@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// BoardListView — Riso-styled Boards home screen.
@@ -57,6 +58,12 @@ struct BoardListView: View {
     /// of pushing `BoardPlayView`. Wired by MainTabView. Nil in preview.
     var onResumeDraft: ((String) -> Void)? = nil
 
+    /// Windowed Completion — the closing-out banner's "Log" action: open the
+    /// (still fully live) board so the user can log any last activity before
+    /// sealing. Wired by MainTabView to push the board id onto the Boards-tab
+    /// stack (the existing `String` `.navigationDestination`). Nil in preview.
+    var onOpenClosingBoard: ((String) -> Void)? = nil
+
     // MARK: - Dependencies
 
     @EnvironmentObject var authService: AuthService
@@ -65,12 +72,21 @@ struct BoardListView: View {
     // MARK: - State
 
     @State private var boards: [Board] = []
+    /// TRUE mini-preview cells per board (bugfix/board-preview-real-cells perf
+    /// follow-up), keyed by board id. Batch-built ONCE per `loadBoards()` call
+    /// via `BoardPreviewCells.fetchWorkspaceData`/`buildMany` — NOT per-card —
+    /// so N board cards don't each mount their own workspace-wide reads. Empty
+    /// (nil lookup) renders as `RisoBoardCard`'s all-empty placeholder until
+    /// the batch fetch resolves.
+    @State private var previewCellsByBoardId: [String: BoardPreviewCellsResult] = [:]
     @State private var activeFilter: String = "active"
     @State private var loadError: String?
     @State private var boardPendingDelete: Board?
     @State private var deleteError: String?
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
     @State private var spawnVM = RecurringBoardSpawnViewModel()
+    /// Windowed Completion — closing-out (Log/Seal) banner state.
+    @State private var closingOutVM = ClosingOutBoardsViewModel()
     /// User's week-start pref ("monday"/"sunday") for the core grid's local
     /// window-boundary fallback. Loaded in `onAppearLoad`.
     @State private var weekStartDayPref: String = "monday"
@@ -90,7 +106,10 @@ struct BoardListView: View {
         guard activeFilter != "all" else { return boards }
         return boards.filter { board in
             guard board.status.rawValue == activeFilter else { return false }
-            if activeFilter == "active", isBoardExpired(board) { return false }
+            // The Active tab hides expired and sealed boards (still visible
+            // under All). A sealed-but-incomplete board keeps status ACTIVE
+            // forever by design, so status alone can't exclude it.
+            if activeFilter == "active", board.sealedAt != nil || isBoardExpired(board) { return false }
             return true
         }
     }
@@ -104,6 +123,14 @@ struct BoardListView: View {
         }
         .navigationBarHidden(true)
         .onAppear { onAppearLoad() }
+        // Board-integrity PR-4 (Item 5, docs/BOARD_INTEGRITY.md): reload the
+        // list when a sync pull lands while this screen is open — iOS had no
+        // live-update mechanism for this before (web is reactive via Dexie's
+        // `useLiveQuery`). Scoped to the boards list itself; preview cells
+        // refresh as a side effect of `loadBoards()`'s existing tail call.
+        .onReceive(NotificationCenter.default.publisher(for: .oybcSyncDidApplyChanges)) { _ in
+            loadBoards()
+        }
     }
 
     // MARK: - Content
@@ -146,6 +173,30 @@ struct BoardListView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
+
+                // Windowed Completion — one-time dismissible upgrade note
+                // (docs §What changes visibly at upgrade). Self-hides via
+                // @AppStorage once dismissed.
+                WindowedCompletionNoteView()
+                    .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+
+                // Windowed Completion — closing-out prompt (docs §Sealing →
+                // Lifecycle → Prompt). One row per board whose window ended
+                // but isn't sealed yet (OQ3 resolution: not collapsed).
+                ClosingOutBannerView(
+                    boards: closingOutVM.boards,
+                    sealingBoardId: closingOutVM.sealingBoardId,
+                    onLog: { boardId in onOpenClosingBoard?(boardId) },
+                    onSeal: { boardId in
+                        guard let userId = authService.currentUser?.id else { return }
+                        closingOutVM.seal(boardId: boardId, userId: userId)
+                    }
+                )
+                .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
 
             // ---- Board cards ----
@@ -166,7 +217,8 @@ struct BoardListView: View {
                                 RisoBoardCard(
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
-                                    isExpiring: isBoardExpiringSoon(board)
+                                    isExpiring: isBoardExpiringSoon(board),
+                                    previewCells: previewCells(for: board)
                                 )
                             }
                         } else {
@@ -174,7 +226,8 @@ struct BoardListView: View {
                                 RisoBoardCard(
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
-                                    isExpiring: isBoardExpiringSoon(board)
+                                    isExpiring: isBoardExpiringSoon(board),
+                                    previewCells: previewCells(for: board)
                                 )
                             }
                         }
@@ -362,6 +415,19 @@ struct BoardListView: View {
                     .listRowBackground(Color.clear)
             }
 
+            ClosingOutBannerView(
+                boards: closingOutVM.boards,
+                sealingBoardId: closingOutVM.sealingBoardId,
+                onLog: { boardId in onOpenClosingBoard?(boardId) },
+                onSeal: { boardId in
+                    guard let userId = authService.currentUser?.id else { return }
+                    closingOutVM.seal(boardId: boardId, userId: userId)
+                }
+            )
+            .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+
             emptyStateCenteredRow
                 .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
                 .listRowSeparator(.hidden)
@@ -432,6 +498,19 @@ struct BoardListView: View {
 
     // MARK: - Helpers
 
+    /// Resolves a board's batch-built preview cells, or an all-empty
+    /// placeholder sized to `board.boardSize` while the batch fetch is still
+    /// in flight. `RisoBoardCard.previewCells` is required (no self-loading
+    /// fallback), so this always returns something concrete — passing an
+    /// undefined/placeholder value here (even transiently, on first load)
+    /// keeps every visible card DB-free; only this one batch fetch reads.
+    private func previewCells(for board: Board) -> BoardPreviewCellsResult {
+        previewCellsByBoardId[board.id] ?? BoardPreviewCellsResult(
+            size: board.boardSize,
+            cells: Array(repeating: .empty, count: board.boardSize * board.boardSize)
+        )
+    }
+
     /// Human-readable label for a board's timeframe window (e.g. "This week · 4 days left").
     private func boardTimeframeLabel(_ board: Board) -> String {
         guard let startDate = parseISO8601Date(board.startDate) else {
@@ -439,7 +518,7 @@ struct BoardListView: View {
         }
         let base = formatTimeframeLabel(timeframe: board.timeframe, startDate: startDate)
         let expiry = getExpiryLabel(board)
-        guard board.timeframe != .custom, !board.isIndefinite,
+        guard !board.isIndefinite,
               !expiry.isEmpty, expiry != "No deadline" else {
             return base
         }
@@ -449,7 +528,7 @@ struct BoardListView: View {
     /// Returns true when the board's end date is within 24 hours of now.
     private func isBoardExpiringSoon(_ board: Board) -> Bool {
         guard board.status == .active,
-              board.timeframe != .custom, !board.isIndefinite,
+              !board.isIndefinite,
               let endStr = board.endDate,
               let end = parseISO8601Date(endStr) else { return false }
         let hoursLeft = end.timeIntervalSinceNow / 3600
@@ -462,12 +541,30 @@ struct BoardListView: View {
         loadBoards()
         if let userId = authService.currentUser?.id {
             pendingRecurringVM.reloadAsync(userId: userId)
+            closingOutVM.reloadAsync(userId: userId)
             _Concurrency.Task {
                 let user = (try? AppDatabase.shared.fetchUser(id: userId)) ?? nil
                 let weekStartDay = user?.decodedPreferences.weekStartDay ?? .monday
                 await MainActor.run { weekStartDayPref = weekStartDay.rawValue }
                 await spawnVM.runSpawnPass(userId: userId, weekStartDay: weekStartDay)
-                await MainActor.run { loadBoards() }
+                // Windowed Completion — lazy auto-seal backstop (docs §Sealing).
+                // Same lazy-detection posture as recurring spawn: boards past
+                // their backstop deadline seal on Boards-tab open, never
+                // background-scheduled. Off-main DB write, then reload.
+                await _Concurrency.Task.detached(priority: .utility) {
+                    _ = try? AppDatabase.shared.runBackstopAutoSeal(userId: userId)
+                    // Windowed-bingo self-heal: rewrite any stale
+                    // `completedLineIds` left by the pre-fix edit/structure
+                    // cascades (lifetime-cache phantom bingos). Idempotent,
+                    // lazy/app-open only — same posture as the backstop above.
+                    _ = try? AppDatabase.shared.reDeriveActiveBoards(userId: userId)
+                }.value
+                await MainActor.run {
+                    loadBoards()
+                    // A backstop pass may have silently sealed a board that
+                    // was in the closing-out set — drop it from the banner.
+                    closingOutVM.reloadAsync(userId: userId)
+                }
             }
         }
     }
@@ -482,8 +579,28 @@ struct BoardListView: View {
                     boards = result
                     loadError = nil
                 }
+                loadPreviewCells(boards: result, userId: userId)
             } catch {
                 await MainActor.run { loadError = error.localizedDescription }
+            }
+        }
+    }
+
+    /// Batch-builds `previewCellsByBoardId` for every board on screen — ONE
+    /// workspace-scoped fetch (`BoardPreviewCells.fetchWorkspaceData`) + ONE
+    /// `fetchAllBoardTasks()`, reused across every board's `build(...)` call,
+    /// instead of each `RisoBoardCard` mounting its own fetch. Runs off the
+    /// main thread; called after every `loadBoards()` reload (initial load,
+    /// post-delete, post-backstop-autoseal) so previews stay in sync with
+    /// the list.
+    private func loadPreviewCells(boards: [Board], userId: String) {
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let database = AppDatabase.shared
+            let allBoardTasks = (try? database.fetchAllBoardTasks()) ?? []
+            let workspace = BoardPreviewCells.fetchWorkspaceData(userId: userId, database: database)
+            let result = BoardPreviewCells.buildMany(boards: boards, boardTasks: allBoardTasks, workspace: workspace)
+            await MainActor.run {
+                self.previewCellsByBoardId = result
             }
         }
     }

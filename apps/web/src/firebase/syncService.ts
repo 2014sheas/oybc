@@ -15,114 +15,61 @@ import {
 import { liveQuery } from 'dexie';
 import { firestore, auth } from './config';
 import { resolveConflict, type SyncableEntity } from './conflictResolver';
-import { recordSyncEvent, recordSyncError, resetSyncStatus } from './syncStatus';
-import { db } from '../db/database';
+import {
+  recordSyncEvent,
+  recordSyncError,
+  resetSyncStatus,
+  setExhaustedCount,
+} from './syncStatus';
+import { db } from '../db/internal';
 import {
   fetchPendingSyncItems,
   markSyncItemInProgress,
   markSyncItemCompleted,
   markSyncItemFailed,
   promoteEligibleFailedItems,
+  countExhaustedSyncItems,
+  retryExhaustedSyncItems,
+  addToSyncQueue,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
   SyncStatus,
   UserSchema,
-  BoardSchema,
-  TaskSchema,
-  TaskStepSchema,
-  BoardTaskSchema,
-  CompositeTaskSchema,
-  CompositeNodeSchema,
-  CompoundChildSchema,
-  RecurringBoardTemplateSchema,
-  DefaultPoolSchema,
   mergeUserPreferences,
-  additiveMergeCount,
-  needsAdditiveMerge,
+  SYNC_COLLECTIONS,
+  LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
   type User,
+  type SyncCollection,
 } from '@oybc/shared';
-import { runBoardCascadeForTask } from '../db/operations/orchestration';
+import { applyTaskEventsBatch } from '../db/operations/taskEventPull';
+import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
  * Entity types that can be synced, mapped to their Dexie table names
  * and Firestore subcollection paths under `users/{userId}/`.
- */
-const SYNCABLE_COLLECTIONS = [
-  'boards',
-  'tasks',
-  'taskSteps',                // legacy — kept so push can drain DELETE ops from migration v4
-  'boardTasks',
-  'compositeTasks',           // legacy — kept so push can drain DELETE ops from migration v4
-  'compositeNodes',           // legacy — kept so push can drain DELETE ops from migration v4
-  'compoundChildren',
-  'recurringBoardTemplates',  // Phase 6.2
-  'defaultPools',             // Phase 6.X — Default Pools
-] as const;
-
-type SyncCollection = (typeof SYNCABLE_COLLECTIONS)[number];
-
-/**
- * Zod schema per syncable subcollection. Remote documents pulled from
- * Firestore are validated against these before being applied to the
- * local Dexie row. A failure is logged and the document is skipped —
- * the safety-net pull will retry on the next cycle.
  *
- * Defense-in-depth: Firestore rules already gate write shape, but a
- * compromised client, SDK bug, or future schema change could emit a
- * malformed document. Validating on read prevents corrupted rows from
- * slipping into the local source-of-truth database.
+ * Sourced from `@oybc/shared`'s `SYNC_COLLECTIONS` (workstream C4 / issue
+ * #261) — this used to be a hand-maintained literal array here, mirrored
+ * by hand in iOS's `SyncService.swift`. It's now the single source of
+ * truth; see that constant's doc comment for the full contract (legacy
+ * push-drain entries, iOS mirroring story, etc.).
  */
-// Each schema's `safeParse` returns a discriminated union — narrowing to
-// the common shape gives us a single callable type to map across
-// collections without pulling zod itself into web's dependency graph.
-type RemoteSchema = {
-  safeParse: (input: unknown) =>
-    | { success: true; data: unknown }
-    | { success: false; error: { issues: Array<{ path: (string | number)[]; message: string }> } };
-};
-
-const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
-  boards: BoardSchema,
-  tasks: TaskSchema,
-  taskSteps: TaskStepSchema,
-  boardTasks: BoardTaskSchema,
-  compositeTasks: CompositeTaskSchema,
-  compositeNodes: CompositeNodeSchema,
-  compoundChildren: CompoundChildSchema,
-  recurringBoardTemplates: RecurringBoardTemplateSchema,
-  defaultPools: DefaultPoolSchema,
-};
-
-/**
- * Subset of syncable collections whose documents carry a top-level
- * `userId` field. For these, the pull path must reject any document
- * whose `userId` doesn't match the authenticated user — a defense
- * against a compromised peer that writes into its own path with a
- * spoofed `userId` and hopes that a future cross-user share path
- * surfaces it.
- */
-const USER_SCOPED_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
-  'boards',
-  'tasks',
-  'compositeTasks',
-  'recurringBoardTemplates',
-  'defaultPools',
-]);
+const SYNCABLE_COLLECTIONS = SYNC_COLLECTIONS;
 
 /**
  * Legacy collections kept in SYNCABLE_COLLECTIONS so the push path can drain
  * DELETE ops produced by the migration-v4 cleanup. The pull path skips them
  * because their Firestore subcollections are either empty or being actively
  * retired — pulling their docs would resurrect legacy rows in local Dexie.
+ *
+ * Sourced from `@oybc/shared`'s `LEGACY_PULL_SKIP_COLLECTIONS`.
  */
-const LEGACY_PULL_SKIP_COLLECTIONS: ReadonlySet<SyncCollection> = new Set([
-  'taskSteps',
-  'compositeTasks',
-  'compositeNodes',
-]);
+const LEGACY_PULL_SKIP_COLLECTIONS: ReadonlySet<SyncCollection> = new Set(
+  SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
+);
 
 export interface PushResult {
   pushed: number;
@@ -140,43 +87,6 @@ export interface PullResult {
 export interface SyncResult {
   push: PushResult;
   pull: PullResult;
-}
-
-// ─── Phase 4: lastSyncedCount bookkeeping after push ─────────────────────────
-
-/**
- * After a successful push of a COUNTING task to Firestore, advance the local
- * `lastSyncedCount` to the pushed `currentCount` value. This records
- * "Firestore now knows about this count" so the next conflict resolution can
- * compute the local delta correctly.
- *
- * This is a targeted write (no version bump, no sync queue entry) — it is sync
- * bookkeeping, not a user edit. Only counting tasks carry `lastSyncedCount`.
- *
- * @param entityType - The entity type from the sync queue item.
- * @param entityId - The task ID.
- * @param payload - The sync payload that was just pushed to Firestore.
- */
-async function updateLastSyncedCountAfterPush(
-  entityType: string,
-  entityId: string,
-  payload: SyncableEntity,
-): Promise<void> {
-  if (entityType !== 'tasks') return;
-  const payloadAsTask = payload as { type?: string; currentCount?: number };
-  if (payloadAsTask.type !== 'counting') return;
-  const pushedCount = payloadAsTask.currentCount;
-  if (typeof pushedCount !== 'number') return;
-
-  try {
-    // Targeted update — does NOT bump version or write a new sync queue entry.
-    // lastSyncedCount is sync bookkeeping only.
-    await db.tasks.update(entityId, { lastSyncedCount: pushedCount });
-  } catch (err) {
-    // Non-fatal: if this write fails, the next conflict will fall back to LWW
-    // (null lastSyncedCount → LWW). Log but do not propagate.
-    console.warn(`[sync] Could not advance lastSyncedCount for tasks/${entityId}:`, err);
-  }
 }
 
 // ─── Push Sync ────────────────────────────────────────────────────────────────
@@ -229,7 +139,19 @@ export async function pushSync(userId: string): Promise<PushResult> {
   await promoteEligibleFailedItems();
 
   const pendingItems = await fetchPendingSyncItems();
-  if (pendingItems.length === 0) return result;
+  if (pendingItems.length === 0) {
+    // Nothing pending, but exhausted FAILED items may still be stranded
+    // (e.g. pre-existing stuck items on a fresh page load after
+    // `resetSyncStatus` zeroed the count). Refresh so the count reflects
+    // reality even on a no-op push. Mirrors the iOS empty-branch
+    // `refreshExhaustedCount()` in `pushSyncCore`.
+    try {
+      setExhaustedCount(await countExhaustedSyncItems());
+    } catch (err) {
+      console.error('[sync] Failed to refresh exhausted-item count:', err);
+    }
+    return result;
+  }
 
   for (const item of pendingItems) {
     try {
@@ -286,9 +208,6 @@ export async function pushSync(userId: string): Promise<PushResult> {
         // No remote — push directly
         await writeSingleDoc(docRef, payload);
         await markSyncItemCompleted(item.id);
-        // Phase 4: After a successful push of a counting task, advance
-        // lastSyncedCount so subsequent conflicts can compute the local delta.
-        await updateLastSyncedCountAfterPush(entityType, item.entityId, payload);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(`Pushed ${entityType}/${item.entityId} (new)`);
@@ -303,10 +222,6 @@ export async function pushSync(userId: string): Promise<PushResult> {
         // Local wins — push to Firestore
         await writeSingleDoc(docRef, payload);
         await markSyncItemCompleted(item.id);
-        // Phase 4: After a successful local-wins push of a counting task,
-        // advance lastSyncedCount so subsequent conflicts can compute the
-        // local delta correctly.
-        await updateLastSyncedCountAfterPush(entityType, item.entityId, payload);
         result.pushed++;
         recordSyncEvent('pushed');
         result.details.push(
@@ -332,6 +247,16 @@ export async function pushSync(userId: string): Promise<PushResult> {
       recordSyncError(errorMsg);
       result.details.push(`Failed ${item.entityType}/${item.entityId}: ${errorMsg}`);
     }
+  }
+
+  // Refresh the exhausted-item count on the sync status. pushSync is the
+  // single choke point where items transition to (and out of) the FAILED
+  // state, so recomputing here covers every caller (fullSync, the debounced
+  // pushTick, the manual retry) without a separate poll loop.
+  try {
+    setExhaustedCount(await countExhaustedSyncItems());
+  } catch (err) {
+    console.error('[sync] Failed to refresh exhausted-item count:', err);
   }
 
   return result;
@@ -408,250 +333,35 @@ async function applyRemoteUserDoc(
     recordSyncEvent('pulled');
     return `Pulled users/${userId} (remote v${remoteSyncable.version} > local v${localSyncable!.version})`;
   }
-  return null; // local-wins → silent no-op
+  // Board-integrity PR-4, item 1: same generic-path fix as
+  // `applyRemoteSubdoc` in `db/operations/pullApply.ts` — see that
+  // function's doc comment for the full race + self-healing rationale.
+  // The `users` doc isn't a `SyncCollection` (it lives at `users/{userId}`,
+  // not a subcollection), so it can't share that function directly, but the
+  // push loop already special-cases `entityType === 'users'` with its own
+  // docRef, so a plain UPDATE enqueue drains through the same path.
+  if (rowsGenuinelyDiffer(localSyncable!, remoteSyncable)) {
+    await addToSyncQueue('users', userId, SyncOperationType.UPDATE, localUser, 0);
+  }
+  return null; // local-wins → re-enqueued (if it differs) so it re-asserts
 }
 
-/**
- * Apply a remote document from a syncable subcollection to the local
- * Dexie table, running LWW conflict resolution. Used by `pullSync` and
- * the per-collection snapshot listener.
- *
- * Validates the payload against the Zod schema for the collection
- * before touching Dexie. A failed parse (missing fields, wrong types,
- * version < 1, userId mismatch for user-scoped collections) logs a
- * `Skipped` status and returns without writing — corrupted remote data
- * must never reach the local source-of-truth DB.
- *
- * @param collectionName The Firestore subcollection being pulled.
- * @param remoteData The raw document data from Firestore (untrusted).
- * @param authenticatedUserId The current user's uid, for userId scope
- *   checks on user-scoped collections.
- * @returns A short status string for logging; `null` if local-wins.
- */
-async function applyRemoteSubdoc(
-  collectionName: SyncCollection,
-  remoteData: unknown,
-  authenticatedUserId: string
-): Promise<string | null> {
-  const schema = COLLECTION_SCHEMAS[collectionName];
-  const parsed = schema.safeParse(remoteData);
-  if (!parsed.success) {
-    const reason = parsed.error.issues
-      .map((i) => `${i.path.join('.')}: ${i.message}`)
-      .join(', ');
-    const id =
-      typeof (remoteData as { id?: unknown })?.id === 'string'
-        ? (remoteData as { id: string }).id
-        : '?';
-    return `Skipped malformed ${collectionName}/${id}: ${reason}`;
-  }
+// `applyRemoteSubdoc` (apply a remote document from a syncable subcollection
+// to the local Dexie table, running LWW conflict resolution — used by
+// `pullSync` and the per-collection snapshot listener) now lives in
+// `db/operations/pullApply.ts` — a firebase-free home so its unit test's
+// import graph never reaches `firebase/config` (the #280/#281 CI-only
+// failure: `firebase/config` initializes Firebase Auth at import time,
+// which throws `auth/invalid-api-key` on a CI runner with no `.env.local`).
+// This module keeps a thin caller via the import above.
 
-  const validated = parsed.data as SyncableEntity;
-
-  // Guard against a peer writing a document with a spoofed `userId`
-  // into its own path — reject anything that doesn't match the
-  // authenticated user on user-scoped collections.
-  //
-  // The status string omits both the payload and authenticated uids
-  // because it flows through `console.debug('[sync]', status)` in the
-  // snapshot listener; log collection or a screenshot would otherwise
-  // leak stable identifiers. The collection + doc id is enough to
-  // triage in practice; the full uids are already one query away in
-  // Dexie if needed.
-  if (USER_SCOPED_COLLECTIONS.has(collectionName)) {
-    const payloadUserId = (validated as { userId?: unknown }).userId;
-    if (payloadUserId !== authenticatedUserId) {
-      return `Skipped ${collectionName}/${validated.id}: userId mismatch`;
-    }
-  }
-
-  // CompoundChild has no `userId` column — children scope through their
-  // parent compound's userId. A crafted Firestore doc with a `compoundTaskId`
-  // pointing at another user's compound would land in local Dexie with no
-  // direct check. Resolve the parent and reject on mismatch.
-  if (collectionName === 'compoundChildren') {
-    const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
-    if (typeof compoundTaskId !== 'string' || !compoundTaskId) {
-      return `Skipped compoundChildren/${validated.id}: missing compoundTaskId`;
-    }
-    const parentTask = await db.tasks.get(compoundTaskId);
-    if (!parentTask) {
-      // No local parent — could be a legitimate cross-device race. Defer:
-      // skip this pull cycle, the safety net will retry. Don't accept blind.
-      return `Skipped compoundChildren/${validated.id}: parent compound not yet present locally`;
-    }
-    if (parentTask.userId !== authenticatedUserId) {
-      return `Skipped compoundChildren/${validated.id}: parent userId mismatch`;
-    }
-  }
-
-  const table = db.table(collectionName);
-  const localData = (await table.get(validated.id)) as SyncableEntity | undefined;
-
-  const isNew = !localData;
-  const remoteWins = isNew || resolveConflict(localData!, validated).winner === 'remote';
-
-  if (!remoteWins) {
-    return null; // local-wins → silent no-op
-  }
-
-  // Apply the remote row to local Dexie, with additive-merge for counting
-  // source tasks (Phase 4). The cascade runs in the same transaction so a
-  // cascade failure rolls back the upsert — pulled value is authoritative
-  // except when additive merge overrides currentCount.
-  //
-  // Additive merge fires when ALL of:
-  //   1. collectionName === 'tasks' (not other entity types)
-  //   2. The remote task is a COUNTING task
-  //   3. The local task exists and has a known lastSyncedCount
-  //   4. Both local and remote currentCount deviate from lastSyncedCount
-  //      (concurrent increments — needsAdditiveMerge returns true)
-  //   5. At least one linked task references this task as a source
-  //      (sharedCounterId === this task's id) — additive merge only pays
-  //      off for sources (the accumulator that multiple views read).
-  //
-  // When merge fires, the merged count replaces the remote count, version
-  // is bumped, and a push entry is enqueued so the merged value reaches
-  // Firestore. The cascade then re-derives all linked tasks + board stats.
-  let mergeLog: string | null = null;
-  await db.transaction(
-    'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
-    async () => {
-      // Phase 4 — Additive merge for shared-counter sources on pull.
-      //
-      // Guard: skip merge when either side is a tombstone. A deleted task
-      // must fall through to standard LWW which handles isDeleted correctly;
-      // running additive merge on a delete would resurrect the record.
-      const remoteIsDeleted = !!(validated as { isDeleted?: boolean }).isDeleted;
-      const localIsDeleted = !!(localData as { isDeleted?: boolean } | undefined)?.isDeleted;
-
-      if (
-        collectionName === 'tasks' &&
-        !isNew &&
-        localData &&
-        !remoteIsDeleted &&
-        !localIsDeleted
-      ) {
-        const remoteTask = validated as { type?: string; currentCount?: number };
-        const localTask = localData as { type?: string; currentCount?: number; lastSyncedCount?: number | null; version?: number };
-
-        if (remoteTask.type === 'counting') {
-          const localCount = typeof localTask.currentCount === 'number' ? localTask.currentCount : 0;
-          const remoteCount = typeof remoteTask.currentCount === 'number' ? remoteTask.currentCount : 0;
-          const lastSynced = typeof localTask.lastSyncedCount === 'number' ? localTask.lastSyncedCount : null;
-
-          if (needsAdditiveMerge(localCount, remoteCount, lastSynced)) {
-            // Check if this task is a shared-counter source (any task references it).
-            const linkedCount = await db.tasks
-              .where('sharedCounterId')
-              .equals(validated.id)
-              .and((t) => !t.isDeleted)
-              .count();
-
-            if (linkedCount > 0) {
-              // Additive merge applies: sum local delta on top of remote count.
-              const { merged } = additiveMergeCount(localCount, remoteCount, lastSynced);
-
-              // version = max(local, remote) + 1 so LWW on next pull doesn't
-              // silently discard the merge if the remote has version > local + 1.
-              const localVersion = typeof localTask.version === 'number' ? localTask.version : 0;
-              const remoteVersion = typeof (validated as { version?: number }).version === 'number'
-                ? (validated as { version?: number }).version!
-                : 0;
-              const newVersion = Math.max(localVersion, remoteVersion) + 1;
-              const now = new Date().toISOString();
-
-              // 1. Apply the full remote record (preserves all remote-changed
-              //    fields: title, description, isDeleted, maxCount, etc.)
-              await table.put(validated);
-
-              // 2. Layer the additively-merged count fields on top of the
-              //    remote upsert so the merged count wins.
-              await db.tasks.update(validated.id, {
-                currentCount: merged,
-                lastSyncedCount: remoteCount, // common ancestor advances to remote
-                version: newVersion,
-                updatedAt: now,
-              });
-
-              // Enqueue push so the merged value reaches Firestore.
-              const mergedTask = await db.tasks.get(validated.id);
-              if (mergedTask) {
-                await db.syncQueue.add({
-                  id: crypto.randomUUID(),
-                  entityType: 'tasks',
-                  entityId: validated.id,
-                  operationType: SyncOperationType.UPDATE,
-                  payload: JSON.stringify(mergedTask),
-                  status: SyncStatus.PENDING,
-                  retryCount: 0,
-                  createdAt: now,
-                  priority: 0,
-                });
-              }
-
-              mergeLog = `additive-merge currentCount ${localCount}+${remoteCount}-${lastSynced}=${merged}`;
-              // Run cascade on the merged task (re-derives linked tasks + board stats).
-              await runBoardCascadeForTask(validated.id);
-              return; // Merge path complete — skip the standard table.put below.
-            }
-          }
-        }
-      }
-
-      await table.put(validated);
-
-      // Issue #5 (remote-wins LWW on counting task): advance lastSyncedCount
-      // so the next conflict can compute the local delta correctly.
-      // The remote doc is not guaranteed to carry the correct per-device
-      // lastSyncedCount (it's local bookkeeping), so we write it explicitly.
-      if (collectionName === 'tasks' && !isNew) {
-        const remoteTask = validated as { type?: string; currentCount?: number };
-        if (remoteTask.type === 'counting' && typeof remoteTask.currentCount === 'number') {
-          await db.tasks.update(validated.id, {
-            lastSyncedCount: remoteTask.currentCount,
-          });
-        }
-      }
-
-      // After pulling a Task or CompoundChild, cascade the board derivation
-      // pass so that any board containing the changed task recomputes its
-      // stats + status transitions. The cascade writes boards + sync queue
-      // entries but does NOT touch the Task itself — pulled value is final.
-      //
-      // Cascade unconditionally (matches iOS SyncService.runPullCascade).
-      // The previous `completionChanged` gate (isCompleted/currentCount diff)
-      // missed compound-affecting edits — operator/threshold/isOrdered changes
-      // would leave boards with stale stats + completedLineIds even though
-      // the compound's derived state had flipped. The cascade is idempotent
-      // and small-N, so always running it is the safer + iOS-parity choice.
-      if (collectionName === 'tasks') {
-        // Let cascade errors propagate so the outer Dexie transaction rolls
-        // back the `table.put(validated)` that just landed. Pulling will retry
-        // on the next cycle. Previously this branch swallowed errors, which
-        // left the task applied locally but board stats stale forever — a
-        // silent divergence that no safety net resolved.
-        await runBoardCascadeForTask(validated.id);
-      } else if (collectionName === 'compoundChildren') {
-        // For a pulled CompoundChild, cascade via the parent compound task.
-        const compoundTaskId = (validated as { compoundTaskId?: unknown }).compoundTaskId;
-        if (typeof compoundTaskId === 'string' && compoundTaskId) {
-          await runBoardCascadeForTask(compoundTaskId);
-        }
-      }
-    },
-  );
-
-  recordSyncEvent('pulled');
-  if (isNew) {
-    return `Pulled ${collectionName}/${validated.id} (new)`;
-  }
-  if (mergeLog) {
-    return `Pulled ${collectionName}/${validated.id} (additive-merge: ${mergeLog})`;
-  }
-  return `Pulled ${collectionName}/${validated.id} (remote v${validated.version} > local v${(localData as SyncableEntity).version})`;
-}
+// Batched pull-path handler for the `taskEvents` collection
+// (docs/WINDOWED_COMPLETION.md §Sync — "Batched pull-path recompute") now
+// lives in `db/operations/taskEventPull.ts` — a firebase-free home so its
+// unit test's import graph never reaches `firebase/config` (the #280/#281
+// CI-only failure: `firebase/config` initializes Firebase Auth at import
+// time, which throws `auth/invalid-api-key` on a CI runner with no
+// `.env.local`). This module keeps a thin caller via the import above.
 
 export async function pullSync(
   userId: string,
@@ -703,6 +413,18 @@ export async function pullSync(
 
       const snapshot = await getDocs(q);
       if (snapshot.empty) continue;
+
+      // Windowed Completion (docs §Sync): task events pull in a BATCH — apply
+      // all rows, then one recompute per task + one cascade per board.
+      if (collectionName === 'taskEvents') {
+        const batch = await applyTaskEventsBatch(
+          userId,
+          snapshot.docs.map((d) => d.data()),
+        );
+        result.pulled += batch.pulled;
+        result.details.push(...batch.details);
+        continue;
+      }
 
       for (const docSnap of snapshot.docs) {
         const remoteData = docSnap.data();
@@ -817,6 +539,23 @@ export function attachPullListeners(
     const unsub = onSnapshot(
       q,
       async (snapshot) => {
+        // Windowed Completion (docs §Sync): batch task-event deliveries so the
+        // recompute + cascade runs once per snapshot, not once per event row.
+        if (collectionName === 'taskEvents') {
+          try {
+            const rows = snapshot
+              .docChanges()
+              .filter((c) => c.type !== 'removed')
+              .map((c) => c.doc.data());
+            if (rows.length > 0) {
+              const batch = await applyTaskEventsBatch(userId, rows);
+              for (const d of batch.details) console.debug('[sync]', d);
+            }
+          } catch (err) {
+            console.error('[sync] taskEvents listener apply failed:', err);
+          }
+          return;
+        }
         for (const change of snapshot.docChanges()) {
           if (change.type === 'removed') continue; // soft-deletes only; no real removes
           try {
@@ -883,6 +622,13 @@ export async function fullSync(userId: string): Promise<SyncResult> {
  *   - back-stop missed Firestore snapshot deliveries (rare)
  * 5 minutes is well below typical user dwell time and keeps Firestore
  * read load minimal.
+ *
+ * DO NOT REMOVE this timer as an "optimization": the pull watermark is a
+ * LOCAL-clock ISO string compared against server `_syncedAt`, so a
+ * clock-skew window exists by design — a doc written during the skew can
+ * slip past the watermark, and this periodic re-pull is the only mechanism
+ * that recovers it. iOS twin: `safetyNetInterval` in SyncService.swift.
+ * See docs/SYNC_STRATEGY.md.
  */
 export const SYNC_SAFETY_NET_MS = 5 * 60 * 1000;
 
@@ -1002,8 +748,22 @@ export function startSyncLoop(
   // that piled up during the offline window. Firestore SDK auto-resumes
   // listener subscriptions on reconnect, but a kick to fullTick covers
   // any race + advances the safety-net watermark.
+  //
+  // The `online` event is inherently edge-triggered (the browser fires it
+  // only on the offline→online transition, never on a steady-state cycle),
+  // so exhausted items get exactly ONE free re-promote per reconnect —
+  // no loop guard needed. This is the cheap first recovery layer: a
+  // transient outage that pushed items past the retry cap clears itself
+  // the moment connectivity returns, without the user tapping Retry.
   function handleOnline(): void {
-    void fullTick();
+    void (async () => {
+      try {
+        await retryExhaustedSyncItems();
+      } catch (err) {
+        console.error('[sync] online re-promote failed:', err);
+      }
+      await fullTick();
+    })();
   }
   window.addEventListener('online', handleOnline);
 
@@ -1054,6 +814,16 @@ async function writeSingleDoc(
   // fresh doc / a board that never had an endDate.)
   if (docRef.parent.id === 'boards' && cleaned.endDate === undefined) {
     cleaned.endDate = deleteField();
+  }
+
+  // Same carve-out for `completedAt`: a COMPLETED→ACTIVE revert (live cascade
+  // un-completing a board) clears `completedAt` locally by writing
+  // `undefined`, but under `merge: true` simply omitting the field would
+  // PRESERVE the stale completion timestamp on the remote doc for other
+  // devices to pull. Explicitly delete it so the remote matches the local
+  // source of truth. (Harmless no-op on docs that never had a completedAt.)
+  if (docRef.parent.id === 'boards' && cleaned.completedAt === undefined) {
+    cleaned.completedAt = deleteField();
   }
 
   await setDoc(docRef, cleaned, { merge: true });

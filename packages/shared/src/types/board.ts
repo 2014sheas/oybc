@@ -66,6 +66,34 @@ export interface Board {
   // (the Zod schema also defaults to `false`); the detector uses
   // strict `=== true` so `undefined` is treated as non-core.
   isCore?: boolean;
+
+  // ── Windowed Completion — board sealing (docs/WINDOWED_COMPLETION.md
+  //    §Sealing → Board schema delta) ────────────────────────────────
+  //
+  // `sealedAt` — set ONCE when the board's window is closed out (user Seal
+  // action OR the auto-seal backstop OR migration of an already-expired
+  // board). Never cleared; there is no unseal gesture. A non-null `sealedAt`
+  // makes the board a permanent historical record: it drops out of the live
+  // derivation fan-out, renders read-only from `sealedCompletedCells`, and is
+  // ineligible for Board Edit. `status` is untouched — sealing is orthogonal
+  // to draft/active/completed/archived.
+  sealedAt?: string;             // ISO8601
+
+  // `sealedCompletedCells` — the green cell indexes (`row*size+col`) frozen at
+  // seal time, computed by `computeSealedCompletedCells` from the converged
+  // in-window event union. A pure function of that union, so it re-derives
+  // deterministically on any device when late pre-seal events arrive (never
+  // LWW-raced). Undefined until the board seals.
+  sealedCompletedCells?: number[];
+
+  // `activatedAt` — when the board transitioned out of DRAFT (or, for a board
+  // created active, its creation). Absent for boards created before this field
+  // existed. The auto-seal backstop keys its deadline off
+  // `max(endDate, activatedAt)` so a DRAFT activated AFTER its window already
+  // expired still gets one full prompt cycle instead of an instant silent
+  // seal (docs §Sealing → backstop, §Edge cases). Never mutated after the
+  // activation that sets it.
+  activatedAt?: string;          // ISO8601
 }
 
 /**

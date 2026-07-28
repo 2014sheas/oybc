@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import type { Task } from '@oybc/shared';
+import { generateCounterTaskTitle, type Task } from '@oybc/shared';
+import { RisoButton } from '../riso';
 import styles from './DeriveCounterModal.module.css';
 
 interface DeriveCounterModalProps {
@@ -19,9 +20,11 @@ interface DeriveCounterModalProps {
 
 /**
  * Minimal modal for the "Derive smaller version…" context-menu action
- * on counting tasks. Single field for the new `maxCount`; the source's
- * `action` and `unit` are inherited so the user only enters the
- * scaled-down target.
+ * on counting tasks. Single field for the new goal; the source's verb and
+ * counted noun are inherited so the user only enters the scaled-down
+ * target. R1 counters refresh — "Refining counters" design handoff
+ * §Creation Surfaces: retitled "Smaller version", copy from Global
+ * Constraints, RisoButton footer.
  *
  * Backdrop click + Escape dismiss; Enter submits. Caller owns state +
  * persistence (this is a presentational component).
@@ -47,14 +50,14 @@ export function DeriveCounterModal({
   const previewMax = parseInt(maxCountInput.trim(), 10);
   const previewTitle =
     Number.isFinite(previewMax) && previewMax > 0
-      ? `${action} ${previewMax} ${unit}`
+      ? generateCounterTaskTitle(action, previewMax, unit)
       : '';
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Derive smaller counter"
+      aria-label="Smaller version"
       className={styles.backdrop}
       onClick={onCancel}
     >
@@ -62,15 +65,9 @@ export function DeriveCounterModal({
         className={styles.dialog}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className={styles.title}>Derive smaller version</h3>
+        <h3 className={styles.title}>Smaller version</h3>
         <div className={styles.sourceHint}>
-          From <strong>{source.title}</strong>
-          {source.maxCount != null && (
-            <span>
-              {' '}
-              — {action} {source.maxCount} {unit}
-            </span>
-          )}
+          From <strong>{source.title}</strong> — same counter, lower goal.
         </div>
         <label className={styles.fieldLabel}>
           New goal
@@ -89,27 +86,19 @@ export function DeriveCounterModal({
         />
         {previewTitle && (
           <div className={styles.preview}>
-            New title: <strong>{previewTitle}</strong>
+            New task: <strong>{previewTitle}</strong> — still counts {unit}.
           </div>
         )}
         {error && (
           <div className={styles.error}>{error}</div>
         )}
         <div className={styles.actions}>
-          <button
-            type="button"
-            onClick={onCancel}
-            className={styles.cancelButton}
-          >
+          <RisoButton kind="ghost" onClick={onCancel}>
             Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            className={styles.saveButton}
-          >
-            Save
-          </button>
+          </RisoButton>
+          <RisoButton kind="blue" onClick={onSave}>
+            Create
+          </RisoButton>
         </div>
       </div>
     </div>

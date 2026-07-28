@@ -9,7 +9,7 @@ import {
   type Board,
   type WeekStartDay,
 } from '@oybc/shared';
-import { db } from '../../db/database';
+import { fetchCoreBoardsForTimeframe } from '../../db/operations';
 
 /** One row in the per-timeframe browser. */
 export interface WindowCell {
@@ -96,14 +96,7 @@ export function useCoreBoardBrowser({
   const boardsByStart = useLiveQuery(
     async (): Promise<Map<string, Board>> => {
       if (!userId) return new Map();
-      const boards = await db.boards
-        .where('[userId+timeframe+status]')
-        .between(
-          [userId, timeframe, ''] as readonly unknown[],
-          [userId, timeframe, '￿'] as readonly unknown[],
-        )
-        .and((b) => !b.isDeleted && b.isCore === true)
-        .toArray();
+      const boards = await fetchCoreBoardsForTimeframe(userId, timeframe);
       const map = new Map<string, Board>();
       for (const b of boards) map.set(b.startDate, b);
       return map;

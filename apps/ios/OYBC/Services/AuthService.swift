@@ -346,7 +346,7 @@ final class AuthService: ObservableObject {
                 completedAt: nil,
                 priority: 1
             )
-            try syncItem.save(db)
+            try syncItem.enqueue(db)
         }
     }
 

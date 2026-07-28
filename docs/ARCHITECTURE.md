@@ -102,10 +102,12 @@ compound_children       -- Parent-child links for compound tasks. One row per
                            composite_nodes tables.
 board_tasks             -- Junction: board ↔ task placement (no completion state —
                            that lives on the Task itself post-unification).
-progress_counters       -- Counting-task progress state (per user × counter).
-bingo_lines             -- Completed lines (denormalized for performance).
+progress_counters       -- Vestigial dead (superseded by the Task.sharedCounterId
+                           model — see docs/SHARED_COUNTERS.md); no live reads/writes.
 sync_queue              -- Pending Firestore operations.
 ```
+
+There is no `bingo_lines` table on either platform. Bingo state is denormalized directly onto `boards` (`linesCompleted` count + `completedLineIds` JSON array of line ids) and is always recomputed from the task-completion grid via `detectBingos` (`packages/bingo-core/src/bingoDetection.ts`, re-exported through `@oybc/shared`; Swift twin `Services/BingoDetection.swift`) — never trusted as authoritative during a sync conflict. See `docs/TASK_SYSTEM.md` §Global completion semantics / derivation pass.
 
 The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_composite_tasks` tables are still present in old migration scripts so first-launch backfill works on dev/test devices, but they receive no live writes and no UI reads. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the canonical schema.
 
@@ -603,7 +605,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - [x] Display name edit (Firebase Auth + local DB + sync)
 - [x] Sync status indicator + iOS `NetworkMonitor`
 
-**Achievement squares** shipped subsequently in Phase 6.3 (PR #54) as the `TaskType.ACHIEVEMENT` first-class type. `ProgressCounter` schema exists but has no UI consumer — open question whether to surface it later or drop the entity.
+**Achievement squares** shipped subsequently in Phase 6.3 (PR #54) as the `TaskType.ACHIEVEMENT` first-class type. The `ProgressCounter` open question below was resolved by Decision 1 (§Shared Counters) — the entity was **not** surfaced; counter-sharing instead ships as the per-Task `sharedCounterId` FK model, with `ProgressCounter`/`TaskProgressCounter`/`calculateCountingRollup` left vestigial-dead (web dropped the Dexie store at v11; iOS still declares the inert `progress_counters` table — tracked in `docs/ROADMAP.md` Track C5).
 
 ### Launch readiness (separate gate, not a Phase 5 sub-task)
 
@@ -965,7 +967,7 @@ The Boards-tab **Core boards** rows previously opened the per-timeframe browser 
 - **Empty windows are lazy**: when no core board exists for a window, the pager shows a setup prompt ("No board for <label> yet" → "Set up"/"Backfill"), which launches the wizard prefilled for that window. **No board row is written until the user acts** — the same no-auto-spawn invariant that governs the rest of Phase 6 (navigating to a window never creates a board).
 - **Prev/next is an in-place state change, not a navigation push**: the pager owns the current-window state and re-resolves the board for the stepped window (via the shared `stepWindow` / iOS `stepCoreBoardWindow`). This avoids the iOS NavigationStack destination-reuse trap (a pushed destination is reused when the path's only element swaps) and avoids polluting web history. Paging is unbounded in both directions (past = backfill/review, future = pre-build). iOS guards rapid stepping with a `reloadToken` stale-result check.
 - **Timezone**: the web route's date-only `:date` param is parsed as **local noon** (`new Date(\`${date}T12:00:00\`)`), not `new Date(date)` — a date-only ISO string parses as UTC midnight, which lands the daily pager on *yesterday's* window for users west of UTC.
-- **Platform divergence (intentional)**: web extracts a presentational `BoardPlaySurface` from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; iOS embeds the existing `BoardPlayView` whole behind a new `embedded` flag (it is 1350 lines and already self-loads by `boardId`, so embedding is lower-risk than extraction). Same behavior on both platforms.
+- **Platform divergence (intentional)**: web extracts a presentational `BoardPlaySurface` from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; iOS embeds the existing `BoardPlayView` whole behind a new `embedded` flag (it self-loads by `boardId`, so embedding is lower-risk than extraction). Same behavior on both platforms. (Post-B2: both play surfaces have since had their write logic extracted — web into `useBoardPlayData`/`useBoardPlay` hooks + `toggleTaskCompletionAndCascade` operation (`BoardPlaySurface.tsx` now ~1,088 lines), iOS into `BoardPlayViewModel` (DB-injected, unit-tested; `BoardPlayView.swift` now ~2,000 lines of rendering). The `embedded`-flag structure itself is unchanged.)
 
 ## Wizard "From a board" picker
 
@@ -1150,6 +1152,8 @@ The recursive call into `runBoardCascadeForTask(dt.id)` already exists as the ri
 
 #### Decision 5 — Sync / conflict: additive merge on `Task.currentCount` for shared-counter sources
 
+> **Superseded by Windowed Completion** ([`WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md)): counts are now event-sourced (`task_events`, union-by-id, per-row LWW) and `currentCount` is a cache recomputed from the event union on pull — offline increments survive as separate event rows, so no merge is needed. `sharedCounterMerge` was neutered in PR B and deleted in PR D; `lastSyncedCount` remains in the schema as an inert legacy field. The section below is preserved as the historical design record.
+
 **Locked**: A counting Task with at least one derived Task (i.e., another Task references it via `sharedCounterId`) becomes an **additive-merge source**. On sync conflict (local version + remote version both incremented since `lastSyncedAt`), instead of plain LWW on `currentCount`, the resolver computes:
 
 ```
@@ -1262,6 +1266,8 @@ The three open questions below were unresolvable without user input and blocked 
 
 ### Phase 4 — Conflict resolution for shared counters (this section)
 
+> **Superseded by Windowed Completion** — same disposition as Decision 5 above: the additive-merge machinery this section specifies shipped, ran, and was then retired (neutered PR B, deleted PR D) in favor of event-sourced counts. `lastSyncedCount` survives only as an inert schema field. Historical record.
+
 > Design locked 2026-06-06 before any Phase 4 code. Decisions below supplement Decision 5 from the Phase 0 doc above, adding the implementation specifics that are safe to resolve without user input.
 
 #### Storage: `lastSyncedCount` on `Task` (option a)
@@ -1325,6 +1331,21 @@ Per the Phase 0 Phasing section: `ProgressCounter` types, Dexie / GRDB table def
 | Branch | `feature/shared-counter-sync-additive` |
 | PR | TBD — link added when opened |
 | Issue | [#84](https://github.com/2014sheas/oybc/issues/84) (investigation only; Phase 0 doc resolves the 7 design decisions) |
+
+---
+
+## Windowed Completion — event-sourced task completion (shipped)
+
+> **Canonical design: [`docs/WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md).** This is a pointer summary only.
+
+Task completion used to be a single mutable global bit (`Task.isCompleted` / `currentCount`), while boards are windowed temporal artifacts — producing two verified failure modes: **recurring respawn bleed** (a task completed Monday spawns Tuesday's board pre-greenlogged) and **mutable history** (decrementing a counter today retroactively breaks last month's streak). Windowed Completion (shipped via the PR train A #316 / B #318 / C #326 / D) fixes both by making completion **event-sourced**:
+
+- **`task_events`** — one new synced collection (SQLite `task_events`, Dexie `taskEvents`, Firestore `users/{uid}/taskEvents`). Each row is a `completion` or `increment` occurrence with an `occurredAt` timestamp; per-row LWW + soft-delete tombstones (tombstone = undo), **union by id** — no new conflict machinery. Only **event-owning** tasks (`NORMAL`, plain `COUNTING`) carry events; derived shared-counters, compounds, and achievements are carved out and read their lifetime caches / derive as before.
+- **Windowed evaluation** — a task's state on a board is computed against that board's window `[startDate, ∞)` (events with `occurredAt >= startDate`), not a global bit. The same task legitimately shows different states on today's board vs this month's. `Task.isCompleted`/`currentCount`/`completedAt` are demoted to **lifetime caches** — read by library/global surfaces, recomputed from events on pull, never trusted for windowed board grids.
+- **Board sealing** — past windows seal (lazy prompt-to-seal on app-open + timeframe-scaled auto-seal backstop) into a permanent, read-only historical record (`Board.sealedAt` + `sealedCompletedCells`). Sealed boards drop out of the live derivation fan-out; their snapshot re-derives deterministically from the converged event union, so it never LWW-races. Board Edit is gated on `!sealedAt`.
+- **Retired** — the Phase-4 additive-merge shared-counter sync (`sharedCounterMerge` + `lastSyncedCount` stamping) is gone; counting conflicts resolve by union-of-events. The `lastSyncedCount` column/field stays inert for decode compatibility. The **recurring-spawn path now runs the derivation pass at spawn**, so a spawned board's stored stats are derivation output (a fresh window computes to zero + FREE-center auto-fill), not a hand-initialized `completedTasks: 0`.
+
+See `WINDOWED_COMPLETION.md` for the full model, sync/batched-recompute details, migration/backfill, sealing lifecycle, and testing matrix. Cross-refs: [`TASK_SYSTEM.md`](./TASK_SYSTEM.md) (task model amendment), [`SYNC_STRATEGY.md` §Task Events sync](./SYNC_STRATEGY.md#task-events-sync-windowed-completion--shipped).
 
 ---
 

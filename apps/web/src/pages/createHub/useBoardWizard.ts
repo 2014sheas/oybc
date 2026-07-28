@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDefaultPool } from '../../hooks';
+import { useDefaultPool, useTemplateMix } from '../../hooks';
 import {
   CenterSquareType,
   Timeframe,
@@ -12,6 +12,7 @@ import {
   type WeekStartDay,
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
+import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
 /** A wizard step. 1 = Setup, 2 = Tasks, 3 = Preview & Activate. */
 export type WizardStep = 1 | 2 | 3;
@@ -33,6 +34,7 @@ export function tasksNeededFor(size: 3 | 4 | 5, centerType: CenterSquareType): n
     (centerType === CenterSquareType.FREE || centerType === CenterSquareType.CUSTOM_FREE);
   return size * size - (hasReservedCenter ? 1 : 0);
 }
+
 
 /**
  * Returns a `centerType` that is internally consistent with `size`.
@@ -332,19 +334,11 @@ export function useBoardWizard({
       effectiveTemplate?.timeframe ??
       effectivePrefill ??
       null;
-    const seed = explicitSource ?? preferences.defaultTimeframe;
-    // Recurring templates can't use CUSTOM (no computed window). If the
-    // user's default timeframe is CUSTOM and they entered via the
-    // recurring CTA, fall back to DAILY (mirrors the `setIsRecurring`
-    // coercion that the removed toggle used to apply).
-    if (initialIsRecurring && seed === Timeframe.CUSTOM) return Timeframe.DAILY;
-    // A fresh board whose timeframe comes only from the CUSTOM default opens
-    // as ongoing (End date = None); a dated range is opt-in via the End-date
-    // control. An explicitly-CUSTOM draft/template/prefill keeps its dates.
-    if (!initialIsRecurring && seed === Timeframe.CUSTOM && explicitSource === null) {
-      return Timeframe.INDEFINITE;
-    }
-    return seed;
+    return resolveInitialWizardTimeframe(
+      explicitSource,
+      preferences.defaultTimeframe,
+      initialIsRecurring,
+    );
   });
   const [customStartDate, setCustomStartDate] = useState(() =>
     draftBoard?.timeframe === Timeframe.CUSTOM && draftBoard.startDate
@@ -390,9 +384,31 @@ export function useBoardWizard({
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
     if (draft) return new Set(draft.boardTasks.map((bt) => bt.taskId));
+    // Synchronous fallback only — `effectiveTemplate.seedTaskIds` is stale
+    // once P1's legacy-editor write-through has run (it writes through to
+    // the linked Pool, not this field; see `useTemplateMix`'s docstring).
+    // The one-shot effect below replaces this with the resolved mix as
+    // soon as it loads.
     if (effectiveTemplate) return new Set(effectiveTemplate.seedTaskIds);
     return new Set();
   });
+
+  // P1 (Task Pools + Recurring Boards Rework) — resolve the template's
+  // CURRENT pool-mix task ids and replace the seedTaskIds-based initial
+  // state above once loaded. One-shot via a ref flag, same pattern as the
+  // DefaultPool prefill effect below: without it, re-opening "Edit"/"Add
+  // tasks" a second time would silently drop whatever a prior edit wrote
+  // through to the Pool, and Save would destructively overwrite the Pool
+  // with the stale set.
+  const templateMix = useTemplateMix(effectiveTemplate);
+  const templateMixAppliedRef = useRef(false);
+  useEffect(() => {
+    if (templateMixAppliedRef.current) return;
+    if (!effectiveTemplate) return;
+    if (templateMix === undefined) return; // still loading
+    templateMixAppliedRef.current = true;
+    setSelectedTaskIds(templateMix);
+  }, [effectiveTemplate, templateMix]);
 
   // Phase 6.X — Default Pool prefill. When the wizard is banner-launched
   // (`effectivePrefill` set) AND no draft/template hydrated the

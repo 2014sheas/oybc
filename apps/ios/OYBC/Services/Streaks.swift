@@ -59,11 +59,11 @@ private func boardMeets(_ board: Board, _ criterion: AchievementTrigger) -> Bool
     }
 }
 
-/// Current streak for one timeframe + criterion. Returns 0 for `.custom` or when
-/// no core boards exist.
+/// Current streak for one timeframe + criterion. Returns 0 for `.custom` /
+/// `.indefinite` or when no core boards exist.
 ///
 /// - Parameters:
-///   - timeframe: daily/weekly/monthly/yearly (`.custom` → 0).
+///   - timeframe: daily/weekly/monthly/yearly (`.custom` / `.indefinite` → 0).
 ///   - criterion: `.bingo` or `.greenlog`.
 ///   - boards: all boards for the active user (caller scopes by userId).
 ///   - weekStartDay: `"monday"` / `"sunday"` — only affects weekly windows.
@@ -75,7 +75,8 @@ func computeStreak(
     weekStartDay: String,
     now: Date
 ) -> Int {
-    guard timeframe != .custom else { return 0 }
+    // `.custom` and `.indefinite` have no window cadence to walk → no streak.
+    guard timeframe != .custom, timeframe != .indefinite else { return 0 }
 
     // startDate → the core board for that window. Core boards write `startDate`
     // via `wizardLocalISOString(window.start)`, the exact string the boundary
@@ -127,7 +128,7 @@ func computeStreak(
 /// the handoff design intent (longest = actual past achievement, not projected).
 ///
 /// - Parameters:
-///   - timeframe: daily/weekly/monthly/yearly (`.custom` → 0).
+///   - timeframe: daily/weekly/monthly/yearly (`.custom` / `.indefinite` → 0).
 ///   - boards: all boards for the active user.
 ///   - weekStartDay: `"monday"` / `"sunday"` — only affects weekly windows.
 ///   - now: reference instant (injected for determinism / testing).
@@ -138,7 +139,7 @@ func computeLongestStreak(
     weekStartDay: String,
     now: Date
 ) -> Int {
-    guard timeframe != .custom else { return 0 }
+    guard timeframe != .custom, timeframe != .indefinite else { return 0 }
 
     var byStart: [String: Board] = [:]
     for board in boards where board.isCore && !board.isDeleted && board.timeframe == timeframe {

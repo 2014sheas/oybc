@@ -9,7 +9,7 @@ import {
   onAuthStateChanged,
 } from './authService';
 import { AuthContext, type AuthContextValue } from './authContextValue';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 // ─── Test-only auth bypass ────────────────────────────────────────────────────
 

@@ -94,6 +94,14 @@ export const BoardSchema = z.object({
   // Phase 6.1 core-board marker. Defaulted so sync-pulled rows from
   // older clients (without the field) decode as ad-hoc / non-core.
   isCore: z.boolean().default(false),
+  // Windowed Completion — board sealing (docs §Sealing → Board schema delta).
+  // All additive + optional so pre-sealing peers' rows decode unchanged.
+  // `sealedCompletedCells` is bounded by boardSize² in practice; we don't
+  // enforce an upper length here (a stale/oversized array self-heals via the
+  // pull-path re-derivation).
+  sealedAt: FlexibleDateTime.optional(),
+  sealedCompletedCells: z.array(z.number().int().min(0)).optional(),
+  activatedAt: FlexibleDateTime.optional(),
 });
 
 // ===== Task Schemas =====
@@ -228,15 +236,19 @@ export const CreateTaskInputSchema = z.object({
   // file (e.g. `referencedBoardId`, `centerTaskId`) — rejects empty strings.
   sharedCounterId: z.string().uuid().nullable().optional(),
   baseline: z.number().int().min(0).nullable().optional(),
+  // P5 — Hub-born counters. See `Task.isCounter` for the full invariant
+  // documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
+  isCounter: z.boolean().optional(),
 }).refine(
   (data) => {
-    // Counting tasks must have action, unit, and maxCount
+    // Counting tasks must have action, unit, and maxCount — except hub-born
+    // counters (isCounter), which are goal-less accumulators (P5).
     if (data.type === TaskType.COUNTING) {
-      return data.action && data.unit && data.maxCount;
+      return data.action && data.unit && (data.maxCount || data.isCounter === true);
     }
     return true;
   },
-  { message: 'Counting tasks must have action, unit, and maxCount' }
+  { message: 'Counting tasks must have action, unit, and maxCount (unless isCounter)' }
 ).refine(
   referencedFieldsOnTaskMutuallyExclusive,
   { message: 'Task.referencedBoardId and referencedTemplateId are mutually exclusive — at most one may be set' },
@@ -255,6 +267,12 @@ export const CreateTaskInputSchema = z.object({
 ).refine(
   sharedCounterFieldsConsistent,
   { message: "sharedCounterId and baseline must both be set (with baseline >= 0) or both be absent/null" },
+).refine(
+  (data) => data.isCounter !== true || data.type === TaskType.COUNTING,
+  { message: 'Only COUNTING tasks may set isCounter' },
+).refine(
+  (data) => data.isCounter !== true || data.sharedCounterId == null,
+  { message: 'A derived (linked) counting task cannot be a counter' },
 );
 // Note: post-unification, Progress tasks are created via
 // `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
@@ -333,6 +351,9 @@ export const AutoCreateCompoundChildTaskSchema = z.object({
   action: z.string().min(1).max(50).optional(),
   unit: z.string().min(1).max(50).optional(),
   maxCount: z.number().int().positive().optional(),
+  // R1 counters refresh — auto-link (see AutoCreateCompoundChildTask doc).
+  sharedCounterId: z.string().uuid().nullable().optional(),
+  baseline: z.number().int().min(0).nullable().optional(),
 }).refine(
   (data) => {
     if (data.type === TaskType.COUNTING) {
@@ -341,6 +362,9 @@ export const AutoCreateCompoundChildTaskSchema = z.object({
     return true;
   },
   { message: 'Counting child tasks require action, unit, and maxCount' },
+).refine(
+  (data) => (data.sharedCounterId != null) === (data.baseline != null),
+  { message: 'sharedCounterId and baseline must both be set or both be absent' },
 );
 
 export const CreateCompoundChildEntrySchema = z.object({
@@ -452,8 +476,9 @@ export const TaskSchema = z.object({
   sharedCounterId: z.string().uuid().nullable().optional(),
   // Phase 2 — Shared Counters. Baseline offset (source count at link time).
   baseline: z.number().int().min(0).nullable().optional(),
-  // Phase 4 — Shared Counter Sync. Common-ancestor value for additive-merge
-  // conflict resolution. Null/absent means no confirmed Firestore round-trip yet.
+  // RETIRED (Windowed Completion) — Phase 4 additive-merge common-ancestor.
+  // Inert residue; nothing reads/writes it (docs/WINDOWED_COMPLETION.md §Shared
+  // counters interaction). Kept in the schema for decode compat with old rows.
   lastSyncedCount: z.number().int().nonnegative().nullable().optional(),
   // Draft-board provenance. `true` for wizard-born (deferred-persist)
   // tasks; absent/false for standalone + copied + pre-feature tasks.
@@ -462,6 +487,13 @@ export const TaskSchema = z.object({
   // and other-platform payloads omit it; must round-trip through sync
   // (z.object strips unknown keys, so it has to be declared here).
   createdInWizard: z.boolean().optional(),
+  // P5 — Hub-born counters. See `Task.isCounter` for the full invariant
+  // documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
+  isCounter: z.boolean().optional(),
+  // Counters UX refresh (R2). See `Task.defaultLogAmount` for the full
+  // invariant documentation. Positive integer when present; forward-compat
+  // (unknown-drop safe like `isCounter`).
+  defaultLogAmount: z.number().int().positive().optional(),
 }).refine(
   (data) => {
     // Compound tasks must have an operator.
@@ -497,6 +529,50 @@ export const TaskSchema = z.object({
   { message: "requiredCount must be a positive integer when referencedTemplateId is set, and must be unset otherwise" },
 );
 
+// ===== TaskEvent Schema (Windowed Completion) =====
+//
+// docs/WINDOWED_COMPLETION.md §New entity. A synced, soft-deletable
+// occurrence row for an event-owning task. Per-row LWW like compoundChildren.
+//
+// NOTE: the "events only for event-owning tasks" rule (reject compound /
+// achievement / derived-counting task ids) CANNOT be enforced here — a
+// TaskEvent row carries only `taskId`, not the task's type. That rule lives in
+// the shared `isEventOwningTask(task)` predicate, which the write choke points
+// call with the Task in hand. This schema enforces the row-shape invariants
+// (delta ⇄ kind, occurredAt required, sync-metadata shape) that the pull path
+// can validate from the row alone.
+export const TaskEventSchema = z
+  .object({
+    id: z.string().uuid(),
+    userId: z.string(),
+    taskId: z.string().uuid(),
+    kind: z.enum(['completion', 'increment']),
+    // Present + non-zero integer on increments; forbidden on completions
+    // (enforced by the refinement below).
+    delta: z.number().int().optional(),
+    occurredAt: z.string().datetime(),
+    boardId: z.string().uuid().optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    lastSyncedAt: z.string().datetime().optional(),
+    version: z.number().int().min(1),
+    isDeleted: z.boolean(),
+    deletedAt: z.string().datetime().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.kind === 'increment') {
+        return data.delta !== undefined && Number.isInteger(data.delta) && data.delta !== 0;
+      }
+      // completion
+      return data.delta === undefined;
+    },
+    {
+      message:
+        "TaskEvent.delta must be a non-zero integer when kind='increment', and must be absent when kind='completion'",
+    },
+  );
+
 export const TaskStepSchema = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
@@ -524,11 +600,20 @@ export const TaskStepSchema = z.object({
 // of the ACHIEVEMENT-as-TaskType refactor — placements just record where
 // the task lives on a board, the rest is derived from the Task itself.
 
+// Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 3) — a sane upper bound
+// on row/col. The max grid is 5×5 (indexes 0-4), so 24 is generous headroom;
+// this is a coarse defense-in-depth guard, not the real bounds check — Zod
+// has no cross-field access to `Board.boardSize`, so the actual
+// `row/col < boardSize` validation happens at the write-path guards (write
+// wrappers) and the resolver's bounds-drop (`resolvePlacements` /
+// `computePlacementIntegrityRepair`, packages/shared/src/algorithms/placementResolution.ts).
+const BOARD_TASK_POSITION_MAX = 24;
+
 export const CreateBoardTaskInputSchema = z.object({
   boardId: z.string().uuid(),
   taskId: z.string().uuid(),
-  row: z.number().int().min(0),
-  col: z.number().int().min(0),
+  row: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
+  col: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   isCenter: z.boolean(),
 });
 
@@ -536,13 +621,21 @@ export const BoardTaskSchema = z.object({
   id: z.string().uuid(),
   boardId: z.string().uuid(),
   taskId: z.string().uuid(),
-  row: z.number().int().min(0),
-  col: z.number().int().min(0),
+  row: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
+  col: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   isCenter: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
+  // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — tombstone soft-delete.
+  // Defaulted (not required, unlike CompoundChild's `isDeleted`) so
+  // pre-existing synced boardTasks docs — written before this field
+  // existed — still decode on pull; the local migration backfills
+  // `isDeleted: false` on first launch. Mirrors Board's `isCore` and
+  // Task's `isCompleted` forward-compat defaults above.
+  isDeleted: z.boolean().default(false),
+  deletedAt: z.string().datetime().optional(),
 });
 
 // ===== CompoundChild Schemas =====
@@ -778,6 +871,23 @@ const RecurringCenterSquareTypeSchema = z.union([
   z.literal(CenterSquareType.NONE),
 ]);
 
+/**
+ * P1 (Task Pools rework) — the three generalized-source fields, additive
+ * and optional on every RecurringBoardTemplate schema (create/update/full)
+ * so a legacy (`seedTaskIds`-only) payload still validates. Each array
+ * gets its own no-dup refine, mirroring `seedTaskIds`'s — a duplicate
+ * `poolId`/`manualTaskId`/`removedTaskId` is a caller bug the schema
+ * should catch before it reaches `resolveMix`.
+ */
+const poolIdsNoDup = (data: { poolIds?: string[] }): boolean =>
+  data.poolIds === undefined || new Set(data.poolIds).size === data.poolIds.length;
+const manualTaskIdsNoDup = (data: { manualTaskIds?: string[] }): boolean =>
+  data.manualTaskIds === undefined ||
+  new Set(data.manualTaskIds).size === data.manualTaskIds.length;
+const removedTaskIdsNoDup = (data: { removedTaskIds?: string[] }): boolean =>
+  data.removedTaskIds === undefined ||
+  new Set(data.removedTaskIds).size === data.removedTaskIds.length;
+
 export const CreateRecurringBoardTemplateInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   timeframe: RecurringTimeframeSchema,
@@ -787,6 +897,9 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()).min(1),
   isActive: z.boolean(),
+  poolIds: z.array(z.string().uuid()).optional(),
+  manualTaskIds: z.array(z.string().uuid()).optional(),
+  removedTaskIds: z.array(z.string().uuid()).optional(),
 }).refine(
   (data) => {
     if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
@@ -809,6 +922,15 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
     return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
   },
   { message: 'seedTaskIds must not contain duplicates' },
+).refine(
+  poolIdsNoDup,
+  { message: 'poolIds must not contain duplicates' },
+).refine(
+  manualTaskIdsNoDup,
+  { message: 'manualTaskIds must not contain duplicates' },
+).refine(
+  removedTaskIdsNoDup,
+  { message: 'removedTaskIds must not contain duplicates' },
 );
 
 export const UpdateRecurringBoardTemplateInputSchema = z.object({
@@ -820,12 +942,24 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
   isRandomized: z.boolean().optional(),
   seedTaskIds: z.array(z.string().uuid()).min(1).optional(),
   isActive: z.boolean().optional(),
+  poolIds: z.array(z.string().uuid()).optional(),
+  manualTaskIds: z.array(z.string().uuid()).optional(),
+  removedTaskIds: z.array(z.string().uuid()).optional(),
 }).refine(
   (data) => {
     if (data.seedTaskIds === undefined) return true;
     return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
   },
   { message: 'seedTaskIds must not contain duplicates' },
+).refine(
+  poolIdsNoDup,
+  { message: 'poolIds must not contain duplicates' },
+).refine(
+  manualTaskIdsNoDup,
+  { message: 'manualTaskIds must not contain duplicates' },
+).refine(
+  removedTaskIdsNoDup,
+  { message: 'removedTaskIds must not contain duplicates' },
 ).refine(
   (data) => {
     // When a partial update sets `centerSquareType` to CUSTOM_FREE, it must
@@ -854,6 +988,11 @@ export const RecurringBoardTemplateSchema = z.object({
   centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()),
+  // P1 — additive, optional generalized-source fields. See
+  // types/recurringBoardTemplate.ts for the mix formula + "legacy shape".
+  poolIds: z.array(z.string().uuid()).optional(),
+  manualTaskIds: z.array(z.string().uuid()).optional(),
+  removedTaskIds: z.array(z.string().uuid()).optional(),
   lastSpawnedWindowKey: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),
@@ -862,7 +1001,117 @@ export const RecurringBoardTemplateSchema = z.object({
   version: z.number().int().min(1),
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
-});
+}).refine(
+  poolIdsNoDup,
+  { message: 'poolIds must not contain duplicates' },
+).refine(
+  manualTaskIdsNoDup,
+  { message: 'manualTaskIds must not contain duplicates' },
+).refine(
+  removedTaskIdsNoDup,
+  { message: 'removedTaskIds must not contain duplicates' },
+);
+
+// ===== Pool Schemas (P1 — Task Pools + Recurring Boards Rework) =====
+
+/**
+ * Pools follow the same name bounds as templates (1-120 chars after trim —
+ * `RecurringTimeframeSchema`'s sibling convention, reused for parity).
+ * `taskIds` MAY be empty — a pool can be created empty and filled later,
+ * matching `DefaultPool`'s tolerance.
+ */
+export const CreatePoolInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  taskIds: z.array(z.string().uuid()),
+}).refine(
+  (data) => new Set(data.taskIds).size === data.taskIds.length,
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const UpdatePoolInputSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  taskIds: z.array(z.string().uuid()).optional(),
+}).refine(
+  (data) => {
+    if (data.taskIds === undefined) return true;
+    return new Set(data.taskIds).size === data.taskIds.length;
+  },
+  { message: 'taskIds must not contain duplicates' },
+);
+
+export const PoolSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  name: z.string().min(1).max(120),
+  taskIds: z.array(z.string().uuid()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+}).refine(
+  (data) => new Set(data.taskIds).size === data.taskIds.length,
+  { message: 'taskIds must not contain duplicates' },
+);
+
+// ===== CoreBoardDefault Schemas (P1 — replaces DefaultPool) =====
+
+/**
+ * `Timeframe.CUSTOM` is excluded — same reason as `DefaultPool` /
+ * `RecurringBoardTemplate`: a "default" tied to a computed recurring
+ * window has no semantic for custom-window boards. Both `corePoolIds` and
+ * `coreDefaultTaskIds` MAY be empty ("No default tasks" is a valid,
+ * expected state — never "Not set").
+ */
+export const CreateCoreBoardDefaultInputSchema = z.object({
+  timeframe: RecurringTimeframeSchema,
+  corePoolIds: z.array(z.string().uuid()),
+  coreDefaultTaskIds: z.array(z.string().uuid()),
+}).refine(
+  (data) => new Set(data.corePoolIds).size === data.corePoolIds.length,
+  { message: 'corePoolIds must not contain duplicates' },
+).refine(
+  (data) => new Set(data.coreDefaultTaskIds).size === data.coreDefaultTaskIds.length,
+  { message: 'coreDefaultTaskIds must not contain duplicates' },
+);
+
+export const UpdateCoreBoardDefaultInputSchema = z.object({
+  corePoolIds: z.array(z.string().uuid()).optional(),
+  coreDefaultTaskIds: z.array(z.string().uuid()).optional(),
+}).refine(
+  (data) => {
+    if (data.corePoolIds === undefined) return true;
+    return new Set(data.corePoolIds).size === data.corePoolIds.length;
+  },
+  { message: 'corePoolIds must not contain duplicates' },
+).refine(
+  (data) => {
+    if (data.coreDefaultTaskIds === undefined) return true;
+    return new Set(data.coreDefaultTaskIds).size === data.coreDefaultTaskIds.length;
+  },
+  { message: 'coreDefaultTaskIds must not contain duplicates' },
+);
+
+export const CoreBoardDefaultSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  timeframe: RecurringTimeframeSchema,
+  corePoolIds: z.array(z.string().uuid()),
+  coreDefaultTaskIds: z.array(z.string().uuid()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSyncedAt: z.string().datetime().optional(),
+  version: z.number().int().min(1),
+  isDeleted: z.boolean(),
+  deletedAt: z.string().datetime().optional(),
+}).refine(
+  (data) => new Set(data.corePoolIds).size === data.corePoolIds.length,
+  { message: 'corePoolIds must not contain duplicates' },
+).refine(
+  (data) => new Set(data.coreDefaultTaskIds).size === data.coreDefaultTaskIds.length,
+  { message: 'coreDefaultTaskIds must not contain duplicates' },
+);
 
 // ===== DefaultPool Schemas (Phase 6.X — Default Pools) =====
 

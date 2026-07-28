@@ -58,13 +58,15 @@ final class TaskLibraryViewModel {
     /// must use `browsableTasks` instead — see below.
     var libraryTasks: [Task] = []
 
-    /// `libraryTasks` minus wizard-born tasks that are still placed only on
-    /// draft boards. This is the set the LIBRARY-BROWSE surfaces show — the
-    /// Tasks tab and the wizard's "add from library" picker — so a task
-    /// created inside the board wizard stays hidden until its board goes
-    /// active (visibility rule: hide iff `createdInWizard` AND every
-    /// non-deleted placement is a draft board; orphan + standalone tasks are
-    /// always visible). Keep `libraryTasks` for resolution; never browse it.
+    /// `libraryTasks` minus wizard-born tasks that aren't yet on a live board.
+    /// This is the set the LIBRARY-BROWSE surfaces show — the Tasks tab and the
+    /// wizard's "add from library" picker — so a task created inside the board
+    /// wizard stays hidden until its board goes active. Visibility rule (see
+    /// `computeBrowsableTasks`): hide iff `createdInWizard` AND no effective
+    /// (own ∪ parent-compound) placement on a non-draft board — i.e. draft-only
+    /// OR orphaned (removed from the pool / board deleted). Only standalone
+    /// tasks are unconditionally visible. Keep `libraryTasks` for resolution;
+    /// never browse it.
     var browsableTasks: [Task] = []
 
     /// All non-deleted compound_children rows in the workspace.
@@ -98,6 +100,15 @@ final class TaskLibraryViewModel {
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
+
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
 
     // MARK: - Filtered queries (computed)
 
@@ -142,15 +153,26 @@ final class TaskLibraryViewModel {
     /// from the local database. Called on .onAppear of the consuming views
     /// and after each task creation/edit so the library stays consistent.
     func reload(userId: String) async {
+        let database = self.database
         do {
-            let tasks = try await Self.loadTasks(userId: userId)
-            let children = try await Self.loadCompoundChildren()
-            let boardTasks = try await Self.loadAllBoardTasks()
-            let boardStatusById = try await Self.loadBoardStatuses(userId: userId)
+            let tasks = try await Self.loadTasks(userId: userId, database: database)
+            let children = try await Self.loadCompoundChildren(database: database)
+            let boardTasks = try await Self.loadAllBoardTasks(database: database)
+            let boardStatusById = try await Self.loadBoardStatuses(userId: userId, database: database)
+            // #73 — child-id set + reverse (child → parents) map, derived up
+            // front because the browsable filter needs it (compound children
+            // inherit their parent compound's placements).
+            var childIds = Set<String>()
+            var reverseMap: [String: [String]] = [:]
+            for c in children {
+                childIds.insert(c.childTaskId)
+                reverseMap[c.childTaskId, default: []].append(c.compoundTaskId)
+            }
             let browsable = Self.computeBrowsableTasks(
                 tasks: tasks,
                 boardTasks: boardTasks,
-                boardStatusById: boardStatusById
+                boardStatusById: boardStatusById,
+                childToParents: reverseMap
             )
             await MainActor.run {
                 self.libraryTasks = tasks
@@ -165,16 +187,7 @@ final class TaskLibraryViewModel {
                     grouped[id]?.sort { $0.childIndex < $1.childIndex }
                 }
                 self.compoundChildrenByCompound = grouped
-                // #73 — derive child-id set + reverse (child → parents) map.
-                var ids = Set<String>()
-                var reverseMap: [String: [String]] = [:]
-                for (compoundId, links) in grouped {
-                    for link in links {
-                        ids.insert(link.childTaskId)
-                        reverseMap[link.childTaskId, default: []].append(compoundId)
-                    }
-                }
-                self.childTaskIds = ids
+                self.childTaskIds = childIds
                 self.childToParents = reverseMap
                 self.loadError = nil
             }
@@ -193,8 +206,8 @@ final class TaskLibraryViewModel {
         _Concurrency.Task { await reload(userId: userId) }
     }
 
-    private static func loadTasks(userId: String) async throws -> [Task] {
-        try await AppDatabase.shared.read { db in
+    private static func loadTasks(userId: String, database: AppDatabase) async throws -> [Task] {
+        try await database.read { db in
             try Task
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .order(Column("title"))
@@ -202,25 +215,27 @@ final class TaskLibraryViewModel {
         }
     }
 
-    private static func loadCompoundChildren() async throws -> [CompoundChild] {
-        try await AppDatabase.shared.read { db in
+    private static func loadCompoundChildren(database: AppDatabase) async throws -> [CompoundChild] {
+        try await database.read { db in
             try CompoundChild
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
         }
     }
 
-    private static func loadAllBoardTasks() async throws -> [BoardTask] {
-        try await AppDatabase.shared.read { db in
-            try BoardTask.fetchAll(db)
+    private static func loadAllBoardTasks(database: AppDatabase) async throws -> [BoardTask] {
+        try await database.read { db in
+            try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
         }
     }
 
     /// Map of non-deleted boardId → status for the user. Drives the
     /// draft-only-visibility filter (a placement on a deleted board is
     /// absent from this map and therefore ignored).
-    private static func loadBoardStatuses(userId: String) async throws -> [String: BoardStatus] {
-        try await AppDatabase.shared.read { db in
+    private static func loadBoardStatuses(userId: String, database: AppDatabase) async throws -> [String: BoardStatus] {
+        try await database.read { db in
             let boards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .fetchAll(db)
@@ -228,36 +243,23 @@ final class TaskLibraryViewModel {
         }
     }
 
-    /// Pure visibility filter for library-browse surfaces. Hides a task iff
-    /// it is wizard-born (`createdInWizard`) AND it has at least one placement
-    /// on a non-deleted board but NONE of those placements are on a non-draft
-    /// board — i.e. it lives only on drafts. Standalone/copied tasks
-    /// (`createdInWizard == false`) and orphan wizard tasks (no live
-    /// placement, e.g. their draft was deleted) are always visible.
-    ///
-    /// Visible iff: `!createdInWizard` OR no live placement OR ≥1 non-draft placement.
-    ///
-    /// - Parameters:
-    ///   - tasks: The full library task set.
-    ///   - boardTasks: Every BoardTask row (any board).
-    ///   - boardStatusById: Non-deleted boardId → status (placements on
-    ///     missing/deleted boards are ignored).
+    /// Forwards to `BrowsableTasks.computeBrowsableTasks` (issue #246 part 2
+    /// — extracted out of this ViewModel to a named helper mirroring
+    /// `packages/shared/src/algorithms/browsableTasks.ts`). Kept as a thin
+    /// static wrapper so existing call sites (this file's `reload`,
+    /// `DraftTaskVisibilityTests`) don't need to change. See
+    /// `BrowsableTasks.computeBrowsableTasks` for the full rule doc.
     static func computeBrowsableTasks(
         tasks: [Task],
         boardTasks: [BoardTask],
-        boardStatusById: [String: BoardStatus]
+        boardStatusById: [String: BoardStatus],
+        childToParents: [String: [String]] = [:]
     ) -> [Task] {
-        // taskId → set of non-deleted board ids it's placed on.
-        var placementsByTask: [String: Set<String>] = [:]
-        for bt in boardTasks {
-            guard boardStatusById[bt.boardId] != nil else { continue }
-            placementsByTask[bt.taskId, default: []].insert(bt.boardId)
-        }
-        return tasks.filter { task in
-            guard task.createdInWizard else { return true }
-            let boardIds = placementsByTask[task.id] ?? []
-            if boardIds.isEmpty { return true }
-            return boardIds.contains { boardStatusById[$0] != .draft }
-        }
+        BrowsableTasks.computeBrowsableTasks(
+            tasks: tasks,
+            boardTasks: boardTasks,
+            boardStatusById: boardStatusById,
+            childToParents: childToParents
+        )
     }
 }

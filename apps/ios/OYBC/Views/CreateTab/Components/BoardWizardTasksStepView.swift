@@ -54,6 +54,12 @@ struct BoardWizardTasksStepView: View {
     var currentStartDate: String? = nil
     var currentEndDate: String? = nil
 
+    /// Toggles a task's board selection. MUST route through the wizard's
+    /// `toggleTaskSelection` so deselecting a newly-created task also purges
+    /// its deferred (Bug #85) `pendingTasks` payload — otherwise the removed
+    /// task is still written to the DB on save and leaks into the library.
+    let onToggleSelection: (_ taskId: String) -> Void
+
     /// Fired after a non-composite task is created from the sheet.
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
 
@@ -105,6 +111,29 @@ struct BoardWizardTasksStepView: View {
         }
         var seen = Set(library.browsableTasks.map { $0.id })
         var combined = library.browsableTasks
+        for payload in pending.values {
+            if !seen.contains(payload.task.id) {
+                combined.append(payload.task)
+                seen.insert(payload.task.id)
+            }
+        }
+        return combined
+    }
+
+    /// Unfiltered (non-browsable-filtered) task pool + this session's pending
+    /// tasks, used ONLY as the counter-link suggestion pool passed to
+    /// `RisoSpecialTaskPanel`. Unlike `effectiveAllTasks` (which is built
+    /// from `browsableTasks` for pickers/autocomplete), this uses
+    /// `library.libraryTasks` so goal-less hub-born counters — which
+    /// `computeBrowsableTasks` excludes — still surface a link suggestion
+    /// in the wizard. Compound-child pickers must keep using
+    /// `effectiveAllTasks`; only the suggestion pool changes here.
+    private var effectiveSuggestionPool: [Task] {
+        guard let pending = pendingTasks, !pending.isEmpty else {
+            return library.libraryTasks
+        }
+        var seen = Set(library.libraryTasks.map { $0.id })
+        var combined = library.libraryTasks
         for payload in pending.values {
             if !seen.contains(payload.task.id) {
                 combined.append(payload.task)
@@ -194,7 +223,19 @@ struct BoardWizardTasksStepView: View {
                                 onTaskCreated(taskId, title, type)
                             },
                             onPendingCreated: onPendingCreated,
-                            onLibraryReloadRequested: onLibraryReloadRequested
+                            onLibraryReloadRequested: onLibraryReloadRequested,
+                            // Library-poll (owner decision 2026-07-21): the
+                            // same browsable+pending pool the compound
+                            // autocomplete + library sheet already use.
+                            // Matches are guaranteed unselected, so reusing
+                            // `toggleSelection` (add-only in this context)
+                            // is safe and keeps the Bug #85 pending-purge
+                            // semantics on any future deselect.
+                            libraryTasks: effectiveAllTasks,
+                            selectedIds: selectedTaskIds,
+                            onExistingTaskPicked: { task in
+                                toggleSelection(task.id)
+                            }
                         )
                     }
                     .padding(12)
@@ -210,6 +251,7 @@ struct BoardWizardTasksStepView: View {
                         defaultStartDate: currentStartDate,
                         defaultEndDate: currentEndDate,
                         taskLibrary: effectiveAllTasks,
+                        suggestionPool: effectiveSuggestionPool,
                         onTaskCreated: { taskId, title, type in
                             onTaskCreated(taskId, title, type)
                         },
@@ -325,14 +367,10 @@ struct BoardWizardTasksStepView: View {
     // MARK: - Selection helper
 
     private func toggleSelection(_ taskId: String) {
-        let wasSelected = selectedTaskIds.contains(taskId)
-        if wasSelected {
-            selectedTaskIds.remove(taskId)
-            if centerTaskId == taskId {
-                centerTaskId = nil
-            }
-        } else {
-            selectedTaskIds.insert(taskId)
-        }
+        // Delegate to the wizard VM: it updates selection, clears the center
+        // mark, AND purges the deferred `pendingTasks` payload on deselect.
+        // The old local-only version skipped the pending purge, so removed
+        // tasks were persisted as orphans and leaked into the library.
+        onToggleSelection(taskId)
     }
 }

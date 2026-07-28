@@ -480,28 +480,36 @@ struct RisoLibrarySheetView: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
+                        // "From {title} — same counter, lower goal."
                         deriveSection(label: "Derived from") {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(source.title)
-                                    .font(.risoHead(15, .bold))
-                                    .foregroundStyle(Color.risoInk)
-                                if let action = source.action, let unit = source.unit, let max = source.maxCount {
-                                    Text("\(action) \(max) \(unit)")
-                                        .font(.risoBody(13, .semibold))
-                                        .foregroundStyle(Color.risoMuted)
-                                }
-                            }
+                            (Text("From ")
+                                .font(.risoBody(13, .semibold))
+                                .foregroundStyle(Color.risoMuted)
+                            + Text(source.title)
+                                .font(.risoHead(15, .bold))
+                                .foregroundStyle(Color.risoInk)
+                            + Text(" — same counter, lower goal.")
+                                .font(.risoBody(13, .semibold))
+                                .foregroundStyle(Color.risoMuted))
                         }
 
                         deriveSection(label: "New target") {
                             VStack(alignment: .leading, spacing: 8) {
                                 RisoNumberField(placeholder: "Goal", text: $deriveMaxCountInput)
+                                // "New task: {derived title} — still counts {noun}."
                                 if let action = source.action, let unit = source.unit,
                                    let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
                                    parsed > 0 {
-                                    Text("Title: \(action) \(parsed) \(unit)")
+                                    let derivedTitle = TaskTitle.generateCounterTaskTitle(action: action, maxCount: parsed, unit: unit)
+                                    (Text("New task: ")
                                         .font(.risoBody(12, .regular))
                                         .foregroundStyle(Color.risoMuted)
+                                    + Text(derivedTitle)
+                                        .font(.risoHead(13, .bold))
+                                        .foregroundStyle(Color.risoInk)
+                                    + Text(" — still counts \(unit).")
+                                        .font(.risoBody(12, .regular))
+                                        .foregroundStyle(Color.risoMuted))
                                 }
                             }
                         }
@@ -515,12 +523,12 @@ struct RisoLibrarySheetView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        Text("Derive smaller version")
+                        Text("Smaller version")
                             .font(.risoHead(17, .extraBold))
                             .foregroundStyle(Color.risoInk)
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        RisoToolbarPill(title: "Save") { saveDerivedCounter(source: source) }
+                        RisoToolbarPill(title: "Create") { saveDerivedCounter(source: source) }
                         .disabled(!isDeriveInputValid(source: source))
                     }
                     ToolbarItem(placement: .cancellationAction) {
@@ -555,9 +563,13 @@ struct RisoLibrarySheetView: View {
         return parsed > 0
     }
 
-    // TODO(riso 3b-follow-up): Shared-counter-linked derive — currently creates a
-    // standalone derived counter. The full linked path (↔ source, shared counters
-    // Phase 4) is deferred. Keep current standalone behavior.
+    /// R1 counters refresh — "Derive smaller version…" must produce a
+    /// LINKED task, not a standalone duplicate (the sheet's own copy
+    /// promises "same counter, lower goal" / "still counts {noun}"). See
+    /// `resolveDeriveLinkTarget` for the source-resolution rule. This
+    /// wizard-inline surface has `effectiveTaskById` in memory (the merged
+    /// live+pending library), so the root task lookup is synchronous —
+    /// unlike `FromBoardGridView`, which fetches by id.
     private func saveDerivedCounter(source: OYBC.Task) {
         guard let action = source.action,
               let unit = source.unit,
@@ -569,7 +581,11 @@ struct RisoLibrarySheetView: View {
         let newId = AppDatabase.generateUUID()
         let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = "\(trimmedAction) \(parsed) \(trimmedUnit)"
+        let title = TaskTitle.generateCounterTaskTitle(action: trimmedAction, maxCount: parsed, unit: trimmedUnit)
+
+        let rootId = source.sharedCounterId ?? source.id
+        let rootTask = rootId == source.id ? source : effectiveTaskById[rootId]
+        let linkTarget = resolveDeriveLinkTarget(source: source, rootTask: rootTask)
 
         let newTask = OYBC.Task(
             id: newId,
@@ -585,23 +601,16 @@ struct RisoLibrarySheetView: View {
             createdAt: now,
             updatedAt: now,
             version: 1,
-            isDeleted: false
+            isDeleted: false,
+            sharedCounterId: linkTarget.sharedCounterId,
+            baseline: linkTarget.baseline
         )
 
         derivingFromTask = nil
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                try AppDatabase.shared.write { db in
-                    try newTask.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: newId,
-                        operationType: .create,
-                        payload: newTask,
-                        now: now
-                    ).save(db)
-                }
+                try AppDatabase.shared.createTaskAndEnqueue(newTask, now: now)
                 DispatchQueue.main.async {
                     onTaskCreated(newId, title, "counting")
                     onLibraryReloadRequested()

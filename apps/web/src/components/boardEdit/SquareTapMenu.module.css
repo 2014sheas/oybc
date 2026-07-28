@@ -121,3 +121,11 @@
   fill: none;
   flex: 0 0 auto;
 }
+
+/* ─── Danger variant (destructive: "Remove from board") ─── */
+/* Mirrors InteractiveTaskSquare's .contextMenuItemDanger red treatment. The
+   hover keeps the shared gold fill (kit convention) with ink-static text so the
+   label stays legible on gold in both schemes (dark contract). */
+.menuItemDanger {
+  color: var(--danger, #dc2626);
+}

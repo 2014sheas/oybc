@@ -27,7 +27,17 @@ struct RisoSpecialTaskPanel: View {
     let defaultStartDate: String?
     let defaultEndDate: String?
     /// Effective task library (live + pending) for compound sub autocomplete.
+    /// This is browsable-FILTERED at wizard call sites (draft-born tasks are
+    /// excluded) — compound-child pickers must stay filtered like this.
     var taskLibrary: [OYBC.Task] = []
+    /// Separate, UNFILTERED pool used only for the counter-link suggestion
+    /// (`updateLinkSuggestion`). Goal-less hub-born counters are excluded
+    /// from the browsable set, so the wizard's suggestion would never fire
+    /// against them if it reused `taskLibrary`. Defaults to `nil`, which
+    /// falls back to `taskLibrary` — so the Tasks-tab call site (which
+    /// already passes the full, unfiltered library as `taskLibrary`) is
+    /// unaffected.
+    var suggestionPool: [OYBC.Task]? = nil
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
     let onCompositeCreated: (OYBC.Task) -> Void
     let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
@@ -167,67 +177,74 @@ struct RisoSpecialTaskPanel: View {
     // MARK: - Counting fields
 
     @State private var countingActionText: String = ""
-    @State private var countingGoalText: String = "5"
+    @State private var countingGoalText: String = ""
     @State private var countingUnitText: String = ""
 
+    // Counter-link suggestion state (R1 counters refresh — auto-link default
+    // ON). Updated whenever the (verb, noun) pair changes.
+    @State private var linkSuggestion: LinkableCounterSuggestion? = nil
+    /// True when the user tapped "Don't link" to opt out of the (default-on)
+    /// suggested link for this create. Reset to `false` whenever the typed
+    /// (verb, noun) pair changes — an edited pair re-offers linking by
+    /// default (web parity).
+    @State private var linkDisabled: Bool = false
+
+    /// R1: counting-fields title preview — "Title: {derived title}",
+    /// matching web's `CountingStepFields` (Verb → Goal → Counting).
     private var countingTitle: String {
         let a = countingActionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let g = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         let u = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !a.isEmpty, !g.isEmpty, !u.isEmpty else { return "" }
-        return "\(a) \(g) \(u)"
+        guard !a.isEmpty, !u.isEmpty, let goal = Int(g), goal > 0 else { return "" }
+        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
+    }
+
+    /// The typed goal as a positive Int, or nil when blank/invalid. Also
+    /// gates the counter-link hint (only shown once a valid goal exists —
+    /// mirrors web's `CounterLinkHint` doc contract).
+    private var countingGoal: Int? {
+        guard let g = Int(countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
+        return g
     }
 
     private var canSubmitCounting: Bool {
         !countingActionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        (Int(countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) > 0
+        countingGoal != nil
     }
 
     private var countingFields: some View {
         VStack(alignment: .leading, spacing: 9) {
-            // Action
-            fieldRow(label: "Action") {
-                RisoTextField(placeholder: "Run", text: $countingActionText)
+            // Verb
+            fieldRow(label: "Verb", required: true) {
+                RisoTextField(placeholder: "Do", text: $countingActionText)
             }
 
-            // Goal + Unit (side by side)
+            // Goal + Counting (side by side)
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Goal")
-                    RisoNumberField(placeholder: "5", text: $countingGoalText)
+                    fieldLabel("Goal", required: true)
+                    RisoNumberField(placeholder: "100", text: $countingGoalText)
                 }
                 VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Unit")
-                    RisoTextField(placeholder: "km", text: $countingUnitText)
+                    fieldLabel("Counting", required: true)
+                    RisoTextField(placeholder: "push-ups", text: $countingUnitText)
                 }
             }
 
-            // Live preview
+            // Live title preview — "Title: {derived title}" (web parity).
             if !countingTitle.isEmpty {
-                HStack(spacing: 4) {
-                    RisoTypeBadge(kind: .counting, style: .pill)
-                    Text(" reads as ")
-                        .font(.risoBody(11, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                    + Text(countingTitle)
-                        .font(.risoBody(11, .extraBold))
-                        .foregroundStyle(Color.risoInk)
-                    + Text(" — tap +/− to log reps on the board.")
-                        .font(.risoBody(11, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                }
-            } else {
-                (Text("reads as ")
+                (Text("Title: ")
                     .font(.risoBody(11, .semibold))
                     .foregroundStyle(Color.risoMuted)
-                + Text("Run 5 km")
+                + Text(countingTitle)
                     .font(.risoBody(11, .extraBold))
-                    .foregroundStyle(Color.risoInk)
-                + Text(" — fill fields above.")
-                    .font(.risoBody(11, .semibold))
-                    .foregroundStyle(Color.risoMuted))
+                    .foregroundStyle(Color.risoInk))
             }
+
+            // Counter-link hint (only when a match exists AND a valid goal
+            // is entered — R1: auto-link default ON, "Don't link" opts out).
+            counterLinkBanner
 
             // Add button
             RisoButton(title: "Add to board ✦", kind: .blue, fullWidth: true) {
@@ -235,6 +252,42 @@ struct RisoSpecialTaskPanel: View {
             }
             .opacity(canSubmitCounting ? 1 : 0.45)
             .allowsHitTesting(canSubmitCounting)
+        }
+        .onChange(of: countingActionText) { _, _ in updateLinkSuggestion() }
+        .onChange(of: countingUnitText) { _, _ in updateLinkSuggestion() }
+    }
+
+    // MARK: Counter-link suggestion banner
+
+    /// Recomputes the link suggestion whenever the (verb, noun) pair
+    /// changes. Resets the opt-out flag so an edited pair re-offers linking
+    /// by default (web parity).
+    private func updateLinkSuggestion() {
+        linkSuggestion = findLinkableCounter(
+            action: countingActionText,
+            unit: countingUnitText,
+            tasks: suggestionPool ?? taskLibrary
+        )
+        linkDisabled = false
+    }
+
+    /// Hint shown in the counting create panel when an existing counter
+    /// matches the typed (verb, noun) pair AND a valid goal is entered. R1
+    /// counters refresh: linking is ON by default (no fuzzy matching, no
+    /// confirm step) — the hint explains what will happen; the "Don't link"
+    /// pill opts out for this create (tapping again re-enables). Baseline is
+    /// always "start fresh" (`suggestion.lifetime`) — the manual baseline
+    /// picker was retired.
+    @ViewBuilder
+    private var counterLinkBanner: some View {
+        if let suggestion = linkSuggestion, let goal = countingGoal {
+            RisoCounterLinkHintView(
+                counterName: suggestion.name,
+                lifetime: suggestion.lifetime,
+                goal: goal,
+                linked: !linkDisabled,
+                onToggle: { linkDisabled.toggle() }
+            )
         }
     }
 
@@ -245,6 +298,18 @@ struct RisoSpecialTaskPanel: View {
         form.countingUnit = countingUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
         form.countingMaxCount = countingGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
         form.title = ""
+
+        // R1: auto-link default ON — apply the suggestion unless opted out
+        // via "Don't link". Baseline is always "start fresh": this task's
+        // displayed count starts at 0 while the source's all-time keeps
+        // climbing.
+        if let suggestion = linkSuggestion, !linkDisabled, countingGoal != nil {
+            form.countingSharedCounterId = suggestion.counterId
+            form.countingBaseline = suggestion.lifetime
+        } else {
+            form.countingSharedCounterId = nil
+            form.countingBaseline = nil
+        }
 
         form.handleCreateAndAddToPool(
             userId: userId,
@@ -259,8 +324,10 @@ struct RisoSpecialTaskPanel: View {
             onPendingCreated: onPendingCreated
         )
         countingActionText = ""
-        countingGoalText = "5"
+        countingGoalText = ""
         countingUnitText = ""
+        linkSuggestion = nil
+        linkDisabled = false
         form = CreateFormViewModel()
         collapse()
     }
@@ -272,6 +339,7 @@ struct RisoSpecialTaskPanel: View {
     private var compoundFields: some View {
         RisoCompoundFieldsView(
             taskLibrary: taskLibrary,
+            suggestionPool: suggestionPool,
             userId: userId,
             defaultTimeframe: defaultTimeframe,
             defaultStartDate: defaultStartDate,
@@ -488,8 +556,11 @@ struct RisoSpecialTaskPanel: View {
         isExpanded = false
         // Counting
         countingActionText = ""
-        countingGoalText = "5"
+        countingGoalText = ""
         countingUnitText = ""
+        // Counter-link suggestion
+        linkSuggestion = nil
+        linkDisabled = false
         // Achievement
         achievementTitle = ""
         achievementBoardId = nil
@@ -498,16 +569,26 @@ struct RisoSpecialTaskPanel: View {
     }
 
     @ViewBuilder
-    private func fieldRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldRow<Content: View>(label: String, required: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            fieldLabel(label)
+            fieldLabel(label, required: required)
             content()
         }
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .risoSectionLabel()
+    /// - Parameter required: Appends a red "*" (matches
+    ///   `RisoBoardSetupForm`'s required-field convention) — web's
+    ///   `CountingStepFields` marks Verb/Goal/Counting required-starred.
+    private func fieldLabel(_ text: String, required: Bool = false) -> some View {
+        HStack(spacing: 3) {
+            Text(text)
+                .risoSectionLabel()
+            if required {
+                Text("*")
+                    .font(.risoBody(11, .bold))
+                    .foregroundStyle(Color.risoRed)
+            }
+        }
     }
 
     // (risoTextInput / risoNumberInput removed — use the kit's

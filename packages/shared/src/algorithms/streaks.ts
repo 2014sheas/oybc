@@ -119,6 +119,91 @@ export function computeStreak(
 }
 
 /**
+ * Compact, timeframe-aware streak label: "3d" / "2w" / "5mo" / "1y".
+ * Shared by every streak surface (the window bar chip, the Profile streaks
+ * page, the core-timeframe grid badge, the celebration overlay). Mirrors
+ * `compactStreakLabel` in `apps/ios/OYBC/Services/Streaks.swift`.
+ *
+ * @param count     The streak count to format.
+ * @param timeframe Controls the unit suffix appended to the count.
+ */
+export function compactStreakLabel(count: number, timeframe: Timeframe): string {
+  const unit =
+    timeframe === Timeframe.DAILY ? 'd' :
+    timeframe === Timeframe.WEEKLY ? 'w' :
+    timeframe === Timeframe.MONTHLY ? 'mo' :
+    timeframe === Timeframe.YEARLY ? 'y' : '';
+  return `${count}${unit}`;
+}
+
+/**
+ * Longest historical greenlog streak for a single timeframe.
+ *
+ * Walks backward from the current window, counting consecutive windows whose
+ * core board was GREENLOGed (`status === COMPLETED`). Stops when it has
+ * processed the oldest known core-board window; it keeps walking through gaps
+ * to find an earlier (possibly longer) run, retaining the max seen.
+ *
+ * **No grace for the current window** (unlike `computeStreak`): an unfinished
+ * current window breaks the run. This reflects the design intent — "longest"
+ * is actual past achievement, not projected.
+ *
+ * Mirrors `computeLongestStreak` in `apps/ios/OYBC/Services/Streaks.swift`.
+ *
+ * @param timeframe    DAILY / WEEKLY / MONTHLY / YEARLY (CUSTOM → 0).
+ * @param boards       All boards for the active user (caller scopes by userId).
+ * @param weekStartDay First day of week — only affects WEEKLY windows.
+ * @param now          Reference instant (frozen in tests).
+ */
+export function computeLongestStreak(
+  timeframe: Timeframe,
+  boards: Board[],
+  weekStartDay: WeekStartDay,
+  now: Date,
+): number {
+  if (timeframe === Timeframe.CUSTOM || timeframe === Timeframe.INDEFINITE) return 0;
+
+  const byStart = new Map<string, Board>();
+  for (const b of boards) {
+    if (b.isCore === true && !b.isDeleted && b.timeframe === timeframe) {
+      byStart.set(b.startDate, b);
+    }
+  }
+  if (byStart.size === 0) return 0;
+
+  // Oldest window that could possibly be achieved — nothing predates the
+  // user's first core board of this timeframe. Keys are local ISO strings
+  // (zero-padded), so lexical order == chronological order.
+  const oldestStart = [...byStart.keys()].sort()[0];
+
+  let longest = 0;
+  let currentRun = 0;
+  let startDate = getTimeframeBoundaries(timeframe, now, weekStartDay).startDate;
+
+  for (let i = 0; i < MAX_WINDOWS; i++) {
+    const board = byStart.get(startDate);
+    const achieved = board !== undefined && board.status === BoardStatus.COMPLETED;
+
+    if (achieved) {
+      currentRun += 1;
+      if (currentRun > longest) longest = currentRun;
+    } else {
+      // A gap resets the current run — but we keep walking back to find an
+      // earlier (possibly longer) run. `longest` retains the max seen.
+      currentRun = 0;
+    }
+
+    // Stop once we've processed the oldest board's window; older windows
+    // can only be gaps and won't extend the longest run.
+    if (startDate <= oldestStart) break;
+
+    startDate = stepWindow(timeframe, startDate, -1, weekStartDay).startDate;
+  }
+
+  return longest;
+}
+
+/**
  * Both streak kinds for all four recurring timeframes in one pass.
  */
 export function computeAllStreaks(

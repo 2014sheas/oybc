@@ -1,0 +1,96 @@
+/* WizardQuickAddRow — inline quick-add input for NORMAL tasks in the
+   wizard Tasks step. Mirrors iOS RisoQuickAddRowView. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Text input — keyline border, paper fill, ink text.
+   Uses static ink for border and text (safe on paper background).
+   Dark-mode note: --riso-ink is adaptive on a paper fill → correct here
+   (paper and ink both flip together, so text stays readable). */
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  caret-color: var(--riso-blue);
+  /* Prevent shrinking below a useful minimum in narrow containers */
+  min-width: 120px;
+}
+
+.input::placeholder {
+  color: var(--riso-muted);
+  font-weight: 600;
+}
+
+.input:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Library-poll dropdown — mirrors PoolEditSheet's `.libraryPicker`/
+   `.libraryRowButton` styling (same paper/ink/hair tokens) so the two
+   reuse-a-task surfaces read as one language. Static block flow under the
+   row (not absolutely positioned) — pushes following content down, same
+   pattern the pool sheet's own library picker already uses. */
+.dropdownList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+
+.dropdownItem + .dropdownItem {
+  border-top: 1.5px solid var(--riso-hair);
+}
+
+.dropdownRowButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--riso-ink);
+}
+.dropdownRowButton:hover {
+  background: var(--riso-paper-2);
+}
+.dropdownRowButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+
+.dropdownRowTitle {
+  flex: 1;
+  font-family: var(--riso-font-body);
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--riso-ink);
+}

@@ -1,0 +1,103 @@
+name: Functions
+
+# Build + emulator-test the Cloud Functions codebase (`functions/`) on every
+# PR/push that touches it. Closes the CI gap proven by a recent
+# functions-only PR that ran no checks at all — `functions/` was the repo's
+# only server-side code with zero automated coverage.
+#
+# No deploy job here and no secrets are used — this workflow only builds and
+# runs the Firestore/Functions emulators locally to the runner. Deploys stay
+# manual (`firebase deploy --only functions`, see CLAUDE.md's Firebase
+# section) until a deploy workflow is deliberately added.
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'functions/**'
+      - 'packages/bingo-core/**'
+      - 'firebase.json'
+      - '.github/workflows/functions.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'functions/**'
+      - 'packages/bingo-core/**'
+      - 'firebase.json'
+      - '.github/workflows/functions.yml'
+
+# Cancel in-flight runs for the same PR (or the same push queue) when a
+# newer commit lands. Scoped per-event (not just per-ref) so a `pull_request`
+# run for a branch never cancels — or gets cancelled by — a `push` run for
+# the same ref; the two events can be in flight at once (e.g. pushing
+# directly to a branch that also has an open PR) and represent different
+# checks that shouldn't race each other.
+concurrency:
+  group: functions-${{ github.event_name }}-${{ github.event.pull_request.number || 'push' }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        # v6 reads the pnpm version from `package.json#packageManager`
+        # (pinned to 9.15.4 at the repo root) and ignores any `version:`
+        # input here — so we omit it.
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install workspace dependencies (pnpm)
+        # Needed to build @oybc/bingo-core below — functions/'s "file:" devDep
+        # on it (used by validateWin.ts, inlined into the esbuild bundle)
+        # resolves to the workspace package's source tree either way, but the
+        # bundle build needs its compiled dist/ to exist.
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @oybc/bingo-core
+        run: pnpm --filter @oybc/bingo-core build
+
+      - name: Install functions dependencies (npm)
+        working-directory: functions
+        run: npm ci
+
+      - name: Build functions
+        # tsc --noEmit (type-check) + esbuild bundle to lib/index.js. The
+        # Functions emulator loads the BUILT lib/index.js, not src/, so this
+        # must run before the emulator step below — it's not implicitly
+        # triggered by `emulators:exec` (predeploy hooks in firebase.json
+        # only fire for `firebase deploy`, not for `emulators:start`/`:exec`).
+        working-directory: functions
+        run: npm run build
+
+      - name: Setup Java (required by the Firestore emulator)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Run emulator-backed tests
+        # Must run from the REPO ROOT: `firebase.json` (the emulator/project
+        # config) lives there, and firebase-tools rejects being pointed at a
+        # config path that escapes the invoking directory. The wrapped
+        # command runs vitest inside functions/ via --prefix so its
+        # package.json scripts and node_modules resolve correctly while the
+        # firebase CLI itself still resolves firebase.json at the root.
+        run: |
+          firebase emulators:exec \
+            --only functions,firestore \
+            --project demo-oybc-functions-test \
+            "npm --prefix functions run test:run"

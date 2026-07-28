@@ -108,6 +108,17 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
         )
     }
 
+    /// Operator-aware compound bars (bugfix): OR shows done-of-1, M_OF_N
+    /// shows done-of-threshold — never done-of-all-children.
+    func testCellCompoundOperatorAwareBarsLight() {
+        let view = cellGrid([
+            RisoBoardPlayCell(title: "Any chore", taskType: .compound, isCompleted: true, compoundDoneCount: 1, compoundChildCount: 4, compoundRequiredCount: 1),
+            RisoBoardPlayCell(title: "2 of 5 habits", taskType: .compound, isCompleted: false, compoundDoneCount: 1, compoundChildCount: 5, compoundRequiredCount: 2),
+            RisoBoardPlayCell(title: "All of 3", taskType: .compound, isCompleted: false, compoundDoneCount: 2, compoundChildCount: 3, compoundRequiredCount: 3),
+        ])
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 200)), record: recordMode)
+    }
+
     func testCellFreeLight() {
         let view = cellGrid([
             RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),
@@ -115,6 +126,30 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
             RisoBoardPlayCell(title: "Done", taskType: .normal, isCompleted: true),
         ])
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 200)), record: recordMode)
+    }
+
+    // issue #345: a CUSTOM_FREE center renders its custom name (short + long),
+    // not the hardcoded "FREE"; plain FREE (first cell) still says "FREE".
+    func testCellCustomCenterNameLight() {
+        let view = cellGrid([
+            RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "My Goal", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "Reading Challenge", taskType: .normal, isCompleted: false, isCenter: true),
+        ])
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 200)), record: recordMode)
+    }
+
+    func testCellCustomCenterNameDark() {
+        let view = cellGrid([
+            RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "My Goal", taskType: .normal, isCompleted: false, isCenter: true),
+            RisoBoardPlayCell(title: "Reading Challenge", taskType: .normal, isCompleted: false, isCenter: true),
+        ])
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 200), traits: .init(userInterfaceStyle: .dark)),
+            record: recordMode
+        )
     }
 
     func testCellFreeDark() {

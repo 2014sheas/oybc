@@ -1,0 +1,244 @@
+/* CreateCounterSheet — Counters Hub "+ New counter" modal (Shared Counters P5;
+   R1 counters refresh — preview card + gold-only dedupe + RisoButton footer).
+   Pattern mirrors DeriveCounterModal.module.css (backdrop + dialog + fields). */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.dialog {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  animation: slideUp 0.2s ease-out;
+}
+
+.title {
+  margin: 0 0 14px;
+  font-family: var(--riso-font-head);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+.fieldLabel {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--riso-muted);
+  margin: 12px 0 6px;
+}
+
+.fieldLabel:first-of-type {
+  margin-top: 0;
+}
+
+.fieldInput {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-card);
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font: inherit;
+  font-family: var(--riso-font-body);
+  box-sizing: border-box;
+  transition: box-shadow 0.1s;
+}
+
+.fieldInput:focus {
+  outline: none;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.fieldInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* Helper copy under each field. */
+.helperText {
+  margin-top: 4px;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  color: var(--riso-muted);
+}
+
+/* ─── Live preview card (R1) ───
+   Paper-2 card with the derived counter name + right-aligned start count +
+   "All-time" label + a sub line, matching screenshots 03/04's preview. */
+.previewCard {
+  margin-top: 14px;
+  padding: 12px 14px 10px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.previewRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.previewName {
+  font-family: var(--riso-font-head);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--riso-ink);
+}
+
+.previewCount {
+  font-family: var(--riso-font-head);
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--riso-blue);
+  font-variant-numeric: tabular-nums;
+}
+
+.previewFooter {
+  margin-top: 4px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.previewSub {
+  font-family: var(--riso-font-body);
+  font-size: 0.78rem;
+  color: var(--riso-muted);
+}
+
+.previewAllTime {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--riso-muted);
+}
+
+/* ─── Dedupe match card — gold only (R1: the green "standalone/promote"
+   card was removed; `established` is the only remaining outcome). ─── */
+
+.matchCardEstablished {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  /* Gold is a LIGHT fill so text uses --riso-ink-static (never the adaptive
+     --riso-ink, which would go invisible-on-invisible in dark mode). */
+  background: var(--riso-gold);
+}
+
+.matchTitle {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--riso-ink-static);
+}
+
+.matchSub {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.82;
+  color: var(--riso-ink-static);
+}
+
+.matchLinkButton {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 6px 14px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+  background: var(--riso-on-color);
+  color: var(--riso-ink-static);
+}
+
+.matchLinkButton:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.matchLinkButton:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.matchLinkButton:focus-visible {
+  outline: 3px solid var(--riso-ink-static);
+  outline-offset: 2px;
+}
+
+/* Validation / thrown-op error. */
+.error {
+  margin-top: 10px;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  color: var(--riso-red);
+  font-weight: 600;
+}
+
+/* Button row — RisoButton handles its own visuals; this just lays them out. */
+.actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .dialog {
+    animation: none;
+  }
+  .fieldInput,
+  .matchLinkButton {
+    transition: none;
+  }
+}

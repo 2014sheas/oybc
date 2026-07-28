@@ -1,31 +1,28 @@
 import {
-  BoardStatus,
   CenterSquareType,
-  SyncOperationType,
   Timeframe,
+  clampMintedPoolName,
   deriveSpawnedBoardName,
-  fisherYatesShuffle,
   getTimeframeBoundaries,
+  isLegacyShapedRecord,
+  mergeLegacyPoolTaskIds,
+  placeBoard,
   toLocalISO,
-  type CompoundChild,
   type PendingTemplateSpawn,
   type Task,
+  type UpdateRecurringBoardTemplateInput,
 } from '@oybc/shared';
-import { db } from '../../db/database';
-import {
-  activateBoard,
-  createBoard,
-  updateBoard,
-} from '../../db/operations/boards';
-import {
-  createBoardTask,
-  deleteBoardTasksForBoard,
-} from '../../db/operations/boardTasks';
 import {
   createRecurringBoardTemplate,
+  fetchRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
-import { addToSyncQueue } from '../../db/operations/syncQueue';
+import { createPool, updatePool, fetchPool } from '../../db/operations/pools';
+import { fetchTasks } from '../../db/operations/tasks.crud';
+import {
+  persistWizardBoardRows,
+  type WizardPendingTaskWrite,
+} from '../../db/operations/wizardBoard';
 import {
   spawnTemplateBoard,
   type SpawnResult,
@@ -59,9 +56,7 @@ export function buildWizardPlacement(
   pendingTasksArg?: Map<string, PendingTaskPayload>,
 ): WizardPlacement {
   const { size, centerType, centerTaskId, isRandomized, selectedTaskIds } = controller;
-  const totalCells = size * size;
   const isOdd = size % 2 !== 0;
-  const centerIdx = Math.floor(size / 2) * size + Math.floor(size / 2);
 
   // Merge pending (in-memory, not-yet-DB) tasks with the live library.
   // Pending tasks win on id collision (shouldn't happen, but defensive).
@@ -93,34 +88,22 @@ export function buildWizardPlacement(
     isOdd && centerType === CenterSquareType.CHOSEN && centerTaskId !== null
       ? selected.find((t) => t.id === centerTaskId) ?? null
       : null;
-  const others = chosenCenter !== null
-    ? selected.filter((t) => t.id !== chosenCenter.id)
-    : selected;
 
-  const ordered = isRandomized ? fisherYatesShuffle([...others]) : [...others];
-
-  const grid: WizardPlacement = new Array(totalCells).fill(null);
-  let oi = 0;
-  for (let i = 0; i < totalCells; i++) {
-    if (i === centerIdx && isOdd) {
-      if (chosenCenter !== null) {
-        grid[i] = chosenCenter;
-        continue;
-      }
-      if (
-        centerType === CenterSquareType.FREE ||
-        centerType === CenterSquareType.CUSTOM_FREE
-      ) {
-        // Reserved cell — leave null; BingoBoard renders the FREE label.
-        continue;
-      }
-      // NONE on odd: fall through and place a regular task here.
-    }
-    if (oi < ordered.length) {
-      grid[i] = ordered[oi++];
-    }
-  }
-  return grid;
+  // Delegate the cell walk to the shared `placeBoard` core (@oybc/bingo-core,
+  // re-exported through @oybc/shared). The preamble above is wizard UI policy
+  // (pending-task merge, library ordering, chosenCenter lookup); the geometry
+  // + center handling + fill are the shared placement math. Passing NONE for
+  // even grids preserves today's "even grid = no special center" behavior
+  // (placeBoard also derives that internally via getCenterSquareIndex, so this
+  // is belt-and-suspenders). No `rng` → defaults to Math.random, matching the
+  // old `fisherYatesShuffle([...others])`.
+  return placeBoard({
+    items: selected,
+    gridSize: size,
+    centerType: isOdd ? centerType : CenterSquareType.NONE,
+    chosenCenterId: chosenCenter?.id,
+    randomize: isRandomized,
+  });
 }
 
 /** Resolved `startDate` / `endDate` ISO strings, or an error to surface.
@@ -215,7 +198,7 @@ export interface PersistWizardBoardArgs {
  *   flip to ACTIVE via `activateBoard` (second version bump).
  * - **Draft update** (`draftBoardId` set): `updateBoard` with the
  *   target status and all other fields → `deleteBoardTasksForBoard`
- *   (hard delete + sync DELETE) → per-cell `createBoardTask`.
+ *   (soft delete/tombstone + sync DELETE) → per-cell `createBoardTask`.
  *
  * Returns the resulting `boardId`. Errors propagate.
  */
@@ -249,113 +232,31 @@ export async function persistWizardBoard({
     isRandomized: controller.isRandomized,
   };
 
-  const size = controller.size;
-  const isOddBoard = size % 2 !== 0;
-  const centerRow = Math.floor(size / 2);
-  const centerCol = Math.floor(size / 2);
-
   // Resolve the pending-tasks map. Prefer the explicit arg (snapshot
   // taken by the caller before any state mutation); fall back to the
   // controller property for callers that don't thread it separately.
   const pendingMap: Map<string, PendingTaskPayload> =
     pendingTasksArg ?? controller.pendingTasks;
+  const pendingTasks: WizardPendingTaskWrite[] = Array.from(pendingMap.values());
 
-  // Wrap the whole write path in a single Dexie transaction so the
-  // board record + its BoardTask rows commit or roll back together.
-  // Splitting across sequential awaits would leave partially-updated
-  // boards on disk (and in the sync queue) if one step failed mid-flight.
-  // `syncQueue` is included in the scope because the inner helpers fire
-  // sync entries inline after their row writes.
-  // Bug #85 — tasks + compoundChildren tables are added to the scope so
-  // pending tasks can be written atomically before board_tasks that
-  // reference them.
-  let boardId: string = '';
-  await db.transaction(
-    'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
-    async () => {
-      // ── Bug #85: Write pending tasks first ────────────────────────────
-      // Pending tasks (created inside the wizard's New Task sheet) have
-      // never been written to the DB. Write them now — parent task first,
-      // then child tasks, then compound_children links — before any
-      // board_tasks rows that would reference them. All inside the same
-      // Dexie transaction so a board-write failure rolls everything back.
-      //
-      // Route every enqueue through `addToSyncQueue` (not a direct
-      // `db.syncQueue.add`) so the DEV playground-user-1 guard fires
-      // here too — otherwise playground sessions can leak pending
-      // tasks into the real sync queue.
-      for (const payload of pendingMap.values()) {
-        await db.tasks.add(payload.task);
-        await addToSyncQueue(
-          'tasks',
-          payload.task.id,
-          SyncOperationType.CREATE,
-          payload.task,
-        );
-        for (const childTask of payload.childTasks) {
-          await db.tasks.add(childTask);
-          await addToSyncQueue(
-            'tasks',
-            childTask.id,
-            SyncOperationType.CREATE,
-            childTask,
-          );
-        }
-        for (const link of payload.childLinks) {
-          await db.compoundChildren.add(link as CompoundChild);
-          await addToSyncQueue(
-            'compoundChildren',
-            link.id,
-            SyncOperationType.CREATE,
-            link,
-          );
-        }
-      }
-
-      // ── Board + BoardTask rows ─────────────────────────────────────────
-      if (controller.draftBoardId !== null) {
-        boardId = controller.draftBoardId;
-        // Preserve the original draft's isCore (set at first wizard
-        // launch); resume + activate of a banner-launched draft stays
-        // core. updateBoard merges Partial<Board> so omitting isCore
-        // here is a no-op when it was already correct on the draft.
-        await updateBoard(boardId, {
-          ...sharedFields,
-          status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
-        });
-        await deleteBoardTasksForBoard(boardId);
-      } else {
-        const board = await createBoard(userId, sharedFields, { isCore: controller.isCore });
-        boardId = board.id;
-      }
-
-      for (let i = 0; i < placement.length; i++) {
-        const task = placement[i];
-        if (task === null) continue;
-        const row = Math.floor(i / size);
-        const col = i % size;
-        const isCenterPos = isOddBoard && row === centerRow && col === centerCol;
-        await createBoardTask({
-          boardId,
-          taskId: task.id,
-          row,
-          col,
-          // Mark centre for CHOSEN (real task at centre) and NONE.
-          isCenter:
-            isCenterPos &&
-            (controller.centerType === CenterSquareType.CHOSEN ||
-              controller.centerType === CenterSquareType.NONE),
-        });
-      }
-
-      if (controller.draftBoardId === null && status === 'active') {
-        await activateBoard(boardId);
-      }
-    },
-  );
-
-  return boardId;
+  // The atomic write (board + BoardTask rows + Bug-#85 pending tasks, all in
+  // one Dexie transaction) lives in the `persistWizardBoardRows` operation.
+  // Everything above is wizard UI policy (name/center/date resolution,
+  // pending-task snapshotting); the operation owns the DB write so this
+  // component-tree helper no longer reaches the raw Dexie instance (B3).
+  return persistWizardBoardRows({
+    userId,
+    // Preserve the original draft's isCore (set at first wizard launch);
+    // resume + activate of a banner-launched draft stays core.
+    draftBoardId: controller.draftBoardId,
+    isCore: controller.isCore,
+    status,
+    boardFields: sharedFields,
+    placement,
+    size: controller.size,
+    centerType: controller.centerType,
+    pendingTasks,
+  });
 }
 
 /** Outcome of a recurring-template persist. */
@@ -386,18 +287,40 @@ export interface PersistRecurringTemplateArgs {
  * Persist path for `controller.isRecurring === true`. Branches on
  * `editingTemplateId`:
  *
- * - **Fresh create** (no `editingTemplateId`): inserts the
- *   `RecurringBoardTemplate` row, then immediately spawns the current
- *   window's board via `spawnTemplateBoard`. The two writes are
- *   sequential (each opens its own Dexie transaction); if the spawn
- *   fails (e.g. soft-deleted task race), the template still exists
- *   with `lastSpawnedWindowKey=null` and the next Boards-tab open
- *   will retry. Locked decision: first-spawn timing = immediate.
+ * - **Fresh create** (no `editingTemplateId`): mints a `Pool` named
+ *   "<template name> pool" from the selection (P1 — Task Pools +
+ *   Recurring Boards Rework, docs/POOLS_RECURRING.md §Migration
+ *   "seedTaskIds end state" — legacy CREATE mints a Pool exactly like
+ *   migration step 2), then inserts the `RecurringBoardTemplate` row
+ *   with `seedTaskIds` (decode-compat only, never read after P1) AND
+ *   `poolIds: [pool.id]`, `manualTaskIds: []`, `removedTaskIds: []`, then
+ *   immediately spawns the current window's board via
+ *   `spawnTemplateBoard`. If the spawn fails (e.g. soft-deleted task
+ *   race), the template still exists with `lastSpawnedWindowKey=null`
+ *   and the next Boards-tab open will retry. Locked decision: first-spawn
+ *   timing = immediate.
  *
- * - **Edit** (`editingTemplateId` set): updates the template via
- *   `updateRecurringBoardTemplate`. Does NOT spawn — edits don't
- *   retroactively change previously-spawned boards, and the next
- *   window's spawn will pick up the new pool naturally.
+ * - **Edit** (`editingTemplateId` set): the P1 legacy-editor write-through
+ *   is SHAPE-SCOPED (`isLegacyShapedRecord` from `@oybc/shared`):
+ *     - legacy-shaped WITH a linked pool (the normal post-P1 case: exactly
+ *       one pool, no manual additions, no removals) → writes the
+ *       selection straight through to that Pool's `taskIds` via
+ *       `updatePool` — the shared Pool IS the source of truth, so the
+ *       template's own `poolIds`/`manualTaskIds`/`removedTaskIds` don't
+ *       need to change.
+ *     - legacy-shaped WITHOUT a pool yet (defensive — shouldn't occur
+ *       post-migration, since migration always mints one, but a record
+ *       edited before its first-launch migration ran would hit this) →
+ *       mints a Pool exactly like the create path / migration step 2.
+ *     - non-legacy-shaped (2+ pools, any manual additions, any removals —
+ *       cannot occur before P4 ships the generalized wizard, but handled
+ *       defensively) → flattens the selection to `manualTaskIds` and
+ *       clears `poolIds`/`removedTaskIds`. The legacy editor never writes
+ *       a Pool it didn't mint.
+ *   `seedTaskIds` itself is left untouched on edit — verbatim/stale,
+ *   never read after P1. Does NOT spawn — edits don't retroactively
+ *   change previously-spawned boards, and the next window's spawn will
+ *   pick up the new mix naturally.
  */
 export async function persistRecurringTemplate({
   controller,
@@ -410,23 +333,89 @@ export async function persistRecurringTemplate({
       : undefined;
   const seedTaskIds = Array.from(controller.selectedTaskIds);
 
-  // Edit path: update + return. No spawn.
+  // Edit path: legacy write-through + field update. No spawn.
   if (controller.editingTemplateId !== null) {
-    await updateRecurringBoardTemplate(controller.editingTemplateId, {
+    const editingTemplateId = controller.editingTemplateId;
+    const baseUpdate: UpdateRecurringBoardTemplateInput = {
       name: trimmedName,
       timeframe: controller.timeframe,
       boardSize: controller.size,
       centerSquareType: controller.centerType,
       centerSquareCustomName: customName,
       isRandomized: controller.isRandomized,
-      seedTaskIds,
-      // `isActive` isn't surfaced in the wizard form (the templates
-      // list owns the pause toggle), so leave it untouched on edit.
-    });
-    return { templateId: controller.editingTemplateId, spawnedBoardId: null };
+      // `isActive` isn't surfaced in the wizard form (the templates list
+      // owns the pause toggle), so leave it untouched on edit.
+      // `seedTaskIds` intentionally omitted — left verbatim/stale, never
+      // read after P1 (docs/POOLS_RECURRING.md §Migration "seedTaskIds
+      // end state").
+    };
+
+    const existingTemplate = await fetchRecurringBoardTemplate(editingTemplateId);
+
+    if (existingTemplate && isLegacyShapedRecord(existingTemplate)) {
+      const existingPoolId = existingTemplate.poolIds?.[0];
+      if (existingPoolId !== undefined) {
+        // The normal post-P1 case: write straight through to the linked
+        // Pool. The Pool is the shared source of truth for the mix — no
+        // change needed to the template's own poolIds/manualTaskIds/
+        // removedTaskIds.
+        //
+        // `seedTaskIds` is hydrated from `resolveMix`, which filters out
+        // soft-deleted tasks — so writing it verbatim would prune soft-
+        // deleted-but-preserved refs the Pool deliberately keeps
+        // (`Pool.taskIds` contract). Preserve-merge against the existing pool
+        // so those refs survive; resolvable tasks the user removed still drop.
+        const existingPool = await fetchPool(existingPoolId);
+        const tasksById = Object.fromEntries(
+          (await fetchTasks(userId)).map((t) => [t.id, t] as const),
+        );
+        const mergedTaskIds = mergeLegacyPoolTaskIds(
+          existingPool?.taskIds ?? [],
+          seedTaskIds,
+          tasksById,
+        );
+        await updatePool(existingPoolId, { taskIds: mergedTaskIds });
+        await updateRecurringBoardTemplate(editingTemplateId, baseUpdate);
+      } else {
+        // Defensive: a legacy-shaped record with no pool yet (edited
+        // before its first-launch migration ran). Mint a Pool exactly
+        // like the create path / migration step 2.
+        const pool = await createPool(userId, {
+          name: clampMintedPoolName(trimmedName, 'pool'),
+          taskIds: seedTaskIds,
+        });
+        await updateRecurringBoardTemplate(editingTemplateId, {
+          ...baseUpdate,
+          poolIds: [pool.id],
+          manualTaskIds: [],
+          removedTaskIds: [],
+        });
+      }
+    } else if (existingTemplate) {
+      // Defensive flatten: a richer shape (2+ pools, manual additions, or
+      // removals) reached by the legacy editor. Never write a Pool this
+      // editor didn't mint — flatten to manualTaskIds instead.
+      await updateRecurringBoardTemplate(editingTemplateId, {
+        ...baseUpdate,
+        manualTaskIds: seedTaskIds,
+        poolIds: [],
+        removedTaskIds: [],
+      });
+    } else {
+      // Concurrently-deleted template (fetch race) — nothing to write
+      // through against; fall back to the plain field update.
+      await updateRecurringBoardTemplate(editingTemplateId, baseUpdate);
+    }
+
+    return { templateId: editingTemplateId, spawnedBoardId: null };
   }
 
-  // Fresh create path: insert template, then spawn current window.
+  // Fresh create path: mint a Pool from the selection (mirrors migration
+  // step 2), then insert the template already in the migrated shape.
+  const pool = await createPool(userId, {
+    name: clampMintedPoolName(trimmedName, 'pool'),
+    taskIds: seedTaskIds,
+  });
   const template = await createRecurringBoardTemplate(userId, {
     name: trimmedName,
     timeframe: controller.timeframe,
@@ -436,6 +425,9 @@ export async function persistRecurringTemplate({
     isRandomized: controller.isRandomized,
     seedTaskIds,
     isActive: true,
+    poolIds: [pool.id],
+    manualTaskIds: [],
+    removedTaskIds: [],
   });
 
   // Compute the spawn window and create the board. `spawnTemplateBoard`

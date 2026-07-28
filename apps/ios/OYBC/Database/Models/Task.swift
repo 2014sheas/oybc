@@ -107,18 +107,14 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     //     → displayed = source.currentCount − baseline.
     var baseline: Int?
 
-    // Phase 4 — Shared Counter Sync. The `currentCount` value that was last
-    // confirmed pushed to (or pulled from) Firestore for this Task. Used as the
-    // common-ancestor baseline for additive-merge conflict resolution:
-    //
-    //   mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)
-    //
-    // Set after every successful push of this counting Task and after every
-    // remote-wins pull. NOT updated on local increments — only on confirmed
-    // Firestore round-trips.
-    //
-    // When nil (first sync, or Task pre-dates Phase 4): the conflict resolver
-    // falls back to plain LWW. Stored as INTEGER in SQLite (GRDB v16 migration).
+    // RETIRED (Windowed Completion). Phase 4's shared-counter additive-merge
+    // common-ancestor baseline. The additive-merge resolver it fed was retired —
+    // counting-task conflicts now resolve by union-of-events, not by merging
+    // `currentCount` (docs/WINDOWED_COMPLETION.md §Shared counters interaction).
+    // Nothing writes or reads this field anymore (WC PR B stopped stamping it;
+    // WC PR D deleted the merge machinery). Kept on the model + as the GRDB v16
+    // column for decode compatibility with old rows / pre-WC clients — dropping
+    // it would break decode. Inert residue; do not re-wire it.
     var lastSyncedCount: Int?
 
     /// Draft-board provenance. `true` when the task was created inside the
@@ -129,6 +125,24 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// their board goes active. Defaults to `false`; standalone + copied +
     /// pre-migration rows are all `false`. Stored as INTEGER (GRDB v17).
     var createdInWizard: Bool
+
+    /// P5 — hub-born counter flag. `true` marks a COUNTING task created from
+    /// the Counters Hub as a goal-less accumulator (`maxCount == nil`) — a
+    /// running tally with no threshold to complete against, as opposed to a
+    /// standard goaled counting task. Defaults to `false`; standalone +
+    /// wizard-born + pre-migration rows are all `false`. Stored as INTEGER
+    /// (GRDB v23).
+    var isCounter: Bool
+
+    /// R2 Counters UX refresh — the counter's last-used log amount
+    /// (positive integer), persisted per source counting task so the
+    /// Counters Hub "+ Log" pill and Counter Detail's amount-chip row default
+    /// to whatever the user logged with most recently. `nil` when never set
+    /// (callers fall back to `1`). Only meaningful when `type == .counting`
+    /// and `sharedCounterId == nil` (the source, not a linked/derived task).
+    /// Additive optional, forward-compat like `isCounter`; stored as
+    /// nullable INTEGER (GRDB v26).
+    var defaultLogAmount: Int?
 
     // MARK: - Database Configuration
 
@@ -175,7 +189,9 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         sharedCounterId: String? = nil,
         baseline: Int? = nil,
         lastSyncedCount: Int? = nil,
-        createdInWizard: Bool = false
+        createdInWizard: Bool = false,
+        isCounter: Bool = false,
+        defaultLogAmount: Int? = nil
     ) {
         self.id = id
         self.userId = userId
@@ -213,6 +229,8 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.baseline = baseline
         self.lastSyncedCount = lastSyncedCount
         self.createdInWizard = createdInWizard
+        self.isCounter = isCounter
+        self.defaultLogAmount = defaultLogAmount
     }
 
     // MARK: - Codable
@@ -237,6 +255,10 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case lastSyncedCount
         // Draft-board provenance (GRDB v17)
         case createdInWizard
+        // P5 — hub-born counter flag (GRDB v23)
+        case isCounter
+        // R2 Counters UX refresh — default log amount (GRDB v26)
+        case defaultLogAmount
     }
 
     // Custom decoding for progressCounters (stored as JSON string)
@@ -293,6 +315,12 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Draft-board provenance. Forward-compat: pre-v17 local rows + pre-feature
         // sync payloads (and all standalone/copied tasks) decode as false.
         createdInWizard = try container.decodeIfPresent(Bool.self, forKey: .createdInWizard) ?? false
+        // P5 — hub-born counter flag. Forward-compat: pre-v23 local rows +
+        // pre-feature sync payloads (and all non-hub-born tasks) decode as false.
+        isCounter = try container.decodeIfPresent(Bool.self, forKey: .isCounter) ?? false
+        // R2 Counters UX refresh — default log amount. Forward-compat:
+        // pre-v26 local rows + pre-feature sync payloads decode as nil.
+        defaultLogAmount = try container.decodeIfPresent(Int.self, forKey: .defaultLogAmount)
     }
 
     // Custom encoding for progressCounters (store as JSON string)
@@ -346,6 +374,10 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         // Draft-board provenance — always encoded (like isCompleted) so the
         // field is present in every Firestore doc + GRDB row.
         try container.encode(createdInWizard, forKey: .createdInWizard)
+        // P5 — hub-born counter flag — always encoded, same rationale.
+        try container.encode(isCounter, forKey: .isCounter)
+        // R2 Counters UX refresh — default log amount (additive optional).
+        try container.encodeIfPresent(defaultLogAmount, forKey: .defaultLogAmount)
     }
 }
 

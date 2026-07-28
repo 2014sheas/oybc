@@ -1,18 +1,20 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type { Board, Task, CompoundChild, CreateBoardInput } from '@oybc/shared';
 import {
   BoardStatus,
+  CenterSquareType,
   SyncOperationType,
-  SyncStatus,
   Timeframe,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  resolvePlacements,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
-import { fetchAllBoardTasks } from './boardTasks';
+import { fetchAllBoardTasks, buildBoardTaskTombstone } from './boardTasks';
+import { buildWindowContext } from './windowContext';
 
 /**
  * Board CRUD Operations
@@ -96,7 +98,15 @@ export async function updateBoardAndCascade(
   // "clear" as `undefined` in the Partial update (Dexie skips undefined keys).
   // For startDate/endDate the EditBoardSheet always provides a concrete
   // string, so null is converted to undefined as a safety net.
-  const { CenterSquareType } = await import('@oybc/shared');
+  //
+  // NOTE: CenterSquareType is a STATIC import. It was previously an
+  // unconditional `await import('@oybc/shared')` here — harmless when this
+  // function opened its own transaction (the import awaited before the txn),
+  // but fatal once PR-4 composed Board-Edit Save into one outer Dexie
+  // transaction: an awaited dynamic import inside an open Dexie transaction
+  // leaves its zone, throwing PrematureCommitError on EVERY real Save in the
+  // browser (invisible to node-side vitest timing; caught by the first e2e to
+  // ever press Save). Never dynamic-import inside transactional code.
 
   const sanitized: Partial<Board> = {};
   if (patch.name !== undefined) sanitized.name = patch.name;
@@ -143,6 +153,14 @@ export async function updateBoardAndCascade(
     }
   }
 
+  // DB-level guard (matches the iOS twin): a sealed or deleted board must
+  // never take a metadata edit — the app-shell backstop can seal a board
+  // while an edit session is already open, and sealed boards never mutate
+  // except via deterministic pull-path re-derivation. UI gates exist
+  // (Board Edit gates on !sealedAt) but the DB level must hold too.
+  const target = await db.boards.get(boardId);
+  if (!target || target.isDeleted || target.sealedAt) return;
+
   // 1. Apply patch (bumps version, enqueues boards sync entry).
   await updateBoard(boardId, sanitized);
 
@@ -150,6 +168,7 @@ export async function updateBoardAndCascade(
   const placements = await db.boardTasks
     .where('boardId')
     .equals(boardId)
+    .filter((bt) => !bt.isDeleted)
     .toArray();
 
   if (placements.length === 0) return;
@@ -159,6 +178,12 @@ export async function updateBoardAndCascade(
   //    affected board. This replaces the previous per-task loop which did
   //    O(N) full-table scans for a 5×5 board (25 cascade calls).
   const taskIds = Array.from(new Set(placements.map((bt) => bt.taskId)));
+
+  // Windowed Completion — build the event map BEFORE the rw transaction so the
+  // cascade resolves each board against its own window (not the lifetime cache),
+  // and `db.taskEvents` need not be in the transaction scope.
+  const windowContext = await buildWindowContext();
+
   await db.transaction(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
@@ -193,15 +218,21 @@ export async function updateBoardAndCascade(
 
         // Re-fetch so we see the just-written metadata update (updateBoard ran above).
         const freshBoard = await db.boards.get(affectedBoardId);
-        if (!freshBoard || freshBoard.isDeleted) continue;
+        if (!freshBoard || freshBoard.isDeleted || freshBoard.sealedAt) continue;
 
-        const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
+        // Board-integrity PR-2 (Part 2) — resolve through the shared winner
+        // rule before deriving (see boardTasks.ts cascades for why).
+        const boardTasksOnBoard = resolvePlacements(
+          allBoardTasks.filter((bt) => bt.boardId === affectedBoardId),
+          freshBoard.boardSize,
+        );
         const stats = computeBoardStatsUpdate(
           freshBoard,
           boardTasksOnBoard,
           childrenByCompound,
           taskById,
           allBoards,
+          windowContext,
         );
 
         const isGreenlog = stats.completedTasks >= freshBoard.boardSize * freshBoard.boardSize;
@@ -227,17 +258,7 @@ export async function updateBoardAndCascade(
 
         const updatedBoard = await db.boards.get(affectedBoardId);
         if (updatedBoard) {
-          await db.syncQueue.add({
-            id: generateUUID(),
-            entityType: 'boards',
-            entityId: affectedBoardId,
-            operationType: SyncOperationType.UPDATE,
-            payload: JSON.stringify(updatedBoard),
-            status: SyncStatus.PENDING,
-            retryCount: 0,
-            createdAt: now,
-            priority: 0,
-          });
+          await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
         }
       }
     },
@@ -259,6 +280,67 @@ export async function fetchBoards(userId: string): Promise<Board[]> {
  */
 export async function fetchBoard(id: string): Promise<Board | undefined> {
   return db.boards.get(id);
+}
+
+/**
+ * Fetch every non-deleted board across all users in the workspace.
+ *
+ * Reactive callers (task-library / filter surfaces) that don't scope to a
+ * single userId use this. Order is Dexie's insertion/primary-key order —
+ * callers that need a display order sort in memory.
+ *
+ * @returns All non-deleted Board rows (unsorted).
+ */
+export async function fetchAllBoards(): Promise<Board[]> {
+  return db.boards.filter((b) => !b.isDeleted).toArray();
+}
+
+/**
+ * Fetch every non-deleted board across all users, sorted by name.
+ *
+ * Used by pickers (e.g. the Achievement board picker) that render a
+ * name-ordered list.
+ *
+ * @returns All non-deleted Board rows, sorted ascending by `name`.
+ */
+export async function fetchAllBoardsSortedByName(): Promise<Board[]> {
+  return db.boards.filter((b) => !b.isDeleted).sortBy('name');
+}
+
+/**
+ * Fetch non-deleted boards by an explicit set of ids.
+ *
+ * @param ids - Board ids to fetch.
+ * @returns The matching non-deleted Board rows.
+ */
+export async function fetchBoardsByIds(ids: string[]): Promise<Board[]> {
+  return db.boards.where('id').anyOf(ids).filter((b) => !b.isDeleted).toArray();
+}
+
+/**
+ * Fetch the user's CORE boards for a timeframe.
+ *
+ * Uses the `[userId+timeframe+status]` compound index to scan only the
+ * user's boards in that timeframe, then narrows in memory on
+ * `!isDeleted && isCore` (IndexedDB boolean keys are unreliable, so those
+ * predicates are JS-filtered — see `useCoreBoardBrowser` for the rationale).
+ *
+ * @param userId    - Owning user.
+ * @param timeframe - The core timeframe (daily / weekly / monthly / yearly).
+ * @returns The user's non-deleted core Board rows for that timeframe.
+ */
+export async function fetchCoreBoardsForTimeframe(
+  userId: string,
+  timeframe: Timeframe,
+): Promise<Board[]> {
+  return db.boards
+    .where('[userId+timeframe+status]')
+    .between(
+      [userId, timeframe, ''] as readonly unknown[],
+      [userId, timeframe, '￿'] as readonly unknown[],
+    )
+    .and((b) => !b.isDeleted && b.isCore === true)
+    .toArray();
 }
 
 /**
@@ -364,11 +446,12 @@ export async function deleteBoard(id: string): Promise<void> {
  * Delete a DRAFT board and its attached BoardTask placements atomically.
  *
  * Used by the Create Hub's drafts-list delete affordance. Soft-deletes the
- * Board (so sync propagates the tombstone) and hard-deletes the BoardTask
- * rows (BoardTask has no isDeleted field — placement removal is always
- * a literal delete; see `deleteBoardTasksForBoard`). Both happen inside one
- * Dexie transaction so a mid-flight failure rolls back instead of leaving
- * orphan BoardTask rows pointing at a soft-deleted Board.
+ * Board (so sync propagates the tombstone) and soft-deletes (tombstones)
+ * the BoardTask rows too (docs/BOARD_INTEGRITY.md — a hard delete here
+ * would let the pushed tombstone lose the LWW tie-break and resurrect the
+ * placement on the next pull; see `deleteBoardTasksForBoard`). Both happen
+ * inside one Dexie transaction so a mid-flight failure rolls back instead
+ * of leaving orphan BoardTask rows pointing at a soft-deleted Board.
  *
  * Caller is responsible for confirming the user wants the deletion.
  */
@@ -388,13 +471,14 @@ export async function deleteDraftWithCascade(id: string): Promise<void> {
       );
     }
 
-    const placements = await db.boardTasks.where('boardId').equals(id).toArray();
+    const now = currentTimestamp();
+    const placements = await db.boardTasks.where('boardId').equals(id).filter((bt) => !bt.isDeleted).toArray();
     for (const bt of placements) {
-      await db.boardTasks.delete(bt.id);
-      await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, bt);
+      const tombstoned = buildBoardTaskTombstone(bt, now);
+      await db.boardTasks.update(bt.id, tombstoned);
+      await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
     }
 
-    const now = currentTimestamp();
     await db.boards.update(id, {
       isDeleted: true,
       deletedAt: now,
@@ -454,6 +538,10 @@ export async function activateBoard(boardId: string): Promise<void> {
   if (!board || board.status !== BoardStatus.DRAFT) return;
   await db.boards.update(boardId, {
     status: BoardStatus.ACTIVE,
+    // Windowed Completion — stamp the activation instant (only if not already
+    // set) so the auto-seal backstop keys off max(endDate, activatedAt) and a
+    // draft activated after its window expired still gets a prompt cycle.
+    activatedAt: board.activatedAt ?? currentTimestamp(),
     updatedAt: currentTimestamp(),
     version: (board.version ?? 0) + 1,
   });

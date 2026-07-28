@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import type { Task } from '@oybc/shared';
-import { TaskType, generateCounterTaskTitle } from '@oybc/shared';
+import { TaskType, generateCounterTaskTitle, findLinkableCounter } from '@oybc/shared';
 import { RisoTypeBadge, type RisoTaskType } from '../riso';
 import { CountingStepFields } from '../CountingStepFields';
+import { CounterLinkHint } from '../counters';
 import type { CompositeLeafPreview } from './BuildStep';
 import {
   type SubtaskDraft,
@@ -167,6 +168,7 @@ interface InlineCardProps extends SubtaskCardProps {
 
 function InlineCard({
   draft,
+  allTasks,
   onUpdate,
   onRemove,
 }: InlineCardProps): React.ReactElement {
@@ -191,6 +193,7 @@ function InlineCard({
 
       <InlineFields
         draft={draft}
+        allTasks={allTasks}
         onUpdate={onUpdate}
       />
 
@@ -212,11 +215,13 @@ function InlineCard({
 
 interface InlineFieldsProps {
   draft: InlineSubtaskDraft;
+  allTasks: Task[];
   onUpdate: (updates: Partial<SubtaskDraft>) => void;
 }
 
 function InlineFields({
   draft,
+  allTasks,
   onUpdate,
 }: InlineFieldsProps): React.ReactElement {
   // Type-switch confirm panel takes over when a pending switch is set.
@@ -307,20 +312,74 @@ function InlineFields({
       </div>
 
       {draft.inlineType === 'counting' && (
-        <CountingStepFields
-          idPrefix={`subtask-${draft.id}`}
-          action={draft.action}
-          maxCount={draft.maxCountStr}
-          unit={draft.unit}
-          onChange={(field, value) => {
-            if (field === 'action') onUpdate({ action: value } as Partial<InlineSubtaskDraft>);
-            else if (field === 'unit') onUpdate({ unit: value } as Partial<InlineSubtaskDraft>);
-            else if (field === 'maxCount') onUpdate({ maxCountStr: value } as Partial<InlineSubtaskDraft>);
-          }}
-        />
+        <>
+          <CountingStepFields
+            idPrefix={`subtask-${draft.id}`}
+            action={draft.action}
+            maxCount={draft.maxCountStr}
+            unit={draft.unit}
+            onChange={(field, value) => {
+              // Verb/Counting changes reset the auto-link opt-out — a fresh
+              // pair should always start linked (mirrors CountingTemplatePicker).
+              if (field === 'action') {
+                onUpdate({ action: value, linkDisabled: false } as Partial<InlineSubtaskDraft>);
+              } else if (field === 'unit') {
+                onUpdate({ unit: value, linkDisabled: false } as Partial<InlineSubtaskDraft>);
+              } else if (field === 'maxCount') {
+                onUpdate({ maxCountStr: value } as Partial<InlineSubtaskDraft>);
+              }
+            }}
+          />
+          <InlineCounterLinkHint draft={draft} allTasks={allTasks} onUpdate={onUpdate} />
+        </>
       )}
 
     </div>
+  );
+}
+
+/**
+ * R1 counters refresh — auto-link hint for the compound builder's inline
+ * counting subtask. Computes the (verb, noun) match against the library
+ * (`allTasks`, already loaded by `CompositeTaskWizard`) and renders
+ * `CounterLinkHint` once a match + a valid goal exist. `CompositeTaskWizard.
+ * handleCreate` re-derives the same match at submit time (guarded by
+ * `draft.linkDisabled`) to set `sharedCounterId`/`baseline` on the inline-
+ * created child — see `AutoCreateCompoundChildTask`.
+ */
+function InlineCounterLinkHint({
+  draft,
+  allTasks,
+  onUpdate,
+}: {
+  draft: InlineSubtaskDraft;
+  allTasks: Task[];
+  onUpdate: (updates: Partial<SubtaskDraft>) => void;
+}): React.ReactElement | null {
+  const trimmedAction = draft.action.trim();
+  const trimmedUnit = draft.unit.trim();
+  const parsedGoal = parseInt(draft.maxCountStr, 10);
+  const goalValid = Number.isInteger(parsedGoal) && parsedGoal > 0;
+
+  const match = useMemo(
+    () =>
+      trimmedAction && trimmedUnit
+        ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, allTasks)
+        : null,
+    [trimmedAction, trimmedUnit, allTasks],
+  );
+
+  if (!match || !goalValid) return null;
+
+  const linked = !draft.linkDisabled;
+  return (
+    <CounterLinkHint
+      counterName={match.name}
+      lifetime={match.lifetime}
+      goal={parsedGoal}
+      linked={linked}
+      onToggle={() => onUpdate({ linkDisabled: linked } as Partial<InlineSubtaskDraft>)}
+    />
   );
 }
 

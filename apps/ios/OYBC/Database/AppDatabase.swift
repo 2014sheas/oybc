@@ -493,14 +493,12 @@ final class AppDatabase {
         }
 
         // v16: Phase 4 — Shared Counter Sync. Adds `lastSyncedCount` (INTEGER)
-        // to `tasks`. This is the common-ancestor value used by SyncService's
-        // additive-merge conflict resolver: when both local and remote have
-        // incremented since `lastSyncedCount`, the resolver sums the deltas
-        // instead of picking a winner (which would lose one device's work).
-        //
-        // NULL for existing rows: the nil value causes the conflict resolver to
-        // fall back to plain LWW on first conflict after migration — correct,
-        // since no common ancestor is known yet.
+        // to `tasks`. RETIRED by Windowed Completion: it was the common-ancestor
+        // for the additive-merge conflict resolver, which is gone (counting-task
+        // conflicts now resolve by union-of-events —
+        // docs/WINDOWED_COMPLETION.md §Shared counters interaction). The column
+        // stays (this migration is history; the field decodes old rows) but is
+        // inert — nothing reads or writes it. Do NOT drop it (breaks decode).
         //
         // Dead-scaffolding note (Decision 1 / Phase 4 cleanup): the `progress_counters`
         // SQLite table remains in place — SQLite cannot drop a table without
@@ -611,6 +609,236 @@ final class AppDatabase {
             try db.execute(sql: "CREATE INDEX idx_boards_status ON boards(status)")
         }
 
+        // v19: Windowed Completion (docs/WINDOWED_COMPLETION.md §New entity +
+        // §Migration & backfill). New `task_events` table — one soft-deletable
+        // occurrence row per completion/increment on an event-owning task,
+        // synced per-row LWW like compound_children. PR B sub-slice 1 is
+        // FOUNDATIONS ONLY: the table is created empty; no backfill and no
+        // write/read paths yet (those land in later sub-slices), so it syncs
+        // harmlessly empty. `delta` is nullable (present only on increments);
+        // `boardId` is provenance-only. Indexes mirror the Dexie v12 store:
+        // `[taskId+occurredAt]` is the windowed-evaluation hot path,
+        // `[userId+occurredAt]` backs lifetime/library reads, and
+        // `[userId+isDeleted]` scopes the sync pull like every other table.
+        migrator.registerMigration("v19") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS task_events (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    taskId TEXT NOT NULL,
+                    kind TEXT NOT NULL, -- completion, increment
+                    delta INTEGER,      -- increment only; signed non-zero
+                    occurredAt TEXT NOT NULL, -- ISO8601; windows key on this
+                    boardId TEXT,       -- provenance only; never read in evaluation
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+                    FOREIGN KEY (userId) REFERENCES users(id)
+                    -- Deliberately NO `FOREIGN KEY (taskId) REFERENCES tasks(id)`:
+                    -- per-collection sync listeners have no cross-collection
+                    -- ordering, so a taskEvent can legitimately arrive before its
+                    -- Task row (docs §Sync → Pull ordering). Unlike
+                    -- compound_children (which defers the upsert until its parent
+                    -- exists), task_events are applied as rows immediately and
+                    -- skipped by recompute until the Task lands — a tasks FK
+                    -- would reject that insert. Matches the Dexie store, which
+                    -- has no FK constraints at all.
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_task_events_task_occurred ON task_events(taskId, occurredAt)")
+            try db.execute(sql: "CREATE INDEX idx_task_events_user_occurred ON task_events(userId, occurredAt)")
+            try db.execute(sql: "CREATE INDEX idx_task_events_user_deleted ON task_events(userId, isDeleted)")
+        }
+
+        // v20: Windowed Completion — TaskEvent backfill (PR B, sub-slice 3;
+        // docs/WINDOWED_COMPLETION.md §Migration & backfill, step 2). Twin of
+        // web's Dexie v13 `runMigrationV13`. v19 created `task_events` empty;
+        // this pass synthesizes the DETERMINISTIC backfill events from existing
+        // lifetime task state so a task placed on a live board whose window
+        // contains its `completedAt` keeps its green (bleed preserved once),
+        // while later windows start empty.
+        //
+        // Only step 2 (event backfill) is B's responsibility. Step 3 (sealing
+        // expired boards) is assigned to PR C by the phasing table; this
+        // migration seals nothing. Step 4 (cache restamp) is a no-op — the events
+        // are DERIVED FROM the caches, so they're already consistent.
+        //
+        // Carve-out (doc §Derived-task carve-out rule 2): `buildBackfillTaskEvent`
+        // returns nil for derived / compound / achievement tasks, so they're
+        // skipped — minting an event from a derived counter's mirrored
+        // currentCount would double-count the source's history.
+        //
+        // Determinism: `buildBackfillTaskEvent` assigns a kind-qualified uuidv5
+        // id and takes timestamps from the task snapshot (not migration
+        // wall-clock), so two devices mint the same-id row and LWW picks the one
+        // derived from the fresher task state. Backfilled events are enqueued for
+        // sync CREATE (they MUST reach Firestore or another device's pull
+        // recompute would zero the caches).
+        migrator.registerMigration("v20") { db in
+            let allTasks: [Task] = try Task.fetchAll(db)
+            for task in allTasks {
+                guard let event = buildBackfillTaskEvent(task: task) else { continue }
+                // Idempotency belt: the deterministic id means a re-run (or a
+                // peer's already-synced row) would collide. Skip if present.
+                if try TaskEvent.fetchOne(db, key: event.id) != nil { continue }
+                try event.save(db)
+                // Enqueue sync CREATE directly (raw SQL — the migration owns its
+                // own transaction; SyncQueueBuilder is not migration-tx-aware in
+                // the same way, mirroring how v7/v14 write sync rows inline).
+                let payloadData = try JSONEncoder().encode(event)
+                let payloadStr = String(data: payloadData, encoding: .utf8) ?? "{}"
+                try db.execute(sql: """
+                    INSERT INTO sync_queue
+                        (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
+                    VALUES (?, 'taskEvents', ?, 'create', ?, 'pending', 0, ?, 0)
+                    """, arguments: [UUID().uuidString, event.id, payloadStr, Self.currentTimestamp()])
+            }
+        }
+
+        // v21: Windowed Completion — board SEALING schema (docs §Sealing →
+        // Board schema delta). Three additive nullable columns on `boards`.
+        // `sealedCompletedCells` is TEXT (JSON string, same encoding as
+        // `completedLineIds`). All decode forward-compatibly (missing → nil).
+        migrator.registerMigration("v21") { db in
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN sealedAt TEXT")
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN sealedCompletedCells TEXT")
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN activatedAt TEXT")
+        }
+
+        // v22: Windowed Completion — expired-board SEALING (docs §Migration &
+        // backfill step 3). Twin of web's Dexie v14 `runMigrationV14`. Runs
+        // AFTER v20's event backfill. Every non-deleted, non-draft,
+        // non-indefinite board ALREADY past its auto-seal backstop deadline at
+        // upgrade time is sealed silently; boards still inside their backstop
+        // window are left for the normal close-out prompt (slice 2).
+        //
+        // The frozen snapshot is computed from the PRE-MIGRATION rendered state
+        // (lifetime Task caches + compound evaluation — NO window context), so
+        // it reproduces exactly what the user currently sees and is
+        // deterministic across devices (the caches were made consistent by v20).
+        // The backstop deadline keys off `endDate` here (boards have no
+        // `activatedAt` pre-v22), which is deterministic and endDate-based.
+        migrator.registerMigration("v22") { db in
+            try AppDatabase.sealExpiredBoardsAtMigration(db: db, now: Self.currentTimestamp())
+        }
+
+        // v23: P5 hub-born counters. Adds `isCounter` (INTEGER 0/1) to `tasks`.
+        migrator.registerMigration("v23") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN isCounter INTEGER NOT NULL DEFAULT 0")
+        }
+
+        // v24: Task Pools + Recurring Boards Rework (P1) — schema only
+        // (docs/POOLS_RECURRING.md §Data model). New `pools` +
+        // `core_board_defaults` tables (JSON-string TEXT arrays, same
+        // house style as `default_pools`/`recurring_board_templates`), plus
+        // three additive NULLABLE TEXT columns on `recurring_board_templates`
+        // (`poolIds`, `manualTaskIds`, `removedTaskIds` — see
+        // `RecurringBoardTemplate.swift`'s tri-state null-preserving
+        // decode/encode). Mirrors web's Dexie v15 (store creation). Data
+        // backfill is v25, run AFTER these tables/columns exist.
+        migrator.registerMigration("v24") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS pools (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    taskIds TEXT NOT NULL DEFAULT '[]',
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_pools_user_deleted ON pools(userId, isDeleted)")
+
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS core_board_defaults (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    corePoolIds TEXT NOT NULL DEFAULT '[]',
+                    coreDefaultTaskIds TEXT NOT NULL DEFAULT '[]',
+
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_core_board_defaults_user_timeframe ON core_board_defaults(userId, timeframe)")
+            try db.execute(sql: "CREATE INDEX idx_core_board_defaults_user_deleted ON core_board_defaults(userId, isDeleted)")
+
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN poolIds TEXT")
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN manualTaskIds TEXT")
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN removedTaskIds TEXT")
+        }
+
+        // v25: Task Pools + Recurring Boards Rework (P1) — first-launch data
+        // migration (docs/POOLS_RECURRING.md §Migration). Twin of web's
+        // Dexie `runMigrationV16`. Two independent steps, both idempotent
+        // by construction (state-based, no separate "migration completed"
+        // marker — mirrors the v20/v22 backfill precedent):
+        //
+        //   1. Each non-deleted `DefaultPool` row → a `Pool` named
+        //      "<Timeframe> default" + a `CoreBoardDefault` row for that
+        //      timeframe with `corePoolIds: [newPool.id]`,
+        //      `coreDefaultTaskIds: []`. The `DefaultPool` row is then
+        //      soft-deleted (tombstone drains to Firestore via the push
+        //      path; `defaultPools` joins `LEGACY_PULL_SKIP_COLLECTIONS`
+        //      in SyncService.swift).
+        //   2. Each `RecurringBoardTemplate` whose `poolIds` column IS NULL
+        //      (the "genuinely un-migrated" half of `PoolMix.isLegacyShapedRecord`)
+        //      has its `seedTaskIds` extracted into a `Pool` named
+        //      "<template name> pool"; the template is stamped with
+        //      `poolIds: [newPool.id]`, `manualTaskIds: []`,
+        //      `removedTaskIds: []`. `seedTaskIds` itself is left VERBATIM
+        //      (decode-compat, the `lastSyncedCount` precedent) and is
+        //      never read live post-migration.
+        //
+        // Both steps enqueue sync entries via raw SQL inline inserts
+        // (`MigrationV25Helpers.enqueueMigrationSync`, mirrors v20/v14 —
+        // the migration owns its own transaction, which `SyncQueueBuilder`'s
+        // coalescing `enqueue(db)` isn't written to participate in). Raw SQL
+        // is fine here specifically because every row minted by this
+        // migration is a brand-new id with no pre-existing PENDING row to
+        // coalesce against — there's nothing for the coalescer to do.
+        migrator.registerMigration("v25") { db in
+            try MigrationV25Helpers.run(db, now: Self.currentTimestamp())
+        }
+
+        // v26: R2 Counters UX refresh. Adds `defaultLogAmount` (nullable
+        // INTEGER) to `tasks` — the counter's last-used log amount,
+        // persisted per source counting task (docs/SHARED_COUNTERS.md
+        // §Counters UX refresh).
+        migrator.registerMigration("v26") { db in
+            try db.execute(sql: "ALTER TABLE tasks ADD COLUMN defaultLogAmount INTEGER")
+        }
+
+        // v27: Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md).
+        // `board_tasks` was the only synced collection with no `isDeleted`
+        // column — placement removal was always a literal SQL DELETE. The
+        // sync layer can only express a deletion as "push a doc with
+        // isDeleted:true" (it never calls Firestore `deleteDoc`), so a
+        // hard-deleted row left nothing local for the push loop to diff a
+        // higher version against: an already-synced remote row could win
+        // the next pull and resurrect the placement within one sync cycle.
+        // Adds `isDeleted`/`deletedAt` so placement removal becomes a soft-
+        // delete tombstone like every other synced collection (Board, Task,
+        // CompoundChild, …) — see `AppDatabase+BoardTasks.removeBoardTaskFromBoard`.
+        migrator.registerMigration("v27") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN isDeleted BOOLEAN NOT NULL DEFAULT 0")
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN deletedAt TEXT")
+            try db.execute(sql: "CREATE INDEX idx_board_tasks_board_deleted ON board_tasks(boardId, isDeleted)")
+        }
+
         return migrator
     }
 
@@ -622,2298 +850,5 @@ final class AppDatabase {
         }
 
         try db.execute(sql: schemaSQL)
-    }
-}
-
-// MARK: - Database Queries (CRUD Operations)
-
-extension AppDatabase {
-    // MARK: - Boards
-
-    func fetchBoards(userId: String) throws -> [Board] {
-        return try read { db in
-            try Board
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .order(Column("updatedAt").desc)
-                .fetchAll(db)
-        }
-    }
-
-    /// Fetch boards by id. Used by the task detail view to render
-    /// "placed on" links for the cells where this task lives.
-    func fetchBoards(ids: [String]) throws -> [Board] {
-        guard !ids.isEmpty else { return [] }
-        return try read { db in
-            try Board
-                .filter(ids.contains(Column("id")) && Column("isDeleted") == false)
-                .fetchAll(db)
-        }
-    }
-
-    /// Boards eligible to act as a "source" in the wizard's
-    /// `From a board…` filter — active boards plus boards completed
-    /// within the last 30 days. Drafts and archived are excluded.
-    /// Sorted recently-active first (`updatedAt desc`). Mirror of
-    /// web's `useSourceBoards` hook.
-    ///
-    /// Opens its own `read` block. For callers that already hold a
-    /// transaction (e.g., `SourceBoardsViewModel.reload` which also
-    /// needs to read board_tasks atomically with the eligibility
-    /// list), use `fetchEligibleSourceBoards(_:userId:)` instead so
-    /// both queries see one consistent snapshot.
-    func fetchEligibleSourceBoards(userId: String) throws -> [Board] {
-        try read { db in
-            try AppDatabase.fetchEligibleSourceBoards(db, userId: userId)
-        }
-    }
-
-    /// Transaction-aware variant. Runs the same eligibility filter as
-    /// `fetchEligibleSourceBoards(userId:)` but inside the caller's
-    /// `read` block so the resulting boards + any subsequent reads
-    /// (placements, tasks) share a single snapshot.
-    static func fetchEligibleSourceBoards(_ db: Database, userId: String) throws -> [Board] {
-        let completedLookbackDays = 30
-        let cutoff = Date().addingTimeInterval(
-            -Double(completedLookbackDays) * 24 * 60 * 60
-        )
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoFormatterNoFrac = ISO8601DateFormatter()
-
-        let boards = try Board
-            .filter(Column("userId") == userId && Column("isDeleted") == false)
-            .order(Column("updatedAt").desc)
-            .fetchAll(db)
-        return boards.filter { board in
-            if board.status == .active { return true }
-            guard board.status == .completed else { return false }
-            guard let completedAt = board.completedAt else { return false }
-            // ISO8601 strings round-trip from JS (fractional) and Swift
-            // (no fractional). Try both parsers so we don't reject valid
-            // timestamps from either platform.
-            let parsed = isoFormatter.date(from: completedAt)
-                ?? isoFormatterNoFrac.date(from: completedAt)
-            guard let ts = parsed else { return false }
-            return ts >= cutoff
-        }
-    }
-
-    func fetchBoard(id: String) throws -> Board? {
-        return try read { db in
-            try Board.fetchOne(db, key: id)
-        }
-    }
-
-    func saveBoard(_ board: Board) throws {
-        try write { db in
-            try board.save(db)
-        }
-    }
-
-    /// Soft-delete a board.
-    ///
-    /// Increments `version` so LWW treats the deletion as later-wins
-    /// against a concurrent update on another device. A soft delete
-    /// without a version bump can be overwritten by a stale edit whose
-    /// `updatedAt` happens to be newer.
-    func deleteBoard(id: String) throws {
-        try write { db in
-            guard var board = try Board.fetchOne(db, key: id) else { return }
-            let now = Self.currentTimestamp()
-            board.isDeleted = true
-            board.deletedAt = now
-            board.updatedAt = now
-            board.version += 1
-            try board.update(db)
-        }
-    }
-
-    /// Move an ACTIVE board to the `.archived` status.
-    ///
-    /// Mirrors the pattern of `deleteBoard(id:)` + `updateBoardAndCascade`:
-    ///   - Mutates status, bumps version, writes `updatedAt`.
-    ///   - Enqueues a `boards` UPDATE item in the sync queue so the change
-    ///     propagates to Firestore (and thence to other devices) on the next
-    ///     sync pass.
-    ///   - Does NOT touch BoardTask rows — placements stay intact so the board
-    ///     appears correctly in the archive view.
-    ///
-    /// Caller is responsible for any pre-confirmation UI (e.g., the alert in
-    /// `BoardEditPanel`).
-    func archiveBoard(id: String) throws {
-        try write { db in
-            guard var board = try Board.fetchOne(db, key: id) else { return }
-            let now = Self.currentTimestamp()
-            board.status = .archived
-            board.updatedAt = now
-            board.version += 1
-            try board.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "boards",
-                entityId: id,
-                operationType: .update,
-                payload: board,
-                now: now
-            ).save(db)
-        }
-    }
-
-    /// Delete a DRAFT board and its attached BoardTask placements atomically.
-    ///
-    /// Used by the Create Hub's drafts-list delete affordance (per-row
-    /// `xmark` button gated behind a confirmation `Alert`). Soft-deletes
-    /// the Board (sync queue carries the tombstone) and hard-deletes the
-    /// BoardTask rows (BoardTask has no isDeleted flag — placement removal
-    /// is always a literal delete; see `deleteBoardTasksForBoard`). Both
-    /// happen inside one GRDB write transaction so a mid-flight failure
-    /// rolls back instead of leaving orphan BoardTask rows pointing at a
-    /// soft-deleted Board.
-    ///
-    /// Helper is draft-only by design — throws if called with a
-    /// non-DRAFT board so misuse from a future caller surfaces loudly
-    /// rather than silently destroying ACTIVE/COMPLETED placements.
-    /// For "delete an active board", use `deleteBoard(id:)` (which
-    /// leaves BoardTask rows in place).
-    ///
-    /// Caller is responsible for confirming the user wants the deletion.
-    /// Web twin: `deleteDraftWithCascade` in `apps/web/src/db/operations/boards.ts`.
-    func deleteDraftWithCascade(id: String) throws {
-        try write { db in
-            guard var board = try Board.fetchOne(db, key: id) else { return }
-            guard board.status == .draft else {
-                throw DatabaseError(
-                    message: "deleteDraftWithCascade: board \(id) has status \"\(board.status.rawValue)\", not \"draft\". " +
-                    "Use deleteBoard(id:) for non-draft boards."
-                )
-            }
-            let now = Self.currentTimestamp()
-
-            let placements = try BoardTask
-                .filter(Column("boardId") == id)
-                .fetchAll(db)
-            for bt in placements {
-                try bt.delete(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boardTasks",
-                    entityId: bt.id,
-                    operationType: .delete,
-                    payload: bt,
-                    now: now
-                ).save(db)
-            }
-
-            board.isDeleted = true
-            board.deletedAt = now
-            board.updatedAt = now
-            board.version += 1
-            try board.update(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "boards",
-                entityId: id,
-                operationType: .delete,
-                payload: board,
-                now: now
-            ).save(db)
-        }
-    }
-
-    // MARK: - Tasks
-
-    func fetchTasks(userId: String) throws -> [Task] {
-        return try read { db in
-            try Task
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .order(Column("title"))
-                .fetchAll(db)
-        }
-    }
-
-    func fetchTask(id: String) throws -> Task? {
-        return try read { db in
-            try Task.fetchOne(db, key: id)
-        }
-    }
-
-    func saveTask(_ task: Task) throws {
-        try write { db in
-            try task.save(db)
-        }
-    }
-
-    /// Atomic save + sync-enqueue used by the Task detail view's edit
-    /// flow. Replaces the prior pattern of calling `saveTask` followed
-    /// by `enqueueTaskSyncUpdate` in two separate transactions — a
-    /// crash between the two left the local row updated but no
-    /// Firestore sync, silently dropping the edit on other devices.
-    func saveTaskAndEnqueueUpdate(_ task: Task) throws {
-        try write { db in
-            try task.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: task.id,
-                operationType: .update,
-                payload: task,
-                now: Self.currentTimestamp(),
-            ).save(db)
-        }
-    }
-
-    // MARK: - Task cascade helpers (M1 — live-edit)
-
-    /// Run the cross-board derivation cascade for a task that just changed.
-    ///
-    /// Mirrors `bpvRunCrossBoardCascade` in `BoardPlayView.swift` but lives
-    /// on `AppDatabase` so it can be called from the Tasks-tab edit path
-    /// without importing the Board play surface.
-    ///
-    /// - Parameters:
-    ///   - db: GRDB database handle (must be inside a write transaction).
-    ///   - changedTaskId: The task whose state just changed.
-    ///   - now: ISO8601 timestamp for stamping updated board rows.
-    ///
-    /// Must be called inside an active write transaction covering
-    /// `tasks`, `boardTasks`, `compoundChildren`, `boards`, and `syncQueue`.
-    static func runBoardCascadeForTask(
-        db: Database,
-        changedTaskId: String,
-        now: String
-    ) throws {
-        let allChildren: [CompoundChild] = try CompoundChild
-            .filter(Column("isDeleted") == false)
-            .fetchAll(db)
-        let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
-        let allTasks: [Task] = try Task.fetchAll(db)
-        let allBoards: [Board] = try Board.fetchAll(db)
-
-        var taskById: [String: Task] = [:]
-        for t in allTasks { taskById[t.id] = t }
-        var childrenByCompound: [String: [CompoundChild]] = [:]
-        for c in allChildren {
-            childrenByCompound[c.compoundTaskId, default: []].append(c)
-        }
-
-        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-            changedTaskId: changedTaskId,
-            children: allChildren
-        )
-        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-            changedTaskId: changedTaskId,
-            parentCompounds: parentCompounds,
-            boardTasks: allBoardTasks
-        )
-
-        for boardId in affectedBoardIds {
-            guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
-            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
-            let update = DerivationPass.computeBoardStatsUpdate(
-                board: board,
-                boardTasksOnBoard: boardTasksOnBoard,
-                childrenByCompound: childrenByCompound,
-                taskById: taskById,
-                allBoards: allBoards
-            )
-
-            let totalSquares = board.boardSize * board.boardSize
-            let isGreenlogNow = update.completedTasks >= totalSquares
-
-            board.completedTasks = update.completedTasks
-            board.totalTasks = totalSquares
-            board.linesCompleted = update.linesCompleted
-            board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-            board.updatedAt = now
-            board.version += 1
-
-            if isGreenlogNow, board.status == .active {
-                board.status = .completed
-                board.completedAt = now
-            } else if !isGreenlogNow, board.status == .completed {
-                board.status = .active
-                board.completedAt = nil
-            }
-
-            try board.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "boards",
-                entityId: boardId,
-                operationType: .update,
-                payload: board,
-                now: now
-            ).save(db)
-        }
-    }
-
-    /// Save a task + enqueue sync + run the board derivation cascade.
-    ///
-    /// UI-edit path wrapper (Tasks tab + Task detail sheet). Keeps the
-    /// cascade write in the same transaction as the task save so a crash
-    /// mid-write can't leave boards stale.
-    ///
-    /// - Parameter task: The updated task value (caller has already bumped
-    ///   `updatedAt` and `version`).
-    func saveTaskAndCascade(_ task: Task) throws {
-        try write { db in
-            try task.save(db)
-            let now = Self.currentTimestamp()
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: task.id,
-                operationType: .update,
-                payload: task,
-                now: now
-            ).save(db)
-            try Self.runBoardCascadeForTask(db: db, changedTaskId: task.id, now: now)
-        }
-    }
-
-    // MARK: - Board metadata edit helpers (M2 — live-edit board metadata)
-
-    /// Editable fields for an ACTIVE board (M2).
-    ///
-    /// Immutable on active boards:
-    ///   - `boardSize` — render as read-only chip (too disruptive to change).
-    ///   - `isCore`, `spawnedFromTemplateId`, `isRandomized` — internal state.
-    ///   - Placement set (`BoardTask` rows) — M3/M4.
-    ///
-    /// NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
-    /// preserves the underlying `BoardTask` row; the board.centerTaskId column
-    /// is cleared so the cell renders as FREE on top, but the placement is
-    /// retained in case the user switches back. Do not treat this as a bug.
-    struct UpdateActiveBoardPatch {
-        var name: String?
-        var timeframe: Timeframe?
-        /// Local-ISO8601 snap to 00:00:00.000 start-of-day (via `wizardLocalISOString`).
-        var startDate: String?
-        /// Local-ISO8601 snap to 23:59:59.999 end-of-day (via `wizardLocalISOString`).
-        var endDate: String?
-        /// Explicitly clear the board's `endDate` (convert to an indefinite /
-        /// ongoing board). A plain `endDate == nil` means "leave unchanged" —
-        /// this flag is the distinct "remove the deadline" signal, since a nil
-        /// value alone can't express clearing. Setting `timeframe = .indefinite`
-        /// also forces the clear (see `updateBoardAndCascade`).
-        var clearEndDate: Bool
-        var centerSquareType: CenterSquareType?
-        /// Only meaningful when `centerSquareType == .customFree`.
-        var centerSquareCustomName: String?
-        /// Only meaningful when `centerSquareType == .chosen`.
-        var centerTaskId: String?
-
-        init(
-            name: String? = nil,
-            timeframe: Timeframe? = nil,
-            startDate: String? = nil,
-            endDate: String? = nil,
-            clearEndDate: Bool = false,
-            centerSquareType: CenterSquareType? = nil,
-            centerSquareCustomName: String? = nil,
-            centerTaskId: String? = nil
-        ) {
-            self.name = name
-            self.timeframe = timeframe
-            self.startDate = startDate
-            self.endDate = endDate
-            self.clearEndDate = clearEndDate
-            self.centerSquareType = centerSquareType
-            self.centerSquareCustomName = centerSquareCustomName
-            self.centerTaskId = centerTaskId
-        }
-    }
-
-    /// Apply a metadata patch to an ACTIVE board and re-derive stats for
-    /// every placed task.
-    ///
-    /// Sequence:
-    ///   1. Apply the patch atomically (bumps version, enqueues boards sync).
-    ///   2. Sanitize center-square auxiliary fields (clear centerTaskId for
-    ///      non-CHOSEN types; clear centerSquareCustomName for non-CUSTOM_FREE).
-    ///   3. Fetch every `BoardTask` that places a task on this board.
-    ///   4. Run `Self.runBoardCascadeForTask` for each unique placed task
-    ///      inside the same write transaction.
-    ///
-    /// Per-task cascade (not per-board) is deliberate: timeframe/dates changes
-    /// can flip expiry state on placed tasks, and each task's derivation reads
-    /// from board.timeframe + board.endDate. Mirrors the web-side
-    /// `updateBoardAndCascade` in `apps/web/src/db/operations/boards.ts`.
-    ///
-    /// NOTE on renaming: references to this board (Achievement tasks,
-    /// recurring-template spawn records) are always by id, so renaming is
-    /// safe with no additional propagation. Renaming does NOT update the
-    /// spawning template name or historical spawn names.
-    ///
-    /// - Parameters:
-    ///   - boardId: Board to update.
-    ///   - patch: Editable fields for ACTIVE boards.
-    func updateBoardAndCascade(boardId: String, patch: UpdateActiveBoardPatch) throws {
-        try write { db in
-            guard var board = try Board.fetchOne(db, key: boardId) else { return }
-            let now = Self.currentTimestamp()
-
-            // 1. Apply scalar fields.
-            if let n = patch.name { board.name = n }
-            if let tf = patch.timeframe { board.timeframe = tf }
-            if let sd = patch.startDate { board.startDate = sd }
-            // Clear the deadline when explicitly requested or when converting to
-            // an indefinite board; otherwise apply a provided endDate. A bare
-            // nil endDate (no clear flag) leaves the existing value untouched.
-            if patch.clearEndDate || patch.timeframe == .indefinite {
-                board.endDate = nil
-            } else if let ed = patch.endDate {
-                board.endDate = ed
-            }
-
-            // 2. Center-square fields with sanitization.
-            if let ct = patch.centerSquareType {
-                board.centerSquareType = ct
-                switch ct {
-                case .customFree:
-                    // Keep caller-supplied custom name; clear any stale centerTaskId.
-                    board.centerSquareCustomName = patch.centerSquareCustomName
-                    board.centerTaskId = nil
-                case .chosen:
-                    // Keep caller-supplied centerTaskId; clear custom name.
-                    // NOTE (asymmetry): switching CHOSEN → FREE/CUSTOM_FREE later
-                    // will clear centerTaskId but NOT the BoardTask row, preserving
-                    // the placement for a potential future switch back.
-                    if let tid = patch.centerTaskId { board.centerTaskId = tid }
-                    board.centerSquareCustomName = nil
-                default:
-                    // FREE / NONE: clear both auxiliary fields.
-                    // The BoardTask row (if any) is preserved — only the board-level
-                    // reference is cleared.
-                    board.centerSquareCustomName = nil
-                    board.centerTaskId = nil
-                }
-            }
-
-            board.updatedAt = now
-            board.version += 1
-            try board.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "boards",
-                entityId: boardId,
-                operationType: .update,
-                payload: board,
-                now: now
-            ).save(db)
-
-            // 3. Batch cascade: load shared tables ONCE, find the union of
-            //    affected board IDs across all placed tasks, then write one
-            //    stats update per affected board. This replaces the previous
-            //    per-task loop which did O(N) full-table scans (one per task
-            //    on a 5×5 board = 25 cascade calls). (Copilot review #9)
-            let placements = try BoardTask
-                .filter(Column("boardId") == boardId)
-                .fetchAll(db)
-            let taskIds = Array(Set(placements.map { $0.taskId }))
-
-            guard !taskIds.isEmpty else { return }
-
-            let allChildren: [CompoundChild] = try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
-            let allTasks: [Task] = try Task.fetchAll(db)
-            let allBoards: [Board] = try Board.fetchAll(db)
-
-            var taskById: [String: Task] = [:]
-            for t in allTasks { taskById[t.id] = t }
-            var childrenByCompound: [String: [CompoundChild]] = [:]
-            for c in allChildren {
-                childrenByCompound[c.compoundTaskId, default: []].append(c)
-            }
-
-            // Collect the union of all affected board IDs across every placed task.
-            var affectedBoardIds = Set<String>()
-            for taskId in taskIds {
-                let parents = DerivationPass.findTransitiveParentCompounds(
-                    changedTaskId: taskId,
-                    children: allChildren
-                )
-                let ids = DerivationPass.findAffectedBoardIds(
-                    changedTaskId: taskId,
-                    parentCompounds: parents,
-                    boardTasks: allBoardTasks
-                )
-                affectedBoardIds.formUnion(ids)
-            }
-
-            // Update each affected board exactly once.
-            for affectedBoardId in affectedBoardIds {
-                // Re-fetch to see the just-written metadata update above.
-                guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
-                      !affectedBoard.isDeleted else { continue }
-                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == affectedBoardId }
-                let update = DerivationPass.computeBoardStatsUpdate(
-                    board: affectedBoard,
-                    boardTasksOnBoard: boardTasksOnBoard,
-                    childrenByCompound: childrenByCompound,
-                    taskById: taskById,
-                    allBoards: allBoards
-                )
-
-                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                affectedBoard.completedTasks = update.completedTasks
-                affectedBoard.totalTasks = totalSquares
-                affectedBoard.linesCompleted = update.linesCompleted
-                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-                affectedBoard.updatedAt = now
-                affectedBoard.version += 1
-
-                if isGreenlogNow, affectedBoard.status == .active {
-                    affectedBoard.status = .completed
-                    affectedBoard.completedAt = now
-                } else if !isGreenlogNow, affectedBoard.status == .completed {
-                    affectedBoard.status = .active
-                    affectedBoard.completedAt = nil
-                }
-
-                try affectedBoard.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: affectedBoardId,
-                    operationType: .update,
-                    payload: affectedBoard,
-                    now: now
-                ).save(db)
-            }
-        }
-    }
-
-    // MARK: - Copy-from-source helpers
-    //
-    // The wizard's `From a board…` filter long-press menu exposes
-    // `⎘ Add a copy of this task…`. The Copy modal collects per-type
-    // editable fields, pre-filled from the source. These helpers
-    // construct the new Task value, persist it + its compound children
-    // (when applicable), and enqueue the sync write — all atomically.
-    // iOS twin of web's `copyTask` / `copyCompound` in
-    // `apps/web/src/db/operations/tasks.ts`. See
-    // docs/ARCHITECTURE.md § "Wizard 'From a board' picker" for the
-    // shallow-compound-copy invariant. Achievement copies are NOT
-    // cycle-checked here — the gate runs at wizard-commit time when
-    // the Task is placed on the new board (Phase 6.3 behavior).
-
-    /// Editable fields the Copy sheet may override when copying a
-    /// primitive (normal / counting / achievement) task. Any property
-    /// left `nil` inherits from the source.
-    ///
-    /// For achievement copies: if EITHER `referencedBoardId` or
-    /// `referencedTemplateId` is provided, both override values are
-    /// used as-is (treating the other's `nil` as "clear"). This is
-    /// how the sheet switches between specific-board and
-    /// recurring-template modes. If neither is provided, both
-    /// inherit from the source.
-    struct CopyTaskOverrides {
-        var title: String?
-        var description: String?
-        // Counting
-        var action: String?
-        var unit: String?
-        var maxCount: Int?
-        // Achievement
-        var achievementTrigger: AchievementTrigger?
-        var referencedBoardId: String?
-        var referencedTemplateId: String?
-        var requiredCount: Int?
-
-        init(
-            title: String? = nil,
-            description: String? = nil,
-            action: String? = nil,
-            unit: String? = nil,
-            maxCount: Int? = nil,
-            achievementTrigger: AchievementTrigger? = nil,
-            referencedBoardId: String? = nil,
-            referencedTemplateId: String? = nil,
-            requiredCount: Int? = nil,
-            overrodeReference: Bool = false
-        ) {
-            self.title = title
-            self.description = description
-            self.action = action
-            self.unit = unit
-            self.maxCount = maxCount
-            self.achievementTrigger = achievementTrigger
-            self.referencedBoardId = referencedBoardId
-            self.referencedTemplateId = referencedTemplateId
-            self.requiredCount = requiredCount
-            self.overrodeReference = overrodeReference
-        }
-
-        /// True when the sheet touched the reference fields. Distinguishes
-        /// "inherit from source" (false → use source's pair) from
-        /// "user picked board mode but left template blank" (true → use
-        /// overrides as-is, blanks become clears). Swift can't infer this
-        /// from `nil` alone the way TS infers from `=== undefined`.
-        var overrodeReference: Bool = false
-    }
-
-    /// Copy a primitive task (normal / counting / achievement). Throws
-    /// if the source is a compound — call `copyCompound` instead.
-    @discardableResult
-    func copyTask(
-        userId: String,
-        source: Task,
-        overrides: CopyTaskOverrides = CopyTaskOverrides()
-    ) throws -> Task {
-        if source.type == .compound {
-            throw NSError(
-                domain: "AppDatabase.copyTask",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey:
-                    "copyTask cannot copy a compound source — use copyCompound instead"]
-            )
-        }
-
-        let now = Self.currentTimestamp()
-        let newId = Self.generateUUID()
-
-        // Resolve reference fields: if the sheet touched either field,
-        // both come from overrides (nil-as-clear so a switch from
-        // board → template doesn't leave both set and trip the XOR
-        // refinement). Otherwise inherit from the source.
-        let refBoard: String? = overrides.overrodeReference
-            ? overrides.referencedBoardId
-            : source.referencedBoardId
-        let refTemplate: String? = overrides.overrodeReference
-            ? overrides.referencedTemplateId
-            : source.referencedTemplateId
-
-        let newTask = Task(
-            id: newId,
-            userId: userId,
-            title: overrides.title ?? source.title,
-            description: overrides.description ?? source.description,
-            type: source.type,
-            action: source.type == .counting
-                ? (overrides.action ?? source.action) : nil,
-            unit: source.type == .counting
-                ? (overrides.unit ?? source.unit) : nil,
-            maxCount: source.type == .counting
-                ? (overrides.maxCount ?? source.maxCount) : nil,
-            referencedBoardId: source.type == .achievement ? refBoard : nil,
-            referencedTemplateId: source.type == .achievement ? refTemplate : nil,
-            achievementTrigger: source.type == .achievement
-                ? (overrides.achievementTrigger ?? source.achievementTrigger) : nil,
-            requiredCount: source.type == .achievement
-                ? (overrides.requiredCount ?? source.requiredCount) : nil,
-            totalCompletions: 0,
-            totalInstances: 0,
-            isCompleted: false,
-            currentCount: source.type == .counting ? 0 : nil,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            isDeleted: false,
-            timeframe: source.timeframe,
-            startDate: source.startDate,
-            endDate: source.endDate
-        )
-
-        try write { db in
-            try newTask.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: newId,
-                operationType: .create,
-                payload: newTask,
-                now: now
-            ).save(db)
-        }
-        return newTask
-    }
-
-    /// Copy a compound task. Shallow: the new compound parent has a
-    /// fresh id but its `compound_children` rows reference the SAME
-    /// primitive child Tasks the source had. Deep-clone is intentionally
-    /// not provided (see ARCHITECTURE.md doc).
-    @discardableResult
-    func copyCompound(
-        userId: String,
-        source: Task,
-        title: String? = nil,
-        description: String? = nil
-    ) throws -> Task {
-        guard source.type == .compound else {
-            throw NSError(
-                domain: "AppDatabase.copyCompound",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey:
-                    "copyCompound requires a compound source task"]
-            )
-        }
-        guard let op = source.operatorType else {
-            throw NSError(
-                domain: "AppDatabase.copyCompound",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey:
-                    "compound source missing operatorType field"]
-            )
-        }
-        guard let isOrdered = source.isOrdered else {
-            throw NSError(
-                domain: "AppDatabase.copyCompound",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey:
-                    "compound source missing isOrdered field"]
-            )
-        }
-
-        let now = Self.currentTimestamp()
-        let newParentId = Self.generateUUID()
-
-        let newParent = Task(
-            id: newParentId,
-            userId: userId,
-            title: title ?? source.title,
-            description: description ?? source.description,
-            type: .compound,
-            operatorType: op,
-            threshold: source.threshold,
-            isOrdered: isOrdered,
-            totalCompletions: 0,
-            totalInstances: 0,
-            isCompleted: false,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            isDeleted: false,
-            timeframe: source.timeframe,
-            startDate: source.startDate,
-            endDate: source.endDate
-        )
-
-        // Read children OUTSIDE the write transaction so we don't hold a
-        // writer lock open across the read. `fetchCompoundChildren`
-        // already filters !isDeleted and orders by childIndex.
-        let sourceChildren = try fetchCompoundChildren(compoundTaskId: source.id)
-
-        try write { db in
-            try newParent.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: newParentId,
-                operationType: .create,
-                payload: newParent,
-                now: now
-            ).save(db)
-
-            for (index, child) in sourceChildren.enumerated() {
-                let linkId = Self.generateUUID()
-                let link = CompoundChild(
-                    id: linkId,
-                    compoundTaskId: newParentId,
-                    childTaskId: child.childTaskId,
-                    childIndex: index,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastSyncedAt: nil,
-                    version: 1,
-                    isDeleted: false,
-                    deletedAt: nil
-                )
-                try link.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "compoundChildren",
-                    entityId: linkId,
-                    operationType: .create,
-                    payload: link,
-                    now: now
-                ).save(db)
-            }
-        }
-
-        return newParent
-    }
-
-    /// Soft-delete a task. See `deleteBoard` for the version-bump rationale.
-    func deleteTask(id: String) throws {
-        try write { db in
-            guard var task = try Task.fetchOne(db, key: id) else { return }
-            let now = Self.currentTimestamp()
-            task.isDeleted = true
-            task.deletedAt = now
-            task.updatedAt = now
-            task.version += 1
-            try task.update(db)
-        }
-    }
-
-    // MARK: - Phase 3: Shared-counter increment hot-path
-
-    /// Increment the shared-counter source task's `currentCount` by `by` (default 1),
-    /// then re-derive every linked task (tasks where `sharedCounterId == sourceTaskId`
-    /// and `!isDeleted`) and run the board derivation cascade for the source AND
-    /// every linked task — all inside a single GRDB write transaction.
-    ///
-    /// Invariants enforced:
-    ///   - NO HIGH-END CLAMP on the source `currentCount`. Overshoot is intentional.
-    ///   - ONE-WAY LATCH on each linked task's `isCompleted`: once `true`, stays `true`.
-    ///   - All writes (task rows + board cascade + sync entries) are atomic.
-    ///
-    /// The caller (BoardPlayView) calls this instead of the legacy
-    /// `handleCountingTap` when the task being tapped has `sharedCounterId != nil`
-    /// (linked task → increment source) OR when the task is a known source
-    /// (has linked tasks pointing at it → increment source + fan-out).
-    ///
-    /// IMPORTANT: Uses `_Concurrency.Task` explicitly to avoid shadowing by the
-    /// GRDB `Task` model. This function itself is synchronous (throws); callers
-    /// wrap it in `_Concurrency.Task.detached` for off-main-thread execution.
-    ///
-    /// - Parameters:
-    ///   - sourceTaskId: The id of the source (template) counting task.
-    ///   - by: Amount to increment. Must be >= 1.
-    func incrementSharedCounter(sourceTaskId: String, by: Int = 1) throws {
-        guard by >= 1 else {
-            throw NSError(
-                domain: "AppDatabase.incrementSharedCounter",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey:
-                    "incrementSharedCounter: `by` must be >= 1"]
-            )
-        }
-
-        try write { db in
-            let now = Self.currentTimestamp()
-
-            // 1. Fetch and validate the source task.
-            guard var source = try Task.fetchOne(db, key: sourceTaskId) else { return }
-            // Soft-delete guard: a deleted source must not be incremented or synced.
-            guard !source.isDeleted else { return }
-            guard source.type == .counting else {
-                throw NSError(
-                    domain: "AppDatabase.incrementSharedCounter",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey:
-                        "incrementSharedCounter: source task \(sourceTaskId) is not a COUNTING task"]
-                )
-            }
-            guard source.sharedCounterId == nil else {
-                throw NSError(
-                    domain: "AppDatabase.incrementSharedCounter",
-                    code: 3,
-                    userInfo: [NSLocalizedDescriptionKey:
-                        "incrementSharedCounter: task \(sourceTaskId) is a linked derived counter; pass the source (template) task id instead"]
-                )
-            }
-
-            // 2. Compute new source count — NO high-end clamp.
-            guard let sourceMaxCount = source.maxCount else {
-                throw NSError(
-                    domain: "AppDatabase.incrementSharedCounter",
-                    code: 4,
-                    userInfo: [NSLocalizedDescriptionKey:
-                        "incrementSharedCounter: source task \(sourceTaskId) has nil maxCount — data integrity error"]
-                )
-            }
-            let prevSourceCount = source.currentCount ?? 0
-            let newSourceCount = prevSourceCount + by
-
-            // ONE-WAY LATCH on source completion.
-            let sourceWasCompleted = source.isCompleted
-            let sourceNowCompleted = sourceWasCompleted || newSourceCount >= sourceMaxCount
-
-            source.currentCount = newSourceCount
-            source.isCompleted = sourceNowCompleted
-            if !sourceWasCompleted && sourceNowCompleted {
-                source.completedAt = now
-            }
-            source.updatedAt = now
-            source.version += 1
-            try source.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: sourceTaskId,
-                operationType: .update,
-                payload: source,
-                now: now
-            ).save(db)
-
-            // 3. Fetch all linked (derived) tasks for this source.
-            let linkedTasks = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId)
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-
-            // 4. Re-derive each linked task.
-            for var linked in linkedTasks {
-                let baseline = linked.baseline ?? 0
-                let derivedMaxCount = linked.maxCount ?? 0
-
-                // deriveDisplayedCount math (mirrors SharedCounter.swift / sharedCounter.ts).
-                // LOW-END CLAMP ONLY — no high-end clamp.
-                let displayed = max(0, newSourceCount - baseline)
-                let derivedCompleted = displayed >= derivedMaxCount
-
-                // ONE-WAY LATCH.
-                let linkedWasCompleted = linked.isCompleted
-                let linkedNowCompleted = linkedWasCompleted || derivedCompleted
-
-                linked.currentCount = newSourceCount  // mirror source count for easy reads
-                linked.isCompleted = linkedNowCompleted
-                if !linkedWasCompleted && linkedNowCompleted {
-                    linked.completedAt = now
-                }
-                linked.updatedAt = now
-                linked.version += 1
-                try linked.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "tasks",
-                    entityId: linked.id,
-                    operationType: .update,
-                    payload: linked,
-                    now: now
-                ).save(db)
-            }
-
-            // 5. Run the board derivation cascade for the source AND each linked task.
-            //    Fetch the workspace data once (all tasks, boardTasks, etc.) — the
-            //    cascade reads will see the rows we just wrote since we're in the
-            //    same transaction.
-            let allTasks: [Task] = try Task.fetchAll(db)
-            let allChildren: [CompoundChild] = try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-            let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
-            let allBoards: [Board] = try Board.fetchAll(db)
-
-            var taskById: [String: Task] = [:]
-            for t in allTasks { taskById[t.id] = t }
-            var childrenByCompound: [String: [CompoundChild]] = [:]
-            for c in allChildren {
-                childrenByCompound[c.compoundTaskId, default: []].append(c)
-            }
-
-            let allChangedTaskIds = [sourceTaskId] + linkedTasks.map { $0.id }
-            // Collect all affected board ids across all changed tasks, deduplicated.
-            var allAffectedBoardIds = Set<String>()
-            for taskId in allChangedTaskIds {
-                let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-                    changedTaskId: taskId,
-                    children: allChildren
-                )
-                let boardIds = DerivationPass.findAffectedBoardIds(
-                    changedTaskId: taskId,
-                    parentCompounds: parentCompounds,
-                    boardTasks: allBoardTasks
-                )
-                allAffectedBoardIds.formUnion(boardIds)
-            }
-
-            for boardId in allAffectedBoardIds {
-                guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else {
-                    continue
-                }
-                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
-                let update = DerivationPass.computeBoardStatsUpdate(
-                    board: board,
-                    boardTasksOnBoard: boardTasksOnBoard,
-                    childrenByCompound: childrenByCompound,
-                    taskById: taskById,
-                    allBoards: allBoards
-                )
-
-                let totalSquares = board.boardSize * board.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                board.completedTasks = update.completedTasks
-                board.totalTasks = totalSquares
-                board.linesCompleted = update.linesCompleted
-                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-                board.updatedAt = now
-                board.version += 1
-
-                if isGreenlogNow, board.status == .active {
-                    board.status = .completed
-                    board.completedAt = now
-                } else if !isGreenlogNow, board.status == .completed {
-                    board.status = .active
-                    board.completedAt = nil
-                }
-
-                try board.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: boardId,
-                    operationType: .update,
-                    payload: board,
-                    now: now
-                ).save(db)
-            }
-        }
-    }
-
-    /// Summary of what `deleteTaskWithCascade` would remove. Lets the
-    /// detail view surface affected counts in the confirm dialog before
-    /// the user commits. Mirrors web's `TaskDeletionImpact`.
-    struct TaskDeletionImpact {
-        /// Count of `BoardTask` rows that reference this task as a placement.
-        let boardTaskCount: Int
-        /// Distinct boards the placements span (cells on the same board count once).
-        let affectedBoardIds: [String]
-        /// The live (non-deleted) board records the placements live on. Same
-        /// set as `affectedBoardIds` — included so the confirm sheet can
-        /// surface board name + status without a second fetch.
-        let affectedBoards: [Board]
-        /// `CompoundChild` rows where the task is the CHILD. The parent
-        /// compound loses this child; sibling children remain.
-        let childLinkCount: Int
-        /// `CompoundChild` rows where the task IS the parent compound.
-        /// Each parent link is severed; the child Tasks remain.
-        let parentLinkCount: Int
-    }
-
-    /// Read-only impact calculation; safe to call before showing the
-    /// confirm dialog. Filters BoardTask placements to those on
-    /// non-deleted boards — `BoardTask` has no `isDeleted` column, so
-    /// orphan placements on soft-deleted boards would otherwise inflate
-    /// the user-facing count. The actual cascade still hard-deletes
-    /// every matching placement (storage cleanup); the dialog only
-    /// reports cells the user can still see.
-    func computeTaskDeletionImpact(taskId: String) throws -> TaskDeletionImpact {
-        try read { db in
-            let allPlacements = try BoardTask
-                .filter(Column("taskId") == taskId)
-                .fetchAll(db)
-            let placementBoardIds = Array(Set(allPlacements.map { $0.boardId }))
-            let liveBoards: [Board] = placementBoardIds.isEmpty
-                ? []
-                : try Board
-                    .filter(placementBoardIds.contains(Column("id"))
-                            && Column("isDeleted") == false)
-                    .fetchAll(db)
-            let liveBoardIds = Set(liveBoards.map { $0.id })
-            let visiblePlacements = allPlacements.filter { liveBoardIds.contains($0.boardId) }
-            let childLinks = try CompoundChild
-                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
-                .fetchCount(db)
-            let parentLinks = try CompoundChild
-                .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
-                .fetchCount(db)
-            return TaskDeletionImpact(
-                boardTaskCount: visiblePlacements.count,
-                affectedBoardIds: Array(liveBoardIds),
-                affectedBoards: liveBoards,
-                childLinkCount: childLinks,
-                parentLinkCount: parentLinks,
-            )
-        }
-    }
-
-    /// Cascade-delete a task. Mirrors web's `deleteTaskWithCascade`:
-    ///
-    /// 1. **BoardTask placements** referencing this task — *hard-
-    ///    deleted* (BoardTask has no `isDeleted` field). Each removal
-    ///    queued for sync DELETE so other devices drop the placement.
-    /// 2. **`CompoundChild` rows where the task IS the parent compound**
-    ///    — soft-deleted (version bump + isDeleted + deletedAt). The
-    ///    child Tasks themselves stay alive.
-    /// 3. **`CompoundChild` rows where the task IS a child** — soft-
-    ///    deleted. Sibling links + the parent Task itself are untouched.
-    /// 4. **The Task itself** — soft-deleted with version bump (matches
-    ///    `deleteTask`'s LWW semantics).
-    ///
-    /// All operations run in a single GRDB write transaction so a
-    /// crash mid-cascade leaves a consistent local DB.
-    func deleteTaskWithCascade(taskId: String) throws {
-        try write { db in
-            guard var task = try Task.fetchOne(db, key: taskId) else { return }
-            let now = Self.currentTimestamp()
-
-            // 1. Hard-delete BoardTask placements.
-            let placements = try BoardTask
-                .filter(Column("taskId") == taskId)
-                .fetchAll(db)
-            for bt in placements {
-                _ = try bt.delete(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boardTasks",
-                    entityId: bt.id,
-                    operationType: .delete,
-                    payload: bt,
-                    now: now,
-                ).save(db)
-            }
-
-            // 2 + 3. Soft-delete compound-child links — both directions.
-            let parentLinks = try CompoundChild
-                .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
-                .fetchAll(db)
-            let childLinks = try CompoundChild
-                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
-                .fetchAll(db)
-            for var link in parentLinks + childLinks {
-                link.isDeleted = true
-                link.deletedAt = now
-                link.updatedAt = now
-                link.version += 1
-                try link.update(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "compoundChildren",
-                    entityId: link.id,
-                    operationType: .delete,
-                    payload: link,
-                    now: now,
-                ).save(db)
-            }
-
-            // 4. Soft-delete the Task itself.
-            task.isDeleted = true
-            task.deletedAt = now
-            task.updatedAt = now
-            task.version += 1
-            try task.update(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "tasks",
-                entityId: task.id,
-                operationType: .delete,
-                payload: task,
-                now: now,
-            ).save(db)
-        }
-    }
-
-    // MARK: - BoardTasks
-
-    func fetchBoardTasks(boardId: String) throws -> [BoardTask] {
-        return try read { db in
-            try BoardTask
-                .filter(Column("boardId") == boardId)
-                .fetchAll(db)
-        }
-    }
-
-    func fetchBoardTask(id: String) throws -> BoardTask? {
-        return try read { db in
-            try BoardTask.fetchOne(db, key: id)
-        }
-    }
-
-    /// Fetch every `BoardTask` row that references a specific Task. Used
-    /// by the Task detail view to list "placed on N boards" and by the
-    /// cascade-delete impact preview.
-    func fetchBoardTasksForTask(taskId: String) throws -> [BoardTask] {
-        return try read { db in
-            try BoardTask
-                .filter(Column("taskId") == taskId)
-                .fetchAll(db)
-        }
-    }
-
-    /// Hard-deletes every `BoardTask` row for the given board. Used
-    /// when re-saving a draft whose task placement has changed —
-    /// simpler than diffing old vs new layout, and tolerable at scale
-    /// (boards have at most 25 cells).
-    ///
-    /// `BoardTask` has no `isDeleted` flag, so the deletion is literal;
-    /// the web twin uses the same pattern.
-    func deleteBoardTasksForBoard(boardId: String) throws {
-        try write { db in
-            _ = try BoardTask
-                .filter(Column("boardId") == boardId)
-                .deleteAll(db)
-        }
-    }
-
-    func saveBoardTask(_ boardTask: BoardTask) throws {
-        try write { db in
-            try boardTask.save(db)
-        }
-    }
-
-    // MARK: - updateBoardTaskAndCascade (M3 — live-edit cell swap)
-
-    /// Patch a BoardTask's `taskId` (cell swap) and re-derive stats for every board
-    /// affected by either the OLD task or the NEW task.
-    ///
-    /// Design mirrors `saveTaskAndCascade` (M1) and the batched cascade in
-    /// `updateBoardAndCascade` (M2/PR #95):
-    ///   1. Validate + no-op guard (swap to same task returns immediately).
-    ///   2. Apply the taskId patch atomically (bumps version, enqueues boardTask sync).
-    ///   3. Compute the union of affected board IDs across both old and new tasks,
-    ///      using pre- and post-patch boardTask snapshots.
-    ///   4. Re-derive stats + GREENLOG transitions for each affected board (one pass).
-    ///
-    /// Counter-overshoot invariant: this function never clamps `currentCount`.
-    /// The derivation delegates to `DerivationPass.computeBoardStatsUpdate` which
-    /// reads `task.isCompleted` — the actual count value on the Task row is untouched.
-    ///
-    /// - Parameters:
-    ///   - boardTaskId: The `BoardTask.id` placement record to update.
-    ///   - newTaskId: The new `Task.id` to write into `BoardTask.taskId`.
-    /// - Throws: GRDB write errors.
-    func updateBoardTaskAndCascade(boardTaskId: String, newTaskId: String) throws {
-        try write { db in
-            guard var boardTask = try BoardTask.fetchOne(db, key: boardTaskId) else { return }
-
-            let oldTaskId = boardTask.taskId
-            // No-op guard: swapping to the same task writes nothing.
-            guard oldTaskId != newTaskId else { return }
-
-            let now = Self.currentTimestamp()
-
-            // ── Pre-patch workspace snapshot (for old-task cascade side) ──
-
-            let allChildren: [CompoundChild] = try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-            let allBoardTasksPre: [BoardTask] = try BoardTask.fetchAll(db)
-
-            // ── Apply the boardTask patch ──
-
-            boardTask.taskId = newTaskId
-            boardTask.updatedAt = now
-            boardTask.version += 1
-            try boardTask.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "boardTasks",
-                entityId: boardTaskId,
-                operationType: .update,
-                payload: boardTask,
-                now: now
-            ).save(db)
-
-            // ── Post-patch workspace snapshot (for new-task cascade side) ──
-
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
-            let allTasks: [Task] = try Task.fetchAll(db)
-            let allBoards: [Board] = try Board.fetchAll(db)
-
-            var taskById: [String: Task] = [:]
-            for t in allTasks { taskById[t.id] = t }
-            var childrenByCompound: [String: [CompoundChild]] = [:]
-            for c in allChildren {
-                childrenByCompound[c.compoundTaskId, default: []].append(c)
-            }
-
-            // ── Compute union of affected board IDs ──
-
-            let oldParents = DerivationPass.findTransitiveParentCompounds(
-                changedTaskId: oldTaskId, children: allChildren
-            )
-            let oldAffected = DerivationPass.findAffectedBoardIds(
-                changedTaskId: oldTaskId,
-                parentCompounds: oldParents,
-                boardTasks: allBoardTasksPre
-            )
-
-            let newParents = DerivationPass.findTransitiveParentCompounds(
-                changedTaskId: newTaskId, children: allChildren
-            )
-            let newAffected = DerivationPass.findAffectedBoardIds(
-                changedTaskId: newTaskId,
-                parentCompounds: newParents,
-                boardTasks: allBoardTasksPost
-            )
-
-            let affectedBoardIds = Set(oldAffected).union(newAffected)
-
-            // ── One derivation pass per affected board ──
-
-            for affectedBoardId in affectedBoardIds {
-                guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
-                      !affectedBoard.isDeleted else { continue }
-
-                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
-                let update = DerivationPass.computeBoardStatsUpdate(
-                    board: affectedBoard,
-                    boardTasksOnBoard: boardTasksOnBoard,
-                    childrenByCompound: childrenByCompound,
-                    taskById: taskById,
-                    allBoards: allBoards
-                )
-
-                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                affectedBoard.completedTasks = update.completedTasks
-                affectedBoard.totalTasks = totalSquares
-                affectedBoard.linesCompleted = update.linesCompleted
-                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-                affectedBoard.updatedAt = now
-                affectedBoard.version += 1
-
-                if isGreenlogNow, affectedBoard.status == .active {
-                    affectedBoard.status = .completed
-                    affectedBoard.completedAt = now
-                } else if !isGreenlogNow, affectedBoard.status == .completed {
-                    affectedBoard.status = .active
-                    affectedBoard.completedAt = nil
-                }
-
-                try affectedBoard.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: affectedBoardId,
-                    operationType: .update,
-                    payload: affectedBoard,
-                    now: now
-                ).save(db)
-            }
-        }
-    }
-
-    /// Fetch every BoardTask in the workspace. Used by the derivation pass
-    /// to find which boards contain a given task (directly or via a compound).
-    /// Small-N: typical user has under a few thousand BoardTasks.
-    func fetchAllBoardTasks() throws -> [BoardTask] {
-        return try read { db in
-            try BoardTask.fetchAll(db)
-        }
-    }
-
-    // MARK: - Phase 3 — Rearrange commit op
-
-    /// A single position move produced by the Rearrange sub-mode.
-    struct BoardTaskPositionMove: Sendable {
-        /// The `BoardTask.id` whose grid position changed.
-        let boardTaskId: String
-        /// New 0-based grid row.
-        let row: Int
-        /// New 0-based grid column.
-        let col: Int
-    }
-
-    /// Writes new `row`/`col` for each moved `BoardTask` row atomically, then
-    /// re-derives the board's positional bingo lines (`completedLineIds` /
-    /// `linesCompleted`) in the same transaction.
-    ///
-    /// Design principles:
-    ///   - **Atomic**: all moves + bingo re-derive land in ONE `write { db in … }`
-    ///     block — no two rows transiently collide on the same `(row, col)` from
-    ///     the perspective of any external reader.
-    ///   - **Bingo-only re-derive**: rearranging doesn't change Task completion
-    ///     state, so `completedTasks` stays constant; only the positional line
-    ///     detection (`completedLineIds` / `linesCompleted`) needs a fresh pass.
-    ///     `DerivationPass.computeBoardStatsUpdate` recomputes both — the pass is
-    ///     cheap for boards ≤ 5×5 and keeps the logic in one canonical place.
-    ///   - **Global Task completion untouched**: `Task.isCompleted` / `currentCount`
-    ///     are never read or written here.
-    ///   - **Sync queue**: one `boardTasks` UPDATE is enqueued per moved row + one
-    ///     `boards` UPDATE for the updated bingo state.
-    ///   - **Empty `moves` list**: returns immediately (no-op).
-    ///
-    /// - Parameters:
-    ///   - boardId: The board whose tiles are being reordered.
-    ///   - moves: Array of `(boardTaskId, row, col)` tuples — only cells that
-    ///     actually changed position should be included (callers compare against
-    ///     original positions; sending unchanged rows is harmless but wasteful).
-    func updateBoardTaskPositions(
-        boardId: String,
-        moves: [BoardTaskPositionMove]
-    ) throws {
-        guard !moves.isEmpty else { return }
-
-        let now = Self.currentTimestamp()
-
-        try write { db in
-            // ── 1. Apply position patches ──
-            for move in moves {
-                guard var boardTask = try BoardTask.fetchOne(db, key: move.boardTaskId),
-                      boardTask.boardId == boardId else { continue }
-                boardTask.row = move.row
-                boardTask.col = move.col
-                // `isCenter` follows the center-square-type rule set by the board,
-                // not the position. Center is fixed and never in the moves list.
-                boardTask.updatedAt = now
-                boardTask.version += 1
-                try boardTask.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boardTasks",
-                    entityId: move.boardTaskId,
-                    operationType: .update,
-                    payload: boardTask,
-                    now: now
-                ).save(db)
-            }
-
-            // ── 2. Re-derive bingo lines for this board ──
-            // Only one board is affected — the one being rearranged.
-            guard var board = try Board.fetchOne(db, key: boardId),
-                  !board.isDeleted else { return }
-
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
-            let allTasks: [Task] = try Task.fetchAll(db)
-            let allBoards: [Board] = try Board.fetchAll(db)
-            let allChildren: [CompoundChild] = try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-
-            var taskById: [String: Task] = [:]
-            for t in allTasks { taskById[t.id] = t }
-            var childrenByCompound: [String: [CompoundChild]] = [:]
-            for c in allChildren {
-                childrenByCompound[c.compoundTaskId, default: []].append(c)
-            }
-
-            let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
-            let update = DerivationPass.computeBoardStatsUpdate(
-                board: board,
-                boardTasksOnBoard: boardTasksOnBoard,
-                childrenByCompound: childrenByCompound,
-                taskById: taskById,
-                allBoards: allBoards
-            )
-
-            // Rearranging cannot change which tasks are completed, so
-            // `completedTasks` is stable. The line-detection geometry changes
-            // (a completed task may now be in a different row/col), so update
-            // the positional bingo fields unconditionally.
-            board.linesCompleted = update.linesCompleted
-            board.completedLineIds = update.completedLineIds.isEmpty
-                ? nil
-                : update.completedLineIds
-            board.updatedAt = now
-            board.version += 1
-
-            try board.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "boards",
-                entityId: boardId,
-                operationType: .update,
-                payload: board,
-                now: now
-            ).save(db)
-        }
-    }
-
-    // MARK: - M4 Live-Edit: Placement Add / Remove
-
-    /// Remove a single BoardTask placement from an ACTIVE board (live-edit M4).
-    ///
-    /// Semantics mirror the web `removeBoardTaskFromBoard`:
-    ///   - Hard-deletes the BoardTask row (BoardTask has no isDeleted field;
-    ///     consistent with `deleteBoardTasksForBoard`).
-    ///   - Enqueues a DELETE sync tombstone.
-    ///   - Runs the batched cascade for every board affected by the removed task
-    ///     (directly or via a compound parent), re-deriving stats + status.
-    ///
-    /// The underlying Task is NOT touched. It stays in the library and on any
-    /// other boards where it appears. Only this board loses the placement.
-    ///
-    /// - Parameter boardTaskId: The `BoardTask.id` placement record to remove.
-    func removeBoardTaskFromBoard(_ boardTaskId: String) throws {
-        guard let existing = try fetchBoardTask(id: boardTaskId) else { return }
-        let now = AppDatabase.currentTimestamp()
-        let removedTaskId = existing.taskId
-
-        let allBoardTasksPre = try fetchAllBoardTasks()
-        let allCompoundChildrenPre = try fetchAllCompoundChildren()
-
-        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-            changedTaskId: removedTaskId,
-            children: allCompoundChildrenPre
-        )
-        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-            changedTaskId: removedTaskId,
-            parentCompounds: parentCompounds,
-            boardTasks: allBoardTasksPre
-        )
-
-        try write { db in
-            try BoardTask.deleteOne(db, key: boardTaskId)
-
-            try SyncQueueBuilder.makeItem(
-                entityType: "boardTasks",
-                entityId: boardTaskId,
-                operationType: .delete,
-                payload: existing,
-                now: now
-            ).save(db)
-
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
-            let allTasks: [Task] = try Task.fetchAll(db)
-            let allBoards: [Board] = try Board.fetchAll(db)
-            let allChildren: [CompoundChild] = try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-
-            var taskById: [String: Task] = [:]
-            for t in allTasks { taskById[t.id] = t }
-            var childrenByCompound: [String: [CompoundChild]] = [:]
-            for c in allChildren {
-                childrenByCompound[c.compoundTaskId, default: []].append(c)
-            }
-
-            for boardId in affectedBoardIds {
-                guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
-                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == boardId }
-                let update = DerivationPass.computeBoardStatsUpdate(
-                    board: board,
-                    boardTasksOnBoard: boardTasksOnBoard,
-                    childrenByCompound: childrenByCompound,
-                    taskById: taskById,
-                    allBoards: allBoards
-                )
-
-                let totalSquares = board.boardSize * board.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                board.completedTasks = update.completedTasks
-                board.totalTasks = totalSquares
-                board.linesCompleted = update.linesCompleted
-                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-                board.updatedAt = now
-                board.version += 1
-
-                if isGreenlogNow, board.status == .active {
-                    board.status = .completed
-                    board.completedAt = now
-                } else if !isGreenlogNow, board.status == .completed {
-                    board.status = .active
-                    board.completedAt = nil
-                }
-
-                try board.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: boardId,
-                    operationType: .update,
-                    payload: board,
-                    now: now
-                ).save(db)
-            }
-        }
-    }
-
-    /// Add a Task to an empty cell on an ACTIVE board (live-edit M4).
-    ///
-    /// Creates a new BoardTask placement at the given grid position and runs the
-    /// batched cascade to re-derive stats for every board affected by the placed task.
-    ///
-    /// Shared-task semantics: if the task is already globally completed, the cascade
-    /// immediately counts this cell as completed and increments `board.completedTasks`.
-    /// No cloning, no reset.
-    ///
-    /// - Parameters:
-    ///   - boardId: The board receiving the new placement.
-    ///   - taskId: The task to place.
-    ///   - position: Grid position `(row, col)` (0-based).
-    /// - Returns: The newly-created `BoardTask` record.
-    @discardableResult
-    func addBoardTaskToBoard(_ boardId: String, taskId: String, position: (row: Int, col: Int)) throws -> BoardTask {
-        let now = AppDatabase.currentTimestamp()
-
-        let newBoardTask = BoardTask(
-            id: AppDatabase.generateUUID(),
-            boardId: boardId,
-            taskId: taskId,
-            row: position.row,
-            col: position.col,
-            isCenter: false,
-            createdAt: now,
-            updatedAt: now,
-            version: 1
-        )
-
-        let allBoardTasksPre = try fetchAllBoardTasks()
-        let allCompoundChildrenPre = try fetchAllCompoundChildren()
-
-        let syntheticBoardTasks = allBoardTasksPre + [newBoardTask]
-        let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-            changedTaskId: taskId,
-            children: allCompoundChildrenPre
-        )
-        let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-            changedTaskId: taskId,
-            parentCompounds: parentCompounds,
-            boardTasks: syntheticBoardTasks
-        )
-
-        try write { db in
-            try newBoardTask.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "boardTasks",
-                entityId: newBoardTask.id,
-                operationType: .create,
-                payload: newBoardTask,
-                now: now
-            ).save(db)
-
-            let allBoardTasksPost: [BoardTask] = try BoardTask.fetchAll(db)
-            let allTasks: [Task] = try Task.fetchAll(db)
-            let allBoards: [Board] = try Board.fetchAll(db)
-            let allChildren: [CompoundChild] = try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-
-            var taskById: [String: Task] = [:]
-            for t in allTasks { taskById[t.id] = t }
-            var childrenByCompound: [String: [CompoundChild]] = [:]
-            for c in allChildren {
-                childrenByCompound[c.compoundTaskId, default: []].append(c)
-            }
-
-            for affectedBoardId in affectedBoardIds {
-                guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted else { continue }
-                let boardTasksOnBoard = allBoardTasksPost.filter { $0.boardId == affectedBoardId }
-                let update = DerivationPass.computeBoardStatsUpdate(
-                    board: board,
-                    boardTasksOnBoard: boardTasksOnBoard,
-                    childrenByCompound: childrenByCompound,
-                    taskById: taskById,
-                    allBoards: allBoards
-                )
-
-                let totalSquares = board.boardSize * board.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                board.completedTasks = update.completedTasks
-                board.totalTasks = totalSquares
-                board.linesCompleted = update.linesCompleted
-                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-                board.updatedAt = now
-                board.version += 1
-
-                if isGreenlogNow, board.status == .active {
-                    board.status = .completed
-                    board.completedAt = now
-                } else if !isGreenlogNow, board.status == .completed {
-                    board.status = .active
-                    board.completedAt = nil
-                }
-
-                try board.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: affectedBoardId,
-                    operationType: .update,
-                    payload: board,
-                    now: now
-                ).save(db)
-            }
-        }
-
-        return newBoardTask
-    }
-
-    // MARK: - CompoundChildren
-
-    /// Fetch every non-deleted compound_children row in the workspace.
-    /// Used by the derivation pass to find transitive parent compounds and
-    /// build the childrenByCompound map fed into computeBoardStatsUpdate.
-    func fetchAllCompoundChildren() throws -> [CompoundChild] {
-        return try read { db in
-            try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-        }
-    }
-
-    /// Fetch the parent compound Tasks that reference the given task as a child
-    /// (via non-deleted compound_children rows where childTaskId == taskId).
-    /// Returns de-duplicated, non-deleted Task rows ordered by title.
-    ///
-    /// - Parameter taskId: The child task's ID.
-    /// - Returns: Non-deleted compound Task rows that are parents of this task.
-    func fetchCompoundParents(forTaskId taskId: String) throws -> [Task] {
-        return try read { db in
-            let links = try CompoundChild
-                .filter(Column("childTaskId") == taskId && Column("isDeleted") == false)
-                .fetchAll(db)
-            let parentIds = Array(Set(links.map { $0.compoundTaskId }))
-            guard !parentIds.isEmpty else { return [] }
-            return try Task
-                .filter(parentIds.contains(Column("id")) && Column("isDeleted") == false)
-                .order(Column("title"))
-                .fetchAll(db)
-        }
-    }
-
-    /// Fetch the child Tasks of a compound, ordered by childIndex.
-    /// Returns non-deleted Task rows only; soft-deleted children are excluded.
-    ///
-    /// - Parameter parentTaskId: The parent compound task's ID.
-    /// - Returns: Child Task rows ordered by compound_children.childIndex.
-    func fetchCompoundChildrenTasks(parentTaskId: String) throws -> [Task] {
-        return try read { db in
-            let links = try CompoundChild
-                .filter(Column("compoundTaskId") == parentTaskId && Column("isDeleted") == false)
-                .order(Column("childIndex"))
-                .fetchAll(db)
-            guard !links.isEmpty else { return [] }
-            // Preserve the childIndex ordering: look up tasks and re-sort.
-            let childIds = links.map { $0.childTaskId }
-            let tasks = try Task
-                .filter(childIds.contains(Column("id")) && Column("isDeleted") == false)
-                .fetchAll(db)
-            let taskById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-            return links.compactMap { taskById[$0.childTaskId] }
-        }
-    }
-
-    /// Fetch all non-deleted recurring templates whose seedTaskIds contain the
-    /// given taskId. Soft-deleted tasks are intentionally retained in
-    /// seedTaskIds per the schema, so this query filters only on template
-    /// isDeleted — not on the task's own deletion state.
-    ///
-    /// - Parameter taskId: The task ID to search for.
-    /// - Returns: Non-deleted templates referencing the task.
-    func fetchTemplatesReferencingTask(_ taskId: String) throws -> [RecurringBoardTemplate] {
-        return try read { db in
-            // Fetch all non-deleted templates, then filter in-process.
-            // seedTaskIds is stored as a JSON string; LIKE '%taskId%' would
-            // be a cheaper SQL predicate, but it risks false-positives on
-            // UUID prefix collisions and is harder to read. The template
-            // table is small (tens of rows per user), so in-process filter
-            // is acceptable here.
-            let all = try RecurringBoardTemplate
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-            return all.filter { $0.seedTaskIds.contains(taskId) }
-        }
-    }
-
-    /// Fetch all non-deleted compound_children rows for a single parent compound,
-    /// ordered by childIndex.
-    ///
-    /// - Parameter compoundTaskId: The parent compound task's ID.
-    /// - Returns: All matching children ordered by `childIndex`.
-    func fetchCompoundChildren(compoundTaskId: String) throws -> [CompoundChild] {
-        return try read { db in
-            try CompoundChild
-                .filter(Column("compoundTaskId") == compoundTaskId && Column("isDeleted") == false)
-                .order(Column("childIndex"))
-                .fetchAll(db)
-        }
-    }
-
-    // MARK: - RecurringBoardTemplates (Phase 6.2)
-
-    /// Fetch all non-deleted templates for a user, ordered by `updatedAt desc`.
-    func fetchRecurringBoardTemplates(userId: String) throws -> [RecurringBoardTemplate] {
-        return try read { db in
-            try RecurringBoardTemplate
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .order(Column("updatedAt").desc)
-                .fetchAll(db)
-        }
-    }
-
-    /// Fetch a single template by id (including soft-deleted, for completeness).
-    func fetchRecurringBoardTemplate(id: String) throws -> RecurringBoardTemplate? {
-        return try read { db in
-            try RecurringBoardTemplate.fetchOne(db, key: id)
-        }
-    }
-
-    /// Insert / update a template. The caller is responsible for bumping
-    /// `version` and `updatedAt` (mirror of `saveBoard`).
-    func saveRecurringBoardTemplate(_ template: RecurringBoardTemplate) throws {
-        try write { db in
-            try template.save(db)
-        }
-    }
-
-    /// Soft-delete a template. Spawned boards remain — they're independent
-    /// once spawned (per Phase 6.2 design). Bumps `version` so LWW treats
-    /// the deletion as later-wins.
-    func softDeleteRecurringBoardTemplate(id: String) throws {
-        try write { db in
-            guard var template = try RecurringBoardTemplate.fetchOne(db, key: id) else { return }
-            let now = Self.currentTimestamp()
-            template.isDeleted = true
-            template.deletedAt = now
-            template.updatedAt = now
-            template.version += 1
-            try template.update(db)
-        }
-    }
-
-    // MARK: - DefaultPools (Phase 6.X)
-
-    /// Fetch all non-deleted DefaultPools for a user. Used by the
-    /// Profile editor to render the per-timeframe summary.
-    func fetchDefaultPools(userId: String) throws -> [DefaultPool] {
-        return try read { db in
-            try DefaultPool
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .fetchAll(db)
-        }
-    }
-
-    /// Fetch the (at-most-one) non-deleted DefaultPool for
-    /// `(userId, timeframe)`. Returns nil when the user has no pool for
-    /// this timeframe. Used by the wizard's banner-launch prefill path.
-    func fetchDefaultPool(userId: String, timeframe: Timeframe) throws -> DefaultPool? {
-        return try read { db in
-            try DefaultPool
-                .filter(
-                    Column("userId") == userId
-                        && Column("timeframe") == timeframe.rawValue
-                        && Column("isDeleted") == false
-                )
-                .fetchOne(db)
-        }
-    }
-
-    /// Insert / update a pool. Caller is responsible for bumping
-    /// `version` + `updatedAt` (mirror of `saveRecurringBoardTemplate`).
-    func saveDefaultPool(_ pool: DefaultPool) throws {
-        try write { db in
-            try pool.save(db)
-        }
-    }
-
-    /// Atomic upsert by `(userId, timeframe)`. Preferred UI-side entry
-    /// point — guarantees per-timeframe uniqueness without leaking the
-    /// create-vs-update decision to callers.
-    @discardableResult
-    func upsertDefaultPool(userId: String, timeframe: Timeframe, taskIds: [String]) throws -> DefaultPool {
-        return try write { db in
-            let now = Self.currentTimestamp()
-            if var existing = try DefaultPool
-                .filter(
-                    Column("userId") == userId
-                        && Column("timeframe") == timeframe.rawValue
-                        && Column("isDeleted") == false
-                )
-                .fetchOne(db)
-            {
-                existing.taskIds = taskIds
-                existing.updatedAt = now
-                existing.version += 1
-                try existing.update(db)
-                return existing
-            }
-            let pool = DefaultPool(
-                id: Self.generateUUID(),
-                userId: userId,
-                timeframe: timeframe,
-                taskIds: taskIds,
-                createdAt: now,
-                updatedAt: now,
-                lastSyncedAt: nil,
-                version: 1,
-                isDeleted: false,
-                deletedAt: nil
-            )
-            try pool.insert(db)
-            return pool
-        }
-    }
-
-    /// Soft-delete a DefaultPool. The Profile editor's "Clear pool"
-    /// action calls this — distinct from saving an empty taskIds list
-    /// (which keeps the row, just empties the pool).
-    func softDeleteDefaultPool(id: String) throws {
-        try write { db in
-            guard var pool = try DefaultPool.fetchOne(db, key: id) else { return }
-            let now = Self.currentTimestamp()
-            pool.isDeleted = true
-            pool.deletedAt = now
-            pool.updatedAt = now
-            pool.version += 1
-            try pool.update(db)
-        }
-    }
-
-    // MARK: - Atomic save + sync-enqueue (templates & pools)
-    //
-    // Mirror of `saveTaskAndEnqueueUpdate`: the model write and its
-    // sync-queue item live in ONE transaction so a crash between them
-    // can't leave the local row ahead of Firestore with no recovery.
-
-    /// Save a template and enqueue its sync op atomically. The caller
-    /// bumps `version`/`updatedAt` before calling; `operation` is
-    /// `.create` for the first save, `.update` thereafter.
-    func saveRecurringBoardTemplateAndEnqueue(
-        _ template: RecurringBoardTemplate,
-        operation: SyncOperationType,
-        now: String
-    ) throws {
-        try write { db in
-            try template.save(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "recurringBoardTemplates",
-                entityId: template.id,
-                operationType: operation,
-                payload: template,
-                now: now
-            ).save(db)
-        }
-    }
-
-    /// Soft-delete a template and enqueue the delete op atomically.
-    func softDeleteRecurringBoardTemplateAndEnqueue(id: String, now: String) throws {
-        try write { db in
-            guard var t = try RecurringBoardTemplate.fetchOne(db, key: id) else { return }
-            t.isDeleted = true
-            t.deletedAt = now
-            t.updatedAt = now
-            t.version += 1
-            try t.update(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "recurringBoardTemplates",
-                entityId: t.id,
-                operationType: .delete,
-                payload: t,
-                now: now
-            ).save(db)
-        }
-    }
-
-    /// Atomic upsert by `(userId, timeframe)` + sync-enqueue. Preferred
-    /// UI entry point — guarantees per-timeframe uniqueness AND that the
-    /// change is queued for sync (`saveDefaultPool` does neither).
-    @discardableResult
-    func upsertDefaultPoolAndEnqueue(
-        userId: String,
-        timeframe: Timeframe,
-        taskIds: [String],
-        now: String
-    ) throws -> DefaultPool {
-        return try write { db in
-            let pool: DefaultPool
-            let op: SyncOperationType
-            if var existing = try DefaultPool
-                .filter(
-                    Column("userId") == userId
-                        && Column("timeframe") == timeframe.rawValue
-                        && Column("isDeleted") == false
-                )
-                .fetchOne(db)
-            {
-                existing.taskIds = taskIds
-                existing.updatedAt = now
-                existing.version += 1
-                try existing.update(db)
-                pool = existing
-                op = .update
-            } else {
-                let fresh = DefaultPool(
-                    id: Self.generateUUID(),
-                    userId: userId,
-                    timeframe: timeframe,
-                    taskIds: taskIds,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastSyncedAt: nil,
-                    version: 1,
-                    isDeleted: false,
-                    deletedAt: nil
-                )
-                try fresh.insert(db)
-                pool = fresh
-                op = .create
-            }
-            try SyncQueueBuilder.makeItem(
-                entityType: "defaultPools",
-                entityId: pool.id,
-                operationType: op,
-                payload: pool,
-                now: now
-            ).save(db)
-            return pool
-        }
-    }
-
-    /// Soft-delete a pool and enqueue the delete op atomically.
-    func softDeleteDefaultPoolAndEnqueue(id: String, now: String) throws {
-        try write { db in
-            guard var pool = try DefaultPool.fetchOne(db, key: id) else { return }
-            pool.isDeleted = true
-            pool.deletedAt = now
-            pool.updatedAt = now
-            pool.version += 1
-            try pool.update(db)
-            try SyncQueueBuilder.makeItem(
-                entityType: "defaultPools",
-                entityId: pool.id,
-                operationType: .delete,
-                payload: pool,
-                now: now
-            ).save(db)
-        }
-    }
-
-    // MARK: - ProgressCounters
-
-    func fetchProgressCounters(userId: String) throws -> [ProgressCounter] {
-        return try read { db in
-            try ProgressCounter
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .order(Column("name"))
-                .fetchAll(db)
-        }
-    }
-
-    func saveProgressCounter(_ counter: ProgressCounter) throws {
-        try write { db in
-            try counter.save(db)
-        }
-    }
-
-    // MARK: - Users
-
-    func fetchUser(id: String) throws -> User? {
-        return try read { db in
-            try User.fetchOne(db, key: id)
-        }
-    }
-
-    func saveUser(_ user: User) throws {
-        try write { db in
-            try user.save(db)
-        }
-    }
-
-    /// Atomically merges a partial preferences update into the authenticated
-    /// user's row, bumps `version` + `updatedAt`, and enqueues a sync queue
-    /// UPDATE item for the `users` entity. The write and its sync-queue entry
-    /// share a single GRDB transaction so they can't drift out of step.
-    ///
-    /// - Parameters:
-    ///   - userId: The User row to update.
-    ///   - transform: Receives the current `UserPreferences` and returns the
-    ///     new value. Using a closure (rather than a partial struct) keeps the
-    ///     merge logic at the call site explicit.
-    /// - Returns: The updated User row, or `nil` if no such row exists.
-    @discardableResult
-    func updateUserPreferences(
-        userId: String,
-        transform: (UserPreferences) -> UserPreferences
-    ) throws -> User? {
-        return try write { db -> User? in
-            guard var user = try User.fetchOne(db, key: userId) else { return nil }
-
-            let current = user.decodedPreferences
-            let next = transform(current)
-
-            user.preferences = User.encodePreferences(next)
-            user.version += 1
-            user.updatedAt = Self.currentTimestamp()
-            try user.save(db)
-
-            // Encode the full user record as the sync payload. Propagating
-            // any encoding error (rather than falling back to an empty "{}"
-            // blob) keeps a malformed push from silently enqueuing and
-            // pushing an invalid document — the caller sees the real
-            // failure and the transaction rolls back, preserving local
-            // state.
-            let data = try JSONEncoder().encode(user)
-            guard let payload = String(data: data, encoding: .utf8) else {
-                throw AppDatabaseError.payloadEncoding(
-                    "Failed to convert encoded user payload to UTF-8 for sync queue item"
-                )
-            }
-
-            let syncItem = SyncQueueItem(
-                id: Self.generateUUID(),
-                entityType: "users",
-                entityId: userId,
-                operationType: .update,
-                payload: payload,
-                status: .pending,
-                retryCount: 0,
-                lastError: nil,
-                createdAt: user.updatedAt,
-                lastAttemptAt: nil,
-                completedAt: nil,
-                priority: 1
-            )
-            try syncItem.save(db)
-
-            return user
-        }
-    }
-
-    // MARK: - SyncQueue
-
-    func fetchPendingSyncItems() throws -> [SyncQueueItem] {
-        return try read { db in
-            try SyncQueueItem
-                .filter(Column("status") == SyncStatus.pending.rawValue)
-                .order(Column("priority").desc, Column("createdAt"))
-                .fetchAll(db)
-        }
-    }
-
-    func saveSyncItem(_ item: SyncQueueItem) throws {
-        try write { db in
-            try item.save(db)
-        }
-    }
-
-    func deleteSyncItem(id: String) throws {
-        try write { db in
-            try SyncQueueItem.deleteOne(db, key: id)
-        }
-    }
-
-    /// Reset sync queue items left in `inProgress` from a force-quit
-    /// or crashed push back to `pending`. Mirrors the equivalent reset
-    /// at the top of the web `pushSync`.
-    ///
-    /// Only items whose `lastAttemptAt` is older than `staleAfter`
-    /// (default 60 s) are reset, so a concurrent push currently
-    /// processing an item won't have its row yanked out from under it.
-    /// 60 s is a generous upper bound on how long a single Firestore
-    /// write should take; anything older is genuinely stuck.
-    ///
-    /// `SyncService.pushSync` also has an `isSyncing` guard preventing
-    /// concurrent pushes, but this staleness check is belt-and-
-    /// suspenders for the case where `pushSync` is called from
-    /// `fullSync` while another caller is mid-flight (rare, but the
-    /// MainActor reentrancy model allows it via async suspension).
-    @discardableResult
-    func resetStaleInProgressSyncItems(staleAfter: TimeInterval = 60) throws -> Int {
-        let cutoff = Date().addingTimeInterval(-staleAfter)
-        let cutoffISO = Self.isoFormatter.string(from: cutoff)
-
-        return try write { db in
-            let inProgress = try SyncQueueItem
-                .filter(Column("status") == SyncStatus.inProgress.rawValue)
-                .fetchAll(db)
-
-            var resetCount = 0
-            for var item in inProgress {
-                // No lastAttemptAt = item entered IN_PROGRESS before that
-                // field was tracked (or via direct write); treat as stale.
-                let isStale: Bool
-                if let lastAttemptAt = item.lastAttemptAt {
-                    isStale = lastAttemptAt < cutoffISO
-                } else {
-                    isStale = true
-                }
-                guard isStale else { continue }
-
-                item.status = .pending
-                try item.save(db)
-                resetCount += 1
-            }
-            return resetCount
-        }
-    }
-
-    /// Promote FAILED sync queue items back to `pending` when their
-    /// exponential-backoff window has elapsed and they're under the
-    /// retry cap. Items at or above `MAX_SYNC_RETRIES` are left FAILED
-    /// indefinitely; they require a fresh enqueue or a manual retry
-    /// from the playground SyncDashboard.
-    ///
-    /// Called at the top of `SyncService.pushSync`. The GRDB
-    /// `ValueObservation` on PENDING count re-fires when items are
-    /// promoted, which triggers the push-on-enqueue debounce — so
-    /// promotion implicitly schedules a fresh push without an explicit
-    /// kick.
-    @discardableResult
-    func promoteEligibleFailedSyncItems() throws -> Int {
-        let nowMs = Int(Date().timeIntervalSince1970 * 1000)
-        return try write { db in
-            let failed = try SyncQueueItem
-                .filter(Column("status") == SyncStatus.failed.rawValue)
-                .fetchAll(db)
-
-            var promoted = 0
-            for var item in failed {
-                if item.retryCount >= SyncRetry.maxRetries { continue }
-                let lastAttemptAtMs: Int? = item.lastAttemptAt
-                    .flatMap { Self.parseISO8601($0) }
-                    .map { Int($0.timeIntervalSince1970 * 1000) }
-                guard SyncRetry.isFailedItemEligibleForRetry(
-                    retryCount: item.retryCount,
-                    lastAttemptAtMs: lastAttemptAtMs,
-                    nowMs: nowMs
-                ) else { continue }
-
-                item.status = .pending
-                item.lastError = nil
-                try item.save(db)
-                promoted += 1
-            }
-            return promoted
-        }
-    }
-}
-
-// MARK: - Sync Queries
-
-extension AppDatabase {
-    /// Fetch entities that need syncing (modified since last sync)
-    func fetchUnsyncedBoards(userId: String) throws -> [Board] {
-        return try read { db in
-            try Board
-                .filter(Column("userId") == userId)
-                .filter(Column("updatedAt") > Column("lastSyncedAt") || Column("lastSyncedAt") == nil)
-                .fetchAll(db)
-        }
-    }
-
-    /// Mark entity as synced
-    func markBoardSynced(id: String) throws {
-        try write { db in
-            var board = try Board.fetchOne(db, key: id)
-            board?.lastSyncedAt = Self.currentTimestamp()
-            try board?.update(db)
-        }
-    }
-}
-
-// MARK: - Cross-Board Queries (for Achievements)
-
-extension AppDatabase {
-    /// Count boards with at least one bingo by timeframe
-    func countBingos(userId: String, timeframe: Timeframe) throws -> Int {
-        return try read { db in
-            try Board
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .filter(Column("timeframe") == timeframe.rawValue)
-                .filter(Column("linesCompleted") > 0)
-                .fetchCount(db)
-        }
-    }
-
-    /// Count completed boards by timeframe
-    func countCompletedBoards(userId: String, timeframe: Timeframe) throws -> Int {
-        return try read { db in
-            try Board
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .filter(Column("timeframe") == timeframe.rawValue)
-                .filter(Column("status") == BoardStatus.completed.rawValue)
-                .fetchCount(db)
-        }
-    }
-
-}
-
-// MARK: - Utilities
-
-extension AppDatabase {
-    /// Generate UUID for new entities
-    static func generateUUID() -> String {
-        return UUID().uuidString.lowercased()
-    }
-
-    /// Shared ISO8601 formatter. `ISO8601DateFormatter` is expensive
-    /// to instantiate (~10–50ms on first use) and identical across
-    /// every call site that just wants `Date.now` in ISO8601 — hoist
-    /// it to a single static so write transactions don't pay the cost
-    /// per row. `Foundation` documents the type as thread-safe.
-    private static let isoFormatter = ISO8601DateFormatter()
-
-    /// Get current ISO8601 timestamp.
-    static func currentTimestamp() -> String {
-        return isoFormatter.string(from: Date())
-    }
-
-    /// Parse an ISO8601 string back to a `Date` (or nil). Used by the
-    /// sync-pull validators.
-    static func parseISO8601(_ s: String) -> Date? {
-        return isoFormatter.date(from: s)
-    }
-
-    /// Errors raised by `AppDatabase` operations.
-    enum AppDatabaseError: LocalizedError {
-        /// A payload that was encoded by `JSONEncoder` couldn't be converted
-        /// to a UTF-8 string for storage as a sync-queue item.
-        case payloadEncoding(String)
-
-        var errorDescription: String? {
-            switch self {
-            case .payloadEncoding(let msg): return msg
-            }
-        }
     }
 }

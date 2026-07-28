@@ -117,12 +117,209 @@ enum DerivationPass {
         boardTasksOnBoard: [BoardTask],
         childrenByCompound: [String: [CompoundChild]],
         taskById: [String: Task],
-        allBoards: [Board] = []
+        allBoards: [Board] = [],
+        windowContext: WindowEvaluationContext?
     ) -> BoardStatsUpdate {
+        let built = computeBoardGrid(
+            board: board,
+            boardTasksOnBoard: boardTasksOnBoard,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            allBoards: allBoards,
+            windowContext: windowContext
+        )
+
+        let detection = BingoDetection.detectBingos(completionGrid: built.grid, gridSize: board.boardSize)
+        let previous = Set(board.completedLineIds ?? [])
+        let current = Set(detection.completedLines)
+        let newBingos = detection.completedLines.filter { !previous.contains($0) }
+        let lostBingos = (board.completedLineIds ?? []).filter { !current.contains($0) }
+
+        return BoardStatsUpdate(
+            boardId: board.id,
+            completedTasks: built.completedTasks,
+            linesCompleted: detection.completedLines.count,
+            completedLineIds: detection.completedLines,
+            newBingos: newBingos,
+            lostBingos: lostBingos
+        )
+    }
+
+    /// Re-derive the set of green cell indexes (`row * size + col`) for a board
+    /// from the (windowed or lifetime) task state — the pure input to a sealed
+    /// board's `sealedCompletedCells` snapshot (docs §Seal snapshots re-derive
+    /// from the event union). Deterministic: the same converged event union
+    /// yields the same cells on any device, so sealing never LWW-races.
+    ///
+    /// Swift twin of `computeSealedCompletedCells` in derivationPass.ts. Sealing
+    /// itself (Board schema fields, the seal transaction, the pull-path
+    /// re-derivation hook) lands in PR C; this builder is the shared kernel it
+    /// and the migration's expired-board sealing call.
+    ///
+    /// - Parameters:
+    ///   - board: The board to snapshot.
+    ///   - boardTasksOnBoard: All BoardTask rows for this board.
+    ///   - childrenByCompound: Map of compoundTaskId → CompoundChild rows.
+    ///   - taskById: Map of taskId → Task.
+    ///   - allBoards: Cross-board context (achievement watchers).
+    ///   - windowContext: Optional windowed-event context; omitted = lifetime.
+    /// - Returns: Ascending cell indexes that are green.
+    static func computeSealedCompletedCells(
+        board: Board,
+        boardTasksOnBoard: [BoardTask],
+        childrenByCompound: [String: [CompoundChild]],
+        taskById: [String: Task],
+        allBoards: [Board] = [],
+        windowContext: WindowEvaluationContext?
+    ) -> [Int] {
+        let built = computeBoardGrid(
+            board: board,
+            boardTasksOnBoard: boardTasksOnBoard,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            allBoards: allBoards,
+            windowContext: windowContext
+        )
+        var cells: [Int] = []
+        for i in 0..<built.grid.count where built.grid[i] { cells.append(i) }
+        return cells
+    }
+
+    // MARK: - Board-integrity PR-3: per-cell resolution (the unified kernel)
+
+    /// Board-integrity PR-3 (issue #360) — per-cell achievement-badge inputs
+    /// attached to a `CellState` when the cell's Task is ACHIEVEMENT-typed
+    /// and carries a reference (`referencedBoardId` XOR `referencedTemplateId`).
+    ///
+    /// Deliberately carries only the RAW ids/counts the kernel already
+    /// computed while resolving `isCompleted` — NOT display names. Both
+    /// platforms' render layers already maintain their own board/template
+    /// lookup maps (for other reasons); adding a `RecurringBoardTemplate`
+    /// list just to resolve a label string here would widen this beyond a
+    /// cosmetic lookup the caller can do in one line from data it already
+    /// has. See `BoardPlayView.achievementBadge(for:)` for the thin
+    /// name-resolution step built on top of these ids. Mirrors the TS
+    /// `AchievementCellBadge`.
+    struct AchievementCellBadge: Equatable {
+        enum Mode: String, Equatable {
+            case specificBoard
+            case recurringTemplate
+        }
+
+        let mode: Mode
+        /// Specific-board mode only.
+        let referencedBoardId: String?
+        /// Specific-board mode only — whether the referenced board (if it
+        /// still exists and isn't soft-deleted) currently meets the Task's
+        /// trigger.
+        let referencedBoardCompleted: Bool?
+        /// Recurring-template mode only.
+        let referencedTemplateId: String?
+        /// Recurring-template mode only — count of in-window spawns meeting
+        /// the trigger (0 when the in-window spawn set is empty).
+        let templateInWindowMet: Int?
+        /// Recurring-template mode only — the Task's `requiredCount` (0 if unset).
+        let templateRequiredCount: Int?
+    }
+
+    /// Board-integrity PR-3 (issue #360) — one per-cell resolution result
+    /// from `computeBoardGrid`, one entry per surviving `BoardTask`
+    /// placement (i.e. NOT the odd-board FREE/CUSTOM_FREE center auto-fill,
+    /// which is not a placement and has no BoardTask/Task id to key on).
+    ///
+    /// This is the single per-cell "is this done, and if it's an
+    /// achievement square what is it watching" resolution both platforms'
+    /// render surfaces (play grid, board-preview mini-grid, achievement
+    /// badge) now read instead of hand-mirroring the branch order
+    /// themselves. Mirrors the TS `CellState`.
+    struct CellState: Equatable {
+        let boardTaskId: String
+        let taskId: String
+        let row: Int
+        let col: Int
+        /// Flat index (`row * boardSize + col`) — matches `grid`'s indexing
+        /// and `Board.sealedCompletedCells`'s encoding.
+        let idx: Int
+        /// Exactly the boolean this placement contributed to `grid[idx]` —
+        /// for a cell a later duplicate placement lost to (the `grid[idx]`
+        /// dup-guard), no CellState is emitted at all.
+        let isCompleted: Bool
+        /// Present only when the Task is ACHIEVEMENT-typed and carries a
+        /// reference. Absent for every other cell, and for a reference-less
+        /// ACHIEVEMENT Task (degrades to incomplete, no badge — write-time
+        /// validation should already reject that shape).
+        let achievement: AchievementCellBadge?
+
+        init(
+            boardTaskId: String,
+            taskId: String,
+            row: Int,
+            col: Int,
+            idx: Int,
+            isCompleted: Bool,
+            achievement: AchievementCellBadge? = nil
+        ) {
+            self.boardTaskId = boardTaskId
+            self.taskId = taskId
+            self.row = row
+            self.col = col
+            self.idx = idx
+            self.isCompleted = isCompleted
+            self.achievement = achievement
+        }
+    }
+
+    /// Shared grid builder for `computeBoardStatsUpdate` +
+    /// `computeSealedCompletedCells` — and, as of Board-integrity PR-3
+    /// (issue #360), the ONE per-cell resolver both platforms' render
+    /// surfaces (play grid, board-preview mini-grid, achievement badge)
+    /// call into directly instead of hand-mirroring this branch order
+    /// themselves. Not `private`: `BoardPlayView` / `BoardPreviewCells` call
+    /// it directly so the ACHIEVEMENT branch has exactly one implementation.
+    ///
+    /// Returns the completion grid plus the `completedTasks` tally computed
+    /// with the exact same increment logic both callers historically used,
+    /// PLUS `cells` — a `CellState` per surviving BoardTask placement (see
+    /// that type's docs). `grid`/`completedTasks` are computed by the EXACT
+    /// same code path as before PR-3 (only additionally recorded into a
+    /// `cells` entry) — this widening is additive and byte-identical for
+    /// those two fields. When `windowContext` is `nil` the resolution is
+    /// byte-identical to the pre-Windowed-Completion behavior (lifetime
+    /// `isCompleted` cache); when present, primitive squares resolve against
+    /// the board's window via events and derived-counting squares stay on
+    /// their cache (the carve-out). Mirrors the TS `computeBoardGrid`.
+    static func computeBoardGrid(
+        board: Board,
+        boardTasksOnBoard: [BoardTask],
+        childrenByCompound: [String: [CompoundChild]],
+        taskById: [String: Task],
+        allBoards: [Board],
+        windowContext: WindowEvaluationContext?
+    ) -> (grid: [Bool], completedTasks: Int, cells: [CellState]) {
         let size = board.boardSize
         let totalSquares = size * size
         var grid = Array(repeating: false, count: totalSquares)
         var completedTasks = 0
+        var cells: [CellState] = []
+        cells.reserveCapacity(boardTasksOnBoard.count)
+
+        // Window context for compound + primitive resolution. `board.startDate`
+        // is the window lower bound `[startDate, ∞)`; indefinite boards use it
+        // too. Nil when no windowContext (lifetime = today's behavior).
+        let compoundCtx: CompoundWindowContext? = windowContext.map {
+            CompoundWindowContext(windowStart: board.startDate, eventsByTaskId: $0.eventsByTaskId)
+        }
+
+        /// Resolve a primitive (normal / counting) square, windowed or lifetime.
+        func resolvePrimitive(_ t: Task) -> Bool {
+            guard let windowContext else { return t.isCompleted }
+            // Derived-task carve-out: shared-counter-linked counting squares
+            // keep their propagation-stamped lifetime cache (docs §Derived-task
+            // carve-out rule 4).
+            if !isEventOwningTask(t) { return t.isCompleted }
+            let events = windowContext.eventsByTaskId[t.id] ?? []
+            return resolveTaskWindowState(task: t, events: events, windowStart: board.startDate).isCompleted
+        }
 
         // Phase 6.3: index all non-deleted boards by id (specific-board
         // mode) and by spawnedFromTemplateId (recurring-template mode).
@@ -147,8 +344,26 @@ enum DerivationPass {
 
         for bt in boardTasksOnBoard {
             guard let task = taskById[bt.taskId], !task.isDeleted else { continue }
+
+            // Bounds guard: `BoardTaskSchema` only enforces `min(0)` on row/col,
+            // so a malformed placement (e.g. `row=0, col=7` on a 5×5) would
+            // otherwise alias into a WRONG cell via `row * size + col`. Skip
+            // out-of-range placements entirely; the flat-index guard below stays
+            // as defense-in-depth. Mirrors the TS `computeBoardGrid`.
+            if bt.row >= size || bt.col >= size { continue }
+
             let idx = bt.row * size + bt.col
             if idx < 0 || idx >= totalSquares { continue }
+
+            // Duplicate-placement guard: `completedTasks` counts per CELL, not
+            // per placement row. Two placements on one cell (possible via
+            // offline sync union — there is no (board,row,col) uniqueness
+            // constraint) must not double-count toward the greenlog predicate
+            // (`completedTasks >= size²`). Skipping an already-true cell is
+            // also order-independent: the cell is green iff ANY of its
+            // placements resolves complete, counted once. Mirrors the TS
+            // `computeBoardGrid`.
+            if grid[idx] { continue }
 
             // Phase 6.3 — ACHIEVEMENT-typed Tasks are cross-board watchers.
             // The backing Task carries the reference fields (board XOR
@@ -182,10 +397,28 @@ enum DerivationPass {
                     // non-deleted. requiredCount is ignored here (the
                     // named board is either done or not).
                     buildBoardIndexes()
-                    if let ref = boardById?[refBoardId], meets(ref) {
+                    let ref = boardById?[refBoardId]
+                    let refCompleted = ref.map(meets) ?? false
+                    if refCompleted {
                         grid[idx] = true
                         completedTasks += 1
                     }
+                    cells.append(CellState(
+                        boardTaskId: bt.id,
+                        taskId: task.id,
+                        row: bt.row,
+                        col: bt.col,
+                        idx: idx,
+                        isCompleted: refCompleted,
+                        achievement: AchievementCellBadge(
+                            mode: .specificBoard,
+                            referencedBoardId: refBoardId,
+                            referencedBoardCompleted: refCompleted,
+                            referencedTemplateId: nil,
+                            templateInWindowMet: nil,
+                            templateRequiredCount: nil
+                        )
+                    ))
                     continue
                 }
 
@@ -209,19 +442,48 @@ enum DerivationPass {
                             endDate: board.endDate
                         )
                     }
-                    if inWindow.isEmpty { continue }
+                    // `metCount` is computed regardless of whether inWindow
+                    // is empty (naturally 0 in that case) so the badge
+                    // always carries an honest "M/N" pair.
                     let metCount = inWindow.filter(meets).count
                     let required = task.requiredCount ?? 0
-                    if required > 0 && metCount >= required {
+                    let templateDone = !inWindow.isEmpty && required > 0 && metCount >= required
+                    if templateDone {
                         grid[idx] = true
                         completedTasks += 1
                     }
+                    cells.append(CellState(
+                        boardTaskId: bt.id,
+                        taskId: task.id,
+                        row: bt.row,
+                        col: bt.col,
+                        idx: idx,
+                        isCompleted: templateDone,
+                        achievement: AchievementCellBadge(
+                            mode: .recurringTemplate,
+                            referencedBoardId: nil,
+                            referencedBoardCompleted: nil,
+                            referencedTemplateId: refTemplateId,
+                            templateInWindowMet: metCount,
+                            templateRequiredCount: required
+                        )
+                    ))
                     continue
                 }
 
                 // No reference set → incomplete (achievement Task lacking
                 // the XOR value should have been rejected at write time;
-                // degrade safely).
+                // degrade safely). No badge data either — matches the
+                // "cell renders as regular task" fallback render surfaces
+                // already relied on.
+                cells.append(CellState(
+                    boardTaskId: bt.id,
+                    taskId: task.id,
+                    row: bt.row,
+                    col: bt.col,
+                    idx: idx,
+                    isCompleted: false
+                ))
                 continue
             }
 
@@ -230,11 +492,21 @@ enum DerivationPass {
                 isDone = CompoundEvaluation.evaluate(
                     compound: task,
                     childrenByCompound: childrenByCompound,
-                    taskById: taskById
+                    taskById: taskById,
+                    windowContext: compoundCtx
                 )
             } else {
-                isDone = task.isCompleted
+                isDone = resolvePrimitive(task)
             }
+            cells.append(CellState(
+                boardTaskId: bt.id,
+                taskId: task.id,
+                row: bt.row,
+                col: bt.col,
+                idx: idx,
+                isCompleted: isDone,
+                achievement: nil
+            ))
             if isDone {
                 grid[idx] = true
                 completedTasks += 1
@@ -254,22 +526,13 @@ enum DerivationPass {
                 && !grid[centerIdx] {
                 grid[centerIdx] = true
                 completedTasks += 1
+                // No CellState emitted — the FREE center auto-fill is not a
+                // BoardTask placement (no boardTaskId/taskId to key on).
+                // Mirrors the TS `computeBoardGrid`, which also does not
+                // push into `cells` here.
             }
         }
 
-        let detection = BingoDetection.detectBingos(completionGrid: grid, gridSize: size)
-        let previous = Set(board.completedLineIds ?? [])
-        let current = Set(detection.completedLines)
-        let newBingos = detection.completedLines.filter { !previous.contains($0) }
-        let lostBingos = (board.completedLineIds ?? []).filter { !current.contains($0) }
-
-        return BoardStatsUpdate(
-            boardId: board.id,
-            completedTasks: completedTasks,
-            linesCompleted: detection.completedLines.count,
-            completedLineIds: detection.completedLines,
-            newBingos: newBingos,
-            lostBingos: lostBingos
-        )
+        return (grid, completedTasks, cells)
     }
 }

@@ -1,8 +1,20 @@
-import { AchievementTrigger, TaskType, type Board, type RecurringBoardTemplate, type Task } from '@oybc/shared';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AchievementTrigger,
+  TaskType,
+  findLinkableCounter,
+  generateCounterTaskTitle,
+  type Board,
+  type RecurringBoardTemplate,
+  type Task,
+} from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
 import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
-import { CountingTemplatePicker } from '../../components/wizard/CountingTemplatePicker';
-import { useBoards, useRecurringBoardTemplates } from '../../hooks';
+import {
+  CountingTemplatePicker,
+  type LinkedCounterInput,
+} from '../../components/wizard/CountingTemplatePicker';
+import { useBoards, useRecurringBoardTemplates, useTasks } from '../../hooks';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
 import {
   type UseCreateFormState,
@@ -12,6 +24,10 @@ import {
   UNIT_MAX_LENGTH,
 } from './useCreateFormState';
 import styles from './CreateNewTaskForm.module.css';
+
+// Stable empty fallback for `?? FALLBACK` — see BoardPlayPage.tsx for
+// rationale (a fresh `[]` literal on every render defeats useMemo below).
+const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 
 const TASK_TYPES: { value: TaskType; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
@@ -30,9 +46,13 @@ const TASK_TYPES: { value: TaskType; label: string }[] = [
  * comes from `useCreateFormState` via the `form` prop.
  *
  * Kept as a pure presentation component — no data-layer calls, no
- * DB imports. The `onCompositeCreated` callback lets the parent decide
- * what to do when a composite is built (typically: flash a success
- * toast directing the user to the Existing Tasks tab).
+ * DB imports (the `useTasks` live-query hook is fine — it's the same
+ * boundary `CountingTemplatePicker`'s `useTaskLibrary` already crosses;
+ * neither reaches for a raw Dexie import).
+ *
+ * The `onCompositeCreated` callback lets the parent decide what to do
+ * when a composite is built (typically: flash a success toast directing
+ * the user to the Existing Tasks tab).
  */
 export interface CreateNewTaskFormProps {
   form: UseCreateFormState;
@@ -41,6 +61,26 @@ export interface CreateNewTaskFormProps {
   onCompositeCreated: (task: Task) => void;
   /** Label for the submit button. Defaults to the legacy pool-flow wording. */
   submitLabel?: string;
+  /**
+   * R1 counters refresh — called instead of `form.handleSubmit` when the
+   * counting-task submit auto-links to a matched counter (exact (verb,
+   * noun) pair match, not opted out via "Don't link"). When omitted, the
+   * form falls back to a plain (unlinked) create even when a match exists
+   * — useful for contexts where linked-counter creation isn't wired yet.
+   */
+  onCreateLinked?: (input: LinkedCounterInput) => void;
+  /**
+   * R1 counters refresh (review fix) — unfiltered task pool (persisted +
+   * the wizard session's in-memory pending tasks) used only for the
+   * counter-link auto-link match. Without this, a counting task created
+   * earlier in the same wizard visit (still pending, not yet in `useTasks`)
+   * wouldn't be linkable — a same-pair follow-up create would silently
+   * duplicate instead of linking (iOS already merges pending tasks into its
+   * match pool via `effectiveSuggestionPool`). Defaults to the live
+   * `useTasks` pool when omitted (non-wizard hosts, e.g. Tasks-tab), so
+   * behavior there is unchanged.
+   */
+  suggestionPool?: Task[];
 }
 
 export function CreateNewTaskForm({
@@ -48,6 +88,8 @@ export function CreateNewTaskForm({
   userId,
   onCompositeCreated,
   submitLabel = 'Create & Add to Pool',
+  onCreateLinked,
+  suggestionPool,
 }: CreateNewTaskFormProps): React.ReactElement {
   // Phase 6.3 — Workspace lookups for the Achievement-task picker.
   // Both hooks return non-deleted rows for `userId` (or `[]` while
@@ -55,6 +97,91 @@ export function CreateNewTaskForm({
   // when neither list has eligible entries.
   const boards: Board[] = useBoards(userId) ?? [];
   const templates: RecurringBoardTemplate[] = useRecurringBoardTemplates(userId) ?? [];
+
+  // R1 counters refresh — auto-link. `tasks` feeds `findLinkableCounter`
+  // (needs the full live pool, same source CountingTemplatePicker's own
+  // `useTaskLibrary` reads) and resolves the matched source Task at submit
+  // time for `LinkedCounterInput.source`.
+  //
+  // `suggestionPool` (wizard callers only) additionally merges in this
+  // session's pending tasks — falls back to the plain live `tasks` pool
+  // when omitted (e.g. Tasks-tab standalone usage) so behavior there is
+  // unchanged.
+  const tasks = useTasks(userId) ?? EMPTY_TASKS;
+  const matchPool = suggestionPool ?? tasks;
+  const trimmedAction = form.action.trim();
+  const trimmedUnit = form.unit.trim();
+  const parsedMaxCount = parseInt(form.maxCountStr, 10);
+  const goalValid = Number.isInteger(parsedMaxCount) && parsedMaxCount > 0;
+
+  // "Don't link" opt-out for the current (verb, noun) pair. Resets whenever
+  // the pair changes so a fresh pair always starts linked (mirrors the
+  // retired suggestion card's per-pair dismiss reset).
+  const [linkDisabled, setLinkDisabled] = useState(false);
+  useEffect(() => {
+    setLinkDisabled(false);
+  }, [trimmedAction, trimmedUnit]);
+
+  const counterMatch = useMemo(
+    () =>
+      form.taskType === TaskType.COUNTING && trimmedAction && trimmedUnit
+        ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, matchPool)
+        : null,
+    [form.taskType, trimmedAction, trimmedUnit, matchPool],
+  );
+
+  // Gate on `onCreateLinked` too — without it, submit can't actually honor
+  // the link (see `handleFormSubmit`), so the hint must stay hidden rather
+  // than promise a linking behavior the caller didn't wire up.
+  const linkHint =
+    counterMatch && goalValid && onCreateLinked
+      ? {
+          match: counterMatch,
+          goal: parsedMaxCount,
+          linked: !linkDisabled,
+          onToggle: () => setLinkDisabled((prev) => !prev),
+        }
+      : null;
+
+  /**
+   * Intercepts the native form submit for the auto-link case: when a
+   * counting-task create matches an existing counter and hasn't been
+   * opted out of, route through `onCreateLinked` (start-fresh baseline —
+   * R1's only auto-link mode) instead of `form.handleSubmit`'s plain
+   * (unlinked) create. Every other case — including an invalid/blank goal,
+   * which `form.handleSubmit`'s own validation already surfaces as a field
+   * error — falls through unchanged.
+   */
+  function handleFormSubmit(e: React.FormEvent): void {
+    if (
+      form.taskType === TaskType.COUNTING &&
+      onCreateLinked &&
+      counterMatch &&
+      !linkDisabled &&
+      goalValid
+    ) {
+      e.preventDefault();
+      const sourceTask = matchPool.find((t) => t.id === counterMatch.counterId);
+      if (!sourceTask) {
+        // Match resolved from a stale snapshot (e.g. the source was deleted
+        // between keystrokes) — fall back to a plain create rather than
+        // silently dropping the submit.
+        void form.handleSubmit(e);
+        return;
+      }
+      const finalTitle =
+        form.title.trim() || generateCounterTaskTitle(trimmedAction, parsedMaxCount, trimmedUnit);
+      onCreateLinked({
+        source: sourceTask,
+        maxCount: parsedMaxCount,
+        title: finalTitle,
+        baselineMode: 'startFromZero',
+        baseline: counterMatch.lifetime,
+      });
+      return;
+    }
+    void form.handleSubmit(e);
+  }
 
   return (
     <div className={styles.modeSection}>
@@ -72,7 +199,7 @@ export function CreateNewTaskForm({
       {form.taskType === TaskType.COMPOUND ? (
         <CompositeTaskWizard userId={userId} onCreated={onCompositeCreated} />
       ) : (
-        <form className={styles.form} onSubmit={form.handleSubmit}>
+        <form className={styles.form} onSubmit={handleFormSubmit}>
           {/* Title */}
           <div className={styles.fieldGroup}>
             <label className={styles.label} htmlFor="create-task-title">
@@ -263,21 +390,23 @@ export function CreateNewTaskForm({
           {/* Counting fields */}
           {form.taskType === TaskType.COUNTING && (
             <div className={styles.countingFields}>
-              {/* "Derive from existing" affordance — only when userId is
-                 resolved. Rendering with `userId === undefined` shows a stale
-                 "No counting tasks yet" empty-state during auth load. */}
+              {/* "Derive from existing" affordance + auto-link hint — only
+                 when userId is resolved. Rendering with `userId === undefined`
+                 shows a stale "No counting tasks yet" empty-state during
+                 auth load. */}
               {userId != null && (
                 <CountingTemplatePicker
                   userId={userId}
                   selectedTemplate={form.deriveFromTask}
                   onSelect={form.applyTemplate}
                   onClear={form.clearTemplate}
+                  linkHint={linkHint}
                 />
               )}
 
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-action">
-                  Action<span className={styles.required}>*</span>
+                  Verb<span className={styles.required}>*</span>
                 </label>
                 <input
                   id="create-task-action"
@@ -285,7 +414,7 @@ export function CreateNewTaskForm({
                   className={`${styles.input} ${form.errors.action ? styles.inputError : ''}`}
                   value={form.action}
                   onChange={(e) => form.setAction(e.target.value)}
-                  placeholder='e.g., "Run"'
+                  placeholder="Do"
                   maxLength={ACTION_MAX_LENGTH}
                 />
                 {form.errors.action && <span className={styles.fieldError}>{form.errors.action}</span>}
@@ -301,7 +430,7 @@ export function CreateNewTaskForm({
                   className={`${styles.input} ${form.errors.maxCount ? styles.inputError : ''}`}
                   value={form.maxCountStr}
                   onChange={(e) => form.setMaxCountStr(e.target.value)}
-                  placeholder="e.g., 26"
+                  placeholder="100"
                   min="1"
                 />
                 {form.errors.maxCount && <span className={styles.fieldError}>{form.errors.maxCount}</span>}
@@ -309,7 +438,7 @@ export function CreateNewTaskForm({
 
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="create-task-unit">
-                  Unit<span className={styles.required}>*</span>
+                  Counting<span className={styles.required}>*</span>
                 </label>
                 <input
                   id="create-task-unit"
@@ -317,11 +446,18 @@ export function CreateNewTaskForm({
                   className={`${styles.input} ${form.errors.unit ? styles.inputError : ''}`}
                   value={form.unit}
                   onChange={(e) => form.setUnit(e.target.value)}
-                  placeholder='e.g., "miles"'
+                  placeholder="push-ups"
                   maxLength={UNIT_MAX_LENGTH}
                 />
                 {form.errors.unit && <span className={styles.fieldError}>{form.errors.unit}</span>}
               </div>
+
+              {goalValid && trimmedAction && trimmedUnit && (
+                <div className={styles.titlePreview}>
+                  Title:{' '}
+                  <strong>{generateCounterTaskTitle(trimmedAction, parsedMaxCount, trimmedUnit)}</strong>
+                </div>
+              )}
             </div>
           )}
 

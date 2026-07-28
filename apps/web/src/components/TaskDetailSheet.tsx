@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { db } from '../db/database';
+import { fetchTask } from '../db/operations';
 import { TaskDetailContent } from '../pages/tasks/TaskDetailContent';
 import styles from './TaskDetailSheet.module.css';
 
@@ -105,7 +105,7 @@ function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.React
     setResolved('pending');
     let cancelled = false;
     void (async () => {
-      const row = await db.tasks.get(taskId);
+      const row = await fetchTask(taskId);
       if (cancelled) return;
       if (row === undefined || row.isDeleted) {
         setResolved('missing');
@@ -124,7 +124,7 @@ function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.React
   // a live subscription in a conditionally-rendered component.
   const handleChanged = async () => {
     if (!taskId) return;
-    const row = await db.tasks.get(taskId);
+    const row = await fetchTask(taskId);
     if (!row || row.isDeleted) {
       onClose();
     } else {

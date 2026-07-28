@@ -23,6 +23,21 @@ import GRDB
 ///   the form layer (and validated by the shared Zod schema on pull).
 ///   The model itself accepts them; the spawn path returns
 ///   `unsupported_timeframe` / `unsupported_center` and skips spawn.
+///
+/// - **P1 (Task Pools + Recurring Boards Rework)** generalizes the task
+///   source: `seedTaskIds` is RETIRED (migrated, then decode-compat only —
+///   never read live post-migration; see `PoolMix.swift` +
+///   docs/POOLS_RECURRING.md §Migration "seedTaskIds end state"). The mix
+///   is `poolIds` / `manualTaskIds` / `removedTaskIds`, resolved via
+///   `PoolMix.resolveMix`. All three are **tri-state, null-preserving**
+///   (mirrors `lastSpawnedWindowKey`'s force-encode-null pattern, NOT
+///   `seedTaskIds`'s always-`[]` pattern): `nil` means "genuinely
+///   un-migrated" (the field is absent on the wire); `[]` is a real empty
+///   array. `PoolMix.isLegacyShapedRecord` distinguishes both from a
+///   richer post-P4 shape. `RecurringBoardTemplate` conforms to
+///   `PoolMixSource` (see `PoolMix.swift`) so it can be passed to
+///   `resolveMix` / `clearRemovalsForUntoggle` / `isLegacyShapedRecord`
+///   directly.
 struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     // Identity
     var id: String
@@ -36,6 +51,12 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     var centerSquareCustomName: String?
     var isRandomized: Bool
     var seedTaskIds: [String]
+
+    // P1 — generalized task source (see type doc above). `nil` ⇒ absent on
+    // the wire (genuinely un-migrated); `[]` ⇒ present-but-empty.
+    var poolIds: [String]?
+    var manualTaskIds: [String]?
+    var removedTaskIds: [String]?
 
     // Spawn state
     var lastSpawnedWindowKey: String?
@@ -61,6 +82,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         case id, userId, name, timeframe, boardSize
         case centerSquareType, centerSquareCustomName, isRandomized
         case seedTaskIds
+        case poolIds, manualTaskIds, removedTaskIds
         case lastSpawnedWindowKey, isActive
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
@@ -76,6 +98,9 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         centerSquareCustomName: String? = nil,
         isRandomized: Bool,
         seedTaskIds: [String],
+        poolIds: [String]? = nil,
+        manualTaskIds: [String]? = nil,
+        removedTaskIds: [String]? = nil,
         lastSpawnedWindowKey: String? = nil,
         isActive: Bool,
         createdAt: String,
@@ -94,6 +119,9 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         self.centerSquareCustomName = centerSquareCustomName
         self.isRandomized = isRandomized
         self.seedTaskIds = seedTaskIds
+        self.poolIds = poolIds
+        self.manualTaskIds = manualTaskIds
+        self.removedTaskIds = removedTaskIds
         self.lastSpawnedWindowKey = lastSpawnedWindowKey
         self.isActive = isActive
         self.createdAt = createdAt
@@ -124,6 +152,17 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
             seedTaskIds = []
         }
 
+        // P1 — decode poolIds/manualTaskIds/removedTaskIds tri-state:
+        // column NULL or absent ⇒ nil (genuinely un-migrated); a JSON
+        // string (even "[]") ⇒ that array, distinguishing "no pool yet"
+        // from "not migrated at all". Unlike seedTaskIds (always `[]` on
+        // decode failure), a malformed JSON string here also decodes to
+        // nil rather than `[]` — never silently manufacture a "migrated,
+        // empty" shape from corrupt data.
+        poolIds = Self.decodeOptionalStringArray(container, forKey: .poolIds)
+        manualTaskIds = Self.decodeOptionalStringArray(container, forKey: .manualTaskIds)
+        removedTaskIds = Self.decodeOptionalStringArray(container, forKey: .removedTaskIds)
+
         lastSpawnedWindowKey = try container.decodeIfPresent(String.self, forKey: .lastSpawnedWindowKey)
         isActive = try container.decode(Bool.self, forKey: .isActive)
         createdAt = try container.decode(String.self, forKey: .createdAt)
@@ -132,6 +171,29 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         version = try container.decode(Int.self, forKey: .version)
         isDeleted = try container.decode(Bool.self, forKey: .isDeleted)
         deletedAt = try container.decodeIfPresent(String.self, forKey: .deletedAt)
+    }
+
+    /// Decodes an optional JSON-string TEXT column into `[String]?`,
+    /// preserving the tri-state distinction P1's `poolIds` / `manualTaskIds`
+    /// / `removedTaskIds` need: `nil` when the key is absent/NULL (never
+    /// written a JSON string in the first place) OR the stored string
+    /// fails to parse; the decoded array (possibly `[]`) when a JSON
+    /// string is present and valid. Never manufactures `[]` from a missing
+    /// key — that would collapse "genuinely un-migrated" into "migrated,
+    /// empty", which `PoolMix.isLegacyShapedRecord` depends on being
+    /// distinguishable at the (`nil` poolIds, absent seedTaskIds fallback)
+    /// vs (`poolIds: []`) boundary. Used by all three P1 fields; not
+    /// applicable to `seedTaskIds`, which intentionally always defaults to
+    /// `[]`.
+    private static func decodeOptionalStringArray(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> [String]? {
+        guard let jsonString = (try? container.decodeIfPresent(String.self, forKey: key)) ?? nil,
+              let data = jsonString.data(using: .utf8) else {
+            return nil
+        }
+        return try? JSONDecoder().decode([String].self, from: data)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -152,6 +214,40 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
             try container.encode(jsonString, forKey: .seedTaskIds)
         } else {
             try container.encode("[]", forKey: .seedTaskIds)
+        }
+
+        // P1 — encode poolIds/manualTaskIds/removedTaskIds as JSON-string
+        // TEXT columns (same mechanism as seedTaskIds), but OMIT the key
+        // entirely when nil rather than force-encoding null. Unlike
+        // `lastSpawnedWindowKey` (whose shared Zod type is `string | null`,
+        // a required-but-nullable key), these three are `.optional()` in
+        // the shared Zod schema — `T[] | undefined`, NOT `T[] | null` — so
+        // writing an explicit `null` would fail a peer's pull-side Zod
+        // parse. Omission is what "genuinely un-migrated" means on the
+        // wire, matching the decode side's tri-state contract above.
+        if let poolIds = poolIds {
+            if let data = try? JSONEncoder().encode(poolIds),
+               let jsonString = String(data: data, encoding: .utf8) {
+                try container.encode(jsonString, forKey: .poolIds)
+            } else {
+                try container.encode("[]", forKey: .poolIds)
+            }
+        }
+        if let manualTaskIds = manualTaskIds {
+            if let data = try? JSONEncoder().encode(manualTaskIds),
+               let jsonString = String(data: data, encoding: .utf8) {
+                try container.encode(jsonString, forKey: .manualTaskIds)
+            } else {
+                try container.encode("[]", forKey: .manualTaskIds)
+            }
+        }
+        if let removedTaskIds = removedTaskIds {
+            if let data = try? JSONEncoder().encode(removedTaskIds),
+               let jsonString = String(data: data, encoding: .utf8) {
+                try container.encode(jsonString, forKey: .removedTaskIds)
+            } else {
+                try container.encode("[]", forKey: .removedTaskIds)
+            }
         }
 
         // `lastSpawnedWindowKey` is `String?` on iOS but `string | null`

@@ -1,51 +1,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import {
   AchievementTrigger,
   BoardStatus,
   CenterSquareType,
-  SyncOperationType,
   TaskType,
   generateCounterTaskTitle,
-  isWithinTimeframe,
   type Board,
-  type RecurringBoardTemplate,
   type Task,
   type TaskStep,
-  type BoardTask,
 } from '@oybc/shared';
-import { useBoardTasks, useBoards, useRecurringBoardTemplates } from '../hooks';
-import { useTaskLibrary } from '../pages/createPage/useTaskLibrary';
-import { db } from '../db/database';
+import {
+  useBoardPlayData,
+  useBoardPlay,
+  useCounterArrivals,
+  type FlashVariant,
+  type CreditedToast,
+} from '../hooks';
 import { taskToSquareData, taskToSquareState } from '../db/adapters';
-import { handleTaskCompletion, runBoardCascadeForTask } from '../db/operations/orchestration';
-import { addToSyncQueue } from '../db/operations/syncQueue';
-import { incrementSharedCounter } from '../db/operations/tasks';
-import { updateBoardTaskAndCascade, removeBoardTaskFromBoard, addBoardTaskToBoard, reorderBoardTasks } from '../db/operations/boardTasks';
-import { updateTaskAndCascade, type UpdateTaskPatch } from '../db/operations/tasks';
 import {
   DetailModal,
   FloatingContextMenu,
-  type AchievementSquareBadgeData,
 } from './InteractiveTaskSquare';
 import type { ContextMenuState } from './interactiveTaskSquareUtils';
+import {
+  resolveSharedCounterDefaultAmount,
+  resolveSharedCounterSourceId,
+} from './boardPlaySharedCounterUtils';
+import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
 import { CellSwapModal } from './CellSwapModal';
 import { BoardStatusBadge } from './BoardStatusBadge';
+import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
-import { isBoardExpired } from '../utils/boardDisplayUtils';
 import { formatDisplayDate } from '../utils/dateFormat';
-import { BoardEditPanel, type SubMode } from './boardEdit/BoardEditPanel';
-import { ArrangeGrid, type ArrangeSlot } from './boardEdit/ArrangeGrid';
+import { BoardEditPanel } from './boardEdit/BoardEditPanel';
+import { ArrangeGrid } from './boardEdit/ArrangeGrid';
 import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
-import { computeStreak, getHighlightedSquares } from '@oybc/shared';
+import { compactStreakLabel, computeStreak, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
 import { RisoIcon } from './riso';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
+import { CounterLogToast } from './counters/CounterLogToast';
+import { RisoArrivalBanner } from './play/RisoArrivalBanner';
+import { ShareBoardSheet } from './share/ShareBoardSheet';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
 
@@ -53,48 +54,26 @@ import play from './play/Play.module.css';
 
 const FLASH_MS = 3000;
 
-// Module-scoped frozen empty arrays. Reused as a stable fallback for
-// `useLiveQuery(...) ?? FALLBACK` so React Compiler can preserve memoization
-// of downstream useCallback/useMemo deps; an inline `?? []` re-allocates on
-// every render and trips `react-hooks/preserve-manual-memoization`. Typed as
-// the mutable element array because consumers (legacy step helpers) require
-// `T[]`, not `readonly T[]`; the runtime frozen array still throws on mutation.
-const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
+/**
+ * Core timeframes that carry a streak. Used to gate the share poster's
+ * STREAK stat — CUSTOM / INDEFINITE boards have no streak. The label itself
+ * is formatted by the shared `compactStreakLabel` so the suffix ("mo" for
+ * monthly) matches the rest of the app (CoreBoardWindowBar, StreaksPage).
+ */
+const CORE_STREAK_TIMEFRAMES = new Set<string>(['daily', 'weekly', 'monthly', 'yearly']);
+
+// Module-scoped frozen empty array. Reused as a stable fallback so React
+// Compiler can preserve memoization of downstream useCallback/useMemo deps;
+// an inline `?? []` re-allocates on every render and trips
+// `react-hooks/preserve-manual-memoization`. Typed as the mutable element
+// array because consumers (legacy step helpers) require `T[]`, not
+// `readonly T[]`; the runtime frozen array still throws on mutation.
 const EMPTY_TASK_STEPS = Object.freeze([]) as unknown as TaskStep[];
-// Phase 6.3 — frozen empty fallbacks for the workspace-wide board /
-// template hooks. Same pattern as EMPTY_BOARD_TASKS above (preserves
-// React Compiler memoization of downstream deps).
-const EMPTY_BOARDS = Object.freeze([]) as unknown as Board[];
-const EMPTY_TEMPLATES = Object.freeze([]) as unknown as RecurringBoardTemplate[];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * Per-cell staged entry for the squares draft (Phase 2 — staged edit model).
- * Seeded from live `BoardTask` rows on entering edit mode; mutated only by
- * Replace/Edit actions — never by live-query updates (to avoid clobbering
- * staged changes mid-session).
- */
-interface SquareDraftCell {
-  boardTaskId: string;
-  /** Current staged row — may differ from originalRow after a Rearrange. */
-  row: number;
-  /** Current staged col — may differ from originalCol after a Rearrange. */
-  col: number;
-  isCenter: boolean;
-  /** Current staged taskId — may differ from originalTaskId after a Replace. */
-  taskId: string;
-  /** The taskId at the time edit mode was entered. Never changes. */
-  originalTaskId: string;
-  /** The row at the time edit mode was entered. Never changes (Phase 3). */
-  originalRow: number;
-  /** The col at the time edit mode was entered. Never changes (Phase 3). */
-  originalCol: number;
-}
-
-/** What `showFlash` is called with. `greenlog` routes to the overlay and a
- *  new bingo to the toast; only the residual cases reach the transient flash. */
-type FlashVariant = 'bingo' | 'greenlog';
+// `SquareDraftCell` + `FlashVariant` moved into `useBoardPlay` (B2-W3, issue
+// #270). `FlashVariant` is imported below for `showFlash`'s signature.
 
 interface FlashMessage {
   text: string;
@@ -130,31 +109,36 @@ export interface BoardPlaySurfaceProps {
  * supply its own top chrome.
  */
 export function BoardPlaySurface({ board, userId, header, allowEdit = true }: BoardPlaySurfaceProps): React.ReactElement {
-  const boardId = board.id;
-
   // ── Reactive data ──────────────────────────────────────────────────────
+  // The read-model (live-query results + derived lookups) is built by
+  // `useBoardPlayData` — extracted from this component (B2-W1, issue #270).
 
-  const boardTasks = useBoardTasks(boardId) ?? EMPTY_BOARD_TASKS;
-  // Post-unification, taskSteps was dropped in Dexie v5. The adapter still
-  // accepts a steps array for the legacy progress branch, but every consumer
-  // here passes EMPTY_TASK_STEPS — the live query was needlessly hitting a
-  // deregistered store. The adapter's progress branch is itself dead code
-  // post-migration; Phase 8 will remove it.
+  const {
+    boardTasks,
+    taskMap,
+    compoundChildrenByCompound,
+    allBoards,
+    achievementBadgesByBoardTaskId,
+    cellStateByBoardTaskId,
+    liveCompletedLineIds,
+    sharedCounterSourceIds,
+    sharedCounterHintsByTaskId,
+    sortedBoardTasks,
+    gridSize,
+    btByPosition,
+    isExpired,
+    squareWindowContext,
+  } = useBoardPlayData(board, userId);
 
-  // Compound resolution data (all BoardTasks workspace-wide for child lookup).
-  const { taskMap, compoundChildrenByCompound } = useTaskLibrary(userId);
-
-  // Workspace-wide BoardTask list for compound child toggle fallback.
-  const allBoardTasks: BoardTask[] =
-    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
-
-  // Phase 6.3 — workspace data needed by per-cell badge data computation
-  // for ACHIEVEMENT-typed Tasks. Reuses existing hooks; `useBoards`
-  // returns non-deleted boards for the user, and
-  // `useRecurringBoardTemplates` returns non-deleted templates.
-  const allBoards: Board[] = useBoards(userId) ?? EMPTY_BOARDS;
-  const allTemplates: RecurringBoardTemplate[] =
-    useRecurringBoardTemplates(userId) ?? EMPTY_TEMPLATES;
+  // Windowed Completion — sealed boards are a frozen, read-only historical
+  // record (docs §Effects of sealed): the grid renders `done` from the stored
+  // `sealedCompletedCells` snapshot (not live event queries), and every play
+  // interaction (tap, context menu, +, edit entry) is disabled.
+  const isSealed = board.sealedAt != null;
+  const sealedCellSet = useMemo(
+    () => new Set(isSealed ? (board.sealedCompletedCells ?? []) : []),
+    [isSealed, board.sealedCompletedCells],
+  );
 
   // ── UI state ───────────────────────────────────────────────────────────
 
@@ -163,6 +147,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // Riso bingo toast (keyed to replay the drop) + greenlog overlay.
   const [bingoToast, setBingoToast] = useState<{ key: number } | null>(null);
   const [greenlogOpen, setGreenlogOpen] = useState(false);
+  // Share sheet: opens from the GREENLOG overlay's "Share my board" button.
+  const [shareSheetOpen, setShareSheetOpen] = useState(false);
   const bingoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -173,78 +159,58 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
   // "Board saved" green toast shown after a successful edit-mode save.
   const [savedToast, setSavedToast] = useState(false);
   const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // M3 — cell swap: the boardTaskId whose square the user requested a swap for.
-  const [swapBoardTaskId, setSwapBoardTaskId] = useState<string | null>(null);
-  // M4 — remove from board: the boardTaskId pending removal confirmation.
-  const [removeBoardTaskId, setRemoveBoardTaskId] = useState<string | null>(null);
+  // Phase 2 — Shared Counters: credited toast shown after an increment/decrement
+  // that ripples to OTHER boards. The `key` field forces CounterLogToast to
+  // remount (resetting its timer) when consecutive logs fire quickly.
+  // R3: amount-aware + Undo — shape matches `useBoardPlay`'s `CreditedToast`.
+  const [creditedToast, setCreditedToast] = useState<CreditedToast | null>(null);
+
+  // R3 — quick-action amount state for the detail modal's chip picker.
+  // Seeded to the counter's current default whenever a NEW square's modal
+  // opens (keyed on `selectedSquareId`); cleared when the modal closes. Not
+  // reset by live-query updates so an in-progress custom-amount edit
+  // survives background writes.
+  const [modalQuickAmount, setModalQuickAmount] = useState<{
+    boardTaskId: string;
+    selected: number;
+    isCustomActive: boolean;
+    customOpen: boolean;
+    customDraft: string;
+  } | null>(null);
   // M4 — add to empty cell: the grid position {row, col} awaiting task selection.
   const [addCellPos, setAddCellPos] = useState<{ row: number; col: number } | null>(null);
 
-  // ── Phase 2 — Edit tasks sub-mode + squares draft ────────────────────────
+  // R3 — seed/reset the detail-modal quick-action amount whenever a
+  // DIFFERENT square's modal opens (or closes). Deliberately keyed only on
+  // `selectedSquareId` — a live-query update to boardTasks/taskMap while the
+  // SAME modal stays open must not clobber an in-progress custom-amount edit.
+  useEffect(() => {
+    if (!selectedSquareId) {
+      setModalQuickAmount(null);
+      return;
+    }
+    const bt = boardTasks.find((b) => b.id === selectedSquareId);
+    const task = bt ? taskMap[bt.taskId] : undefined;
+    if (!task || task.type !== TaskType.COUNTING) return;
+    const sourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
+    if (!sourceId) return; // Standalone counting square — no quick-action row.
+    setModalQuickAmount({
+      boardTaskId: selectedSquareId,
+      selected: initialChipAmount(taskMap[sourceId]?.defaultLogAmount),
+      isCustomActive: false,
+      customOpen: false,
+      customDraft: '',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSquareId]);
 
-  // Sub-mode is hoisted here (from BoardEditPanel) so the grid can gate taps.
-  const [subMode, setSubMode] = useState<SubMode>('editTasks');
-
-  // Squares draft: per-cell staged state seeded when entering edit mode.
-  // Never updated by live boardTasks changes (only by Replace/Edit actions).
-  const [squaresDraft, setSquaresDraft] = useState<SquareDraftCell[]>([]);
-
-  // Staged task-field overrides, keyed by taskId.
-  // Applied to the grid display while in edit mode; committed on Save.
-  const [taskOverrides, setTaskOverrides] = useState<Map<string, UpdateTaskPatch>>(
-    () => new Map(),
-  );
-
-  // Count of staged square edits — DERIVED from draft state (not an action
-  // counter) so reverting a cell to its original task un-counts it (no phantom
-  // edits / no "Board saved" for a net-zero session). Mirrors iOS.
-  // Phase 3: also counts cells whose position differs from the original
-  // (drag-to-insert / tap-to-swap), so a net-zero rearrange contributes 0.
-  // Phase 2b: the rearrange-move count excludes only truly pinned centers
-  // (CHOSEN / FREE / CUSTOM_FREE). A NONE center is a regular movable cell.
-  const squareEditCount =
-    squaresDraft.filter((c) => c.taskId !== c.originalTaskId).length +
-    taskOverrides.size +
-    squaresDraft.filter(
-      (c) =>
-        !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
-        (c.row !== c.originalRow || c.col !== c.originalCol),
-    ).length;
-
-  // Phase 2b — draft centerSquareType, lifted so the grid can compute
-  // isPinnedCenter. Seeded on edit-mode entry from board.centerSquareType;
-  // updated by both the BoardSetupForm selector (via BoardEditPanel) and the
-  // center cell toggle (direct tap in editTasks mode).
-  const [draftCenterType, setDraftCenterType] = useState<CenterSquareType>(
-    board.centerSquareType as CenterSquareType,
-  );
-
-  // Phase 2b — tap menu for the FREE/CUSTOM_FREE center in editTasks mode.
-  // The free center has no boardTaskId so it can't use squareTapMenu.
-  const [freeCenterTapMenu, setFreeCenterTapMenu] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
-  // Tap menu: set when a non-pinned square is tapped in editTasks sub-mode.
-  // Stores click coordinates (not a DOMRect) because RisoBoardCell's onClick
-  // is `() => void` (no event parameter). The SquareTapMenu positions itself
-  // from these coordinates.
-  // Phase 2b: isCenterTask added — true when the tapped cell is the NONE center;
-  // causes SquareTapMenu to show the "Make it a free space" toggle item.
-  const [squareTapMenu, setSquareTapMenu] = useState<{
-    boardTaskId: string;
-    taskId: string;
-    x: number;
-    y: number;
-    isCenterTask: boolean;
-  } | null>(null);
-
-  // The boardTaskId whose cell is being replaced in edit mode (opens CellSwapModal).
-  const [editReplaceId, setEditReplaceId] = useState<string | null>(null);
-
-  // The taskId being edited in edit mode (opens BoardEditTaskSheet).
-  const [editTaskSheetId, setEditTaskSheetId] = useState<string | null>(null);
+  // Edit-mode draft state (subMode / squaresDraft / taskOverrides /
+  // draftCenterType / freeCenterTapMenu / squareTapMenu / editReplaceId /
+  // editTaskSheetId), the derived squareEditCount + draftByPosition, and the
+  // seeding/reset effect all moved into `useBoardPlay` (B2-W3, issue #270).
+  // `editMode` itself stays here — it's pure chrome (set from the JSX Edit
+  // button + BoardEditPanel Cancel/Save) and is passed into the hook to drive
+  // the seed/reset effect.
 
   // User preferences (weekStartDay is forwarded to BoardEditPanel + BoardSetupForm).
   const [prefs] = usePreferences();
@@ -258,148 +224,11 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     };
   }, []);
 
-  // Seed the squares draft when entering edit mode; reset all draft state when
-  // exiting. boardTasks is intentionally NOT in the dep array — we seed once
-  // on entry and must not re-seed on live-query updates (that would clobber
-  // staged changes mid-session). board is also not in deps for the same reason;
-  // we read board.centerSquareType once at entry time (the snapshot rule).
-  useEffect(() => {
-    if (!editMode) {
-      setSquaresDraft([]);
-      setTaskOverrides(new Map());
-      setSubMode('editTasks');
-      setSquareTapMenu(null);
-      setEditReplaceId(null);
-      setEditTaskSheetId(null);
-      // Phase 2b: clear center-related menus + reset the draft center type, so a
-      // toggle-then-cancel-then-reedit doesn't flash a stale FREE center for one
-      // frame before the entry seed runs.
-      setFreeCenterTapMenu(null);
-      setDraftCenterType(board.centerSquareType as CenterSquareType);
-      return;
-    }
-    // Phase 2b: seed draft center type from the board's current stored value.
-    setDraftCenterType(board.centerSquareType as CenterSquareType);
-    // Seed from the current boardTasks snapshot.
-    setSquaresDraft(
-      boardTasks.map((bt) => ({
-        boardTaskId: bt.id,
-        row: bt.row,
-        col: bt.col,
-        isCenter: bt.isCenter ?? false,
-        taskId: bt.taskId,
-        originalTaskId: bt.taskId,
-        // Phase 3: original positions for derived rearrange-edit count.
-        originalRow: bt.row,
-        originalCol: bt.col,
-      })),
-    );
-    setTaskOverrides(new Map());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode]);
-
   // ── Derived data ───────────────────────────────────────────────────────
-
-  // Phase 6.3 — per-cell achievement-task badge data, keyed by
-  // BoardTask.id. The badge labels what each ACHIEVEMENT-typed Task is
-  // watching; the cell's actual completion state still comes from
-  // derivationPass.
-  //
-  // Build the lookup maps once per render (boardById, spawnsByTemplate)
-  // then loop cells to assemble the badge entries. This mirrors the
-  // performance optimization in `derivationPass.ts` — without the
-  // template index, each template-mode cell would re-scan all boards.
-  const achievementBadgesByBoardTaskId = useMemo<Record<string, AchievementSquareBadgeData>>(() => {
-    const out: Record<string, AchievementSquareBadgeData> = {};
-    const boardById = new Map<string, Board>();
-    const spawnsByTemplate = new Map<string, Board[]>();
-    for (const b of allBoards) {
-      if (b.isDeleted) continue;
-      boardById.set(b.id, b);
-      if (b.spawnedFromTemplateId) {
-        const list = spawnsByTemplate.get(b.spawnedFromTemplateId) ?? [];
-        list.push(b);
-        spawnsByTemplate.set(b.spawnedFromTemplateId, list);
-      }
-    }
-    const templateById = new Map(allTemplates.map((t) => [t.id, t]));
-
-    for (const bt of boardTasks) {
-      const t = taskMap[bt.taskId];
-      if (!t || t.type !== TaskType.ACHIEVEMENT) continue;
-      const trigger = t.achievementTrigger ?? AchievementTrigger.GREENLOG;
-      const meets = (b: Board): boolean =>
-        trigger === AchievementTrigger.BINGO
-          ? (b.linesCompleted ?? 0) > 0
-          : b.status === BoardStatus.COMPLETED;
-      // Phase 6.3 precedence: referencedBoardId wins when both fields
-      // somehow get set. The Zod refinement should prevent this, but
-      // the badge stays predictable for bad-data payloads.
-      if (t.referencedBoardId) {
-        const ref = boardById.get(t.referencedBoardId);
-        out[bt.id] = {
-          mode: 'specificBoard',
-          referencedBoardName: ref?.name,
-          referencedBoardCompleted: ref ? meets(ref) : false,
-        };
-        continue;
-      }
-      if (t.referencedTemplateId) {
-        const tmpl = templateById.get(t.referencedTemplateId);
-        const spawns = spawnsByTemplate.get(t.referencedTemplateId) ?? [];
-        // Parse to timestamps via the shared helper — `Board.startDate`/
-        // `endDate` may be local-ISO (no zone) or UTC-with-`Z` (sync
-        // round-trips), and the two encodings don't compare correctly
-        // as strings. Same fix as derivationPass.ts.
-        const inWindow = spawns.filter((b) =>
-          isWithinTimeframe(b.startDate, board.startDate, board.endDate),
-        );
-        const met = inWindow.filter(meets).length;
-        out[bt.id] = {
-          mode: 'recurringTemplate',
-          templateName: tmpl?.name,
-          templateInWindowMet: met,
-          templateRequiredCount: t.requiredCount ?? 0,
-        };
-      }
-      // No reference set on an ACHIEVEMENT task: skip the badge entirely
-      // (the cell renders as a regular task; derivation marks incomplete).
-    }
-    return out;
-  }, [boardTasks, allBoards, allTemplates, taskMap, board.startDate, board.endDate]);
-
-  // Phase 3 — Shared Counters: Set of task ids that are shared-counter SOURCES
-  // (i.e., at least one other task points to them via `sharedCounterId`).
-  // Computed once per render from taskMap so the grid `onAct` can detect
-  // whether tapping a counting task should route through incrementSharedCounter.
-  const sharedCounterSourceIds = useMemo<Set<string>>(() => {
-    const sources = new Set<string>();
-    for (const t of Object.values(taskMap)) {
-      if (t.sharedCounterId) sources.add(t.sharedCounterId);
-    }
-    return sources;
-  }, [taskMap]);
-
-  const sortedBoardTasks = [...boardTasks].sort((a, b) =>
-    a.row !== b.row ? a.row - b.row : a.col - b.col
-  );
-
-  const gridSize = board.boardSize ?? 3;
-
-  const btByPosition: Record<string, BoardTask> = {};
-  for (const bt of sortedBoardTasks) {
-    btByPosition[`${bt.row}-${bt.col}`] = bt;
-  }
-
-  // Phase 2 — draft position lookup (edit mode only; stable key format matches btByPosition).
-  const draftByPosition: Record<string, SquareDraftCell> = {};
-  if (editMode) {
-    for (const cell of squaresDraft) {
-      draftByPosition[`${cell.row}-${cell.col}`] = cell;
-    }
-  }
-
-  const isExpired = isBoardExpired(board);
+  // achievementBadgesByBoardTaskId, sharedCounterSourceIds,
+  // sharedCounterHintsByTaskId, sortedBoardTasks, gridSize, btByPosition,
+  // and isExpired all come from useBoardPlayData above. The edit-mode
+  // squareEditCount + draftByPosition come from useBoardPlay below.
 
   // ── Flash message helper ───────────────────────────────────────────────
 
@@ -433,370 +262,119 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     }, FLASH_MS);
   }, []);
 
-  // ── Phase 2 — Square-edit handlers ────────────────────────────────────────
-
-  /**
-   * Stage a Replace for the given boardTaskId.
-   * Called when the CellSwapModal (edit-mode flow) confirms a new task.
-   * NO DB write happens here — committed in onExtraCommit at Save time.
-   */
-  const handleEditReplace = useCallback((boardTaskId: string, newTaskId: string) => {
-    setSquaresDraft((prev) =>
-      prev.map((cell) =>
-        cell.boardTaskId === boardTaskId ? { ...cell, taskId: newTaskId } : cell,
-      ),
-    );
-    // squareEditCount is derived from squaresDraft — no manual increment.
-  }, []);
-
-  /**
-   * Stage Task-field edits for the given taskId.
-   * Called when BoardEditTaskSheet's Done fires.
-   * Merges with any previously staged override for the same taskId.
-   * NO DB write happens here — committed in onExtraCommit at Save time.
-   */
-  const handleEditTaskDone = useCallback(
-    (taskId: string, patch: UpdateTaskPatch) => {
-      setTaskOverrides((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(taskId) ?? {};
-        next.set(taskId, { ...existing, ...patch });
-        return next;
-      });
-      // squareEditCount is derived from taskOverrides — no manual increment.
-    },
-    [],
-  );
-
-  /**
-   * Commits all staged square edits.
-   * Called by BoardEditPanel.handleSave BEFORE the metadata patch.
-   * Order: task replacements first, then task-field edits.
-   */
-  /**
-   * Phase 3 — Rearrange reorder callback.
-   *
-   * Called by ArrangeGrid whenever the user commits a drag-drop or tap-swap.
-   * Maps the new flat slot order back to (row, col) by index position and
-   * updates `squaresDraft` in place for non-center, non-empty slots.
-   * The center square's position is never modified.
-   */
-  const handleRearrangeReorder = useCallback(
-    (newSlots: ArrangeSlot[]) => {
-      setSquaresDraft((prev) => {
-        const newPositions = new Map<string, { row: number; col: number }>();
-        newSlots.forEach((slot, i) => {
-          if (!slot.isEmpty && !slot.isCenter) {
-            newPositions.set(slot.cid, {
-              row: Math.floor(i / gridSize),
-              col: i % gridSize,
-            });
-          }
-        });
-        return prev.map((cell) => {
-          const pos = newPositions.get(cell.boardTaskId);
-          return pos ? { ...cell, row: pos.row, col: pos.col } : cell;
-        });
-      });
-    },
-    [gridSize],
-  );
-
-  /**
-   * Phase 3 — Build the ArrangeSlot[] for rearrange sub-mode.
-   *
-   * Each slot carries the current staged (row, col) from squaresDraft.
-   * Bingo highlights are suppressed (isLine: false) — the post-save
-   * derivation pass will re-compute correct lines.
-   *
-   * Centre squares are flagged isCenter:true so ArrangeGrid pins them.
-   * Empty positions (no draftCell at a given row/col) are flagged isEmpty:true.
-   */
-  const arrangeSlots = useMemo<ArrangeSlot[]>(() => {
-    if (!editMode || subMode !== 'rearrange') return [];
-
-    const half = Math.floor(gridSize / 2);
-
-    const slots: ArrangeSlot[] = [];
-    for (let r = 0; r < gridSize; r++) {
-      for (let c = 0; c < gridSize; c++) {
-        // Phase 2b: distinguish positional center from "pinned" center.
-        // NONE center is NOT pinned — it participates in drag/swap normally.
-        const isPositionalCenter = gridSize % 2 === 1 && r === half && c === half;
-        const isCenter = isPositionalCenter && draftCenterType !== CenterSquareType.NONE;
-        const draftCell = squaresDraft.find((d) => d.row === r && d.col === c);
-
-        if (isPositionalCenter && !draftCell && draftCenterType !== CenterSquareType.NONE) {
-          // FREE/CUSTOM_FREE (or CHOSEN with no task) centre — pinned, not draggable.
-          slots.push({
-            cid: `center-${r}-${c}`,
-            isCenter: true,
-            isEmpty: false,
-            model: {
-              key: `center-${r}-${c}`,
-              label: 'FREE',
-              type: 'normal',
-              done: false,
-              isFree: true,
-              isLine: false,
-            },
-          });
-        } else if (draftCell) {
-          // Real tile (including CHOSEN centre).
-          const baseTask: Task | undefined = taskMap[draftCell.taskId];
-          let model: BoardCellModel | null = null;
-          if (baseTask) {
-            const task: Task =
-              taskOverrides.has(draftCell.taskId)
-                ? { ...baseTask, ...(taskOverrides.get(draftCell.taskId) as Partial<Task>) }
-                : baseTask;
-            const taskChildren = compoundChildrenByCompound[task.id] ?? [];
-            const squareData = taskToSquareData(
-              task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
-            );
-            const squareState = taskToSquareState(
-              task, taskChildren, taskMap, compoundChildrenByCompound,
-            );
-            const displayLabel =
-              task.title && task.title.trim()
-                ? task.title
-                : task.type === TaskType.COUNTING
-                  ? generateCounterTaskTitle(
-                      task.action ?? '',
-                      task.maxCount ?? 0,
-                      task.unit ?? '',
-                    )
-                  : '';
-            model = {
-              key: draftCell.boardTaskId,
-              label: displayLabel,
-              type:
-                squareData.type === 'counting'
-                  ? 'counting'
-                  : squareData.type === 'compound' || squareData.type === 'progress'
-                    ? 'compound'
-                    : 'normal',
-              done: squareState.isCompleted,
-              count:
-                squareData.type === 'counting'
-                  ? { cur: squareState.currentCount, max: task.maxCount ?? 0 }
-                  : undefined,
-              isFree: false,
-              isLine: false, // suppressed during rearrange
-            };
-          }
-          slots.push({
-            cid: draftCell.boardTaskId,
-            isCenter,
-            isEmpty: false,
-            model,
-          });
-        } else {
-          // Empty slot (no task placed here in the current draft).
-          slots.push({
-            cid: `empty-${r}-${c}`,
-            isCenter: false,
-            isEmpty: true,
-            model: null,
-          });
-        }
-      }
-    }
-    return slots;
-  }, [
-    editMode,
-    subMode,
-    gridSize,
+  // ── Handler + edit-draft layer ─────────────────────────────────────────
+  // The staged edit-mode draft, the completion-orchestration handlers, and
+  // the play-mode board-task write methods all live in `useBoardPlay`
+  // (B2-W3, issue #270 — pure code-motion). It receives the read-model data
+  // plus the transient-UI callbacks (`onFlash` = showFlash, `onCreditedToast`
+  // = setCreditedToast, and setContextMenu for the error-path menu dismiss);
+  // everything below is consumed by the JSX unchanged.
+  const {
     squaresDraft,
-    taskMap,
     taskOverrides,
+    draftCenterType,
+    setDraftCenterType,
+    subMode,
+    setSubMode,
+    squareTapMenu,
+    setSquareTapMenu,
+    freeCenterTapMenu,
+    setFreeCenterTapMenu,
+    editReplaceId,
+    setEditReplaceId,
+    editTaskSheetId,
+    setEditTaskSheetId,
+    squareEditCount,
+    draftByPosition,
+    arrangeSlots,
+    handleEditReplace,
+    handleEditRemove,
+    handleEditTaskDone,
+    handleRearrangeReorder,
+    commitSquareEdits,
+    handleComplete,
+    handleSharedCounterIncrement,
+    handleSharedCounterDecrement,
+    undoCounterLog,
+    handleCompoundChildToggle,
+    addTaskToCell,
+  } = useBoardPlay({
+    board,
+    editMode,
+    boardTasks,
+    taskMap,
     compoundChildrenByCompound,
-    draftCenterType, // Phase 2b: NONE center is not pinned
-  ]);
+    gridSize,
+    // Sealing replaced the expiry lock (docs §Lifecycle): play handlers are
+    // locked only on sealed boards; an expired-but-unsealed board stays live.
+    playLocked: isSealed,
+    squareWindowContext,
+    onFlash: showFlash,
+    onCreditedToast: setCreditedToast,
+    setContextMenu,
+  });
 
-  const commitSquareEdits = useCallback(async (): Promise<void> => {
-    // 1. Cell replacements: cells whose staged taskId differs from the original.
-    for (const cell of squaresDraft) {
-      if (cell.taskId !== cell.originalTaskId) {
-        await updateBoardTaskAndCascade(cell.boardTaskId, cell.taskId);
-      }
+  // ── Passive completion (Shared Counters P3) ─────────────────────────────
+  // Detects shared-counter squares that filled in from a log made elsewhere
+  // (Counter Detail / another board) and drives the gold arrival banner + the
+  // per-cell pulse. Latched to fire once per board-open; a local tap here never
+  // masquerades as an arrival. Edit mode has no shared-counter play, so the
+  // banner is suppressed while editing.
+  const { arrival, arrivedTaskIds, dismiss: dismissArrival } = useCounterArrivals({
+    boardId: board.id,
+    boardTasks,
+    taskMap,
+    sharedCounterSourceIds,
+  });
+
+  // The banner's tap target: the single distinct arrived counter's Detail page,
+  // or the Counters Hub when squares arrived from more than one counter (the
+  // doc's "N squares … your counters" copy names no single counter). Its copy
+  // strings (single-square variant) resolve from the one arrived square's task.
+  const arrivalNav = useCallback(() => {
+    if (!arrival) return;
+    dismissArrival();
+    if (arrival.arrivedCounters.length === 1) {
+      navigate(`/profile/counters/${arrival.arrivedCounters[0].counterId}`);
+    } else {
+      navigate('/profile/counters');
     }
-    // 2. Global task-field edits: apply UpdateTaskPatch for each staged override.
-    for (const [taskId, patch] of taskOverrides.entries()) {
-      await updateTaskAndCascade(taskId, patch);
-    }
-    // 3. Position reorders (Phase 3): cells whose staged row/col differs from original.
-    //    Committed as a single atomic Dexie transaction via reorderBoardTasks.
-    //    Phase 2b: NONE center is not pinned — its moves ARE included.
-    const moves = squaresDraft
-      .filter(
-        (c) =>
-          !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
-          (c.row !== c.originalRow || c.col !== c.originalCol),
-      )
-      .map((c) => ({ boardTaskId: c.boardTaskId, row: c.row, col: c.col }));
-    if (moves.length > 0) {
-      await reorderBoardTasks(boardId, moves);
-    }
-  }, [squaresDraft, taskOverrides, boardId, draftCenterType]);
+  }, [arrival, dismissArrival, navigate]);
 
-  // ── Completion handler ─────────────────────────────────────────────────
-
-  /**
-   * Handles task completion via the orchestration layer, then shows
-   * appropriate flash messages based on bingo detection results.
-   */
-  const handleComplete = useCallback(
-    async (
-      boardTaskId: string,
-      updates: {
-        isCompleted?: boolean;
-        currentCount?: number;
-        completedStepIds?: string[];
-      }
-    ): Promise<void> => {
-      if (!boardId) return;
-      try {
-        const result = await handleTaskCompletion(boardId, boardTaskId, updates);
-        // Priority: reactivated > lostBingos > greenlog > newBingos
-        if (result.boardReactivated) {
-          showFlash('Board reactivated — no longer complete', 'bingo');
-        } else if (result.lostBingos.length > 0) {
-          showFlash(`Bingo lost: ${result.lostBingos.join(', ')}`, 'bingo');
-        } else if (result.isGreenlog) {
-          showFlash('GREENLOG! Board complete!', 'greenlog');
-        } else if (result.newBingos.length > 0) {
-          showFlash(`Bingo! ${result.newBingos.join(', ')}`, 'bingo');
-        }
-      } catch (err) {
-        console.error('Task completion failed:', err);
-        showFlash('Something went wrong', 'bingo');
-        setContextMenu(null);
-      }
-    },
-
-    [boardId, showFlash]
-  );
-
-  /**
-   * Phase 3 — Shared Counters: increment the shared-counter accumulator for a
-   * given source task id, then show any bingo/greenlog flash that resulted.
-   *
-   * Used when the tapped/clicked task is either:
-   *   (a) the source (template) counting task itself, or
-   *   (b) a linked (derived) counting task whose `sharedCounterId` points to
-   *       the source.
-   *
-   * Both cases route to `incrementSharedCounter(sourceId)` which handles the
-   * full propagation transactionally (source update → linked task re-derive →
-   * cascade for all affected boards).
-   *
-   * Post-increment bingo/greenlog flash: we re-fetch the board after the
-   * transaction and compare stats against the pre-increment snapshot.
-   * Flash is best-effort — a query failure doesn't undo the write.
-   *
-   * @param sourceTaskId - The source (template) task id to increment.
-   */
-  const handleSharedCounterIncrement = useCallback(
-    async (sourceTaskId: string): Promise<void> => {
-      if (isExpired) return;
-      try {
-        // Capture the pre-increment board stats for flash comparison.
-        const boardBefore = await db.boards.get(boardId);
-        await incrementSharedCounter(sourceTaskId);
-        // Re-fetch to get post-increment board state.
-        const boardAfter = await db.boards.get(boardId);
-        if (!boardBefore || !boardAfter) return;
-
-        const prevBingos = new Set(boardBefore.completedLineIds ?? []);
-        const nextBingos = new Set(boardAfter.completedLineIds ?? []);
-        const newBingos = [...nextBingos].filter((id) => !prevBingos.has(id));
-        const lostBingos = [...prevBingos].filter((id) => !nextBingos.has(id));
-        const totalSquares = boardAfter.boardSize * boardAfter.boardSize;
-        const isGreenlog = boardAfter.completedTasks >= totalSquares;
-        const wasActive = boardBefore.status === BoardStatus.ACTIVE;
-        const isNowCompleted = boardAfter.status === BoardStatus.COMPLETED;
-        const wasCompleted = boardBefore.status === BoardStatus.COMPLETED;
-        const isNowActive = boardAfter.status === BoardStatus.ACTIVE;
-
-        if (wasCompleted && isNowActive) {
-          showFlash('Board reactivated — no longer complete', 'bingo');
-        } else if (lostBingos.length > 0) {
-          showFlash(`Bingo lost: ${lostBingos.join(', ')}`, 'bingo');
-        } else if (wasActive && isNowCompleted && isGreenlog) {
-          showFlash('GREENLOG! Board complete!', 'greenlog');
-        } else if (newBingos.length > 0) {
-          showFlash(`Bingo! ${newBingos.join(', ')}`, 'bingo');
-        }
-      } catch (err) {
-        console.error('Shared counter increment failed:', err);
-        showFlash('Something went wrong', 'bingo');
-      }
-    },
-    [boardId, isExpired, showFlash],
-  );
-
-  /**
-   * Handles toggling a compound child task from the detail sheet.
-   *
-   * Looks up the child's BoardTask on any board and delegates to
-   * `handleTaskCompletion` so the global Task update and cross-board cascade
-   * run atomically. If the child isn't placed on any board, falls back to a
-   * direct Task update via the orchestration layer using its own BoardTask
-   * id (or bails out gracefully).
-   */
-  const handleCompoundChildToggle = useCallback(
-    async (childTaskId: string): Promise<void> => {
-      if (isExpired) return;
-      const childTask = taskMap[childTaskId];
-      if (!childTask) return;
-
-      // Find any BoardTask for this child Task on the current board first,
-      // then fall back to any board in the workspace.
-      const childBt =
-        boardTasks.find((bt) => bt.taskId === childTaskId) ??
-        allBoardTasks.find((bt) => bt.taskId === childTaskId);
-
-      if (childBt) {
-        await handleComplete(childBt.id, { isCompleted: !childTask.isCompleted });
-      } else {
-        // Child is not placed on any board, but the parent compound (on THIS
-        // board, since the user is opening its detail sheet) still derives
-        // through this child — so we must run the board cascade to recompute
-        // bingo state + denormalised board stats. Wrap the Task update + sync
-        // enqueue + cascade in a single Dexie transaction so a downstream
-        // failure rolls back the partial writes; previously a crash between
-        // the task update and the cascade would leave the Task flipped but
-        // board stats stale forever.
-        try {
-          const now = new Date().toISOString();
-          await db.transaction(
-            'rw',
-            [db.tasks, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
-            async () => {
-              await db.tasks.update(childTaskId, {
-                isCompleted: !childTask.isCompleted,
-                completedAt: !childTask.isCompleted ? now : undefined,
-                updatedAt: now,
-                version: childTask.version + 1,
-              });
-              const updated = await db.tasks.get(childTaskId);
-              if (updated) {
-                await addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
-              }
-              await runBoardCascadeForTask(childTaskId);
-            },
-          );
-        } catch (err) {
-          console.error('Compound child toggle failed:', err);
-          showFlash('Something went wrong', 'bingo');
-        }
-      }
-    },
-    [isExpired, taskMap, boardTasks, allBoardTasks, handleComplete, showFlash]
-  );
+  // Single-square copy needs the arrived square's task name + its counter name.
+  // Resolve the display label (title, or the auto-generated "Action N unit" for
+  // a titleless counting task) so a blank-titled counter still reads as "single".
+  const arrivalSingle = (() => {
+    if (!arrival || arrival.totalArrivedSquares !== 1) return null;
+    const taskId = [...arrival.arrivedTaskIds][0];
+    const t = taskId ? taskMap[taskId] : undefined;
+    const taskName = t
+      ? t.title && t.title.trim()
+        ? t.title
+        : generateCounterTaskTitle(t.action ?? '', t.maxCount, t.unit ?? '')
+      : '';
+    const counterName = arrival.arrivedCounters[0]?.counterName ?? '';
+    return { taskName, counterName };
+  })();
 
   // ── Render ─────────────────────────────────────────────────────────────
+
+  // Compute streak once so both RisoGreenlog and ShareBoardSheet use the same value.
+  const greenlogStreak = computeStreak(
+    board.timeframe,
+    AchievementTrigger.GREENLOG,
+    allBoards,
+    prefs.weekStartDay,
+    new Date(),
+  );
+
+  // Format as compact label for the share poster (e.g. "3d", "2w", "5mo").
+  // Only core boards (daily/weekly/monthly/yearly) have streaks; CUSTOM/INDEFINITE
+  // fall through to undefined so the poster's STREAK card is hidden.
+  const shareStreakLabel: string | undefined =
+    greenlogStreak > 0 && CORE_STREAK_TIMEFRAMES.has(board.timeframe)
+      ? compactStreakLabel(greenlogStreak, board.timeframe)
+      : undefined;
 
   return (
     <div className={play.play}>
@@ -806,20 +384,69 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           boardName={board.name}
           boardSize={board.boardSize}
           bingos={board.linesCompleted}
-          streak={computeStreak(
-            board.timeframe,
-            AchievementTrigger.GREENLOG,
-            allBoards,
-            prefs.weekStartDay,
-            new Date(),
-          )}
-          onShare={() => setGreenlogOpen(false)}
+          streak={greenlogStreak}
+          celebrationIntensity={prefs.celebrationIntensity}
+          onShare={() => setShareSheetOpen(true)}
           onNewBoard={() => navigate('/create')}
           onClose={() => setGreenlogOpen(false)}
         />
       )}
+
+      {/* Share poster sheet — opens from the GREENLOG "Share my board" button */}
+      {shareSheetOpen && (
+        <ShareBoardSheet
+          boardName={board.name}
+          completedTasks={board.completedTasks}
+          totalTasks={board.totalTasks}
+          linesCompleted={board.linesCompleted}
+          streak={shareStreakLabel}
+          onDismiss={() => setShareSheetOpen(false)}
+        />
+      )}
       {/* Bingo toast */}
       {bingoToast && <RisoBingoToast key={bingoToast.key} count={board.linesCompleted} />}
+
+      {/* Arrival banner — passive-completion (Shared Counters P3). Suppressed in
+          edit mode (no shared-counter play while editing). */}
+      {arrival && !editMode && (
+        <RisoArrivalBanner
+          key={arrival.key}
+          squareCount={arrival.totalArrivedSquares}
+          taskName={arrivalSingle?.taskName}
+          counterName={arrivalSingle?.counterName}
+          onOpen={arrivalNav}
+          onDismiss={dismissArrival}
+        />
+      )}
+
+      {/* Credited toast — shared-counter ripple feedback (R3: amount-aware + Undo) */}
+      {creditedToast && (
+        <CounterLogToast
+          key={creditedToast.key}
+          amount={creditedToast.amount}
+          unit=""
+          verb={creditedToast.verb}
+          counterName={creditedToast.counterName}
+          boardNames={creditedToast.boardNames}
+          onUndo={() => {
+            const sourceTaskId = creditedToast.sourceTaskId;
+            // Await-then-clear like R2's Hub/Detail callers (#342 review M3):
+            // a failed undo must not leave the user believing it succeeded.
+            void (async () => {
+              try {
+                // Route through the hook so the reversal flashes any board
+                // COMPLETED→ACTIVE / lost-bingo transition it causes (F1).
+                await undoCounterLog(sourceTaskId);
+              } catch (err) {
+                console.error('Undo failed', err);
+              } finally {
+                setCreditedToast(null);
+              }
+            })();
+          }}
+          onDone={() => setCreditedToast(null)}
+        />
+      )}
 
       {/* Transient flash — lost bingo / reactivated / errors (bingo + greenlog
           route to the toast/overlay above). */}
@@ -869,8 +496,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           <div className={play.railTop}>
             {header}
             {/* Edit entry: ACTIVE boards only, and only when the container allows
-                editing (allowEdit=false in the core-board pager). */}
-            {board.status === BoardStatus.ACTIVE && allowEdit && (
+                editing (allowEdit=false in the core-board pager). Sealed boards
+                are frozen — never editable (docs §Effects of sealed: not editable). */}
+            {board.status === BoardStatus.ACTIVE && allowEdit && !isSealed && (
               <button
                 type="button"
                 className={`${play.back} ${play.iconBtn}`}
@@ -885,12 +513,19 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           <div>
             <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
             <h2 className={play.title}>{board.name}</h2>
-            <div style={{ marginTop: 10 }}>
-              <BoardStatusBadge status={board.status} />
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {isSealed ? (
+                // User-facing label is "Closed" — "sealed" is internal
+                // Windowed-Completion vocabulary, never UI copy.
+                <span className={styles.sealedBadge}>Closed</span>
+              ) : (
+                <BoardStatusBadge status={board.status} />
+              )}
+              {board.spawnedFromTemplateId != null && <RecurringBadge />}
             </div>
           </div>
 
-          {isExpired && (
+          {isExpired && !isSealed && (
             <div className={styles.expiredBanner}>
               Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
             </div>
@@ -958,8 +593,18 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         >
           {(() => {
             const cells: React.ReactElement[] = [];
-            // Gold-ring the cells in completed bingo lines.
-            const highlightedSquares = getHighlightedSquares(board.completedLineIds ?? [], gridSize);
+            // Gold-ring the cells in completed bingo lines. Board-integrity
+            // PR-3, Part 3 (ring coherence): a LIVE (unsealed) board rings
+            // from `liveCompletedLineIds` — detected from the SAME kernel
+            // grid `cellStateByBoardTaskId` was built from THIS render —
+            // rather than `board.completedLineIds`, whose write lags one
+            // cascade transaction behind the reactive grid. A SEALED board
+            // keeps its frozen `completedLineIds` snapshot (the permanent
+            // read-only record; never re-derived live).
+            const highlightedSquares = getHighlightedSquares(
+              isSealed ? (board.completedLineIds ?? []) : liveCompletedLineIds,
+              gridSize,
+            );
 
             for (let row = 0; row < gridSize; row++) {
               for (let col = 0; col < gridSize; col++) {
@@ -1038,7 +683,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                       !editMode &&
                       !isPinnedCenter &&
                       board.status === BoardStatus.ACTIVE &&
-                      !isExpired;
+                      !isSealed;
                     cells.push(
                       <div
                         key={`empty-${row}-${col}`}
@@ -1076,16 +721,31 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   : baseTask;
 
                 const taskChildren = compoundChildrenByCompound[task.id] ?? [];
+                // Board-integrity PR-3 — the kernel's per-cell resolution for
+                // THIS placement (achievement completion has no other source).
+                const cellState = boardTaskId ? cellStateByBoardTaskId[boardTaskId] : undefined;
                 const squareData = taskToSquareData(
-                  task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+                  task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
                 );
                 const squareState = taskToSquareState(
-                  task, taskChildren, taskMap, compoundChildrenByCompound,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState,
                 );
-                const taskIsCompleted = squareState.isCompleted;
+                // Windowed Completion — on a SEALED board, `done` reads the
+                // frozen `sealedCompletedCells` snapshot (docs §Effects of
+                // sealed), never live event queries (which could bleed a
+                // post-seal log of the same task from another live board).
+                const cellIndex = row * gridSize + col;
+                const taskIsCompleted = isSealed
+                  ? sealedCellSet.has(cellIndex)
+                  : squareState.isCompleted;
                 // Use squareState.currentCount (baseline-adjusted for linked
                 // counters). For standalone counters this equals task.currentCount.
-                const taskCurrentCount = squareState.currentCount;
+                // On a sealed board only completion was snapshotted (not partial
+                // progress), so a frozen counting square reads max/max when green
+                // and 0/max otherwise — an honest read of what was frozen.
+                const taskCurrentCount = isSealed
+                  ? (taskIsCompleted ? (task.maxCount ?? 0) : 0)
+                  : squareState.currentCount;
 
                 // Resolve the display label:
                 // - If the task has a title, use it.
@@ -1093,8 +753,16 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 const displayLabel = task.title && task.title.trim()
                   ? task.title
                   : (task.type === TaskType.COUNTING
-                      ? generateCounterTaskTitle(task.action ?? '', task.maxCount ?? 0, task.unit ?? '')
+                      ? generateCounterTaskTitle(task.action ?? '', task.maxCount, task.unit ?? '')
                       : '');
+
+                // Phase 2 — Shared Counters: mark the cell as shared when
+                // it is a source OR a linked derived counter, so the
+                // two-dot ↔ marker appears on the grid while not done.
+                const isSharedCountingTask =
+                  squareData.type === 'counting' &&
+                  !taskIsCompleted &&
+                  (task.sharedCounterId != null || sharedCounterSourceIds.has(task.id));
 
                 const cellModel: BoardCellModel = {
                   key: boardTaskId,
@@ -1112,14 +780,31 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                       : undefined,
                   isFree: false,
                   isLine: highlightedSquares.has(row * gridSize + col),
+                  isShared: isSharedCountingTask || undefined,
+                  // Phase 3 — pulse squares that just filled in from an
+                  // elsewhere log (play mode only; suppressed while editing).
+                  isArrived: (!editMode && resolvedTaskId != null && arrivedTaskIds.has(resolvedTaskId)) || undefined,
                 };
 
                 // ── Click handler (play mode) ────────────────────────────
                 // Edit mode taps are handled by a wrapper div below (we need
                 // mouse coordinates which RisoBoardCell's onClick: () => void
                 // does not expose).
-                const handlePlayClick = (!editMode && !isExpired)
+                // Sealing REPLACES the old expiry-based interaction lock
+                // (docs §Lifecycle: an expired-but-unsealed board is "still
+                // fully live" — the closing-out banner's Log action opens it
+                // to log late activity; the backstop bounds the overtime).
+                const handlePlayClick = (!editMode && !isSealed)
                   ? () => {
+                      // Board-integrity PR-3 (issue #360, finding 2) —
+                      // Achievement squares are read-only on the grid; tap
+                      // is a no-op (mirrors iOS `case .achievement: break`).
+                      // Detail is reachable via the context-menu "View
+                      // Details" item (falls through FloatingContextMenu's
+                      // type switch to the common item), never a plain tap.
+                      if (squareData.type === 'achievement') {
+                        return;
+                      }
                       if (squareData.type === 'progress' || squareData.type === 'compound') {
                         setSelectedSquareId(boardTaskId);
                       } else if (squareData.type === 'counting') {
@@ -1131,10 +816,13 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                         //  (c) Standalone counter (no shared link at all):
                         //      falls through to the legacy handleComplete path.
                         // All shared-counter paths forbid the old high-end clamp (overshoot allowed).
-                        if (task.sharedCounterId != null) {
-                          void handleSharedCounterIncrement(task.sharedCounterId);
-                        } else if (sharedCounterSourceIds.has(task.id)) {
-                          void handleSharedCounterIncrement(task.id);
+                        // R3 — a plain tap on a shared counting square logs the
+                        // counter's default amount (was hardcoded 1); the
+                        // one-tap path never persists a new default.
+                        const sourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
+                        if (sourceId) {
+                          const amount = resolveSharedCounterDefaultAmount(taskMap[sourceId]);
+                          void handleSharedCounterIncrement(sourceId, amount, false);
                         } else {
                           // Standalone (unlinked) counting task — no propagation needed.
                           const next = taskCurrentCount + 1;
@@ -1176,7 +864,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                     }
                     onClick={editMode ? undefined : handlePlayClick}
                     onContextMenu={editMode ? undefined : (e) => {
-                      if (isExpired) return;
+                      if (isSealed) return;
                       e.preventDefault();
                       setContextMenu({ squareId: boardTaskId, x: e.clientX, y: e.clientY });
                     }}
@@ -1247,6 +935,13 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             }}
             onEdit={() => {
               setEditTaskSheetId(squareTapMenu.taskId);
+            }}
+            // Staged removal — empties the cell (persisted on Save). A pinned
+            // center never opens this menu, so every square that reaches here
+            // is removable (a NONE-center task included).
+            onRemove={() => {
+              handleEditRemove(squareTapMenu.boardTaskId);
+              setSquareTapMenu(null);
             }}
             // Phase 2b: NONE center task shows "Make it a free space" toggle.
             onMakeFree={squareTapMenu.isCenterTask ? () => {
@@ -1321,10 +1016,11 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         const squareState = taskToSquareState(
-          task, taskChildren, taskMap, compoundChildrenByCompound,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          cellStateByBoardTaskId[bt.id],
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters)
         // rather than the raw task.currentCount accumulator. For standalone
@@ -1335,49 +1031,110 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         // source task. Decrement and reset must be disabled for them.
         const isLinkedCounter = squareData.sharedCounterId != null;
 
+        // Phase 2 — resolve the shared-counter hint for this task.
+        const modalSharedHint = sharedCounterHintsByTaskId.get(task.id);
+
+        // R3 — quick-action amount picker (shared counting squares only).
+        const modalSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
+        const activeQuickAmount =
+          modalQuickAmount && modalQuickAmount.boardTaskId === bt.id ? modalQuickAmount : null;
+        // Initial highlighted chip for the amount picker — a preset (or 10),
+        // NOT the raw remembered default (fixed rows have no off-preset chip).
+        // The remembered default still drives the plain grid tap + Hub pill.
+        const modalDefaultAmount = initialChipAmount(
+          modalSourceId ? taskMap[modalSourceId]?.defaultLogAmount : undefined,
+        );
+        const quickSelected = activeQuickAmount?.selected ?? modalDefaultAmount;
+        const quickAmount =
+          squareData.type === 'counting' && modalSourceId
+            ? {
+                options: buildBoardQuickAmountOptions(),
+                selected: quickSelected,
+                isCustomActive: activeQuickAmount?.isCustomActive ?? false,
+                customOpen: activeQuickAmount?.customOpen ?? false,
+                customDraft: activeQuickAmount?.customDraft ?? '',
+                unit: task.unit ?? '',
+                busy: isSealed,
+                onSelectChip: (value: number) =>
+                  setModalQuickAmount({
+                    boardTaskId: bt.id,
+                    selected: value,
+                    isCustomActive: false,
+                    customOpen: false,
+                    customDraft: '',
+                  }),
+                onOpenCustom: () =>
+                  setModalQuickAmount((prev) => ({
+                    boardTaskId: bt.id,
+                    selected: prev?.selected ?? modalDefaultAmount,
+                    isCustomActive: prev?.isCustomActive ?? false,
+                    customOpen: true,
+                    customDraft: prev?.isCustomActive ? String(prev.selected) : '',
+                  })),
+                onCustomDraftChange: (raw: string) =>
+                  setModalQuickAmount((prev) => (prev ? { ...prev, customDraft: raw } : prev)),
+                onConfirmCustom: () => {
+                  const parsed = parseCustomLogAmount(activeQuickAmount?.customDraft ?? '');
+                  if (parsed == null) return;
+                  setModalQuickAmount({
+                    boardTaskId: bt.id,
+                    selected: parsed,
+                    isCustomActive: true,
+                    customOpen: false,
+                    customDraft: '',
+                  });
+                },
+                onAdd: () => {
+                  if (isSealed) return;
+                  // R3 — an explicit custom "#" amount persists as the new
+                  // default; the 1/{default} chips are a quick nudge, not a
+                  // preference change (Global Constraints asymmetry vs R2).
+                  void handleSharedCounterIncrement(
+                    modalSourceId,
+                    quickSelected,
+                    activeQuickAmount?.isCustomActive ?? false,
+                  );
+                },
+                onRemove: () => {
+                  if (isSealed || isLinkedCounter) return;
+                  void handleSharedCounterDecrement(
+                    modalSourceId,
+                    quickSelected,
+                    activeQuickAmount?.isCustomActive ?? false,
+                  );
+                },
+                removeDisabled: isLinkedCounter || modalCurrentCount <= 0,
+                removeTitle: isLinkedCounter ? 'Linked counters cannot be decremented directly' : undefined,
+              }
+            : undefined;
+
         return (
           <DetailModal
             sq={squareData}
             state={squareState}
             onClose={() => setSelectedSquareId(null)}
             onToggleComplete={() => {
-              if (isExpired) return;
-              // `handleComplete` transitively calls `showFlash`, which
-              // writes `flashTimerRef.current`. The `react-hooks/refs`
-              // rule (v7.1+) traces that ref-access chain and flags this
-              // call site as "ref accessed during render" — but this
-              // callback is the DetailModal's onToggleComplete prop,
-              // invoked from the modal's click handler well after
-              // render commits. False positive; disabled per-site.
-              // eslint-disable-next-line react-hooks/refs
+              if (isSealed) return;
+              // `handleComplete` now comes from `useBoardPlay`; the ref-access
+              // chain that previously tripped `react-hooks/refs` is no longer
+              // visible to the analyzer (the handler is an opaque hook return),
+              // so the per-site disable directives here were removed (B2-W3).
               void handleComplete(bt.id, { isCompleted: !squareState.isCompleted });
             }}
             onIncrementCount={() => {
-              if (isExpired) return;
-              // Phase 3 — Shared Counters: same routing as the grid onAct.
-              // handleSharedCounterIncrement transitively writes flashTimerRef.current
-              // from showFlash — same false-positive as the handleComplete case above.
-              /* eslint-disable react-hooks/refs */
-              if (task.sharedCounterId != null) {
-                void handleSharedCounterIncrement(task.sharedCounterId);
-              } else if (sharedCounterSourceIds.has(task.id)) {
-                void handleSharedCounterIncrement(task.id);
-              } else {
-                void handleComplete(bt.id, { currentCount: modalCurrentCount + 1 });
-              }
-              /* eslint-enable react-hooks/refs */
+              // Standalone (non-shared) counting squares only — shared squares
+              // route through `quickAmount.onAdd` above.
+              if (isSealed) return;
+              void handleComplete(bt.id, { currentCount: modalCurrentCount + 1 });
             }}
             onDecrementCount={() => {
-              // Linked derived counters are read-only — decrement must go through
-              // the source. Silently ignore the action here; the UI should hide/
-              // disable the button when isLinkedCounter is true.
-              if (isExpired || isLinkedCounter) return;
-              if (modalCurrentCount > 0) {
-                void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
-              }
+              // Standalone (non-shared) counting squares only — shared squares
+              // route through `quickAmount.onRemove` above.
+              if (isSealed) return;
+              if (modalCurrentCount > 0) void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
             }}
             onToggleStep={(stepId: string) => {
-              if (isExpired) return;
+              if (isSealed) return;
               // Per-board step completion is not tracked under the unified model.
               // Progress steps link to their own Task records; toggle them directly.
               void handleCompoundChildToggle(stepId);
@@ -1386,6 +1143,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               squareData.type === 'compound' ? handleCompoundChildToggle : undefined
             }
             onOpenInLibrary={(taskId) => setOpenedTaskInLibrary(taskId)}
+            sharedHint={modalSharedHint}
+            quickAmount={quickAmount}
+            achievementBadge={achievementBadgesByBoardTaskId[bt.id]}
           />
         );
       })()}
@@ -1407,24 +1167,34 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound,
+          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         const squareState = taskToSquareState(
-          task, taskChildren, taskMap, compoundChildrenByCompound,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          cellStateByBoardTaskId[bt.id],
         );
         // Use squareState.currentCount (baseline-adjusted for linked counters).
         const menuCurrentCount = squareState.currentCount;
         // Linked derived counters are read-only — decrement/reset must be gated.
         const isLinkedCounter = squareData.sharedCounterId != null;
 
-        // M3 — Swap is available on ACTIVE non-expired squares that are not a
-        // pinned center. Phase 2b: NONE center (bt.isCenter may be true in DB
-        // for wizard-placed boards) is swappable — only FREE/CUSTOM_FREE/CHOSEN
-        // centers are pinned.
-        const swapEligible =
-          board.status === BoardStatus.ACTIVE &&
-          !isExpired &&
-          !(bt.isCenter && board.centerSquareType !== CenterSquareType.NONE);
+        // Phase 2 — resolve the shared-counter hint for this task.
+        const menuSharedHint = sharedCounterHintsByTaskId.get(task.id);
+
+        // R3 — quick-action amount options (shared counting squares only).
+        // The "# Custom amount…" item opens the detail modal (which owns
+        // the full picker) rather than an inline input — see the prop's
+        // docstring on `FloatingContextMenu` for why.
+        const menuSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
+        const sharedAmountActions =
+          squareData.type === 'counting' && menuSourceId
+            ? {
+                unit: task.unit ?? '',
+                defaultAmount: resolveSharedCounterDefaultAmount(taskMap[menuSourceId]),
+                onAdd: (amount: number) => void handleSharedCounterIncrement(menuSourceId, amount, false),
+                onOpenCustom: () => setSelectedSquareId(bt.id),
+              }
+            : undefined;
 
         return (
           <FloatingContextMenu
@@ -1437,20 +1207,24 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               setContextMenu(null);
             }}
             onIncrementCount={() => {
-              // Phase 3 — Shared Counters: same routing as the grid onAct.
-              if (task.sharedCounterId != null) {
-                void handleSharedCounterIncrement(task.sharedCounterId);
-              } else if (sharedCounterSourceIds.has(task.id)) {
-                void handleSharedCounterIncrement(task.id);
-              } else {
-                void handleComplete(bt.id, { currentCount: menuCurrentCount + 1 });
-              }
+              // Standalone (non-shared) counting squares only — shared
+              // squares route through `sharedAmountActions.onAdd` above.
+              void handleComplete(bt.id, { currentCount: menuCurrentCount + 1 });
               setContextMenu(null);
             }}
             onDecrementCount={() => {
               // Linked derived counters are read-only — no decrement.
               if (isLinkedCounter) { setContextMenu(null); return; }
-              if (menuCurrentCount > 0) {
+              // Phase 2 — Source shared counters route through decrementSharedCounter.
+              // R3: mirror the ADD amount (the counter's default) per the
+              // contract "decrement mirrors the add amount" — matches iOS's
+              // context menu and this menu's own remove label.
+              if (sharedCounterSourceIds.has(task.id)) {
+                void handleSharedCounterDecrement(
+                  task.id,
+                  resolveSharedCounterDefaultAmount(task),
+                );
+              } else if (menuCurrentCount > 0) {
                 void handleComplete(bt.id, { currentCount: menuCurrentCount - 1 });
               }
               setContextMenu(null);
@@ -1469,99 +1243,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               setOpenedTaskInLibrary(taskId);
               setContextMenu(null);
             }}
-            onSwapTask={swapEligible ? () => {
-              setSwapBoardTaskId(bt.id);
-              setContextMenu(null);
-            } : undefined}
-            onRemoveFromBoard={swapEligible ? () => {
-              setRemoveBoardTaskId(bt.id);
-              setContextMenu(null);
-            } : undefined}
+            sharedHint={menuSharedHint}
+            sharedAmountActions={sharedAmountActions}
           />
-        );
-      })()}
-
-      {/* M3 — Cell Swap Modal */}
-      {!editMode && swapBoardTaskId && (() => {
-        const bt = boardTasks.find((b) => b.id === swapBoardTaskId);
-        if (!bt) return null;
-        return (
-          <CellSwapModal
-            mode="swap"
-            currentTaskId={bt.taskId}
-            candidateTasks={Object.values(taskMap)}
-            onClose={() => setSwapBoardTaskId(null)}
-            onConfirm={async (newTaskId) => {
-              setSwapBoardTaskId(null);
-              try {
-                await updateBoardTaskAndCascade(swapBoardTaskId, newTaskId);
-              } catch (err) {
-                console.error('Cell swap failed:', err);
-                // `showFlash` is a stable event-time callback; the ref access
-                // happens inside a catch block (not during render). False positive
-                // from the react-hooks/refs analyzer — same pattern as the
-                // DetailModal `onToggleComplete` disable above.
-                // eslint-disable-next-line react-hooks/refs
-                showFlash('Swap failed — please try again', 'bingo');
-              }
-            }}
-          />
-        );
-      })()}
-
-      {/* M4 — Remove from board confirmation */}
-      {!editMode && removeBoardTaskId && (() => {
-        const bt = boardTasks.find((b) => b.id === removeBoardTaskId);
-        const task = bt ? taskMap[bt.taskId] : undefined;
-        return (
-          <div
-            className={styles.removeConfirmBackdrop}
-            onClick={() => setRemoveBoardTaskId(null)}
-            role="presentation"
-          >
-            <div
-              className={styles.removeConfirmDialog}
-              onClick={(e) => e.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="remove-confirm-title"
-              aria-describedby="remove-confirm-body"
-            >
-              <h3 id="remove-confirm-title" className={styles.removeConfirmTitle}>
-                Remove from board?
-              </h3>
-              <p id="remove-confirm-body" className={styles.removeConfirmBody}>
-                <strong>{task?.title ?? 'This task'}</strong> will be removed from this board.
-                The task stays in your library and on any other boards where it appears.
-              </p>
-              <div className={styles.removeConfirmButtons}>
-                <button
-                  type="button"
-                  className={styles.removeConfirmCancel}
-                  onClick={() => setRemoveBoardTaskId(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className={styles.removeConfirmDanger}
-                  onClick={async () => {
-                    const targetId = removeBoardTaskId;
-                    setRemoveBoardTaskId(null);
-                    try {
-                      await removeBoardTaskFromBoard(targetId);
-                    } catch (err) {
-                      console.error('Remove from board failed:', err);
-                      // eslint-disable-next-line react-hooks/refs
-                      showFlash('Remove failed — please try again', 'bingo');
-                    }
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          </div>
         );
       })()}
 
@@ -1574,12 +1258,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           onConfirm={async (taskId) => {
             const pos = addCellPos;
             setAddCellPos(null);
-            try {
-              await addBoardTaskToBoard(boardId, taskId, pos.row, pos.col);
-            } catch (err) {
-              console.error('Add task to cell failed:', err);
-              showFlash('Add failed — please try again', 'bingo');
-            }
+            // DB write + error flash live in `useBoardPlay.addTaskToCell`.
+            await addTaskToCell(taskId, pos.row, pos.col);
           }}
         />
       )}

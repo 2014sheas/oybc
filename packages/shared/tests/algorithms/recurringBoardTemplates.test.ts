@@ -532,3 +532,155 @@ describe('multi-window spawn simulation', () => {
     expect(findTemplatesPendingSpawn([tpl], [board], 'monday', day)).toHaveLength(0);
   });
 });
+
+// ─── Golden-parity matrix: buildSpawnPlacement ───────────────────────────────
+//
+// PLAY_TRANSITION.md T2. Byte-for-byte golden of `buildSpawnPlacement` across
+// {3×3, 4×4, 5×5} × {FREE, CUSTOM_FREE, CHOSEN, NONE} × {randomized, not} ×
+// {exact-fit, overfilled pool}, driven by the shared seeded LCG below. These
+// expected arrays were committed against the OLD hand-rolled loop first
+// (baseline), then must stay byte-identical after buildSpawnPlacement is
+// refactored to delegate to bingo-core`s `placeBoard`. The Swift twin
+// (BoardPlacementTests.swift) ports the SAME LCG + SAME expected arrays — that
+// lockstep is the cross-platform placement proof.
+
+/** Deterministic uniform [0,1) LCG (Numerical Recipes constants). Identical to
+ *  packages/bingo-core/tests/seededRng.ts and the Swift port in
+ *  OYBCTests/BoardPlacementTests.swift. */
+function makeSeededRng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+const SPAWN_GOLDEN_SEED = 2026;
+
+interface SpawnGoldenCase {
+  size: number;
+  center: CenterSquareType;
+  randomize: boolean;
+  fit: string;
+  poolCount: number;
+  expected: (string | null)[];
+}
+
+const SPAWN_GOLDENS: SpawnGoldenCase[] = [
+  { size: 3, center: CenterSquareType.FREE, randomize: false, fit: "exact", poolCount: 8,
+    expected: ["t0", "t1", "t2", "t3", null, "t4", "t5", "t6", "t7"] },
+  { size: 3, center: CenterSquareType.FREE, randomize: false, fit: "over", poolCount: 14,
+    expected: ["t0", "t1", "t2", "t3", null, "t4", "t5", "t6", "t7"] },
+  { size: 3, center: CenterSquareType.FREE, randomize: true, fit: "exact", poolCount: 8,
+    expected: ["t5", "t4", "t1", "t2", null, "t3", "t6", "t7", "t0"] },
+  { size: 3, center: CenterSquareType.FREE, randomize: true, fit: "over", poolCount: 14,
+    expected: ["t2", "t1", "t3", "t9", null, "t10", "t11", "t5", "t8"] },
+  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "exact", poolCount: 8,
+    expected: ["t0", "t1", "t2", "t3", null, "t4", "t5", "t6", "t7"] },
+  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "over", poolCount: 14,
+    expected: ["t0", "t1", "t2", "t3", null, "t4", "t5", "t6", "t7"] },
+  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "exact", poolCount: 8,
+    expected: ["t5", "t4", "t1", "t2", null, "t3", "t6", "t7", "t0"] },
+  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "over", poolCount: 14,
+    expected: ["t2", "t1", "t3", "t9", null, "t10", "t11", "t5", "t8"] },
+  { size: 3, center: CenterSquareType.CHOSEN, randomize: false, fit: "exact", poolCount: 9,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"] },
+  { size: 3, center: CenterSquareType.CHOSEN, randomize: false, fit: "over", poolCount: 15,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"] },
+  { size: 3, center: CenterSquareType.CHOSEN, randomize: true, fit: "exact", poolCount: 9,
+    expected: ["t6", "t2", "t4", "t1", "t5", "t3", "t7", "t8", "t0"] },
+  { size: 3, center: CenterSquareType.CHOSEN, randomize: true, fit: "over", poolCount: 15,
+    expected: ["t10", "t3", "t2", "t9", "t12", "t8", "t1", "t6", "t5"] },
+  { size: 3, center: CenterSquareType.NONE, randomize: false, fit: "exact", poolCount: 9,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"] },
+  { size: 3, center: CenterSquareType.NONE, randomize: false, fit: "over", poolCount: 15,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"] },
+  { size: 3, center: CenterSquareType.NONE, randomize: true, fit: "exact", poolCount: 9,
+    expected: ["t6", "t2", "t4", "t1", "t5", "t3", "t7", "t8", "t0"] },
+  { size: 3, center: CenterSquareType.NONE, randomize: true, fit: "over", poolCount: 15,
+    expected: ["t10", "t3", "t2", "t9", "t12", "t8", "t1", "t6", "t5"] },
+  { size: 4, center: CenterSquareType.FREE, randomize: false, fit: "exact", poolCount: 16,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.FREE, randomize: false, fit: "over", poolCount: 22,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.FREE, randomize: true, fit: "exact", poolCount: 16,
+    expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"] },
+  { size: 4, center: CenterSquareType.FREE, randomize: true, fit: "over", poolCount: 22,
+    expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"] },
+  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "exact", poolCount: 16,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "over", poolCount: 22,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "exact", poolCount: 16,
+    expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"] },
+  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "over", poolCount: 22,
+    expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"] },
+  { size: 4, center: CenterSquareType.CHOSEN, randomize: false, fit: "exact", poolCount: 16,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.CHOSEN, randomize: false, fit: "over", poolCount: 22,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.CHOSEN, randomize: true, fit: "exact", poolCount: 16,
+    expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"] },
+  { size: 4, center: CenterSquareType.CHOSEN, randomize: true, fit: "over", poolCount: 22,
+    expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"] },
+  { size: 4, center: CenterSquareType.NONE, randomize: false, fit: "exact", poolCount: 16,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.NONE, randomize: false, fit: "over", poolCount: 22,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
+  { size: 4, center: CenterSquareType.NONE, randomize: true, fit: "exact", poolCount: 16,
+    expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"] },
+  { size: 4, center: CenterSquareType.NONE, randomize: true, fit: "over", poolCount: 22,
+    expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"] },
+  { size: 5, center: CenterSquareType.FREE, randomize: false, fit: "exact", poolCount: 24,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", null, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"] },
+  { size: 5, center: CenterSquareType.FREE, randomize: false, fit: "over", poolCount: 30,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", null, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"] },
+  { size: 5, center: CenterSquareType.FREE, randomize: true, fit: "exact", poolCount: 24,
+    expected: ["t4", "t6", "t3", "t10", "t18", "t22", "t16", "t17", "t7", "t5", "t19", "t8", null, "t15", "t21", "t14", "t2", "t20", "t11", "t9", "t12", "t13", "t23", "t1", "t0"] },
+  { size: 5, center: CenterSquareType.FREE, randomize: true, fit: "over", poolCount: 30,
+    expected: ["t25", "t15", "t8", "t19", "t23", "t5", "t11", "t10", "t7", "t6", "t2", "t18", null, "t27", "t22", "t24", "t9", "t4", "t13", "t21", "t29", "t20", "t3", "t26", "t14"] },
+  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "exact", poolCount: 24,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", null, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"] },
+  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "over", poolCount: 30,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", null, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"] },
+  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "exact", poolCount: 24,
+    expected: ["t4", "t6", "t3", "t10", "t18", "t22", "t16", "t17", "t7", "t5", "t19", "t8", null, "t15", "t21", "t14", "t2", "t20", "t11", "t9", "t12", "t13", "t23", "t1", "t0"] },
+  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "over", poolCount: 30,
+    expected: ["t25", "t15", "t8", "t19", "t23", "t5", "t11", "t10", "t7", "t6", "t2", "t18", null, "t27", "t22", "t24", "t9", "t4", "t13", "t21", "t29", "t20", "t3", "t26", "t14"] },
+  { size: 5, center: CenterSquareType.CHOSEN, randomize: false, fit: "exact", poolCount: 25,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23", "t24"] },
+  { size: 5, center: CenterSquareType.CHOSEN, randomize: false, fit: "over", poolCount: 31,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23", "t24"] },
+  { size: 5, center: CenterSquareType.CHOSEN, randomize: true, fit: "exact", poolCount: 25,
+    expected: ["t10", "t5", "t7", "t4", "t18", "t23", "t17", "t21", "t12", "t8", "t6", "t3", "t19", "t16", "t22", "t15", "t2", "t20", "t11", "t9", "t13", "t14", "t24", "t1", "t0"] },
+  { size: 5, center: CenterSquareType.CHOSEN, randomize: true, fit: "over", poolCount: 31,
+    expected: ["t11", "t16", "t20", "t5", "t24", "t9", "t6", "t25", "t2", "t8", "t7", "t19", "t26", "t28", "t14", "t23", "t10", "t4", "t13", "t22", "t30", "t21", "t3", "t27", "t15"] },
+  { size: 5, center: CenterSquareType.NONE, randomize: false, fit: "exact", poolCount: 25,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23", "t24"] },
+  { size: 5, center: CenterSquareType.NONE, randomize: false, fit: "over", poolCount: 31,
+    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23", "t24"] },
+  { size: 5, center: CenterSquareType.NONE, randomize: true, fit: "exact", poolCount: 25,
+    expected: ["t10", "t5", "t7", "t4", "t18", "t23", "t17", "t21", "t12", "t8", "t6", "t3", "t19", "t16", "t22", "t15", "t2", "t20", "t11", "t9", "t13", "t14", "t24", "t1", "t0"] },
+  { size: 5, center: CenterSquareType.NONE, randomize: true, fit: "over", poolCount: 31,
+    expected: ["t11", "t16", "t20", "t5", "t24", "t9", "t6", "t25", "t2", "t8", "t7", "t19", "t26", "t28", "t14", "t23", "t10", "t4", "t13", "t22", "t30", "t21", "t3", "t27", "t15"] },
+];
+
+describe("buildSpawnPlacement golden-parity matrix (seed " + String(SPAWN_GOLDEN_SEED) + ")", () => {
+  it.each(SPAWN_GOLDENS)(
+    "$size×$size $center randomize=$randomize $fit-fit (pool $poolCount) matches golden",
+    ({ size, center, randomize, poolCount, expected }) => {
+      const tpl = buildTemplate({
+        boardSize: size as 3 | 4 | 5,
+        centerSquareType: center,
+        isRandomized: randomize,
+        seedTaskIds: Array.from({ length: poolCount }, (_, i) => `t${i}`),
+      });
+      const placement = buildSpawnPlacement({
+        template: tpl,
+        poolTasks: buildPool(tpl),
+        rng: makeSeededRng(SPAWN_GOLDEN_SEED),
+      });
+      expect(placement.map((t) => t?.id ?? null)).toEqual(expected);
+    },
+  );
+});

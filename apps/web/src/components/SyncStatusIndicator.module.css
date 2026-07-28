@@ -52,6 +52,47 @@
   background: var(--riso-muted);
 }
 
+/* Exhausted-item recovery row: plain count + inline Retry (only shown when
+   items are stuck past the retry cap). Warning tint on the count draws the
+   eye without shouting; never carries raw error text. */
+.exhaustedLabel {
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--riso-red);
+}
+
+.retryButton {
+  padding: 7px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+  flex-shrink: 0;
+}
+.retryButton:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.retryButton:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.retryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.retryButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
 .syncButton {
   width: 100%;
   padding: 11px;

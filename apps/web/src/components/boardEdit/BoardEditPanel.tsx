@@ -11,11 +11,10 @@ import { BoardSetupForm } from '../wizard/BoardSetupForm';
 import { RisoButton, RisoSegmented, RisoSectionLabel } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
 import {
-  updateBoardAndCascade,
   archiveBoard,
   type UpdateActiveBoardPatch,
 } from '../../db/operations/boards';
-import { db } from '../../db/database';
+import { countBoardTasksForBoard } from '../../db/operations';
 import styles from './BoardEditPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -47,12 +46,14 @@ export interface BoardEditPanelProps {
    */
   squareEditCount: number;
   /**
-   * Called at the START of handleSave — commits all staged square edits
-   * (BoardTask replacements + global Task field patches) BEFORE the
-   * metadata `updateBoardAndCascade` write. Must throw on error (the
-   * panel's catch block will surface the failure to the user).
+   * Commits the WHOLE Save: staged square edits (BoardTask replacements +
+   * global Task field patches + reorders + removals) AND the board-metadata
+   * patch, all in one atomic Dexie transaction (board-integrity PR-4, item 3,
+   * docs/BOARD_INTEGRITY.md). Must throw on error (the panel's catch block
+   * surfaces the failure to the user) — a throw rolls back every write in
+   * the transaction, so a failed Save can never leave the board half-edited.
    */
-  onExtraCommit: () => Promise<void>;
+  onExtraCommit: (metadataPatch: UpdateActiveBoardPatch) => Promise<void>;
   /**
    * Called when the user cancels with no unsaved changes, or after
    * the inline "Discard changes?" confirm. The parent exits edit mode.
@@ -103,6 +104,65 @@ function snapEnd(ymd: string): string {
   return toLocalISO(new Date(y, m - 1, d, 23, 59, 59, 999));
 }
 
+/**
+ * Pure decision core for the Save patch's date fields — EXPORTED FOR TESTS.
+ *
+ * A metadata-only Save must PRESERVE the board's stored window (returns
+ * `{}` — omit both fields): under Windowed Completion, `startDate` is the
+ * completion window's lower bound, and rewriting it wipes the windowed
+ * progress of every task whose events predate the new start. Dates are
+ * returned ONLY for a deliberate re-window: the timeframe changed, or the
+ * (unchanged-CUSTOM) dates were edited.
+ *
+ * Kept pure so the branch-selection logic — the exact booleans that decide
+ * preserve-vs-rewindow — is directly unit-testable (review: this decision
+ * had zero direct coverage as inline component code).
+ */
+export function buildEditDatesPatch(args: {
+  boardTimeframe: Timeframe;
+  formTimeframe: Timeframe;
+  origStart: string;
+  origEnd: string;
+  customStartDate: string;
+  customEndDate: string;
+  computedBoundaries: { startDate: string; endDate: string } | null;
+  /** Injected "today" for determinism in tests; defaults to now. */
+  now?: Date;
+}): { startDate?: string; endDate?: string | null } {
+  const {
+    boardTimeframe, formTimeframe, origStart, origEnd,
+    customStartDate, customEndDate, computedBoundaries,
+  } = args;
+  const timeframeChanged = formTimeframe !== boardTimeframe;
+  const customDatesChanged =
+    formTimeframe === Timeframe.CUSTOM &&
+    (customStartDate !== origStart || customEndDate !== origEnd);
+
+  if (timeframeChanged) {
+    // A deliberate re-window: converting the board recomputes its dates.
+    if (formTimeframe === Timeframe.INDEFINITE) {
+      // Ongoing board — anchor startDate to today, clear the deadline.
+      const dayStart = args.now ? new Date(args.now) : new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      return { startDate: toLocalISO(dayStart), endDate: null };
+    }
+    if (formTimeframe === Timeframe.CUSTOM) {
+      return { startDate: snapStart(customStartDate), endDate: snapEnd(customEndDate) };
+    }
+    if (computedBoundaries) {
+      return { startDate: computedBoundaries.startDate, endDate: computedBoundaries.endDate };
+    }
+    return {};
+  }
+  if (customDatesChanged) {
+    // Same CUSTOM timeframe, user picked new dates.
+    return { startDate: snapStart(customStartDate), endDate: snapEnd(customEndDate) };
+  }
+  // Window untouched — omit startDate/endDate so the stored window (and
+  // every in-window completion event) survives the save.
+  return {};
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
@@ -110,7 +170,12 @@ function snapEnd(ymd: string): string {
  * when the board is in edit mode (Phase 1).
  *
  * Carries all form state previously held by EditBoardSheet, with the same
- * validation and save path (`updateBoardAndCascade`). Phase 1 scope:
+ * validation as before. The metadata write itself (`updateBoardAndCascade`)
+ * now happens INSIDE `onExtraCommit` (board-integrity PR-4, item 3,
+ * docs/BOARD_INTEGRITY.md) — this component builds the patch and hands it
+ * to `onExtraCommit`, which commits it atomically alongside the staged
+ * square edits, rather than calling it here as a second, separate write.
+ * Phase 1 scope:
  *   - Cancel (confirms if dirty) + "Editing" gold pill with red dot.
  *   - Board metadata fields via `BoardSetupForm` (name, timeframe, dates, center).
  *   - Immutable board-size chip (active boards cannot be resized).
@@ -122,7 +187,7 @@ function snapEnd(ymd: string): string {
  * @param board - The ACTIVE board to edit. Must be non-null.
  * @param weekStartDay - Drives timeframe boundary computation.
  * @param onCancel - Called on clean cancel or after Discard confirm.
- * @param onSaved - Called after a successful `updateBoardAndCascade` write.
+ * @param onSaved - Called after a successful save (square edits + metadata, one transaction).
  * @param onArchived - Called after a successful `archiveBoard` write.
  */
 export function BoardEditPanel({
@@ -174,11 +239,9 @@ export function BoardEditPanel({
     setSaving(false);
     setConfirm(null);
 
-    void db.boardTasks
-      .where('boardId')
-      .equals(board.id)
-      .count()
-      .then((count) => setHasCandidateTasks(count > 0));
+    void countBoardTasksForBoard(board.id).then((count) =>
+      setHasCandidateTasks(count > 0),
+    );
   // Re-seed only when the board's id changes, not on every reactive update
   // (mirrors EditBoardSheet's seeding strategy to avoid disrupting edits).
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -266,29 +329,36 @@ export function BoardEditPanel({
       patch.centerSquareCustomName = centerCustomName.trim() || null;
     }
 
-    // Timeframe + dates.
+    // Timeframe + dates — ONLY when the user actually changed the window.
+    //
+    // A metadata-only Save must PRESERVE the board's stored window: under
+    // Windowed Completion, `startDate` is the completion window's lower bound
+    // — rewriting it silently re-windows the board and wipes the progress of
+    // every task whose completion events predate the new start. The old code
+    // did exactly that on EVERY save (indefinite → re-anchored to today; core
+    // → recomputed from today's window), which reset all progress except
+    // tasks completed on the edit day.
     patch.timeframe = timeframe;
-    if (timeframe === Timeframe.INDEFINITE) {
-      // Ongoing board — anchor startDate to today, clear the deadline.
-      const dayStart = new Date();
-      dayStart.setHours(0, 0, 0, 0);
-      patch.startDate = toLocalISO(dayStart);
-      patch.endDate = null;
-    } else if (timeframe === Timeframe.CUSTOM) {
-      patch.startDate = snapStart(customStartDate);
-      patch.endDate = snapEnd(customEndDate);
-    } else if (computedBoundaries) {
-      patch.startDate = computedBoundaries.startDate;
-      patch.endDate = computedBoundaries.endDate;
-    }
+    const dates = buildEditDatesPatch({
+      boardTimeframe: board.timeframe as Timeframe,
+      formTimeframe: timeframe,
+      origStart,
+      origEnd,
+      customStartDate,
+      customEndDate,
+      computedBoundaries,
+    });
+    if (dates.startDate !== undefined) patch.startDate = dates.startDate;
+    if (dates.endDate !== undefined) patch.endDate = dates.endDate;
 
     setSaving(true);
     try {
-      // 1. Commit square edits (replacements + task-field patches) first.
-      //    onExtraCommit throws on failure; the catch block surfaces the error.
-      await onExtraCommit();
-      // 2. Commit metadata (name / timeframe / dates / center).
-      await updateBoardAndCascade(board.id, patch);
+      // Commit EVERYTHING (square edits — replacements / task-field patches /
+      // reorders / removals — THEN the metadata patch) as one atomic Dexie
+      // transaction (board-integrity PR-4, item 3). onExtraCommit throws on
+      // any failure; the catch block surfaces it, and the whole transaction
+      // rolls back — no more partial-Save state.
+      await onExtraCommit(patch);
       onSaved();
     } catch (err) {
       console.error('BoardEditPanel: save failed', err);

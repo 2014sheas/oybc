@@ -1,0 +1,23 @@
+{
+  "name": "@oybc/bingo-core",
+  "version": "1.0.0",
+  "description": "Pure bingo game math shared by OYBC (Do) and Play OYBC — detection, shuffle, center-square, placement. No domain types, no platform code.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.1",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
+    "typescript": "^6.0.3"
+  }
+}

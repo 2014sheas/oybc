@@ -98,16 +98,19 @@ export function validateForm(
   }
 
   if (type === TaskType.COUNTING) {
+    // R1 counters refresh — field names are Verb/Goal/Counting everywhere
+    // (CreateNewTaskForm's labels); these error strings are the iOS parity
+    // contract for the same relabel.
     if (action.trim().length === 0) {
-      errors.action = 'Action is required';
+      errors.action = 'Verb is required';
     } else if (action.trim().length > ACTION_MAX_LENGTH) {
-      errors.action = `Action must be ${ACTION_MAX_LENGTH} characters or less`;
+      errors.action = `Verb must be ${ACTION_MAX_LENGTH} characters or less`;
     }
 
     if (unit.trim().length === 0) {
-      errors.unit = 'Unit is required';
+      errors.unit = 'Counting is required';
     } else if (unit.trim().length > UNIT_MAX_LENGTH) {
-      errors.unit = `Unit must be ${UNIT_MAX_LENGTH} characters or less`;
+      errors.unit = `Counting must be ${UNIT_MAX_LENGTH} characters or less`;
     }
 
     if (maxCountStr.trim().length === 0) {
@@ -504,6 +507,9 @@ export function useCreateFormState({
               timeframe: defaultTimeframe,
               startDate: defaultStartDate,
               endDate: defaultEndDate,
+              // Wizard-born (deferred-persist). Hidden from the library until
+              // its board goes active (see computeBrowsableTasks). Mirrors iOS.
+              createdInWizard: true,
             };
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
             onTaskCreated(newTask);
@@ -536,6 +542,9 @@ export function useCreateFormState({
               timeframe: defaultTimeframe,
               startDate: defaultStartDate,
               endDate: defaultEndDate,
+              // Wizard-born (deferred-persist). Hidden from the library until
+              // its board goes active (see computeBrowsableTasks). Mirrors iOS.
+              createdInWizard: true,
             };
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
             onTaskCreated(newTask);
@@ -570,6 +579,9 @@ export function useCreateFormState({
               timeframe: defaultTimeframe,
               startDate: defaultStartDate,
               endDate: defaultEndDate,
+              // Wizard-born (deferred-persist). Hidden from the library until
+              // its board goes active (see computeBrowsableTasks). Mirrors iOS.
+              createdInWizard: true,
             };
             const payload: PendingTaskPayload = { task: newTask, childTasks: [], childLinks: [] };
             onTaskCreated(newTask);

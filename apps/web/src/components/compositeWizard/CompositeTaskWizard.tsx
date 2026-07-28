@@ -3,13 +3,18 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   OperatorType,
   TaskType,
+  findLinkableCounter,
   type Task,
   type BoardTask,
   type CompoundChild,
   type CreateCompoundChildEntry,
 } from '@oybc/shared';
-import { db } from '../../db/database';
-import { createCompound } from '../../db/operations/tasks';
+import {
+  createCompound,
+  fetchAllBoardTasks,
+  fetchAllCompoundChildren,
+  fetchTasksForUser,
+} from '../../db/operations';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from '../playground/playgroundUtils';
 import { createEmptyStep } from '../progressStepUtils';
 import {
@@ -101,28 +106,28 @@ export function CompositeTaskWizard({
   // breaks for new rows because Dexie compound-index match is strict-equal,
   // and `false !== 0`.
   const allTasks = useLiveQuery(
-    () =>
-      db.tasks
-        .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type !== TaskType.COMPOUND)
-        .toArray(),
+    async () =>
+      (await fetchTasksForUser(resolvedUserId)).filter(
+        (t) => t.type !== TaskType.COMPOUND,
+      ),
     [resolvedUserId],
   ) ?? EMPTY_TASKS;
 
   // Compound tasks in the library (formerly "compositeTasks").
   const allCompoundTasks: Task[] = useLiveQuery(
-    () =>
-      db.tasks
-        .filter((t) => t.userId === resolvedUserId && !t.isDeleted && t.type === TaskType.COMPOUND)
-        .toArray(),
+    async () =>
+      (await fetchTasksForUser(resolvedUserId)).filter(
+        (t) => t.type === TaskType.COMPOUND,
+      ),
     [resolvedUserId],
   ) ?? EMPTY_TASKS;
 
   // Usage hints for the existing-task picker.
-  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+  const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []) ?? EMPTY_BOARD_TASKS;
 
   // compoundChildren — used to compute child counts + leaf previews for compound tasks.
   const allCompoundChildren: CompoundChild[] = useLiveQuery(
-    () => db.compoundChildren.filter((c) => !c.isDeleted).toArray(),
+    () => fetchAllCompoundChildren(),
     [],
   ) ?? EMPTY_COMPOUND_CHILDREN;
 
@@ -260,6 +265,14 @@ export function CompositeTaskWizard({
           const maxCount = parseInt(subtask.maxCountStr, 10);
           const trimmedAction = subtask.action.trim();
           const trimmedUnit = subtask.unit.trim();
+          // R1 counters refresh — auto-link. Re-derive the match fresh at
+          // submit time (the library may have changed since the last
+          // keystroke); `linkDisabled` is the user's "Don't link" opt-out
+          // from the InlineCounterLinkHint shown under the fields.
+          const match =
+            !subtask.linkDisabled && trimmedAction && trimmedUnit
+              ? findLinkableCounter({ action: trimmedAction, unit: trimmedUnit }, allTasks)
+              : null;
           return {
             autoCreate: {
               type: TaskType.COUNTING,
@@ -267,6 +280,10 @@ export function CompositeTaskWizard({
               action: trimmedAction || undefined,
               unit: trimmedUnit || undefined,
               maxCount: Number.isFinite(maxCount) ? maxCount : undefined,
+              // "Start fresh" baseline — the source's lifetime count at
+              // creation time, so the new child's own window begins at 0.
+              sharedCounterId: match ? match.counterId : undefined,
+              baseline: match ? match.lifetime : undefined,
             },
           };
         }

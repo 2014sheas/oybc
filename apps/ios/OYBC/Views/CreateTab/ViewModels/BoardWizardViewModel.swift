@@ -114,6 +114,9 @@ final class BoardWizardViewModel {
 
     private let initialPreferences: UserPreferences
 
+    /// Injected for tests; defaults to the production singleton.
+    private let database: AppDatabase
+
     init(
         preferences: UserPreferences,
         initialStep: WizardStep = 1,
@@ -122,8 +125,10 @@ final class BoardWizardViewModel {
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
         startRecurring: Bool = false,
-        userId: String? = nil
+        userId: String? = nil,
+        database: AppDatabase = .shared
     ) {
+        self.database = database
         self.initialPreferences = preferences
         self.weekStartDay = preferences.weekStartDay.rawValue
         self.currentStep = initialStep
@@ -181,7 +186,7 @@ final class BoardWizardViewModel {
             self.timeframe = t.timeframe
             self.centerType = t.centerSquareType
             self.centerCustomName = t.centerSquareCustomName ?? ""
-            self.selectedTaskIds = Set(t.seedTaskIds)
+            self.selectedTaskIds = Self.resolveTemplateHydrationTaskIds(t, database: database)
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -207,7 +212,7 @@ final class BoardWizardViewModel {
                 // Silent on DB error — the wizard still opens with an
                 // empty selection so the user can build a board manually.
                 if let userId = userId,
-                   let pool = try? AppDatabase.shared.fetchDefaultPool(userId: userId, timeframe: timeframe),
+                   let pool = try? database.fetchDefaultPool(userId: userId, timeframe: timeframe),
                    !pool.taskIds.isEmpty {
                     self.selectedTaskIds = Set(pool.taskIds)
                 }
@@ -215,10 +220,10 @@ final class BoardWizardViewModel {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
                 // The "Custom" segment defaults to an ongoing board (End date =
                 // None); a dated range is opt-in via the End-date control. So a
-                // CUSTOM default resolves to .indefinite for a fresh board.
-                // Recurring templates can't use CUSTOM/INDEFINITE (no computed
-                // window) → fall back to daily in the recurring CTA.
-                if resolved == .custom {
+                // CUSTOM (or already-INDEFINITE) default resolves to .indefinite
+                // for a fresh board. Recurring templates can't use CUSTOM/INDEFINITE
+                // (no computed window) → fall back to daily in the recurring CTA.
+                if resolved == .custom || resolved == .indefinite {
                     self.timeframe = isRecurringAtEntry ? .daily : .indefinite
                 } else {
                     self.timeframe = resolved
@@ -256,12 +261,71 @@ final class BoardWizardViewModel {
 
     private static func resolveTimeframe(_ value: DefaultTimeframe) -> Timeframe {
         switch value {
-        case .daily:   return .daily
-        case .weekly:  return .weekly
-        case .monthly: return .monthly
-        case .yearly:  return .yearly
-        case .custom:  return .custom
+        case .daily:      return .daily
+        case .weekly:     return .weekly
+        case .monthly:    return .monthly
+        case .yearly:     return .yearly
+        case .custom:     return .custom
+        case .indefinite: return .indefinite
         }
+    }
+
+    /// Resolves a template's CURRENT pool-mix task ids for edit-mode
+    /// hydration. iOS twin of web's `useTemplateMix`.
+    ///
+    /// P1 (Task Pools + Recurring Boards Rework,
+    /// docs/POOLS_RECURRING.md §Migration "seedTaskIds end state") rewired
+    /// the legacy template editor's persistence to write edits through to
+    /// the linked `Pool`'s `taskIds` instead of the template's own
+    /// `seedTaskIds` field — which is left VERBATIM (decode-compat only)
+    /// and never read again. That means this hydration can no longer read
+    /// `t.seedTaskIds` directly: after a first "Add tasks"/"Edit"
+    /// round-trip, that field is stale — it would silently drop whatever
+    /// the write-through already applied to the Pool, and re-opening the
+    /// wizard a second time would show (and then re-save, DESTRUCTIVELY)
+    /// the wrong selection.
+    ///
+    /// Un-migrated safety net (shouldn't occur post-migration — the
+    /// first-launch migration always stamps a length-1 `poolIds`): falls
+    /// back to `seedTaskIds` verbatim ONLY when `poolIds` is `nil`
+    /// (genuinely un-migrated — see `PoolMix.isLegacyShapedRecord`'s
+    /// docstring).
+    ///
+    /// Review finding M2: this must NOT also fall back for an empty-but-
+    /// present `poolIds: []` — that shape also covers the defensive
+    /// "flatten" write-through (`BoardWizardPersist.swift`'s richer-shape
+    /// branch: `manualTaskIds: seedTaskIds, poolIds: [], removedTaskIds:
+    /// []`). Falling back to stale `seedTaskIds` there would silently
+    /// drop whatever the flatten already wrote to `manualTaskIds` — a
+    /// destructive-edit bug (re-saving the hydrated-wrong selection
+    /// resurrects stale seeds). `poolIds: []` resolves correctly through
+    /// `PoolMix.resolveMix` below regardless of which case produced it.
+    ///
+    /// Any DB read failure also falls back to `seedTaskIds` (silent, like
+    /// the DefaultPool prefill above) so the wizard still opens with a
+    /// usable selection rather than an error.
+    private static func resolveTemplateHydrationTaskIds(
+        _ template: RecurringBoardTemplate,
+        database: AppDatabase
+    ) -> Set<String> {
+        guard let poolIds = template.poolIds else {
+            return Set(template.seedTaskIds)
+        }
+        guard let pools = try? database.fetchPools(ids: poolIds) else {
+            return Set(template.seedTaskIds)
+        }
+        let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
+
+        var referencedIds = Set<String>()
+        for pool in pools { referencedIds.formUnion(pool.taskIds) }
+        referencedIds.formUnion(template.manualTaskIds ?? [])
+
+        guard let tasks = try? database.fetchTasks(ids: Array(referencedIds)) else {
+            return Set(template.seedTaskIds)
+        }
+        let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+
+        return Set(PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById).taskIds)
     }
 
     // MARK: - Coupled mutators

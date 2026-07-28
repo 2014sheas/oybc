@@ -1,5 +1,5 @@
-/* Counting step sub-fields (Riso) — Action → Goal → Unit, used in the compound
-   builder + progress rows. */
+/* Counting step sub-fields (Riso) — Verb → Goal → Counting, used in the
+   compound builder's inline subtask fields. */
 .countingFields {
   display: flex;
   flex-direction: column;
@@ -53,4 +53,11 @@
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--riso-red);
+}
+
+/* Live derived-title preview — R1 counters refresh. */
+.titlePreview {
+  font-family: var(--riso-font-body);
+  font-size: 0.8rem;
+  color: var(--riso-muted);
 }

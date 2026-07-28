@@ -7,6 +7,61 @@ import GRDB
 /// `WizardPlacement`.
 typealias WizardPlacement = [Task?]
 
+/// Builds the persisted `BoardTask` rows for a board from a wizard placement.
+///
+/// `isCenter` is TRUE **only** for a `.chosen` centre task. FREE / CUSTOM_FREE
+/// centres have a `nil` placement slot (so no row is produced), and a `.none`
+/// centre holds an ordinary task that must render as a normal square — so it is
+/// NOT flagged. Marking a `.none` centre `isCenter` makes the play grid render
+/// a gold "FREE" cell over a real task (the preview never did, because it gates
+/// on `centreType != .none`). This helper is the single source of truth shared
+/// by the wizard-save and recurring-spawn paths so the rule can't diverge.
+func makeWizardBoardTaskRows(
+    placement: WizardPlacement,
+    boardId: String,
+    size: Int,
+    centerType: CenterSquareType,
+    now: String
+) -> [BoardTask] {
+    let isOdd = size % 2 != 0
+    let centerRow = size / 2
+    let centerCol = size / 2
+    var rows: [BoardTask] = []
+    for (i, slot) in placement.enumerated() {
+        guard let task = slot else { continue }
+        let row = i / size
+        let col = i % size
+        let isCenterPos = isOdd && row == centerRow && col == centerCol
+        rows.append(BoardTask(
+            id: AppDatabase.generateUUID(),
+            boardId: boardId,
+            taskId: task.id,
+            row: row,
+            col: col,
+            isCenter: isCenterPos && centerType == .chosen,
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+        ))
+    }
+    return rows
+}
+
+/// The pending (deferred-persist, Bug #85) payloads that should actually be
+/// written when saving a board: only those whose task is placed on the board.
+///
+/// A task removed from the wizard pool can linger in `pendingTasks` (removal
+/// only updates the selection binding). Without this guard it would be written
+/// as an orphan `createdInWizard` Task row with no placement — which then leaks
+/// into the library (a wizard-orphan with no live placement is browsable) and
+/// reappears on draft resume.
+func pendingPayloadsToPersist(
+    pending: [String: PendingTaskPayload],
+    placedTaskIds: Set<String>
+) -> [PendingTaskPayload] {
+    pending.values.filter { placedTaskIds.contains($0.task.id) }
+}
+
 /// Resolution result for the wizard's start/end dates. Mirrors web's
 /// `ResolvedDates` discriminated union.
 enum ResolvedWizardDates {
@@ -34,9 +89,7 @@ func buildWizardPlacement(
     library: TaskLibraryViewModel
 ) -> WizardPlacement {
     let size = controller.size
-    let total = size * size
     let isOdd = size % 2 != 0
-    let centerIdx = (size / 2) * size + (size / 2)
 
     // Merge pending tasks with the live library so both appear in the grid.
     // Build a combined id → Task map; pending wins on collision (shouldn't
@@ -56,37 +109,24 @@ func buildWizardPlacement(
         }
         return selected.first(where: { $0.id == id })
     }()
-    let others: [Task] = chosenCenter != nil
-        ? selected.filter { $0.id != chosenCenter!.id }
-        : selected
-    // When isRandomized is false (e.g. snapshot tests pin this to get
-    // deterministic baselines), sort by task id so Set iteration order
-    // — which is non-deterministic across process restarts in Swift —
-    // doesn't produce a different grid on every test run.
-    let ordered = controller.isRandomized
-        ? Shuffle.fisherYatesShuffle(others)
-        : others.sorted { $0.id < $1.id }
+    // When isRandomized is false (e.g. snapshot tests pin this for
+    // deterministic baselines), sort by task id so Swift's non-deterministic
+    // Set iteration order doesn't reshuffle the grid across process restarts.
+    // Pre-sort here and pass `randomize: false` so the shared core preserves
+    // the order verbatim; the randomized path lets the core shuffle. Center
+    // handling + the cell walk are the shared placement math
+    // (BoardPlacement.placeBoard — the Swift mirror of bingo-core `placeBoard`).
+    let ordered: [Task] = controller.isRandomized
+        ? selected
+        : selected.sorted { $0.id < $1.id }
 
-    var grid: WizardPlacement = Array(repeating: nil, count: total)
-    var oi = 0
-    for i in 0..<total {
-        if i == centerIdx && isOdd {
-            if let center = chosenCenter {
-                grid[i] = center
-                continue
-            }
-            if controller.centerType == .free || controller.centerType == .customFree {
-                // Reserved cell — leave nil; BingoBoard renders the FREE label.
-                continue
-            }
-            // NONE on odd: fall through and place a regular task here.
-        }
-        if oi < ordered.count {
-            grid[i] = ordered[oi]
-            oi += 1
-        }
-    }
-    return grid
+    return BoardPlacement.placeBoard(
+        items: ordered,
+        gridSize: size,
+        centerType: isOdd ? controller.centerType : .none,
+        chosenCenterId: chosenCenter?.id,
+        randomize: controller.isRandomized
+    )
 }
 
 /// Resolves local-ISO start/end strings for the wizard's current
@@ -139,8 +179,8 @@ func resolveWizardDates(controller: BoardWizardViewModel) -> ResolvedWizardDates
 ///   rows in a single transaction. Version always starts at 1.
 /// - **Draft update** (`draftBoardId` set): updates the existing
 ///   `Board` with new field values + target status (version bump
-///   via `saveBoard`), hard-deletes all of its `BoardTask` rows, then
-///   inserts the new placement.
+///   via `saveBoard`), soft-deletes (tombstones) all of its existing
+///   `BoardTask` rows, then inserts the new placement.
 ///
 /// Runs on a background queue; dispatches the provided callbacks on
 /// the main queue. Callers should already have validated
@@ -156,9 +196,6 @@ func persistWizardBoard(
 ) {
     let trimmedName = controller.name.trimmingCharacters(in: .whitespacesAndNewlines)
     let size = controller.size
-    let isOdd = size % 2 != 0
-    let centerRow = size / 2
-    let centerCol = size / 2
     let centerType = controller.centerType
     let customCenterName: String? = centerType == .customFree
         ? controller.centerCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -224,113 +261,36 @@ func persistWizardBoard(
             let boardData = try JSONSerialization.data(withJSONObject: boardDict)
             let board = try JSONDecoder().decode(Board.self, from: boardData)
 
-            var boardTasks: [BoardTask] = []
-            for (i, slot) in placement.enumerated() {
-                guard let task = slot else { continue }
-                let row = i / size
-                let col = i % size
-                let isCenterPos = isOdd && row == centerRow && col == centerCol
-                let bt = BoardTask(
-                    id: UUID().uuidString.lowercased(),
-                    boardId: boardId,
-                    taskId: task.id,
-                    row: row,
-                    col: col,
-                    isCenter: isCenterPos && (centerType == .chosen || centerType == .none),
-                    createdAt: now,
-                    updatedAt: now,
-                    version: 1
-                )
-                boardTasks.append(bt)
-            }
+            let boardTasks = makeWizardBoardTaskRows(
+                placement: placement,
+                boardId: boardId,
+                size: size,
+                centerType: centerType,
+                now: now
+            )
+            // Only persist deferred (Bug #85) tasks that are actually placed —
+            // a task removed from the pool lingers in `pendingTasks` and must
+            // not be written as an orphan Task row (see pendingPayloadsToPersist).
+            let placedTaskIds = Set(boardTasks.map { $0.taskId })
+            let pendingToPersist = pendingPayloadsToPersist(
+                pending: capturedPendingTasks,
+                placedTaskIds: placedTaskIds
+            )
 
-            // Single atomic transaction: writing pending new tasks, then
-            // the board record + its BoardTask rows — plus all matching
-            // SyncQueueItem records — must commit or roll back together.
-            // Without the sync items the board stays local-only
-            // (SyncService.pushSync reads exclusively from sync_queue),
-            // so every write path below enqueues one.
-            //
-            // Bug #85: pending tasks are written FIRST (before board_tasks)
-            // so the referential integrity of task → board_task is never
-            // violated even during a crash mid-write (the txn rolls back).
-            try AppDatabase.shared.write { db in
-                // ── Bug #85: pending tasks ─────────────────────────────
-                for payload in capturedPendingTasks.values {
-                    try payload.task.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: payload.task.id,
-                        operationType: .create,
-                        payload: payload.task,
-                        now: now
-                    ).save(db)
-                    for childTask in payload.childTasks {
-                        try childTask.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "tasks",
-                            entityId: childTask.id,
-                            operationType: .create,
-                            payload: childTask,
-                            now: now
-                        ).save(db)
-                    }
-                    for link in payload.childLinks {
-                        try link.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "compoundChildren",
-                            entityId: link.id,
-                            operationType: .create,
-                            payload: link,
-                            now: now
-                        ).save(db)
-                    }
-                }
-
-                // ── Board + BoardTask rows ─────────────────────────────
-                try board.save(db)
-
-                let boardSyncOp: SyncOperationType = isUpdate ? .update : .create
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: boardId,
-                    operationType: boardSyncOp,
-                    payload: board,
-                    now: now
-                ).save(db)
-
-                if isUpdate {
-                    // Snapshot the existing BoardTasks before deleting
-                    // so each gets a matching DELETE sync item whose
-                    // payload reflects the row that actually existed.
-                    let oldBoardTasks = try BoardTask
-                        .filter(Column("boardId") == boardId)
-                        .fetchAll(db)
-                    _ = try BoardTask
-                        .filter(Column("boardId") == boardId)
-                        .deleteAll(db)
-                    for old in oldBoardTasks {
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "boardTasks",
-                            entityId: old.id,
-                            operationType: .delete,
-                            payload: old,
-                            now: now
-                        ).save(db)
-                    }
-                }
-
-                for bt in boardTasks {
-                    try bt.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "boardTasks",
-                        entityId: bt.id,
-                        operationType: .create,
-                        payload: bt,
-                        now: now
-                    ).save(db)
-                }
-            }
+            // The single atomic transaction (deferred pending tasks, then the
+            // board record + its BoardTask rows, plus every matching
+            // SyncQueueItem) is owned by `AppDatabase.saveWizardBoard`. Without
+            // the sync items the board stays local-only (SyncService.pushSync
+            // reads exclusively from sync_queue), so that method enqueues one
+            // per write. Pending tasks are written FIRST so task → board_task
+            // referential integrity holds even on a crash mid-write.
+            try AppDatabase.shared.saveWizardBoard(
+                board: board,
+                boardTasks: boardTasks,
+                pendingTasks: pendingToPersist,
+                isUpdate: isUpdate,
+                now: now
+            )
 
             DispatchQueue.main.async { onSuccess(boardId) }
         } catch {
@@ -367,9 +327,27 @@ enum RecurringTemplatePersistOutcome {
 ///   two writes are sequential GRDB transactions; if the spawn fails
 ///   (e.g. soft-deleted task race), the template still exists with
 ///   `lastSpawnedWindowKey=nil` and the next Boards-tab open will retry.
-/// - **Edit** (`editingTemplateId` set): updates the template via a
-///   direct `saveRecurringBoardTemplate`. Does NOT spawn — edits don't
-///   retroactively change previously-spawned boards.
+/// - **Edit** (`editingTemplateId` set): the P1 legacy-editor write-through
+///   is SHAPE-SCOPED (`PoolMix.isLegacyShapedRecord`):
+///     - legacy-shaped WITH a linked pool (the normal post-P1 case: exactly
+///       one pool, no manual additions, no removals) → writes the
+///       selection straight through to that Pool's `taskIds` via
+///       `updatePoolAndEnqueue` — the shared Pool IS the source of truth,
+///       so the template's own `poolIds`/`manualTaskIds`/`removedTaskIds`
+///       don't need to change.
+///     - legacy-shaped WITHOUT a pool yet (defensive — shouldn't occur
+///       post-migration, since migration always mints one, but a record
+///       edited before its first-launch migration ran would hit this) →
+///       mints a Pool exactly like the create path / migration step 2.
+///     - non-legacy-shaped (2+ pools, any manual additions, any removals —
+///       cannot occur before P4 ships the generalized wizard, but handled
+///       defensively) → flattens the selection to `manualTaskIds` and
+///       clears `poolIds`/`removedTaskIds`. The legacy editor never writes
+///       a Pool it didn't mint.
+///   `seedTaskIds` itself is left untouched on edit — verbatim/stale,
+///   never read after P1. Does NOT spawn — edits don't retroactively
+///   change previously-spawned boards, and the next window's spawn will
+///   pick up the new mix naturally.
 ///
 /// Runs on a background queue; dispatches callbacks on the main queue.
 func persistRecurringTemplate(
@@ -401,42 +379,120 @@ func persistRecurringTemplate(
                     }
                     return
                 }
-                let updated = RecurringBoardTemplate(
-                    id: existing.id,
-                    userId: existing.userId,
-                    name: trimmedName,
-                    timeframe: timeframe,
-                    boardSize: boardSize,
-                    centerSquareType: centerType,
-                    centerSquareCustomName: customCenterName,
-                    isRandomized: isRandomized,
-                    seedTaskIds: seedTaskIds,
-                    // `isActive` isn't surfaced in the wizard form (the
-                    // templates list owns the pause toggle), so preserve.
-                    lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
-                    isActive: existing.isActive,
-                    createdAt: existing.createdAt,
-                    updatedAt: now,
-                    lastSyncedAt: existing.lastSyncedAt,
-                    version: existing.version + 1,
-                    isDeleted: false,
-                    deletedAt: nil
-                )
-                try AppDatabase.shared.saveRecurringBoardTemplate(updated)
-                try AppDatabase.shared.write { db in
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "recurringBoardTemplates",
-                        entityId: updated.id,
-                        operationType: .update,
-                        payload: updated,
-                        now: now
-                    ).save(db)
+
+                // Base field update — shared by every shape branch below.
+                // `seedTaskIds` is intentionally omitted (left
+                // verbatim/stale, never read after P1); poolIds/manual/
+                // removed are set per-branch.
+                func baseUpdate(
+                    poolIds: [String]?,
+                    manualTaskIds: [String]?,
+                    removedTaskIds: [String]?
+                ) -> RecurringBoardTemplate {
+                    RecurringBoardTemplate(
+                        id: existing.id,
+                        userId: existing.userId,
+                        name: trimmedName,
+                        timeframe: timeframe,
+                        boardSize: boardSize,
+                        centerSquareType: centerType,
+                        centerSquareCustomName: customCenterName,
+                        isRandomized: isRandomized,
+                        seedTaskIds: existing.seedTaskIds,
+                        poolIds: poolIds,
+                        manualTaskIds: manualTaskIds,
+                        removedTaskIds: removedTaskIds,
+                        // `isActive` isn't surfaced in the wizard form (the
+                        // templates list owns the pause toggle), so preserve.
+                        lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
+                        isActive: existing.isActive,
+                        createdAt: existing.createdAt,
+                        updatedAt: now,
+                        lastSyncedAt: existing.lastSyncedAt,
+                        version: existing.version + 1,
+                        isDeleted: false,
+                        deletedAt: nil
+                    )
                 }
-                DispatchQueue.main.async { onSuccess(.updated(templateId: updated.id)) }
+
+                if PoolMix.isLegacyShapedRecord(existing) {
+                    if let existingPoolId = existing.poolIds?.first {
+                        // Normal post-P1 case: write straight through to
+                        // the linked Pool. The Pool is the shared source
+                        // of truth for the mix — no change needed to the
+                        // template's own poolIds/manualTaskIds/removedTaskIds.
+                        //
+                        // `seedTaskIds` is hydrated from `resolveMix`, which
+                        // filters out soft-deleted tasks — so writing it
+                        // verbatim would prune soft-deleted-but-preserved refs
+                        // the Pool deliberately keeps (`Pool.taskIds` contract).
+                        // Preserve-merge against the existing pool so those refs
+                        // survive; resolvable tasks the user removed still drop.
+                        let existingPool = try AppDatabase.shared.fetchPool(id: existingPoolId)
+                        let tasksById = Dictionary(
+                            (try AppDatabase.shared.fetchTasks(userId: userId)).map { ($0.id, $0) },
+                            uniquingKeysWith: { first, _ in first }
+                        )
+                        let mergedTaskIds = PoolMix.mergeLegacyPoolTaskIds(
+                            existingPool?.taskIds ?? [],
+                            selectedTaskIds: seedTaskIds,
+                            tasksById: tasksById
+                        )
+                        try AppDatabase.shared.updatePoolAndEnqueue(
+                            id: existingPoolId, taskIds: mergedTaskIds, now: now
+                        )
+                        let updated = baseUpdate(
+                            poolIds: existing.poolIds,
+                            manualTaskIds: existing.manualTaskIds,
+                            removedTaskIds: existing.removedTaskIds
+                        )
+                        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                            updated, operation: .update, now: now
+                        )
+                    } else {
+                        // Defensive: a legacy-shaped record with no pool
+                        // yet (edited before its first-launch migration
+                        // ran). Mint a Pool exactly like the create path /
+                        // migration step 2.
+                        let pool = try AppDatabase.shared.createPoolAndEnqueue(
+                            userId: userId,
+                            name: PoolMix.clampMintedPoolName(trimmedName, suffix: "pool"),
+                            taskIds: seedTaskIds,
+                            now: now
+                        )
+                        let updated = baseUpdate(
+                            poolIds: [pool.id], manualTaskIds: [], removedTaskIds: []
+                        )
+                        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                            updated, operation: .update, now: now
+                        )
+                    }
+                } else {
+                    // Defensive flatten: a richer shape (2+ pools, manual
+                    // additions, or removals) reached by the legacy
+                    // editor. Never write a Pool this editor didn't mint —
+                    // flatten to manualTaskIds instead.
+                    let updated = baseUpdate(
+                        poolIds: [], manualTaskIds: seedTaskIds, removedTaskIds: []
+                    )
+                    try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                        updated, operation: .update, now: now
+                    )
+                }
+
+                DispatchQueue.main.async { onSuccess(.updated(templateId: templateId)) }
                 return
             }
 
             // ── Fresh-create path ─────────────────────────────────────
+            // Mint a Pool from the selection (mirrors migration step 2),
+            // then insert the template already in the migrated shape.
+            let pool = try AppDatabase.shared.createPoolAndEnqueue(
+                userId: userId,
+                name: PoolMix.clampMintedPoolName(trimmedName, suffix: "pool"),
+                taskIds: seedTaskIds,
+                now: now
+            )
             let template = RecurringBoardTemplate(
                 id: AppDatabase.generateUUID(),
                 userId: userId,
@@ -447,6 +503,9 @@ func persistRecurringTemplate(
                 centerSquareCustomName: customCenterName,
                 isRandomized: isRandomized,
                 seedTaskIds: seedTaskIds,
+                poolIds: [pool.id],
+                manualTaskIds: [],
+                removedTaskIds: [],
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,
@@ -456,16 +515,11 @@ func persistRecurringTemplate(
                 isDeleted: false,
                 deletedAt: nil
             )
-            try AppDatabase.shared.saveRecurringBoardTemplate(template)
-            try AppDatabase.shared.write { db in
-                try SyncQueueBuilder.makeItem(
-                    entityType: "recurringBoardTemplates",
-                    entityId: template.id,
-                    operationType: .create,
-                    payload: template,
-                    now: now
-                ).save(db)
-            }
+            try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                template,
+                operation: .create,
+                now: now
+            )
 
             // Compute spawn window + spawn. Mirrors web's
             // `persistRecurringTemplate` second-step. Reference date

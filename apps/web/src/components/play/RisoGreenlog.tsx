@@ -3,18 +3,29 @@ import { getCenterSquareIndex } from '@oybc/shared';
 import { RisoButton, RisoIcon } from '../riso';
 import styles from './Play.module.css';
 
-/** Deterministic confetti (no Math.random — varies by index). */
-const CONFETTI = Array.from({ length: 36 }, (_, i) => {
+/**
+ * Builds a deterministic confetti piece array scaled by celebration intensity.
+ *
+ * Mirrors the iOS RisoGreenlogOverlay formula exactly:
+ *   count = 8 + clamp(intensity, 1, 10) × 8
+ *
+ * intensity 1  →  16 pieces ("Whisper")
+ * intensity 7  →  64 pieces ("Full press", the original burst)
+ * intensity 10 →  88 pieces ("Detonate")
+ */
+function buildConfetti(intensity: number) {
+  const clamped = Math.max(1, Math.min(10, intensity));
+  const count = 8 + clamped * 8;
   const colors = ['#FFC21F', '#EB4D2E', '#2C44C9', '#FBF6EA'];
-  return {
+  return Array.from({ length: count }, (_, i) => ({
     left: (i * 2.8 + (i % 5) * 3) % 100,
     color: colors[i % 4],
     delay: (i % 9) * 0.18,
     dur: 2.4 + (i % 5) * 0.4,
     size: 8 + (i % 3) * 4,
     rot: i * 40,
-  };
-});
+  }));
+}
 
 export interface RisoGreenlogProps {
   boardName: string;
@@ -22,6 +33,13 @@ export interface RisoGreenlogProps {
   bingos: number;
   /** Timeframe greenlog streak (incl. this clear). */
   streak: number;
+  /**
+   * Celebration intensity from Board Preferences (1–10, default 7).
+   * Scales confetti count: count = 8 + intensity × 8 → 16…88 pieces.
+   * Mirrors the iOS RisoGreenlogOverlay formula exactly.
+   * prefers-reduced-motion: confetti is hidden via CSS regardless of count.
+   */
+  celebrationIntensity?: number;
   onShare: () => void;
   onNewBoard: () => void;
   onClose: () => void;
@@ -37,17 +55,19 @@ export function RisoGreenlog({
   boardSize,
   bingos,
   streak,
+  celebrationIntensity = 7,
   onShare,
   onNewBoard,
   onClose,
 }: RisoGreenlogProps): React.ReactElement {
   const centerIndex = getCenterSquareIndex(boardSize);
   const total = boardSize * boardSize;
+  const confetti = buildConfetti(celebrationIntensity);
 
   return (
     <div className={styles.greenlog} role="dialog" aria-modal="true" aria-label="Board complete">
       <div className={styles.confetti} aria-hidden="true">
-        {CONFETTI.map((c, i) => (
+        {confetti.map((c, i) => (
           <i
             key={i}
             style={{

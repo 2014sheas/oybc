@@ -29,8 +29,14 @@ struct RisoCompoundFieldsView: View {
         var subs: [CreateFormViewModel.CompoundSubItem] = []
         var subInputText: String = ""
         var newSubType: NewSubType = .normal
-        var subGoalText: String = "5"
+        var subGoalText: String = ""
         var subUnitText: String = ""
+        /// Pre-seeds the counter-link hint state directly, bypassing the
+        /// `.onChange` recompute (which doesn't fire from a seeded initial
+        /// value) — lets snapshot tests render `RisoCounterLinkHintView` in
+        /// context without needing to simulate keystrokes.
+        var subLinkSuggestion: LinkableCounterSuggestion? = nil
+        var subLinkDisabled: Bool = false
     }
 
     // MARK: - Enums
@@ -62,6 +68,15 @@ struct RisoCompoundFieldsView: View {
     /// The effective merged task library (live + pending) for smart autocomplete.
     /// Compound tasks are excluded from matches per spec.
     let taskLibrary: [OYBC.Task]
+    /// Separate, UNFILTERED pool used only for the new-counting-sub
+    /// counter-link suggestion (`updateSubLinkSuggestion`) — mirrors
+    /// `RisoSpecialTaskPanel.suggestionPool`. Goal-less hub-born counters are
+    /// excluded from the browsable `taskLibrary`, so matching against it
+    /// would never surface a link suggestion for them. Defaults to `nil`,
+    /// which falls back to `taskLibrary` so existing call sites (Tasks-tab,
+    /// which already passes the full unfiltered library as `taskLibrary`)
+    /// are unaffected. Autocomplete keeps using `taskLibrary` unconditionally.
+    var suggestionPool: [OYBC.Task]? = nil
 
     let userId: String
     /// Optional timeframe — nil produces an indefinite task (Tasks-tab usage).
@@ -94,6 +109,15 @@ struct RisoCompoundFieldsView: View {
     /// Controls visibility of the smart-autocomplete dropdown below the sub input.
     @State private var subAutocompleteVisible: Bool = false
 
+    // Counter-link suggestion state for the new-counting-sub fields (R1
+    // counters refresh — auto-link default ON). Mirrors
+    // `RisoSpecialTaskPanel`'s `linkSuggestion` / `linkDisabled` so inline
+    // compound children are born linked exactly like standalone counting
+    // tasks. `subInputText` doubles as the sub's verb when `newSubType ==
+    // .counting`.
+    @State private var subLinkSuggestion: LinkableCounterSuggestion? = nil
+    @State private var subLinkDisabled: Bool = false
+
     /// Owned form VM — reset on each successful submit.
     @State private var form = CreateFormViewModel()
 
@@ -106,6 +130,7 @@ struct RisoCompoundFieldsView: View {
     ///     `Timeframe` from the wizard; pass `nil` for indefinite Tasks-tab tasks.
     init(
         taskLibrary: [OYBC.Task],
+        suggestionPool: [OYBC.Task]? = nil,
         userId: String,
         defaultTimeframe: Timeframe? = nil,
         defaultStartDate: String? = nil,
@@ -116,6 +141,7 @@ struct RisoCompoundFieldsView: View {
         onSubmitted: @escaping () -> Void
     ) {
         self.taskLibrary = taskLibrary
+        self.suggestionPool = suggestionPool
         self.userId = userId
         self.defaultTimeframe = defaultTimeframe
         self.defaultStartDate = defaultStartDate
@@ -132,7 +158,7 @@ struct RisoCompoundFieldsView: View {
         _compoundSubs     = State(initialValue: [])
         _subInputText     = State(initialValue: "")
         _newSubType       = State(initialValue: .normal)
-        _subGoalText      = State(initialValue: "5")
+        _subGoalText      = State(initialValue: "")
         _subUnitText      = State(initialValue: "")
     }
 
@@ -141,6 +167,7 @@ struct RisoCompoundFieldsView: View {
     init(
         seed: Seed,
         taskLibrary: [OYBC.Task],
+        suggestionPool: [OYBC.Task]? = nil,
         userId: String = "preview-user",
         defaultTimeframe: Timeframe? = nil,
         defaultStartDate: String? = nil,
@@ -151,6 +178,7 @@ struct RisoCompoundFieldsView: View {
         onSubmitted: @escaping () -> Void = {}
     ) {
         self.taskLibrary = taskLibrary
+        self.suggestionPool = suggestionPool
         self.userId = userId
         self.defaultTimeframe = defaultTimeframe
         self.defaultStartDate = defaultStartDate
@@ -168,18 +196,44 @@ struct RisoCompoundFieldsView: View {
         _newSubType       = State(initialValue: seed.newSubType)
         _subGoalText      = State(initialValue: seed.subGoalText)
         _subUnitText      = State(initialValue: seed.subUnitText)
+        _subLinkSuggestion = State(initialValue: seed.subLinkSuggestion)
+        _subLinkDisabled  = State(initialValue: seed.subLinkDisabled)
     }
 
     // MARK: - Derived properties
 
-    /// Live preview title for a new counting sub: "Run 5 km".
-    private var subCountingPreview: String {
+    /// Live title preview for a new counting sub — "Title: {derived title}",
+    /// matching `RisoSpecialTaskPanel.countingTitle` / web's
+    /// `CountingStepFields` exactly. Empty (hidden) until verb + counting +
+    /// a valid positive goal are all present — no placeholder-substituted
+    /// fallback text.
+    private var subCountingTitle: String {
         let a = subInputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let g = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
-        let u = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "reps"
-            : subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(a.isEmpty ? "Run" : a) \(g) \(u)"
+        let g = subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let u = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !a.isEmpty, !u.isEmpty, let goal = Int(g), goal > 0 else { return "" }
+        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
+    }
+
+    /// The typed sub goal as a positive Int, or nil when blank/invalid.
+    /// Gates `subCounterLinkBanner` — mirrors `RisoSpecialTaskPanel`'s
+    /// `countingGoal` (the hint only shows once a valid goal exists).
+    private var subCountingGoal: Int? {
+        guard let g = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)), g > 0 else { return nil }
+        return g
+    }
+
+    /// Gates the sub "Add" button and `addNewSub()`. A Normal sub needs only
+    /// its title; a Counting sub additionally needs a valid positive Goal and
+    /// a non-blank Counting noun — mirroring `RisoSpecialTaskPanel`'s
+    /// `canSubmitCounting` and web's `evaluateSubtaskReadiness`, so an
+    /// untouched Goal (blank since R1 removed the "5" pre-fill) can never
+    /// silently produce a `maxCount = 1` / "reps" child.
+    private var canAddSub: Bool {
+        guard !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard newSubType == .counting else { return true }
+        return subCountingGoal != nil
+            && !subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Gates the "Add to board ✦" button — title must be non-empty and at
@@ -253,10 +307,17 @@ struct RisoCompoundFieldsView: View {
                 }
             }
 
+            // "Verb" label — R1 vocabulary, only when adding a counting sub
+            // (the same input doubles as the Normal sub's free-text title,
+            // which has no fixed label).
+            if newSubType == .counting {
+                fieldLabel("Verb", required: true)
+            }
+
             // Sub-add input row + Add button
             HStack(spacing: 8) {
                 TextField(
-                    newSubType == .counting ? "Action — e.g. Run" : "Add a sub-task…",
+                    newSubType == .counting ? "Do" : "Add a sub-task…",
                     text: $subInputText
                 )
                 .font(.risoHead(14, .bold))
@@ -272,6 +333,7 @@ struct RisoCompoundFieldsView: View {
                 )
                 .onChange(of: subInputText) { _, _ in
                     subAutocompleteVisible = !subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    updateSubLinkSuggestion()
                 }
                 .onSubmit { addNewSub() }
 
@@ -284,16 +346,14 @@ struct RisoCompoundFieldsView: View {
                 .padding(.horizontal, 14)
                 .background(
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .fill(subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color.risoMuted
-                            : Color.risoGreen)
+                        .fill(canAddSub ? Color.risoGreen : Color.risoMuted)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
                         .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
                 )
                 .buttonStyle(.plain)
-                .disabled(subInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(!canAddSub)
             }
 
             // Smart autocomplete dropdown
@@ -314,24 +374,39 @@ struct RisoCompoundFieldsView: View {
                     newSubType = .counting
                 }
             }
+            .onChange(of: newSubType) { _, _ in updateSubLinkSuggestion() }
 
-            // Counting sub config row: Goal + Unit + live preview
+            // Counting sub config row: Goal + Counting + live preview
+            // ("Title: {derived title}", matching RisoSpecialTaskPanel /
+            // web's CountingStepFields exactly).
             if newSubType == .counting {
                 VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
-                        Text("Goal")
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            fieldLabel("Goal", required: true)
+                            RisoNumberField(placeholder: "100", text: $subGoalText)
+                                .frame(width: 70)
+                        }
+                        VStack(alignment: .leading, spacing: 5) {
+                            fieldLabel("Counting", required: true)
+                            RisoTextField(placeholder: "push-ups", text: $subUnitText)
+                                .onChange(of: subUnitText) { _, _ in updateSubLinkSuggestion() }
+                        }
+                    }
+
+                    if !subCountingTitle.isEmpty {
+                        (Text("Title: ")
                             .font(.risoBody(11, .semibold))
                             .foregroundStyle(Color.risoMuted)
-                        RisoNumberField(placeholder: "5", text: $subGoalText)
-                            .frame(width: 60)
-                        RisoTextField(placeholder: "reps", text: $subUnitText)
+                        + Text(subCountingTitle)
+                            .font(.risoBody(11, .extraBold))
+                            .foregroundStyle(Color.risoInk))
                     }
-                    (Text("reads as ")
-                        .font(.risoBody(11, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                    + Text(subCountingPreview)
-                        .font(.risoBody(11, .extraBold))
-                        .foregroundStyle(Color.risoInk))
+
+                    // Counter-link hint (R1 — same auto-link-default-ON
+                    // mechanism as RisoSpecialTaskPanel's standalone
+                    // counting fields, only shown once a valid goal exists).
+                    subCounterLinkBanner
                 }
             }
 
@@ -510,33 +585,80 @@ struct RisoCompoundFieldsView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Counter-link hint (new counting sub)
+
+    /// Hint shown below the new-counting-sub fields when an existing
+    /// counter matches the typed (verb, noun) pair AND a valid goal is
+    /// entered. R1 counters refresh: linking is ON by default; "Don't
+    /// link" opts out for this sub (mirrors `RisoSpecialTaskPanel`'s
+    /// `counterLinkBanner`, factored into the shared `RisoCounterLinkHintView`).
+    @ViewBuilder
+    private var subCounterLinkBanner: some View {
+        if let suggestion = subLinkSuggestion, let goal = subCountingGoal {
+            RisoCounterLinkHintView(
+                counterName: suggestion.name,
+                lifetime: suggestion.lifetime,
+                goal: goal,
+                linked: !subLinkDisabled,
+                onToggle: { subLinkDisabled.toggle() }
+            )
+        }
+    }
+
+    /// Recomputes the sub's link suggestion whenever the typed (verb, noun)
+    /// pair changes. Resets the opt-out flag so an edited pair re-offers
+    /// linking by default (web parity).
+    private func updateSubLinkSuggestion() {
+        guard newSubType == .counting else {
+            subLinkSuggestion = nil
+            return
+        }
+        subLinkSuggestion = findLinkableCounter(
+            action: subInputText,
+            unit: subUnitText,
+            tasks: suggestionPool ?? taskLibrary
+        )
+        subLinkDisabled = false
+    }
+
     // MARK: - Sub-add action
 
     /// Adds the current sub-input as a new sub (new Normal or new Counting).
     /// Called on "Add" button tap or when the TextField submits (`.onSubmit`).
     private func addNewSub() {
+        guard canAddSub else { return }
         let text = subInputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
 
         let sub: CreateFormViewModel.CompoundSubItem
         switch newSubType {
         case .normal:
             sub = .newNormal(title: text)
         case .counting:
-            let goal = Int(subGoalText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 1
-            let unit = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "reps"
-                : subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
-            sub = .newCounting(action: text, goal: goal, unit: unit)
+            // `canAddSub` guarantees a valid positive goal and non-blank unit
+            // for a counting sub — no silent `?? 1` / "reps" fallbacks.
+            guard let goal = subCountingGoal else { return }
+            let unit = subUnitText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // R1: auto-link default ON — apply the suggestion unless opted
+            // out via "Don't link". Baseline is always "start fresh".
+            let linked = subLinkSuggestion != nil && !subLinkDisabled
+            sub = .newCounting(
+                action: text,
+                goal: goal,
+                unit: unit,
+                sharedCounterId: linked ? subLinkSuggestion?.counterId : nil,
+                baseline: linked ? subLinkSuggestion?.lifetime : nil
+            )
         }
 
         compoundSubs.append(sub)
         subInputText = ""
         subAutocompleteVisible = false
         // Reset counting sub fields after each add
-        subGoalText = "5"
+        subGoalText = ""
         subUnitText = ""
         newSubType = .normal
+        subLinkSuggestion = nil
+        subLinkDisabled = false
     }
 
     // MARK: - Submit
@@ -585,24 +707,37 @@ struct RisoCompoundFieldsView: View {
         compoundSubs      = []
         subInputText      = ""
         newSubType        = .normal
-        subGoalText       = "5"
+        subGoalText       = ""
         subUnitText       = ""
         subAutocompleteVisible = false
+        subLinkSuggestion = nil
+        subLinkDisabled   = false
     }
 
     // MARK: - Field helpers
 
     @ViewBuilder
-    private func fieldRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldRow<Content: View>(label: String, required: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            fieldLabel(label)
+            fieldLabel(label, required: required)
             content()
         }
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .risoSectionLabel()
+    /// - Parameter required: Appends a red "*" (matches
+    ///   `RisoBoardSetupForm`'s / `RisoSpecialTaskPanel`'s required-field
+    ///   convention) — web's `CountingStepFields` marks Verb/Goal/Counting
+    ///   required-starred; the inline counting-sub fields here mirror that.
+    private func fieldLabel(_ text: String, required: Bool = false) -> some View {
+        HStack(spacing: 3) {
+            Text(text)
+                .risoSectionLabel()
+            if required {
+                Text("*")
+                    .font(.risoBody(11, .bold))
+                    .foregroundStyle(Color.risoRed)
+            }
+        }
     }
 
     // (risoTextInput / risoNumberInput removed — use the kit's

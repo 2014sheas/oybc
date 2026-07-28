@@ -25,6 +25,13 @@ export interface SyncStatus {
   lastEventAt: Date | null;
   /** Most recent error, if any. Cleared on next successful event. */
   lastError: { message: string; at: Date } | null;
+  /**
+   * FAILED items that exhausted their retry budget (`retryCount >=
+   * MAX_SYNC_RETRIES`). Refreshed after each push cycle via
+   * `setExhaustedCount`; surfaced to the user as "N changes couldn't sync"
+   * with a Retry affordance. `0` means nothing is stuck.
+   */
+  exhaustedCount: number;
 }
 
 export type SyncEventKind = 'pushed' | 'pulled' | 'conflict' | 'failed';
@@ -36,6 +43,7 @@ const initialState: SyncStatus = {
   totalFailed: 0,
   lastEventAt: null,
   lastError: null,
+  exhaustedCount: 0,
 };
 
 let state: SyncStatus = { ...initialState };
@@ -93,6 +101,18 @@ export function recordSyncEvent(kind: SyncEventKind, at: Date = new Date()): voi
 /** Record an error message and timestamp. Doesn't increment any counter. */
 export function recordSyncError(message: string, at: Date = new Date()): void {
   state = { ...state, lastError: { message, at } };
+  notify();
+}
+
+/**
+ * Set the exhausted-item count (FAILED items past the retry cap). Called
+ * after each push cycle with a fresh count from `countExhaustedSyncItems()`.
+ * No-ops when the value is unchanged so subscribers don't re-render on
+ * every cycle when nothing is stuck.
+ */
+export function setExhaustedCount(count: number): void {
+  if (state.exhaustedCount === count) return;
+  state = { ...state, exhaustedCount: count };
   notify();
 }
 

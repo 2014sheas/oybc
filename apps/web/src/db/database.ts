@@ -2,6 +2,7 @@ import Dexie, { Table } from 'dexie';
 import type {
   Board,
   Task,
+  TaskEvent,
   TaskStep,
   BoardTask,
   User,
@@ -11,6 +12,8 @@ import type {
   CompoundChild,
   RecurringBoardTemplate,
   DefaultPool,
+  Pool,
+  CoreBoardDefault,
 } from '@oybc/shared';
 
 /**
@@ -31,6 +34,9 @@ export class AppDatabase extends Dexie {
   compoundChildren!: Table<CompoundChild, string>;
   recurringBoardTemplates!: Table<RecurringBoardTemplate, string>;
   defaultPools!: Table<DefaultPool, string>;
+  taskEvents!: Table<TaskEvent, string>;
+  pools!: Table<Pool, string>;
+  coreBoardDefaults!: Table<CoreBoardDefault, string>;
 
   constructor() {
     super('oybc');
@@ -321,33 +327,124 @@ export class AppDatabase extends Dexie {
       `,
       progressCounters: null, // Drop the inert ProgressCounter object store.
     });
+
+    // v12: Windowed Completion (docs/WINDOWED_COMPLETION.md §New entity +
+    // §Sync). New `taskEvents` store — one soft-deletable occurrence row per
+    // completion/increment on an event-owning task, synced per-row LWW like
+    // compoundChildren. PR B sub-slice 1 is FOUNDATIONS ONLY: the store is
+    // created empty; no backfill and no write/read paths yet (those land in
+    // later sub-slices), so the table syncs harmlessly empty.
+    //
+    // Indexes: `[taskId+occurredAt]` is the windowed-evaluation hot path
+    // (all of a task's events since a board's startDate). `[userId+occurredAt]`
+    // backs lifetime/library reads. `[userId+isDeleted]` scopes the sync pull
+    // like every other collection; `taskId` supports parent-scoped lookups.
+    this.version(12).stores({
+      taskEvents: `
+        id,
+        [userId+isDeleted],
+        taskId,
+        [taskId+occurredAt],
+        [userId+occurredAt]
+      `,
+    });
+
+    // v13: Windowed Completion — event BACKFILL (docs/WINDOWED_COMPLETION.md
+    // §Migration & backfill, step 2). v12 created the `taskEvents` store empty
+    // (sub-slice 1); this bump runs the backfill upgrade that synthesizes the
+    // deterministic completion/increment events from existing lifetime task
+    // state. Separated from v12 so the upgrade fires even on a dev machine that
+    // already opened the DB at v12-empty (Dexie only runs an upgrade when
+    // moving to a HIGHER stored version — attaching it to v12 would silently
+    // skip those machines). No schema shape change (`.stores({})` no-op); the
+    // version bump is the vehicle for the `.upgrade()` callback. Expired-board
+    // SEALING (doc step 3) is PR C, NOT here.
+    this.version(13).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV13 imports `db`).
+      return import('./operations/migrationV13').then((mod) => mod.runMigrationV13(tx));
+    });
+
+    // v14: Windowed Completion — board SEALING (docs/WINDOWED_COMPLETION.md
+    // §Sealing → Board schema delta + §Migration step 3). Three new optional
+    // Board fields (`sealedAt`, `sealedCompletedCells`, `activatedAt`) ride
+    // along automatically — Dexie stores the full Board object verbatim, so no
+    // index change is needed and none are indexed. The version bump is the
+    // vehicle for the `.upgrade()` callback, which seals every already-expired
+    // board (past its backstop deadline at upgrade time) from the pre-migration
+    // rendered state. Boards still inside their backstop window are left for the
+    // normal close-out prompt (slice 2). Runs AFTER v13's event backfill so the
+    // event log exists, but seals from the lifetime task caches (pre-migration
+    // semantics) to reproduce exactly what the user currently sees.
+    this.version(14).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV14 imports `db`).
+      return import('./operations/migrationV14').then((mod) => mod.runMigrationV14(tx));
+    });
+
+    // v15: Task Pools + Recurring Boards Rework (P1, docs/POOLS_RECURRING.md
+    // §Data model + §Migration). New `pools` and `coreBoardDefaults` stores —
+    // created EMPTY here, mirroring the taskEvents v12/v13 split (schema shape
+    // separated from the backfill upgrade so the upgrade still fires even on a
+    // dev machine that already opened the DB at v15-empty).
+    //
+    // `pools`: `[userId+isDeleted]` scopes the sync pull + the future Tasks-tab
+    // Pools segment list query (P2); `updatedAt` for ordered reads. No index on
+    // `taskIds` — consumers (`resolveMix`, health checks) read the whole row.
+    //
+    // `coreBoardDefaults`: `[userId+timeframe]` is the one-row-per-(user,
+    // timeframe) lookup the core-board setup prefill needs (mirrors the
+    // `defaultPools` v8 index); `[userId+isDeleted]` scopes the sync pull.
+    this.version(15).stores({
+      pools: `
+        id,
+        [userId+isDeleted],
+        updatedAt
+      `,
+      coreBoardDefaults: `
+        id,
+        [userId+timeframe],
+        [userId+isDeleted],
+        updatedAt
+      `,
+    });
+
+    // v16: Task Pools + Recurring Boards Rework — first-launch BACKFILL
+    // (docs/POOLS_RECURRING.md §Migration). Runs AFTER v15 created the stores
+    // empty. Mints: (1) a `Pool` + `CoreBoardDefault` row per `DefaultPool`,
+    // soft-deleting the `DefaultPool` row; (2) a `Pool` per
+    // `RecurringBoardTemplate`'s `seedTaskIds`, stamping `poolIds: [pool.id]`,
+    // `manualTaskIds: []`, `removedTaskIds: []` on the template (`seedTaskIds`
+    // itself is left VERBATIM — decode-compat only, never read after P1).
+    // No schema shape change here (`.stores({})` no-op); the version bump is
+    // the vehicle for the `.upgrade()` callback, same pattern as v13/v14.
+    this.version(16).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV16 imports `db`).
+      return import('./operations/migrationV16').then((mod) => mod.runMigrationV16(tx));
+    });
+
+    // v17: Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — BoardTask gains
+    // `isDeleted`/`deletedAt`, mirroring every other synced collection. See
+    // `operations/migrationV17.ts` for the full rationale + backfill body.
+    // No schema shape change (`isDeleted` is unindexed — filtering is a JS
+    // predicate on the small-N boardTasks scans, same as every other
+    // tombstoned collection), so `.stores({})` is a no-op; the version bump
+    // is the vehicle for the backfill `.upgrade()`, same pattern as v13/v14/v16.
+    this.version(17).stores({}).upgrade((tx) => {
+      // Dynamic import avoids a top-of-file cycle (migrationV17 imports `db`).
+      return import('./operations/migrationV17').then((mod) => mod.runMigrationV17(tx));
+    });
   }
 }
 
-// Singleton instance
-export const db = new AppDatabase();
-
-// Enable debug logging in development
-if (import.meta.env.DEV) {
-  db.on('ready', () => {
-    console.log('✅ Dexie database initialized');
-  });
-
-  // Log all database operations
-  db.on('populate', () => {
-    console.log('📊 Database populated with initial data');
-  });
-
-  // Uncomment to log all transactions (verbose)
-  // db.on('changes', (changes) => {
-  //   console.log('Database changes:', changes);
-  // });
-}
+// NOTE: The `db` singleton instance lives in `db/internal.ts` (B3, issue
+// #284). This module only defines the `AppDatabase` class + schema so the
+// raw Dexie instance has a single, boundary-enforced import site. See
+// `db/internal.ts`.
 
 // Export types for convenience
 export type {
   Board,
   Task,
+  TaskEvent,
   TaskStep,
   BoardTask,
   User,

@@ -1,0 +1,92 @@
+name: Hosting deploy (coming-soon)
+
+# Deploys the public oybc.com apex page — `apps/coming-soon/dist`, per
+# firebase.json's `hosting.public` — to Firebase Hosting on every push to
+# `dev` that touches the page, `firebase.json`, or this workflow, plus a
+# manual `workflow_dispatch` for one-off redeploys. This does NOT deploy
+# the app (`apps/web`); the app lives at app.oybc.com and has no
+# Hosting-deploy automation here (see docs/COMING_SOON.md).
+#
+# apps/coming-soon is already built (tsc + vite build) on every PR and
+# push to dev by .github/workflows/web.yml (its `paths` list includes
+# `apps/coming-soon/**`) — so this workflow adds deploy-only automation
+# and intentionally has no `pull_request` trigger or build-verification
+# job of its own; PR-time build breakage is already caught there.
+#
+# firebase.json's hosting block declares:
+#   "predeploy": ["pnpm --filter @oybc/coming-soon run build"]
+# `firebase deploy --only hosting` runs that predeploy hook itself before
+# uploading `dist/`, from the same directory as firebase.json (repo
+# root) — so this workflow relies on the predeploy instead of adding a
+# redundant explicit build step. The `pnpm install` step below just
+# ensures pnpm + node_modules are present on PATH for that hook to run.
+#
+# Secrets: reuses the same `FIREBASE_SERVICE_ACCOUNT` repo secret as
+# .github/workflows/firestore-rules.yml, via the identical
+# env-var → temp-file → GOOGLE_APPLICATION_CREDENTIALS pattern (see that
+# workflow's header for one-time setup steps).
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'apps/coming-soon/**'
+      - 'firebase.json'
+      - '.github/workflows/hosting.yml'
+  workflow_dispatch:
+
+# Serialize deploys rather than racing them, but never cancel one that's
+# already in flight — a killed mid-upload deploy can leave Hosting in a
+# half-updated state. This is the one deliberate divergence from
+# firestore-rules.yml's deploy concurrency (which doesn't need a group at
+# all, since it's gated behind a `needs: test` job per push).
+concurrency:
+  group: hosting-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        # v6 reads the pnpm version from `package.json#packageManager`
+        # (pinned to 9.15.4 at the repo root) and ignores any `version:`
+        # input here — so we omit it. To change the pnpm major used in
+        # CI, bump the `packageManager` field, not this workflow.
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      - name: Deploy hosting
+        env:
+          # firebase-tools picks up the SA JSON via the standard env var.
+          # Writing to a temp file avoids passing the secret on a command
+          # line where it could leak into a run log.
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT: oybc-dev-e2668
+        run: |
+          if [ -z "$FIREBASE_SA_JSON" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT secret is not set."
+            echo "See .github/workflows/firestore-rules.yml header for setup steps."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SA_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          firebase deploy \
+            --only hosting \
+            --project "$FIREBASE_PROJECT" \
+            --non-interactive

@@ -42,7 +42,11 @@ final class CreateHubViewModel {
         /// Wizard launched in template-edit mode (Profile → Recurring
         /// templates → Edit). The wizard hydrates from the template
         /// and Save updates the template instead of creating a board.
-        case wizardEditTemplate(templateId: String)
+        /// `initialStep` (issue #321) lets the "Add tasks" card
+        /// affordance land the user on the Tasks step (2) directly
+        /// instead of Setup (1); the whole-card tap keeps the default of
+        /// step 1.
+        case wizardEditTemplate(templateId: String, initialStep: WizardStep)
     }
 
     // MARK: - State
@@ -56,6 +60,15 @@ final class CreateHubViewModel {
     /// the wizard mounts only after this resolves so its view-model's
     /// hydration runs against real data.
     var editingTemplate: RecurringBoardTemplate? = nil
+
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
 
     // MARK: - Mode transitions
 
@@ -93,7 +106,7 @@ final class CreateHubViewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                let draftBoards: [Board] = try AppDatabase.shared.read { db in
+                let draftBoards: [Board] = try self.database.read { db in
                     try Board
                         .filter(
                             Column("userId") == userId
@@ -105,7 +118,7 @@ final class CreateHubViewModel {
                 }
                 var rows: [DraftRowData] = []
                 for board in draftBoards {
-                    let count = try AppDatabase.shared.fetchBoardTasks(boardId: board.id).count
+                    let count = try self.database.fetchBoardTasks(boardId: board.id).count
                     rows.append(DraftRowData(board: board, taskCount: count))
                 }
                 DispatchQueue.main.async { self.drafts = rows }
@@ -122,7 +135,7 @@ final class CreateHubViewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                let boardTasks = try AppDatabase.shared.fetchBoardTasks(boardId: board.id)
+                let boardTasks = try self.database.fetchBoardTasks(boardId: board.id)
                 DispatchQueue.main.async {
                     self.resumeDraft = (board, boardTasks)
                     self.mode = .wizardResume(boardId: board.id)
@@ -144,7 +157,7 @@ final class CreateHubViewModel {
     func loadDraftAndEnterWizard(boardId: String, userId: String) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            let board = try? AppDatabase.shared.fetchBoard(id: boardId)
+            let board = try? self.database.fetchBoard(id: boardId)
             DispatchQueue.main.async {
                 if let board {
                     self.loadDraftAndEnterWizard(board: board)
@@ -168,7 +181,7 @@ final class CreateHubViewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                try AppDatabase.shared.deleteDraftWithCascade(id: boardId)
+                try self.database.deleteDraftWithCascade(id: boardId)
                 DispatchQueue.main.async {
                     self.reloadDrafts(userId: userId)
                 }
@@ -182,13 +195,18 @@ final class CreateHubViewModel {
     /// immediately (so the view can show a loading state) and then
     /// fetches the template. A concurrently-deleted template falls
     /// back to fresh-create with a log.
-    func loadTemplateAndEnterWizard(templateId: String) {
-        mode = .wizardEditTemplate(templateId: templateId)
+    ///
+    /// - Parameter initialStep: which wizard step to land on once
+    ///   hydrated. Defaults to 1 (Setup) for the whole-card tap; the
+    ///   card's "Add tasks" affordance (issue #321) passes 2 (Tasks) so
+    ///   the user lands directly on the pool picker.
+    func loadTemplateAndEnterWizard(templateId: String, initialStep: WizardStep = 1) {
+        mode = .wizardEditTemplate(templateId: templateId, initialStep: initialStep)
         editingTemplate = nil
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                let template = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId)
+                let template = try self.database.fetchRecurringBoardTemplate(id: templateId)
                 DispatchQueue.main.async {
                     if let template = template {
                         self.editingTemplate = template

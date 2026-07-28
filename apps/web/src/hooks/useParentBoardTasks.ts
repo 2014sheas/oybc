@@ -5,7 +5,7 @@ import {
   type Task,
   type Timeframe,
 } from '@oybc/shared';
-import { db } from '../db/database';
+import { db } from '../db/internal';
 
 /**
  * React hook returning the unique tasks placed on currently-active "parent"
@@ -62,6 +62,7 @@ export function useParentBoardTasks(
         const parentBoardTasks = await db.boardTasks
           .where('boardId')
           .anyOf(parentIds)
+          .filter((bt) => !bt.isDeleted)
           .toArray();
 
         const taskIds = Array.from(

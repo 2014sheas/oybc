@@ -2,172 +2,15 @@ import SwiftUI
 import UIKit
 import GRDB
 
-// MARK: - Sync Queue Helpers (private to this file)
-
-/// Encodes a `Codable` value to a JSON string for storage in the sync queue payload.
-///
-/// - Parameter value: The value to encode.
-/// - Returns: A JSON string, or an empty JSON object string `"{}"` on failure.
-private func bpvEncodeSyncPayload<T: Codable>(_ value: T) -> String {
-    guard
-        let data = try? JSONEncoder().encode(value),
-        let string = String(data: data, encoding: .utf8)
-    else { return "{}" }
-    return string
-}
-
-/// Builds a `SyncQueueItem` for a local write that should be synced to Firestore.
-///
-/// - Parameters:
-///   - entityType: The Firestore collection name (e.g. `"boards"`, `"boardTasks"`).
-///   - entityId: The primary key of the entity.
-///   - operationType: `.create`, `.update`, or `.delete`.
-///   - payload: A `Codable` value whose JSON representation is stored as the payload.
-///   - now: The current ISO8601 timestamp.
-/// - Returns: A new `SyncQueueItem` with `status = .pending`.
-private func bpvMakeSyncItem<T: Codable>(
-    entityType: String,
-    entityId: String,
-    operationType: SyncOperationType,
-    payload: T,
-    now: String
-) -> SyncQueueItem {
-    SyncQueueItem(
-        id: AppDatabase.generateUUID(),
-        entityType: entityType,
-        entityId: entityId,
-        operationType: operationType,
-        payload: bpvEncodeSyncPayload(payload),
-        status: .pending,
-        retryCount: 0,
-        lastError: nil,
-        createdAt: now,
-        lastAttemptAt: nil,
-        completedAt: nil,
-        priority: 1
-    )
-}
-
-/// Per-board outcome of `bpvRunCrossBoardCascade`. Caller uses this to surface
-/// flash messages for the currently-visible board.
-struct BPVCascadeBoardResult {
-    let update: DerivationPass.BoardStatsUpdate
-    /// True if this board transitioned COMPLETED → ACTIVE because it is no
-    /// longer GREENLOG.
-    let wasReactivated: Bool
-    /// True if every cell on this board is now complete.
-    let isGreenlogNow: Bool
-    /// True if `board.status` was bumped to `.completed` by this cascade pass.
-    let didAutoComplete: Bool
-}
-
-/// Run the cross-board derivation cascade for a Task that just changed locally.
-///
-/// For every board affected by `changedTaskId` (directly or via a compound
-/// containing it transitively), this:
-///   1. Rebuilds bingo state via `DerivationPass.computeBoardStatsUpdate`
-///      — which respects compound evaluation + achievement-square overrides.
-///   2. Auto-completes the board on GREENLOG; reverts COMPLETED → ACTIVE when
-///      no longer GREENLOG.
-///   3. Persists the updated `Board` row (bumping `updatedAt` + `version`).
-///   4. Enqueues a `boards` sync entry for Firestore.
-///
-/// Mirrors `SyncService.runPullCascade` but additionally applies the GREENLOG
-/// status transitions that local interactions own. Caller controls the
-/// transaction via the passed `db` handle.
-///
-/// - Parameters:
-///   - db: GRDB database handle (must be inside a write transaction).
-///   - changedTaskId: The id of the Task whose state just changed.
-///   - now: ISO8601 timestamp to stamp on every updated board row.
-/// - Returns: A `[boardId: BPVCascadeBoardResult]` map. Boards excluded by
-///   `isDeleted` are omitted.
-private func bpvRunCrossBoardCascade(
-    db: Database,
-    changedTaskId: String,
-    now: String
-) throws -> [String: BPVCascadeBoardResult] {
-    let allChildren: [CompoundChild] = try CompoundChild
-        .filter(Column("isDeleted") == false)
-        .fetchAll(db)
-    let allBoardTasks: [BoardTask] = try BoardTask.fetchAll(db)
-    let allTasks: [Task] = try Task.fetchAll(db)
-    // Phase 6.3 — DerivationPass.computeBoardStatsUpdate needs the
-    // workspace's boards to evaluate the specific-board / recurring-
-    // template achievement branches. Pre-6.3 calls omitted this and
-    // the algorithm defaults to []; on this cascade path we already
-    // have the data fetched, so use it.
-    let allBoards: [Board] = try Board.fetchAll(db)
-
-    var taskById: [String: Task] = [:]
-    for t in allTasks { taskById[t.id] = t }
-    var childrenByCompound: [String: [CompoundChild]] = [:]
-    for c in allChildren {
-        childrenByCompound[c.compoundTaskId, default: []].append(c)
-    }
-
-    let parentCompounds = DerivationPass.findTransitiveParentCompounds(
-        changedTaskId: changedTaskId,
-        children: allChildren
-    )
-    let affectedBoardIds = DerivationPass.findAffectedBoardIds(
-        changedTaskId: changedTaskId,
-        parentCompounds: parentCompounds,
-        boardTasks: allBoardTasks
-    )
-
-    var results: [String: BPVCascadeBoardResult] = [:]
-    for boardId in affectedBoardIds {
-        guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { continue }
-        let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
-        let update = DerivationPass.computeBoardStatsUpdate(
-            board: board,
-            boardTasksOnBoard: boardTasksOnBoard,
-            childrenByCompound: childrenByCompound,
-            taskById: taskById,
-            allBoards: allBoards
-        )
-
-        let totalSquares = board.boardSize * board.boardSize
-        let isGreenlogNow = update.completedTasks >= totalSquares
-        var wasReactivated = false
-        var didAutoComplete = false
-
-        board.completedTasks = update.completedTasks
-        board.totalTasks = totalSquares
-        board.linesCompleted = update.linesCompleted
-        board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-        board.updatedAt = now
-        board.version += 1
-
-        if isGreenlogNow, board.status == .active {
-            board.status = .completed
-            board.completedAt = now
-            didAutoComplete = true
-        } else if !isGreenlogNow, board.status == .completed {
-            board.status = .active
-            board.completedAt = nil
-            wasReactivated = true
-        }
-
-        try board.save(db)
-        try bpvMakeSyncItem(
-            entityType: "boards",
-            entityId: boardId,
-            operationType: .update,
-            payload: board,
-            now: now
-        ).save(db)
-
-        results[boardId] = BPVCascadeBoardResult(
-            update: update,
-            wasReactivated: wasReactivated,
-            isGreenlogNow: isGreenlogNow,
-            didAutoComplete: didAutoComplete
-        )
-    }
-    return results
-}
+// NOTE (B2-I2 → B4): the play-interaction WRITE layer moved to
+// `ViewModels/BoardPlayViewModel.swift`, then in B4 the write transactions
+// themselves (task completion + compound-child fallback + their sync/cascade
+// enqueue) were absorbed into `AppDatabase` (`completeTaskOrchestrated` /
+// `toggleCompoundChildFallback` / `runBoardCascadeForTaskWithResults` +
+// `CascadeBoardResult` in `Database/AppDatabase+Tasks.swift`). This view
+// delegates every write (tap / stepper / swap / add / remove) to the view
+// model and observes its one-shot `flashEvent` to fire the residual view-side
+// toast/overlay animations.
 
 /// Applies BoardPlayView's navigation title only when not embedded.
 /// SwiftUI can't conditionally apply a modifier inline without a branch,
@@ -190,16 +33,51 @@ private struct BoardPlayTitleChrome: ViewModifier {
     }
 }
 
-// MARK: - SwapTarget
+// MARK: - CreditToastState (P2/R3 — shared-counter credited toast)
 
-/// Lightweight `Identifiable` wrapper used to drive the `.sheet(item:)` for
-/// the M3 cell-swap picker. Carries the boardTask id + the current task id so
-/// `CellSwapSheet` can exclude the current task from the eligible list.
-private struct SwapTarget: Identifiable {
-    /// The `BoardTask.id` whose cell is being swapped.
-    let id: String
-    /// The `Task.id` currently occupying the square (excluded from the picker).
-    let currentTaskId: String
+/// The showing credited toast's render + Undo inputs, derived from a
+/// `SharedCounterCreditToastPayload` flash event. A distinct `toastKey`
+/// (fresh `UUID` per trigger) drives `CounterLogToastView`'s `.id(...)` so
+/// back-to-back logs restart the auto-dismiss timer cleanly — mirrors
+/// `CounterDetailView`'s `DetailToastState` pattern.
+private struct CreditToastState {
+    /// The shared counter's SOURCE task id — what `Undo` reverses.
+    let sourceTaskId: String
+    let amount: Int
+    let unit: String
+    let verb: CounterLogToastView.Verb
+    let message: String
+    let toastKey: String
+}
+
+// MARK: - ArrivalBannerData / ArrivalNavTarget (Shared Counters P3)
+
+/// The showing arrival-banner's copy inputs, derived from a `CounterArrivalEvent`.
+private struct ArrivalBannerData {
+    /// Total arrived squares — selects the single-vs-multiple copy.
+    let squareCount: Int
+    /// The arrived square's task name (single-square variant only).
+    let taskName: String?
+    /// The arrived counter's display name (single-square variant only).
+    let counterName: String?
+    /// The distinct arrived counters — resolves the tap target.
+    let arrivedCounters: [ArrivedCounter]
+}
+
+/// Sheet-presented navigation target when the arrival banner is tapped.
+/// A single distinct arrived counter opens its Counter Detail; multiple
+/// counters (the "N squares … your counters" copy names none in particular)
+/// open the Counters Hub.
+private enum ArrivalNavTarget: Identifiable {
+    case counter(String)
+    case hub
+
+    var id: String {
+        switch self {
+        case .counter(let counterId): return "counter-\(counterId)"
+        case .hub: return "hub"
+        }
+    }
 }
 
 // MARK: - BoardPlayView
@@ -241,20 +119,29 @@ struct BoardPlayView: View {
 
     // MARK: - State
 
-    @State private var board: Board?
-    @State private var boardTasks: [BoardTask] = []
-    @State private var allTasks: [Task] = []
-    @State private var allCompoundChildren: [CompoundChild] = []
+    /// Owns the data-loading layer (B2-I1). The seven data arrays the play
+    /// surface reads are now `@Published private(set)` on the view model and
+    /// exposed here as read-only computed shims so every existing read site
+    /// (`board`, `boardTasks`, …) is untouched. Constructed in `init` with
+    /// the board id + user id.
+    @StateObject private var viewModel: BoardPlayViewModel
+
+    private var board: Board? { viewModel.board }
+    private var boardTasks: [BoardTask] { viewModel.boardTasks }
+    private var allTasks: [Task] { viewModel.allTasks }
+    private var allCompoundChildren: [CompoundChild] { viewModel.allCompoundChildren }
     // Phase 6.3 — workspace-wide boards + templates feed both the
     // achievement-square config sheet (for the pickers) and the per-
-    // cell badge data computation. Refreshed alongside `loadTaskData`
+    // cell badge data computation. Refreshed alongside the task data
     // so the sheet always sees up-to-date data when opened.
-    @State private var allBoardsInWorkspace: [Board] = []
-    @State private var allTemplatesInWorkspace: [RecurringBoardTemplate] = []
-    @State private var allBoardTasksInWorkspace: [BoardTask] = []
+    private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
+    private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
+    private var allBoardTasksInWorkspace: [BoardTask] { viewModel.allBoardTasksInWorkspace }
 
-    @State private var isProcessing = false
-    @State private var bingoMessage: String?
+    // Interaction write-state now lives on the view model (B2-I2). Read-only
+    // shim so the many render sites that gate on `isProcessing` are untouched;
+    // `bingoMessage` is read/written through `viewModel.bingoMessage` directly.
+    private var isProcessing: Bool { viewModel.isProcessing }
     // MARK: Riso visual layer state
     /// Whether to show the GREENLOG full-bleed celebration overlay.
     @State private var showGreenlogOverlay: Bool = false
@@ -272,38 +159,51 @@ struct BoardPlayView: View {
     /// rapid bingos no longer spawn overlapping dismiss tasks that cut a
     /// fresh toast short.
     @State private var bingoToastGeneration: Int = 0
+    // MARK: P2/R3 — Shared-counter credited toast
+    /// The showing credited toast's data (message + Undo target), or nil
+    /// when no toast is up. R3: unified onto `CounterLogToastView` (amount-
+    /// aware copy + Undo pill) — see `triggerCreditToast(payload:)`.
+    @State private var creditToast: CreditToastState? = nil
     /// Board task id of the counting cell whose stepper sheet is open.
     @State private var countingStepperBoardTaskId: String?
+    // MARK: P3 — Shared-counter arrival banner (passive completion)
+    /// The showing arrival banner's data, or nil when no banner is up.
+    @State private var arrivalBanner: ArrivalBannerData? = nil
+    /// Arrived square task ids — drives the per-cell gold pulse.
+    @State private var arrivedTaskIds: Set<String> = []
+    /// Monotonic token so only the latest arrival's ~5.2s auto-clear fires.
+    @State private var arrivalBannerGeneration: Int = 0
+    /// Sheet-presented nav target for the banner tap (Counter Detail / Hub).
+    @State private var arrivalNavTarget: ArrivalNavTarget? = nil
     @State private var detailBoardTaskId: String?
     /// Drives the task-detail library sheet (separate from the board-play detail sheet).
     @State private var taskDetailSheetTaskId: TaskIdItem?
+    /// Child task detail opened from INSIDE the on-board detail sheet (the
+    /// compound child ⓘ button). Deliberately a separate item from
+    /// `taskDetailSheetTaskId`: that sheet presents from the view root, and
+    /// SwiftUI silently queues a sibling sheet until the detail sheet is
+    /// manually dismissed. This item's sheet presents from the detail
+    /// sheet's own content instead, stacking immediately — matching web's
+    /// overlay behavior (DetailModal + TaskDetailSheet are independent).
+    @State private var compoundChildDetailTaskId: TaskIdItem?
+    /// Windowed Completion (docs Decision 9 + §Write paths — "the toggle is
+    /// disabled with an explanatory affordance"). Task ids whose un-complete
+    /// affordance in `detailSheet` would be inert because every live
+    /// completion is sealed-window-immune. Populated on-demand when the
+    /// detail sheet opens (see `loadSealBlockedTaskIds`), not per grid render.
+    @State private var sealBlockedTaskIds: Set<String> = []
     // MARK: Edit-mode draft state (Phase 1 board-edit chrome)
+    // NOTE (B2-I3): the edit-draft *data* layer moved to `BoardPlayViewModel`.
+    // The `BoardEditPanel`'s seven two-way bindings are now `$viewModel.editName`
+    // … projections, and the staged-square dictionaries + draft-derived helpers
+    // + the seed/save/archive commit live on the view model. The view keeps only
+    // the render-level edit chrome below (`editMode` overlay gate, the Save
+    // spinner mirror, the alert/toast flags, and the cell-menu routing state).
     /// True while the in-place `BoardEditPanel` is overlaid on `BoardPlayView`.
     @State private var editMode: Bool = false
-    /// Draft board name input.
-    @State private var editName: String = ""
-    /// Draft timeframe segmented picker value.
-    @State private var editTimeframe: Timeframe = .monthly
-    /// Draft custom start-date picker value.
-    @State private var editCustomStartDate: Date = Date()
-    /// Draft custom end-date picker value.
-    @State private var editCustomEndDate: Date = Date()
-    /// Original parsed start date seeded from `board.startDate` — used by the
-    /// `BoardEditPanel` dirty-check comparison.
-    @State private var editOriginalCustomStartDate: Date = Date()
-    /// Original parsed end date seeded from `board.endDate` — used by the
-    /// `BoardEditPanel` dirty-check comparison.
-    @State private var editOriginalCustomEndDate: Date = Date()
-    /// Draft center-square type selector value.
-    @State private var editCenterType: CenterSquareType = .free
-    /// Draft custom center name input (only relevant when `editCenterType == .customFree`).
-    @State private var editCenterCustomName: String = ""
-    /// True when the board already has a center-task placement (gates CHOSEN option).
-    /// Loaded asynchronously by `seedEditDraft(from:)`.
-    @State private var editHasCandidateTasks: Bool = false
-    /// Which squares sub-mode (Edit tasks / Rearrange) is active.
-    @State private var editSubMode: BoardEditSubMode = .editTasks
-    /// True while `updateBoardAndCascade` is in flight — disables the Save pill.
+    /// True while a `handleEditSave` commit is in flight — disables the Save
+    /// pill. UI mirror driven by `viewModel.handleEditSave`'s return value +
+    /// `viewModel.editEvent`; the authoritative re-entry guard is VM-side.
     @State private var editSaving: Bool = false
     /// Surfaces a board-edit Save failure (the edit panel overlays the inline
     /// flash, so a system alert is used — it pierces the overlay).
@@ -311,14 +211,8 @@ struct BoardPlayView: View {
     /// Controls the "Board saved" success toast (auto-dismissed after 2.4 s).
     @State private var showEditSavedToast: Bool = false
     // MARK: Edit-mode squares draft (Phase 2 — Edit tasks)
-    /// Per-cell staged state keyed by "row-col". Seeded from live `BoardTask`
-    /// rows when the user enters edit mode; modified by Replace / Edit-task actions.
-    /// Nothing is written to the DB until `handleEditSave` commits.
-    @State private var editSquaresDraft: [String: SquaresDraftCell] = [:]
-    /// Staged task-field overrides keyed by taskId (global — shared by all squares
-    /// that reference the same task). Applied to `editDraftTaskMap` for rendering and
-    /// committed via `saveTaskAndCascade` in `handleEditSave`.
-    @State private var editTaskOverrides: [String: StagedTaskOverride] = [:]
+    // NOTE (B2-I3): `editSquaresDraft` / `editTaskOverrides` moved to the view
+    // model (read via `viewModel.editSquaresDraft` / `.editTaskOverrides`).
     /// Target for the "Replace task" sheet triggered from a cell tap in edit mode.
     @State private var editModeReplaceTarget: EditModeSwapTarget? = nil
     /// Target for the "Edit task" sheet triggered from a cell tap in edit mode.
@@ -332,19 +226,13 @@ struct BoardPlayView: View {
     /// (used to show the Phase-2b "Make it a free space" / "Make it a task
     /// square" toggle items in `confirmationDialog`).
     @State private var editCellMenuIsCenter: Bool = false
-    /// M3 — live-edit cell swap: the square whose task the user wants to replace.
-    @State private var swapTarget: SwapTarget? = nil
-    /// M4 — live-edit remove from board: the boardTaskId pending confirmation.
-    @State private var removeBoardTaskId: String? = nil
     /// M4 — live-edit add to empty cell: the grid position awaiting task selection.
     @State private var addCellPos: (row: Int, col: Int)? = nil
     /// M4 — tracks whether the add-cell sheet was dismissed via a confirmed selection.
     /// `onDismiss` skips the reload when true because `handleAddTaskToCell` already reloads.
     @State private var addTaskConfirmed: Bool = false
-    /// Phase 3 — Rearrange sub-mode staged state.
-    /// Ordered `[RearrangeCellData]` array shown by `RearrangeGrid`. nil until
-    /// the user first enters Rearrange sub-mode (built lazily by `seedRearrangeCells`).
-    @State private var editRearrangeCells: [RearrangeCellData]? = nil
+    // NOTE (B2-I3): `editRearrangeCells` moved to the view model (read via
+    // `viewModel.editRearrangeCells`).
 
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
@@ -355,85 +243,80 @@ struct BoardPlayView: View {
     /// correctly.
     @State private var pendingOpenBoardId: String?
 
+    // MARK: - Init
+
+    /// Constructs the view and its data-loading `BoardPlayViewModel`.
+    ///
+    /// The view model is created with a nil userId here because the
+    /// `@EnvironmentObject` `AuthService` is not available in a SwiftUI
+    /// `init`. The view supplies the authenticated user's id to the view
+    /// model in `.onAppear` (via `setUserId`), where the env IS available —
+    /// faithfully reproducing the pre-refactor behavior, where the loaders
+    /// read `authService.currentUser?.id` at reload time.
+    init(
+        boardId: String,
+        onOpenBoard: @escaping (String) -> Void = { _ in },
+        embedded: Bool = false,
+        onResumeDraft: ((String) -> Void)? = nil
+    ) {
+        self.boardId = boardId
+        self.onOpenBoard = onOpenBoard
+        self.embedded = embedded
+        self.onResumeDraft = onResumeDraft
+        _viewModel = StateObject(
+            wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil)
+        )
+    }
+
     // MARK: - Computed
 
-    /// O(1) task lookup by task ID.
-    private var taskMap: [String: Task] {
-        Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+    /// O(1) task lookup by task ID. Delegates to the view model (B2-I2), which
+    /// owns the same lookup for its interaction handlers.
+    private var taskMap: [String: Task] { viewModel.taskMap }
+
+    // MARK: - Windowed reads (Windowed Completion)
+
+    /// The current board's window lower bound (`board.startDate`). Every
+    /// event-owning square resolves against `[windowStart, ∞)`.
+    private var windowStart: String? { viewModel.windowStart }
+
+    /// The workspace's non-deleted TaskEvents grouped by taskId (from the VM).
+    private var windowEventsByTaskId: [String: [TaskEvent]] { viewModel.windowEventsByTaskId }
+
+    /// The compound window context for the current board — passed into
+    /// `CompoundEvaluation.evaluate` so compound squares resolve their primitive
+    /// children windowed (docs §Semantics). Derived-counting children are carved
+    /// out inside the kernel.
+    private var boardWindowContext: CompoundWindowContext {
+        CompoundWindowContext(windowStart: windowStart, eventsByTaskId: windowEventsByTaskId)
+    }
+
+    /// Windowed completed state of an event-owning primitive square. Callers must
+    /// branch derived / compound / achievement before calling.
+    private func windowedIsCompleted(_ task: Task) -> Bool {
+        resolveTaskWindowState(
+            task: task,
+            events: windowEventsByTaskId[task.id] ?? [],
+            windowStart: windowStart
+        ).isCompleted
+    }
+
+    /// Windowed count of an event-owning counting square (source / plain).
+    private func windowedCount(_ task: Task) -> Int {
+        resolveTaskWindowState(
+            task: task,
+            events: windowEventsByTaskId[task.id] ?? [],
+            windowStart: windowStart
+        ).count
     }
 
     // MARK: - Edit-mode squares draft (Phase 2)
-
-    /// Live `BoardTask` rows with staged task-ID replacements applied.
-    /// Used as `boardTasks:` in `BoardEditPanel` so the draft grid shows
-    /// the staged tasks without touching the database.
-    private var editDraftBoardTasks: [BoardTask] {
-        guard editMode, !editSquaresDraft.isEmpty else { return boardTasks }
-        return boardTasks.map { bt in
-            let key = "\(bt.row)-\(bt.col)"
-            guard let draft = editSquaresDraft[key],
-                  draft.stagedTaskId != bt.taskId else { return bt }
-            var copy = bt
-            copy.taskId = draft.stagedTaskId
-            return copy
-        }
-    }
-
-    /// `taskMap` with staged task-field overrides applied.
-    /// Used as `taskMap:` in `BoardEditPanel` so cell labels show the
-    /// staged title/type without a database write.
-    private var editDraftTaskMap: [String: Task] {
-        guard editMode, !editTaskOverrides.isEmpty else { return taskMap }
-        var map = taskMap
-        for (taskId, override) in editTaskOverrides {
-            guard var t = map[taskId] else { continue }
-            t.title = override.title
-            t.type  = override.type
-            if override.type == .counting {
-                t.action   = override.action
-                t.unit     = override.unit
-                t.maxCount = override.maxCount
-            }
-            map[taskId] = t
-        }
-        return map
-    }
-
-    /// Number of staged square edits: cell replacements + task-field overrides +
-    /// position moves (from Rearrange sub-mode).
-    ///
-    /// Position moves are DERIVED: a drag that returns a cell to its original slot
-    /// is net-zero and does not inflate the counter. Each `RearrangeCellData` carries
-    /// its `originalRow`/`originalCol` so we can compare the current slot index to
-    /// the original position. The staged positions are inferred from the order of
-    /// `editRearrangeCells` (index → row-major row/col).
-    ///
-    /// Forwarded to `BoardEditPanel.squareEditCount` so the counter and Save pill
-    /// react to square-level changes, not just metadata changes.
-    private var editSquaresEditCount: Int {
-        guard editMode else { return 0 }
-        let replacements = editSquaresDraft.values
-            .filter { $0.stagedTaskId != $0.originalTaskId }.count
-        let overrides = editTaskOverrides.count
-        let positionMoves = countPositionMoves(in: editRearrangeCells, gridSize: gridSize)
-        return replacements + overrides + positionMoves
-    }
-
-    /// Returns the number of task cells that are in a different grid slot from
-    /// their `originalRow`/`originalCol`. Center and empty slots are excluded.
-    private func countPositionMoves(in cells: [RearrangeCellData]?, gridSize: Int) -> Int {
-        guard let cells, gridSize > 0 else { return 0 }
-        var count = 0
-        for (slotIdx, cell) in cells.enumerated() {
-            guard !cell.isCenter, !cell.isEmpty else { continue }
-            let stagedRow = slotIdx / gridSize
-            let stagedCol = slotIdx % gridSize
-            if stagedRow != cell.originalRow || stagedCol != cell.originalCol {
-                count += 1
-            }
-        }
-        return count
-    }
+    //
+    // NOTE (B2-I3): `editDraftBoardTasks` / `editDraftTaskMap` /
+    // `editSquaresEditCount` / `countPositionMoves` moved to `BoardPlayViewModel`
+    // (read via `viewModel.editDraftBoardTasks` etc.). `editCellMenuTitle`
+    // stays here — it reads view-owned state (the cell-menu routing / `editMode`)
+    // alongside the VM draft state.
 
     /// Display title for the tap-menu confirmationDialog.
     ///
@@ -442,25 +325,13 @@ struct BoardPlayView: View {
     private var editCellMenuTitle: String {
         // Free center tap has no squaresDraft entry — give it a clear title.
         if editCellMenuIsCenter
-            && (editCenterType == .free || editCenterType == .customFree) {
+            && (viewModel.editCenterType == .free || viewModel.editCenterType == .customFree) {
             return "Center square"
         }
         let key = "\(editCellMenuRow)-\(editCellMenuCol)"
-        guard let draft = editSquaresDraft[key] else { return "Square" }
-        let map = editDraftTaskMap
+        guard let draft = viewModel.editSquaresDraft[key] else { return "Square" }
+        let map = viewModel.editDraftTaskMap
         return map[draft.stagedTaskId]?.title ?? "Square"
-    }
-
-    /// Returns true when `boardTask.isCenter` AND the board's center type
-    /// (using the edit draft while in edit mode) is non-`.none`. This is the
-    /// Phase-2b "pinned center" predicate used by the live context menus.
-    ///
-    /// A `.none`-center board task that happens to sit at the middle position
-    /// is NOT pinned — Swap and Remove are enabled for it.
-    private func isPinnedCenter(boardTask: BoardTask) -> Bool {
-        guard boardTask.isCenter else { return false }
-        let effectiveCenterType = editMode ? editCenterType : (board?.centerSquareType ?? .none)
-        return effectiveCenterType != .none
     }
 
     /// Compound children grouped by parent compound task ID, sorted by childIndex.
@@ -475,6 +346,29 @@ struct BoardPlayView: View {
         return grouped
     }
 
+    /// Board-integrity PR-3 — kernel-derived per-cell state for THIS board,
+    /// keyed by `boardTaskId`. `DerivationPass.computeBoardGrid` is now the
+    /// ONE implementation of the ACHIEVEMENT branch (trigger/reference
+    /// resolution); this re-runs it against the same live inputs already
+    /// assembled for compound/primitive rendering below and is consulted
+    /// ONLY for achievement cells (`risoPlaySquare`'s achievement branch,
+    /// `achievementBadge(for:)`, `achievementDetailContent`) — those three
+    /// surfaces used to hand-copy the trigger/meets/spawn-filter logic
+    /// separately and could drift; now they can't. Compound + windowed-
+    /// primitive cells keep resolving inline above (their `@Published`-backed
+    /// reactive paths), per the PR-3 judgment rule: at most one thin
+    /// windowed-primitive path outside the kernel, with the achievement
+    /// branch unified. Not used for sealed boards — those short-circuit to
+    /// the frozen `sealedCompletedCells` snapshot before ever consulting this.
+    ///
+    /// Stored on the VM (rebuilt once per `apply(_:)` data change) rather
+    /// than computed here — the review flagged that a computed property runs
+    /// the full kernel pass once per rendered CELL (O(size²) derivations per
+    /// render).
+    private var kernelCellStates: [String: DerivationPass.CellState] {
+        viewModel.kernelCellStates
+    }
+
     /// Board tasks sorted row-major (ascending row then col).
     private var sortedBoardTasks: [BoardTask] {
         boardTasks.sorted { $0.row == $1.row ? $0.col < $1.col : $0.row < $1.row }
@@ -486,18 +380,40 @@ struct BoardPlayView: View {
     }
 
     /// Position lookup for fast grid rendering: "row-col" → BoardTask.
+    ///
+    /// Board-integrity PR-2 (Part 2): resolves `boardTasks` through
+    /// `PlacementIntegrity.resolvePlacements` first, so a raw duplicate row
+    /// (pre-repair, or a sealed board whose corrupt rows aren't touched by
+    /// the repair pass's stats side) can't make this map disagree with what
+    /// derivation counted — both consume the SAME deterministic winner.
     private var btByPosition: [String: BoardTask] {
         var map: [String: BoardTask] = [:]
-        for bt in boardTasks {
+        for bt in PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize) {
             map["\(bt.row)-\(bt.col)"] = bt
         }
         return map
     }
 
-    /// Whether the current board has passed its `endDate` (non-Custom timeframe only).
+    /// Whether the current board is a frozen, read-only historical record
+    /// (docs §Effects of sealed: "Not editable" — a sealed board can never be
+    /// interacted with again). Sealing REPLACES the old expiry lock: an
+    /// expired-but-unsealed board stays fully live (docs §Lifecycle — the
+    /// closing-out banner's Log action opens it to log late activity) until
+    /// the user seals it or the backstop does. Gates every play interaction:
+    /// tap-to-complete, counter stepper, context-menu actions, the empty-cell
+    /// "+" add affordance, and the toolbar Edit entry. Delegates to the
+    /// standalone `isBoardPlayLocked` predicate (Helpers/Sealing.swift) so
+    /// the gating rule is unit-testable.
     private var isBoardLocked: Bool {
         guard let b = board else { return false }
-        return isBoardExpired(b)
+        return isBoardPlayLocked(b)
+    }
+
+    /// Windowed Completion — whether the current board is sealed (docs
+    /// §Effects of sealed). Sealed boards render read-only from
+    /// `sealedCompletedCells` rather than live event queries.
+    private var isSealed: Bool {
+        board?.sealedAt != nil
     }
 
     /// Set of 0-based cell indices (row * gridSize + col) that are part of a
@@ -567,9 +483,10 @@ struct BoardPlayView: View {
                                 .padding(.horizontal, Riso.gutter)
                         }
 
-                        // ── Expired banner (below grid) ──
+                        // ── Sealed banner (below grid) ── locked == sealed;
+                        // an expired-but-unsealed board stays live (no banner).
                         if isBoardLocked {
-                            Text("Board expired — interactions disabled")
+                            Text("Board closed — a permanent record")
                                 .font(.risoBody(12, .semibold))
                                 .foregroundStyle(Color.risoRed)
                                 .padding(.horizontal, Riso.gutter)
@@ -596,6 +513,60 @@ struct BoardPlayView: View {
                     )
                 )
                 .zIndex(10)
+            }
+
+            // ── P3: Shared-counter arrival banner (drops from top) ──
+            if let banner = arrivalBanner {
+                RisoArrivalBanner(
+                    squareCount: banner.squareCount,
+                    taskName: banner.taskName,
+                    counterName: banner.counterName,
+                    onOpen: { openArrivalTarget(banner) },
+                    onDismiss: dismissArrivalBanner
+                )
+                .padding(.horizontal, Riso.gutter)
+                .padding(.top, 54)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    )
+                )
+                .zIndex(12)
+            }
+
+            // ── P2/R3: Shared-counter credited toast (slides from bottom) ──
+            // Unified onto `CounterLogToastView` (R2) via its `message`
+            // override — same card chrome as the Counters Hub/Detail toasts,
+            // now with the pinned "+N counterName — also counted on…" copy
+            // and an Undo pill that reverses the whole logged entry.
+            if let creditToast {
+                VStack {
+                    Spacer()
+                    CounterLogToastView(
+                        amount: creditToast.amount,
+                        unit: creditToast.unit,
+                        verb: creditToast.verb,
+                        message: creditToast.message,
+                        onUndo: {
+                            viewModel.undoSharedCounterLog(sourceTaskId: creditToast.sourceTaskId)
+                            withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
+                        },
+                        onDone: {
+                            withAnimation(.easeOut(duration: 0.2)) { self.creditToast = nil }
+                        }
+                    )
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 100)
+                }
+                .id(creditToast.toastKey)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .move(edge: .bottom).combined(with: .opacity)
+                    )
+                )
+                .zIndex(9)
             }
 
             // ── GREENLOG overlay (full-bleed) ──
@@ -663,50 +634,73 @@ struct BoardPlayView: View {
             if editMode, let b = board {
                 BoardEditPanel(
                     board: b,
-                    boardTasks: editDraftBoardTasks,
-                    taskMap: editDraftTaskMap,
+                    boardTasks: viewModel.editDraftBoardTasks,
+                    taskMap: viewModel.editDraftTaskMap,
                     weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
-                    originalCustomStartDate: editOriginalCustomStartDate,
-                    originalCustomEndDate: editOriginalCustomEndDate,
-                    name: $editName,
-                    timeframe: $editTimeframe,
-                    customStartDate: $editCustomStartDate,
-                    customEndDate: $editCustomEndDate,
-                    centerType: $editCenterType,
-                    centerCustomName: $editCenterCustomName,
-                    hasCandidateTasks: editHasCandidateTasks,
-                    subMode: $editSubMode,
-                    squareEditCount: editSquaresEditCount,
+                    originalCustomStartDate: viewModel.editOriginalCustomStartDate,
+                    originalCustomEndDate: viewModel.editOriginalCustomEndDate,
+                    // B2-I3: the seven two-way bindings are now `$viewModel.…`
+                    // projections (`@StateObject` projections are two-way, so
+                    // these behave exactly like the pre-move `@State` bindings).
+                    name: $viewModel.editName,
+                    timeframe: $viewModel.editTimeframe,
+                    customStartDate: $viewModel.editCustomStartDate,
+                    customEndDate: $viewModel.editCustomEndDate,
+                    centerType: $viewModel.editCenterType,
+                    centerCustomName: $viewModel.editCenterCustomName,
+                    hasCandidateTasks: viewModel.editHasCandidateTasks,
+                    subMode: $viewModel.editSubMode,
+                    squareEditCount: viewModel.editSquaresEditCount,
                     onCellTap: { row, col in handleEditCellTap(row: row, col: col) },
                     // Phase 2b — center toggle (free center → task square).
                     onCenterTap: handleFreeCenterTap,
                     // Phase 3 — Rearrange
-                    rearrangeCells: editRearrangeCells,
-                    onReorder: handleRearrange,
+                    rearrangeCells: viewModel.editRearrangeCells,
+                    onReorder: viewModel.handleRearrange,
+                    // Windowed Completion parity (d16ff21, sub-slice 3 review
+                    // finding): the edit/rearrange preview must show the
+                    // WINDOWED state, not the lifetime cache.
+                    windowedIsCompleted: viewModel.windowedIsCompleted,
                     isSaving: editSaving,
-                    onSave: handleEditSave,
+                    onSave: {
+                        let weekStart = authService.currentUser?.decodedPreferences
+                            .weekStartDay.rawValue ?? "monday"
+                        // The VM validates + dispatches the commit; it returns
+                        // true iff the save actually started, so `editSaving`
+                        // (view-owned) flips synchronously in the same tick the
+                        // pre-move code did — the reset runs on `.editEvent`.
+                        if viewModel.handleEditSave(weekStartDay: weekStart) {
+                            editSaving = true
+                        }
+                    },
                     onCancelConfirmed: {
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
                     },
-                    onArchiveConfirmed: handleEditArchive
+                    onArchiveConfirmed: viewModel.handleEditArchive
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.risoPaper.ignoresSafeArea())
                 .transition(.opacity)
                 .zIndex(30)
-                // Phase 3 — seed rearrange cells lazily on sub-mode switch to Rearrange.
-                .onChange(of: editSubMode) { _, newMode in
+                // Phase 3 — seed rearrange cells lazily on sub-mode switch to
+                // Rearrange. Kept as a view `.onChange` (observing the VM's
+                // published `editSubMode`) rather than a VM `didSet`: SwiftUI's
+                // onChange fires AFTER the view update, a `didSet` fires
+                // synchronously before it — preserving the post-update timing
+                // matters here (see the B2-I3 report), so this stays an observer.
+                .onChange(of: viewModel.editSubMode) { _, newMode in
                     if newMode == .rearrange {
-                        seedRearrangeCells(for: b)
+                        viewModel.seedRearrangeCells(for: b)
                     }
                 }
                 // Phase 2b — when center type changes (via the toggle or the
                 // BoardSetupFormView picker), rebuild the staged rearrange cells
                 // so the Rearrange sub-mode immediately reflects the new pinning.
                 // If no rearrange cells exist yet, seedRearrangeCells will build
-                // them with the correct type on the next sub-mode switch.
-                .onChange(of: editCenterType) { _, newType in
-                    guard let current = editRearrangeCells else { return }
+                // them with the correct type on the next sub-mode switch. Same
+                // onChange-vs-didSet rationale as above.
+                .onChange(of: viewModel.editCenterType) { _, newType in
+                    guard let current = viewModel.editRearrangeCells else { return }
                     // Preserve any staged rearrange order: map each non-center,
                     // non-empty cell's CURRENT slot index back to (row, col) and pass
                     // it as the positionDraft, so changing the center type doesn't
@@ -716,8 +710,8 @@ struct BoardPlayView: View {
                     for (i, cell) in current.enumerated() where !cell.isCenter && !cell.isEmpty {
                         positions[cell.id] = (row: i / size, col: i % size)
                     }
-                    editRearrangeCells = buildRearrangeCells(
-                        squaresDraft: editSquaresDraft,
+                    viewModel.editRearrangeCells = buildRearrangeCells(
+                        squaresDraft: viewModel.editSquaresDraft,
                         gridSize: size,
                         centerSquareType: newType,
                         positionDraft: positions
@@ -735,10 +729,16 @@ struct BoardPlayView: View {
             // M2 — "Edit" button: visible on ACTIVE non-embedded boards when the
             // edit-mode panel is not already open (hide it once we're editing so
             // the top bar inside `BoardEditPanel` owns all navigation).
-            if let b = board, b.status == .active, !embedded, !editMode {
+            // Windowed Completion — a sealed board is never editable (docs
+            // §Effects of sealed: rearranging squares under a frozen snapshot
+            // would desync the frozen record; no unseal gesture in v1).
+            if let b = board, b.status == .active, !embedded, !editMode, !isSealed {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Edit") {
-                        seedEditDraft(from: b)
+                        viewModel.seedEditDraft(from: b)
+                        // The pre-move `seedEditDraft` reset `editSaving = false`
+                        // inline; `editSaving` stays view-side, so reset it here.
+                        editSaving = false
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
                     }
                 }
@@ -757,9 +757,9 @@ struct BoardPlayView: View {
             // Replace / Edit task: shown for any occupied cell (including a .none
             // center with a task). Not shown for a free center (no task draft entry).
             let cellKey = "\(editCellMenuRow)-\(editCellMenuCol)"
-            if editSquaresDraft[cellKey] != nil {
+            if viewModel.editSquaresDraft[cellKey] != nil {
                 Button("Replace task") {
-                    if let draft = editSquaresDraft[cellKey] {
+                    if let draft = viewModel.editSquaresDraft[cellKey] {
                         editModeReplaceTarget = EditModeSwapTarget(
                             id: cellKey,
                             currentTaskId: draft.stagedTaskId
@@ -767,12 +767,19 @@ struct BoardPlayView: View {
                     }
                 }
                 Button("Edit task") {
-                    if let draft = editSquaresDraft[cellKey] {
-                        let map = editDraftTaskMap
+                    if let draft = viewModel.editSquaresDraft[cellKey] {
+                        let map = viewModel.editDraftTaskMap
                         if let task = map[draft.stagedTaskId] {
                             editModeTaskTarget = EditModeTaskTarget(id: cellKey, task: task)
                         }
                     }
+                }
+                // Staged removal — empties the cell in the draft; the placement
+                // is only deleted from the DB on Save (handleEditSave). A free
+                // center has no draft entry so this block is skipped for it,
+                // keeping a pinned center non-removable.
+                Button("Remove from board", role: .destructive) {
+                    viewModel.handleEditRemove(cellKey: cellKey)
                 }
             }
 
@@ -780,14 +787,14 @@ struct BoardPlayView: View {
             // is the positional center. .chosen is intentionally excluded — the
             // BoardSetupFormView chrome is the way out of CHOSEN.
             if editCellMenuIsCenter {
-                if editCenterType == .free || editCenterType == .customFree {
+                if viewModel.editCenterType == .free || viewModel.editCenterType == .customFree {
                     // Free center → task square (empty; fill via the live "+" flow).
                     // The .onChange(of: editCenterType) handler rebuilds the rearrange
                     // cells (preserving any staged order) — no inline rebuild here.
-                    Button("Make it a task square") { editCenterType = .none }
-                } else if editCenterType == .none {
+                    Button("Make it a task square") { viewModel.editCenterType = .none }
+                } else if viewModel.editCenterType == .none {
                     // Task square (or empty slot) → free space.
-                    Button("Make it a free space") { editCenterType = .free }
+                    Button("Make it a free space") { viewModel.editCenterType = .free }
                 }
             }
 
@@ -802,7 +809,7 @@ struct BoardPlayView: View {
                 onDismiss: { editModeReplaceTarget = nil },
                 onConfirm: { newTaskId in
                     editModeReplaceTarget = nil
-                    handleEditCellReplace(cellKey: target.id, newTaskId: newTaskId)
+                    viewModel.handleEditCellReplace(cellKey: target.id, newTaskId: newTaskId)
                 }
             )
         }
@@ -812,58 +819,11 @@ struct BoardPlayView: View {
                 task: target.task,
                 onDone: { patch in
                     editModeTaskTarget = nil
-                    handleEditTaskOverride(taskId: target.task.id, patch: patch)
+                    viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
                 },
                 onCancel: { editModeTaskTarget = nil }
             )
         }
-        // M3 — Cell swap sheet. Presented when the user taps "⎘ Swap with
-        // another task…" in the context menu of a non-center ACTIVE square.
-        .sheet(
-            item: $swapTarget,
-            onDismiss: {
-                // Reload so the grid reflects any completed swap.
-                loadBoardTasks()
-                loadTaskData()
-            }
-        ) { target in
-            CellSwapSheet(
-                mode: .swap,
-                currentTaskId: target.currentTaskId,
-                candidateTasks: allTasks,
-                onDismiss: { swapTarget = nil },
-                onConfirm: { newTaskId in
-                    swapTarget = nil
-                    handleCellSwap(boardTaskId: target.id, newTaskId: newTaskId)
-                }
-            )
-        }
-        // M4 — Remove from board confirmation. Presented when the user taps
-        // "⎘ Remove from board" in the context menu of a non-center ACTIVE square.
-        .alert(
-            "Remove from board?",
-            isPresented: Binding(
-                get: { removeBoardTaskId != nil },
-                set: { if !$0 { removeBoardTaskId = nil } }
-            ),
-            actions: {
-                Button("Cancel", role: .cancel) { removeBoardTaskId = nil }
-                Button("Remove", role: .destructive) {
-                    guard let targetId = removeBoardTaskId else { return }
-                    removeBoardTaskId = nil
-                    handleRemoveFromBoard(boardTaskId: targetId)
-                }
-            },
-            message: {
-                if let btId = removeBoardTaskId,
-                   let bt = boardTasks.first(where: { $0.id == btId }),
-                   let task = taskMap[bt.taskId] {
-                    Text("\"\(task.title)\" will be removed from this board. The task stays in your library and on any other boards where it appears.")
-                } else {
-                    Text("This task will be removed from this board. The task stays in your library and on any other boards where it appears.")
-                }
-            }
-        )
         // Board-edit Save failure — a system alert pierces the edit overlay.
         .alert(
             "Couldn’t save",
@@ -889,8 +849,7 @@ struct BoardPlayView: View {
                 if addTaskConfirmed {
                     addTaskConfirmed = false
                 } else {
-                    loadBoardTasks()
-                    loadTaskData()
+                    viewModel.reloadBoardTasksAndTaskData()
                 }
             }
         ) {
@@ -903,24 +862,77 @@ struct BoardPlayView: View {
                     onConfirm: { taskId in
                         addTaskConfirmed = true
                         addCellPos = nil
-                        handleAddTaskToCell(taskId: taskId, row: pos.row, col: pos.col)
+                        viewModel.handleAddTaskToCell(taskId: taskId, row: pos.row, col: pos.col)
                     }
                 )
             }
         }
         .onAppear {
-            loadBoard()
-            loadBoardTasks()
-            loadTaskData()
+            // Supply the authenticated user id from the env (unavailable in
+            // `init`) before the first load. userId is stable for the
+            // session, so later reloads (post-write tails, sheet dismisses,
+            // pager board-changes) reuse it.
+            viewModel.setUserId(authService.currentUser?.id)
+            // P3 — this board-open should run arrival detection on the reload
+            // that follows (the reused pager instance uses boardChanged instead).
+            viewModel.markArrivalDetectionPending()
+            viewModel.reload()
+        }
+        .onDisappear {
+            // P3 — re-snapshot the last-seen baseline on leaving so local taps
+            // don't re-fire on the next open (belt-and-suspenders; the once-
+            // per-open detect + local-tap reloads already keep it current).
+            viewModel.snapshotArrivalsOnDisappear()
         }
         // Defensive: also reload on boardId prop change. With `.id(boardId)`
-        // on the destination, SwiftUI re-creates the view (and .onAppear
-        // fires) — but if any future refactor strips the .id, this keeps
-        // data fresh per boardId.
-        .onChange(of: boardId) { _, _ in
-            loadBoard()
-            loadBoardTasks()
-            loadTaskData()
+        // on the standalone destination, SwiftUI re-creates the view (and the
+        // view model) so .onAppear fires — but the embedded core-board pager
+        // reuses the SAME BoardPlayView instance (no `.id()`), so this points
+        // the existing view model at the new board and reloads.
+        .onChange(of: boardId) { _, newBoardId in
+            viewModel.boardChanged(to: newBoardId)
+        }
+        // B2-I2 — the view model's interaction handlers publish a one-shot
+        // `flashEvent` after each write; the view fires the residual toast /
+        // overlay animations here (they read view `@State` + `AuthService`, so
+        // they can't move into the view model). A single event may carry both a
+        // bingo/GREENLOG notification and a shared-counter credit toast.
+        .onChange(of: viewModel.flashEvent) { _, event in
+            guard let event else { return }
+            if let msg = event.risoNotification {
+                triggerRisoNotification(from: msg)
+            }
+            if let payload = event.creditToast {
+                triggerCreditToast(payload: payload)
+            }
+        }
+        // P3 — passive-completion arrival. The VM detects + seeds the baseline
+        // on a board-open reload and publishes this one-shot; the view drives
+        // the gold banner + per-square pulse + the ~5.2s auto-clear (all
+        // view-owned `@State`). Suppressed in edit mode.
+        .onChange(of: viewModel.arrivalEvent) { _, event in
+            guard let event, !editMode else { return }
+            triggerArrivalBanner(from: event)
+        }
+        // B2-I3 — edit-commit outcome observer. The VM's `handleEditSave` /
+        // `handleEditArchive` DB commits (+ the domain `reload()`) run VM-side;
+        // this runs the residual view-owned UI mutations they still trigger
+        // (which read view `@State` / the `dismiss` environment), reproducing
+        // the pre-move MainActor tails exactly.
+        .onChange(of: viewModel.editEvent) { _, event in
+            guard let event else { return }
+            switch event.outcome {
+            case .saved:
+                editSaving = false
+                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                triggerBoardSavedToast()
+            case .saveFailed(let message):
+                editSaving = false
+                editSaveError = message
+            case .archived:
+                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                dismiss()
+            }
         }
         // Counting stepper sheet — Riso pill stepper for counting cells.
         // Wires to handleCountingTap / handleCountingDecrement; dismiss clears state.
@@ -936,27 +948,43 @@ struct BoardPlayView: View {
                 let rawCount = task.currentCount ?? 0
                 let maxVal = task.maxCount ?? 0
                 let isLinked = task.sharedCounterId != nil
+                // Windowed Completion — the stepper shows the WINDOWED count for
+                // event-owning source/plain counters; derived members stay on the
+                // baseline-derived display (carve-out).
                 let displayed: Int = {
-                    if let _ = task.sharedCounterId {
+                    if task.sharedCounterId != nil {
                         return deriveDisplayedCount(
                             derivedBaseline: task.baseline ?? 0,
                             derivedMaxCount: maxVal,
                             sourceCurrentCount: rawCount
                         ).displayed
                     }
-                    return rawCount
+                    return windowedCount(task)
                 }()
+                // P2: Compute shared hint — other ACTIVE boards where a member
+                // task lives, excluding the current board.
+                let sharedHint: String? = sharedStepperHint(for: task)
+                // R3: resolve the shared-counter SOURCE (if any) to gate the
+                // amount-chip row and seed its "+{default}" chip — the chip
+                // row is shared-counting-squares-only per the copy contract;
+                // standalone counters keep the plain +/- stepper.
+                let sourceId = viewModel.sharedCounterSourceId(for: task)
+                let isSharedCounter = sourceId != nil
+                let defaultLogAmount = sourceId.flatMap { taskMap[$0]?.defaultLogAmount }
                 RisoCountingStepperSheet(
                     taskTitle: task.title,
                     currentCount: displayed,
                     maxCount: maxVal,
                     unitText: task.unit ?? "",
                     isLinkedCounter: isLinked,
-                    onIncrement: {
-                        handleCountingTap(boardTask: bt, task: task)
+                    sharedHint: sharedHint,
+                    isSharedCounter: isSharedCounter,
+                    defaultLogAmount: defaultLogAmount,
+                    onIncrement: { amount, persistAsDefault in
+                        viewModel.handleCountingTap(boardTask: bt, task: task, amount: amount, persistAsDefault: persistAsDefault)
                     },
-                    onDecrement: {
-                        handleCountingDecrement(boardTask: bt, task: task)
+                    onDecrement: { amount, persistAsDefault in
+                        viewModel.handleCountingDecrement(boardTask: bt, task: task, amount: amount, persistAsDefault: persistAsDefault)
                     }
                     // Dismissal clears `countingStepperBoardTaskId` via the
                     // .sheet(isPresented:) binding setter above.
@@ -966,8 +994,31 @@ struct BoardPlayView: View {
         .sheet(isPresented: Binding(
             get: { detailBoardTaskId != nil },
             set: { if !$0 { detailBoardTaskId = nil } }
-        )) {
+        ), onDismiss: {
+            // Drains cross-board nav requested from the NESTED child detail
+            // sheet (see `compoundChildDetailTaskId`): child dismiss closes
+            // this sheet, then navigation lands here post-unmount — same
+            // clean-transaction pattern as the library sheet below.
+            if let target = pendingOpenBoardId {
+                pendingOpenBoardId = nil
+                onOpenBoard(target)
+            }
+            // Board-integrity PR-5 (Item 5): this sheet's own content
+            // (`detailSheet`) can complete/edit the boardTask's task
+            // directly, and its NESTED child-detail sheet
+            // (`compoundChildDetailTaskId`) edits/deletes a compound
+            // child's `Task` via `AppDatabase.shared` — neither write goes
+            // through this VM, so refresh on dismiss the same way the M4
+            // add-cell sheet does on cancel.
+            viewModel.reloadBoardTasksAndTaskData()
+        }) {
             detailSheet
+        }
+        // Windowed Completion — resolve seal-immunity for the un-complete
+        // affordance(s) the detail sheet is about to show. On-demand (sheet
+        // open only), not per grid render.
+        .onChange(of: detailBoardTaskId) { _, newValue in
+            loadSealBlockedTaskIds(for: newValue)
         }
         // `onDismiss:` fires AFTER the sheet has visually unmounted, so
         // the subsequent boardsPath mutation (via onOpenBoard) lands in
@@ -983,6 +1034,11 @@ struct BoardPlayView: View {
                     pendingOpenBoardId = nil
                     onOpenBoard(target)
                 }
+                // Board-integrity PR-5 (Item 5): this sheet edits/deletes its
+                // task via `AppDatabase.shared` directly (bypasses this VM) —
+                // refresh so the grid reflects an edited title/type or a
+                // cascade-deleted placement.
+                viewModel.reloadBoardTasksAndTaskData()
             }
         ) { item in
             TaskDetailSheetView(
@@ -1010,59 +1066,58 @@ struct BoardPlayView: View {
                 .presentationDetents([.medium, .large])
             }
         }
+        // P3 — arrival banner tap → Counter Detail (single counter) / Counters
+        // Hub (multiple). Presented as a sheet (wrapped in its own
+        // NavigationStack so the destinations' member→board NavigationLinks work)
+        // to match how this view presents every other secondary surface — and to
+        // avoid a nav-push conflicting with the embedded pager's own chrome.
+        .sheet(item: $arrivalNavTarget) { target in
+            NavigationStack {
+                switch target {
+                case .counter(let counterId):
+                    CounterDetailView(counterId: counterId)
+                case .hub:
+                    CountersHubView()
+                }
+            }
+        }
     }
 
     // MARK: - Phase 6.3: per-cell achievement-task badge data
 
     /// Compute the achievement-task badge for one BoardTask. nil if the
-    /// backing Task is not ACHIEVEMENT-typed. Mirrors the TS-side
-    /// `achievementBadgesByBoardTaskId` memo in BoardPlayPage.tsx.
+    /// backing Task is not ACHIEVEMENT-typed (or the kernel has no
+    /// achievement metadata for it — e.g. no reference set). Mirrors the
+    /// TS-side `achievementBadgesByBoardTaskId` memo in BoardPlayPage.tsx.
+    ///
+    /// Board-integrity PR-3 — the met/count/required numbers come straight
+    /// from `kernelCellStates`; only the display NAME lookups (board /
+    /// template name) stay local, since names aren't part of the kernel's
+    /// completion-derivation domain.
     private func achievementBadge(for bt: BoardTask) -> AchievementSquareBadgeData? {
         guard let task = taskMap[bt.taskId], task.type == .achievement else { return nil }
-        guard let parent = board else { return nil }
-        let trigger = task.achievementTrigger ?? .greenlog
-        let meets: (Board) -> Bool = { b in
-            switch trigger {
-            case .bingo:
-                return (b.linesCompleted ?? 0) > 0
-            case .greenlog:
-                return b.status == .completed
+        guard let achievement = kernelCellStates[bt.id]?.achievement else { return nil }
+        switch achievement.mode {
+        case .specificBoard:
+            let ref = achievement.referencedBoardId.flatMap { refId in
+                allBoardsInWorkspace.first(where: { $0.id == refId && !$0.isDeleted })
             }
-        }
-        // Precedence: referencedBoardId wins when both somehow get set.
-        // Mirrors derivationPass's bad-data rule.
-        if let refBoardId = task.referencedBoardId {
-            let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted })
             return AchievementSquareBadgeData(
                 mode: .specificBoard,
                 referencedBoardName: ref?.name,
-                referencedBoardCompleted: ref.map(meets) ?? false
+                referencedBoardCompleted: achievement.referencedBoardCompleted ?? false
             )
-        }
-        if let refTemplateId = task.referencedTemplateId {
-            let template = allTemplatesInWorkspace.first(where: { $0.id == refTemplateId })
-            // Use the timestamp-based window helper rather than
-            // lexicographic string compare — Board dates can be local-ISO
-            // or UTC-with-`Z` and the two don't sort correctly as strings.
-            let spawns = allBoardsInWorkspace.filter { b in
-                !b.isDeleted
-                    && b.spawnedFromTemplateId == refTemplateId
-                    && DateFormatting.isWithinTimeframe(
-                        b.startDate,
-                        startDate: parent.startDate,
-                        endDate: parent.endDate
-                    )
+        case .recurringTemplate:
+            let template = achievement.referencedTemplateId.flatMap { tid in
+                allTemplatesInWorkspace.first(where: { $0.id == tid })
             }
-            let metCount = spawns.filter(meets).count
             return AchievementSquareBadgeData(
                 mode: .recurringTemplate,
                 templateName: template?.name,
-                templateInWindowMet: metCount,
-                templateRequiredCount: task.requiredCount ?? 0
+                templateInWindowMet: achievement.templateInWindowMet ?? 0,
+                templateRequiredCount: achievement.templateRequiredCount ?? 0
             )
         }
-        // No reference set: no badge (cell renders as regular task).
-        return nil
     }
 
     // MARK: - Riso Play Header
@@ -1091,10 +1146,21 @@ struct BoardPlayView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Status badge
+            // Status badge (+ recurring-provenance tag, issue #321). Windowed
+            // Completion — a sealed board shows the "Sealed" pill in place of
+            // the live status badge (docs §Effects of sealed; OQ1 resolution).
             if let b = board {
-                risoStatusBadge(status: b.status)
-                    .padding(.top, 4)
+                VStack(alignment: .trailing, spacing: 4) {
+                    if b.sealedAt != nil {
+                        RisoSealedBadge()
+                    } else {
+                        risoStatusBadge(status: b.status)
+                    }
+                    if RisoRecurringBadge.shouldShow(for: b) {
+                        RisoRecurringBadge()
+                    }
+                }
+                .padding(.top, 4)
             }
         }
     }
@@ -1158,8 +1224,10 @@ struct BoardPlayView: View {
     }
 
     /// Compact expiry string for the stat bar — "4d", "Expired", "Today", etc.
+    /// A custom board with an end date counts down like a timed board (it seals
+    /// at that date too); only INDEFINITE / no-endDate boards read "No end".
     private func risoExpiryText(board: Board) -> String {
-        guard board.timeframe != .custom, !board.isIndefinite else { return "No end" }
+        guard !board.isIndefinite else { return "No end" }
         guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "—" }
         let now = Date()
         guard now <= end else { return "Expired" }
@@ -1214,6 +1282,130 @@ struct BoardPlayView: View {
         }
     }
 
+    // MARK: - P2/R3: Shared-counter credited toast helpers
+
+    /// Fires the credited toast for a shared-counter ripple that reached
+    /// other boards. R3: mounts a fresh `CreditToastState` (distinct
+    /// `toastKey`) so `CounterLogToastView`'s own `.id(...)`-scoped
+    /// auto-dismiss `.task` restarts cleanly for back-to-back logs — the
+    /// manual generation-token timer this used to hand-roll is now owned by
+    /// the shared component (mirrors `CounterDetailView`'s toast pattern).
+    ///
+    /// - Parameter payload: The credited toast's copy + Undo target.
+    private func triggerCreditToast(payload: SharedCounterCreditToastPayload) {
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+            creditToast = CreditToastState(
+                sourceTaskId: payload.sourceTaskId,
+                amount: payload.amount,
+                unit: payload.unit,
+                verb: payload.isIncrement ? .logged : .removed,
+                message: payload.message,
+                toastKey: UUID().uuidString
+            )
+        }
+    }
+
+    // `sharedCreditToastText(counterName:otherBoards:isIncrement:)` moved to
+    // `BoardPlayViewModel` (B2-I2) — its only callers are the shared-counter
+    // handlers that now live there.
+
+    // MARK: - P3: Shared-counter arrival banner helpers
+
+    /// Shows the gold arrival banner + starts the per-square pulse from a
+    /// one-shot `CounterArrivalEvent`, then schedules a ~5.2s auto-clear guarded
+    /// by a generation token (a newer arrival supersedes the stale timer).
+    ///
+    /// - Parameter event: The VM's published arrival payload.
+    private func triggerArrivalBanner(from event: CounterArrivalEvent) {
+        let counterName = event.arrivedCounters.first?.counterName
+        arrivalBanner = ArrivalBannerData(
+            squareCount: event.totalArrivedSquares,
+            taskName: event.singleTaskName,
+            counterName: event.totalArrivedSquares == 1 ? counterName : nil,
+            arrivedCounters: event.arrivedCounters
+        )
+        arrivedTaskIds = event.arrivedTaskIds
+        arrivalBannerGeneration &+= 1
+        let generation = arrivalBannerGeneration
+        _Concurrency.Task.detached { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 5_200_000_000)
+            guard generation == arrivalBannerGeneration else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                arrivalBanner = nil
+            }
+            arrivedTaskIds = []
+        }
+    }
+
+    /// Dismiss the arrival banner immediately (the ✕ tap). Invalidates the
+    /// pending auto-clear via the generation bump.
+    private func dismissArrivalBanner() {
+        arrivalBannerGeneration &+= 1
+        withAnimation(.easeOut(duration: 0.2)) { arrivalBanner = nil }
+        arrivedTaskIds = []
+    }
+
+    /// Resolve + present the banner's tap target: the single distinct arrived
+    /// counter's Detail, or the Counters Hub when squares arrived from more than
+    /// one counter.
+    private func openArrivalTarget(_ data: ArrivalBannerData) {
+        if data.arrivedCounters.count == 1 {
+            arrivalNavTarget = .counter(data.arrivedCounters[0].counterId)
+        } else {
+            arrivalNavTarget = .hub
+        }
+        dismissArrivalBanner()
+    }
+
+    /// Computes the "↔ Shared · also counts on …" hint shown in the stepper sheet
+    /// for a shared-counter task. Returns `nil` when the task is not in a shared group
+    /// or has no OTHER active boards to mention.
+    ///
+    /// - Parameter task: The `Task` backing the tapped counting square.
+    private func sharedStepperHint(for task: Task) -> String? {
+        // R3: source detection extracted to `viewModel.sharedCounterSourceId(for:)`
+        // — shares the exact same rule as the tap-routing handlers and the
+        // chip-visibility gate below, instead of re-deriving it a third time.
+        guard task.type == .counting, let sourceId = viewModel.sharedCounterSourceId(for: task) else {
+            return nil
+        }
+
+        // Collect all member task ids (source + linked).
+        let memberIds: Set<String> = {
+            var ids = Set<String>([sourceId])
+            for t in allTasks where t.sharedCounterId == sourceId && !t.isDeleted {
+                ids.insert(t.id)
+            }
+            return ids
+        }()
+
+        // Find ACTIVE boards (other than the current board) where any member is placed.
+        let currentBid = board?.id
+        var seenBoardIds = Set<String>()
+        if let cid = currentBid { seenBoardIds.insert(cid) }
+        var otherBoardNames: [String] = []
+        for bt in allBoardTasksInWorkspace {
+            guard memberIds.contains(bt.taskId),
+                  !seenBoardIds.contains(bt.boardId)
+            else { continue }
+            if let b = allBoardsInWorkspace.first(where: { $0.id == bt.boardId }),
+               !b.isDeleted, b.status == .active {
+                seenBoardIds.insert(b.id)
+                otherBoardNames.append(b.name)
+            }
+        }
+        guard !otherBoardNames.isEmpty else { return nil }
+        otherBoardNames.sort()  // stable order
+
+        if otherBoardNames.count == 1 {
+            return "↔ Shared · also counts on \(otherBoardNames[0])"
+        } else {
+            let first = otherBoardNames[0]
+            let more = otherBoardNames.count - 1
+            return "↔ Shared · also counts on \(first) + \(more) more"
+        }
+    }
+
     /// Computes the greenlog streak for the current board (core boards only) and
     /// stores a compact label in `greenlogStreakValue` for the overlay + poster.
     /// Non-core boards → nil (the STREAK card hides). Reads boards off-main.
@@ -1256,9 +1448,22 @@ struct BoardPlayView: View {
                 } else if isCenter,
                           let b = board,
                           (b.centerSquareType == .free || b.centerSquareType == .customFree) {
-                    // FREE center cell — gold FREE label, not interactive in play mode.
+                    // FREE center cell — gold label, not interactive in play mode.
+                    // A CUSTOM_FREE center shows its custom name (issue #345 —
+                    // was hardcoded "FREE", discarding the stored name). Empty
+                    // custom name / plain FREE falls back to "FREE" to match the
+                    // wizard preview (RearrangeGrid) — deliberately NOT
+                    // getCenterDisplayText, which would rename every plain FREE
+                    // center to "FREE SPACE".
+                    let centerName: String = {
+                        guard b.centerSquareType == .customFree,
+                              let custom = b.centerSquareCustomName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                              !custom.isEmpty
+                        else { return "FREE" }
+                        return custom
+                    }()
                     RisoBoardPlayCell(
-                        title: "FREE",
+                        title: centerName,
                         taskType: .normal,
                         isCompleted: false,
                         isBingoLine: highlighted.contains(index),
@@ -1312,34 +1517,67 @@ struct BoardPlayView: View {
         // Completion derivation — preserved verbatim from original playSquare.
         // Compounds: NEVER read Task.isCompleted. Achievements: derive from
         // cross-board references. Primitives: read Task.isCompleted directly.
+        // Windowed Completion — a SEALED board renders `done` from the frozen
+        // `sealedCompletedCells` snapshot (docs §Effects of sealed), never
+        // live event queries (which could bleed a post-seal log of the same
+        // task from another live board).
         let isCompleted: Bool = {
+            if isSealed {
+                return board?.sealedCompletedCells?.contains(index) ?? false
+            }
             guard let task = task else { return false }
             if task.type == .compound {
                 return CompoundEvaluation.evaluate(
                     compound: task,
                     childrenByCompound: compoundChildrenByCompound,
-                    taskById: taskMap
+                    taskById: taskMap,
+                    windowContext: boardWindowContext
                 )
             }
             if task.type == .achievement {
-                return achievementCellIsCompleted(for: task)
+                // Board-integrity PR-3 — the kernel's ACHIEVEMENT branch is
+                // the single source of truth; see `kernelCellStates`.
+                return kernelCellStates[boardTask.id]?.isCompleted ?? false
             }
-            return task.isCompleted
+            // Windowed Completion — derived counters (sharedCounterId set) stay
+            // on their propagation-stamped lifetime cache (carve-out); every
+            // other primitive resolves windowed via events.
+            if task.sharedCounterId != nil { return task.isCompleted }
+            return windowedIsCompleted(task)
         }()
 
-        // Counting display values — mirrors original playSquare.
+        // Counting display values — windowed for event-owning source/plain
+        // counters; baseline-derived for linked members (carve-out).
         let rawCount = task?.currentCount ?? 0
         let maxVal = task?.maxCount ?? 0
         let isLinkedCounter = task?.sharedCounterId != nil
+        // Windowed Completion — only completion was snapshotted at seal time
+        // (not partial progress), so a frozen counting square reads max/max
+        // when green and 0/max otherwise — an honest read of what was frozen.
         let current: Int = {
-            if let t = task, let _ = t.sharedCounterId {
+            if isSealed { return isCompleted ? maxVal : 0 }
+            guard let t = task else { return 0 }
+            if t.sharedCounterId != nil {
                 return deriveDisplayedCount(
                     derivedBaseline: t.baseline ?? 0,
                     derivedMaxCount: t.maxCount ?? 0,
                     sourceCurrentCount: rawCount
                 ).displayed
             }
+            if t.type == .counting { return windowedCount(t) }
             return rawCount
+        }()
+
+        // P2: Shared-counter marker — true for source tasks that have linked tasks
+        // pointing at them, for linked tasks with sharedCounterId set, or (P5)
+        // for a promoted zero-link counter (`isCounter == true`) — mirrors web
+        // `useBoardPlayData.ts`'s `sharedCounterSourceIds` set exactly. R3:
+        // routed through `viewModel.sharedCounterSourceId(for:)` (single
+        // source of truth for this detection, shared with `sharedStepperHint`
+        // and the tap-routing handlers).
+        let isSharedCounterCell: Bool = {
+            guard let t = task, t.type == .counting else { return false }
+            return viewModel.sharedCounterSourceId(for: t) != nil
         }()
 
         // Compound child progress — mirrors original playSquare.
@@ -1350,11 +1588,29 @@ struct BoardPlayView: View {
                 return CompoundEvaluation.evaluate(
                     compound: childTask,
                     childrenByCompound: compoundChildrenByCompound,
-                    taskById: taskMap
+                    taskById: taskMap,
+                    windowContext: boardWindowContext
                 )
             }
-            return childTask.isCompleted
+            // Windowed child progress — carve out derived counters.
+            if childTask.sharedCounterId != nil { return childTask.isCompleted }
+            return windowedIsCompleted(childTask)
         }.count
+
+        // Operator-aware completion target for the cell's progress bar —
+        // mirrors web's DetailModal fractions (OR → any one child completes;
+        // M_OF_N → threshold; AND → all children) and matches the
+        // `CompoundEvaluation` semantics that color the cell green.
+        let compoundRequiredCount: Int = {
+            guard let t = task, t.type == .compound, !compoundLinks.isEmpty else {
+                return compoundLinks.count
+            }
+            switch t.operatorType {
+            case .or:        return 1
+            case .mOfN:      return Swift.max(1, t.threshold ?? 1)
+            case .and, nil:  return compoundLinks.count
+            }
+        }()
 
         let cellKind: CellTaskType = {
             switch taskType {
@@ -1365,17 +1621,31 @@ struct BoardPlayView: View {
             }
         }()
 
+        // Positional center-ness (PR-5, parity with web): never trust the
+        // row's OWN isCenter flag — a stray duplicate-center row (pre-guard
+        // corruption) would misrender a real task as the gold center cell. A
+        // placed cell renders center styling only when it actually SITS at
+        // the positional center of a CHOSEN-center board.
+        let renderAsCenter: Bool = {
+            guard let b = board, gridSize % 2 == 1 else { return false }
+            let isPositionalCenter = index / gridSize == gridSize / 2
+                && index % gridSize == gridSize / 2
+            return isPositionalCenter && b.centerSquareType == .chosen
+        }()
+
         RisoBoardPlayCell(
             title: task?.title ?? "Unknown",
             taskType: cellKind,
             isCompleted: isCompleted,
             isBingoLine: highlighted.contains(index),
-            isCenter: boardTask.isCenter,
+            isCenter: renderAsCenter,
             isLocked: isBoardLocked,
             currentCount: current,
             maxCount: maxVal,
+            isSharedCounter: isSharedCounterCell,
             compoundDoneCount: compoundDoneCount,
             compoundChildCount: compoundLinks.count,
+            compoundRequiredCount: compoundRequiredCount,
             onTap: {
                 guard !isBoardLocked, !isProcessing else { return }
                 // Haptic feedback — fire immediately on tap (before async write
@@ -1386,7 +1656,7 @@ struct BoardPlayView: View {
                 }
                 switch taskType {
                 case .normal:
-                    handleNormalTap(boardTask: boardTask)
+                    viewModel.handleNormalTap(boardTask: boardTask)
                 case .counting:
                     // Tap → open counting stepper sheet
                     countingStepperBoardTaskId = boardTask.id
@@ -1400,6 +1670,10 @@ struct BoardPlayView: View {
         .contextMenu {
             risoContextMenu(boardTask: boardTask, task: task, isCompleted: isCompleted, taskType: taskType, current: current, maxVal: maxVal, isLinkedCounter: isLinkedCounter)
         }
+        // P3 — pulse the square when it just arrived from an elsewhere log.
+        // Applied at the call site (not inside RisoBoardPlayCell) so the
+        // snapshot-covered cell internals stay untouched.
+        .arrivePulse(active: task.map { arrivedTaskIds.contains($0.id) } ?? false)
     }
 
     /// Context menu items — preserved exactly from original `playSquare`, now
@@ -1421,7 +1695,7 @@ struct BoardPlayView: View {
                 systemImage: isCompleted ? "xmark.circle" : "checkmark.circle"
             ) {
                 guard !isBoardLocked else { return }
-                handleNormalTap(boardTask: boardTask)
+                viewModel.handleNormalTap(boardTask: boardTask)
             }
             .disabled(isProcessing || isBoardLocked)
 
@@ -1431,45 +1705,34 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                Divider()
-                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                }
-                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                    removeBoardTaskId = boardTask.id
-                }
-            }
 
         case .counting:
             if let t = task {
                 let actionLabel = t.action ?? "item"
-                Button("+ Add \(actionLabel)", systemImage: "plus") {
+                // R3: shared counting squares use the counter's persisted
+                // default amount for this quick single-tap action (was
+                // hardcoded +1/-1) — the "#" custom entry still lives in the
+                // stepper sheet's chip row; this menu quick-action never
+                // persists a new default (mirrors the sheet's plain-tap rule).
+                let quickAmount = viewModel.sharedCounterSourceId(for: t).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
+                Button("+ Add \(quickAmount) \(actionLabel)", systemImage: "plus") {
                     guard !isBoardLocked else { return }
-                    handleCountingTap(boardTask: boardTask, task: t)
+                    viewModel.handleCountingTap(boardTask: boardTask, task: t, amount: quickAmount)
                 }
                 // No maxVal gate — overshoot is a feature (never clamp);
                 // matches the cell-tap stepper + detail-sheet stepper.
                 .disabled(isProcessing || isBoardLocked)
-                Button("− Remove \(actionLabel)", systemImage: "minus") {
+                Button("− Remove \(quickAmount) \(actionLabel)", systemImage: "minus") {
                     guard !isBoardLocked else { return }
-                    handleCountingDecrement(boardTask: boardTask, task: t)
+                    viewModel.handleCountingDecrement(boardTask: boardTask, task: t, amount: quickAmount)
                 }
-                .disabled(current == 0 || isLinkedCounter || isProcessing || isBoardLocked)
+                // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
+                .disabled(current == 0 || isProcessing || isBoardLocked)
                 Button("View Details", systemImage: "info.circle") {
                     detailBoardTaskId = boardTask.id
                 }
                 Button("Open in library", systemImage: "book") {
                     taskDetailSheetTaskId = TaskIdItem(id: t.id)
-                }
-                if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                    Divider()
-                    Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                        swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                    }
-                    Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                        removeBoardTaskId = boardTask.id
-                    }
                 }
             }
 
@@ -1480,15 +1743,6 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                Divider()
-                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                }
-                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                    removeBoardTaskId = boardTask.id
-                }
-            }
 
         case .achievement:
             Button("View Details", systemImage: "info.circle") {
@@ -1497,58 +1751,7 @@ struct BoardPlayView: View {
             Button("Open in library", systemImage: "book") {
                 taskDetailSheetTaskId = TaskIdItem(id: boardTask.taskId)
             }
-            if board?.status == .active, !isBoardLocked, !isPinnedCenter(boardTask: boardTask) {
-                Divider()
-                Button("Swap with another task…", systemImage: "arrow.2.squarepath") {
-                    swapTarget = SwapTarget(id: boardTask.id, currentTaskId: boardTask.taskId)
-                }
-                Button("Remove from board", systemImage: "minus.circle", role: .destructive) {
-                    removeBoardTaskId = boardTask.id
-                }
-            }
         }
-    }
-
-    // MARK: - Phase 6.3: ACHIEVEMENT cell completion (local mirror of DerivationPass)
-
-    /// Local mirror of DerivationPass's ACHIEVEMENT branch for per-cell
-    /// rendering. The persisted `board.completedTasks` count already
-    /// reflects this (derivation writes it on every Task cascade), but
-    /// per-cell green-tinting reads from this helper so the UI doesn't
-    /// have to round-trip through DerivationPass on every render.
-    private func achievementCellIsCompleted(for task: Task) -> Bool {
-        guard let parent = board else { return false }
-        let trigger = task.achievementTrigger ?? .greenlog
-        let meets: (Board) -> Bool = { b in
-            switch trigger {
-            case .bingo:
-                return (b.linesCompleted ?? 0) > 0
-            case .greenlog:
-                return b.status == .completed
-            }
-        }
-        if let refBoardId = task.referencedBoardId {
-            guard let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted }) else {
-                return false
-            }
-            return meets(ref)
-        }
-        if let refTemplateId = task.referencedTemplateId {
-            let spawns = allBoardsInWorkspace.filter { b in
-                !b.isDeleted
-                    && b.spawnedFromTemplateId == refTemplateId
-                    && DateFormatting.isWithinTimeframe(
-                        b.startDate,
-                        startDate: parent.startDate,
-                        endDate: parent.endDate
-                    )
-            }
-            if spawns.isEmpty { return false }
-            let metCount = spawns.filter(meets).count
-            let required = task.requiredCount ?? 0
-            return required > 0 && metCount >= required
-        }
-        return false
     }
 
     // MARK: - Detail Sheet
@@ -1588,7 +1791,7 @@ struct BoardPlayView: View {
                             case .compound:
                                 compoundDetailContent(boardTask: bt, task: task)
                             case .achievement:
-                                achievementDetailContent(task: task)
+                                achievementDetailContent(boardTask: bt, task: task)
                             }
                         }
                         .padding(.horizontal, Riso.gutter)
@@ -1597,6 +1800,39 @@ struct BoardPlayView: View {
                 }
             }
             .presentationDetents([.medium, .large])
+            // Nested child detail — presented from the detail sheet's own
+            // content so it stacks immediately instead of waiting for the
+            // parent to dismiss (SwiftUI queues sibling sheets on one host).
+            .sheet(
+                item: $compoundChildDetailTaskId,
+                onDismiss: {
+                    // Cross-board nav from the nested sheet: also close the
+                    // parent detail sheet; its onDismiss drains
+                    // `pendingOpenBoardId` in a clean transaction.
+                    if pendingOpenBoardId != nil { detailBoardTaskId = nil }
+                    // Board-integrity PR-5 (Item 5): this nested sheet
+                    // edits/deletes the compound CHILD's `Task` directly via
+                    // `AppDatabase.shared` — the parent `detailSheet`'s
+                    // compound-progress display and the underlying grid both
+                    // read stale in-memory state until refreshed. Reload
+                    // unconditionally (not just on cross-board nav) so a
+                    // plain "Done" dismiss after an edit/delete still picks
+                    // up the change. When `detailBoardTaskId` is ALSO about
+                    // to nil out (the cross-board branch above), the outer
+                    // sheet's own onDismiss reloads again — redundant but
+                    // harmless (cheap local reads).
+                    viewModel.reloadBoardTasksAndTaskData()
+                }
+            ) { item in
+                TaskDetailSheetView(
+                    taskId: item.id,
+                    onClose: { compoundChildDetailTaskId = nil },
+                    onOpenBoard: { newBoardId in
+                        pendingOpenBoardId = newBoardId
+                        compoundChildDetailTaskId = nil
+                    }
+                )
+            }
         }
     }
 
@@ -1648,26 +1884,66 @@ struct BoardPlayView: View {
         }
     }
 
+    /// 0-based grid index (row * gridSize + col) for a BoardTask — used to
+    /// look up its membership in a sealed board's frozen `sealedCompletedCells`.
+    private func cellIndex(for boardTask: BoardTask) -> Int {
+        boardTask.row * gridSize + boardTask.col
+    }
+
+    /// Windowed Completion (docs Decision 9) — resolve `isUncompleteBlockedBySeal`
+    /// for every un-complete affordance the detail sheet is about to render:
+    /// the boardTask's own task (normal/counting Mark-complete button), plus
+    /// every compound child row (the sheet's "Children" list). Off-main; the
+    /// result populates `sealBlockedTaskIds` so the sheet renders
+    /// disabled-with-explanation for any task whose green is held entirely by
+    /// a sealed-window-immune completion.
+    ///
+    /// - Parameter boardTaskId: The `detailBoardTaskId` that just changed, or
+    ///   `nil` when the sheet closed (clears the set).
+    private func loadSealBlockedTaskIds(for boardTaskId: String?) {
+        guard let boardTaskId,
+              let bt = boardTasks.first(where: { $0.id == boardTaskId }),
+              let task = taskMap[bt.taskId] else {
+            sealBlockedTaskIds = []
+            return
+        }
+        var candidateIds: [String] = [task.id]
+        if task.type == .compound {
+            let children = compoundChildrenByCompound[task.id] ?? []
+            candidateIds.append(contentsOf: children.map { $0.childTaskId })
+        }
+        _Concurrency.Task.detached(priority: .utility) {
+            var blocked: Set<String> = []
+            for id in candidateIds {
+                if let isBlocked = try? AppDatabase.shared.isUncompleteBlockedBySeal(taskId: id), isBlocked {
+                    blocked.insert(id)
+                }
+            }
+            await MainActor.run { self.sealBlockedTaskIds = blocked }
+        }
+    }
+
     @ViewBuilder
     private func normalDetailContent(boardTask: BoardTask) -> some View {
-        let isCompleted = taskMap[boardTask.taskId]?.isCompleted ?? false
+        // Windowed Completion — a SEALED board reads `done` from the frozen
+        // snapshot (docs §Effects of sealed), never live events.
+        let isCompleted = isSealed
+            ? (board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false)
+            : (taskMap[boardTask.taskId].map { windowedIsCompleted($0) } ?? false)
+        // Windowed Completion (docs Decision 9) — if every live completion is
+        // sealed-window-immune, un-completing here would be inert (the
+        // tombstone finds nothing to tombstone). Disable + explain instead of
+        // a tap that silently does nothing.
+        let sealBlocked = isCompleted && sealBlockedTaskIds.contains(boardTask.taskId)
         detailSection("Completion") {
-            Button {
-                handleNormalTap(boardTask: boardTask)
+            CompletionToggleView(
+                isCompleted: isCompleted,
+                sealBlocked: sealBlocked,
+                disabled: isProcessing || isBoardLocked
+            ) {
+                viewModel.handleNormalTap(boardTask: boardTask)
                 detailBoardTaskId = nil
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: isCompleted ? "xmark.circle" : "checkmark.circle")
-                    Text(isCompleted ? "Mark incomplete" : "Mark complete")
-                }
-                .font(.risoHead(15, .bold))
-                .foregroundStyle(isCompleted ? Color.risoInk : Color.risoPaper)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-                .risoCard(fill: isCompleted ? .risoPaper2 : .risoGreen)
             }
-            .buttonStyle(RisoButtonStyle())
-            .disabled(isProcessing || isBoardLocked)
         }
     }
 
@@ -1682,15 +1958,30 @@ struct BoardPlayView: View {
         let unitText = task.unit ?? ""
         let isLinkedCounter = task.sharedCounterId != nil
         let current: Int = {
-            if let _ = task.sharedCounterId {
+            // Windowed Completion — a SEALED board only snapshotted completion
+            // (not partial progress): max/max when the frozen cell is green,
+            // 0/max otherwise (docs §Effects of sealed).
+            if isSealed {
+                let done = board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false
+                return done ? maxVal : 0
+            }
+            if task.sharedCounterId != nil {
                 return deriveDisplayedCount(
                     derivedBaseline: task.baseline ?? 0,
                     derivedMaxCount: maxVal,
                     sourceCurrentCount: rawCount
                 ).displayed
             }
-            return rawCount
+            // Windowed Completion — event-owning source/plain counter shows the
+            // windowed count.
+            return windowedCount(task)
         }()
+
+        // R3: shared counting squares' quick +/- here use the counter's
+        // persisted default amount (was hardcoded 1) — same rule as the
+        // context-menu quick actions; the "#" custom entry lives in the
+        // stepper sheet's chip row, not this modal.
+        let quickAmount = viewModel.sharedCounterSourceId(for: task).flatMap { taskMap[$0]?.defaultLogAmount } ?? 1
 
         detailSection("Progress") {
             VStack(alignment: .leading, spacing: 12) {
@@ -1704,12 +1995,12 @@ struct BoardPlayView: View {
                     .foregroundStyle(Color.risoMuted)
 
                 HStack(spacing: 16) {
-                    // Linked derived counters are read-only — decrement disabled.
+                    // P2: isLinkedCounter no longer disables − (decrementSharedCounter handles fan-out).
                     detailStepperButton(
                         system: "minus",
-                        enabled: current > 0 && !isLinkedCounter && !isProcessing && !isBoardLocked
+                        enabled: current > 0 && !isProcessing && !isBoardLocked
                     ) {
-                        handleCountingDecrement(boardTask: boardTask, task: task)
+                        viewModel.handleCountingDecrement(boardTask: boardTask, task: task, amount: quickAmount)
                     }
 
                     Spacer()
@@ -1727,8 +2018,19 @@ struct BoardPlayView: View {
                         // feature, never clamped; matches the cell-tap stepper.
                         enabled: !isProcessing && !isBoardLocked
                     ) {
-                        handleCountingTap(boardTask: boardTask, task: task)
+                        viewModel.handleCountingTap(boardTask: boardTask, task: task, amount: quickAmount)
                     }
+                }
+
+                // R3 contract: "labels disclose the amount" on BOTH platforms —
+                // when the stepper moves by the counter's default (not 1), say
+                // so; bare ± glyphs silently logging 10 broke the contract
+                // (#342 final review I1).
+                if quickAmount != 1 {
+                    Text("Steps by \(quickAmount)\(unitText.isEmpty ? "" : " \(unitText)")")
+                        .font(.risoBody(11, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
         }
@@ -1759,39 +2061,55 @@ struct BoardPlayView: View {
                                 return CompoundEvaluation.evaluate(
                                     compound: ct,
                                     childrenByCompound: compoundChildrenByCompound,
-                                    taskById: taskMap
+                                    taskById: taskMap,
+                                    windowContext: boardWindowContext
                                 )
                             }
-                            return ct.isCompleted
+                            // Windowed child state — carve out derived counters.
+                            if ct.sharedCounterId != nil { return ct.isCompleted }
+                            return windowedIsCompleted(ct)
                         }()
+                        // Windowed Completion (docs Decision 9) — a child whose
+                        // only live completion(s) are sealed-window-immune
+                        // can't be un-completed from here; disable + explain.
+                        let sealBlocked = isDone && sealBlockedTaskIds.contains(link.childTaskId)
 
-                        HStack(spacing: 10) {
-                            Button {
-                                guard let ct = childTask, !isBoardLocked, !isProcessing else { return }
-                                handleCompoundChildToggle(childTask: ct)
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(isDone ? Color.risoGreen : Color.risoMuted)
-                                    Text(childTask?.title ?? link.childTaskId)
-                                        .font(.risoBody(14, .semibold))
-                                        .foregroundStyle(Color.risoInk)
-                                    Spacer(minLength: 0)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 10) {
+                                Button {
+                                    guard let ct = childTask, !isBoardLocked, !isProcessing, !sealBlocked else { return }
+                                    viewModel.handleCompoundChildToggle(childTask: ct)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(isDone ? Color.risoGreen : Color.risoMuted)
+                                        Text(childTask?.title ?? link.childTaskId)
+                                            .font(.risoBody(14, .semibold))
+                                            .foregroundStyle(Color.risoInk)
+                                        Spacer(minLength: 0)
+                                    }
                                 }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isProcessing || isBoardLocked || childTask == nil)
+                                .buttonStyle(.plain)
+                                .disabled(isProcessing || isBoardLocked || childTask == nil || sealBlocked)
 
-                            // Info button — opens the child task's detail in the library sheet.
-                            Button {
-                                taskDetailSheetTaskId = TaskIdItem(id: link.childTaskId)
-                            } label: {
-                                Image(systemName: "info.circle")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(Color.risoMuted)
+                                // Info button — opens the child task's detail, stacked
+                                // on top of this sheet (see `compoundChildDetailTaskId`).
+                                Button {
+                                    compoundChildDetailTaskId = TaskIdItem(id: link.childTaskId)
+                                } label: {
+                                    Image(systemName: "info.circle")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(Color.risoMuted)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
+                            if sealBlocked {
+                                Text("Completed in a closed window")
+                                    .font(.risoBody(11, .semibold))
+                                    .foregroundStyle(Color.risoMuted)
+                                    .padding(.leading, 24)
+                            }
                         }
                     }
                 }
@@ -1807,30 +2125,27 @@ struct BoardPlayView: View {
 
     /// Phase 6.3 — detail content for an ACHIEVEMENT-typed Task.
     /// Surfaces the cross-board target's current state so the user can
-    /// understand why the cell is (or isn't) complete. Uses the same
-    /// trigger-aware `meets` predicate as `achievementBadge(for:)` and
-    /// `achievementCellIsCompleted(for:)` so the three surfaces never
-    /// drift on completion semantics.
+    /// understand why the cell is (or isn't) complete.
+    ///
+    /// Board-integrity PR-3 — met/count/required numbers come straight from
+    /// `kernelCellStates` (the same lookup `achievementBadge(for:)` and the
+    /// play-grid completion branch consult), so this is no longer a THIRD
+    /// hand-copy of the trigger/meets/spawn-filter logic; only the display
+    /// NAME lookups (board/template name — outside the kernel's domain) stay
+    /// local.
     @ViewBuilder
-    private func achievementDetailContent(task: Task) -> some View {
+    private func achievementDetailContent(boardTask: BoardTask, task: Task) -> some View {
         let trigger = task.achievementTrigger ?? .greenlog
-        let meets: (Board) -> Bool = { b in
-            switch trigger {
-            case .bingo:
-                return (b.linesCompleted ?? 0) > 0
-            case .greenlog:
-                return b.status == .completed
-            }
-        }
+        let achievement = kernelCellStates[boardTask.id]?.achievement
 
         if let refBoardId = task.referencedBoardId {
-            // Match the !isDeleted filter used by achievementBadge(for:) and
-            // achievementCellIsCompleted(for:) so a soft-deleted watched board
-            // doesn't show here while the cell reads as not-complete.
+            // Match the !isDeleted filter used by achievementBadge(for:) so
+            // a soft-deleted watched board doesn't show here while the cell
+            // reads as not-complete.
             let ref = allBoardsInWorkspace.first(where: { $0.id == refBoardId && !$0.isDeleted })
+            let isMet = achievement?.referencedBoardCompleted ?? false
             detailSection("Watching board") {
                 if let ref {
-                    let isMet = meets(ref)
                     HStack(spacing: 8) {
                         Image(systemName: isMet ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(isMet ? Color.risoGreen : Color.risoMuted)
@@ -1850,9 +2165,17 @@ struct BoardPlayView: View {
             }
         } else if let refTemplateId = task.referencedTemplateId {
             let template = allTemplatesInWorkspace.first(where: { $0.id == refTemplateId })
-            let parent = board
-            let spawns: [Board] = {
-                guard let parent else { return [] }
+            let metCount = achievement?.templateInWindowMet ?? 0
+            let required = achievement?.templateRequiredCount ?? (task.requiredCount ?? 0)
+            // Total in-window spawn count (not just those meeting the
+            // trigger) is a display-only detail outside the kernel's
+            // completion-derivation domain (the kernel's CellState only
+            // carries `templateInWindowMet`, the met subset) — mirrors how
+            // board/template NAME lookups above also stay local. Recomputed
+            // with a plain filter (no trigger evaluation), so it can't drift
+            // on completion semantics.
+            let inWindowCount: Int = {
+                guard let parent = board else { return 0 }
                 return allBoardsInWorkspace.filter { b in
                     !b.isDeleted
                         && b.spawnedFromTemplateId == refTemplateId
@@ -1861,10 +2184,8 @@ struct BoardPlayView: View {
                             startDate: parent.startDate,
                             endDate: parent.endDate
                         )
-                }
+                }.count
             }()
-            let metCount = spawns.filter(meets).count
-            let required = task.requiredCount ?? 0
             detailSection("Watching template") {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -1885,7 +2206,7 @@ struct BoardPlayView: View {
                             .font(.risoBody(12, .bold))
                             .foregroundStyle(Color.risoMuted)
                     }
-                    Text("\(spawns.count) in-window spawn\(spawns.count == 1 ? "" : "s")")
+                    Text("\(inWindowCount) in-window spawn\(inWindowCount == 1 ? "" : "s")")
                         .font(.risoBody(12, .regular))
                         .foregroundStyle(Color.risoMuted)
                 }
@@ -1905,577 +2226,25 @@ struct BoardPlayView: View {
             .padding(.horizontal, 4)
     }
 
-    // MARK: - Tap Handlers
+    // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)
     //
-    // After compound-tasks unification, completion state lives on Task (not BoardTask).
-    // Each handler mutates the Task record and passes it to runOrchestration alongside
-    // the BoardTask (used only to update its updatedAt/version placement metadata).
-
-    /// Toggles completion of a normal task square and runs the full bingo orchestration.
-    ///
-    /// - Parameter boardTask: The tapped `BoardTask`.
-    private func handleNormalTap(boardTask: BoardTask) {
-        guard !isProcessing, var task = taskMap[boardTask.taskId] else { return }
-        let now = AppDatabase.currentTimestamp()
-        let newCompleted = !task.isCompleted
-
-        task.isCompleted = newCompleted
-        task.completedAt = newCompleted ? now : nil
-        task.updatedAt = now
-        task.version += 1
-
-        runOrchestration(updatedTask: task, boardTask: boardTask)
-    }
-
-    /// Increments a counting task's `currentCount` by 1.
-    ///
-    /// Phase 3 — Shared Counters routing:
-    ///  (a) Linked derived counter (`task.sharedCounterId != nil`): tap increments
-    ///      the source task and propagates to all sibling linked tasks.
-    ///  (b) Source counter (`task.id` appears as a `sharedCounterId` on any task
-    ///      in `taskMap`): tap increments source + propagates to all linked tasks.
-    ///  (c) Standalone counter (no shared link): falls through to the legacy
-    ///      `runOrchestration` path.
-    ///
-    /// All shared-counter paths go through `AppDatabase.shared.incrementSharedCounter`,
-    /// which enforces the overshoot (no high-end clamp) and one-way-latch invariants
-    /// inside a single GRDB write transaction.
-    ///
-    /// - Parameters:
-    ///   - boardTask: The counting task's `BoardTask` record.
-    ///   - task: The `Task` providing `maxCount` and shared-counter fields.
-    private func handleCountingTap(boardTask: BoardTask, task: Task) {
-        guard !isProcessing else { return }
-
-        // Detect whether this task participates in a shared-counter relationship.
-        if let sourceId = task.sharedCounterId {
-            // (a) Linked derived counter — increment the source.
-            runSharedCounterIncrement(sourceTaskId: sourceId)
-            return
-        }
-
-        // (b) Source counter — check if any task in the workspace links to this task.
-        let isSource = allTasks.contains { $0.sharedCounterId == task.id && !$0.isDeleted }
-        if isSource {
-            runSharedCounterIncrement(sourceTaskId: task.id)
-            return
-        }
-
-        // (c) Standalone counter — legacy path. NO high-end clamp per the
-        //     feedback_counter_overshoot_is_valid invariant: overshoot is
-        //     intentional and the count must be allowed to exceed maxCount.
-        guard let maxCount = task.maxCount else { return }
-        let now = AppDatabase.currentTimestamp()
-        // NO min(...) clamp: let the count go past maxCount.
-        let newCount = (task.currentCount ?? 0) + 1
-        let wasCompleted = task.isCompleted
-        let nowCompleted = wasCompleted || newCount >= maxCount
-
-        var updatedTask = task
-        updatedTask.currentCount = newCount
-        updatedTask.isCompleted = nowCompleted
-        updatedTask.completedAt = !wasCompleted && nowCompleted ? now : task.completedAt
-        updatedTask.updatedAt = now
-        updatedTask.version += 1
-
-        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
-    }
-
-    /// Runs the shared-counter propagation in a background task, then refreshes
-    /// board + task data on the main thread.
-    ///
-    /// Mirrors the pattern in `runOrchestration` (uses `_Concurrency.Task.detached`
-    /// to avoid shadowing by the GRDB `Task` model).
-    ///
-    /// - Parameter sourceTaskId: The source (template) task id to increment.
-    private func runSharedCounterIncrement(sourceTaskId: String) {
-        guard !isProcessing else { return }
-        isProcessing = true
-        let currentBoardId = board?.id
-
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                // Capture pre-increment board stats for flash-message comparison.
-                let boardBefore: Board? = currentBoardId.flatMap { id in
-                    try? AppDatabase.shared.read { db in try Board.fetchOne(db, key: id) }
-                }
-
-                try AppDatabase.shared.incrementSharedCounter(sourceTaskId: sourceTaskId)
-
-                // Re-fetch the board after the write to detect bingo/greenlog changes.
-                let boardAfter: Board? = currentBoardId.flatMap { id in
-                    try? AppDatabase.shared.read { db in try Board.fetchOne(db, key: id) }
-                }
-
-                var newBingoMsg: String? = nil
-                if let before = boardBefore, let after = boardAfter {
-                    let prevBingos = Set(before.completedLineIds ?? [])
-                    let nextBingos = Set(after.completedLineIds ?? [])
-                    let gained = nextBingos.subtracting(prevBingos).sorted()
-                    let lost = prevBingos.subtracting(nextBingos).sorted()
-                    let totalSquares = after.boardSize * after.boardSize
-                    let isGreenlogNow = after.completedTasks >= totalSquares
-
-                    if before.status == .completed && after.status == .active {
-                        newBingoMsg = "Board reactivated — no longer complete"
-                    } else if !lost.isEmpty {
-                        newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                    } else if isGreenlogNow && after.status == .completed && before.status == .active {
-                        newBingoMsg = "GREENLOG!"
-                    } else if !gained.isEmpty {
-                        newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                    }
-                }
-
-                await MainActor.run {
-                    isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
-                    if let msg = newBingoMsg {
-                        bingoMessage = msg
-                        triggerRisoNotification(from: msg)
-                        let dismissAfter: Double = 3.0
-                        _Concurrency.Task.detached { @MainActor in
-                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
-                            if bingoMessage == msg {
-                                bingoMessage = nil
-                            }
-                        }
-                    }
-                }
-            } catch {
-                print("⚠️ BoardPlayView shared-counter increment error: \(error)")
-                await MainActor.run {
-                    isProcessing = false
-                }
-            }
-        }
-    }
-
-    /// Decrements a counting task's `currentCount` by 1 and un-marks completion.
-    ///
-    /// - Parameters:
-    ///   - boardTask: The counting task's `BoardTask` record.
-    ///   - task: The `Task` providing current state.
-    private func handleCountingDecrement(boardTask: BoardTask, task: Task) {
-        guard !isProcessing else { return }
-        let now = AppDatabase.currentTimestamp()
-        let newCount = max((task.currentCount ?? 0) - 1, 0)
-
-        var updatedTask = task
-        updatedTask.currentCount = newCount
-        updatedTask.isCompleted = false
-        updatedTask.completedAt = nil
-        updatedTask.updatedAt = now
-        updatedTask.version += 1
-
-        runOrchestration(updatedTask: updatedTask, boardTask: boardTask)
-    }
-
-    /// Toggles a compound child's `Task.isCompleted` state.
-    ///
-    /// If the child is placed on the current board, orchestrates via the full bingo pipeline.
-    /// If the child is not on any board, falls back to a direct Task update + sync enqueue.
-    ///
-    /// - Parameter childTask: The child `Task` to toggle.
-    private func handleCompoundChildToggle(childTask: Task) {
-        guard !isProcessing else { return }
-        let now = AppDatabase.currentTimestamp()
-        var updatedChild = childTask
-        let newCompleted = !childTask.isCompleted
-        updatedChild.isCompleted = newCompleted
-        updatedChild.completedAt = newCompleted ? now : nil
-        updatedChild.updatedAt = now
-        updatedChild.version += 1
-
-        // If the child has a BoardTask on the current board, use the full orchestration
-        // pipeline so bingo detection stays consistent.
-        if let childBt = boardTasks.first(where: { $0.taskId == childTask.id }) {
-            runOrchestration(updatedTask: updatedChild, boardTask: childBt)
-            return
-        }
-
-        // Fallback: child is not placed on this board, but a parent compound
-        // (or the child via another board) may be — so we still need the
-        // cross-board cascade to recompute every affected board's bingo state
-        // and propagate the change to UI on this board (its compound square
-        // derives via CompoundEvaluation, not Task.isCompleted).
-        isProcessing = true
-        let currentBoardId = board?.id
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                var newBingoMsg: String? = nil
-                try AppDatabase.shared.write { db in
-                    try updatedChild.save(db)
-                    try bpvMakeSyncItem(
-                        entityType: "tasks",
-                        entityId: updatedChild.id,
-                        operationType: .update,
-                        payload: updatedChild,
-                        now: now
-                    ).save(db)
-
-                    let cascadeResults = try bpvRunCrossBoardCascade(
-                        db: db,
-                        changedTaskId: updatedChild.id,
-                        now: now
-                    )
-                    if let cid = currentBoardId, let result = cascadeResults[cid] {
-                        let lost = result.update.lostBingos.sorted()
-                        let gained = result.update.newBingos.sorted()
-                        if result.wasReactivated {
-                            newBingoMsg = "Board reactivated — no longer complete"
-                        } else if !lost.isEmpty {
-                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                        } else if result.isGreenlogNow {
-                            newBingoMsg = "GREENLOG!"
-                        } else if !gained.isEmpty {
-                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                        }
-                    }
-                }
-                await MainActor.run {
-                    isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
-                    if let msg = newBingoMsg {
-                        bingoMessage = msg
-                        triggerRisoNotification(from: msg)
-                        let dismissAfter: Double = 3.0
-                        _Concurrency.Task.detached { @MainActor in
-                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
-                            if bingoMessage == msg {
-                                bingoMessage = nil
-                            }
-                        }
-                    }
-                }
-            } catch {
-                print("⚠️ BoardPlayView compoundChildToggle error: \(error)")
-                await MainActor.run {
-                    isProcessing = false
-                }
-            }
-        }
-    }
-
-    // MARK: - Cell Swap (M3)
-
-    /// Swap the task occupying a non-center square to a different task from the library.
-    ///
-    /// Delegates to `AppDatabase.shared.updateBoardTaskAndCascade`, which:
-    ///   1. Patches `BoardTask.taskId` atomically (version bump + sync enqueue).
-    ///   2. Computes the union of boards affected by the OLD and NEW task.
-    ///   3. Re-derives stats + GREENLOG transitions for each affected board.
-    ///
-    /// The swap runs on a detached `_Concurrency.Task` to avoid blocking the main thread.
-    /// UI is refreshed via `loadBoardTasks()` + `loadTaskData()` on completion (the
-    /// sheet's `onDismiss` also triggers a reload as a defensive belt-and-suspenders).
-    ///
-    /// - Parameters:
-    ///   - boardTaskId: The `BoardTask.id` whose cell is being swapped.
-    ///   - newTaskId: The replacement `Task.id`.
-    private func handleCellSwap(boardTaskId: String, newTaskId: String) {
-        isProcessing = true
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                try AppDatabase.shared.updateBoardTaskAndCascade(
-                    boardTaskId: boardTaskId,
-                    newTaskId: newTaskId
-                )
-                await MainActor.run {
-                    isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
-                }
-            } catch {
-                print("⚠️ BoardPlayView cell swap error: \(error)")
-                await MainActor.run {
-                    isProcessing = false
-                    bingoMessage = "Swap failed — please try again"
-                }
-            }
-        }
-    }
-
-    // MARK: - Placement Add / Remove (M4)
-
-    /// Remove a task placement from the current board.
-    ///
-    /// Delegates to `AppDatabase.shared.removeBoardTaskFromBoard`, which hard-deletes
-    /// the `BoardTask` row, enqueues a DELETE sync tombstone, and re-derives stats for
-    /// every board affected by the removed task. The underlying `Task` is untouched.
-    ///
-    /// - Parameter boardTaskId: The `BoardTask.id` to remove.
-    private func handleRemoveFromBoard(boardTaskId: String) {
-        isProcessing = true
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                try AppDatabase.shared.removeBoardTaskFromBoard(boardTaskId)
-                await MainActor.run {
-                    isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
-                }
-            } catch {
-                print("⚠️ BoardPlayView remove-from-board error: \(error)")
-                await MainActor.run {
-                    isProcessing = false
-                    bingoMessage = "Remove failed — please try again"
-                }
-            }
-        }
-    }
-
-    /// Add a task to an empty cell on the current board.
-    ///
-    /// Delegates to `AppDatabase.shared.addBoardTaskToBoard`, which creates a new
-    /// `BoardTask` placement, enqueues a CREATE sync entry, and re-derives stats for
-    /// every board affected by the placed task. If the task is already globally
-    /// completed, the cascade immediately credits this cell as completed.
-    ///
-    /// - Parameters:
-    ///   - taskId: The `Task.id` to place.
-    ///   - row: 0-based grid row.
-    ///   - col: 0-based grid column.
-    private func handleAddTaskToCell(taskId: String, row: Int, col: Int) {
-        guard let b = board else { return }
-        isProcessing = true
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                try AppDatabase.shared.addBoardTaskToBoard(
-                    b.id,
-                    taskId: taskId,
-                    position: (row: row, col: col)
-                )
-                await MainActor.run {
-                    isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
-                }
-            } catch {
-                print("⚠️ BoardPlayView add-to-cell error: \(error)")
-                await MainActor.run {
-                    isProcessing = false
-                    bingoMessage = "Add failed — please try again"
-                }
-            }
-        }
-    }
-
-    // MARK: - Orchestration
-
-    /// Runs the full task-completion orchestration in a single DB write transaction.
-    ///
-    /// Steps:
-    /// 1. Auto-activates a DRAFT board on first interaction.
-    /// 2. Persists the updated `Task` (global completion state) and bumps the
-    ///    `BoardTask` placement record's `updatedAt`/`version`. Both are queued
-    ///    for sync.
-    /// 3. Delegates to `bpvRunCrossBoardCascade` — which uses
-    ///    `DerivationPass.computeBoardStatsUpdate` to rebuild bingo state for
-    ///    every affected board (current board plus any other board placing this
-    ///    task or a compound containing it). Cascade respects compound
-    ///    evaluation + achievement-square overrides, applies GREENLOG → COMPLETED
-    ///    auto-completion + COMPLETED → ACTIVE reactivation, persists each
-    ///    affected board, and queues board sync entries.
-    /// 4. Surfaces a flash message for the *current* board only (other affected
-    ///    boards update silently — the user isn't looking at them).
-    ///
-    /// Uses `_Concurrency.Task` to avoid shadowing by the GRDB `Task` model.
-    ///
-    /// - Parameters:
-    ///   - updatedTask: The already-mutated `Task` carrying new completion state.
-    ///   - boardTask: The `BoardTask` placement record on the current board
-    ///     (updatedAt/version will be bumped + sync-queued).
-    private func runOrchestration(updatedTask: Task, boardTask: BoardTask) {
-        guard let board = board else { return }
-        isProcessing = true
-        let now = AppDatabase.currentTimestamp()
-        let currentBoardId = board.id
-
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                var newBingoMsg: String? = nil
-
-                try AppDatabase.shared.write { db in
-                    // 1. Auto-activate DRAFT boards on first interaction. Cascade
-                    //    will re-save the board with stats; this leg only flips
-                    //    .draft → .active so cascade doesn't promote a draft to
-                    //    .completed (which would be wrong for first-tap).
-                    if board.status == .draft {
-                        var activated = board
-                        activated.status = .active
-                        activated.updatedAt = now
-                        activated.version += 1
-                        try activated.save(db)
-                    }
-
-                    // 2a. Persist the updated Task (carries completion state).
-                    try updatedTask.save(db)
-                    try bpvMakeSyncItem(
-                        entityType: "tasks",
-                        entityId: updatedTask.id,
-                        operationType: .update,
-                        payload: updatedTask,
-                        now: now
-                    ).save(db)
-
-                    // 2b. Bump the BoardTask placement record's updatedAt/version.
-                    var updatedBoardTask = boardTask
-                    updatedBoardTask.updatedAt = now
-                    updatedBoardTask.version += 1
-                    try updatedBoardTask.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "boardTasks",
-                        entityId: updatedBoardTask.id,
-                        operationType: .update,
-                        payload: updatedBoardTask,
-                        now: now
-                    ).save(db)
-
-                    // 3. Cross-board cascade: rebuilds bingo state via
-                    //    DerivationPass.computeBoardStatsUpdate (which honours
-                    //    compound evaluation + achievement squares), applies
-                    //    GREENLOG transitions, and persists every affected board.
-                    let cascadeResults = try bpvRunCrossBoardCascade(
-                        db: db,
-                        changedTaskId: updatedTask.id,
-                        now: now
-                    )
-
-                    // 4. Surface a flash message for the *current* board only.
-                    //    Other affected boards still updated stats — they just
-                    //    don't get a transient banner since the user isn't on them.
-                    if let result = cascadeResults[currentBoardId] {
-                        let lost = result.update.lostBingos.sorted()
-                        let gained = result.update.newBingos.sorted()
-                        if result.wasReactivated {
-                            newBingoMsg = "Board reactivated — no longer complete"
-                        } else if !lost.isEmpty {
-                            newBingoMsg = "Bingo lost: \(lost.joined(separator: ", "))"
-                        } else if result.isGreenlogNow {
-                            newBingoMsg = "GREENLOG!"
-                        } else if !gained.isEmpty {
-                            newBingoMsg = "Bingo! (\(gained.joined(separator: ", ")))"
-                        }
-                    }
-                }
-
-                // Refresh UI on main thread.
-                await MainActor.run {
-                    isProcessing = false
-                    loadBoard()
-                    loadBoardTasks()
-                    // Also refresh allTasks + allCompoundChildren so the compound
-                    // detail sheet (which renders from taskMap + compoundChildrenByCompound)
-                    // reflects the latest child-toggle state immediately without needing a
-                    // dismiss-and-reopen. Mirrors the Path-B (child-not-on-board) pattern.
-                    loadTaskData()
-                    if let msg = newBingoMsg {
-                        bingoMessage = msg
-                        triggerRisoNotification(from: msg)
-                        let dismissAfter: Double = 3.0
-                        _Concurrency.Task.detached { @MainActor in
-                            try? await _Concurrency.Task.sleep(nanoseconds: UInt64(dismissAfter * 1_000_000_000))
-                            // Only dismiss if this is still the same message
-                            if bingoMessage == msg {
-                                bingoMessage = nil
-                            }
-                        }
-                    }
-                }
-            } catch {
-                print("⚠️ BoardPlayView orchestration error: \(error)")
-                await MainActor.run {
-                    isProcessing = false
-                    bingoMessage = "Error: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
+    // handleNormalTap / handleCountingTap / handleCountingDecrement /
+    // handleCompoundChildToggle /
+    // handleAddTaskToCell (plus the private runOrchestration /
+    // runSharedCounterIncrement / runSharedCounterDecrement they call) now
+    // live on `viewModel`. The view's tap closures call `viewModel.handleX(...)`
+    // and observe `viewModel.flashEvent` to fire the residual toast/overlay
+    // animations (see the `.onChange(of: viewModel.flashEvent)` observer).
 
     // MARK: - Edit Mode
-
-    /// Seeds all edit-draft @State vars from the live board record before
-    /// entering edit mode. Called synchronously on the main actor immediately
-    /// before `editMode = true` so the form shows the current board values on
-    /// first render.
-    ///
-    /// - Parameter b: The current active `Board` from `self.board`.
-    private func seedEditDraft(from b: Board) {
-        editName = b.name
-        editTimeframe = b.timeframe
-
-        let cal = Calendar.current
-        let fallbackStart = cal.startOfDay(for: Date())
-        let fallbackEnd = cal.date(byAdding: .day, value: 30, to: fallbackStart) ?? Date()
-        let seedStart = parseWizardCalendarDate(b.startDate) ?? fallbackStart
-        let seedEnd: Date = {
-            if let endStr = b.endDate, let parsed = parseWizardCalendarDate(endStr) { return parsed }
-            return fallbackEnd
-        }()
-        editCustomStartDate = seedStart
-        editOriginalCustomStartDate = seedStart
-        editCustomEndDate = seedEnd
-        editOriginalCustomEndDate = seedEnd
-        editCenterType = b.centerSquareType
-        editCenterCustomName = b.centerSquareCustomName ?? ""
-        editSubMode = .editTasks
-        editSaving = false
-        editHasCandidateTasks = false
-
-        // Phase 2 — seed the squares draft from the current live placement rows.
-        // `boardTasks` is already loaded by `loadBoardTasks()` on appear.
-        editSquaresDraft = [:]
-        for bt in boardTasks {
-            let key = "\(bt.row)-\(bt.col)"
-            editSquaresDraft[key] = SquaresDraftCell(
-                boardTaskId: bt.id,
-                row: bt.row,
-                col: bt.col,
-                isCenter: bt.isCenter,
-                originalTaskId: bt.taskId,
-                stagedTaskId: bt.taskId
-            )
-        }
-        editTaskOverrides = [:]
-        // Phase 3 — reset rearrange cells so they're rebuilt fresh on next sub-mode entry.
-        editRearrangeCells = nil
-
-        // Async: check whether the board has any center-task placement so
-        // BoardEditPanel can gate the CHOSEN option in BoardSetupFormView.
-        let bid = b.id
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let count = (try? AppDatabase.shared.fetchBoardTasks(boardId: bid).count) ?? 0
-            await MainActor.run { editHasCandidateTasks = count > 0 }
-        }
-    }
-
-    // MARK: - Phase 3 rearrange handlers
-
-    /// Lazily builds `editRearrangeCells` the first time the user switches to
-    /// Rearrange sub-mode. Subsequent sub-mode switches preserve the staged order.
-    private func seedRearrangeCells(for b: Board) {
-        guard editRearrangeCells == nil else { return }
-        editRearrangeCells = buildRearrangeCells(
-            squaresDraft: editSquaresDraft,
-            gridSize: b.boardSize,
-            centerSquareType: editCenterType
-        )
-    }
-
-    /// Called by `RearrangeGrid.onReorder` when a drag-to-insert or tap-to-swap
-    /// is committed. Updates the staged rearrange cells and leaves everything else
-    /// in place — no DB write until Save.
-    private func handleRearrange(newCells: [RearrangeCellData]) {
-        editRearrangeCells = newCells
-    }
+    //
+    // NOTE (B2-I3): the edit-draft data layer moved to `BoardPlayViewModel` —
+    // `seedEditDraft`, the Phase-3 rearrange seed/handle (`seedRearrangeCells` /
+    // `handleRearrange`), the staged mutators (`handleEditCellReplace` /
+    // `handleEditTaskOverride`), and the DB commits (`handleEditSave` /
+    // `handleEditArchive`). The view keeps only the cell-menu routing handlers
+    // below (they mutate view-owned `editCellMenu*` `@State`) and
+    // `triggerBoardSavedToast` (a pure view animation).
 
     // MARK: - Phase 2 edit-mode tap-menu handlers
 
@@ -2501,247 +2270,6 @@ struct BoardPlayView: View {
         editCellMenuVisible = true
     }
 
-    /// Stages a task-ID replacement on one cell (no DB write).
-    ///
-    /// Called when the user picks a task from the Replace-task sheet in
-    /// board-edit mode. Increments the squares draft so the panel counter
-    /// and Save pill reflect this staged change.
-    ///
-    /// - Parameters:
-    ///   - cellKey: The "row-col" key into `editSquaresDraft`.
-    ///   - newTaskId: The task the user selected from `CellSwapSheet`.
-    private func handleEditCellReplace(cellKey: String, newTaskId: String) {
-        guard let draft = editSquaresDraft[cellKey] else { return }
-        editSquaresDraft[cellKey]?.stagedTaskId = newTaskId
-        // Keep an already-seeded rearrange grid in sync so a Replace made after
-        // switching to Rearrange (which doesn't re-seed) shows the new task label.
-        if let idx = editRearrangeCells?.firstIndex(where: { $0.id == draft.boardTaskId }) {
-            let old = editRearrangeCells![idx]
-            editRearrangeCells![idx] = RearrangeCellData(
-                id: old.id,
-                taskId: newTaskId,
-                isCenter: old.isCenter,
-                isEmpty: old.isEmpty,
-                originalRow: old.originalRow,
-                originalCol: old.originalCol
-            )
-        }
-    }
-
-    /// Stages task-field overrides for a global Task (no DB write).
-    ///
-    /// Called when the user taps Done in `SquareEditTaskSheet`. Stores the
-    /// patch as a `StagedTaskOverride` keyed by `taskId`. The edit-mode draft
-    /// task map picks this up immediately so the grid label updates.
-    ///
-    /// - Parameters:
-    ///   - taskId: The global Task being edited.
-    ///   - patch: Name / type / counting fields from `SquareEditTaskSheet`.
-    private func handleEditTaskOverride(taskId: String, patch: SquareEditTaskSheet.Patch) {
-        editTaskOverrides[taskId] = StagedTaskOverride(
-            title: patch.title,
-            type: patch.type,
-            action: patch.action.isEmpty ? nil : patch.action,
-            unit: patch.unit.isEmpty ? nil : patch.unit,
-            maxCount: patch.maxCount
-        )
-    }
-
-    /// Builds the metadata patch from current draft state and writes it via
-    /// `updateBoardAndCascade`. On success: exits edit mode, reloads the
-    /// board from GRDB, and shows a 2.4-second "Board saved" toast.
-    private func handleEditSave() {
-        guard !editSaving else { return }
-        let trimmedName = editName.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty else { return }
-
-        let cal = Calendar.current
-        let weekStart = authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday"
-
-        func snapStart(_ d: Date) -> String {
-            wizardLocalISOString(cal.startOfDay(for: d))
-        }
-        func snapEnd(_ d: Date) -> String {
-            let nextDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: d))!
-            return wizardLocalISOString(nextDay.addingTimeInterval(-0.001))
-        }
-
-        let startISO: String
-        let endISO: String?
-        var clearEnd = false
-
-        if editTimeframe == .indefinite {
-            startISO = wizardLocalISOString(cal.startOfDay(for: Date()))
-            endISO = nil
-            clearEnd = true
-        } else if editTimeframe == .custom {
-            startISO = snapStart(editCustomStartDate)
-            let snappedEnd = snapEnd(editCustomEndDate)
-            // Carry over EditBoardSheet's guard: the end-date picker's min can lag a
-            // start-date change, so re-validate end >= start before persisting.
-            guard snappedEnd >= startISO else { return }
-            endISO = snappedEnd
-        } else if let boundaries = computeTimeframeBoundaries(
-            timeframe: editTimeframe,
-            referenceDate: Date(),
-            weekStartDay: weekStart
-        ) {
-            startISO = wizardLocalISOString(boundaries.start)
-            endISO = wizardLocalISOString(boundaries.end)
-        } else {
-            return
-        }
-
-        let patch = AppDatabase.UpdateActiveBoardPatch(
-            name: trimmedName,
-            timeframe: editTimeframe,
-            startDate: startISO,
-            endDate: endISO,
-            clearEndDate: clearEnd,
-            centerSquareType: editCenterType,
-            centerSquareCustomName: editCenterType == .customFree
-                ? (editCenterCustomName.trimmingCharacters(in: .whitespaces).isEmpty
-                    ? nil
-                    : editCenterCustomName.trimmingCharacters(in: .whitespaces))
-                : nil
-        )
-
-        // Phase 2 — snapshot squares draft before entering the detached task.
-        // `@State` vars are only safe on the MainActor; capture copies as
-        // value types so the detached task has stable, sendable data.
-        let cellReplacements: [(boardTaskId: String, newTaskId: String)] =
-            editSquaresDraft.values
-                .filter { $0.stagedTaskId != $0.originalTaskId }
-                .map { (boardTaskId: $0.boardTaskId, newTaskId: $0.stagedTaskId) }
-
-        // Build (task, override) pairs from the live taskMap + staged overrides.
-        // De-duplicated by taskId so each global Task is saved at most once.
-        var taskOverridePairs: [(task: Task, override: StagedTaskOverride)] = []
-        for (taskId, override) in editTaskOverrides {
-            if let task = taskMap[taskId] {
-                taskOverridePairs.append((task: task, override: override))
-            }
-        }
-
-        // Phase 3 — snapshot staged position moves.
-        // Compare each cell's slot in `editRearrangeCells` to its originalRow/Col.
-        // Center and empty slots are excluded (they don't correspond to BoardTask rows).
-        let positionMoves: [(boardTaskId: String, row: Int, col: Int)] = {
-            guard let rearranged = editRearrangeCells, gridSize > 0 else { return [] }
-            var moves: [(boardTaskId: String, row: Int, col: Int)] = []
-            for (slotIdx, cell) in rearranged.enumerated() {
-                guard !cell.isCenter, !cell.isEmpty else { continue }
-                let stagedRow = slotIdx / gridSize
-                let stagedCol = slotIdx % gridSize
-                if stagedRow != cell.originalRow || stagedCol != cell.originalCol {
-                    moves.append((boardTaskId: cell.id, row: stagedRow, col: stagedCol))
-                }
-            }
-            return moves
-        }()
-
-        editSaving = true
-        let bid = boardId
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                // 1. Metadata patch (name / timeframe / center).
-                try AppDatabase.shared.updateBoardAndCascade(boardId: bid, patch: patch)
-
-                // 2. Staged cell replacements — each repoints one BoardTask row
-                //    and re-derives board stats for the old + new task contexts.
-                for replacement in cellReplacements {
-                    try AppDatabase.shared.updateBoardTaskAndCascade(
-                        boardTaskId: replacement.boardTaskId,
-                        newTaskId: replacement.newTaskId
-                    )
-                }
-
-                // 3. Staged task-field overrides — each writes the global Task
-                //    and re-derives board stats for all boards the task is on.
-                let now = AppDatabase.currentTimestamp()
-                for (task, override) in taskOverridePairs {
-                    var updated = task
-                    updated.title = override.title
-                    updated.type  = override.type
-                    switch override.type {
-                    case .counting:
-                        // action can be cleared (nil) — assign unconditionally so the
-                        // commit matches the draft grid (which clears it on blank).
-                        updated.action = override.action
-                        if let u = override.unit   { updated.unit   = u }
-                        if let m = override.maxCount { updated.maxCount = m }
-                    case .normal:
-                        // Switching from Counting → Simple: clear counting fields.
-                        if task.type == .counting {
-                            updated.action   = nil
-                            updated.unit     = nil
-                            updated.maxCount = nil
-                        }
-                    default:
-                        break
-                    }
-                    updated.updatedAt = now
-                    updated.version  += 1
-                    try AppDatabase.shared.saveTaskAndCascade(updated)
-                }
-
-                // 4. Phase 3 — Staged position moves: rewrite row/col on moved BoardTask rows
-                //    in a single atomic transaction, then re-derive bingo lines for this board.
-                if !positionMoves.isEmpty {
-                    try AppDatabase.shared.updateBoardTaskPositions(
-                        boardId: bid,
-                        moves: positionMoves.map {
-                            AppDatabase.BoardTaskPositionMove(
-                                boardTaskId: $0.boardTaskId,
-                                row: $0.row,
-                                col: $0.col
-                            )
-                        }
-                    )
-                }
-
-                await MainActor.run {
-                    editSaving = false
-                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                    loadBoard()
-                    loadBoardTasks()
-                    loadTaskData()
-                    triggerBoardSavedToast()
-                }
-            } catch {
-                print("⚠️ BoardPlayView.handleEditSave: \(error)")
-                await MainActor.run {
-                    editSaving = false
-                    editSaveError = "Couldn’t save your changes — please try again."
-                }
-            }
-        }
-    }
-
-    /// Archives the board by setting `status = .archived` in GRDB, then
-    /// dismisses `BoardPlayView` back to the Boards list.
-    ///
-    /// The archive confirm alert in `BoardEditPanel` calls this callback only
-    /// after the user confirms — no further confirmation required here.
-    private func handleEditArchive() {
-        let bid = boardId
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                try AppDatabase.shared.archiveBoard(id: bid)
-                // Only leave the board if the archive actually committed.
-                await MainActor.run {
-                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                    dismiss()
-                }
-            } catch {
-                print("⚠️ BoardPlayView.handleEditArchive: \(error)")
-                await MainActor.run {
-                    bingoMessage = "Archive failed — please try again."
-                }
-            }
-        }
-    }
-
     /// Flashes the "Board saved" success toast for 2.4 s, then hides it.
     /// Safe to call multiple times — the latest invocation wins.
     private func triggerBoardSavedToast() {
@@ -2753,54 +2281,11 @@ struct BoardPlayView: View {
     }
 
     // MARK: - Data Loading
-
-    /// Reloads the board record from GRDB and updates `board` on the main thread.
-    private func loadBoard() {
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let fetched = try? AppDatabase.shared.fetchBoard(id: boardId)
-            await MainActor.run { board = fetched }
-        }
-    }
-
-    /// Reloads all board tasks for the current board from GRDB.
-    private func loadBoardTasks() {
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let fetched = (try? AppDatabase.shared.fetchBoardTasks(boardId: boardId)) ?? []
-            await MainActor.run { boardTasks = fetched }
-        }
-    }
-
-    /// Loads all tasks and compound children for the authenticated user
-    /// into memory. CompoundChildren are fetched globally (not user-scoped)
-    /// since the AppDatabase helper doesn't filter by userId for that table.
-    private func loadTaskData() {
-        let userId = authService.currentUser?.id
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let tasks = userId.flatMap { id in
-                try? AppDatabase.shared.fetchTasks(userId: id)
-            } ?? []
-            let children = (try? AppDatabase.shared.fetchAllCompoundChildren()) ?? []
-            // Phase 6.3 — workspace-wide boards + templates + board_tasks
-            // for the achievement-square config sheet (pickers) and the
-            // per-cell badge data computation. Same fetch pattern as
-            // tasks above — runs once per onAppear, refreshed alongside
-            // the spawn-driver pass.
-            let workspaceBoards = userId.flatMap { id in
-                try? AppDatabase.shared.fetchBoards(userId: id)
-            } ?? []
-            let workspaceTemplates = userId.flatMap { id in
-                try? AppDatabase.shared.fetchRecurringBoardTemplates(userId: id)
-            } ?? []
-            let workspaceBoardTasks = (try? AppDatabase.shared.fetchAllBoardTasks()) ?? []
-            await MainActor.run {
-                allTasks = tasks
-                allCompoundChildren = children
-                allBoardsInWorkspace = workspaceBoards
-                allTemplatesInWorkspace = workspaceTemplates
-                allBoardTasksInWorkspace = workspaceBoardTasks
-            }
-        }
-    }
+    //
+    // The board / placements / workspace-task loaders moved to
+    // `BoardPlayViewModel` (B2-I1). Call sites now use `viewModel.reload()`
+    // (full) or `viewModel.reloadBoardTasksAndTaskData()` (placements + task
+    // data, board unchanged).
 }
 
 // MARK: - BackButton

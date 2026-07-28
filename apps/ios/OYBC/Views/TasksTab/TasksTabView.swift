@@ -40,6 +40,37 @@ struct TasksTabView: View {
     @State private var reloadAfterDeleteDismiss = false
     @State private var quickActionError: String?
 
+    // MARK: - Pools segment (Task Pools + Recurring Boards Rework, P2)
+
+    /// Library/Pools segment mode. Mirrors web `TasksSegment`.
+    private enum TasksTabSegment: Hashable {
+        case library
+        case pools
+    }
+
+    private enum PoolEditTarget: Identifiable {
+        case new
+        case existing(Pool)
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .existing(let p): return p.id
+            }
+        }
+    }
+
+    @State private var segment: TasksTabSegment = .library
+    /// The user's non-deleted pools — loaded on appear (cheap; also needed
+    /// for the segment's "Pools · N" label) rather than only when the
+    /// segment is entered.
+    @State private var pools: [Pool] = []
+    /// Active recurring-board templates — used only for pool-health
+    /// consumer detection. Loaded alongside `pools`; batched ONCE per
+    /// screen (never per-card — see `PoolHealth.computePoolHealth`).
+    @State private var poolTemplates: [RecurringBoardTemplate] = []
+    @State private var poolEditTarget: PoolEditTarget?
+    @State private var poolLoadError: String?
+
     // MARK: - Body
 
     var body: some View {
@@ -69,33 +100,75 @@ struct TasksTabView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
 
-                    // Controls (search + chips + sort + filters)
-                    RisoTasksControlsView(
-                        search: $vm.search,
-                        typeFilter: $vm.typeFilter,
-                        statusFilter: $vm.statusFilter,
-                        usageFilter: $vm.usageFilter,
-                        sortBy: $vm.sortBy,
-                        showExpired: $vm.showExpired,
-                        groupByCompound: $vm.groupByCompound,
-                        resultCount: filtered.count
+                    segmentRow
+                        .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+
+                    if segment == .library {
+                        // Controls (search + chips + sort + filters)
+                        RisoTasksControlsView(
+                            search: $vm.search,
+                            typeFilter: $vm.typeFilter,
+                            statusFilter: $vm.statusFilter,
+                            usageFilter: $vm.usageFilter,
+                            sortBy: $vm.sortBy,
+                            showExpired: $vm.showExpired,
+                            groupByCompound: $vm.groupByCompound,
+                            resultCount: filtered.count
+                        )
+                        .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 8, trailing: Riso.gutter))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+
+                        if let err = quickActionError {
+                            Text(err)
+                                .font(.risoBody(13, .regular))
+                                .foregroundStyle(Color.risoRed)
+                                .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 4, trailing: Riso.gutter))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                        }
+                    }
+                }
+
+                // ── Pools segment content ────────────────────────────
+                if segment == .pools {
+                    // Health/preview lookups — built ONCE here (never per-card),
+                    // and only in Pools mode so Library-mode keystrokes don't
+                    // re-run resolveMix over every pool×template (matches web,
+                    // which only computes this inside the mounted PoolsBrowse).
+                    let tasksById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
+                    let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
+                    let healthByPoolId = Dictionary(uniqueKeysWithValues: pools.map { pool in
+                        (pool.id, PoolHealth.computePoolHealth(pool, templates: poolTemplates, poolsById: poolsById, tasksById: tasksById))
+                    })
+                    let poolTasksById = Dictionary(uniqueKeysWithValues: pools.map { pool in
+                        (pool.id, pool.taskIds.compactMap { tasksById[$0] })
+                    })
+
+                    PoolsBrowseView(
+                        pools: pools,
+                        poolTasksById: poolTasksById,
+                        healthByPoolId: healthByPoolId,
+                        onSelectPool: { poolEditTarget = .existing($0) },
+                        onNewPool: { poolEditTarget = .new }
                     )
-                    .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 8, trailing: Riso.gutter))
+                    .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 20, trailing: Riso.gutter))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
 
-                    if let err = quickActionError {
-                        Text(err)
+                    if let poolLoadError {
+                        Text(poolLoadError)
                             .font(.risoBody(13, .regular))
                             .foregroundStyle(Color.risoRed)
-                            .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 4, trailing: Riso.gutter))
+                            .listRowInsets(EdgeInsets(top: 0, leading: Riso.gutter, bottom: 8, trailing: Riso.gutter))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                     }
                 }
-
                 // ── Empty state ─────────────────────────────────────
-                if filtered.isEmpty {
+                else if filtered.isEmpty {
                     emptyState(hasAnyTasks: !library.libraryTasks.isEmpty)
                         .listRowInsets(EdgeInsets(top: 8, leading: Riso.gutter, bottom: 8, trailing: Riso.gutter))
                         .listRowSeparator(.hidden)
@@ -229,7 +302,8 @@ struct TasksTabView: View {
                 onLibraryReloadRequested: {
                     library.loadLibrary(userId: userId)
                     vm.reloadAsync()
-                }
+                },
+                taskLibrary: library.libraryTasks
             )
         }
         .sheet(item: $editingTask) { task in
@@ -284,6 +358,22 @@ struct TasksTabView: View {
                 }
             )
         }
+        .sheet(item: $poolEditTarget) { target in
+            PoolEditSheetView(
+                pool: { if case .existing(let p) = target { return p }; return nil }(),
+                templates: poolTemplates,
+                library: library,
+                userId: userId,
+                onSaved: {
+                    poolEditTarget = nil
+                    loadPools()
+                },
+                onDeleted: {
+                    poolEditTarget = nil
+                    loadPools()
+                }
+            )
+        }
         // ── Navigation destination ────────────────────────────────────
         .navigationDestination(for: String.self) { taskId in
             TaskDetailView(
@@ -304,10 +394,24 @@ struct TasksTabView: View {
         .onAppear {
             library.loadLibrary(userId: userId)
             vm.reloadAsync()
+            loadPools()
         }
     }
 
     // MARK: - Header
+
+    /// Pill-styled Library/Pools segment (P2 Task 3). Pools mode swaps the
+    /// results region below for `PoolsBrowseView`.
+    private var segmentRow: some View {
+        RisoSegmented(
+            options: [
+                (TasksTabSegment.library, "Library"),
+                (TasksTabSegment.pools, "Pools · \(pools.count)"),
+            ],
+            selection: $segment,
+            style: .pill
+        )
+    }
 
     /// Scrolling header row: kicker "YOUR LIBRARY" + "Tasks" title + gold + button.
     @ViewBuilder
@@ -401,6 +505,33 @@ struct TasksTabView: View {
         _Concurrency.Task {
             await library.reload(userId: userId)
             await vm.reload()
+        }
+    }
+
+    /// Loads `pools` + `poolTemplates` for the Pools segment. Called once
+    /// on appear (cheap — needed for the "Pools · N" segment label
+    /// immediately, not only once the segment is entered) and after any
+    /// pool create/save/delete so the browse list + segment count refresh.
+    private func loadPools() {
+        let uid = userId
+        _Concurrency.Task {
+            do {
+                let loadedPools = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try AppDatabase.shared.fetchPools(userId: uid)
+                }.value
+                let loadedTemplates = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
+                }.value
+                await MainActor.run {
+                    pools = loadedPools
+                    poolTemplates = loadedTemplates
+                    poolLoadError = nil
+                }
+            } catch {
+                await MainActor.run {
+                    poolLoadError = "Failed to load pools: \(error.localizedDescription)"
+                }
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type {
   RecurringBoardTemplate,
   CreateRecurringBoardTemplateInput,
@@ -27,6 +27,20 @@ export async function fetchRecurringBoardTemplates(
     .filter((t) => t.userId === userId && !t.isDeleted)
     .reverse()
     .sortBy('updatedAt');
+}
+
+/**
+ * Fetch every non-deleted template across all users, sorted by name.
+ *
+ * Used by the Achievement template picker, which lists all templates (not
+ * user-scoped) in name order.
+ *
+ * @returns All non-deleted RecurringBoardTemplate rows, sorted by `name`.
+ */
+export async function fetchAllTemplatesSortedByName(): Promise<
+  RecurringBoardTemplate[]
+> {
+  return db.recurringBoardTemplates.filter((t) => !t.isDeleted).sortBy('name');
 }
 
 /**
@@ -64,6 +78,15 @@ export async function createRecurringBoardTemplate(
     version: 1,
     isDeleted: false,
   };
+  // P1 — additive, optional. The legacy template CREATE write-through
+  // (`wizardPersist.ts persistRecurringTemplate`) mints a Pool and passes
+  // these so the record is born already-migrated-shaped; callers that omit
+  // them (pre-P1 tests, any future un-migrated path) get the "genuinely
+  // un-migrated" shape (fields absent), same as `isLegacyShapedRecord`'s
+  // docstring describes.
+  if (input.poolIds !== undefined) template.poolIds = [...input.poolIds];
+  if (input.manualTaskIds !== undefined) template.manualTaskIds = [...input.manualTaskIds];
+  if (input.removedTaskIds !== undefined) template.removedTaskIds = [...input.removedTaskIds];
 
   await db.recurringBoardTemplates.add(template);
   await addToSyncQueue(

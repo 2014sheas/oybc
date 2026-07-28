@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useCreateFormState, type PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
-import type { Task, Timeframe } from '@oybc/shared';
+import { type LinkedCounterInput } from './CountingTemplatePicker';
+import { createTask } from '../../db/operations/tasks';
+import { generateUUID, currentTimestamp } from '../../db/utils';
+import { TaskType, type Task, type Timeframe } from '@oybc/shared';
 import styles from './NewTaskSheet.module.css';
 
 export interface NewTaskSheetProps {
@@ -44,6 +47,15 @@ export interface NewTaskSheetProps {
    * keeps it `false`.
    */
   deferPersist?: boolean;
+  /**
+   * R1 counters refresh (review fix) — unfiltered task pool (persisted +
+   * this wizard session's pending tasks) used only for the counter-link
+   * auto-link match, so a pending (not-yet-persisted) counter created
+   * earlier in the same wizard visit is still linkable. Passed straight
+   * through to `CreateNewTaskForm`; omitted for standalone Tasks-tab usage,
+   * which falls back to the live `useTasks` pool there.
+   */
+  suggestionPool?: Task[];
 }
 
 /**
@@ -70,6 +82,7 @@ export function NewTaskSheet({
   defaultStartDate,
   defaultEndDate,
   deferPersist = false,
+  suggestionPool,
 }: NewTaskSheetProps): React.ReactElement | null {
   useEffect(() => {
     if (!isOpen) return;
@@ -94,6 +107,7 @@ export function NewTaskSheet({
       defaultStartDate={defaultStartDate}
       defaultEndDate={defaultEndDate}
       deferPersist={deferPersist}
+      suggestionPool={suggestionPool}
     />
   );
 }
@@ -113,6 +127,7 @@ function NewTaskSheetBody({
   defaultStartDate,
   defaultEndDate,
   deferPersist = false,
+  suggestionPool,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
   const form = useCreateFormState({
     userId,
@@ -126,6 +141,85 @@ function NewTaskSheetBody({
     defaultEndDate,
     deferPersist,
   });
+
+  /**
+   * R1 counters refresh — auto-link. `CreateNewTaskForm` calls this instead
+   * of `form.handleSubmit` when a counting-task submit's (verb, noun) pair
+   * exactly matches an existing counter and the user hasn't opted out via
+   * `CounterLinkHint`'s "Don't link" pill (linking is ON by default; the
+   * manual "Link to existing counter" mode this docstring used to describe
+   * was retired — see `CountingTemplatePicker`). Creates a new COUNTING
+   * task with `sharedCounterId` + `baseline` set, then notifies the parent
+   * and closes the sheet. Respects the same deferred-persist path as the
+   * regular COUNTING create so wizard usage stays atomic.
+   */
+  const handleCreateLinked = useCallback(
+    async (input: LinkedCounterInput): Promise<void> => {
+      if (!userId) return;
+      try {
+        let newTask: Task;
+        if (deferPersist) {
+          // Build in-memory for the wizard — written inside the board-save txn.
+          const now = currentTimestamp();
+          newTask = {
+            id: generateUUID(),
+            userId,
+            title: input.title,
+            type: TaskType.COUNTING,
+            action: input.source.action ?? '',
+            unit: input.source.unit ?? '',
+            maxCount: input.maxCount,
+            currentCount: 0,
+            sharedCounterId: input.source.id,
+            baseline: input.baseline,
+            isCompleted: false,
+            totalCompletions: 0,
+            totalInstances: 0,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
+            // Wizard-born — hidden from the task library until the board goes active.
+            createdInWizard: true,
+          };
+          onPendingCreated?.({ task: newTask, childTasks: [], childLinks: [] });
+        } else {
+          // Immediate-persist path (Tasks-tab standalone quick-add).
+          newTask = await createTask(userId, {
+            title: input.title,
+            type: TaskType.COUNTING,
+            action: input.source.action ?? '',
+            unit: input.source.unit ?? '',
+            maxCount: input.maxCount,
+            sharedCounterId: input.source.id,
+            baseline: input.baseline,
+            timeframe: defaultTimeframe,
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
+          });
+        }
+        onTaskCreated(newTask);
+        onClose();
+      } catch (err) {
+        // Surface to the console; the form has no dedicated error banner for
+        // the link path. A future iteration can thread an error state.
+        console.error('[NewTaskSheet] handleCreateLinked failed:', err);
+      }
+    },
+    [
+      userId,
+      deferPersist,
+      onTaskCreated,
+      onPendingCreated,
+      onClose,
+      defaultTimeframe,
+      defaultStartDate,
+      defaultEndDate,
+    ],
+  );
 
   return (
     <div
@@ -163,6 +257,8 @@ function NewTaskSheetBody({
               onClose();
             }}
             submitLabel={submitLabel ?? 'Create & Select'}
+            onCreateLinked={handleCreateLinked}
+            suggestionPool={suggestionPool}
           />
         </div>
       </div>

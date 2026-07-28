@@ -37,9 +37,13 @@ final class CoreBoardBrowserViewModel {
     private let initialRadius: Int
     private let pageSize: Int
 
-    init(initialRadius: Int = 10, pageSize: Int = 10) {
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(initialRadius: Int = 10, pageSize: Int = 10, database: AppDatabase = .shared) {
         self.initialRadius = initialRadius
         self.pageSize = pageSize
+        self.database = database
     }
 
     // MARK: - Public state
@@ -51,6 +55,18 @@ final class CoreBoardBrowserViewModel {
     var currentIndex: Int = -1
     /// Most recent reload error, surfaced as a caption.
     var loadError: String?
+
+    /// TRUE mini-preview cells for every board currently in `boardsByStart`
+    /// (bugfix/board-preview-real-cells perf follow-up), keyed by board id.
+    /// Batch-built in `rebuildCells()` from `workspaceData`/`allBoardTasksCache`
+    /// — fetched ONCE per `reload()`, not per row and not per pagination
+    /// fetch (`loadEarlier`/`loadLater` never hit the DB; `fetchCoreBoards`
+    /// already loads every core board for this user+timeframe up front, so
+    /// pagination only changes which window OFFSETS are exposed, never which
+    /// boards exist). `CoreBoardBrowserView` passes this straight through to
+    /// every `CoreBoardWindowCellView` → `RisoBoardCard(previewCells:)`
+    /// instead of letting the card self-load.
+    var previewCellsByBoardId: [String: BoardPreviewCellsResult] = [:]
 
     // MARK: - Private state
 
@@ -73,6 +89,12 @@ final class CoreBoardBrowserViewModel {
     /// GRDB read; live-update isn't needed because the browser
     /// reloads on `.onAppear` (return-from-wizard).
     private var boardsByStart: [String: Board] = [:]
+    /// Workspace-scoped preview-cell inputs (bugfix/board-preview-real-cells
+    /// perf follow-up), fetched once per `reload()` alongside `boardsByStart`.
+    private var workspaceData: BoardPreviewCells.WorkspaceData = .empty
+    /// Workspace-wide BoardTask rows, fetched once per `reload()`. Each
+    /// board's `BoardPreviewCells.build` filters this to its own id.
+    private var allBoardTasksCache: [BoardTask] = []
 
     /// Monotonically-increasing token incremented on every `reload`
     /// call. Each in-flight background fetch captures the token at
@@ -115,11 +137,19 @@ final class CoreBoardBrowserViewModel {
             guard let self = self else { return }
             do {
                 let boards = try self.fetchCoreBoards(userId: userId, timeframe: timeframe)
+                // Batch preview-cell inputs (bugfix/board-preview-real-cells
+                // perf follow-up) — fetched ONCE here, reused by every
+                // board's `build(...)` call in `rebuildCells()`, instead of
+                // each `RisoBoardCard` row self-loading.
+                let allBoardTasks = (try? self.database.fetchAllBoardTasks()) ?? []
+                let workspace = BoardPreviewCells.fetchWorkspaceData(userId: userId, database: self.database)
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
                     self.boardsByStart = Dictionary(
                         uniqueKeysWithValues: boards.map { ($0.startDate, $0) }
                     )
+                    self.allBoardTasksCache = allBoardTasks
+                    self.workspaceData = workspace
                     self.rebuildCells()
                     self.loadError = nil
                 }
@@ -158,6 +188,7 @@ final class CoreBoardBrowserViewModel {
               let anchor = anchorWindowStart else {
             cells = []
             currentIndex = -1
+            previewCellsByBoardId = [:]
             return
         }
         var out: [CoreBoardWindowCell] = []
@@ -183,12 +214,24 @@ final class CoreBoardBrowserViewModel {
         }
         cells = out
         currentIndex = out.firstIndex(where: { $0.isCurrentWindow }) ?? -1
+
+        // Batch preview cells (bugfix/board-preview-real-cells perf
+        // follow-up) — pure recompute from already-fetched workspace data,
+        // re-run on every `rebuildCells()` call (initial load AND
+        // pagination) so a board entering the visible range via
+        // `loadEarlier`/`loadLater` always has cells ready. No new DB read:
+        // `boardsByStart` was fully populated up front in `reload()`.
+        previewCellsByBoardId = BoardPreviewCells.buildMany(
+            boards: Array(boardsByStart.values),
+            boardTasks: allBoardTasksCache,
+            workspace: workspaceData
+        )
     }
 
     // MARK: - Data loader
 
     private func fetchCoreBoards(userId: String, timeframe: Timeframe) throws -> [Board] {
-        try AppDatabase.shared.read { db in
+        try database.read { db in
             try Board
                 .filter(
                     Column("userId") == userId

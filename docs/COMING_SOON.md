@@ -33,12 +33,21 @@ apps/coming-soon/
 
 ### Tokens are self-contained (by design)
 
-The Riso token **values** here are byte-identical to `apps/web/src/styles/riso.css`
-(the handoff's unprefixed `--paper`/`--red`/… equal the app's `--riso-*`). We copy
-them (unprefixed, matching the handoff) rather than importing the app stylesheet
+The Riso token **values** here are byte-identical to `packages/riso-tokens/riso.css`
+(the handoff's unprefixed `--paper`/`--red`/… equal the app's `--riso-*`; the
+tokens were extracted from `apps/web/src/styles/riso.css` into the
+`@oybc/riso-tokens` workspace package — pure relocation, no value change). We
+copy them (unprefixed, matching the handoff) rather than importing the package
 so the placeholder has **zero dependency on the app build**. If the palette ever
 changes, update both — but the palette is stable and this page is throwaway at
 launch.
+
+**CI drift-check:** `node scripts/check-coming-soon-tokens.mjs` (wired into
+`.github/workflows/web.yml` after the Lint step) parses the light/dark custom
+properties from both `packages/riso-tokens/riso.css` and this page's
+`src/styles.css`, strips the `riso-` prefix, and fails the build if any token
+present in both files has diverged in value. Tokens only one file has are
+ignored. Run it locally with plain `node`, no dependencies.
 
 ## Locked production config (Tweaks panel stripped)
 

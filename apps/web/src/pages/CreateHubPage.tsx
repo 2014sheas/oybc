@@ -8,7 +8,9 @@ import {
 import { useDrafts } from './createHub/useDrafts';
 import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframeParam';
 import { useEditTemplateParam } from './createHub/useEditTemplateParam';
+import { useNewRecurringParam } from './createHub/useNewRecurringParam';
 import { useResumableDraft } from './createHub/useResumableDraft';
+import { useResumeDraftParam } from './createHub/useResumeDraftParam';
 import { useCoreBoardSlots } from '../hooks';
 import { deleteDraftWithCascade } from '../db/operations/boards';
 import { BoardWizardPage } from './BoardWizardPage';
@@ -52,6 +54,10 @@ type HubMode =
        *  hydrate from the template, `isRecurring` is forced ON, and
        *  Save updates the template instead of creating a new board. */
       editingTemplate?: RecurringBoardTemplate;
+      /** Optional starting step (defaults to 1). Set to 2 by the template
+       *  row's "Add tasks" affordance (`&step=tasks`) so the wizard opens
+       *  directly on the Tasks step. */
+      initialStep?: 1 | 2;
       /** Issue #71 — set when launched from the "Create a recurring
        *  board" CTA. Forces `isRecurring` ON at entry; the user picks
        *  timeframe/size/center + pool. */
@@ -72,11 +78,14 @@ type HubMode =
  * Task library + quick-add moved out of this hub when the dedicated
  * `/tasks` tab landed — Create is now board-creation-only.
  *
- * Two deep-link entry points are handled by dedicated hooks:
+ * Three deep-link entry points are handled by dedicated hooks:
  * - `?recurringTimeframe=daily` → `useRecurringTimeframeParam`
- * - `?editTemplate=<uuid>` → `useEditTemplateParam`
- * Each consumes its param exactly once and clears it from the URL so a
- * wizard cancel + manual re-entry doesn't re-arm the prefill.
+ * - `?editTemplate=<uuid>[&step=tasks]` → `useEditTemplateParam`
+ *   (`step=tasks` = the template row's "Add tasks", lands on step 2)
+ * - `?newRecurring=1` → `useNewRecurringParam` (Profile templates
+ *   page's "+ New template")
+ * Each consumes its param(s) exactly once and clears them from the URL
+ * so a wizard cancel + manual re-entry doesn't re-arm the prefill.
  */
 export function CreateHubPage({
   userId,
@@ -100,8 +109,16 @@ export function CreateHubPage({
   );
 
   useEditTemplateParam(
-    useCallback((template: RecurringBoardTemplate) => {
-      setMode({ kind: 'wizard', editingTemplate: template });
+    useCallback((template: RecurringBoardTemplate, initialStep: 1 | 2) => {
+      setMode({ kind: 'wizard', editingTemplate: template, initialStep });
+    }, []),
+  );
+
+  // "+ New template" from Profile → Recurring templates. Same entry as
+  // the Create-hub "Create a recurring board" CTA (`startRecurring`).
+  useNewRecurringParam(
+    useCallback(() => {
+      setMode({ kind: 'wizard', startRecurring: true });
     }, []),
   );
 
@@ -124,6 +141,18 @@ export function CreateHubPage({
       setMode({ kind: 'wizard', draft });
     },
     [resolveDraft],
+  );
+
+  // Cross-tab draft-resume bridge: `/create?resumeDraft=<boardId>` (set by
+  // the Boards tab when the user taps a DRAFT card or a draft CoreStrip slot,
+  // the CoreBoardBrowser row, and by the BoardPlayPage catch-all guard).
+  // Reuses `handleResumeDraft` — the same path the CreateHub drafts list uses
+  // — so there's exactly one resume path. Handles not-found / non-draft boards
+  // gracefully (no callback fired).
+  useResumeDraftParam(
+    useCallback((board) => {
+      void handleResumeDraft(board);
+    }, [handleResumeDraft]),
   );
 
   const handleDeleteDraft = useCallback(async (board: Board): Promise<void> => {
@@ -171,6 +200,7 @@ export function CreateHubPage({
         prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
         targetWindowDate={mode.targetWindowDate}
         editingTemplate={mode.editingTemplate}
+        initialStep={mode.initialStep}
         startRecurring={mode.startRecurring}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}

@@ -72,6 +72,7 @@ function makeBoardTask(taskId: string, row: number, col: number): BoardTask {
     createdAt: '2026-05-01T00:00:00.000',
     updatedAt: '2026-05-01T00:00:00.000',
     version: 1,
+    isDeleted: false,
   };
 }
 
@@ -102,8 +103,8 @@ describe('center-square switch semantics', () => {
     ];
     const taskById = { t1, t2 };
 
-    const statsNone = computeBoardStatsUpdate(boardNone, bts, {}, taskById);
-    const statsFree = computeBoardStatsUpdate(boardFree, bts, {}, taskById);
+    const statsNone = computeBoardStatsUpdate(boardNone, bts, {}, taskById, [], undefined);
+    const statsFree = computeBoardStatsUpdate(boardFree, bts, {}, taskById, [], undefined);
 
     // With NONE: only t1 is completed → completedTasks = 1
     expect(statsNone.completedTasks).toBe(1);
@@ -126,7 +127,7 @@ describe('center-square switch semantics', () => {
     ];
     const taskById = { 'center-task': chosenTask };
 
-    const statsChosen = computeBoardStatsUpdate(board, bts, {}, taskById);
+    const statsChosen = computeBoardStatsUpdate(board, bts, {}, taskById, [], undefined);
     // CHOSEN center + task completed → completedTasks = 1
     expect(statsChosen.completedTasks).toBe(1);
 
@@ -136,7 +137,7 @@ describe('center-square switch semantics', () => {
       centerSquareType: CenterSquareType.FREE,
       centerTaskId: 'center-task', // row preserved (not cleared)
     });
-    const statsFree = computeBoardStatsUpdate(boardFree, bts, {}, taskById);
+    const statsFree = computeBoardStatsUpdate(boardFree, bts, {}, taskById, [], undefined);
     // FREE center on an odd board auto-completes the center cell ONLY when no
     // BoardTask occupies it. Here a BoardTask IS at (1,1), so the center is
     // treated as a normal placed task — isCenterAutoCompleted returns false.
@@ -150,7 +151,7 @@ describe('center-square switch semantics', () => {
     const bts: BoardTask[] = [makeBoardTask('t1', 0, 0)];
     const taskById = { t1 };
 
-    const stats = computeBoardStatsUpdate(board, bts, {}, taskById);
+    const stats = computeBoardStatsUpdate(board, bts, {}, taskById, [], undefined);
     // t1 (completed) + CUSTOM_FREE center (auto-complete) = 2
     expect(stats.completedTasks).toBe(2);
   });
@@ -187,8 +188,8 @@ describe('derivation re-pass after timeframe/date change', () => {
       endDate: '2026-06-30T23:59:59.999',
     });
 
-    const statsMay = computeBoardStatsUpdate(boardMay, bts, {}, taskById);
-    const statsJune = computeBoardStatsUpdate(boardJune, bts, {}, taskById);
+    const statsMay = computeBoardStatsUpdate(boardMay, bts, {}, taskById, [], undefined);
+    const statsJune = computeBoardStatsUpdate(boardJune, bts, {}, taskById, [], undefined);
 
     // Both tasks are completed regardless of which month the board covers.
     // completedTasks should be 2 in both cases (task completion is global).
@@ -209,8 +210,8 @@ describe('derivation re-pass after timeframe/date change', () => {
       endDate: '2026-12-31T23:59:59.999',
     });
 
-    const statsMonthly = computeBoardStatsUpdate(boardMonthly, bts, {}, taskById);
-    const statsYearly = computeBoardStatsUpdate(boardYearly, bts, {}, taskById);
+    const statsMonthly = computeBoardStatsUpdate(boardMonthly, bts, {}, taskById, [], undefined);
+    const statsYearly = computeBoardStatsUpdate(boardYearly, bts, {}, taskById, [], undefined);
 
     // Task completion is global — changing timeframe does not flip completion.
     expect(statsMonthly.completedTasks).toBe(1);
@@ -225,8 +226,8 @@ describe('derivation re-pass after timeframe/date change', () => {
     const boardOriginal = makeBoard({ name: 'Old Name' });
     const boardRenamed = makeBoard({ name: 'New Name' });
 
-    const statsOriginal = computeBoardStatsUpdate(boardOriginal, bts, {}, taskById);
-    const statsRenamed = computeBoardStatsUpdate(boardRenamed, bts, {}, taskById);
+    const statsOriginal = computeBoardStatsUpdate(boardOriginal, bts, {}, taskById, [], undefined);
+    const statsRenamed = computeBoardStatsUpdate(boardRenamed, bts, {}, taskById, [], undefined);
 
     // Name is irrelevant to stats.
     expect(statsOriginal.completedTasks).toBe(statsRenamed.completedTasks);

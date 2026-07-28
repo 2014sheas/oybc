@@ -23,15 +23,20 @@ enum DefaultBoardSize: Int, Codable {
 }
 
 /// Board timeframe default. Mirrors the `Timeframe` enum in @oybc/shared
-/// (`daily | weekly | monthly | yearly | custom`) — kept separate from the
-/// existing per-board `Timeframe` enum to avoid coupling the preference
-/// schema to any future additions.
+/// (`daily | weekly | monthly | yearly | custom | indefinite`) — kept
+/// separate from the existing per-board `Timeframe` enum to avoid coupling
+/// the preference schema to any future additions.
+///
+/// `indefinite` is accepted here for decode-safety (a value web can write to
+/// `mergeUserPreferences`), even though it isn't currently a selectable
+/// option in either platform's preferences UI — see `BoardPreferencesPage.tsx`.
 enum DefaultTimeframe: String, Codable {
     case daily
     case weekly
     case monthly
     case yearly
     case custom
+    case indefinite
 }
 
 /// App appearance override. `system` follows the OS appearance; `light`/`dark`

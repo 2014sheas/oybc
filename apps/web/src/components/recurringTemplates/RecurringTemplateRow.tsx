@@ -8,6 +8,7 @@ import {
   softDeleteRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
+import { POOL_PREVIEW_LIMIT } from './poolPreview';
 import styles from '../../pages/RecurringTemplatesPage.module.css';
 
 const TIMEFRAME_LABELS: Record<Timeframe, string> = {
@@ -33,15 +34,36 @@ const ATTENTION_COPY: Record<
 
 export interface RecurringTemplateRowProps {
   template: RecurringBoardTemplate;
+  /** The template's CURRENT resolved pool-mix size, for the "N-task
+   *  pool" meta text. Computed at the page level from `useTemplateMixes`
+   *  — NOT `template.seedTaskIds.length`, which goes stale after the P1
+   *  legacy-editor write-through edits the linked Pool (see
+   *  `computeTemplateAttention`'s docstring for the full story). */
+  poolTaskCount: number;
   /** Set when this template's last spawn was skipped — surfaces a badge. */
   attentionReason?: SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed';
+  /** First few resolved pool task titles (≤ POOL_PREVIEW_LIMIT, in mix
+   *  order); the page resolves ids against the library. Empty/omitted
+   *  renders no chip row. */
+  poolPreview?: string[];
+  /** Count of additional resolved titles beyond `poolPreview` (0 ⇒ no
+   *  "+k more" chip). See `computePoolPreview`. */
+  poolPreviewOverflow?: number;
   onEdit: (template: RecurringBoardTemplate) => void;
+  /** "Add tasks" — deep-links into the wizard's Tasks step for this
+   *  template. Adds-only in framing; the wizard's existing min-count
+   *  validation still guards removals below the floor. */
+  onAddTasks: (template: RecurringBoardTemplate) => void;
 }
 
 export function RecurringTemplateRow({
   template,
+  poolTaskCount,
   attentionReason,
+  poolPreview = [],
+  poolPreviewOverflow = 0,
   onEdit,
+  onAddTasks,
 }: RecurringTemplateRowProps): React.ReactElement {
   const [busy, setBusy] = useState(false);
 
@@ -78,8 +100,22 @@ export function RecurringTemplateRow({
         <div className={styles.rowMeta}>
           {TIMEFRAME_LABELS[template.timeframe]} ·{' '}
           {template.boardSize}×{template.boardSize} ·{' '}
-          {`${template.seedTaskIds.length}-task pool`}
+          {`${poolTaskCount}-task pool`}
         </div>
+        {poolPreview.length > 0 && (
+          <div className={styles.poolPreview} aria-label="Pool preview">
+            {poolPreview.slice(0, POOL_PREVIEW_LIMIT).map((title, i) => (
+              <span key={`${title}-${i}`} className={styles.poolChip}>
+                {title}
+              </span>
+            ))}
+            {poolPreviewOverflow > 0 && (
+              <span className={`${styles.poolChip} ${styles.poolChipMore}`}>
+                +{poolPreviewOverflow} more
+              </span>
+            )}
+          </div>
+        )}
         {attentionReason && (
           <div className={styles.attentionBadge} role="status">
             ⚠️ {ATTENTION_COPY[attentionReason]}
@@ -97,6 +133,15 @@ export function RecurringTemplateRow({
           />
           <span>{template.isActive ? 'Active' : 'Paused'}</span>
         </label>
+        <button
+          type="button"
+          className={styles.editButton}
+          onClick={() => onAddTasks(template)}
+          disabled={busy}
+          aria-label={`Add tasks to ${template.name}`}
+        >
+          Add tasks
+        </button>
         <button
           type="button"
           className={styles.editButton}

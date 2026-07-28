@@ -148,6 +148,56 @@ describe('RecurringBoardTemplateSchema', () => {
       RecurringBoardTemplateSchema.parse(validTemplate({ boardSize: 6 })),
     ).toThrow();
   });
+
+  // ─── P1 — generalized-source fields (additive, optional) ────────────────────
+
+  it('accepts a record with poolIds/manualTaskIds/removedTaskIds absent (genuinely un-migrated shape)', () => {
+    expect(() => RecurringBoardTemplateSchema.parse(validTemplate())).not.toThrow();
+  });
+
+  it('accepts a migrated record (poolIds set, manual/removed empty)', () => {
+    expect(() =>
+      RecurringBoardTemplateSchema.parse(
+        validTemplate({ poolIds: [uuid(1)], manualTaskIds: [], removedTaskIds: [] }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts a record with manualTaskIds and removedTaskIds populated', () => {
+    expect(() =>
+      RecurringBoardTemplateSchema.parse(
+        validTemplate({
+          poolIds: [uuid(1), uuid(2)],
+          manualTaskIds: [uuid(3)],
+          removedTaskIds: [uuid(4)],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects duplicate poolIds', () => {
+    expect(() =>
+      RecurringBoardTemplateSchema.parse(
+        validTemplate({ poolIds: [uuid(1), uuid(1)] }),
+      ),
+    ).toThrow(/duplicates/i);
+  });
+
+  it('rejects duplicate manualTaskIds', () => {
+    expect(() =>
+      RecurringBoardTemplateSchema.parse(
+        validTemplate({ manualTaskIds: [uuid(1), uuid(1)] }),
+      ),
+    ).toThrow(/duplicates/i);
+  });
+
+  it('rejects duplicate removedTaskIds', () => {
+    expect(() =>
+      RecurringBoardTemplateSchema.parse(
+        validTemplate({ removedTaskIds: [uuid(1), uuid(1)] }),
+      ),
+    ).toThrow(/duplicates/i);
+  });
 });
 
 // ─── CreateRecurringBoardTemplateInputSchema ──────────────────────────────────
@@ -209,6 +259,44 @@ describe('CreateRecurringBoardTemplateInputSchema', () => {
         }),
       ),
     ).toThrow();
+  });
+
+  // ─── P1 — generalized-source fields (additive, optional) ────────────────────
+
+  it('accepts poolIds/manualTaskIds/removedTaskIds when provided', () => {
+    expect(() =>
+      CreateRecurringBoardTemplateInputSchema.parse(
+        validCreateInput({
+          poolIds: [uuid(1)],
+          manualTaskIds: [uuid(2)],
+          removedTaskIds: [uuid(3)],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects duplicate poolIds', () => {
+    expect(() =>
+      CreateRecurringBoardTemplateInputSchema.parse(
+        validCreateInput({ poolIds: [uuid(1), uuid(1)] }),
+      ),
+    ).toThrow(/duplicates/i);
+  });
+
+  it('rejects duplicate manualTaskIds', () => {
+    expect(() =>
+      CreateRecurringBoardTemplateInputSchema.parse(
+        validCreateInput({ manualTaskIds: [uuid(1), uuid(1)] }),
+      ),
+    ).toThrow(/duplicates/i);
+  });
+
+  it('rejects duplicate removedTaskIds', () => {
+    expect(() =>
+      CreateRecurringBoardTemplateInputSchema.parse(
+        validCreateInput({ removedTaskIds: [uuid(1), uuid(1)] }),
+      ),
+    ).toThrow(/duplicates/i);
   });
 });
 
@@ -273,6 +361,40 @@ describe('UpdateRecurringBoardTemplateInputSchema', () => {
         centerSquareType: CenterSquareType.FREE,
       }),
     ).not.toThrow();
+  });
+
+  // ─── P1 — generalized-source fields (additive, optional) ────────────────────
+
+  it('accepts a poolIds/manualTaskIds/removedTaskIds patch', () => {
+    expect(() =>
+      UpdateRecurringBoardTemplateInputSchema.parse({
+        poolIds: [uuid(1)],
+        manualTaskIds: [uuid(2)],
+        removedTaskIds: [uuid(3)],
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects duplicate poolIds in a patch', () => {
+    expect(() =>
+      UpdateRecurringBoardTemplateInputSchema.parse({ poolIds: [uuid(1), uuid(1)] }),
+    ).toThrow(/duplicates/i);
+  });
+
+  it('rejects duplicate manualTaskIds in a patch', () => {
+    expect(() =>
+      UpdateRecurringBoardTemplateInputSchema.parse({
+        manualTaskIds: [uuid(1), uuid(1)],
+      }),
+    ).toThrow(/duplicates/i);
+  });
+
+  it('rejects duplicate removedTaskIds in a patch', () => {
+    expect(() =>
+      UpdateRecurringBoardTemplateInputSchema.parse({
+        removedTaskIds: [uuid(1), uuid(1)],
+      }),
+    ).toThrow(/duplicates/i);
   });
 });
 

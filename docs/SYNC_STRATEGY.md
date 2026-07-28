@@ -1,6 +1,8 @@
 # OYBC Sync Strategy Documentation
 
-> **Note (2026-04-30):** Sections #4 (Progress Task Step Sync) and #6 (Composite Task Sync) describe the **pre-unification** sync model. After the Compound Tasks Unification (PR #43, 2026-04-29) those two patterns collapsed into one: parent-child relationships live in a single `compound_children` table (with `compoundTaskId` for the parent and `childTaskId` for the child), and the parent's completion derives from its children via the operator/threshold stored on the parent `Task`. The `task_steps` and `composite_tasks`/`composite_nodes` tables still appear in old schema migrations so first-launch backfill works on dev/test devices, but receive no live writes and are not read by any UI. The LWW + version + ProgressCounter + Achievement Square + Bingo Line + User Preferences + Real-Time + Performance sections (everything else in this doc) remain accurate. For the current task model see [`TASK_SYSTEM.md`](TASK_SYSTEM.md).
+> **Note (2026-04-30):** Sections #4 (Progress Task Step Sync) and #6 (Composite Task Sync) describe the **pre-unification** sync model. After the Compound Tasks Unification (PR #43, 2026-04-29) those two patterns collapsed into one: parent-child relationships live in a single `compound_children` table (with `compoundTaskId` for the parent and `childTaskId` for the child), and the parent's completion derives from its children via the operator/threshold stored on the parent `Task`. The `task_steps` and `composite_tasks`/`composite_nodes` tables still appear in old schema migrations so first-launch backfill works on dev/test devices, but receive no live writes and are not read by any UI. The LWW + version + Achievement Square + Bingo Line + User Preferences + Real-Time + Performance sections (everything else in this doc) remain accurate. For the current task model see [`TASK_SYSTEM.md`](TASK_SYSTEM.md).
+>
+> **Note (2026-07-08, amended by Windowed Completion):** Section #1 (**ProgressCounter Conflict Resolution**) is **superseded** — `ProgressCounter` was never revived; Shared Counters (Issue #84) shipped the per-Task `sharedCounterId`/`baseline` model instead. Its additive-merge sync design was itself later **retired by Windowed Completion** — counting conflicts now resolve by union-of-events on `task_events` (see [§Shared Counter Sync — current state (shipped)](#shared-counter-sync--current-state-shipped) and [`WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md)). Section #1 is kept below as historical reference for the LWW-vs-additive reasoning (the "Strategy A vs Strategy B" framing). The D1/D3 sync-hardening work (dead-letter surfacing, per-entity queue coalescing) is still live; D2's `lastSyncedCount` advancement was removed with the merge.
 
 ## Overview
 
@@ -10,7 +12,7 @@ This document details the synchronization strategies for complex features in OYB
 
 ## Table of Contents
 
-1. [ProgressCounter Conflict Resolution](#progresscounter-conflict-resolution)
+1. [ProgressCounter Conflict Resolution](#progresscounter-conflict-resolution) — **superseded**, see #10
 2. [Achievement Square Auto-Completion](#achievement-square-auto-completion)
 3. [Cross-Board Queries](#cross-board-queries)
 4. [Progress Task Step Sync](#progress-task-step-sync)
@@ -19,10 +21,13 @@ This document details the synchronization strategies for complex features in OYB
 7. [User Preferences Sync](#user-preferences-sync)
 8. [Real-Time Sync](#real-time-sync)
 9. [Performance Considerations](#performance-considerations)
+10. [Shared Counter Sync — current state (shipped)](#shared-counter-sync--current-state-shipped)
 
 ---
 
 ## ProgressCounter Conflict Resolution
+
+> **Superseded (2026-07-08).** This section is historical — kept for the LWW-vs-additive reasoning, not as current design. `ProgressCounter` itself is vestigial dead (web dropped its Dexie store; iOS's table is inert). See [§Shared Counter Sync — current state (shipped)](#shared-counter-sync--current-state-shipped) for what actually shipped.
 
 ### Problem Statement
 
@@ -1271,6 +1276,8 @@ The sync layer used to be polling-only: a 30-second `setInterval` drove a `fullS
 
 The current design is event-driven on both sides, with the polling loop kept as a slow safety net.
 
+> **The safety-net loop is load-bearing — never remove it as an "optimization."** The pull watermark is a *local-clock* ISO string compared against server `_syncedAt`, so a clock-skew window exists by design: a doc written during the skew can slip past the watermark, and the periodic re-pull (5 min; `SYNC_SAFETY_NET_MS` on web, `safetyNetInterval` on iOS — both sites carry matching DO-NOT-REMOVE comments) is the only mechanism that recovers it, in addition to its FAILED-retry and stale-IN_PROGRESS duties.
+
 ### Push side — push-on-enqueue
 
 - `addToSyncQueue` (web: `apps/web/src/db/operations/syncQueue.ts`; iOS: `AppDatabase.saveSyncItem`) is unchanged and remains fire-and-forget.
@@ -1386,9 +1393,9 @@ db.boards.filter(b => b.userId === userId && !b.isDeleted)
 
 | Feature | Strategy | Conflict Resolution | Performance |
 |---------|----------|---------------------|-------------|
-| **ProgressCounter** | Last-write-wins (MVP) | Version field comparison | Fast |
+| **Shared Counters** (shipped; supersedes the ProgressCounter row this table used to have) | Additive three-way merge via `lastSyncedCount` | `sharedCounterMerge` — see [§Shared Counter Sync](#shared-counter-sync--current-state-shipped) | Fast |
 | **Achievement Squares** | Recompute from source | Always recompute | Medium (200ms) |
-| **Task Step Linking** | Additive merge | Union of completedStepIds | Fast |
+| **Task Step Linking** (pre-unification; see [`TASK_SYSTEM.md`](./TASK_SYSTEM.md) for the current `compound_children` model) | Additive merge | Union of completedStepIds | Fast |
 | **Bingo Lines** | Recompute from grid | Detect from task states | Fast |
 
 ### Implementation Priority
@@ -1442,6 +1449,7 @@ This section documents what was actually implemented for the sync layer (Phase 3
 1. Higher `version` wins
 2. Same `version`: newer `updatedAt` wins
 3. Tie on both: remote wins
+4. Same `version` with an empty/unparseable `updatedAt` on either side: remote wins (canon pinned in `lwwVectors.json`, issue #263 — production never emits such timestamps; defensive)
 
 ### Push Sync
 
@@ -1465,7 +1473,67 @@ This section documents what was actually implemented for the sync layer (Phase 3
 
 ---
 
-## Recurring Boards sync (Phase 6 — planned)
+## Shared Counter Sync — current state (shipped)
+
+This section is the current-state supersession of §1 (ProgressCounter Conflict Resolution). Shared Counters (Issue #84, both platforms) shipped a per-Task model instead of reviving `ProgressCounter` — see [`TASK_SYSTEM.md` §Shared counters](./TASK_SYSTEM.md#shared-counters-linked-counting-tasks) for the data model (`sharedCounterId` / `baseline` on `Task`) and [`SHARED_COUNTERS.md`](./SHARED_COUNTERS.md) for the UX. This section covers only the sync-conflict machinery, including the D-track (Track D, `docs/ROADMAP.md`) hardening that shipped after the initial engine.
+
+> **RETIRED by Windowed Completion (SHIPPED — [`docs/WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md)).** The additive-merge machinery below (`sharedCounterMerge` / `additiveMergeCount` / `needsAdditiveMerge` + the `lastSyncedCount` ancestor-advance stamping) **no longer exists** — its code, tests, and cross-platform fixture (`sharedCounterMergeVectors.json`) were deleted in WC PR B (neutered) + D (removed). Counting-task conflicts now resolve by **union-of-events** on the `task_events` collection (see [§Task Events sync](#task-events-sync-windowed-completion--shipped) below): every offline increment is its own soft-deletable row, so per-row LWW + union loses nothing without a three-way merge. The `lastSyncedCount` column/field is kept **inert** on both platforms for decode compatibility with old synced rows. The three subsections that follow are **historical** — read them for the LWW-vs-additive reasoning only; the D1/D3 hardening (dead-letter surfacing, queue coalescing) is still live, but D2's `lastSyncedCount` advance is gone (pushes just mark the queue item completed).
+
+### Task Events sync (Windowed Completion — shipped)
+
+`task_events` (Dexie `taskEvents`, GRDB `task_events`, Firestore `users/{uid}/taskEvents`) is the collection that replaced additive merge. It joins the known-collections list on both platforms (`SYNC_COLLECTIONS` in `@oybc/shared`, enforced by the C4 sync-contract fixture) with matching owner-only `firestore.rules`. Conflict model: **per-row LWW + soft-delete tombstones, union by id** — exactly like `compoundChildren`. There is no cross-row merge; the only mutable bit worth racing is `isDeleted` (an undo racing a no-op), and LWW on it is acceptable. On pull, event-owning tasks' lifetime caches (`isCompleted` / `currentCount` / `completedAt`) are **recomputed from the converged event union** (batched once per task per pull cycle, no `version` bump), and sealed boards' frozen snapshots **re-derive locally** from the same union whenever an in-window event lands — so seal snapshots never LWW-race between devices. See [`WINDOWED_COMPLETION.md` §Sync](./WINDOWED_COMPLETION.md#sync) for the batched-recompute + pull-ordering details.
+
+### Additive merge via `lastSyncedCount` (three-way merge) — HISTORICAL / retired
+
+Plain LWW on `Task.currentCount` would lose increments: if device A pushes `count=6` and device B (offline, started from the same base) later pushes `count=7`, LWW picks one and silently drops the other device's log. Shared counters instead run a three-way merge keyed on `lastSyncedCount` — the counter's value as of the last successful push (the common ancestor both devices last agreed on):
+
+```
+needsAdditiveMerge = local.currentCount ≠ lastSyncedCount AND remote.currentCount ≠ lastSyncedCount
+mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)   // when both diverged from the ancestor
+```
+
+If only one side diverged from `lastSyncedCount`, that side's value is simply authoritative (no real conflict — the "conflict" is just one device catching up). The merge function *was* `sharedCounterMerge` (`sharedCounterMerge.ts`, Swift twin `SharedCounterMerge.swift`), fixture-tested against both platforms (Track C1, 21 vectors). **All three files, plus the `sharedCounterMergeVectors.json` fixture and their tests, were deleted in WC PR D** — the paragraph above documents how the retired mechanism worked, not current behavior.
+
+### D2 — reliable `lastSyncedCount` advancement (issue #294) — RETIRED
+
+D2 folded the queue-item completion and the `lastSyncedCount` advance into one transaction so the ancestor couldn't half-advance and silently degrade the next conflict to LWW. **This is gone** (Windowed Completion): with additive merge retired there is no ancestor to advance, so the push path just marks the queue item completed (`markSyncItemCompleted` / `markCompleted`). The `completePushedItem` / `completePushedItemLoud` / `countAdvanceForPush` plumbing was deleted in WC PR D. Kept here only so the issue-#294 history resolves.
+
+### D3 — per-entity PENDING queue coalescing (issue #296, shipped)
+
+Before D3, N edits to one task enqueued N full-snapshot sync-queue rows → N Firestore writes, widening the blast radius of any single-item failure. D3 added `coalesceSyncOperation` (`apps/web/src/db/operations/syncQueue.ts`, Swift twin `SyncQueueBuilder.coalesce`): when a PENDING row already exists for the same `(entityType, entityId)`, a new enqueue **replaces** its payload + operation type in place (keeping the original row's queue position) instead of appending a second row. IN_PROGRESS and FAILED rows are never coalesced into — only a second PENDING enqueue is eligible.
+
+Op-precedence table (rows = existing PENDING op, cols = incoming op):
+
+| existing ↓ / incoming → | CREATE | UPDATE | DELETE |
+| --- | --- | --- | --- |
+| **CREATE** | CREATE | CREATE | DROP* / DELETE |
+| **UPDATE** | CREATE | UPDATE | DELETE |
+| **DELETE** | CREATE (resurrection) | UPDATE (resurrection) | DELETE |
+
+\* DROP only when the existing row was never attempted (`lastAttemptAt` unset — proves the server never saw the entity, so a create-then-delete nets to nothing anywhere); otherwise the row becomes a DELETE tombstone (harmless to push even if the doc doesn't exist server-side, whereas dropping it risks orphaning a live remote doc). DELETE+CREATE/UPDATE "resurrection" case: an un-pushed tombstone is stale next to a newer, higher-version live snapshot — pushing the live snapshot under LWW is correct in one write, no ordering dependency.
+
+### D1 — dead-letter surfacing for exhausted retries (issue #292, shipped)
+
+Previously a queue item that exhausted `MAX_SYNC_RETRIES` (5) sat FAILED forever with only a `console.warn` — invisible to the user, and Firestore never learned of the change (slow, silent multi-device divergence). D1 made this observable and recoverable on both platforms:
+
+- Both platforms track an `exhaustedCount` (FAILED items past the retry cap) alongside the existing sync-status state.
+- The web `SyncStatusIndicator` and iOS's minimal sync row (`RisoSyncRow.swift` / `SyncSheet.swift`) show a plain-count "N changes couldn't sync" affordance with a **Retry** button when `exhaustedCount > 0` — no raw error text, keeping the #151 three-state-row minimalism.
+- Tapping Retry (`retryExhaustedSyncItems()` web, mirrored iOS) resets the exhausted rows' `retryCount` to 0 and re-promotes them to PENDING, then kicks an immediate sync.
+- **Network-regain auto-re-promote**: exhausted items also get exactly one free re-promote the moment connectivity returns (`online` event listener), without the user needing to tap Retry manually.
+
+### Interaction summary
+
+| Concern | Mechanism | Where |
+| --- | --- | --- |
+| Lost increments across concurrent offline edits | **Union-of-events** on `task_events` (per-row LWW + tombstones) — *replaced* the retired additive three-way merge | `taskEvents.ts` / `AppDatabase+TaskEvents.swift`; see [§Task Events sync](#task-events-sync-windowed-completion--shipped) |
+| Queue bloat from edit bursts | D3 — per-entity PENDING coalescing | `syncQueue.ts` `coalesceSyncOperation` / `SyncQueueBuilder.coalesce` |
+| Permanently-stuck items | D1 — exhausted-count UI + Retry + network-regain re-promote | `SyncStatusIndicator.tsx` / `RisoSyncRow.swift`, `retryExhaustedSyncItems` |
+
+---
+
+## Recurring Boards sync (Phase 6 — shipped)
+
+> **Status (2026-07-08):** all of Phase 6 (6.1 timeframe banners, 6.2 preset-pool templates, 6.3 Achievement) is shipped on both platforms — see CLAUDE.md §Recurring Boards. The "Phase 2 will add…" / "Phase 3 extends…" language below is retained verbatim because the sync design it describes is exactly what shipped (the `recurring_board_templates` table / `referencedBoardId` field), just no longer future tense in practice.
 
 Recurring Boards Phase 1 introduces **no new sync collections**. The 4 new boolean fields on `UserPreferences` (`recurringDailyEnabled`, `recurringWeeklyEnabled`, `recurringMonthlyEnabled`, `recurringYearlyEnabled`) ride the existing user-prefs sync — same LWW resolution, same conflict-resolution code path, same forward-compatible decoder pattern. Detection of pending recurring boards is computed at read time from existing `boards` data; no persistence required, no sync footprint.
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Timeframe, formatTimeframeLabel, type Board } from '@oybc/shared';
 import { isBoardExpired, getExpiryLabel } from '../utils/boardDisplayUtils';
 import { BoardStatusBadge } from './BoardStatusBadge';
+import { RecurringBadge } from './RecurringBadge';
 import styles from './BoardListItem.module.css';
 
 interface BoardListItemProps {
@@ -86,7 +87,10 @@ export function BoardListItem({ board, onClick, onDelete }: BoardListItemProps):
             </span>
           </div>
         </div>
-        <BoardStatusBadge status={board.status} />
+        <div className={styles.badges}>
+          {board.spawnedFromTemplateId != null && <RecurringBadge />}
+          <BoardStatusBadge status={board.status} />
+        </div>
       </button>
 
       {onDelete && (

@@ -9,18 +9,21 @@ import {
   type CompoundChild,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../db/database';
+import { fetchAllBoardTasks } from '../../db/operations';
 import { createTask } from '../../db/operations/tasks';
 import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
-import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
+import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import { FromBoardGrid } from './FromBoardGrid';
 import { FromBoardPicker } from './FromBoardPicker';
 import { NewTaskSheet } from './NewTaskSheet';
 import { RowContextMenu } from './RowContextMenu';
+import { mergeSuggestionPool } from './suggestionPool';
+import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import styles from './BoardWizardTasksStep.module.css';
 
@@ -183,13 +186,33 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.taskMap, pendingTasks]);
+  const browsableTasks = useBrowsableTasks(library.allTasks, library.childToParents);
   const effectiveAllTasks = useMemo<Task[]>(() => {
-    if (!pendingTasks || pendingTasks.size === 0) return library.allTasks;
+    // Browse the draft-filtered set (hides other drafts' wizard-orphans), but
+    // always merge THIS session's in-memory pending tasks so the just-created
+    // ones still appear.
+    if (!pendingTasks || pendingTasks.size === 0) return browsableTasks;
     const pendingArr = Array.from(pendingTasks.values()).map((p) => p.task);
     // Deduplicate: library tasks first, pending tasks fill any gaps.
-    const ids = new Set(library.allTasks.map((t) => t.id));
-    return [...library.allTasks, ...pendingArr.filter((t) => !ids.has(t.id))];
-  }, [library.allTasks, pendingTasks]);
+    const ids = new Set(browsableTasks.map((t) => t.id));
+    return [...browsableTasks, ...pendingArr.filter((t) => !ids.has(t.id))];
+  }, [browsableTasks, pendingTasks]);
+
+  // R1 counters refresh (review fix) — unfiltered (non-browsable-filtered)
+  // task pool + this session's pending tasks, used ONLY as the counter-link
+  // suggestion pool passed to `NewTaskSheet` → `CreateNewTaskForm`. Unlike
+  // `effectiveAllTasks` (built from `browsableTasks` for pickers/autocomplete),
+  // this uses `library.allTasks` so goal-less hub-born counters — which
+  // `computeBrowsableTasks` excludes — still surface a link suggestion in the
+  // wizard, AND so a same-session pending counter (created earlier in this
+  // wizard visit, not yet persisted) is matchable too — otherwise creating
+  // counting task A (pending) then a same-pair task B silently duplicates
+  // instead of linking. Mirrors iOS `BoardWizardTasksStepView.effectiveSuggestionPool`.
+  const effectiveSuggestionPool = useMemo<Task[]>(
+    () => mergeSuggestionPool(library.allTasks, pendingTasks),
+    [library.allTasks, pendingTasks],
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<TasksFilter>('all');
 
@@ -267,7 +290,7 @@ export function BoardWizardTasksStep({
   // Matches the composite wizard's library row hints so the two
   // surfaces agree at a glance. Board counts require a live query
   // since `useTaskLibrary` doesn't expose boardTasks.
-  const allBoardTasks = useLiveQuery(() => db.boardTasks.toArray(), []) ?? [];
+  const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []) ?? [];
 
   const taskBoardCounts = useMemo(() => {
     const buckets = new Map<string, Set<string>>();
@@ -536,6 +559,32 @@ export function BoardWizardTasksStep({
         </div>
       </div>
 
+      {/* Quick-add row — inline NORMAL task entry. Hidden in "From a board…"
+          mode since that flow has its own grid interaction. The full modal
+          (NewTaskSheet) remains for Counting/Compound/Achievement types.
+          Web twin of iOS RisoQuickAddRowView.
+          Library polling (owner decision 2026-07-21): `effectiveAllTasks`
+          is the SAME browsable+pending set the picker/autocomplete surfaces
+          below already use, so a typed title that matches an existing task
+          offers a reuse match instead of a duplicate. `onExistingTaskPicked`
+          reuses the exact `onTaskCreated` seam — both add the (new or
+          existing) task id to `selectedTaskIds` via the wizard's
+          `toggleTaskSelection`, and the dropdown already excludes selected
+          ids so this can never toggle one off. */}
+      {activeFilter !== 'from-board' && (
+        <WizardQuickAddRow
+          userId={userId}
+          currentTimeframe={currentTimeframe}
+          currentStartDate={currentStartDate}
+          currentEndDate={currentEndDate}
+          onTaskCreated={onTaskCreated}
+          onPendingCreated={onPendingCreated}
+          libraryTasks={effectiveAllTasks}
+          selectedIds={selectedTaskIds}
+          onExistingTaskPicked={onTaskCreated}
+        />
+      )}
+
       {/* From-a-board flow — picker (no source) or grid (source picked) */}
       {activeFilter === 'from-board' ? (
         pickedSourceBoardId === null ? (
@@ -703,6 +752,18 @@ export function BoardWizardTasksStep({
 
       {/* Footer — actions */}
       <div className={styles.footer}>
+        {/* Visible dead-Next reason — the tooltip alone is invisible on
+            touch, and a quietly greyed-out Next reads as "broken". */}
+        {!canAdvance && (
+          <span className={styles.footerMessage}>
+            {!isCountSatisfied
+              ? (() => {
+                  const n = tasksRequired - selectedCount;
+                  return `Pick ${n} more task${n === 1 ? '' : 's'} to continue (${tasksRequired}${isRecurring ? ' minimum' : ''} needed).`;
+                })()
+              : 'Mark one selected task as the center.'}
+          </span>
+        )}
         <button type="button" className={styles.backButton} onClick={onBack}>
           ‹ Back
         </button>
@@ -741,6 +802,7 @@ export function BoardWizardTasksStep({
         defaultStartDate={currentStartDate}
         defaultEndDate={currentEndDate}
         deferPersist={onPendingCreated !== undefined}
+        suggestionPool={effectiveSuggestionPool}
       />
 
       {rowContextMenu && (() => {
@@ -864,7 +926,18 @@ export function BoardWizardTasksStep({
             }
             const action = (derivingFromTask.action ?? '').trim();
             const unit = (derivingFromTask.unit ?? '').trim();
-            const title = `${action} ${parsed} ${unit}`;
+            const title = generateCounterTaskTitle(action, parsed, unit);
+            // R1 counters refresh — "Derive smaller version" must produce a
+            // LINKED task, not a standalone duplicate (the modal's own copy
+            // already promises "same counter, lower goal"). See
+            // `resolveDeriveLinkTarget` for the source-resolution rule.
+            // `effectiveTaskMap` (already loaded for this component's row
+            // rendering) resolves the root task synchronously when
+            // `derivingFromTask` is itself derived.
+            const linkTarget = resolveDeriveLinkTarget(
+              derivingFromTask,
+              effectiveTaskMap[derivingFromTask.sharedCounterId ?? derivingFromTask.id],
+            );
             try {
               const newTask = await createTask(userId, {
                 title,
@@ -872,6 +945,8 @@ export function BoardWizardTasksStep({
                 action,
                 unit,
                 maxCount: parsed,
+                sharedCounterId: linkTarget.sharedCounterId,
+                baseline: linkTarget.baseline,
               });
               onTaskCreated(newTask);
               setDerivingFromTask(null);

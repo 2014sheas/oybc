@@ -36,6 +36,14 @@ final class SourceBoardsViewModel {
     /// (`(completed, total)`), keyed by board id.
     var completionByBoardId: [String: (completed: Int, total: Int)] = [:]
 
+    /// TRUE mini-preview cells per eligible board (bugfix/board-preview-real-cells
+    /// perf follow-up), batch-built ONCE per `reload(userId:)` call via
+    /// `BoardPreviewCells.fetchWorkspaceData`/`buildMany` — NOT one fetch per
+    /// row. `FromBoardPickerView` reads this directly rather than
+    /// self-loading per row (which would re-run workspace-wide reads on
+    /// every scroll-triggered re-render of a `LazyVStack`).
+    var previewCellsByBoardId: [String: BoardPreviewCellsResult] = [:]
+
     /// Placements on the currently-loaded source board, row-major.
     /// Empty when no source is selected or the source has no placements.
     var placements: [SourceBoardPlacement] = []
@@ -62,6 +70,15 @@ final class SourceBoardsViewModel {
     @ObservationIgnored private var latestBoardsSeq: UInt64 = 0
     @ObservationIgnored private var latestPlacementsSeq: UInt64 = 0
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Loading — eligible boards
 
     /// Loads the source-picker list.
@@ -72,9 +89,10 @@ final class SourceBoardsViewModel {
         }
 
         do {
-            let result = try await AppDatabase.shared.read { db -> (
+            let result = try await database.read { db -> (
                 boards: [Board],
-                completion: [String: (Int, Int)]
+                completion: [String: (Int, Int)],
+                allPlacements: [BoardTask]
             ) in
                 // Re-run the eligibility filter inside the read so the
                 // boards + their placements come from one consistent
@@ -85,19 +103,19 @@ final class SourceBoardsViewModel {
                 // mismatched data.
                 let eligible = try AppDatabase.fetchEligibleSourceBoards(db, userId: userId)
                 if eligible.isEmpty {
-                    return (eligible, [:])
+                    return (eligible, [:], [])
                 }
 
                 let boardIds = Set(eligible.map { $0.id })
                 let allPlacements = try BoardTask
-                    .filter(boardIds.contains(Column("boardId")))
+                    .filter(boardIds.contains(Column("boardId")) && Column("isDeleted") == false)
                     .fetchAll(db)
                 if allPlacements.isEmpty {
                     var emptyCompl: [String: (Int, Int)] = [:]
                     for b in eligible {
                         emptyCompl[b.id] = (0, b.boardSize * b.boardSize)
                     }
-                    return (eligible, emptyCompl)
+                    return (eligible, emptyCompl, [])
                 }
 
                 let taskIds = Set(allPlacements.map { $0.taskId })
@@ -128,13 +146,30 @@ final class SourceBoardsViewModel {
                     completion[board.id] = (done, size * size)
                 }
 
-                return (eligible, completion)
+                return (eligible, completion, allPlacements)
+            }
+
+            // Batch-build TRUE preview cells for every eligible board — ONE
+            // workspace-scoped fetch reused across every board's `build(...)`
+            // call (bugfix/board-preview-real-cells perf follow-up), instead
+            // of `FromBoardPickerView` mounting a self-loading grid per row.
+            // Reuses `allPlacements` from the read above rather than a second
+            // `board_tasks` fetch.
+            let previewCells: [String: BoardPreviewCellsResult]
+            if result.boards.isEmpty {
+                previewCells = [:]
+            } else {
+                let workspace = BoardPreviewCells.fetchWorkspaceData(userId: userId, database: database)
+                previewCells = BoardPreviewCells.buildMany(
+                    boards: result.boards, boardTasks: result.allPlacements, workspace: workspace
+                )
             }
 
             await MainActor.run {
                 guard mySeq == latestBoardsSeq else { return }
                 self.eligibleBoards = result.boards
                 self.completionByBoardId = result.completion
+                self.previewCellsByBoardId = previewCells
                 self.loadError = nil
             }
         } catch {
@@ -143,6 +178,7 @@ final class SourceBoardsViewModel {
                 self.loadError = "Failed to load source boards: \(error.localizedDescription)"
                 self.eligibleBoards = []
                 self.completionByBoardId = [:]
+                self.previewCellsByBoardId = [:]
             }
         }
     }
@@ -172,12 +208,12 @@ final class SourceBoardsViewModel {
         }
 
         do {
-            let result = try await AppDatabase.shared.read { db -> (
+            let result = try await database.read { db -> (
                 placements: [SourceBoardPlacement],
                 compoundLeaves: [String: [String]]
             ) in
                 let placements = try BoardTask
-                    .filter(Column("boardId") == boardId)
+                    .filter(Column("boardId") == boardId && Column("isDeleted") == false)
                     .fetchAll(db)
                 if placements.isEmpty { return ([], [:]) }
 

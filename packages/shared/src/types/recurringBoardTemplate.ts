@@ -37,6 +37,34 @@ import { BoardSize } from "../constants";
  *   FREE / CUSTOM_FREE / NONE only. CHOSEN can be added later as an
  *   additive change (`centerTaskId?: string` field). The Zod schema
  *   enforces this.
+ *
+ * ## Task Pools + Recurring Boards Rework (P1) — generalized task source
+ *
+ * `seedTaskIds` is RETIRED: left verbatim on migrated records for
+ * decode-compat (the `lastSyncedCount` precedent) and never read after P1
+ * — no fallback. The record's task source generalizes to three additive,
+ * optional fields — `poolIds` / `manualTaskIds` / `removedTaskIds` — whose
+ * mix is resolved by `resolveMix` in `../algorithms/poolMix`:
+ *
+ *     mix = (union(pools' resolvable tasks) − removedTaskIds) + manualTaskIds
+ *
+ * Evaluation order is normative: removals subtract from the pool union
+ * FIRST, then the manual layer adds — so a task id present in BOTH
+ * `manualTaskIds` and `removedTaskIds` IS in the mix (manual wins;
+ * removals only ever suppress pool-sourced supply). See
+ * docs/POOLS_RECURRING.md §Changed: the spawn record for the full
+ * removals semantics (supply-based untoggle clearing, stale-inert
+ * entries) and the worked example that is the P1 unit-test vector set.
+ *
+ * **"Legacy shape"** (`isLegacyShapedRecord` in `../algorithms/poolMix`):
+ * at most one pool, no manual additions, no removals — i.e. either a
+ * genuinely un-migrated record (`poolIds`/`manualTaskIds`/`removedTaskIds`
+ * all absent, `seedTaskIds` present) or a migration/legacy-create-minted
+ * record (`poolIds.length === 1`, `manualTaskIds: []`, `removedTaskIds:
+ * []`). This is the ONLY shape the legacy template editor's write-through
+ * may mutate the linked Pool's `taskIds` for — a richer shape falls back
+ * to writing `manualTaskIds` and clearing `poolIds`/`removedTaskIds`
+ * instead (the legacy editor never writes a Pool it didn't mint).
  */
 export interface RecurringBoardTemplate {
   // Identity
@@ -61,6 +89,26 @@ export interface RecurringBoardTemplate {
    * and the selector added friction without capability.
    */
   seedTaskIds: string[];
+
+  /**
+   * P1 — pools pulled into this record's mix (may be empty; absent on a
+   * genuinely un-migrated record — see the class docstring's "legacy
+   * shape"). Order is preserved and is significant: `resolveMix`'s
+   * `suppliedByPool`/union order is first-seen-pool order.
+   */
+  poolIds?: string[];
+  /**
+   * P1 — hand-picked additions layered on top of the pool union. Manual
+   * always wins over a removal (see `resolveMix`).
+   */
+  manualTaskIds?: string[];
+  /**
+   * P1 — flat per-record removals of pool-sourced tasks (no per-pool
+   * attribution — a removal suppresses that task regardless of which
+   * pool(s) supply it). See `clearRemovalsForUntoggle` in
+   * `../algorithms/poolMix` for the supply-based untoggle-clearing rule.
+   */
+  removedTaskIds?: string[];
 
   // Spawn state
   lastSpawnedWindowKey: string | null; // local ISO startDate of last spawn, or null
@@ -91,6 +139,14 @@ export interface CreateRecurringBoardTemplateInput {
   isRandomized: boolean;
   seedTaskIds: string[];
   isActive: boolean;
+  // P1 — additive, optional. The legacy create path (still the only path
+  // until P4's wizard ships) sets these itself (`poolIds: [mintedPoolId]`,
+  // `manualTaskIds: []`, `removedTaskIds: []`) rather than accepting them
+  // from the caller; kept here so a future P4 caller can pass a
+  // generalized create shape without a separate input type.
+  poolIds?: string[];
+  manualTaskIds?: string[];
+  removedTaskIds?: string[];
 }
 
 /**
@@ -106,4 +162,9 @@ export interface UpdateRecurringBoardTemplateInput {
   isRandomized?: boolean;
   seedTaskIds?: string[];
   isActive?: boolean;
+  // P1 — additive, optional. See `RecurringBoardTemplate`'s docstring for
+  // the mix formula and the "legacy shape" write-through rule.
+  poolIds?: string[];
+  manualTaskIds?: string[];
+  removedTaskIds?: string[];
 }

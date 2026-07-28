@@ -1,5 +1,5 @@
 import type { Transaction } from 'dexie';
-import { db } from '../database';
+import { db } from '../internal';
 import type {
   Task,
   TaskStep,
@@ -288,7 +288,20 @@ export async function runMigrationV4(_tx: Transaction): Promise<void> {
   for (const board of allBoards) {
     if (board.isDeleted) continue;
     const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === board.id);
-    const update = computeBoardStatsUpdate(board, boardTasksOnBoard, childrenByCompound, taskById);
+    // Lifetime derivation (explicit `undefined` window context). Deliberate: this
+    // v4 schema-upgrade backfill runs at a version that predates the task_events
+    // table, so there are no windowed events to resolve against — the migration
+    // recomputes from the lifetime `Task.isCompleted` caches, exactly the state
+    // in effect at v4. (No cross-board achievement tasks exist pre-6.3 either, so
+    // `[]` for allBoards preserves the original defaulted behavior.)
+    const update = computeBoardStatsUpdate(
+      board,
+      boardTasksOnBoard,
+      childrenByCompound,
+      taskById,
+      [],
+      undefined,
+    );
     const newVersion = (board.version ?? 0) + 1;
     await db.boards.update(board.id, {
       completedTasks: update.completedTasks,

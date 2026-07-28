@@ -1,4 +1,4 @@
-import { db } from '../database';
+import { db } from '../internal';
 import type {
   DefaultPool,
   CreateDefaultPoolInput,

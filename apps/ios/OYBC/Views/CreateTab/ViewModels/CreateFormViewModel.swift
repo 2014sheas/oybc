@@ -114,6 +114,23 @@ final class CreateFormViewModel {
     /// this task. Only relevant when `taskType == .counting`.
     var countingDeriveFromTask: OYBC.Task? = nil
 
+    // Counter-link (R1 counters refresh — auto-link default ON).
+    // Non-nil when the typed (verb, noun) pair matched an existing counter
+    // AND the user did not tap "Don't link" to opt out. Written from
+    // `RisoSpecialTaskPanel` (and `RisoCompoundFieldsView`'s inline counting
+    // subs) before calling `handleCreateAndAddToPool` — there is no
+    // confirm-first suggestion banner anymore; the `RisoCounterLinkHintView`
+    // card just explains what auto-linking will do and offers the opt-out.
+    //
+    // When set, the new task is linked to the given counter source:
+    //   sharedCounterId = countingSharedCounterId
+    //   baseline        = countingBaseline
+    // Baseline is always "start fresh" (the manual baseline picker /
+    // "Inherit total" mode was retired in R1): baseline = source.currentCount
+    // at link time → displayed = source.currentCount − baseline (starts at 0).
+    var countingSharedCounterId: String? = nil
+    var countingBaseline: Int? = nil
+
     // UI state
     var isSubmitting: Bool = false
     var errorMessage: String?
@@ -150,6 +167,15 @@ final class CreateFormViewModel {
     /// Required spawn count for template mode. Stored as string so the
     /// input field can be empty (no auto-zero); parsed at submit time.
     var achievementRequiredCountStr: String = ""
+
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
 
     // MARK: - Actions
 
@@ -226,23 +252,31 @@ final class CreateFormViewModel {
             break
 
         case .counting:
+            // R1 counters refresh — field names are Verb/Goal/Counting
+            // everywhere (RisoSpecialTaskPanel's labels); these error
+            // strings are the web parity contract for the same relabel
+            // (apps/web/src/pages/createPage/useCreateFormState.ts).
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
             let m = countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !a.isEmpty else {
-                errorMessage = "Action is required for Counting tasks"
+                errorMessage = "Verb is required"
                 return
             }
             guard a.count <= CreateFormLimits.action else {
-                errorMessage = "Action must be \(CreateFormLimits.action) characters or less"
+                errorMessage = "Verb must be \(CreateFormLimits.action) characters or less"
                 return
             }
             guard !u.isEmpty else {
-                errorMessage = "Unit is required for Counting tasks"
+                errorMessage = "Counting is required"
                 return
             }
             guard u.count <= CreateFormLimits.unit else {
-                errorMessage = "Unit must be \(CreateFormLimits.unit) characters or less"
+                errorMessage = "Counting must be \(CreateFormLimits.unit) characters or less"
+                return
+            }
+            guard !m.isEmpty else {
+                errorMessage = "Goal is required"
                 return
             }
             guard let v = Int(m), v > 0 else {
@@ -282,11 +316,13 @@ final class CreateFormViewModel {
         let taskId = AppDatabase.generateUUID()
 
         let resolvedTitle: String
-        if resolvedType == .counting && trimmedTitle.isEmpty {
+        if resolvedType == .counting {
             let a = countingAction.trimmingCharacters(in: .whitespacesAndNewlines)
             let u = countingUnit.trimmingCharacters(in: .whitespacesAndNewlines)
             let m = Int(countingMaxCount.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-            resolvedTitle = "\(a) \(m) \(u)"
+            resolvedTitle = TaskTitle.generateCounterTaskTitle(
+                action: a, maxCount: m, unit: u, providedTitle: trimmedTitle
+            )
         } else {
             resolvedTitle = trimmedTitle
         }
@@ -352,46 +388,14 @@ final class CreateFormViewModel {
             guard let self else { return }
             do {
                 if progressChildLinks.isEmpty {
-                    try AppDatabase.shared.saveTask(newTask)
-                    try AppDatabase.shared.write { db in
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "tasks",
-                            entityId: newTask.id,
-                            operationType: .create,
-                            payload: newTask,
-                            now: now
-                        ).save(db)
-                    }
+                    try self.database.createTaskAndEnqueue(newTask, now: now)
                 } else {
-                    try AppDatabase.shared.write { db in
-                        try newTask.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "tasks",
-                            entityId: newTask.id,
-                            operationType: .create,
-                            payload: newTask,
-                            now: now
-                        ).save(db)
-
-                        for (childTask, link) in zip(progressChildTasks, progressChildLinks) {
-                            try childTask.save(db)
-                            try SyncQueueBuilder.makeItem(
-                                entityType: "tasks",
-                                entityId: childTask.id,
-                                operationType: .create,
-                                payload: childTask,
-                                now: now
-                            ).save(db)
-                            try link.save(db)
-                            try SyncQueueBuilder.makeItem(
-                                entityType: "compoundChildren",
-                                entityId: link.id,
-                                operationType: .create,
-                                payload: link,
-                                now: now
-                            ).save(db)
-                        }
-                    }
+                    try self.database.createTaskWithPairedChildrenAndEnqueue(
+                        task: newTask,
+                        childTasks: progressChildTasks,
+                        childLinks: progressChildLinks,
+                        now: now
+                    )
                 }
                 DispatchQueue.main.async {
                     self.isSubmitting = false
@@ -424,6 +428,8 @@ final class CreateFormViewModel {
         countingUnit = ""
         countingMaxCount = ""
         countingDeriveFromTask = nil
+        countingSharedCounterId = nil
+        countingBaseline = nil
         achievementMode = .specificBoard
         achievementReferenceId = nil
         achievementTrigger = .greenlog
@@ -472,14 +478,26 @@ final class CreateFormViewModel {
         case newNormal(title: String)
         /// Inline Counting task to be created on submit.
         /// title is auto-generated as "\(action) \(goal) \(unit)" at save time.
-        case newCounting(action: String, goal: Int, unit: String)
+        ///
+        /// - Parameters:
+        ///   - sharedCounterId: R1 counters refresh — auto-link. Non-nil
+        ///     when the sub's (verb, noun) pair matched an existing counter
+        ///     and the user hasn't opted out via the "Don't link" hint, so
+        ///     the inline-created child is born already linked (mirrors
+        ///     `Task.sharedCounterId`). Must be paired with `baseline`.
+        ///   - baseline: The auto-link baseline — always the matched
+        ///     counter's lifetime count at add time ("start fresh": the new
+        ///     sub's own window begins at 0). Must be set when
+        ///     `sharedCounterId` is set.
+        case newCounting(action: String, goal: Int, unit: String, sharedCounterId: String?, baseline: Int?)
 
         /// Display title for the sub chip in the UI.
         var displayTitle: String {
             switch self {
             case .existing(_, let t, _): return t
             case .newNormal(let t): return t
-            case .newCounting(let a, let g, let u): return "\(a) \(g) \(u)"
+            case .newCounting(let a, let g, let u, _, _):
+                return TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u)
             }
         }
 
@@ -635,9 +653,9 @@ final class CreateFormViewModel {
                 childTasks.append(newTask)
                 childTaskId = newId
 
-            case .newCounting(let action, let goal, let unit):
+            case .newCounting(let action, let goal, let unit, let sharedCounterId, let baseline):
                 let newId = AppDatabase.generateUUID()
-                let autoTitle = "\(action.trimmingCharacters(in: .whitespacesAndNewlines)) \(goal) \(unit.trimmingCharacters(in: .whitespacesAndNewlines))"
+                let autoTitle = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit)
                 let newTask = OYBC.Task(
                     id: newId,
                     userId: userId,
@@ -652,7 +670,11 @@ final class CreateFormViewModel {
                     createdAt: now,
                     updatedAt: now,
                     version: 1,
-                    isDeleted: false
+                    isDeleted: false,
+                    // R1 counters refresh — auto-link (see
+                    // `CompoundSubItem.newCounting` doc).
+                    sharedCounterId: sharedCounterId,
+                    baseline: baseline
                 )
                 childTasks.append(newTask)
                 childTaskId = newId
@@ -703,8 +725,6 @@ final class CreateFormViewModel {
         }
 
         // ── Immediate-persist path ───────────────────────────────────────────
-        // Build a set of new child task IDs for efficient membership check.
-        let newChildIds = Set(childTasks.map { $0.id })
         let capturedChildTasks = childTasks
         let capturedChildLinks = childLinks
         let capturedParent = parentTask
@@ -712,44 +732,16 @@ final class CreateFormViewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
-                try AppDatabase.shared.write { db in
-                    // 1. Parent compound task + sync entry.
-                    try capturedParent.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: capturedParent.id,
-                        operationType: .create,
-                        payload: capturedParent,
-                        now: now
-                    ).save(db)
-
-                    // 2. For each link: if the child is a NEW inline task,
-                    //    insert the child Task row + its sync entry first.
-                    //    Then insert the CompoundChild link + its sync entry.
-                    //    Existing-sub links skip the Task insert — the Task
-                    //    already lives in GRDB.
-                    for link in capturedChildLinks {
-                        if newChildIds.contains(link.childTaskId),
-                           let childTask = capturedChildTasks.first(where: { $0.id == link.childTaskId }) {
-                            try childTask.save(db)
-                            try SyncQueueBuilder.makeItem(
-                                entityType: "tasks",
-                                entityId: childTask.id,
-                                operationType: .create,
-                                payload: childTask,
-                                now: now
-                            ).save(db)
-                        }
-                        try link.save(db)
-                        try SyncQueueBuilder.makeItem(
-                            entityType: "compoundChildren",
-                            entityId: link.id,
-                            operationType: .create,
-                            payload: link,
-                            now: now
-                        ).save(db)
-                    }
-                }
+                // Parent compound + its children/links are written +
+                // sync-enqueued atomically by the data layer. A child Task row
+                // is inserted only for NEW inline children; existing-library
+                // children are referenced by id (already in GRDB).
+                try self.database.createCompoundAndEnqueue(
+                    parent: capturedParent,
+                    newChildTasks: capturedChildTasks,
+                    childLinks: capturedChildLinks,
+                    now: now
+                )
 
                 DispatchQueue.main.async {
                     self.isSubmitting = false
@@ -802,7 +794,9 @@ final class CreateFormViewModel {
                 type: .counting, action: a, unit: u, maxCount: m,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false,
-                timeframe: timeframe, startDate: startDate, endDate: endDate
+                timeframe: timeframe, startDate: startDate, endDate: endDate,
+                sharedCounterId: countingSharedCounterId,
+                baseline: countingBaseline
             )
         case .compound:
             // Unreachable — compound CreateTaskType returns nil from

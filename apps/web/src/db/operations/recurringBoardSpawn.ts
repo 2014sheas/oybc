@@ -1,19 +1,24 @@
-import { db } from '../database';
+import { db } from '../internal';
 import {
   BoardStatus,
+  CenterSquareType,
   SyncOperationType,
-  SyncStatus,
   buildSpawnPlacement,
   validateSpawnPool,
+  computeBoardStatsUpdate,
+  resolveMix,
   type Board,
   type BoardTask,
+  type CompoundChild,
+  type Pool,
   type RecurringBoardTemplate,
   type Task,
+  type TaskEvent,
   type PendingTemplateSpawn,
   type SpawnPoolFailureReason,
-  type SyncQueueItem,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 
 /**
  * Recurring-board spawn (Phase 6.2).
@@ -71,21 +76,44 @@ export async function spawnTemplateBoard(
       db.boards,
       db.boardTasks,
       db.tasks,
+      db.pools,
+      db.compoundChildren,
+      db.taskEvents,
       db.recurringBoardTemplates,
       db.syncQueue,
     ],
     async (): Promise<SpawnResult> => {
-      // Resolve seedTaskIds → Task[] in seedTaskIds order. Drops any
-      // ids that don't resolve; the validator catches the resulting
-      // pool-too-small as `has_deleted_tasks` (caller responsibility:
-      // the create/update form rejects deleted refs at save time).
-      const tasks = await db.tasks
-        .where('id')
-        .anyOf(template.seedTaskIds)
-        .toArray();
-      const tasksById = new Map<string, Task>(tasks.map((t) => [t.id, t]));
-      const orderedPool: Task[] = template.seedTaskIds
-        .map((id) => tasksById.get(id))
+      // P1 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+      // §Changed: the spawn record) — the task source is the resolved
+      // pool-mix, not `template.seedTaskIds` directly. Post-migration EVERY
+      // live template has `poolIds` set, so `seedTaskIds` is never read
+      // here (left verbatim on the record for decode-compat only — see
+      // `RecurringBoardTemplate`'s docstring's "seedTaskIds end state").
+      //
+      // Single full-table reads (tasks, pools) rather than a targeted
+      // `anyOf(seedTaskIds)` lookup: `resolveMix` needs a `tasksById` map
+      // to filter each pool's OWN resolvable supply (deleted tasks skipped
+      // — derived detachment), and the same `allTasks`/`tasksById` are
+      // reused below for the spawn-time derivation pass, so this is not an
+      // added read.
+      const allTasks = await db.tasks.toArray();
+      const tasksById: Record<string, Task> = {};
+      for (const t of allTasks) tasksById[t.id] = t;
+
+      const poolIds = template.poolIds ?? [];
+      const pools = poolIds.length > 0 ? await db.pools.where('id').anyOf(poolIds).toArray() : [];
+      const poolsById: Record<string, Pool> = {};
+      for (const p of pools) poolsById[p.id] = p;
+
+      const mix = resolveMix(template, poolsById, tasksById);
+      // Resolve mix task ids → Task[] in mix order. Drops any ids that
+      // don't resolve at all (e.g. a hard-gone manual reference — the
+      // manual layer isn't deleted-filtered by resolveMix itself); the
+      // validator below catches a resolved-but-deleted task (possible
+      // for a manual-sourced id, since resolveMix only filters deletion
+      // for pool-sourced supply) as `has_deleted_tasks`.
+      const orderedPool: Task[] = mix.taskIds
+        .map((id) => tasksById[id])
         .filter((t): t is Task => t !== undefined);
 
       if (orderedPool.length === 0) {
@@ -159,12 +187,51 @@ export async function spawnTemplateBoard(
           taskId: t.id,
           row,
           col,
-          isCenter: cell === centerCellIndex,
+          // isCenter marks a CHOSEN centre task only. Recurring templates
+          // never use CHOSEN (free/customFree = null centre slot, none = an
+          // ordinary task), so this is effectively always false — but gating
+          // on CHOSEN keeps it correct + prevents a stale isCenter from
+          // syncing to iOS as a gold "FREE" cell over a real task.
+          isCenter:
+            cell === centerCellIndex &&
+            template.centerSquareType === CenterSquareType.CHOSEN,
           createdAt: now,
           updatedAt: now,
           version: 1,
+          isDeleted: false,
         });
       }
+
+      // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this closes —
+      // respawn-bleed row): run the derivation pass at spawn so stored stats are
+      // derivation output, not a hand-initialized 0. A fresh window has no events,
+      // so event-owning squares resolve incomplete (no respawn bleed); a
+      // FREE/CUSTOM_FREE center still auto-fills. The invariant "stored stats are
+      // always derivation output" now holds from the first row written.
+      const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
+      const childrenByCompound: Record<string, CompoundChild[]> = {};
+      for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+      // Reuse the `tasksById` map read at the top of this closure for
+      // mix resolution — no writes to `tasks` happen in between, so it's
+      // still an accurate snapshot for the derivation pass.
+      const taskById: Record<string, Task> = tasksById;
+      const eventsByTaskId: Record<string, TaskEvent[]> = {};
+      for (const e of await db.taskEvents.toArray()) {
+        if (e.isDeleted) continue;
+        (eventsByTaskId[e.taskId] ??= []).push(e);
+      }
+      const allBoards = await db.boards.toArray();
+      const stats = computeBoardStatsUpdate(
+        board,
+        boardTasks,
+        childrenByCompound,
+        taskById,
+        allBoards,
+        { eventsByTaskId },
+      );
+      board.completedTasks = stats.completedTasks;
+      board.linesCompleted = stats.linesCompleted;
+      board.completedLineIds = stats.completedLineIds;
 
       const updatedTemplate: RecurringBoardTemplate = {
         ...template,
@@ -173,53 +240,26 @@ export async function spawnTemplateBoard(
         version: (template.version ?? 0) + 1,
       };
 
-      const queueItems: SyncQueueItem[] = [
-        buildSyncItem('boards', board.id, SyncOperationType.CREATE, board),
-        ...boardTasks.map((bt) =>
-          buildSyncItem('boardTasks', bt.id, SyncOperationType.CREATE, bt),
-        ),
-        buildSyncItem(
-          'recurringBoardTemplates',
-          updatedTemplate.id,
-          SyncOperationType.UPDATE,
-          updatedTemplate,
-        ),
-      ];
-
       await db.boards.add(board);
       if (boardTasks.length > 0) await db.boardTasks.bulkAdd(boardTasks);
       await db.recurringBoardTemplates.put(updatedTemplate);
-      await db.syncQueue.bulkAdd(queueItems);
+
+      // Enqueue through the D3 choke point (per-entity coalescing). The
+      // board + boardTasks are freshly-minted UUIDs so their lookups are
+      // no-op appends; the template UPDATE coalesces with any pending
+      // template edit.
+      await addToSyncQueue('boards', board.id, SyncOperationType.CREATE, board);
+      for (const bt of boardTasks) {
+        await addToSyncQueue('boardTasks', bt.id, SyncOperationType.CREATE, bt);
+      }
+      await addToSyncQueue(
+        'recurringBoardTemplates',
+        updatedTemplate.id,
+        SyncOperationType.UPDATE,
+        updatedTemplate,
+      );
 
       return { ok: true, boardId, templateId: template.id, windowStart };
     },
   );
 }
-
-function buildSyncItem(
-  entityType: string,
-  entityId: string,
-  operationType: SyncOperationType,
-  payload: unknown,
-): SyncQueueItem {
-  return {
-    id: generateUUID(),
-    entityType,
-    entityId,
-    operationType,
-    payload: JSON.stringify(payload),
-    status: SyncStatus.PENDING,
-    retryCount: 0,
-    createdAt: currentTimestamp(),
-    priority: 0,
-  };
-}
-
-// Note: Dexie `bulkAdd` with the manually-shaped queue items above
-// bypasses `addToSyncQueue`'s playground-user short-circuit. There is
-// no runtime assertion here that `template.userId !== 'playground-user-1'`
-// — this is a documented assumption, NOT an enforced invariant. The
-// spawn path is only invoked by signed-in users from the real Boards
-// tab, so the assumption holds today. If a future refactor extends the
-// playground to host the recurring-template surface, replicate the
-// guard or convert this comment into an explicit dev-only check.

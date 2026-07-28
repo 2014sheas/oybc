@@ -14,6 +14,15 @@ import SnapshotTesting
 /// not self-load from `AppDatabase.shared`. All fixtures are seeded via
 /// `SnapshotFixtures` builders.
 ///
+/// Exception (bugfix/board-preview-real-cells): `FromBoardPickerView`'s row
+/// thumbnail reads `vm.previewCellsByBoardId[board.id]` — batch-built by
+/// `SourceBoardsViewModel.reload(userId:)`, never a per-row DB self-load (the
+/// perf follow-up that replaced the original per-row `RisoBoardPreviewGrid`).
+/// The picker fixtures below only stub `vm.eligibleBoards`/
+/// `vm.completionByBoardId` in-memory and never call `reload`, so
+/// `previewCellsByBoardId` stays empty and the thumbnail deterministically
+/// falls back to its all-empty placeholder — still fully DB-free.
+///
 /// Light + dark for every variant. `recordMode: .missing` auto-records
 /// baselines on first run and passes green on subsequent runs.
 final class RisoWizardLibrarySnapshotTests: XCTestCase {

@@ -132,6 +132,34 @@ export interface Task {
    */
   createdInWizard?: boolean;
 
+  /**
+   * P5 — Hub-born counters. `true` marks this COUNTING task as a counter in
+   * its own right: it appears in the Counters Hub even with zero linked
+   * tasks, and — when goal-less (`maxCount` absent) — is excluded from
+   * library-browse surfaces (it lives in the hub; board presence goes
+   * through linked member tasks). Set by the hub "+ New counter" create and
+   * promote-at-dedupe paths only; excluded from `UpdateTaskInput` (the
+   * `lastSpawnedWindowKey` precedent). Optional/absent on all pre-P5 rows;
+   * forward-compatible decode (`Board.isCore` precedent).
+   * Canonical design: docs/SHARED_COUNTERS.md §P5.
+   */
+  isCounter?: boolean;
+
+  /**
+   * Counters UX refresh (R2). The last amount the user logged against this
+   * counter — becomes the pre-selected "default" amount chip on the Hub's
+   * "+ Log" pill and Counter Detail's amount-chip row (alongside the fixed
+   * 1 / 25 / # options). Only meaningful on a source counting task (a plain
+   * or hub-born counter, i.e. `sharedCounterId == null`); derived (linked)
+   * tasks never set it — logging always happens through the source.
+   *
+   * Positive integer when present; absent means "no log yet" and callers
+   * fall back to `1`. Synced per-row LWW like every other Task field.
+   * Canonical design: docs/SHARED_COUNTERS.md §Counters UX refresh →
+   * Amount logging.
+   */
+  defaultLogAmount?: number;
+
   // Phase 6.Y — Timeboxed Tasks. All three fields are optional; when
   // ALL are absent the task is "indefinite" (never expires, always
   // shows in the Tasks tab). When `endDate` is set, the Tasks tab
@@ -177,24 +205,16 @@ export interface Task {
   baseline?: number | null;
 
   /**
-   * Phase 4 — Shared Counter Sync. The `currentCount` value that was last
-   * confirmed pushed to (or pulled from) Firestore for this Task. Used as the
-   * common-ancestor baseline for additive-merge conflict resolution:
+   * RETIRED (Windowed Completion). Phase 4's shared-counter additive-merge
+   * common-ancestor baseline. The additive-merge conflict resolver it fed was
+   * retired — counting-task conflicts now resolve by union-of-events, not by
+   * merging `currentCount` (docs/WINDOWED_COMPLETION.md §Shared counters
+   * interaction). Nothing writes or reads this field anymore (WC PR B stopped
+   * stamping it; WC PR D deleted the merge machinery).
    *
-   *   mergedCount = remote.currentCount + (local.currentCount - lastSyncedCount)
-   *
-   * Set after every successful push of this counting Task and after every
-   * remote-wins pull. Not bumped on local increments — only on confirmed
-   * Firestore round-trips.
-   *
-   * When null/undefined (first sync, or Task pre-dates Phase 4 migration):
-   * the conflict resolver falls back to plain LWW — no common ancestor is
-   * known so additive merge is not safe.
-   *
-   * Only meaningful on `type === COUNTING` tasks that are shared-counter
-   * sources (i.e. at least one other Task has `sharedCounterId === this.id`).
-   * Stored on ALL counting tasks for forward-compatibility (if the source
-   * designation changes, the field is already present).
+   * The field is kept in the type + Zod schema + persisted columns for decode
+   * compatibility — old synced rows and pre-WC clients may still carry it, so
+   * dropping it would break decode. It is inert residue; do not re-wire it.
    */
   lastSyncedCount?: number | null;
 }
@@ -291,6 +311,12 @@ export interface CreateTaskInput {
    * must be absent when `sharedCounterId` is absent. See `Task.baseline`.
    */
   baseline?: number | null;
+
+  /**
+   * P5 — Hub-born counters. See `Task.isCounter` for the full invariant
+   * documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
+   */
+  isCounter?: boolean;
 }
 
 /**
@@ -365,6 +391,22 @@ export interface AutoCreateCompoundChildTask {
   action?: string;
   unit?: string;
   maxCount?: number;
+  /**
+   * R1 counters refresh — auto-link (docs/SHARED_COUNTERS.md, counters UX
+   * refresh spec). When the counting child's (action, unit) pair matches an
+   * existing counter and the user hasn't opted out via the "Don't link"
+   * hint, the caller sets this to the matched counter's source Task id so
+   * the inline-created child is born already linked (same semantics as
+   * `Task.sharedCounterId`). Must be paired with `baseline`.
+   */
+  sharedCounterId?: string | null;
+  /**
+   * The auto-link baseline — always the source counter's lifetime count at
+   * creation time ("start fresh": the new task's own window begins at 0
+   * regardless of the source's history). See `Task.baseline`. Must be
+   * provided when `sharedCounterId` is set.
+   */
+  baseline?: number | null;
 }
 
 /**

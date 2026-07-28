@@ -120,6 +120,18 @@ enum SnapshotFixtures {
         )
     }
 
+    /// Build a `BoardPreviewCellsResult` fixture for `RisoBoardCard`/`RisoMiniGrid`
+    /// snapshots (bugfix/board-preview-real-cells) — `RisoBoardCard.previewCells`
+    /// is a required prop (no self-loading fallback), so every fixture that
+    /// composes a `RisoBoardCard` needs an explicit value to stay DB-free.
+    /// Marks the first `completed` of `size*size` cells done (row-major); not
+    /// meant to exercise `BoardPreviewCells.build`'s real positional/derivation
+    /// logic (see `BoardPreviewCellsTests` for that) — purely a pixel fixture.
+    static func makePreviewCells(completed: Int, size: Int = 5) -> BoardPreviewCellsResult {
+        let cells: [BoardPreviewCell] = (0..<(size * size)).map { $0 < completed ? .task(completed: true) : .task(completed: false) }
+        return BoardPreviewCellsResult(size: size, cells: cells)
+    }
+
     static func makeBoardTask(
         id: String,
         boardId: String,

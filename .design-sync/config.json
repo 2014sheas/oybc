@@ -6,7 +6,7 @@
   "globalName": "OYBCRiso",
   "srcDir": "src/components/riso",
   "tsconfig": "tsconfig.json",
-  "cssEntry": "src/styles/riso.css",
+  "cssEntry": "../../packages/riso-tokens/riso.css",
   "extraFonts": [
     "../../.design-sync/fonts/riso-webfonts.css"
   ],

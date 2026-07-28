@@ -38,7 +38,9 @@ final class RisoDeleteConfirmSnapshotTests: XCTestCase {
             affectedBoardIds: ["b-active", "b-done", "b-exp"],
             affectedBoards: boards(),
             childLinkCount: 2,
-            parentLinkCount: 0
+            parentLinkCount: 0,
+            counterMemberCount: 0,
+            counterMembers: []
         )
         return TaskDeleteConfirmView(task: task, impact: impact, onConfirm: {}, onCancel: {})
     }
@@ -50,7 +52,9 @@ final class RisoDeleteConfirmSnapshotTests: XCTestCase {
             affectedBoardIds: [],
             affectedBoards: [],
             childLinkCount: 0,
-            parentLinkCount: 3
+            parentLinkCount: 3,
+            counterMemberCount: 0,
+            counterMembers: []
         )
         return TaskDeleteConfirmView(task: task, impact: impact, onConfirm: {}, onCancel: {})
     }
@@ -62,7 +66,9 @@ final class RisoDeleteConfirmSnapshotTests: XCTestCase {
             affectedBoardIds: [],
             affectedBoards: [],
             childLinkCount: 0,
-            parentLinkCount: 0
+            parentLinkCount: 0,
+            counterMemberCount: 0,
+            counterMembers: []
         )
         return TaskDeleteConfirmView(task: task, impact: impact, onConfirm: {}, onCancel: {})
     }

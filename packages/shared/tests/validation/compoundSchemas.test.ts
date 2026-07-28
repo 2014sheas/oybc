@@ -4,6 +4,7 @@ import {
   CompoundChildSchema,
   CreateCompoundChildInputSchema,
   CreateCompoundTaskInputSchema,
+  AutoCreateCompoundChildTaskSchema,
 } from '../../src/validation/schemas';
 import { TaskType, OperatorType } from '../../src/constants/enums';
 
@@ -247,6 +248,24 @@ describe('BoardTaskSchema — post-simplification', () => {
 
   it('rejects a board task with version=0', () => {
     const result = BoardTaskSchema.safeParse(validBoardTask({ version: 0 }));
+    expect(result.success).toBe(false);
+  });
+
+  // Board-integrity PR-2 (Part 3) — sane upper bound on row/col. Max grid is
+  // 5×5 (indexes 0-4); 24 is generous headroom since Zod can't cross-validate
+  // against a specific Board's boardSize (that's the write-path guards' job).
+  it('accepts a board task at the max allowed row/col (24)', () => {
+    const result = BoardTaskSchema.safeParse(validBoardTask({ row: 24, col: 24 }));
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a board task with row exceeding the sane upper bound (25)', () => {
+    const result = BoardTaskSchema.safeParse(validBoardTask({ row: 25 }));
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a board task with col exceeding the sane upper bound (25)', () => {
+    const result = BoardTaskSchema.safeParse(validBoardTask({ col: 25 }));
     expect(result.success).toBe(false);
   });
 });
@@ -500,6 +519,70 @@ describe('CreateCompoundTaskInputSchema', () => {
     if (!result.success) {
       const messages = result.error.errors.map((e) => e.message);
       expect(messages.some((m) => m.includes('action, unit, and maxCount'))).toBe(true);
+    }
+  });
+});
+
+// ── AutoCreateCompoundChildTaskSchema — sharedCounterId/baseline co-presence
+//    (R1 counters refresh — compound-builder auto-link) ────────────────────────
+
+/** Minimal valid counting autoCreate input. Spread overrides per test. */
+function validCountingAutoCreate(overrides: Record<string, unknown> = {}) {
+  return {
+    type: TaskType.COUNTING,
+    title: 'Do 100 push-ups',
+    action: 'Do',
+    unit: 'push-ups',
+    maxCount: 100,
+    ...overrides,
+  };
+}
+
+describe('AutoCreateCompoundChildTaskSchema — sharedCounterId/baseline co-presence', () => {
+  it('accepts a counting child with neither sharedCounterId nor baseline set (unlinked)', () => {
+    const result = AutoCreateCompoundChildTaskSchema.safeParse(validCountingAutoCreate());
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a counting child with both sharedCounterId and baseline set (linked)', () => {
+    const result = AutoCreateCompoundChildTaskSchema.safeParse(
+      validCountingAutoCreate({
+        sharedCounterId: '00000000-0000-0000-0000-000000000099',
+        baseline: 42,
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a counting child with baseline=0 (start-fresh against a brand-new counter)', () => {
+    const result = AutoCreateCompoundChildTaskSchema.safeParse(
+      validCountingAutoCreate({
+        sharedCounterId: '00000000-0000-0000-0000-000000000099',
+        baseline: 0,
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects sharedCounterId set without baseline', () => {
+    const result = AutoCreateCompoundChildTaskSchema.safeParse(
+      validCountingAutoCreate({ sharedCounterId: '00000000-0000-0000-0000-000000000099' })
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.errors.map((e) => e.message);
+      expect(messages).toContain('sharedCounterId and baseline must both be set or both be absent');
+    }
+  });
+
+  it('rejects baseline set without sharedCounterId', () => {
+    const result = AutoCreateCompoundChildTaskSchema.safeParse(
+      validCountingAutoCreate({ baseline: 42 })
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.errors.map((e) => e.message);
+      expect(messages).toContain('sharedCounterId and baseline must both be set or both be absent');
     }
   });
 });

@@ -1,0 +1,33 @@
+{
+  "_generatedBy": "packages/shared/scripts/generate-sync-contract.js — DO NOT hand edit. Regenerate with `pnpm --filter @oybc/shared run gen:sync-contract` after changing src/constants/syncContract.ts.",
+  "syncCollections": [
+    "boards",
+    "tasks",
+    "taskSteps",
+    "boardTasks",
+    "compositeTasks",
+    "compositeNodes",
+    "compoundChildren",
+    "recurringBoardTemplates",
+    "defaultPools",
+    "taskEvents",
+    "pools",
+    "coreBoardDefaults"
+  ],
+  "userScopedSyncCollections": [
+    "boards",
+    "tasks",
+    "compositeTasks",
+    "recurringBoardTemplates",
+    "defaultPools",
+    "taskEvents",
+    "pools",
+    "coreBoardDefaults"
+  ],
+  "legacyPullSkipCollections": [
+    "taskSteps",
+    "compositeTasks",
+    "compositeNodes",
+    "defaultPools"
+  ]
+}

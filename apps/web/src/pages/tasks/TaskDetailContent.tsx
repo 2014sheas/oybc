@@ -9,7 +9,13 @@ import {
   type CompoundChild,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../db/database';
+import {
+  fetchBoardsByIds,
+  fetchBoardTasksForTask,
+  fetchCompoundChildren,
+  fetchTask,
+  fetchTasksByIds,
+} from '../../db/operations';
 import {
   computeTaskDeletionImpact,
   deleteTaskWithCascade,
@@ -96,7 +102,7 @@ function CountingSourceCaption({ sharedCounterId }: { sharedCounterId: string })
   //   null       → not found (query resolved to undefined → we map to null)
   //   Task       → loaded successfully
   const rawResult = useLiveQuery(
-    () => db.tasks.get(sharedCounterId),
+    () => fetchTask(sharedCounterId),
     [sharedCounterId],
   );
   // Map query result: undefined (DB miss) → null (not-found sentinel).
@@ -198,7 +204,7 @@ export function TaskDetailContent({
   // ── Placement / board data ─────────────────────────────────────────────
 
   const placements = useLiveQuery(
-    async () => db.boardTasks.where('taskId').equals(taskId).toArray(),
+    async () => fetchBoardTasksForTask(taskId),
     [taskId],
   ) as BoardTask[] | undefined;
 
@@ -210,13 +216,7 @@ export function TaskDetailContent({
   const placementBoardIdsKey = placementBoardIds.join(',');
   const affectedBoards = useLiveQuery(
     async () =>
-      placementBoardIds.length === 0
-        ? []
-        : await db.boards
-            .where('id')
-            .anyOf(placementBoardIds)
-            .filter((b) => !b.isDeleted)
-            .toArray(),
+      placementBoardIds.length === 0 ? [] : await fetchBoardsByIds(placementBoardIds),
     [placementBoardIdsKey],
   ) as Board[] | undefined;
 
@@ -231,11 +231,7 @@ export function TaskDetailContent({
 
   const compoundChildren = useLiveQuery(
     async () =>
-      task.type === TaskType.COMPOUND
-        ? db.compoundChildren
-            .filter((c: CompoundChild) => !c.isDeleted && c.compoundTaskId === taskId)
-            .toArray()
-        : [],
+      task.type === TaskType.COMPOUND ? fetchCompoundChildren(taskId) : [],
     [taskId, task.type],
   ) as CompoundChild[] | undefined;
 
@@ -253,13 +249,7 @@ export function TaskDetailContent({
   const childTaskIdsKey = childTaskIds.join(',');
   const childTasks = useLiveQuery(
     async () =>
-      childTaskIds.length === 0
-        ? []
-        : db.tasks
-            .where('id')
-            .anyOf(childTaskIds)
-            .filter((t) => !t.isDeleted)
-            .toArray(),
+      childTaskIds.length === 0 ? [] : fetchTasksByIds(childTaskIds),
     [childTaskIdsKey],
   ) as Task[] | undefined;
 

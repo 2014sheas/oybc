@@ -1,11 +1,8 @@
 export * from './enums';
 export * from './syncRetry';
+export * from './syncContract';
 
-/**
- * Board size options
- */
-export const BOARD_SIZES = [3, 4, 5] as const;
-export type BoardSize = typeof BOARD_SIZES[number];
+export { BOARD_SIZES, type BoardSize } from '@oybc/bingo-core';
 
 /**
  * Maximum retry attempts for sync operations

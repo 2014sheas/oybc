@@ -32,7 +32,9 @@ struct SyncSheetContainer: View {
     var body: some View {
         SyncSheet(
             state: derivedState,
+            exhaustedCount: syncService.exhaustedCount,
             onTryAgain: handleTryAgain,
+            onRetryExhausted: handleRetryExhausted,
             onClose: onClose
         )
     }
@@ -61,6 +63,15 @@ struct SyncSheetContainer: View {
             await syncService.fullSync(userId: userId)
         }
     }
+
+    /// Recover items stuck past the retry cap: reset them to PENDING and kick
+    /// a full sync. Delegates to `SyncService.retryExhaustedItems`.
+    private func handleRetryExhausted() {
+        guard let userId = authService.currentUser?.id else { return }
+        _Concurrency.Task {
+            await syncService.retryExhaustedItems(userId: userId)
+        }
+    }
 }
 
 // MARK: - SyncSheet (pure-props leaf, snapshot-testable)
@@ -76,7 +87,12 @@ struct SyncSheetContainer: View {
 struct SyncSheet: View {
 
     let state: SyncSheetState
+    /// Number of changes stuck past the retry cap. `0` (the default) renders
+    /// nothing new — existing snapshots are unaffected. When `> 0` an
+    /// exhausted-item recovery block appears with a plain count + Retry button.
+    var exhaustedCount: Int = 0
     var onTryAgain: () -> Void = {}
+    var onRetryExhausted: () -> Void = {}
     var onClose: () -> Void = {}
 
     var body: some View {
@@ -110,6 +126,16 @@ struct SyncSheet: View {
                     }
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 24)
+                }
+
+                // Exhausted-item recovery — only when changes are stuck past
+                // the retry cap. Independent of the connectivity state above:
+                // an item can be exhausted while the sheet reads "All synced".
+                // Plain count only — never a raw error (the #151 discipline).
+                if exhaustedCount > 0 {
+                    exhaustedBlock
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 24)
                 }
 
                 // Static info rows
@@ -165,6 +191,35 @@ struct SyncSheet: View {
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(stateTitle). \(stateSubtitle)")
+    }
+
+    // MARK: - Exhausted-item recovery block
+
+    private var exhaustedBlock: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(exhaustedCountLabel)
+                .font(.risoHead(15, .extraBold))
+                .tracking(-0.3)
+                .foregroundStyle(Color.risoRed)
+                .fixedSize(horizontal: false, vertical: true)
+
+            RisoButton(title: "Retry", kind: .primary, fullWidth: true) {
+                onRetryExhausted()
+            }
+        }
+        .padding(Riso.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(exhaustedCountLabel). Retry.")
+    }
+
+    /// "N change(s) couldn't sync" — the singular/plural copy shared with web.
+    private var exhaustedCountLabel: String {
+        exhaustedCount == 1
+            ? "1 change couldn\u{2019}t sync"
+            : "\(exhaustedCount) changes couldn\u{2019}t sync"
     }
 
     // MARK: - State-derived values

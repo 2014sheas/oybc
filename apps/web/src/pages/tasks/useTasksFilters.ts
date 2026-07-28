@@ -3,12 +3,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   BoardStatus,
   TaskType,
+  computeBrowsableTasks,
   isTaskExpired,
   type Board,
   type BoardTask,
   type Task,
 } from '@oybc/shared';
-import { db } from '../../db/database';
+import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
 import type { TaskLibrary } from '../createPage/useTaskLibrary';
 
 /** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
@@ -76,6 +77,14 @@ export interface TasksFiltersApi extends TasksFiltersState {
    *  the current search query matches one of their non-independent children.
    *  Derived — not stored. */
   autoExpandCompoundIds: Set<string>;
+  /** Draft-filtered task set (`computeBrowsableTasks` over
+   *  `library.allTasks`) — the same set the Library segment browses.
+   *  Exposed so other browse-only surfaces (e.g. the Pools segment's
+   *  library-reuse picker, P2 I-2) can offer the same set without a
+   *  second `computeBrowsableTasks` pass or duplicated live queries. NOT
+   *  for resolution/chip-display use — those need the full `allTasks`
+   *  set so a wizard-born task a pool already references still resolves. */
+  browsableTasks: Task[];
 }
 
 const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
@@ -97,18 +106,15 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   // Issue #73 — group compound children under their parent by default.
   const [groupByCompound, setGroupByCompound] = useState(true);
 
-  // Workspace-wide BoardTasks. `BoardTask` has no `isDeleted` field
-  // (deletes are hard via `deleteBoardTasksForBoard`), so the table
-  // already represents the live placement set. Small-N — even very
-  // active users have well under a few thousand placements. We need
-  // the `boardId` join to filter by `Board.status` below.
+  // Workspace-wide BoardTasks. `fetchAllBoardTasks` filters tombstoned
+  // rows internally (docs/BOARD_INTEGRITY.md), so this already represents
+  // the live placement set. Small-N — even very active users have well
+  // under a few thousand placements. We need the `boardId` join to filter
+  // by `Board.status` below.
   const allBoardTasks =
-    useLiveQuery(() => db.boardTasks.toArray(), []) ?? EMPTY_BOARD_TASKS;
+    useLiveQuery(() => fetchAllBoardTasks(), []) ?? EMPTY_BOARD_TASKS;
   const allBoards =
-    useLiveQuery(
-      () => db.boards.filter((b: Board) => !b.isDeleted).toArray(),
-      [],
-    ) ?? EMPTY_BOARDS;
+    useLiveQuery(() => fetchAllBoards(), []) ?? EMPTY_BOARDS;
 
   // Index boards by id so the join below stays O(N) total.
   const boardStatusById = useMemo(() => {
@@ -117,14 +123,44 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     return m;
   }, [allBoards]);
 
+  // Draft-visibility filter (mirrors iOS): hide wizard-born tasks that live
+  // only on draft boards, or are orphaned (removed from the pool / board gone),
+  // until they land on a live board. Reuses the board data loaded above.
+  const browsableTasks = useMemo(
+    () =>
+      computeBrowsableTasks(
+        library.allTasks,
+        allBoardTasks,
+        boardStatusById,
+        library.childToParents,
+      ),
+    [library.allTasks, allBoardTasks, boardStatusById, library.childToParents],
+  );
+
   const { placementCountByTaskId, activePlacementCountByTaskId } = useMemo(() => {
-    const all: Record<string, number> = {};
-    const active: Record<string, number> = {};
+    // Count DISTINCT non-deleted boards per task (drafts included) — matching
+    // the task-detail page (dedup by boardId + `!isDeleted` filter). Gating on
+    // `boardStatusById` drops placements on soft-deleted boards; the Set dedups
+    // duplicate rows on one board. Previously this counted every raw row incl.
+    // rows on deleted boards, so the pool disagreed with task-detail.
+    const allBoardsByTask: Record<string, Set<string>> = {};
+    const activeBoardsByTask: Record<string, Set<string>> = {};
     for (const bt of allBoardTasks) {
-      all[bt.taskId] = (all[bt.taskId] ?? 0) + 1;
+      if (!boardStatusById[bt.boardId]) continue; // skip soft-deleted boards
+      (allBoardsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
       if (boardStatusById[bt.boardId] === BoardStatus.ACTIVE) {
-        active[bt.taskId] = (active[bt.taskId] ?? 0) + 1;
+        // DISTINCT active boards too — the row's "N active" must match the
+        // task-detail page (distinct active boards), not raw row count.
+        (activeBoardsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
       }
+    }
+    const all: Record<string, number> = {};
+    for (const [taskId, boardIds] of Object.entries(allBoardsByTask)) {
+      all[taskId] = boardIds.size;
+    }
+    const active: Record<string, number> = {};
+    for (const [taskId, boardIds] of Object.entries(activeBoardsByTask)) {
+      active[taskId] = boardIds.size;
     }
     return { placementCountByTaskId: all, activePlacementCountByTaskId: active };
   }, [allBoardTasks, boardStatusById]);
@@ -167,7 +203,9 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
 
   const filteredTasks = useMemo(() => {
     const trimmed = search.trim().toLowerCase();
-    const typed = library.allTasks
+    // Browse the draft-filtered set: wizard-born tasks placed only on draft
+    // boards (or orphaned) stay hidden until their board goes active.
+    const typed = browsableTasks
       .filter((t) => matchesTypeFilter(t, typeFilter))
       .filter((t) => {
         // Issue #73 — suppress non-independent children from top level when on.
@@ -193,6 +231,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
       .sort((a, b) => compareTasks(a, b, sortBy, placementCountByTaskId));
   }, [
     library,
+    browsableTasks,
     search,
     typeFilter,
     statusFilter,
@@ -224,6 +263,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     placementCountByTaskId,
     activePlacementCountByTaskId,
     autoExpandCompoundIds,
+    browsableTasks,
   };
 }
 

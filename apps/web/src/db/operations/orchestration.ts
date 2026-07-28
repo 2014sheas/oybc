@@ -1,20 +1,28 @@
-import { db } from '../database';
+import { db } from '../internal';
 import {
   BoardStatus,
   TaskType,
   SyncOperationType,
-  SyncStatus,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  resolveTaskWindowState,
+  resolvePlacements,
   type Board,
   type Task,
   type CompoundChild,
   type BoardStatsUpdate,
 } from '@oybc/shared';
-import { currentTimestamp, generateUUID } from '../utils';
+import { currentTimestamp } from '../utils';
+import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks } from './boardTasks';
+import { buildWindowContext } from './windowContext';
+import {
+  appendCompletionEvent,
+  appendIncrementEvent,
+  tombstoneWindowCompletions,
+} from './taskEvents';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +78,28 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
 export async function runBoardCascadeForTask(
   changedTaskId: string,
 ): Promise<Map<string, BoardCascadeEntry>> {
+  return runBoardCascadeForTasks([changedTaskId]);
+}
+
+/**
+ * Batched multi-task variant of {@link runBoardCascadeForTask}
+ * (docs/WINDOWED_COMPLETION.md §Sync — "recompute each affected task's caches
+ * once, then run ONE derivation pass per affected live board"). Builds the
+ * derivation lookups + the windowed-event map ONCE, resolves the UNION of
+ * affected boards across every changed task, and recomputes each affected board
+ * exactly once. The single-task path delegates here so both share the windowed
+ * evaluation and per-board dedupe.
+ *
+ * Same transaction contract as `runBoardCascadeForTask` — must run inside an
+ * active Dexie `rw` transaction covering `boards`, `boardTasks`, `tasks`,
+ * `compoundChildren`, `taskEvents`, and `syncQueue`.
+ *
+ * @param changedTaskIds The tasks whose state changed (deduped internally).
+ * @returns A map of boardId → BoardCascadeEntry for every recomputed board.
+ */
+export async function runBoardCascadeForTasks(
+  changedTaskIds: Iterable<string>,
+): Promise<Map<string, BoardCascadeEntry>> {
   const now = currentTimestamp();
 
   // Build the lookups for the derivation pass.
@@ -77,11 +107,10 @@ export async function runBoardCascadeForTask(
   const allBoardTasks = await fetchAllBoardTasks();
   const allTasks = await db.tasks.toArray();
   // Phase 6.3 — `computeBoardStatsUpdate` needs the workspace's boards
-  // to evaluate the specific-board / recurring-template achievement
-  // branches. Pre-6.3 callers passed nothing here and the algorithm
-  // defaults to `[]`, but on this cascade path we have the full set
-  // available, so use it.
+  // to evaluate the specific-board / recurring-template achievement branches.
   const allBoards = await db.boards.toArray();
+  // Windowed Completion — group events once so every board evaluates windowed.
+  const windowContext = await buildWindowContext();
 
   const taskById: Record<string, Task> = {};
   for (const t of allTasks) taskById[t.id] = t;
@@ -91,23 +120,38 @@ export async function runBoardCascadeForTask(
     (childrenByCompound[c.compoundTaskId] ??= []).push(c);
   }
 
-  // Resolve affected boards via the shared derivation helpers.
-  const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
-  const affectedBoardIds = findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks);
+  // Resolve the UNION of affected boards across every changed task.
+  const affectedBoardIds = new Set<string>();
+  for (const changedTaskId of changedTaskIds) {
+    const parentCompounds = findTransitiveParentCompounds(changedTaskId, allChildren);
+    for (const id of findAffectedBoardIds(changedTaskId, parentCompounds, allBoardTasks)) {
+      affectedBoardIds.add(id);
+    }
+  }
 
   const resultMap = new Map<string, BoardCascadeEntry>();
 
   for (const affectedBoardId of affectedBoardIds) {
     const affectedBoard = await db.boards.get(affectedBoardId);
-    if (!affectedBoard || affectedBoard.isDeleted) continue;
+    // Windowed Completion — sealed boards drop out of the live derivation
+    // fan-out (docs §Effects of sealed). Greenlog can no longer revert on
+    // them from live activity; the ONLY sanctioned mutation is the
+    // deterministic pull-path re-derivation (see sealing.ts).
+    if (!affectedBoard || affectedBoard.isDeleted || affectedBoard.sealedAt) continue;
 
-    const boardTasksOnBoard = allBoardTasks.filter((bt) => bt.boardId === affectedBoardId);
+    // Board-integrity PR-2 (Part 2) — resolve through the shared winner
+    // rule before deriving (see boardTasks.ts cascades for why).
+    const boardTasksOnBoard = resolvePlacements(
+      allBoardTasks.filter((bt) => bt.boardId === affectedBoardId),
+      affectedBoard.boardSize,
+    );
     const stats: BoardStatsUpdate = computeBoardStatsUpdate(
       affectedBoard,
       boardTasksOnBoard,
       childrenByCompound,
       taskById,
       allBoards,
+      windowContext,
     );
 
     const totalSquares = affectedBoard.boardSize * affectedBoard.boardSize;
@@ -147,17 +191,7 @@ export async function runBoardCascadeForTask(
     // Enqueue sync for this board (inside the transaction for all-or-nothing semantics).
     const updatedBoard = await db.boards.get(affectedBoardId);
     if (updatedBoard) {
-      await db.syncQueue.add({
-        id: generateUUID(),
-        entityType: 'boards',
-        entityId: affectedBoardId,
-        operationType: SyncOperationType.UPDATE,
-        payload: JSON.stringify(updatedBoard),
-        status: SyncStatus.PENDING,
-        retryCount: 0,
-        createdAt: currentTimestamp(),
-        priority: 0,
-      });
+      await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
     }
 
     resultMap.set(affectedBoardId, {
@@ -168,6 +202,94 @@ export async function runBoardCascadeForTask(
   }
 
   return resultMap;
+}
+
+/**
+ * Run the derivation pass for a SPECIFIC board, not via task-driven
+ * affected-board discovery (Board-integrity PR-1, docs/BOARD_INTEGRITY.md —
+ * the boardTasks-pull cascade).
+ *
+ * `runBoardCascadeForTask(s)` resolve the affected-board set by walking
+ * `taskId → boardId` reachability over the LIVE (non-deleted) `boardTasks`
+ * snapshot. That's wrong for a pulled `boardTasks` row: a pulled TOMBSTONE
+ * is (correctly) invisible to that reachability walk, so a board that lost
+ * its only placement of a task via a remote delete would never be
+ * discovered as "affected" and its stats would go stale forever. Here the
+ * board is already known directly from the pulled row's `boardId`, so this
+ * recomputes that ONE board unconditionally from the post-pull snapshot —
+ * mirroring `reorderBoardTasks`'s board-driven (not task-driven) recompute,
+ * which is exactly this same shape (positional bingo lines can change from
+ * either a live rearrange or a pulled one).
+ *
+ * Sealed boards are skipped (live derivation never mutates a sealed board);
+ * callers are responsible for invoking the deterministic sealed re-derive
+ * (`reDeriveSealedBoardsByIds`) separately when the board is sealed —
+ * mirrors the `boards`-pull branch in `pullApply.ts`.
+ *
+ * Same transaction contract as `runBoardCascadeForTask` — must run inside an
+ * active Dexie `rw` transaction covering `boards`, `boardTasks`, `tasks`,
+ * `compoundChildren`, and `syncQueue`.
+ *
+ * @param boardId The board to recompute.
+ */
+export async function runBoardCascadeForBoardId(boardId: string): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board || board.isDeleted || board.sealedAt) return;
+
+  const now = currentTimestamp();
+  const allChildren = await fetchAllCompoundChildren();
+  const allBoardTasks = await fetchAllBoardTasks();
+  const allTasks = await db.tasks.toArray();
+  const allBoards = await db.boards.toArray();
+  const windowContext = await buildWindowContext();
+
+  const taskById: Record<string, Task> = {};
+  for (const t of allTasks) taskById[t.id] = t;
+
+  const childrenByCompound: Record<string, CompoundChild[]> = {};
+  for (const c of allChildren) {
+    (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+  }
+
+  // Board-integrity PR-2 (Part 2) — resolve through the shared winner rule
+  // before deriving (see boardTasks.ts cascades for why).
+  const boardTasksOnBoard = resolvePlacements(
+    allBoardTasks.filter((bt) => bt.boardId === boardId),
+    board.boardSize,
+  );
+  const stats: BoardStatsUpdate = computeBoardStatsUpdate(
+    board,
+    boardTasksOnBoard,
+    childrenByCompound,
+    taskById,
+    allBoards,
+    windowContext,
+  );
+
+  const totalSquares = board.boardSize * board.boardSize;
+  const isGreenlog = stats.completedTasks >= totalSquares;
+
+  const boardUpdate: Partial<Board> = {
+    completedTasks: stats.completedTasks,
+    linesCompleted: stats.linesCompleted,
+    completedLineIds: stats.completedLineIds,
+    updatedAt: now,
+    version: (board.version ?? 1) + 1,
+  };
+
+  if (isGreenlog && board.status === BoardStatus.ACTIVE) {
+    boardUpdate.status = BoardStatus.COMPLETED;
+    boardUpdate.completedAt = now;
+  } else if (!isGreenlog && board.status === BoardStatus.COMPLETED) {
+    boardUpdate.status = BoardStatus.ACTIVE;
+    boardUpdate.completedAt = undefined;
+  }
+
+  await db.boards.update(boardId, boardUpdate);
+  const updatedBoard = await db.boards.get(boardId);
+  if (updatedBoard) {
+    await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard, 0);
+  }
 }
 
 // ─── Orchestration ───────────────────────────────────────────────────────────
@@ -220,7 +342,7 @@ export async function handleTaskCompletion(
 
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       const now = currentTimestamp();
 
@@ -231,6 +353,11 @@ export async function handleTaskCompletion(
       if (primaryBoard.status === BoardStatus.DRAFT) {
         await db.boards.update(boardId, {
           status: BoardStatus.ACTIVE,
+          // Windowed Completion — stamp the activation instant so the
+          // auto-seal backstop keys off max(endDate, activatedAt): a draft
+          // activated after its window expired gets a full prompt cycle
+          // (docs §Sealing → backstop). Only stamp once.
+          activatedAt: primaryBoard.activatedAt ?? now,
           updatedAt: now,
           version: (primaryBoard.version ?? 1) + 1,
         });
@@ -240,7 +367,7 @@ export async function handleTaskCompletion(
 
       // 2. Resolve target BoardTask + its underlying Task.
       const targetBt = await db.boardTasks.get(boardTaskId);
-      if (!targetBt) throw new Error(`BoardTask ${boardTaskId} not found`);
+      if (!targetBt || targetBt.isDeleted) throw new Error(`BoardTask ${boardTaskId} not found`);
       if (targetBt.boardId !== boardId) {
         throw new Error(`BoardTask ${boardTaskId} does not belong to board ${boardId}`);
       }
@@ -257,28 +384,54 @@ export async function handleTaskCompletion(
         );
       }
 
-      // 3. Compute the new global Task state and write it (bumps version — write-path only).
-      const taskUpdate: Partial<Task> = {
-        updatedAt: now,
-        version: (targetTask.version ?? 1) + 1,
-      };
+      // Board-integrity PR-3 (issue #360, finding 2) — Achievement squares
+      // are read-only on the grid, same as Compound. Their state derives
+      // from the watched board/template via `computeBoardGrid`'s ACHIEVEMENT
+      // branch, never a local toggle. The render layer already makes an
+      // achievement-square tap a no-op (mirrors iOS); this guard is
+      // defense-in-depth against any other caller reaching this function
+      // directly for an achievement BoardTask.
+      if (targetTask.type === TaskType.ACHIEVEMENT) {
+        throw new Error(
+          'Achievement BoardTasks are read-only on the grid. Their completion ' +
+            'derives from the watched board or recurring template, never a local toggle.',
+        );
+      }
 
+      // 3. Windowed Completion (docs §Write paths): board-context taps write
+      //    TaskEvents (not the lifetime cache). The event choke points append
+      //    the row, restamp the lifetime caches, bump `Task.version`, and
+      //    enqueue the Task sync entry — all inside THIS transaction.
+      //
+      //    `updates.currentCount` is the UI's desired NEW windowed count (the
+      //    grid derives it from `resolveTaskWindowState`), so the event delta
+      //    is `desired - currentWindowedCount`. Increment → positive delta;
+      //    decrement/reset → negative delta, gated so the window sum can't go
+      //    below zero from a local gesture. `updates.isCompleted` toggles a
+      //    normal square: complete → append a completion event; un-complete →
+      //    window-scoped tombstone of this board's in-window completions.
+      const windowStart = primaryBoard.startDate;
       if (updates.currentCount !== undefined) {
-        taskUpdate.currentCount = updates.currentCount;
-        if (targetTask.maxCount !== undefined) {
-          const reached = updates.currentCount >= targetTask.maxCount;
-          taskUpdate.isCompleted = reached;
-          taskUpdate.completedAt = reached ? now : undefined;
+        const events = await db.taskEvents.where('taskId').equals(targetTask.id).toArray();
+        const { count: windowedCount } = resolveTaskWindowState(
+          targetTask,
+          events.filter((e) => !e.isDeleted),
+          windowStart,
+        );
+        let delta = updates.currentCount - windowedCount;
+        // Gate a decrement so the window sum stays ≥ 0 (belt against a local
+        // gesture poisoning the window with a dangling negative).
+        if (delta < 0) delta = Math.max(delta, -windowedCount);
+        if (delta !== 0) {
+          await appendIncrementEvent(targetTask.id, delta, boardId, now);
+        }
+      } else if (updates.isCompleted !== undefined) {
+        if (updates.isCompleted) {
+          await appendCompletionEvent(targetTask.id, boardId, now);
+        } else {
+          await tombstoneWindowCompletions(targetTask.id, windowStart, now);
         }
       }
-
-      // Only apply isCompleted directly when currentCount hasn't already determined it.
-      if (updates.isCompleted !== undefined && updates.currentCount === undefined) {
-        taskUpdate.isCompleted = updates.isCompleted;
-        taskUpdate.completedAt = updates.isCompleted ? now : undefined;
-      }
-
-      await db.tasks.update(targetTask.id, taskUpdate);
 
       // 4. Run the shared derivation pass — cascade to every affected board.
       const cascadeMap = await runBoardCascadeForTask(targetTask.id);
@@ -301,21 +454,9 @@ export async function handleTaskCompletion(
         }
       }
 
-      // 6. Enqueue sync for the target Task (inside the transaction).
-      const updatedTask = await db.tasks.get(targetTask.id);
-      if (updatedTask) {
-        await db.syncQueue.add({
-          id: generateUUID(),
-          entityType: 'tasks',
-          entityId: targetTask.id,
-          operationType: SyncOperationType.UPDATE,
-          payload: JSON.stringify(updatedTask),
-          status: SyncStatus.PENDING,
-          retryCount: 0,
-          createdAt: currentTimestamp(),
-          priority: 0,
-        });
-      }
+      // 6. The Task sync entry is already enqueued by the event choke points
+      //    (they restamp the lifetime caches as an authored write, bump
+      //    `Task.version`, and enqueue the Task UPDATE — docs §Task caches).
 
       // Populate collateralBingosByBoard on the result now that the loop is done.
       result.collateralBingosByBoard = collateralBingosByBoard;

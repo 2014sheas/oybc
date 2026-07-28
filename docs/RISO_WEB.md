@@ -25,10 +25,16 @@ prototypes live under `design_handoff_web/`.
 
 ## Foundation (Phase 0 — shipped)
 
-### Token layer — `apps/web/src/styles/riso.css`
+### Token layer — `packages/riso-tokens/riso.css`
 
-CSS custom properties, imported after `index.css` in `main.tsx`. Token **values**
-are lifted verbatim from the iOS design system so the platforms stay in lockstep.
+CSS custom properties, extracted into the `@oybc/riso-tokens` workspace package
+(pure file relocation from the former `apps/web/src/styles/riso.css`, zero
+visual change) so a second product can consume the same tokens. Imported via
+`import '@oybc/riso-tokens/riso.css'` after `index.css` in `apps/web/src/main.tsx`.
+Token **values** are lifted verbatim from the iOS design system so the platforms
+stay in lockstep. A `node scripts/check-coming-soon-tokens.mjs` CI step guards
+against `apps/coming-soon`'s hand-copied unprefixed twins drifting from these
+values — see `docs/COMING_SOON.md`.
 
 - **Names are `--riso-*`-prefixed** so they coexist with the app's pre-Riso
   generic vars (`--bg-primary`, `--text-primary`, …) during the rollout. As each

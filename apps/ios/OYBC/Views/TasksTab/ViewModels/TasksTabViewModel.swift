@@ -82,11 +82,21 @@ final class TasksTabViewModel {
     /// Most recent reload error, surfaced to the user as a caption.
     var loadError: String?
 
+    // MARK: - DB injection
+
+    /// Injected for tests; defaults to the production singleton.
+    @ObservationIgnored private let database: AppDatabase
+
+    init(database: AppDatabase = .shared) {
+        self.database = database
+    }
+
     // MARK: - Lifecycle
 
     func reload() async {
+        let database = self.database
         do {
-            let boards = try await Self.loadBoards()
+            let boards = try await Self.loadBoards(database: database)
             await MainActor.run {
                 var m: [String: BoardStatus] = [:]
                 for b in boards {
@@ -108,26 +118,37 @@ final class TasksTabViewModel {
 
     // MARK: - Derived placement counts
 
-    /// `taskId` → count of non-deleted BoardTask placements (any board
-    /// status). Used for the "Most-used" sort and "Placed on N boards"
-    /// hint when there are no active-board placements.
+    /// `taskId` → count of DISTINCT non-deleted boards the task is placed on
+    /// (any board status, drafts included). Used for the "Most-used" sort and
+    /// "Placed on N boards" hint when there are no active-board placements.
+    ///
+    /// `boardStatusById` holds only live (non-deleted) boards, so gating on it
+    /// drops placements whose board was soft-deleted; deduping by `boardId`
+    /// collapses multiple rows on one board. Both are required to match the
+    /// task-detail page (`Set(bts.map(\.boardId))` + `fetchBoards` isDeleted
+    /// filter) — previously this counted every raw row, including rows on
+    /// soft-deleted boards, so the two surfaces disagreed.
     func placementCounts(boardTasks: [BoardTask]) -> [String: Int] {
-        var counts: [String: Int] = [:]
-        for bt in boardTasks {
-            counts[bt.taskId, default: 0] += 1
+        var boardsByTask: [String: Set<String>] = [:]
+        for bt in boardTasks where boardStatusById[bt.boardId] != nil {
+            boardsByTask[bt.taskId, default: []].insert(bt.boardId)
         }
-        return counts
+        return boardsByTask.mapValues { $0.count }
     }
 
     /// `taskId` → count of placements on boards whose `status == .active`.
     /// Drives the usage filter's "On active boards" value plus the row's
     /// primary usage hint.
     func activePlacementCounts(boardTasks: [BoardTask]) -> [String: Int] {
-        var counts: [String: Int] = [:]
+        // DISTINCT active boards per task — matches the task-detail page
+        // (`affectedBoards.filter { $0.status == .active }.count`) so the row's
+        // "N active" agrees with detail. (Was raw row count, which over-counts
+        // if a task has >1 board_task row on the same active board.)
+        var boardsByTask: [String: Set<String>] = [:]
         for bt in boardTasks where boardStatusById[bt.boardId] == .active {
-            counts[bt.taskId, default: 0] += 1
+            boardsByTask[bt.taskId, default: []].insert(bt.boardId)
         }
-        return counts
+        return boardsByTask.mapValues { $0.count }
     }
 
     // MARK: - Pipeline
@@ -173,59 +194,13 @@ final class TasksTabViewModel {
         return visible.sorted { Self.compare($0, $1, sort: sortBy, placementCounts: placementCounts) }
     }
 
-    /// Mirrors the shared `isTaskExpired` predicate (we don't import
-    /// the TS module on iOS — algorithm is small enough to duplicate
-    /// per the convention used by `isBoardExpired`). Keep in lock-step
-    /// with `packages/shared/src/algorithms/taskExpiry.ts`.
-    ///
-    /// Date shapes supported (must match the shared predicate so the
-    /// two platforms don't drift):
-    ///   - Calendar-only `YYYY-MM-DD` → interpreted as **local end-of-day**
-    ///     (`23:59:59.999` in the device's local timezone). Important:
-    ///     iOS's default ISO parser would reject this shape, and any
-    ///     formatter pinned to UTC would expire the task up to a day
-    ///     early for users east of UTC.
-    ///   - Local-ISO without timezone (output of `toLocalISO` / the
-    ///     wizard's date helpers, e.g. `2026-05-25T23:59:59.999`).
-    ///   - Full ISO8601 with `Z` / `±HH:MM` (Firestore sync round-trip).
-    ///
-    /// The non-date-only branch delegates to the shared `parseISO8601Date`
-    /// helper in `TimeframeFormatting.swift`, which already covers the two
-    /// timestamped shapes via cached formatters.
+    /// Forwards to `TaskExpiry.isTaskExpired` (issue #246 part 2 — extracted
+    /// out of this ViewModel to a named helper mirroring
+    /// `packages/shared/src/algorithms/taskExpiry.ts`). Kept as a thin
+    /// static wrapper so existing call sites (`RisoLibrarySheetView`,
+    /// `FromBoardGridView`, this file) don't need to change.
     static func isTaskExpired(_ task: Task, now: Date = Date()) -> Bool {
-        guard let endIso = task.endDate else { return false }
-        guard let end = parseTaskEndDate(endIso) else { return false }
-        return now > end
-    }
-
-    /// Parse the supported `Task.endDate` shapes into a `Date`. See
-    /// `isTaskExpired` for the full shape contract.
-    static func parseTaskEndDate(_ s: String) -> Date? {
-        if let end = parseLocalEndOfDayDate(s) { return end }
-        return parseISO8601Date(s)
-    }
-
-    /// If `s` is a calendar-only `YYYY-MM-DD` string, return the local
-    /// end-of-day Date for that calendar date. Returns nil for any
-    /// other shape so the timestamped branch can take over.
-    private static func parseLocalEndOfDayDate(_ s: String) -> Date? {
-        guard s.count == 10 else { return nil }
-        let parts = s.split(separator: "-")
-        guard parts.count == 3,
-              let year = Int(parts[0]), parts[0].count == 4,
-              let month = Int(parts[1]), parts[1].count == 2,
-              let day = Int(parts[2]), parts[2].count == 2 else {
-            return nil
-        }
-        var comps = DateComponents()
-        comps.year = year
-        comps.month = month
-        comps.day = day
-        comps.hour = 23
-        comps.minute = 59
-        comps.second = 59
-        comps.nanosecond = 999_000_000
-        return Calendar.current.date(from: comps)
+        TaskExpiry.isTaskExpired(task, now: now)
     }
 
     // MARK: - Pure helpers (mirror useTasksFilters.ts)
@@ -363,8 +338,8 @@ final class TasksTabViewModel {
 
     // MARK: - Data loaders
 
-    private static func loadBoards() async throws -> [Board] {
-        try await AppDatabase.shared.read { db in
+    private static func loadBoards(database: AppDatabase) async throws -> [Board] {
+        try await database.read { db in
             try Board
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)

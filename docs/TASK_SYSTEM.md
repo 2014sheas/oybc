@@ -1,6 +1,8 @@
 # OYBC Task System
 
-> **Canonical reference for the unified task model.** The Compound Tasks Unification (PR #43, PR #42, Phase 8 cleanup) collapsed Progress + Composite into **Compound**; Phase 6.3 (PR #54) then added **Achievement** as a fourth first-class type. The implementations in `apps/web` and `apps/ios` match this shape today. Achievement is a cross-board watcher that lives on `Task` (via `referencedBoardId` XOR `referencedTemplateId`); `BoardTask` is a pure placement record. See [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards--shipped) for the cross-board design.
+> **Canonical reference for the unified task model.** The Compound Tasks Unification (PR #43, PR #42, Phase 8 cleanup) collapsed Progress + Composite into **Compound**; Phase 6.3 (PR #54) then added **Achievement** as a fourth first-class type. The implementations in `apps/web` and `apps/ios` match this shape today. Achievement is a cross-board watcher that lives on `Task` (via `referencedBoardId` XOR `referencedTemplateId`); `BoardTask` is a pure placement record. See [`docs/ARCHITECTURE.md` §Phase 6](./ARCHITECTURE.md#phase-6-recurring-boards--shipped) for the cross-board design. Shared Counters (Issue #84, shipped both platforms) added `sharedCounterId`/`baseline` fields to `COUNTING` tasks — no new task type — see [§Shared counters](#shared-counters-linked-counting-tasks) below. (`lastSyncedCount` also shipped with Shared Counters but is now **retired inert residue** — see the Windowed Completion callout below.)
+
+> **Amended by Windowed Completion (SHIPPED, PRs #316/#318/#326/D — canonical doc [`docs/WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md)).** Completion is now **event-sourced**: normal + plain-counting tasks own a `task_events` log (`kind: completion | increment`, `occurredAt`), and a task's state on a given board is evaluated **against that board's window** `[startDate, ∞)`, not a single global bit. `Task.isCompleted` / `currentCount` / `completedAt` are demoted to **lifetime caches** (latest lifetime state; read by library/global surfaces, recomputed from events on pull, never trusted for windowed board grids). Past windows **seal** into a permanent record. Derived (shared-counter-linked) counters, compounds, and achievements are **carved out** — they don't own events and read their lifetime caches / derive as before. The old additive-merge shared-counter sync (`sharedCounterMerge` + `lastSyncedCount` stamping) is **retired** — counting conflicts now resolve by union-of-events. The "Completion is global per Task" framing below is the *library/lifetime* view; the *per-board* view is windowed.
 
 ## Overview
 
@@ -75,6 +77,31 @@ Compound subsumes what used to be modeled as two separate concepts (`Progress` a
 ```
 
 The optional title auto-fills from `action + maxCount + unit` via `generateCounterTaskTitle()` in `@oybc/shared` if blank — don't duplicate that logic.
+
+#### Shared counters (linked counting tasks)
+
+One real-world activity can feed **many** Counting tasks from a single running tally (Issue #84, shipped both platforms). A **source** counting task's `currentCount` is the one true accumulator; any other `COUNTING` task can **link** to it as a **derived** task via three fields on `Task`:
+
+- `sharedCounterId?: string | null` — FK to the source Task. Only valid on `type === 'counting'`.
+- `baseline?: number | null` — the source's `currentCount` at link time. Required (≥ 0) iff `sharedCounterId` is set. "Inherit" mode links with `baseline = 0` (displayed = full source count); "start from zero" mode sets `baseline = source.currentCount` at that moment (displayed = source count so far *since linking*).
+- `lastSyncedCount?: number | null` — **inert legacy field** (only counting tasks carry it): formerly the common-ancestor `currentCount` for the retired additive-merge conflict resolution. Kept in the schema so pre-Windowed-Completion rows still decode; never written or read by live code. Not part of the user-facing model.
+
+**Derived tasks never carry their own count.** A derived task's displayed count and completion are computed, never stored:
+
+```ts
+deriveDisplayedCount({ baseline, maxCount }, { currentCount }): { displayed, isCompleted }
+// displayed = max(0, currentCount - baseline)   — clamped at the low end only
+// isCompleted latches true once reached; re-deriving with a lower displayed value
+// never un-completes it (one-way latch)
+```
+
+`packages/shared/src/algorithms/sharedCounter.ts` (`deriveDisplayedCount`, `propagateIncrement`) is the source of truth; the Swift twin is `Helpers/SharedCounter.swift`. **No high-end clamp** — a derived task can read `5500 / 5000`; overshoot is intentional (never `Math.min` it away).
+
+**Logging is a single write path.** `incrementSharedCounter(sourceId)` — `AppDatabase+SharedCounters.swift` / web `db/operations/tasks.sharedCounter.ts` — increments the source's `currentCount`, re-derives every linked task on every board it's placed on, recomputes bingo/greenlog per affected board, and enqueues sync, all in one transaction. Logging from *any* member task's square or from the counter's own detail screen goes through this same function.
+
+**A "counter"** (the UX-facing concept) = one source counting task + all tasks linking to it via `sharedCounterId`. `buildSharedCounterGroups({tasks, boardTasks, boards})` (`packages/shared/src/algorithms/sharedCounterGroups.ts`, Swift port `SharedCounterGroups.swift`) is the pure read-model that assembles counter groups for the Counters Hub / Counter Detail UI. `findLinkableCounter({action, unit}, tasks)` (`packages/shared/src/algorithms/linkableCounter.ts`) powers the create-form "counts on your existing **{name}** counter" link suggestion. See [`docs/SHARED_COUNTERS.md`](SHARED_COUNTERS.md) for the full UX design and phasing; [`docs/ARCHITECTURE.md` §"Shared counters (Issue #84 — Phase 0 design)"](./ARCHITECTURE.md#shared-counters-issue-84--phase-0-design) (Decisions 1–7) is the canonical schema/design-decision record.
+
+**Sync**: counts are event-sourced — offline increments on multiple devices survive as separate `task_events` rows (union-by-id, per-row LWW) and the source's `currentCount` cache is recomputed from the event union on pull, so no increments are lost. The earlier `sharedCounterMerge` additive three-way merge (keyed on `lastSyncedCount`) was retired by Windowed Completion (design: [`WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md); neutered in PR B, deleted in PR D) — see [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md) for the current sync design. `progress_counters` / `ProgressCounter` / `calculateCountingRollup` are vestigial dead — rejected in favor of this per-Task model; do not build against them.
 
 ### 3. Compound tasks
 
@@ -695,4 +722,5 @@ When any approach triggers a "type action" on a square:
 
 - [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md) — push/pull/LWW reconciliation.
 - [`OFFLINE_FIRST.md`](./OFFLINE_FIRST.md) — local-first architecture.
-- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — overall system design (includes the Phase 6 Recurring Boards design that adds the planned specific-board reference mode to achievement squares).
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — overall system design (includes the Phase 6 Recurring Boards design that adds the planned specific-board reference mode to achievement squares, and the Shared Counters Decisions 1–7 schema record).
+- [`SHARED_COUNTERS.md`](./SHARED_COUNTERS.md) — Shared Counters UX design + phasing (the engine described above already ships; this doc covers the Counters Hub / Detail / board-play polish / arrival-banner UX built on top of it).

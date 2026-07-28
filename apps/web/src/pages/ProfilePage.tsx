@@ -4,9 +4,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { updateDisplayName } from '../firebase/authService';
-import { db } from '../db/database';
+import { fetchUser } from '../db/operations';
 import { usePreferences } from '../hooks';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
+import { RisoSegmented } from '../components/riso';
 import styles from './ProfilePage.module.css';
 
 /**
@@ -55,7 +56,7 @@ export function ProfilePage(): React.ReactElement {
   // undefined = cleared). Only fall back to the auth-context user while
   // the live query is still loading.
   const liveUser = useLiveQuery(
-    () => (user?.id ? db.users.get(user.id) : undefined),
+    () => (user?.id ? fetchUser(user.id) : undefined),
     [user?.id]
   );
   // Treat empty string as "no name" — we store '' in Dexie/Firestore
@@ -140,21 +141,18 @@ export function ProfilePage(): React.ReactElement {
       <div className={styles.sectionLabel}>App</div>
       <div className={styles.card}>
         <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-theme">
-            Theme
-          </label>
-          <select
-            id="pref-theme"
-            className={styles.select}
+          <span className={styles.rowLabel}>Theme</span>
+          <RisoSegmented<UserPreferences['theme']>
+            aria-label="Theme"
+            variant="pill"
             value={prefs.theme}
-            onChange={(e) =>
-              updatePrefs({ theme: e.target.value as UserPreferences['theme'] })
-            }
-          >
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
+            onChange={(value) => updatePrefs({ theme: value })}
+            options={[
+              { value: 'system', label: 'System' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' },
+            ]}
+          />
         </div>
         <SyncStatusIndicator />
       </div>
@@ -167,6 +165,25 @@ export function ProfilePage(): React.ReactElement {
           className={`${styles.settingsRow} ${styles.rowLink}`}
         >
           <span className={styles.rowLabel}>Account &amp; security</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
+      </div>
+
+      {/* Activity */}
+      <div className={styles.sectionLabel}>Activity</div>
+      <div className={styles.card}>
+        <Link
+          to="/profile/streaks"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Streaks</span>
+          <span className={styles.rowArrow}>&rarr;</span>
+        </Link>
+        <Link
+          to="/profile/counters"
+          className={`${styles.settingsRow} ${styles.rowLink}`}
+        >
+          <span className={styles.rowLabel}>Shared counters</span>
           <span className={styles.rowArrow}>&rarr;</span>
         </Link>
       </div>
@@ -197,14 +214,20 @@ export function ProfilePage(): React.ReactElement {
         </Link>
       </div>
 
-      {/* Developer tools */}
-      <div className={styles.sectionLabel}>Developer</div>
-      <div className={styles.card}>
-        <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
-          <span className={styles.rowLabel}>Playground</span>
-          <span className={styles.rowArrow}>&rarr;</span>
-        </Link>
-      </div>
+      {/* Developer tools — dev builds only. The Playground can wipe the real
+          local database, so this section (and the route it links to) must
+          not be reachable in production. */}
+      {import.meta.env.DEV && (
+        <>
+          <div className={styles.sectionLabel}>Developer</div>
+          <div className={styles.card}>
+            <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
+              <span className={styles.rowLabel}>Playground</span>
+              <span className={styles.rowArrow}>&rarr;</span>
+            </Link>
+          </div>
+        </>
+      )}
 
       {/* Sign out */}
       <button
@@ -214,6 +237,13 @@ export function ProfilePage(): React.ReactElement {
       >
         Sign Out
       </button>
+
+      {/* Version footer — mirrors iOS ProfileView "OYBC · v{version} ({build})" footer.
+          Web has no build number (no bundle metadata at runtime), so we show semver only.
+          Version is injected at build time from package.json via vite.config.ts `define`. */}
+      <p className={styles.versionFooter}>
+        OYBC · v{__APP_VERSION__}
+      </p>
 
       {/* Sign-out confirmation modal */}
       {showSignOutConfirm && (

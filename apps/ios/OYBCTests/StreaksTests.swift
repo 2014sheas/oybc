@@ -88,6 +88,19 @@ final class StreaksTests: XCTestCase {
         XCTAssertEqual(streak(.custom, .greenlog, [greenlog(.daily, w[0])]), 0)
     }
 
+    func testIndefiniteIsZero() {
+        // `.indefinite` boards have no window cadence — same guard as `.custom`.
+        // (Boards can't actually be core+.indefinite in practice, but the guard
+        // must be explicit rather than incidentally true via a nil boundary.)
+        let w = windowsBack(.daily, now(), 1)
+        XCTAssertEqual(streak(.indefinite, .greenlog, [greenlog(.daily, w[0])]), 0)
+        XCTAssertEqual(streak(.indefinite, .bingo, [greenlog(.daily, w[0])]), 0)
+        XCTAssertEqual(
+            computeLongestStreak(timeframe: .indefinite, boards: [greenlog(.daily, w[0])], weekStartDay: "monday", now: now()),
+            0
+        )
+    }
+
     func testCountsConsecutiveUntilFirstMiss() {
         let w = windowsBack(.daily, now(), 5)
         let boards = [greenlog(.daily, w[0]), greenlog(.daily, w[1]), greenlog(.daily, w[2])]
@@ -162,5 +175,74 @@ final class StreaksTests: XCTestCase {
         XCTAssertEqual(all[.weekly], StreakPair(bingo: 0, greenlog: 0))
         XCTAssertEqual(all[.monthly], StreakPair(bingo: 0, greenlog: 0))
         XCTAssertEqual(all[.yearly], StreakPair(bingo: 0, greenlog: 0))
+    }
+
+    // MARK: - computeLongestStreak
+    //
+    // Parity target: the `computeLongestStreak` describe-block in
+    // `packages/shared/tests/algorithms/streaks.test.ts` (~lines 203-248).
+    // Longest streak has NO current-window grace — it's the max past run.
+
+    private func longest(_ tf: Timeframe, _ boards: [Board]) -> Int {
+        computeLongestStreak(timeframe: tf, boards: boards, weekStartDay: "monday", now: now())
+    }
+
+    func testLongestIsZeroWithNoCoreBoards() {
+        XCTAssertEqual(longest(.daily, []), 0)
+    }
+
+    func testLongestIsZeroForCustomAndIndefinite() {
+        let w = windowsBack(.daily, now(), 3)
+        let boards = w.map { greenlog(.daily, $0) }
+        XCTAssertEqual(longest(.custom, boards), 0)
+        XCTAssertEqual(longest(.indefinite, boards), 0)
+    }
+
+    func testLongestCountsConsecutiveIncludingCurrent() {
+        let w = windowsBack(.daily, now(), 3)
+        let boards = w.map { greenlog(.daily, $0) }
+        XCTAssertEqual(longest(.daily, boards), 3)
+    }
+
+    func testLongestNoGrace_unfinishedCurrentDoesNotShortenPast() {
+        // current active (not greenlogged), 3 prior greenlogged → longest past run = 3.
+        let w = windowsBack(.daily, now(), 4)
+        let boards = [
+            bingoOnly(.daily, w[0]),
+            greenlog(.daily, w[1]),
+            greenlog(.daily, w[2]),
+            greenlog(.daily, w[3]),
+        ]
+        XCTAssertEqual(longest(.daily, boards), 3)
+    }
+
+    func testLongestRetainsLongestRunAcrossGap() {
+        // current+prev greenlogged (run 2), gap at w[2], then two more (run 2) → 2.
+        let w = windowsBack(.daily, now(), 5)
+        let boards = [
+            greenlog(.daily, w[0]),
+            greenlog(.daily, w[1]),
+            // w[2] missing → gap resets the run
+            greenlog(.daily, w[3]),
+            greenlog(.daily, w[4]),
+        ]
+        XCTAssertEqual(longest(.daily, boards), 2)
+    }
+
+    // MARK: - compactStreakLabel
+    //
+    // Parity target: the `compactStreakLabel` describe-block in
+    // `packages/shared/tests/algorithms/streaks.test.ts`.
+
+    func testCompactStreakLabel_suffixesByTimeframe() {
+        XCTAssertEqual(compactStreakLabel(3, timeframe: .daily), "3d")
+        XCTAssertEqual(compactStreakLabel(2, timeframe: .weekly), "2w")
+        XCTAssertEqual(compactStreakLabel(5, timeframe: .monthly), "5mo")
+        XCTAssertEqual(compactStreakLabel(1, timeframe: .yearly), "1y")
+    }
+
+    func testCompactStreakLabel_noSuffixForNonRecurring() {
+        XCTAssertEqual(compactStreakLabel(4, timeframe: .custom), "4")
+        XCTAssertEqual(compactStreakLabel(4, timeframe: .indefinite), "4")
     }
 }

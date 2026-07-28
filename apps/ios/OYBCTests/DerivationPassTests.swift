@@ -314,7 +314,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
         // row_0 not fully complete (t2 not done), no bingos
@@ -337,7 +338,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: childrenByCompound,
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -357,7 +359,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: childrenByCompound,
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -381,7 +384,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.linesCompleted, 1)
         XCTAssertTrue(result.completedLineIds.contains("row_0"))
@@ -406,7 +410,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertTrue(result.newBingos.contains("row_0"))
         XCTAssertEqual(result.lostBingos, [])
@@ -431,7 +436,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertTrue(result.lostBingos.contains("row_0"))
         XCTAssertEqual(result.newBingos, [])
@@ -446,7 +452,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -459,7 +466,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -472,7 +480,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -485,7 +494,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -510,7 +520,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         // auto-filled center counts + 4 explicit tasks
         XCTAssertEqual(result.completedTasks, 5)
@@ -530,7 +541,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: bts,
             childrenByCompound: [:],
-            taskById: taskById
+            taskById: taskById,
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -545,7 +557,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [stale],
             childrenByCompound: [:],
-            taskById: ["t1": t]
+            taskById: ["t1": t],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
         XCTAssertEqual(result.completedLineIds, [])
@@ -559,7 +572,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.newBingos, [])
         XCTAssertEqual(result.lostBingos, [])
@@ -573,7 +587,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [],
             childrenByCompound: [:],
-            taskById: [:]
+            taskById: [:],
+            windowContext: nil
         )
         XCTAssertEqual(result.boardId, "myBoard")
     }
@@ -596,7 +611,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": ach]
+            taskById: ["ach1": ach],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -612,7 +628,8 @@ final class DerivationPassTests: XCTestCase {
             board: b,
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
-            taskById: ["ach1": ach]
+            taskById: ["ach1": ach],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -629,7 +646,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -644,7 +662,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -659,7 +678,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -673,7 +693,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent]
+            allBoards: [parent],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -691,7 +712,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -708,7 +730,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -723,7 +746,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent]
+            allBoards: [parent],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -738,7 +762,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1]
+            allBoards: [parent, s1],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -757,7 +782,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2, s3, s4]
+            allBoards: [parent, s1, s2, s3, s4],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -772,7 +798,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1]
+            allBoards: [parent, s1],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -787,7 +814,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1]
+            allBoards: [parent, s1],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -807,7 +835,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -822,7 +851,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -844,7 +874,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
     }
@@ -867,7 +898,8 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, s1, s2]
+            allBoards: [parent, s1, s2],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 0)
     }
@@ -926,8 +958,223 @@ final class DerivationPassTests: XCTestCase {
             boardTasksOnBoard: [bt],
             childrenByCompound: [:],
             taskById: ["ach1": ach],
-            allBoards: [parent, ref]
+            allBoards: [parent, ref],
+            windowContext: nil
         )
         XCTAssertEqual(result.completedTasks, 1)
+    }
+
+    // MARK: - Board-integrity PR-3: computeBoardGrid per-cell CellState
+    //
+    // `DerivationPass.computeBoardGrid` (widened from `private` so render
+    // surfaces can call it directly) now returns `cells: [CellState]`
+    // alongside `grid`/`completedTasks`. These tests pin the per-cell shape
+    // for every dispatch branch — the ONE implementation both
+    // `BoardPlayView` and `BoardPreviewCells` now consult for ACHIEVEMENT
+    // cells instead of hand-copying the trigger/reference logic.
+
+    private func completionEvent(_ id: String, taskId: String, occurredAt: String) -> TaskEvent {
+        TaskEvent(
+            id: id, userId: "u", taskId: taskId, kind: .completion, delta: nil,
+            occurredAt: occurredAt, boardId: nil, createdAt: occurredAt, updatedAt: occurredAt,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    private func incrementEvent(_ id: String, taskId: String, occurredAt: String, delta: Int) -> TaskEvent {
+        TaskEvent(
+            id: id, userId: "u", taskId: taskId, kind: .increment, delta: delta,
+            occurredAt: occurredAt, boardId: nil, createdAt: occurredAt, updatedAt: occurredAt,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    func testComputeBoardGrid_NormalWindowed_CellStateMatchesGrid() {
+        // In-window completion event → cell state true; out-of-window → false.
+        // Same board window ("2026-07-05T...") for both, only the event's
+        // occurredAt differs.
+        let b = board("b1", boardSize: 3, startDate: "2026-07-05T00:00:00.000Z", endDate: "2026-07-06T00:00:00.000Z")
+        let tIn = task("t-in", isCompleted: false)
+        let tOut = task("t-out", isCompleted: true) // stale lifetime cache — must NOT be trusted
+        let bts = [boardTask("b1", "t-in", 0, 0), boardTask("b1", "t-out", 0, 1)]
+        let events: [String: [TaskEvent]] = [
+            "t-in": [completionEvent("e-in", taskId: "t-in", occurredAt: "2026-07-05T09:00:00.000Z")],
+            "t-out": [completionEvent("e-out", taskId: "t-out", occurredAt: "2026-07-01T00:00:00.000Z")],
+        ]
+        let windowContext = WindowEvaluationContext(eventsByTaskId: events)
+
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: bts, childrenByCompound: [:],
+            taskById: ["t-in": tIn, "t-out": tOut], allBoards: [], windowContext: windowContext
+        )
+
+        let inCell = built.cells.first { $0.boardTaskId == "b1-t-in" }
+        let outCell = built.cells.first { $0.boardTaskId == "b1-t-out" }
+        XCTAssertEqual(inCell?.isCompleted, true)
+        XCTAssertEqual(inCell?.taskId, "t-in")
+        XCTAssertEqual(inCell?.row, 0)
+        XCTAssertEqual(inCell?.col, 0)
+        XCTAssertEqual(inCell?.idx, 0)
+        XCTAssertNil(inCell?.achievement)
+        XCTAssertEqual(outCell?.isCompleted, false, "stale lifetime cache must not leak through the windowed cell state")
+        XCTAssertEqual(built.grid[0], inCell?.isCompleted)
+        XCTAssertEqual(built.grid[1], outCell?.isCompleted)
+    }
+
+    func testComputeBoardGrid_Counting_CellStateReflectsWindowedSum() {
+        let b = board("b1", boardSize: 3, startDate: "2026-07-05T00:00:00.000Z", endDate: "2026-07-06T00:00:00.000Z")
+        var counter = task("t-count", isCompleted: false)
+        counter.type = .counting
+        counter.maxCount = 5
+        let bts = [boardTask("b1", "t-count", 1, 0)]
+        let events: [String: [TaskEvent]] = [
+            "t-count": [
+                incrementEvent("e1", taskId: "t-count", occurredAt: "2026-07-05T09:00:00.000Z", delta: 3),
+                incrementEvent("e2", taskId: "t-count", occurredAt: "2026-07-05T10:00:00.000Z", delta: 2),
+            ],
+        ]
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: bts, childrenByCompound: [:],
+            taskById: ["t-count": counter], allBoards: [],
+            windowContext: WindowEvaluationContext(eventsByTaskId: events)
+        )
+        let cell = built.cells.first { $0.boardTaskId == "b1-t-count" }
+        XCTAssertEqual(cell?.isCompleted, true) // 3+2 = 5 >= maxCount 5
+        XCTAssertNil(cell?.achievement)
+    }
+
+    func testComputeBoardGrid_Compound_CellStateMatchesEvaluator() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let comp = compoundTask("comp", operator: .and)
+        let child1 = task("c1", isCompleted: true)
+        let child2 = task("c2", isCompleted: false)
+        let bts = [boardTask("b1", "comp", 1, 1)]
+        let taskById = ["comp": comp, "c1": child1, "c2": child2]
+        let childrenByCompound = ["comp": [child("comp", "c1", 0), child("comp", "c2", 1)]]
+
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: bts, childrenByCompound: childrenByCompound,
+            taskById: taskById, allBoards: [], windowContext: nil
+        )
+        let cell = built.cells.first { $0.boardTaskId == "b1-comp" }
+        XCTAssertEqual(cell?.isCompleted, false) // c2 incomplete, operator .and
+        XCTAssertNil(cell?.achievement)
+    }
+
+    func testComputeBoardGrid_DerivedCounterCarveOut_CellStateReadsLifetimeCacheNotWindow() {
+        // sharedCounterId set + windowContext present but NO events — the
+        // carve-out must still read the lifetime cache, not resolve
+        // windowed-to-false (which would be wrong for a derived counter).
+        let b = board("b1", boardSize: 3, startDate: "2026-07-05T00:00:00.000Z", endDate: "2026-07-06T00:00:00.000Z")
+        var derived = task("t-derived", isCompleted: true)
+        derived.type = .counting
+        derived.sharedCounterId = "source-task"
+        derived.currentCount = 10
+        derived.maxCount = 10
+        let bts = [boardTask("b1", "t-derived", 0, 0)]
+
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: bts, childrenByCompound: [:],
+            taskById: ["t-derived": derived], allBoards: [],
+            windowContext: WindowEvaluationContext(eventsByTaskId: [:])
+        )
+        let cell = built.cells.first { $0.boardTaskId == "b1-t-derived" }
+        XCTAssertEqual(cell?.isCompleted, true)
+        XCTAssertNil(cell?.achievement)
+    }
+
+    func testComputeBoardGrid_AchievementBoardMode_MetAndUnmet() {
+        let parent = board("parent", boardSize: 3, centerSquareType: .none)
+        let refMet = board("ref-met", status: "completed")
+        let refUnmet = board("ref-unmet", status: "active")
+        let achMet = achievementTask("ach-met", referencedBoardId: "ref-met")
+        let achUnmet = achievementTask("ach-unmet", referencedBoardId: "ref-unmet")
+        let bts = [boardTask("parent", "ach-met", 0, 0), boardTask("parent", "ach-unmet", 0, 1)]
+
+        let built = DerivationPass.computeBoardGrid(
+            board: parent, boardTasksOnBoard: bts, childrenByCompound: [:],
+            taskById: ["ach-met": achMet, "ach-unmet": achUnmet],
+            allBoards: [parent, refMet, refUnmet], windowContext: nil
+        )
+
+        let metCell = built.cells.first { $0.boardTaskId == "parent-ach-met" }
+        XCTAssertEqual(metCell?.isCompleted, true)
+        XCTAssertEqual(metCell?.achievement?.mode, .specificBoard)
+        XCTAssertEqual(metCell?.achievement?.referencedBoardId, "ref-met")
+        XCTAssertEqual(metCell?.achievement?.referencedBoardCompleted, true)
+
+        let unmetCell = built.cells.first { $0.boardTaskId == "parent-ach-unmet" }
+        XCTAssertEqual(unmetCell?.isCompleted, false)
+        XCTAssertEqual(unmetCell?.achievement?.mode, .specificBoard)
+        XCTAssertEqual(unmetCell?.achievement?.referencedBoardCompleted, false)
+    }
+
+    func testComputeBoardGrid_AchievementTemplateMode_MetAndUnmet() {
+        let parent = board("parent", boardSize: 3, centerSquareType: .none)
+        let s1 = board("s1", status: "completed", startDate: "2026-04-08T00:00:00.000Z", spawnedFromTemplateId: "t1")
+        let s2 = board("s2", status: "active", startDate: "2026-04-15T00:00:00.000Z", spawnedFromTemplateId: "t1")
+        // requiredCount=2, only 1 of 2 in-window spawns meets → unmet.
+        let ach = achievementTask("ach1", referencedTemplateId: "t1", requiredCount: 2)
+        let bt = boardTask("parent", "ach1", 0, 0)
+
+        let built = DerivationPass.computeBoardGrid(
+            board: parent, boardTasksOnBoard: [bt], childrenByCompound: [:],
+            taskById: ["ach1": ach], allBoards: [parent, s1, s2], windowContext: nil
+        )
+        let cell = built.cells.first { $0.boardTaskId == "parent-ach1" }
+        XCTAssertEqual(cell?.isCompleted, false)
+        XCTAssertEqual(cell?.achievement?.mode, .recurringTemplate)
+        XCTAssertEqual(cell?.achievement?.referencedTemplateId, "t1")
+        XCTAssertEqual(cell?.achievement?.templateInWindowMet, 1)
+        XCTAssertEqual(cell?.achievement?.templateRequiredCount, 2)
+
+        // Now both spawns meet → met.
+        var s2Met = s2
+        s2Met.status = .completed
+        let builtMet = DerivationPass.computeBoardGrid(
+            board: parent, boardTasksOnBoard: [bt], childrenByCompound: [:],
+            taskById: ["ach1": ach], allBoards: [parent, s1, s2Met], windowContext: nil
+        )
+        let metCell = builtMet.cells.first { $0.boardTaskId == "parent-ach1" }
+        XCTAssertEqual(metCell?.isCompleted, true)
+        XCTAssertEqual(metCell?.achievement?.templateInWindowMet, 2)
+    }
+
+    func testComputeBoardGrid_AchievementNoReference_NoAchievementMetadata() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let ach = achievementTask("ach1")
+        let bt = boardTask("b1", "ach1", 0, 0)
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: [bt], childrenByCompound: [:],
+            taskById: ["ach1": ach], allBoards: [], windowContext: nil
+        )
+        let cell = built.cells.first { $0.boardTaskId == "b1-ach1" }
+        XCTAssertEqual(cell?.isCompleted, false)
+        XCTAssertNil(cell?.achievement)
+    }
+
+    func testComputeBoardGrid_FreeCenterAutoFill_NoSyntheticCellStateEntry() {
+        // The FREE/CUSTOM_FREE center auto-fill is not a BoardTask placement
+        // (no boardTaskId/taskId to key on), so `computeBoardGrid` fills
+        // `grid`/`completedTasks` for it but emits NO `CellState` — mirrors
+        // the TS `computeBoardGrid`, which also never pushes into `cells`
+        // for the synthetic center fill.
+        let b = board("b1", boardSize: 3, centerSquareType: .free)
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: [], childrenByCompound: [:],
+            taskById: [:], allBoards: [], windowContext: nil
+        )
+        XCTAssertTrue(built.cells.isEmpty)
+        XCTAssertTrue(built.grid[4])
+        XCTAssertEqual(built.completedTasks, 1)
+    }
+
+    func testComputeBoardGrid_NoAutoFillCenter_NoSyntheticCellStateEntry() {
+        let b = board("b1", boardSize: 3, centerSquareType: .none)
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: [], childrenByCompound: [:],
+            taskById: [:], allBoards: [], windowContext: nil
+        )
+        XCTAssertTrue(built.cells.isEmpty)
     }
 }

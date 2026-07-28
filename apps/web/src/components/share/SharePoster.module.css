@@ -1,0 +1,208 @@
+/*
+  SharePoster — the GREENLOG share poster card.
+
+  CRITICAL: Every color declaration here uses STATIC fixed-hex values.
+  This component is rasterised to a PNG via html-to-image; the export
+  must be identical in light and dark mode. Never use var(--riso-*)
+  adaptive tokens here — they flip in dark mode and would produce
+  different PNGs depending on the user's theme.
+
+  Static palette (mirrors iOS risoInkStatic / risoPaper-static):
+    cream   #FBF6EA   — risoPaper-static / on-color
+    ink     #18120B   — risoInk-static
+    blue    #2C44C9   — risoBlue day-press (unchanged for poster)
+    red     #EB4D2E   — risoRed day-press (unchanged for poster)
+    green   #1F9B6B   — risoGreen day-press (badge fill)
+    gold    #FFC21F   — risoGold (unchanged across themes)
+    muted   #7E7460   — risoMuted day-press (stat labels on cream)
+*/
+
+/* ── Poster card ── */
+.poster {
+  position: relative;
+  /* Fixed 280 px matches iOS 280pt export width for deterministic output */
+  width: 280px;
+  padding: 16px;
+  background: #2c44c9; /* risoBlue — static */
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 13px;
+  /* Clip the halftone overprint to the card's rounded corners */
+  overflow: hidden;
+  font-family: 'Bricolage Grotesque', sans-serif;
+}
+
+/* ── Halftone overprint ── */
+/*
+ * Real DOM element — html-to-image does NOT serialise ::after pseudo-elements;
+ * they are absent from the foreignObject snapshot. A real child with the same
+ * visual properties is required so the halftone appears in the exported PNG.
+ */
+.halftone {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.45;
+  mix-blend-mode: multiply;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    #18120b 1.2px,
+    transparent 1.4px
+  );
+  background-size: 9px 9px;
+  border-radius: inherit;
+}
+
+/* All content layers sit above the halftone */
+.topRow,
+.boardName,
+.grid,
+.stats,
+.footer {
+  position: relative;
+  z-index: 2;
+}
+
+/* ── Top row: GREENLOG badge + OYBC wordmark ── */
+.topRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Green pill badge — mirrors iOS `.greenlogBadge` */
+.greenlogBadge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #18120b; /* ink-static */
+  background: #1f9b6b; /* risoGreen static */
+  border: 1.5px solid #18120b;
+  border-radius: 100px;
+  padding: 3px 10px;
+  line-height: 1.4;
+}
+
+/* OYBC wordmark */
+.wordmark {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #fbf6ea; /* cream static */
+}
+
+/* ── Board name ── */
+.boardName {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fbf6ea; /* cream static */
+  text-align: center;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  max-width: 100%;
+}
+
+/* ── 5×5 mini-grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  width: 200px;
+  height: 200px;
+}
+
+/* Base cell */
+.cell {
+  position: relative;
+  border-radius: 3px;
+  border: 1.5px solid #18120b; /* ink-static */
+  overflow: hidden;
+}
+
+/* Done cell — red */
+.cellDone {
+  background: #eb4d2e; /* risoRed static */
+}
+
+/* Centre cell — gold FREE */
+.cellCenter {
+  background: #ffc21f; /* risoGold static */
+  display: grid;
+  place-items: center;
+}
+
+/* Halftone overprint on done cells (same real-element rationale as outer .halftone) */
+.cellHalftone {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    rgba(24, 18, 11, 0.32) 1.2px,
+    transparent 1.4px
+  );
+  background-size: 6px 6px;
+  mix-blend-mode: multiply;
+}
+
+/* FREE star glyph */
+.star {
+  font-size: 11px;
+  color: #18120b; /* ink-static */
+  line-height: 1;
+}
+
+/* ── Stat trio ── */
+.stats {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.statCard {
+  flex: 1;
+  background: #fbf6ea; /* cream static — iOS uses Color.risoPaper (paper) */
+  border: 1.5px solid #18120b; /* ink-static */
+  border-radius: 10px;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0; /* prevent flex blowout on narrow text */
+}
+
+.statValue {
+  font-size: 18px;
+  font-weight: 800;
+  color: #18120b; /* ink-static */
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.statLabel {
+  font-family: 'Archivo', sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7e7460; /* risoMuted static */
+  line-height: 1;
+}
+
+/* ── Footer tagline ── */
+.footer {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  /* Cream at 70% opacity on blue — static, matches iOS `.opacity(0.7)` */
+  color: rgba(251, 246, 234, 0.7);
+}

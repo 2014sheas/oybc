@@ -1,0 +1,490 @@
+/* CounterDetailPage — single shared counter detail screen.
+   R2 Counters UX refresh — design handoff §Counter Detail. Mirrors `cd-*`
+   styles from the shared-counters design handoff. See docs/RISO_WEB.md
+   dark-mode contract. */
+
+.container {
+  padding: 0;
+}
+
+/* ─── Header row: back+kicker+title (left) · "⋯" overflow (right) ─── */
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
+}
+
+/* Blue kicker above h1 (was red "PROFILE" — Detail's kicker is
+   "SHARED COUNTER", distinct from the Hub's page-level "PROFILE" kicker). */
+.kicker {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--riso-blue);
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.overflowBtn {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--riso-ink);
+  border-radius: 50%;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.overflowBtn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.overflowBtn:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* ─── Desktop two-column layout ───────────────────────────────────────────
+   Mobile: leftRail + rightCol just stack in DOM order (no grid needed —
+   the DOM order already matches the mobile reading order: hero → stats →
+   log → explainer → task cards → history → delete). Desktop: 360px sticky
+   left rail + flexible right column. */
+.layout {
+  margin-top: 14px;
+}
+
+@media (min-width: 900px) {
+  .layout {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  .leftRail {
+    position: sticky;
+    top: 24px;
+  }
+}
+
+/* ─── 1. Hero card ─── */
+.heroCard {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  padding: 16px 16px 15px;
+  margin-bottom: 12px;
+}
+
+.heroTop {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.heroLifeBlock {
+  display: flex;
+  align-items: flex-end;
+  gap: 9px;
+  min-width: 0;
+}
+
+/* Blue hero number — sits on paper bg, so adaptive blue is correct here. */
+.lifetimeNum {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 46px;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+  color: var(--riso-blue);
+  font-variant-numeric: tabular-nums;
+}
+
+.lifetimeLabel {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--riso-muted);
+  padding-bottom: 6px;
+  white-space: nowrap;
+}
+
+/* 7-day sparkline — 9px-wide bars, blue with a static border; today's bar
+   is gold. DARK-MODE CONTRACT: colored fills → static border. */
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.sparkBar {
+  width: 9px;
+  min-height: 3px;
+  border-radius: 2px 2px 0 0;
+  border: 1px solid var(--riso-ink-static);
+  background: var(--riso-blue);
+}
+
+.sparkBarToday {
+  background: var(--riso-gold);
+}
+
+/* Milestone progress bar */
+.milestone {
+  margin-top: 12px;
+}
+
+.milestoneBar {
+  position: relative;
+  height: 8px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+
+.milestoneFill {
+  height: 100%;
+  background: var(--riso-blue);
+  border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .milestoneFill {
+    transition: width 0.3s ease;
+  }
+}
+
+.milestoneLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
+.milestoneLabel strong {
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+}
+
+/* ─── 2. Stat strip — Today / Streak / Best week ─── */
+.statStrip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.statValue {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--riso-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.statLabel {
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+
+/* ─── 3. Log control — blue filled card ─── */
+/*
+ * DARK-MODE CONTRACT:
+ *   Background = --riso-blue (adaptive; correct on both modes)
+ *   Text on blue fill = --riso-on-color (static cream)
+ *   Borders on blue fill = --riso-ink-static (static dark)
+ *   Selected (gold) chip = --riso-ink-static border + text (gold doesn't flip)
+ *   "+ Add N" cream button = --riso-on-color fill + --riso-ink-static text
+ */
+.logCard {
+  border: 2px solid var(--riso-ink-static);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-blue);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  padding: 13px 14px;
+  margin-bottom: 8px;
+}
+
+.logHeader {
+  margin-bottom: 11px;
+}
+
+.logTitle {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--riso-on-color);
+}
+
+.logSub {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-on-color);
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+/* Amount chip row */
+.chipRow {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 14px;
+  padding: 8px 4px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-on-color);
+  background: transparent;
+  color: var(--riso-on-color);
+  cursor: pointer;
+  transition: background 0.08s, transform 0.08s;
+}
+
+.chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+
+.chipSelected,
+.chipSelected:hover {
+  background: var(--riso-gold);
+  border-color: var(--riso-ink-static);
+  color: var(--riso-ink-static);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+
+/* Custom-amount inline input, shown when the "#" chip is tapped. */
+.customInputRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.customInput {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-cell);
+  border: 2px solid var(--riso-on-color);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+
+.customInput:focus-visible {
+  outline: 2px solid var(--riso-on-color);
+  outline-offset: 2px;
+}
+
+.customConfirm {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: var(--riso-r-cell);
+  border: 2px solid var(--riso-on-color);
+  background: var(--riso-on-color);
+  color: var(--riso-ink-static);
+  cursor: pointer;
+}
+
+.customConfirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* "−" outline button + "＋ Add N" cream fill button */
+.logActionsRow {
+  display: flex;
+  gap: 10px;
+}
+
+.minusBtn {
+  flex: 0 0 52px;
+  height: 44px;
+  border-radius: var(--riso-r-cell);
+  border: 2px solid var(--riso-on-color);
+  background: transparent;
+  color: var(--riso-on-color);
+  font-family: var(--riso-font-head);
+  font-size: 22px;
+  font-weight: 800;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.08s;
+}
+
+.minusBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.minusBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.minusBtn:focus-visible {
+  outline: 2px solid var(--riso-on-color);
+  outline-offset: -3px;
+}
+
+.addBtn {
+  flex: 1;
+  height: 44px;
+  border-radius: var(--riso-r-cell);
+  border: 2px solid var(--riso-on-color);
+  background: var(--riso-on-color);
+  color: var(--riso-ink-static);
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+
+.addBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.addBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.addBtn:focus-visible {
+  outline: 2px solid var(--riso-ink-static);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .addBtn {
+    transition: none;
+  }
+}
+
+/* ─── 4. Explainer copy ─── */
+.explainer {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--riso-muted);
+  font-weight: 600;
+  margin: 0 2px 4px;
+}
+
+/* ─── Task cards — 1-up mobile / 2-up desktop ─── */
+.taskCardsGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+
+@media (min-width: 900px) {
+  .taskCardsGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ─── "Recent weeks" — P4 stub card ─── */
+.historyCard {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.historyStub {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* ─── Delete-counter footer action ─── */
+.deleteAction {
+  margin-top: 16px;
+  padding-bottom: 8px;
+}
+
+.deleteLink {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.deleteLink:hover {
+  text-decoration: underline;
+}
+
+.deleteLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.deleteError {
+  margin: 12px 2px 0;
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.9rem;
+}

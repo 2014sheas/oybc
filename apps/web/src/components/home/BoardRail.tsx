@@ -1,9 +1,13 @@
 import { formatTimeframeLabel, type Board } from '@oybc/shared';
 import { BoardMiniGrid } from './BoardMiniGrid';
+import type { BoardPreviewCellsResult } from './boardPreviewCells';
 import styles from './Home.module.css';
 
 export interface BoardRailProps {
   boards: Board[];
+  /** `board.id` → TRUE preview cells, batch-built once by the page (`HomePage`
+   *  via `useBoardsPreviewCells`) — see `BoardMiniGrid`'s `previewCells` doc. */
+  previewCellsByBoardId: Record<string, BoardPreviewCellsResult>;
   onOpen: (boardId: string) => void;
 }
 
@@ -12,7 +16,7 @@ export interface BoardRailProps {
  * + name + timeframe + progress + bingo count. Built from the boards'
  * denormalized fields.
  */
-export function BoardRail({ boards, onOpen }: BoardRailProps): React.ReactElement {
+export function BoardRail({ boards, previewCellsByBoardId, onOpen }: BoardRailProps): React.ReactElement {
   return (
     <div className={styles.rail}>
       {boards.map((b) => {
@@ -20,7 +24,7 @@ export function BoardRail({ boards, onOpen }: BoardRailProps): React.ReactElemen
         return (
           <button key={b.id} type="button" className={styles.railCard} onClick={() => onOpen(b.id)}>
             <div className={styles.railTop}>
-              <BoardMiniGrid board={b} cell={9} />
+              <BoardMiniGrid board={b} previewCells={previewCellsByBoardId[b.id]} cell={9} />
               <div>
                 <div className={styles.railName}>{b.name}</div>
                 <div className={styles.railTf}>{formatTimeframeLabel(b.timeframe, b.startDate)}</div>

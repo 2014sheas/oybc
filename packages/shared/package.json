@@ -11,7 +11,9 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "gen:sync-contract": "node scripts/generate-sync-contract.js",
+    "gen:sync-fixtures": "node scripts/sync-fixtures-to-ios.js"
   },
   "keywords": [
     "bingo",
@@ -21,13 +23,14 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@oybc/bingo-core": "workspace:*",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.1.1",
     "jest": "^30.4.2",
-    "ts-jest": "^29.4.11",
+    "ts-jest": "^29.4.12",
     "typescript": "^6.0.3"
   }
 }

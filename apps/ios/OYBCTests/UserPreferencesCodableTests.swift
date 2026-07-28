@@ -50,6 +50,32 @@ final class UserPreferencesCodableTests: XCTestCase {
         XCTAssertEqual(decoded, original)
     }
 
+    // MARK: - INDEFINITE default timeframe (web-settable, previously undecodable on iOS)
+
+    func testIndefiniteDefaultTimeframeDecodesAndRoundTrips() throws {
+        // Web's `mergeUserPreferences` accepts Timeframe.INDEFINITE as a valid
+        // `defaultTimeframe` even though it isn't currently a picker option in
+        // either platform's UI. Before this enum gained an `.indefinite` case,
+        // this payload silently fell back to `.custom` on decode.
+        let json = """
+        {
+          "weekStartDay": "monday",
+          "defaultBoardSize": 5,
+          "defaultCenterType": "free",
+          "defaultTimeframe": "indefinite",
+          "defaultRandomize": true,
+          "defaultCenterCustomName": "",
+          "theme": "system"
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertEqual(decoded.defaultTimeframe, .indefinite)
+
+        let reencoded = try encoder.encode(decoded)
+        let redecoded = try decoder.decode(UserPreferences.self, from: reencoded)
+        XCTAssertEqual(redecoded.defaultTimeframe, .indefinite, "Must not degrade to .custom on re-encode.")
+    }
+
     // MARK: - Missing keys
 
     func testEmptyObjectDecodesToDefaults() throws {

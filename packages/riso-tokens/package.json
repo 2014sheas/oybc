@@ -1,0 +1,7 @@
+{
+  "name": "@oybc/riso-tokens",
+  "version": "1.0.0",
+  "description": "OYBC Riso design tokens (CSS custom properties) — single source of truth for web surfaces of both products. iOS twin: apps/ios/OYBC/Views/Riso/RisoTheme.swift.",
+  "exports": { "./riso.css": "./riso.css" },
+  "scripts": { "build": "true", "test": "true", "lint": "true", "clean": "true" }
+}

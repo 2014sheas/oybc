@@ -296,7 +296,27 @@ struct RisoBoardSetupForm: View {
                     }
                 }
             }
+
+            Text(tasksRequiredCaption)
+                .font(.risoBody(12, .regular))
+                .foregroundStyle(Color.risoMuted)
         }
+    }
+
+    /// Live requirement line, recomputed from `size` + `centerType` via the
+    /// shared `tasksNeededForBoard` helper (never hardcoded). Recurring
+    /// boards get "at least" copy since an overfilled pool is valid and
+    /// intended (spawns draw a random subset each window); one-off boards
+    /// need exactly this many, so plain copy. Renders under the size
+    /// selector in both the standard and core-board layouts (both call
+    /// `sizeSection`) — this is what pre-empts the Tasks-step's dead-Next
+    /// problem, so `RisoTasksPoolHeaderView` is left untouched (issue #321).
+    private var tasksRequiredCaption: String {
+        let n = controller.size
+        let count = controller.tasksRequired
+        return controller.isRecurring
+            ? "A \(n)×\(n) board needs at least \(count) tasks."
+            : "A \(n)×\(n) board needs \(count) tasks."
     }
 
     // MARK: - Section: Center square

@@ -33,3 +33,25 @@ describe('generateCounterTaskTitle', () => {
     expect(generateCounterTaskTitle('Do', 1, 'pushup')).toBe('Do 1 pushup');
   });
 });
+
+describe('generateCounterTaskTitle — goal-less variant (pair-derived, R1)', () => {
+  it('derives the pair-derived counter name when maxCount is null, eliding a default "Do"', () => {
+    expect(generateCounterTaskTitle('Do', null, 'push-ups')).toBe('Push-ups');
+  });
+
+  it('renders the same when maxCount is undefined, with surrounding whitespace trimmed', () => {
+    expect(generateCounterTaskTitle(' Do ', undefined, ' push-ups ')).toBe('Push-ups');
+  });
+
+  it('keeps a non-"Do" verb in the goal-less title', () => {
+    expect(generateCounterTaskTitle('Run', null, 'miles')).toBe('Run miles');
+  });
+
+  it('keeps the numeric form when maxCount is present', () => {
+    expect(generateCounterTaskTitle('Read', 100, 'pages')).toBe('Read 100 pages');
+  });
+
+  it('providedTitle still wins', () => {
+    expect(generateCounterTaskTitle('Do', null, 'push-ups', 'My tally')).toBe('My tally');
+  });
+});

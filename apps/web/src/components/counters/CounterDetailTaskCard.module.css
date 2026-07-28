@@ -1,0 +1,167 @@
+/* CounterDetailTaskCard — member task card for the Counter Detail screen.
+   Mirrors `cd-task` styles from the shared-counters design handoff.
+   See docs/RISO_WEB.md dark-mode contract. */
+
+/* Base card — reset button default styles first */
+.card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  /* Riso card chrome */
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  padding: 12px 13px;
+  margin-bottom: 11px;
+  color: var(--riso-ink);
+  /* Riso letterpress press animation */
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.card:hover:not(:disabled):not(.cardInactive) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.card:active:not(:disabled):not(.cardInactive) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.card:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.card:disabled {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}
+
+/* Inactive variant — greyed out, not interactive */
+.cardInactive {
+  opacity: 0.62;
+  cursor: default;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+
+.cardInactive:hover {
+  transform: none;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+
+/* ─── Card contents ─── */
+.top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.taskName {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progressVal {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--riso-ink);
+}
+
+.progressGoal {
+  color: var(--riso-muted);
+}
+
+/* Board + dot row */
+.boardRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  margin: 5px 0 10px;
+}
+
+/* Timeframe accent dot.
+   DARK-MODE CONTRACT: colored fill → border must be static. */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink-static);
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* Window progress bar */
+.barWrap {
+  height: 10px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: var(--riso-blue);
+  border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .barFill {
+    transition: width 0.3s ease;
+  }
+}
+
+.barFillMet {
+  background: var(--riso-green);
+}
+
+/* Caption — window label or goal-met copy */
+.caption {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Badge for inactive tasks ("Draft" / "Unplaced") */
+.inactiveBadge {
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1.5px solid var(--riso-ink);
+  background: var(--riso-paper);
+  color: var(--riso-muted);
+  margin-left: auto;
+  flex-shrink: 0;
+}

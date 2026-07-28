@@ -20,6 +20,8 @@ struct MainTabView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var notificationService: NotificationService
     @EnvironmentObject var notificationDelegate: NotificationDelegate
+    @EnvironmentObject var syncService: SyncService
+    @EnvironmentObject var networkMonitor: NetworkMonitor
     @Environment(\.scenePhase) private var scenePhase
 
     @EnvironmentObject var tutorialStore: TutorialProgressStore
@@ -55,6 +57,19 @@ struct MainTabView: View {
     /// fetches + hydrates the wizard in template-edit mode, then clears
     /// the binding. Same pattern as `pendingRecurringTimeframe`.
     @State private var pendingEditTemplateId: String? = nil
+
+    /// "Add tasks" cross-tab deep-link (issue #321) — mirrors
+    /// `pendingEditTemplateId` exactly, except `CreateHubView` lands the
+    /// wizard on the Tasks step (2) instead of Setup (1). Set by the
+    /// Profile → Recurring templates page's per-card "Add tasks" button.
+    @State private var pendingAddTasksTemplateId: String? = nil
+
+    /// Cross-tab new-recurring-template deep-link. Set when the user taps
+    /// "+ New template" on the Profile → Recurring templates page; we flip
+    /// this and switch `selectedTab` to Create, where `CreateHubView`
+    /// opens the wizard's recurring flow and clears it. Mirrors
+    /// `pendingEditTemplateId`.
+    @State private var pendingNewRecurringTemplate: Bool = false
 
     /// Draft-resume cross-tab deep-link. Set when the user taps a DRAFT
     /// board on the Boards tab (list card or core-grid slot); we stash the
@@ -217,7 +232,14 @@ struct MainTabView: View {
                         selectedTab = 2
                     },
                     onOpenTutorial: { boardsPath.append(TutorialRoute()) },
-                    onResumeDraft: { boardId in openDraftInWizard(boardId) }
+                    onResumeDraft: { boardId in openDraftInWizard(boardId) },
+                    onOpenClosingBoard: { boardId in
+                        // Windowed Completion — closing-out banner's "Log"
+                        // action: push the still-live board onto this SAME
+                        // stack (we're already on the Boards tab), matching
+                        // the Core Boards grid's onOpenCoreWindow pattern.
+                        boardsPath.append(boardId)
+                    }
                 )
                 .navigationDestination(for: TutorialRoute.self) { _ in
                     TutorialBoardView(
@@ -317,6 +339,8 @@ struct MainTabView: View {
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
                             pendingTargetWindowDate: $pendingTargetWindowDate,
                             pendingEditTemplateId: $pendingEditTemplateId,
+                            pendingAddTasksTemplateId: $pendingAddTasksTemplateId,
+                            pendingNewRecurringTemplate: $pendingNewRecurringTemplate,
                             pendingDraftId: $pendingDraftId,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
@@ -348,10 +372,22 @@ struct MainTabView: View {
                     onEditRecurringTemplate: { templateId in
                         // Phase 6.2 UX rework: cross-tab edit. The
                         // Profile tab's RecurringTemplatesView wires
-                        // its row Edit buttons here; we stash the id
+                        // its card taps here; we stash the id
                         // and switch to Create. CreateHubView consumes
                         // the binding and opens the wizard hydrated.
                         pendingEditTemplateId = templateId
+                        selectedTab = 2
+                    },
+                    onNewRecurringTemplate: {
+                        // "+ New template" cross-tab route: open the
+                        // wizard's fresh recurring flow on the Create tab.
+                        pendingNewRecurringTemplate = true
+                        selectedTab = 2
+                    },
+                    onAddTasksRecurringTemplate: { templateId in
+                        // Issue #321 — same cross-tab route as edit, but
+                        // CreateHubView lands the wizard on the Tasks step.
+                        pendingAddTasksTemplateId = templateId
                         selectedTab = 2
                     },
                     onOpenTutorial: { openTutorial() }
@@ -361,10 +397,20 @@ struct MainTabView: View {
                 .navigationDestination(for: ProfileRoute.self) { route in
                     switch route {
                     case .recurringTemplates:
-                        RecurringTemplatesView(onEditTemplate: { templateId in
-                            pendingEditTemplateId = templateId
-                            selectedTab = 2
-                        })
+                        RecurringTemplatesView(
+                            onEditTemplate: { templateId in
+                                pendingEditTemplateId = templateId
+                                selectedTab = 2
+                            },
+                            onNewTemplate: {
+                                pendingNewRecurringTemplate = true
+                                selectedTab = 2
+                            },
+                            onAddTasksTemplate: { templateId in
+                                pendingAddTasksTemplateId = templateId
+                                selectedTab = 2
+                            }
+                        )
                     case .defaultPools:
                         DefaultPoolsListView()
                     case .streaks:
@@ -420,6 +466,17 @@ struct MainTabView: View {
         .onChange(of: notificationDelegate.pendingDeepLink) { _, _ in
             routePendingDeepLink()
         }
+        .onChange(of: networkMonitor.isConnected) { _, isConnected in
+            // Network-regain auto-recovery (D1): on the offline→online EDGE,
+            // give exhausted sync items ONE free re-promote + push. `.onChange`
+            // fires only on a real transition and we gate on the new value
+            // being `true`, so this fires once per reconnect — no loop. Mirrors
+            // web `handleOnline` (which is edge-triggered by the browser's
+            // `online` event). No-op when nothing is stuck (retry resets zero
+            // rows, fullSync is the same kick the loop already makes).
+            guard isConnected, let userId = authService.currentUser?.id else { return }
+            _Concurrency.Task { await syncService.retryExhaustedItems(userId: userId) }
+        }
     }
 
     /// Re-syncs scheduled local notifications with current local state.
@@ -448,4 +505,6 @@ struct MainTabView: View {
         .environmentObject(NotificationService())
         .environmentObject(NotificationDelegate.shared)
         .environmentObject(TutorialProgressStore())
+        .environmentObject(SyncService())
+        .environmentObject(NetworkMonitor())
 }

@@ -1,0 +1,645 @@
+import Foundation
+import GRDB
+
+extension AppDatabase {
+    // MARK: - Boards
+
+    func fetchBoards(userId: String) throws -> [Board] {
+        return try read { db in
+            try Board
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+        }
+    }
+
+    /// Fetch boards by id. Used by the task detail view to render
+    /// "placed on" links for the cells where this task lives.
+    func fetchBoards(ids: [String]) throws -> [Board] {
+        guard !ids.isEmpty else { return [] }
+        return try read { db in
+            try Board
+                .filter(ids.contains(Column("id")) && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+    }
+
+    /// Boards eligible to act as a "source" in the wizard's
+    /// `From a board…` filter — active boards plus boards completed
+    /// within the last 30 days. Drafts and archived are excluded.
+    /// Sorted recently-active first (`updatedAt desc`). Mirror of
+    /// web's `useSourceBoards` hook.
+    ///
+    /// Opens its own `read` block. For callers that already hold a
+    /// transaction (e.g., `SourceBoardsViewModel.reload` which also
+    /// needs to read board_tasks atomically with the eligibility
+    /// list), use `fetchEligibleSourceBoards(_:userId:)` instead so
+    /// both queries see one consistent snapshot.
+    func fetchEligibleSourceBoards(userId: String) throws -> [Board] {
+        try read { db in
+            try AppDatabase.fetchEligibleSourceBoards(db, userId: userId)
+        }
+    }
+
+    /// Transaction-aware variant. Runs the same eligibility filter as
+    /// `fetchEligibleSourceBoards(userId:)` but inside the caller's
+    /// `read` block so the resulting boards + any subsequent reads
+    /// (placements, tasks) share a single snapshot.
+    static func fetchEligibleSourceBoards(_ db: Database, userId: String) throws -> [Board] {
+        let completedLookbackDays = 30
+        let cutoff = Date().addingTimeInterval(
+            -Double(completedLookbackDays) * 24 * 60 * 60
+        )
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoFormatterNoFrac = ISO8601DateFormatter()
+
+        let boards = try Board
+            .filter(Column("userId") == userId && Column("isDeleted") == false)
+            .order(Column("updatedAt").desc)
+            .fetchAll(db)
+        return boards.filter { board in
+            if board.status == .active { return true }
+            guard board.status == .completed else { return false }
+            guard let completedAt = board.completedAt else { return false }
+            // ISO8601 strings round-trip from JS (fractional) and Swift
+            // (no fractional). Try both parsers so we don't reject valid
+            // timestamps from either platform.
+            let parsed = isoFormatter.date(from: completedAt)
+                ?? isoFormatterNoFrac.date(from: completedAt)
+            guard let ts = parsed else { return false }
+            return ts >= cutoff
+        }
+    }
+
+    func fetchBoard(id: String) throws -> Board? {
+        return try read { db in
+            try Board.fetchOne(db, key: id)
+        }
+    }
+
+    func saveBoard(_ board: Board) throws {
+        try write { db in
+            try board.save(db)
+        }
+    }
+
+    /// Soft-delete a board.
+    ///
+    /// Increments `version` so LWW treats the deletion as later-wins
+    /// against a concurrent update on another device. A soft delete
+    /// without a version bump can be overwritten by a stale edit whose
+    /// `updatedAt` happens to be newer.
+    func deleteBoard(id: String) throws {
+        try write { db in
+            guard var board = try Board.fetchOne(db, key: id) else { return }
+            let now = Self.currentTimestamp()
+            board.isDeleted = true
+            board.deletedAt = now
+            board.updatedAt = now
+            board.version += 1
+            try board.update(db)
+        }
+    }
+
+    /// Move an ACTIVE board to the `.archived` status.
+    ///
+    /// Mirrors the pattern of `deleteBoard(id:)` + `updateBoardAndCascade`:
+    ///   - Mutates status, bumps version, writes `updatedAt`.
+    ///   - Enqueues a `boards` UPDATE item in the sync queue so the change
+    ///     propagates to Firestore (and thence to other devices) on the next
+    ///     sync pass.
+    ///   - Does NOT touch BoardTask rows — placements stay intact so the board
+    ///     appears correctly in the archive view.
+    ///
+    /// Caller is responsible for any pre-confirmation UI (e.g., the alert in
+    /// `BoardEditPanel`).
+    func archiveBoard(id: String) throws {
+        try write { db in
+            guard var board = try Board.fetchOne(db, key: id) else { return }
+            let now = Self.currentTimestamp()
+            board.status = .archived
+            board.updatedAt = now
+            board.version += 1
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: id,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).enqueue(db)
+        }
+    }
+
+    /// Delete a DRAFT board and its attached BoardTask placements atomically.
+    ///
+    /// Used by the Create Hub's drafts-list delete affordance (per-row
+    /// `xmark` button gated behind a confirmation `Alert`). Soft-deletes
+    /// the Board AND its BoardTask placements (Board-integrity PR-1,
+    /// docs/BOARD_INTEGRITY.md — BoardTask placement removal is a tombstone
+    /// now, matching the Board itself). Both happen inside one GRDB write
+    /// transaction so a mid-flight failure rolls back instead of leaving
+    /// orphan live BoardTask rows pointing at a soft-deleted Board.
+    ///
+    /// Helper is draft-only by design — throws if called with a
+    /// non-DRAFT board so misuse from a future caller surfaces loudly
+    /// rather than silently destroying ACTIVE/COMPLETED placements.
+    /// For "delete an active board", use `deleteBoard(id:)` (which
+    /// leaves BoardTask rows in place).
+    ///
+    /// Caller is responsible for confirming the user wants the deletion.
+    /// Web twin: `deleteDraftWithCascade` in `apps/web/src/db/operations/boards.ts`.
+    func deleteDraftWithCascade(id: String) throws {
+        try write { db in
+            guard var board = try Board.fetchOne(db, key: id) else { return }
+            guard board.status == .draft else {
+                throw DatabaseError(
+                    message: "deleteDraftWithCascade: board \(id) has status \"\(board.status.rawValue)\", not \"draft\". " +
+                    "Use deleteBoard(id:) for non-draft boards."
+                )
+            }
+            let now = Self.currentTimestamp()
+
+            let placements = try BoardTask
+                .filter(Column("boardId") == id && Column("isDeleted") == false)
+                .fetchAll(db)
+            for var bt in placements {
+                bt.isDeleted = true
+                bt.deletedAt = now
+                bt.updatedAt = now
+                bt.version += 1
+                try bt.update(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: bt.id,
+                    operationType: .delete,
+                    payload: bt,
+                    now: now
+                ).enqueue(db)
+            }
+
+            board.isDeleted = true
+            board.deletedAt = now
+            board.updatedAt = now
+            board.version += 1
+            try board.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: id,
+                operationType: .delete,
+                payload: board,
+                now: now
+            ).enqueue(db)
+        }
+    }
+
+    // MARK: - Board metadata edit helpers (M2 — live-edit board metadata)
+
+    /// Editable fields for an ACTIVE board (M2).
+    ///
+    /// Immutable on active boards:
+    ///   - `boardSize` — render as read-only chip (too disruptive to change).
+    ///   - `isCore`, `spawnedFromTemplateId`, `isRandomized` — internal state.
+    ///   - Placement set (`BoardTask` rows) — M3/M4.
+    ///
+    /// NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
+    /// preserves the underlying `BoardTask` row; the board.centerTaskId column
+    /// is cleared so the cell renders as FREE on top, but the placement is
+    /// retained in case the user switches back. Do not treat this as a bug.
+    struct UpdateActiveBoardPatch {
+        var name: String?
+        var timeframe: Timeframe?
+        /// Local-ISO8601 snap to 00:00:00.000 start-of-day (via `wizardLocalISOString`).
+        var startDate: String?
+        /// Local-ISO8601 snap to 23:59:59.999 end-of-day (via `wizardLocalISOString`).
+        var endDate: String?
+        /// Explicitly clear the board's `endDate` (convert to an indefinite /
+        /// ongoing board). A plain `endDate == nil` means "leave unchanged" —
+        /// this flag is the distinct "remove the deadline" signal, since a nil
+        /// value alone can't express clearing. Setting `timeframe = .indefinite`
+        /// also forces the clear (see `updateBoardAndCascade`).
+        var clearEndDate: Bool
+        var centerSquareType: CenterSquareType?
+        /// Only meaningful when `centerSquareType == .customFree`.
+        var centerSquareCustomName: String?
+        /// Only meaningful when `centerSquareType == .chosen`.
+        var centerTaskId: String?
+
+        init(
+            name: String? = nil,
+            timeframe: Timeframe? = nil,
+            startDate: String? = nil,
+            endDate: String? = nil,
+            clearEndDate: Bool = false,
+            centerSquareType: CenterSquareType? = nil,
+            centerSquareCustomName: String? = nil,
+            centerTaskId: String? = nil
+        ) {
+            self.name = name
+            self.timeframe = timeframe
+            self.startDate = startDate
+            self.endDate = endDate
+            self.clearEndDate = clearEndDate
+            self.centerSquareType = centerSquareType
+            self.centerSquareCustomName = centerSquareCustomName
+            self.centerTaskId = centerTaskId
+        }
+    }
+
+    /// Apply a metadata patch to an ACTIVE board and re-derive stats for
+    /// every placed task.
+    ///
+    /// Sequence:
+    ///   1. Apply the patch atomically (bumps version, enqueues boards sync).
+    ///   2. Sanitize center-square auxiliary fields (clear centerTaskId for
+    ///      non-CHOSEN types; clear centerSquareCustomName for non-CUSTOM_FREE).
+    ///   3. Fetch every `BoardTask` that places a task on this board.
+    ///   4. Run `Self.runBoardCascadeForTask` for each unique placed task
+    ///      inside the same write transaction.
+    ///
+    /// Per-task cascade (not per-board) is deliberate: timeframe/dates changes
+    /// can flip expiry state on placed tasks, and each task's derivation reads
+    /// from board.timeframe + board.endDate. Mirrors the web-side
+    /// `updateBoardAndCascade` in `apps/web/src/db/operations/boards.ts`.
+    ///
+    /// NOTE on renaming: references to this board (Achievement tasks,
+    /// recurring-template spawn records) are always by id, so renaming is
+    /// safe with no additional propagation. Renaming does NOT update the
+    /// spawning template name or historical spawn names.
+    ///
+    /// - Parameters:
+    ///   - boardId: Board to update.
+    ///   - patch: Editable fields for ACTIVE boards.
+    func updateBoardAndCascade(boardId: String, patch: UpdateActiveBoardPatch) throws {
+        try write { db in
+            try Self.updateBoardAndCascade(db: db, boardId: boardId, patch: patch)
+        }
+    }
+
+    /// `db`-scoped core of `updateBoardAndCascade` — Board-integrity PR-4 (Item 3,
+    /// docs/BOARD_INTEGRITY.md): lets `BoardPlayViewModel.handleEditSave` compose
+    /// this cascade with the other Save sub-ops into ONE outer
+    /// `database.write { db in }` transaction. GRDB's `DatabaseQueue.write` is not
+    /// reentrant — calling the instance method above (which opens its own
+    /// `write { }`) from inside another `write` block traps, so a caller composing
+    /// multiple cascades into one transaction must call this `db:`-parameterized
+    /// variant directly instead. Identical body to the instance method; the
+    /// instance method is now a one-line wrapper so every other call site
+    /// (Task detail, Tasks tab, tests) is unaffected.
+    ///
+    /// Must be called inside an active write transaction covering `boards`,
+    /// `boardTasks`, and `syncQueue`.
+    static func updateBoardAndCascade(db: Database, boardId: String, patch: UpdateActiveBoardPatch) throws {
+            // UI gates Board Edit on `!sealedAt` already, but the DB level
+            // must hold too (hardening item 6) — a sealed board's snapshot is
+            // a frozen, read-only record, so a metadata edit on a sealed or
+            // already-deleted board is a no-op rather than silently writing
+            // through.
+            guard var board = try Board.fetchOne(db, key: boardId),
+                  !board.isDeleted, board.sealedAt == nil else { return }
+            let now = Self.currentTimestamp()
+
+            // 1. Apply scalar fields.
+            if let n = patch.name { board.name = n }
+            if let tf = patch.timeframe { board.timeframe = tf }
+            if let sd = patch.startDate { board.startDate = sd }
+            // Clear the deadline when explicitly requested or when converting to
+            // an indefinite board; otherwise apply a provided endDate. A bare
+            // nil endDate (no clear flag) leaves the existing value untouched.
+            if patch.clearEndDate || patch.timeframe == .indefinite {
+                board.endDate = nil
+            } else if let ed = patch.endDate {
+                board.endDate = ed
+            }
+
+            // 2. Center-square fields with sanitization.
+            if let ct = patch.centerSquareType {
+                board.centerSquareType = ct
+                switch ct {
+                case .customFree:
+                    // Keep caller-supplied custom name; clear any stale centerTaskId.
+                    board.centerSquareCustomName = patch.centerSquareCustomName
+                    board.centerTaskId = nil
+                case .chosen:
+                    // Keep caller-supplied centerTaskId; clear custom name.
+                    // NOTE (asymmetry): switching CHOSEN → FREE/CUSTOM_FREE later
+                    // will clear centerTaskId but NOT the BoardTask row, preserving
+                    // the placement for a potential future switch back.
+                    if let tid = patch.centerTaskId { board.centerTaskId = tid }
+                    board.centerSquareCustomName = nil
+                default:
+                    // FREE / NONE: clear both auxiliary fields.
+                    // The BoardTask row (if any) is preserved — only the board-level
+                    // reference is cleared.
+                    board.centerSquareCustomName = nil
+                    board.centerTaskId = nil
+                }
+            }
+
+            board.updatedAt = now
+            board.version += 1
+            try board.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: boardId,
+                operationType: .update,
+                payload: board,
+                now: now
+            ).enqueue(db)
+
+            // 3. Batch cascade: load shared tables ONCE, find the union of
+            //    affected board IDs across all placed tasks, then write one
+            //    stats update per affected board. This replaces the previous
+            //    per-task loop which did O(N) full-table scans (one per task
+            //    on a 5×5 board = 25 cascade calls). (Copilot review #9)
+            let placements = try BoardTask
+                .filter(Column("boardId") == boardId && Column("isDeleted") == false)
+                .fetchAll(db)
+            let taskIds = Array(Set(placements.map { $0.taskId }))
+
+            guard !taskIds.isEmpty else { return }
+
+            let allChildren: [CompoundChild] = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let allBoardTasks: [BoardTask] = try BoardTask
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let allTasks: [Task] = try Task.fetchAll(db)
+            let allBoards: [Board] = try Board.fetchAll(db)
+
+            var taskById: [String: Task] = [:]
+            for t in allTasks { taskById[t.id] = t }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildren {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+
+            // Collect the union of all affected board IDs across every placed task.
+            var affectedBoardIds = Set<String>()
+            for taskId in taskIds {
+                let parents = DerivationPass.findTransitiveParentCompounds(
+                    changedTaskId: taskId,
+                    children: allChildren
+                )
+                let ids = DerivationPass.findAffectedBoardIds(
+                    changedTaskId: taskId,
+                    parentCompounds: parents,
+                    boardTasks: allBoardTasks
+                )
+                affectedBoardIds.formUnion(ids)
+            }
+
+            // Windowed Completion: resolve each board against its own
+            // `[startDate, ∞)` window from the event log, not the lifetime
+            // `Task.isCompleted` cache (which would count out-of-window cells
+            // into bingo lines → phantom bingos).
+            let windowContext = try Self.buildWindowContext(db: db)
+
+            // Update each affected board exactly once.
+            for affectedBoardId in affectedBoardIds {
+                // Re-fetch to see the just-written metadata update above.
+                guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
+                      !affectedBoard.isDeleted, affectedBoard.sealedAt == nil else { continue }
+                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == affectedBoardId }
+                let update = DerivationPass.computeBoardStatsUpdate(
+                    board: affectedBoard,
+                    boardTasksOnBoard: boardTasksOnBoard,
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: allBoards,
+                    windowContext: windowContext
+                )
+
+                let totalSquares = affectedBoard.boardSize * affectedBoard.boardSize
+                let isGreenlogNow = update.completedTasks >= totalSquares
+
+                affectedBoard.completedTasks = update.completedTasks
+                affectedBoard.totalTasks = totalSquares
+                affectedBoard.linesCompleted = update.linesCompleted
+                affectedBoard.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+                affectedBoard.updatedAt = now
+                affectedBoard.version += 1
+
+                if isGreenlogNow, affectedBoard.status == .active {
+                    affectedBoard.status = .completed
+                    affectedBoard.completedAt = now
+                } else if !isGreenlogNow, affectedBoard.status == .completed {
+                    affectedBoard.status = .active
+                    affectedBoard.completedAt = nil
+                }
+
+                try affectedBoard.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boards",
+                    entityId: affectedBoardId,
+                    operationType: .update,
+                    payload: affectedBoard,
+                    now: now
+                ).enqueue(db)
+            }
+    }
+
+    // MARK: - Wizard board persist (B4 — absorbed from BoardWizardPersist)
+
+    /// Persist a wizard-built board in a single atomic transaction: any
+    /// deferred (Bug #85) pending tasks that are actually placed, then the
+    /// `Board` row + its `BoardTask` rows — plus all matching `SyncQueueItem`
+    /// records — commit or roll back together. Without the sync items the
+    /// board stays local-only (`SyncService.pushSync` reads exclusively from
+    /// `sync_queue`), so every write path below enqueues one.
+    ///
+    /// Moved VERBATIM from `BoardWizardPersist.persistWizardBoard`'s write
+    /// block so the sync-enqueue lives in the data layer, not the view-layer
+    /// helper. The caller resolves the board dict, placement rows, and the
+    /// placed-only pending payloads before invoking.
+    ///
+    /// Bug #85: pending tasks are written FIRST (before board_tasks) so the
+    /// referential integrity of task → board_task is never violated even
+    /// during a crash mid-write (the txn rolls back).
+    ///
+    /// - Parameters:
+    ///   - board: The resolved `Board` row to insert/update.
+    ///   - boardTasks: The per-cell `BoardTask` placement rows to insert.
+    ///   - pendingTasks: Placed-only deferred payloads (parent + inline
+    ///     children + links) to write first.
+    ///   - isUpdate: `true` when updating an existing draft (old placements
+    ///     are soft-deleted (tombstoned) + DELETE-enqueued first); `false` for
+    ///     fresh create.
+    ///   - now: ISO8601 timestamp for the sync-queue rows.
+    func saveWizardBoard(
+        board: Board,
+        boardTasks: [BoardTask],
+        pendingTasks: [PendingTaskPayload],
+        isUpdate: Bool,
+        now: String
+    ) throws {
+        try write { db in
+            // ── Bug #85: pending tasks (placed-only) ───────────────
+            for payload in pendingTasks {
+                try payload.task.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: payload.task.id,
+                    operationType: .create,
+                    payload: payload.task,
+                    now: now
+                ).enqueue(db)
+                for childTask in payload.childTasks {
+                    try childTask.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "tasks",
+                        entityId: childTask.id,
+                        operationType: .create,
+                        payload: childTask,
+                        now: now
+                    ).enqueue(db)
+                }
+                for link in payload.childLinks {
+                    try link.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "compoundChildren",
+                        entityId: link.id,
+                        operationType: .create,
+                        payload: link,
+                        now: now
+                    ).enqueue(db)
+                }
+            }
+
+            // ── Board + BoardTask rows ─────────────────────────────
+            // Windowed Completion — stamp the activation instant on an active
+            // wizard board (fresh-active OR a resumed draft saved active) if not
+            // already set, so the auto-seal backstop keys off max(endDate,
+            // activatedAt) (docs §Sealing → backstop).
+            var boardToSave = board
+            if boardToSave.status == .active, boardToSave.activatedAt == nil {
+                boardToSave.activatedAt = now
+            }
+
+            // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this
+            // closes — respawn-bleed row): run the derivation pass over the
+            // just-built placements so stored stats are derivation output,
+            // never a hand-init. `persistWizardBoard` seeds `completedTasks:
+            // 0` / `linesCompleted: 0` (or preserves the prior draft's value
+            // on update) — this overwrites that with the real value. Without
+            // it, a board placing an already-in-window-complete task (or a
+            // FREE/CUSTOM_FREE center) would persist + sync wrong stats until
+            // the next app-open self-heal. Covers both fresh creation AND
+            // draft→active resume — both flow through this one function, and
+            // `activatedAt` above is already stamped by the time this runs.
+            // Mirrors the recurring-spawn path
+            // (`AppDatabase+RecurringTemplates.swift`) exactly, including
+            // reading `allBoards` BEFORE this board is inserted (same as
+            // spawn — an achievement referencing this board-in-progress is a
+            // same-transaction chicken-and-egg case neither path handles).
+            // Status logic is deliberately untouched here — a fresh board
+            // with a bingo from shared tasks legitimately shows those lines;
+            // status transitions stay the live-cascade's job.
+            let windowContext = try AppDatabase.buildWindowContext(db: db)
+            let allChildrenForDerivation = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in allChildrenForDerivation {
+                childrenByCompound[c.compoundTaskId, default: []].append(c)
+            }
+            let allTasksForDerivation = try Task.fetchAll(db)
+            var taskById: [String: Task] = [:]
+            for t in allTasksForDerivation { taskById[t.id] = t }
+            let allBoardsForDerivation = try Board
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+            let stats = DerivationPass.computeBoardStatsUpdate(
+                board: boardToSave,
+                boardTasksOnBoard: boardTasks,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoardsForDerivation,
+                windowContext: windowContext
+            )
+            boardToSave.completedTasks = stats.completedTasks
+            boardToSave.linesCompleted = stats.linesCompleted
+            boardToSave.completedLineIds = stats.completedLineIds.isEmpty ? nil : stats.completedLineIds
+
+            try boardToSave.save(db)
+
+            let boardSyncOp: SyncOperationType = isUpdate ? .update : .create
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: board.id,
+                operationType: boardSyncOp,
+                payload: boardToSave,
+                now: now
+            ).enqueue(db)
+
+            if isUpdate {
+                // Board-integrity PR-1 (tombstones): the wizard doesn't diff
+                // old vs new layout — it always rewrites the full placement
+                // set. SOFT-delete every existing LIVE row (isDeleted, bumped
+                // version) rather than a literal SQL DELETE, so an
+                // already-synced device sees a tombstone win LWW instead of a
+                // hard-deleted row that a stale remote pull could resurrect.
+                // The fresh `boardTasks` rows below always carry NEW ids
+                // (`BoardWizardPersist` mints them per save), so there's no
+                // id collision between the old tombstones and the new rows.
+                let oldBoardTasks = try BoardTask
+                    .filter(Column("boardId") == board.id && Column("isDeleted") == false)
+                    .fetchAll(db)
+                for var old in oldBoardTasks {
+                    old.isDeleted = true
+                    old.deletedAt = now
+                    old.updatedAt = now
+                    old.version += 1
+                    try old.update(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "boardTasks",
+                        entityId: old.id,
+                        operationType: .delete,
+                        payload: old,
+                        now: now
+                    ).enqueue(db)
+                }
+            }
+
+            // Board-integrity PR-5 (Item 3) — isCenter uniqueness guard.
+            // Nothing upstream enforced single-center uniqueness before this:
+            // `makeWizardBoardTaskRows` only ever computes ONE positional
+            // center per placement today, but a future caller or placement
+            // bug could otherwise slip a SECOND `isCenter: true` row onto
+            // this board at a different cell. Fresh in-txn read (mirrors the
+            // `addBoardTaskToBoard` PR-2 guard idiom) — for a fresh create
+            // this is always 0; for a draft update the old rows were just
+            // tombstoned above, so it's also 0 today, but the read (rather
+            // than trusting that invariant) is what makes this guard survive
+            // a future change to the update path. Mirrors web's
+            // `createBoardTask` guard (the wizard write loop's per-cell
+            // equivalent — see docs/BOARD_INTEGRITY.md).
+            var liveCenterCount = try BoardTask
+                .filter(Column("boardId") == board.id
+                        && Column("isDeleted") == false
+                        && Column("isCenter") == true)
+                .fetchCount(db)
+            for bt in boardTasks {
+                if bt.isCenter {
+                    guard liveCenterCount == 0 else {
+                        throw AppDatabaseError.invalidPlacement(
+                            "Board already has a center placement."
+                        )
+                    }
+                    liveCenterCount += 1
+                }
+                try bt.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: bt.id,
+                    operationType: .create,
+                    payload: bt,
+                    now: now
+                ).enqueue(db)
+            }
+        }
+    }
+
+}

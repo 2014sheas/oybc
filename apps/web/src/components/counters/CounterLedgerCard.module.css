@@ -1,0 +1,250 @@
+/* CounterLedgerCard — Ledger layout card for the Counters Hub.
+   Mirrors the `cn-led` styles from the shared-counters design handoff,
+   translated to Riso web tokens. See docs/RISO_WEB.md dark-mode contract. */
+
+/* Whole card is the tap target → Detail (except the "+ Log" pill, which
+   stops propagation). `role="button"` on a <div> (not a real <button>) so it
+   can validly contain the nested "+ Log" <button> — mirrors the
+   outer-div-plus-inner-buttons split used by BoardListItem. */
+.card {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  padding: 15px 16px 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink);
+}
+
+.card:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--riso-shadow-ink);
+}
+
+.card:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+  .card:hover,
+  .card:active {
+    transform: none;
+  }
+}
+
+/* ─── Top row: name (left) + lifetime (right) ─── */
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.name {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--riso-ink);
+  min-width: 0;
+}
+
+.lifetimeBlock {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Blue lifetime number — --riso-blue is adaptive (dims in dark mode) which is
+   intentional: the number sits on paper, not a colored fill. */
+.lifetimeNum {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+  color: var(--riso-blue);
+  font-variant-numeric: tabular-nums;
+}
+
+.lifetimeLabel {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+  margin-top: 3px;
+}
+
+/* ─── Active task rows ─── */
+.rows {
+  margin: 14px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.rowLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.rowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowWindow {
+  color: var(--riso-muted);
+  font-weight: 600;
+}
+
+/* Timeframe accent dot.
+   DARK-MODE CONTRACT: dot has a colored fill — border must be static. */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--riso-ink-static);
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.rowVal {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--riso-ink);
+}
+
+.rowGoal {
+  color: var(--riso-muted);
+  font-weight: 700;
+}
+
+/* Progress bar spans both grid columns */
+.barWrap {
+  grid-column: 1 / -1;
+  height: 10px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: var(--riso-blue);
+  border-radius: inherit;
+  /* No animation: respects prefers-reduced-motion by default (no motion class) */
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .barFill {
+    transition: width 0.3s ease;
+  }
+}
+
+.barFillMet {
+  background: var(--riso-green);
+}
+
+/* ─── Footer: dashed divider + meta + "+ Log" pill + chevron ─── */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1.5px dashed var(--riso-ink);
+}
+
+.footerMeta {
+  flex: 1;
+  min-width: 0;
+}
+
+/* "+ Log" pill — blue fill, on-color text (dark-mode contract: colored
+   fill → static content), 2px static border + 2px offset shadow. Stops
+   click-propagation to the card's own onClick (see CounterLedgerCard.tsx). */
+.logPill {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 2px solid var(--riso-ink-static);
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+
+.logPill:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.logPill:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.logPill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.logPill:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logPill {
+    transition: none;
+  }
+}

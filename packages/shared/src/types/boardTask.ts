@@ -11,6 +11,10 @@
  *   `TaskType` in this package for details.
  * - Grid position (row, col) for board layout.
  * - UUID primary key (offline creation).
+ * - Soft-deleted (tombstoned) like every other synced collection — see
+ *   `docs/BOARD_INTEGRITY.md`. Placement removal sets `isDeleted`/`deletedAt`
+ *   instead of a physical delete so the LWW version bump wins the sync
+ *   tie-break and the tombstone propagates to other devices.
  */
 export interface BoardTask {
   // Identity
@@ -30,6 +34,8 @@ export interface BoardTask {
   // Sync metadata
   lastSyncedAt?: string;         // ISO8601
   version: number;               // Optimistic locking
+  isDeleted: boolean;            // Soft delete (tombstone)
+  deletedAt?: string;            // ISO8601
 }
 
 /**

@@ -9,11 +9,14 @@ import { CreateHubPage } from './pages/CreateHubPage';
 import { TasksPage } from './pages/TasksPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { StreaksPage } from './pages/StreaksPage';
 import { AccountSecurityPage } from './pages/AccountSecurityPage';
 import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
 import { DefaultPoolsListPage } from './pages/DefaultPoolsListPage';
 import { DefaultPoolEditorPage } from './pages/DefaultPoolEditorPage';
+import { CountersHubPage } from './pages/CountersHubPage';
+import { CounterDetailPage } from './pages/CounterDetailPage';
 import { CoreBoardBrowserPage } from './pages/core-board-browser/CoreBoardBrowserPage';
 import { CoreBoardWindowPage } from './pages/core-board-browser/CoreBoardWindowPage';
 import { Playground } from './pages/Playground';
@@ -107,11 +110,14 @@ function AuthenticatedLayout(): React.ReactElement {
         <Route path="/tasks" element={<TasksRoute />} />
         <Route path="/tasks/:id" element={<TaskDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile/streaks" element={<StreaksPage />} />
         <Route path="/profile/board-preferences" element={<BoardPreferencesPage />} />
         <Route path="/profile/recurring-templates" element={<RecurringTemplatesPage />} />
         <Route path="/profile/default-pools" element={<DefaultPoolsListPage />} />
         <Route path="/profile/default-pools/:timeframe" element={<DefaultPoolEditorPage />} />
         <Route path="/profile/account-security" element={<AccountSecurityPage />} />
+        <Route path="/profile/counters" element={<CountersHubPage />} />
+        <Route path="/profile/counters/:counterId" element={<CounterDetailPage />} />
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
@@ -124,7 +130,9 @@ function AuthenticatedLayout(): React.ReactElement {
 /**
  * Root app component.
  *
- * - Playground is accessible without auth (dev tool)
+ * - Playground is accessible without auth (dev tool) and only registered in
+ *   dev builds (`import.meta.env.DEV`) — it must never be reachable in
+ *   production, since it can wipe the real local database.
  * - All other routes require authentication via AuthGate
  * - The Riso `AppShell` provides the top nav (→ mobile bottom tab bar):
  *   Home · Boards · Tasks · You, plus New board + avatar
@@ -134,8 +142,12 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public route — playground accessible without auth */}
-          <Route path="/playground" element={<Playground />} />
+          {/* Public route — playground accessible without auth, dev builds only.
+              Gated on import.meta.env.DEV so Vite dead-code-eliminates the
+              Playground chunk from production bundles. */}
+          {import.meta.env.DEV && (
+            <Route path="/playground" element={<Playground />} />
+          )}
 
           {/* Protected routes — auth required */}
           <Route
