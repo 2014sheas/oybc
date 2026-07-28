@@ -106,7 +106,10 @@ struct BoardListView: View {
         guard activeFilter != "all" else { return boards }
         return boards.filter { board in
             guard board.status.rawValue == activeFilter else { return false }
-            if activeFilter == "active", isBoardExpired(board) { return false }
+            // The Active tab hides expired and sealed boards (still visible
+            // under All). A sealed-but-incomplete board keeps status ACTIVE
+            // forever by design, so status alone can't exclude it.
+            if activeFilter == "active", board.sealedAt != nil || isBoardExpired(board) { return false }
             return true
         }
     }

@@ -115,6 +115,24 @@ final class IndefiniteBoardTests: XCTestCase {
         XCTAssertEqual(getExpiryLabel(makeBoard(id: "c-none", timeframe: .custom, endDate: nil)), "No deadline")
     }
 
+    /// Regression (Boards-tab Active leak): `isBoardExpired` must treat a
+    /// CUSTOM board with a past end date as expired, exactly like a timed
+    /// board — mirror of web `isBoardExpired` in `boardDisplayUtils.ts`
+    /// (#355 parity). The old `.custom` carve-out let an expired (and even
+    /// sealed) custom board pass the Active filter forever, because a
+    /// sealed-but-incomplete board keeps status ACTIVE by design.
+    func testIsBoardExpiredHonorsCustomEndDate() {
+        XCTAssertTrue(isBoardExpired(makeBoard(id: "c-past", timeframe: .custom, endDate: "2000-01-01T00:00:00.000")),
+                      "a custom board past its end date is expired")
+        XCTAssertFalse(isBoardExpired(makeBoard(id: "c-fut", timeframe: .custom, endDate: "2099-01-01T00:00:00.000")))
+        XCTAssertFalse(isBoardExpired(makeBoard(id: "c-none", timeframe: .custom, endDate: nil)),
+                       "no end date → nothing to expire against")
+        XCTAssertFalse(isBoardExpired(makeBoard(id: "indef", timeframe: .indefinite, endDate: "2000-01-01T00:00:00.000")),
+                       "indefinite wins even with a stray past endDate")
+        XCTAssertTrue(isBoardExpired(makeBoard(id: "m-past", timeframe: .monthly, endDate: "2000-01-01T00:00:00.000")),
+                      "timed boards keep expiring as before")
+    }
+
     /// The rebuild recreates the boards table; confirm its indexes survived.
     func testRebuiltBoardsTableKeepsIndexes() throws {
         let db = try makeDatabase()

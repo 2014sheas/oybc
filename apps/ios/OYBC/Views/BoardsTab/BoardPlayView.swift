@@ -486,7 +486,7 @@ struct BoardPlayView: View {
                         // ── Sealed banner (below grid) ── locked == sealed;
                         // an expired-but-unsealed board stays live (no banner).
                         if isBoardLocked {
-                            Text("Board sealed — a permanent record")
+                            Text("Board closed — a permanent record")
                                 .font(.risoBody(12, .semibold))
                                 .foregroundStyle(Color.risoRed)
                                 .padding(.horizontal, Riso.gutter)
@@ -2105,7 +2105,7 @@ struct BoardPlayView: View {
                                 .accessibilityLabel("Open \(childTask?.title ?? "task") in library")
                             }
                             if sealBlocked {
-                                Text("Completed in a sealed window")
+                                Text("Completed in a closed window")
                                     .font(.risoBody(11, .semibold))
                                     .foregroundStyle(Color.risoMuted)
                                     .padding(.leading, 24)

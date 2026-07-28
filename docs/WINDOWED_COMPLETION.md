@@ -548,9 +548,14 @@ can merge immediately.
 1. Should sealed-but-not-greenlogged boards get a distinct visual treatment
    ("ended" vs "active")? Pure UI; decide at C-PR design time.
    **Resolved (C-PR, slice 2/2): No distinct treatment.** A sealed board carries
-   a single functional **"Sealed"** badge (Riso `RisoBadge` / `BoardStatusBadge`
+   a single functional badge (Riso `RisoBadge` / `BoardStatusBadge`
    vocabulary) regardless of greenlog outcome; its frozen grid + existing
-   progress/bingo meta already convey how much was completed. Rationale:
+   progress/bingo meta already convey how much was completed.
+   **User-facing vocabulary (2026-07-27): "sealed" is internal feature-speak and
+   never appears in UI copy.** The badge reads **"Closed"** ("CLOSED" on iOS),
+   the closing-out banner's action is **"Close out"** / "Closing…", and prose
+   copy says "closed window" / "Board closed — a permanent record". Code,
+   docs, and identifiers keep the `sealed` domain term. Rationale:
    consistency with the app's existing single-status-badge pattern (one badge per
    card, mutually exclusive with Active/Expiring), and the doc flags this
    treatment as optional-only. A separate "ended-but-empty" state would add a

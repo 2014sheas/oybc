@@ -74,9 +74,9 @@ export function ClosingOutBanner({
                 className={styles.closingBannerSeal}
                 onClick={() => handleSeal(b.id)}
                 disabled={sealingId === b.id}
-                aria-label={`Seal ${b.name}`}
+                aria-label={`Close out ${b.name}`}
               >
-                {sealingId === b.id ? 'Sealing…' : 'Seal'}
+                {sealingId === b.id ? 'Closing…' : 'Close out'}
               </button>
             </div>
           </div>

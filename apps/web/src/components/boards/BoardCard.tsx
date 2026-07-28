@@ -88,9 +88,10 @@ export function BoardCard({ board, previewCells, onOpen, onDelete }: BoardCardPr
             {board.spawnedFromTemplateId != null && <RecurringBadge />}
             {board.sealedAt != null ? (
               // Windowed Completion — a sealed board is a frozen historical
-              // record; one functional "Sealed" badge (OQ1 resolution), shown
-              // in place of the live status badge.
-              <span className={styles.sealedBadge}>Sealed</span>
+              // record; one functional badge (OQ1 resolution), shown in
+              // place of the live status badge. User-facing label is
+              // "Closed" — "sealed" is internal vocabulary, never UI copy.
+              <span className={styles.sealedBadge}>Closed</span>
             ) : (
               <RisoBadge kind={badge.kind}>{badge.text}</RisoBadge>
             )}

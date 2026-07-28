@@ -610,7 +610,7 @@ extension AppDatabase {
             // `updateBoardAndCascade` / `updateBoardTaskPositions`.
             guard let owningBoard = try Board.fetchOne(db, key: boardId),
                   !owningBoard.isDeleted, owningBoard.sealedAt == nil else {
-                throw AppDatabaseError.invalidPlacement("Board is sealed or no longer exists.")
+                throw AppDatabaseError.invalidPlacement("This board is closed or no longer exists.")
             }
 
             // Board-integrity PR-2 (Part 3): reject placements that would
