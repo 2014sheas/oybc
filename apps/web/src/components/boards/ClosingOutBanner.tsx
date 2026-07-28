@@ -45,7 +45,7 @@ export function ClosingOutBanner({
     <div
       className={styles.closingBanner}
       role="region"
-      aria-label="Boards ready to seal"
+      aria-label="Boards ready to close out"
     >
       <div className={styles.closingBannerHead}>
         <RisoIcon name="shield" size={13} aria-hidden />
