@@ -102,4 +102,45 @@ describe("subscribe", () => {
     expect(res.status).toBe(405);
     expect(json).toEqual({ ok: false, error: "method_not_allowed" });
   });
+
+  it("re-submit preserves the original createdAt (transaction contract)", async () => {
+    // The confirmation-email change rewrote the write as a read-check-write
+    // transaction: only a genuinely-new signup stamps createdAt (and triggers
+    // the one-time email); a re-submit merges email/source but must NOT touch
+    // createdAt or re-send. This pins the createdAt half of that contract —
+    // the send itself isn't observable over HTTP.
+    const email = `resubmit-${Date.now()}@example.com`;
+
+    await postSubscribe({ email, source: "vitest-first" });
+    const first = await db.doc(`signups/${emailKey(email)}`).get();
+    const firstCreatedAt = first.data()?.createdAt;
+    expect(firstCreatedAt).toBeTruthy();
+
+    const { status, json } = await postSubscribe({ email, source: "vitest-again" });
+    expect(status).toBe(200);
+    expect(json).toEqual({ ok: true });
+
+    const second = await db.doc(`signups/${emailKey(email)}`).get();
+    expect(second.data()?.source).toBe("vitest-again");
+    expect(second.data()?.createdAt).toEqual(firstCreatedAt);
+  });
+
+  it("signup still succeeds when the Resend send fails (best-effort mail)", async () => {
+    // The emulator has no RESEND_API_KEY secret, so sendConfirmationEmail
+    // throws inside the function on every new signup in this suite. This test
+    // makes that implicit fact an explicit pin: a mail failure must never fail
+    // the request or drop the address (the send is wrapped in its own
+    // try/catch). If someone ever moves the send inside the write path or lets
+    // its error propagate, this is the test that goes red.
+    const email = `mail-failure-${Date.now()}@example.com`;
+
+    const { status, json } = await postSubscribe({ email, source: "vitest-mail-failure" });
+
+    expect(status).toBe(200);
+    expect(json).toEqual({ ok: true });
+
+    const doc = await db.doc(`signups/${emailKey(email)}`).get();
+    expect(doc.exists).toBe(true);
+    expect(doc.data()?.email).toBe(email.toLowerCase());
+  });
 });

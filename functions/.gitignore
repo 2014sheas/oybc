@@ -2,3 +2,7 @@ node_modules/
 lib/
 *.log
 .runtimeconfig.json
+# Local Functions env/secret files — never commit (hold the Resend API key etc.)
+.env.local
+.env*.local
+.secret.local

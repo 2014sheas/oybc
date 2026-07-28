@@ -25,13 +25,37 @@ check) stub `window.fetch` to return `200`.
 
 ## Email capture
 
-Submits land in Firestore at `signups/{lowercased-email}` via the `subscribe`
+Submits land in Firestore at `signups/{sha256(email)}` via the `subscribe`
 function (`functions/src/index.ts`). Re-submitting a known address is idempotent
 and still shows success. `firestore.rules` is unchanged — the collection is
 default-denied to clients; the Admin SDK in the function is the only writer.
 
-**Deferred to launch** (not blocking the placeholder): double opt-in +
-unsubscribe (needs a mail provider), per-IP rate limiting, and the consent line.
+On a **genuinely new** signup the function also sends a one-time "you're on the
+board" confirmation email via [Resend](https://resend.com) (best-effort — a mail
+failure never fails the signup; duplicates are not re-sent).
+
+**Still deferred to launch** (not blocking the placeholder): double opt-in,
+unsubscribe/list management, and per-IP rate limiting — these belong with the
+bulk launch-announcement send.
+
+## Set up Resend (one-time, before deploy)
+
+The confirmation email needs a Resend account + a verified sending domain.
+
+1. Create an account at [resend.com](https://resend.com).
+2. **Add + verify the domain** `oybc.com`: Resend → Domains → Add Domain → copy
+   the DNS records it shows (SPF `TXT`, DKIM `TXT`/`CNAME`, and often a
+   `MX`/return-path) and add them at your DNS host (GoDaddy). Wait for Resend to
+   mark the domain **Verified**. Until then, sends from `hello@oybc.com` fail
+   (the signup still saves — the email is just skipped).
+3. Create an **API key** (Resend → API Keys), then store it as a Functions
+   secret (never commit it):
+   ```bash
+   firebase functions:secrets:set RESEND_API_KEY
+   # paste the key when prompted
+   ```
+   To change the from-address later, edit `CONFIRM_FROM` in
+   `functions/src/index.ts`.
 
 ## Deploy (Firebase Hosting)
 
@@ -40,7 +64,7 @@ unsubscribe (needs a mail provider), per-IP rate limiting, and the consent line.
 `/index.html`, and a `predeploy` that builds this package).
 
 ```bash
-# from the repo root, with the Firebase project on the Blaze plan (functions):
+# from the repo root, on the Blaze plan, with RESEND_API_KEY secret set:
 firebase deploy --only functions:subscribe,hosting
 ```
 
