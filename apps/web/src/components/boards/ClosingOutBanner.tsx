@@ -45,7 +45,7 @@ export function ClosingOutBanner({
     <div
       className={styles.closingBanner}
       role="region"
-      aria-label="Boards ready to seal"
+      aria-label="Boards ready to close out"
     >
       <div className={styles.closingBannerHead}>
         <RisoIcon name="shield" size={13} aria-hidden />
@@ -74,9 +74,9 @@ export function ClosingOutBanner({
                 className={styles.closingBannerSeal}
                 onClick={() => handleSeal(b.id)}
                 disabled={sealingId === b.id}
-                aria-label={`Seal ${b.name}`}
+                aria-label={`Close out ${b.name}`}
               >
-                {sealingId === b.id ? 'Sealing…' : 'Seal'}
+                {sealingId === b.id ? 'Closing…' : 'Close out'}
               </button>
             </div>
           </div>

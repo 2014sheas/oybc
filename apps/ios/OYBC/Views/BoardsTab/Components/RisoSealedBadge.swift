@@ -1,8 +1,11 @@
 import SwiftUI
 
-/// "Sealed" frozen-record pill (Windowed Completion §Effects of sealed +
+/// Sealed-board frozen-record pill (Windowed Completion §Effects of sealed +
 /// §Open questions OQ1 resolution: no distinct "ended-but-empty" treatment —
 /// a single functional badge regardless of greenlog outcome).
+///
+/// User-facing label is "CLOSED" — "sealed" is internal Windowed-Completion
+/// vocabulary and never appears in UI copy (Closed / Close out family).
 ///
 /// Shown in place of the live status badge on both `RisoBoardCard` (board
 /// list) and `BoardPlayView`'s header — a sealed board's frozen grid +
@@ -15,7 +18,7 @@ import SwiftUI
 /// a FILL behind cream content — see `docs/RISO_UI_CHECKLIST.md`.
 struct RisoSealedBadge: View {
     var body: some View {
-        Text("SEALED")
+        Text("CLOSED")
             .font(.risoHead(10, .bold))
             .tracking(0.6)
             .foregroundStyle(Color.risoInk)

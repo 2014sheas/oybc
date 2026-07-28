@@ -84,8 +84,10 @@ export function BoardsPage(): React.ReactElement {
   const filteredBoards = allBoards.filter((b) => {
     if (activeFilter === 'all') return true;
     if (b.status !== activeFilter) return false;
-    // The Active tab hides expired-but-still-ACTIVE boards (still visible under All).
-    if (activeFilter === 'active' && isBoardExpired(b)) return false;
+    // The Active tab hides expired and sealed boards (still visible under
+    // All). A sealed-but-incomplete board keeps status ACTIVE forever by
+    // design, so status alone can't exclude it.
+    if (activeFilter === 'active' && (b.sealedAt != null || isBoardExpired(b))) return false;
     return true;
   });
 

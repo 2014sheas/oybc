@@ -515,7 +515,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             <h2 className={play.title}>{board.name}</h2>
             <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {isSealed ? (
-                <span className={styles.sealedBadge}>Sealed</span>
+                // User-facing label is "Closed" — "sealed" is internal
+                // Windowed-Completion vocabulary, never UI copy.
+                <span className={styles.sealedBadge}>Closed</span>
               ) : (
                 <BoardStatusBadge status={board.status} />
               )}

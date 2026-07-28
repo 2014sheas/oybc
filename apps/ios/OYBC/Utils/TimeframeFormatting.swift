@@ -138,13 +138,14 @@ func formatRecurringCadence(timeframe: Timeframe) -> String {
 
 /// Returns whether a board is expired (past its end date).
 ///
-/// Custom and indefinite boards never expire (no deadline) — mirror of the
-/// shared `isBoardIndefinite()` exclusion.
+/// Only INDEFINITE / no-endDate boards never expire. A CUSTOM board with an
+/// end date expires at that date like a timed board (it seals there too) —
+/// mirror of web `isBoardExpired` in `boardDisplayUtils.ts` (#355 parity).
 ///
 /// - Parameter board: The board to check.
 /// - Returns: `true` if the board has a deadline that is now in the past.
 func isBoardExpired(_ board: Board) -> Bool {
-    guard board.timeframe != .custom, !board.isIndefinite else { return false }
+    guard !board.isIndefinite else { return false }
     guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return false }
     return Date() > end
 }

@@ -88,9 +88,9 @@ private struct ClosingOutBoardRow: View {
             HStack(spacing: 8) {
                 RisoButton(title: "Log", kind: .neutral, small: true) { onLog() }
                     .disabled(isSealing)
-                RisoButton(title: isSealing ? "Sealing…" : "Seal", kind: .gold, small: true) { onSeal() }
+                RisoButton(title: isSealing ? "Closing…" : "Close out", kind: .gold, small: true) { onSeal() }
                     .disabled(isSealing)
-                    .accessibilityLabel("Seal \(board.name)")
+                    .accessibilityLabel("Close out \(board.name)")
             }
         }
         .padding(10)
