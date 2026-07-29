@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TaskType, type BoardTask, type Task } from '@oybc/shared';
+import { TaskType, type BoardTask, type Task, type TaskEvent } from '@oybc/shared';
+import type { SquareWindowContext } from '../../db/adapters';
 import { buildArrivalSquares } from '../useCounterArrivals';
 
 /**
@@ -25,6 +26,29 @@ function makeTask(over: Partial<Task> & Pick<Task, 'id'>): Task {
   };
 }
 
+const WINDOW_START = '2026-01-01T00:00:00.000Z';
+
+/** Window read-model: SOURCE counters resolve their count from in-window
+ *  increment events (issue #377), exactly like the grid cell. */
+function ctx(eventsByTaskId: Record<string, TaskEvent[]> = {}): SquareWindowContext {
+  return { windowStart: WINDOW_START, eventsByTaskId };
+}
+
+function increment(taskId: string, delta: number, occurredAt = '2026-01-10T00:00:00.000Z'): TaskEvent {
+  return {
+    id: `ev-${taskId}-${occurredAt}-${delta}`,
+    userId: 'u1',
+    taskId,
+    kind: 'increment',
+    delta,
+    occurredAt,
+    createdAt: occurredAt,
+    updatedAt: occurredAt,
+    version: 1,
+    isDeleted: false,
+  } as TaskEvent;
+}
+
 function bt(taskId: string, row = 0, col = 0): BoardTask {
   return {
     id: `bt-${taskId}`,
@@ -48,6 +72,7 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('src')],
       taskMap: { src: source, lnk: linked },
       sharedCounterSourceIds: new Set(['src']),
+      windowContext: ctx({ src: [increment('src', 12)] }),
     });
     expect(squares).toEqual([
       { taskId: 'src', counterId: 'src', counterName: 'Push-ups', displayed: 12 },
@@ -62,6 +87,7 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('lnk')],
       taskMap: { src: source, lnk: linked },
       sharedCounterSourceIds: new Set(['src']),
+      windowContext: ctx(),
     });
     expect(squares).toEqual([
       { taskId: 'lnk', counterId: 'src', counterName: 'Push-ups', displayed: 15 },
@@ -75,6 +101,7 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('src')],
       taskMap: { src: source, lnk: linked },
       sharedCounterSourceIds: new Set(['src']),
+      windowContext: ctx(),
     });
     expect(squares[0].counterName).toBe('Run miles');
     expect(squares[0].counterId).toBe('src');
@@ -88,6 +115,7 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('src')],
       taskMap: { src: source },
       sharedCounterSourceIds: new Set(['src']),
+      windowContext: ctx(),
     });
     expect(squares[0].counterName).toBe('Push-ups');
   });
@@ -98,6 +126,7 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('src')],
       taskMap: { src: source },
       sharedCounterSourceIds: new Set(['src']),
+      windowContext: ctx(),
     });
     expect(squares[0].counterName).toBe('Legacy counter name');
   });
@@ -109,6 +138,7 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('solo'), bt('norm')],
       taskMap: { solo: standalone, norm: normal },
       sharedCounterSourceIds: new Set(),
+      windowContext: ctx(),
     });
     expect(squares).toEqual([]);
   });
@@ -118,6 +148,7 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('ghost')],
       taskMap: {},
       sharedCounterSourceIds: new Set(['ghost']),
+      windowContext: ctx(),
     });
     expect(squares).toEqual([]);
   });
@@ -131,9 +162,29 @@ describe('buildArrivalSquares', () => {
       boardTasks: [bt('src')],
       taskMap: { src: source },
       sharedCounterSourceIds: new Set(['src']),
+      windowContext: ctx({ src: [increment('src', 8)] }),
     });
     expect(squares).toEqual([
       { taskId: 'src', counterId: 'src', counterName: 'Push-ups', displayed: 8 },
     ]);
+  });
+
+  it('issue #377: a SOURCE counter resolves WINDOWED, not from its lifetime cache', () => {
+    // Lifetime currentCount says 12, but only 5 of it happened inside this
+    // board's window — the arrival baseline must see 5, matching the grid
+    // cell. Pre-fix (raw task.currentCount) this read 12.
+    const source = makeTask({ id: 'src', title: 'Push-ups', currentCount: 12, maxCount: 50 });
+    const squares = buildArrivalSquares({
+      boardTasks: [bt('src')],
+      taskMap: { src: source },
+      sharedCounterSourceIds: new Set(['src']),
+      windowContext: ctx({
+        src: [
+          increment('src', 7, '2025-12-20T00:00:00.000Z'), // pre-window
+          increment('src', 5, '2026-01-10T00:00:00.000Z'), // in-window
+        ],
+      }),
+    });
+    expect(squares[0].displayed).toBe(5);
   });
 });

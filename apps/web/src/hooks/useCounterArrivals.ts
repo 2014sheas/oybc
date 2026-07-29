@@ -4,12 +4,14 @@ import {
   deriveDisplayedCount,
   detectCounterArrivals,
   formatCounterName,
+  resolveTaskWindowState,
   snapshotCounterSquares,
   type ArrivalSquare,
   type ArrivedCounter,
   type BoardTask,
   type Task,
 } from '@oybc/shared';
+import type { SquareWindowContext } from '../db/adapters';
 import { readLastSeen, writeLastSeen } from '../utils/counterArrivalStore';
 
 /** Auto-clear delay for the arrival banner + square pulse (spec: ~5.2s). */
@@ -23,6 +25,10 @@ export interface BuildArrivalSquaresInput {
   taskMap: Record<string, Task>;
   /** Task ids that are shared-counter SOURCES (something links to them). */
   sharedCounterSourceIds: Set<string>;
+  /** This board's window read-model — SOURCE counters resolve their count
+   *  against the board's window like the grid cell does (issue #377), never
+   *  the lifetime cache. Derived members keep their lifetime carve-out. */
+  windowContext: SquareWindowContext;
 }
 
 /**
@@ -47,14 +53,17 @@ function counterDisplayName(source: Task | undefined): string {
  * task). Firebase-free — imports only `@oybc/shared` — so it is unit-testable
  * in isolation (issue #280 lesson).
  *
- * `displayed` uses `deriveDisplayedCount` for linked members (baseline-adjusted)
- * and the raw `currentCount` for sources — matching what the grid cell shows.
+ * `displayed` uses `deriveDisplayedCount` for linked members (baseline-adjusted
+ * lifetime carve-out) and the board-WINDOWED count for sources — matching what
+ * the grid cell shows (issue #377; a source square's cell resolves via
+ * `resolveTaskWindowState`, so the arrival baseline must too, or a library
+ * decrement that tombstones a pre-window event desyncs the two).
  *
- * @param input - The board's placements + workspace task lookup + source ids.
+ * @param input - The board's placements + workspace task lookup + source ids + window.
  * @returns The shared-counting squares (empty when the board has none).
  */
 export function buildArrivalSquares(input: BuildArrivalSquaresInput): ArrivalSquare[] {
-  const { boardTasks, taskMap, sharedCounterSourceIds } = input;
+  const { boardTasks, taskMap, sharedCounterSourceIds, windowContext } = input;
   const squares: ArrivalSquare[] = [];
   for (const bt of boardTasks) {
     const task = taskMap[bt.taskId];
@@ -76,7 +85,11 @@ export function buildArrivalSquares(input: BuildArrivalSquaresInput): ArrivalSqu
             { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
             { currentCount: task.currentCount ?? 0 },
           ).displayed
-        : task.currentCount ?? 0;
+        : resolveTaskWindowState(
+            task,
+            windowContext.eventsByTaskId[task.id] ?? [],
+            windowContext.windowStart,
+          ).count;
 
     squares.push({
       taskId: task.id,
@@ -136,12 +149,13 @@ export function useCounterArrivals(params: {
   boardTasks: BoardTask[];
   taskMap: Record<string, Task>;
   sharedCounterSourceIds: Set<string>;
+  windowContext: SquareWindowContext;
 }): UseCounterArrivalsResult {
-  const { boardId, boardTasks, taskMap, sharedCounterSourceIds } = params;
+  const { boardId, boardTasks, taskMap, sharedCounterSourceIds, windowContext } = params;
 
   const arrivalSquares = useMemo(
-    () => buildArrivalSquares({ boardTasks, taskMap, sharedCounterSourceIds }),
-    [boardTasks, taskMap, sharedCounterSourceIds],
+    () => buildArrivalSquares({ boardTasks, taskMap, sharedCounterSourceIds, windowContext }),
+    [boardTasks, taskMap, sharedCounterSourceIds, windowContext],
   );
 
   // "Settled" data: both live queries have resolved. A board with placements
