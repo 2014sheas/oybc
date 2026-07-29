@@ -447,7 +447,10 @@ export const TaskSchema = z.object({
   progressCounters: z.array(TaskProgressCounterSchema).optional(),
   totalCompletions: z.number().int().min(0),
   totalInstances: z.number().int().min(0),
-  // Completion tracking fields (live on Task, not BoardTask).
+  // LIFETIME-CACHE completion fields (live on Task, not BoardTask) — Windowed
+  // Completion demoted these to caches over `task_events`: library/global
+  // reads + the derived-counter carve-out only, never windowed board
+  // rendering. See docs/WINDOWED_COMPLETION.md §Task caches.
   // `isCompleted` defaults to `false` on decode so pre-unification Firestore
   // docs (written before global-completion landed) still pass pull validation
   // on a fresh device. Mirrors iOS Task.swift's `decodeIfPresent ?? false`

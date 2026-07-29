@@ -85,12 +85,18 @@ struct RearrangeGrid: View {
     var onReorder: ([RearrangeCellData]) -> Void
 
     /// Windowed-Completion-aware completion read for a cell's task (Windowed
-    /// Completion — docs/WINDOWED_COMPLETION.md §Task caches). Defaults to the
-    /// lifetime `Task.isCompleted` cache — the pre-fix behavior — so callers
-    /// that don't have a board window in scope (e.g. the Phase 4 create-arrange
-    /// wizard preview, which has no completed tasks yet) are unaffected.
-    /// `BoardEditPanel` passes `BoardPlayViewModel.windowedIsCompleted(for:)` so
-    /// the Board-Edit rearrange preview matches the live grid's windowed reads.
+    /// Completion — docs/WINDOWED_COMPLETION.md §Task caches).
+    ///
+    /// ⚠️ The default falls back to the lifetime `Task.isCompleted` cache and
+    /// is UNSAFE for any surface that can display shared/library tasks — a
+    /// task completed in a previous window renders green (the bleed-green
+    /// class). An earlier version of this comment claimed the wizard preview
+    /// "has no completed tasks yet" and could rely on the default; that was
+    /// FALSE (PR #373's root cause) — the wizard preview now injects
+    /// `previewIsCompleted` (windowed against the prospective board), and
+    /// `BoardEditPanel` injects `BoardPlayViewModel.windowedIsCompleted(for:)`.
+    /// Every current caller overrides this; treat the default as a decode-era
+    /// fallback, never something a new caller should lean on.
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
 
     // MARK: - Internal state

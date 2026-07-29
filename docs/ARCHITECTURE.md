@@ -94,8 +94,10 @@ User completes task → Update local DB immediately (< 10ms) → UI updates
 users                   -- Cached user profiles
 boards                  -- Board documents
 tasks                   -- Task definitions (reusable across boards). Compounds carry
-                           operator + threshold + isOrdered here. Completion is
-                           global on the Task row (not per-board).
+                           operator + threshold + isOrdered here. Completion fields on
+                           the Task row are the LIFETIME view (library caches over
+                           task_events); per-board rendering evaluates against the
+                           board's window — see §Windowed Completion below.
 compound_children       -- Parent-child links for compound tasks. One row per
                            link; the child can be any Task, including another
                            compound. Replaces the retired task_steps and
@@ -118,8 +120,8 @@ The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_compos
 - **Version fields** (optimistic locking for conflict resolution)
 - **Soft deletes** (`isDeleted` flag, not hard delete - prevents data loss)
 - **Denormalized stats** (board.completedTasks stored directly for instant reads)
-- **Global per-Task completion** (post-unification): a Task is either complete or not, regardless of how many boards reference it. `compound_children` rows record the parent-child structure; the parent's completion is derived from its children's completion via the operator/threshold on the parent Task.
-- **Cross-board task reusability** (same task can appear on multiple boards; completing it once propagates to every placement)
+- **Per-Task completion identity, windowed board evaluation** (post-unification + Windowed Completion): a Task's *identity* is shared across boards (no clones), and its lifetime caches live on the Task row — but a board renders each task against ITS window `[startDate, ∞)` from `task_events`, so the same task legitimately shows different states on today's board vs this month's. `compound_children` rows record the parent-child structure; the parent's completion is derived from its children (windowed on boards). See §Windowed Completion below — reading the lifetime caches for board rendering is the bleed-green bug class.
+- **Cross-board task reusability** (same task can appear on multiple boards; an in-window completion reflects on every placement whose window contains it)
 
 **Example: Board Table**:
 

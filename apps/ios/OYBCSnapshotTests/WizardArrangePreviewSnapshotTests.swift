@@ -19,6 +19,14 @@ import SnapshotTesting
 ///
 /// All fixtures use `isRandomized = false` + a pinned reference date (2026-04-01)
 /// so placement ordering and date labels are deterministic across runs.
+///
+/// COVERAGE NOTE (pre-WC audit, 2026-07-29): every fixture task here has
+/// `isCompleted == false` and no `task_events`, so these snapshots CANNOT
+/// distinguish windowed from lifetime completion — a regression that dropped
+/// the preview's windowed resolution (PR #373's bug class) would still render
+/// all-grey here. That regression is pinned by the logic suites instead:
+/// `WizardPreviewCompletionTests.swift` (iOS) / `wizardPreviewWindowed.test.ts`
+/// (web). Don't mistake a green run here for windowed-resolution coverage.
 final class WizardArrangePreviewSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing

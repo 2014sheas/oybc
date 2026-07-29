@@ -5,9 +5,15 @@ import { AchievementTrigger, OperatorType, TaskType, Timeframe } from '../consta
  *
  * Design principles:
  * - Tasks are reusable across multiple boards
- * - Global completion state lives on Task itself (`isCompleted`, `currentCount`,
- *   `completedAt`). Completing a task on any board reflects on every board it
- *   appears on. BoardTask is now a pure placement record.
+ * - LIFETIME-CACHE completion state lives on Task (`isCompleted`,
+ *   `currentCount`, `completedAt`) — Windowed Completion
+ *   (docs/WINDOWED_COMPLETION.md §Task caches) demoted these to caches over
+ *   the `task_events` log: read them ONLY on library/global surfaces and for
+ *   the derived shared-counter carve-out. A board renders each task against
+ *   ITS window (`resolveTaskWindowState` / `computeBoardGrid`) — reading
+ *   these fields for anything windowed is the bleed-green bug class
+ *   (PR #356, #373, #376). They are recomputed from events on pull.
+ *   BoardTask is a pure placement record.
  * - For compound Tasks (`type='compound'`), `isCompleted` is written
  *   defensively as `false` for column uniformity (so Firestore + Zod always
  *   see the field) but is never *read* — derive completion at evaluation
@@ -88,7 +94,9 @@ export interface Task {
   // Progress counters (for tasks that contribute to shared counters)
   progressCounters?: TaskProgressCounter[];
 
-  // Global completion state
+  // LIFETIME-CACHE completion state (Windowed Completion §Task caches):
+  // library/global reads + the derived-counter carve-out ONLY — never for
+  // windowed board rendering (resolve via task_events instead).
   //   - STORED for primitives (NORMAL / COUNTING): the actual value.
   //   - STORED as `false` on compound rows for column uniformity (so the
   //     field is always present in Firestore docs + Zod-validated payloads),
@@ -100,7 +108,7 @@ export interface Task {
   currentCount?: number;         // For counting tasks (NOTE: moved here from BoardTask)
 
   // Aggregate stats (denormalized for performance)
-  totalCompletions: number;      // How many times completed across all boards
+  totalCompletions: number;      // Lifetime count of non-deleted completion events (derived, not hand-incremented)
   totalInstances: number;        // How many boards include this task
 
   // Timestamps

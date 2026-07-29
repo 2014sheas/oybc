@@ -7,10 +7,15 @@ import GRDB
 ///
 /// Design principles:
 ///   - Tasks are reusable across multiple boards.
-///   - Global completion state lives on Task itself (`isCompleted`,
-///     `completedAt`, `currentCount`). Completing a task on any board
-///     reflects on every board it appears on. BoardTask is a pure
-///     placement record.
+///   - LIFETIME-CACHE completion state lives on Task (`isCompleted`,
+///     `completedAt`, `currentCount`) — Windowed Completion
+///     (docs/WINDOWED_COMPLETION.md §Task caches) demoted these to caches
+///     over the `task_events` log: read them ONLY on library/global
+///     surfaces and for the derived shared-counter carve-out. A board
+///     renders each task against ITS window (`resolveTaskWindowState` /
+///     `DerivationPass.computeBoardGrid`) — reading these fields for
+///     anything windowed is the bleed-green bug class (PR #356/#373/#376).
+///     Recomputed from events on pull. BoardTask is a pure placement record.
 ///   - For compound Tasks (`type=.compound`), `isCompleted` is structurally
 ///     present but never written or read — derive completion via
 ///     CompoundEvaluation.evaluate (added in Task 3.6).
