@@ -128,6 +128,27 @@ enum PlacementIntegrity {
         return out
     }
 
+    /// Single cascade entry point for the PR-2 invariant (issue #375,
+    /// docs/BOARD_INTEGRITY.md): a board-stat derivation must ALWAYS run over
+    /// collision-resolved rows, never a raw `boardId` filter — otherwise the
+    /// persisted stats can disagree with the rendered grid (which resolves)
+    /// whenever a duplicate placement survives from before PR-2's write-time
+    /// guards or an offline sync union. Every task-driven cascade
+    /// (`AppDatabase+Tasks` / `+SharedCounters` / `+Boards`, `SyncService`
+    /// pull cascades) filters + resolves through HERE, so the next derivation
+    /// invariant lands once — mirroring web, where the single shared cascade
+    /// in `orchestration.ts` made the PR-2 fix land once.
+    static func resolvedRows(
+        boardId: String,
+        in allBoardTasks: [BoardTask],
+        boardSize: Int
+    ) -> [BoardTask] {
+        return resolvePlacements(
+            allBoardTasks.filter { $0.boardId == boardId },
+            boardSize: boardSize
+        )
+    }
+
     // MARK: - computeRepair (Part 1 — OOB + cell collision + same-task dup)
 
     /// The outcome of a placement-integrity repair pass over one board.

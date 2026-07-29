@@ -89,7 +89,11 @@ extension AppDatabase {
             guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else {
                 continue
             }
-            let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == boardId }
+            // Board-integrity PR-2 (issue #375): resolve collisions/OOB before
+            // deriving, so persisted stats can never disagree with the render.
+            let boardTasksOnBoard = PlacementIntegrity.resolvedRows(
+                boardId: boardId, in: allBoardTasks, boardSize: board.boardSize
+            )
             let update = DerivationPass.computeBoardStatsUpdate(
                 board: board,
                 boardTasksOnBoard: boardTasksOnBoard,

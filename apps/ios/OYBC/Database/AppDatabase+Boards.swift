@@ -402,7 +402,10 @@ extension AppDatabase {
                 // Re-fetch to see the just-written metadata update above.
                 guard var affectedBoard = try Board.fetchOne(db, key: affectedBoardId),
                       !affectedBoard.isDeleted, affectedBoard.sealedAt == nil else { continue }
-                let boardTasksOnBoard = allBoardTasks.filter { $0.boardId == affectedBoardId }
+                // Board-integrity PR-2 (issue #375): resolve before deriving.
+                let boardTasksOnBoard = PlacementIntegrity.resolvedRows(
+                    boardId: affectedBoardId, in: allBoardTasks, boardSize: affectedBoard.boardSize
+                )
                 let update = DerivationPass.computeBoardStatsUpdate(
                     board: affectedBoard,
                     boardTasksOnBoard: boardTasksOnBoard,
