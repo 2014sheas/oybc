@@ -64,6 +64,13 @@ struct BoardWizardPreviewStepView: View {
     /// the user taps the Rearrange segment; the grid gains jiggle + drag/tap.
     @State private var arrangeSubMode: ArrangeSubMode = .preview
 
+    /// Non-deleted TaskEvents grouped by taskId, loaded once on appear —
+    /// the read-model the preview grid's windowed completion resolves
+    /// against (see `previewIsCompleted`). Empty until the fetch lands
+    /// (cells render grey, then settle — same progressive pattern as the
+    /// boards-list preview cells).
+    @State private var eventsByTaskId: [String: [TaskEvent]] = [:]
+
     // MARK: - Computed helpers
 
     private var selectionKey: String {
@@ -151,6 +158,50 @@ struct BoardWizardPreviewStepView: View {
             map[task.id] = task
         }
         return map
+    }
+
+    /// The prospective board's window lower bound — the SAME resolution the
+    /// Save handler persists, so the preview's windowed completion matches
+    /// the board the user actually gets. nil while dates are invalid (the
+    /// Save button surfaces the error; the grid falls back to lifetime).
+    private var previewWindowStart: String? {
+        if case .ok(let start, _) = resolveWizardDates(controller: controller) { return start }
+        return nil
+    }
+
+    /// Library-wide task lookup for compound-child resolution (children are
+    /// library tasks, not placed cells), merged with the placement map so
+    /// wizard-born pending tasks resolve too.
+    private var previewTaskById: [String: Task] {
+        var map: [String: Task] = [:]
+        for task in library.libraryTasks { map[task.id] = task }
+        for task in placement.compactMap({ $0 }) { map[task.id] = task }
+        return map
+    }
+
+    /// Windowed completion for a preview cell (the "green squares from
+    /// previous windows" bug — see `wizardPreviewIsCompleted`).
+    private func previewIsCompleted(_ task: Task) -> Bool {
+        guard let windowStart = previewWindowStart else { return task.isCompleted }
+        return wizardPreviewIsCompleted(
+            task: task,
+            taskById: previewTaskById,
+            childrenByCompound: library.compoundChildrenByCompound,
+            eventsByTaskId: eventsByTaskId,
+            windowStart: windowStart
+        )
+    }
+
+    /// Load the events read-model for windowed preview completion.
+    private func loadPreviewEvents() {
+        do {
+            let events = try AppDatabase.shared.fetchNonDeletedTaskEvents(userId: userId)
+            eventsByTaskId = Dictionary(grouping: events, by: { $0.taskId })
+        } catch {
+            // Non-fatal: the grid falls back to empty events (all grey for
+            // event-owning tasks) rather than blocking the wizard.
+            print("wizard preview: failed to load task events: \(error)")
+        }
     }
 
     /// Maps a `RearrangeGrid` reorder callback back to `@State placement`.
@@ -287,7 +338,8 @@ struct BoardWizardPreviewStepView: View {
                         centerCustomName: controller.centerCustomName,
                         rearrange: arrangeSubMode == .rearrange,
                         sideLength: gridSideLength,
-                        onReorder: { handleReorder($0) }
+                        onReorder: { handleReorder($0) },
+                        windowedIsCompleted: { previewIsCompleted($0) }
                     )
 
                     // Dashed note
@@ -320,7 +372,10 @@ struct BoardWizardPreviewStepView: View {
         // and a late async library load re-resolves the grid. The grid and
         // persist both read this single stored array — never a fresh re-roll
         // — so what's previewed is exactly what's saved.
-        .onAppear { if placement.isEmpty { reseedPlacement() } }
+        .onAppear {
+            if placement.isEmpty { reseedPlacement() }
+            loadPreviewEvents()
+        }
         .onChange(of: placementKey) { _, _ in reseedPlacement() }
     }
 

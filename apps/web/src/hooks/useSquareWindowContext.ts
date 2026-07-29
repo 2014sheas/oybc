@@ -22,9 +22,12 @@ const EMPTY_TASK_EVENTS = Object.freeze([]) as unknown as TaskEvent[];
  * new board-square surface gets windowed reads by construction instead of by
  * remembering to wire it up ad hoc.
  *
- * @param board - The board whose window (`[board.startDate, ∞)`) squares resolve against.
+ * @param board - The board whose window (`[board.startDate, ∞)`) squares
+ *   resolve against. Only `startDate` is read, so a prospective (not yet
+ *   persisted) board — e.g. the wizard preview's resolved dates — can pass
+ *   `{ startDate }` directly.
  */
-export function useSquareWindowContext(board: Board): SquareWindowContext {
+export function useSquareWindowContext(board: Pick<Board, 'startDate'>): SquareWindowContext {
   const allTaskEvents: TaskEvent[] =
     useLiveQuery(() => db.taskEvents.toArray(), []) ?? EMPTY_TASK_EVENTS;
 

@@ -70,6 +70,43 @@ enum ResolvedWizardDates {
     case error(String)
 }
 
+/// Windowed "done" for a wizard-preview cell, resolved against the
+/// PROSPECTIVE board's window (`[resolveWizardDates(...).start, ∞)`) — never
+/// the task's lifetime cache. A shared library task completed in a PREVIOUS
+/// window must preview grey on the new board, exactly as it will render after
+/// Save (the "green squares from previous windows" bug).
+///
+/// Branch order mirrors web `taskToSquareState` (and the play surfaces):
+/// compound → windowed `CompoundEvaluation`; derived (shared-counter-linked)
+/// counting → lifetime carve-out; event-owning primitives → windowed events.
+/// Achievements aren't placeable via the wizard, so no kernel cell-state is
+/// needed here. Pinned by `WizardPreviewCompletionTests`.
+func wizardPreviewIsCompleted(
+    task: Task,
+    taskById: [String: Task],
+    childrenByCompound: [String: [CompoundChild]],
+    eventsByTaskId: [String: [TaskEvent]],
+    windowStart: String
+) -> Bool {
+    if task.type == .compound {
+        return CompoundEvaluation.evaluate(
+            compound: task,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            windowContext: CompoundWindowContext(
+                windowStart: windowStart,
+                eventsByTaskId: eventsByTaskId
+            )
+        )
+    }
+    guard isEventOwningTask(task) else { return task.isCompleted }
+    return resolveTaskWindowState(
+        task: task,
+        events: eventsByTaskId[task.id] ?? [],
+        windowStart: windowStart
+    ).isCompleted
+}
+
 enum WizardStatus: String {
     case active
     case draft

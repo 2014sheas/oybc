@@ -7,9 +7,11 @@ import {
   formatTimeframeLabel,
   getTimeframeBoundaries,
 } from '@oybc/shared';
-import type { Task } from '@oybc/shared';
+import type { CompoundChild, Task } from '@oybc/shared';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import { taskToSquareState, type SquareWindowContext } from '../../db/adapters';
+import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
 import { ArrangeGrid } from '../boardEdit/ArrangeGrid';
 import type { ArrangeSlot } from '../boardEdit/ArrangeGrid';
 import type { BoardCellModel } from '../board/RisoBoardCell';
@@ -64,10 +66,26 @@ const ARRANGE_MODE_OPTIONS: ReadonlyArray<RisoSegmentedOption<ArrangeMode>> = [
 
 /**
  * Map a Task to a BoardCellModel for ArrangeGrid rendering.
- * Progress (done) and count values reflect the task's GLOBAL state at
- * preview time — they are informational only; the wizard doesn't write them.
+ *
+ * Progress (done) and count values are informational only (the wizard doesn't
+ * write them) — but they must be WINDOWED against the prospective board's
+ * window (`[resolveWizardDates(...).startDate, ∞)`), not the task's lifetime
+ * cache: a shared library task completed in a PREVIOUS window must preview
+ * grey on the new board, exactly as it will render after Save. Resolution
+ * goes through `taskToSquareState` — the same branch order the play surfaces
+ * use (derived-counter lifetime carve-out, windowed compound evaluation,
+ * windowed events for event-owning tasks). Achievements aren't placeable via
+ * the wizard, so the adapter's kernel-cellState branch is never needed here.
+ *
+ * Exported for unit tests (`__tests__/wizardPreviewWindowed.test.ts`).
  */
-function taskToModel(task: Task): BoardCellModel {
+export function taskToModel(
+  task: Task,
+  taskMap: Record<string, Task>,
+  childrenByCompound: Record<string, CompoundChild[]>,
+  windowContext: SquareWindowContext,
+): BoardCellModel {
+  const state = taskToSquareState(task, undefined, taskMap, childrenByCompound, windowContext);
   return {
     key: task.id,
     label: task.title,
@@ -77,10 +95,10 @@ function taskToModel(task: Task): BoardCellModel {
         : task.type === TaskType.COMPOUND
           ? 'compound'
           : 'normal',
-    done: task.isCompleted,
+    done: state.isCompleted,
     count:
       task.type === TaskType.COUNTING && task.maxCount != null
-        ? { cur: task.currentCount ?? 0, max: task.maxCount }
+        ? { cur: state.currentCount, max: task.maxCount }
         : undefined,
     isFree: false,
     isLine: false,
@@ -103,6 +121,7 @@ function buildArrangeSlots(
   gridSize: number,
   centerType: CenterSquareType,
   centerCustomName: string,
+  toModel: (task: Task) => BoardCellModel,
 ): ArrangeSlot[] {
   const isOdd = gridSize % 2 !== 0;
   const centerIdx = isOdd
@@ -140,7 +159,7 @@ function buildArrangeSlots(
         cid: task.id,
         isCenter: true,
         isEmpty: false,
-        model: taskToModel(task),
+        model: toModel(task),
       };
     }
 
@@ -153,7 +172,7 @@ function buildArrangeSlots(
       cid: task.id,
       isCenter: false,
       isEmpty: false,
-      model: taskToModel(task),
+      model: toModel(task),
     };
   });
 }
@@ -225,6 +244,22 @@ export function BoardWizardPreviewStep({
 
   // ── Arrange slot derivation ──────────────────────────────────────────────
 
+  // The prospective board's window lower bound — the SAME resolution the Save
+  // handler persists (incl. plan-ahead `targetWindowDate`), so the preview's
+  // windowed completion matches the board the user actually gets. On a date
+  // validation error the Save button surfaces it; previewing lifetime-ish
+  // "today" state until then is harmless.
+  const resolvedDates = useMemo(
+    () => resolveWizardDates(controller, controller.targetWindowDate ?? undefined),
+    // Re-resolve on the fields resolveWizardDates actually reads (controller
+    // itself is a fresh object every render — depending on it would defeat the
+    // memo).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [controller.timeframe, controller.customStartDate, controller.customEndDate, controller.targetWindowDate],
+  );
+  const windowStart = 'startDate' in resolvedDates ? resolvedDates.startDate : new Date().toISOString();
+  const windowContext = useSquareWindowContext({ startDate: windowStart });
+
   // Build the ArrangeSlot[] from the current (possibly user-reordered) placement.
   const arrangeSlots = useMemo(
     () =>
@@ -233,8 +268,17 @@ export function BoardWizardPreviewStep({
         controller.size,
         controller.centerType,
         controller.centerCustomName,
+        (task) => taskToModel(task, library.taskMap, library.compoundChildrenByCompound, windowContext),
       ),
-    [placement, controller.size, controller.centerType, controller.centerCustomName],
+    [
+      placement,
+      controller.size,
+      controller.centerType,
+      controller.centerCustomName,
+      library.taskMap,
+      library.compoundChildrenByCompound,
+      windowContext,
+    ],
   );
 
   // cid → Task look-up used inside handleReorder.
