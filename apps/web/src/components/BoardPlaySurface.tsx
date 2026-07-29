@@ -325,6 +325,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     boardTasks,
     taskMap,
     sharedCounterSourceIds,
+    windowContext: squareWindowContext,
   });
 
   // The banner's tap target: the single distinct arrived counter's Detail page,

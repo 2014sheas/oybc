@@ -1929,7 +1929,12 @@ final class BoardPlayViewModel: ObservableObject {
                     sourceCurrentCount: task.currentCount ?? 0
                 ).displayed
             } else {
-                displayed = task.currentCount ?? 0
+                // Issue #377: a SOURCE counting square's grid cell shows the
+                // board-WINDOWED count, so the arrival baseline must match —
+                // the lifetime cache desyncs when a library decrement
+                // tombstones a pre-window event. Mirrors web
+                // `buildArrivalSquares`.
+                displayed = windowedState(forTaskId: task.id).count
             }
 
             out.append(ArrivalSquare(

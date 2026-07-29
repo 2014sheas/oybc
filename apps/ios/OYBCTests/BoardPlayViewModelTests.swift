@@ -1081,14 +1081,13 @@ final class BoardPlayViewModelTests: XCTestCase {
         try db.saveBoardTask(makeBoardTask(id: "bt-lnk", boardId: "b2", taskId: "c-lnk", row: 0, col: 0))
     }
 
-    /// Simulate a log made ELSEWHERE (Counter Detail / another board): bump the
-    /// source counter's `currentCount` straight in the DB while the board is not
-    /// being observed.
-    private func bumpSourceCount(_ db: AppDatabase, to value: Int) throws {
-        var src = try XCTUnwrap(dbTask(db, "c-src"))
-        src.currentCount = value
-        src.version += 1
-        try db.saveTask(src)
+    /// Simulate a log made ELSEWHERE (Counter Detail / another board) through
+    /// the REAL production path — `incrementSharedCounter` appends the
+    /// increment event AND stamps the caches. Issue #377 made arrival
+    /// detection resolve SOURCE counts windowed (from events), so a raw
+    /// `currentCount` write no longer models an elsewhere log.
+    private func bumpSourceCount(_ db: AppDatabase, by delta: Int, taskId: String = "c-src") throws {
+        _ = try db.incrementSharedCounter(sourceTaskId: taskId, by: delta)
     }
 
     func test_arrivalDetection_afterElsewhereLog_emitsArrivalEventWithPayload() throws {
@@ -1104,7 +1103,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertNil(vm.arrivalEvent, "first view must not arrive")
 
         // A log lands elsewhere while the board is closed.
-        try bumpSourceCount(db, to: 3)
+        try bumpSourceCount(db, by: 3)
 
         // Reopen → detect against the seeded baseline → c-src arrived (3 > 0).
         vm.markArrivalDetectionPending()
@@ -1128,7 +1127,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         vm.markArrivalDetectionPending()
         vm.reload()
         XCTAssertTrue(waitUntil { vm.board?.id == "b1" && !vm.allTasks.isEmpty })
-        try bumpSourceCount(db, to: 3)
+        try bumpSourceCount(db, by: 3)
         vm.markArrivalDetectionPending()
         vm.reload()
         XCTAssertTrue(waitUntil { vm.arrivalEvent != nil })
@@ -1167,11 +1166,9 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertTrue(waitUntil { vm.board?.id == "b1" && !vm.allTasks.isEmpty })
         XCTAssertNil(vm.arrivalEvent, "first view must not arrive")
 
-        // Logged elsewhere (Counter Detail's +1) — no other task links to it.
-        var solo = try XCTUnwrap(dbTask(db, "c-solo"))
-        solo.currentCount = 2
-        solo.version += 1
-        try db.saveTask(solo)
+        // Logged elsewhere (Counter Detail's +2) through the real increment
+        // path — appends the events windowed detection resolves from (#377).
+        try bumpSourceCount(db, by: 2, taskId: "c-solo")
 
         // Reopen → detect against the seeded baseline → c-solo arrived (2 > 0)
         // even though `allTasks.contains { $0.sharedCounterId == "c-solo" }`
@@ -1956,5 +1953,48 @@ final class BoardPlayViewModelTests: XCTestCase {
         let afterHeal = try XCTUnwrap(db.fetchBoard(id: "b1"))
         XCTAssertEqual(afterHeal.version, versionBeforeHeal,
                        "self-heal must not bump version on an already-converged board")
+    }
+
+    // MARK: - 15. Counter arrivals resolve SOURCE counts windowed (issue #377)
+
+    /// The arrival baseline for a SOURCE counting square must match the grid
+    /// cell — the board-WINDOWED count from events — never the lifetime
+    /// `currentCount` cache. Lifetime says 12 here, but only 5 happened inside
+    /// this board's window (which opens 2026-06-21). Mirrors the web pin in
+    /// `buildArrivalSquares.test.ts` ("issue #377" case).
+    func test_sharedCounterArrivalSquares_sourceResolvesWindowed_issue377() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+
+        var source = makeTask("src")
+        source.type = .counting
+        source.maxCount = 10
+        source.currentCount = 12
+        source.isCounter = true
+        try db.saveTask(source)
+        try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "src", row: 0, col: 0))
+
+        let now = AppDatabase.currentTimestamp()
+        try db.write { database in
+            for (id, delta, at) in [("e-pre", 7, "2026-06-10T00:00:00.000"),
+                                    ("e-in", 5, "2026-06-25T00:00:00.000")] {
+                try TaskEvent(
+                    id: id, userId: "u1", taskId: "src", kind: .increment,
+                    delta: delta, occurredAt: at, boardId: nil,
+                    createdAt: now, updatedAt: now, lastSyncedAt: nil,
+                    version: 1, isDeleted: false, deletedAt: nil
+                ).save(database)
+            }
+        }
+
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board != nil }, "reload never applied")
+
+        let squares = vm.sharedCounterArrivalSquares()
+        XCTAssertEqual(squares.count, 1)
+        XCTAssertEqual(squares.first?.displayed, 5,
+                       "source arrival baseline must be the in-window sum (5), not the lifetime cache (12)")
     }
 }
