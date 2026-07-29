@@ -3,6 +3,15 @@
  *
  * All writes go to Dexie first (local source of truth), then enqueue a sync
  * entry so the background SyncService can propagate changes to Firestore.
+ *
+ * ⚠️ MUTATOR CAVEAT (pre-WC audit, issue #379): `createCompoundChild`,
+ * `softDeleteCompoundChild`, and `reorderCompoundChildren` have NO production
+ * callers today (compound authoring is create-only via `createCompound`) and
+ * none of them runs the board derivation cascade. Restructuring a compound's
+ * children changes every placed parent's windowed completion — a future
+ * compound-editing UI that reuses these MUST follow each write with
+ * `runBoardCascadeForTask(parentCompoundId, ...)` (orchestration.ts) or the
+ * affected boards' stats/bingo lines go stale until the next self-heal.
  */
 
 import { db } from '../internal';
