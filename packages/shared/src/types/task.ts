@@ -108,7 +108,9 @@ export interface Task {
   currentCount?: number;         // For counting tasks (NOTE: moved here from BoardTask)
 
   // Aggregate stats (denormalized for performance)
-  totalCompletions: number;      // Lifetime count of non-deleted completion events (derived, not hand-incremented)
+  totalCompletions: number;      // ⚠️ NOT currently derived from task_events — stuck at its creation-time
+                                 // value (WINDOWED_COMPLETION.md's "becomes real" table row was never
+                                 // implemented; user-visible on both task-detail screens). Issue #384.
   totalInstances: number;        // How many boards include this task
 
   // Timestamps

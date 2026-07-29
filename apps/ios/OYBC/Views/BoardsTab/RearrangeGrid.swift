@@ -95,8 +95,11 @@ struct RearrangeGrid: View {
     /// FALSE (PR #373's root cause) — the wizard preview now injects
     /// `previewIsCompleted` (windowed against the prospective board), and
     /// `BoardEditPanel` injects `BoardPlayViewModel.windowedIsCompleted(for:)`.
-    /// Every current caller overrides this; treat the default as a decode-era
-    /// fallback, never something a new caller should lean on.
+    /// Every PRODUCTION caller overrides this; the two snapshot-test call
+    /// sites (`RearrangeGridSnapshotTests`, `WizardArrangePreviewSnapshotTests`)
+    /// still rely on the default, which is safe only because their fixtures
+    /// never carry completed tasks — don't copy that pattern into a real
+    /// surface.
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
 
     // MARK: - Internal state
