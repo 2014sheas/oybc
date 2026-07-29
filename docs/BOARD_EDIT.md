@@ -38,8 +38,13 @@ and these invariants are locked — adapt, don't copy:
    `row`/`col` (not a single index, not an array). The grid is reconstructed at
    render from `BoardTask` rows. There is **no `cells` array** and **no per-cell
    completion field**.
-2. **Completion is GLOBAL per `Task`** (`Task.isCompleted` / `currentCount`),
-   shared across every board the task is placed on. So:
+2. **Completion identity is per `Task`, evaluated against the board's window**
+   (Windowed Completion — the edit grid's windowed reads come from
+   `BoardPlayViewModel.windowedIsCompleted(for:)` / the play surface's
+   `SquareWindowContext`, never the lifetime caches). **Edit mode gates on
+   `!sealedAt`**: a sealed ("Closed") board is a frozen record and cannot
+   enter Edit at all — no unseal gesture exists
+   ([`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) §Sealing). So:
    - The prototype's *"Replace task resets progress (done=false, cur=0)"* does
      **not** apply — Replace just repoints `BoardTask.taskId`; completion follows
      the new task's global state (this is exactly what the existing

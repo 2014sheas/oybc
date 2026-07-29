@@ -158,10 +158,14 @@ export function taskToSquareData(
 /**
  * Derives the SquareState for a task square from the underlying Task record.
  *
- * Under the unified compound model, BoardTask is placement-only. Completion
- * state (isCompleted, currentCount) lives globally on Task. Progress-step
- * completion (completedStepIds) is no longer tracked per-board — returns an
- * empty Set for non-compound tasks.
+ * Under the unified compound model, BoardTask is placement-only. When
+ * `windowContext` is supplied (every board surface), primitive and compound
+ * state resolve **windowed** against `task_events` for that board's window —
+ * the Task row's lifetime caches are read only for the derived shared-counter
+ * carve-out, or as the no-context fallback (library/legacy callers). See
+ * docs/WINDOWED_COMPLETION.md §Task caches. Progress-step completion
+ * (completedStepIds) is no longer tracked per-board — returns an empty Set
+ * for non-compound tasks.
  *
  * For compound tasks, pass `compoundChildren` and `taskMap` so the operator-
  * aware completion can be evaluated via `evaluateCompound`.

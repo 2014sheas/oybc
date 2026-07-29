@@ -15,7 +15,7 @@ OYBC supports **four** task types:
 
 Compound subsumes what used to be modeled as two separate concepts (`Progress` and `Composite`). Conceptually they're the same parent-children-with-completion-rule pattern; the unified `Compound` carries an operator (`AND`/`OR`/`M_OF_N`) and an `isOrdered` display hint that distinguishes the "step list" UX (former Progress) from the "subtask group" UX (former Composite).
 
-**Completion is global per Task.** A Task on three boards has one shared completion state — completing it on one board reflects everywhere.
+**Completion identity is per Task; board evaluation is windowed.** A Task on three boards has one shared *lifetime* completion state (the library view) — but each board renders it against its own window from `task_events`, so an in-window completion reflects on every placement whose window contains it, while a fresh window starts grey. See [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) §Semantics.
 
 ---
 
@@ -198,14 +198,14 @@ The evaluator recurses naturally: evaluating "Wellness routine" requires evaluat
 
 ## Global completion semantics
 
-### Why global
+### Why global identity (and how Windowed Completion refined it)
 
-Tasks are **library entities** — definitions a user reuses. Completing "Read book" on Monday's board and seeing it still incomplete on Tuesday's board (which has the same task) is confusing. The unified model treats Task completion as a property of the Task itself, mirrored across every board it appears on.
+Tasks are **library entities** — definitions a user reuses. The unification refactor made completion a property of the Task (no per-board clones). Windowed Completion then refined *evaluation*: a Monday board and a Tuesday board holding the same task now legitimately show different states, because each evaluates against its own window — that's the shipped, intended behavior, not the confusion the original rationale worried about. What stays "global" is the task's identity and its event history; what's per-board is the window it's judged in.
 
 ### Storage
 
-- **Primitives** (`Normal`, `Counting`): `Task.isCompleted` and `Task.currentCount` are the source of truth, written directly on the Task row.
-- **Compounds**: completion is **never stored**. Always computed from children's states at evaluation time.
+- **Primitives** (`Normal`, `Counting`): the authoritative record is the **`task_events` log**; `Task.isCompleted` / `Task.currentCount` are lifetime caches over it (library/global reads + the derived-counter carve-out only — recomputed from events on pull, never trusted for windowed board grids). See [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) §Task caches.
+- **Compounds**: completion is **never stored**. Always computed from children's states at evaluation time (windowed on boards via the compound window context).
 
 `BoardTask` rows carry no completion state — they are pure placement records mapping a board to a task at a row/col/center position.
 
@@ -213,10 +213,10 @@ Tasks are **library entities** — definitions a user reuses. Completing "Read b
 
 When a primitive Task's completion changes, a transaction-scoped derivation pass:
 
-1. Updates the primitive Task row.
+1. Appends/tombstones the `task_events` row(s) and stamps the primitive Task row's lifetime caches.
 2. Walks up `compound_children` to find every compound that contains this Task transitively.
-3. Resolves the set of affected boards: every board placing the changed task or any transitive parent compound.
-4. For each affected board, rebuilds the completion grid (reading Task states + recursively evaluating compounds), runs `detectBingos`, diffs against `boards.completedLineIds` for new/lost-bingo signals, writes board stats, and enqueues a Board sync entry.
+3. Resolves the set of affected boards: every board placing the changed task or any transitive parent compound (sealed boards excluded — frozen records).
+4. For each affected board, rebuilds the completion grid **against that board's window** (a `WindowEvaluationContext` of events threads through primitive + compound resolution; placements pass the collision resolver first), runs `detectBingos`, diffs against `boards.completedLineIds` for new/lost-bingo signals, writes board stats, and enqueues a Board sync entry.
 
 The implementation lives in `packages/shared/src/algorithms/derivationPass.ts` (with platform wrappers in `apps/web/src/db/operations/orchestration.ts` and the iOS equivalent).
 
@@ -224,17 +224,17 @@ The implementation lives in `packages/shared/src/algorithms/derivationPass.ts` (
 
 **Example 1**: Same Counting task on three boards.
 - "Run 5 miles" placed on a weekly board, a monthly board, and a Q2-themed board.
-- User logs 1 mile → `Task.currentCount` becomes 1 → all three boards' renders show "1/5 miles".
-- User logs 4 more miles → `Task.currentCount` becomes 5 → `isCompleted=true` → all three boards' bingo grids re-evaluate.
+- User logs 1 mile → an increment event lands → every board **whose window contains the event** shows "1/5 miles" (all three here, assuming all windows are open; a board spawned next week starts back at 0/5 — that's Windowed Completion working, not a bug).
+- User logs 4 more miles → the in-window sum reaches 5 → those boards' squares complete and their bingo grids re-evaluate.
 
 **Example 2**: Compound parent + leaf both on the same board.
 - "Wellness routine" compound has children including "Run 5 miles".
 - Both placed as separate squares on Board A.
 - Logging miles on the "Run 5 miles" square completes that primitive globally → Board A's "Wellness routine" square recomputes (one fewer pending child) → if all children now complete, the compound square fills → bingo detection runs once on the rebuilt grid.
 
-**Example 3**: Counting race across devices.
-- Device 1 increments count to 6. Device 2 (offline) increments count to 7.
-- Both sync. LWW picks one. The "lost" increment is lost. Acceptable cost; CRDT counters are a future option.
+**Example 3**: Counting race across devices — **fixed by Windowed Completion**.
+- Device 1 logs +1 (event A). Device 2 (offline) logs +1 (event B).
+- Both sync. `task_events` unions by id — **both increments survive** and the windowed sum counts them all. The old per-row-LWW outcome ("the lost increment is lost") was retired with the event log; no CRDT needed.
 
 ---
 
