@@ -1896,8 +1896,9 @@ final class BoardPlayViewModel: ObservableObject {
     /// Build the board's current shared-counting `ArrivalSquare`s from the
     /// loaded placements + task graph. One entry per COUNTING square that is a
     /// linked derived counter or a source with ≥1 linked task. `displayed` is
-    /// baseline-adjusted for linked members (via `deriveDisplayedCount`) and the
-    /// raw `currentCount` for sources — matching what the grid cell shows.
+    /// baseline-adjusted for linked members (via `deriveDisplayedCount` — the
+    /// lifetime carve-out) and the board-WINDOWED count for sources (issue
+    /// #377) — matching what the grid cell shows.
     ///
     /// Mirrors the web `buildArrivalSquares` pure adapter.
     func sharedCounterArrivalSquares() -> [ArrivalSquare] {

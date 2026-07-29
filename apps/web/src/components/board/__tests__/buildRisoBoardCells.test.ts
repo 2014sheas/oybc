@@ -10,7 +10,7 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import type { SquareWindowContext } from '../../../db/adapters';
-import { buildRisoBoardCells } from '../RisoBoard';
+import { buildRisoBoardCells } from '../risoBoardCells';
 
 /**
  * Issue #376 — the Home ResumePanel poster (`RisoBoard`) must treat a sealed
@@ -138,6 +138,36 @@ describe('buildRisoBoardCells — sealed vs live (issue #376)', () => {
     });
     const cells = buildRisoBoardCells(sealed, placements, taskMap, {}, ctx([]));
     expect(cells.map((c) => c.isLine)).toEqual([true, true, false, false]);
+  });
+
+  it('sealed board: a counting cell freezes its displayed count (done → max, else 0)', () => {
+    // Post-seal increments on a shared task must not animate a frozen poster
+    // (review finding on #381; mirrors BoardPlaySurface's taskCurrentCount).
+    const counter = {
+      ...makeTask('t0'),
+      type: TaskType.COUNTING,
+      maxCount: 5,
+      currentCount: 7,
+    } as Task;
+    const map = { ...taskMap, t0: counter };
+    const sealed = makeBoard({
+      sealedAt: '2026-08-01T02:00:00.000Z',
+      sealedCompletedCells: [0],
+      completedLineIds: [],
+    });
+    const events = [
+      { id: 'inc', userId: 'u1', taskId: 't0', kind: 'increment', delta: 3, occurredAt: '2026-08-05T00:00:00.000Z', createdAt: '2026-08-05T00:00:00.000Z', updatedAt: '2026-08-05T00:00:00.000Z', version: 1, isDeleted: false } as TaskEvent,
+    ];
+    const cells = buildRisoBoardCells(sealed, placements, map, {}, ctx(events));
+    expect(cells[0].count).toEqual({ cur: 5, max: 5 });
+
+    const sealedIncomplete = makeBoard({
+      sealedAt: '2026-08-01T02:00:00.000Z',
+      sealedCompletedCells: [],
+      completedLineIds: [],
+    });
+    const cells2 = buildRisoBoardCells(sealedIncomplete, placements, map, {}, ctx(events));
+    expect(cells2[0].count).toEqual({ cur: 0, max: 5 });
   });
 
   it('sealed-but-ACTIVE board (the Home leak shape) still reads the snapshot', () => {
