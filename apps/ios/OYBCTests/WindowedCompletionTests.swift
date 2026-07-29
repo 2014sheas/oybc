@@ -423,6 +423,60 @@ final class WindowedCompletionTests: XCTestCase {
             XCTAssertEqual(board.linesCompleted, 0)
         }
     }
+
+    /// Regression (issue #375): the task-driven cascade family must derive
+    /// board stats over COLLISION-RESOLVED placement rows, exactly like the
+    /// placement-driven family and the render path. Seeds a duplicate
+    /// placement (two live rows at one cell — pre-PR-2 corruption / offline
+    /// union shape) where the RESOLVER'S LOSER is a completed task, then
+    /// fires the main board-tap completion path. Pre-fix, the raw-filter
+    /// derivation counted the loser's completion too (completedTasks == 2);
+    /// post-fix only the winner row and the newly completed square count.
+    func test_completeTaskOrchestrated_derivesOverResolvedPlacements_issue375() throws {
+        let db = try makeDb()
+        try seedUser(db)
+
+        let board = makeBoard(id: "b1", size: 2)
+        try db.saveBoard(board)
+        try db.saveTask(makeTask("t-win"))
+        try db.saveTask(makeTask("t-lose"))
+        try db.saveTask(makeTask("t-tap"))
+
+        // Duplicate cell (0,0): identical version + updatedAt, so the winner
+        // rule falls through to lowest id → "bt-a" (t-win, incomplete) wins;
+        // "bt-b" (t-lose, completed in-window) is the loser the raw filter
+        // would wrongly count.
+        let fixed = "2026-06-01T00:00:00.000"
+        func placement(_ id: String, taskId: String, row: Int, col: Int) -> BoardTask {
+            BoardTask(
+                id: id, boardId: "b1", taskId: taskId, row: row, col: col,
+                isCenter: false, createdAt: fixed, updatedAt: fixed,
+                lastSyncedAt: nil, version: 1
+            )
+        }
+        try db.saveBoardTask(placement("bt-a", taskId: "t-win", row: 0, col: 0))
+        try db.saveBoardTask(placement("bt-b", taskId: "t-lose", row: 0, col: 0))
+        let tapRow = placement("bt-c", taskId: "t-tap", row: 1, col: 1)
+        try db.saveBoardTask(tapRow)
+
+        // The loser's task IS completed within the window — the bait.
+        try db.write { database in
+            try makeEvent("e-lose", taskId: "t-lose", kind: .completion,
+                          occurredAt: "2026-06-05T00:00:00.000").save(database)
+        }
+
+        _ = try db.completeTaskOrchestrated(
+            board: db.fetchBoard(id: "b1")!, taskId: "t-tap",
+            intent: .setCompleted(true), boardTask: tapRow,
+            now: "2026-06-15T12:00:00.000"
+        )
+
+        let after = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(
+            after.completedTasks, 1,
+            "cascade must count only the resolved winner rows — the duplicate loser's completed task (raw-filter derivation) would make this 2"
+        )
+    }
 }
 
 // Test-only convenience to resolve windowed state through the DB read path.
