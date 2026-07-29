@@ -20,6 +20,11 @@ export { styles as interactiveTaskSquareStyles };
  * `db/adapters.ts`'s `taskToSquareData`/`taskToSquareState` ACHIEVEMENT
  * branches and their `cellState` parameter.
  */
+// 'progress' is INTENTIONALLY-INERT legacy residue (pre-unification per-board
+// steps): `taskToSquareData`/`taskToSquareState` never emit it, so its
+// branches here and in InteractiveTaskSquare.tsx are unreachable — kept only
+// so old call shapes decode. Same disposition as `Task.lastSyncedCount`; do
+// not wire new code to it (issue #379).
 export type SquareTaskType = 'normal' | 'counting' | 'progress' | 'compound' | 'achievement';
 
 /** A single step within a progress-type task. */

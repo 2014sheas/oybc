@@ -37,6 +37,12 @@ describe("purgeUserData", () => {
     await db
       .doc(`users/${targetUid}/tasks/task-1`)
       .set({ userId: targetUid, title: "Task 1" });
+    // Windowed Completion: taskEvents is a synced subcollection like any
+    // other — pin that recursiveDelete covers it (issue #379: previously
+    // only asserted generically via boards/tasks).
+    await db
+      .doc(`users/${targetUid}/taskEvents/event-1`)
+      .set({ userId: targetUid, taskId: "task-1", kind: "completion" });
 
     await db.doc(`users/${otherUid}`).set({ id: otherUid, version: 1 });
     await db
@@ -52,6 +58,11 @@ describe("purgeUserData", () => {
       .collection(`users/${targetUid}/boards`)
       .get();
     expect(targetBoards.empty).toBe(true);
+
+    const targetEvents = await db
+      .collection(`users/${targetUid}/taskEvents`)
+      .get();
+    expect(targetEvents.empty).toBe(true);
 
     const targetTasks = await db.collection(`users/${targetUid}/tasks`).get();
     expect(targetTasks.empty).toBe(true);

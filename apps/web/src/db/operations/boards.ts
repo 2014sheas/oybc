@@ -490,43 +490,13 @@ export async function deleteDraftWithCascade(id: string): Promise<void> {
   });
 }
 
-/**
- * Update board stats (denormalized)
- */
-export async function updateBoardStats(
-  boardId: string,
-  stats: {
-    completedTasks?: number;
-    linesCompleted?: number;
-    completedLineIds?: string[];
-  }
-): Promise<void> {
-  const board = await db.boards.get(boardId);
-  if (!board) return;
-  await db.boards.update(boardId, {
-    ...stats,
-    updatedAt: currentTimestamp(),
-    version: (board.version ?? 0) + 1,
-  });
-  const updatedBoard = await db.boards.get(boardId);
-  if (updatedBoard) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard);
-}
-
-/**
- * Mark board as completed
- */
-export async function completeBoard(boardId: string): Promise<void> {
-  const board = await db.boards.get(boardId);
-  if (!board) return;
-  await db.boards.update(boardId, {
-    status: BoardStatus.COMPLETED,
-    completedAt: currentTimestamp(),
-    updatedAt: currentTimestamp(),
-    version: (board.version ?? 0) + 1,
-  });
-  const completedBoard = await db.boards.get(boardId);
-  if (completedBoard) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, completedBoard);
-}
+// NOTE (pre-WC audit, issue #379): the legacy `updateBoardStats` /
+// `completeBoard` hand-write helpers were DELETED here. They pre-dated
+// Windowed Completion, had zero callers, and wiring them up would have
+// bypassed the windowed derivation pass — board stats and status flips are
+// derivation-pass output ONLY (`runBoardCascadeForTask(s)` /
+// `runBoardCascadeForBoardId` in orchestration.ts). Do not reintroduce a
+// direct stat/status writer.
 
 /**
  * Activate a board (transition from DRAFT to ACTIVE)
