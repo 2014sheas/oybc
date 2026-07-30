@@ -540,6 +540,14 @@ body {
   z-index: 2;
   display: flex;
   justify-content: center;
+  /* Full column width, always. Without this, the stacked mobile hero's
+     `justify-items: center` makes this wrapper shrink-to-fit while
+     `.cs-board` sizes to 100% OF the wrapper — a circular width WebKit
+     resolves smaller than the grid content, so the board frame shrank
+     while its aspect-ratio cells didn't: the mock board "clipped through
+     itself" on iOS Safari (Chromium happened to resolve the cycle wide).
+     A definite width breaks the cycle identically in every engine. */
+  width: 100%;
 }
 .cs-board {
   position: relative;
