@@ -34,9 +34,11 @@ On a **genuinely new** signup the function also sends a one-time "you're on the
 board" confirmation email via [Resend](https://resend.com) (best-effort — a mail
 failure never fails the signup; duplicates are not re-sent).
 
-**Still deferred to launch** (not blocking the placeholder): double opt-in,
-unsubscribe/list management, and per-IP rate limiting — these belong with the
-bulk launch-announcement send.
+Unsubscribe is **shipped**: the email's footer link + RFC 8058 one-click
+headers hit `oybc.com/unsubscribe` (see `docs/COMING_SOON.md`); the launch
+send must filter `unsubscribed != true`. **Still deferred to launch** (not
+blocking the placeholder): double opt-in and per-IP rate limiting — these
+belong with the bulk launch-announcement send.
 
 ## Set up Resend (one-time, before deploy)
 
