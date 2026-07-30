@@ -80,6 +80,11 @@ targets:
         # Required to save a shared board poster to Photos (add-only — the app
         # never reads the library). Without it, the first save call crashes.
         NSPhotoLibraryAddUsageDescription: "OYBC saves your board poster image to Photos."
+        # TestFlight/App Store: the app uses only standard ATS/HTTPS (and
+        # Firebase SDK) encryption — exempt from export documentation. This
+        # key pre-answers the App Store Connect export-compliance question so
+        # every upload skips the questionnaire.
+        ITSAppUsesNonExemptEncryption: false
         UIAppFonts:
           - BricolageGrotesque-Bold.ttf
           - BricolageGrotesque-ExtraBold.ttf
