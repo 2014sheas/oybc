@@ -98,4 +98,26 @@ describe("unsubscribe", () => {
     const res = await fetch(UNSUB_URL, { method: "DELETE" });
     expect(res.status).toBe(405);
   });
+
+  it("re-signup after unsubscribe clears the flag (opt-back-in)", async () => {
+    // Review finding on #388: without this, a resubscribed user stays
+    // flagged and the launch send's `unsubscribed != true` filter would
+    // silently exclude them forever.
+    const email = `unsub-resub-${Date.now()}@example.com`;
+    const key = await seedSignup(email);
+    await fetch(`${UNSUB_URL}?u=${key}`, { method: "POST" });
+
+    const SUBSCRIBE_URL = `http://${FUNCTIONS_HOST}/${PROJECT_ID}/us-central1/subscribe`;
+    const res = await fetch(SUBSCRIBE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, source: "vitest-resub" }),
+    });
+    expect(res.status).toBe(200);
+
+    const doc = await db.doc(`signups/${key}`).get();
+    expect(doc.data()?.unsubscribed).toBe(false);
+    expect(doc.data()?.unsubscribedAt).toBeUndefined();
+    expect(doc.data()?.source).toBe("vitest-resub");
+  });
 });

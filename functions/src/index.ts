@@ -296,9 +296,19 @@ export const subscribe = onRequest({ secrets: [RESEND_API_KEY] }, async (req, re
     // exists===false. Also preserves the original createdAt on re-submits (the
     // merge omits createdAt when the doc already exists).
     const isNew = await db.runTransaction(async (tx) => {
-      const exists = (await tx.get(ref)).exists;
+      const snap = await tx.get(ref);
+      const exists = snap.exists;
       const data: Record<string, unknown> = { email, source };
       if (!exists) data.createdAt = FieldValue.serverTimestamp();
+      // Re-signup after an unsubscribe is an explicit opt-back-in: clear the
+      // flag or the launch send's `unsubscribed != true` filter would silently
+      // exclude them forever despite the success UI (review finding on #388).
+      // Deliberately does NOT re-send the confirmation (isNew stays false) —
+      // no re-send loop for repeated submits.
+      if (exists && snap.data()?.unsubscribed === true) {
+        data.unsubscribed = false;
+        data.unsubscribedAt = FieldValue.delete();
+      }
       tx.set(ref, data, { merge: true });
       return !exists;
     });
