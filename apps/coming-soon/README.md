@@ -59,6 +59,17 @@ The confirmation email needs a Resend account + a verified sending domain.
 
 ## Deploy (Firebase Hosting)
 
+> **DEPLOYED — LIVE ON `https://oybc.com` (2026-07-30).** First deploy of
+> `subscribe` + hosting to `oybc-dev-e2668`; apex custom domain connected
+> (GoDaddy nameservers repointed from Afternic to default GoDaddy, A
+> `199.36.158.100` + verification TXT), SSL minted, signups persisting
+> (required a one-time `roles/datastore.user` IAM grant to the default
+> compute SA — gen-2 functions don't get Firestore access by default on
+> newer projects). Still pending: `www.oybc.com` redirect (one console
+> click), Resend domain verification (until Verified, confirmation emails
+> skip gracefully — signups still save), and the `FIREBASE_SERVICE_ACCOUNT`
+> Actions secret (issue #262) — deploys stay MANUAL until it's set.
+
 `firebase.json` already carries the `hosting` block (public =
 `apps/coming-soon/dist`, `/api/subscribe` → the `subscribe` function, catch-all →
 `/index.html`, and a `predeploy` that builds this package).

@@ -114,6 +114,14 @@ that — try again.", button re-enabled).
 
 ## Hosting — Firebase Hosting
 
+> **LIVE (2026-07-30):** deployed to `oybc-dev-e2668` and serving on
+> `https://oybc.com` (see `apps/coming-soon/README.md` §Deploy for the
+> as-deployed record: DNS/nameserver notes, the compute-SA
+> `roles/datastore.user` IAM grant the subscribe write path needs, and the
+> still-pending items — www redirect, Resend domain verification, #262
+> auto-deploy secret). The A4 dev/prod project split remains pending: the
+> apex intentionally points at the dev project until then.
+
 `firebase.json` gains a `hosting` block:
 
 ```jsonc
