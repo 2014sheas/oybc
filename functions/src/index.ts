@@ -28,6 +28,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createHash } from "crypto";
 import { Resend } from "resend";
+import { confirmationEmailHtml, confirmationEmailText } from "./confirmEmail";
 
 export { validateWin } from "./validateWin";
 
@@ -216,27 +217,8 @@ async function sendConfirmationEmail(email: string, emailKey: string): Promise<v
       "List-Unsubscribe": `<${unsubscribeUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
-    text:
-      `You're on the board.\n\n` +
-      `Thanks for grabbing a square. We'll let you know the moment OYBC opens — ${SEASON}. ` +
-      `That's a bingo.\n\n` +
-      `You're getting this because you signed up at oybc.com. No spam — just launch news.\n\n` +
-      `Unsubscribe: ${unsubscribeUrl}\n\n` +
-      `— OYBC · On Your Bingo Card`,
-    html:
-      `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;` +
-      `max-width:480px;margin:0 auto;padding:24px;color:#18120b">` +
-      `<h1 style="font-size:22px;margin:0 0 12px">You're on the board.</h1>` +
-      `<p style="font-size:15px;line-height:1.5;margin:0 0 16px">` +
-      `Thanks for grabbing a square. We'll let you know the moment OYBC opens — <b>${SEASON}</b>. That's a bingo.` +
-      `</p>` +
-      `<p style="font-size:12.5px;line-height:1.5;color:#7e7460;margin:0">` +
-      `You're getting this because you signed up at ` +
-      `<a href="https://oybc.com" style="color:#eb4d2e">oybc.com</a>. No spam — just launch news.` +
-      `</p>` +
-      `<p style="font-size:12.5px;color:#7e7460;margin:16px 0 0">— OYBC · On Your Bingo Card &nbsp;·&nbsp; ` +
-      `<a href="${unsubscribeUrl}" style="color:#7e7460;text-decoration:underline">Unsubscribe</a></p>` +
-      `</div>`,
+    text: confirmationEmailText(SEASON, unsubscribeUrl),
+    html: confirmationEmailHtml(SEASON, unsubscribeUrl),
   });
   if (error) throw new Error(`resend_error: ${error.message ?? error.name}`);
 }
