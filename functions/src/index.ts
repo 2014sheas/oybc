@@ -95,36 +95,147 @@ const CONFIRM_FROM = process.env.CONFIRM_FROM || "OYBC <hello@oybc.com>";
 const SEASON = "Fall 2026";
 
 /**
+ * Public origin used in email links (unsubscribe). Overridable via env so the
+ * emulator suite can point links at itself; production default is the apex.
+ */
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "https://oybc.com";
+
+/**
+ * Shared minimal page shell for the unsubscribe confirm/done pages — inline
+ * Riso-token styling (byte-values from apps/coming-soon), no external assets.
+ */
+function unsubscribePage(inner: string): string {
+  return (
+    `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<meta name="robots" content="noindex,nofollow"><title>OYBC — Unsubscribe</title></head>` +
+    `<body style="margin:0;background:#f1e9d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#18120b">` +
+    `<div style="max-width:420px;margin:12vh auto 0;padding:0 16px;text-align:center">` +
+    `<div style="font-weight:800;letter-spacing:2px;font-size:14px;margin-bottom:18px">OYBC` +
+    `<span style="color:#7e7460;font-size:10px;letter-spacing:3px"> · ON YOUR BINGO CARD</span></div>` +
+    `<div style="background:#fbf6ea;border:3px solid #18120b;border-radius:18px;padding:28px 22px">${inner}</div>` +
+    `</div></body></html>`
+  );
+}
+
+/**
+ * Unsubscribe endpoint, served on the apex as `/unsubscribe?u=<token>` via a
+ * Firebase Hosting rewrite (registered BEFORE the catch-all so it wins).
+ * The token is the signup doc id (sha256 of the lowercased email) — the same
+ * derivation `subscribe` writes, so no extra state is needed.
+ *
+ * - GET renders a confirm page with a POST button. The interstitial exists
+ *   because mail security scanners prefetch GETs in email bodies — a
+ *   GET-that-unsubscribes would silently remove real subscribers.
+ * - POST performs the unsubscribe: marks the doc `unsubscribed: true` +
+ *   `unsubscribedAt` (kept, never deleted — the launch send filters on it).
+ *   Also accepts RFC 8058 one-click POSTs (the `List-Unsubscribe-Post`
+ *   header target), which mailbox providers call directly.
+ * - Unknown/missing tokens still render the success page — an unsubscribe
+ *   surface must not act as a membership oracle. Idempotent throughout.
+ */
+export const unsubscribe = onRequest(async (req, res) => {
+  const token = typeof req.query.u === "string" ? req.query.u : "";
+  const validToken = /^[a-f0-9]{64}$/.test(token);
+
+  if (req.method === "GET") {
+    if (!validToken) {
+      res.status(200).send(unsubscribePage(
+        `<h1 style="font-size:22px;margin:0 0 10px">That link didn't work.</h1>` +
+        `<p style="font-size:14px;line-height:1.5;color:#7e7460;margin:0">` +
+        `Use the unsubscribe link from your email, or write to hello@oybc.com.</p>`
+      ));
+      return;
+    }
+    res.status(200).send(unsubscribePage(
+      `<h1 style="font-size:22px;margin:0 0 10px">Leave the list?</h1>` +
+      `<p style="font-size:14px;line-height:1.5;color:#7e7460;margin:0 0 20px">` +
+      `You won't hear from us when OYBC opens.</p>` +
+      `<form method="POST" action="/unsubscribe?u=${token}">` +
+      `<button type="submit" style="background:#eb4d2e;color:#fbf6ea;border:2px solid #18120b;` +
+      `border-radius:999px;padding:11px 22px;font-weight:800;font-size:14px;letter-spacing:1px;cursor:pointer">` +
+      `Take me off the list</button></form>`
+    ));
+    return;
+  }
+
+  if (req.method === "POST") {
+    if (validToken) {
+      try {
+        const db = getFirestore();
+        const ref = db.collection("signups").doc(token);
+        // Transactional exists-check: never CREATE a doc for an unknown token
+        // (that would let the endpoint be used to seed junk rows).
+        await db.runTransaction(async (tx) => {
+          const snap = await tx.get(ref);
+          if (snap.exists) {
+            tx.set(ref, {
+              unsubscribed: true,
+              unsubscribedAt: FieldValue.serverTimestamp(),
+            }, { merge: true });
+          }
+        });
+      } catch (err) {
+        logger.error("unsubscribe failed", err);
+        res.status(500).send(unsubscribePage(
+          `<h1 style="font-size:22px;margin:0 0 10px">Something went wrong.</h1>` +
+          `<p style="font-size:14px;line-height:1.5;color:#7e7460;margin:0">` +
+          `Try the link again, or write to hello@oybc.com.</p>`
+        ));
+        return;
+      }
+    }
+    res.status(200).send(unsubscribePage(
+      `<h1 style="font-size:22px;margin:0 0 10px">You're off the list.</h1>` +
+      `<p style="font-size:14px;line-height:1.5;color:#7e7460;margin:0">` +
+      `No hard feelings. The doors open ${SEASON} either way — ` +
+      `<a href="https://oybc.com" style="color:#eb4d2e;font-weight:bold;text-decoration:none">oybc.com</a>.</p>`
+    ));
+    return;
+  }
+
+  res.status(405).send("method_not_allowed");
+});
+
+/**
  * Sends the one-time "you're on the list" confirmation. Best-effort: callers
  * MUST NOT fail the signup if this throws — the address is already stored, and
  * a mail hiccup (or an unverified Resend domain pre-launch) shouldn't surface an
  * error to the user or drop them from the list.
  */
-async function sendConfirmationEmail(email: string): Promise<void> {
+async function sendConfirmationEmail(email: string, emailKey: string): Promise<void> {
   const resend = new Resend(RESEND_API_KEY.value());
+  const unsubscribeUrl = `${PUBLIC_ORIGIN}/unsubscribe?u=${emailKey}`;
   const { error } = await resend.emails.send({
     from: CONFIRM_FROM,
     to: email,
     subject: "You're on the board — OYBC",
+    // RFC 8058 one-click + classic header — makes Gmail/Apple Mail surface
+    // their native "Unsubscribe" affordance next to the sender.
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
     text:
       `You're on the board.\n\n` +
-      `Thanks for signing up. We'll email you the moment OYBC opens — ${SEASON}. ` +
+      `Thanks for grabbing a square. We'll let you know the moment OYBC opens — ${SEASON}. ` +
       `That's a bingo.\n\n` +
-      `You're getting this because you asked to be notified at oybc.com. ` +
-      `We'll only email you at launch.\n\n` +
+      `You're getting this because you signed up at oybc.com. No spam — just launch news.\n\n` +
+      `Unsubscribe: ${unsubscribeUrl}\n\n` +
       `— OYBC · On Your Bingo Card`,
     html:
       `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;` +
       `max-width:480px;margin:0 auto;padding:24px;color:#18120b">` +
       `<h1 style="font-size:22px;margin:0 0 12px">You're on the board.</h1>` +
       `<p style="font-size:15px;line-height:1.5;margin:0 0 16px">` +
-      `Thanks for signing up. We'll email you the moment OYBC opens — <b>${SEASON}</b>. That's a bingo.` +
+      `Thanks for grabbing a square. We'll let you know the moment OYBC opens — <b>${SEASON}</b>. That's a bingo.` +
       `</p>` +
       `<p style="font-size:12.5px;line-height:1.5;color:#7e7460;margin:0">` +
-      `You're getting this because you asked to be notified at ` +
-      `<a href="https://oybc.com" style="color:#eb4d2e">oybc.com</a>. We'll only email you at launch.` +
+      `You're getting this because you signed up at ` +
+      `<a href="https://oybc.com" style="color:#eb4d2e">oybc.com</a>. No spam — just launch news.` +
       `</p>` +
-      `<p style="font-size:12.5px;color:#7e7460;margin:16px 0 0">— OYBC · On Your Bingo Card</p>` +
+      `<p style="font-size:12.5px;color:#7e7460;margin:16px 0 0">— OYBC · On Your Bingo Card &nbsp;·&nbsp; ` +
+      `<a href="${unsubscribeUrl}" style="color:#7e7460;text-decoration:underline">Unsubscribe</a></p>` +
       `</div>`,
   });
   if (error) throw new Error(`resend_error: ${error.message ?? error.name}`);
@@ -195,7 +306,7 @@ export const subscribe = onRequest({ secrets: [RESEND_API_KEY] }, async (req, re
     // Best-effort confirmation — never let a mail failure fail the signup.
     if (isNew) {
       try {
-        await sendConfirmationEmail(email);
+        await sendConfirmationEmail(email, emailKey);
       } catch (mailErr) {
         logger.error(`confirmation email failed for a new signup`, mailErr);
       }

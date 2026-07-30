@@ -22,6 +22,10 @@
         "source": "/api/subscribe",
         "function": { "functionId": "subscribe", "region": "us-central1" }
       },
+      {
+        "source": "/unsubscribe",
+        "function": { "functionId": "unsubscribe", "region": "us-central1" }
+      },
       { "source": "**", "destination": "/index.html" }
     ],
     "predeploy": ["pnpm --filter @oybc/coming-soon run build"]

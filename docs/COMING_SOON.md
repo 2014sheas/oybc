@@ -102,9 +102,17 @@ Decision: capture to **Firestore**, reusing the existing `functions/` codebase.
   `secrets:` on the function) — set it with
   `firebase functions:secrets:set RESEND_API_KEY` before deploying. The from
   address (`hello@oybc.com`) must be a Resend-**verified domain** or sends fail.
-- **Still deferred to launch**: double opt-in, unsubscribe/list management, and
-  per-IP rate limiting — these belong with the bulk launch-announcement send, not
-  the placeholder. Firestore holds the list for that send.
+- **Unsubscribe (shipped)**: the confirmation email carries a footer
+  `Unsubscribe` link to `oybc.com/unsubscribe?u=<sha256(email)>` (the
+  `unsubscribe` function behind a hosting rewrite registered before the
+  catch-all) plus RFC 8058 `List-Unsubscribe`/`List-Unsubscribe-Post` headers
+  (Gmail/Apple Mail native affordance). GET renders a confirm page (scanner
+  prefetch defense); POST marks `signups/{key}.unsubscribed = true` (doc kept
+  — **the launch send MUST filter `unsubscribed != true`**); unknown tokens
+  show success without creating docs (no membership oracle).
+- **Still deferred to launch**: double opt-in and per-IP rate limiting —
+  these belong with the bulk launch-announcement send, not the placeholder.
+  Firestore holds the list for that send.
 
 ### Submit states (handoff)
 
