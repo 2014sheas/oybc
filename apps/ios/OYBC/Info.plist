@@ -29,6 +29,8 @@
 	<string>1</string>
 	<key>GIDClientID</key>
 	<string>401044947930-j31aflmqoltb2gm4luj6gt2l5opn0beb.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>OYBC saves your board poster image to Photos.</string>
 	<key>UIAppFonts</key>
