@@ -121,6 +121,15 @@ jobs:
           cp -r /tmp/xcodegen-install/xcodegen/share "$RUNNER_TEMP/xcodegen/share"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
 
+      - name: Guard committed pbxproj keeps GoogleService-Info.plist ref
+        # Runs BEFORE `xcodegen generate` on purpose: the generate step below
+        # regenerates a 0-ref pbxproj on this runner (no gitignored plist here),
+        # so this must inspect the as-committed pbxproj. Fails the PR if someone
+        # committed a pbxproj that lost its plist reference (which builds fine
+        # but crashes at launch). See the script header for the full mechanism.
+        working-directory: apps/ios
+        run: bash scripts/check-firebase-plist-ref.sh
+
       - name: Generate Xcode project
         working-directory: apps/ios
         run: xcodegen generate
