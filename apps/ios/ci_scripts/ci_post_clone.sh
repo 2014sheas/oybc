@@ -26,7 +26,7 @@ if [ -z "${GOOGLE_SERVICE_INFO_PLIST_B64:-}" ]; then
   echo "error: GOOGLE_SERVICE_INFO_PLIST_B64 is not set in the Xcode Cloud workflow environment." >&2
   exit 1
 fi
-printf '%s' "$GOOGLE_SERVICE_INFO_PLIST_B64" | base64 -d > "$PLIST"
+printf '%s' "$GOOGLE_SERVICE_INFO_PLIST_B64" | base64 --decode > "$PLIST"
 plutil -lint "$PLIST"
 echo "GoogleService-Info.plist materialized."
 

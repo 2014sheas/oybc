@@ -36,7 +36,12 @@ on:
 # checks that shouldn't race each other.
 concurrency:
   group: functions-${{ github.event_name }}-${{ github.event.pull_request.number || 'push' }}
-  cancel-in-progress: true
+  # PR runs cancel superseded runs; push/dispatch runs NEVER cancel — a
+  # workflow-level cancel kills every job in the prior run, including a
+  # mid-flight `firebase deploy` in the deploy job below, which its own
+  # job-level `cancel-in-progress: false` cannot protect against (review
+  # finding on #396). Successive dev pushes queue instead.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-test:
