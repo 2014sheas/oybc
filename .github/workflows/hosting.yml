@@ -152,7 +152,16 @@ jobs:
             --project "$FIREBASE_PROJECT" \
             --expires 7d \
             --non-interactive --json > channel.json
-          URL=$(node -e "const r=require('./channel.json');const c=r.result;const k=Object.keys(c)[0];console.log(c[k].url)")
+          # The predeploy hook (pnpm build) shares stdout with the --json
+          # payload, so channel.json is build-log-then-JSON — slice from
+          # where the result object starts before parsing.
+          URL=$(node -e "
+            const t = require('fs').readFileSync('channel.json', 'utf8');
+            const i = t.indexOf('{\"status\"');
+            if (i < 0) { console.error(t); process.exit(1); }
+            const c = JSON.parse(t.slice(i)).result;
+            console.log(c[Object.keys(c)[0]].url);
+          ")
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment preview URL on the PR
