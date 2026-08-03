@@ -353,6 +353,14 @@ const NOTIFY_TO = process.env.NOTIFY_TO || "2014shea.s@gmail.com";
 export const onSignupCreated = onDocumentCreated(
   { document: "signups/{key}", secrets: [RESEND_API_KEY] },
   async (event) => {
+    // Emulator gate (review finding on #393): the test suites seed signups
+    // docs directly, and without this every seed would fire a REAL network
+    // call to api.resend.com from CI — flakiness surface for zero coverage
+    // (the builder is unit-tested; the wiring is production-verified).
+    if (process.env.FUNCTIONS_EMULATOR === "true") {
+      logger.info("signup notification skipped (emulator)");
+      return;
+    }
     try {
       const data = event.data?.data();
       const email = typeof data?.email === "string" ? data.email : "(unknown)";

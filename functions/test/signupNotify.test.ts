@@ -20,4 +20,18 @@ describe("buildSignupNotification", () => {
       expect(body).toContain("coming-soon");
     }
   });
+
+  it("escapes HTML in attacker-controllable fields (html part only)", () => {
+    const n = buildSignupNotification(
+      "<img src=x onerror=alert(1)>@a.co",
+      "<script>evil()</script>",
+      1,
+    );
+    expect(n.html).not.toContain("<img");
+    expect(n.html).not.toContain("<script>");
+    expect(n.html).toContain("&lt;img src=x onerror=alert(1)&gt;@a.co");
+    expect(n.html).toContain("&lt;script&gt;evil()&lt;/script&gt;");
+    // Plain text is not rendered as HTML — stays verbatim.
+    expect(n.text).toContain("<script>evil()</script>");
+  });
 });
