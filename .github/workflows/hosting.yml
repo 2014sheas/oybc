@@ -33,6 +33,16 @@ on:
       - 'apps/coming-soon/**'
       - 'firebase.json'
       - '.github/workflows/hosting.yml'
+  # PR preview channels: every PR touching the page gets a throwaway
+  # preview URL (7-day expiry) commented on the PR, so changes are
+  # eyeballable on-device BEFORE merge. Same-repo PRs only (fork PRs
+  # don't get secrets — fine, this is a solo repo).
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'apps/coming-soon/**'
+      - 'firebase.json'
+      - '.github/workflows/hosting.yml'
   workflow_dispatch:
 
 # Serialize deploys rather than racing them, but never cancel one that's
@@ -40,14 +50,16 @@ on:
 # half-updated state. This is the one deliberate divergence from
 # firestore-rules.yml's deploy concurrency (which doesn't need a group at
 # all, since it's gated behind a `needs: test` job per push).
-concurrency:
-  group: hosting-deploy
-  cancel-in-progress: false
-
 jobs:
   deploy:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Serialize real deploys (moved from workflow level so PR previews get
+    # their own per-PR group below instead of queuing behind deploys).
+    concurrency:
+      group: hosting-deploy
+      cancel-in-progress: false
 
     steps:
       - uses: actions/checkout@v7
@@ -69,7 +81,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install firebase-tools
-        run: npm install -g firebase-tools
+        # Pinned for determinism (matches functions.yml; the @latest
+        # emulator regression there doesn't apply to authed deploys, but
+        # unpinned CLI drift bit CI once already — bump deliberately).
+        run: npm install -g firebase-tools@15.13.0
 
       - name: Deploy hosting
         env:
@@ -90,3 +105,62 @@ jobs:
             --only hosting \
             --project "$FIREBASE_PROJECT" \
             --non-interactive
+
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: hosting-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools@15.13.0
+
+      - name: Deploy preview channel
+        id: preview
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT: oybc-dev-e2668
+          CHANNEL: pr-${{ github.event.pull_request.number }}
+        run: |
+          if [ -z "$FIREBASE_SA_JSON" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT secret is not set."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SA_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          firebase hosting:channel:deploy "$CHANNEL" \
+            --project "$FIREBASE_PROJECT" \
+            --expires 7d \
+            --non-interactive --json > channel.json
+          URL=$(node -e "const r=require('./channel.json');const c=r.result;const k=Object.keys(c)[0];console.log(c[k].url)")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          URL: ${{ steps.preview.outputs.url }}
+        run: |
+          BODY="🟩 Coming-soon preview for this PR: $URL (expires in 7 days, redeploys on every push)"
+          gh pr comment "$PR" --edit-last --body "$BODY" \
+            || gh pr comment "$PR" --body "$BODY"
