@@ -1,0 +1,5 @@
+# oybc.com — the Coming Soon placeholder is the only public surface and may
+# be indexed. (The app itself lives on a separate, unlinked host.)
+User-agent: *
+Allow: /
+Disallow: /unsubscribe
