@@ -153,13 +153,17 @@ jobs:
             --expires 7d \
             --non-interactive --json > channel.json
           # The predeploy hook (pnpm build) shares stdout with the --json
-          # payload, so channel.json is build-log-then-JSON — slice from
-          # where the result object starts before parsing.
+          # payload (which the CLI pretty-prints), so channel.json is
+          # build-log-then-multiline-JSON. Try parsing from each "{" until
+          # one parses — needle-free and format-agnostic.
           URL=$(node -e "
             const t = require('fs').readFileSync('channel.json', 'utf8');
-            const i = t.indexOf('{\"status\"');
-            if (i < 0) { console.error(t); process.exit(1); }
-            const c = JSON.parse(t.slice(i)).result;
+            let r = null;
+            for (const m of t.matchAll(/\{/g)) {
+              try { r = JSON.parse(t.slice(m.index)); break; } catch {}
+            }
+            if (!r) { console.error('no JSON found in channel output'); process.exit(1); }
+            const c = r.result;
             console.log(c[Object.keys(c)[0]].url);
           ")
           echo "url=$URL" >> "$GITHUB_OUTPUT"
