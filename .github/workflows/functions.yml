@@ -5,10 +5,11 @@ name: Functions
 # functions-only PR that ran no checks at all — `functions/` was the repo's
 # only server-side code with zero automated coverage.
 #
-# No deploy job here and no secrets are used — this workflow only builds and
-# runs the Firestore/Functions emulators locally to the runner. Deploys stay
-# manual (`firebase deploy --only functions`, see CLAUDE.md's Firebase
-# section) until a deploy workflow is deliberately added.
+# Also auto-deploys the codebase on push to dev (after tests pass) using the
+# same FIREBASE_SERVICE_ACCOUNT secret as hosting.yml/firestore-rules.yml —
+# the deliberately-added deploy workflow this header used to defer. A manual
+# `workflow_dispatch` covers one-off redeploys. `--force` lets CI delete
+# functions that were removed from source (continuous-delivery semantics).
 
 on:
   pull_request:
@@ -25,6 +26,7 @@ on:
       - 'packages/bingo-core/**'
       - 'firebase.json'
       - '.github/workflows/functions.yml'
+  workflow_dispatch:
 
 # Cancel in-flight runs for the same PR (or the same push queue) when a
 # newer commit lands. Scoped per-event (not just per-ref) so a `pull_request`
@@ -34,7 +36,12 @@ on:
 # checks that shouldn't race each other.
 concurrency:
   group: functions-${{ github.event_name }}-${{ github.event.pull_request.number || 'push' }}
-  cancel-in-progress: true
+  # PR runs cancel superseded runs; push/dispatch runs NEVER cancel — a
+  # workflow-level cancel kills every job in the prior run, including a
+  # mid-flight `firebase deploy` in the deploy job below, which its own
+  # job-level `cancel-in-progress: false` cannot protect against (review
+  # finding on #396). Successive dev pushes queue instead.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-test:
@@ -108,3 +115,61 @@ jobs:
             --only functions,firestore \
             --project demo-oybc-functions-test \
             "npm --prefix functions run test:run"
+
+  deploy:
+    # Push-to-dev (or manual) only — PR runs stop at build-and-test. Gated on
+    # the tests so a red suite never ships.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Serialize function deploys; never kill one mid-flight (same rationale
+    # as hosting.yml's deploy concurrency).
+    concurrency:
+      group: functions-deploy
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install workspace dependencies (pnpm)
+        # @oybc/bingo-core must be built for the esbuild bundle (validateWin).
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @oybc/bingo-core
+        run: pnpm --filter @oybc/bingo-core build
+
+      - name: Install functions dependencies (npm)
+        working-directory: functions
+        run: npm ci
+
+      - name: Install firebase-tools
+        # Same pin + rationale as the test job above.
+        run: npm install -g firebase-tools@15.13.0
+
+      - name: Deploy functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          FIREBASE_SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT: oybc-dev-e2668
+        run: |
+          if [ -z "$FIREBASE_SA_JSON" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT secret is not set."
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SA_JSON" > "$GOOGLE_APPLICATION_CREDENTIALS"
+          firebase deploy \
+            --only functions \
+            --project "$FIREBASE_PROJECT" \
+            --non-interactive \
+            --force
