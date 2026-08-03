@@ -74,6 +74,11 @@ The confirmation email needs a Resend account + a verified sending domain.
 > secret is set (#262 closed) — merges to `dev` touching this package or
 > `firebase.json` now AUTO-DEPLOY via `hosting.yml`; functions still deploy
 > manually (`firebase deploy --only functions:subscribe,functions:unsubscribe`).
+> Email hosting (2026-08-02): `hello@oybc.com` is a real Google Workspace
+> mailbox (apex MX `smtp.google.com`, apex SPF `_spf.google.com`, Workspace
+> DKIM on `google._domainkey`) — coexists with Resend, whose records live on
+> the `send.` subdomain. The footer's X link was removed (no account,
+> deliberate); Instagram stays pending a real handle.
 
 `firebase.json` already carries the `hosting` block (public =
 `apps/coming-soon/dist`, `/api/subscribe` → the `subscribe` function, catch-all →
