@@ -26,9 +26,11 @@ import { defineSecret } from "firebase-functions/params";
 import * as functionsV1 from "firebase-functions/v1";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { createHash } from "crypto";
 import { Resend } from "resend";
 import { confirmationEmailHtml, confirmationEmailText } from "./confirmEmail";
+import { buildSignupNotification } from "./signupNotify";
 
 export { validateWin } from "./validateWin";
 
@@ -329,3 +331,56 @@ export const onUserDeleted = functionsV1
       throw err;
     }
   });
+
+/**
+ * Where the new-signup owner notification goes. Env-overridable for tests /
+ * future change without a code edit.
+ */
+const NOTIFY_TO = process.env.NOTIFY_TO || "2014shea.s@gmail.com";
+
+/**
+ * Launch-push delight: email the owner whenever someone genuinely NEW joins
+ * the launch list. Fires on document CREATE only — `subscribe`'s re-signup
+ * path and `unsubscribe` both merge onto EXISTING docs (never create), and
+ * the honeypot branch writes nothing, so every event here is a real first
+ * signup. Best-effort: a notify failure only logs — it can never affect the
+ * subscriber-facing flow (it runs out-of-band from the request entirely).
+ *
+ * The count is the aggregate total of `signups` docs (unsubscribed rows
+ * included — it's a "list size" vanity number, not the launch-send audience;
+ * the send-time filter stays `unsubscribed != true`).
+ */
+export const onSignupCreated = onDocumentCreated(
+  { document: "signups/{key}", secrets: [RESEND_API_KEY] },
+  async (event) => {
+    // Emulator gate (review finding on #393): the test suites seed signups
+    // docs directly, and without this every seed would fire a REAL network
+    // call to api.resend.com from CI — flakiness surface for zero coverage
+    // (the builder is unit-tested; the wiring is production-verified).
+    if (process.env.FUNCTIONS_EMULATOR === "true") {
+      logger.info("signup notification skipped (emulator)");
+      return;
+    }
+    try {
+      const data = event.data?.data();
+      const email = typeof data?.email === "string" ? data.email : "(unknown)";
+      const source = typeof data?.source === "string" ? data.source : "(unknown)";
+
+      const agg = await getFirestore().collection("signups").count().get();
+      const count = agg.data().count;
+
+      const note = buildSignupNotification(email, source, count);
+      const resend = new Resend(RESEND_API_KEY.value());
+      const { error } = await resend.emails.send({
+        from: CONFIRM_FROM,
+        to: NOTIFY_TO,
+        subject: note.subject,
+        text: note.text,
+        html: note.html,
+      });
+      if (error) throw new Error(`resend_error: ${error.message ?? error.name}`);
+    } catch (err) {
+      logger.error("signup notification failed", err);
+    }
+  },
+);
