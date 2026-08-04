@@ -125,9 +125,12 @@ that — try again.", button re-enabled).
 > **LIVE (2026-07-30):** deployed to `oybc-dev-e2668` and serving on
 > `https://oybc.com` (see `apps/coming-soon/README.md` §Deploy for the
 > as-deployed record: DNS/nameserver notes, the compute-SA
-> `roles/datastore.user` IAM grant the subscribe write path needs, and the
-> still-pending items — www redirect, Resend domain verification, #262
-> auto-deploy secret). The A4 dev/prod project split remains pending: the
+> `roles/datastore.user` IAM grant the subscribe write path needs). The
+> once-pending items are all resolved (2026-08-04): www redirect live, Resend
+> domain Verified, and CI auto-deploys cover hosting (`hosting.yml`, #262
+> closed) AND functions (`functions.yml` — see the README for the deployer-SA
+> IAM set + Cloud Billing API enablement its first run required). The A4
+> dev/prod project split remains pending: the
 > apex intentionally points at the dev project until then.
 
 `firebase.json` gains a `hosting` block:

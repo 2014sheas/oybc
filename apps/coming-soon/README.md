@@ -72,8 +72,12 @@ The confirmation email needs a Resend account + a verified sending domain.
 > the Poster template, `functions/src/confirmEmail.ts`, with the
 > `/unsubscribe` endpoint), and the `FIREBASE_SERVICE_ACCOUNT` Actions
 > secret is set (#262 closed) — merges to `dev` touching this package or
-> `firebase.json` now AUTO-DEPLOY via `hosting.yml`; functions still deploy
-> manually (`firebase deploy --only functions:subscribe,functions:unsubscribe`).
+> `firebase.json` now AUTO-DEPLOY via `hosting.yml`, and merges touching
+> `functions/`, `packages/bingo-core/`, or `firebase.json` auto-deploy via
+> `functions.yml` (proven 2026-08-04; the deployer
+> SA needed serviceAccountUser on both runtime SAs + serviceUsageConsumer +
+> cloudfunctions.admin + secretmanager.admin, and the Cloud Billing API
+> enabled — the CLI's Blaze pre-check hits it).
 > Email hosting (2026-08-02): `hello@oybc.com` is a real Google Workspace
 > mailbox (apex MX `smtp.google.com`, apex SPF `_spf.google.com`, Workspace
 > DKIM on `google._domainkey`) — coexists with Resend, whose records live on
@@ -85,7 +89,9 @@ The confirmation email needs a Resend account + a verified sending domain.
 `/index.html`, and a `predeploy` that builds this package).
 
 ```bash
-# from the repo root, on the Blaze plan, with RESEND_API_KEY secret set:
+# Manual one-off only — merges to dev auto-deploy both hosting and functions
+# via CI (hosting.yml / functions.yml). From the repo root, on the Blaze plan,
+# with the RESEND_API_KEY secret set:
 firebase deploy --only functions:subscribe,hosting
 ```
 
