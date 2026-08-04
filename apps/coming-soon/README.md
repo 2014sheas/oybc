@@ -72,8 +72,11 @@ The confirmation email needs a Resend account + a verified sending domain.
 > the Poster template, `functions/src/confirmEmail.ts`, with the
 > `/unsubscribe` endpoint), and the `FIREBASE_SERVICE_ACCOUNT` Actions
 > secret is set (#262 closed) — merges to `dev` touching this package or
-> `firebase.json` now AUTO-DEPLOY via `hosting.yml`; functions still deploy
-> manually (`firebase deploy --only functions:subscribe,functions:unsubscribe`).
+> `firebase.json` now AUTO-DEPLOY via `hosting.yml`, and merges touching
+> `functions/` auto-deploy via `functions.yml` (proven 2026-08-04; the deployer
+> SA needed serviceAccountUser on both runtime SAs + serviceUsageConsumer +
+> cloudfunctions.admin + secretmanager.admin, and the Cloud Billing API
+> enabled — the CLI's Blaze pre-check hits it).
 > Email hosting (2026-08-02): `hello@oybc.com` is a real Google Workspace
 > mailbox (apex MX `smtp.google.com`, apex SPF `_spf.google.com`, Workspace
 > DKIM on `google._domainkey`) — coexists with Resend, whose records live on
