@@ -264,6 +264,7 @@ struct BoardWizardView: View {
             BoardWizardTasksStepView(
                 library: library,
                 selectedTaskIds: $wizard.selectedTaskIds,
+                poolOrder: wizard.poolOrder,
                 tasksRequired: wizard.tasksRequired,
                 isRecurring: wizard.isRecurring,
                 centerTaskMode: wizard.centerMode,

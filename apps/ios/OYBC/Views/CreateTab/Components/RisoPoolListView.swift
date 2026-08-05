@@ -12,6 +12,10 @@ import SwiftUI
 struct RisoPoolListView: View {
 
     let selectedTaskIds: Set<String>
+    /// Render order (insertion order from `BoardWizardViewModel.poolOrder`).
+    /// Rows render in this order — no alphabetical sort — so a renamed task
+    /// keeps its position. `selectedTaskIds` still drives membership + the count.
+    let orderedTaskIds: [String]
     let effectiveTaskById: [String: OYBC.Task]
     let effectiveChildrenByCompound: [String: [CompoundChild]]
     let isRecurring: Bool
@@ -29,13 +33,11 @@ struct RisoPoolListView: View {
 
     // MARK: - Ordered pool
 
-    /// Pool ordered by insertion (descending) — we approximate insertion order
-    /// as alphabetical within the same type for stability. A true insertion-order
-    /// pool would need an ordered structure in the parent; for now we use the set
-    /// order from `selectedTaskIds` with stable sort.
+    /// Pool in insertion order (from the parent's `poolOrder`). No sort — a
+    /// renamed task must keep its position. Ids without a resolved task
+    /// (mid-hydration races) are skipped.
     private var poolTasks: [OYBC.Task] {
-        selectedTaskIds.compactMap { effectiveTaskById[$0] }
-            .sorted { $0.title < $1.title }
+        orderedTaskIds.compactMap { effectiveTaskById[$0] }
     }
 
     var body: some View {

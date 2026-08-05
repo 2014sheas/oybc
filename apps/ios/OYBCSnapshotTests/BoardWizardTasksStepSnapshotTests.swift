@@ -188,6 +188,7 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     func testPoolListEmptyLight() {
         let view = RisoPoolListView(
             selectedTaskIds: [],
+            orderedTaskIds: [],
             effectiveTaskById: [:],
             effectiveChildrenByCompound: [:],
             isRecurring: false,
@@ -205,6 +206,7 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     func testPoolListEmptyDark() {
         let view = RisoPoolListView(
             selectedTaskIds: [],
+            orderedTaskIds: [],
             effectiveTaskById: [:],
             effectiveChildrenByCompound: [:],
             isRecurring: false,
@@ -310,6 +312,10 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
 
         return RisoPoolListView(
             selectedTaskIds: selectedIds,
+            // Reproduce the previous alphabetical-by-title order so the baseline
+            // is unchanged (rendering is now order-driven, not sorted).
+            orderedTaskIds: [normalTask, countingTask, compoundTask]
+                .sorted { $0.title < $1.title }.map(\.id),
             effectiveTaskById: taskById,
             effectiveChildrenByCompound: childrenByCompound,
             isRecurring: false,
@@ -345,10 +351,21 @@ private struct TasksStepHost: View {
         self.isRecurring = isRecurring
     }
 
+    /// Reproduce the previous alphabetical-by-title pool order so baselines are
+    /// unchanged now that the list renders by `poolOrder` instead of sorting.
+    private var poolOrder: [String] {
+        let byId = Dictionary(
+            library.libraryTasks.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return selectedTaskIds.sorted { (byId[$0]?.title ?? $0) < (byId[$1]?.title ?? $1) }
+    }
+
     var body: some View {
         BoardWizardTasksStepView(
             library: library,
             selectedTaskIds: $selectedTaskIds,
+            poolOrder: poolOrder,
             tasksRequired: 25,
             isRecurring: isRecurring,
             centerTaskMode: centerTaskMode,

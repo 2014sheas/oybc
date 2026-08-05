@@ -64,6 +64,13 @@ final class BoardWizardViewModel {
     var selectedTaskIds: Set<String> = []
     var centerTaskId: String? = nil
 
+    /// Insertion order of the pool. `RisoPoolListView` renders in this order
+    /// rather than sorting alphabetically, so a renamed task (inline editing)
+    /// keeps its position. Kept in lockstep with `selectedTaskIds`; undo-restore
+    /// re-inserts at the original index. Hydrated from placement/pool order on
+    /// draft/template resume.
+    var poolOrder: [String] = []
+
     /// Bug #85 — In-memory pending tasks created inside the wizard's
     /// New Task sheet. Keyed by `task.id`. These have NOT been written
     /// to GRDB yet; `persistWizardBoard` drains this dictionary inside
@@ -175,6 +182,12 @@ final class BoardWizardViewModel {
             self.centerCustomName = d.board.centerSquareCustomName ?? ""
             self.centerTaskId = d.board.centerTaskId
             self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
+            // Preserve placement order on resume so the pool doesn't reshuffle.
+            self.poolOrder = Self.dedupePreservingOrder(
+                d.boardTasks
+                    .sorted { ($0.row, $0.col) < ($1.row, $1.col) }
+                    .map { $0.taskId }
+            )
             if d.board.timeframe == .custom {
                 self.customStartDate = String(d.board.startDate.prefix(10))
                 // A custom board always has an endDate; default defensively.
@@ -187,6 +200,9 @@ final class BoardWizardViewModel {
             self.centerType = t.centerSquareType
             self.centerCustomName = t.centerSquareCustomName ?? ""
             self.selectedTaskIds = Self.resolveTemplateHydrationTaskIds(t, database: database)
+            // Template hydration returns a Set (order not preserved); use a
+            // deterministic order so the pool is stable within the session.
+            self.poolOrder = self.selectedTaskIds.sorted()
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -215,6 +231,7 @@ final class BoardWizardViewModel {
                    let pool = try? database.fetchDefaultPool(userId: userId, timeframe: timeframe),
                    !pool.taskIds.isEmpty {
                     self.selectedTaskIds = Set(pool.taskIds)
+                    self.poolOrder = Self.dedupePreservingOrder(pool.taskIds)
                 }
             } else {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
@@ -377,9 +394,27 @@ final class BoardWizardViewModel {
             // Bug #85 — purge the pending payload if this was a not-yet-
             // persisted task. No-op for library tasks (won't be in the map).
             pendingTasks.removeValue(forKey: taskId)
+            poolOrder.removeAll { $0 == taskId }
         } else {
             selectedTaskIds.insert(taskId)
+            if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
         }
+    }
+
+    /// Undo-restore for the Remove ✕ toast: re-select and re-insert at the
+    /// original index (clamped), so the removed row returns to where it was.
+    func restoreToPool(_ taskId: String, at index: Int) {
+        selectedTaskIds.insert(taskId)
+        if !poolOrder.contains(taskId) {
+            poolOrder.insert(taskId, at: min(max(0, index), poolOrder.count))
+        }
+    }
+
+    /// De-dupes a task-id sequence preserving first occurrence — used to derive
+    /// `poolOrder` from a board's placement rows on draft resume.
+    private static func dedupePreservingOrder(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
     }
 
     /// Bug #85 — Store a pending task payload in the wizard's in-memory
@@ -428,6 +463,7 @@ final class BoardWizardViewModel {
         centerCustomName = initialPreferences.defaultCenterCustomName
         isRecurring = false
         selectedTaskIds = []
+        poolOrder = []
         centerTaskId = nil
         pendingTasks = [:]
         currentStep = 1

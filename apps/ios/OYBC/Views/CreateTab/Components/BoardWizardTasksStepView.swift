@@ -31,6 +31,9 @@ struct BoardWizardTasksStepView: View {
 
     /// Currently-selected task ids — controlled by the wizard.
     @Binding var selectedTaskIds: Set<String>
+    /// Insertion order of the pool (from `BoardWizardViewModel.poolOrder`).
+    /// Passed down so the list renders in order rather than sorting.
+    let poolOrder: [String]
 
     /// Number of tasks the chosen board geometry requires.
     let tasksRequired: Int
@@ -292,6 +295,7 @@ struct BoardWizardTasksStepView: View {
                 // 4. Pool list
                 RisoPoolListView(
                     selectedTaskIds: selectedTaskIds,
+                    orderedTaskIds: poolOrder,
                     effectiveTaskById: effectiveTaskById,
                     effectiveChildrenByCompound: effectiveChildrenByCompound,
                     isRecurring: isRecurring,
