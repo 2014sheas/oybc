@@ -265,6 +265,7 @@ struct BoardWizardView: View {
                 library: library,
                 selectedTaskIds: $wizard.selectedTaskIds,
                 poolOrder: wizard.poolOrder,
+                stagedEdits: wizard.stagedEdits,
                 tasksRequired: wizard.tasksRequired,
                 isRecurring: wizard.isRecurring,
                 centerTaskMode: wizard.centerMode,

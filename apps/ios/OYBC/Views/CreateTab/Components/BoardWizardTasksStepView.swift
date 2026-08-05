@@ -34,6 +34,9 @@ struct BoardWizardTasksStepView: View {
     /// Insertion order of the pool (from `BoardWizardViewModel.poolOrder`).
     /// Passed down so the list renders in order rather than sorting.
     let poolOrder: [String]
+    /// Staged inline edits (from `BoardWizardViewModel.stagedEdits`), overlaid
+    /// onto `effectiveTaskById` so rows + preview reflect unsaved edits.
+    var stagedEdits: [String: TaskEditPatch] = [:]
 
     /// Number of tasks the chosen board geometry requires.
     let tasksRequired: Int
@@ -186,6 +189,11 @@ struct BoardWizardTasksStepView: View {
                     by[childTask.id] = childTask
                 }
             }
+        }
+        // Overlay staged inline edits so rows + preview reflect unsaved changes
+        // (the DB is untouched until board create).
+        for (id, patch) in stagedEdits {
+            if let base = by[id] { by[id] = patch.applied(to: base) }
         }
         return by
     }

@@ -71,6 +71,12 @@ final class BoardWizardViewModel {
     /// draft/template resume.
     var poolOrder: [String] = []
 
+    /// Staged, not-yet-persisted inline edits keyed by task id. Applied ONLY
+    /// inside the board-create transaction (`persistWizardBoard` →
+    /// `saveWizardBoard`) — never while the board is a draft. Cleared when the
+    /// task leaves the pool or the wizard resets.
+    var stagedEdits: [String: TaskEditPatch] = [:]
+
     /// Bug #85 — In-memory pending tasks created inside the wizard's
     /// New Task sheet. Keyed by `task.id`. These have NOT been written
     /// to GRDB yet; `persistWizardBoard` drains this dictionary inside
@@ -395,10 +401,39 @@ final class BoardWizardViewModel {
             // persisted task. No-op for library tasks (won't be in the map).
             pendingTasks.removeValue(forKey: taskId)
             poolOrder.removeAll { $0 == taskId }
+            // A task that leaves the pool drops any staged edit — re-adding it
+            // starts clean, matching the removal-purges-pending semantics.
+            stagedEdits.removeValue(forKey: taskId)
         } else {
             selectedTaskIds.insert(taskId)
             if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
         }
+    }
+
+    /// Stage an inline edit; returns the previous patch (or nil) so the Save
+    /// toast's Undo can revert to it.
+    @discardableResult
+    func stageEdit(_ patch: TaskEditPatch, for taskId: String) -> TaskEditPatch? {
+        let previous = stagedEdits[taskId]
+        stagedEdits[taskId] = patch
+        return previous
+    }
+
+    /// Undo a staged edit: restore the previous patch, or clear it entirely
+    /// when there was none.
+    func revertEdit(for taskId: String, to previous: TaskEditPatch?) {
+        if let previous {
+            stagedEdits[taskId] = previous
+        } else {
+            stagedEdits.removeValue(forKey: taskId)
+        }
+    }
+
+    /// Overlay a staged patch onto a base task for DISPLAY (pool rows + preview)
+    /// — the DB is untouched until board create. No-op when unstaged.
+    func effectiveTask(_ base: OYBC.Task) -> OYBC.Task {
+        guard let patch = stagedEdits[base.id] else { return base }
+        return patch.applied(to: base)
     }
 
     /// Undo-restore for the Remove ✕ toast: re-select and re-insert at the
@@ -464,6 +499,7 @@ final class BoardWizardViewModel {
         isRecurring = false
         selectedTaskIds = []
         poolOrder = []
+        stagedEdits = [:]
         centerTaskId = nil
         pendingTasks = [:]
         currentStep = 1
