@@ -61,6 +61,36 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 380)), record: recordMode)
     }
 
+    // MARK: - Compound editor
+
+    private func compoundDraft() -> TaskEditPatch {
+        var d = TaskEditPatch(title: "Morning routine"); d.ordered = true
+        var progress = ChildPatch(id: "s2", childTaskId: "s2", title: "Run", isProgress: true)
+        progress.action = "Run"; progress.goal = "3"; progress.unit = "km"
+        d.children = [
+            ChildPatch(id: "s1", childTaskId: "s1", title: "Make the bed", isProgress: false),
+            progress,
+        ]
+        return d
+    }
+
+    func testCompoundEditorLight() {
+        let view = host(
+            RisoPoolRowEditorView(taskType: .compound, draft: .constant(compoundDraft()),
+                                  onSave: {}, onDiscard: {})
+        )
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 560)), record: recordMode)
+    }
+
+    func testCompoundEditorDark() {
+        let view = host(
+            RisoPoolRowEditorView(taskType: .compound, draft: .constant(compoundDraft()),
+                                  onSave: {}, onDiscard: {}),
+            dark: true
+        )
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 560)), record: recordMode)
+    }
+
     // MARK: - Simple (normal) editor
 
     func testNormalEditorLight() {

@@ -1,5 +1,16 @@
 import Foundation
 
+/// Shared "Reads as: Action — Goal — Unit" live preview for counting task and
+/// compound progress-step editors. Returns nil when all three fields are blank;
+/// blanks render as an em dash.
+func risoReadsAsPreview(action: String, goal: String, unit: String) -> String? {
+    let a = action.trimmingCharacters(in: .whitespaces)
+    let g = goal.trimmingCharacters(in: .whitespaces)
+    let u = unit.trimmingCharacters(in: .whitespaces)
+    guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
+    return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
+}
+
 /// A single compound-step edit. Present in PR 1's model so PR 2 (compound
 /// editing) needs no model change; PR 1 never populates `children`.
 struct ChildPatch: Identifiable, Equatable {
@@ -18,6 +29,31 @@ struct ChildPatch: Identifiable, Equatable {
     var markedDeleted: Bool = false
 
     var isNew: Bool { childTaskId == nil }
+
+    init(id: String, childTaskId: String?, title: String, isProgress: Bool,
+         action: String = "", goal: String = "", unit: String = "", markedDeleted: Bool = false) {
+        self.id = id
+        self.childTaskId = childTaskId
+        self.title = title
+        self.isProgress = isProgress
+        self.action = action
+        self.goal = goal
+        self.unit = unit
+        self.markedDeleted = markedDeleted
+    }
+
+    /// Clone a step from an existing child Task. A counting child is a "progress"
+    /// step (Action/Goal/Unit); anything else is a simple step.
+    init(from child: OYBC.Task) {
+        self.id = child.id
+        self.childTaskId = child.id
+        self.title = child.title
+        self.isProgress = child.type == .counting
+        self.action = child.action ?? ""
+        self.goal = child.maxCount.map(String.init) ?? ""
+        self.unit = child.unit ?? ""
+        self.markedDeleted = false
+    }
 }
 
 /// A staged, not-yet-persisted edit to a pooled task. Applied ONLY inside the
@@ -53,17 +89,12 @@ struct TaskEditPatch: Equatable {
     /// Live "Reads as: Action — Goal — Unit" preview for counting editors.
     /// nil when all three fields are blank.
     var countingPreview: String? {
-        let a = action.trimmingCharacters(in: .whitespaces)
-        let g = goal.trimmingCharacters(in: .whitespaces)
-        let u = unit.trimmingCharacters(in: .whitespaces)
-        guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
-        return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
+        risoReadsAsPreview(action: action, goal: goal, unit: unit)
     }
 
     /// The blocking validation message, or nil when the patch is valid for the
-    /// given task type. PR 1 handles `.normal` + `.counting`; `.compound`
-    /// returns nil here (PR 2 adds compound-step validation); `.achievement`
-    /// isn't editable in the pool.
+    /// given task type. Handles `.normal`, `.counting`, and `.compound`;
+    /// `.achievement` isn't editable in the pool (returns nil).
     func validate(type: TaskType) -> String? {
         switch type {
         case .counting:
@@ -75,6 +106,23 @@ struct TaskEditPatch: Equatable {
             return nil
         case .normal:
             return trimmedTitle.isEmpty ? "A title is required." : nil
+        case .compound:
+            if trimmedTitle.isEmpty { return "A title is required." }
+            // Steps that are deleted or blank-titled don't count (blank ones are
+            // dropped on save).
+            let liveSteps = children.filter {
+                !$0.markedDeleted && !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if liveSteps.count < 2 { return "A compound task needs at least two steps." }
+            for step in liveSteps where step.isProgress {
+                let g = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? 0
+                let u = step.unit.trimmingCharacters(in: .whitespaces)
+                if g <= 0 || u.isEmpty {
+                    let name = step.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return "Progress step \"\(name)\" needs a goal and a unit."
+                }
+            }
+            return nil
         default:
             return nil
         }
@@ -98,6 +146,11 @@ struct TaskEditPatch: Equatable {
             t.title = typed.isEmpty
                 ? TaskTitle.generateCounterTaskTitle(action: a, maxCount: g, unit: u)
                 : typed
+        case .compound:
+            // Parent-level fields only; child Task/link CRUD is applied by the
+            // persist layer (saveWizardBoard / pending merge), not here.
+            t.title = trimmedTitle
+            t.isOrdered = ordered
         default:
             t.title = trimmedTitle
         }

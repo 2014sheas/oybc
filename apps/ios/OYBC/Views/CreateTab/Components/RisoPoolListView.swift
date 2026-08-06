@@ -108,10 +108,11 @@ struct RisoPoolListView: View {
     private func poolRow(_ task: OYBC.Task) -> some View {
         let isCenter = centerTaskMode && centerTaskId == task.id
         let detail = typeDetailSubtitle(task, isCenter: isCenter)
-        // Pencil is shown for editable in-pool tasks. PR 1 edits simple +
-        // counting; compound editing arrives in PR 2. Achievement is never
-        // editable in the pool (it shows the "TASKS TAB" marker instead).
-        let showsPencil = onEdit != nil && (task.type == .normal || task.type == .counting)
+        // Pencil is shown for editable in-pool tasks (normal / counting /
+        // compound). Achievement is never editable in the pool (it shows the
+        // "TASKS TAB" marker instead).
+        let showsPencil = onEdit != nil
+            && (task.type == .normal || task.type == .counting || task.type == .compound)
 
         return HStack(alignment: .center, spacing: 9) {
             badge(task, isCenter: isCenter)

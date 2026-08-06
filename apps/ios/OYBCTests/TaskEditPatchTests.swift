@@ -112,4 +112,87 @@ final class TaskEditPatchTests: XCTestCase {
     func test_preview_nil_when_all_blank() {
         XCTAssertNil(TaskEditPatch(title: "anything").countingPreview)
     }
+
+    // MARK: - Compound (PR 2)
+
+    private func compoundPatch(_ children: [ChildPatch], title: String = "Routine", ordered: Bool = false) -> TaskEditPatch {
+        var p = TaskEditPatch(title: title); p.ordered = ordered; p.children = children
+        return p
+    }
+
+    private func simpleStep(_ title: String, id: String = "c1") -> ChildPatch {
+        ChildPatch(id: id, childTaskId: id, title: title, isProgress: false)
+    }
+
+    private func progressStep(_ title: String, id: String = "p1", goal: String = "3", unit: String = "km") -> ChildPatch {
+        var c = ChildPatch(id: id, childTaskId: id, title: title, isProgress: true)
+        c.action = title; c.goal = goal; c.unit = unit
+        return c
+    }
+
+    func test_childPatch_from_counting_task_is_progress() {
+        let child = makeTask(id: "cc", type: .counting, title: "Run 3 km", action: "Run", unit: "km", maxCount: 3)
+        let cp = ChildPatch(from: child)
+        XCTAssertTrue(cp.isProgress)
+        XCTAssertEqual(cp.childTaskId, "cc")
+        XCTAssertEqual(cp.action, "Run"); XCTAssertEqual(cp.goal, "3"); XCTAssertEqual(cp.unit, "km")
+        XCTAssertFalse(cp.isNew)
+    }
+
+    func test_childPatch_from_normal_task_is_simple() {
+        let cp = ChildPatch(from: makeTask(id: "cn", type: .normal, title: "Stretch"))
+        XCTAssertFalse(cp.isProgress)
+        XCTAssertEqual(cp.title, "Stretch")
+    }
+
+    func test_compound_empty_title_blocks() {
+        var p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")]); p.title = "  "
+        XCTAssertEqual(p.validate(type: .compound), "A title is required.")
+    }
+
+    func test_compound_needs_two_steps() {
+        let p = compoundPatch([simpleStep("only", id: "a")])
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two steps.")
+    }
+
+    func test_compound_blank_titled_steps_dont_count() {
+        let p = compoundPatch([simpleStep("A", id: "a"), simpleStep("   ", id: "b"), simpleStep("", id: "c")])
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two steps.")
+    }
+
+    func test_compound_deleted_steps_dont_count() {
+        var deleted = simpleStep("B", id: "b"); deleted.markedDeleted = true
+        let p = compoundPatch([simpleStep("A", id: "a"), deleted])
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two steps.")
+    }
+
+    func test_compound_two_simple_steps_valid() {
+        let p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")])
+        XCTAssertNil(p.validate(type: .compound))
+    }
+
+    func test_compound_progress_step_missing_goal_blocks() {
+        var noGoal = progressStep("Run", id: "p"); noGoal.goal = "0"
+        let p = compoundPatch([simpleStep("A", id: "a"), noGoal])
+        XCTAssertEqual(p.validate(type: .compound), "Progress step \"Run\" needs a goal and a unit.")
+    }
+
+    func test_compound_progress_step_missing_unit_blocks() {
+        var noUnit = progressStep("Run", id: "p"); noUnit.unit = ""
+        let p = compoundPatch([simpleStep("A", id: "a"), noUnit])
+        XCTAssertEqual(p.validate(type: .compound), "Progress step \"Run\" needs a goal and a unit.")
+    }
+
+    func test_compound_valid_with_progress_step() {
+        let p = compoundPatch([simpleStep("A", id: "a"), progressStep("Run", id: "p")])
+        XCTAssertNil(p.validate(type: .compound))
+    }
+
+    func test_apply_compound_sets_title_and_ordered() {
+        let base = makeTask(id: "cmp", type: .compound, title: "Old")
+        var p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")], title: "Morning", ordered: true)
+        let out = p.applied(to: base)
+        XCTAssertEqual(out.title, "Morning")
+        XCTAssertEqual(out.isOrdered, true)
+    }
 }

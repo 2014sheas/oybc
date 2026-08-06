@@ -446,17 +446,148 @@ extension AppDatabase {
 
     // MARK: - Wizard board persist (B4 — absorbed from BoardWizardPersist)
 
+    /// Builds a fresh child Task row for a newly-added compound step.
+    private static func makeStagedChildTask(
+        id: String, step: ChildPatch, title: String, userId: String, now: String
+    ) -> Task {
+        if step.isProgress {
+            let action = step.action.trimmingCharacters(in: .whitespaces)
+            let unit = step.unit.trimmingCharacters(in: .whitespaces)
+            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? 0
+            return Task(
+                id: id, userId: userId,
+                title: TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, providedTitle: title),
+                type: .counting, action: action, unit: unit, maxCount: goal,
+                totalCompletions: 0, totalInstances: 0,
+                createdAt: now, updatedAt: now, version: 1, isDeleted: false
+            )
+        }
+        return Task(
+            id: id, userId: userId, title: title, type: .normal,
+            totalCompletions: 0, totalInstances: 0,
+            createdAt: now, updatedAt: now, version: 1, isDeleted: false
+        )
+    }
+
+    /// Applies a step's edited fields onto its existing child Task (title, and
+    /// for a progress step the action/goal/unit + regenerated counting title).
+    /// Returns the (possibly unchanged) task; caller bumps version if different.
+    private static func applyStagedStepToChild(_ base: Task, step: ChildPatch, title: String) -> Task {
+        var t = base
+        if step.isProgress, base.type == .counting {
+            let action = step.action.trimmingCharacters(in: .whitespaces)
+            let unit = step.unit.trimmingCharacters(in: .whitespaces)
+            let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? base.maxCount ?? 0
+            t.action = action; t.unit = unit; t.maxCount = goal
+            t.title = TaskTitle.generateCounterTaskTitle(action: action, maxCount: goal, unit: unit, providedTitle: title)
+        } else {
+            t.title = title
+        }
+        return t
+    }
+
+    /// Applies a compound patch's child edits to its `compound_children` links +
+    /// child Task rows, inside an active write transaction. Called by
+    /// `saveWizardBoard` for a staged compound edit (library or already-written
+    /// pending compound). The parent Task itself is saved+cascaded by the caller
+    /// AFTER this returns.
+    ///
+    /// Semantics (docs/INLINE_TASK_EDITING.md): a kept new step mints a child
+    /// Task + link; a kept existing step edits its child Task GLOBALLY (with
+    /// cascade) and reindexes its link to display order; a removed step (deleted
+    /// or blank-titled) soft-deletes the LINK only — the child Task survives
+    /// (orphans acceptable). Steps render/persist in `patch.children` order.
+    static func applyStagedCompoundChildEdits(
+        db: Database, parent: Task, patch: TaskEditPatch, now: String
+    ) throws {
+        let parentId = parent.id
+        let existingLinks = try CompoundChild
+            .filter(Column("compoundTaskId") == parentId && Column("isDeleted") == false)
+            .fetchAll(db)
+        let linkByChildId = Dictionary(existingLinks.map { ($0.childTaskId, $0) }, uniquingKeysWith: { a, _ in a })
+
+        var keptChildIds = Set<String>()
+        var displayIndex = 0
+        for step in patch.children {
+            let title = step.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Removed = explicitly deleted OR blank-titled ("dropped on save").
+            guard !step.markedDeleted, !title.isEmpty else { continue }
+            let index = displayIndex
+            displayIndex += 1
+
+            if step.isNew {
+                let childId = AppDatabase.generateUUID()
+                let child = makeStagedChildTask(id: childId, step: step, title: title, userId: parent.userId, now: now)
+                try child.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks", entityId: childId, operationType: .create, payload: child, now: now
+                ).enqueue(db)
+                let link = CompoundChild(
+                    id: AppDatabase.generateUUID(), compoundTaskId: parentId, childTaskId: childId,
+                    childIndex: index, createdAt: now, updatedAt: now, lastSyncedAt: nil,
+                    version: 1, isDeleted: false, deletedAt: nil
+                )
+                try link.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren", entityId: link.id, operationType: .create, payload: link, now: now
+                ).enqueue(db)
+                keptChildIds.insert(childId)
+            } else if let childId = step.childTaskId {
+                keptChildIds.insert(childId)
+                // Global child edit (rename / goal / unit) → save + cascade.
+                if let existingChild = try Task.fetchOne(db, key: childId) {
+                    let updated = applyStagedStepToChild(existingChild, step: step, title: title)
+                    let changed = updated.title != existingChild.title
+                        || updated.action != existingChild.action
+                        || updated.unit != existingChild.unit
+                        || updated.maxCount != existingChild.maxCount
+                    if changed {
+                        var u = updated
+                        u.version += 1
+                        u.updatedAt = now
+                        try Self.saveTaskAndCascade(db: db, task: u)
+                    }
+                }
+                // Reindex the link to display order if it moved.
+                if var link = linkByChildId[childId], link.childIndex != index {
+                    link.childIndex = index
+                    link.version += 1
+                    link.updatedAt = now
+                    try link.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "compoundChildren", entityId: link.id, operationType: .update, payload: link, now: now
+                    ).enqueue(db)
+                }
+            }
+        }
+
+        // Soft-delete links whose child is no longer kept (link only — the child
+        // Task stays in the library; orphans are acceptable per product decision).
+        for link in existingLinks where !keptChildIds.contains(link.childTaskId) {
+            var l = link
+            l.isDeleted = true
+            l.deletedAt = now
+            l.version += 1
+            l.updatedAt = now
+            try l.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "compoundChildren", entityId: l.id, operationType: .delete, payload: l, now: now
+            ).enqueue(db)
+        }
+    }
+
     /// Persist a wizard-built board in a single atomic transaction: any
-    /// deferred (Bug #85) pending tasks that are actually placed, then the
-    /// `Board` row + its `BoardTask` rows — plus all matching `SyncQueueItem`
-    /// records — commit or roll back together. Without the sync items the
-    /// board stays local-only (`SyncService.pushSync` reads exclusively from
-    /// `sync_queue`), so every write path below enqueues one.
+    /// deferred (Bug #85) pending tasks that are actually placed, then any
+    /// staged inline task edits (active create only), then the `Board` row + its
+    /// `BoardTask` rows — plus all matching `SyncQueueItem` records — commit or
+    /// roll back together. Without the sync items the board stays local-only
+    /// (`SyncService.pushSync` reads exclusively from `sync_queue`), so every
+    /// write path enqueues one.
     ///
     /// Moved VERBATIM from `BoardWizardPersist.persistWizardBoard`'s write
     /// block so the sync-enqueue lives in the data layer, not the view-layer
-    /// helper. The caller resolves the board dict, placement rows, and the
-    /// placed-only pending payloads before invoking.
+    /// helper. The caller resolves the board dict, placement rows, the
+    /// placed-only pending payloads, and the staged edits before invoking.
     ///
     /// Bug #85: pending tasks are written FIRST (before board_tasks) so the
     /// referential integrity of task → board_task is never violated even
@@ -467,6 +598,8 @@ extension AppDatabase {
     ///   - boardTasks: The per-cell `BoardTask` placement rows to insert.
     ///   - pendingTasks: Placed-only deferred payloads (parent + inline
     ///     children + links) to write first.
+    ///   - stagedEdits: Inline task edits to apply (active create only); see the
+    ///     staged-edits block below for per-type handling.
     ///   - isUpdate: `true` when updating an existing draft (old placements
     ///     are soft-deleted (tombstoned) + DELETE-enqueued first); `false` for
     ///     fresh create.
@@ -515,26 +648,45 @@ extension AppDatabase {
             // ── Staged inline edits (Inline Task Editing) ──────────
             // ONLY on an active board create — a draft must never carry a task
             // edit (invariant: TaskEditPatch / docs/INLINE_TASK_EDITING.md).
-            // Pending tasks already carry their merged patch (persistWizardBoard
-            // merges before this call), so skip those ids and apply staged edits
-            // only to existing LIBRARY tasks. Runs BEFORE the derivation pass
-            // below so a changed counting goal feeds into stored stats. The edit
-            // is GLOBAL (same Task on every board), so it goes through
-            // saveTaskAndCascade — save + tasks-update enqueue + re-derive every
-            // OTHER board / parent compound that shares this Task, in this same
-            // transaction. A bare save (no cascade) would leave those boards'
-            // cached bingo/greenlog stats stale until the app-open self-heal.
+            // Runs BEFORE the derivation pass below so a changed counting goal
+            // feeds into stored stats. Edits are GLOBAL (same Task on every
+            // board), so each mutation goes through saveTaskAndCascade — save +
+            // sync enqueue + re-derive every OTHER board / parent compound that
+            // shares the Task, in this same transaction. A bare save (no cascade)
+            // would leave those boards' cached bingo/greenlog stats stale until
+            // the app-open self-heal. Per-type handling:
+            //   • compound (library OR pending) — the compound branch owns the
+            //     full apply (parent fields + child/link CRUD). Pending compounds
+            //     are NOT pre-merged in persistWizardBoard, so this is their one
+            //     and only apply; their rows already exist (pending loop above).
+            //   • simple/counting — a PENDING one was already merged into its
+            //     payload (persistWizardBoard), so skip it here; apply LIBRARY ones.
             if board.status == .active {
                 let pendingIds = Set(pendingTasks.map { $0.task.id })
-                for (taskId, patch) in stagedEdits where !pendingIds.contains(taskId) {
+                for (taskId, patch) in stagedEdits {
                     guard var task = try Task.fetchOne(db, key: taskId) else { continue }
                     // Defensive: never persist an invalid edit (the UI blocks
                     // Save, but a stale draft shouldn't corrupt the row).
                     guard patch.validate(type: task.type) == nil else { continue }
-                    task = patch.applied(to: task)
-                    task.version += 1
-                    task.updatedAt = now
-                    try Self.saveTaskAndCascade(db: db, task: task)
+                    if task.type == .compound {
+                        // Parent fields + child/link CRUD. Works for library AND
+                        // pending compounds — the pending loop above already wrote
+                        // the pending compound's rows, so they're real rows here.
+                        task = patch.applied(to: task)
+                        task.version += 1
+                        task.updatedAt = now
+                        try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: patch, now: now)
+                        try Self.saveTaskAndCascade(db: db, task: task)
+                    } else {
+                        // simple/counting: a pending task's edit was merged into
+                        // its payload already (persistWizardBoard), so skip it
+                        // here; apply library-task edits.
+                        if pendingIds.contains(taskId) { continue }
+                        task = patch.applied(to: task)
+                        task.version += 1
+                        task.updatedAt = now
+                        try Self.saveTaskAndCascade(db: db, task: task)
+                    }
                 }
             }
 
