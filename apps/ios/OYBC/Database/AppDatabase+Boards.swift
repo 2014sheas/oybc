@@ -513,29 +513,29 @@ extension AppDatabase {
             }
 
             // ── Staged inline edits (Inline Task Editing) ──────────
+            // ONLY on an active board create — a draft must never carry a task
+            // edit (invariant: TaskEditPatch / docs/INLINE_TASK_EDITING.md).
             // Pending tasks already carry their merged patch (persistWizardBoard
             // merges before this call), so skip those ids and apply staged edits
             // only to existing LIBRARY tasks. Runs BEFORE the derivation pass
-            // below so a changed counting goal feeds into stored stats. Each
-            // mutated Task bumps version + enqueues a tasks-update sync row —
-            // the edit is GLOBAL (the same Task on every board it's placed on).
-            let pendingIds = Set(pendingTasks.map { $0.task.id })
-            for (taskId, patch) in stagedEdits where !pendingIds.contains(taskId) {
-                guard var task = try Task.fetchOne(db, key: taskId) else { continue }
-                // Defensive: never persist an invalid edit (the UI blocks Save,
-                // but a stale draft shouldn't corrupt the row).
-                guard patch.validate(type: task.type) == nil else { continue }
-                task = patch.applied(to: task)
-                task.version += 1
-                task.updatedAt = now
-                try task.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "tasks",
-                    entityId: task.id,
-                    operationType: .update,
-                    payload: task,
-                    now: now
-                ).enqueue(db)
+            // below so a changed counting goal feeds into stored stats. The edit
+            // is GLOBAL (same Task on every board), so it goes through
+            // saveTaskAndCascade — save + tasks-update enqueue + re-derive every
+            // OTHER board / parent compound that shares this Task, in this same
+            // transaction. A bare save (no cascade) would leave those boards'
+            // cached bingo/greenlog stats stale until the app-open self-heal.
+            if board.status == .active {
+                let pendingIds = Set(pendingTasks.map { $0.task.id })
+                for (taskId, patch) in stagedEdits where !pendingIds.contains(taskId) {
+                    guard var task = try Task.fetchOne(db, key: taskId) else { continue }
+                    // Defensive: never persist an invalid edit (the UI blocks
+                    // Save, but a stale draft shouldn't corrupt the row).
+                    guard patch.validate(type: task.type) == nil else { continue }
+                    task = patch.applied(to: task)
+                    task.version += 1
+                    task.updatedAt = now
+                    try Self.saveTaskAndCascade(db: db, task: task)
+                }
             }
 
             // ── Board + BoardTask rows ─────────────────────────────

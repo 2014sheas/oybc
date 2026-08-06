@@ -408,7 +408,9 @@ struct BoardWizardTasksStepView: View {
     private func saveEdit(_ task: OYBC.Task) {
         let previous = onStageEdit(editDraft, task.id)
         editingTaskId = nil
-        showToast("Task updated") { onRevertEdit(task.id, previous) }
+        // "edited" (not "updated") — the change is captured for this board's
+        // creation, not yet written to the DB; don't overclaim persistence.
+        showToast("Task edited") { onRevertEdit(task.id, previous) }
     }
 
     /// Discard the edit. If the draft differs from the task, toast "Edit

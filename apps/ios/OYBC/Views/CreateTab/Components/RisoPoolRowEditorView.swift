@@ -67,7 +67,9 @@ struct RisoPoolRowEditorView: View {
         switch taskType {
         case .counting: return "Editing · Counting task"
         case .compound: return "Editing · Compound task"
-        default: return "Editing · Simple task"
+        // "Normal" is the app's domain term for this TaskType (RisoTypeBadge
+        // renders .normal as "Normal") — don't paraphrase it as "Simple".
+        default: return "Editing · Normal task"
         }
     }
 

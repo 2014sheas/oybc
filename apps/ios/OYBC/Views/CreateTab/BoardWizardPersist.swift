@@ -326,18 +326,23 @@ func persistWizardBoard(
                 placedTaskIds: placedTaskIds
             )
             // Merge staged inline edits into pending payloads (a pending task
-            // edited before board-create). Library-task edits are applied inside
-            // saveWizardBoard's transaction; pending ones are merged here and
-            // written as the create payload, so saveWizardBoard skips them.
-            let mergedPending = pendingToPersist.map { payload -> PendingTaskPayload in
-                guard let patch = capturedStagedEdits[payload.task.id],
-                      patch.validate(type: payload.task.type) == nil else { return payload }
-                return PendingTaskPayload(
-                    task: patch.applied(to: payload.task),
-                    childTasks: payload.childTasks,
-                    childLinks: payload.childLinks
-                )
-            }
+            // edited before board-create) — but ONLY on an active create. A
+            // draft must never carry a task edit (invariant), so a draft save
+            // writes pending tasks with their pre-edit values and skips staged
+            // edits entirely (library-task edits are likewise gated inside
+            // saveWizardBoard on board.status).
+            let isActiveCreate = status == .active
+            let pendingForSave: [PendingTaskPayload] = isActiveCreate
+                ? pendingToPersist.map { payload -> PendingTaskPayload in
+                    guard let patch = capturedStagedEdits[payload.task.id],
+                          patch.validate(type: payload.task.type) == nil else { return payload }
+                    return PendingTaskPayload(
+                        task: patch.applied(to: payload.task),
+                        childTasks: payload.childTasks,
+                        childLinks: payload.childLinks
+                    )
+                }
+                : pendingToPersist
 
             // The single atomic transaction (deferred pending tasks, then the
             // board record + its BoardTask rows, plus every matching
@@ -349,8 +354,8 @@ func persistWizardBoard(
             try AppDatabase.shared.saveWizardBoard(
                 board: board,
                 boardTasks: boardTasks,
-                pendingTasks: mergedPending,
-                stagedEdits: capturedStagedEdits,
+                pendingTasks: pendingForSave,
+                stagedEdits: isActiveCreate ? capturedStagedEdits : [:],
                 isUpdate: isUpdate,
                 now: now
             )
