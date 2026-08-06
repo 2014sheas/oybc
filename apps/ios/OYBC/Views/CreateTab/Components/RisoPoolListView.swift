@@ -38,6 +38,13 @@ struct RisoPoolListView: View {
     /// boards" detail line for simple tasks. Absent ⇒ not shared.
     var sharedCountByTaskId: [String: Int] = [:]
 
+    /// The row currently open in the inline editor, if any. That row is
+    /// replaced in place by `editor`.
+    var editingTaskId: String? = nil
+    /// Builds the inline editor view for the open row (owned by the parent, so
+    /// it holds the draft/focus/toast state). nil ⇒ never swaps.
+    var editor: ((OYBC.Task) -> AnyView)? = nil
+
     // MARK: - Ordered pool
 
     /// Pool in insertion order (from the parent's `poolOrder`). No sort — a
@@ -67,7 +74,11 @@ struct RisoPoolListView: View {
 
                 VStack(spacing: 7) {
                     ForEach(poolTasks, id: \.id) { task in
-                        poolRow(task)
+                        if task.id == editingTaskId, let editor {
+                            editor(task).id(task.id)
+                        } else {
+                            poolRow(task).id(task.id)
+                        }
                     }
                 }
             }

@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// A transient toast shown above the wizard footer (staged-save / discard /
+/// remove), with an optional Undo affordance. Auto-dismisses after 6s.
+private struct PoolEditToast: Identifiable {
+    let id = UUID()
+    let text: String
+    let undo: (() -> Void)?
+}
+
 /// BoardWizardTasksStepView — Step 2 of the board-creation wizard (Riso redesign).
 ///
 /// This is a PRESENTATION RESTRUCTURE of the pre-Phase 3b implementation.
@@ -37,6 +45,15 @@ struct BoardWizardTasksStepView: View {
     /// Staged inline edits (from `BoardWizardViewModel.stagedEdits`), overlaid
     /// onto `effectiveTaskById` so rows + preview reflect unsaved edits.
     var stagedEdits: [String: TaskEditPatch] = [:]
+
+    /// Stage an inline edit; returns the previous patch (or nil) for the Save
+    /// toast's Undo. Routes to `BoardWizardViewModel.stageEdit`.
+    var onStageEdit: (_ patch: TaskEditPatch, _ taskId: String) -> TaskEditPatch? = { _, _ in nil }
+    /// Undo a staged edit. Routes to `BoardWizardViewModel.revertEdit`.
+    var onRevertEdit: (_ taskId: String, _ previous: TaskEditPatch?) -> Void = { _, _ in }
+    /// Restore a removed task to the pool at its original index. Routes to
+    /// `BoardWizardViewModel.restoreToPool`.
+    var onRestoreToPool: (_ taskId: String, _ index: Int) -> Void = { _, _ in }
 
     /// Number of tasks the chosen board geometry requires.
     let tasksRequired: Int
@@ -99,6 +116,12 @@ struct BoardWizardTasksStepView: View {
     @State private var pickedSourceBoardId: String? = nil
     @State private var copiedTaskIds: Set<String> = []
     @State private var copyingTask: OYBC.Task? = nil
+
+    // Inline task editor (PR 1) — at most one row open at a time.
+    @State private var editingTaskId: String? = nil
+    @State private var editDraft = TaskEditPatch(title: "")
+    @State private var toast: PoolEditToast? = nil
+    @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
 
     // MARK: - Derived
 
@@ -207,9 +230,10 @@ struct BoardWizardTasksStepView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                // 1. Pool header card
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    // 1. Pool header card
                 RisoTasksPoolHeaderView(
                     selectedCount: selectedCount,
                     tasksRequired: tasksRequired,
@@ -307,20 +331,42 @@ struct BoardWizardTasksStepView: View {
                     effectiveTaskById: effectiveTaskById,
                     effectiveChildrenByCompound: effectiveChildrenByCompound,
                     isRecurring: isRecurring,
-                    onRemove: { taskId in toggleSelection(taskId) },
+                    onRemove: { taskId in removeWithUndo(taskId) },
                     centerTaskMode: centerTaskMode,
                     centerTaskId: centerTaskId,
                     onSetCenter: { taskId in
                         // Toggle: tapping the marked task again clears it.
                         centerTaskId = (centerTaskId == taskId) ? nil : taskId
+                    },
+                    onEdit: { taskId in openEditor(taskId) },
+                    sharedCountByTaskId: taskBoardCounts,
+                    editingTaskId: editingTaskId,
+                    editor: { task in
+                        AnyView(
+                            RisoPoolRowEditorView(
+                                taskType: task.type,
+                                draft: $editDraft,
+                                sharedBoardCount: taskBoardCounts[task.id] ?? 0,
+                                onSave: { saveEdit(task) },
+                                onDiscard: { discardEdit(task) }
+                            )
+                        )
                     }
                 )
             }
             .padding(Riso.gutter)
+            }
+            .onChange(of: editingTaskId) { _, newValue in
+                guard let id = newValue else { return }
+                withAnimation { proxy.scrollTo(id, anchor: .top) }
+            }
         }
         .background(RisoPaperBackground())
         .safeAreaInset(edge: .bottom) {
             footer
+        }
+        .overlay(alignment: .bottom) {
+            if let toast { toastOverlay(toast) }
         }
         // Task detail sheet (opened from a library row's "Open in library").
         .sheet(item: $openedTaskInLibrary) { item in
@@ -345,6 +391,96 @@ struct BoardWizardTasksStepView: View {
                 onCancel: { copyingTask = nil }
             )
         }
+    }
+
+    // MARK: - Inline editor (PR 1)
+
+    /// Open the inline editor for a row. Closes any other open editor (only one
+    /// at a time). Seeds the draft from the effective (staged-overlaid) task.
+    private func openEditor(_ taskId: String) {
+        guard let task = effectiveTaskById[taskId] else { return }
+        editDraft = TaskEditPatch(from: task)
+        editingTaskId = taskId
+    }
+
+    /// Save the edit into the wizard's staged map (no DB write) and toast with
+    /// undo to the previous snapshot.
+    private func saveEdit(_ task: OYBC.Task) {
+        let previous = onStageEdit(editDraft, task.id)
+        let shared = taskBoardCounts[task.id] ?? 0
+        editingTaskId = nil
+        let text = shared > 0
+            ? "Staged · updates \(shared + 1) boards when you create"
+            : "Staged · saves when you create the board"
+        showToast(text) { onRevertEdit(task.id, previous) }
+    }
+
+    /// Discard the edit. If the draft differs from the task, toast "Edit
+    /// discarded" with undo that reopens the row with the typing intact.
+    private func discardEdit(_ task: OYBC.Task) {
+        let changed = editDraft != TaskEditPatch(from: task)
+        let keptDraft = editDraft
+        editingTaskId = nil
+        if changed {
+            showToast("Edit discarded") {
+                editDraft = keptDraft
+                editingTaskId = task.id
+            }
+        }
+    }
+
+    /// Remove a row immediately, closing its editor if open, and toast with
+    /// undo that restores it at its original index.
+    private func removeWithUndo(_ taskId: String) {
+        let index = poolOrder.firstIndex(of: taskId) ?? poolOrder.count
+        let name = effectiveTaskById[taskId]?.title ?? "task"
+        if editingTaskId == taskId { editingTaskId = nil }
+        toggleSelection(taskId)
+        showToast("Removed \"\(name)\"") { onRestoreToPool(taskId, index) }
+    }
+
+    private func showToast(_ text: String, undo: (() -> Void)?) {
+        toastDismiss?.cancel()
+        toast = PoolEditToast(text: text, undo: undo)
+        toastDismiss = _Concurrency.Task {
+            try? await _Concurrency.Task.sleep(nanoseconds: 6_000_000_000)
+            if !_Concurrency.Task.isCancelled { toast = nil }
+        }
+    }
+
+    private func toastOverlay(_ toast: PoolEditToast) -> some View {
+        HStack(spacing: 10) {
+            Text(toast.text)
+                .font(.risoHead(13, .extraBold))
+                .foregroundStyle(Color.risoPaper)
+                .fixedSize(horizontal: false, vertical: true)
+            if let undo = toast.undo {
+                Spacer(minLength: 8)
+                Button {
+                    toastDismiss?.cancel()
+                    self.toast = nil
+                    undo()
+                } label: {
+                    Text("UNDO")
+                        .font(.risoBody(11.5, .extraBold))
+                        .tracking(0.6)
+                        .foregroundStyle(Color.risoInk)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.risoPaper))
+                        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoGreen))
+        .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+        .risoHardShadow(Riso.Shadow.card)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 112)
     }
 
     // MARK: - Footer
