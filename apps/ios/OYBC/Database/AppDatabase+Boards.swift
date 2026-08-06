@@ -446,31 +446,6 @@ extension AppDatabase {
 
     // MARK: - Wizard board persist (B4 — absorbed from BoardWizardPersist)
 
-    /// Persist a wizard-built board in a single atomic transaction: any
-    /// deferred (Bug #85) pending tasks that are actually placed, then the
-    /// `Board` row + its `BoardTask` rows — plus all matching `SyncQueueItem`
-    /// records — commit or roll back together. Without the sync items the
-    /// board stays local-only (`SyncService.pushSync` reads exclusively from
-    /// `sync_queue`), so every write path below enqueues one.
-    ///
-    /// Moved VERBATIM from `BoardWizardPersist.persistWizardBoard`'s write
-    /// block so the sync-enqueue lives in the data layer, not the view-layer
-    /// helper. The caller resolves the board dict, placement rows, and the
-    /// placed-only pending payloads before invoking.
-    ///
-    /// Bug #85: pending tasks are written FIRST (before board_tasks) so the
-    /// referential integrity of task → board_task is never violated even
-    /// during a crash mid-write (the txn rolls back).
-    ///
-    /// - Parameters:
-    ///   - board: The resolved `Board` row to insert/update.
-    ///   - boardTasks: The per-cell `BoardTask` placement rows to insert.
-    ///   - pendingTasks: Placed-only deferred payloads (parent + inline
-    ///     children + links) to write first.
-    ///   - isUpdate: `true` when updating an existing draft (old placements
-    ///     are soft-deleted (tombstoned) + DELETE-enqueued first); `false` for
-    ///     fresh create.
-    ///   - now: ISO8601 timestamp for the sync-queue rows.
     /// Builds a fresh child Task row for a newly-added compound step.
     private static func makeStagedChildTask(
         id: String, step: ChildPatch, title: String, userId: String, now: String
@@ -601,6 +576,34 @@ extension AppDatabase {
         }
     }
 
+    /// Persist a wizard-built board in a single atomic transaction: any
+    /// deferred (Bug #85) pending tasks that are actually placed, then any
+    /// staged inline task edits (active create only), then the `Board` row + its
+    /// `BoardTask` rows — plus all matching `SyncQueueItem` records — commit or
+    /// roll back together. Without the sync items the board stays local-only
+    /// (`SyncService.pushSync` reads exclusively from `sync_queue`), so every
+    /// write path enqueues one.
+    ///
+    /// Moved VERBATIM from `BoardWizardPersist.persistWizardBoard`'s write
+    /// block so the sync-enqueue lives in the data layer, not the view-layer
+    /// helper. The caller resolves the board dict, placement rows, the
+    /// placed-only pending payloads, and the staged edits before invoking.
+    ///
+    /// Bug #85: pending tasks are written FIRST (before board_tasks) so the
+    /// referential integrity of task → board_task is never violated even
+    /// during a crash mid-write (the txn rolls back).
+    ///
+    /// - Parameters:
+    ///   - board: The resolved `Board` row to insert/update.
+    ///   - boardTasks: The per-cell `BoardTask` placement rows to insert.
+    ///   - pendingTasks: Placed-only deferred payloads (parent + inline
+    ///     children + links) to write first.
+    ///   - stagedEdits: Inline task edits to apply (active create only); see the
+    ///     staged-edits block below for per-type handling.
+    ///   - isUpdate: `true` when updating an existing draft (old placements
+    ///     are soft-deleted (tombstoned) + DELETE-enqueued first); `false` for
+    ///     fresh create.
+    ///   - now: ISO8601 timestamp for the sync-queue rows.
     func saveWizardBoard(
         board: Board,
         boardTasks: [BoardTask],
@@ -645,15 +648,19 @@ extension AppDatabase {
             // ── Staged inline edits (Inline Task Editing) ──────────
             // ONLY on an active board create — a draft must never carry a task
             // edit (invariant: TaskEditPatch / docs/INLINE_TASK_EDITING.md).
-            // Pending tasks already carry their merged patch (persistWizardBoard
-            // merges before this call), so skip those ids and apply staged edits
-            // only to existing LIBRARY tasks. Runs BEFORE the derivation pass
-            // below so a changed counting goal feeds into stored stats. The edit
-            // is GLOBAL (same Task on every board), so it goes through
-            // saveTaskAndCascade — save + tasks-update enqueue + re-derive every
-            // OTHER board / parent compound that shares this Task, in this same
-            // transaction. A bare save (no cascade) would leave those boards'
-            // cached bingo/greenlog stats stale until the app-open self-heal.
+            // Runs BEFORE the derivation pass below so a changed counting goal
+            // feeds into stored stats. Edits are GLOBAL (same Task on every
+            // board), so each mutation goes through saveTaskAndCascade — save +
+            // sync enqueue + re-derive every OTHER board / parent compound that
+            // shares the Task, in this same transaction. A bare save (no cascade)
+            // would leave those boards' cached bingo/greenlog stats stale until
+            // the app-open self-heal. Per-type handling:
+            //   • compound (library OR pending) — the compound branch owns the
+            //     full apply (parent fields + child/link CRUD). Pending compounds
+            //     are NOT pre-merged in persistWizardBoard, so this is their one
+            //     and only apply; their rows already exist (pending loop above).
+            //   • simple/counting — a PENDING one was already merged into its
+            //     payload (persistWizardBoard), so skip it here; apply LIBRARY ones.
             if board.status == .active {
                 let pendingIds = Set(pendingTasks.map { $0.task.id })
                 for (taskId, patch) in stagedEdits {

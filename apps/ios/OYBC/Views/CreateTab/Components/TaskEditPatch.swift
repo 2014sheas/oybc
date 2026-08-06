@@ -1,5 +1,16 @@
 import Foundation
 
+/// Shared "Reads as: Action — Goal — Unit" live preview for counting task and
+/// compound progress-step editors. Returns nil when all three fields are blank;
+/// blanks render as an em dash.
+func risoReadsAsPreview(action: String, goal: String, unit: String) -> String? {
+    let a = action.trimmingCharacters(in: .whitespaces)
+    let g = goal.trimmingCharacters(in: .whitespaces)
+    let u = unit.trimmingCharacters(in: .whitespaces)
+    guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
+    return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
+}
+
 /// A single compound-step edit. Present in PR 1's model so PR 2 (compound
 /// editing) needs no model change; PR 1 never populates `children`.
 struct ChildPatch: Identifiable, Equatable {
@@ -78,17 +89,12 @@ struct TaskEditPatch: Equatable {
     /// Live "Reads as: Action — Goal — Unit" preview for counting editors.
     /// nil when all three fields are blank.
     var countingPreview: String? {
-        let a = action.trimmingCharacters(in: .whitespaces)
-        let g = goal.trimmingCharacters(in: .whitespaces)
-        let u = unit.trimmingCharacters(in: .whitespaces)
-        guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
-        return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
+        risoReadsAsPreview(action: action, goal: goal, unit: unit)
     }
 
     /// The blocking validation message, or nil when the patch is valid for the
-    /// given task type. PR 1 handles `.normal` + `.counting`; `.compound`
-    /// returns nil here (PR 2 adds compound-step validation); `.achievement`
-    /// isn't editable in the pool.
+    /// given task type. Handles `.normal`, `.counting`, and `.compound`;
+    /// `.achievement` isn't editable in the pool (returns nil).
     func validate(type: TaskType) -> String? {
         switch type {
         case .counting:

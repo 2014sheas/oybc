@@ -495,6 +495,62 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         // The new step minted a fresh child Task.
         let newLink = try XCTUnwrap(liveLinks.first { $0.childTaskId != "c1" })
         XCTAssertEqual(try db.fetchTask(id: newLink.childTaskId)?.title, "Brand new step")
+
+        // Sync coverage: renamed child → tasks.update; new child → tasks.create;
+        // new link → compoundChildren.create; removed link → compoundChildren.delete.
+        let rows = try syncRows(db)
+        XCTAssertGreaterThanOrEqual(count(rows, type: "tasks", op: .update), 1)
+        XCTAssertGreaterThanOrEqual(count(rows, type: "tasks", op: .create), 1)
+        XCTAssertGreaterThanOrEqual(count(rows, type: "compoundChildren", op: .create), 1)
+        XCTAssertEqual(count(rows, type: "compoundChildren", op: .delete), 1)
+    }
+
+    func test_saveWizardBoard_pendingCompoundEdit_appliesChildCRUDOnce() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // A pending (deferred) compound with two inline children + links — the
+        // shape CreateFormViewModel builds for a wizard-created compound.
+        let payload = PendingTaskPayload(
+            task: makeTask("pcmp", type: .compound),
+            childTasks: [makeTask("pc1", type: .normal), makeTask("pc2", type: .normal)],
+            childLinks: [
+                CompoundChild(id: "pl1", compoundTaskId: "pcmp", childTaskId: "pc1", childIndex: 0,
+                              createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+                              isDeleted: false, deletedAt: nil),
+                CompoundChild(id: "pl2", compoundTaskId: "pcmp", childTaskId: "pc2", childIndex: 1,
+                              createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+                              isDeleted: false, deletedAt: nil),
+            ]
+        )
+        let board = makeBoard(id: "wbPC")
+        let bt = makeBoardTask(id: "wbPCbt", boardId: "wbPC", taskId: "pcmp")
+
+        // Edit the still-pending compound: rename pc1, delete pc2, add a new step.
+        var patch = TaskEditPatch(title: "Edited pending compound"); patch.ordered = true
+        var deleted = ChildPatch(id: "pc2", childTaskId: "pc2", title: "gone", isProgress: false)
+        deleted.markedDeleted = true
+        patch.children = [
+            ChildPatch(id: "pc1", childTaskId: "pc1", title: "Renamed pending", isProgress: false),
+            deleted,
+            ChildPatch(id: "newp", childTaskId: nil, title: "New pending step", isProgress: false),
+        ]
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [payload],
+            stagedEdits: ["pcmp": patch], isUpdate: false, now: now
+        )
+
+        // Applied exactly once (not double-applied via a pre-merge): parent
+        // fields set, pc1 renamed, pc2 unlinked, new step minted.
+        let cmp = try XCTUnwrap(try db.fetchTask(id: "pcmp"))
+        XCTAssertEqual(cmp.title, "Edited pending compound")
+        XCTAssertEqual(cmp.isOrdered, true)
+        XCTAssertEqual(try db.fetchTask(id: "pc1")?.title, "Renamed pending")
+        let liveLinks = try db.fetchCompoundChildren(compoundTaskId: "pcmp")
+        XCTAssertEqual(liveLinks.count, 2)
+        XCTAssertFalse(liveLinks.contains { $0.childTaskId == "pc2" })
     }
 
     func test_saveWizardBoard_draftStatus_skipsStagedEdits() throws {

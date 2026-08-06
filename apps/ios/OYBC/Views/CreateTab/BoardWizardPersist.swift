@@ -334,7 +334,14 @@ func persistWizardBoard(
             let isActiveCreate = status == .active
             let pendingForSave: [PendingTaskPayload] = isActiveCreate
                 ? pendingToPersist.map { payload -> PendingTaskPayload in
-                    guard let patch = capturedStagedEdits[payload.task.id],
+                    // Compound edits (parent fields AND child/link CRUD) are
+                    // applied once, in saveWizardBoard's compound branch, against
+                    // the just-written pending rows — so DON'T pre-merge them here
+                    // (that would double-apply the parent + bump version twice).
+                    // Simple/counting pending edits ARE merged in-memory (no extra
+                    // write) and skipped by that loop.
+                    guard payload.task.type != .compound,
+                          let patch = capturedStagedEdits[payload.task.id],
                           patch.validate(type: payload.task.type) == nil else { return payload }
                     return PendingTaskPayload(
                         task: patch.applied(to: payload.task),

@@ -121,6 +121,11 @@ struct BoardWizardTasksStepView: View {
     // Inline task editor (PR 1) — at most one row open at a time.
     @State private var editingTaskId: String? = nil
     @State private var editDraft = TaskEditPatch(title: "")
+    /// The draft as it was when the editor opened — used to tell whether the
+    /// user actually changed anything on Discard (a fresh `TaskEditPatch(from:)`
+    /// never carries compound children, so comparing against it falsely reports
+    /// "changed" for every compound).
+    @State private var editBaseline = TaskEditPatch(title: "")
     @State private var toast: PoolEditToast? = nil
     @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
 
@@ -399,17 +404,28 @@ struct BoardWizardTasksStepView: View {
     /// at a time). Seeds the draft from the effective (staged-overlaid) task.
     private func openEditor(_ taskId: String) {
         guard let task = effectiveTaskById[taskId] else { return }
-        var draft = TaskEditPatch(from: task)
-        if task.type == .compound {
-            // Seed step rows from the compound's links (in childIndex order),
-            // resolving each child Task through the staged-overlaid map.
-            let links = (effectiveChildrenByCompound[taskId] ?? [])
-                .sorted { $0.childIndex < $1.childIndex }
-            draft.children = links.compactMap { link in
-                effectiveTaskById[link.childTaskId].map { ChildPatch(from: $0) }
+        let draft: TaskEditPatch
+        if let staged = stagedEdits[taskId] {
+            // Reopen: reuse the staged patch verbatim. The effectiveTaskById
+            // overlay carries scalar edits (title/counting) but NOT compound
+            // child edits, so reconstructing children here would silently revert
+            // a prior step rename/add/delete.
+            draft = staged
+        } else {
+            var d = TaskEditPatch(from: task)
+            if task.type == .compound {
+                // First open: seed step rows from the compound's links (in
+                // childIndex order), resolving each child Task.
+                let links = (effectiveChildrenByCompound[taskId] ?? [])
+                    .sorted { $0.childIndex < $1.childIndex }
+                d.children = links.compactMap { link in
+                    effectiveTaskById[link.childTaskId].map { ChildPatch(from: $0) }
+                }
             }
+            draft = d
         }
         editDraft = draft
+        editBaseline = draft
         editingTaskId = taskId
     }
 
@@ -426,7 +442,9 @@ struct BoardWizardTasksStepView: View {
     /// Discard the edit. If the draft differs from the task, toast "Edit
     /// discarded" with undo that reopens the row with the typing intact.
     private func discardEdit(_ task: OYBC.Task) {
-        let changed = editDraft != TaskEditPatch(from: task)
+        // Compare against the draft as it opened — not a fresh TaskEditPatch(from:),
+        // which never carries compound children and so always reads as "changed".
+        let changed = editDraft != editBaseline
         let keptDraft = editDraft
         editingTaskId = nil
         if changed {

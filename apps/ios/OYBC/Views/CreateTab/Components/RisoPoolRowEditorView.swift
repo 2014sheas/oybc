@@ -1,13 +1,14 @@
 import SwiftUI
 
-/// Inline pool-row editor (Inline Task Editing PR 1 — simple & counting).
+/// Inline pool-row editor (Inline Task Editing) — renders `.normal`,
+/// `.counting`, and `.compound` tasks.
 ///
 /// Replaces a resting `RisoPoolListView` row in place: an accent header bar, a
 /// Title field (autofocused), the counting Action/Goal/Unit row with a live
-/// "Reads as" preview, a staging hint, a validation line, and Discard / Save
-/// actions. Edits are staged only — nothing touches the DB until the board is
-/// created (`onSave` writes the parent's `stagedEdits`). Compound editing is
-/// PR 2; this view renders `.normal` and `.counting`.
+/// "Reads as" preview, the compound STEPS editor (in-order toggle, step cards,
+/// add-step buttons), a validation line, and Discard / Save actions. Edits are
+/// staged only — nothing touches the DB until the board is created (`onSave`
+/// writes the parent's `stagedEdits`).
 struct RisoPoolRowEditorView: View {
 
     let taskType: TaskType
@@ -236,11 +237,7 @@ struct RisoPoolRowEditorView: View {
     }
 
     private func progressPreview(_ step: ChildPatch) -> String? {
-        let a = step.action.trimmingCharacters(in: .whitespaces)
-        let g = step.goal.trimmingCharacters(in: .whitespaces)
-        let u = step.unit.trimmingCharacters(in: .whitespaces)
-        guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
-        return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
+        risoReadsAsPreview(action: step.action, goal: step.goal, unit: step.unit)
     }
 
     // MARK: - Actions
