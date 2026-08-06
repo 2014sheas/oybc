@@ -347,7 +347,6 @@ struct BoardWizardTasksStepView: View {
                             RisoPoolRowEditorView(
                                 taskType: task.type,
                                 draft: $editDraft,
-                                sharedBoardCount: taskBoardCounts[task.id] ?? 0,
                                 onSave: { saveEdit(task) },
                                 onDiscard: { discardEdit(task) }
                             )
@@ -408,12 +407,8 @@ struct BoardWizardTasksStepView: View {
     /// undo to the previous snapshot.
     private func saveEdit(_ task: OYBC.Task) {
         let previous = onStageEdit(editDraft, task.id)
-        let shared = taskBoardCounts[task.id] ?? 0
         editingTaskId = nil
-        let text = shared > 0
-            ? "Staged · updates \(shared + 1) boards when you create"
-            : "Staged · saves when you create the board"
-        showToast(text) { onRevertEdit(task.id, previous) }
+        showToast("Task updated") { onRevertEdit(task.id, previous) }
     }
 
     /// Discard the edit. If the draft differs from the task, toast "Edit

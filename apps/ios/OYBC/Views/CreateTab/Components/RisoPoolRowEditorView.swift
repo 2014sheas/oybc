@@ -12,9 +12,6 @@ struct RisoPoolRowEditorView: View {
 
     let taskType: TaskType
     @Binding var draft: TaskEditPatch
-    /// Number of OTHER boards this task is placed on (drives the staging-hint /
-    /// save-toast copy). 0 ⇒ not shared.
-    var sharedBoardCount: Int = 0
     let onSave: () -> Void
     let onDiscard: () -> Void
 
@@ -29,7 +26,6 @@ struct RisoPoolRowEditorView: View {
             VStack(alignment: .leading, spacing: 11) {
                 titleField
                 if taskType == .counting { countingFields }
-                stagingHint
                 if let msg = validationMessage {
                     Text(msg)
                         .font(.risoBody(11.5, .extraBold))
@@ -119,26 +115,6 @@ struct RisoPoolRowEditorView: View {
         }
         .frame(maxWidth: flex ? .infinity : nil)
         .frame(width: width)
-    }
-
-    // MARK: - Staging hint
-
-    private var stagingHint: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "checkmark.shield")
-                .font(.system(size: 13, weight: .semibold))
-            Text(stagingText)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .font(.risoBody(11.5, .semibold))
-        .foregroundStyle(Color.risoMuted)
-    }
-
-    private var stagingText: String {
-        if sharedBoardCount > 0 {
-            return "Staged until you create the board. It then changes here and on \(sharedBoardCount) other board\(sharedBoardCount == 1 ? "" : "s")."
-        }
-        return "Staged until you create the board, then applied everywhere this task is used."
     }
 
     // MARK: - Actions

@@ -144,9 +144,6 @@ they share the transaction. Version-bump every mutated row.
   **+ Simple step** / **+ Progress step**; the note "A step's type is fixed once
   added. Deleting a step unlinks it — if it lives on another board it stays in
   your library."
-- **Staging hint** (shield glyph): shared → "Staged until you create the board.
-  It then changes here and on 2 other boards."; not shared → "Staged until you
-  create the board, then applied everywhere this task is used."
 - **Validation line** (`--riso-red`) above the buttons when blocked.
 - **Actions**: **Discard** (paper) / **Save task** (red, hard shadow;
   `.disabled(true)` when blocked so VoiceOver reports it).
@@ -159,10 +156,11 @@ they share the transaction. Version-bump every mutated row.
 - Pencil → that row becomes the editor; any other open editor closes.
 - **Discard** → closes; if the draft differs, toast "Edit discarded" + **Undo**
   reopens the row with typing intact.
-- **Save task** → writes to `stagedEdits` (no DB write), closes, toast
-  "Staged · saves when you create the board" or "Staged · updates N boards when
-  you create" (shared count + 1). **Undo** reverts the staged edit to the previous
-  snapshot.
+- **Save task** → writes to `stagedEdits` (no DB write; applied on board
+  create), closes, and shows a plain **"Task updated"** toast. **Undo** reverts
+  the edit to the previous snapshot. (No staging-jargon copy — the user-facing
+  "staged until you create" hint/toast wording was cut as feature-speak; the
+  mechanism is unchanged.)
 - **Remove ✕** → row leaves the pool immediately; toast `Removed "Stretch"` +
   **Undo** restores it at its original index. Removal keeps routing through
   `onToggleSelection` so it also purges any `pendingTasks` payload.

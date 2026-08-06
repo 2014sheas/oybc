@@ -31,7 +31,7 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         let view = host(
             RisoPoolRowEditorView(
                 taskType: .counting, draft: .constant(countingDraft()),
-                sharedBoardCount: 2, onSave: {}, onDiscard: {}
+                onSave: {}, onDiscard: {}
             )
         )
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 360)), record: recordMode)
@@ -41,7 +41,7 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         let view = host(
             RisoPoolRowEditorView(
                 taskType: .counting, draft: .constant(countingDraft()),
-                sharedBoardCount: 2, onSave: {}, onDiscard: {}
+                onSave: {}, onDiscard: {}
             ),
             dark: true
         )
@@ -55,7 +55,7 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         let view = host(
             RisoPoolRowEditorView(
                 taskType: .counting, draft: .constant(d),
-                sharedBoardCount: 0, onSave: {}, onDiscard: {}
+                onSave: {}, onDiscard: {}
             )
         )
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 380)), record: recordMode)
@@ -67,7 +67,7 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         let view = host(
             RisoPoolRowEditorView(
                 taskType: .normal, draft: .constant(TaskEditPatch(title: "Stretch")),
-                sharedBoardCount: 0, onSave: {}, onDiscard: {}
+                onSave: {}, onDiscard: {}
             )
         )
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 260)), record: recordMode)
