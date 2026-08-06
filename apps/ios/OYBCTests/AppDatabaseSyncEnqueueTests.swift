@@ -440,6 +440,63 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(count(try syncRows(db), type: "tasks", op: .update), 1)
     }
 
+    func test_saveWizardBoard_stagedCompoundEdit_appliesChildCRUD() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Library compound "cmp" with two children: c1 (normal), c2 (counting).
+        try db.saveTask(makeTask("cmp", type: .compound))
+        try db.saveTask(makeTask("c1", type: .normal))
+        try db.saveTask(makeTask("c2", type: .counting, maxCount: 5))
+        try db.write { d in
+            try CompoundChild(id: "l1", compoundTaskId: "cmp", childTaskId: "c1", childIndex: 0,
+                              createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+                              isDeleted: false, deletedAt: nil).save(d)
+            try CompoundChild(id: "l2", compoundTaskId: "cmp", childTaskId: "c2", childIndex: 1,
+                              createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+                              isDeleted: false, deletedAt: nil).save(d)
+        }
+
+        // Active board placing the compound, with a staged edit: rename c1,
+        // delete c2, add a new simple step, and mark the compound ordered.
+        let board = makeBoard(id: "wbCmp")
+        let bt = makeBoardTask(id: "wbCmpbt", boardId: "wbCmp", taskId: "cmp")
+        var patch = TaskEditPatch(title: "Morning routine")
+        patch.ordered = true
+        var deletedC2 = ChildPatch(id: "c2", childTaskId: "c2", title: "Old counting", isProgress: true)
+        deletedC2.markedDeleted = true
+        patch.children = [
+            ChildPatch(id: "c1", childTaskId: "c1", title: "Renamed step", isProgress: false),
+            deletedC2,
+            ChildPatch(id: "new-1", childTaskId: nil, title: "Brand new step", isProgress: false),
+        ]
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [],
+            stagedEdits: ["cmp": patch], isUpdate: false, now: now
+        )
+
+        // Parent: title + isOrdered applied.
+        let cmp = try XCTUnwrap(try db.fetchTask(id: "cmp"))
+        XCTAssertEqual(cmp.title, "Morning routine")
+        XCTAssertEqual(cmp.isOrdered, true)
+
+        // c1 renamed globally.
+        XCTAssertEqual(try db.fetchTask(id: "c1")?.title, "Renamed step")
+
+        // Live links = c1 + the new step (c2's link soft-deleted).
+        let liveLinks = try db.fetchCompoundChildren(compoundTaskId: "cmp")
+        XCTAssertEqual(liveLinks.count, 2)
+        XCTAssertTrue(liveLinks.contains { $0.childTaskId == "c1" })
+        XCTAssertFalse(liveLinks.contains { $0.childTaskId == "c2" }, "c2 link should be soft-deleted")
+        // c2's Task row survives (orphans acceptable) even though its link is gone.
+        XCTAssertNotNil(try db.fetchTask(id: "c2"))
+        // The new step minted a fresh child Task.
+        let newLink = try XCTUnwrap(liveLinks.first { $0.childTaskId != "c1" })
+        XCTAssertEqual(try db.fetchTask(id: newLink.childTaskId)?.title, "Brand new step")
+    }
+
     func test_saveWizardBoard_draftStatus_skipsStagedEdits() throws {
         let db = try makeDb()
         try seedUser(db)
