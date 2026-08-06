@@ -268,7 +268,7 @@ struct BoardWizardView: View {
                 stagedEdits: wizard.stagedEdits,
                 onStageEdit: { patch, taskId in wizard.stageEdit(patch, for: taskId) },
                 onRevertEdit: { taskId, previous in wizard.revertEdit(for: taskId, to: previous) },
-                onRestoreToPool: { taskId, index in wizard.restoreToPool(taskId, at: index) },
+                onRestoreToPool: { taskId, index, payload in wizard.restoreToPool(taskId, at: index, payload: payload) },
                 tasksRequired: wizard.tasksRequired,
                 isRecurring: wizard.isRecurring,
                 centerTaskMode: wizard.centerMode,

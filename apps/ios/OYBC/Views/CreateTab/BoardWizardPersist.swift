@@ -137,6 +137,15 @@ func buildWizardPlacement(
     for payload in controller.pendingTasks.values {
         taskById[payload.task.id] = payload.task
     }
+    // Overlay staged inline edits (Inline Task Editing) so the Step 3 preview
+    // grid + summary reflect unsaved renames/goal changes — matching Step 2's
+    // pool rows. The DB is untouched until create; the real patch is applied in
+    // saveWizardBoard's transaction.
+    for (id, patch) in controller.stagedEdits {
+        if let base = taskById[id], patch.validate(type: base.type) == nil {
+            taskById[id] = patch.applied(to: base)
+        }
+    }
 
     let selected = controller.selectedTaskIds.compactMap { taskById[$0] }
 

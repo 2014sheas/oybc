@@ -51,9 +51,10 @@ struct BoardWizardTasksStepView: View {
     var onStageEdit: (_ patch: TaskEditPatch, _ taskId: String) -> TaskEditPatch? = { _, _ in nil }
     /// Undo a staged edit. Routes to `BoardWizardViewModel.revertEdit`.
     var onRevertEdit: (_ taskId: String, _ previous: TaskEditPatch?) -> Void = { _, _ in }
-    /// Restore a removed task to the pool at its original index. Routes to
+    /// Restore a removed task to the pool at its original index (re-adding its
+    /// pending payload when non-nil). Routes to
     /// `BoardWizardViewModel.restoreToPool`.
-    var onRestoreToPool: (_ taskId: String, _ index: Int) -> Void = { _, _ in }
+    var onRestoreToPool: (_ taskId: String, _ index: Int, _ payload: PendingTaskPayload?) -> Void = { _, _, _ in }
 
     /// Number of tasks the chosen board geometry requires.
     let tasksRequired: Int
@@ -434,9 +435,13 @@ struct BoardWizardTasksStepView: View {
     private func removeWithUndo(_ taskId: String) {
         let index = poolOrder.firstIndex(of: taskId) ?? poolOrder.count
         let name = effectiveTaskById[taskId]?.title ?? "task"
+        // Capture the deferred (Bug #85) pending payload BEFORE removal purges
+        // it, so Undo can restore it — otherwise the restored id can't resolve
+        // and the board under-fills. nil for library tasks.
+        let payload = pendingTasks?[taskId]
         if editingTaskId == taskId { editingTaskId = nil }
         toggleSelection(taskId)
-        showToast("Removed \"\(name)\"") { onRestoreToPool(taskId, index) }
+        showToast("Removed \"\(name)\"") { onRestoreToPool(taskId, index, payload) }
     }
 
     private func showToast(_ text: String, undo: (() -> Void)?) {

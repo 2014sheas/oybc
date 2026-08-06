@@ -72,4 +72,34 @@ final class BoardWizardStagedEditsTests: XCTestCase {
         vm.toggleTaskSelection("x") // remove
         XCTAssertNil(vm.stagedEdits["x"])
     }
+
+    /// Regression: removing a PENDING (deferred, not-yet-persisted) task purges
+    /// its payload; undo-restore must re-attach it, or the restored id can't be
+    /// resolved and the board under-fills. (Self-review finding #1.)
+    func test_restore_reattaches_pending_payload() {
+        let vm = makeVM()
+        let task = makeTask(id: "p1", title: "Inline task")
+        vm.toggleTaskSelection("p1")
+        vm.addPendingTask(PendingTaskPayload(task: task, childTasks: [], childLinks: []))
+        let index = vm.poolOrder.firstIndex(of: "p1")!
+
+        vm.toggleTaskSelection("p1") // remove — purges pending + selection + order
+        XCTAssertNil(vm.pendingTasks["p1"])
+
+        vm.restoreToPool("p1", at: index,
+                         payload: PendingTaskPayload(task: task, childTasks: [], childLinks: []))
+        XCTAssertNotNil(vm.pendingTasks["p1"], "pending payload must be re-attached on undo")
+        XCTAssertTrue(vm.selectedTaskIds.contains("p1"))
+        XCTAssertTrue(vm.poolOrder.contains("p1"))
+    }
+
+    func test_restore_library_task_needs_no_payload() {
+        let vm = makeVM()
+        vm.toggleTaskSelection("lib")
+        let index = vm.poolOrder.firstIndex(of: "lib")!
+        vm.toggleTaskSelection("lib")
+        vm.restoreToPool("lib", at: index) // payload defaults nil
+        XCTAssertTrue(vm.selectedTaskIds.contains("lib"))
+        XCTAssertNil(vm.pendingTasks["lib"])
+    }
 }

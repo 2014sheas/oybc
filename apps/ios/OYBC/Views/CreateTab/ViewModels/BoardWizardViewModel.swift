@@ -438,11 +438,18 @@ final class BoardWizardViewModel {
 
     /// Undo-restore for the Remove ✕ toast: re-select and re-insert at the
     /// original index (clamped), so the removed row returns to where it was.
-    func restoreToPool(_ taskId: String, at index: Int) {
+    ///
+    /// `payload` MUST be supplied when the removed task was a deferred (Bug #85)
+    /// pending task — `toggleTaskSelection` purges its `pendingTasks` entry on
+    /// removal, so without re-adding it the restored id can't be resolved by
+    /// `effectiveTaskById`/`buildWizardPlacement` and the board silently
+    /// under-fills (a `nil` grid cell). Library tasks pass `nil`.
+    func restoreToPool(_ taskId: String, at index: Int, payload: PendingTaskPayload? = nil) {
         selectedTaskIds.insert(taskId)
         if !poolOrder.contains(taskId) {
             poolOrder.insert(taskId, at: min(max(0, index), poolOrder.count))
         }
+        if let payload { pendingTasks[payload.task.id] = payload }
     }
 
     /// De-dupes a task-id sequence preserving first occurrence — used to derive
