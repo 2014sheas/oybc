@@ -414,6 +414,55 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(count(rows, type: "tasks", op: .create), 1)
     }
 
+    // MARK: - saveWizardBoard staged inline edits (Inline Task Editing)
+
+    func test_saveWizardBoard_stagedEdit_updatesLibraryTaskAndEnqueues() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Existing library task placed on the new board, with a staged rename.
+        try db.saveTask(makeTask("lib1"))
+        let original = try XCTUnwrap(try db.fetchTask(id: "lib1"))
+        let board = makeBoard(id: "wbS")
+        let bt = makeBoardTask(id: "wbtS", boardId: "wbS", taskId: "lib1")
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [],
+            stagedEdits: ["lib1": TaskEditPatch(title: "Renamed task")],
+            isUpdate: false, now: now
+        )
+
+        let updated = try XCTUnwrap(try db.fetchTask(id: "lib1"))
+        XCTAssertEqual(updated.title, "Renamed task")
+        XCTAssertEqual(updated.version, original.version + 1)
+        // A tasks-UPDATE sync row was enqueued for the edited library task.
+        XCTAssertEqual(count(try syncRows(db), type: "tasks", op: .update), 1)
+    }
+
+    func test_saveWizardBoard_stagedEdit_skipsPendingTaskId() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // persistWizardBoard already merges a pending task's patch into its
+        // payload, so saveWizardBoard must NOT re-apply the same id — it should
+        // write only the create row, never a spurious update.
+        let board = makeBoard(id: "wbP")
+        let bt = makeBoardTask(id: "wbtP", boardId: "wbP", taskId: "pend1")
+        let merged = PendingTaskPayload(task: makeTask("pend1"), childTasks: [], childLinks: [])
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [merged],
+            stagedEdits: ["pend1": TaskEditPatch(title: "X")],
+            isUpdate: false, now: now
+        )
+
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "tasks", op: .create), 1)
+        XCTAssertEqual(count(rows, type: "tasks", op: .update), 0)
+    }
+
     func test_saveWizardBoard_update_deletesOldTasksEnqueuesDeletes() throws {
         let db = try makeDb()
         try seedUser(db)

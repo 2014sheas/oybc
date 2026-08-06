@@ -475,6 +475,7 @@ extension AppDatabase {
         board: Board,
         boardTasks: [BoardTask],
         pendingTasks: [PendingTaskPayload],
+        stagedEdits: [String: TaskEditPatch] = [:],
         isUpdate: Bool,
         now: String
     ) throws {
@@ -509,6 +510,32 @@ extension AppDatabase {
                         now: now
                     ).enqueue(db)
                 }
+            }
+
+            // ── Staged inline edits (Inline Task Editing) ──────────
+            // Pending tasks already carry their merged patch (persistWizardBoard
+            // merges before this call), so skip those ids and apply staged edits
+            // only to existing LIBRARY tasks. Runs BEFORE the derivation pass
+            // below so a changed counting goal feeds into stored stats. Each
+            // mutated Task bumps version + enqueues a tasks-update sync row —
+            // the edit is GLOBAL (the same Task on every board it's placed on).
+            let pendingIds = Set(pendingTasks.map { $0.task.id })
+            for (taskId, patch) in stagedEdits where !pendingIds.contains(taskId) {
+                guard var task = try Task.fetchOne(db, key: taskId) else { continue }
+                // Defensive: never persist an invalid edit (the UI blocks Save,
+                // but a stale draft shouldn't corrupt the row).
+                guard patch.validate(type: task.type) == nil else { continue }
+                task = patch.applied(to: task)
+                task.version += 1
+                task.updatedAt = now
+                try task.save(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "tasks",
+                    entityId: task.id,
+                    operationType: .update,
+                    payload: task,
+                    now: now
+                ).enqueue(db)
             }
 
             // ── Board + BoardTask rows ─────────────────────────────

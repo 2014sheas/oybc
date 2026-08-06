@@ -249,6 +249,9 @@ func persistWizardBoard(
     // the main actor. Dictionary is a value type (copy-on-write) so this
     // is a safe O(n) snapshot.
     let capturedPendingTasks = controller.pendingTasks
+    // Inline Task Editing — snapshot staged edits alongside pending tasks
+    // (value types, safe O(n) copy) so the async write applies them atomically.
+    let capturedStagedEdits = controller.stagedEdits
 
     DispatchQueue.global(qos: .userInitiated).async {
         do {
@@ -313,6 +316,19 @@ func persistWizardBoard(
                 pending: capturedPendingTasks,
                 placedTaskIds: placedTaskIds
             )
+            // Merge staged inline edits into pending payloads (a pending task
+            // edited before board-create). Library-task edits are applied inside
+            // saveWizardBoard's transaction; pending ones are merged here and
+            // written as the create payload, so saveWizardBoard skips them.
+            let mergedPending = pendingToPersist.map { payload -> PendingTaskPayload in
+                guard let patch = capturedStagedEdits[payload.task.id],
+                      patch.validate(type: payload.task.type) == nil else { return payload }
+                return PendingTaskPayload(
+                    task: patch.applied(to: payload.task),
+                    childTasks: payload.childTasks,
+                    childLinks: payload.childLinks
+                )
+            }
 
             // The single atomic transaction (deferred pending tasks, then the
             // board record + its BoardTask rows, plus every matching
@@ -324,7 +340,8 @@ func persistWizardBoard(
             try AppDatabase.shared.saveWizardBoard(
                 board: board,
                 boardTasks: boardTasks,
-                pendingTasks: pendingToPersist,
+                pendingTasks: mergedPending,
+                stagedEdits: capturedStagedEdits,
                 isUpdate: isUpdate,
                 now: now
             )
