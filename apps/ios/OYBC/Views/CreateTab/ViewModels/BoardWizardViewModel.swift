@@ -64,6 +64,19 @@ final class BoardWizardViewModel {
     var selectedTaskIds: Set<String> = []
     var centerTaskId: String? = nil
 
+    /// Insertion order of the pool. `RisoPoolListView` renders in this order
+    /// rather than sorting alphabetically, so a renamed task (inline editing)
+    /// keeps its position. Kept in lockstep with `selectedTaskIds`; undo-restore
+    /// re-inserts at the original index. Hydrated from placement/pool order on
+    /// draft/template resume.
+    var poolOrder: [String] = []
+
+    /// Staged, not-yet-persisted inline edits keyed by task id. Applied ONLY
+    /// inside the board-create transaction (`persistWizardBoard` →
+    /// `saveWizardBoard`) — never while the board is a draft. Cleared when the
+    /// task leaves the pool or the wizard resets.
+    var stagedEdits: [String: TaskEditPatch] = [:]
+
     /// Bug #85 — In-memory pending tasks created inside the wizard's
     /// New Task sheet. Keyed by `task.id`. These have NOT been written
     /// to GRDB yet; `persistWizardBoard` drains this dictionary inside
@@ -175,6 +188,12 @@ final class BoardWizardViewModel {
             self.centerCustomName = d.board.centerSquareCustomName ?? ""
             self.centerTaskId = d.board.centerTaskId
             self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
+            // Preserve placement order on resume so the pool doesn't reshuffle.
+            self.poolOrder = Self.dedupePreservingOrder(
+                d.boardTasks
+                    .sorted { ($0.row, $0.col) < ($1.row, $1.col) }
+                    .map { $0.taskId }
+            )
             if d.board.timeframe == .custom {
                 self.customStartDate = String(d.board.startDate.prefix(10))
                 // A custom board always has an endDate; default defensively.
@@ -187,6 +206,9 @@ final class BoardWizardViewModel {
             self.centerType = t.centerSquareType
             self.centerCustomName = t.centerSquareCustomName ?? ""
             self.selectedTaskIds = Self.resolveTemplateHydrationTaskIds(t, database: database)
+            // Template hydration returns a Set (order not preserved); use a
+            // deterministic order so the pool is stable within the session.
+            self.poolOrder = self.selectedTaskIds.sorted()
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -215,6 +237,7 @@ final class BoardWizardViewModel {
                    let pool = try? database.fetchDefaultPool(userId: userId, timeframe: timeframe),
                    !pool.taskIds.isEmpty {
                     self.selectedTaskIds = Set(pool.taskIds)
+                    self.poolOrder = Self.dedupePreservingOrder(pool.taskIds)
                 }
             } else {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
@@ -377,9 +400,63 @@ final class BoardWizardViewModel {
             // Bug #85 — purge the pending payload if this was a not-yet-
             // persisted task. No-op for library tasks (won't be in the map).
             pendingTasks.removeValue(forKey: taskId)
+            poolOrder.removeAll { $0 == taskId }
+            // A task that leaves the pool drops any staged edit — re-adding it
+            // starts clean, matching the removal-purges-pending semantics.
+            stagedEdits.removeValue(forKey: taskId)
         } else {
             selectedTaskIds.insert(taskId)
+            if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
         }
+    }
+
+    /// Stage an inline edit; returns the previous patch (or nil) so the Save
+    /// toast's Undo can revert to it.
+    @discardableResult
+    func stageEdit(_ patch: TaskEditPatch, for taskId: String) -> TaskEditPatch? {
+        let previous = stagedEdits[taskId]
+        stagedEdits[taskId] = patch
+        return previous
+    }
+
+    /// Undo a staged edit: restore the previous patch, or clear it entirely
+    /// when there was none.
+    func revertEdit(for taskId: String, to previous: TaskEditPatch?) {
+        if let previous {
+            stagedEdits[taskId] = previous
+        } else {
+            stagedEdits.removeValue(forKey: taskId)
+        }
+    }
+
+    /// Overlay a staged patch onto a base task for DISPLAY (pool rows + preview)
+    /// — the DB is untouched until board create. No-op when unstaged.
+    func effectiveTask(_ base: OYBC.Task) -> OYBC.Task {
+        guard let patch = stagedEdits[base.id] else { return base }
+        return patch.applied(to: base)
+    }
+
+    /// Undo-restore for the Remove ✕ toast: re-select and re-insert at the
+    /// original index (clamped), so the removed row returns to where it was.
+    ///
+    /// `payload` MUST be supplied when the removed task was a deferred (Bug #85)
+    /// pending task — `toggleTaskSelection` purges its `pendingTasks` entry on
+    /// removal, so without re-adding it the restored id can't be resolved by
+    /// `effectiveTaskById`/`buildWizardPlacement` and the board silently
+    /// under-fills (a `nil` grid cell). Library tasks pass `nil`.
+    func restoreToPool(_ taskId: String, at index: Int, payload: PendingTaskPayload? = nil) {
+        selectedTaskIds.insert(taskId)
+        if !poolOrder.contains(taskId) {
+            poolOrder.insert(taskId, at: min(max(0, index), poolOrder.count))
+        }
+        if let payload { pendingTasks[payload.task.id] = payload }
+    }
+
+    /// De-dupes a task-id sequence preserving first occurrence — used to derive
+    /// `poolOrder` from a board's placement rows on draft resume.
+    private static func dedupePreservingOrder(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
     }
 
     /// Bug #85 — Store a pending task payload in the wizard's in-memory
@@ -428,6 +505,8 @@ final class BoardWizardViewModel {
         centerCustomName = initialPreferences.defaultCenterCustomName
         isRecurring = false
         selectedTaskIds = []
+        poolOrder = []
+        stagedEdits = [:]
         centerTaskId = nil
         pendingTasks = [:]
         currentStep = 1

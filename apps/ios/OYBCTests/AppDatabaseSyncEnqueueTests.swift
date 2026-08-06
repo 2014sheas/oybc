@@ -88,7 +88,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
 
     private func makeBoard(
         id: String, userId: String = "u1", status: BoardStatus = .active,
-        boardSize: Int = 3, sealedAt: String? = nil
+        boardSize: Int = 3, sealedAt: String? = nil, completedTasks: Int = 0
     ) -> Board {
         var dict: [String: Any] = [
             "id": id,
@@ -102,7 +102,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             "centerSquareType": CenterSquareType.free.rawValue,
             "isRandomized": false,
             "totalTasks": boardSize * boardSize,
-            "completedTasks": 0,
+            "completedTasks": completedTasks,
             "linesCompleted": 0,
             "createdAt": "2026-06-01T00:00:00.000",
             "updatedAt": "2026-06-01T00:00:00.000",
@@ -412,6 +412,105 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(count(rows, type: "boards", op: .create), 1)
         XCTAssertEqual(count(rows, type: "boardTasks", op: .create), 1)
         XCTAssertEqual(count(rows, type: "tasks", op: .create), 1)
+    }
+
+    // MARK: - saveWizardBoard staged inline edits (Inline Task Editing)
+
+    func test_saveWizardBoard_stagedEdit_updatesLibraryTaskAndEnqueues() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Existing library task placed on the new board, with a staged rename.
+        try db.saveTask(makeTask("lib1"))
+        let original = try XCTUnwrap(try db.fetchTask(id: "lib1"))
+        let board = makeBoard(id: "wbS")
+        let bt = makeBoardTask(id: "wbtS", boardId: "wbS", taskId: "lib1")
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [],
+            stagedEdits: ["lib1": TaskEditPatch(title: "Renamed task")],
+            isUpdate: false, now: now
+        )
+
+        let updated = try XCTUnwrap(try db.fetchTask(id: "lib1"))
+        XCTAssertEqual(updated.title, "Renamed task")
+        XCTAssertEqual(updated.version, original.version + 1)
+        // A tasks-UPDATE sync row was enqueued for the edited library task.
+        XCTAssertEqual(count(try syncRows(db), type: "tasks", op: .update), 1)
+    }
+
+    func test_saveWizardBoard_draftStatus_skipsStagedEdits() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Invariant: a DRAFT board must never carry a task edit. Saving a draft
+        // with a staged edit must leave the library task untouched.
+        try db.saveTask(makeTask("libD"))
+        let original = try XCTUnwrap(try db.fetchTask(id: "libD"))
+        let board = makeBoard(id: "wbDraft", status: .draft)
+        let bt = makeBoardTask(id: "wbtDraft", boardId: "wbDraft", taskId: "libD")
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [],
+            stagedEdits: ["libD": TaskEditPatch(title: "Should NOT apply")],
+            isUpdate: false, now: now
+        )
+
+        let after = try XCTUnwrap(try db.fetchTask(id: "libD"))
+        XCTAssertEqual(after.title, original.title, "draft save must not apply staged edits")
+        XCTAssertEqual(after.version, original.version)
+        XCTAssertEqual(count(try syncRows(db), type: "tasks", op: .update), 0)
+    }
+
+    func test_saveWizardBoard_stagedEdit_reDerivesOtherBoardSharingTask() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Existing ACTIVE board B2 places the shared task, with a deliberately
+        // stale completedTasks (99). Editing the shared task on a NEW active
+        // board must cascade a re-derivation onto B2 (edits are global) — a bare
+        // save would leave 99 stale until app-open self-heal.
+        try db.saveTask(makeTask("sharedC"))
+        try db.saveBoard(makeBoard(id: "b2", completedTasks: 99))
+        try db.saveBoardTask(makeBoardTask(id: "b2bt", boardId: "b2", taskId: "sharedC"))
+
+        let board = makeBoard(id: "wbNew")
+        let bt = makeBoardTask(id: "wbNewbt", boardId: "wbNew", taskId: "sharedC")
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [],
+            stagedEdits: ["sharedC": TaskEditPatch(title: "Renamed shared")],
+            isUpdate: false, now: now
+        )
+
+        let b2 = try XCTUnwrap(try db.fetchBoard(id: "b2"))
+        XCTAssertNotEqual(b2.completedTasks, 99, "cascade must re-derive the other board sharing the edited task")
+    }
+
+    func test_saveWizardBoard_stagedEdit_skipsPendingTaskId() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // persistWizardBoard already merges a pending task's patch into its
+        // payload, so saveWizardBoard must NOT re-apply the same id — it should
+        // write only the create row, never a spurious update.
+        let board = makeBoard(id: "wbP")
+        let bt = makeBoardTask(id: "wbtP", boardId: "wbP", taskId: "pend1")
+        let merged = PendingTaskPayload(task: makeTask("pend1"), childTasks: [], childLinks: [])
+
+        try db.saveWizardBoard(
+            board: board, boardTasks: [bt], pendingTasks: [merged],
+            stagedEdits: ["pend1": TaskEditPatch(title: "X")],
+            isUpdate: false, now: now
+        )
+
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "tasks", op: .create), 1)
+        XCTAssertEqual(count(rows, type: "tasks", op: .update), 0)
     }
 
     func test_saveWizardBoard_update_deletesOldTasksEnqueuesDeletes() throws {

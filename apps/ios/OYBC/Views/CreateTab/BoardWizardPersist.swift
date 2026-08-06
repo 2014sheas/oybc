@@ -137,6 +137,15 @@ func buildWizardPlacement(
     for payload in controller.pendingTasks.values {
         taskById[payload.task.id] = payload.task
     }
+    // Overlay staged inline edits (Inline Task Editing) so the Step 3 preview
+    // grid + summary reflect unsaved renames/goal changes — matching Step 2's
+    // pool rows. The DB is untouched until create; the real patch is applied in
+    // saveWizardBoard's transaction.
+    for (id, patch) in controller.stagedEdits {
+        if let base = taskById[id], patch.validate(type: base.type) == nil {
+            taskById[id] = patch.applied(to: base)
+        }
+    }
 
     let selected = controller.selectedTaskIds.compactMap { taskById[$0] }
 
@@ -249,6 +258,9 @@ func persistWizardBoard(
     // the main actor. Dictionary is a value type (copy-on-write) so this
     // is a safe O(n) snapshot.
     let capturedPendingTasks = controller.pendingTasks
+    // Inline Task Editing — snapshot staged edits alongside pending tasks
+    // (value types, safe O(n) copy) so the async write applies them atomically.
+    let capturedStagedEdits = controller.stagedEdits
 
     DispatchQueue.global(qos: .userInitiated).async {
         do {
@@ -313,6 +325,24 @@ func persistWizardBoard(
                 pending: capturedPendingTasks,
                 placedTaskIds: placedTaskIds
             )
+            // Merge staged inline edits into pending payloads (a pending task
+            // edited before board-create) — but ONLY on an active create. A
+            // draft must never carry a task edit (invariant), so a draft save
+            // writes pending tasks with their pre-edit values and skips staged
+            // edits entirely (library-task edits are likewise gated inside
+            // saveWizardBoard on board.status).
+            let isActiveCreate = status == .active
+            let pendingForSave: [PendingTaskPayload] = isActiveCreate
+                ? pendingToPersist.map { payload -> PendingTaskPayload in
+                    guard let patch = capturedStagedEdits[payload.task.id],
+                          patch.validate(type: payload.task.type) == nil else { return payload }
+                    return PendingTaskPayload(
+                        task: patch.applied(to: payload.task),
+                        childTasks: payload.childTasks,
+                        childLinks: payload.childLinks
+                    )
+                }
+                : pendingToPersist
 
             // The single atomic transaction (deferred pending tasks, then the
             // board record + its BoardTask rows, plus every matching
@@ -324,7 +354,8 @@ func persistWizardBoard(
             try AppDatabase.shared.saveWizardBoard(
                 board: board,
                 boardTasks: boardTasks,
-                pendingTasks: pendingToPersist,
+                pendingTasks: pendingForSave,
+                stagedEdits: isActiveCreate ? capturedStagedEdits : [:],
                 isUpdate: isUpdate,
                 now: now
             )

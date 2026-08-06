@@ -12,6 +12,10 @@ import SwiftUI
 struct RisoPoolListView: View {
 
     let selectedTaskIds: Set<String>
+    /// Render order (insertion order from `BoardWizardViewModel.poolOrder`).
+    /// Rows render in this order — no alphabetical sort — so a renamed task
+    /// keeps its position. `selectedTaskIds` still drives membership + the count.
+    let orderedTaskIds: [String]
     let effectiveTaskById: [String: OYBC.Task]
     let effectiveChildrenByCompound: [String: [CompoundChild]]
     let isRecurring: Bool
@@ -27,15 +31,27 @@ struct RisoPoolListView: View {
     /// (set, or unset when tapping the already-marked task).
     var onSetCenter: ((_ taskId: String) -> Void)? = nil
 
+    /// Fired when the user taps a row's pencil (editable tasks only). nil ⇒ no
+    /// pencil is shown (e.g. snapshot contexts that don't wire editing).
+    var onEdit: ((_ taskId: String) -> Void)? = nil
+    /// Count of OTHER boards each task is placed on — drives the "On N other
+    /// boards" detail line for simple tasks. Absent ⇒ not shared.
+    var sharedCountByTaskId: [String: Int] = [:]
+
+    /// The row currently open in the inline editor, if any. That row is
+    /// replaced in place by `editor`.
+    var editingTaskId: String? = nil
+    /// Builds the inline editor view for the open row (owned by the parent, so
+    /// it holds the draft/focus/toast state). nil ⇒ never swaps.
+    var editor: ((OYBC.Task) -> AnyView)? = nil
+
     // MARK: - Ordered pool
 
-    /// Pool ordered by insertion (descending) — we approximate insertion order
-    /// as alphabetical within the same type for stability. A true insertion-order
-    /// pool would need an ordered structure in the parent; for now we use the set
-    /// order from `selectedTaskIds` with stable sort.
+    /// Pool in insertion order (from the parent's `poolOrder`). No sort — a
+    /// renamed task must keep its position. Ids without a resolved task
+    /// (mid-hydration races) are skipped.
     private var poolTasks: [OYBC.Task] {
-        selectedTaskIds.compactMap { effectiveTaskById[$0] }
-            .sorted { $0.title < $1.title }
+        orderedTaskIds.compactMap { effectiveTaskById[$0] }
     }
 
     var body: some View {
@@ -58,7 +74,11 @@ struct RisoPoolListView: View {
 
                 VStack(spacing: 7) {
                     ForEach(poolTasks, id: \.id) { task in
-                        poolRow(task)
+                        if task.id == editingTaskId, let editor {
+                            editor(task).id(task.id)
+                        } else {
+                            poolRow(task).id(task.id)
+                        }
                     }
                 }
             }
@@ -86,29 +106,15 @@ struct RisoPoolListView: View {
     // MARK: - Pool row
 
     private func poolRow(_ task: OYBC.Task) -> some View {
-        let detail = typeDetailSubtitle(task)
         let isCenter = centerTaskMode && centerTaskId == task.id
+        let detail = typeDetailSubtitle(task, isCenter: isCenter)
+        // Pencil is shown for editable in-pool tasks. PR 1 edits simple +
+        // counting; compound editing arrives in PR 2. Achievement is never
+        // editable in the pool (it shows the "TASKS TAB" marker instead).
+        let showsPencil = onEdit != nil && (task.type == .normal || task.type == .counting)
 
         return HStack(alignment: .center, spacing: 9) {
-            // Leading affordance: center star (in CHOSEN mode) or grip.
-            if centerTaskMode {
-                Button {
-                    onSetCenter?(task.id)
-                } label: {
-                    Image(systemName: isCenter ? "star.fill" : "star")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(isCenter ? Color.risoGold : Color.risoMuted)
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .accessibilityLabel(isCenter ? "Center task" : "Mark as center task")
-                .accessibilityAddTraits(isCenter ? [.isSelected] : [])
-            } else {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.risoMuted)
-            }
+            badge(task, isCenter: isCenter)
 
             // Name + detail
             VStack(alignment: .leading, spacing: 2) {
@@ -125,8 +131,13 @@ struct RisoPoolListView: View {
             }
             Spacer(minLength: 4)
 
-            // Type badge (pill style)
-            RisoTypeBadge(kind: risoKind(for: task.type), style: .pill)
+            // Edit affordance: pencil (editable) or the read-only "TASKS TAB"
+            // marker (achievement). Compound in PR 1 shows neither.
+            if showsPencil {
+                pencilButton(task)
+            } else if task.type == .achievement {
+                tasksTabMarker
+            }
 
             // Remove button
             Button {
@@ -139,50 +150,122 @@ struct RisoPoolListView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
+            .accessibilityLabel("Remove from board")
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .risoCard(fill: isCenter ? Color.risoGold.opacity(0.16) : .risoPaper2)
-        .overlay(
-            isCenter
-                ? RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoGold, lineWidth: Riso.Keyline.container)
-                : nil
-        )
+        .risoCard(fill: .risoPaper2)
+    }
+
+    /// Type badge (letter square). In CHOSEN center mode it doubles as the
+    /// center control; the marked task carries a gold ★ notch at the badge's
+    /// top-right (replaces the old leading star column, which left no room for
+    /// a pencil at 393pt).
+    @ViewBuilder
+    private func badge(_ task: OYBC.Task, isCenter: Bool) -> some View {
+        let badgeView = RisoTypeBadge(kind: risoKind(for: task.type), style: .letterSquare)
+            .overlay(alignment: .topTrailing) {
+                if isCenter { centerNotch.offset(x: 6, y: -6) }
+            }
+
+        if centerTaskMode {
+            Button { onSetCenter?(task.id) } label: { badgeView }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityLabel(isCenter ? "Center task" : "Mark as center task")
+                .accessibilityAddTraits(isCenter ? [.isSelected] : [])
+        } else {
+            badgeView
+        }
+    }
+
+    private var centerNotch: some View {
+        Text("★")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(Color.risoInkStatic)
+            .frame(width: 15, height: 15)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.risoGold))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+    }
+
+    private func pencilButton(_ task: OYBC.Task) -> some View {
+        Button {
+            onEdit?(task.id)
+        } label: {
+            Image(systemName: "pencil")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.risoInk)
+                .frame(width: 32, height: 32)
+                .risoCard(fill: .risoPaper)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Edit task")
+    }
+
+    /// Read-only marker for achievement rows — trigger/target are edited in the
+    /// Tasks tab, not inline.
+    private var tasksTabMarker: some View {
+        Text("TASKS TAB")
+            .font(.risoBody(9, .extraBold))
+            .tracking(0.9)
+            .foregroundStyle(Color.risoMuted)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [3, 3]))
+                    .foregroundStyle(Color.risoInk)
+            )
     }
 
     // MARK: - Helpers
 
-    private func typeDetailSubtitle(_ task: OYBC.Task) -> String? {
-        switch task.type {
-        case .counting:
-            guard let a = task.action, let m = task.maxCount, let u = task.unit,
-                  !a.isEmpty, !u.isEmpty else { return nil }
-            return "\(a) · goal \(m) \(u)"
-        case .compound:
-            let n = effectiveChildrenByCompound[task.id]?.count ?? 0
-            if task.isOrdered == true {
-                return n > 0 ? "\(n) step\(n == 1 ? "" : "s") · in order" : nil
+    /// Detail subtitle. `isCenter` prefixes "Center square · ".
+    private func typeDetailSubtitle(_ task: OYBC.Task, isCenter: Bool) -> String? {
+        let base: String? = {
+            switch task.type {
+            case .normal:
+                let shared = sharedCountByTaskId[task.id] ?? 0
+                return shared > 0 ? "On \(shared) other board\(shared == 1 ? "" : "s")" : nil
+            case .counting:
+                guard let a = task.action, let m = task.maxCount, let u = task.unit,
+                      !a.isEmpty, !u.isEmpty else { return nil }
+                return "\(a) · goal \(m) \(u)"
+            case .compound:
+                let children = effectiveChildrenByCompound[task.id] ?? []
+                let n = children.count
+                guard n > 0 else { return nil }
+                // "with progress" = children that resolve to a counting task.
+                let progress = children.filter {
+                    effectiveTaskById[$0.childTaskId]?.type == .counting
+                }.count
+                var parts = ["\(n) step\(n == 1 ? "" : "s")"]
+                if progress > 0 { parts.append("\(progress) with progress") }
+                if task.isOrdered == true {
+                    parts.append("in order")
+                } else {
+                    switch task.operatorType {
+                    case .or: parts.append("any of \(n)")
+                    case .mOfN: parts.append("≥\(task.threshold ?? n) of \(n)")
+                    default: break // AND: no suffix
+                    }
+                }
+                return parts.joined(separator: " · ")
+            case .achievement:
+                // referencedBoardId/referencedTemplateId are UUIDs, not names,
+                // and the watched board/template isn't loaded here — describe the
+                // target kind + trigger rather than leaking a raw id.
+                let trigger = task.achievementTrigger == .bingo ? "First Bingo" : "GREENLOG"
+                let target = task.referencedBoardId != nil ? "a board" : "a template"
+                return "Watch \(target) · \(trigger)"
             }
-            guard n > 0 else { return nil }
-            let op = task.operatorType
-            switch op {
-            case .or: return "Any of \(n)"
-            case .mOfN:
-                let t = task.threshold ?? n
-                return "≥\(t) of \(n)"
-            default: return "All of \(n)"
-            }
-        case .achievement:
-            // `referencedBoardId`/`referencedTemplateId` are UUIDs, not names,
-            // and the watched board/template isn't loaded here — so describe the
-            // target kind + trigger rather than leaking a raw id into the row.
-            let trigger = task.achievementTrigger == .bingo ? "First Bingo" : "GREENLOG"
-            let target = task.referencedBoardId != nil ? "a board" : "a template"
-            return "Watch \(target) · \(trigger)"
-        default:
-            return nil
+        }()
+
+        if isCenter {
+            return base.map { "Center square · \($0)" } ?? "Center square"
         }
+        return base
     }
 
     private func risoKind(for type: TaskType) -> RisoTaskKind {
