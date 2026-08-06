@@ -18,7 +18,7 @@
   "dependencies": {
     "firebase-admin": "^14.2.0",
     "firebase-functions": "^7.3.0",
-    "resend": "^4.8.0"
+    "resend": "^6.18.1"
   },
   "devDependencies": {
     "@oybc/bingo-core": "file:../packages/bingo-core",
