@@ -16,7 +16,15 @@ DerivedData
 *.hmap
 *.ipa
 *.xcuserstate
-project.xcworkspace
+# Ignore the workspace EXCEPT swiftpm/Package.resolved — Xcode Cloud disables
+# automatic SPM resolution and hard-fails without a committed resolved file.
+# (Negation chain: a file can't be unignored while any parent dir is ignored.)
+OYBC.xcodeproj/project.xcworkspace/*
+!OYBC.xcodeproj/project.xcworkspace/xcshareddata/
+OYBC.xcodeproj/project.xcworkspace/xcshareddata/*
+!OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # Swift Package Manager
 .build/
