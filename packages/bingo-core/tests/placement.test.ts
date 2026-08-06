@@ -21,9 +21,8 @@ function ids(placement: (Item | null)[]): string[] {
 // ─── fillableCellCount ────────────────────────────────────────────────────────
 
 describe('fillableCellCount', () => {
-  it('5x5 FREE / CUSTOM_FREE reserve the center → 24', () => {
+  it('5x5 FREE reserves the center → 24', () => {
     expect(fillableCellCount(5, CenterSquareType.FREE)).toBe(24);
-    expect(fillableCellCount(5, CenterSquareType.CUSTOM_FREE)).toBe(24);
   });
 
   it('5x5 CHOSEN / NONE fill the center → 25', () => {
@@ -38,7 +37,6 @@ describe('fillableCellCount', () => {
 
   it('4x4 even board has no center → 16 regardless of center type', () => {
     expect(fillableCellCount(4, CenterSquareType.FREE)).toBe(16);
-    expect(fillableCellCount(4, CenterSquareType.CUSTOM_FREE)).toBe(16);
     expect(fillableCellCount(4, CenterSquareType.CHOSEN)).toBe(16);
     expect(fillableCellCount(4, CenterSquareType.NONE)).toBe(16);
   });
@@ -61,16 +59,6 @@ describe('placeBoard center handling', () => {
     expect(placement[13]?.id).toBe('i12'); // skipped center
     const placed = placement.flatMap((t) => (t ? [t.id] : []));
     expect(placed).toHaveLength(24);
-  });
-
-  it('5x5 CUSTOM_FREE also leaves index 12 null (same shape as FREE)', () => {
-    const placement = placeBoard({
-      items: items(24),
-      gridSize: 5,
-      centerType: CenterSquareType.CUSTOM_FREE,
-      randomize: false,
-    });
-    expect(placement[12]).toBeNull();
   });
 
   it('5x5 CHOSEN pins the id at center and never duplicates it elsewhere', () => {

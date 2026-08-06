@@ -36,10 +36,6 @@ describe('isCenterAutoCompleted', () => {
     expect(isCenterAutoCompleted(CenterSquareType.FREE)).toBe(true);
   });
 
-  it('returns true for CUSTOM_FREE type', () => {
-    expect(isCenterAutoCompleted(CenterSquareType.CUSTOM_FREE)).toBe(true);
-  });
-
   it('returns false for CHOSEN type', () => {
     expect(isCenterAutoCompleted(CenterSquareType.CHOSEN)).toBe(false);
   });
@@ -54,24 +50,8 @@ describe('getCenterDisplayText', () => {
     expect(getCenterDisplayText(CenterSquareType.FREE)).toBe('FREE SPACE');
   });
 
-  it('returns custom name for CUSTOM_FREE type when provided', () => {
-    expect(getCenterDisplayText(CenterSquareType.CUSTOM_FREE, 'My Goal!')).toBe('My Goal!');
-  });
-
-  it('returns "FREE SPACE" for CUSTOM_FREE type when no custom name provided', () => {
-    expect(getCenterDisplayText(CenterSquareType.CUSTOM_FREE)).toBe('FREE SPACE');
-  });
-
-  it('returns "FREE SPACE" for CUSTOM_FREE type when custom name is undefined', () => {
-    expect(getCenterDisplayText(CenterSquareType.CUSTOM_FREE, undefined)).toBe('FREE SPACE');
-  });
-
   it('returns empty string for CHOSEN type', () => {
     expect(getCenterDisplayText(CenterSquareType.CHOSEN)).toBe('');
-  });
-
-  it('returns empty string for CHOSEN type even with custom name', () => {
-    expect(getCenterDisplayText(CenterSquareType.CHOSEN, 'ignored')).toBe('');
   });
 
   it('returns empty string for NONE type', () => {
