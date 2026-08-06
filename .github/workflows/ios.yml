@@ -81,20 +81,15 @@ jobs:
         # remove most of the GRDB / Firebase iOS SDK / GoogleSignIn /
         # swift-snapshot-testing network-resolution time.
         #
-        # Keyed on apps/ios/project.yml rather than a committed
-        # Package.resolved: apps/ios/OYBC.xcodeproj/project.xcworkspace is
-        # gitignored and rebuilt fresh by `xcodegen generate` every run, so
-        # there's no committed lockfile for the actual scheme's resolution.
-        # (There IS a tracked apps/ios/Package.resolved, but it's a stale
-        # leftover pinning only GRDB — it predates the Firebase/GoogleSignIn/
-        # SnapshotTesting deps and isn't read by this build.) project.yml's
-        # `packages:` section is the real source of truth for dependency
-        # floors, so hashing it is the closest deterministic proxy — a
-        # version bump there invalidates the cache, matching intent.
+        # Keyed on project.yml (dependency floors) + the committed workspace
+        # Package.resolved (exact pins — tracked since the Xcode Cloud fix;
+        # Xcode Cloud requires it, and it makes local/CI/Cloud resolve the
+        # same versions). Either changing a floor or re-resolving pins
+        # invalidates the cache, matching intent.
         uses: actions/cache@v6
         with:
           path: ${{ env.DERIVED_DATA_PATH }}/SourcePackages
-          key: ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('apps/ios/project.yml') }}
+          key: ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-${{ hashFiles('apps/ios/project.yml', 'apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: |
             ios-spm-${{ runner.os }}-${{ env.DEVELOPER_DIR }}-
             ios-spm-${{ runner.os }}-
