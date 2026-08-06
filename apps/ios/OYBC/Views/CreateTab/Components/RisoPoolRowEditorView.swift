@@ -26,6 +26,7 @@ struct RisoPoolRowEditorView: View {
             VStack(alignment: .leading, spacing: 11) {
                 titleField
                 if taskType == .counting { countingFields }
+                if taskType == .compound { compoundFields }
                 if let msg = validationMessage {
                     Text(msg)
                         .font(.risoBody(11.5, .extraBold))
@@ -117,6 +118,129 @@ struct RisoPoolRowEditorView: View {
         }
         .frame(maxWidth: flex ? .infinity : nil)
         .frame(width: width)
+    }
+
+    // MARK: - Compound steps
+
+    private var compoundFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Steps").risoSectionLabel(.risoRed)
+                Spacer()
+                inOrderToggle
+            }
+            ForEach($draft.children) { $step in
+                stepCard($step)
+            }
+            HStack(spacing: 7) {
+                addStepButton(title: "+ Simple step", isProgress: false)
+                addStepButton(title: "+ Progress step", isProgress: true)
+            }
+            Text("A step's type is fixed once added. Deleting a step unlinks it — if it lives on another board it stays in your library.")
+                .font(.risoBody(10.5, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var inOrderToggle: some View {
+        Button {
+            draft.ordered.toggle()
+        } label: {
+            Text("In order")
+                .font(.risoBody(9.5, .extraBold))
+                .tracking(1)
+                .textCase(.uppercase)
+                .foregroundStyle(draft.ordered ? Color.risoPaper : Color.risoMuted)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(draft.ordered ? Color.risoInk : Color.risoPaper))
+                .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func stepCard(_ step: Binding<ChildPatch>) -> some View {
+        let index = (draft.children.firstIndex { $0.id == step.wrappedValue.id } ?? 0) + 1
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("\(index)")
+                    .font(.risoHead(9.5, .extraBold))
+                    .foregroundStyle(Color.risoInk)
+                    .frame(width: 20, height: 20)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.risoPaper2))
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+                RisoTextField(placeholder: "Step title", text: step.title)
+                stepTypeIndicator(isProgress: step.wrappedValue.isProgress)
+                Button {
+                    let id = step.wrappedValue.id
+                    draft.children.removeAll { $0.id == id }
+                } label: {
+                    Text("✕")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityLabel("Delete step")
+            }
+            if step.wrappedValue.isProgress {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        RisoTextField(placeholder: "e.g. Run", text: step.action).frame(maxWidth: .infinity)
+                        RisoNumberField(placeholder: "5", text: step.goal).frame(width: 56)
+                        RisoTextField(placeholder: "km", text: step.unit).frame(maxWidth: .infinity)
+                    }
+                    if let preview = progressPreview(step.wrappedValue) {
+                        Text(preview)
+                            .font(.risoBody(10.5, .extraBold))
+                            .foregroundStyle(Color.risoBlue)
+                    }
+                }
+                .padding(.leading, 27)
+            }
+        }
+        .padding(7)
+        .risoCard(fill: .risoPaper)
+    }
+
+    private func stepTypeIndicator(isProgress: Bool) -> some View {
+        Text(isProgress ? "C" : "S")
+            .font(.risoHead(9.5, .extraBold))
+            .foregroundStyle(isProgress ? Color.risoPaper : Color.risoInk)
+            .frame(width: 26, height: 26)
+            .background(RoundedRectangle(cornerRadius: 6).fill(isProgress ? Color.risoBlue : Color.risoPaper2))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+            .accessibilityLabel(isProgress ? "Progress step" : "Simple step")
+    }
+
+    private func addStepButton(title: String, isProgress: Bool) -> some View {
+        Button {
+            draft.children.append(
+                ChildPatch(id: AppDatabase.generateUUID(), childTaskId: nil, title: "", isProgress: isProgress)
+            )
+        } label: {
+            Text(title)
+                .font(.risoHead(12, .extraBold))
+                .foregroundStyle(Color.risoInk)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [4, 3]))
+                        .foregroundStyle(Color.risoInk)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func progressPreview(_ step: ChildPatch) -> String? {
+        let a = step.action.trimmingCharacters(in: .whitespaces)
+        let g = step.goal.trimmingCharacters(in: .whitespaces)
+        let u = step.unit.trimmingCharacters(in: .whitespaces)
+        guard !a.isEmpty || !g.isEmpty || !u.isEmpty else { return nil }
+        return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
     }
 
     // MARK: - Actions

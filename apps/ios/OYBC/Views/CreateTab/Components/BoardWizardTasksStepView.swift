@@ -399,7 +399,17 @@ struct BoardWizardTasksStepView: View {
     /// at a time). Seeds the draft from the effective (staged-overlaid) task.
     private func openEditor(_ taskId: String) {
         guard let task = effectiveTaskById[taskId] else { return }
-        editDraft = TaskEditPatch(from: task)
+        var draft = TaskEditPatch(from: task)
+        if task.type == .compound {
+            // Seed step rows from the compound's links (in childIndex order),
+            // resolving each child Task through the staged-overlaid map.
+            let links = (effectiveChildrenByCompound[taskId] ?? [])
+                .sorted { $0.childIndex < $1.childIndex }
+            draft.children = links.compactMap { link in
+                effectiveTaskById[link.childTaskId].map { ChildPatch(from: $0) }
+            }
+        }
+        editDraft = draft
         editingTaskId = taskId
     }
 
