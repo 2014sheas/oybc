@@ -322,7 +322,8 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             onRemove: { _ in },
             centerTaskMode: centerTaskMode,
             centerTaskId: centerTaskId,
-            onSetCenter: { _ in }
+            onSetCenter: { _ in },
+            onEdit: { _ in }
         )
     }
 }
