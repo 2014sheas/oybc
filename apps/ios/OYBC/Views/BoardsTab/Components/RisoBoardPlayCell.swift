@@ -155,10 +155,8 @@ struct RisoBoardPlayCell: View {
             StarShape()
                 .fill(Color.risoGold)
                 .frame(width: 17, height: 17)
-            // Render the passed-in title (a CUSTOM_FREE center's custom name),
-            // falling back to "FREE" when empty — was hardcoded to "FREE",
-            // which discarded custom names on the live grid (issue #345).
-            // Scale/clamp so a longer custom name still fits the small cell.
+            // Render the passed-in title, falling back to "FREE" when empty.
+            // Scale/clamp so a longer title still fits the small cell.
             Text(title.isEmpty ? "FREE" : title)
                 .font(.risoHead(9, .extraBold))
                 .tracking(1.0)

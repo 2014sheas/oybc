@@ -36,8 +36,6 @@ export function BoardWizardSetupStep({
     setCustomEndDate,
     centerType,
     setCenterType,
-    centerCustomName,
-    setCenterCustomName,
     isRecurring,
     isCore,
     weekStartDay,
@@ -60,8 +58,6 @@ export function BoardWizardSetupStep({
         onCustomEndDateChange={setCustomEndDate}
         centerType={centerType}
         onCenterTypeChange={setCenterType}
-        centerCustomName={centerCustomName}
-        onCenterCustomNameChange={setCenterCustomName}
         isRecurring={isRecurring}
         isCore={isCore}
         weekStartDay={weekStartDay}

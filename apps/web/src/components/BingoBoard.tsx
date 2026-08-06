@@ -22,8 +22,6 @@ interface BingoBoardProps {
   squareSize?: number;
   /** Center square type (default: none) */
   centerSquareType?: CenterSquareType;
-  /** Custom name for CUSTOM_FREE center square type */
-  centerSquareCustomName?: string;
   /** When true, the controls (Shuffle / Reset / Fill All) are hidden,
    *  square toggling is disabled, and the bingo-detection message is
    *  suppressed. Used by the wizard's preview step where the grid is a
@@ -41,27 +39,24 @@ interface BingoBoardProps {
  *
  * Center square types:
  * - FREE: Auto-completed, shows "FREE SPACE", locked (cannot toggle off)
- * - CUSTOM_FREE: Auto-completed with custom text, locked
  * - CHOSEN: Fixed task name, NOT auto-completed, toggleable like any square
  * - NONE: Center is an ordinary square, no special treatment
  *
  * @param gridSize - Number of rows/columns (3, 4, or 5; default: 5)
  * @param squareSize - Width and height of each square in pixels (default: 80)
  * @param centerSquareType - Center square behavior type (default: NONE)
- * @param centerSquareCustomName - Custom name for CUSTOM_FREE type
  */
 export function BingoBoard({
   taskNames,
   gridSize = 5,
   squareSize = 80,
   centerSquareType = CenterSquareType.NONE,
-  centerSquareCustomName,
   readOnly = false,
 }: BingoBoardProps) {
   const totalSquares = gridSize * gridSize;
   const centerIndex = getCenterSquareIndex(gridSize);
   const autoCompleted = isCenterAutoCompleted(centerSquareType);
-  const centerDisplayText = getCenterDisplayText(centerSquareType, centerSquareCustomName);
+  const centerDisplayText = getCenterDisplayText(centerSquareType);
 
   const [taskLabels, setTaskLabels] = useState<string[]>(taskNames);
   const [completedSquares, setCompletedSquares] = useState<Set<number>>(() => {
@@ -73,7 +68,7 @@ export function BingoBoard({
 
   /**
    * Toggle a square's completed state by index.
-   * Prevents toggling auto-completed center squares (FREE, CUSTOM_FREE).
+   * Prevents toggling auto-completed center squares (FREE).
    *
    * @param index - The 0-based index of the square to toggle
    */
@@ -114,7 +109,7 @@ export function BingoBoard({
 
   /**
    * Shuffle task names using Fisher-Yates algorithm and reset completion state.
-   * For any special center type (FREE, CUSTOM_FREE, CHOSEN), keeps the center
+   * For any special center type (FREE, CHOSEN), keeps the center
    * position fixed and only shuffles the other squares.
    * For NONE, shuffles all squares freely.
    */

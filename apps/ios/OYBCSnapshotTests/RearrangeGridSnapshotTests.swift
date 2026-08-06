@@ -122,7 +122,6 @@ final class RearrangeGridSnapshotTests: XCTestCase {
                     gridSize: gridSize,
                     taskMap: taskMap,
                     centerSquareType: .free,
-                    centerCustomName: "",
                     rearrange: rearrange,
                     sideLength: side,
                     onReorder: { _ in }  // no-op for snapshot

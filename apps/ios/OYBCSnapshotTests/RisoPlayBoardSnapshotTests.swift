@@ -128,30 +128,6 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 200)), record: recordMode)
     }
 
-    // issue #345: a CUSTOM_FREE center renders its custom name (short + long),
-    // not the hardcoded "FREE"; plain FREE (first cell) still says "FREE".
-    func testCellCustomCenterNameLight() {
-        let view = cellGrid([
-            RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),
-            RisoBoardPlayCell(title: "My Goal", taskType: .normal, isCompleted: false, isCenter: true),
-            RisoBoardPlayCell(title: "Reading Challenge", taskType: .normal, isCompleted: false, isCenter: true),
-        ])
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 200)), record: recordMode)
-    }
-
-    func testCellCustomCenterNameDark() {
-        let view = cellGrid([
-            RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),
-            RisoBoardPlayCell(title: "My Goal", taskType: .normal, isCompleted: false, isCenter: true),
-            RisoBoardPlayCell(title: "Reading Challenge", taskType: .normal, isCompleted: false, isCenter: true),
-        ])
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 200), traits: .init(userInterfaceStyle: .dark)),
-            record: recordMode
-        )
-    }
-
     func testCellFreeDark() {
         let view = cellGrid([
             RisoBoardPlayCell(title: "FREE", taskType: .normal, isCompleted: false, isCenter: true),

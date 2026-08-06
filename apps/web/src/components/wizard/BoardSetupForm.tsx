@@ -33,7 +33,6 @@ const RECURRING_TIMEFRAME_OPTIONS = TIMEFRAME_OPTIONS.filter(
 
 const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
   { value: CenterSquareType.FREE, label: "Free Space" },
-  { value: CenterSquareType.CUSTOM_FREE, label: "Custom Name" },
   { value: CenterSquareType.CHOSEN, label: "Pick one of my board tasks" },
   { value: CenterSquareType.NONE, label: "None" },
 ];
@@ -77,8 +76,6 @@ export interface BoardSetupFormProps {
 
   centerType: CenterSquareType;
   onCenterTypeChange: (t: CenterSquareType) => void;
-  centerCustomName: string;
-  onCenterCustomNameChange: (n: string) => void;
 
   /** Phase 6.2 — read-only flag (set at wizard entry, no in-form
    *  toggle since #71). When true the wizard saves a recurring template;
@@ -107,7 +104,7 @@ export interface BoardSetupFormProps {
  * BoardSetupForm — Pure presentational form for the wizard's Setup step.
  *
  * Renders configuration controls (name, size, timeframe, custom dates,
- * center type, custom name input) without owning any state. The wizard
+ * center type) without owning any state. The wizard
  * controller drives every field via the `on*Change` callbacks.
  *
  * Three layouts, gated by the read-only `isCore` / `isRecurring` flags:
@@ -138,8 +135,6 @@ export function BoardSetupForm({
   onCustomEndDateChange,
   centerType,
   onCenterTypeChange,
-  centerCustomName,
-  onCenterCustomNameChange,
   isRecurring,
   isCore,
   weekStartDay,
@@ -212,22 +207,6 @@ export function BoardSetupForm({
           )}
         </div>
       )}
-      {isOddBoard && centerType === CenterSquareType.CUSTOM_FREE && (
-        <div className={styles.fieldGroup}>
-          <label className={styles.label} htmlFor="bw-center-custom-name">
-            Custom center name
-          </label>
-          <input
-            id="bw-center-custom-name"
-            type="text"
-            className={styles.input}
-            value={centerCustomName}
-            onChange={(e) => onCenterCustomNameChange(e.target.value)}
-            placeholder='e.g., "Wild Card"'
-            maxLength={100}
-          />
-        </div>
-      )}
     </>
   );
 
@@ -257,7 +236,7 @@ export function BoardSetupForm({
       {/* Upfront requirement line — surfaces the task-count cost live with
           the size + center selection so the user isn't blindsided by a
           disabled Next later. Count is the shared `fillableCellCount`
-          (odd + FREE/CUSTOM_FREE center reserves one cell). Recurring
+          (odd + FREE center reserves one cell). Recurring
           mode says "at least" — its pool can overfill (spawn draws a
           random subset each window). */}
       <p className={styles.requirementNote}>
@@ -415,7 +394,7 @@ export function BoardSetupForm({
         </div>
       )}
 
-      {/* Center square + custom name (shared with the core layout) */}
+      {/* Center square (shared with the core layout) */}
       {centerBlock}
     </div>
   );

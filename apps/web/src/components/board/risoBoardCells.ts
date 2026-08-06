@@ -55,7 +55,7 @@ export function buildRisoBoardCells(
     if (i === centerIndex && freeCenter) {
       return {
         key: `free-${i}`,
-        label: getCenterDisplayText(board.centerSquareType, board.centerSquareCustomName) || 'FREE',
+        label: getCenterDisplayText(board.centerSquareType) || 'FREE',
         type: 'normal',
         done: true,
         isFree: true,

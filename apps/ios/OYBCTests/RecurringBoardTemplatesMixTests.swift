@@ -31,7 +31,6 @@ final class RecurringBoardTemplatesMixTests: XCTestCase {
             timeframe: .daily,
             boardSize: 3,
             centerSquareType: .free,
-            centerSquareCustomName: nil,
             isRandomized: true,
             seedTaskIds: seedTaskIds,
             poolIds: poolIds,

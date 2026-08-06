@@ -215,7 +215,6 @@ enum SnapshotFixtures {
             timeframe: timeframe,
             boardSize: boardSize,
             centerSquareType: centerSquareType,
-            centerSquareCustomName: nil,
             isRandomized: isRandomized,
             seedTaskIds: (0..<seedTaskCount).map { "\(id)-task-\($0)" },
             lastSpawnedWindowKey: lastSpawnedWindowKey,
@@ -327,7 +326,6 @@ enum SnapshotFixtures {
             defaultCenterType: .free,
             defaultTimeframe: .monthly,
             defaultRandomize: true,
-            defaultCenterCustomName: "",
             theme: .system,
             // Snapshot fixtures pin the recurring*Enabled flags off so any
             // existing snapshot baselines that render the wizard or hub

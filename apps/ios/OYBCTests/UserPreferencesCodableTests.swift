@@ -38,7 +38,6 @@ final class UserPreferencesCodableTests: XCTestCase {
             defaultCenterType: .none,
             defaultTimeframe: .weekly,
             defaultRandomize: false,
-            defaultCenterCustomName: "Wild Card",
             theme: .dark,
             recurringDailyEnabled: true,
             recurringWeeklyEnabled: false,
@@ -64,7 +63,6 @@ final class UserPreferencesCodableTests: XCTestCase {
           "defaultCenterType": "free",
           "defaultTimeframe": "indefinite",
           "defaultRandomize": true,
-          "defaultCenterCustomName": "",
           "theme": "system"
         }
         """
@@ -96,7 +94,6 @@ final class UserPreferencesCodableTests: XCTestCase {
         XCTAssertEqual(decoded.defaultCenterType, UserPreferences.defaults.defaultCenterType)
         XCTAssertEqual(decoded.defaultTimeframe, UserPreferences.defaults.defaultTimeframe)
         XCTAssertEqual(decoded.defaultRandomize, UserPreferences.defaults.defaultRandomize)
-        XCTAssertEqual(decoded.defaultCenterCustomName, UserPreferences.defaults.defaultCenterCustomName)
     }
 
     // MARK: - Malformed / wrong-typed values
@@ -111,7 +108,6 @@ final class UserPreferencesCodableTests: XCTestCase {
           "defaultCenterType": true,
           "defaultTimeframe": 999,
           "defaultRandomize": "yes",
-          "defaultCenterCustomName": null,
           "theme": ["dark"]
         }
         """
@@ -154,7 +150,6 @@ final class UserPreferencesCodableTests: XCTestCase {
           "defaultCenterType": "free",
           "defaultTimeframe": "custom",
           "defaultRandomize": true,
-          "defaultCenterCustomName": "",
           "theme": "system"
         }
         """
@@ -177,7 +172,6 @@ final class UserPreferencesCodableTests: XCTestCase {
           "defaultCenterType": "free",
           "defaultTimeframe": "custom",
           "defaultRandomize": true,
-          "defaultCenterCustomName": "",
           "theme": "system",
           "recurringDailyEnabled": false,
           "recurringMonthlyEnabled": false
@@ -198,7 +192,6 @@ final class UserPreferencesCodableTests: XCTestCase {
           "defaultCenterType": "free",
           "defaultTimeframe": "custom",
           "defaultRandomize": true,
-          "defaultCenterCustomName": "",
           "theme": "system",
           "recurringDailyEnabled": "yes",
           "recurringWeeklyEnabled": 1,

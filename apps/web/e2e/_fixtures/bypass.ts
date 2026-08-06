@@ -130,8 +130,7 @@ export interface SeedTemplate {
   name: string;
   timeframe: 'daily' | 'weekly' | 'monthly' | 'yearly';
   boardSize: 3 | 4 | 5;
-  centerSquareType: 'free' | 'custom_free' | 'none';
-  centerSquareCustomName?: string;
+  centerSquareType: 'free' | 'none';
   isRandomized: boolean;
   seedTaskIds: string[];
   isActive: boolean;
@@ -162,7 +161,6 @@ export async function seedTemplate(page: Page, template: SeedTemplate): Promise<
   const now = new Date().toISOString();
   const row = {
     userId: BYPASS_USER_ID,
-    centerSquareCustomName: undefined,
     lastSpawnedWindowKey: null,
     createdAt: now,
     updatedAt: now,
@@ -231,7 +229,7 @@ export interface SeedBoard {
   status: 'active' | 'completed' | 'archived' | 'draft';
   startDate: string;
   endDate: string;
-  centerSquareType?: 'free' | 'custom_free' | 'none' | 'chosen';
+  centerSquareType?: 'free' | 'none' | 'chosen';
   isRandomized?: boolean;
   totalTasks?: number;
   completedTasks?: number;

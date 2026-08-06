@@ -34,7 +34,7 @@ import { BoardSize } from "../constants";
  *   recurrence. The Zod schema enforces this.
  *
  * - `CenterSquareType.CHOSEN` is excluded for the MVP — the form supports
- *   FREE / CUSTOM_FREE / NONE only. CHOSEN can be added later as an
+ *   FREE / NONE only. CHOSEN can be added later as an
  *   additive change (`centerTaskId?: string` field). The Zod schema
  *   enforces this.
  *
@@ -75,8 +75,7 @@ export interface RecurringBoardTemplate {
   name: string; // Display name (1-120 chars after trim)
   timeframe: Timeframe; // DAILY / WEEKLY / MONTHLY / YEARLY (no CUSTOM)
   boardSize: BoardSize; // 3, 4, or 5
-  centerSquareType: CenterSquareType; // FREE / CUSTOM_FREE / NONE (no CHOSEN in MVP)
-  centerSquareCustomName?: string; // Required when centerSquareType is CUSTOM_FREE
+  centerSquareType: CenterSquareType; // FREE / NONE (no CHOSEN in MVP)
   isRandomized: boolean; // Whether spawn shuffles seedTaskIds
   /**
    * Pool the spawn function draws from. Length must be ≥ the fillable
@@ -135,7 +134,6 @@ export interface CreateRecurringBoardTemplateInput {
   timeframe: Timeframe;
   boardSize: BoardSize;
   centerSquareType: CenterSquareType;
-  centerSquareCustomName?: string;
   isRandomized: boolean;
   seedTaskIds: string[];
   isActive: boolean;
@@ -158,7 +156,6 @@ export interface UpdateRecurringBoardTemplateInput {
   timeframe?: Timeframe;
   boardSize?: BoardSize;
   centerSquareType?: CenterSquareType;
-  centerSquareCustomName?: string;
   isRandomized?: boolean;
   seedTaskIds?: string[];
   isActive?: boolean;

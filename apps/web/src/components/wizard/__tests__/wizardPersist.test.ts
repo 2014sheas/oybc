@@ -27,7 +27,7 @@ import type { BoardWizardController } from '../../../pages/createHub/useBoardWiz
  *     touching a Pool it didn't mint.
  *
  * `persistRecurringTemplate` only reads a handful of `BoardWizardController`
- * fields (`name`, `centerType`, `centerCustomName`, `selectedTaskIds`,
+ * fields (`name`, `centerType`, `selectedTaskIds`,
  * `editingTemplateId`, `timeframe`, `size`, `isRandomized`,
  * `targetWindowDate`, `weekStartDay`) — `useBoardWizard` itself is a hook
  * with no DOM harness in this repo (see `wizardTimeframeSeed.test.ts`), so
@@ -48,7 +48,6 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
     customStartDate: '',
     customEndDate: '',
     centerType: CenterSquareType.FREE,
-    centerCustomName: '',
     isRandomized: true,
     weekStartDay: 'monday',
     isRecurring: true,

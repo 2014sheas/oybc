@@ -186,10 +186,6 @@ extension AppDatabase {
                     // must treat them the same.
                     "isCore": true,
                 ]
-                if let custom = template.centerSquareCustomName, !custom.isEmpty {
-                    boardDict["centerSquareCustomName"] = custom
-                }
-
                 let boardData = try JSONSerialization.data(withJSONObject: boardDict)
                 var board = try JSONDecoder().decode(Board.self, from: boardData)
 
@@ -208,7 +204,7 @@ extension AppDatabase {
                 // closes — respawn-bleed row): run the derivation pass at spawn so
                 // stored stats are derivation output, not a hand-initialized 0. A
                 // fresh window has no events, so event-owning squares resolve
-                // incomplete (no respawn bleed); a FREE/CUSTOM_FREE center still
+                // incomplete (no respawn bleed); a FREE center still
                 // auto-fills. The invariant "stored stats are always derivation
                 // output" now holds from the first row written. Mirrors the web
                 // `spawnTemplateBoard` change.

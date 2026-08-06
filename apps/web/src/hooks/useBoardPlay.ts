@@ -274,7 +274,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     board.centerSquareType as CenterSquareType,
   );
 
-  // Phase 2b — tap menu for the FREE/CUSTOM_FREE center in editTasks mode.
+  // Phase 2b — tap menu for the FREE center in editTasks mode.
   // The free center has no boardTaskId so it can't use squareTapMenu.
   const [freeCenterTapMenu, setFreeCenterTapMenu] = useState<{
     x: number;
@@ -307,7 +307,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   // Phase 3: also counts cells whose position differs from the original
   // (drag-to-insert / tap-to-swap), so a net-zero rearrange contributes 0.
   // Phase 2b: the rearrange-move count excludes only truly pinned centers
-  // (CHOSEN / FREE / CUSTOM_FREE). A NONE center is a regular movable cell.
+  // (CHOSEN / FREE). A NONE center is a regular movable cell.
   // Staged removals: pre-edit placements (still live in `boardTasks` during
   // staging) absent from the current draft. Gated on `editMode` + `draftSeeded`
   // (NOT `squaresDraft.length > 0`) so the un-seeded first render doesn't briefly
@@ -486,7 +486,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         const draftCell = squaresDraft.find((d) => d.row === r && d.col === c);
 
         if (isPositionalCenter && !draftCell && draftCenterType !== CenterSquareType.NONE) {
-          // FREE/CUSTOM_FREE (or CHOSEN with no task) centre — pinned, not draggable.
+          // FREE (or CHOSEN with no task) centre — pinned, not draggable.
           slots.push({
             cid: `center-${r}-${c}`,
             isCenter: true,

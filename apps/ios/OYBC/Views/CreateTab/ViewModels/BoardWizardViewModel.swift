@@ -8,12 +8,12 @@ typealias WizardStep = Int
 /// Mirrors web's `tasksNeededFor` in `useBoardWizard.ts`.
 ///
 /// - Even-sized boards (no center concept): `size²`.
-/// - Odd-sized boards with FREE / CUSTOM_FREE center: `size² - 1`.
+/// - Odd-sized boards with FREE center: `size² - 1`.
 /// - Odd-sized boards with NONE: `size²`.
 /// - Odd-sized boards with CHOSEN: `size²` (one selection IS the center).
 func tasksNeededForBoard(size: Int, centerType: CenterSquareType) -> Int {
     let isOdd = size % 2 != 0
-    let hasReservedCenter = isOdd && (centerType == .free || centerType == .customFree)
+    let hasReservedCenter = isOdd && centerType == .free
     return size * size - (hasReservedCenter ? 1 : 0)
 }
 
@@ -41,7 +41,6 @@ final class BoardWizardViewModel {
     /// `yyyy-MM-dd` — empty when not yet picked.
     var customEndDate: String = ""
     var centerType: CenterSquareType
-    var centerCustomName: String
     /// Issue #69 — board placement is always randomized. There's no
     /// manual-placement UI, so the per-board "Randomize positions"
     /// toggle (and the `defaultRandomize` preference) were dead UX and
@@ -185,7 +184,6 @@ final class BoardWizardViewModel {
             self.size = d.board.boardSize
             self.timeframe = d.board.timeframe
             self.centerType = d.board.centerSquareType
-            self.centerCustomName = d.board.centerSquareCustomName ?? ""
             self.centerTaskId = d.board.centerTaskId
             self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
             // Preserve placement order on resume so the pool doesn't reshuffle.
@@ -204,7 +202,6 @@ final class BoardWizardViewModel {
             self.size = t.boardSize
             self.timeframe = t.timeframe
             self.centerType = t.centerSquareType
-            self.centerCustomName = t.centerSquareCustomName ?? ""
             self.selectedTaskIds = Self.resolveTemplateHydrationTaskIds(t, database: database)
             // Template hydration returns a Set (order not preserved); use a
             // deterministic order so the pool is stable within the session.
@@ -256,7 +253,6 @@ final class BoardWizardViewModel {
                 size: initialSize,
                 desired: Self.resolveCenterType(preferences.defaultCenterType)
             )
-            self.centerCustomName = preferences.defaultCenterCustomName
         }
     }
 
@@ -269,7 +265,7 @@ final class BoardWizardViewModel {
 
     /// Returns a `centerType` consistent with `size`. Even boards have
     /// no center concept — the form hides the center selector for
-    /// them, so a leaked FREE/CUSTOM_FREE from prefs would be
+    /// them, so a leaked FREE from prefs would be
     /// unfixable from the UI. Coerce to NONE in that case. Mirrors
     /// the web `coerceCenterType` helper in `useBoardWizard.ts` and
     /// the existing odd/even guard inside `updateSize`.
@@ -502,7 +498,6 @@ final class BoardWizardViewModel {
             size: nextSize,
             desired: Self.resolveCenterType(initialPreferences.defaultCenterType)
         )
-        centerCustomName = initialPreferences.defaultCenterCustomName
         isRecurring = false
         selectedTaskIds = []
         poolOrder = []

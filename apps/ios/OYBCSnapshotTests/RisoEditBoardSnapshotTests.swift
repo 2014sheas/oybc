@@ -79,39 +79,6 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - Form: custom dates, customFree center (light)
-
-    func testFormCustomDatesCustomFreeLight() {
-        let view = makeForm(
-            timeframe: .custom,
-            centerType: .customFree,
-            centerCustomName: "Wild Card"
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 750)),
-            record: recordMode
-        )
-    }
-
-    // MARK: - Form: custom dates, customFree center (dark)
-
-    func testFormCustomDatesCustomFreeDark() {
-        let view = makeForm(
-            timeframe: .custom,
-            centerType: .customFree,
-            centerCustomName: "Wild Card"
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(
-                layout: .fixed(width: 393, height: 750),
-                traits: .init(userInterfaceStyle: .dark)
-            ),
-            record: recordMode
-        )
-    }
-
     // MARK: - View builders
 
     /// Builds the edit-only `BoardSetupFormView` wrapped in a
@@ -120,7 +87,6 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
         name: String = "Spring Goals",
         timeframe: Timeframe = .monthly,
         centerType: CenterSquareType = .free,
-        centerCustomName: String = "",
         chosenCenterDisabled: Bool = false
     ) -> some View {
         ScrollView {
@@ -131,7 +97,6 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
                     customStartDate: .constant(Self.fixedStart),
                     customEndDate: .constant(Self.fixedEnd),
                     centerType: .constant(centerType),
-                    centerCustomName: .constant(centerCustomName),
                     weekStartDay: "monday",
                     chosenCenterDisabled: chosenCenterDisabled
                 )

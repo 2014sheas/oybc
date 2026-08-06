@@ -3,14 +3,13 @@ import GRDB
 
 /// Per-cell placement for the wizard's preview grid and the persisted
 /// `BoardTask` rows. `nil` slots only appear at the reserved centre
-/// cell for FREE / CUSTOM_FREE centre types. Mirrors web's
-/// `WizardPlacement`.
+/// cell for a FREE centre type. Mirrors web's `WizardPlacement`.
 typealias WizardPlacement = [Task?]
 
 /// Builds the persisted `BoardTask` rows for a board from a wizard placement.
 ///
-/// `isCenter` is TRUE **only** for a `.chosen` centre task. FREE / CUSTOM_FREE
-/// centres have a `nil` placement slot (so no row is produced), and a `.none`
+/// `isCenter` is TRUE **only** for a `.chosen` centre task. A FREE centre has
+/// a `nil` placement slot (so no row is produced), and a `.none`
 /// centre holds an ordinary task that must render as a normal square — so it is
 /// NOT flagged. Marking a `.none` centre `isCenter` makes the play grid render
 /// a gold "FREE" cell over a real task (the preview never did, because it gates
@@ -243,9 +242,6 @@ func persistWizardBoard(
     let trimmedName = controller.name.trimmingCharacters(in: .whitespacesAndNewlines)
     let size = controller.size
     let centerType = controller.centerType
-    let customCenterName: String? = centerType == .customFree
-        ? controller.centerCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
-        : nil
     let chosenCenterId: String? = centerType == .chosen ? controller.centerTaskId : nil
     let draftBoardId = controller.draftBoardId
     let now = AppDatabase.currentTimestamp()
@@ -299,9 +295,6 @@ func persistWizardBoard(
             // its Firestore doc carry no deadline at all — no sentinel.
             if let end = dates.end {
                 boardDict["endDate"] = end
-            }
-            if let name = customCenterName, !name.isEmpty {
-                boardDict["centerSquareCustomName"] = name
             }
             if let id = chosenCenterId {
                 boardDict["centerTaskId"] = id
@@ -435,9 +428,6 @@ func persistRecurringTemplate(
     let timeframe = controller.timeframe
     let boardSize = controller.size
     let centerType = controller.centerType
-    let customCenterName: String? = centerType == .customFree
-        ? controller.centerCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
-        : nil
     let isRandomized = controller.isRandomized
     let seedTaskIds = Array(controller.selectedTaskIds)
     let editingTemplateId = controller.editingTemplateId
@@ -471,7 +461,6 @@ func persistRecurringTemplate(
                         timeframe: timeframe,
                         boardSize: boardSize,
                         centerSquareType: centerType,
-                        centerSquareCustomName: customCenterName,
                         isRandomized: isRandomized,
                         seedTaskIds: existing.seedTaskIds,
                         poolIds: poolIds,
@@ -575,7 +564,6 @@ func persistRecurringTemplate(
                 timeframe: timeframe,
                 boardSize: boardSize,
                 centerSquareType: centerType,
-                centerSquareCustomName: customCenterName,
                 isRandomized: isRandomized,
                 seedTaskIds: seedTaskIds,
                 poolIds: [pool.id],

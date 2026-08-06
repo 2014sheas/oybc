@@ -102,7 +102,7 @@ func buildRearrangeCells(
     let mid = gridSize / 2
     // A cell is pinned (immovable, excluded from drag/swap) when it is the
     // positional center AND the board's center type is not .none. This is the
-    // Phase-2b predicate: .free / .customFree / .chosen are all pinned;
+    // Phase-2b predicate: .free / .chosen are all pinned;
     // .none makes the center position a fully normal cell.
     let hasPinnedCenter = gridSize % 2 == 1 && centerSquareType != .none
 

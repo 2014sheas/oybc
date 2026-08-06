@@ -136,7 +136,6 @@ final class WizardArrangePreviewSnapshotTests: XCTestCase {
                     gridSize: controller.size,
                     taskMap: taskMap,
                     centerSquareType: controller.centerType,
-                    centerCustomName: controller.centerCustomName,
                     rearrange: rearrange,
                     sideLength: side,
                     onReorder: { _ in }  // no-op for snapshot

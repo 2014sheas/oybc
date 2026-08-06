@@ -136,21 +136,16 @@ struct FromBoardGridView: View {
                 cells[idx] = placement
             }
         }
-        // FREE / CUSTOM_FREE boards have NO BoardTask placement at the
-        // geometric center — without a special case here the source
-        // grid would render a dashed hole where the play view shows
-        // the FREE square. Mirror BoardPlayView's behavior.
-        let usesFreeCenter = size % 2 == 1
-            && (sourceBoard.centerSquareType == .free
-                || sourceBoard.centerSquareType == .customFree)
+        // FREE boards have NO BoardTask placement at the geometric center —
+        // without a special case here the source grid would render a dashed
+        // hole where the play view shows the FREE square. Mirror
+        // BoardPlayView's behavior.
+        let usesFreeCenter = size % 2 == 1 && sourceBoard.centerSquareType == .free
         let freeCenterIndex: Int = usesFreeCenter
             ? (size / 2) * size + (size / 2)
             : -1
         let freeCenterText: String = usesFreeCenter
-            ? CenterSquare.getCenterDisplayText(
-                type: sourceBoard.centerSquareType,
-                customName: sourceBoard.centerSquareCustomName
-            )
+            ? CenterSquare.getCenterDisplayText(type: sourceBoard.centerSquareType)
             : ""
 
         return LazyVGrid(columns: columns, spacing: Riso.cellGap) {
@@ -174,8 +169,8 @@ struct FromBoardGridView: View {
         if let entry, let task = entry.task {
             sourceCell(task: task, placement: entry.placement)
         } else if isVirtualFreeCenter {
-            // Virtual FREE / CUSTOM_FREE center — non-interactive, no
-            // BoardTask to link or copy. Riso: ink fill with gold star/text.
+            // Virtual FREE center — non-interactive, no BoardTask to link or
+            // copy. Riso: ink fill with gold star/text.
             freeCenterCell(label: freeCenterText)
         } else {
             // Empty grid slot — dashed ink placeholder.

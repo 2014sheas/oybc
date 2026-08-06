@@ -22,7 +22,6 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     // endDate as an unbounded window [startDate, ∞). See `isIndefinite`.
     var endDate: String? // ISO8601
     var centerSquareType: CenterSquareType
-    var centerSquareCustomName: String?
     var centerTaskId: String?
     var isRandomized: Bool
 
@@ -93,7 +92,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
 
     enum CodingKeys: String, CodingKey {
         case id, userId, name, description, status, boardSize, timeframe
-        case startDate, endDate, centerSquareType, centerSquareCustomName, centerTaskId, isRandomized
+        case startDate, endDate, centerSquareType, centerTaskId, isRandomized
         case totalTasks, completedTasks, linesCompleted, completedLineIds
         case createdAt, updatedAt, completedAt
         case lastSyncedAt, version, isDeleted, deletedAt
@@ -118,7 +117,6 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         // that omits the key). decodeIfPresent keeps both cases nil-safe.
         endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
         centerSquareType = try container.decode(CenterSquareType.self, forKey: .centerSquareType)
-        centerSquareCustomName = try container.decodeIfPresent(String.self, forKey: .centerSquareCustomName)
         centerTaskId = try container.decodeIfPresent(String.self, forKey: .centerTaskId)
         isRandomized = try container.decode(Bool.self, forKey: .isRandomized)
         totalTasks = try container.decode(Int.self, forKey: .totalTasks)
@@ -173,7 +171,6 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         // row / Firestore doc carries no endDate at all.
         try container.encodeIfPresent(endDate, forKey: .endDate)
         try container.encode(centerSquareType, forKey: .centerSquareType)
-        try container.encodeIfPresent(centerSquareCustomName, forKey: .centerSquareCustomName)
         try container.encodeIfPresent(centerTaskId, forKey: .centerTaskId)
         try container.encode(isRandomized, forKey: .isRandomized)
         try container.encode(totalTasks, forKey: .totalTasks)
@@ -244,11 +241,35 @@ enum Timeframe: String, Codable, DatabaseValueConvertible {
     case indefinite   // No end date — ongoing board that never expires
 }
 
-enum CenterSquareType: String, Codable, DatabaseValueConvertible {
+enum CenterSquareType: String, DatabaseValueConvertible {
     case free
-    case customFree = "custom_free"
     case chosen
     case none
+}
+
+extension CenterSquareType: Codable {
+    // Defensive fallback: an unknown or retired raw value (e.g. the removed
+    // "custom_free" case, which was behaviorally just FREE + a display name)
+    // decodes as `.free` instead of throwing.
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = CenterSquareType(rawValue: raw) ?? .free
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+extension CenterSquareType {
+    // Mirror the Codable fallback for the SQLite read path: a legacy
+    // "custom_free" value already on disk decodes as `.free` rather than
+    // failing the row fetch.
+    static func fromDatabaseValue(_ dbValue: DatabaseValue) -> CenterSquareType? {
+        guard let raw = String.fromDatabaseValue(dbValue) else { return nil }
+        return CenterSquareType(rawValue: raw) ?? .free
+    }
 }
 
 // MARK: - Computed Properties

@@ -35,7 +35,7 @@ import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 
 /** Per-cell placement for the preview grid and the persisted
  *  `BoardTask` rows. `null` slots only appear at the reserved centre
- *  cell for FREE / CUSTOM_FREE centre types. */
+ *  cell for the FREE centre type. */
 export type WizardPlacement = (Task | null)[];
 
 /**
@@ -211,10 +211,6 @@ export async function persistWizardBoard({
   pendingTasks: pendingTasksArg,
 }: PersistWizardBoardArgs): Promise<string> {
   const trimmedName = controller.name.trim();
-  const customName =
-    controller.centerType === CenterSquareType.CUSTOM_FREE
-      ? controller.centerCustomName.trim() || undefined
-      : undefined;
   const centerTaskId =
     controller.centerType === CenterSquareType.CHOSEN
       ? controller.centerTaskId ?? undefined
@@ -227,7 +223,6 @@ export async function persistWizardBoard({
     startDate: dates.startDate,
     endDate: dates.endDate,
     centerSquareType: controller.centerType,
-    centerSquareCustomName: customName,
     centerTaskId,
     isRandomized: controller.isRandomized,
   };
@@ -327,10 +322,6 @@ export async function persistRecurringTemplate({
   userId,
 }: PersistRecurringTemplateArgs): Promise<PersistRecurringTemplateResult> {
   const trimmedName = controller.name.trim();
-  const customName =
-    controller.centerType === CenterSquareType.CUSTOM_FREE
-      ? controller.centerCustomName.trim() || undefined
-      : undefined;
   const seedTaskIds = Array.from(controller.selectedTaskIds);
 
   // Edit path: legacy write-through + field update. No spawn.
@@ -341,7 +332,6 @@ export async function persistRecurringTemplate({
       timeframe: controller.timeframe,
       boardSize: controller.size,
       centerSquareType: controller.centerType,
-      centerSquareCustomName: customName,
       isRandomized: controller.isRandomized,
       // `isActive` isn't surfaced in the wizard form (the templates list
       // owns the pause toggle), so leave it untouched on edit.
@@ -421,7 +411,6 @@ export async function persistRecurringTemplate({
     timeframe: controller.timeframe,
     boardSize: controller.size,
     centerSquareType: controller.centerType,
-    centerSquareCustomName: customName,
     isRandomized: controller.isRandomized,
     seedTaskIds,
     isActive: true,

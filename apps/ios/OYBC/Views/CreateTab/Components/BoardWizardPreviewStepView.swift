@@ -100,8 +100,7 @@ struct BoardWizardPreviewStepView: View {
     /// Converts `placement` to `[RearrangeCellData]` for `RearrangeGrid`.
     ///
     /// Center detection mirrors `buildWizardPlacement`:
-    ///   - `FREE` / `CUSTOM_FREE`: center slot is nil in placement → pinned,
-    ///     taskId nil.
+    ///   - `FREE`: center slot is nil in placement → pinned, taskId nil.
     ///   - `CHOSEN`: center slot holds the chosen Task → pinned, taskId set.
     ///   - `NONE`: center slot holds a regular task (no pinning).
     ///   - Even boards: no center slot.
@@ -113,12 +112,12 @@ struct BoardWizardPreviewStepView: View {
         return placement.enumerated().map { (i, task) in
             let row = i / size
             let col = i % size
-            // Pin FREE, CUSTOM_FREE, and CHOSEN center slots on odd boards.
+            // Pin FREE and CHOSEN center slots on odd boards.
             // NONE falls through — the task occupying the center is movable.
             let isPinnedCenter = isOdd && i == centerIdx && controller.centerType != .none
 
             if isPinnedCenter, task == nil {
-                // FREE or CUSTOM_FREE — nil slot, always pinned.
+                // FREE — nil slot, always pinned.
                 return RearrangeCellData(
                     id: "center",
                     taskId: nil,
@@ -215,7 +214,7 @@ struct BoardWizardPreviewStepView: View {
         var newPlacement: WizardPlacement = Array(repeating: nil, count: newCells.count)
         for (i, cell) in newCells.enumerated() {
             if cell.isCenter, cell.taskId == nil {
-                // FREE / CUSTOM_FREE center — remains nil in placement.
+                // FREE center — remains nil in placement.
                 newPlacement[i] = nil
             } else if let taskId = cell.taskId, let task = taskMap[taskId] {
                 // Task cell (including a CHOSEN center that is pinned).
@@ -280,9 +279,6 @@ struct BoardWizardPreviewStepView: View {
         switch controller.centerType {
         case .free:
             return "Free space"
-        case .customFree:
-            let trimmed = controller.centerCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "Custom (unnamed)" : "Custom · \"\(trimmed)\""
         case .chosen:
             if let id = controller.centerTaskId,
                let task = library.libraryTasks.first(where: { $0.id == id }) {
@@ -335,7 +331,6 @@ struct BoardWizardPreviewStepView: View {
                         gridSize: controller.size,
                         taskMap: wizardTaskMap,
                         centerSquareType: controller.centerType,
-                        centerCustomName: controller.centerCustomName,
                         rearrange: arrangeSubMode == .rearrange,
                         sideLength: gridSideLength,
                         onReorder: { handleReorder($0) },

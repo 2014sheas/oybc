@@ -1225,7 +1225,7 @@ Core / board-creation defaults:
 
 - `weekStartDay` — `'monday' | 'sunday'`
 - `defaultBoardSize` — `3 | 4 | 5`
-- `defaultCenterType` — `FREE | NONE` (narrowed from `CenterSquareType`; CHOSEN / CUSTOM_FREE require per-board context)
+- `defaultCenterType` — `FREE | NONE` (narrowed from `CenterSquareType`; CHOSEN requires per-board context)
 - `defaultTimeframe` — `daily | weekly | monthly | yearly | custom`
 - `defaultRandomize` — `boolean`
 - `defaultCenterCustomName` — `string` (≤ 100 chars)

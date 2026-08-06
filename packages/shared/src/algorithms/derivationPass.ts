@@ -104,7 +104,7 @@ export interface AchievementCellBadge {
 /**
  * Board-integrity PR-3 (issue #360) — one per-cell resolution result from
  * {@link computeBoardGrid}, one entry per surviving `BoardTask` placement
- * (i.e. NOT the odd-board FREE/CUSTOM_FREE center auto-fill, which is not a
+ * (i.e. NOT the odd-board FREE center auto-fill, which is not a
  * placement and has no BoardTask/Task id to key on).
  *
  * This is the single per-cell "is this done, and if it's an achievement
@@ -156,7 +156,7 @@ export interface BoardStatsUpdate {
  * persisting the returned payload + enqueuing the sync entry.
  *
  * Center auto-fill: for odd-sized boards (3 / 5) where the centre square is
- * unoccupied AND the board's centerSquareType is FREE or CUSTOM_FREE, the
+ * unoccupied AND the board's centerSquareType is FREE, the
  * centre cell is treated as completed (mirrors current per-platform logic).
  *
  * @param board              The board whose stats need recomputing.
@@ -477,7 +477,7 @@ export function computeBoardGrid(
     cells.push({ boardTaskId: bt.id, taskId: t.id, row: bt.row, col: bt.col, idx, isCompleted: isDone });
   }
 
-  // Center auto-fill for odd-sized boards with FREE / CUSTOM_FREE center.
+  // Center auto-fill for odd-sized boards with a FREE center.
   if (size % 2 === 1) {
     const centerRow = Math.floor(size / 2);
     const centerCol = Math.floor(size / 2);
@@ -487,8 +487,7 @@ export function computeBoardGrid(
     );
     if (
       !hasCenterTask &&
-      (board.centerSquareType === CenterSquareType.FREE ||
-        board.centerSquareType === CenterSquareType.CUSTOM_FREE) &&
+      board.centerSquareType === CenterSquareType.FREE &&
       !grid[centerIdx]
     ) {
       grid[centerIdx] = true;

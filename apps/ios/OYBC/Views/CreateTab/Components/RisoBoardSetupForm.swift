@@ -19,8 +19,7 @@ import SwiftUI
 ///   3. Board size — three size cards with dot-matrix previews; selected = gold
 ///      fill + hard shadow, dots turn red.
 ///   4. Center square — `RisoSegmented` (Free Space / I'll choose / None); visible
-///      only on odd boards; Custom Name field when `.customFree`.
-///      CHOSEN is suppressed in recurring mode.
+///      only on odd boards. CHOSEN is suppressed in recurring mode.
 ///   5. Custom date pickers (when timeframe == .custom), in Riso cards.
 ///
 /// Core boards skip sections 1–2 (name/timeframe) and show a locked-name chip
@@ -342,23 +341,13 @@ struct RisoBoardSetupForm: View {
                     .foregroundStyle(Color.risoMuted)
             }
 
-            if controller.centerType == .customFree {
-                RisoNameInput(
-                    text: Binding(
-                        get: { controller.centerCustomName },
-                        set: { controller.centerCustomName = $0 }
-                    ),
-                    placeholder: "Custom center name (e.g. Wild Card)"
-                )
-            }
         }
     }
 
     private var centerOptions: [(value: CenterSquareType, label: String)] {
-        // Short labels so the (up to 4) equal-width segments don't clip.
+        // Short labels so the (up to 3) equal-width segments don't clip.
         var opts: [(value: CenterSquareType, label: String)] = [
-            (.free,       "Free"),
-            (.customFree, "Custom"),
+            (.free, "Free"),
         ]
         // CHOSEN is suppressed for recurring boards (same rule as BoardSetupFormView).
         if !controller.isRecurring {

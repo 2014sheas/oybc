@@ -212,13 +212,6 @@ describe('buildBoardPreviewCells', () => {
     }
   });
 
-  it('a CUSTOM_FREE center also renders freeCenter', () => {
-    const board = makeBoard({ boardSize: 5, centerSquareType: CenterSquareType.CUSTOM_FREE });
-    const { cells } = buildBoardPreviewCells(board, [], {}, {}, {});
-    // 5x5 center index = row2,col2 = index 12.
-    expect(cells[12]).toEqual({ kind: 'freeCenter' });
-  });
-
   it('a NONE center with no task placed is a plain empty cell (not freeCenter)', () => {
     const board = makeBoard({ boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const { cells } = buildBoardPreviewCells(board, [], {}, {}, {});

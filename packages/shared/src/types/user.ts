@@ -10,9 +10,8 @@ import { CenterSquareType, Timeframe } from '../constants/enums';
  * under standard last-write-wins conflict resolution.
  *
  * - `defaultCenterType` is restricted to the values a user can pick as a
- *   blanket default (FREE or NONE). CHOSEN / CUSTOM_FREE require per-board
- *   context and don't make sense as a global default — CUSTOM_FREE's custom
- *   text is captured by `defaultCenterCustomName` below.
+ *   blanket default (FREE or NONE). CHOSEN requires per-board context and
+ *   doesn't make sense as a global default.
  * - `theme` is `'system'` by default so the app follows the OS appearance
  *   unless the user explicitly overrides it.
  */
@@ -26,7 +25,6 @@ export interface UserPreferences {
   defaultCenterType: DefaultCenterSquareType;
   defaultTimeframe: Timeframe;
   defaultRandomize: boolean;
-  defaultCenterCustomName: string;
   theme: ThemePreference;
   // Recurring boards (Phase 6.1) — when enabled, the Boards and Create tabs
   // surface a prominent "core boards" section inviting the user to create a
@@ -80,7 +78,6 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   defaultCenterType: CenterSquareType.FREE,
   defaultTimeframe: Timeframe.CUSTOM,
   defaultRandomize: true,
-  defaultCenterCustomName: '',
   theme: 'system',
   // Phase 6.1: default to true so the core boards (daily/weekly/monthly/
   // yearly) are immediately discoverable on a fresh account. Per the
@@ -156,12 +153,6 @@ export function mergeUserPreferences(
     typeof partial.defaultRandomize === 'boolean'
       ? partial.defaultRandomize
       : DEFAULT_USER_PREFERENCES.defaultRandomize;
-
-  const defaultCenterCustomName: string =
-    typeof partial.defaultCenterCustomName === 'string' &&
-    partial.defaultCenterCustomName.length <= 100
-      ? partial.defaultCenterCustomName
-      : DEFAULT_USER_PREFERENCES.defaultCenterCustomName;
 
   const theme: ThemePreference =
     partial.theme === 'light' ||
@@ -243,7 +234,6 @@ export function mergeUserPreferences(
     defaultCenterType,
     defaultTimeframe,
     defaultRandomize,
-    defaultCenterCustomName,
     theme,
     recurringDailyEnabled,
     recurringWeeklyEnabled,

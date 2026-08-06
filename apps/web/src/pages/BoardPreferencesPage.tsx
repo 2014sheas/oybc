@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CenterSquareType,
@@ -54,24 +53,6 @@ export function BoardPreferencesPage(): React.ReactElement {
     value: UserPreferences[K]
   ): void => {
     updatePrefs({ [key]: value } as Partial<UserPreferences>);
-  };
-
-  // Free-form text fields keep a local draft so every keystroke doesn't
-  // bump `version` and enqueue a sync item. The draft commits on blur or
-  // Enter, and resyncs if the value changes externally (e.g. a pull from
-  // another device).
-  const [centerCustomNameDraft, setCenterCustomNameDraft] = useState(
-    prefs.defaultCenterCustomName
-  );
-  useEffect(() => {
-    setCenterCustomNameDraft(prefs.defaultCenterCustomName);
-  }, [prefs.defaultCenterCustomName]);
-
-  const commitCenterCustomName = (): void => {
-    const trimmed = centerCustomNameDraft;
-    if (trimmed !== prefs.defaultCenterCustomName) {
-      set('defaultCenterCustomName', trimmed);
-    }
   };
 
   return (
@@ -163,27 +144,6 @@ export function BoardPreferencesPage(): React.ReactElement {
             <option value={CenterSquareType.FREE}>Free</option>
             <option value={CenterSquareType.NONE}>None</option>
           </select>
-        </div>
-
-        <div className={styles.stackedRow}>
-          <label className={styles.rowLabel} htmlFor="pref-center-custom-name">
-            Default custom center name
-          </label>
-          <input
-            id="pref-center-custom-name"
-            type="text"
-            className={styles.textInput}
-            value={centerCustomNameDraft}
-            maxLength={100}
-            placeholder='e.g., "Wild Card"'
-            onChange={(e) => setCenterCustomNameDraft(e.target.value)}
-            onBlur={commitCenterCustomName}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.currentTarget.blur();
-              }
-            }}
-          />
         </div>
       </div>
 

@@ -118,7 +118,7 @@ final class BoardWizardCenterSquareTests: XCTestCase {
     }
 
     func testPersistedFreeCenterHasNoRow() {
-        // FREE / CUSTOM_FREE reserve the center as a nil slot → no BoardTask row,
+        // FREE reserves the center as a nil slot → no BoardTask row,
         // and nothing is flagged isCenter (the play grid renders FREE positionally).
         var p = full3x3()
         p[4] = nil

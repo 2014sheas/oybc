@@ -35,7 +35,6 @@ final class RecurringBoardTemplatesTests: XCTestCase {
             timeframe: timeframe,
             boardSize: boardSize,
             centerSquareType: centerSquareType,
-            centerSquareCustomName: nil,
             isRandomized: isRandomized,
             seedTaskIds: seedTaskIds ?? (0..<24).map { "task-\($0)" },
             lastSpawnedWindowKey: lastSpawnedWindowKey,

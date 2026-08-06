@@ -712,7 +712,7 @@
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_4297C20C-7F9E-434F-BBF2-B051A7018798" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_C0F24B00-CA77-4758-9CE7-34423276591C" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1295,10 +1295,10 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
-		"TEMP_03BD83F4-862F-452A-B077-3FEBCFB8385D" /* ios */ = {
+		"TEMP_4E67130A-F27A-4AC4-A9E7-3687CD48517D" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_4297C20C-7F9E-434F-BBF2-B051A7018798" /* Signing.xcconfig */,
+				"TEMP_C0F24B00-CA77-4758-9CE7-34423276591C" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1834,7 +1834,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_4297C20C-7F9E-434F-BBF2-B051A7018798" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_C0F24B00-CA77-4758-9CE7-34423276591C" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1931,7 +1931,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_4297C20C-7F9E-434F-BBF2-B051A7018798" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_C0F24B00-CA77-4758-9CE7-34423276591C" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

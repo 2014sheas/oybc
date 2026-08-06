@@ -63,7 +63,6 @@ struct RearrangeCellData: Identifiable, Equatable {
 ///   - taskMap: `[Task.id: Task]` — each cell's staged `taskId` is looked up here
 ///     for title + type display. (NOT keyed by boardTaskId.)
 ///   - centerSquareType: Controls the center cell label.
-///   - centerCustomName: Custom label when `centerSquareType == .customFree`.
 ///   - rearrange: When `false` the grid is display-only — no jiggle, no gestures.
 ///   - sideLength: Explicit side length for the square grid in points. The caller provides
 ///     this (e.g. `UIScreen.main.bounds.width - 2 * Riso.gutter`). Derived explicitly
@@ -79,7 +78,6 @@ struct RearrangeGrid: View {
     let gridSize: Int
     let taskMap: [String: Task]
     let centerSquareType: CenterSquareType
-    var centerCustomName: String = ""
     var rearrange: Bool
     let sideLength: CGFloat
     var onReorder: ([RearrangeCellData]) -> Void
@@ -272,10 +270,9 @@ struct RearrangeGrid: View {
         let label: String = {
             if cell.isCenter {
                 switch centerSquareType {
-                case .free:       return "FREE"
-                case .customFree: return centerCustomName.isEmpty ? "FREE" : centerCustomName
-                case .chosen:     return task?.title ?? "FREE"
-                case .none:       return ""
+                case .free:   return "FREE"
+                case .chosen: return task?.title ?? "FREE"
+                case .none:   return ""
                 }
             }
             if cell.isEmpty { return "" }
@@ -318,8 +315,7 @@ struct RearrangeGrid: View {
 
             if !isHole {
                 // Center star icon for pure-FREE center
-                if cell.isCenter && (centerSquareType == .free || centerSquareType == .customFree)
-                    && centerSquareType == .free {
+                if cell.isCenter && centerSquareType == .free {
                     Image(systemName: "star.fill")
                         .font(.system(size: cellSize * 0.28, weight: .bold))
                         .foregroundStyle(Color.risoInkStatic.opacity(0.6))

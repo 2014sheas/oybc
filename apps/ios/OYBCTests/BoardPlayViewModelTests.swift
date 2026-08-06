@@ -150,7 +150,6 @@ final class BoardPlayViewModelTests: XCTestCase {
             timeframe: .weekly,
             boardSize: 3,
             centerSquareType: .free,
-            centerSquareCustomName: nil,
             isRandomized: false,
             seedTaskIds: ["t1", "t2"],
             lastSpawnedWindowKey: nil,
