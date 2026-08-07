@@ -243,14 +243,10 @@ struct RisoPoolListView: View {
                 }.count
                 var parts = ["\(n) step\(n == 1 ? "" : "s")"]
                 if progress > 0 { parts.append("\(progress) with progress") }
-                if task.isOrdered == true {
-                    parts.append("in order")
-                } else {
-                    switch task.operatorType {
-                    case .or: parts.append("any of \(n)")
-                    case .mOfN: parts.append("≥\(task.threshold ?? n) of \(n)")
-                    default: break // AND: no suffix
-                    }
+                switch task.operatorType {
+                case .or: parts.append("any of \(n)")
+                case .mOfN: parts.append("≥\(task.threshold ?? n) of \(n)")
+                default: break // AND: no suffix
                 }
                 return parts.joined(separator: " · ")
             case .achievement:

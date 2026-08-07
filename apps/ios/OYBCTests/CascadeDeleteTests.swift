@@ -64,7 +64,6 @@ final class CascadeDeleteTests: XCTestCase {
             maxCount: nil,
             operatorType: type == .compound ? .and : nil,
             threshold: nil,
-            isOrdered: nil,
             referencedBoardId: nil,
             referencedTemplateId: nil,
             achievementTrigger: nil,

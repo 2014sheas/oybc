@@ -80,25 +80,6 @@
   margin-top: 4px;
 }
 
-/* Ordered-steps checkbox — labelled toggle */
-.orderedToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--riso-font-body);
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--riso-ink);
-  cursor: pointer;
-  user-select: none;
-}
-.orderedToggle input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--riso-green);
-  cursor: pointer;
-}
-
 /* Footer */
 .footer {
   display: flex;

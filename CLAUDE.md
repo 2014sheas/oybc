@@ -34,7 +34,7 @@ The core task model is the unified one — **Normal / Counting / Compound** (Pro
 
 Schema shape:
 
-- `tasks` carries operator + threshold + isOrdered for compounds.
+- `tasks` carries operator + threshold for compounds.
 - `compound_children` replaces the retired `task_steps` and `composite_nodes` tables (one row per parent-child link; the child can be any Task, including another compound).
 - `composite_tasks` is dropped at the model level; composites live in `tasks` with `type='compound'`.
 - `BoardTask` is a pure placement record — no `isCompleted` / `completedAt` / `currentCount` / `completedStepIds`. Completion is **global per Task**, not per-board.

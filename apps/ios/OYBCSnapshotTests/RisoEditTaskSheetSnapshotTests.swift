@@ -253,8 +253,7 @@ final class RisoEditTaskSheetSnapshotTests: XCTestCase {
             id: "et-compound",
             title: "Daily wellness routine",
             type: .compound,
-            operatorType: .and,
-            isOrdered: false
+            operatorType: .and
         )
     }
 }

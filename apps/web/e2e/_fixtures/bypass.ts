@@ -287,8 +287,6 @@ export interface SeedTask {
   /** Counting-task current progress; used by the "in progress" status
    *  filter and the detail page's progress bar. */
   currentCount?: number;
-  /** Compound-task ordering flag — true ⇒ Progress UX, false ⇒ Composite. */
-  isOrdered?: boolean;
   /** Mark the task as already completed (global completion state). */
   isCompleted?: boolean;
   /** Phase 6.3 — Achievement-task reference (specific-board mode).

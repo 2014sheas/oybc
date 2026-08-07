@@ -13,7 +13,7 @@ final class BoardWizardStagedEditsTests: XCTestCase {
         OYBC.Task(
             id: id, userId: "u1", title: title, description: nil, type: type,
             action: nil, unit: nil, maxCount: nil,
-            operatorType: nil, threshold: nil, isOrdered: nil,
+            operatorType: nil, threshold: nil,
             parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: 0, totalInstances: 0,
             isCompleted: false, completedAt: nil, currentCount: nil,

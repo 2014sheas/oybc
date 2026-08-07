@@ -38,7 +38,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     // Compound-specific (when type=.compound)
     var operatorType: OperatorType?
     var threshold: Int?
-    var isOrdered: Bool?
 
     // Phase 6.3 — Achievement-task cross-board references (only
     // meaningful when type == .achievement). Mutually exclusive; the
@@ -169,7 +168,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         maxCount: Int? = nil,
         operatorType: OperatorType? = nil,
         threshold: Int? = nil,
-        isOrdered: Bool? = nil,
         referencedBoardId: String? = nil,
         referencedTemplateId: String? = nil,
         achievementTrigger: AchievementTrigger? = nil,
@@ -208,7 +206,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.maxCount = maxCount
         self.operatorType = operatorType
         self.threshold = threshold
-        self.isOrdered = isOrdered
         self.referencedBoardId = referencedBoardId
         self.referencedTemplateId = referencedTemplateId
         self.achievementTrigger = achievementTrigger
@@ -244,7 +241,7 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case id, userId, title, description, type
         case action, unit, maxCount
         case operatorType = "operator"
-        case threshold, isOrdered
+        case threshold
         case referencedBoardId, referencedTemplateId
         case achievementTrigger, requiredCount
         case parentStepId, parentStepIndex, progressCounters
@@ -280,7 +277,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         maxCount = try container.decodeIfPresent(Int.self, forKey: .maxCount)
         operatorType = try container.decodeIfPresent(OperatorType.self, forKey: .operatorType)
         threshold = try container.decodeIfPresent(Int.self, forKey: .threshold)
-        isOrdered = try container.decodeIfPresent(Bool.self, forKey: .isOrdered)
         referencedBoardId = try container.decodeIfPresent(String.self, forKey: .referencedBoardId)
         referencedTemplateId = try container.decodeIfPresent(String.self, forKey: .referencedTemplateId)
         achievementTrigger = try container.decodeIfPresent(AchievementTrigger.self, forKey: .achievementTrigger)
@@ -342,7 +338,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encodeIfPresent(maxCount, forKey: .maxCount)
         try container.encodeIfPresent(operatorType, forKey: .operatorType)
         try container.encodeIfPresent(threshold, forKey: .threshold)
-        try container.encodeIfPresent(isOrdered, forKey: .isOrdered)
         try container.encodeIfPresent(referencedBoardId, forKey: .referencedBoardId)
         try container.encodeIfPresent(referencedTemplateId, forKey: .referencedTemplateId)
         try container.encodeIfPresent(achievementTrigger, forKey: .achievementTrigger)
@@ -435,7 +430,8 @@ enum TaskType: String, Codable, DatabaseValueConvertible {
     /// on the Task row; BoardTask remains placement-only.
     case achievement
     // Note: the legacy `.progress` case was removed post-unification. Former
-    // Progress tasks are now `.compound` with `isOrdered=true`. Migration
+    // Progress tasks are now `.compound` (isOrdered removed; see the
+    // in-order-compounds removal). Migration
     // helpers that need to recognise legacy `'progress'` rows in pre-migration
     // storage compare against the literal string directly via
     // `typeStr == "progress"` — there is no enum case for it.

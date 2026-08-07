@@ -67,9 +67,9 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         { type: TaskType.COUNTING, title: '', action: 'Drink', unit: 'glasses of water', maxCount: 8 },
         { type: TaskType.NORMAL, title: 'Try a new recipe' },
       ] as const;
-      // Former Progress tasks become compound + isOrdered=true under the
-      // unified model. Use createCompound with `autoCreate` children to
-      // mirror the legacy progress-task seed shape.
+      // Former Progress tasks become plain compound tasks under the unified
+      // model. Use createCompound with `autoCreate` children to mirror the
+      // legacy progress-task seed shape.
       const compoundSamples = [
         {
           title: 'Weekly workout',
@@ -87,7 +87,6 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         await createCompound(PLAYGROUND_USER_ID, {
           title: def.title,
           operator: OperatorType.AND,
-          isOrdered: true,
           children: def.steps.map((stepTitle) => ({
             autoCreate: { type: TaskType.NORMAL, title: stepTitle },
           })),

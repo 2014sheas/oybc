@@ -14,7 +14,7 @@ import SnapshotTesting
 /// Variants (light + dark each):
 ///   1. Empty — title blank, rule = All of, no subs
 ///   2. At least N — title filled, stepper row visible, no subs yet
-///   3. In order with subs — "1./2." prefix, one Normal + one Counting sub
+///   3. With subs — one Normal + one Counting sub
 ///   4. New-sub type = Counting — Goal/unit row + live preview visible
 ///
 /// Width: 393pt (iPhone 16). Height sized per variant to capture full content.
@@ -76,10 +76,10 @@ final class RisoCompoundPanelSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - 3. In order rule, two subs (Normal + Counting)
+    // MARK: - 3. All of rule, two subs (Normal + Counting)
 
-    func testCompoundInOrderWithSubsLight() {
-        let view = makeHost(seed: .inOrderWithSubs)
+    func testCompoundWithSubsLight() {
+        let view = makeHost(seed: .withSubs)
             .padding(16)
             .background(Color.risoPaper)
         assertSnapshot(
@@ -89,8 +89,8 @@ final class RisoCompoundPanelSnapshotTests: XCTestCase {
         )
     }
 
-    func testCompoundInOrderWithSubsDark() {
-        let view = makeHost(seed: .inOrderWithSubs)
+    func testCompoundWithSubsDark() {
+        let view = makeHost(seed: .withSubs)
             .padding(16)
             .background(Color.risoPaper)
         assertSnapshot(
@@ -208,8 +208,8 @@ fileprivate enum CompoundSeed {
     case empty
     /// Rule = At least N (stepper row visible), no subs yet.
     case atLeastN
-    /// Rule = In order, two subs added (Normal + Counting), showing "1./2." prefix.
-    case inOrderWithSubs
+    /// Rule = All of, two subs added (Normal + Counting).
+    case withSubs
     /// New-sub type flipped to Counting, showing Goal/unit row + preview.
     case newSubCounting
     /// New-sub type = Counting, (verb, noun) pair matches an existing
@@ -256,10 +256,10 @@ fileprivate enum CompoundSeed {
                 subGoalText: "5",
                 subUnitText: ""
             )
-        case .inOrderWithSubs:
+        case .withSubs:
             return RisoCompoundFieldsView.Seed(
                 title: "Morning routine",
-                rule: .inOrder,
+                rule: .allOf,
                 threshold: 2,
                 subs: [
                     .newNormal(title: "Meditate 10 min"),

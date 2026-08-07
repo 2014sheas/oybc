@@ -512,32 +512,29 @@ final class CreateFormViewModel {
     }
 
     /// Compound completion rule choices for the inline panel.
-    /// Maps to operator/threshold/isOrdered on the Task row verbatim.
+    /// Maps to operator/threshold on the Task row verbatim.
     enum CompoundRule {
-        /// All sub-tasks must complete — operatorType .and, isOrdered false.
+        /// All sub-tasks must complete — operatorType .and.
         case allOf
-        /// Any single sub-task completes the parent — operatorType .or, isOrdered false.
+        /// Any single sub-task completes the parent — operatorType .or.
         case anyOf
-        /// At least N sub-tasks must complete — operatorType .mOfN, threshold N, isOrdered false.
+        /// At least N sub-tasks must complete — operatorType .mOfN, threshold N.
         case atLeastN(threshold: Int)
-        /// All sub-tasks in strict order — operatorType .and, isOrdered true.
-        case inOrder
 
         var label: String {
             switch self {
             case .allOf:      return "All of"
             case .anyOf:      return "Any of"
             case .atLeastN:   return "At least N"
-            case .inOrder:    return "In order"
             }
         }
 
         /// The OperatorType value to write to the Task row.
         var operatorType: OperatorType {
             switch self {
-            case .allOf, .inOrder: return .and
-            case .anyOf:            return .or
-            case .atLeastN:         return .mOfN
+            case .allOf:    return .and
+            case .anyOf:    return .or
+            case .atLeastN: return .mOfN
             }
         }
 
@@ -546,9 +543,6 @@ final class CreateFormViewModel {
             if case .atLeastN(let n) = self { return n }
             return nil
         }
-
-        /// Whether to set Task.isOrdered = true.
-        var isOrdered: Bool { if case .inOrder = self { return true }; return false }
     }
 
     /// Validates the supplied inputs and either creates the compound task
@@ -557,15 +551,14 @@ final class CreateFormViewModel {
     /// save transaction (Bug #85).
     ///
     /// Rule → field mapping (verbatim from the inline compound builder):
-    ///   - All of  → operatorType .and,  isOrdered false, threshold nil
-    ///   - Any of  → operatorType .or,   isOrdered false, threshold nil
-    ///   - At least N → operatorType .mOfN, isOrdered false, threshold N
-    ///   - In order   → operatorType .and, isOrdered true,  threshold nil
+    ///   - All of  → operatorType .and,  threshold nil
+    ///   - Any of  → operatorType .or,   threshold nil
+    ///   - At least N → operatorType .mOfN, threshold N
     ///
     /// - Parameters:
     ///   - userId: Authenticated user id for Task.userId.
     ///   - title: Trimmed compound task title. Must be non-empty.
-    ///   - rule: Completion rule — drives operator/threshold/isOrdered.
+    ///   - rule: Completion rule — drives operator/threshold.
     ///   - subs: Ordered list of sub-task entries (min 2).
     ///   - onTaskCreated: Called on main queue with (parentId, title, "Compound").
     ///   - onLibraryReloadRequested: Called on main queue after an immediate-persist
@@ -600,7 +593,6 @@ final class CreateFormViewModel {
 
         let resolvedOperator = rule.operatorType
         let resolvedThreshold: Int? = resolvedOperator == .mOfN ? rule.threshold : nil
-        let resolvedIsOrdered = rule.isOrdered
 
         let parentTask = OYBC.Task(
             id: compoundId,
@@ -610,7 +602,6 @@ final class CreateFormViewModel {
             type: .compound,
             operatorType: resolvedOperator,
             threshold: resolvedThreshold,
-            isOrdered: resolvedIsOrdered,
             totalCompletions: 0,
             totalInstances: 0,
             createdAt: now,
@@ -807,7 +798,6 @@ final class CreateFormViewModel {
                 type: .compound,
                 operatorType: .and,
                 threshold: nil,
-                isOrdered: false,
                 totalCompletions: 0, totalInstances: 0,
                 createdAt: now, updatedAt: now, version: 1, isDeleted: false,
                 timeframe: timeframe, startDate: startDate, endDate: endDate

@@ -196,9 +196,9 @@ export async function applyRemoteSubdoc(
       //
       // Cascade unconditionally (matches iOS SyncService.runPullCascade).
       // The previous `completionChanged` gate (isCompleted/currentCount diff)
-      // missed compound-affecting edits — operator/threshold/isOrdered changes
-      // would leave boards with stale stats + completedLineIds even though
-      // the compound's derived state had flipped. The cascade is idempotent
+      // missed compound-affecting edits — operator/threshold changes would
+      // leave boards with stale stats + completedLineIds even though the
+      // compound's derived state had flipped. The cascade is idempotent
       // and small-N, so always running it is the safer + iOS-parity choice.
       if (collectionName === 'tasks') {
         // Let cascade errors propagate so the outer Dexie transaction rolls

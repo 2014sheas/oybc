@@ -125,11 +125,7 @@ struct RisoPoolRowEditorView: View {
 
     private var compoundFields: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Steps").risoSectionLabel(.risoRed)
-                Spacer()
-                inOrderToggle
-            }
+            Text("Steps").risoSectionLabel(.risoRed)
             ForEach($draft.children) { $step in
                 stepCard($step)
             }
@@ -142,23 +138,6 @@ struct RisoPoolRowEditorView: View {
                 .foregroundStyle(Color.risoMuted)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var inOrderToggle: some View {
-        Button {
-            draft.ordered.toggle()
-        } label: {
-            Text("In order")
-                .font(.risoBody(9.5, .extraBold))
-                .tracking(1)
-                .textCase(.uppercase)
-                .foregroundStyle(draft.ordered ? Color.risoPaper : Color.risoMuted)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(draft.ordered ? Color.risoInk : Color.risoPaper))
-                .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-        }
-        .buttonStyle(.plain)
     }
 
     private func stepCard(_ step: Binding<ChildPatch>) -> some View {

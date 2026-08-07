@@ -371,8 +371,7 @@ function buildTaskSubtitle(task: Task, taskStepCounts: Record<string, number>): 
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  // Former Progress = compound + isOrdered=true under the unified model.
-  if (task.type === TaskType.COMPOUND && task.isOrdered === true) {
+  if (task.type === TaskType.COMPOUND) {
     const n = taskStepCounts[task.id] ?? 0;
     if (n === 0) return '';
     return `${n} step${n === 1 ? '' : 's'}`;

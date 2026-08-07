@@ -6,7 +6,7 @@ import GRDB
 /// Matches TypeScript CompoundChild interface from @oybc/shared.
 /// Replaces task_steps (for progress) and composite_nodes leaves (for composite)
 /// under the unified compound model. The parent compound's operator + threshold
-/// + isOrdered fields live on the Task row itself.
+/// fields live on the Task row itself.
 ///
 /// The child can be ANY Task — primitive (normal/counting) or another compound.
 /// Nesting is natural: a compound's children may themselves resolve to compound
@@ -18,7 +18,7 @@ struct CompoundChild: Codable, FetchableRecord, PersistableRecord, Identifiable 
     var childTaskId: String      // FK to tasks (child — any type, including nested compound)
 
     // Ordering
-    var childIndex: Int          // 0-based; honored when parent.isOrdered
+    var childIndex: Int          // 0-based; children always render in this order
 
     // Timestamps
     var createdAt: String        // ISO8601

@@ -86,7 +86,6 @@ export function CompositeTaskWizard({
   const [title, setTitle] = useState('');
   const [operator, setOperator] = useState<OperatorType>(OperatorType.AND);
   const [threshold, setThreshold] = useState(2);
-  const [isOrdered, setIsOrdered] = useState(false);
   const [subtasks, setSubtasks] = useState<SubtaskDraft[]>([]);
 
   // UI state
@@ -234,7 +233,6 @@ export function CompositeTaskWizard({
     setTitle('');
     setOperator(OperatorType.AND);
     setThreshold(2);
-    setIsOrdered(false);
     setSubtasks([]);
     setCurrentStep(1);
     setErrorMessage(null);
@@ -301,7 +299,6 @@ export function CompositeTaskWizard({
         title: title.trim(),
         operator,
         threshold: operator === OperatorType.M_OF_N ? threshold : undefined,
-        isOrdered,
         children,
       });
 
@@ -333,8 +330,6 @@ export function CompositeTaskWizard({
           onTitleChange={setTitle}
           operator={operator}
           onOperatorChange={setOperator}
-          isOrdered={isOrdered}
-          onOrderedChange={setIsOrdered}
           onCancel={resetForm}
           onNext={() => setCurrentStep(2)}
         />

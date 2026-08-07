@@ -14,8 +14,7 @@ import type { TaskLibrary } from '../createPage/useTaskLibrary';
 
 /** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
  *  adds ACHIEVEMENT (which the wizard hides because achievements can't
- *  be placed on a board pool). 'compound' matches ALL compound tasks
- *  (both ordered and unordered — the isOrdered distinction is internal). */
+ *  be placed on a board pool). 'compound' matches ALL compound tasks. */
 export type TypeFilter =
   | 'all'
   | 'normal'
@@ -278,9 +277,8 @@ export function matchesTypeFilter(task: Task, filter: TypeFilter): boolean {
     case 'counting':
       return task.type === TaskType.COUNTING;
     case 'compound':
-      // Matches ALL compound tasks — both ordered (formerly "progress")
-      // and unordered (formerly "composite"). The isOrdered flag is an
-      // internal implementation detail; users see a single "Compound" chip.
+      // Matches ALL compound tasks — formerly "progress" and "composite"
+      // collapsed onto a single "Compound" chip under the unified model.
       return task.type === TaskType.COMPOUND;
     case 'achievement':
       return task.type === TaskType.ACHIEVEMENT;

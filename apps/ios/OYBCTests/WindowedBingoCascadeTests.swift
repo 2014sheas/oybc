@@ -41,7 +41,7 @@ final class WindowedBingoCascadeTests: XCTestCase {
         return Task(
             id: id, userId: userId, title: id, description: nil, type: .normal,
             action: nil, unit: nil, maxCount: nil,
-            operatorType: nil, threshold: nil, isOrdered: nil,
+            operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil,
             achievementTrigger: nil, requiredCount: nil,
             parentStepId: nil, parentStepIndex: nil, progressCounters: nil,

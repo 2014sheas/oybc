@@ -641,9 +641,6 @@ struct RisoLibrarySheetView: View {
         case .compound:
             let n = effectiveChildrenByCompound[task.id]?.count ?? 0
             guard n > 0 else { return nil }
-            if task.isOrdered == true {
-                return "\(n) step\(n == 1 ? "" : "s") · in order"
-            }
             let op = task.operatorType
             switch op {
             case .or: return "Any of \(n)"

@@ -34,7 +34,7 @@ final class SealingTests: XCTestCase {
         let now = AppDatabase.currentTimestamp()
         return Task(
             id: id, userId: userId, title: "N", description: nil, type: .normal,
-            action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil, isOrdered: nil,
+            action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
             parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: 0, totalInstances: 0,
@@ -52,7 +52,7 @@ final class SealingTests: XCTestCase {
         let now = AppDatabase.currentTimestamp()
         return Task(
             id: id, userId: userId, title: "C", description: nil, type: .counting,
-            action: "Pushups", unit: "reps", maxCount: maxCount, operatorType: nil, threshold: nil, isOrdered: nil,
+            action: "Pushups", unit: "reps", maxCount: maxCount, operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
             parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: 0, totalInstances: 0,

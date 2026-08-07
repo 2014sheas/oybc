@@ -109,9 +109,8 @@ export async function copyTask(
  * which the brainstorm explicitly ruled out.
  *
  * Throws if the source is not a compound, or if the source's required
- * operator/isOrdered fields are missing (defensive: the schema enforces
- * them but a programmatic call site could in theory pass a malformed
- * source).
+ * operator field is missing (defensive: the schema enforces it but a
+ * programmatic call site could in theory pass a malformed source).
  */
 export async function copyCompound(
   userId: string,
@@ -123,9 +122,6 @@ export async function copyCompound(
   }
   if (source.operator === undefined) {
     throw new Error('compound source missing operator field');
-  }
-  if (source.isOrdered === undefined) {
-    throw new Error('compound source missing isOrdered field');
   }
 
   // Fetch live children, ordered. `compoundChildren` has no boolean
@@ -143,7 +139,6 @@ export async function copyCompound(
     description: overrides.description ?? source.description,
     operator: source.operator,
     threshold: source.threshold,
-    isOrdered: source.isOrdered,
     timeframe: source.timeframe,
     startDate: source.startDate,
     endDate: source.endDate,

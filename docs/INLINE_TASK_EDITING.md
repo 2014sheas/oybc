@@ -108,7 +108,6 @@ failure rolls back the board record too, and the safety-net pull retries cleanly
     acceptable**, per product decision).
   - **add a step** = create a new child `Task` (+ its progress/counting fields)
     and a `compound_children` link.
-  - **in-order toggle** = `Task.isOrdered` on the parent compound.
 
 Thread these into `saveWizardBoard` via a new parameter (e.g.
 `stagedEdits: [String: TaskEditPatch]`) rather than a separate write block, so
@@ -122,7 +121,7 @@ they share the transaction. Version-bump every mutated row.
   marked task's badge — replaces the old leading star column, which left no room
   for a pencil at 393pt). Elsewhere the badge is a plain indicator.
 - **Title + detail** (1 line each). Detail strings:
-  counting → `"Run · goal 5 km"`; compound → `"3 steps · 1 with progress · in order"`
+  counting → `"Run · goal 5 km"`; compound → `"3 steps · 1 with progress"`
   (progress clause only when >0); achievement → `"Watch a board · First Bingo"`;
   shared simple → `"On 2 other boards"`; center → prefix `"Center square · "`.
 - **Pencil button** (32×32, ≥44pt hit area via `.contentShape` + padding) —
@@ -138,7 +137,7 @@ they share the transaction. Version-bump every mutated row.
 - **Counting** — Action / Goal / Unit (flex 1.4 / 0.7 / 1) + live
   `"Reads as: Run — 5 — km"` (`--riso-blue`), same builder as
   `SquareEditTaskSheet.countingPreview`.
-- **Compound** — "STEPS" label + **In order** pill toggle; per-step card (index
+- **Compound** — "STEPS" label; per-step card (index
   chip · title field · type indicator S/C · delete ✕); a **progress step** expands
   indented with Action/Goal/Unit + a "Reads as:" line; two dashed buttons
   **+ Simple step** / **+ Progress step**; the note "A step's type is fixed once
@@ -213,7 +212,7 @@ and device testing.
 | PR | Scope | Screens |
 |---|---|---|
 | **1** | Pool ordering (`poolOrder`) + row chrome (pencil, gold center-marker on the badge, "TASKS TAB" marker, detail strings) + `RisoPoolRowEditorView` for **simple & counting** + `stagedEdits` map + apply-at-create + validation + undo/toast + snapshots (light+dark) | 1, 2, 3, 5, 6 |
-| **2** | **Compound** step editing (step cards, +simple/+progress, delete/unlink, in-order toggle, progress children, its validation) + snapshots | 4, 7 |
+| **2** | **Compound** step editing (step cards, +simple/+progress, delete/unlink, progress children, its validation) + snapshots | 4, 7 |
 
 ## Testing
 

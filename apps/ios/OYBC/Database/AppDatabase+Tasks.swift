@@ -807,15 +807,6 @@ extension AppDatabase {
                     "compound source missing operatorType field"]
             )
         }
-        guard let isOrdered = source.isOrdered else {
-            throw NSError(
-                domain: "AppDatabase.copyCompound",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey:
-                    "compound source missing isOrdered field"]
-            )
-        }
-
         let now = Self.currentTimestamp()
         let newParentId = Self.generateUUID()
 
@@ -827,7 +818,6 @@ extension AppDatabase {
             type: .compound,
             operatorType: op,
             threshold: source.threshold,
-            isOrdered: isOrdered,
             totalCompletions: 0,
             totalInstances: 0,
             isCompleted: false,

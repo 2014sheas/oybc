@@ -47,7 +47,6 @@ struct RisoCompoundFieldsView: View {
         case allOf    = "All of"
         case anyOf    = "Any of"
         case atLeastN = "At least N"
-        case inOrder  = "In order"
 
         /// Converts to the VM-layer rule (threshold is only used for `.atLeastN`).
         func toVMRule(threshold: Int) -> CreateFormViewModel.CompoundRule {
@@ -55,7 +54,6 @@ struct RisoCompoundFieldsView: View {
             case .allOf:    return .allOf
             case .anyOf:    return .anyOf
             case .atLeastN: return .atLeastN(threshold: threshold)
-            case .inOrder:  return .inOrder
             }
         }
     }
@@ -456,18 +454,12 @@ struct RisoCompoundFieldsView: View {
 
     // MARK: - Sub chips
 
-    /// Rendered list of added sub-task chips. Ordered rule shows "1." prefix;
-    /// counting subs show a small blue type-dot; compound subs show a green dot.
+    /// Rendered list of added sub-task chips. Counting subs show a small
+    /// blue type-dot; compound subs show a green dot.
     private var compoundSubChips: some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(Array(compoundSubs.enumerated()), id: \.offset) { index, sub in
                 HStack(spacing: 5) {
-                    // Ordered index prefix
-                    if compoundRule == .inOrder {
-                        Text("\(index + 1).")
-                            .font(.risoHead(11, .extraBold))
-                            .foregroundStyle(Color.risoInk)
-                    }
                     // Type dot for non-normal tasks
                     if sub.taskType == .counting {
                         Circle()

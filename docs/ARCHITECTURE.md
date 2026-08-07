@@ -94,7 +94,7 @@ User completes task → Update local DB immediately (< 10ms) → UI updates
 users                   -- Cached user profiles
 boards                  -- Board documents
 tasks                   -- Task definitions (reusable across boards). Compounds carry
-                           operator + threshold + isOrdered here. Completion fields on
+                           operator + threshold here. Completion fields on
                            the Task row are the LIFETIME view (library caches over
                            task_events); per-board rendering evaluates against the
                            board's window — see §Windowed Completion below.

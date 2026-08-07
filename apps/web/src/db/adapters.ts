@@ -125,14 +125,13 @@ export function taskToSquareData(
       type: 'compound',
       operator: task.operator ?? undefined,
       threshold: task.threshold ?? undefined,
-      isOrdered: task.isOrdered ?? undefined,
       children,
     };
   }
 
   // Post-unification: only NORMAL / COUNTING reach this branch (compound
   // is handled above). The legacy 'progress' SquareData type is dead — its
-  // role is taken by 'compound' with isOrdered=true.
+  // role is taken by 'compound'.
   const type = task.type === TaskType.COUNTING ? 'counting' : 'normal';
 
   // `taskSteps` is intentionally unused in the post-unification path; the

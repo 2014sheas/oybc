@@ -344,7 +344,7 @@ struct RisoTaskDetailContentView: View {
             if let op = task.operatorType {
                 switch op {
                 case .or: ruleLabel = "any of \(n)"
-                case .and: ruleLabel = task.isOrdered == true ? "in order" : "all of \(n)"
+                case .and: ruleLabel = "all of \(n)"
                 case .mOfN:
                     let threshold = task.threshold ?? n
                     ruleLabel = "≥\(threshold) of \(n)"
