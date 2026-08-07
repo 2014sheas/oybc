@@ -32,7 +32,7 @@ const BEATS: ReadonlyArray<{ n: string; state: BeatState; h: string; p: string; 
 const TYPES: ReadonlyArray<{ b: string; cls: string; h: string; p: string }> = [
   { b: 'N', cls: styles.normal, h: 'Normal', p: 'A simple done / not-done check. Tap it when you’ve done the thing.' },
   { b: 'C', cls: styles.count, h: 'Counting', p: 'A goal with a number — “Run 5 km.” Tap +/− to log progress.' },
-  { b: 'K', cls: styles.cmnd, h: 'Compound', p: 'Multi-step tasks — all of, any of, or a set number. One square, several moves.' },
+  { b: 'K', cls: styles.cmnd, h: 'Compound', p: 'Multi-step tasks — all of, any of, or at least N. One square, several moves.' },
   { b: 'A', cls: styles.achv, h: 'Achievement', p: 'Watches a board or template and completes on a bingo or GREENLOG.' },
 ];
 

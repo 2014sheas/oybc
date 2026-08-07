@@ -184,10 +184,8 @@ export function BuildStep({
     if (q.length === 0) return true;
     return row.title.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q);
   });
-  // Note: 'compound' filter matches ALL compound tasks (both ordered and
-  // unordered), because both kinds appear in the compositeRows list with
-  // type='compound'. The ordered/unordered distinction is an implementation
-  // detail users don't see at this picker level.
+  // Note: the 'compound' filter matches all compound tasks (they appear in the
+  // compositeRows list with type='compound').
 
   const showEmptyLibrary = libraryRows.length === 0;
   const showNoMatches = !showEmptyLibrary && visibleRows.length === 0;

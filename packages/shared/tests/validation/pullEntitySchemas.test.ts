@@ -165,6 +165,17 @@ describe('TaskSchema pull validation', () => {
     expect(TaskSchema.safeParse(validTask()).success).toBe(true);
   });
 
+  it('tolerates a legacy isOrdered field (retired) — strips it, does not reject', () => {
+    // A compound task synced from an unmigrated peer still carries the retired
+    // `isOrdered` bool. TaskSchema is a non-strict object, so it must parse
+    // (stripping the unknown key) rather than skip the doc forever.
+    const result = TaskSchema.safeParse(validTask({ isOrdered: true }));
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect('isOrdered' in result.data).toBe(false);
+    }
+  });
+
   it('rejects a task with version = 0', () => {
     expect(TaskSchema.safeParse(validTask({ version: 0 })).success).toBe(false);
   });
