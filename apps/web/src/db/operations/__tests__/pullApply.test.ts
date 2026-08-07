@@ -10,8 +10,6 @@ import {
   SYNC_COLLECTIONS,
   type Board,
   type BoardTask,
-  type CompositeNode,
-  type CompositeTask,
   type CompoundChild,
   type CoreBoardDefault,
   type DefaultPool,
@@ -21,7 +19,6 @@ import {
   type SyncCollection,
   type Task,
   type TaskEvent,
-  type TaskStep,
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../pullApply';
@@ -47,24 +44,15 @@ import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../pullApply';
  * collection", so the test must assert that, not just the ones broken
  * today.
  *
- * `taskSteps` / `compositeTasks` / `compositeNodes` are excluded from the
- * loop: their Dexie tables were DROPPED (`null`'d) in the Compound Tasks
- * Unification migration (`database.ts` v4) — no live table exists to land
- * a doc in, and `pullSync`/`attachPullListeners` never call
- * `applyRemoteSubdoc` for them in production (`LEGACY_PULL_SKIP_COLLECTIONS`
- * short-circuits before the call). `defaultPools` joined that same skip set
- * in P1 but its Dexie table is still live (kept for migration backfill
- * reads), so it stays in the loop as a defense-in-depth check on the
- * transaction-scope fix itself.
+ * `defaultPools` is in `LEGACY_PULL_SKIP_COLLECTIONS` but its Dexie table is
+ * still live (kept for migration backfill reads), so it stays in the loop as
+ * a defense-in-depth check on the transaction-scope fix itself. (The retired
+ * `taskSteps`/`compositeTasks`/`compositeNodes` collections were removed from
+ * the sync contract entirely once their tables were dropped, so there's
+ * nothing left to exclude here.)
  */
 
-const DROPPED_TABLES: ReadonlySet<SyncCollection> = new Set([
-  'taskSteps',
-  'compositeTasks',
-  'compositeNodes',
-]);
-
-const LIVE_SYNC_COLLECTIONS = SYNC_COLLECTIONS.filter((c) => !DROPPED_TABLES.has(c));
+const LIVE_SYNC_COLLECTIONS = SYNC_COLLECTIONS;
 
 const USER = 'user-1';
 const NOW = '2026-07-19T00:00:00.000Z';
@@ -128,19 +116,6 @@ const FIXTURES: Record<
       isDeleted: false,
     }),
   },
-  taskSteps: {
-    doc: (): TaskStep => ({
-      id: uuid(3),
-      taskId: uuid(2),
-      stepIndex: 0,
-      title: 'Step',
-      type: TaskType.NORMAL,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    }),
-  },
   boardTasks: {
     doc: (): BoardTask => ({
       id: uuid(4),
@@ -149,31 +124,6 @@ const FIXTURES: Record<
       row: 0,
       col: 0,
       isCenter: false,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    }),
-  },
-  compositeTasks: {
-    doc: (): CompositeTask => ({
-      id: uuid(5),
-      userId: USER,
-      title: 'Composite',
-      rootNodeId: uuid(6),
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    }),
-  },
-  compositeNodes: {
-    doc: (): CompositeNode => ({
-      id: uuid(6),
-      compositeTaskId: uuid(5),
-      nodeIndex: 0,
-      nodeType: 'operator',
-      operatorType: OperatorType.AND,
       createdAt: NOW,
       updatedAt: NOW,
       version: 1,

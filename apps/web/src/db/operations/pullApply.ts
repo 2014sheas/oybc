@@ -1,10 +1,7 @@
 import {
   BoardSchema,
   TaskSchema,
-  TaskStepSchema,
   BoardTaskSchema,
-  CompositeTaskSchema,
-  CompositeNodeSchema,
   CompoundChildSchema,
   RecurringBoardTemplateSchema,
   DefaultPoolSchema,
@@ -286,10 +283,7 @@ type RemoteSchema = {
 export const COLLECTION_SCHEMAS: Record<SyncCollection, RemoteSchema> = {
   boards: BoardSchema,
   tasks: TaskSchema,
-  taskSteps: TaskStepSchema,
   boardTasks: BoardTaskSchema,
-  compositeTasks: CompositeTaskSchema,
-  compositeNodes: CompositeNodeSchema,
   compoundChildren: CompoundChildSchema,
   recurringBoardTemplates: RecurringBoardTemplateSchema,
   defaultPools: DefaultPoolSchema,

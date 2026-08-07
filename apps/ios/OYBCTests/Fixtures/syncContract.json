@@ -3,10 +3,7 @@
   "syncCollections": [
     "boards",
     "tasks",
-    "taskSteps",
     "boardTasks",
-    "compositeTasks",
-    "compositeNodes",
     "compoundChildren",
     "recurringBoardTemplates",
     "defaultPools",
@@ -17,7 +14,6 @@
   "userScopedSyncCollections": [
     "boards",
     "tasks",
-    "compositeTasks",
     "recurringBoardTemplates",
     "defaultPools",
     "taskEvents",
@@ -25,9 +21,6 @@
     "coreBoardDefaults"
   ],
   "legacyPullSkipCollections": [
-    "taskSteps",
-    "compositeTasks",
-    "compositeNodes",
     "defaultPools"
   ]
 }

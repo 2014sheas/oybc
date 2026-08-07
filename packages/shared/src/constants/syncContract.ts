@@ -32,14 +32,10 @@
  * processes each collection independently), but the order is preserved
  * here to keep git history/diffs against that original list minimal.
  *
- * Includes three collections retired at the data-model level in the
- * Compound Tasks Unification (`taskSteps`, `compositeTasks`,
- * `compositeNodes` — replaced by `compound_children` / `compoundChildren`).
- * They stay in this list so the **push** path can drain DELETE
- * tombstones produced by the migration cleanup; see
- * `LEGACY_PULL_SKIP_COLLECTIONS` for why the **pull** path must not read
- * from them. See CLAUDE.md's "Task model — Compound Tasks Unification"
- * section for the full migration story.
+ * The three Compound-Tasks-Unification collections (`taskSteps`,
+ * `compositeTasks`, `compositeNodes`) were removed from this list once
+ * their tables were dropped and every device had drained its migration
+ * tombstones — see CLAUDE.md's "Task model" section for the history.
  *
  * Consumers: web `SYNCABLE_COLLECTIONS` in `syncService.ts`; iOS
  * `syncableCollections` (the `firestoreName` half of each tuple) in
@@ -48,10 +44,7 @@
 export const SYNC_COLLECTIONS = [
   'boards',
   'tasks',
-  'taskSteps',
   'boardTasks',
-  'compositeTasks',
-  'compositeNodes',
   'compoundChildren',
   'recurringBoardTemplates',
   'defaultPools',
@@ -83,7 +76,6 @@ export type SyncCollection = (typeof SYNC_COLLECTIONS)[number];
 export const USER_SCOPED_SYNC_COLLECTIONS = [
   'boards',
   'tasks',
-  'compositeTasks',
   'recurringBoardTemplates',
   'defaultPools',
   // TaskEvent rows carry a top-level `userId` (docs/WINDOWED_COMPLETION.md
@@ -97,26 +89,23 @@ export const USER_SCOPED_SYNC_COLLECTIONS = [
 /**
  * Subset of `SYNC_COLLECTIONS` that the **pull** path must skip even
  * though they remain in the full syncable list so the **push** path can
- * drain their DELETE tombstones. Their underlying GRDB/Dexie tables were
- * dropped at the model level in the Compound Tasks Unification — pulling
- * a document into a retired collection would either resurrect a legacy
- * row that no live code reads, or (on iOS) attempt to upsert into a
- * dropped table.
+ * drain their DELETE tombstones. Pulling a document into a retired
+ * collection would resurrect a row that no live code reads (or, where the
+ * table has been dropped, attempt to upsert into a nonexistent table).
  *
- * `defaultPools` joined this list in P1 (Task Pools + Recurring Boards
- * Rework, docs/POOLS_RECURRING.md §Migration): first-launch backfill
- * migrates every `DefaultPool` row into a `Pool` + `CoreBoardDefault`
- * pair and soft-deletes the `DefaultPool` row. It stays in
- * `SYNC_COLLECTIONS` so the push path can drain those DELETE tombstones
- * (same composite-tables precedent), but the pull path must not
- * resurrect a `DefaultPool` row a peer already migrated away.
+ * `defaultPools` is the current member (the Compound-Tasks-Unification
+ * collections that used the same pattern were fully removed from the
+ * contract once their tables were dropped). It joined this list in P1
+ * (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+ * §Migration): first-launch backfill migrates every `DefaultPool` row
+ * into a `Pool` + `CoreBoardDefault` pair and soft-deletes the
+ * `DefaultPool` row. It stays in `SYNC_COLLECTIONS` so the push path can
+ * drain those DELETE tombstones, but the pull path must not resurrect a
+ * `DefaultPool` row a peer already migrated away.
  *
  * Consumers: web `LEGACY_PULL_SKIP_COLLECTIONS` in `syncService.ts`; iOS
  * `legacyPullSkipCollections` in `SyncService.swift`.
  */
 export const LEGACY_PULL_SKIP_COLLECTIONS = [
-  'taskSteps',
-  'compositeTasks',
-  'compositeNodes',
   'defaultPools',
 ] as const satisfies readonly SyncCollection[];

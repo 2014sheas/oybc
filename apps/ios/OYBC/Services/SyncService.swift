@@ -39,10 +39,7 @@ extension Notification.Name {
 let syncableCollections: [(firestoreName: String, grdbTable: String)] = [
     ("boards", "boards"),
     ("tasks", "tasks"),
-    ("taskSteps", "task_steps"),                      // legacy — kept so push can drain v7's DELETE sync ops
     ("boardTasks", "board_tasks"),
-    ("compositeTasks", "composite_tasks"),            // legacy — same
-    ("compositeNodes", "composite_nodes"),            // legacy — same
     ("compoundChildren", "compound_children"),
     ("recurringBoardTemplates", "recurring_board_templates"), // Phase 6.2
     ("defaultPools", "default_pools"),                       // Phase 6.X — legacy, see legacyPullSkipCollections
@@ -67,7 +64,7 @@ private let allowedGRDBTables: Set<String> = Set(syncableCollections.map(\.grdbT
 /// enforced by `OYBCTests/SyncContractTests.swift`. Not `private` so
 /// that test can see it via `@testable import OYBC`.
 let userScopedCollections: Set<String> = [
-    "boards", "tasks", "compositeTasks", "recurringBoardTemplates",
+    "boards", "tasks", "recurringBoardTemplates",
     "defaultPools",
     // TaskEvent rows carry a top-level `userId` (Windowed Completion).
     "taskEvents",
@@ -75,30 +72,26 @@ let userScopedCollections: Set<String> = [
     "pools", "coreBoardDefaults",
 ]
 
-/// Collections whose GRDB tables are retired from live use by a
-/// first-launch data migration — `taskSteps` / `compositeTasks` /
-/// `compositeNodes` are NOT actually dropped by the v7 data migration;
-/// MigrationV7Helpers only DELETEs their rows (and enqueues the
-/// corresponding Firestore tombstones) so the sync queue can drain. The
-/// tables themselves persist for now — a future cleanup migration can
-/// `DROP TABLE` them once the sync queue is verified empty across
-/// devices. `defaultPools` (P1 — Task Pools + Recurring Boards Rework)
-/// keeps its `default_pools` table, but every row is soft-deleted by the
-/// v25 migration (docs/POOLS_RECURRING.md §Migration), so pulling a
-/// peer's still-live `DefaultPool` doc (a mixed-version device that
-/// hasn't migrated yet) would resurrect a row the local migration
-/// already tombstoned. All four stay in `syncableCollections` so the
-/// push path can drain DELETE sync ops for pre-migration rows (cleaning
-/// up Firestore), but the pull path must skip them — for the first
-/// three, upserting into a row-emptied-but-still-live table would
-/// resurrect rows the migration deleted; for `defaultPools`, upserting
-/// would fight the local migration's tombstone.
+/// Collections whose GRDB table is retired from live use by a
+/// first-launch data migration but still receives sync tombstone drains.
+/// `defaultPools` (P1 — Task Pools + Recurring Boards Rework) keeps its
+/// `default_pools` table, but every row is soft-deleted by the v25
+/// migration (docs/POOLS_RECURRING.md §Migration), so pulling a peer's
+/// still-live `DefaultPool` doc (a mixed-version device that hasn't
+/// migrated yet) would resurrect a row the local migration already
+/// tombstoned. It stays in `syncableCollections` so the push path can
+/// drain DELETE sync ops for pre-migration rows (cleaning up Firestore),
+/// but the pull path must skip it so upserting doesn't fight the local
+/// migration's tombstone. (The Compound-Tasks-Unification collections
+/// `taskSteps`/`compositeTasks`/`compositeNodes` that used this same
+/// pattern were removed from the sync contract entirely once their
+/// tables were dropped.)
 ///
 /// Must set-match `@oybc/shared`'s `LEGACY_PULL_SKIP_COLLECTIONS` —
 /// enforced by `OYBCTests/SyncContractTests.swift`. Not `private` so
 /// that test can see it via `@testable import OYBC`.
 let legacyPullSkipCollections: Set<String> = [
-    "taskSteps", "compositeTasks", "compositeNodes", "defaultPools",
+    "defaultPools",
 ]
 
 /// Validates the baseline sync-safety invariants that every pulled
@@ -787,7 +780,7 @@ final class SyncService: ObservableObject {
         guard let payloadStr = try Self.encodedLocalPayload(
             db: db, entityType: entityType, entityId: entityId
         ) else {
-            // Legacy drain-only tables (taskSteps/composite*) have no live
+            // Drain-only legacy tables (e.g. defaultPools) have no live
             // model path and never need a reassert.
             log("No typed re-assert payload for \(entityType)/\(entityId) — skipped")
             return
