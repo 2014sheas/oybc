@@ -1,24 +1,24 @@
-import type { StepFormState } from '../progressStepUtils';
+import type { SubtaskFormState } from '../subtaskDraftUtils';
 
-/** The inline task types a SubtaskCard can create. Composite sub-composites
- *  can't be built inline — they must already exist in the library. Ordered
- *  compounds (formerly "progress") are created through the Compound wizard,
- *  not as inline subtasks. */
+/** The inline task types a SubtaskCard can create. Nested compound-of-
+ *  compound subtasks can't be built inline — they must already exist in
+ *  the library. Ordered compounds (formerly "progress") are created
+ *  through the Compound wizard, not as inline subtasks. */
 export type InlineSubtaskType = 'normal' | 'counting';
 
-/** Existing-mode draft: points at a Task or CompositeTask already in the
+/** Existing-mode draft: points at a Task or compound Task already in the
  *  library. `selectionType` is derived from which list the id came from
  *  and used purely for the chip badge in Review. */
 export interface ExistingSubtaskDraft {
   id: string;
   mode: 'existing';
-  selectionType: 'task' | 'composite';
+  selectionType: 'task' | 'compound';
   selectedId: string;
 }
 
 /** Inline-mode draft: the user is creating a brand-new Task inside the
- *  composite. On save, the Task row lands in the library AND becomes a
- *  leaf node on the composite. */
+ *  compound. On save, the Task row lands in the library AND becomes a
+ *  child of the compound. */
 export interface InlineSubtaskDraft {
   id: string;
   mode: 'inline';
@@ -27,7 +27,7 @@ export interface InlineSubtaskDraft {
   action: string;
   unit: string;
   maxCountStr: string;
-  steps: StepFormState[];
+  steps: SubtaskFormState[];
   /** When a user clicks a different type button while the current type
    *  has dirty fields, the click is pending until they confirm switching
    *  (and losing the current fields). Null/undefined = no pending switch. */
@@ -46,7 +46,7 @@ export interface InlineSubtaskDraft {
 export type SubtaskDraft = ExistingSubtaskDraft | InlineSubtaskDraft;
 
 /** Result of checking whether a subtask draft is ready to ship as part of
- *  the composite. `message` is a plain-English hint suitable for inline
+ *  the compound. `message` is a plain-English hint suitable for inline
  *  rendering under the card. */
 export interface SubtaskReadiness {
   ready: boolean;
@@ -64,7 +64,7 @@ export function evaluateSubtaskReadiness(
 ): SubtaskReadiness {
   if (draft.mode === 'existing') {
     if (!draft.selectedId) {
-      return { ready: false, message: 'Pick a task or composite from your library.' };
+      return { ready: false, message: 'Pick a task or compound from your library.' };
     }
     if (excludedIds.has(draft.selectedId)) {
       return { ready: false, message: 'Already selected in another card.' };

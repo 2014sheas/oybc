@@ -8,7 +8,7 @@ import {
 } from '@oybc/shared';
 import { createTask } from '../../db/operations/tasks';
 import { generateUUID, currentTimestamp } from '../../db/utils';
-import { type StepFormState, createEmptyStep } from '../../components/progressStepUtils';
+import { type SubtaskFormState, createEmptySubtask } from '../../components/subtaskDraftUtils';
 
 /**
  * Payload returned by the form's deferred-persist path (wizard mode).
@@ -208,7 +208,7 @@ export interface UseCreateFormState {
   action: string;
   unit: string;
   maxCountStr: string;
-  steps: StepFormState[];
+  steps: SubtaskFormState[];
   errors: FormErrors;
   isSubmitting: boolean;
 
@@ -252,7 +252,7 @@ export interface UseCreateFormState {
   clearTemplate: () => void;
 
   // Step-array helpers
-  updateStep: (stepId: string, field: keyof StepFormState, value: string) => void;
+  updateStep: (stepId: string, field: keyof SubtaskFormState, value: string) => void;
   addStep: () => void;
   removeStep: (stepId: string) => void;
 
@@ -268,7 +268,7 @@ export interface UseCreateFormState {
  * with the right shape per task type (NORMAL / COUNTING / ACHIEVEMENT),
  * hands the new task to `onTaskCreated`, and resets the form.
  * Errors surface as `errors.general`. Compound creation doesn't flow
- * through this hook — it goes through the CompositeTaskWizard.
+ * through this hook — it goes through the CompoundTaskWizard.
  */
 export function useCreateFormState({
   userId,
@@ -285,7 +285,7 @@ export function useCreateFormState({
   const [action, setAction] = useState('');
   const [unit, setUnit] = useState('');
   const [maxCountStr, setMaxCountStr] = useState('');
-  const [steps, setSteps] = useState<StepFormState[]>([createEmptyStep()]);
+  const [steps, setSteps] = useState<SubtaskFormState[]>([createEmptySubtask()]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deriveFromTask, setDeriveFromTask] = useState<Task | null>(null);
@@ -414,7 +414,7 @@ export function useCreateFormState({
     setErrors((prev) => ({ ...prev, action: undefined, unit: undefined, maxCount: undefined }));
   }, []);
 
-  const updateStep = useCallback((stepId: string, field: keyof StepFormState, value: string) => {
+  const updateStep = useCallback((stepId: string, field: keyof SubtaskFormState, value: string) => {
     setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, [field]: value } : s)));
     setErrors((prev) => {
       if (!prev.steps?.[stepId]) return prev;
@@ -429,7 +429,7 @@ export function useCreateFormState({
   }, []);
 
   const addStep = useCallback(() => {
-    setSteps((prev) => [...prev, createEmptyStep()]);
+    setSteps((prev) => [...prev, createEmptySubtask()]);
   }, []);
 
   const removeStep = useCallback((stepId: string) => {
@@ -450,7 +450,7 @@ export function useCreateFormState({
     setAction('');
     setUnit('');
     setMaxCountStr('');
-    setSteps([createEmptyStep()]);
+    setSteps([createEmptySubtask()]);
     setErrors({});
     setDeriveFromTask(null);
     setAchievementMode('specificBoard');

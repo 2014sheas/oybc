@@ -15,7 +15,7 @@ export interface SetupStepProps {
 }
 
 /**
- * Step 1 of the composite mini-wizard. Title + operator + (conditional)
+ * Step 1 of the compound mini-wizard. Title + operator + (conditional)
  * threshold. Next is blocked until the title is non-empty; validation
  * is live, not deferred to submit.
  */
@@ -40,16 +40,16 @@ export function SetupStep({
   return (
     <div className={styles.container}>
       <div className={styles.fieldGroup}>
-        <label className={styles.label} htmlFor="composite-wizard-title">
+        <label className={styles.label} htmlFor="compound-wizard-title">
           Title<span className={styles.required}>*</span>
         </label>
         <input
-          id="composite-wizard-title"
+          id="compound-wizard-title"
           type="text"
           className={styles.titleInput}
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="Enter composite task title"
+          placeholder="Enter compound task title"
           maxLength={TITLE_MAX_LENGTH + 1}
         />
         <span className={getCharCountClass(title.length, TITLE_MAX_LENGTH, styles)}>

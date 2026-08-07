@@ -1,5 +1,5 @@
 import { OperatorType, type Task } from '@oybc/shared';
-import type { SubtaskDraft } from './compositeSubtaskDraft';
+import type { SubtaskDraft } from './compoundSubtaskDraft';
 import styles from './ReviewStep.module.css';
 
 export interface ReviewStepProps {
@@ -7,10 +7,10 @@ export interface ReviewStepProps {
   operator: OperatorType;
   threshold: number;
   subtasks: SubtaskDraft[];
-  /** Library tasks + composites — needed to resolve existing-mode chips
+  /** Library tasks + compounds — needed to resolve existing-mode chips
    *  to their actual titles and metadata. */
   allTasks: Task[];
-  allCompositeTasks: Task[];
+  allCompoundTasks: Task[];
   isSubmitting: boolean;
   errorMessage: string | null;
   onBack: () => void;
@@ -35,7 +35,7 @@ export function ReviewStep({
   threshold,
   subtasks,
   allTasks,
-  allCompositeTasks,
+  allCompoundTasks,
   isSubmitting,
   errorMessage,
   onBack,
@@ -77,7 +77,7 @@ export function ReviewStep({
               <SubtaskReviewChip
                 draft={s}
                 allTasks={allTasks}
-                allCompositeTasks={allCompositeTasks}
+                allCompoundTasks={allCompoundTasks}
                 index={idx + 1}
                 onOpenTask={onOpenTask}
               />
@@ -120,7 +120,7 @@ export function ReviewStep({
           disabled={isSubmitting}
         >
           {isSubmitting && <span className={styles.spinner} aria-hidden="true" />}
-          {isSubmitting ? 'Creating…' : 'Create Composite'}
+          {isSubmitting ? 'Creating…' : 'Create Compound'}
         </button>
       </div>
     </div>
@@ -132,7 +132,7 @@ export function ReviewStep({
 interface SubtaskReviewChipProps {
   draft: SubtaskDraft;
   allTasks: Task[];
-  allCompositeTasks: Task[];
+  allCompoundTasks: Task[];
   index: number;
   onOpenTask?: (taskId: string) => void;
 }
@@ -140,7 +140,7 @@ interface SubtaskReviewChipProps {
 function SubtaskReviewChip({
   draft,
   allTasks,
-  allCompositeTasks,
+  allCompoundTasks,
   index,
   onOpenTask,
 }: SubtaskReviewChipProps): React.ReactElement {
@@ -159,12 +159,12 @@ function SubtaskReviewChip({
         />
       );
     }
-    const ct = allCompositeTasks.find((c) => c.id === draft.selectedId);
+    const ct = allCompoundTasks.find((c) => c.id === draft.selectedId);
     return (
       <ReviewChipBody
         index={index}
-        badge="COMPOSITE"
-        title={ct?.title ?? '(unknown composite)'}
+        badge="COMPOUND"
+        title={ct?.title ?? '(unknown compound)'}
         meta={null}
         tone="library"
         onClick={onClick}

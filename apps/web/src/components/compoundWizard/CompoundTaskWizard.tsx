@@ -16,11 +16,11 @@ import {
   fetchTasksForUser,
 } from '../../db/operations';
 import { PLAYGROUND_USER_ID, SUCCESS_DISMISS_MS } from '../playground/playgroundUtils';
-import { createEmptyStep } from '../progressStepUtils';
+import { createEmptySubtask } from '../subtaskDraftUtils';
 import {
-  CompositeWizardStepper,
-  type CompositeWizardStep,
-} from './CompositeWizardStepper';
+  CompoundWizardStepper,
+  type CompoundWizardStep,
+} from './CompoundWizardStepper';
 import { SetupStep } from './SetupStep';
 import { BuildStep } from './BuildStep';
 import { ReviewStep } from './ReviewStep';
@@ -29,22 +29,22 @@ import {
   type SubtaskDraft,
   type ExistingSubtaskDraft,
   type InlineSubtaskDraft,
-} from './compositeSubtaskDraft';
-import styles from './CompositeTaskWizard.module.css';
+} from './compoundSubtaskDraft';
+import styles from './CompoundTaskWizard.module.css';
 
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
 const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 const EMPTY_BOARD_TASKS = Object.freeze([]) as unknown as BoardTask[];
 const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
 
-export interface CompositeTaskWizardProps {
+export interface CompoundTaskWizardProps {
   /** User ID for task ownership. Defaults to playground user when omitted. */
   userId?: string;
   /** Invoked with the newly created compound Task after a successful save. */
   onCreated?: (task: Task) => void;
 }
 
-function createExistingSubtask(id: string, kind: 'task' | 'composite'): ExistingSubtaskDraft {
+function createExistingSubtask(id: string, kind: 'task' | 'compound'): ExistingSubtaskDraft {
   return {
     id: crypto.randomUUID(),
     mode: 'existing',
@@ -62,12 +62,12 @@ function createEmptyInlineSubtask(): InlineSubtaskDraft {
     action: '',
     unit: '',
     maxCountStr: '',
-    steps: [createEmptyStep()],
+    steps: [createEmptySubtask()],
   };
 }
 
 /**
- * CompositeTaskWizard — 3-step mini-wizard (Setup → Build → Review) that
+ * CompoundTaskWizard — 3-step mini-wizard (Setup → Build → Review) that
  * creates compound tasks using the unified compound model (db.tasks +
  * db.compoundChildren). Legacy composite/progress tables are no longer used.
  *
@@ -76,10 +76,10 @@ function createEmptyInlineSubtask(): InlineSubtaskDraft {
  * is under active iteration. A hook extraction is on the table if a
  * third consumer needs the same state shape later.
  */
-export function CompositeTaskWizard({
+export function CompoundTaskWizard({
   userId,
   onCreated,
-}: CompositeTaskWizardProps = {}): React.ReactElement {
+}: CompoundTaskWizardProps = {}): React.ReactElement {
   const resolvedUserId = userId ?? PLAYGROUND_USER_ID;
 
   // Core form state
@@ -89,7 +89,7 @@ export function CompositeTaskWizard({
   const [subtasks, setSubtasks] = useState<SubtaskDraft[]>([]);
 
   // UI state
-  const [currentStep, setCurrentStep] = useState<CompositeWizardStep>(1);
+  const [currentStep, setCurrentStep] = useState<CompoundWizardStep>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -190,24 +190,18 @@ export function CompositeTaskWizard({
     return previews;
   }, [allCompoundChildren, allTasks, allCompoundTasks]);
 
-  // taskStepCounts is no longer meaningful after the v5 migration (taskSteps
-  // table was dropped). Pass an empty map so downstream components compile;
-  // the "N steps" subtitle will simply not appear, which is correct — progress
-  // tasks are now compound tasks and their children appear via compoundChildren.
-  const taskStepCounts: Record<string, number> = {};
-
   // ─── State helpers ────────────────────────────────────────────────────────────
 
   function addInlineSubtask(): void {
     setSubtasks((prev) => [...prev, createEmptyInlineSubtask()]);
   }
 
-  /** Toggle one library item in/out of the composite. If an
+  /** Toggle one library item in/out of the compound. If an
    *  existing-mode draft already points at `id`, remove it; otherwise
    *  append a fresh draft. Inline drafts are untouched. Threshold
    *  clamping is handled by BuildStep's effect, so this stays a pure
    *  state update. */
-  function toggleLibraryItem(id: string, kind: 'task' | 'composite'): void {
+  function toggleLibraryItem(id: string, kind: 'task' | 'compound'): void {
     setSubtasks((prev) => {
       const alreadyIdx = prev.findIndex(
         (s) => s.mode === 'existing' && s.selectedId === id,
@@ -317,7 +311,7 @@ export function CompositeTaskWizard({
 
   return (
     <div className={styles.container}>
-      <CompositeWizardStepper
+      <CompoundWizardStepper
         currentStep={currentStep}
         onStepClick={(step) => {
           if (step < currentStep) setCurrentStep(step);
@@ -342,11 +336,10 @@ export function CompositeTaskWizard({
           threshold={threshold}
           onThresholdChange={setThreshold}
           allTasks={allTasks}
-          allCompositeTasks={allCompoundTasks}
+          allCompoundTasks={allCompoundTasks}
           taskBoardCounts={taskBoardCounts}
-          taskStepCounts={taskStepCounts}
-          compositeSubtaskCounts={compoundChildCounts}
-          compositeLeafPreviews={compoundLeafPreviews}
+          compoundSubtaskCounts={compoundChildCounts}
+          compoundLeafPreviews={compoundLeafPreviews}
           onUpdateSubtask={updateSubtask}
           onRemoveSubtask={removeSubtask}
           onToggleLibraryItem={toggleLibraryItem}
@@ -364,7 +357,7 @@ export function CompositeTaskWizard({
           threshold={threshold}
           subtasks={subtasks}
           allTasks={allTasks}
-          allCompositeTasks={allCompoundTasks}
+          allCompoundTasks={allCompoundTasks}
           isSubmitting={isSubmitting}
           errorMessage={errorMessage}
           onBack={() => setCurrentStep(2)}

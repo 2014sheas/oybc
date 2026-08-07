@@ -9,7 +9,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import { TaskTypeSelector } from '../../components/TaskTypeSelector';
-import { CompositeTaskWizard } from '../../components/compositeWizard/CompositeTaskWizard';
+import { CompoundTaskWizard } from '../../components/compoundWizard/CompoundTaskWizard';
 import {
   CountingTemplatePicker,
   type LinkedCounterInput,
@@ -40,8 +40,8 @@ const TASK_TYPES: { value: TaskType; label: string }[] = [
 
 /**
  * Renders the "Create New" tab: the type selector, per-type form
- * fields, progress steps, and the submit button. Composite selection
- * swaps to `CompositeTaskWizard` (owns its own state). All other state
+ * fields, progress steps, and the submit button. Compound selection
+ * swaps to `CompoundTaskWizard` (owns its own state). All other state
  * comes from `useCreateFormState` via the `form` prop.
  *
  * Kept as a pure presentation component — no data-layer calls, no
@@ -50,7 +50,7 @@ const TASK_TYPES: { value: TaskType; label: string }[] = [
  * neither reaches for a raw Dexie import).
  *
  * The `onCompositeCreated` callback lets the parent decide what to do
- * when a composite is built (typically: flash a success toast directing
+ * when a compound is built (typically: flash a success toast directing
  * the user to the Existing Tasks tab).
  */
 export interface CreateNewTaskFormProps {
@@ -196,7 +196,7 @@ export function CreateNewTaskForm({
       </div>
 
       {form.taskType === TaskType.COMPOUND ? (
-        <CompositeTaskWizard userId={userId} onCreated={onCompositeCreated} />
+        <CompoundTaskWizard userId={userId} onCreated={onCompositeCreated} />
       ) : (
         <form className={styles.form} onSubmit={handleFormSubmit}>
           {/* Title */}
