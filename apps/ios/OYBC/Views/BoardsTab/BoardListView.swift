@@ -178,13 +178,24 @@ struct BoardListView: View {
                 // (docs §What changes visibly at upgrade). Self-hides via
                 // @AppStorage once dismissed.
                 WindowedCompletionNoteView()
-                    .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                    // Bottom inset matches the closing-out banner's so the
+                    // gap before the board cards holds when THIS is the only
+                    // banner showing (post-update, no expiring board), not
+                    // just when the closing-out banner is present.
+                    .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 14, trailing: Riso.gutter))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
 
                 // Windowed Completion — closing-out prompt (docs §Sealing →
                 // Lifecycle → Prompt). One row per board whose window ended
                 // but isn't sealed yet (OQ3 resolution: not collapsed).
+                // Bottom inset (not the board cards' top inset) is what
+                // creates the gap between the banner group and the board
+                // cards: this row's top inset already gives it consistent
+                // ~14pt separation from whatever precedes it (visible or
+                // collapsed banner), so adding the same 14pt below it here
+                // guarantees a balanced gap before the first card whether
+                // zero, one, or both banners above are actually showing.
                 ClosingOutBannerView(
                     boards: closingOutVM.boards,
                     sealingBoardId: closingOutVM.sealingBoardId,
@@ -194,7 +205,7 @@ struct BoardListView: View {
                         closingOutVM.seal(boardId: boardId, userId: userId)
                     }
                 )
-                .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+                .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 14, trailing: Riso.gutter))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
@@ -222,7 +233,16 @@ struct BoardListView: View {
                                 )
                             }
                         } else {
-                            NavigationLink(value: board.id) {
+                            // ZStack + hidden NavigationLink (rather than
+                            // wrapping RisoBoardCard directly in the link's
+                            // label) so List doesn't detect a bare
+                            // NavigationLink row and append its trailing
+                            // disclosure chevron — that reserved width was
+                            // why non-draft cards didn't line up with the
+                            // banners/draft cards above/around them.
+                            ZStack {
+                                NavigationLink(value: board.id) { EmptyView() }
+                                    .opacity(0)
                                 RisoBoardCard(
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
@@ -415,6 +435,11 @@ struct BoardListView: View {
                     .listRowBackground(Color.clear)
             }
 
+            // Same balanced-gap rationale as the primary `boardList` path
+            // above: this row's bottom inset (not the following row's top
+            // inset) creates the ~14pt separation before the empty-state
+            // content, consistent whether the banner above is visible or
+            // collapsed to nothing.
             ClosingOutBannerView(
                 boards: closingOutVM.boards,
                 sealingBoardId: closingOutVM.sealingBoardId,
@@ -424,7 +449,7 @@ struct BoardListView: View {
                     closingOutVM.seal(boardId: boardId, userId: userId)
                 }
             )
-            .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 0, trailing: Riso.gutter))
+            .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 14, trailing: Riso.gutter))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
 
