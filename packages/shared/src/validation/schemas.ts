@@ -23,6 +23,21 @@ export const BoardSizeSchema = z.union([z.literal(3), z.literal(4), z.literal(5)
  */
 const FlexibleDateTime = z.string().datetime({ local: true, offset: true });
 
+/**
+ * Retired center-square value that must still decode. `CUSTOM_FREE` was a
+ * shipped center type; a legacy board/template synced from an unmigrated peer
+ * can still carry the string. iOS coerces it to `.free` on decode
+ * (`Board.swift`), so the web sync-pull path must too — otherwise the doc fails
+ * `safeParse` and is skipped forever. See the CUSTOM_FREE removal PR.
+ */
+const LEGACY_CUSTOM_FREE = 'custom_free';
+
+/** `CenterSquareType`, tolerantly coercing the retired `custom_free` → FREE. */
+const CenterSquareTypeSchema = z.preprocess(
+  (v) => (v === LEGACY_CUSTOM_FREE ? CenterSquareType.FREE : v),
+  z.nativeEnum(CenterSquareType)
+);
+
 export const CreateBoardInputSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
@@ -32,7 +47,7 @@ export const CreateBoardInputSchema = z.object({
   // Absent for INDEFINITE boards (no end date). When present it must be
   // after startDate (see refine below).
   endDate: FlexibleDateTime.optional(),
-  centerSquareType: z.nativeEnum(CenterSquareType),
+  centerSquareType: CenterSquareTypeSchema,
   centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
 }).refine(
@@ -64,7 +79,7 @@ export const BoardSchema = z.object({
   timeframe: z.nativeEnum(Timeframe),
   startDate: FlexibleDateTime,
   endDate: FlexibleDateTime.optional(),   // Absent for INDEFINITE boards
-  centerSquareType: z.nativeEnum(CenterSquareType),
+  centerSquareType: CenterSquareTypeSchema,
   centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
   totalTasks: z.number().int().min(0),
@@ -858,10 +873,13 @@ const RecurringTimeframeSchema = z.union([
   z.literal(Timeframe.YEARLY),
 ]);
 
-const RecurringCenterSquareTypeSchema = z.union([
-  z.literal(CenterSquareType.FREE),
-  z.literal(CenterSquareType.NONE),
-]);
+const RecurringCenterSquareTypeSchema = z.preprocess(
+  (v) => (v === LEGACY_CUSTOM_FREE ? CenterSquareType.FREE : v),
+  z.union([
+    z.literal(CenterSquareType.FREE),
+    z.literal(CenterSquareType.NONE),
+  ])
+);
 
 /**
  * P1 (Task Pools rework) — the three generalized-source fields, additive

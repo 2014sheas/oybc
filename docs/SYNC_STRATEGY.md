@@ -1228,7 +1228,6 @@ Core / board-creation defaults:
 - `defaultCenterType` — `FREE | NONE` (narrowed from `CenterSquareType`; CHOSEN requires per-board context)
 - `defaultTimeframe` — `daily | weekly | monthly | yearly | custom`
 - `defaultRandomize` — `boolean`
-- `defaultCenterCustomName` — `string` (≤ 100 chars)
 - `theme` — `'light' | 'dark' | 'system'`
 
 Recurring boards (Phase 6.1): `recurringDailyEnabled` / `recurringWeeklyEnabled` / `recurringMonthlyEnabled` / `recurringYearlyEnabled` — `boolean` (default true).

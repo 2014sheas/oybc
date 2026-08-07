@@ -45,5 +45,10 @@ export function getCenterDisplayText(type: CenterSquareType): string {
     case CenterSquareType.CHOSEN:
     case CenterSquareType.NONE:
       return '';
+    // Defensive: a raw runtime value outside the enum (e.g. a retired
+    // 'custom_free' string that bypassed validation) returns no label rather
+    // than undefined.
+    default:
+      return '';
   }
 }
