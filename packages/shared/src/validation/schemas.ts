@@ -111,14 +111,6 @@ export const BoardSchema = z.object({
 
 // ===== Task Schemas =====
 
-export const CreateTaskStepInputSchema = z.object({
-  title: z.string().min(1).max(200),
-  type: z.nativeEnum(TaskType),
-  action: z.string().max(50).optional(),
-  unit: z.string().max(50).optional(),
-  maxCount: z.number().int().positive().optional(),
-});
-
 /**
  * Phase 6.3 — `referencedBoardId` and `referencedTemplateId` rules on Task:
  *   1. Both unset OR exactly one set; never both. (Mutually exclusive.)
@@ -224,7 +216,6 @@ export const CreateTaskInputSchema = z.object({
   action: z.string().max(50).optional(),
   unit: z.string().max(50).optional(),
   maxCount: z.number().int().positive().optional(),
-  steps: z.array(CreateTaskStepInputSchema).optional(),
   referencedBoardId: z.string().uuid().optional(),
   referencedTemplateId: z.string().uuid().optional(),
   achievementTrigger: z.nativeEnum(AchievementTrigger).optional(),
@@ -737,91 +728,6 @@ export const AutoCreateTaskInputSchema = z.object({
   action: z.string().max(50).optional(),
   unit: z.string().max(50).optional(),
   maxCount: z.number().int().positive().optional(),
-});
-
-/**
- * Recursive composite node input schema.
- *
- * Uses z.lazy() because operator nodes contain children of the same type.
- */
-export const CreateCompositeNodeInputSchema: z.ZodType<unknown> = z.lazy(() =>
-  z
-    .object({
-      nodeType: z.enum(['operator', 'leaf']),
-
-      // Operator node fields
-      operatorType: z.nativeEnum(OperatorType).optional(),
-      threshold: z.number().int().positive().optional(),
-      children: z.array(CreateCompositeNodeInputSchema).optional(),
-
-      // Leaf node fields
-      taskId: z.string().uuid().optional(),
-      childCompositeTaskId: z.string().uuid().optional(),
-      autoCreateTask: AutoCreateTaskInputSchema.optional(),
-    })
-    .refine(
-      (data) => {
-        if (data.nodeType === 'operator') {
-          return (
-            data.operatorType !== undefined &&
-            Array.isArray(data.children) &&
-            data.children.length > 0
-          );
-        }
-        return true;
-      },
-      { message: 'Operator nodes must have operatorType and at least one child' }
-    )
-    .refine(
-      (data) => {
-        if (data.operatorType === OperatorType.M_OF_N) {
-          return data.threshold !== undefined && data.threshold > 0;
-        }
-        return true;
-      },
-      { message: 'M_OF_N operator must have threshold > 0' }
-    )
-    .refine(
-      (data) => {
-        if (
-          data.operatorType === OperatorType.M_OF_N &&
-          data.threshold !== undefined &&
-          Array.isArray(data.children)
-        ) {
-          return data.threshold <= data.children.length;
-        }
-        return true;
-      },
-      { message: 'M_OF_N threshold must be <= number of children' }
-    )
-    .refine(
-      (data) => {
-        if (data.nodeType === 'leaf') {
-          const count = [data.taskId, data.childCompositeTaskId, data.autoCreateTask].filter(Boolean).length;
-          return count === 1;
-        }
-        return true;
-      },
-      {
-        message:
-          'Leaf nodes must have exactly one of taskId, childCompositeTaskId, or autoCreateTask',
-      }
-    )
-    .refine(
-      (data) => {
-        if (data.nodeType === 'leaf') {
-          return !data.children || data.children.length === 0;
-        }
-        return true;
-      },
-      { message: 'Leaf nodes cannot have children' }
-    )
-);
-
-export const CreateCompositeTaskInputSchema = z.object({
-  title: z.string().min(1).max(200),
-  description: z.string().max(1000).optional(),
-  rootNode: CreateCompositeNodeInputSchema,
 });
 
 export const CompositeTaskSchema = z.object({

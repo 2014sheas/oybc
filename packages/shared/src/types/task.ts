@@ -281,7 +281,6 @@ export interface CreateTaskInput {
   action?: string;
   unit?: string;
   maxCount?: number;
-  steps?: CreateTaskStepInput[]; // Only for progress tasks
   /** Phase 6.3 — required (XOR with `referencedTemplateId`) when
    *  `type === TaskType.ACHIEVEMENT`. Forbidden on all other types. */
   referencedBoardId?: string;
@@ -326,17 +325,6 @@ export interface CreateTaskInput {
    * documentation. Canonical design: docs/SHARED_COUNTERS.md §P5.
    */
   isCounter?: boolean;
-}
-
-/**
- * Task step creation input
- */
-export interface CreateTaskStepInput {
-  title: string;
-  type: TaskType;
-  action?: string;
-  unit?: string;
-  maxCount?: number;
 }
 
 /**

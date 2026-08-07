@@ -20,18 +20,7 @@ export { styles as interactiveTaskSquareStyles };
  * `db/adapters.ts`'s `taskToSquareData`/`taskToSquareState` ACHIEVEMENT
  * branches and their `cellState` parameter.
  */
-// 'progress' is INTENTIONALLY-INERT legacy residue (pre-unification per-board
-// steps): `taskToSquareData`/`taskToSquareState` never emit it, so its
-// branches here and in InteractiveTaskSquare.tsx are unreachable — kept only
-// so old call shapes decode. Same disposition as `Task.lastSyncedCount`; do
-// not wire new code to it (issue #379).
-export type SquareTaskType = 'normal' | 'counting' | 'progress' | 'compound' | 'achievement';
-
-/** A single step within a progress-type task. */
-export interface ProgressStep {
-  id: string;
-  label: string;
-}
+export type SquareTaskType = 'normal' | 'counting' | 'compound' | 'achievement';
 
 /**
  * A pre-resolved child task for compound squares.
@@ -56,7 +45,6 @@ export interface CompoundChild {
  * @property action - Counting tasks only: verb label (e.g. "Run")
  * @property maxCount - Counting tasks only: target count for completion
  * @property unit - Counting tasks only: unit label (e.g. "km")
- * @property steps - Progress tasks only: ordered list of sub-steps
  * @property operator - Compound tasks only: completion operator ('AND' | 'OR' | 'M_OF_N')
  * @property threshold - Compound tasks only: required count for M_OF_N operator
  * @property children - Compound tasks only: pre-resolved child tasks (resolved by the caller)
@@ -88,8 +76,6 @@ export interface TaskSquareData {
    * Non-null only when `sharedCounterId` is non-null.
    */
   baseline?: number | null;
-  /** progress only */
-  steps?: ProgressStep[];
   /** compound only */
   operator?: 'AND' | 'OR' | 'M_OF_N';
   threshold?: number;
@@ -130,7 +116,6 @@ export interface ContextMenuState {
  * Perform the "type-specific action" for a square:
  * - normal: toggle completion
  * - counting: increment count (caps at maxCount, marks complete at max)
- * - progress: no grid-level action (callers should open modal instead)
  * - compound: no grid-level action (callers should open modal instead)
  */
 export function applyAction(sq: TaskSquareData, prev: SquareState): SquareState {
@@ -142,7 +127,7 @@ export function applyAction(sq: TaskSquareData, prev: SquareState): SquareState 
     const next = Math.min(prev.currentCount + 1, max);
     return { ...prev, currentCount: next, isCompleted: next >= max };
   }
-  // progress and compound — no grid-level action; callers should open modal instead
+  // compound — no grid-level action; callers should open modal instead
   return prev;
 }
 
@@ -158,11 +143,6 @@ export function progressFraction(sq: TaskSquareData, state: SquareState): number
   if (sq.type === 'counting') {
     const max = sq.maxCount ?? 1;
     return max === 0 ? 0 : state.currentCount / max;
-  }
-  if (sq.type === 'progress') {
-    const total = sq.steps?.length ?? 0;
-    if (total === 0) return 0;
-    return state.completedStepIds.size / total;
   }
   if (sq.type === 'compound') {
     const children = sq.children ?? [];
@@ -189,10 +169,6 @@ export function progressFraction(sq: TaskSquareData, state: SquareState): number
 export function progressBarLabel(sq: TaskSquareData, state: SquareState): string {
   if (sq.type === 'counting') {
     return `${state.currentCount}/${sq.maxCount} ${sq.unit ?? ''}`.trim();
-  }
-  if (sq.type === 'progress') {
-    const total = sq.steps?.length ?? 0;
-    return `${state.completedStepIds.size}/${total} steps`;
   }
   if (sq.type === 'compound') {
     const children = sq.children ?? [];

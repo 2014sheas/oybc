@@ -75,19 +75,24 @@ let userScopedCollections: Set<String> = [
     "pools", "coreBoardDefaults",
 ]
 
-/// Collections whose GRDB tables were dropped (or, for `defaultPools`,
-/// retired by a first-launch data migration) — `taskSteps` /
-/// `compositeTasks` / `compositeNodes`' tables were literally dropped in
-/// the v7 data migration; `defaultPools` (P1 — Task Pools + Recurring
-/// Boards Rework) keeps its `default_pools` table, but every row is
-/// soft-deleted by the v25 migration (docs/POOLS_RECURRING.md §Migration),
-/// so pulling a peer's still-live `DefaultPool` doc (a mixed-version
-/// device that hasn't migrated yet) would resurrect a row the local
-/// migration already tombstoned. All four stay in `syncableCollections`
-/// so the push path can drain DELETE sync ops for pre-migration rows
-/// (cleaning up Firestore), but the pull path must skip them — for the
-/// first three, upserting into a dropped table would crash; for
-/// `defaultPools`, upserting would fight the local migration's tombstone.
+/// Collections whose GRDB tables are retired from live use by a
+/// first-launch data migration — `taskSteps` / `compositeTasks` /
+/// `compositeNodes` are NOT actually dropped by the v7 data migration;
+/// MigrationV7Helpers only DELETEs their rows (and enqueues the
+/// corresponding Firestore tombstones) so the sync queue can drain. The
+/// tables themselves persist for now — a future cleanup migration can
+/// `DROP TABLE` them once the sync queue is verified empty across
+/// devices. `defaultPools` (P1 — Task Pools + Recurring Boards Rework)
+/// keeps its `default_pools` table, but every row is soft-deleted by the
+/// v25 migration (docs/POOLS_RECURRING.md §Migration), so pulling a
+/// peer's still-live `DefaultPool` doc (a mixed-version device that
+/// hasn't migrated yet) would resurrect a row the local migration
+/// already tombstoned. All four stay in `syncableCollections` so the
+/// push path can drain DELETE sync ops for pre-migration rows (cleaning
+/// up Firestore), but the pull path must skip them — for the first
+/// three, upserting into a row-emptied-but-still-live table would
+/// resurrect rows the migration deleted; for `defaultPools`, upserting
+/// would fight the local migration's tombstone.
 ///
 /// Must set-match `@oybc/shared`'s `LEGACY_PULL_SKIP_COLLECTIONS` —
 /// enforced by `OYBCTests/SyncContractTests.swift`. Not `private` so

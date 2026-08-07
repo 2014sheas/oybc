@@ -760,7 +760,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   type:
                     squareData.type === 'counting'
                       ? 'counting'
-                      : squareData.type === 'compound' || squareData.type === 'progress'
+                      : squareData.type === 'compound'
                         ? 'compound'
                         : 'normal',
                   done: taskIsCompleted,
@@ -795,7 +795,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                       if (squareData.type === 'achievement') {
                         return;
                       }
-                      if (squareData.type === 'progress' || squareData.type === 'compound') {
+                      if (squareData.type === 'compound') {
                         setSelectedSquareId(boardTaskId);
                       } else if (squareData.type === 'counting') {
                         // Phase 3 — Shared Counters routing:
@@ -1122,12 +1122,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               // route through `quickAmount.onRemove` above.
               if (isSealed) return;
               if (modalCurrentCount > 0) void handleComplete(bt.id, { currentCount: modalCurrentCount - 1 });
-            }}
-            onToggleStep={(stepId: string) => {
-              if (isSealed) return;
-              // Per-board step completion is not tracked under the unified model.
-              // Progress steps link to their own Task records; toggle them directly.
-              void handleCompoundChildToggle(stepId);
             }}
             onCompoundChildToggle={
               squareData.type === 'compound' ? handleCompoundChildToggle : undefined

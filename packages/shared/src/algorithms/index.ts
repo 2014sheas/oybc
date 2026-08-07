@@ -10,10 +10,6 @@ export { generateCounterTaskTitle } from './taskTitle';
 // ===== Pair-derived counter display names (R1 — counters refresh) =====
 export { formatCounterName } from './counterName';
 
-export {
-  evaluateCompositeTree,
-} from './compositeEvaluation';
-
 // ===== Compound tasks unification =====
 export {
   evaluateCompound,
@@ -93,12 +89,10 @@ export type {
 
 export {
   calculateCountingRollup,
-  calculateProgressRollup,
 } from './rollup';
 
 export type {
   CountingRollupResult,
-  ProgressRollupResult,
 } from './rollup';
 
 export {

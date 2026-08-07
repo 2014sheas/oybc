@@ -26,17 +26,6 @@ const DEMO_SQUARES: TaskSquareData[] = [
     description: 'Spend 30 min reading',
   },
   {
-    id: 'sq-2',
-    title: 'Weekly Workout',
-    type: 'progress',
-    description: 'Complete all three sessions',
-    steps: [
-      { id: 'step-mon', label: 'Mon strength' },
-      { id: 'step-wed', label: 'Wed cardio' },
-      { id: 'step-fri', label: 'Fri yoga' },
-    ],
-  },
-  {
     id: 'sq-3',
     title: 'Cook at home',
     type: 'normal',
@@ -55,17 +44,6 @@ const DEMO_SQUARES: TaskSquareData[] = [
     title: 'Meditate',
     type: 'normal',
     description: 'Sit quietly for 10 min',
-  },
-  {
-    id: 'sq-6',
-    title: 'Learn Spanish',
-    type: 'progress',
-    description: 'Daily language practice',
-    steps: [
-      { id: 'step-duo', label: 'Duolingo lesson' },
-      { id: 'step-vocab', label: 'Vocab review' },
-      { id: 'step-pod', label: 'Podcast' },
-    ],
   },
   {
     id: 'sq-7',
@@ -122,11 +100,6 @@ export function TaskSquareActionsPlayground() {
 
   const handleAct = useCallback(
     (sq: TaskSquareData) => {
-      if (sq.type === 'progress') {
-        // Progress tasks open the modal instead
-        setSelectedSquareId(sq.id);
-        return;
-      }
       setSquareStates((prev) => ({
         ...prev,
         [sq.id]: applyAction(sq, prev[sq.id]),
@@ -161,46 +134,10 @@ export function TaskSquareActionsPlayground() {
     });
   }, []);
 
-  const handleToggleStep = useCallback((squareId: string, stepId: string) => {
-    const sq = DEMO_SQUARES.find((s) => s.id === squareId);
-    if (!sq) return;
-    setSquareStates((prev) => {
-      const cur = prev[squareId];
-      const updated = new Set(cur.completedStepIds);
-      if (updated.has(stepId)) {
-        updated.delete(stepId);
-      } else {
-        updated.add(stepId);
-      }
-      const allDone = (sq.steps ?? []).length > 0 && updated.size >= (sq.steps ?? []).length;
-      return {
-        ...prev,
-        [squareId]: { ...cur, completedStepIds: updated, isCompleted: allDone },
-      };
-    });
-  }, []);
-
   const handleResetCount = useCallback((id: string) => {
     setSquareStates((prev) => ({
       ...prev,
       [id]: { ...prev[id], currentCount: 0, isCompleted: false },
-    }));
-  }, []);
-
-  const handleMarkAllStepsComplete = useCallback((id: string) => {
-    const sq = DEMO_SQUARES.find((s) => s.id === id);
-    if (!sq) return;
-    const allIds = new Set((sq.steps ?? []).map((s) => s.id));
-    setSquareStates((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], completedStepIds: allIds, isCompleted: true },
-    }));
-  }, []);
-
-  const handleMarkAllStepsIncomplete = useCallback((id: string) => {
-    setSquareStates((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], completedStepIds: new Set(), isCompleted: false },
     }));
   }, []);
 
@@ -253,7 +190,6 @@ export function TaskSquareActionsPlayground() {
           onToggleComplete={handleToggleComplete}
           onIncrementCount={handleIncrementCount}
           onDecrementCount={handleDecrementCount}
-          onToggleStep={handleToggleStep}
         />
       )}
 
@@ -271,8 +207,6 @@ export function TaskSquareActionsPlayground() {
             onIncrementCount={handleIncrementCount}
             onDecrementCount={handleDecrementCount}
             onResetCount={handleResetCount}
-            onMarkAllStepsComplete={handleMarkAllStepsComplete}
-            onMarkAllStepsIncomplete={handleMarkAllStepsIncomplete}
             onViewDetails={(id) => {
               setContextMenu(null);
               setSelectedSquareId(id);

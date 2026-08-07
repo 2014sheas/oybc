@@ -3,7 +3,7 @@ import GRDB
 
 /// Builds `SyncQueueItem` rows for local writes that should be pushed
 /// to Firestore by `SyncService.pushSync`. Any write path that mutates
-/// a user-visible entity (Board, BoardTask, Task, TaskStep, …) must
+/// a user-visible entity (Board, BoardTask, Task, CompoundChild, …) must
 /// enqueue a matching sync item inside the same GRDB transaction,
 /// otherwise the change stays local-only.
 ///

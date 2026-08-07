@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { BingoBoard } from '../BingoBoard';
 import { PLAYGROUND_USER_ID, generateSampleTaskTitles } from './playgroundUtils';
-import { UnifiedTaskCreatorPlayground } from './UnifiedTaskCreatorPlayground';
 import { useTasks } from '../../hooks/useTasks';
 import { createTask } from '../../db/operations/tasks';
 import { fisherYatesShuffle, CenterSquareType, getCenterSquareIndex, TaskType } from '@oybc/shared';
@@ -14,9 +13,9 @@ const TASKS_NEEDED = BOARD_SIZE * BOARD_SIZE - 1; // 8 non-center squares
 /**
  * Board Generator Playground
  *
- * Lets the user create tasks via the Unified Task Creator and generate a 3×3
- * bingo board from them. The center square is always a FREE space. At least 8
- * tasks are required to generate a board.
+ * Generates a 3×3 bingo board from the user's existing tasks. The center
+ * square is always a FREE space. At least 8 tasks are required to generate
+ * a board.
  */
 export function BoardGeneratorPlayground() {
   const [isGeneratingSamples, setIsGeneratingSamples] = useState(false);
@@ -73,9 +72,6 @@ export function BoardGeneratorPlayground() {
           <p className={styles.seedError}>{sampleError}</p>
         )}
       </div>
-
-      {/* Task creation and library via Unified Task Creator */}
-      <UnifiedTaskCreatorPlayground />
 
       {/* Board generation */}
       <div className={styles.generateSection}>
