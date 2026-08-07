@@ -3,18 +3,19 @@ import SwiftUI
 /// BoardPreferencesView — Riso-styled Profile sub-page for board-creation
 /// defaults and play-feel settings. Design: §5a README + screenshot 08.
 ///
-/// Three keyline cards:
+/// Two keyline cards:
 ///   New boards — Default size · Center square · Week starts
 ///   Playing    — Celebration intensity (10-tick strip) · Haptics toggle
-///   Housekeeping — Auto-archive completed
 ///
 /// `expiringReminders` moved to `NotificationPreferencesView` in Phase 7 (it's
-/// now a live notification toggle, not a dead housekeeping flag).
+/// now a live notification toggle, not a dead housekeeping flag). The
+/// Housekeeping card's Auto-archive completed toggle was removed — it never
+/// had a consumer (no archive logic read it on either platform).
 ///
 /// All controls write through `AppDatabase.updateUserPreferences` via the
-/// `bind(_:)` helper. New fields (`celebrationIntensity`, `haptics`,
-/// `autoArchiveCompleted`) were added to `UserPreferences`
-/// as part of this reskin; they decode forward-compatibly via try? fallback.
+/// `bind(_:)` helper. New fields (`celebrationIntensity`, `haptics`) were
+/// added to `UserPreferences` as part of this reskin; they decode
+/// forward-compatibly via try? fallback.
 struct BoardPreferencesView: View {
 
     @EnvironmentObject var authService: AuthService
@@ -33,10 +34,7 @@ struct BoardPreferencesView: View {
                     newBoardsCard.padding(.horizontal, Riso.gutter).padding(.bottom, 18)
 
                     sectionLabel("Playing")
-                    playingCard.padding(.horizontal, Riso.gutter).padding(.bottom, 18)
-
-                    sectionLabel("Housekeeping")
-                    housekeepingCard.padding(.horizontal, Riso.gutter).padding(.bottom, 16)
+                    playingCard.padding(.horizontal, Riso.gutter).padding(.bottom, 16)
 
                     Text("Defaults apply to new boards — existing boards keep their settings.")
                         .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
@@ -152,22 +150,6 @@ struct BoardPreferencesView: View {
         case 9: return "Loud"
         default: return "Detonate"
         }
-    }
-
-    // MARK: - Housekeeping card
-
-    private var housekeepingCard: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                toggleRow(icon: "archivebox", label: "Auto-archive completed",
-                          binding: bind(\.autoArchiveCompleted))
-                Text("Move GREENLOGed boards out of the list after a week.")
-                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
-                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 8)
-            }
-        }
-        .risoCard()
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
     // MARK: - Row helpers

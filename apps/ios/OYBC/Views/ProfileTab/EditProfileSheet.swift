@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// EditProfileSheet — bottom sheet to update the user's display name and
-/// Blip avatar mood (§5b of the Riso redesign spec).
+/// EditProfileSheet — bottom sheet to update the user's display name
+/// (§5b of the Riso redesign spec).
 ///
 /// Opened from `RisoProfileAccountCard`'s name/✎ tap affordance in
 /// `ProfileView`. On Save it calls `updateName(_:)`, which in production
@@ -14,14 +14,9 @@ import SwiftUI
 /// Layout (over `Color.risoPaper`, inside a NavigationStack sheet):
 /// 1. Navigation bar — "Edit profile" title, gold-pill "Done" (dismiss)
 /// 2. Large Blip avatar (84 px) with circular ink keyline + hard shadow
-/// 3. BLIP MOOD section label + three keyline mood cards
-/// 4. DISPLAY NAME label + `RisoTextField`
-/// 5. EMAIL label + disabled text display + account-security hint
-/// 6. Red "Save profile" full-width button (disabled when name empty)
-///
-/// The Blip mood selection is local state only for now — mood will be
-/// stored in `UserPreferences` in a follow-up PR once the field is
-/// added to the shared schema.
+/// 3. DISPLAY NAME label + `RisoTextField`
+/// 4. EMAIL label + disabled text display + account-security hint
+/// 5. Red "Save profile" full-width button (disabled when name empty)
 struct EditProfileSheet: View {
 
     // MARK: - Inputs
@@ -31,9 +26,6 @@ struct EditProfileSheet: View {
 
     /// Current email (shown read-only).
     let email: String?
-
-    /// Current Blip mood as stored in preferences. Defaults to `.happy`.
-    var initialMood: BlipPlaceholder.Mood = .happy
 
     /// Async closure that persists the new display name. Typically wraps
     /// `AuthService.updateDisplayName(_:)` — separating the async persistence
@@ -52,7 +44,6 @@ struct EditProfileSheet: View {
     // MARK: - Private state
 
     @State private var nameValue: String
-    @State private var selectedMood: BlipPlaceholder.Mood
 
     /// Tracks the async save in flight (disables the button while pending).
     @State private var isSaving = false
@@ -65,7 +56,6 @@ struct EditProfileSheet: View {
     /// - Parameters:
     ///   - displayName: Current display name to pre-fill.
     ///   - email: User's email (shown read-only; nil falls back to empty).
-    ///   - initialMood: Current Blip avatar mood. Defaults to `.happy`.
     ///   - updateName: Async closure that commits the new name (e.g. wraps
     ///                 `AuthService.updateDisplayName`).
     ///   - onSave: Closure called after a successful save; dismiss here.
@@ -73,19 +63,16 @@ struct EditProfileSheet: View {
     init(
         displayName: String,
         email: String?,
-        initialMood: BlipPlaceholder.Mood = .happy,
         updateName: @escaping (_ newName: String) async throws -> Void,
         onSave: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.displayName = displayName
         self.email = email
-        self.initialMood = initialMood
         self.updateName = updateName
         self.onSave = onSave
         self.onCancel = onCancel
         _nameValue = State(initialValue: displayName)
-        _selectedMood = State(initialValue: initialMood)
     }
 
     // MARK: - Body
@@ -99,10 +86,7 @@ struct EditProfileSheet: View {
                         .padding(.bottom, 20)
                         .frame(maxWidth: .infinity)
 
-                    moodSection
-
                     nameSection
-                        .padding(.top, 14)
 
                     emailSection
                         .padding(.top, 4)
@@ -156,46 +140,9 @@ struct EditProfileSheet: View {
                 .frame(width: 92, height: 92)
                 .overlay(Circle().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
 
-            BlipPlaceholder(size: 84, mood: selectedMood)
+            BlipPlaceholder(size: 84, mood: .happy)
         }
         .frame(width: 92, height: 92)
-    }
-
-    // MARK: - Blip mood picker
-
-    /// Three keyline card buttons — Happy / Cheer / Calm.
-    /// Selected card gets a gold fill + hard shadow.
-    private var moodSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Blip mood")
-                .risoSectionLabel()
-
-            HStack(spacing: 8) {
-                ForEach(BlipPlaceholder.Mood.allCases, id: \.self) { mood in
-                    moodCard(mood)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func moodCard(_ mood: BlipPlaceholder.Mood) -> some View {
-        let isSelected = selectedMood == mood
-        Button {
-            selectedMood = mood
-        } label: {
-            VStack(spacing: 8) {
-                BlipPlaceholder(size: 40, mood: mood)
-                Text(mood.label)
-                    .font(.risoHead(12, .bold))
-                    // Selected card is gold — non-inverting ink for dark mode.
-                    .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoMuted)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .risoCard(fill: isSelected ? Color.risoGold : Color.risoPaper2)
-        }
-        .buttonStyle(RisoButtonStyle(offset: isSelected ? Riso.Shadow.small : 0, radius: Riso.cardRadius))
     }
 
     // MARK: - Display name field
@@ -279,23 +226,6 @@ struct EditProfileSheet: View {
     }
 }
 
-// MARK: - BlipPlaceholder.Mood helpers
-
-extension BlipPlaceholder.Mood: CaseIterable {
-    // `internal` to match `BlipPlaceholder` (a `public` witness on an internal
-    // type is misleading — it can't actually widen access).
-    static var allCases: [BlipPlaceholder.Mood] { [.happy, .cheer, .calm] }
-
-    /// Display label for the mood picker card.
-    var label: String {
-        switch self {
-        case .happy: return "Happy"
-        case .cheer: return "Cheer"
-        case .calm: return "Calm"
-        }
-    }
-}
-
 // MARK: - Preview
 
 #if DEBUG
@@ -303,7 +233,6 @@ extension BlipPlaceholder.Mood: CaseIterable {
     EditProfileSheet(
         displayName: "OYBC User",
         email: "you@example.com",
-        initialMood: .happy,
         updateName: { _ in },
         onSave: {},
         onCancel: {}
