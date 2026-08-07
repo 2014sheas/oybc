@@ -365,8 +365,10 @@ enum RisoTaskKind {
     var letter: String {
         switch self {
         case .normal: return "N"
-        case .counting: return "C"
-        case .compound: return "K"
+        // "#" (a number) reads as "counting" and frees "C" for compound —
+        // avoids the old C/counting vs K/compound letter collision.
+        case .counting: return "#"
+        case .compound: return "C"
         case .achievement: return "A"
         }
     }
