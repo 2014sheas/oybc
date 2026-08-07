@@ -162,7 +162,7 @@ final class AuthService: ObservableObject {
         userRowObservation = observation.start(
             in: AppDatabase.shared.dbQueue,
             onError: { error in
-                print("⚠️ user row observation failed: \(error)")
+                dlog("⚠️ user row observation failed: \(error)")
             },
             onChange: { [weak self] refreshed in
                 guard let refreshed, let self else { return }
@@ -554,7 +554,7 @@ final class AuthService: ObservableObject {
         } catch {
             // Non-fatal: the account is already deleted server-side. Log loudly
             // rather than swallow so a regression here is never invisible.
-            print("⚠️ AuthService.wipeLocalDatabase failed: \(error)")
+            dlog("⚠️ AuthService.wipeLocalDatabase failed: \(error)")
         }
     }
 
@@ -675,7 +675,7 @@ final class AuthService: ObservableObject {
         } catch {
             // Database errors are non-fatal for the auth flow; log and return
             // a transient User from Firebase data so the session still starts.
-            print("⚠️ AuthService: failed to upsert local user: \(error)")
+            dlog("⚠️ AuthService: failed to upsert local user: \(error)")
             return User(
                 id: firebaseUser.uid,
                 email: firebaseUser.email ?? "",

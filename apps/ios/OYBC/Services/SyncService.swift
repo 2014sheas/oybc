@@ -1472,7 +1472,7 @@ final class SyncService: ObservableObject {
         if syncEvents.count > 100 {
             syncEvents = Array(syncEvents.prefix(100))
         }
-        print("[SyncService] \(message)")
+        dlog("[SyncService] \(message)")
     }
 }
 

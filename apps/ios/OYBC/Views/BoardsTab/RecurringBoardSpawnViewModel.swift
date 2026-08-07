@@ -102,7 +102,7 @@ final class RecurringBoardSpawnViewModel {
                         attention[templateId] = reason
                     }
                 } catch {
-                    print("[recurring-spawn] failed for template \(spawn.template.id): \(error)")
+                    dlog("[recurring-spawn] failed for template \(spawn.template.id): \(error)")
                     attention[spawn.template.id] = .spawnFailed
                 }
             }

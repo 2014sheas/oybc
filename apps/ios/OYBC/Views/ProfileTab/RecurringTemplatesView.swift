@@ -99,7 +99,7 @@ struct RecurringTemplatesView: View {
                     updated, operation: .update, now: now
                 )
                 await MainActor.run { templatesVM.reloadAsync(userId: userId) }
-            } catch { print("[RecurringTemplatesView] toggle failed: \(error)") }
+            } catch { dlog("[RecurringTemplatesView] toggle failed: \(error)") }
         }
     }
 
@@ -114,7 +114,7 @@ struct RecurringTemplatesView: View {
                     id: id, now: AppDatabase.currentTimestamp()
                 )
                 await MainActor.run { templatesVM.reloadAsync(userId: userId) }
-            } catch { print("[RecurringTemplatesView] deleteTemplate failed: \(error)") }
+            } catch { dlog("[RecurringTemplatesView] deleteTemplate failed: \(error)") }
         }
     }
 

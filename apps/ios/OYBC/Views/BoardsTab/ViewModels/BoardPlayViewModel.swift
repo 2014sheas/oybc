@@ -738,7 +738,7 @@ final class BoardPlayViewModel: ObservableObject {
                     self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
                 }
             } catch {
-                print("⚠️ BoardPlayView shared-counter increment error: \(error)")
+                dlog("⚠️ BoardPlayView shared-counter increment error: \(error)")
                 await MainActor.run {
                     self.isProcessing = false
                 }
@@ -843,7 +843,7 @@ final class BoardPlayViewModel: ObservableObject {
                     self.emitFlash(risoNotification: newBingoMsg, creditToast: creditPayload)
                 }
             } catch {
-                print("⚠️ BoardPlayView shared-counter decrement error: \(error)")
+                dlog("⚠️ BoardPlayView shared-counter decrement error: \(error)")
                 await MainActor.run {
                     self.isProcessing = false
                 }
@@ -1024,7 +1024,7 @@ final class BoardPlayViewModel: ObservableObject {
                     self.emitFlash(risoNotification: newBingoMsg, creditToast: nil)
                 }
             } catch {
-                print("⚠️ BoardPlayView compoundChildToggle error: \(error)")
+                dlog("⚠️ BoardPlayView compoundChildToggle error: \(error)")
                 await MainActor.run {
                     self.isProcessing = false
                 }
@@ -1061,7 +1061,7 @@ final class BoardPlayViewModel: ObservableObject {
                     self.reload()
                 }
             } catch {
-                print("⚠️ BoardPlayView add-to-cell error: \(error)")
+                dlog("⚠️ BoardPlayView add-to-cell error: \(error)")
                 await MainActor.run {
                     self.isProcessing = false
                     self.bingoMessage = "Add failed — please try again"
@@ -1152,7 +1152,7 @@ final class BoardPlayViewModel: ObservableObject {
                     self.emitFlash(risoNotification: newBingoMsg, creditToast: nil)
                 }
             } catch {
-                print("⚠️ BoardPlayView orchestration error: \(error)")
+                dlog("⚠️ BoardPlayView orchestration error: \(error)")
                 await MainActor.run {
                     self.isProcessing = false
                     self.bingoMessage = "Error: \(error.localizedDescription)"
@@ -1639,7 +1639,7 @@ final class BoardPlayViewModel: ObservableObject {
                     self.emitEdit(.saved)
                 }
             } catch {
-                print("⚠️ BoardPlayViewModel.handleEditSave: \(error)")
+                dlog("⚠️ BoardPlayViewModel.handleEditSave: \(error)")
                 await MainActor.run {
                     self.editSaveInFlight = false
                     self.emitEdit(.saveFailed("Couldn’t save your changes — please try again."))
@@ -1668,7 +1668,7 @@ final class BoardPlayViewModel: ObservableObject {
                     self.emitEdit(.archived)
                 }
             } catch {
-                print("⚠️ BoardPlayViewModel.handleEditArchive: \(error)")
+                dlog("⚠️ BoardPlayViewModel.handleEditArchive: \(error)")
                 await MainActor.run {
                     self.bingoMessage = "Archive failed — please try again."
                 }

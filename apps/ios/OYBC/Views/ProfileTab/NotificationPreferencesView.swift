@@ -136,7 +136,7 @@ struct NotificationPreferencesView: View {
                 return next
             }
         } catch {
-            print("⚠️ NotificationPreferencesView updateUserPreferences failed: \(error)")
+            dlog("⚠️ NotificationPreferencesView updateUserPreferences failed: \(error)")
         }
         if reconcileAfter { reconcile() }
     }

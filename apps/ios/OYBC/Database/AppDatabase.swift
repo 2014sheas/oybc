@@ -28,7 +28,7 @@ final class AppDatabase {
             dbQueue = try DatabaseQueue(path: databaseURL.path, configuration: Self.databaseConfiguration())
             try migrator.migrate(dbQueue)
             let elapsed = Date().timeIntervalSince(start)
-            print("✅ Database initialized at: \(databaseURL.path) (\(String(format: "%.2f", elapsed))s)")
+            dlog("✅ Database initialized at: \(databaseURL.path) (\(String(format: "%.2f", elapsed))s)")
         } catch {
             fatalError("Database initialization failed: \(error)")
         }

@@ -465,7 +465,7 @@ struct ProfileView: View {
                         return next
                     }
                 } catch {
-                    print("⚠️ updateUserPreferences(theme) failed: \(error)")
+                    dlog("⚠️ updateUserPreferences(theme) failed: \(error)")
                 }
             }
         )

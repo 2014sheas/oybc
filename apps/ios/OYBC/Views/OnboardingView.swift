@@ -166,7 +166,7 @@ struct OnboardingView: View {
                     return next
                 }
             } catch {
-                print("⚠️ OnboardingView: updateUserPreferences failed: \(error)")
+                dlog("⚠️ OnboardingView: updateUserPreferences failed: \(error)")
             }
         }
 

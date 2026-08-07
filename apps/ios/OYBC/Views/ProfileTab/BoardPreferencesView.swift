@@ -217,7 +217,7 @@ struct BoardPreferencesView: View {
                         return next
                     }
                 } catch {
-                    print("⚠️ BoardPreferencesView updateUserPreferences failed: \(error)")
+                    dlog("⚠️ BoardPreferencesView updateUserPreferences failed: \(error)")
                 }
             }
         )

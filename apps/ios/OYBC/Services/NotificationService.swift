@@ -121,7 +121,7 @@ final class NotificationService: ObservableObject {
             do {
                 try await center.add(makeRequest(planned))
             } catch {
-                print("⚠️ NotificationService: failed to schedule \(planned.identifier): \(error)")
+                dlog("⚠️ NotificationService: failed to schedule \(planned.identifier): \(error)")
             }
         }
     }

@@ -144,7 +144,7 @@ final class CreateHubViewModel {
                 DispatchQueue.main.async {
                     self.resumeDraft = nil
                     self.mode = .wizardFresh
-                    print("⚠️ Failed to load draft \(board.id): \(error.localizedDescription)")
+                    dlog("⚠️ Failed to load draft \(board.id): \(error.localizedDescription)")
                 }
             }
         }
@@ -164,7 +164,7 @@ final class CreateHubViewModel {
                 } else {
                     self.resumeDraft = nil
                     self.mode = .wizardFresh
-                    print("⚠️ Failed to load draft board \(boardId) for resume")
+                    dlog("⚠️ Failed to load draft board \(boardId) for resume")
                 }
             }
         }
@@ -186,7 +186,7 @@ final class CreateHubViewModel {
                     self.reloadDrafts(userId: userId)
                 }
             } catch {
-                print("⚠️ Failed to delete draft \(boardId): \(error.localizedDescription)")
+                dlog("⚠️ Failed to delete draft \(boardId): \(error.localizedDescription)")
             }
         }
     }
@@ -211,13 +211,13 @@ final class CreateHubViewModel {
                     if let template = template {
                         self.editingTemplate = template
                     } else {
-                        print("⚠️ Recurring template \(templateId) no longer exists")
+                        dlog("⚠️ Recurring template \(templateId) no longer exists")
                         self.mode = .wizardFresh
                     }
                 }
             } catch {
                 DispatchQueue.main.async {
-                    print("⚠️ Failed to load recurring template \(templateId): \(error.localizedDescription)")
+                    dlog("⚠️ Failed to load recurring template \(templateId): \(error.localizedDescription)")
                     self.mode = .wizardFresh
                 }
             }
