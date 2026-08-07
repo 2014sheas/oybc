@@ -7,7 +7,6 @@ export * from './boardTask';
 export * from './compoundChild';
 export * from './progressCounter';
 export * from './syncQueue';
-export * from './compositeTask';
 export * from './recurringBoardTemplate';
 export * from './defaultPool';
 export * from './pool';

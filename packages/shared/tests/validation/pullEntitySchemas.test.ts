@@ -1,10 +1,7 @@
 import {
   BoardSchema,
   TaskSchema,
-  TaskStepSchema,
   BoardTaskSchema,
-  CompositeTaskSchema,
-  CompositeNodeSchema,
 } from '../../src/validation/schemas';
 import {
   BoardStatus,
@@ -200,32 +197,6 @@ describe('TaskSchema pull validation', () => {
   });
 });
 
-describe('TaskStepSchema pull validation', () => {
-  const validStep = () => ({
-    id: '00000000-0000-0000-0000-000000000003',
-    taskId: '00000000-0000-0000-0000-000000000004',
-    stepIndex: 0,
-    title: 'Step 1',
-    type: TaskType.NORMAL,
-    createdAt: '2026-04-17T00:00:00.000Z',
-    updatedAt: '2026-04-17T00:00:00.000Z',
-    version: 1,
-    isDeleted: false,
-  });
-
-  it('accepts a well-formed step', () => {
-    expect(TaskStepSchema.safeParse(validStep()).success).toBe(true);
-  });
-
-  it('rejects a step with a negative stepIndex', () => {
-    expect(TaskStepSchema.safeParse({ ...validStep(), stepIndex: -1 }).success).toBe(false);
-  });
-
-  it('rejects a step with version = 0', () => {
-    expect(TaskStepSchema.safeParse({ ...validStep(), version: 0 }).success).toBe(false);
-  });
-});
-
 describe('BoardTaskSchema pull validation', () => {
   const validBoardTask = () => ({
     id: '00000000-0000-0000-0000-000000000005',
@@ -255,47 +226,5 @@ describe('BoardTaskSchema pull validation', () => {
   // an out-of-sane-range row/col must not decode on pull.
   it('rejects a pulled board task with a row past the sane upper bound (25)', () => {
     expect(BoardTaskSchema.safeParse({ ...validBoardTask(), row: 25 }).success).toBe(false);
-  });
-});
-
-describe('CompositeTaskSchema / CompositeNodeSchema pull validation', () => {
-  const validComposite = () => ({
-    id: '00000000-0000-0000-0000-000000000008',
-    userId: 'user-1',
-    title: 'Master task',
-    rootNodeId: '00000000-0000-0000-0000-000000000009',
-    createdAt: '2026-04-17T00:00:00.000Z',
-    updatedAt: '2026-04-17T00:00:00.000Z',
-    version: 1,
-    isDeleted: false,
-  });
-
-  const validNode = () => ({
-    id: '00000000-0000-0000-0000-000000000009',
-    compositeTaskId: '00000000-0000-0000-0000-000000000008',
-    nodeIndex: 0,
-    nodeType: 'leaf',
-    createdAt: '2026-04-17T00:00:00.000Z',
-    updatedAt: '2026-04-17T00:00:00.000Z',
-    version: 1,
-    isDeleted: false,
-  });
-
-  it('accepts a well-formed composite task', () => {
-    expect(CompositeTaskSchema.safeParse(validComposite()).success).toBe(true);
-  });
-
-  it('rejects a composite task with missing userId', () => {
-    const base = validComposite();
-    delete (base as Record<string, unknown>).userId;
-    expect(CompositeTaskSchema.safeParse(base).success).toBe(false);
-  });
-
-  it('accepts a well-formed leaf node', () => {
-    expect(CompositeNodeSchema.safeParse(validNode()).success).toBe(true);
-  });
-
-  it('rejects a node with an unknown nodeType', () => {
-    expect(CompositeNodeSchema.safeParse({ ...validNode(), nodeType: 'branch' }).success).toBe(false);
   });
 });

@@ -570,24 +570,6 @@ export const TaskEventSchema = z
     },
   );
 
-export const TaskStepSchema = z.object({
-  id: z.string().uuid(),
-  taskId: z.string().uuid(),
-  stepIndex: z.number().int().min(0),
-  title: z.string().min(1).max(200),
-  type: z.nativeEnum(TaskType),
-  action: z.string().max(50).optional(),
-  unit: z.string().max(50).optional(),
-  maxCount: z.number().int().positive().optional(),
-  linkedTaskId: z.string().uuid().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  lastSyncedAt: z.string().datetime().optional(),
-  version: z.number().int().min(1),
-  isDeleted: z.boolean(),
-  deletedAt: z.string().datetime().optional(),
-});
-
 // ===== BoardTask Schemas =====
 //
 // Phase 6.3 — BoardTask is a pure placement record. The pre-refactor
@@ -715,51 +697,6 @@ export const SyncQueueItemSchema = z.object({
   lastAttemptAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
   priority: z.number().int(),
-});
-
-// ===== Composite Task Schemas =====
-
-/**
- * Inline task auto-creation input (used in leaf nodes)
- */
-export const AutoCreateTaskInputSchema = z.object({
-  type: z.nativeEnum(TaskType),
-  title: z.string().min(1).max(200),
-  action: z.string().max(50).optional(),
-  unit: z.string().max(50).optional(),
-  maxCount: z.number().int().positive().optional(),
-});
-
-export const CompositeTaskSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string(),
-  title: z.string().min(1).max(200),
-  description: z.string().max(1000).optional(),
-  rootNodeId: z.string().uuid(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  lastSyncedAt: z.string().datetime().optional(),
-  version: z.number().int().min(1),
-  isDeleted: z.boolean(),
-  deletedAt: z.string().datetime().optional(),
-});
-
-export const CompositeNodeSchema = z.object({
-  id: z.string().uuid(),
-  compositeTaskId: z.string().uuid(),
-  parentNodeId: z.string().uuid().optional(),
-  nodeIndex: z.number().int().min(0),
-  nodeType: z.enum(['operator', 'leaf']),
-  operatorType: z.nativeEnum(OperatorType).optional(),
-  threshold: z.number().int().positive().optional(),
-  taskId: z.string().uuid().optional(),
-  childCompositeTaskId: z.string().uuid().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  lastSyncedAt: z.string().datetime().optional(),
-  version: z.number().int().min(1),
-  isDeleted: z.boolean(),
-  deletedAt: z.string().datetime().optional(),
 });
 
 // ===== RecurringBoardTemplate Schemas (Phase 6.2) =====
