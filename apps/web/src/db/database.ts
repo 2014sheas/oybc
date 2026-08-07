@@ -3,12 +3,9 @@ import type {
   Board,
   Task,
   TaskEvent,
-  TaskStep,
   BoardTask,
   User,
   SyncQueueItem,
-  CompositeTask,
-  CompositeNode,
   CompoundChild,
   RecurringBoardTemplate,
   DefaultPool,
@@ -26,11 +23,8 @@ export class AppDatabase extends Dexie {
   users!: Table<User, string>;
   boards!: Table<Board, string>;
   tasks!: Table<Task, string>;
-  taskSteps!: Table<TaskStep, string>;
   boardTasks!: Table<BoardTask, string>;
   syncQueue!: Table<SyncQueueItem, string>;
-  compositeTasks!: Table<CompositeTask, string>;
-  compositeNodes!: Table<CompositeNode, string>;
   compoundChildren!: Table<CompoundChild, string>;
   recurringBoardTemplates!: Table<RecurringBoardTemplate, string>;
   defaultPools!: Table<DefaultPool, string>;
@@ -135,30 +129,22 @@ export class AppDatabase extends Dexie {
     // v4: Add compoundChildren table for the unified compound model.
     // Replaces task_steps + composite_nodes (legacy stores remain in place
     // until v5 — Task 2.6 — drops them after Task 2.5's data migration).
-    this.version(4)
-      .stores({
-        compoundChildren: `
-          id,
-          compoundTaskId,
-          childTaskId,
-          [compoundTaskId+childIndex]
-        `,
-      })
-      .upgrade((tx) => {
-        // Dynamic import avoids a top-of-file circular reference:
-        // migrationV4.ts imports `db` from this file, so a static import here
-        // would create a cycle. Dexie resolves the Promise before the upgrade
-        // transaction commits, so atomicity is preserved.
-        return import('./operations/migrationV4').then((mod) =>
-          mod.runMigrationV4(tx)
-        );
-      });
+    this.version(4).stores({
+      compoundChildren: `
+        id,
+        compoundTaskId,
+        childTaskId,
+        [compoundTaskId+childIndex]
+      `,
+    });
 
-    // v5: Drop legacy stores. The v4 upgrade callback already migrated their
-    // rows into `tasks` + `compoundChildren`. Class field declarations for
-    // `taskSteps`, `compositeTasks`, `compositeNodes` remain so migrationV4.ts
-    // still compiles — Phase 8 cleanup removes them along with the migration
-    // code itself once we're past the transition window.
+    // v5: Drop legacy stores. The (now-removed) v4 upgrade callback migrated
+    // their rows into `tasks` + `compoundChildren` on any device that passed
+    // through v4 during an upgrade; a fresh install never runs Dexie
+    // `.upgrade()` callbacks at all, so this `.stores({...: null})` clause is
+    // what actually keeps the legacy stores out of a new device's schema —
+    // KEEP untouched. `runMigrationV4` itself was deleted as dead code once
+    // every real device had long since passed v4 (see chore/wave2-pr1).
     this.version(5).stores({
       taskSteps: null,
       compositeTasks: null,
@@ -445,12 +431,9 @@ export type {
   Board,
   Task,
   TaskEvent,
-  TaskStep,
   BoardTask,
   User,
   SyncQueueItem,
-  CompositeTask,
-  CompositeNode,
   CompoundChild,
   RecurringBoardTemplate,
 };

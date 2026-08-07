@@ -70,21 +70,6 @@ export type {
   CycleCheckContext,
   CycleCheckResult,
 } from './cycleDetection';
-
-export {
-  progressTaskToCompound,
-  taskStepToCompoundChild,
-  compositeTaskToTask,
-  compositeNodeToCompoundChild,
-  backfillTaskCompletion,
-  collectEverCompletedStepIds,
-  shouldBackfillStepLinkedTaskAsComplete,
-} from './migrationHelpers';
-
-export type {
-  LegacyBoardTaskCompletion,
-  CompletionBackfillResult,
-} from './migrationHelpers';
 // ===== End compound tasks unification =====
 
 export {
