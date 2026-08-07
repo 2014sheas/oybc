@@ -200,3 +200,75 @@ func getExpiryLabel(_ board: Board) -> String {
     if daysLeft == 1 { return "1 day left" }
     return "\(daysLeft) days left"
 }
+
+// MARK: - Board List Sort
+
+/// Boards-screen ordering — Swift mirror of `@oybc/shared`'s
+/// `compareBoardsForList`. Active boards (still in play) first, ordered by
+/// soonest endDate (no-deadline boards last), then non-active boards by most
+/// recent activity. Ties within a group break by `updatedAt` descending.
+/// Keep in lock-step with the TS comparator + its unit tests.
+///
+/// Written as an `areInIncreasingOrder` predicate for `sorted(by:)`: returns
+/// `true` iff `a` should be ordered before `b`.
+///
+/// - Parameters:
+///   - a: First board.
+///   - b: Second board.
+///   - now: Reference time for the expiry check (injectable for tests).
+/// - Returns: `true` if `a` sorts before `b`.
+func compareBoardsForList(_ a: Board, _ b: Board, now: Date = Date()) -> Bool {
+    let aActive = isActiveForSort(a, now: now)
+    let bActive = isActiveForSort(b, now: now)
+
+    // 1. Active group before non-active group.
+    if aActive != bActive { return aActive }
+
+    // 2. Both active — soonest deadline first, no-deadline boards last.
+    if aActive {
+        let aEnd = deadlineTime(a)
+        let bEnd = deadlineTime(b)
+        if aEnd != bEnd {
+            if aEnd == nil { return false } // a has no deadline → after b
+            if bEnd == nil { return true }  // b has no deadline → after a
+            return aEnd! < bEnd!            // ascending: soonest first
+        }
+        // Same (or both-missing) deadline → most recent activity first.
+        return activityAfter(a, b)
+    }
+
+    // 3. Both non-active — most recent activity / completion first.
+    return activityAfter(a, b)
+}
+
+/// A board "still in play": ACTIVE status, not sealed, not past its endDate.
+private func isActiveForSort(_ board: Board, now: Date) -> Bool {
+    guard board.status == .active else { return false }
+    guard board.sealedAt == nil else { return false }
+    return !isBoardExpiredAt(board, now: now)
+}
+
+/// `isBoardExpired` with an injectable reference time, for deterministic
+/// sort-comparator tests. `isBoardExpired(_:)` itself always reads `Date()`.
+private func isBoardExpiredAt(_ board: Board, now: Date) -> Bool {
+    guard !board.isIndefinite else { return false }
+    guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return false }
+    return now > end
+}
+
+/// The board's deadline as a `Date`, or `nil` for INDEFINITE / no endDate.
+private func deadlineTime(_ board: Board) -> Date? {
+    guard !board.isIndefinite else { return nil }
+    guard let endStr = board.endDate else { return nil }
+    return parseISO8601Date(endStr)
+}
+
+/// `true` iff `a.updatedAt` is more recent than `b.updatedAt` (descending
+/// activity order). Unparseable timestamps fall back to `.distantPast` so a
+/// malformed value never crashes the comparator or breaks the strict-weak
+/// ordering — mirrors `PlacementIntegrity.swift`'s `updatedAt` handling.
+private func activityAfter(_ a: Board, _ b: Board) -> Bool {
+    let aTime = parseISO8601Date(a.updatedAt) ?? .distantPast
+    let bTime = parseISO8601Date(b.updatedAt) ?? .distantPast
+    return aTime > bTime
+}

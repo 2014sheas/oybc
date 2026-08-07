@@ -105,8 +105,13 @@ struct BoardListView: View {
     private var filteredBoards: [Board] {
         // Chip semantics (incl. "Completed = every board whose run is over")
         // live in the shared, unit-tested predicate — see
-        // `boardMatchesListFilter` in TimeframeFormatting.swift.
-        boards.filter { boardMatchesListFilter($0, filter: activeFilter) }
+        // `boardMatchesListFilter` in TimeframeFormatting.swift. Display
+        // ordering (active-by-deadline above non-active-by-recency) is the
+        // shared, unit-tested `compareBoardsForList` — same file, mirrors
+        // web's `useBoards` sort.
+        boards
+            .filter { boardMatchesListFilter($0, filter: activeFilter) }
+            .sorted { compareBoardsForList($0, $1) }
     }
 
     // MARK: - Body
