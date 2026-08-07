@@ -101,7 +101,7 @@ deriveDisplayedCount({ baseline, maxCount }, { currentCount }): { displayed, isC
 
 **A "counter"** (the UX-facing concept) = one source counting task + all tasks linking to it via `sharedCounterId`. `buildSharedCounterGroups({tasks, boardTasks, boards})` (`packages/shared/src/algorithms/sharedCounterGroups.ts`, Swift port `SharedCounterGroups.swift`) is the pure read-model that assembles counter groups for the Counters Hub / Counter Detail UI. `findLinkableCounter({action, unit}, tasks)` (`packages/shared/src/algorithms/linkableCounter.ts`) powers the create-form "counts on your existing **{name}** counter" link suggestion. See [`docs/SHARED_COUNTERS.md`](SHARED_COUNTERS.md) for the full UX design and phasing; [`docs/ARCHITECTURE.md` §"Shared counters (Issue #84 — Phase 0 design)"](./ARCHITECTURE.md#shared-counters-issue-84--phase-0-design) (Decisions 1–7) is the canonical schema/design-decision record.
 
-**Sync**: counts are event-sourced — offline increments on multiple devices survive as separate `task_events` rows (union-by-id, per-row LWW) and the source's `currentCount` cache is recomputed from the event union on pull, so no increments are lost. The earlier `sharedCounterMerge` additive three-way merge (keyed on `lastSyncedCount`) was retired by Windowed Completion (design: [`WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md); neutered in PR B, deleted in PR D) — see [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md) for the current sync design. `progress_counters` / `ProgressCounter` / `calculateCountingRollup` are vestigial dead — rejected in favor of this per-Task model; do not build against them.
+**Sync**: counts are event-sourced — offline increments on multiple devices survive as separate `task_events` rows (union-by-id, per-row LWW) and the source's `currentCount` cache is recomputed from the event union on pull, so no increments are lost. The earlier `sharedCounterMerge` additive three-way merge (keyed on `lastSyncedCount`) was retired by Windowed Completion (design: [`WINDOWED_COMPLETION.md`](./WINDOWED_COMPLETION.md); neutered in PR B, deleted in PR D) — see [`SYNC_STRATEGY.md`](./SYNC_STRATEGY.md) for the current sync design. `progress_counters` / `ProgressCounter` / `calculateCountingRollup` were **removed in Wave 2 (PRs #411–#414)** — rejected in favor of this per-Task model.
 
 ### 3. Compound tasks
 
@@ -333,6 +333,8 @@ CREATE TABLE board_tasks (
 - `task_steps` — children move to `compound_children` (with `linkedTaskId` becoming `childTaskId`).
 - `composite_tasks` — merged into `tasks` (with `type='compound'`).
 - `composite_nodes` — leaf nodes move to `compound_children`; root operator nodes are discarded (operator now lives on the parent Task).
+
+The unification collapsed these at the model level; the physical SQLite tables (plus `progress_counters`) and their `TaskStep` / `CompositeTask` / `CompositeNode` / `ProgressCounter` types were then **fully removed in the progress-tasks teardown (Wave 2, 2026-08; PRs #411–#414)** — the iOS GRDB tables were dropped in migration v28 and the Dexie stores were already dropped.
 
 ---
 

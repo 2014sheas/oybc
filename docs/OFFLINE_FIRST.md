@@ -1,6 +1,6 @@
 # Offline-First Architecture
 
-> **Note (2026-04-30, amended 2026-07-29):** This doc was last revised before the Compound Tasks Unification (PR #43, 2026-04-29). The persistence and sync principles described here remain accurate, but task-model specifics (4-type model, `task_steps`, `composite_tasks`, per-`BoardTask` completion) have been retired. For the current task model see [`TASK_SYSTEM.md`](TASK_SYSTEM.md). Where this doc says "composite task" or "progress task", read it as **compound task**; where it shows `BoardTask.isCompleted` or a direct `isCompleted: true` field write, the current write path **appends a `task_events` row** and stamps the Task's lifetime caches — boards evaluate against their window from those events, never a bare field write. See [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) for the current write-path shape; this doc's snippets are illustrative of the *offline-first flow*, not the completion model.
+> **Note (2026-04-30, amended 2026-07-29):** This doc was last revised before the Compound Tasks Unification (PR #43, 2026-04-29). The persistence and sync principles described here remain accurate, but task-model specifics (4-type model, `task_steps`, `composite_tasks`, per-`BoardTask` completion) have been removed — the `task_steps`/`composite_tasks` tables and types were torn down in the progress-tasks teardown (Wave 2, 2026-08; PRs #411–#414). For the current task model see [`TASK_SYSTEM.md`](TASK_SYSTEM.md). Where this doc says "composite task" or "progress task", read it as **compound task**; where it shows `BoardTask.isCompleted` or a direct `isCompleted: true` field write, the current write path **appends a `task_events` row** and stamps the Task's lifetime caches — boards evaluate against their window from those events, never a bare field write. See [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) for the current write-path shape; this doc's snippets are illustrative of the *offline-first flow*, not the completion model.
 
 This document explains the offline-first architecture of OYBC and why it's essential for the user experience.
 
@@ -218,45 +218,7 @@ User taps task → Update local DB (isCompleted = true)
 
 ### Completing a Composite Task (Offline)
 
-**Scenario**: User completes sub-task in composite task "(Exercise OR Yoga) AND (2 of [Meditate, Journal, Read])"
-
-```
-User completes "Exercise" task
-  ↓
-Update local DB (board_tasks: Exercise isCompleted = true)
-  ↓
-Detect composite tasks referencing "Exercise"
-  ↓
-Evaluate composite tree (recursive traversal)
-  ├─ Check AND operator (root)
-  │  ├─ Check OR operator (left child)
-  │  │  ├─ Exercise: ✅ Complete
-  │  │  └─ Yoga: ❌ Incomplete
-  │  │  → OR result: ✅ True (at least one complete)
-  │  └─ Check M_OF_N operator (right child, threshold=2)
-  │     ├─ Meditate: ✅ Complete
-  │     ├─ Journal: ✅ Complete
-  │     └─ Read: ❌ Incomplete
-  │     → M_OF_N result: ✅ True (2/3 complete, meets threshold)
-  → AND result: ✅ True (both children complete)
-  ↓
-Auto-complete composite task
-  ↓
-Update board stats + detect bingo
-  ↓
-Queue sync operations
-  ↓
-UI updates (instant) ✨
-```
-
-**Timeline**:
-- 0ms: User completes "Exercise"
-- 5ms: Local DB updated (compound child completion on `tasks`)
-- 8ms: Compound rule evaluated (< 50ms target)
-- 8ms: Compound parent task auto-completed
-- 10ms: Board stats updated
-- 10ms: UI shows compound completion ✨
-- Later: Syncs the parent + child task rows + compound_children edges to Firestore
+> **Removed (Wave 2, 2026-08; PRs #411–#414).** The composite/progress task model this walkthrough described was torn down in the progress-tasks teardown. Compounds now live as ordinary `tasks` rows (`type='compound'`, with `operator` + `threshold`) with children linked via `compound_children`, and completion is event-sourced via `task_events` — see [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) and [`TASK_SYSTEM.md`](TASK_SYSTEM.md). The original offline-completion walkthrough is in git history.
 
 ### Multi-Device Sync
 

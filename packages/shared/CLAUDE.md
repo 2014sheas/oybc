@@ -12,9 +12,10 @@ Single source of truth for types, algorithms, validation, and constants shared a
 
 ```
 src/
-├── types/        # Board, Task, CompoundChild, BoardTask, ProgressCounter, User,
+├── types/        # Board, Task, CompoundChild, BoardTask, User,
 │                 #   SyncQueueItem, RecurringBoardTemplate, DefaultPool
-│                 #   (TaskStep / CompositeTask persist as legacy migration-read types only)
+│                 #   (TaskStep / CompositeTask / CompositeNode / ProgressCounter were
+│                 #    removed in the progress-tasks teardown — Wave 2, PRs #411–#414)
 ├── algorithms/   # bingo detection, shuffle, calendar boundaries, compound evaluation,
 │                 #   derivation pass, recurring boards, streaks, task events (windowed
 │                 #   completion), cross-board rollup, task expiry, cycle detection, migration helpers

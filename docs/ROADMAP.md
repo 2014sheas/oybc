@@ -123,10 +123,9 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 - **Scope:** export `SYNC_COLLECTIONS`, `USER_SCOPED_COLLECTIONS`, `LEGACY_PULL_SKIP` as constants from `packages/shared`; web consumes them directly; a Swift test asserts `SyncService`'s lists match a checked-in JSON copy of them (generated into the fixture dir by the shared build or hand-synced with a Jest guard). LWW tie-break rules become C1 fixture vectors run against both `resolveConflict` implementations.
 - **Acceptance:** adding a collection on one platform without the other fails a test somewhere.
 
-### C5 — Finish the `progressCounters` retirement on iOS — `S`
-- **Why:** web dropped the Dexie store at v11 and de-exported the type; iOS still declares `progress_counters` (`Schema.sql:150`) and row-wipes it (`AuthService.swift:536`); `packages/shared/src/types/progressCounter.ts` is orphaned (exported nowhere, imported nowhere). A half-retired entity is a trap for the next contributor.
-- **Scope:** iOS migration dropping the table (or, if kept inert for old-device compatibility like the other legacy tables, an explicit comment saying so and why); remove the wipe call; delete the orphaned shared type file; confirm the sync known-collections list treatment matches the other legacy tables.
-- **Acceptance:** `progress_counters`/`ProgressCounter` references are either gone or carry an explicit legacy-inert comment matching the `task_steps` convention; grep is clean otherwise.
+### C5 — Finish the `progressCounters` retirement on iOS — DONE (Wave 2, PR #414)
+- **Why:** web dropped the Dexie store at v11 and de-exported the type; iOS still declared `progress_counters` and row-wiped it; `packages/shared/src/types/progressCounter.ts` was orphaned. A half-retired entity is a trap for the next contributor.
+- **Shipped:** the `progress_counters` GRDB table was dropped in migration v28, the row-wipe call was removed, and the orphaned `ProgressCounter` type + `calculateCountingRollup` were deleted — done as part of the wider progress-tasks teardown (Wave 2, PRs #411–#414). `progress_counters` / `ProgressCounter` references are gone from live code; grep is clean.
 
 ### C6 — Web draft-board containment parity — SHIPPED (part 1 PR #203; part 2 PR #211; e2e coverage #313's PR)
 - **Why:** already tracked in CLAUDE.md: iOS shipped draft-task library hiding (`createdInWizard`) and drafts-never-playable; web still browses wizard-born draft tasks and opens draft boards as playable.
