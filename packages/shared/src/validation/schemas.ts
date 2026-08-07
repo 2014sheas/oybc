@@ -279,9 +279,9 @@ export const CreateTaskInputSchema = z.object({
   (data) => data.isCounter !== true || data.sharedCounterId == null,
   { message: 'A derived (linked) counting task cannot be a counter' },
 );
-// Note: post-unification, Progress tasks are created via
-// `CreateCompoundTaskInputSchema` (compound + isOrdered=true). This schema
-// only accepts NORMAL / COUNTING / COMPOUND / ACHIEVEMENT — no Progress branch needed.
+// Note: post-unification, former Progress tasks are created via
+// `CreateCompoundTaskInputSchema` (compound + AND). This schema only accepts
+// NORMAL / COUNTING / COMPOUND / ACHIEVEMENT — no Progress branch needed.
 
 export const UpdateTaskInputSchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -385,7 +385,6 @@ export const CreateCompoundTaskInputSchema = z.object({
   description: z.string().max(1000).optional(),
   operator: z.nativeEnum(OperatorType),
   threshold: z.number().int().positive().optional(),
-  isOrdered: z.boolean(),
   children: z.array(CreateCompoundChildEntrySchema).min(2),
   // Phase 6.Y — Timeboxed Tasks. Optional; when set, the parent
   // compound AND all inline-created children inherit this triple at
@@ -428,7 +427,6 @@ export const TaskSchema = z.object({
   // Compound task fields
   operator: z.nativeEnum(OperatorType).optional(),
   threshold: z.number().int().positive().optional(),
-  isOrdered: z.boolean().optional(),
   // Phase 6.3 — Achievement-task cross-board references. Only meaningful
   // when `type === ACHIEVEMENT`. Mutually exclusive and required-XOR'd on
   // achievement tasks; forbidden on every other type. The refinements at

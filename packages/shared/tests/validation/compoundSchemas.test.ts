@@ -361,7 +361,6 @@ function validCreateCompoundTaskInput(overrides: Record<string, unknown> = {}) {
   return {
     title: 'Read two books',
     operator: OperatorType.AND,
-    isOrdered: false,
     children: [
       { childTaskId: '00000000-0000-0000-0000-000000000001' },
       { childTaskId: '00000000-0000-0000-0000-000000000002' },

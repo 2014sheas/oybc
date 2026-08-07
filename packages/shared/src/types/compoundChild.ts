@@ -2,7 +2,7 @@
  * CompoundChild — one parent-child link in a compound task's structure.
  *
  * Replaces both `task_steps` (for progress) and `composite_nodes` leaves (for
- * composite). The parent compound's operator + threshold + isOrdered fields
+ * composite). The parent compound's operator + threshold fields
  * live on the Task row itself (see `Task` in ./task.ts).
  *
  * The child can be ANY Task — primitive (normal/counting) or another
@@ -16,7 +16,7 @@ export interface CompoundChild {
   childTaskId: string;           // FK to tasks (the child — any type, including nested compound)
 
   // Ordering
-  childIndex: number;            // 0-based; honored when parent.isOrdered
+  childIndex: number;            // 0-based child ordering (always honored)
 
   // Timestamps
   createdAt: string;             // ISO8601

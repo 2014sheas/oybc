@@ -40,7 +40,6 @@ export interface Task {
   // Compound-specific fields (only meaningful when type === TaskType.COMPOUND)
   operator?: OperatorType;       // AND | OR | M_OF_N
   threshold?: number;            // Required when operator === 'M_OF_N'
-  isOrdered?: boolean;           // Display hint: true → progress-style ordered step list
 
   /**
    * Phase 6.3 — Achievement-task cross-board reference (specific board).
@@ -442,8 +441,6 @@ export interface CreateCompoundTaskInput {
   operator: OperatorType;
   /** Required when operator === 'M_OF_N'. */
   threshold?: number;
-  /** Display hint: true → renders as ordered "step list" (former Progress UX). */
-  isOrdered: boolean;
   children: CreateCompoundChildEntry[];
   /** Phase 6.Y — Timeboxed Tasks. Optional. When provided the parent
    *  compound + every inline-created child Task inherit this triple. */
