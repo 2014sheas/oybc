@@ -523,7 +523,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
               type:
                 squareData.type === 'counting'
                   ? 'counting'
-                  : squareData.type === 'compound' || squareData.type === 'progress'
+                  : squareData.type === 'compound'
                     ? 'compound'
                     : 'normal',
               done: squareState.isCompleted,

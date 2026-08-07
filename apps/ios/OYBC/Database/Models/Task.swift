@@ -381,44 +381,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     }
 }
 
-// MARK: - TaskStep
-
-/// TaskStep - Step within a progress task
-///
-/// Matches TypeScript TaskStep interface from @oybc/shared
-struct TaskStep: Codable, FetchableRecord, PersistableRecord {
-    // Identity
-    var id: String
-    var taskId: String
-    var stepIndex: Int
-
-    // Core fields
-    var title: String
-    var type: TaskType
-
-    // Counting step fields
-    var action: String?
-    var unit: String?
-    var maxCount: Int?
-
-    // Step linking
-    var linkedTaskId: String?
-
-    // Timestamps
-    var createdAt: String // ISO8601
-    var updatedAt: String // ISO8601
-
-    // Sync metadata
-    var lastSyncedAt: String? // ISO8601
-    var version: Int
-    var isDeleted: Bool
-    var deletedAt: String? // ISO8601
-
-    // MARK: - Database Configuration
-
-    static let databaseTableName = "task_steps"
-}
-
 // MARK: - Supporting Types
 
 enum TaskType: String, Codable, DatabaseValueConvertible {

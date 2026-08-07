@@ -81,32 +81,3 @@ export interface AutoCreateTaskInput {
   unit?: string;
   maxCount?: number;
 }
-
-/**
- * Input for creating a composite node (nested tree structure)
- *
- * The tree is specified as nested input — operator nodes contain
- * their children inline. This is flattened to rows when persisted.
- */
-export interface CreateCompositeNodeInput {
-  nodeType: 'operator' | 'leaf';
-
-  // Operator node fields
-  operatorType?: OperatorType;
-  threshold?: number;                // Required for M_OF_N
-  children?: CreateCompositeNodeInput[]; // Operator children (recursive)
-
-  // Leaf node fields (exactly one of taskId, childCompositeTaskId, or autoCreateTask must be set)
-  taskId?: string;                   // Reference existing task
-  childCompositeTaskId?: string;     // Reference nested composite task
-  autoCreateTask?: AutoCreateTaskInput; // Create new task inline
-}
-
-/**
- * Input for creating a composite task
- */
-export interface CreateCompositeTaskInput {
-  title: string;
-  description?: string;
-  rootNode: CreateCompositeNodeInput;
-}

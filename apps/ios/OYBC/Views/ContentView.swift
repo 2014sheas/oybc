@@ -13,11 +13,8 @@ import SwiftUI
 /// Maybe later). Developers can reset it via a "Replay onboarding" tweak
 /// in ProfileView.
 ///
-/// The pre-unification debug screenshot harnesses (`CompositeBuildPreview`,
-/// `BoardWizardTasksPreview`) were dropped in Phase 8 — their fixtures
-/// consumed retired CompositeTask / CompositeNode / TaskStep shapes. The
-/// snapshot test target (`OYBCSnapshotTests`) is the new visual-verification
-/// surface.
+/// The `OYBCSnapshotTests` target is the visual-verification surface for
+/// UI changes.
 struct ContentView: View {
 
     /// Shared auth service — owned here so both `AuthGateView` and

@@ -28,8 +28,6 @@ interface ContextMenuProps {
   onIncrementCount?: (id: string) => void;
   onDecrementCount?: (id: string) => void;
   onResetCount?: (id: string) => void;
-  onMarkAllStepsComplete?: (id: string) => void;
-  onMarkAllStepsIncomplete?: (id: string) => void;
   onViewDetails?: (id: string) => void;
   /**
    * When provided, an "Open in library" item is added to the context menu
@@ -74,8 +72,6 @@ interface ContextMenuProps {
  * @param onIncrementCount - Add one unit to a counting task
  * @param onDecrementCount - Remove one unit from a counting task
  * @param onResetCount - Reset counting task to zero
- * @param onMarkAllStepsComplete - Mark every progress step complete
- * @param onMarkAllStepsIncomplete - Mark every progress step incomplete
  * @param onViewDetails - Open the detail modal for this square
  */
 export function FloatingContextMenu({
@@ -87,8 +83,6 @@ export function FloatingContextMenu({
   onIncrementCount,
   onDecrementCount,
   onResetCount,
-  onMarkAllStepsComplete,
-  onMarkAllStepsIncomplete,
   onViewDetails,
   onOpenInLibrary,
   sharedHint,
@@ -125,11 +119,6 @@ export function FloatingContextMenu({
       document.removeEventListener('keydown', handleKey);
     };
   }, [onClose]);
-
-  const allStepsDone =
-    sq.type === 'progress' &&
-    (sq.steps ?? []).length > 0 &&
-    state.completedStepIds.size >= (sq.steps ?? []).length;
 
   return (
     <div
@@ -237,40 +226,6 @@ export function FloatingContextMenu({
         </>
       )}
 
-      {sq.type === 'progress' && (
-        <>
-          <button
-            className={styles.contextMenuItem}
-            onClick={() => {
-              onViewDetails?.(sq.id);
-              onClose();
-            }}
-          >
-            ✓ View Steps
-          </button>
-          <button
-            className={styles.contextMenuItem}
-            disabled={allStepsDone}
-            onClick={() => {
-              onMarkAllStepsComplete?.(sq.id);
-              onClose();
-            }}
-          >
-            ✓✓ Mark All Complete
-          </button>
-          <button
-            className={styles.contextMenuItem}
-            disabled={!allStepsDone}
-            onClick={() => {
-              onMarkAllStepsIncomplete?.(sq.id);
-              onClose();
-            }}
-          >
-            ✗ Mark Incomplete
-          </button>
-        </>
-      )}
-
       {sq.type === 'compound' && (
         <button
           className={styles.contextMenuItem}
@@ -371,7 +326,7 @@ export function InteractiveTaskSquare({
   onContextMenu,
   achievementBadge,
 }: InteractiveTaskSquareProps) {
-  const hasProgress = sq.type === 'counting' || sq.type === 'progress' || sq.type === 'compound';
+  const hasProgress = sq.type === 'counting' || sq.type === 'compound';
   const fraction = progressFraction(sq, state);
   const barLabel = progressBarLabel(sq, state);
 
@@ -465,7 +420,6 @@ interface DetailModalProps {
   onToggleComplete: (id: string) => void;
   onIncrementCount: (id: string) => void;
   onDecrementCount: (id: string) => void;
-  onToggleStep: (squareId: string, stepId: string) => void;
   /** Compound tasks only: called when the user toggles a child task in the detail sheet. */
   onCompoundChildToggle?: (childTaskId: string) => void;
   /**
@@ -526,8 +480,8 @@ interface DetailModalProps {
  * A detail modal rendered as a fixed overlay with backdrop.
  *
  * Presents type-appropriate controls: a toggle button for normal tasks, a
- * counter with +/− buttons for counting tasks, and step checkboxes for
- * progress tasks. Backdrop clicks and Escape key close the modal.
+ * counter with +/− buttons for counting tasks, and a child-task list for
+ * compound tasks. Backdrop clicks and Escape key close the modal.
  *
  * @param sq - Task data to display
  * @param state - Current state of the task
@@ -535,7 +489,6 @@ interface DetailModalProps {
  * @param onToggleComplete - Called with square id to toggle normal task completion
  * @param onIncrementCount - Called with square id to add one count unit
  * @param onDecrementCount - Called with square id to remove one count unit
- * @param onToggleStep - Called with (squareId, stepId) to toggle a progress step
  * @param onCompoundChildToggle - Compound tasks only: called with childTaskId to toggle a child
  */
 export function DetailModal({
@@ -545,7 +498,6 @@ export function DetailModal({
   onToggleComplete,
   onIncrementCount,
   onDecrementCount,
-  onToggleStep,
   onCompoundChildToggle,
   onOpenInLibrary,
   sharedHint,
@@ -753,36 +705,6 @@ export function DetailModal({
             {sharedHint && (
               <div className={styles.sharedHint}>{sharedHint}</div>
             )}
-          </>
-        )}
-
-        {/* Progress task */}
-        {sq.type === 'progress' && (
-          <>
-            {sq.description && (
-              <p className={styles.modalDescription}>{sq.description}</p>
-            )}
-            {/* Progress bar */}
-            <div className={styles.modalProgressBar}>
-              <div
-                className={`${styles.modalProgressFill} ${styles.modalProgressFillProgress}`}
-                style={{ width: `${fraction * 100}%` }}
-              />
-              <div className={styles.modalProgressLabel}>{barLabel}</div>
-            </div>
-            {/* Step checkboxes */}
-            <div className={styles.stepsList}>
-              {(sq.steps ?? []).map((step) => (
-                <label key={step.id} className={styles.stepItem}>
-                  <input
-                    type="checkbox"
-                    checked={state.completedStepIds.has(step.id)}
-                    onChange={() => onToggleStep(sq.id, step.id)}
-                  />
-                  {step.label}
-                </label>
-              ))}
-            </div>
           </>
         )}
 
