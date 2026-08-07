@@ -86,13 +86,6 @@ export interface Task {
    */
   requiredCount?: number;
 
-  // Task linking (for tasks used as progress steps)
-  parentStepId?: string;         // References TaskStep.id in parent task
-  parentStepIndex?: number;      // Position of step in parent task (0-based)
-
-  // Progress counters (for tasks that contribute to shared counters)
-  progressCounters?: TaskProgressCounter[];
-
   // LIFETIME-CACHE completion state (Windowed Completion §Task caches):
   // library/global reads + the derived-counter carve-out ONLY — never for
   // windowed board rendering (resolve via task_events instead).
@@ -226,17 +219,6 @@ export interface Task {
    * dropping it would break decode. It is inert residue; do not re-wire it.
    */
   lastSyncedCount?: number | null;
-}
-
-/**
- * TaskProgressCounter - Link task to progress counter
- *
- * Allows task to contribute to shared counter
- */
-export interface TaskProgressCounter {
-  counterId: string;             // FK to progress_counters table
-  targetValue: number;           // Target for this task instance
-  unit?: string;                 // Override unit if different from counter
 }
 
 /**

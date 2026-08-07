@@ -839,6 +839,140 @@ final class AppDatabase {
             try db.execute(sql: "CREATE INDEX idx_board_tasks_board_deleted ON board_tasks(boardId, isDeleted)")
         }
 
+        // v28: Wave-2 PR-4 (C5) — drop the retired progress/composite scaffolding
+        // that the Compound Tasks Unification (v6/v7) and Windowed Completion
+        // work made permanently dead. Three parts:
+        //
+        //   (a) Recreate `tasks` WITHOUT `parentStepId` / `parentStepIndex` /
+        //       `progressCounters` / `isOrdered`. `parentStepId` carried a
+        //       FOREIGN KEY to `task_steps(id)` plus the `idx_tasks_parent_step`
+        //       index — both of which must go before `task_steps` itself can be
+        //       dropped in part (b). `isOrdered` (added in v6 for the
+        //       now-removed in-order-compounds feature) was already model-less
+        //       on the Swift side, so it's along for the ride. Follows the v18
+        //       boards-rebuild recipe exactly: standard SQLite
+        //       create-twin/copy/drop/rename table-rebuild, relying on the
+        //       migrator's default `.deferred` foreign-key mode (FK checks
+        //       suspended until COMMIT, so `board_tasks.taskId` /
+        //       `compound_children.*TaskId` / `boards.centerTaskId` references
+        //       into `tasks` don't trip mid-rebuild) plus a `COUNT(*)` row-count
+        //       parity guard against a silent copy failure.
+        //   (b) Drop `task_steps`, `composite_nodes`, `composite_tasks` — the
+        //       legacy tables `MigrationV7Helpers` reads via raw SQL earlier in
+        //       THIS SAME chain (v7, which already ran by the time v28 runs).
+        //       They've been unreferenced by any live read/write path since the
+        //       Compound Tasks Unification shipped; only first-launch backfill
+        //       ever needed them, and that backfill is migration history now.
+        //       Children before parents: `composite_nodes` FKs into
+        //       `composite_tasks`.
+        //   (c) Drop `progress_counters` (C5) — the `ProgressCounter` Swift
+        //       model backing it had no callers (dead since the Phase-4
+        //       shared-counter rework superseded it); see the v16 migration's
+        //       "Dead-scaffolding note" for why it lingered this long.
+        //
+        // Surviving `tasks` columns were enumerated by reading Schema.sql's
+        // `tasks` CREATE plus every `ALTER TABLE tasks ADD COLUMN` across
+        // v1–v27 (v6, v10, v11, v14, v15, v16, v17, v23, v26) and subtracting
+        // the four removed columns above.
+        migrator.registerMigration("v28") { db in
+            // (a) Rebuild `tasks`.
+            let before = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tasks") ?? 0
+
+            try db.execute(sql: """
+                CREATE TABLE tasks_new (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    userId TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    type TEXT NOT NULL,
+                    action TEXT,
+                    unit TEXT,
+                    maxCount INTEGER,
+                    totalCompletions INTEGER NOT NULL DEFAULT 0,
+                    totalInstances INTEGER NOT NULL DEFAULT 0,
+                    createdAt TEXT NOT NULL,
+                    updatedAt TEXT NOT NULL,
+                    lastSyncedAt TEXT,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    isDeleted INTEGER NOT NULL DEFAULT 0,
+                    deletedAt TEXT,
+                    "operator" TEXT,
+                    threshold INTEGER,
+                    isCompleted INTEGER NOT NULL DEFAULT 0,
+                    completedAt TEXT,
+                    currentCount INTEGER,
+                    referencedBoardId TEXT,
+                    referencedTemplateId TEXT,
+                    achievementTrigger TEXT,
+                    requiredCount INTEGER,
+                    timeframe TEXT,
+                    startDate TEXT,
+                    endDate TEXT,
+                    sharedCounterId TEXT,
+                    baseline INTEGER,
+                    lastSyncedCount INTEGER,
+                    createdInWizard INTEGER NOT NULL DEFAULT 0,
+                    isCounter INTEGER NOT NULL DEFAULT 0,
+                    defaultLogAmount INTEGER,
+                    FOREIGN KEY (userId) REFERENCES users(id)
+                )
+                """)
+
+            try db.execute(sql: """
+                INSERT INTO tasks_new (
+                    id, userId, title, description, type, action, unit, maxCount,
+                    totalCompletions, totalInstances,
+                    createdAt, updatedAt, lastSyncedAt, version, isDeleted, deletedAt,
+                    "operator", threshold, isCompleted, completedAt, currentCount,
+                    referencedBoardId, referencedTemplateId,
+                    achievementTrigger, requiredCount,
+                    timeframe, startDate, endDate,
+                    sharedCounterId, baseline,
+                    lastSyncedCount,
+                    createdInWizard,
+                    isCounter,
+                    defaultLogAmount
+                )
+                SELECT
+                    id, userId, title, description, type, action, unit, maxCount,
+                    totalCompletions, totalInstances,
+                    createdAt, updatedAt, lastSyncedAt, version, isDeleted, deletedAt,
+                    "operator", threshold, isCompleted, completedAt, currentCount,
+                    referencedBoardId, referencedTemplateId,
+                    achievementTrigger, requiredCount,
+                    timeframe, startDate, endDate,
+                    sharedCounterId, baseline,
+                    lastSyncedCount,
+                    createdInWizard,
+                    isCounter,
+                    defaultLogAmount
+                FROM tasks
+                """)
+
+            let copied = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tasks_new") ?? -1
+            guard copied == before else {
+                throw DatabaseError(message: "v28 migration row-count mismatch: \(before) tasks but \(copied) copied")
+            }
+
+            try db.execute(sql: "DROP TABLE tasks")
+            try db.execute(sql: "ALTER TABLE tasks_new RENAME TO tasks")
+
+            // Recreate the surviving indexes (dropped with the old table).
+            // NOT recreated: idx_tasks_parent_step (indexed the removed
+            // parentStepId column).
+            try db.execute(sql: "CREATE INDEX idx_tasks_user_deleted ON tasks(userId, isDeleted)")
+            try db.execute(sql: "CREATE INDEX idx_tasks_updated ON tasks(updatedAt)")
+            try db.execute(sql: "CREATE INDEX idx_tasks_type ON tasks(type)")
+
+            // (b) Now-unreferenced legacy tables. Children before parents.
+            try db.execute(sql: "DROP TABLE task_steps")
+            try db.execute(sql: "DROP TABLE composite_nodes")
+            try db.execute(sql: "DROP TABLE composite_tasks")
+
+            // (c) C5 — dead ProgressCounter scaffolding.
+            try db.execute(sql: "DROP TABLE progress_counters")
+        }
+
         return migrator
     }
 

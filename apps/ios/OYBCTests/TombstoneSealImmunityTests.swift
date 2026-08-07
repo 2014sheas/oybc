@@ -41,7 +41,6 @@ final class TombstoneSealImmunityTests: XCTestCase {
             id: taskA, userId: userId, title: "N", description: nil, type: .normal,
             action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
-            parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: isCompleted ? 1 : 0, totalInstances: 1,
             isCompleted: isCompleted, completedAt: isCompleted ? inSealedWindow : nil,
             currentCount: nil, createdAt: start, updatedAt: start,

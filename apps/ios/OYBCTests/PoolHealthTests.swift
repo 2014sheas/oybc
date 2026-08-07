@@ -20,7 +20,6 @@ final class PoolHealthTests: XCTestCase {
             operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil,
             achievementTrigger: nil, requiredCount: nil,
-            parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: 0, totalInstances: 0,
             isCompleted: false, completedAt: nil, currentCount: nil,
             createdAt: Self.ts, updatedAt: Self.ts,

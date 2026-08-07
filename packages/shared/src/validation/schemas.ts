@@ -400,12 +400,6 @@ export const CreateCompoundTaskInputSchema = z.object({
   { message: 'Compound children must not contain duplicate childTaskId references' },
 );
 
-export const TaskProgressCounterSchema = z.object({
-  counterId: z.string().uuid(),
-  targetValue: z.number().positive(),
-  unit: z.string().max(50).optional(),
-});
-
 export const TaskSchema = z.object({
   id: z.string().uuid(),
   userId: z.string(),
@@ -436,9 +430,6 @@ export const TaskSchema = z.object({
   // is set, forbidden otherwise. Enforced by the `requiredCountRulesOk`
   // refinement below.
   requiredCount: z.number().int().positive().optional(),
-  parentStepId: z.string().uuid().optional(),
-  parentStepIndex: z.number().int().min(0).optional(),
-  progressCounters: z.array(TaskProgressCounterSchema).optional(),
   totalCompletions: z.number().int().min(0),
   totalInstances: z.number().int().min(0),
   // LIFETIME-CACHE completion fields (live on Task, not BoardTask) — Windowed
@@ -644,35 +635,6 @@ export const CompoundChildSchema = z.object({
   isDeleted: z.boolean(),
   deletedAt: z.string().datetime().optional(),
 }).refine(compoundChildNoSelfReference, compoundChildSelfReferenceMessage);
-
-// ===== ProgressCounter Schemas =====
-
-export const CreateProgressCounterInputSchema = z.object({
-  name: z.string().min(1).max(100),
-  unit: z.string().min(1).max(50),
-  targetValue: z.number().positive(),
-});
-
-export const UpdateProgressCounterInputSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  currentValue: z.number().min(0).optional(),
-  targetValue: z.number().positive().optional(),
-});
-
-export const ProgressCounterSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string(),
-  name: z.string().min(1).max(100),
-  unit: z.string().min(1).max(50),
-  targetValue: z.number().positive(),
-  currentValue: z.number().min(0),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  lastSyncedAt: z.string().datetime().optional(),
-  version: z.number().int().min(1),
-  isDeleted: z.boolean(),
-  deletedAt: z.string().datetime().optional(),
-});
 
 // ===== SyncQueue Schemas =====
 
