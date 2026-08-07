@@ -43,7 +43,7 @@ export interface PlaceBoardArgs<T extends { id: string }> {
  *   2. Odd grid + CHOSEN + a `chosenCenterId` that resolves → pin that item
  *      at `centerIdx` and exclude it from the fill pool. Unresolvable id →
  *      ordinary center.
- *   3. Odd grid + FREE / CUSTOM_FREE → center stays `null` (reserved; the
+ *   3. Odd grid + FREE → center stays `null` (reserved; the
  *      render layer draws the FREE label).
  *   4. NONE (or even grid) → center is filled like any other cell.
  *   5. Fill pool = `items` minus any pinned center item;
@@ -57,7 +57,7 @@ export interface PlaceBoardArgs<T extends { id: string }> {
  * Never mutates `items` (the shuffle copies).
  *
  * @returns A length `gridSize²` array; `null` = empty cell (reserved
- *   FREE/CUSTOM_FREE center, or pool underfill).
+ *   FREE center, or pool underfill).
  */
 export function placeBoard<T extends { id: string }>(
   args: PlaceBoardArgs<T>,
@@ -85,7 +85,7 @@ export function placeBoard<T extends { id: string }>(
         continue;
       }
       if (isCenterAutoCompleted(centerType)) {
-        // Reserved FREE / CUSTOM_FREE center — leave null.
+        // Reserved FREE center — leave null.
         continue;
       }
       // NONE on an odd grid: fall through and place a regular item here.
@@ -101,7 +101,7 @@ export function placeBoard<T extends { id: string }>(
 /**
  * Number of cells a task pool must fill: total cells minus a reserved
  * center. Even grids have no center; odd grids reserve one cell only when
- * the center is auto-completed (FREE / CUSTOM_FREE). CHOSEN / NONE centers
+ * the center is auto-completed (FREE). CHOSEN / NONE centers
  * hold a regular task, so they don't reduce the count.
  *
  * Moved verbatim from `recurringBoardTemplates.ts` (which now re-exports it).

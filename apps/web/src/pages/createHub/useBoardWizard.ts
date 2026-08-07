@@ -21,7 +21,7 @@ export type WizardStep = 1 | 2 | 3;
  * Returns the number of pool tasks the chosen geometry requires.
  *
  * - Even-sized boards (no center concept): `size²`.
- * - Odd-sized boards with FREE / CUSTOM_FREE center: `size² - 1`
+ * - Odd-sized boards with FREE center: `size² - 1`
  *   (the center cell is auto-filled, doesn't consume a task).
  * - Odd-sized boards with NONE: `size²` (no special center).
  * - Odd-sized boards with CHOSEN: `size²` (one of the selections IS
@@ -29,9 +29,7 @@ export type WizardStep = 1 | 2 | 3;
  */
 export function tasksNeededFor(size: 3 | 4 | 5, centerType: CenterSquareType): number {
   const isOdd = size % 2 !== 0;
-  const hasReservedCenter =
-    isOdd &&
-    (centerType === CenterSquareType.FREE || centerType === CenterSquareType.CUSTOM_FREE);
+  const hasReservedCenter = isOdd && centerType === CenterSquareType.FREE;
   return size * size - (hasReservedCenter ? 1 : 0);
 }
 
@@ -67,7 +65,6 @@ export interface BoardWizardState {
   customStartDate: string; // YYYY-MM-DD
   customEndDate: string; // YYYY-MM-DD
   centerType: CenterSquareType;
-  centerCustomName: string;
   isRandomized: boolean;
   weekStartDay: WeekStartDay;
 
@@ -137,7 +134,6 @@ export interface BoardWizardActions {
   setCustomStartDate: (d: string) => void;
   setCustomEndDate: (d: string) => void;
   setCenterType: (t: CenterSquareType) => void;
-  setCenterCustomName: (n: string) => void;
   toggleTaskSelection: (taskId: string) => void;
   setCenterTaskId: (id: string | null) => void;
   goToStep: (step: WizardStep) => void;
@@ -353,7 +349,7 @@ export function useBoardWizard({
   const [centerType, setCenterTypeRaw] = useState<CenterSquareType>(() =>
     // Even-size boards have no center concept — the BoardSetupForm
     // hides the center selector for them, so the user can't correct a
-    // FREE/CUSTOM_FREE that leaks in from prefs or a malformed draft.
+    // FREE that leaks in from prefs or a malformed draft.
     // Coerce to NONE here so the initial state is internally consistent
     // (matches the same guard in setSize).
     coerceCenterType(
@@ -364,12 +360,6 @@ export function useBoardWizard({
         effectiveTemplate?.centerSquareType ??
         preferences.defaultCenterType,
     ),
-  );
-  const [centerCustomName, setCenterCustomName] = useState(
-    () =>
-      draftBoard?.centerSquareCustomName ??
-      effectiveTemplate?.centerSquareCustomName ??
-      preferences.defaultCenterCustomName,
   );
   // Issue #69 — board placement is always randomized. There's no
   // manual-placement UI, so the per-board "Randomize positions" toggle
@@ -590,7 +580,6 @@ export function useBoardWizard({
     );
     setCustomStartDate('');
     setCustomEndDate('');
-    setCenterCustomName(preferences.defaultCenterCustomName);
     setIsRecurringRaw(false);
     setSelectedTaskIds(new Set());
     setCenterTaskIdRaw(null);
@@ -673,7 +662,6 @@ export function useBoardWizard({
     customStartDate,
     customEndDate,
     centerType,
-    centerCustomName,
     isRandomized,
     isRecurring,
     weekStartDay,
@@ -693,7 +681,6 @@ export function useBoardWizard({
     setCustomStartDate,
     setCustomEndDate,
     setCenterType,
-    setCenterCustomName,
     toggleTaskSelection,
     setCenterTaskId,
     addPendingTask,

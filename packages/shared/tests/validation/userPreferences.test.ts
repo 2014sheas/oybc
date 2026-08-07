@@ -17,10 +17,8 @@ describe('UserPreferencesSchema', () => {
     ['weekStartDay', { weekStartDay: 'tuesday' }],
     ['defaultBoardSize (6)', { defaultBoardSize: 6 }],
     ['defaultCenterType (CHOSEN)', { defaultCenterType: CenterSquareType.CHOSEN }],
-    ['defaultCenterType (CUSTOM_FREE)', { defaultCenterType: CenterSquareType.CUSTOM_FREE }],
     ['defaultTimeframe (nonsense)', { defaultTimeframe: 'fortnightly' }],
     ['defaultRandomize (string)', { defaultRandomize: 'yes' }],
-    ['defaultCenterCustomName (too long)', { defaultCenterCustomName: 'x'.repeat(101) }],
     ['theme (invalid)', { theme: 'sepia' }],
   ])('rejects invalid %s', (_label, override) => {
     expect(() =>
@@ -158,7 +156,6 @@ describe('mergeUserPreferences', () => {
       defaultCenterType: CenterSquareType.NONE as const,
       defaultTimeframe: Timeframe.WEEKLY,
       defaultRandomize: false,
-      defaultCenterCustomName: 'Wild Card',
       theme: 'dark' as const,
       recurringDailyEnabled: true,
       recurringWeeklyEnabled: true,
@@ -188,7 +185,6 @@ describe('mergeUserPreferences', () => {
       defaultCenterType: CenterSquareType.FREE as const,
       defaultTimeframe: Timeframe.CUSTOM,
       defaultRandomize: true,
-      defaultCenterCustomName: '',
       theme: 'system' as const,
     };
     const merged = mergeUserPreferences(legacy);
@@ -286,10 +282,9 @@ describe('mergeUserPreferences', () => {
   });
 
   it('preserves falsy-but-valid values (empty string, false) instead of falling back to defaults', () => {
-    const partial = { defaultRandomize: false, defaultCenterCustomName: '' };
+    const partial = { defaultRandomize: false };
     const merged = mergeUserPreferences(partial);
     expect(merged.defaultRandomize).toBe(false);
-    expect(merged.defaultCenterCustomName).toBe('');
   });
 
   // mergeUserPreferences is the quarantine layer between Firestore payloads
@@ -302,7 +297,6 @@ describe('mergeUserPreferences', () => {
       defaultCenterType: CenterSquareType.CHOSEN,
       defaultTimeframe: 'fortnightly',
       defaultRandomize: 'yes',
-      defaultCenterCustomName: 'x'.repeat(101),
       theme: 'sepia',
     } as unknown as Parameters<typeof mergeUserPreferences>[0];
     expect(mergeUserPreferences(garbage)).toEqual(DEFAULT_USER_PREFERENCES);

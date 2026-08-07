@@ -34,20 +34,14 @@ export interface UpdateActiveBoardPatch {
   name?: string;
   centerSquareType?: Board['centerSquareType'];
   /**
-   * Cleared automatically by the write helper when `centerSquareType`
-   * switches away from `CUSTOM_FREE`. Callers may still pass the old
-   * value; the helper discards it.
-   */
-  centerSquareCustomName?: string | null;
-  /**
    * Cleared automatically when `centerSquareType` switches away from
    * `CHOSEN`. Callers may still pass the old value; the helper discards
    * it.
    *
-   * NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
+   * NOTE (center-switch asymmetry): switching CHOSEN → FREE
    * does NOT hard-delete the underlying BoardTask — it preserves the
    * placement so a later switch back to CHOSEN can reuse it. The cell
-   * renders as FREE/CUSTOM_FREE on top of the placement. This is
+   * renders as FREE on top of the placement. This is
    * intentional; do not treat it as a bug.
    */
   centerTaskId?: string | null;
@@ -67,8 +61,7 @@ export interface UpdateActiveBoardPatch {
  * Sequence:
  *   1. Apply the patch via `updateBoard` (bumps version + enqueues sync).
  *   2. Sanitize center-square fields (clear `centerTaskId` when
- *      `centerSquareType` is not CHOSEN; clear `centerSquareCustomName`
- *      when not CUSTOM_FREE).
+ *      `centerSquareType` is not CHOSEN).
  *   3. Fetch every `BoardTask` that places a task on this board.
  *   4. Run `runBoardCascadeForTask` for each placed task inside a single
  *      Dexie transaction covering the required tables.
@@ -92,12 +85,12 @@ export async function updateBoardAndCascade(
   patch: UpdateActiveBoardPatch,
 ): Promise<void> {
   // Build the sanitized Partial<Board> for updateBoard.
-  // Board.startDate / endDate / centerSquareCustomName / centerTaskId are
-  // typed as `string` (non-nullable) on the Board model, but an edit may
-  // want to clear centerSquareCustomName or centerTaskId. We represent
-  // "clear" as `undefined` in the Partial update (Dexie skips undefined keys).
-  // For startDate/endDate the EditBoardSheet always provides a concrete
-  // string, so null is converted to undefined as a safety net.
+  // Board.startDate / endDate / centerTaskId are typed as `string`
+  // (non-nullable) on the Board model, but an edit may want to clear
+  // centerTaskId. We represent "clear" as `undefined` in the Partial
+  // update (Dexie skips undefined keys). For startDate/endDate the
+  // EditBoardSheet always provides a concrete string, so null is
+  // converted to undefined as a safety net.
   //
   // NOTE: CenterSquareType is a STATIC import. It was previously an
   // unconditional `await import('@oybc/shared')` here — harmless when this
@@ -114,7 +107,7 @@ export async function updateBoardAndCascade(
   if (patch.startDate != null) sanitized.startDate = patch.startDate;
   // Clear the deadline when converting to an indefinite board or when the
   // edit explicitly passes `endDate: null`. Writing `undefined` clears the
-  // stored value (same mechanism the center-name clear above relies on — a
+  // stored value (same mechanism the centerTaskId clear below relies on — a
   // bare omit can't clear, but an undefined write does). Otherwise apply a
   // provided endDate.
   if (patch.timeframe === Timeframe.INDEFINITE || patch.endDate === null) {
@@ -126,24 +119,11 @@ export async function updateBoardAndCascade(
   if (patch.centerSquareType !== undefined) {
     sanitized.centerSquareType = patch.centerSquareType;
     // Sanitize auxiliary center fields based on the new type.
-    if (patch.centerSquareType === CenterSquareType.CUSTOM_FREE) {
-      // Fix #1: distinguish undefined (skip field entirely) from null (user
-      // explicitly cleared the name — write undefined so IndexedDB's structured
-      // clone omits the property, clearing the prior stored value).
-      // The old `!= null` check swallowed null and left the prior value in place.
-      if (patch.centerSquareCustomName !== undefined) {
-        // null from the UI → undefined (clear); string from the UI → write it.
-        sanitized.centerSquareCustomName = patch.centerSquareCustomName ?? undefined;
-      }
-    } else {
-      // Switching away from CUSTOM_FREE → clear the custom name.
-      sanitized.centerSquareCustomName = undefined;
-    }
     if (patch.centerSquareType !== CenterSquareType.CHOSEN) {
       // Switching away from CHOSEN → clear centerTaskId so no stale
       // reference remains. The underlying BoardTask row is preserved
       // (the placement lives in boardTasks, not on the board row itself).
-      // NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
+      // NOTE (center-switch asymmetry): switching CHOSEN → FREE
       // does NOT delete the BoardTask row — the placement is retained so a
       // later switch back to CHOSEN can reuse it. The board.centerTaskId
       // field merely controls which type the center cell renders as.
@@ -366,7 +346,6 @@ export async function createBoard(
     startDate: input.startDate,
     endDate: input.endDate,
     centerSquareType: input.centerSquareType,
-    centerSquareCustomName: input.centerSquareCustomName,
     centerTaskId: input.centerTaskId,
     isRandomized: input.isRandomized,
     totalTasks: input.boardSize * input.boardSize,

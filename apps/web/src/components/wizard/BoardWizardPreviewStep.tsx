@@ -109,7 +109,7 @@ export function taskToModel(
  * Build a flat ArrangeSlot[] from a WizardPlacement.
  *
  * Center pinning:
- *   - FREE / CUSTOM_FREE (null at centerIdx) → isCenter=true, isFree=true.
+ *   - FREE (null at centerIdx) → isCenter=true, isFree=true.
  *   - CHOSEN (Task at centerIdx) → isCenter=true, real task model.
  *   - NONE on odd board → no pinning (regular moveable task at centerIdx).
  *   - Even boards → centerIdx=-1, no center slot.
@@ -120,7 +120,6 @@ function buildArrangeSlots(
   placement: WizardPlacement,
   gridSize: number,
   centerType: CenterSquareType,
-  centerCustomName: string,
   toModel: (task: Task) => BoardCellModel,
 ): ArrangeSlot[] {
   const isOdd = gridSize % 2 !== 0;
@@ -129,17 +128,14 @@ function buildArrangeSlots(
     : -1;
 
   return placement.map((task, i) => {
-    // Center is pinned for FREE / CUSTOM_FREE / CHOSEN — not for NONE.
+    // Center is pinned for FREE / CHOSEN — not for NONE.
     const isPinnedCenter =
       isOdd && i === centerIdx && centerType !== CenterSquareType.NONE;
 
     if (isPinnedCenter) {
       if (task === null) {
-        // FREE / CUSTOM_FREE center: star cell, pinned, not a real task.
-        const label =
-          centerType === CenterSquareType.CUSTOM_FREE && centerCustomName.trim()
-            ? centerCustomName.trim()
-            : 'FREE';
+        // FREE center: star cell, pinned, not a real task.
+        const label = 'FREE';
         return {
           cid: 'center',
           isCenter: true,
@@ -267,14 +263,12 @@ export function BoardWizardPreviewStep({
         placement,
         controller.size,
         controller.centerType,
-        controller.centerCustomName,
         (task) => taskToModel(task, library.taskMap, library.compoundChildrenByCompound, windowContext),
       ),
     [
       placement,
       controller.size,
       controller.centerType,
-      controller.centerCustomName,
       library.taskMap,
       library.compoundChildrenByCompound,
       windowContext,
@@ -359,10 +353,6 @@ export function BoardWizardPreviewStep({
     switch (controller.centerType) {
       case CenterSquareType.FREE:
         return 'Free space';
-      case CenterSquareType.CUSTOM_FREE:
-        return controller.centerCustomName.trim().length > 0
-          ? `Custom · "${controller.centerCustomName.trim()}"`
-          : 'Custom (unnamed)';
       case CenterSquareType.CHOSEN:
         if (controller.centerTaskId !== null) {
           const t = library.taskMap[controller.centerTaskId];
@@ -380,8 +370,6 @@ export function BoardWizardPreviewStep({
     switch (controller.centerType) {
       case CenterSquareType.FREE:
         return 'Free';
-      case CenterSquareType.CUSTOM_FREE:
-        return controller.centerCustomName.trim() || 'Custom';
       case CenterSquareType.CHOSEN:
         return 'Chosen';
       case CenterSquareType.NONE:

@@ -19,7 +19,6 @@ struct BoardSetupFormView: View {
     var customStartDateBinding: Binding<Date>
     var customEndDateBinding: Binding<Date>
     var centerTypeBinding: Binding<CenterSquareType>
-    var centerCustomNameBinding: Binding<String>
     var weekStartDay: String
     /// When true (edit-active only), the CHOSEN option in the center picker is
     /// guarded with an explanatory note.
@@ -251,24 +250,15 @@ struct BoardSetupFormView: View {
                     .font(.risoBody(12, .semibold))
                     .foregroundStyle(Color.risoMuted)
             }
-
-            // Custom center name input.
-            if centerTypeBinding.wrappedValue == .customFree {
-                EditBoardNameInput(
-                    text: centerCustomNameBinding,
-                    placeholder: "Custom center name (e.g. Wild Card)"
-                )
-            }
         }
     }
 
     private var editCenterOptions: [(value: CenterSquareType, label: String)] {
-        // Short labels so the 4 equal-width segments don't clip.
+        // Short labels so the 3 equal-width segments don't clip.
         [
-            (.free,       "Free"),
-            (.customFree, "Custom"),
-            (.chosen,     "Choose"),
-            (.none,       "None"),
+            (.free,   "Free"),
+            (.chosen, "Choose"),
+            (.none,   "None"),
         ]
     }
 }
@@ -324,7 +314,6 @@ extension BoardSetupFormView {
         customStartDate: Binding<Date>,
         customEndDate: Binding<Date>,
         centerType: Binding<CenterSquareType>,
-        centerCustomName: Binding<String>,
         weekStartDay: String,
         chosenCenterDisabled: Bool = false
     ) {
@@ -333,7 +322,6 @@ extension BoardSetupFormView {
         self.customStartDateBinding = customStartDate
         self.customEndDateBinding = customEndDate
         self.centerTypeBinding = centerType
-        self.centerCustomNameBinding = centerCustomName
         self.weekStartDay = weekStartDay
         self.chosenCenterDisabled = chosenCenterDisabled
     }

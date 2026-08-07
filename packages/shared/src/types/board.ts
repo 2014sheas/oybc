@@ -27,8 +27,7 @@ export interface Board {
   endDate?: string;              // ISO8601 (end of timeframe). Absent for INDEFINITE boards — they
                                  // never expire. Treat a missing endDate as an unbounded window
                                  // [startDate, ∞). See isBoardIndefinite().
-  centerSquareType: CenterSquareType; // free, custom_free, chosen, none
-  centerSquareCustomName?: string;   // Custom display name for CUSTOM_FREE type
+  centerSquareType: CenterSquareType; // free, chosen, none
   centerTaskId?: string;             // Task ID for CHOSEN type (future use)
   isRandomized: boolean;         // Whether tasks are randomized on grid
 
@@ -107,7 +106,6 @@ export interface CreateBoardInput {
   startDate: string;
   endDate?: string;              // Absent for INDEFINITE boards
   centerSquareType: CenterSquareType;
-  centerSquareCustomName?: string;   // Required when centerSquareType is CUSTOM_FREE
   centerTaskId?: string;             // Required when centerSquareType is CHOSEN
   isRandomized: boolean;
 }

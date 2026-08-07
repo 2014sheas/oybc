@@ -244,7 +244,7 @@ acceptance above; not treated as a bug to fix.
   background creation. Unchanged from Phase 6.
 - **"↻ Deal again"** on a fresh spawned board re-deals from the same mix —
   offered only while the window has zero **user**-completed cells (the
-  auto-completed FREE/CUSTOM_FREE center never counts — it's completed at
+  auto-completed FREE center never counts — it's completed at
   spawn by derivation).
 - Copy rules (owner-enforced): "No default tasks" not "Not set"; "from" never
   "deals from"; keep "extras shuffle into the mix" / "in the deck" language.

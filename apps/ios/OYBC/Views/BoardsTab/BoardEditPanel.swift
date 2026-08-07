@@ -84,7 +84,6 @@ struct BoardEditPanel: View {
     @Binding var customStartDate: Date
     @Binding var customEndDate: Date
     @Binding var centerType: CenterSquareType
-    @Binding var centerCustomName: String
 
     /// True when the board already has a center-task placement (so CHOSEN is
     /// available). Loaded asynchronously by `BoardPlayView.seedEditDraft`.
@@ -107,7 +106,7 @@ struct BoardEditPanel: View {
     var onCellTap: ((Int, Int) -> Void)? = nil
 
     /// Called when the user taps the center cell in `.editTasks` sub-mode
-    /// and the center is currently a free space (`.free`/`.customFree`).
+    /// and the center is currently a free space (`.free`).
     /// `BoardPlayView` presents the "Make it a task square" action sheet.
     /// nil = center is inert (Phase 1; non-edit-tasks sub-mode; non-free center).
     var onCenterTap: (() -> Void)? = nil
@@ -164,8 +163,6 @@ struct BoardEditPanel: View {
         if name.trimmingCharacters(in: .whitespaces) != board.name { return true }
         if timeframe != board.timeframe { return true }
         if centerType != board.centerSquareType { return true }
-        if centerType == .customFree,
-           centerCustomName != (board.centerSquareCustomName ?? "") { return true }
         // Custom-date changes are only meaningful when the timeframe supports user-chosen dates.
         if timeframe == .custom || timeframe == .indefinite {
             if abs(customStartDate.timeIntervalSince(originalCustomStartDate)) > 60 { return true }
@@ -190,9 +187,7 @@ struct BoardEditPanel: View {
             return false
         }()
         if tfChanged || dateChanged { n += 1 }
-        let centerChanged = (centerType != board.centerSquareType)
-            || (centerType == .customFree
-                && centerCustomName != (board.centerSquareCustomName ?? ""))
+        let centerChanged = centerType != board.centerSquareType
         if centerChanged { n += 1 }
         return n
     }
@@ -238,7 +233,6 @@ struct BoardEditPanel: View {
                     customStartDate: $customStartDate,
                     customEndDate: $customEndDate,
                     centerType: $centerType,
-                    centerCustomName: $centerCustomName,
                     weekStartDay: weekStartDay,
                     chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks
                 )
@@ -355,9 +349,6 @@ struct BoardEditPanel: View {
                     gridSize: board.boardSize,
                     taskMap: taskMap,
                     centerSquareType: centerType,
-                    centerCustomName: centerCustomName.isEmpty
-                        ? (board.centerSquareCustomName ?? "")
-                        : centerCustomName,
                     rearrange: true,
                     sideLength: UIScreen.main.bounds.width - 2 * Riso.gutter,
                     onReorder: { onReorder?($0) },
@@ -371,9 +362,6 @@ struct BoardEditPanel: View {
                     boardTasks: boardTasks,
                     taskMap: taskMap,
                     centerSquareType: centerType,
-                    centerCustomName: centerCustomName.isEmpty
-                        ? board.centerSquareCustomName
-                        : centerCustomName,
                     onCellTap: subMode == .editTasks ? onCellTap : nil,
                     onCenterTap: subMode == .editTasks ? onCenterTap : nil,
                     windowedIsCompleted: windowedIsCompleted
@@ -450,7 +438,7 @@ struct BoardEditPanel: View {
 ///
 /// A `.none`-center middle cell is treated as a normal cell — tappable when
 /// it holds a task, and not given the gold FREE label. When `onCenterTap` is
-/// provided and the center is `.free`/`.customFree`, the center cell becomes
+/// provided and the center is `.free`, the center cell becomes
 /// interactive (shows a pencil badge and calls `onCenterTap` on tap) so the
 /// user can trigger "Make it a task square."
 ///
@@ -460,10 +448,9 @@ private struct BoardEditStaticGrid: View {
     let boardTasks: [BoardTask]
     let taskMap: [String: Task]
     let centerSquareType: CenterSquareType
-    let centerCustomName: String?
     /// Phase 2: callback for non-center occupied cell taps. nil = display-only.
     var onCellTap: ((Int, Int) -> Void)? = nil
-    /// Phase 2b: callback for tapping the FREE/CUSTOM_FREE center cell.
+    /// Phase 2b: callback for tapping the FREE center cell.
     /// nil = center inert. Set only in edit-tasks sub-mode.
     var onCenterTap: (() -> Void)? = nil
     /// Windowed-Completion-aware completion read, forwarded from
@@ -495,9 +482,8 @@ private struct BoardEditStaticGrid: View {
                     && col == boardSize / 2
                 let isCenter = isPositionalCenter && centerSquareType != .none
 
-                // Free-center tap: center is .free/.customFree, onCenterTap provided.
-                let isFreeCenter = isPositionalCenter
-                    && (centerSquareType == .free || centerSquareType == .customFree)
+                // Free-center tap: center is .free, onCenterTap provided.
+                let isFreeCenter = isPositionalCenter && centerSquareType == .free
                 let centerTapEnabled = isFreeCenter && onCenterTap != nil
 
                 // Normal task-cell tap: occupied, not a pinned center.
@@ -507,7 +493,6 @@ private struct BoardEditStaticGrid: View {
                     task: bt.flatMap { taskMap[$0.taskId] },
                     isCenter: isCenter,
                     centerSquareType: centerSquareType,
-                    centerCustomName: centerCustomName,
                     isInteractive: taskTapEnabled || centerTapEnabled,
                     onTap: centerTapEnabled
                         ? { onCenterTap?() }
@@ -526,12 +511,11 @@ private struct BoardEditStaticGrid: View {
 /// When `isInteractive` is true the cell renders with a pencil badge and a
 /// tap gesture that calls `onTap`. Two cases:
 /// - Non-center occupied cell (Phase 2): Replace / Edit task flow.
-/// - FREE/CUSTOM_FREE center cell (Phase 2b): "Make it a task square" action.
+/// - FREE center cell (Phase 2b): "Make it a task square" action.
 private struct BoardEditStaticCell: View {
     let task: Task?
     let isCenter: Bool
     let centerSquareType: CenterSquareType
-    let centerCustomName: String?
     /// Phase 2: when true the cell shows an edit-affordance and fires `onTap`.
     var isInteractive: Bool = false
     var onTap: (() -> Void)? = nil
@@ -549,9 +533,6 @@ private struct BoardEditStaticCell: View {
             switch centerSquareType {
             case .free:
                 return "FREE"
-            case .customFree:
-                let name = centerCustomName ?? ""
-                return name.isEmpty ? "FREE" : name
             case .chosen:
                 return task?.title ?? "FREE"
             case .none:
@@ -627,7 +608,6 @@ private struct BoardEditStaticCell: View {
         @State var startDate = Date()
         @State var endDate = Date().addingTimeInterval(30 * 24 * 3600)
         @State var centerType = CenterSquareType.free
-        @State var centerCustomName = ""
         @State var subMode = BoardEditSubMode.editTasks
 
         var body: some View {
@@ -647,7 +627,6 @@ private struct BoardEditStaticCell: View {
                 customStartDate: $startDate,
                 customEndDate: $endDate,
                 centerType: $centerType,
-                centerCustomName: $centerCustomName,
                 hasCandidateTasks: false,
                 subMode: $subMode,
                 isSaving: false,

@@ -17,7 +17,7 @@ import { taskToSquareState, type SquareWindowContext } from '../../db/adapters';
  * - `task` — a real placed square; `completed` is the SAME derivation the
  *   play surface uses (windowed events / compound evaluation / sealed
  *   snapshot / derived-counter lifetime cache — see `buildBoardPreviewCells`).
- * - `freeCenter` — the odd-board FREE/CUSTOM_FREE center; always renders
+ * - `freeCenter` — the odd-board FREE center; always renders
  *   "filled" on the real grid, same as `BoardPlaySurface`'s static FREE cell.
  * - `empty` — no BoardTask placed at this position.
  */
@@ -52,7 +52,7 @@ export interface BoardPreviewCellsResult {
  *   function the play grid calls — it already implements the compound /
  *   derived-counter-lifetime-carve-out / windowed-event / achievement
  *   branch order, so this function does not re-derive any of that.
- * - **FREE / CUSTOM_FREE center** on an odd board with no task placed there
+ * - **FREE center** on an odd board with no task placed there
  *   renders `freeCenter` — the auto-completed center square.
  * - Any other unplaced position renders `empty`.
  *
@@ -117,9 +117,7 @@ export function buildBoardPreviewCells(
   }
 
   const hasFreeCenter =
-    size % 2 === 1 &&
-    (board.centerSquareType === CenterSquareType.FREE ||
-      board.centerSquareType === CenterSquareType.CUSTOM_FREE);
+    size % 2 === 1 && board.centerSquareType === CenterSquareType.FREE;
   const centerRow = Math.floor(size / 2);
   const centerCol = Math.floor(size / 2);
 

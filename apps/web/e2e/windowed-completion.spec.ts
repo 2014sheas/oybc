@@ -85,7 +85,7 @@ test.describe('Windowed Completion (issue #317)', () => {
       startDate: TODAY,
       endDate: NEXT_WEEK,
       completedTasks: 0,
-      // 'none' — a FREE/CUSTOM_FREE center auto-completes in the derivation
+      // 'none' — a FREE center auto-completes in the derivation
       // pass (`derivationPass.ts` center auto-fill), which would make the
       // Squares stat's arithmetic depend on the center square too. 'none'
       // keeps the stat a clean function of just the one seeded task.

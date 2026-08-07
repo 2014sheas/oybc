@@ -161,12 +161,6 @@ final class BoardPreviewCellsTests: XCTestCase {
         for i in 0..<9 where i != 4 { XCTAssertEqual(result.cells[i], .empty) }
     }
 
-    func testCustomFreeCenterAlsoRendersFreeCenter() {
-        let board = makeBoard(boardSize: 5, centerSquareType: .customFree)
-        let result = BoardPreviewCells.build(board: board, boardTasks: [], taskMap: [:], childrenByCompound: [:], eventsByTaskId: [:])
-        XCTAssertEqual(result.cells[12], .freeCenter)
-    }
-
     func testNoneCenterWithNoTaskIsPlainEmptyCell() {
         let board = makeBoard(boardSize: 3, centerSquareType: .none)
         let result = BoardPreviewCells.build(board: board, boardTasks: [], taskMap: [:], childrenByCompound: [:], eventsByTaskId: [:])

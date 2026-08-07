@@ -146,8 +146,6 @@ final class BoardPlayViewModel: ObservableObject {
     @Published var editOriginalCustomEndDate: Date = Date()
     /// Draft center-square type selector value.
     @Published var editCenterType: CenterSquareType = .free
-    /// Draft custom center name input (only relevant when `editCenterType == .customFree`).
-    @Published var editCenterCustomName: String = ""
     /// True when the board already has a center-task placement (gates CHOSEN option).
     /// Loaded asynchronously by `seedEditDraft(from:)`.
     @Published var editHasCandidateTasks: Bool = false
@@ -1268,7 +1266,6 @@ final class BoardPlayViewModel: ObservableObject {
         editCustomEndDate = seedEnd
         editOriginalCustomEndDate = seedEnd
         editCenterType = b.centerSquareType
-        editCenterCustomName = b.centerSquareCustomName ?? ""
         editSubMode = .editTasks
         editHasCandidateTasks = false
 
@@ -1493,12 +1490,7 @@ final class BoardPlayViewModel: ObservableObject {
             startDate: startISO,
             endDate: endISO,
             clearEndDate: clearEnd,
-            centerSquareType: editCenterType,
-            centerSquareCustomName: editCenterType == .customFree
-                ? (editCenterCustomName.trimmingCharacters(in: .whitespaces).isEmpty
-                    ? nil
-                    : editCenterCustomName.trimmingCharacters(in: .whitespaces))
-                : nil
+            centerSquareType: editCenterType
         )
 
         // Snapshot the staged square edits as value types before the detached

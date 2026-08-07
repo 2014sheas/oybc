@@ -4,8 +4,7 @@ import GRDB
 // MARK: - UserPreferences
 
 /// Subset of `CenterSquareType` values allowed as a global default.
-/// CHOSEN / CUSTOM_FREE require per-board context and aren't sensible defaults
-/// (the CUSTOM_FREE display text is captured by `defaultCenterCustomName`).
+/// CHOSEN requires per-board context and isn't a sensible default.
 enum DefaultCenterSquareType: String, Codable {
     case free
     case none
@@ -60,7 +59,6 @@ struct UserPreferences: Codable, Equatable {
     var defaultCenterType: DefaultCenterSquareType
     var defaultTimeframe: DefaultTimeframe
     var defaultRandomize: Bool
-    var defaultCenterCustomName: String
     var theme: ThemePreference
     // Recurring boards (Phase 6.1) — when enabled, the Boards and Create tabs
     // surface a prominent "core boards" section inviting the user to create a
@@ -109,7 +107,6 @@ struct UserPreferences: Codable, Equatable {
         defaultCenterType: .free,
         defaultTimeframe: .custom,
         defaultRandomize: true,
-        defaultCenterCustomName: "",
         theme: .system,
         // Phase 6.1: default true so the core boards (daily/weekly/monthly/
         // yearly) are immediately discoverable on a fresh account. Per the
@@ -155,8 +152,6 @@ struct UserPreferences: Codable, Equatable {
             ?? Self.defaults.defaultTimeframe
         self.defaultRandomize = (try? c.decode(Bool.self, forKey: .defaultRandomize))
             ?? Self.defaults.defaultRandomize
-        self.defaultCenterCustomName = (try? c.decode(String.self, forKey: .defaultCenterCustomName))
-            ?? Self.defaults.defaultCenterCustomName
         self.theme = (try? c.decode(ThemePreference.self, forKey: .theme))
             ?? Self.defaults.theme
         self.recurringDailyEnabled = (try? c.decode(Bool.self, forKey: .recurringDailyEnabled))
@@ -213,7 +208,6 @@ struct UserPreferences: Codable, Equatable {
         defaultCenterType: DefaultCenterSquareType,
         defaultTimeframe: DefaultTimeframe,
         defaultRandomize: Bool,
-        defaultCenterCustomName: String,
         theme: ThemePreference,
         recurringDailyEnabled: Bool,
         recurringWeeklyEnabled: Bool,
@@ -233,7 +227,6 @@ struct UserPreferences: Codable, Equatable {
         self.defaultCenterType = defaultCenterType
         self.defaultTimeframe = defaultTimeframe
         self.defaultRandomize = defaultRandomize
-        self.defaultCenterCustomName = defaultCenterCustomName
         self.theme = theme
         self.recurringDailyEnabled = recurringDailyEnabled
         self.recurringWeeklyEnabled = recurringWeeklyEnabled

@@ -73,8 +73,8 @@ extension SpawnAttentionReason {
 }
 
 /// Counts the cells that need a Task placement for a given board configuration.
-/// Even-sized boards have no center; odd-sized boards with FREE/CUSTOM_FREE
-/// centers reserve one cell for the auto-completed free space; otherwise the
+/// Even-sized boards have no center; odd-sized boards with a FREE
+/// center reserve one cell for the auto-completed free space; otherwise the
 /// center cell gets a regular task.
 func recurringTemplateFillableCellCount(
     boardSize: Int,
@@ -82,7 +82,7 @@ func recurringTemplateFillableCellCount(
 ) -> Int {
     let total = boardSize * boardSize
     let hasCenter = boardSize % 2 == 1
-    let centerOmitsTask = hasCenter && (centerSquareType == .free || centerSquareType == .customFree)
+    let centerOmitsTask = hasCenter && centerSquareType == .free
     return total - (centerOmitsTask ? 1 : 0)
 }
 
@@ -198,7 +198,7 @@ func validateSpawnPool(
 
 /// Builds the cell-by-cell placement for a spawn. Returns an array of
 /// length `boardSize²` where each entry is a Task to place on that cell,
-/// or `nil` for the auto-completed FREE / CUSTOM_FREE center on odd-sized
+/// or `nil` for the auto-completed FREE center on odd-sized
 /// boards.
 ///
 /// Thin wrapper over the shared `BoardPlacement.placeBoard` core — mirrors

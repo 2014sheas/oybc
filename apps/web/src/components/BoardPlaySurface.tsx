@@ -616,7 +616,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                   col === Math.floor(gridSize / 2);
 
                 // Phase 2b: isPinnedCenter = positional center AND type is not NONE.
-                // FREE / CUSTOM_FREE / CHOSEN centers are pinned (not editable/rearrangeable).
+                // FREE / CHOSEN centers are pinned (not editable/rearrangeable).
                 // NONE center is a fully normal cell — tappable, placeable, rearrangeable.
                 const effectiveCenterType = editMode
                   ? draftCenterType
@@ -641,9 +641,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                     ? draftCenterType
                     : (board.centerSquareType as CenterSquareType);
                   const isFreeCenter =
-                    isCenter &&
-                    (centerTypeForDisplay === CenterSquareType.FREE ||
-                      centerTypeForDisplay === CenterSquareType.CUSTOM_FREE);
+                    isCenter && centerTypeForDisplay === CenterSquareType.FREE;
 
                   if (isFreeCenter && !editMode) {
                     // Play mode: static FREE label.
@@ -953,7 +951,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         );
       })()}
 
-      {/* Phase 2b — Center toggle menu: shown when tapping a FREE/CUSTOM_FREE
+      {/* Phase 2b — Center toggle menu: shown when tapping a FREE
           center in editTasks mode. No boardTaskId (free centers have no task). */}
       {editMode && freeCenterTapMenu && (
         <SquareTapMenu

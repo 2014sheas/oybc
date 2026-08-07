@@ -29,7 +29,7 @@ interface SquareTapMenuProps {
    */
   onMakeFree?: () => void;
   /**
-   * Phase 2b — shown when the center is a free space (FREE/CUSTOM_FREE) and
+   * Phase 2b — shown when the center is a free space (FREE) and
    * the user can convert it to a task square. Omit to hide the item.
    */
   onMakeTask?: () => void;
@@ -217,7 +217,7 @@ export function SquareTapMenu({
           </button>
         )}
 
-        {/* Phase 2b — Make it a task square (FREE/CUSTOM_FREE center → NONE) */}
+        {/* Phase 2b — Make it a task square (FREE center → NONE) */}
         {onMakeTask && (
           <button
             type="button"

@@ -156,7 +156,7 @@
   box-shadow: 0 0 0 2px var(--riso-gold), 2px 2px 0 var(--riso-shadow-ink);
 }
 
-/* FREE / CUSTOM_FREE virtual center — ink fill, gold star text, non-interactive */
+/* FREE virtual center — ink fill, gold star text, non-interactive */
 .cellFree {
   /* static ink fill — adaptive --riso-ink flips to cream in dark mode, which
      would leave gold text on a cream cell (invisible). */

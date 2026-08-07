@@ -203,10 +203,10 @@ extension AppDatabase {
     ///   - `isCore`, `spawnedFromTemplateId`, `isRandomized` — internal state.
     ///   - Placement set (`BoardTask` rows) — M3/M4.
     ///
-    /// NOTE (center-switch asymmetry): switching CHOSEN → FREE/CUSTOM_FREE
-    /// preserves the underlying `BoardTask` row; the board.centerTaskId column
-    /// is cleared so the cell renders as FREE on top, but the placement is
-    /// retained in case the user switches back. Do not treat this as a bug.
+    /// NOTE (center-switch asymmetry): switching CHOSEN → FREE preserves the
+    /// underlying `BoardTask` row; the board.centerTaskId column is cleared
+    /// so the cell renders as FREE on top, but the placement is retained in
+    /// case the user switches back. Do not treat this as a bug.
     struct UpdateActiveBoardPatch {
         var name: String?
         var timeframe: Timeframe?
@@ -221,8 +221,6 @@ extension AppDatabase {
         /// also forces the clear (see `updateBoardAndCascade`).
         var clearEndDate: Bool
         var centerSquareType: CenterSquareType?
-        /// Only meaningful when `centerSquareType == .customFree`.
-        var centerSquareCustomName: String?
         /// Only meaningful when `centerSquareType == .chosen`.
         var centerTaskId: String?
 
@@ -233,7 +231,6 @@ extension AppDatabase {
             endDate: String? = nil,
             clearEndDate: Bool = false,
             centerSquareType: CenterSquareType? = nil,
-            centerSquareCustomName: String? = nil,
             centerTaskId: String? = nil
         ) {
             self.name = name
@@ -242,7 +239,6 @@ extension AppDatabase {
             self.endDate = endDate
             self.clearEndDate = clearEndDate
             self.centerSquareType = centerSquareType
-            self.centerSquareCustomName = centerSquareCustomName
             self.centerTaskId = centerTaskId
         }
     }
@@ -253,7 +249,7 @@ extension AppDatabase {
     /// Sequence:
     ///   1. Apply the patch atomically (bumps version, enqueues boards sync).
     ///   2. Sanitize center-square auxiliary fields (clear centerTaskId for
-    ///      non-CHOSEN types; clear centerSquareCustomName for non-CUSTOM_FREE).
+    ///      non-CHOSEN types).
     ///   3. Fetch every `BoardTask` that places a task on this board.
     ///   4. Run `Self.runBoardCascadeForTask` for each unique placed task
     ///      inside the same write transaction.
@@ -317,22 +313,16 @@ extension AppDatabase {
             if let ct = patch.centerSquareType {
                 board.centerSquareType = ct
                 switch ct {
-                case .customFree:
-                    // Keep caller-supplied custom name; clear any stale centerTaskId.
-                    board.centerSquareCustomName = patch.centerSquareCustomName
-                    board.centerTaskId = nil
                 case .chosen:
-                    // Keep caller-supplied centerTaskId; clear custom name.
-                    // NOTE (asymmetry): switching CHOSEN → FREE/CUSTOM_FREE later
-                    // will clear centerTaskId but NOT the BoardTask row, preserving
-                    // the placement for a potential future switch back.
+                    // Keep caller-supplied centerTaskId.
+                    // NOTE (asymmetry): switching CHOSEN → FREE later will clear
+                    // centerTaskId but NOT the BoardTask row, preserving the
+                    // placement for a potential future switch back.
                     if let tid = patch.centerTaskId { board.centerTaskId = tid }
-                    board.centerSquareCustomName = nil
                 default:
-                    // FREE / NONE: clear both auxiliary fields.
+                    // FREE / NONE: clear the auxiliary field.
                     // The BoardTask row (if any) is preserved — only the board-level
                     // reference is cleared.
-                    board.centerSquareCustomName = nil
                     board.centerTaskId = nil
                 }
             }
@@ -707,7 +697,7 @@ extension AppDatabase {
             // 0` / `linesCompleted: 0` (or preserves the prior draft's value
             // on update) — this overwrites that with the real value. Without
             // it, a board placing an already-in-window-complete task (or a
-            // FREE/CUSTOM_FREE center) would persist + sync wrong stats until
+            // FREE center) would persist + sync wrong stats until
             // the next app-open self-heal. Covers both fresh creation AND
             // draft→active resume — both flow through this one function, and
             // `activatedAt` above is already stamped by the time this runs.

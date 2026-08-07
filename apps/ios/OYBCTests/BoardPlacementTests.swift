@@ -66,13 +66,6 @@ final class BoardPlacementTests: XCTestCase {
         XCTAssertEqual(placement.compactMap { $0 }.count, 24)
     }
 
-    func testCustomFreeCenterAlsoNull() {
-        let placement = BoardPlacement.placeBoard(
-            items: items(24), gridSize: 5, centerType: .customFree, randomize: false
-        )
-        XCTAssertNil(placement[12])
-    }
-
     func testChosenCenterPinnedAndNotDuplicated() {
         let placement = BoardPlacement.placeBoard(
             items: items(25), gridSize: 5, centerType: .chosen,
@@ -201,14 +194,6 @@ final class BoardPlacementTests: XCTestCase {
                     expected: ["t5", "t4", "t1", "t2", nil, "t3", "t6", "t7", "t0"]),
         SpawnGolden(size: 3, center: .free, randomize: true, poolCount: 14,
                     expected: ["t2", "t1", "t3", "t9", nil, "t10", "t11", "t5", "t8"]),
-        SpawnGolden(size: 3, center: .customFree, randomize: false, poolCount: 8,
-                    expected: ["t0", "t1", "t2", "t3", nil, "t4", "t5", "t6", "t7"]),
-        SpawnGolden(size: 3, center: .customFree, randomize: false, poolCount: 14,
-                    expected: ["t0", "t1", "t2", "t3", nil, "t4", "t5", "t6", "t7"]),
-        SpawnGolden(size: 3, center: .customFree, randomize: true, poolCount: 8,
-                    expected: ["t5", "t4", "t1", "t2", nil, "t3", "t6", "t7", "t0"]),
-        SpawnGolden(size: 3, center: .customFree, randomize: true, poolCount: 14,
-                    expected: ["t2", "t1", "t3", "t9", nil, "t10", "t11", "t5", "t8"]),
         SpawnGolden(size: 3, center: .chosen, randomize: false, poolCount: 9,
                     expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"]),
         SpawnGolden(size: 3, center: .chosen, randomize: false, poolCount: 15,
@@ -233,14 +218,6 @@ final class BoardPlacementTests: XCTestCase {
                     expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"]),
         SpawnGolden(size: 4, center: .free, randomize: true, poolCount: 22,
                     expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"]),
-        SpawnGolden(size: 4, center: .customFree, randomize: false, poolCount: 16,
-                    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"]),
-        SpawnGolden(size: 4, center: .customFree, randomize: false, poolCount: 22,
-                    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"]),
-        SpawnGolden(size: 4, center: .customFree, randomize: true, poolCount: 16,
-                    expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"]),
-        SpawnGolden(size: 4, center: .customFree, randomize: true, poolCount: 22,
-                    expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"]),
         SpawnGolden(size: 4, center: .chosen, randomize: false, poolCount: 16,
                     expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"]),
         SpawnGolden(size: 4, center: .chosen, randomize: false, poolCount: 22,
@@ -264,14 +241,6 @@ final class BoardPlacementTests: XCTestCase {
         SpawnGolden(size: 5, center: .free, randomize: true, poolCount: 24,
                     expected: ["t4", "t6", "t3", "t10", "t18", "t22", "t16", "t17", "t7", "t5", "t19", "t8", nil, "t15", "t21", "t14", "t2", "t20", "t11", "t9", "t12", "t13", "t23", "t1", "t0"]),
         SpawnGolden(size: 5, center: .free, randomize: true, poolCount: 30,
-                    expected: ["t25", "t15", "t8", "t19", "t23", "t5", "t11", "t10", "t7", "t6", "t2", "t18", nil, "t27", "t22", "t24", "t9", "t4", "t13", "t21", "t29", "t20", "t3", "t26", "t14"]),
-        SpawnGolden(size: 5, center: .customFree, randomize: false, poolCount: 24,
-                    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", nil, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"]),
-        SpawnGolden(size: 5, center: .customFree, randomize: false, poolCount: 30,
-                    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", nil, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"]),
-        SpawnGolden(size: 5, center: .customFree, randomize: true, poolCount: 24,
-                    expected: ["t4", "t6", "t3", "t10", "t18", "t22", "t16", "t17", "t7", "t5", "t19", "t8", nil, "t15", "t21", "t14", "t2", "t20", "t11", "t9", "t12", "t13", "t23", "t1", "t0"]),
-        SpawnGolden(size: 5, center: .customFree, randomize: true, poolCount: 30,
                     expected: ["t25", "t15", "t8", "t19", "t23", "t5", "t11", "t10", "t7", "t6", "t2", "t18", nil, "t27", "t22", "t24", "t9", "t4", "t13", "t21", "t29", "t20", "t3", "t26", "t14"]),
         SpawnGolden(size: 5, center: .chosen, randomize: false, poolCount: 25,
                     expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23", "t24"]),

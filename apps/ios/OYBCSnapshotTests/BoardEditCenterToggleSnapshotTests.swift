@@ -164,7 +164,6 @@ final class BoardEditCenterToggleSnapshotTests: XCTestCase {
             customStartDate: .constant(Self.fixedStart),
             customEndDate: .constant(Self.fixedEnd),
             centerType: .constant(centerType),
-            centerCustomName: .constant(""),
             hasCandidateTasks: false,
             subMode: .constant(.editTasks),
             squareEditCount: 0,

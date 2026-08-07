@@ -22,33 +22,28 @@ enum CenterSquare {
 
     /// Check if center square should be auto-completed.
     ///
-    /// FREE and CUSTOM_FREE types are auto-completed and locked (cannot toggle off).
+    /// FREE is auto-completed and locked (cannot toggle off).
     /// CHOSEN and NONE types are not auto-completed.
     ///
     /// - Parameter type: The center square type
     /// - Returns: True if the center square should be auto-completed
     static func isCenterAutoCompleted(_ type: CenterSquareType) -> Bool {
-        return type == .free || type == .customFree
+        return type == .free
     }
 
     /// Get display text for center square.
     ///
     /// Returns the appropriate label text based on the center square type:
     /// - FREE: "FREE SPACE"
-    /// - CUSTOM_FREE: custom name or "FREE SPACE" fallback
     /// - CHOSEN: empty string (uses task name from board data)
     /// - NONE: empty string (ordinary square)
     ///
-    /// - Parameters:
-    ///   - type: The center square type
-    ///   - customName: Optional custom name for CUSTOM_FREE type
+    /// - Parameter type: The center square type
     /// - Returns: Display text for the center square
-    static func getCenterDisplayText(type: CenterSquareType, customName: String? = nil) -> String {
+    static func getCenterDisplayText(type: CenterSquareType) -> String {
         switch type {
         case .free:
             return "FREE SPACE"
-        case .customFree:
-            return customName ?? "FREE SPACE"
         case .chosen, .none:
             return ""
         }

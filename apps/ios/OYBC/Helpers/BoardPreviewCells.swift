@@ -16,7 +16,7 @@ enum BoardPreviewCell: Equatable {
     /// snapshot / derived-counter lifetime cache / achievement cross-board
     /// reference — see `BoardPreviewCells.build`).
     case task(completed: Bool)
-    /// The odd-board FREE/CUSTOM_FREE center — always renders "filled" on
+    /// The odd-board FREE center — always renders "filled" on
     /// the real grid, same as `BoardPlayView`'s static FREE cell.
     case freeCenter
     /// No BoardTask placed at this position.
@@ -107,7 +107,7 @@ enum BoardPreviewCells {
             return out
         }()
 
-        let hasFreeCenter = size % 2 == 1 && (board.centerSquareType == .free || board.centerSquareType == .customFree)
+        let hasFreeCenter = size % 2 == 1 && board.centerSquareType == .free
         let centerRow = size / 2
         let centerCol = size / 2
 

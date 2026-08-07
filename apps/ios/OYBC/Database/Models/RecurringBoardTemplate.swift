@@ -48,7 +48,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     var timeframe: Timeframe
     var boardSize: Int
     var centerSquareType: CenterSquareType
-    var centerSquareCustomName: String?
     var isRandomized: Bool
     var seedTaskIds: [String]
 
@@ -80,7 +79,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
 
     enum CodingKeys: String, CodingKey {
         case id, userId, name, timeframe, boardSize
-        case centerSquareType, centerSquareCustomName, isRandomized
+        case centerSquareType, isRandomized
         case seedTaskIds
         case poolIds, manualTaskIds, removedTaskIds
         case lastSpawnedWindowKey, isActive
@@ -95,7 +94,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         timeframe: Timeframe,
         boardSize: Int,
         centerSquareType: CenterSquareType,
-        centerSquareCustomName: String? = nil,
         isRandomized: Bool,
         seedTaskIds: [String],
         poolIds: [String]? = nil,
@@ -116,7 +114,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         self.timeframe = timeframe
         self.boardSize = boardSize
         self.centerSquareType = centerSquareType
-        self.centerSquareCustomName = centerSquareCustomName
         self.isRandomized = isRandomized
         self.seedTaskIds = seedTaskIds
         self.poolIds = poolIds
@@ -141,7 +138,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         timeframe = try container.decode(Timeframe.self, forKey: .timeframe)
         boardSize = try container.decode(Int.self, forKey: .boardSize)
         centerSquareType = try container.decode(CenterSquareType.self, forKey: .centerSquareType)
-        centerSquareCustomName = try container.decodeIfPresent(String.self, forKey: .centerSquareCustomName)
         isRandomized = try container.decode(Bool.self, forKey: .isRandomized)
 
         // Decode seedTaskIds from JSON-string TEXT column.
@@ -205,7 +201,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         try container.encode(timeframe, forKey: .timeframe)
         try container.encode(boardSize, forKey: .boardSize)
         try container.encode(centerSquareType, forKey: .centerSquareType)
-        try container.encodeIfPresent(centerSquareCustomName, forKey: .centerSquareCustomName)
         try container.encode(isRandomized, forKey: .isRandomized)
 
         // Encode seedTaskIds as JSON-string TEXT column.

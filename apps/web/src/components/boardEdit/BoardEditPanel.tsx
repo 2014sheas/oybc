@@ -210,8 +210,6 @@ export function BoardEditPanel({
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   // centerType is now a controlled prop (Phase 2b — lifted to BoardPlaySurface).
-  // centerCustomName stays internal (not needed by the grid predicate).
-  const [centerCustomName, setCenterCustomName] = useState('');
 
   // subMode is now a prop (lifted to BoardPlaySurface so the grid can gate taps).
   const [confirm, setConfirm] = useState<'cancel' | 'archive' | null>(null);
@@ -234,7 +232,6 @@ export function BoardEditPanel({
     setCustomEndDate(toYMD(board.endDate));
     // centerType is a controlled prop seeded by BoardPlaySurface on edit-mode
     // entry — do NOT re-seed here, or a grid center-toggle would be overwritten.
-    setCenterCustomName(board.centerSquareCustomName ?? '');
     setValidationError(null);
     setSaving(false);
     setConfirm(null);
@@ -262,19 +259,14 @@ export function BoardEditPanel({
   // not raw keystrokes.
   const origStart = toYMD(board.startDate);
   const origEnd = toYMD(board.endDate);
-  const origCenterCustomName = board.centerSquareCustomName ?? '';
 
   let metaEditCount = 0;
   if (name !== board.name) metaEditCount++;
   if (timeframe !== (board.timeframe as Timeframe)) metaEditCount++;
   // Dates: count as one group (start + end together reflect one timeframe window).
   if (customStartDate !== origStart || customEndDate !== origEnd) metaEditCount++;
-  // Center: count as one group (type + custom name are one logical change).
-  if (
-    centerType !== (board.centerSquareType as CenterSquareType) ||
-    centerCustomName !== origCenterCustomName
-  )
-    metaEditCount++;
+  // Center: one group.
+  if (centerType !== (board.centerSquareType as CenterSquareType)) metaEditCount++;
 
   // Combined edit count: metadata changes + square edits from BoardPlaySurface.
   const editCount = metaEditCount + squareEditCount;
@@ -323,11 +315,6 @@ export function BoardEditPanel({
     }
 
     const patch: UpdateActiveBoardPatch = { name: trimmedName, centerSquareType: centerType };
-
-    // Center-square auxiliary fields.
-    if (centerType === CenterSquareType.CUSTOM_FREE) {
-      patch.centerSquareCustomName = centerCustomName.trim() || null;
-    }
 
     // Timeframe + dates — ONLY when the user actually changed the window.
     //
@@ -438,8 +425,6 @@ export function BoardEditPanel({
         onCustomEndDateChange={setCustomEndDate}
         centerType={centerType}
         onCenterTypeChange={onCenterTypeChange}
-        centerCustomName={centerCustomName}
-        onCenterCustomNameChange={setCenterCustomName}
         isRecurring={false}
         isCore={false}
         weekStartDay={weekStartDay}

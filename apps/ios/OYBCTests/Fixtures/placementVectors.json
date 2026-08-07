@@ -90,7 +90,7 @@
         "i23"
       ],
       "gridSize": 5,
-      "centerType": "custom_free",
+      "centerType": "free",
       "chosenCenterId": null,
       "randomize": false,
       "seed": null,

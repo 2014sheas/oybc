@@ -705,33 +705,6 @@
       "expectedCells": []
     },
     {
-      "name": "center-auto-fill-custom-free",
-      "board": {
-        "id": "b1",
-        "boardSize": 3,
-        "centerSquareType": "custom_free",
-        "startDate": "2026-04-01T00:00:00.000Z",
-        "endDate": "2026-04-30T23:59:59.000Z",
-        "status": "active",
-        "linesCompleted": 0,
-        "completedLineIds": [],
-        "isDeleted": false,
-        "spawnedFromTemplateId": null
-      },
-      "boardTasksOnBoard": [],
-      "childrenByCompound": {},
-      "taskById": {},
-      "allBoards": [],
-      "expected": {
-        "boardId": "b1",
-        "completedTasks": 1,
-        "linesCompleted": 0,
-        "completedLineIds": [],
-        "newBingos": [],
-        "lostBingos": []
-      }
-    },
-    {
       "name": "center-not-auto-filled-chosen",
       "board": {
         "id": "b1",

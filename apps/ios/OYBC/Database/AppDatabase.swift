@@ -198,8 +198,8 @@ final class AppDatabase {
 
         // v5: Synced user preferences JSON column. The current schema holds
         // `weekStartDay`, `defaultBoardSize`, `defaultCenterType`,
-        // `defaultTimeframe`, `defaultRandomize`, `defaultCenterCustomName`,
-        // and `theme` — but the migration itself only adds the column;
+        // `defaultTimeframe`, `defaultRandomize`, and `theme` — but the
+        // migration itself only adds the column;
         // future field additions don't need a migration because the JSON
         // is decoded by `UserPreferences.init(from:)` which tolerates
         // missing keys. Stored as a JSON string to mirror how other

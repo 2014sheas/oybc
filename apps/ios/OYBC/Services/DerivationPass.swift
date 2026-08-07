@@ -96,7 +96,7 @@ enum DerivationPass {
     /// reads the referenced state.
     ///
     /// **Center auto-fill**: for odd-sized boards (3 / 5) with no BoardTask at
-    /// the centre AND centerSquareType == .free or .customFree, the center
+    /// the centre AND centerSquareType == .free, the center
     /// cell is treated as completed.
     ///
     /// - Parameters:
@@ -224,7 +224,7 @@ enum DerivationPass {
 
     /// Board-integrity PR-3 (issue #360) — one per-cell resolution result
     /// from `computeBoardGrid`, one entry per surviving `BoardTask`
-    /// placement (i.e. NOT the odd-board FREE/CUSTOM_FREE center auto-fill,
+    /// placement (i.e. NOT the odd-board FREE center auto-fill,
     /// which is not a placement and has no BoardTask/Task id to key on).
     ///
     /// This is the single per-cell "is this done, and if it's an
@@ -513,7 +513,7 @@ enum DerivationPass {
             }
         }
 
-        // Center auto-fill for odd-sized boards with FREE / CUSTOM_FREE center.
+        // Center auto-fill for odd-sized boards with a FREE center.
         if size % 2 == 1 {
             let centerRow = size / 2
             let centerCol = size / 2
@@ -522,7 +522,7 @@ enum DerivationPass {
                 bt.row == centerRow && bt.col == centerCol
             }
             if !hasCenterTask
-                && (board.centerSquareType == .free || board.centerSquareType == .customFree)
+                && board.centerSquareType == .free
                 && !grid[centerIdx] {
                 grid[centerIdx] = true
                 completedTasks += 1

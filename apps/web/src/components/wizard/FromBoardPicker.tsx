@@ -108,8 +108,7 @@ function computeCellStates(
   const states: ThumbnailCellState[] = Array(size * size).fill('empty');
   const usesChosenCenter =
     board.centerSquareType === CenterSquareType.CHOSEN ||
-    board.centerSquareType === CenterSquareType.FREE ||
-    board.centerSquareType === CenterSquareType.CUSTOM_FREE;
+    board.centerSquareType === CenterSquareType.FREE;
   const centerIndex =
     size % 2 === 1 && usesChosenCenter
       ? Math.floor(size / 2) * size + Math.floor(size / 2)

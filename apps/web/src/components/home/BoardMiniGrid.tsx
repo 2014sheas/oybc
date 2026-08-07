@@ -26,7 +26,7 @@ export interface BoardMiniGridProps {
  * `BoardTask.row/col` placement, real per-cell completion (same derivation
  * `BoardPlaySurface` uses for the live play grid). Purely presentational —
  * `previewCells` is computed by the caller (see `useBoardsPreviewCells`).
- * The FREE/CUSTOM_FREE center renders inked; every other placed square
+ * The FREE center renders inked; every other placed square
  * fills (red, or green when the board is cleared) once its own completion
  * is true.
  */

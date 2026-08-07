@@ -52,7 +52,7 @@ final class PoolHealthTests: XCTestCase {
         RecurringBoardTemplate(
             id: id, userId: "u1", name: name.isEmpty ? "Template \(id)" : name,
             timeframe: timeframe, boardSize: boardSize, centerSquareType: centerSquareType,
-            centerSquareCustomName: nil, isRandomized: false, seedTaskIds: [],
+            isRandomized: false, seedTaskIds: [],
             poolIds: poolIds, manualTaskIds: [], removedTaskIds: [],
             lastSpawnedWindowKey: nil, isActive: isActive,
             createdAt: Self.ts, updatedAt: Self.ts,

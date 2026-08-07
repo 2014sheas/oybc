@@ -17,7 +17,7 @@ enum BoardPlacement {
     ///   2. Odd grid + `.chosen` + a `chosenCenterId` that resolves → pin
     ///      that item at the center and exclude it from the fill pool.
     ///      Unresolvable id → ordinary center.
-    ///   3. Odd grid + `.free` / `.customFree` → center stays `nil` (reserved).
+    ///   3. Odd grid + `.free` → center stays `nil` (reserved).
     ///   4. `.none` (or even grid) → center is filled like any other cell.
     ///   5. Fill pool = `items` minus any pinned center;
     ///      `randomize ? Shuffle.fisherYatesShuffle(pool, rng:) : pool`.
@@ -34,7 +34,7 @@ enum BoardPlacement {
     ///   - randomize: shuffle the fill pool when true.
     ///   - rng: uniform `[0, 1)` generator, injectable for deterministic tests.
     /// - Returns: `gridSize²` array; `nil` = empty cell (reserved
-    ///   FREE/CUSTOM_FREE center, or pool underfill).
+    ///   FREE center, or pool underfill).
     static func placeBoard(
         items: [Task],
         gridSize: Int,
@@ -59,7 +59,7 @@ enum BoardPlacement {
         for cell in 0..<total {
             if cell == centerIdx {
                 if let center = chosenCenter { grid[cell] = center; continue }
-                if centerType == .free || centerType == .customFree { continue }
+                if centerType == .free { continue }
             }
             if next < ordered.count { grid[cell] = ordered[next]; next += 1 }
         }

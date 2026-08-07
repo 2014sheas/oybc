@@ -208,24 +208,19 @@ export function FromBoardGrid({
   }
 
   const size = board.boardSize;
-  // FREE / CUSTOM_FREE boards have NO BoardTask placement at the
+  // FREE boards have NO BoardTask placement at the
   // geometric center — those center squares are virtual (rendered by
   // BoardPlaySurface from board metadata). Without a special case
   // here, the source grid would show a dashed "empty" hole where the
   // play view shows the FREE square, breaking the "render real
   // geometry" contract.
   const usesFreeCenter =
-    size % 2 === 1 &&
-    (board.centerSquareType === CenterSquareType.FREE ||
-      board.centerSquareType === CenterSquareType.CUSTOM_FREE);
+    size % 2 === 1 && board.centerSquareType === CenterSquareType.FREE;
   const freeCenterIndex = usesFreeCenter
     ? Math.floor(size / 2) * size + Math.floor(size / 2)
     : -1;
   const freeCenterText = usesFreeCenter
-    ? getCenterDisplayText(
-        board.centerSquareType,
-        board.centerSquareCustomName,
-      )
+    ? getCenterDisplayText(board.centerSquareType)
     : '';
 
   return (
@@ -256,7 +251,7 @@ export function FromBoardGrid({
           }}
         >
           {placementGrid.map((entry, idx) => {
-            // Render the virtual FREE / CUSTOM_FREE center cell when
+            // Render the virtual FREE center cell when
             // the source board has no BoardTask placement at the
             // geometric center. Non-interactive — there's no real
             // Task to link or copy.

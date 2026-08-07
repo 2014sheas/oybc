@@ -30,7 +30,6 @@ final class BoardWizardTemplateEditTests: XCTestCase {
             timeframe: timeframe,
             boardSize: boardSize,
             centerSquareType: centerSquareType,
-            centerSquareCustomName: nil,
             isRandomized: true,
             seedTaskIds: seedTaskIds ?? (0..<24).map { "task-\($0)" },
             poolIds: poolIds,

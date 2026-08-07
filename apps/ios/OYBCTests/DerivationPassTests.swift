@@ -458,20 +458,6 @@ final class DerivationPassTests: XCTestCase {
         XCTAssertEqual(result.completedTasks, 1)
     }
 
-    // MARK: - computeBoardStatsUpdate: center auto-fill CUSTOM_FREE
-
-    func testComputeBoardStats_CenterAutoFillCustomFreeBoard() {
-        let b = board("b1", boardSize: 3, centerSquareType: .customFree)
-        let result = DerivationPass.computeBoardStatsUpdate(
-            board: b,
-            boardTasksOnBoard: [],
-            childrenByCompound: [:],
-            taskById: [:],
-            windowContext: nil
-        )
-        XCTAssertEqual(result.completedTasks, 1)
-    }
-
     // MARK: - computeBoardStatsUpdate: no auto-fill on CHOSEN
 
     func testComputeBoardStats_NoAutoFillForChosenCenter() {
@@ -1154,7 +1140,7 @@ final class DerivationPassTests: XCTestCase {
     }
 
     func testComputeBoardGrid_FreeCenterAutoFill_NoSyntheticCellStateEntry() {
-        // The FREE/CUSTOM_FREE center auto-fill is not a BoardTask placement
+        // The FREE center auto-fill is not a BoardTask placement
         // (no boardTaskId/taskId to key on), so `computeBoardGrid` fills
         // `grid`/`completedTasks` for it but emits NO `CellState` — mirrors
         // the TS `computeBoardGrid`, which also never pushes into `cells`

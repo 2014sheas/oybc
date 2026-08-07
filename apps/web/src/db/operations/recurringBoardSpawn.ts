@@ -148,7 +148,6 @@ export async function spawnTemplateBoard(
         startDate: windowStart,
         endDate: windowEnd,
         centerSquareType: template.centerSquareType,
-        centerSquareCustomName: template.centerSquareCustomName,
         isRandomized: template.isRandomized,
         totalTasks: template.boardSize * template.boardSize,
         completedTasks: 0,
@@ -167,8 +166,8 @@ export async function spawnTemplateBoard(
       };
 
       // For odd-sized boards, the center cell index is `floor(N²/2)`;
-      // for even-sized, no center exists. `placement` encodes FREE /
-      // CUSTOM_FREE as `null` at the center, so the `t === null`
+      // for even-sized, no center exists. `placement` encodes a FREE
+      // center as `null`, so the `t === null`
       // check below covers the "auto-completed center" case directly.
       const centerCellIndex =
         template.boardSize % 2 === 1
@@ -178,7 +177,7 @@ export async function spawnTemplateBoard(
       const boardTasks: BoardTask[] = [];
       for (let cell = 0; cell < placement.length; cell++) {
         const t = placement[cell];
-        if (t === null) continue; // auto-completed FREE / CUSTOM_FREE center
+        if (t === null) continue; // auto-completed FREE center
         const row = Math.floor(cell / template.boardSize);
         const col = cell % template.boardSize;
         boardTasks.push({
@@ -188,7 +187,7 @@ export async function spawnTemplateBoard(
           row,
           col,
           // isCenter marks a CHOSEN centre task only. Recurring templates
-          // never use CHOSEN (free/customFree = null centre slot, none = an
+          // never use CHOSEN (free = null centre slot, none = an
           // ordinary task), so this is effectively always false — but gating
           // on CHOSEN keeps it correct + prevents a stale isCenter from
           // syncing to iOS as a gold "FREE" cell over a real task.
@@ -206,7 +205,7 @@ export async function spawnTemplateBoard(
       // respawn-bleed row): run the derivation pass at spawn so stored stats are
       // derivation output, not a hand-initialized 0. A fresh window has no events,
       // so event-owning squares resolve incomplete (no respawn bleed); a
-      // FREE/CUSTOM_FREE center still auto-fills. The invariant "stored stats are
+      // FREE center still auto-fills. The invariant "stored stats are
       // always derivation output" now holds from the first row written.
       const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
       const childrenByCompound: Record<string, CompoundChild[]> = {};

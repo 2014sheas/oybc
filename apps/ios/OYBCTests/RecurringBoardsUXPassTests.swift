@@ -59,7 +59,7 @@ final class RecurringBoardsUXPassTests: XCTestCase {
         let tpl = RecurringBoardTemplate(
             id: "tpl-1", userId: "u1", name: "Morning Routine",
             timeframe: .weekly, boardSize: 5, centerSquareType: .free,
-            centerSquareCustomName: nil, isRandomized: true,
+            isRandomized: true,
             seedTaskIds: (0..<24).map { "t\($0)" },
             lastSpawnedWindowKey: nil, isActive: true,
             createdAt: "2026-05-01T00:00:00.000Z",

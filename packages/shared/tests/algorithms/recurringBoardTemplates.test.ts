@@ -308,15 +308,6 @@ describe('validateSpawnPool', () => {
     expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({ ok: true });
   });
 
-  it('CUSTOM_FREE center on 5x5 → fillable count is 24 (same as FREE)', () => {
-    const tpl = buildTemplate({
-      centerSquareType: CenterSquareType.CUSTOM_FREE,
-      centerSquareCustomName: 'Win!',
-      seedTaskIds: Array.from({ length: 24 }, (_, i) => `t${i}`),
-    });
-    expect(validateSpawnPool(tpl, buildPool(tpl))).toEqual({ ok: true });
-  });
-
   it('4x4 even board has no center → fillable count is 16 regardless of centerSquareType', () => {
     const tpl = buildTemplate({
       boardSize: 4,
@@ -399,16 +390,6 @@ describe('buildSpawnPlacement', () => {
     expect(placement.every((t) => t !== null)).toBe(true);
   });
 
-  it('CUSTOM_FREE center: cell 12 is null (same shape as FREE)', () => {
-    const tpl = buildTemplate({
-      centerSquareType: CenterSquareType.CUSTOM_FREE,
-      centerSquareCustomName: 'My center',
-      isRandomized: false,
-      seedTaskIds: Array.from({ length: 24 }, (_, i) => `t${i}`),
-    });
-    const placement = buildSpawnPlacement({ template: tpl, poolTasks: buildPool(tpl) });
-    expect(placement[12]).toBeNull();
-  });
 });
 
 // ─── Multi-window spawn simulation ───────────────────────────────────────────
@@ -536,7 +517,7 @@ describe('multi-window spawn simulation', () => {
 // ─── Golden-parity matrix: buildSpawnPlacement ───────────────────────────────
 //
 // PLAY_TRANSITION.md T2. Byte-for-byte golden of `buildSpawnPlacement` across
-// {3×3, 4×4, 5×5} × {FREE, CUSTOM_FREE, CHOSEN, NONE} × {randomized, not} ×
+// {3×3, 4×4, 5×5} × {FREE, CHOSEN, NONE} × {randomized, not} ×
 // {exact-fit, overfilled pool}, driven by the shared seeded LCG below. These
 // expected arrays were committed against the OLD hand-rolled loop first
 // (baseline), then must stay byte-identical after buildSpawnPlacement is
@@ -575,14 +556,6 @@ const SPAWN_GOLDENS: SpawnGoldenCase[] = [
     expected: ["t5", "t4", "t1", "t2", null, "t3", "t6", "t7", "t0"] },
   { size: 3, center: CenterSquareType.FREE, randomize: true, fit: "over", poolCount: 14,
     expected: ["t2", "t1", "t3", "t9", null, "t10", "t11", "t5", "t8"] },
-  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "exact", poolCount: 8,
-    expected: ["t0", "t1", "t2", "t3", null, "t4", "t5", "t6", "t7"] },
-  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "over", poolCount: 14,
-    expected: ["t0", "t1", "t2", "t3", null, "t4", "t5", "t6", "t7"] },
-  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "exact", poolCount: 8,
-    expected: ["t5", "t4", "t1", "t2", null, "t3", "t6", "t7", "t0"] },
-  { size: 3, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "over", poolCount: 14,
-    expected: ["t2", "t1", "t3", "t9", null, "t10", "t11", "t5", "t8"] },
   { size: 3, center: CenterSquareType.CHOSEN, randomize: false, fit: "exact", poolCount: 9,
     expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"] },
   { size: 3, center: CenterSquareType.CHOSEN, randomize: false, fit: "over", poolCount: 15,
@@ -607,14 +580,6 @@ const SPAWN_GOLDENS: SpawnGoldenCase[] = [
     expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"] },
   { size: 4, center: CenterSquareType.FREE, randomize: true, fit: "over", poolCount: 22,
     expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"] },
-  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "exact", poolCount: 16,
-    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
-  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "over", poolCount: 22,
-    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
-  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "exact", poolCount: 16,
-    expected: ["t3", "t11", "t4", "t2", "t10", "t13", "t12", "t1", "t9", "t6", "t5", "t7", "t8", "t14", "t15", "t0"] },
-  { size: 4, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "over", poolCount: 22,
-    expected: ["t16", "t3", "t15", "t10", "t14", "t6", "t5", "t4", "t13", "t7", "t1", "t19", "t18", "t2", "t17", "t9"] },
   { size: 4, center: CenterSquareType.CHOSEN, randomize: false, fit: "exact", poolCount: 16,
     expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15"] },
   { size: 4, center: CenterSquareType.CHOSEN, randomize: false, fit: "over", poolCount: 22,
@@ -638,14 +603,6 @@ const SPAWN_GOLDENS: SpawnGoldenCase[] = [
   { size: 5, center: CenterSquareType.FREE, randomize: true, fit: "exact", poolCount: 24,
     expected: ["t4", "t6", "t3", "t10", "t18", "t22", "t16", "t17", "t7", "t5", "t19", "t8", null, "t15", "t21", "t14", "t2", "t20", "t11", "t9", "t12", "t13", "t23", "t1", "t0"] },
   { size: 5, center: CenterSquareType.FREE, randomize: true, fit: "over", poolCount: 30,
-    expected: ["t25", "t15", "t8", "t19", "t23", "t5", "t11", "t10", "t7", "t6", "t2", "t18", null, "t27", "t22", "t24", "t9", "t4", "t13", "t21", "t29", "t20", "t3", "t26", "t14"] },
-  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "exact", poolCount: 24,
-    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", null, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"] },
-  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: false, fit: "over", poolCount: 30,
-    expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", null, "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23"] },
-  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "exact", poolCount: 24,
-    expected: ["t4", "t6", "t3", "t10", "t18", "t22", "t16", "t17", "t7", "t5", "t19", "t8", null, "t15", "t21", "t14", "t2", "t20", "t11", "t9", "t12", "t13", "t23", "t1", "t0"] },
-  { size: 5, center: CenterSquareType.CUSTOM_FREE, randomize: true, fit: "over", poolCount: 30,
     expected: ["t25", "t15", "t8", "t19", "t23", "t5", "t11", "t10", "t7", "t6", "t2", "t18", null, "t27", "t22", "t24", "t9", "t4", "t13", "t21", "t29", "t20", "t3", "t26", "t14"] },
   { size: 5, center: CenterSquareType.CHOSEN, randomize: false, fit: "exact", poolCount: 25,
     expected: ["t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "t14", "t15", "t16", "t17", "t18", "t19", "t20", "t21", "t22", "t23", "t24"] },

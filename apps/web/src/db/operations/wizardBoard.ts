@@ -189,7 +189,7 @@ export async function persistWizardBoardRows({
       // Stored stats are derivation output, never a hand-init (mirrors the
       // recurring-spawn path — recurringBoardSpawn.ts). Without this, a board
       // placing a task that is ALREADY complete in this board's window (or a
-      // FREE/CUSTOM_FREE center) would persist + sync `completedTasks: 0`
+      // FREE center) would persist + sync `completedTasks: 0`
       // until the next app-open self-heal. Runs after activation so the final
       // row is derived exactly once, same-transaction as the board write.
       // Status logic is deliberately NOT touched here — a fresh board with a

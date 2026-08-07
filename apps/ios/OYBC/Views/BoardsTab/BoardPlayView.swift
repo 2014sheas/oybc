@@ -324,8 +324,7 @@ struct BoardPlayView: View {
     /// - For any task cell: returns the staged task title.
     private var editCellMenuTitle: String {
         // Free center tap has no squaresDraft entry — give it a clear title.
-        if editCellMenuIsCenter
-            && (viewModel.editCenterType == .free || viewModel.editCenterType == .customFree) {
+        if editCellMenuIsCenter && viewModel.editCenterType == .free {
             return "Center square"
         }
         let key = "\(editCellMenuRow)-\(editCellMenuCol)"
@@ -647,7 +646,6 @@ struct BoardPlayView: View {
                     customStartDate: $viewModel.editCustomStartDate,
                     customEndDate: $viewModel.editCustomEndDate,
                     centerType: $viewModel.editCenterType,
-                    centerCustomName: $viewModel.editCenterCustomName,
                     hasCandidateTasks: viewModel.editHasCandidateTasks,
                     subMode: $viewModel.editSubMode,
                     squareEditCount: viewModel.editSquaresEditCount,
@@ -787,7 +785,7 @@ struct BoardPlayView: View {
             // is the positional center. .chosen is intentionally excluded — the
             // BoardSetupFormView chrome is the way out of CHOSEN.
             if editCellMenuIsCenter {
-                if viewModel.editCenterType == .free || viewModel.editCenterType == .customFree {
+                if viewModel.editCenterType == .free {
                     // Free center → task square (empty; fill via the live "+" flow).
                     // The .onChange(of: editCenterType) handler rebuilds the rearrange
                     // cells (preserving any staged order) — no inline rebuild here.
@@ -1447,23 +1445,13 @@ struct BoardPlayView: View {
                     risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
                 } else if isCenter,
                           let b = board,
-                          (b.centerSquareType == .free || b.centerSquareType == .customFree) {
+                          b.centerSquareType == .free {
                     // FREE center cell — gold label, not interactive in play mode.
-                    // A CUSTOM_FREE center shows its custom name (issue #345 —
-                    // was hardcoded "FREE", discarding the stored name). Empty
-                    // custom name / plain FREE falls back to "FREE" to match the
-                    // wizard preview (RearrangeGrid) — deliberately NOT
-                    // getCenterDisplayText, which would rename every plain FREE
-                    // center to "FREE SPACE".
-                    let centerName: String = {
-                        guard b.centerSquareType == .customFree,
-                              let custom = b.centerSquareCustomName?.trimmingCharacters(in: .whitespacesAndNewlines),
-                              !custom.isEmpty
-                        else { return "FREE" }
-                        return custom
-                    }()
+                    // Deliberately NOT getCenterDisplayText, which returns
+                    // "FREE SPACE" — this cell matches the wizard preview
+                    // (RearrangeGrid), which uses the shorter "FREE".
                     RisoBoardPlayCell(
-                        title: centerName,
+                        title: "FREE",
                         taskType: .normal,
                         isCompleted: false,
                         isBingoLine: highlighted.contains(index),
@@ -2259,8 +2247,8 @@ struct BoardPlayView: View {
         editCellMenuVisible = true
     }
 
-    /// Called by `BoardEditPanel.onCenterTap` when the user taps the FREE /
-    /// CUSTOM_FREE center cell in Edit-tasks sub-mode. Shows the center-toggle
+    /// Called by `BoardEditPanel.onCenterTap` when the user taps the FREE
+    /// center cell in Edit-tasks sub-mode. Shows the center-toggle
     /// confirmationDialog ("Make it a task square").
     private func handleFreeCenterTap() {
         let mid = gridSize / 2

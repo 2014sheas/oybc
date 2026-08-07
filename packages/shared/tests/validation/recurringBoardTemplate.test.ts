@@ -102,10 +102,9 @@ describe('RecurringBoardTemplateSchema', () => {
     ).toThrow();
   });
 
-  it('accepts CenterSquareType.FREE / CUSTOM_FREE / NONE', () => {
+  it('accepts CenterSquareType.FREE / NONE', () => {
     for (const c of [
       CenterSquareType.FREE,
-      CenterSquareType.CUSTOM_FREE,
       CenterSquareType.NONE,
     ]) {
       expect(() =>
@@ -223,33 +222,6 @@ describe('CreateRecurringBoardTemplateInputSchema', () => {
     ).toThrow();
   });
 
-  it('CUSTOM_FREE center requires centerSquareCustomName', () => {
-    expect(() =>
-      CreateRecurringBoardTemplateInputSchema.parse(
-        validCreateInput({ centerSquareType: CenterSquareType.CUSTOM_FREE }),
-      ),
-    ).toThrow();
-    expect(() =>
-      CreateRecurringBoardTemplateInputSchema.parse(
-        validCreateInput({
-          centerSquareType: CenterSquareType.CUSTOM_FREE,
-          centerSquareCustomName: 'My center',
-        }),
-      ),
-    ).not.toThrow();
-  });
-
-  it('CUSTOM_FREE center rejects whitespace-only centerSquareCustomName', () => {
-    expect(() =>
-      CreateRecurringBoardTemplateInputSchema.parse(
-        validCreateInput({
-          centerSquareType: CenterSquareType.CUSTOM_FREE,
-          centerSquareCustomName: '   ',
-        }),
-      ),
-    ).toThrow();
-  });
-
   it('rejects duplicate seedTaskIds', () => {
     const dupId = uuid(1);
     expect(() =>
@@ -329,33 +301,7 @@ describe('UpdateRecurringBoardTemplateInputSchema', () => {
     ).not.toThrow();
   });
 
-  it('rejects a patch that sets centerSquareType=CUSTOM_FREE without a non-blank centerSquareCustomName', () => {
-    // Setting CUSTOM_FREE without a label in the same patch would create a
-    // template whose center cell has no displayable text — the refinement
-    // requires both fields travel together.
-    expect(() =>
-      UpdateRecurringBoardTemplateInputSchema.parse({
-        centerSquareType: CenterSquareType.CUSTOM_FREE,
-      }),
-    ).toThrow();
-    expect(() =>
-      UpdateRecurringBoardTemplateInputSchema.parse({
-        centerSquareType: CenterSquareType.CUSTOM_FREE,
-        centerSquareCustomName: '   ',
-      }),
-    ).toThrow();
-  });
-
-  it('accepts a patch that sets CUSTOM_FREE WITH a non-blank centerSquareCustomName', () => {
-    expect(() =>
-      UpdateRecurringBoardTemplateInputSchema.parse({
-        centerSquareType: CenterSquareType.CUSTOM_FREE,
-        centerSquareCustomName: 'My center',
-      }),
-    ).not.toThrow();
-  });
-
-  it('accepts a patch that switches AWAY from CUSTOM_FREE without a label (label becomes irrelevant)', () => {
+  it('accepts a patch that sets centerSquareType=FREE', () => {
     expect(() =>
       UpdateRecurringBoardTemplateInputSchema.parse({
         centerSquareType: CenterSquareType.FREE,

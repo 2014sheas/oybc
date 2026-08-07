@@ -142,6 +142,17 @@ describe('BoardSchema pull validation', () => {
     expect(BoardSchema.safeParse(base).success).toBe(true);
   });
 
+  it('coerces a legacy custom_free center to FREE instead of rejecting', () => {
+    // CUSTOM_FREE was a shipped center type; a doc synced from an unmigrated
+    // peer still carries the raw string. It must normalize, not fail safeParse
+    // (which would skip the doc forever). Mirrors iOS's decode fallback.
+    const result = BoardSchema.safeParse(validBoard({ centerSquareType: 'custom_free' }));
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.centerSquareType).toBe(CenterSquareType.FREE);
+    }
+  });
+
   it('accepts a board with timeframe INDEFINITE (new enum value)', () => {
     expect(
       BoardSchema.safeParse(validBoard({ timeframe: Timeframe.INDEFINITE })).success

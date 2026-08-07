@@ -23,6 +23,21 @@ export const BoardSizeSchema = z.union([z.literal(3), z.literal(4), z.literal(5)
  */
 const FlexibleDateTime = z.string().datetime({ local: true, offset: true });
 
+/**
+ * Retired center-square value that must still decode. `CUSTOM_FREE` was a
+ * shipped center type; a legacy board/template synced from an unmigrated peer
+ * can still carry the string. iOS coerces it to `.free` on decode
+ * (`Board.swift`), so the web sync-pull path must too — otherwise the doc fails
+ * `safeParse` and is skipped forever. See the CUSTOM_FREE removal PR.
+ */
+const LEGACY_CUSTOM_FREE = 'custom_free';
+
+/** `CenterSquareType`, tolerantly coercing the retired `custom_free` → FREE. */
+const CenterSquareTypeSchema = z.preprocess(
+  (v) => (v === LEGACY_CUSTOM_FREE ? CenterSquareType.FREE : v),
+  z.nativeEnum(CenterSquareType)
+);
+
 export const CreateBoardInputSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
@@ -32,21 +47,12 @@ export const CreateBoardInputSchema = z.object({
   // Absent for INDEFINITE boards (no end date). When present it must be
   // after startDate (see refine below).
   endDate: FlexibleDateTime.optional(),
-  centerSquareType: z.nativeEnum(CenterSquareType),
-  centerSquareCustomName: z.string().max(100).optional(),
+  centerSquareType: CenterSquareTypeSchema,
   centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
 }).refine(
   (data) => data.endDate == null || new Date(data.endDate) > new Date(data.startDate),
   { message: 'End date must be after start date' }
-).refine(
-  (data) => {
-    if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
-      return data.centerSquareCustomName !== undefined && data.centerSquareCustomName.length > 0;
-    }
-    return true;
-  },
-  { message: 'centerSquareCustomName is required when centerSquareType is custom_free' }
 ).refine(
   (data) => {
     if (data.centerSquareType === CenterSquareType.CHOSEN) {
@@ -73,8 +79,7 @@ export const BoardSchema = z.object({
   timeframe: z.nativeEnum(Timeframe),
   startDate: FlexibleDateTime,
   endDate: FlexibleDateTime.optional(),   // Absent for INDEFINITE boards
-  centerSquareType: z.nativeEnum(CenterSquareType),
-  centerSquareCustomName: z.string().max(100).optional(),
+  centerSquareType: CenterSquareTypeSchema,
   centerTaskId: z.string().uuid().optional(),
   isRandomized: z.boolean(),
   totalTasks: z.number().int().min(0),
@@ -868,11 +873,13 @@ const RecurringTimeframeSchema = z.union([
   z.literal(Timeframe.YEARLY),
 ]);
 
-const RecurringCenterSquareTypeSchema = z.union([
-  z.literal(CenterSquareType.FREE),
-  z.literal(CenterSquareType.CUSTOM_FREE),
-  z.literal(CenterSquareType.NONE),
-]);
+const RecurringCenterSquareTypeSchema = z.preprocess(
+  (v) => (v === LEGACY_CUSTOM_FREE ? CenterSquareType.FREE : v),
+  z.union([
+    z.literal(CenterSquareType.FREE),
+    z.literal(CenterSquareType.NONE),
+  ])
+);
 
 /**
  * P1 (Task Pools rework) — the three generalized-source fields, additive
@@ -896,7 +903,6 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
   timeframe: RecurringTimeframeSchema,
   boardSize: BoardSizeSchema,
   centerSquareType: RecurringCenterSquareTypeSchema,
-  centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()).min(1),
   isActive: z.boolean(),
@@ -904,20 +910,6 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
   manualTaskIds: z.array(z.string().uuid()).optional(),
   removedTaskIds: z.array(z.string().uuid()).optional(),
 }).refine(
-  (data) => {
-    if (data.centerSquareType === CenterSquareType.CUSTOM_FREE) {
-      // Trim before checking length so a whitespace-only label
-      // ('   ') doesn't slip through. The form input layer also
-      // trims, but this is the schema-level defense.
-      return (
-        data.centerSquareCustomName !== undefined &&
-        data.centerSquareCustomName.trim().length > 0
-      );
-    }
-    return true;
-  },
-  { message: 'centerSquareCustomName is required (and must be non-blank) when centerSquareType is custom_free' },
-).refine(
   (data) => {
     // No duplicate seedTaskIds — each pool entry must reference a distinct
     // Task. The spawn path treats duplicates as an error class equivalent
@@ -941,7 +933,6 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
   timeframe: RecurringTimeframeSchema.optional(),
   boardSize: BoardSizeSchema.optional(),
   centerSquareType: RecurringCenterSquareTypeSchema.optional(),
-  centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean().optional(),
   seedTaskIds: z.array(z.string().uuid()).min(1).optional(),
   isActive: z.boolean().optional(),
@@ -963,22 +954,6 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
 ).refine(
   removedTaskIdsNoDup,
   { message: 'removedTaskIds must not contain duplicates' },
-).refine(
-  (data) => {
-    // When a partial update sets `centerSquareType` to CUSTOM_FREE, it must
-    // also include a non-blank `centerSquareCustomName` in the same patch.
-    // Otherwise a syncing peer or malicious client could land a
-    // CUSTOM_FREE template with no label, and the spawn path would create
-    // boards whose center cell has no displayable text. The schema can't
-    // see the existing record's name, so the conservative call is to
-    // require both fields to travel together — the form already does so.
-    if (data.centerSquareType !== CenterSquareType.CUSTOM_FREE) return true;
-    return (
-      data.centerSquareCustomName !== undefined &&
-      data.centerSquareCustomName.trim().length > 0
-    );
-  },
-  { message: 'Setting centerSquareType to custom_free requires a non-blank centerSquareCustomName in the same patch' },
 );
 
 export const RecurringBoardTemplateSchema = z.object({
@@ -988,7 +963,6 @@ export const RecurringBoardTemplateSchema = z.object({
   timeframe: RecurringTimeframeSchema,
   boardSize: BoardSizeSchema,
   centerSquareType: RecurringCenterSquareTypeSchema,
-  centerSquareCustomName: z.string().max(100).optional(),
   isRandomized: z.boolean(),
   seedTaskIds: z.array(z.string().uuid()),
   // P1 — additive, optional generalized-source fields. See
@@ -1180,7 +1154,6 @@ export const UserPreferencesSchema = z.object({
   defaultCenterType: DefaultCenterSquareTypeSchema,
   defaultTimeframe: z.nativeEnum(Timeframe),
   defaultRandomize: z.boolean(),
-  defaultCenterCustomName: z.string().max(100),
   theme: ThemePreferenceSchema,
   // Recurring boards (Phase 6.1): optional for forward-compat with older peers
   // that wrote their user doc before these fields existed. mergeUserPreferences

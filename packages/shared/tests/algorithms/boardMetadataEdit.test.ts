@@ -83,7 +83,6 @@ function makeBoardTask(taskId: string, row: number, col: number): BoardTask {
 //   - switching CHOSEN → FREE should preserve the boardTask placement
 //     (the derivation does not change just from the center type change)
 //   - switching FREE → CHOSEN requires a candidate boardTask
-//   - CUSTOM_FREE center stores the custom name separately
 
 describe('center-square switch semantics', () => {
   it('board stats re-derive correctly after switching centerSquareType from NONE to FREE (odd board auto-completes center)', () => {
@@ -145,16 +144,6 @@ describe('center-square switch semantics', () => {
     expect(statsFree.completedTasks).toBe(1);
   });
 
-  it('board stats with CUSTOM_FREE center behave like FREE (center auto-completed)', () => {
-    const board = makeBoard({ centerSquareType: CenterSquareType.CUSTOM_FREE, centerSquareCustomName: 'Wild Card' });
-    const t1 = makeTask('t1', { isCompleted: true });
-    const bts: BoardTask[] = [makeBoardTask('t1', 0, 0)];
-    const taskById = { t1 };
-
-    const stats = computeBoardStatsUpdate(board, bts, {}, taskById, [], undefined);
-    // t1 (completed) + CUSTOM_FREE center (auto-complete) = 2
-    expect(stats.completedTasks).toBe(2);
-  });
 });
 
 // ─── Section 2: derivation re-pass after timeframe/date change ────────────────

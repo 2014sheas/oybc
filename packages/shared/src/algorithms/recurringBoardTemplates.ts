@@ -228,7 +228,7 @@ export interface BuildSpawnPlacementArgs {
 /**
  * Builds the cell-by-cell placement for a spawn. Returns an array of
  * length `boardSize²` where each entry is a `Task` to place on that
- * cell, or `null` for the auto-completed FREE / CUSTOM_FREE center on
+ * cell, or `null` for the auto-completed FREE center on
  * odd-sized boards.
  *
  * Thin wrapper over the shared `placeBoard` core (@oybc/bingo-core):

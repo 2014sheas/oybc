@@ -129,7 +129,6 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
             customStartDate: .constant(Self.fixedStart),
             customEndDate: .constant(Self.fixedEnd),
             centerType: .constant(.free),
-            centerCustomName: .constant(""),
             hasCandidateTasks: false,
             subMode: .constant(.editTasks),
             isSaving: isSaving,
