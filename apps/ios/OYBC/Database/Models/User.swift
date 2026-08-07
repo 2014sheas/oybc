@@ -264,7 +264,6 @@ struct User: Codable, FetchableRecord, PersistableRecord {
 
     static let boards = hasMany(Board.self)
     static let tasks = hasMany(Task.self)
-    static let progressCounters = hasMany(ProgressCounter.self)
 
     // MARK: - Preferences accessors
 

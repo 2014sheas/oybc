@@ -5,7 +5,6 @@ export * from './task';
 export * from './taskEvent';
 export * from './boardTask';
 export * from './compoundChild';
-export * from './progressCounter';
 export * from './syncQueue';
 export * from './recurringBoardTemplate';
 export * from './defaultPool';

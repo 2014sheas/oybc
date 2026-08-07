@@ -60,13 +60,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
     /// specific-board mode and forbidden on non-ACHIEVEMENT.
     var requiredCount: Int?
 
-    // Task linking (for tasks used as progress steps)
-    var parentStepId: String?
-    var parentStepIndex: Int?
-
-    // Progress counters
-    var progressCounters: [TaskProgressCounter]?
-
     // Aggregate stats
     var totalCompletions: Int
     var totalInstances: Int
@@ -172,9 +165,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         referencedTemplateId: String? = nil,
         achievementTrigger: AchievementTrigger? = nil,
         requiredCount: Int? = nil,
-        parentStepId: String? = nil,
-        parentStepIndex: Int? = nil,
-        progressCounters: [TaskProgressCounter]? = nil,
         totalCompletions: Int,
         totalInstances: Int,
         isCompleted: Bool = false,
@@ -210,9 +200,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.referencedTemplateId = referencedTemplateId
         self.achievementTrigger = achievementTrigger
         self.requiredCount = requiredCount
-        self.parentStepId = parentStepId
-        self.parentStepIndex = parentStepIndex
-        self.progressCounters = progressCounters
         self.totalCompletions = totalCompletions
         self.totalInstances = totalInstances
         self.isCompleted = isCompleted
@@ -244,7 +231,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case threshold
         case referencedBoardId, referencedTemplateId
         case achievementTrigger, requiredCount
-        case parentStepId, parentStepIndex, progressCounters
         case totalCompletions, totalInstances
         case isCompleted, completedAt, currentCount
         case createdAt, updatedAt
@@ -263,7 +249,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case defaultLogAmount
     }
 
-    // Custom decoding for progressCounters (stored as JSON string)
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
@@ -281,17 +266,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         referencedTemplateId = try container.decodeIfPresent(String.self, forKey: .referencedTemplateId)
         achievementTrigger = try container.decodeIfPresent(AchievementTrigger.self, forKey: .achievementTrigger)
         requiredCount = try container.decodeIfPresent(Int.self, forKey: .requiredCount)
-        parentStepId = try container.decodeIfPresent(String.self, forKey: .parentStepId)
-        parentStepIndex = try container.decodeIfPresent(Int.self, forKey: .parentStepIndex)
-
-        // Decode progressCounters from JSON string
-        if let jsonString = try container.decodeIfPresent(String.self, forKey: .progressCounters),
-           let data = jsonString.data(using: .utf8) {
-            progressCounters = try? JSONDecoder().decode([TaskProgressCounter].self, from: data)
-        } else {
-            progressCounters = nil
-        }
-
         totalCompletions = try container.decode(Int.self, forKey: .totalCompletions)
         totalInstances = try container.decode(Int.self, forKey: .totalInstances)
         isCompleted = try container.decodeIfPresent(Bool.self, forKey: .isCompleted) ?? false
@@ -324,7 +298,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         defaultLogAmount = try container.decodeIfPresent(Int.self, forKey: .defaultLogAmount)
     }
 
-    // Custom encoding for progressCounters (store as JSON string)
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
@@ -342,16 +315,6 @@ struct Task: Codable, FetchableRecord, PersistableRecord, Identifiable {
         try container.encodeIfPresent(referencedTemplateId, forKey: .referencedTemplateId)
         try container.encodeIfPresent(achievementTrigger, forKey: .achievementTrigger)
         try container.encodeIfPresent(requiredCount, forKey: .requiredCount)
-        try container.encodeIfPresent(parentStepId, forKey: .parentStepId)
-        try container.encodeIfPresent(parentStepIndex, forKey: .parentStepIndex)
-
-        // Encode progressCounters as JSON string
-        if let progressCounters = progressCounters,
-           let data = try? JSONEncoder().encode(progressCounters),
-           let jsonString = String(data: data, encoding: .utf8) {
-            try container.encode(jsonString, forKey: .progressCounters)
-        }
-
         try container.encode(totalCompletions, forKey: .totalCompletions)
         try container.encode(totalInstances, forKey: .totalInstances)
         try container.encode(isCompleted, forKey: .isCompleted)
@@ -397,12 +360,6 @@ enum TaskType: String, Codable, DatabaseValueConvertible {
     // helpers that need to recognise legacy `'progress'` rows in pre-migration
     // storage compare against the literal string directly via
     // `typeStr == "progress"` — there is no enum case for it.
-}
-
-struct TaskProgressCounter: Codable {
-    var counterId: String
-    var targetValue: Double
-    var unit: String?
 }
 
 /// Phase 6.3 — Achievement-task completion trigger. Mirrors the TS

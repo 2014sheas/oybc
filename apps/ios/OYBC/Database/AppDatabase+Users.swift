@@ -2,23 +2,6 @@ import Foundation
 import GRDB
 
 extension AppDatabase {
-    // MARK: - ProgressCounters
-
-    func fetchProgressCounters(userId: String) throws -> [ProgressCounter] {
-        return try read { db in
-            try ProgressCounter
-                .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .order(Column("name"))
-                .fetchAll(db)
-        }
-    }
-
-    func saveProgressCounter(_ counter: ProgressCounter) throws {
-        try write { db in
-            try counter.save(db)
-        }
-    }
-
     // MARK: - Users
 
     func fetchUser(id: String) throws -> User? {

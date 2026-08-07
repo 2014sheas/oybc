@@ -533,19 +533,22 @@ final class AuthService: ObservableObject {
     /// `AppDatabase` singleton has no reopen path and `fatalError`s on init.
     private func wipeLocalDatabase() {
         let tables = [
-            "users", "boards", "tasks", "task_steps", "board_tasks",
-            "progress_counters", "sync_queue", "composite_tasks",
-            "composite_nodes", "compound_children",
+            "users", "boards", "tasks", "board_tasks",
+            "sync_queue", "compound_children",
             "recurring_board_templates", "default_pools"
         ]
         do {
             try AppDatabase.shared.write { db in
                 // `foreign_keys = ON` would reject deleting a parent (e.g.
-                // `users`) before its children, and the legacy
-                // `tasks` ↔ `task_steps` FK pair is even circular — so no static
-                // delete order is safe. `defer_foreign_keys` (settable inside a
-                // transaction, unlike `foreign_keys`) defers all FK checks to
-                // COMMIT, by which point every row is gone. Order-independent.
+                // `users`) before its children — no static delete order is
+                // safe. `defer_foreign_keys` (settable inside a transaction,
+                // unlike `foreign_keys`) defers all FK checks to COMMIT, by
+                // which point every row is gone. Order-independent. (The
+                // legacy `tasks` ↔ `task_steps` circular FK that originally
+                // motivated this no longer exists post-v28: `task_steps`,
+                // `composite_tasks`, `composite_nodes`, and
+                // `progress_counters` were dropped, and `tasks.parentStepId`
+                // — the FK column itself — was removed.)
                 try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
                 for table in tables {
                     try db.execute(sql: "DELETE FROM \(table)")

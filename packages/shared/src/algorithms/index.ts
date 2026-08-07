@@ -73,14 +73,6 @@ export type {
 // ===== End compound tasks unification =====
 
 export {
-  calculateCountingRollup,
-} from './rollup';
-
-export type {
-  CountingRollupResult,
-} from './rollup';
-
-export {
   toLocalISO,
   getDayBoundaries,
   getWeekBoundaries,

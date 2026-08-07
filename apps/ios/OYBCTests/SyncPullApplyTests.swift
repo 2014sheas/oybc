@@ -67,7 +67,6 @@ final class SyncPullApplyTests: XCTestCase {
             operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil,
             achievementTrigger: nil, requiredCount: nil,
-            parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: 0, totalInstances: 0,
             isCompleted: isCompleted, completedAt: isCompleted ? now : nil,
             currentCount: currentCount, createdAt: now, updatedAt: now,
