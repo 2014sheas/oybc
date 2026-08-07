@@ -1,13 +1,9 @@
 import { useState } from 'react';
 import { clearAllTables } from '../db';
-import { UnifiedTaskCreatorPlayground } from '../components/playground/UnifiedTaskCreatorPlayground';
 import { BoardGeneratorPlayground } from '../components/playground/BoardGeneratorPlayground';
 import { TaskSquareActionsPlayground } from '../components/playground/TaskSquareActionsPlayground';
-import { SubtaskDerivationPlayground } from '../components/playground/SubtaskDerivationPlayground';
-import { CrossBoardRollupPlayground } from '../components/playground/CrossBoardRollupPlayground';
 import { BoardWizardTasksPlayground } from '../components/playground/BoardWizardTasksPlayground';
 import { CreateHubPlayground } from '../components/playground/CreateHubPlayground';
-import { BoardLifecyclePlayground } from '../components/playground/BoardLifecyclePlayground';
 import { SharedCounterPlayground } from '../components/playground/SharedCounterPlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import { RisoKitPlayground } from '../components/playground/RisoKitPlayground';
@@ -64,21 +60,6 @@ export function Playground() {
       content: <SyncSimulationPlayground />,
     },
     {
-      id: 'board-lifecycle',
-      title: 'Board Lifecycle',
-      content: <BoardLifecyclePlayground />,
-    },
-    {
-      id: 'cross-board-rollup',
-      title: 'Cross-Board Progress Rollup',
-      content: <CrossBoardRollupPlayground />,
-    },
-    {
-      id: 'subtask-derivation',
-      title: 'Subtask Derivation Engine',
-      content: <SubtaskDerivationPlayground />,
-    },
-    {
       id: 'task-square-actions',
       title: 'Task Square Interactions',
       content: <TaskSquareActionsPlayground />,
@@ -87,11 +68,6 @@ export function Playground() {
       id: 'board-generator',
       title: 'Board Generator',
       content: <BoardGeneratorPlayground />,
-    },
-    {
-      id: 'unified-task-creator',
-      title: 'Task Creation (Unified)',
-      content: <UnifiedTaskCreatorPlayground />,
     },
   ];
 

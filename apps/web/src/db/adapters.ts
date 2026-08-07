@@ -5,7 +5,6 @@ import {
   isEventOwningTask,
   resolveTaskWindowState,
   type Task,
-  type TaskStep,
   type TaskEvent,
   type CompoundChild,
   type CellState,
@@ -54,15 +53,14 @@ export function buildSquareWindowContext(
 }
 
 /**
- * Converts a Task record (and its associated TaskStep records) to the
- * TaskSquareData shape expected by InteractiveTaskSquare.
+ * Converts a Task record to the TaskSquareData shape expected by
+ * InteractiveTaskSquare.
  *
  * For compound tasks, pass `compoundChildren` (the pre-resolved children for
  * this specific task) and `taskMap` so the children's completion states can be
  * evaluated.
  *
  * @param task - The Task record to adapt
- * @param taskSteps - All task steps; filtered internally by task ID (used for legacy progress rows)
  * @param compoundChildren - Compound tasks only: pre-resolved CompoundChild links for this task
  * @param taskMap - Compound tasks only: id → Task lookup for child resolution
  * @param childrenByCompound - Compound tasks only: full map used for recursive evaluateCompound
@@ -71,7 +69,6 @@ export function buildSquareWindowContext(
  */
 export function taskToSquareData(
   task: Task,
-  taskSteps: TaskStep[],
   compoundChildren?: CompoundChild[],
   taskMap?: Record<string, Task>,
   childrenByCompound?: Record<string, CompoundChild[]>,
@@ -133,11 +130,6 @@ export function taskToSquareData(
   // is handled above). The legacy 'progress' SquareData type is dead — its
   // role is taken by 'compound'.
   const type = task.type === TaskType.COUNTING ? 'counting' : 'normal';
-
-  // `taskSteps` is intentionally unused in the post-unification path; the
-  // legacy progress branch consumed it. Kept as a parameter so call sites
-  // don't need to change all at once. Will be removed in a follow-up sweep.
-  void taskSteps;
 
   return {
     id: task.id,

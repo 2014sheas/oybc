@@ -108,12 +108,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   const rawBoardTasks = useBoardTasks(boardId) ?? EMPTY_BOARD_TASKS;
   const boardTasks =
     rawBoardTasks.length === 0 ? rawBoardTasks : resolvePlacements(rawBoardTasks, gridSize);
-  // Post-unification, taskSteps was dropped in Dexie v5. The adapter still
-  // accepts a steps array for the legacy progress branch, but every consumer
-  // here passes EMPTY_TASK_STEPS — the live query was needlessly hitting a
-  // deregistered store. The adapter's progress branch is itself dead code
-  // post-migration; Phase 8 will remove it.
-
   // Compound resolution data (all BoardTasks workspace-wide for child lookup).
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(userId);
 
