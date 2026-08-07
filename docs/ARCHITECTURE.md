@@ -100,18 +100,16 @@ tasks                   -- Task definitions (reusable across boards). Compounds 
                            board's window — see §Windowed Completion below.
 compound_children       -- Parent-child links for compound tasks. One row per
                            link; the child can be any Task, including another
-                           compound. Replaces the retired task_steps and
-                           composite_nodes tables.
+                           compound. Replaced the task_steps and composite_nodes
+                           tables (removed in Wave 2, PRs #411–#414).
 board_tasks             -- Junction: board ↔ task placement (no completion state —
                            that lives on the Task itself post-unification).
-progress_counters       -- Vestigial dead (superseded by the Task.sharedCounterId
-                           model — see docs/SHARED_COUNTERS.md); no live reads/writes.
 sync_queue              -- Pending Firestore operations.
 ```
 
 There is no `bingo_lines` table on either platform. Bingo state is denormalized directly onto `boards` (`linesCompleted` count + `completedLineIds` JSON array of line ids) and is always recomputed from the task-completion grid via `detectBingos` (`packages/bingo-core/src/bingoDetection.ts`, re-exported through `@oybc/shared`; Swift twin `Services/BingoDetection.swift`) — never trusted as authoritative during a sync conflict. See `docs/TASK_SYSTEM.md` §Global completion semantics / derivation pass.
 
-The legacy `task_steps`, `composite_tasks`, `composite_nodes`, and `board_composite_tasks` tables are still present in old migration scripts so first-launch backfill works on dev/test devices, but they receive no live writes and no UI reads. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the canonical schema.
+The legacy `task_steps`, `composite_tasks`, `composite_nodes`, `board_composite_tasks`, and `progress_counters` tables were **removed in the progress-tasks teardown (Wave 2, 2026-08; PRs #411–#414)** — the iOS GRDB tables were dropped in migration v28, the Dexie stores were already dropped, and the legacy collections were removed from the sync contract. See [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the canonical schema.
 
 **Key Design Decisions**:
 
@@ -607,7 +605,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - [x] Display name edit (Firebase Auth + local DB + sync)
 - [x] Sync status indicator + iOS `NetworkMonitor`
 
-**Achievement squares** shipped subsequently in Phase 6.3 (PR #54) as the `TaskType.ACHIEVEMENT` first-class type. The `ProgressCounter` open question below was resolved by Decision 1 (§Shared Counters) — the entity was **not** surfaced; counter-sharing instead ships as the per-Task `sharedCounterId` FK model, with `ProgressCounter`/`TaskProgressCounter`/`calculateCountingRollup` left vestigial-dead (web dropped the Dexie store at v11; iOS still declares the inert `progress_counters` table — tracked in `docs/ROADMAP.md` Track C5).
+**Achievement squares** shipped subsequently in Phase 6.3 (PR #54) as the `TaskType.ACHIEVEMENT` first-class type. The `ProgressCounter` open question below was resolved by Decision 1 (§Shared Counters) — the entity was **not** surfaced; counter-sharing instead ships as the per-Task `sharedCounterId` FK model, and `ProgressCounter`/`TaskProgressCounter`/`calculateCountingRollup` were **removed in Wave 2 (PR #414, Track C5)** — the Dexie store was already dropped, the iOS `progress_counters` GRDB table was dropped in migration v28, and the shared types/algorithm are deleted.
 
 ### Launch readiness (separate gate, not a Phase 5 sub-task)
 

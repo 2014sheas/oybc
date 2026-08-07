@@ -39,7 +39,7 @@ Schema shape:
 - `composite_tasks` is dropped at the model level; composites live in `tasks` with `type='compound'`.
 - `BoardTask` is a pure placement record — no `isCompleted` / `completedAt` / `currentCount` / `completedStepIds`. Completion is **global per Task**, not per-board.
 
-The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables are still present in old migrations so first-launch backfill on dev/test devices works. They are read only by (a) the GRDB/Dexie first-launch migrations that backfill `compound_children`, and (b) the sync service's known-collections list, which lets the push loop drain DELETE tombstones to Firestore. No live UI reads, no live writes — once a device has migrated and drained, those rows are inert. Build deferred compound playgrounds (`CompoundTaskPlayground` / `GlobalCompletionPlayground`) when a future feature genuinely needs them — the snapshot test target (`OYBCSnapshotTests`) is the primary visual-verification surface today.
+The legacy `composite_tasks` / `composite_nodes` / `task_steps` SQLite tables were **removed in the progress-tasks teardown (Wave 2, 2026-08; PRs #411–#414)**: the iOS GRDB tables were dropped in migration v28, the Dexie stores were already dropped, and the three legacy collections were removed from the sync contract. They no longer exist in the schema, are not read by any migration, and are not in the sync known-collections list. Build deferred compound playgrounds (`CompoundTaskPlayground` / `GlobalCompletionPlayground`) when a future feature genuinely needs them — the snapshot test target (`OYBCSnapshotTests`) is the primary visual-verification surface today.
 
 ## Windowed Completion (event-sourced, shipped)
 
@@ -415,7 +415,7 @@ oybc/
 
 ### Database Schema (Identical Across Platforms)
 
-**Tables**: `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `progress_counters`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). Legacy `task_steps` / `composite_tasks` / `composite_nodes` linger in old migrations for first-launch backfill only — no live reads/writes (see top-of-doc Task model section).
+**Tables**: `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
 
 **Key Design Elements**:
 
@@ -427,7 +427,7 @@ oybc/
 
 ### Type System
 
-**`packages/shared`** is the single source of truth for types: `Board`, `Task`, `CompoundChild`, `BoardTask`, `ProgressCounter`, `User`, `SyncQueueItem`. Includes Zod schemas and enums (`BoardStatus`, `TaskType` = `NORMAL` / `COUNTING` / `COMPOUND` / `ACHIEVEMENT`, `Timeframe`, `CenterSquareType`). Legacy `TaskStep` / `CompositeTask` types persist for migration reads only.
+**`packages/shared`** is the single source of truth for types: `Board`, `Task`, `CompoundChild`, `BoardTask`, `User`, `SyncQueueItem`. Includes Zod schemas and enums (`BoardStatus`, `TaskType` = `NORMAL` / `COUNTING` / `COMPOUND` / `ACHIEVEMENT`, `Timeframe`, `CenterSquareType`). The legacy `TaskStep` / `CompositeTask` / `CompositeNode` / `ProgressCounter` types were **removed in Wave 2 (PRs #411–#414)**.
 
 - **iOS**: Swift models mirror TypeScript types using GRDB's `Codable`/`FetchableRecord`/`PersistableRecord`. JSON arrays stored as strings in SQLite.
 - **Web**: Dexie uses TypeScript types directly from `@oybc/shared`. Compound indexes match iOS GRDB indexes.
