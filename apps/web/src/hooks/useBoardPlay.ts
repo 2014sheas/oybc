@@ -9,7 +9,6 @@ import {
   type BoardTask,
   type CompoundChild,
   type Task,
-  type TaskStep,
 } from '@oybc/shared';
 import { db } from '../db/internal';
 import { taskToSquareData, taskToSquareState, type SquareWindowContext } from '../db/adapters';
@@ -33,14 +32,6 @@ import type { ContextMenuState } from '../components/interactiveTaskSquareUtils'
 import { type SubMode } from '../components/boardEdit/BoardEditPanel';
 import { type ArrangeSlot } from '../components/boardEdit/ArrangeGrid';
 import { type BoardCellModel } from '../components/board/RisoBoardCell';
-
-// Module-scoped frozen empty array. Reused as a stable fallback so React
-// Compiler can preserve memoization of downstream useCallback/useMemo deps;
-// an inline `?? []` re-allocates on every render and trips
-// `react-hooks/preserve-manual-memoization`. Typed as the mutable element
-// array because consumers (legacy step helpers) require `T[]`, not
-// `readonly T[]`; the runtime frozen array still throws on mutation.
-const EMPTY_TASK_STEPS = Object.freeze([]) as unknown as TaskStep[];
 
 /**
  * Per-cell staged entry for the squares draft (Phase 2 — staged edit model).
@@ -511,7 +502,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
                 : baseTask;
             const taskChildren = compoundChildrenByCompound[task.id] ?? [];
             const squareData = taskToSquareData(
-              task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+              task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
             );
             const squareState = taskToSquareState(
               task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,

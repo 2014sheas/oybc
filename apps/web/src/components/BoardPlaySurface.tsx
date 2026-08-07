@@ -7,7 +7,6 @@ import {
   generateCounterTaskTitle,
   type Board,
   type Task,
-  type TaskStep,
 } from '@oybc/shared';
 import {
   useBoardPlayData,
@@ -61,14 +60,6 @@ const FLASH_MS = 3000;
  * monthly) matches the rest of the app (CoreBoardWindowBar, StreaksPage).
  */
 const CORE_STREAK_TIMEFRAMES = new Set<string>(['daily', 'weekly', 'monthly', 'yearly']);
-
-// Module-scoped frozen empty array. Reused as a stable fallback so React
-// Compiler can preserve memoization of downstream useCallback/useMemo deps;
-// an inline `?? []` re-allocates on every render and trips
-// `react-hooks/preserve-manual-memoization`. Typed as the mutable element
-// array because consumers (legacy step helpers) require `T[]`, not
-// `readonly T[]`; the runtime frozen array still throws on mutation.
-const EMPTY_TASK_STEPS = Object.freeze([]) as unknown as TaskStep[];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -724,7 +715,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 // THIS placement (achievement completion has no other source).
                 const cellState = boardTaskId ? cellStateByBoardTaskId[boardTaskId] : undefined;
                 const squareData = taskToSquareData(
-                  task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+                  task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
                 );
                 const squareState = taskToSquareState(
                   task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext, cellState,
@@ -1015,7 +1006,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
@@ -1166,7 +1157,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         if (!task) return null;
         const taskChildren = compoundChildrenByCompound[task.id] ?? [];
         const squareData = taskToSquareData(
-          task, EMPTY_TASK_STEPS, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
+          task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
         );
         const squareState = taskToSquareState(
           task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,

@@ -251,14 +251,14 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── TypeBadge.tsx           ←→                  (iOS: removed — Riso uses RisoTypeBadge)
     │   (FilterTabs.tsx — REMOVED, dead code; iOS already removed — Riso uses RisoChip)
     ├── TaskTypeSelector.tsx    ←→                  (iOS: removed — Riso uses RisoSegmented)
-    │   (SelectableTaskItem.tsx — REMOVED, dead code; iOS SelectableTaskItemView.swift may still exist)
+    │   (SelectableTaskItem.tsx — REMOVED, dead code; iOS SelectableTaskItemView.swift also removed)
     ├── PoolItem.tsx            ←→                  PoolItemView.swift
-    │   (SubtaskChip.tsx — REMOVED, dead code; iOS SubtaskChipView.swift may still exist)
+    │   (SubtaskChip.tsx — REMOVED, dead code; iOS SubtaskChipView.swift also removed)
     ├── OperatorSelector.tsx    ←→                  OperatorSelectorView.swift
     ├── CounterStepper.tsx      ←→                  CounterStepperView.swift
     │   (ProgressStepRow.tsx — REMOVED, dead code; helpers live on in progressStepUtils.ts)
     ├── CountingStepFields.tsx  ←→                  CountingStepFieldsView.swift
-    │   (CountingDerivationPanel.tsx — REMOVED, dead code; iOS CountingDerivationPanelView.swift may still exist)
+    │   (CountingDerivationPanel.tsx — REMOVED, dead code; iOS CountingDerivationPanelView.swift also removed)
     ├── ProgressDerivationPanel.tsx ←→               ProgressDerivationPanelView.swift
     ├── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
     ├── AuthGate.tsx               ←→               Views/AuthGateView.swift

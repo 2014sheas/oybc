@@ -153,7 +153,7 @@ describe('ACHIEVEMENT branch (board-integrity PR-3, issue #360)', () => {
 
   it('taskToSquareData tags the square as type "achievement", not "normal"', () => {
     const task = makeAchievementTask();
-    const squareData = taskToSquareData(task, []);
+    const squareData = taskToSquareData(task);
     expect(squareData.type).toBe('achievement');
   });
 
