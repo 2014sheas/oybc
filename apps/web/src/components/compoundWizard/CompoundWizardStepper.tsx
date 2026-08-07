@@ -1,31 +1,31 @@
-import styles from './CompositeWizardStepper.module.css';
+import styles from './CompoundWizardStepper.module.css';
 
-export type CompositeWizardStep = 1 | 2 | 3;
+export type CompoundWizardStep = 1 | 2 | 3;
 
-const STEPS: { id: CompositeWizardStep; label: string }[] = [
+const STEPS: { id: CompoundWizardStep; label: string }[] = [
   { id: 1, label: 'Setup' },
   { id: 2, label: 'Build' },
   { id: 3, label: 'Review' },
 ];
 
-export interface CompositeWizardStepperProps {
-  currentStep: CompositeWizardStep;
+export interface CompoundWizardStepperProps {
+  currentStep: CompoundWizardStep;
   /** Tapping a completed chip jumps back to that step. Future steps
    *  (> currentStep) are disabled so users can't skip validation. */
-  onStepClick?: (step: CompositeWizardStep) => void;
+  onStepClick?: (step: CompoundWizardStep) => void;
 }
 
 /**
- * 3-chip header for the composite-task mini-wizard. Visual style
+ * 3-chip header for the compound-task mini-wizard. Visual style
  * matches the board-creation stepper so users see a consistent
  * multi-step pattern across the app.
  */
-export function CompositeWizardStepper({
+export function CompoundWizardStepper({
   currentStep,
   onStepClick,
-}: CompositeWizardStepperProps): React.ReactElement {
+}: CompoundWizardStepperProps): React.ReactElement {
   return (
-    <nav className={styles.stepper} aria-label="Composite wizard progress">
+    <nav className={styles.stepper} aria-label="Compound wizard progress">
       {STEPS.map((step, idx) => {
         const isActive = step.id === currentStep;
         const isComplete = step.id < currentStep;

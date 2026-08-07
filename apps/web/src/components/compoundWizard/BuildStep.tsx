@@ -7,12 +7,12 @@ import { SubtaskCard } from './SubtaskCard';
 import {
   type SubtaskDraft,
   evaluateSubtaskReadiness,
-} from './compositeSubtaskDraft';
+} from './compoundSubtaskDraft';
 import styles from './BuildStep.module.css';
 
-/** Preview payload for a composite: first few leaf titles + total. Used
- *  to power the library row's subtitle when the row is a composite. */
-export interface CompositeLeafPreview {
+/** Preview payload for a compound: first few child titles + total. Used
+ *  to power the library row's subtitle when the row is a compound. */
+export interface CompoundLeafPreview {
   titles: string[];
   totalLeaves: number;
 }
@@ -32,7 +32,7 @@ interface LibraryRow {
   type: 'normal' | 'counting' | 'compound';
   subtitle: string;
   usageHint: string;
-  kind: 'task' | 'composite';
+  kind: 'task' | 'compound';
 }
 
 export interface BuildStepProps {
@@ -44,20 +44,18 @@ export interface BuildStepProps {
   threshold: number;
   onThresholdChange: (next: number) => void;
   allTasks: Task[];
-  allCompositeTasks: Task[];
+  allCompoundTasks: Task[];
   /** taskId → count of distinct boards the task is placed on. */
   taskBoardCounts: Record<string, number>;
-  /** taskId → number of non-deleted steps (progress tasks only). */
-  taskStepCounts: Record<string, number>;
-  /** compositeTaskId → number of leaf subtasks. */
-  compositeSubtaskCounts: Record<string, number>;
-  /** compositeTaskId → first few leaf titles for library row subtitles. */
-  compositeLeafPreviews: Record<string, CompositeLeafPreview>;
+  /** compoundTaskId → number of leaf subtasks. */
+  compoundSubtaskCounts: Record<string, number>;
+  /** compoundTaskId → first few leaf titles for library row subtitles. */
+  compoundLeafPreviews: Record<string, CompoundLeafPreview>;
   onUpdateSubtask: (id: string, updates: Partial<SubtaskDraft>) => void;
   onRemoveSubtask: (id: string) => void;
-  /** Toggle a library item in/out of the composite. Add (not present) or
+  /** Toggle a library item in/out of the compound. Add (not present) or
    *  remove (already an existing-mode subtask) decided by the parent. */
-  onToggleLibraryItem: (id: string, kind: 'task' | 'composite') => void;
+  onToggleLibraryItem: (id: string, kind: 'task' | 'compound') => void;
   onAddInline: () => void;
   onBack: () => void;
   onNext: () => void;
@@ -68,7 +66,7 @@ export interface BuildStepProps {
 }
 
 /**
- * Step 2 of the composite mini-wizard. Existing-task selections render
+ * Step 2 of the compound mini-wizard. Existing-task selections render
  * as flat rows (no card frame); inline-created subtasks keep their
  * card frame. The task library is rendered always-visible below the
  * selections — tapping a row toggles membership immediately, matching
@@ -80,11 +78,10 @@ export function BuildStep({
   threshold,
   onThresholdChange,
   allTasks,
-  allCompositeTasks,
+  allCompoundTasks,
   taskBoardCounts,
-  taskStepCounts,
-  compositeSubtaskCounts,
-  compositeLeafPreviews,
+  compoundSubtaskCounts,
+  compoundLeafPreviews,
   onUpdateSubtask,
   onRemoveSubtask,
   onToggleLibraryItem,
@@ -152,30 +149,29 @@ export function BuildStep({
         id: t.id,
         title: t.title,
         type: t.type as 'normal' | 'counting',
-        subtitle: buildTaskSubtitle(t, taskStepCounts),
+        subtitle: buildTaskSubtitle(t),
         usageHint,
         kind: 'task',
       };
     });
-    const compositeRows: LibraryRow[] = allCompositeTasks.map((ct) => {
-      const leaves = compositeSubtaskCounts[ct.id] ?? 0;
+    const compoundRows: LibraryRow[] = allCompoundTasks.map((ct) => {
+      const leaves = compoundSubtaskCounts[ct.id] ?? 0;
       return {
         id: ct.id,
         title: ct.title,
         type: 'compound',
-        subtitle: buildCompositeSubtitle(ct.id, compositeLeafPreviews),
+        subtitle: buildCompoundSubtitle(ct.id, compoundLeafPreviews),
         usageHint: `${leaves} subtask${leaves === 1 ? '' : 's'}`,
-        kind: 'composite',
+        kind: 'compound',
       };
     });
-    return [...taskRows, ...compositeRows].sort((a, b) => a.title.localeCompare(b.title));
+    return [...taskRows, ...compoundRows].sort((a, b) => a.title.localeCompare(b.title));
   }, [
     allTasks,
-    allCompositeTasks,
+    allCompoundTasks,
     taskBoardCounts,
-    taskStepCounts,
-    compositeSubtaskCounts,
-    compositeLeafPreviews,
+    compoundSubtaskCounts,
+    compoundLeafPreviews,
   ]);
 
   const q = query.trim().toLowerCase();
@@ -185,7 +181,7 @@ export function BuildStep({
     return row.title.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q);
   });
   // Note: the 'compound' filter matches all compound tasks (they appear in the
-  // compositeRows list with type='compound').
+  // compoundRows list with type='compound').
 
   const showEmptyLibrary = libraryRows.length === 0;
   const showNoMatches = !showEmptyLibrary && visibleRows.length === 0;
@@ -223,7 +219,7 @@ export function BuildStep({
        *  so the two lists feel like paired zones rather than a floating
        *  row above the library. */}
       <div className={styles.selectionsSection}>
-        <h3 className={styles.sectionHeading}>In this composite</h3>
+        <h3 className={styles.sectionHeading}>In this compound</h3>
 
         <div className={styles.subtaskList}>
           {subtasks.map((s) => (
@@ -231,11 +227,10 @@ export function BuildStep({
               key={s.id}
               draft={s}
               allTasks={allTasks}
-              allCompositeTasks={allCompositeTasks}
+              allCompoundTasks={allCompoundTasks}
               taskBoardCounts={taskBoardCounts}
-              taskStepCounts={taskStepCounts}
-              compositeSubtaskCounts={compositeSubtaskCounts}
-              compositeLeafPreviews={compositeLeafPreviews}
+              compoundSubtaskCounts={compoundSubtaskCounts}
+              compoundLeafPreviews={compoundLeafPreviews}
               onUpdate={(updates) => onUpdateSubtask(s.id, updates)}
               onRemove={() => onRemoveSubtask(s.id)}
               onOpenTask={onOpenTask}
@@ -362,26 +357,24 @@ export function BuildStep({
 
 // ─── Helpers (ported from the retired LibraryPickerSheet) ─────────────────────
 
-function buildTaskSubtitle(task: Task, taskStepCounts: Record<string, number>): string {
+function buildTaskSubtitle(task: Task): string {
   if (task.type === TaskType.COUNTING) {
     const { action, maxCount, unit } = task;
     if (!action || !unit || maxCount === undefined) return '';
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  if (task.type === TaskType.COMPOUND) {
-    const n = taskStepCounts[task.id] ?? 0;
-    if (n === 0) return '';
-    return `${n} step${n === 1 ? '' : 's'}`;
-  }
+  // Compound-typed tasks never reach this helper — `allTasks` (the pool
+  // this is called against) always excludes TaskType.COMPOUND rows, which
+  // render via `buildCompoundSubtitle` instead.
   return '';
 }
 
-function buildCompositeSubtitle(
-  compositeId: string,
-  previews: Record<string, CompositeLeafPreview>,
+function buildCompoundSubtitle(
+  compoundId: string,
+  previews: Record<string, CompoundLeafPreview>,
 ): string {
-  const preview = previews[compositeId];
+  const preview = previews[compoundId];
   if (!preview) return '';
   const { titles, totalLeaves } = preview;
   if (titles.length === 0) return '';

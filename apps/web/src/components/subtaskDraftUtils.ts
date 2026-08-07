@@ -1,17 +1,17 @@
 /**
- * Non-component helpers + types for progress/counting step forms.
- * Consumed by the composite-task wizard (CompositeTaskWizard,
- * compositeSubtaskDraft) and useCreateFormState. (The original
+ * Non-component helpers + types for the compound-task creation subtask
+ * forms. Consumed by the compound-task wizard (CompoundTaskWizard,
+ * compoundSubtaskDraft) and useCreateFormState. (The original
  * `ProgressStepRow` component was removed as dead code; these shared
  * helpers live on.)
  */
 
 /**
- * Form state for a single step in a progress task creation form.
+ * Form state for a single inline subtask in a compound-task creation form.
  * Exported so parent components (ProgressTaskCreationPlayground,
  * UnifiedTaskCreatorPlayground) share a single type definition.
  */
-export interface StepFormState {
+export interface SubtaskFormState {
   id: string;
   title: string;
   type: 'normal' | 'counting';
@@ -21,10 +21,10 @@ export interface StepFormState {
 }
 
 /**
- * Validation error state for a single progress step.
+ * Validation error state for a single inline subtask.
  * Exported so parent FormErrors types can reference it.
  */
-export interface StepFormErrors {
+export interface SubtaskFormErrors {
   title?: string;
   action?: string;
   unit?: string;
@@ -32,7 +32,7 @@ export interface StepFormErrors {
 }
 
 /**
- * Generates a unique client-side ID for form step tracking.
+ * Generates a unique client-side ID for form subtask tracking.
  *
  * @returns A unique string ID
  */
@@ -41,11 +41,11 @@ export function generateFormId(): string {
 }
 
 /**
- * Creates a new empty step form state.
+ * Creates a new empty subtask form state.
  *
- * @returns A fresh StepFormState with default values
+ * @returns A fresh SubtaskFormState with default values
  */
-export function createEmptyStep(): StepFormState {
+export function createEmptySubtask(): SubtaskFormState {
   return {
     id: generateFormId(),
     title: '',

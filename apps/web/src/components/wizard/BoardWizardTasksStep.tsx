@@ -14,7 +14,6 @@ import { createTask } from '../../db/operations/tasks';
 import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
-import { formatOperatorLabel } from '../playground/playgroundUtils';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
@@ -332,9 +331,9 @@ export function BoardWizardTasksStep({
 
   // Subtask counts for compounds (formerly composites + progress). Both
   // tabs render counts from the same `compound_children` source — the
-  // legacy `taskStepCounts` and `compositeSubtaskCounts` collapse into
-  // one map keyed by the parent compoundTaskId. Sources from the
-  // effective map so pending compounds show real counts.
+  // legacy `compositeSubtaskCounts` collapses into one map keyed by the
+  // parent compoundTaskId. Sources from the effective map so pending
+  // compounds show real counts.
   const compoundChildCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const [compoundId, children] of Object.entries(effectiveChildrenByCompound)) {
@@ -344,10 +343,8 @@ export function BoardWizardTasksStep({
   }, [effectiveChildrenByCompound]);
 
   // Alias kept for the existing call sites that still pass
-  // `taskStepCounts` and `compositeSubtaskCounts` separately. Both
-  // resolve to the same compound-children-derived count under the
-  // unified model.
-  const taskStepCounts = compoundChildCounts;
+  // `compositeSubtaskCounts` separately. Resolves to the same
+  // compound-children-derived count under the unified model.
   const compositeSubtaskCounts = compoundChildCounts;
 
   // First-3 child titles + total subtask count, keyed by parent
@@ -648,7 +645,6 @@ export function BoardWizardTasksStep({
                     setRowContextMenu({ taskId: task.id, x: e.clientX, y: e.clientY });
                   },
                   taskBoardCounts,
-                  taskStepCounts,
                   showCenterStar: centerTaskMode && isSelected,
                   isCenter,
                   onCenterClick: () => handleCenterRadio(task.id),
@@ -735,7 +731,6 @@ export function BoardWizardTasksStep({
                               setRowContextMenu({ taskId: leafTask.id, x: e.clientX, y: e.clientY });
                             },
                             taskBoardCounts,
-                            taskStepCounts,
                             showCenterStar: centerTaskMode && isSelected,
                             isCenter,
                             onCenterClick: () => handleCenterRadio(leafTask.id),
@@ -994,7 +989,6 @@ interface TaskRowProps {
    *  `.contextMenu` long-press affordance. */
   onContextMenu?: (e: React.MouseEvent) => void;
   taskBoardCounts: Record<string, number>;
-  taskStepCounts: Record<string, number>;
   showCenterStar: boolean;
   isCenter: boolean;
   onCenterClick: () => void;
@@ -1006,12 +1000,11 @@ function renderTaskRow({
   onToggle,
   onContextMenu,
   taskBoardCounts,
-  taskStepCounts,
   showCenterStar,
   isCenter,
   onCenterClick,
 }: TaskRowProps): React.ReactElement {
-  const subtitle = buildTaskSubtitle(task, taskStepCounts);
+  const subtitle = buildTaskSubtitle(task);
   const boards = taskBoardCounts[task.id] ?? 0;
   const usageHint = boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`;
   return (
@@ -1046,26 +1039,18 @@ function renderTaskRow({
   );
 }
 
-// ─── Subtitle helper (ported from composite wizard) ──────────────────────────
+// ─── Subtitle helper (ported from compound wizard) ────────────────────────────
 
-function buildTaskSubtitle(
-  task: Task,
-  taskStepCounts: Record<string, number>,
-): string {
+function buildTaskSubtitle(task: Task): string {
   if (task.type === TaskType.COUNTING) {
     const { action, maxCount, unit } = task;
     if (!action || !unit || maxCount === undefined) return '';
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  // Compound tasks (formerly Progress + Composite): show "N step(s)" plus
-  // the completion-operator descriptor from compound children.
-  if (task.type === TaskType.COMPOUND) {
-    const n = taskStepCounts[task.id] ?? 0;
-    if (n === 0) return '';
-    const stepLabel = `${n} step${n === 1 ? '' : 's'}`;
-    if (!task.operator) return stepLabel;
-    return `${stepLabel} · ${formatOperatorLabel(task.operator, task.threshold, n)}`;
-  }
+  // Compound-typed tasks never reach this helper — both call sites
+  // (`visible.tasks` and expanded-leaf lists) filter TaskType.COMPOUND
+  // out upstream; compound rows render their own subtitle via
+  // `compositeLeafPreviews` instead.
   return '';
 }

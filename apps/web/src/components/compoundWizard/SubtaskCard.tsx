@@ -4,7 +4,7 @@ import { TaskType, generateCounterTaskTitle, findLinkableCounter } from '@oybc/s
 import { RisoTypeBadge, type RisoTaskType } from '../riso';
 import { CountingStepFields } from '../CountingStepFields';
 import { CounterLinkHint } from '../counters';
-import type { CompositeLeafPreview } from './BuildStep';
+import type { CompoundLeafPreview } from './BuildStep';
 import {
   type SubtaskDraft,
   type ExistingSubtaskDraft,
@@ -13,7 +13,7 @@ import {
   evaluateSubtaskReadiness,
   hasInlineDirtyFields,
   switchInlineType,
-} from './compositeSubtaskDraft';
+} from './compoundSubtaskDraft';
 import styles from './SubtaskCard.module.css';
 
 /** Max title length — matches the shared CreateForm limits. */
@@ -26,15 +26,13 @@ export interface SubtaskCardProps {
   draft: SubtaskDraft;
   /** Library feeds — needed by existing-mode rows to look up their title + meta. */
   allTasks: Task[];
-  allCompositeTasks: Task[];
+  allCompoundTasks: Task[];
   /** taskId → count of distinct boards the task is placed on. */
   taskBoardCounts: Record<string, number>;
-  /** taskId → number of non-deleted steps (progress tasks only). */
-  taskStepCounts: Record<string, number>;
-  /** compositeTaskId → leaf (subtask) count. */
-  compositeSubtaskCounts: Record<string, number>;
-  /** compositeTaskId → first few leaf titles for the existing-row subtitle. */
-  compositeLeafPreviews: Record<string, CompositeLeafPreview>;
+  /** compoundTaskId → leaf (subtask) count. */
+  compoundSubtaskCounts: Record<string, number>;
+  /** compoundTaskId → first few leaf titles for the existing-row subtitle. */
+  compoundLeafPreviews: Record<string, CompoundLeafPreview>;
   /** Called with a partial update to merge into the draft. */
   onUpdate: (updates: Partial<SubtaskDraft>) => void;
   /** Called when the user clicks remove. */
@@ -46,7 +44,7 @@ export interface SubtaskCardProps {
 }
 
 /**
- * SubtaskCard — renders a single subtask of a composite. Existing-mode
+ * SubtaskCard — renders a single subtask of a compound. Existing-mode
  * selections render as a flat borderless row (no frame, no readiness
  * footer — they're ready by construction). Inline-created subtasks keep
  * their full card frame and the live readiness check that drives the
@@ -68,11 +66,10 @@ interface ExistingFlatRowProps extends SubtaskCardProps {
 function ExistingFlatRow({
   draft,
   allTasks,
-  allCompositeTasks,
+  allCompoundTasks,
   taskBoardCounts,
-  taskStepCounts,
-  compositeSubtaskCounts,
-  compositeLeafPreviews,
+  compoundSubtaskCounts,
+  compoundLeafPreviews,
   onRemove,
   onOpenTask,
 }: ExistingFlatRowProps): React.ReactElement {
@@ -86,32 +83,31 @@ function ExistingFlatRow({
       return {
         type: badgeType,
         title: task.title,
-        subtitle: buildTaskSubtitle(task, taskStepCounts),
+        subtitle: buildTaskSubtitle(task),
         usageHint: boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`,
       };
     }
-    const ct = allCompositeTasks.find((c) => c.id === draft.selectedId);
+    const ct = allCompoundTasks.find((c) => c.id === draft.selectedId);
     if (!ct) return null;
-    const leaves = compositeSubtaskCounts[ct.id] ?? 0;
+    const leaves = compoundSubtaskCounts[ct.id] ?? 0;
     return {
       type: 'compound' as const,
       title: ct.title,
-      subtitle: buildCompositeSubtitle(ct.id, compositeLeafPreviews),
+      subtitle: buildCompoundSubtitle(ct.id, compoundLeafPreviews),
       usageHint: `${leaves} subtask${leaves === 1 ? '' : 's'}`,
     };
   }, [
     draft,
     allTasks,
-    allCompositeTasks,
+    allCompoundTasks,
     taskBoardCounts,
-    taskStepCounts,
-    compositeSubtaskCounts,
-    compositeLeafPreviews,
+    compoundSubtaskCounts,
+    compoundLeafPreviews,
   ]);
 
   if (!row) {
     // Library row went missing (rare — e.g. the target task was deleted
-    // from another tab while the composite wizard was open). Fall back
+    // from another tab while the compound wizard was open). Fall back
     // to a minimal remove-only row so the user can clean it up.
     return (
       <div className={styles.flatRow}>
@@ -341,8 +337,8 @@ function InlineFields({
 /**
  * R1 counters refresh — auto-link hint for the compound builder's inline
  * counting subtask. Computes the (verb, noun) match against the library
- * (`allTasks`, already loaded by `CompositeTaskWizard`) and renders
- * `CounterLinkHint` once a match + a valid goal exist. `CompositeTaskWizard.
+ * (`allTasks`, already loaded by `CompoundTaskWizard`) and renders
+ * `CounterLinkHint` once a match + a valid goal exist. `CompoundTaskWizard.
  * handleCreate` re-derives the same match at submit time (guarded by
  * `draft.linkDisabled`) to set `sharedCounterId`/`baseline` on the inline-
  * created child — see `AutoCreateCompoundChildTask`.
@@ -385,26 +381,23 @@ function InlineCounterLinkHint({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function buildTaskSubtitle(task: Task, taskStepCounts: Record<string, number>): string {
+function buildTaskSubtitle(task: Task): string {
   if (task.type === TaskType.COUNTING) {
     const { action, maxCount, unit } = task;
     if (!action || !unit || maxCount === undefined) return '';
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  if (task.type === TaskType.COMPOUND) {
-    const n = taskStepCounts[task.id] ?? 0;
-    if (n === 0) return '';
-    return `${n} step${n === 1 ? '' : 's'}`;
-  }
+  // Compound-typed tasks never reach this helper via the 'task' selection
+  // branch above — they render via `buildCompoundSubtitle` instead.
   return '';
 }
 
-function buildCompositeSubtitle(
-  compositeId: string,
-  previews: Record<string, CompositeLeafPreview>,
+function buildCompoundSubtitle(
+  compoundId: string,
+  previews: Record<string, CompoundLeafPreview>,
 ): string {
-  const preview = previews[compositeId];
+  const preview = previews[compoundId];
   if (!preview) return '';
   const { titles, totalLeaves } = preview;
   if (titles.length === 0) return '';
