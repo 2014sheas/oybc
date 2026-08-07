@@ -146,6 +146,8 @@ export type {
 
 export { isTaskExpired } from './taskExpiry';
 
+export { compareBoardsForList } from './boardListSort';
+
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
 
 // ===== Phase 1 + Phase 3 — Shared counter =====

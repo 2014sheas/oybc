@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { compareBoardsForList } from '@oybc/shared';
 import { db } from '../db/internal';
 
 /**
@@ -11,10 +12,13 @@ export function useBoards(userId: string | undefined) {
     async () => {
       if (!userId) return [];
 
-      return db.boards
+      const boards = await db.boards
         .filter((b) => b.userId === userId && !b.isDeleted)
-        .reverse()
-        .sortBy('updatedAt');
+        .toArray();
+      // Boards-screen ordering: active boards by soonest deadline, then
+      // non-active by most recent activity. Shared comparator so web + iOS
+      // stay in lock-step (docs: compareBoardsForList).
+      return boards.sort((a, b) => compareBoardsForList(a, b));
     },
     [userId],
     [] // Default value while loading
