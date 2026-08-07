@@ -37,7 +37,7 @@ final class WindowedCompletionTests: XCTestCase {
         return Task(
             id: id, userId: userId, title: title, description: nil, type: type,
             action: nil, unit: nil, maxCount: maxCount ?? (type == .counting ? 5 : nil),
-            operatorType: nil, threshold: nil, isOrdered: nil,
+            operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil,
             achievementTrigger: nil, requiredCount: nil,
             parentStepId: nil, parentStepIndex: nil, progressCounters: nil,

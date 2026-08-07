@@ -39,7 +39,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
     private func seedNormalTask(_ db: AppDatabase, isCompleted: Bool = true) throws {
         try db.saveTask(Task(
             id: taskA, userId: userId, title: "N", description: nil, type: .normal,
-            action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil, isOrdered: nil,
+            action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil,
             referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil, requiredCount: nil,
             parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: isCompleted ? 1 : 0, totalInstances: 1,

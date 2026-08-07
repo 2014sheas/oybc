@@ -111,7 +111,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testRowCompoundLight() {
         let task = SnapshotFixtures.makeTask(
             id: "t-k", title: "Morning routine", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let view = wrap(
             RisoTaskRowView(task: task, placementCount: 2, activePlacementCount: 1, childCount: 3),
@@ -127,7 +127,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testRowCompoundDark() {
         let task = SnapshotFixtures.makeTask(
             id: "t-k", title: "Morning routine", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let view = wrap(
             RisoTaskRowView(task: task, placementCount: 2, activePlacementCount: 1, childCount: 3),
@@ -175,7 +175,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testCompoundGroupCollapsedLight() {
         let parent = SnapshotFixtures.makeTask(
             id: "t-compound-and", title: "Daily wellness", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let children: [(link: CompoundChild, task: Task?)] = [
             (link: SnapshotFixtures.makeCompoundChild(id: "cc1", compoundTaskId: parent.id, childTaskId: "t-leaf-water", childIndex: 0),
@@ -209,7 +209,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testCompoundGroupCollapsedDark() {
         let parent = SnapshotFixtures.makeTask(
             id: "t-compound-and", title: "Daily wellness", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let children: [(link: CompoundChild, task: Task?)] = [
             (link: SnapshotFixtures.makeCompoundChild(id: "cc1", compoundTaskId: parent.id, childTaskId: "t-leaf-water", childIndex: 0),
@@ -243,7 +243,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testCompoundGroupExpandedLight() {
         let parent = SnapshotFixtures.makeTask(
             id: "t-compound-and", title: "Daily wellness", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let children: [(link: CompoundChild, task: Task?)] = [
             (link: SnapshotFixtures.makeCompoundChild(id: "cc1", compoundTaskId: parent.id, childTaskId: "t-leaf-water", childIndex: 0),
@@ -279,7 +279,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testCompoundGroupExpandedDark() {
         let parent = SnapshotFixtures.makeTask(
             id: "t-compound-and", title: "Daily wellness", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let children: [(link: CompoundChild, task: Task?)] = [
             (link: SnapshotFixtures.makeCompoundChild(id: "cc1", compoundTaskId: parent.id, childTaskId: "t-leaf-water", childIndex: 0),
@@ -435,7 +435,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testDetailCompoundLight() {
         let task = SnapshotFixtures.makeTask(
             id: "t-compound", title: "Daily wellness", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let children = [
             SnapshotFixtures.makeTask(id: "t-leaf-water", title: "Drink water", type: .normal),
@@ -464,7 +464,7 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
     func testDetailCompoundDark() {
         let task = SnapshotFixtures.makeTask(
             id: "t-compound", title: "Daily wellness", type: .compound,
-            operatorType: .and, isOrdered: false
+            operatorType: .and
         )
         let children = [
             SnapshotFixtures.makeTask(id: "t-leaf-water", title: "Drink water", type: .normal),

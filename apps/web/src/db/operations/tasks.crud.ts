@@ -160,14 +160,14 @@ export async function createTask(
   };
 
   // Post-unification: createTask is for primitives only (NORMAL / COUNTING /
-  // ACHIEVEMENT). Compound tasks (which include former Progress as
-  // `compound + isOrdered=true`) route through createCompound. The legacy
-  // 'progress' string check is defensive — old call sites or remote
-  // payloads that still emit type='progress' should surface here loudly
-  // instead of silently writing an invalid Task row.
+  // ACHIEVEMENT). Compound tasks (which include former Progress) route
+  // through createCompound. The legacy 'progress' string check is
+  // defensive — old call sites or remote payloads that still emit
+  // type='progress' should surface here loudly instead of silently
+  // writing an invalid Task row.
   if (input.type === TaskType.COMPOUND || (input.type as string) === 'progress') {
     throw new Error(
-      `createTask received type='${input.type}'. Compound (and former progress) tasks must call createCompound (with isOrdered=true for progress).`
+      `createTask received type='${input.type}'. Compound (and former progress) tasks must call createCompound.`
     );
   }
 
@@ -183,7 +183,7 @@ export async function createTask(
  * Create a new compound task (unifies former progress + composite create paths).
  *
  * Writes:
- *   - One `tasks` row with `type='compound'` + operator/threshold/isOrdered.
+ *   - One `tasks` row with `type='compound'` + operator/threshold.
  *   - For each child entry: either references the provided `childTaskId`, or
  *     auto-creates a new primitive Task (if `autoCreate` is provided).
  *   - One `compoundChildren` row per child link.
@@ -212,7 +212,6 @@ export async function createCompound(
     type: TaskType.COMPOUND,
     operator: input.operator,
     threshold: input.operator === OperatorType.M_OF_N ? input.threshold : undefined,
-    isOrdered: input.isOrdered,
     isCompleted: false, // Field exists for column uniformity; never read on compound rows.
     totalCompletions: 0,
     totalInstances: 0,

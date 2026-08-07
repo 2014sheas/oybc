@@ -84,7 +84,6 @@ final class BoardPlayViewModelTests: XCTestCase {
             maxCount: nil,
             operatorType: nil,
             threshold: nil,
-            isOrdered: nil,
             referencedBoardId: nil,
             referencedTemplateId: nil,
             achievementTrigger: nil,

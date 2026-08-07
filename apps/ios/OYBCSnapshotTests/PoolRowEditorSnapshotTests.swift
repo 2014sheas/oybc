@@ -64,7 +64,7 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
     // MARK: - Compound editor
 
     private func compoundDraft() -> TaskEditPatch {
-        var d = TaskEditPatch(title: "Morning routine"); d.ordered = true
+        var d = TaskEditPatch(title: "Morning routine")
         var progress = ChildPatch(id: "s2", childTaskId: "s2", title: "Run", isProgress: true)
         progress.action = "Run"; progress.goal = "3"; progress.unit = "km"
         d.children = [

@@ -81,7 +81,7 @@ function ExistingFlatRow({
       const task = allTasks.find((t) => t.id === draft.selectedId);
       if (!task) return null;
       const boards = taskBoardCounts[task.id] ?? 0;
-      // Compound tasks (both ordered and unordered) show 'compound' badge.
+      // Compound tasks show the 'compound' badge.
       const badgeType = task.type === 'compound' ? 'compound' : task.type as 'normal' | 'counting';
       return {
         type: badgeType,
@@ -392,8 +392,7 @@ function buildTaskSubtitle(task: Task, taskStepCounts: Record<string, number>): 
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  // Former Progress = compound + isOrdered=true under the unified model.
-  if (task.type === TaskType.COMPOUND && task.isOrdered === true) {
+  if (task.type === TaskType.COMPOUND) {
     const n = taskStepCounts[task.id] ?? 0;
     if (n === 0) return '';
     return `${n} step${n === 1 ? '' : 's'}`;

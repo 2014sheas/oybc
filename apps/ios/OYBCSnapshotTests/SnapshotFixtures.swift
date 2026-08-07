@@ -68,7 +68,6 @@ enum SnapshotFixtures {
         maxCount: Int? = nil,
         operatorType: OperatorType? = nil,
         threshold: Int? = nil,
-        isOrdered: Bool? = nil,
         isCompleted: Bool = false
     ) -> Task {
         Task(
@@ -82,7 +81,6 @@ enum SnapshotFixtures {
             maxCount: maxCount,
             operatorType: operatorType,
             threshold: threshold,
-            isOrdered: isOrdered,
             parentStepId: nil,
             parentStepIndex: nil,
             progressCounters: nil,
@@ -390,32 +388,20 @@ enum SnapshotFixtures {
             id: "t-compound-and",
             title: "Daily wellness",
             type: .compound,
-            operatorType: .and,
-            isOrdered: false
-        )
-        let compoundOrdered = makeTask(
-            id: "t-compound-ordered",
-            title: "Bake bread",
-            type: .compound,
-            operatorType: .and,
-            isOrdered: true
+            operatorType: .and
         )
         let compoundOr = makeTask(
             id: "t-compound-or",
             title: "Pick a hobby",
             type: .compound,
-            operatorType: .or,
-            isOrdered: false
+            operatorType: .or
         )
-        let compounds = [compoundAnd, compoundOrdered, compoundOr]
+        let compounds = [compoundAnd, compoundOr]
 
         let children: [CompoundChild] = [
             makeCompoundChild(id: "cc-and-1", compoundTaskId: compoundAnd.id, childTaskId: "t-leaf-water", childIndex: 0),
             makeCompoundChild(id: "cc-and-2", compoundTaskId: compoundAnd.id, childTaskId: "t-leaf-stretch", childIndex: 1),
             makeCompoundChild(id: "cc-and-3", compoundTaskId: compoundAnd.id, childTaskId: "t-leaf-vitamins", childIndex: 2),
-            makeCompoundChild(id: "cc-ord-1", compoundTaskId: compoundOrdered.id, childTaskId: "t-leaf-mix", childIndex: 0),
-            makeCompoundChild(id: "cc-ord-2", compoundTaskId: compoundOrdered.id, childTaskId: "t-leaf-rise", childIndex: 1),
-            makeCompoundChild(id: "cc-ord-3", compoundTaskId: compoundOrdered.id, childTaskId: "t-leaf-bake", childIndex: 2),
             makeCompoundChild(id: "cc-or-1", compoundTaskId: compoundOr.id, childTaskId: "t-leaf-paint", childIndex: 0),
             makeCompoundChild(id: "cc-or-2", compoundTaskId: compoundOr.id, childTaskId: "t-leaf-knit", childIndex: 1),
         ]
@@ -427,9 +413,6 @@ enum SnapshotFixtures {
             "t-leaf-water":    "Drink water",
             "t-leaf-stretch":  "Stretch 5 min",
             "t-leaf-vitamins": "Take vitamins",
-            "t-leaf-mix":      "Mix dough",
-            "t-leaf-rise":     "Let dough rise",
-            "t-leaf-bake":     "Bake the loaf",
             "t-leaf-paint":    "Paint a small canvas",
             "t-leaf-knit":     "Knit one row",
         ]

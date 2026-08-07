@@ -68,7 +68,6 @@ struct TaskEditPatch: Equatable {
     var action: String = ""
     var goal: String = ""
     var unit: String = ""
-    var ordered: Bool = false
     var children: [ChildPatch] = []
 
     init(title: String) { self.title = title }
@@ -80,7 +79,6 @@ struct TaskEditPatch: Equatable {
         self.action = task.action ?? ""
         self.goal = task.maxCount.map(String.init) ?? ""
         self.unit = task.unit ?? ""
-        self.ordered = task.isOrdered ?? false
     }
 
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -150,7 +148,6 @@ struct TaskEditPatch: Equatable {
             // Parent-level fields only; child Task/link CRUD is applied by the
             // persist layer (saveWizardBoard / pending merge), not here.
             t.title = trimmedTitle
-            t.isOrdered = ordered
         default:
             t.title = trimmedTitle
         }

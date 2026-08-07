@@ -93,11 +93,10 @@ function makeLegacyRow(overrides: Partial<LegacyBoardTaskCompletion> = {}): Lega
 // ─── progressTaskToCompound ───────────────────────────────────────────────────
 
 describe('progressTaskToCompound', () => {
-  it('returns type=COMPOUND, operator=AND, isOrdered=true', () => {
+  it('returns type=COMPOUND, operator=AND', () => {
     const result = progressTaskToCompound();
     expect(result.type).toBe(TaskType.COMPOUND);
     expect(result.operator).toBe(OperatorType.AND);
-    expect(result.isOrdered).toBe(true);
   });
 
   it('does not include threshold', () => {
@@ -151,13 +150,12 @@ describe('taskStepToCompoundChild', () => {
 // ─── compositeTaskToTask ──────────────────────────────────────────────────────
 
 describe('compositeTaskToTask', () => {
-  it('AND root → Task with operator=AND, isOrdered=false, no threshold', () => {
+  it('AND root → Task with operator=AND, no threshold', () => {
     const ct = makeCompositeTask();
     const root = makeOperatorNode({ operatorType: OperatorType.AND });
     const result = compositeTaskToTask(ct, root);
     expect(result).not.toBeNull();
     expect(result!.operator).toBe(OperatorType.AND);
-    expect(result!.isOrdered).toBe(false);
     expect(result!.threshold).toBeUndefined();
   });
 

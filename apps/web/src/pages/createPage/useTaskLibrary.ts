@@ -159,10 +159,10 @@ export function useBrowsableTasks(
  *   - 'all'      — every task
  *   - 'normal'   — type=normal
  *   - 'counting' — type=counting
- *   - 'compound' — type=compound (both ordered and unordered)
+ *   - 'compound' — type=compound
  *
  * Returns a single flat list. Consumers iterate `filteredTasks` and
- * inspect `task.type` + `task.isOrdered` to render appropriately.
+ * inspect `task.type` to render appropriately.
  */
 export function filterLibraryForDisplay(
   library: TaskLibrary,

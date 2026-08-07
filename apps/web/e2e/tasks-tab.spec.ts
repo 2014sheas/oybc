@@ -383,7 +383,7 @@ test.describe('Tasks tab', () => {
     const PARENT_ID = 'eeeeeeee-0011-0000-0000-000000000011';
     const CHILD_ID = 'eeeeeeee-0012-0000-0000-000000000012';
     const LINK_ID = 'eeeeeeee-aaaa-0000-0000-000000000011';
-    await seedTask(page, { id: PARENT_ID, title: 'Workout routine', type: 'compound', isOrdered: false });
+    await seedTask(page, { id: PARENT_ID, title: 'Workout routine', type: 'compound' });
     await seedTask(page, { id: CHILD_ID, title: 'Pushups', type: 'normal' });
     await seedCompoundChild(page, {
       id: LINK_ID,
@@ -432,7 +432,7 @@ test.describe('Tasks tab', () => {
     const LINK_A_ID = 'eeeeeeee-aaaa-0000-0000-000000000001';
     const LINK_B_ID = 'eeeeeeee-aaaa-0000-0000-000000000002';
 
-    await seedTask(page, { id: PARENT_ID, title: 'Workout routine', type: 'compound', isOrdered: false });
+    await seedTask(page, { id: PARENT_ID, title: 'Workout routine', type: 'compound' });
     await seedTask(page, { id: CHILD_A_ID, title: 'Pushups', type: 'normal' });
     await seedTask(page, { id: CHILD_B_ID, title: 'Squats', type: 'normal' });
     await seedCompoundChild(page, {

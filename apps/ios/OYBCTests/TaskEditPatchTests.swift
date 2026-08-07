@@ -16,7 +16,7 @@ final class TaskEditPatchTests: XCTestCase {
         OYBC.Task(
             id: id, userId: "u1", title: title, description: nil, type: type,
             action: action, unit: unit, maxCount: maxCount,
-            operatorType: nil, threshold: nil, isOrdered: nil,
+            operatorType: nil, threshold: nil,
             parentStepId: nil, parentStepIndex: nil, progressCounters: nil,
             totalCompletions: 0, totalInstances: 0,
             isCompleted: false, completedAt: nil, currentCount: nil,
@@ -115,8 +115,8 @@ final class TaskEditPatchTests: XCTestCase {
 
     // MARK: - Compound (PR 2)
 
-    private func compoundPatch(_ children: [ChildPatch], title: String = "Routine", ordered: Bool = false) -> TaskEditPatch {
-        var p = TaskEditPatch(title: title); p.ordered = ordered; p.children = children
+    private func compoundPatch(_ children: [ChildPatch], title: String = "Routine") -> TaskEditPatch {
+        var p = TaskEditPatch(title: title); p.children = children
         return p
     }
 
@@ -188,11 +188,10 @@ final class TaskEditPatchTests: XCTestCase {
         XCTAssertNil(p.validate(type: .compound))
     }
 
-    func test_apply_compound_sets_title_and_ordered() {
+    func test_apply_compound_sets_title() {
         let base = makeTask(id: "cmp", type: .compound, title: "Old")
-        var p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")], title: "Morning", ordered: true)
+        let p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")], title: "Morning")
         let out = p.applied(to: base)
         XCTAssertEqual(out.title, "Morning")
-        XCTAssertEqual(out.isOrdered, true)
     }
 }

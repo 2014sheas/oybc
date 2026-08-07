@@ -184,10 +184,8 @@ export function BuildStep({
     if (q.length === 0) return true;
     return row.title.toLowerCase().includes(q) || row.subtitle.toLowerCase().includes(q);
   });
-  // Note: 'compound' filter matches ALL compound tasks (both ordered and
-  // unordered), because both kinds appear in the compositeRows list with
-  // type='compound'. The ordered/unordered distinction is an implementation
-  // detail users don't see at this picker level.
+  // Note: the 'compound' filter matches all compound tasks (they appear in the
+  // compositeRows list with type='compound').
 
   const showEmptyLibrary = libraryRows.length === 0;
   const showNoMatches = !showEmptyLibrary && visibleRows.length === 0;
@@ -371,8 +369,7 @@ function buildTaskSubtitle(task: Task, taskStepCounts: Record<string, number>): 
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  // Former Progress = compound + isOrdered=true under the unified model.
-  if (task.type === TaskType.COMPOUND && task.isOrdered === true) {
+  if (task.type === TaskType.COMPOUND) {
     const n = taskStepCounts[task.id] ?? 0;
     if (n === 0) return '';
     return `${n} step${n === 1 ? '' : 's'}`;

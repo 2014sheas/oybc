@@ -56,7 +56,6 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             maxCount: maxCount,
             operatorType: type == .compound ? .and : nil,
             threshold: nil,
-            isOrdered: nil,
             referencedBoardId: nil,
             referencedTemplateId: nil,
             achievementTrigger: nil,
@@ -459,11 +458,10 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         }
 
         // Active board placing the compound, with a staged edit: rename c1,
-        // delete c2, add a new simple step, and mark the compound ordered.
+        // delete c2, and add a new simple step.
         let board = makeBoard(id: "wbCmp")
         let bt = makeBoardTask(id: "wbCmpbt", boardId: "wbCmp", taskId: "cmp")
         var patch = TaskEditPatch(title: "Morning routine")
-        patch.ordered = true
         var deletedC2 = ChildPatch(id: "c2", childTaskId: "c2", title: "Old counting", isProgress: true)
         deletedC2.markedDeleted = true
         patch.children = [
@@ -477,10 +475,9 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
             stagedEdits: ["cmp": patch], isUpdate: false, now: now
         )
 
-        // Parent: title + isOrdered applied.
+        // Parent: title applied.
         let cmp = try XCTUnwrap(try db.fetchTask(id: "cmp"))
         XCTAssertEqual(cmp.title, "Morning routine")
-        XCTAssertEqual(cmp.isOrdered, true)
 
         // c1 renamed globally.
         XCTAssertEqual(try db.fetchTask(id: "c1")?.title, "Renamed step")
@@ -528,7 +525,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         let bt = makeBoardTask(id: "wbPCbt", boardId: "wbPC", taskId: "pcmp")
 
         // Edit the still-pending compound: rename pc1, delete pc2, add a new step.
-        var patch = TaskEditPatch(title: "Edited pending compound"); patch.ordered = true
+        var patch = TaskEditPatch(title: "Edited pending compound")
         var deleted = ChildPatch(id: "pc2", childTaskId: "pc2", title: "gone", isProgress: false)
         deleted.markedDeleted = true
         patch.children = [
@@ -546,7 +543,6 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         // fields set, pc1 renamed, pc2 unlinked, new step minted.
         let cmp = try XCTUnwrap(try db.fetchTask(id: "pcmp"))
         XCTAssertEqual(cmp.title, "Edited pending compound")
-        XCTAssertEqual(cmp.isOrdered, true)
         XCTAssertEqual(try db.fetchTask(id: "pc1")?.title, "Renamed pending")
         let liveLinks = try db.fetchCompoundChildren(compoundTaskId: "pcmp")
         XCTAssertEqual(liveLinks.count, 2)

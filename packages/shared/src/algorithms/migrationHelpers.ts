@@ -27,17 +27,16 @@ export interface LegacyBoardTaskCompletion {
  * convert it into the unified compound shape. Caller does the actual update.
  *
  * Takes no parameter — the conversion is constant per legacy progress row
- * (every progress task becomes `compound + AND + isOrdered=true`). Earlier
+ * (every progress task becomes `compound + AND`). Earlier
  * iterations took a Task argument for context but never read any field; the
  * signature is now parameter-free for clarity.
  *
- * @returns Partial Task fields to apply to the row (type, operator, isOrdered).
+ * @returns Partial Task fields to apply to the row (type, operator).
  */
 export function progressTaskToCompound(): Partial<Task> {
   return {
     type: TaskType.COMPOUND,
     operator: OperatorType.AND,
-    isOrdered: true,
     // threshold deliberately omitted — AND has no threshold
   };
 }
@@ -117,7 +116,6 @@ export function compositeTaskToTask(
     type: TaskType.COMPOUND,
     operator: rootOperatorNode.operatorType,
     threshold: rootOperatorNode.operatorType === OperatorType.M_OF_N ? rootOperatorNode.threshold : undefined,
-    isOrdered: false,
     isCompleted: false,           // never read on compound rows; field present for column uniformity
     totalCompletions: 0,
     totalInstances: 0,

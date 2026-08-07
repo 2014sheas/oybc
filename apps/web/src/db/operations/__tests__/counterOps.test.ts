@@ -431,7 +431,6 @@ describe('createCompound — goal-less counter child guard (P5 review)', () => {
       createCompound('u1', {
         title: 'Morning routine',
         operator: OperatorType.AND,
-        isOrdered: false,
         children: [{ childTaskId: 'goalless2' }],
       }),
     ).rejects.toThrow('createCompound: goal-less counter tasks cannot be compound children');
@@ -449,7 +448,6 @@ describe('createCompound — goal-less counter child guard (P5 review)', () => {
     const compound = await createCompound('u1', {
       title: 'Morning routine',
       operator: OperatorType.AND,
-      isOrdered: false,
       children: [{ childTaskId: 'goaled2' }],
     });
 
@@ -468,7 +466,6 @@ describe('createCompound — inline counting child auto-link (R1 counters refres
     const compound = await createCompound('u1', {
       title: 'Morning routine',
       operator: OperatorType.AND,
-      isOrdered: false,
       children: [
         {
           autoCreate: {
@@ -498,7 +495,6 @@ describe('createCompound — inline counting child auto-link (R1 counters refres
     const compound = await createCompound('u1', {
       title: 'Morning routine',
       operator: OperatorType.AND,
-      isOrdered: false,
       children: [
         {
           autoCreate: {

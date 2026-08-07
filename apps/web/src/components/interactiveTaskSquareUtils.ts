@@ -59,7 +59,6 @@ export interface CompoundChild {
  * @property steps - Progress tasks only: ordered list of sub-steps
  * @property operator - Compound tasks only: completion operator ('AND' | 'OR' | 'M_OF_N')
  * @property threshold - Compound tasks only: required count for M_OF_N operator
- * @property isOrdered - Compound tasks only: whether children must be completed in order
  * @property children - Compound tasks only: pre-resolved child tasks (resolved by the caller)
  */
 export interface TaskSquareData {
@@ -94,7 +93,6 @@ export interface TaskSquareData {
   /** compound only */
   operator?: 'AND' | 'OR' | 'M_OF_N';
   threshold?: number;
-  isOrdered?: boolean;
   children?: CompoundChild[];
 }
 

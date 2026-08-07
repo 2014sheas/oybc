@@ -13,8 +13,9 @@ export enum BoardStatus {
  *
  * COMPOUND is the canonical type that subsumes the former Progress (ordered
  * step list) and Composite (operator-based) task models. A Progress-style
- * task is a COMPOUND with `operator='AND'` + `isOrdered=true`; a Composite
- * is a COMPOUND with `operator='AND'/'OR'/'M_OF_N'` + `isOrdered=false`.
+ * task is a COMPOUND with `operator='AND'`; a Composite is a COMPOUND with
+ * `operator='AND'/'OR'/'M_OF_N'`. (The former `isOrdered` display flag was
+ * retired — children always render in `childIndex` order.)
  *
  * ACHIEVEMENT (Phase 6.3) is a cross-board watcher: the Task carries a
  * `referencedBoardId` XOR `referencedTemplateId` and completes when the

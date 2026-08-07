@@ -37,7 +37,7 @@ function validCounting(overrides: Record<string, unknown> = {}) {
  *
  * Pre-unification this helper was named `validProgress`. Under the unified
  * compound model, the legacy Progress task type doesn't exist (Progress is
- * now `compound + isOrdered=true`, created via CreateCompoundTaskInputSchema).
+ * now `compound + AND`, created via CreateCompoundTaskInputSchema).
  */
 function validWithSteps(overrides: Record<string, unknown> = {}) {
   return {
@@ -328,7 +328,7 @@ describe('CreateTaskInputSchema — COUNTING type refinement', () => {
 
 // Note: Progress-type refinement was removed in the compound-tasks unification
 // — under the new model, what was a "Progress" task is a `compound` Task with
-// `isOrdered=true`, created via `CreateCompoundTaskInputSchema`. This schema
+// `compound + AND`, created via `CreateCompoundTaskInputSchema`. This schema
 // (CreateTaskInputSchema) only accepts NORMAL / COUNTING / COMPOUND.
 
 // ── steps array validation ────────────────────────────────────────────────────

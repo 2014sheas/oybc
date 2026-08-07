@@ -13,7 +13,7 @@ OYBC supports **four** task types:
 3. **Compound** — composed of other tasks evaluated by an operator. *"Morning routine"* (all of: shower, brush teeth, journal). *"Cardio choice"* (any of: run, bike, swim).
 4. **Achievement** (Phase 6.3) — a cross-board watcher that completes when a referenced board (`referencedBoardId`) **or** every in-window spawn of a recurring template (`referencedTemplateId`, with `requiredCount`) hits its `achievementTrigger` (bingo or greenlog). The reference fields live on `Task`; cycle detection prevents an achievement from watching a board it sits on.
 
-Compound subsumes what used to be modeled as two separate concepts (`Progress` and `Composite`). Conceptually they're the same parent-children-with-completion-rule pattern; the unified `Compound` carries an operator (`AND`/`OR`/`M_OF_N`) and an `isOrdered` display hint that distinguishes the "step list" UX (former Progress) from the "subtask group" UX (former Composite).
+Compound subsumes what used to be modeled as two separate concepts (`Progress` and `Composite`). Conceptually they're the same parent-children-with-completion-rule pattern; the unified `Compound` carries an operator (`AND`/`OR`/`M_OF_N`) and its children always render in `childIndex` order. (The former `isOrdered` "step list vs subtask group" display flag was retired — see the in-order-compounds removal.)
 
 **Completion identity is per Task; board evaluation is windowed.** A Task on three boards has one shared *lifetime* completion state (the library view) — but each board renders it against its own window from `task_events`, so an in-window completion reflects on every placement whose window contains it, while a fresh window starts grey. See [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) §Semantics.
 
@@ -108,7 +108,7 @@ deriveDisplayedCount({ baseline, maxCount }, { currentCount }): { displayed, isC
 **Definition**: composed of other tasks (its *children*) and evaluated by a logical operator. Completion is **derived** from children's global states; never stored on the compound itself.
 
 **Use cases**:
-- *"Morning routine"* — `AND` of [shower, brush teeth, journal] with `isOrdered=true` (renders as ordered "step list").
+- *"Morning routine"* — `AND` of [shower, brush teeth, journal].
 - *"Cardio choice"* — `OR` of [run 5 miles, bike 10 miles, swim 1 mile].
 - *"At least 2 of 3 hobbies today"* — `M_OF_N` (`threshold=2`) of [paint, play guitar, write].
 
@@ -121,7 +121,6 @@ deriveDisplayedCount({ baseline, maxCount }, { currentCount }): { displayed, isC
   description?,
   operator: 'AND' | 'OR' | 'M_OF_N',
   threshold?,                          // only for M_OF_N
-  isOrdered,                           // display hint: true → progress-style step UX
   isCompleted: bool,                   // present for column uniformity but NEVER WRITTEN/READ — see "Compound completion is always derived"
   completedAt?,                        // same — never used on compound rows
   totalCompletions, totalInstances,
@@ -137,7 +136,7 @@ Children live in `compound_children`:
   id,
   compoundTaskId,    // FK tasks (the parent compound)
   childTaskId,       // FK tasks (any task type, including another compound)
-  childIndex,        // ordering — honored when parent.isOrdered
+  childIndex,        // child ordering (always honored)
   createdAt, updatedAt, version, isDeleted, deletedAt?
 }
 ```
@@ -163,14 +162,9 @@ Edge cases:
 - `OR` / `M_OF_N` with 0 non-deleted children evaluates to `false`.
 - `M_OF_N`'s `threshold` is clamped to `[1, childCount]` when children are added/removed.
 
-### Ordered vs unordered
+### Child ordering
 
-`isOrdered: true` is a **display hint only** — evaluation semantics don't change. The UI uses it to:
-- Render children as numbered steps (1, 2, 3, …) like the legacy Progress UX.
-- Sort children by `childIndex` rather than alphabetically.
-- Filter into the "Progress" library tab (vs. `isOrdered: false` which appears under "Composite").
-
-`operator='AND' + isOrdered=true` is the migration shape for former Progress tasks. Any operator can be `isOrdered` if the user wants — there's no enforced coupling.
+Compound children always render in `childIndex` order (the order they were added; editable in the compound editor). There is no separate "ordered vs unordered" mode — the former `isOrdered` display flag was retired.
 
 ### Children + nesting
 
@@ -259,7 +253,7 @@ CREATE TABLE tasks (
     -- compound-specific (NULL for other types)
     operator TEXT,                             -- 'AND' | 'OR' | 'M_OF_N'
     threshold INTEGER,                         -- only when operator='M_OF_N'
-    isOrdered INTEGER,                         -- 0/1 boolean
+    isOrdered INTEGER,                         -- LEGACY inert column (in-order retired)
 
     -- global completion state
     --   stored for primitives; structurally present but never written/read on compound rows
@@ -287,7 +281,7 @@ CREATE TABLE compound_children (
     id TEXT PRIMARY KEY NOT NULL,
     compoundTaskId TEXT NOT NULL,              -- parent compound
     childTaskId TEXT NOT NULL,                 -- child task (any type, incl. nested compound)
-    childIndex INTEGER NOT NULL,               -- order; honored when parent.isOrdered
+    childIndex INTEGER NOT NULL,               -- child ordering (always honored)
 
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
@@ -348,7 +342,7 @@ CREATE TABLE board_tasks (
 
 - `title` required, 1–200 characters.
 - `description` optional, max 1000 characters.
-- `action`, `unit`, `maxCount`, `currentCount`, `operator`, `threshold`, `isOrdered` all forbidden.
+- `action`, `unit`, `maxCount`, `currentCount`, `operator`, `threshold` all forbidden.
 
 ### Counting
 
@@ -363,7 +357,6 @@ CREATE TABLE board_tasks (
 - `title` required.
 - `operator` required.
 - `threshold` required iff `operator='M_OF_N'`; integer in `[1, childCount]` (clamped on child changes).
-- `isOrdered` required (boolean).
 - Minimum 2 children at save time.
 - No duplicate `childTaskId` across `compound_children` rows for the same `compoundTaskId`.
 - No circular references — adding a child must not produce a cycle. Validated at creation by walking the descendant tree.
@@ -379,22 +372,19 @@ CREATE TABLE board_tasks (
 
 ### Library / wizard tabs
 
-Filter chips on the wizard's Tasks step: **All / Normal / Counting / Compound**, plus the contextual **From parent boards** and **From a board…** source pickers. Progress and Composite were collapsed into a single **Compound** chip (the `isOrdered` flag still distinguishes the step-list vs subtask-group UX inside a compound, but it's no longer a top-level filter). The Tasks tab additionally surfaces an **Achievement** chip; Achievement is hidden from the wizard's boardable picker.
+Filter chips on the wizard's Tasks step: **All / Normal / Counting / Compound**, plus the contextual **From parent boards** and **From a board…** source pickers. Progress and Composite were collapsed into a single **Compound** chip. The Tasks tab additionally surfaces an **Achievement** chip; Achievement is hidden from the wizard's boardable picker.
 
 ### Creating a task
 
 Two entry points, both writing through the same compound-create transaction:
 
-- **+ New Progress task** → creates `Task(type='compound', operator='AND', isOrdered=true)` + step children. The step editor UI looks identical to today's progress step editor.
-- **+ New Composite task** → opens the existing composite wizard. Creates `Task(type='compound', operator=<chosen>, isOrdered=false, threshold)` + subtask children.
+- **+ New Compound task** → opens the compound wizard (operator picker: All of / Any of / At least N of). Creates `Task(type='compound', operator=<chosen>, threshold?)` + children (steps).
 
 Inline-created children (a child whose definition is authored alongside the parent) become their own primitive Task rows in the same transaction — preserves today's step-with-`linkedTaskId` pattern.
 
 ### Editing a task
 
-- **Progress editor** (isOrdered=true): step list view with add / remove / reorder.
-- **Composite wizard** (isOrdered=false): operator picker + subtask list.
-- Both run the same compound-structure-edit transaction (mutate `compound_children`, then run derivation pass for affected boards).
+- **Compound editor**: operator picker + child list with add / remove. Runs the compound-structure-edit transaction (mutate `compound_children`, then run derivation pass for affected boards).
 
 ### Board grid
 
@@ -443,7 +433,6 @@ async function createCompound(input: CreateCompoundInput): Promise<Task> {
       description: validated.description,
       operator: validated.operator,
       threshold: validated.operator === 'M_OF_N' ? validated.threshold : undefined,
-      isOrdered: validated.isOrdered,
       isCompleted: false,         // structurally required; never read on compound rows
       totalCompletions: 0,
       totalInstances: 0,

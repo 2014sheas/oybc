@@ -14,6 +14,7 @@ import { createTask } from '../../db/operations/tasks';
 import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import { formatOperatorLabel } from '../playground/playgroundUtils';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
@@ -438,7 +439,7 @@ export function BoardWizardTasksStep({
 
     // Composites region shows ALL compound tasks under "All" and under
     // the "Compound" filter so every compound is reachable, selectable,
-    // and expandable into its leaves. isOrdered is not surfaced here.
+    // and expandable into its leaves.
     const composites =
       activeFilter === 'all' || activeFilter === 'compound'
         ? effectiveAllTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t.title))
@@ -1057,13 +1058,14 @@ function buildTaskSubtitle(
     const derived = generateCounterTaskTitle(action, maxCount, unit);
     return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
   }
-  // Former Progress tasks: now compound + isOrdered=true. Show "N step(s)"
-  // subtitle from compound children. Mirrors the iOS twin's
-  // `case .compound where task.isOrdered == true` branch.
-  if (task.type === TaskType.COMPOUND && task.isOrdered === true) {
+  // Compound tasks (formerly Progress + Composite): show "N step(s)" plus
+  // the completion-operator descriptor from compound children.
+  if (task.type === TaskType.COMPOUND) {
     const n = taskStepCounts[task.id] ?? 0;
     if (n === 0) return '';
-    return `${n} step${n === 1 ? '' : 's'}`;
+    const stepLabel = `${n} step${n === 1 ? '' : 's'}`;
+    if (!task.operator) return stepLabel;
+    return `${stepLabel} · ${formatOperatorLabel(task.operator, task.threshold, n)}`;
   }
   return '';
 }
