@@ -7,9 +7,9 @@ import Observation
 ///   - .all      → every task
 ///   - .normal   → type=.normal
 ///   - .counting → type=.counting
-///   - .compound → type=.compound (both ordered and unordered)
+///   - .compound → type=.compound
 /// The former .progress / .composite split is retired — both authored via
-/// the compound wizard with the Ordered steps toggle.
+/// the compound wizard (operator picker + children).
 enum LibraryFilter: String, CaseIterable {
     case all = "All"
     case normal = "Normal"

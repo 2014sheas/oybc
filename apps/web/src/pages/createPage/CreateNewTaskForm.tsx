@@ -32,8 +32,7 @@ const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 const TASK_TYPES: { value: TaskType; label: string }[] = [
   { value: TaskType.NORMAL, label: 'Normal' },
   { value: TaskType.COUNTING, label: 'Counting' },
-  // Compound opens the wizard (ordered vs unordered is chosen inside
-  // the wizard via the "Ordered steps" toggle on SetupStep).
+  // Compound opens the wizard (operator + children chosen there).
   { value: TaskType.COMPOUND, label: 'Compound' },
   // Phase 6.3 — Achievement (cross-board watcher).
   { value: TaskType.ACHIEVEMENT, label: 'Achievement' },
