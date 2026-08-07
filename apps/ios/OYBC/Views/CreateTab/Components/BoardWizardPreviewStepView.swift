@@ -199,7 +199,7 @@ struct BoardWizardPreviewStepView: View {
         } catch {
             // Non-fatal: the grid falls back to empty events (all grey for
             // event-owning tasks) rather than blocking the wizard.
-            print("wizard preview: failed to load task events: \(error)")
+            dlog("wizard preview: failed to load task events: \(error)")
         }
     }
 

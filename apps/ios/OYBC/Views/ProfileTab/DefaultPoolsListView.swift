@@ -152,7 +152,7 @@ struct DefaultPoolsListView: View {
                     userId: userId, timeframe: pool.timeframe, taskIds: pool.taskIds, now: now
                 )
                 await MainActor.run { load() }
-            } catch { print("[DefaultPoolsListView] savePool failed: \(error)") }
+            } catch { dlog("[DefaultPoolsListView] savePool failed: \(error)") }
         }
     }
 
@@ -165,7 +165,7 @@ struct DefaultPoolsListView: View {
                     id: id, now: AppDatabase.currentTimestamp()
                 )
                 await MainActor.run { load() }
-            } catch { print("[DefaultPoolsListView] deletePool failed: \(error)") }
+            } catch { dlog("[DefaultPoolsListView] deletePool failed: \(error)") }
         }
     }
 
