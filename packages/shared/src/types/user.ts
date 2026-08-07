@@ -48,8 +48,6 @@ export interface UserPreferences {
   haptics: boolean;
   /** Nudge the day before a board expires. */
   expiringReminders: boolean;
-  /** Move completed (GREENLOGed) boards out of the list after a week. */
-  autoArchiveCompleted: boolean;
 
   // Notifications (Phase 7 — iOS local reminders). iOS-only at the feature
   // level: iOS schedules local OS-delivered notifications from these prefs;
@@ -91,7 +89,6 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   celebrationIntensity: 7,
   haptics: true,
   expiringReminders: true,
-  autoArchiveCompleted: false,
   notificationsEnabled: false,
   recurringWindowReminders: true,
   dailyPlayReminderEnabled: false,
@@ -199,11 +196,6 @@ export function mergeUserPreferences(
       ? partial.expiringReminders
       : DEFAULT_USER_PREFERENCES.expiringReminders;
 
-  const autoArchiveCompleted: boolean =
-    typeof partial.autoArchiveCompleted === 'boolean'
-      ? partial.autoArchiveCompleted
-      : DEFAULT_USER_PREFERENCES.autoArchiveCompleted;
-
   // Notifications (Phase 7) — forward-compat decode.
   const notificationsEnabled: boolean =
     typeof partial.notificationsEnabled === 'boolean'
@@ -242,7 +234,6 @@ export function mergeUserPreferences(
     celebrationIntensity,
     haptics,
     expiringReminders,
-    autoArchiveCompleted,
     notificationsEnabled,
     recurringWindowReminders,
     dailyPlayReminderEnabled,

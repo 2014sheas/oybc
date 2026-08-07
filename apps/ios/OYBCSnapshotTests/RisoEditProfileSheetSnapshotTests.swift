@@ -5,14 +5,13 @@ import SnapshotTesting
 
 /// Snapshot coverage for `EditProfileSheet` (§5b of the Riso redesign).
 ///
-/// The sheet is a pure-props view that takes displayName / email / mood
-/// as init parameters. `AuthService` is injected via `.environmentObject`
-/// as a render-only stub — the init is `@MainActor`, so the test class
-/// is marked `@MainActor` throughout to keep the call in-actor.
+/// The sheet is a pure-props view that takes displayName / email as init
+/// parameters. `AuthService` is injected via `.environmentObject` as a
+/// render-only stub — the init is `@MainActor`, so the test class is marked
+/// `@MainActor` throughout to keep the call in-actor.
 ///
 /// Tests cover:
-/// - Light + dark mode of the full sheet (happy mood, name filled)
-/// - Mood card selection states (cheer / calm selected, light)
+/// - Light + dark mode of the full sheet (name filled)
 /// - Save disabled state (empty name, light)
 ///
 /// `record: .missing` auto-records baselines on first run.
@@ -27,8 +26,7 @@ final class RisoEditProfileSheetSnapshotTests: XCTestCase {
     func testEditProfileSheetHappyLight() {
         let view = makeSheet(
             displayName: "OYBC User",
-            email: "you@example.com",
-            mood: .happy
+            email: "you@example.com"
         )
         assertSnapshot(
             of: view,
@@ -40,8 +38,7 @@ final class RisoEditProfileSheetSnapshotTests: XCTestCase {
     func testEditProfileSheetHappyDark() {
         let view = makeSheet(
             displayName: "OYBC User",
-            email: "you@example.com",
-            mood: .happy
+            email: "you@example.com"
         )
         assertSnapshot(
             of: view,
@@ -53,41 +50,12 @@ final class RisoEditProfileSheetSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - Mood selection variants
-
-    func testEditProfileSheetCheerMoodLight() {
-        let view = makeSheet(
-            displayName: "OYBC User",
-            email: "you@example.com",
-            mood: .cheer
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 660)),
-            record: recordMode
-        )
-    }
-
-    func testEditProfileSheetCalmMoodLight() {
-        let view = makeSheet(
-            displayName: "OYBC User",
-            email: "you@example.com",
-            mood: .calm
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 660)),
-            record: recordMode
-        )
-    }
-
     // MARK: - Save disabled (empty name)
 
     func testEditProfileSheetEmptyNameLight() {
         let view = makeSheet(
             displayName: "",
-            email: "you@example.com",
-            mood: .happy
+            email: "you@example.com"
         )
         assertSnapshot(
             of: view,
@@ -103,13 +71,11 @@ final class RisoEditProfileSheetSnapshotTests: XCTestCase {
     /// the NavigationStack chrome renders in a fixed rect.
     private func makeSheet(
         displayName: String,
-        email: String?,
-        mood: BlipPlaceholder.Mood
+        email: String?
     ) -> some View {
         EditProfileSheet(
             displayName: displayName,
             email: email,
-            initialMood: mood,
             updateName: { _ in },
             onSave: {},
             onCancel: {}

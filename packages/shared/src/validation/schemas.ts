@@ -1167,7 +1167,6 @@ export const UserPreferencesSchema = z.object({
   celebrationIntensity: z.number().int().min(1).max(10).optional(),
   haptics: z.boolean().optional(),
   expiringReminders: z.boolean().optional(),
-  autoArchiveCompleted: z.boolean().optional(),
   // Notifications (Phase 7 — iOS local reminders): optional for forward-compat
   // with peers that wrote their user doc before these fields existed.
   // mergeUserPreferences fills defaults on the pull path and rejects a

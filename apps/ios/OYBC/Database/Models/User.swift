@@ -82,9 +82,6 @@ struct UserPreferences: Codable, Equatable {
     var haptics: Bool
     /// Whether the user wants a nudge the day before a board expires.
     var expiringReminders: Bool
-    /// Whether completed (GREENLOGed) boards are moved out of the list after
-    /// one week.
-    var autoArchiveCompleted: Bool
 
     // Notifications (Phase 7 — iOS local reminders). All decode
     // forward-compatibly via the custom `init(from:)`.
@@ -120,7 +117,6 @@ struct UserPreferences: Codable, Equatable {
         celebrationIntensity: 7,
         haptics: true,
         expiringReminders: true,
-        autoArchiveCompleted: false,
         notificationsEnabled: false,
         recurringWindowReminders: true,
         dailyPlayReminderEnabled: false,
@@ -171,8 +167,6 @@ struct UserPreferences: Codable, Equatable {
             ?? Self.defaults.haptics
         self.expiringReminders = (try? c.decode(Bool.self, forKey: .expiringReminders))
             ?? Self.defaults.expiringReminders
-        self.autoArchiveCompleted = (try? c.decode(Bool.self, forKey: .autoArchiveCompleted))
-            ?? Self.defaults.autoArchiveCompleted
         self.notificationsEnabled = (try? c.decode(Bool.self, forKey: .notificationsEnabled))
             ?? Self.defaults.notificationsEnabled
         self.recurringWindowReminders = (try? c.decode(Bool.self, forKey: .recurringWindowReminders))
@@ -216,7 +210,6 @@ struct UserPreferences: Codable, Equatable {
         celebrationIntensity: Int = 7,
         haptics: Bool = true,
         expiringReminders: Bool = true,
-        autoArchiveCompleted: Bool = false,
         notificationsEnabled: Bool = false,
         recurringWindowReminders: Bool = true,
         dailyPlayReminderEnabled: Bool = false,
@@ -235,7 +228,6 @@ struct UserPreferences: Codable, Equatable {
         self.celebrationIntensity = celebrationIntensity
         self.haptics = haptics
         self.expiringReminders = expiringReminders
-        self.autoArchiveCompleted = autoArchiveCompleted
         self.notificationsEnabled = notificationsEnabled
         self.recurringWindowReminders = recurringWindowReminders
         self.dailyPlayReminderEnabled = dailyPlayReminderEnabled
