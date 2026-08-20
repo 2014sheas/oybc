@@ -436,11 +436,11 @@ extension AppDatabase {
 
     // MARK: - Wizard board persist (B4 — absorbed from BoardWizardPersist)
 
-    /// Builds a fresh child Task row for a newly-added compound step.
+    /// Builds a fresh child Task row for a newly-added compound sub-task.
     private static func makeStagedChildTask(
         id: String, step: ChildPatch, title: String, userId: String, now: String
     ) -> Task {
-        if step.isProgress {
+        if step.isCounting {
             let action = step.action.trimmingCharacters(in: .whitespaces)
             let unit = step.unit.trimmingCharacters(in: .whitespaces)
             let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? 0
@@ -459,12 +459,13 @@ extension AppDatabase {
         )
     }
 
-    /// Applies a step's edited fields onto its existing child Task (title, and
-    /// for a progress step the action/goal/unit + regenerated counting title).
-    /// Returns the (possibly unchanged) task; caller bumps version if different.
+    /// Applies a sub-task's edited fields onto its existing child Task (title,
+    /// and for a counting sub-task the action/goal/unit + regenerated counting
+    /// title). Returns the (possibly unchanged) task; caller bumps version if
+    /// different.
     private static func applyStagedStepToChild(_ base: Task, step: ChildPatch, title: String) -> Task {
         var t = base
-        if step.isProgress, base.type == .counting {
+        if step.isCounting, base.type == .counting {
             let action = step.action.trimmingCharacters(in: .whitespaces)
             let unit = step.unit.trimmingCharacters(in: .whitespaces)
             let goal = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? base.maxCount ?? 0
@@ -482,11 +483,12 @@ extension AppDatabase {
     /// pending compound). The parent Task itself is saved+cascaded by the caller
     /// AFTER this returns.
     ///
-    /// Semantics (docs/INLINE_TASK_EDITING.md): a kept new step mints a child
-    /// Task + link; a kept existing step edits its child Task GLOBALLY (with
-    /// cascade) and reindexes its link to display order; a removed step (deleted
-    /// or blank-titled) soft-deletes the LINK only — the child Task survives
-    /// (orphans acceptable). Steps render/persist in `patch.children` order.
+    /// Semantics (docs/INLINE_TASK_EDITING.md): a kept new sub-task mints a
+    /// child Task + link; a kept existing sub-task edits its child Task
+    /// GLOBALLY (with cascade) and reindexes its link to display order; a
+    /// removed sub-task (deleted or blank-titled) soft-deletes the LINK only —
+    /// the child Task survives (orphans acceptable). Sub-tasks render/persist
+    /// in `patch.children` order.
     static func applyStagedCompoundChildEdits(
         db: Database, parent: Task, patch: TaskEditPatch, now: String
     ) throws {

@@ -5,10 +5,11 @@ import SwiftUI
 ///
 /// Replaces a resting `RisoPoolListView` row in place: an accent header bar, a
 /// Title field (autofocused), the counting Action/Goal/Unit row with a live
-/// "Reads as" preview, the compound STEPS editor (step cards, add-step
-/// buttons), a validation line, and Discard / Save actions. Edits are
-/// staged only — nothing touches the DB until the board is created (`onSave`
-/// writes the parent's `stagedEdits`).
+/// "Reads as" preview, the compound SUB-TASKS editor (the shared
+/// `RisoCompoundRulePicker` + sub-task cards + add-sub-task buttons), a
+/// validation line, and Discard / Save actions. Edits are staged only —
+/// nothing touches the DB until the board is created (`onSave` writes the
+/// parent's `stagedEdits`).
 struct RisoPoolRowEditorView: View {
 
     let taskType: TaskType
@@ -103,7 +104,32 @@ struct RisoPoolRowEditorView: View {
                     .font(.risoBody(11.5, .bold))
                     .foregroundStyle(Color.risoBlue)
             }
+            // Live derived-title preview — matches the create panel
+            // (`RisoSpecialTaskPanel.countingTitle`) so the user can see what
+            // an auto-generated title will read as once Action/Goal/Unit are
+            // filled in (companion to the blank-title reseed in
+            // `TaskEditPatch.seededForEditor`).
+            if !countingDerivedTitle.isEmpty {
+                (Text("Title: ")
+                    .font(.risoBody(11, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                + Text(countingDerivedTitle)
+                    .font(.risoBody(11, .extraBold))
+                    .foregroundStyle(Color.risoInk))
+            }
         }
+    }
+
+    /// Live "Title: {derived title}" preview for the counting editor —
+    /// blank until Action/Unit are non-empty and Goal is a valid positive
+    /// integer (mirrors `RisoSpecialTaskPanel.countingTitle` /
+    /// `RisoCompoundFieldsView.subCountingTitle`).
+    private var countingDerivedTitle: String {
+        let a = draft.action.trimmingCharacters(in: .whitespacesAndNewlines)
+        let g = draft.goal.trimmingCharacters(in: .whitespacesAndNewlines)
+        let u = draft.unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !a.isEmpty, !u.isEmpty, let goal = Int(g), goal > 0 else { return "" }
+        return TaskTitle.generateCounterTaskTitle(action: a, maxCount: goal, unit: u)
     }
 
     /// Kicker label above a field. `flex` fields expand; `width` pins a fixed
@@ -121,27 +147,64 @@ struct RisoPoolRowEditorView: View {
         .frame(width: width)
     }
 
-    // MARK: - Compound steps
+    // MARK: - Compound sub-tasks
+
+    /// Compound rule (as a `CompoundRuleChoice`), bridged to `draft.operatorType`.
+    /// Switching to `.atLeastN` seeds a default threshold when none is staged
+    /// yet; switching away nils the threshold out (mirrors `applied(to:)`'s
+    /// persist-time clamp/clear, so the picker and the eventual save agree).
+    private var ruleBinding: Binding<CompoundRuleChoice> {
+        Binding(
+            get: { CompoundRuleChoice(operator: draft.operatorType) },
+            set: { newRule in
+                draft.operatorType = newRule.toOperator()
+                if newRule == .atLeastN {
+                    if draft.threshold == nil { draft.threshold = 2 }
+                } else {
+                    draft.threshold = nil
+                }
+            }
+        )
+    }
+
+    private var thresholdBinding: Binding<Int> {
+        Binding(
+            get: { draft.threshold ?? 2 },
+            set: { draft.threshold = $0 }
+        )
+    }
 
     private var compoundFields: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Steps").risoSectionLabel(.risoRed)
-            ForEach($draft.children) { $step in
-                stepCard($step)
+            // Shared rule picker (chips + conditional "How many?" stepper) —
+            // the same `RisoCompoundRulePicker` the create panel uses, so the
+            // two compound builders can't visually drift apart.
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Counts as done when…").risoSectionLabel(.risoRed)
+                RisoCompoundRulePicker(
+                    rule: ruleBinding,
+                    threshold: thresholdBinding,
+                    subCount: draft.liveChildren.count
+                )
+            }
+
+            Text("Sub-tasks").risoSectionLabel(.risoRed)
+            ForEach($draft.children) { $child in
+                subtaskCard($child)
             }
             HStack(spacing: 7) {
-                addStepButton(title: "+ Simple step", isProgress: false)
-                addStepButton(title: "+ Progress step", isProgress: true)
+                addSubtaskButton(title: "+ Normal sub-task", isCounting: false)
+                addSubtaskButton(title: "+ Counting sub-task", isCounting: true)
             }
-            Text("A step's type is fixed once added. Deleting a step unlinks it — if it lives on another board it stays in your library.")
+            Text("A sub-task's type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.")
                 .font(.risoBody(10.5, .semibold))
                 .foregroundStyle(Color.risoMuted)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func stepCard(_ step: Binding<ChildPatch>) -> some View {
-        let index = (draft.children.firstIndex { $0.id == step.wrappedValue.id } ?? 0) + 1
+    private func subtaskCard(_ child: Binding<ChildPatch>) -> some View {
+        let index = (draft.children.firstIndex { $0.id == child.wrappedValue.id } ?? 0) + 1
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text("\(index)")
@@ -150,11 +213,16 @@ struct RisoPoolRowEditorView: View {
                     .frame(width: 20, height: 20)
                     .background(RoundedRectangle(cornerRadius: 5).fill(Color.risoPaper2))
                     .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-                RisoTextField(placeholder: "Step title", text: step.title)
-                stepTypeIndicator(isProgress: step.wrappedValue.isProgress)
+                RisoTextField(placeholder: "Sub-task title", text: child.title)
+                subtaskTypeIndicator(isCounting: child.wrappedValue.isCounting)
                 Button {
-                    let id = step.wrappedValue.id
+                    let id = child.wrappedValue.id
                     draft.children.removeAll { $0.id == id }
+                    // Mirror the create panel: shrinking the sub-task set below an
+                    // "At least N" threshold clamps N down so the rule stays valid.
+                    if draft.operatorType == .mOfN {
+                        draft.threshold = min(draft.threshold ?? 2, max(1, draft.liveChildren.count))
+                    }
                 } label: {
                     Text("✕")
                         .font(.system(size: 13, weight: .semibold))
@@ -163,16 +231,16 @@ struct RisoPoolRowEditorView: View {
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())
-                .accessibilityLabel("Delete step")
+                .accessibilityLabel("Delete sub-task")
             }
-            if step.wrappedValue.isProgress {
+            if child.wrappedValue.isCounting {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        RisoTextField(placeholder: "e.g. Run", text: step.action).frame(maxWidth: .infinity)
-                        RisoNumberField(placeholder: "5", text: step.goal).frame(width: 56)
-                        RisoTextField(placeholder: "km", text: step.unit).frame(maxWidth: .infinity)
+                        RisoTextField(placeholder: "e.g. Run", text: child.action).frame(maxWidth: .infinity)
+                        RisoNumberField(placeholder: "5", text: child.goal).frame(width: 56)
+                        RisoTextField(placeholder: "km", text: child.unit).frame(maxWidth: .infinity)
                     }
-                    if let preview = progressPreview(step.wrappedValue) {
+                    if let preview = subtaskCountingPreview(child.wrappedValue) {
                         Text(preview)
                             .font(.risoBody(10.5, .extraBold))
                             .foregroundStyle(Color.risoBlue)
@@ -185,20 +253,20 @@ struct RisoPoolRowEditorView: View {
         .risoCard(fill: .risoPaper)
     }
 
-    private func stepTypeIndicator(isProgress: Bool) -> some View {
-        Text(isProgress ? "C" : "S")
+    private func subtaskTypeIndicator(isCounting: Bool) -> some View {
+        Text(isCounting ? "C" : "N")
             .font(.risoHead(9.5, .extraBold))
-            .foregroundStyle(isProgress ? Color.risoPaper : Color.risoInk)
+            .foregroundStyle(isCounting ? Color.risoPaper : Color.risoInk)
             .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: 6).fill(isProgress ? Color.risoBlue : Color.risoPaper2))
+            .background(RoundedRectangle(cornerRadius: 6).fill(isCounting ? Color.risoBlue : Color.risoPaper2))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-            .accessibilityLabel(isProgress ? "Progress step" : "Simple step")
+            .accessibilityLabel(isCounting ? "Counting sub-task" : "Normal sub-task")
     }
 
-    private func addStepButton(title: String, isProgress: Bool) -> some View {
+    private func addSubtaskButton(title: String, isCounting: Bool) -> some View {
         Button {
             draft.children.append(
-                ChildPatch(id: AppDatabase.generateUUID(), childTaskId: nil, title: "", isProgress: isProgress)
+                ChildPatch(id: AppDatabase.generateUUID(), childTaskId: nil, title: "", isCounting: isCounting)
             )
         } label: {
             Text(title)
@@ -215,8 +283,8 @@ struct RisoPoolRowEditorView: View {
         .buttonStyle(.plain)
     }
 
-    private func progressPreview(_ step: ChildPatch) -> String? {
-        risoReadsAsPreview(action: step.action, goal: step.goal, unit: step.unit)
+    private func subtaskCountingPreview(_ child: ChildPatch) -> String? {
+        risoReadsAsPreview(action: child.action, goal: child.goal, unit: child.unit)
     }
 
     // MARK: - Actions

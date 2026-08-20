@@ -128,7 +128,7 @@ struct NewTaskSheetContentView: View {
                     onTaskCreated: { taskId, title, type in
                         onTaskCreated(taskId, title, type)
                     },
-                    onCompositeCreated: { _ in
+                    onCompoundCreated: { _ in
                         onLibraryReloadRequested()
                     },
                     onPendingCreated: nil,

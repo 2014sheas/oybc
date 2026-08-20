@@ -377,7 +377,7 @@ private struct TasksStepHost: View {
             currentTimeframe: .custom,
             onToggleSelection: { _ in },
             onTaskCreated: { _, _, _ in },
-            onCompositeCreated: { _ in },
+            onCompoundCreated: { _ in },
             onLibraryReloadRequested: { },
             onBack: { },
             onNext: { }

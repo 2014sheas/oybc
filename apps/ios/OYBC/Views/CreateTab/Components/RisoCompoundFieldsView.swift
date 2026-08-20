@@ -41,22 +41,11 @@ struct RisoCompoundFieldsView: View {
 
     // MARK: - Enums
 
-    /// Completion rule options shown as pill chips in the compound builder.
-    /// Maps to `CreateFormViewModel.CompoundRule` for the VM call.
-    enum CompoundRuleChoice: String, CaseIterable {
-        case allOf    = "All of"
-        case anyOf    = "Any of"
-        case atLeastN = "At least N"
-
-        /// Converts to the VM-layer rule (threshold is only used for `.atLeastN`).
-        func toVMRule(threshold: Int) -> CreateFormViewModel.CompoundRule {
-            switch self {
-            case .allOf:    return .allOf
-            case .anyOf:    return .anyOf
-            case .atLeastN: return .atLeastN(threshold: threshold)
-            }
-        }
-    }
+    // `CompoundRuleChoice` (the "All of" / "Any of" / "At least N" rule
+    // options) was promoted to a top-level type in `CompoundRuleChoice.swift`
+    // so it — and the chips + threshold-stepper UI in `RisoCompoundRulePicker`
+    // — can be shared verbatim with the inline pool-row editor
+    // (`RisoPoolRowEditorView`).
 
     /// Sub-task type selector — Normal or Counting only (no nested compounds).
     enum NewSubType { case normal, counting }
@@ -272,29 +261,16 @@ struct RisoCompoundFieldsView: View {
                 RisoTextField(placeholder: "Morning routine", text: $compoundTitle)
             }
 
-            // "Counts as done when…" label + rule chips
+            // "Counts as done when…" label + the shared rule picker (chips +
+            // conditional threshold stepper) — kept in lockstep with the
+            // inline editor's compound fields via `RisoCompoundRulePicker`.
             VStack(alignment: .leading, spacing: 5) {
                 fieldLabel("Counts as done when…")
-                compoundRuleChipsRow
-            }
-
-            // "How many?" stepper — only when rule is At least N
-            if compoundRule == .atLeastN {
-                HStack(alignment: .center, spacing: 9) {
-                    fieldLabel("How many?")
-                    Spacer()
-                    RisoInlineStepperView(
-                        value: Binding(
-                            get: { effectiveThreshold },
-                            set: { compoundThreshold = Swift.min(Swift.max(1, $0), Swift.max(2, compoundSubs.count)) }
-                        ),
-                        min: 1,
-                        max: Swift.max(2, compoundSubs.count)
-                    )
-                    Text("of \(compoundSubs.isEmpty ? "…" : "\(compoundSubs.count)") sub-tasks")
-                        .font(.risoBody(11, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                }
+                RisoCompoundRulePicker(
+                    rule: $compoundRule,
+                    threshold: $compoundThreshold,
+                    subCount: compoundSubs.count
+                )
             }
 
             // "Sub-tasks" label + chips list
@@ -422,34 +398,6 @@ struct RisoCompoundFieldsView: View {
             .opacity(canSubmitCompound ? 1 : 0.45)
             .allowsHitTesting(canSubmitCompound)
         }
-    }
-
-    // MARK: - Rule chips row
-
-    /// Pill chips row for the compound completion rule.
-    private var compoundRuleChipsRow: some View {
-        HStack(spacing: 6) {
-            ForEach(CompoundRuleChoice.allCases, id: \.rawValue) { choice in
-                compoundRuleChip(choice)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func compoundRuleChip(_ choice: CompoundRuleChoice) -> some View {
-        let isOn = compoundRule == choice
-        return Button {
-            compoundRule = choice
-        } label: {
-            Text(choice.rawValue)
-                .font(.risoHead(11, .bold))
-                .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
-                .padding(.vertical, 5)
-                .padding(.horizontal, 9)
-                .background(Capsule().fill(isOn ? Color.risoGreen : Color.risoPaper))
-                .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Sub chips

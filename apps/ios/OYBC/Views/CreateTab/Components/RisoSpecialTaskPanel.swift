@@ -39,7 +39,7 @@ struct RisoSpecialTaskPanel: View {
     /// unaffected.
     var suggestionPool: [OYBC.Task]? = nil
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
-    let onCompositeCreated: (OYBC.Task) -> Void
+    let onCompoundCreated: (OYBC.Task) -> Void
     let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
     let onLibraryReloadRequested: () -> Void
 

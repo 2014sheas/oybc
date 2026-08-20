@@ -34,7 +34,9 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
                 onSave: {}, onDiscard: {}
             )
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 360)), record: recordMode)
+        // +40 vs. the pre-rework baseline: the new "Title: {derived}" live
+        // preview line (Bug #5 companion).
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 400)), record: recordMode)
     }
 
     func testCountingEditorDark() {
@@ -45,7 +47,7 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
             ),
             dark: true
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 360)), record: recordMode)
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 400)), record: recordMode)
     }
 
     // MARK: - Validation blocked (unit cleared → Save disabled + red line)
@@ -58,17 +60,17 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
                 onSave: {}, onDiscard: {}
             )
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 380)), record: recordMode)
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 420)), record: recordMode)
     }
 
     // MARK: - Compound editor
 
     private func compoundDraft() -> TaskEditPatch {
         var d = TaskEditPatch(title: "Morning routine")
-        var progress = ChildPatch(id: "s2", childTaskId: "s2", title: "Run", isProgress: true)
+        var progress = ChildPatch(id: "s2", childTaskId: "s2", title: "Run", isCounting: true)
         progress.action = "Run"; progress.goal = "3"; progress.unit = "km"
         d.children = [
-            ChildPatch(id: "s1", childTaskId: "s1", title: "Make the bed", isProgress: false),
+            ChildPatch(id: "s1", childTaskId: "s1", title: "Make the bed", isCounting: false),
             progress,
         ]
         return d
@@ -79,7 +81,9 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
             RisoPoolRowEditorView(taskType: .compound, draft: .constant(compoundDraft()),
                                   onSave: {}, onDiscard: {})
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 560)), record: recordMode)
+        // +80 vs. the pre-rework baseline: the new shared `RisoCompoundRulePicker`
+        // (rule chips row) above the sub-tasks list.
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 640)), record: recordMode)
     }
 
     func testCompoundEditorDark() {
@@ -88,7 +92,33 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
                                   onSave: {}, onDiscard: {}),
             dark: true
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 560)), record: recordMode)
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 640)), record: recordMode)
+    }
+
+    /// Rule = At least N — proves the shared picker's conditional threshold
+    /// stepper renders inside the inline editor exactly as it does in the
+    /// create panel (`RisoCompoundPanelSnapshotTests.testCompoundAtLeastN*`).
+    func testCompoundEditorAtLeastNLight() {
+        var d = compoundDraft()
+        d.operatorType = .mOfN
+        d.threshold = 2
+        let view = host(
+            RisoPoolRowEditorView(taskType: .compound, draft: .constant(d),
+                                  onSave: {}, onDiscard: {})
+        )
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 680)), record: recordMode)
+    }
+
+    func testCompoundEditorAtLeastNDark() {
+        var d = compoundDraft()
+        d.operatorType = .mOfN
+        d.threshold = 2
+        let view = host(
+            RisoPoolRowEditorView(taskType: .compound, draft: .constant(d),
+                                  onSave: {}, onDiscard: {}),
+            dark: true
+        )
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 680)), record: recordMode)
     }
 
     // MARK: - Simple (normal) editor

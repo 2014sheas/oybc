@@ -84,11 +84,11 @@ struct BoardWizardTasksStepView: View {
     /// task is still written to the DB on save and leaks into the library.
     let onToggleSelection: (_ taskId: String) -> Void
 
-    /// Fired after a non-composite task is created from the sheet.
+    /// Fired after a non-compound task is created from the sheet.
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
 
-    /// Fired after a composite task is created from the sheet.
-    let onCompositeCreated: (OYBC.Task) -> Void
+    /// Fired after a compound task is created from the sheet.
+    let onCompoundCreated: (OYBC.Task) -> Void
 
     /// Called after either creation callback so the parent's library VM can refresh.
     let onLibraryReloadRequested: () -> Void
@@ -196,16 +196,19 @@ struct BoardWizardTasksStepView: View {
         return buckets.mapValues { $0.count }
     }
 
-    /// Bug #85 — Effective compound-children map merging live + pending.
+    /// Bug #85 / Inline Task Editing — effective compound-children map
+    /// merging live + pending + staged child edits. Delegates to the shared
+    /// `effectiveCompoundChildrenByCompound` (BoardWizardPersist.swift) so
+    /// this view and the Step-3 preview (`BoardWizardPreviewStepView`) can
+    /// never disagree about "how many sub-tasks does this compound have
+    /// right now" — a staged add/remove/rename now shows up immediately in
+    /// the pool-row subtitle instead of staying stale until Save.
     private var effectiveChildrenByCompound: [String: [CompoundChild]] {
-        guard let pending = pendingTasks, !pending.isEmpty else {
-            return library.compoundChildrenByCompound
-        }
-        var merged = library.compoundChildrenByCompound
-        for payload in pending.values where !payload.childLinks.isEmpty {
-            merged[payload.task.id] = payload.childLinks
-        }
-        return merged
+        effectiveCompoundChildrenByCompound(
+            library: library,
+            pendingTasks: pendingTasks ?? [:],
+            stagedEdits: stagedEdits
+        )
     }
 
     /// Bug #85 — Per-id task lookup including pending parent + child tasks.
@@ -223,6 +226,14 @@ struct BoardWizardTasksStepView: View {
         // (the DB is untouched until board create).
         for (id, patch) in stagedEdits {
             if let base = by[id] { by[id] = patch.applied(to: base) }
+        }
+        // Inline Task Editing — synthesize placeholder Task entries for
+        // brand-new staged compound sub-tasks (no real Task row yet) so the
+        // pool subtitle's "N with a goal" subcount can resolve their type via
+        // the matching synthetic childTaskId `effectiveChildrenByCompound`
+        // produces above.
+        for (id, task) in stagedNewChildPlaceholders(userId: userId, stagedEdits: stagedEdits) {
+            by[id] = task
         }
         return by
     }
@@ -296,8 +307,8 @@ struct BoardWizardTasksStepView: View {
                         onTaskCreated: { taskId, title, type in
                             onTaskCreated(taskId, title, type)
                         },
-                        onCompositeCreated: { ct in
-                            onCompositeCreated(ct)
+                        onCompoundCreated: { ct in
+                            onCompoundCreated(ct)
                         },
                         onPendingCreated: onPendingCreated,
                         onLibraryReloadRequested: onLibraryReloadRequested
@@ -412,10 +423,14 @@ struct BoardWizardTasksStepView: View {
             // a prior step rename/add/delete.
             draft = staged
         } else {
-            var d = TaskEditPatch(from: task)
+            // First open: `seededForEditor` blanks a Counting task's Title
+            // field when it still matches its auto-generated form, so the
+            // title keeps re-deriving as Action/Goal/Unit change in the
+            // editor (bug: a non-blank seeded title never re-derived).
+            var d = TaskEditPatch.seededForEditor(from: task)
             if task.type == .compound {
-                // First open: seed step rows from the compound's links (in
-                // childIndex order), resolving each child Task.
+                // First open: seed sub-task rows from the compound's links
+                // (in childIndex order), resolving each child Task.
                 let links = (effectiveChildrenByCompound[taskId] ?? [])
                     .sorted { $0.childIndex < $1.childIndex }
                 d.children = links.compactMap { link in

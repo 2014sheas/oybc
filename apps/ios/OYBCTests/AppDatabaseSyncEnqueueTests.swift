@@ -459,12 +459,16 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         let board = makeBoard(id: "wbCmp")
         let bt = makeBoardTask(id: "wbCmpbt", boardId: "wbCmp", taskId: "cmp")
         var patch = TaskEditPatch(title: "Morning routine")
-        var deletedC2 = ChildPatch(id: "c2", childTaskId: "c2", title: "Old counting", isProgress: true)
+        // Seeded as a real editor patch would be (TaskEditPatch(from:) carries
+        // the base task's operator forward) — proves applied(to:) round-trips
+        // it rather than silently resetting to nil.
+        patch.operatorType = .and
+        var deletedC2 = ChildPatch(id: "c2", childTaskId: "c2", title: "Old counting", isCounting: true)
         deletedC2.markedDeleted = true
         patch.children = [
-            ChildPatch(id: "c1", childTaskId: "c1", title: "Renamed step", isProgress: false),
+            ChildPatch(id: "c1", childTaskId: "c1", title: "Renamed step", isCounting: false),
             deletedC2,
-            ChildPatch(id: "new-1", childTaskId: nil, title: "Brand new step", isProgress: false),
+            ChildPatch(id: "new-1", childTaskId: nil, title: "Brand new step", isCounting: false),
         ]
 
         try db.saveWizardBoard(
@@ -523,12 +527,13 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
 
         // Edit the still-pending compound: rename pc1, delete pc2, add a new step.
         var patch = TaskEditPatch(title: "Edited pending compound")
-        var deleted = ChildPatch(id: "pc2", childTaskId: "pc2", title: "gone", isProgress: false)
+        patch.operatorType = .and
+        var deleted = ChildPatch(id: "pc2", childTaskId: "pc2", title: "gone", isCounting: false)
         deleted.markedDeleted = true
         patch.children = [
-            ChildPatch(id: "pc1", childTaskId: "pc1", title: "Renamed pending", isProgress: false),
+            ChildPatch(id: "pc1", childTaskId: "pc1", title: "Renamed pending", isCounting: false),
             deleted,
-            ChildPatch(id: "newp", childTaskId: nil, title: "New pending step", isProgress: false),
+            ChildPatch(id: "newp", childTaskId: nil, title: "New pending step", isCounting: false),
         ]
 
         try db.saveWizardBoard(
