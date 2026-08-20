@@ -1070,4 +1070,50 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(bt.taskId, "tA", "a sealed board's placement must not be swapped")
         XCTAssertEqual(bt.version, 1, "no write happened — version untouched")
     }
+
+    // MARK: - deleteBoard / deleteTask enqueue the sync-push fix
+    //
+    // Regression coverage for the deleted-boards-resurrect bugfix: both bare
+    // soft-delete methods previously bumped isDeleted/version locally but
+    // never enqueued a sync_queue row, so the tombstone never reached
+    // Firestore and the entity resurrected (reinstall, re-auth, another
+    // device). `deleteBoard` is the primary (user-facing, Boards-tab)
+    // fix; `deleteTask` closes the same latent trap on the currently
+    // caller-less bare method.
+
+    func test_deleteBoard_enqueuesBoardsDeleteWithTombstonedPayload() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "delb"))
+
+        try db.deleteBoard(id: "delb")
+
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "boards", op: .delete), 1)
+
+        let item = try XCTUnwrap(rows.first { $0.entityType == "boards" && $0.operationType == .delete })
+        let payloadData = try XCTUnwrap(item.payload.data(using: .utf8))
+        let payloadBoard = try JSONDecoder().decode(Board.self, from: payloadData)
+        XCTAssertEqual(payloadBoard.id, "delb")
+        XCTAssertTrue(payloadBoard.isDeleted, "the enqueued snapshot must carry the tombstone, not the pre-delete state")
+        XCTAssertNotNil(payloadBoard.deletedAt)
+    }
+
+    func test_deleteTask_enqueuesTasksDeleteWithTombstonedPayload() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeTask("delt"))
+
+        try db.deleteTask(id: "delt")
+
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "tasks", op: .delete), 1)
+
+        let item = try XCTUnwrap(rows.first { $0.entityType == "tasks" && $0.operationType == .delete })
+        let payloadData = try XCTUnwrap(item.payload.data(using: .utf8))
+        let payloadTask = try JSONDecoder().decode(Task.self, from: payloadData)
+        XCTAssertEqual(payloadTask.id, "delt")
+        XCTAssertTrue(payloadTask.isDeleted, "the enqueued snapshot must carry the tombstone, not the pre-delete state")
+        XCTAssertNotNil(payloadTask.deletedAt)
+    }
 }

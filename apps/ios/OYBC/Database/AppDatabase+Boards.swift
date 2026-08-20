@@ -89,7 +89,12 @@ extension AppDatabase {
     /// Increments `version` so LWW treats the deletion as later-wins
     /// against a concurrent update on another device. A soft delete
     /// without a version bump can be overwritten by a stale edit whose
-    /// `updatedAt` happens to be newer.
+    /// `updatedAt` happens to be newer. Enqueues a `boards` DELETE sync
+    /// item so the tombstone reaches Firestore — without this, the
+    /// deletion never propagates and the board resurrects (reinstall,
+    /// re-auth, or any other device that never saw the local tombstone).
+    /// Does NOT cascade to BoardTask placements — see
+    /// `deleteDraftWithCascade` for the draft-only cascading variant.
     func deleteBoard(id: String) throws {
         try write { db in
             guard var board = try Board.fetchOne(db, key: id) else { return }
@@ -99,6 +104,13 @@ extension AppDatabase {
             board.updatedAt = now
             board.version += 1
             try board.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: id,
+                operationType: .delete,
+                payload: board,
+                now: now
+            ).enqueue(db)
         }
     }
 

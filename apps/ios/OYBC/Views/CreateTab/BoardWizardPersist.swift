@@ -364,7 +364,13 @@ func persistWizardBoard(
                 "createdAt": existing?.createdAt ?? now,
                 "updatedAt": now,
                 "version": (existing?.version ?? 0) + 1,
-                "isDeleted": false,
+                // Preserve an existing board's tombstone state rather than
+                // hardcoding false — a wizard resume/update save must not
+                // silently resurrect + re-push a board that was soft-deleted
+                // elsewhere (e.g. from the Boards tab on another device)
+                // while this draft was open. Fresh creates (existing == nil)
+                // are always isDeleted=false/deletedAt=nil.
+                "isDeleted": existing?.isDeleted ?? false,
                 // Phase 6.1 core-board marker. Preserve existing draft's
                 // marker on update; for fresh creates, take it from the
                 // controller (set true when the wizard was launched from
@@ -379,6 +385,13 @@ func persistWizardBoard(
             }
             if let id = chosenCenterId {
                 boardDict["centerTaskId"] = id
+            }
+            // A preserved isDeleted=true tombstone must carry its deletedAt
+            // too, or the record is internally inconsistent. Omit the key
+            // (rather than encode NSNull) for the common nil case, matching
+            // endDate's representation above.
+            if let deletedAt = existing?.deletedAt {
+                boardDict["deletedAt"] = deletedAt
             }
 
             let boardData = try JSONSerialization.data(withJSONObject: boardDict)

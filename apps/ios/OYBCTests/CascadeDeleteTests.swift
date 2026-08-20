@@ -20,10 +20,12 @@ import GRDB
 ///   3. Achievement tasks skip the task-side (compound-link) cascade — they
 ///      reference boards/templates, not tasks, so no CompoundChild rows exist
 ///      for them and an unrelated compound's links survive.
-///   4. Board deletion: `deleteBoard(id:)` soft-deletes the board ONLY (leaves
-///      placements, does not enqueue), whereas `deleteDraftWithCascade(id:)`
-///      soft-deletes (tombstones) placements + soft-deletes the board +
-///      enqueues both — and rejects a non-draft board.
+///   4. Board deletion: `deleteBoard(id:)` soft-deletes the board and
+///      enqueues a `boards` DELETE sync item, but leaves BoardTask
+///      placements untouched (no placement cascade), whereas
+///      `deleteDraftWithCascade(id:)` soft-deletes (tombstones) placements
+///      + soft-deletes the board + enqueues both — and rejects a
+///      non-draft board.
 ///
 /// Each test spins up its own in-memory `AppDatabase.makeTestInstance()`
 /// (full migration chain, FK enforcement ON).
@@ -378,9 +380,11 @@ final class CascadeDeleteTests: XCTestCase {
         let bt = try XCTUnwrap(try fetchBoardTask(db, id: "bt"))
         XCTAssertFalse(bt.isDeleted)
 
-        // deleteBoard does not enqueue a sync row (see AppDatabase+Boards).
+        // deleteBoard enqueues exactly one boards DELETE sync row (the fix —
+        // without this the tombstone never reaches Firestore and the board
+        // resurrects on reinstall / re-auth / another device).
         let rows = try syncRows(db)
-        XCTAssertEqual(count(rows, type: "boards", op: .delete), 0)
+        XCTAssertEqual(count(rows, type: "boards", op: .delete), 1)
     }
 
     func test_deleteDraftWithCascade_softDeletesPlacementsAndEnqueuesBoth() throws {
