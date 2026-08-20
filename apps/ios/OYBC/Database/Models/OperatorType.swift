@@ -12,7 +12,11 @@ import GRDB
 /// `CompositeNode` GRDB models. Those were dropped in Phase 8 of the
 /// compound-tasks unification, but the operator enum is still load-
 /// bearing — `CompoundEvaluation` switches on these cases to evaluate
-/// completion, and `OperatorSelectorView` uses them for the picker UI.
+/// completion, and the shared `RisoCompoundRulePicker` (+ its
+/// `CompoundRuleChoice` bridge) uses them for the rule-chip UI in both the
+/// create panel and the inline pool-row editor. (`OperatorSelectorView`,
+/// referenced here historically, was retired in the Riso redesign — compound
+/// authoring is inline now, not a separate picker screen.)
 enum OperatorType: String, Codable, DatabaseValueConvertible {
     case and = "AND"
     case or = "OR"

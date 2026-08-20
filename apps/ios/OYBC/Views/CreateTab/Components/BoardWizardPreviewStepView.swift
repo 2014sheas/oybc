@@ -170,12 +170,31 @@ struct BoardWizardPreviewStepView: View {
 
     /// Library-wide task lookup for compound-child resolution (children are
     /// library tasks, not placed cells), merged with the placement map so
-    /// wizard-born pending tasks resolve too.
+    /// wizard-born pending tasks resolve too. Also carries Inline Task
+    /// Editing's staged-new-child placeholders (see
+    /// `previewChildrenByCompound`) so a compound's windowed completion isn't
+    /// evaluated against a stale child set right after an unsaved edit.
     private var previewTaskById: [String: Task] {
         var map: [String: Task] = [:]
         for task in library.libraryTasks { map[task.id] = task }
         for task in placement.compactMap({ $0 }) { map[task.id] = task }
+        for (id, task) in stagedNewChildPlaceholders(userId: userId, stagedEdits: controller.stagedEdits) {
+            map[id] = task
+        }
         return map
+    }
+
+    /// Compound-children map, staged-edit-aware — the Step-3 twin of
+    /// `BoardWizardTasksStepView.effectiveChildrenByCompound` (both delegate
+    /// to the shared `effectiveCompoundChildrenByCompound`), so an unsaved
+    /// inline sub-task add/remove is reflected in the preview grid's
+    /// completion state exactly as Step 2's pool subtitle already shows it.
+    private var previewChildrenByCompound: [String: [CompoundChild]] {
+        effectiveCompoundChildrenByCompound(
+            library: library,
+            pendingTasks: controller.pendingTasks,
+            stagedEdits: controller.stagedEdits
+        )
     }
 
     /// Windowed completion for a preview cell (the "green squares from
@@ -185,7 +204,7 @@ struct BoardWizardPreviewStepView: View {
         return wizardPreviewIsCompleted(
             task: task,
             taskById: previewTaskById,
-            childrenByCompound: library.compoundChildrenByCompound,
+            childrenByCompound: previewChildrenByCompound,
             eventsByTaskId: eventsByTaskId,
             windowStart: windowStart
         )

@@ -1,8 +1,8 @@
 import Foundation
 
 /// Shared "Reads as: Action — Goal — Unit" live preview for counting task and
-/// compound progress-step editors. Returns nil when all three fields are blank;
-/// blanks render as an em dash.
+/// compound counting sub-task editors. Returns nil when all three fields are
+/// blank; blanks render as an em dash.
 func risoReadsAsPreview(action: String, goal: String, unit: String) -> String? {
     let a = action.trimmingCharacters(in: .whitespaces)
     let g = goal.trimmingCharacters(in: .whitespaces)
@@ -11,18 +11,17 @@ func risoReadsAsPreview(action: String, goal: String, unit: String) -> String? {
     return "Reads as: \(a.isEmpty ? "—" : a) — \(g.isEmpty ? "—" : g) — \(u.isEmpty ? "—" : u)"
 }
 
-/// A single compound-step edit. Present in PR 1's model so PR 2 (compound
-/// editing) needs no model change; PR 1 never populates `children`.
+/// A single compound sub-task edit.
 struct ChildPatch: Identifiable, Equatable {
     /// Stable identity for SwiftUI: the child task id for existing links, or a
-    /// fresh UUID for a not-yet-created step.
+    /// fresh UUID for a not-yet-created sub-task.
     var id: String
-    /// nil ⇒ a new step created in the editor (see `isNew`).
+    /// nil ⇒ a new sub-task created in the editor (see `isNew`).
     var childTaskId: String?
     var title: String
-    /// A "progress" step is a counting child (Action/Goal/Unit); otherwise a
-    /// simple step. A step's type is fixed once added.
-    var isProgress: Bool
+    /// A counting sub-task is a Counting child (Action/Goal/Unit); otherwise
+    /// a Normal sub-task. A sub-task's type is fixed once added.
+    var isCounting: Bool
     var action: String = ""
     var goal: String = ""
     var unit: String = ""
@@ -30,25 +29,26 @@ struct ChildPatch: Identifiable, Equatable {
 
     var isNew: Bool { childTaskId == nil }
 
-    init(id: String, childTaskId: String?, title: String, isProgress: Bool,
+    init(id: String, childTaskId: String?, title: String, isCounting: Bool,
          action: String = "", goal: String = "", unit: String = "", markedDeleted: Bool = false) {
         self.id = id
         self.childTaskId = childTaskId
         self.title = title
-        self.isProgress = isProgress
+        self.isCounting = isCounting
         self.action = action
         self.goal = goal
         self.unit = unit
         self.markedDeleted = markedDeleted
     }
 
-    /// Clone a step from an existing child Task. A counting child is a "progress"
-    /// step (Action/Goal/Unit); anything else is a simple step.
+    /// Clone a sub-task from an existing child Task. A Counting child is a
+    /// "counting" sub-task (Action/Goal/Unit); anything else is a Normal
+    /// sub-task.
     init(from child: OYBC.Task) {
         self.id = child.id
         self.childTaskId = child.id
         self.title = child.title
-        self.isProgress = child.type == .counting
+        self.isCounting = child.type == .counting
         self.action = child.action ?? ""
         self.goal = child.maxCount.map(String.init) ?? ""
         self.unit = child.unit ?? ""
@@ -59,7 +59,8 @@ struct ChildPatch: Identifiable, Equatable {
 /// A staged, not-yet-persisted edit to a pooled task. Applied ONLY inside the
 /// board-create transaction (`saveWizardBoard`) — never while the board is a
 /// draft. Modeled on `StagedTaskOverride` (board-edit mode) but carries
-/// compound children so the same type serves PR 2.
+/// compound children (+ operator/threshold, for the rule picker) since a
+/// compound is editable inline too.
 ///
 /// `goal` is a String (not Int) so an in-progress empty field is representable
 /// while the user types.
@@ -69,20 +70,41 @@ struct TaskEditPatch: Equatable {
     var goal: String = ""
     var unit: String = ""
     var children: [ChildPatch] = []
+    /// Compound completion operator. Seeded from `Task.operatorType` on open;
+    /// written back onto the Task row in `applied(to:)`. `nil` for non-
+    /// compound patches (never read).
+    var operatorType: OperatorType?
+    /// Compound "at least N" threshold. Only meaningful when
+    /// `operatorType == .mOfN`; `applied(to:)` clamps it into
+    /// `1...max(1, liveChildren.count)` and nils it out for `.and`/`.or`.
+    var threshold: Int?
 
     init(title: String) { self.title = title }
 
     /// Clone the editable fields from a task on open. Compound children are
-    /// populated by the caller (PR 2) from `effectiveChildrenByCompound`.
+    /// populated by the caller from `effectiveChildrenByCompound`.
     init(from task: OYBC.Task) {
         self.title = task.title
         self.action = task.action ?? ""
         self.goal = task.maxCount.map(String.init) ?? ""
         self.unit = task.unit ?? ""
+        self.operatorType = task.operatorType
+        self.threshold = task.threshold
     }
 
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var parsedGoal: Int? { Int(goal.trimmingCharacters(in: .whitespaces)) }
+
+    /// Kept sub-tasks — excludes deleted and blank-titled entries (dropped on
+    /// save). Shared by validation, apply-at-create clamping, the inline
+    /// rule picker's max clamp, and the wizard's staged-overlay pool
+    /// subtitle/preview — the one place "how many sub-tasks does this patch
+    /// really have right now" is computed.
+    var liveChildren: [ChildPatch] {
+        children.filter {
+            !$0.markedDeleted && !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
 
     /// Live "Reads as: Action — Goal — Unit" preview for counting editors.
     /// nil when all three fields are blank.
@@ -106,18 +128,19 @@ struct TaskEditPatch: Equatable {
             return trimmedTitle.isEmpty ? "A title is required." : nil
         case .compound:
             if trimmedTitle.isEmpty { return "A title is required." }
-            // Steps that are deleted or blank-titled don't count (blank ones are
-            // dropped on save).
-            let liveSteps = children.filter {
-                !$0.markedDeleted && !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-            if liveSteps.count < 2 { return "A compound task needs at least two steps." }
-            for step in liveSteps where step.isProgress {
-                let g = Int(step.goal.trimmingCharacters(in: .whitespaces)) ?? 0
-                let u = step.unit.trimmingCharacters(in: .whitespaces)
+            let kept = liveChildren
+            if kept.count < 2 { return "Add at least 2 sub-tasks." }
+            for child in kept where child.isCounting {
+                let g = Int(child.goal.trimmingCharacters(in: .whitespaces)) ?? 0
+                let u = child.unit.trimmingCharacters(in: .whitespaces)
                 if g <= 0 || u.isEmpty {
-                    let name = step.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return "Progress step \"\(name)\" needs a goal and a unit."
+                    let name = child.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return "Counting sub-task \"\(name)\" needs a goal and a unit."
+                }
+            }
+            if operatorType == .mOfN {
+                guard let t = threshold, t >= 1, t <= kept.count else {
+                    return "Choose how many sub-tasks must complete."
                 }
             }
             return nil
@@ -126,10 +149,11 @@ struct TaskEditPatch: Equatable {
         }
     }
 
-    /// Applies the patch's title/counting fields to a base task. Assumes
-    /// `validate` already passed. Does NOT bump `version`/`updatedAt` — the
-    /// persist caller owns that. Compound children are applied by the persist
-    /// layer in PR 2, not here.
+    /// Applies the patch's title/counting/compound-rule fields to a base
+    /// task. Assumes `validate` already passed. Does NOT bump
+    /// `version`/`updatedAt` — the persist caller owns that. Compound child
+    /// Task/link CRUD is applied by the persist layer
+    /// (`AppDatabase.applyStagedCompoundChildEdits`), not here.
     func applied(to base: OYBC.Task) -> OYBC.Task {
         var t = base
         switch base.type {
@@ -148,9 +172,43 @@ struct TaskEditPatch: Equatable {
             // Parent-level fields only; child Task/link CRUD is applied by the
             // persist layer (saveWizardBoard / pending merge), not here.
             t.title = trimmedTitle
+            t.operatorType = operatorType
+            if operatorType == .mOfN {
+                let maxN = Swift.max(1, liveChildren.count)
+                t.threshold = Swift.min(Swift.max(1, threshold ?? 1), maxN)
+            } else {
+                t.threshold = nil
+            }
         default:
             t.title = trimmedTitle
         }
         return t
+    }
+}
+
+extension TaskEditPatch {
+    /// Editor-seeding variant of `init(from:)` — used only when the inline
+    /// pool-row editor opens a row for the FIRST time (reopens reuse the
+    /// staged patch verbatim; see `BoardWizardTasksStepView.openEditor`).
+    ///
+    /// For a Counting task whose stored title still matches its
+    /// auto-generated form, seeds the Title field BLANK so it keeps
+    /// auto-deriving as Action/Goal/Unit change in the editor — a non-blank
+    /// seeded title reads as "custom" in `applied(to:)` and would otherwise
+    /// never re-derive (bug: editing the goal didn't update the title). A
+    /// genuinely custom title is preserved verbatim. `init(from:)` itself is
+    /// left unchanged — it's also asserted directly by
+    /// `TaskEditPatchTests.test_init_from_counting_task_clones_fields`.
+    static func seededForEditor(from task: OYBC.Task) -> TaskEditPatch {
+        var patch = TaskEditPatch(from: task)
+        if task.type == .counting {
+            let autoTitle = TaskTitle.generateCounterTaskTitle(
+                action: task.action ?? "", maxCount: task.maxCount, unit: task.unit ?? ""
+            )
+            if task.title == autoTitle {
+                patch.title = ""
+            }
+        }
+        return patch
     }
 }

@@ -283,8 +283,8 @@ struct BoardWizardView: View {
                 onTaskCreated: { taskId, _, _ in
                     wizard.toggleTaskSelection(taskId)
                 },
-                onCompositeCreated: { _ in
-                    // Composites can't be auto-selected (not boardable).
+                onCompoundCreated: { _ in
+                    // Compounds can't be auto-selected (not boardable).
                 },
                 onLibraryReloadRequested: {
                     library.loadLibrary(userId: userId)

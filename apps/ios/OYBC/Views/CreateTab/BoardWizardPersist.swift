@@ -174,6 +174,87 @@ func buildWizardPlacement(
     )
 }
 
+/// Merges `library.compoundChildrenByCompound` with any deferred (Bug #85)
+/// pending compound's child links AND staged inline-editor child edits
+/// (Inline Task Editing) — the single source of truth for "how many
+/// sub-tasks does this compound have right now" across the wizard's Tasks
+/// step pool subtitle (`RisoPoolListView`) and the Preview step's windowed-
+/// completion evaluation (`wizardPreviewIsCompleted`).
+///
+/// A staged edit's KEPT sub-tasks (`TaskEditPatch.liveChildren` — non-deleted,
+/// non-blank) replace the base entry with synthesized `CompoundChild` rows in
+/// draft order. A brand-new sub-task (no real `childTaskId` yet, `isNew ==
+/// true`) gets a synthetic id (`"staged-child-<patchChildId>"`) so it still
+/// counts toward "N sub-tasks" — pair with `stagedNewChildPlaceholders(...)`
+/// below so type-dependent reads (the "N with a goal" subcount, windowed
+/// completion) can resolve it. A not-yet-persisted child trivially evaluates
+/// as incomplete (no events exist for it yet), which is correct: it can't
+/// have contributed to any past completion.
+func effectiveCompoundChildrenByCompound(
+    library: TaskLibraryViewModel,
+    pendingTasks: [String: PendingTaskPayload],
+    stagedEdits: [String: TaskEditPatch]
+) -> [String: [CompoundChild]] {
+    var merged = library.compoundChildrenByCompound
+    for payload in pendingTasks.values where !payload.childLinks.isEmpty {
+        merged[payload.task.id] = payload.childLinks
+    }
+    guard !stagedEdits.isEmpty else { return merged }
+    let now = AppDatabase.currentTimestamp()
+    for (taskId, patch) in stagedEdits {
+        let kept = patch.liveChildren
+        guard !kept.isEmpty else { continue }
+        merged[taskId] = kept.enumerated().map { index, child in
+            CompoundChild(
+                id: "staged-\(taskId)-\(child.id)",
+                compoundTaskId: taskId,
+                childTaskId: child.childTaskId ?? "staged-child-\(child.id)",
+                childIndex: index,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+        }
+    }
+    return merged
+}
+
+/// Synthesizes placeholder `Task` entries for brand-new staged compound
+/// sub-tasks (no real Task row yet — `ChildPatch.isNew`), keyed by the same
+/// synthetic id `effectiveCompoundChildrenByCompound` uses for their
+/// `childTaskId` (`"staged-child-<patchChildId>"`), so a type-dependent
+/// lookup (`effectiveTaskById[childTaskId]?.type == .counting`) resolves
+/// correctly for a sub-task that only exists in the draft so far.
+func stagedNewChildPlaceholders(
+    userId: String,
+    stagedEdits: [String: TaskEditPatch]
+) -> [String: OYBC.Task] {
+    guard !stagedEdits.isEmpty else { return [:] }
+    let now = AppDatabase.currentTimestamp()
+    var placeholders: [String: OYBC.Task] = [:]
+    for patch in stagedEdits.values {
+        for child in patch.liveChildren where child.isNew {
+            let id = "staged-child-\(child.id)"
+            placeholders[id] = OYBC.Task(
+                id: id,
+                userId: userId,
+                title: child.title,
+                type: child.isCounting ? .counting : .normal,
+                totalCompletions: 0,
+                totalInstances: 0,
+                createdAt: now,
+                updatedAt: now,
+                version: 1,
+                isDeleted: false
+            )
+        }
+    }
+    return placeholders
+}
+
 /// Resolves local-ISO start/end strings for the wizard's current
 /// timeframe. Non-custom timeframes use `computeTimeframeBoundaries`;
 /// custom timeframes require non-empty `customStartDate` /

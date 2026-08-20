@@ -234,19 +234,25 @@ struct RisoPoolListView: View {
                       !a.isEmpty, !u.isEmpty else { return nil }
                 return "\(a) · goal \(m) \(u)"
             case .compound:
+                // `effectiveChildrenByCompound` / `task.operatorType` /
+                // `task.threshold` are all already staged-edit-aware (Inline
+                // Task Editing overlays them onto `effectiveTaskById` /
+                // `effectiveChildrenByCompound` upstream in
+                // `BoardWizardTasksStepView`), so this subtitle reflects an
+                // unsaved sub-task add/remove/rule change immediately.
                 let children = effectiveChildrenByCompound[task.id] ?? []
                 let n = children.count
                 guard n > 0 else { return nil }
-                // "with progress" = children that resolve to a counting task.
-                let progress = children.filter {
+                // "with a goal" = sub-tasks that resolve to a Counting task.
+                let counting = children.filter {
                     effectiveTaskById[$0.childTaskId]?.type == .counting
                 }.count
-                var parts = ["\(n) step\(n == 1 ? "" : "s")"]
-                if progress > 0 { parts.append("\(progress) with progress") }
+                var parts = ["\(n) sub-task\(n == 1 ? "" : "s")"]
+                if counting > 0 { parts.append("\(counting) with a goal") }
                 switch task.operatorType {
                 case .or: parts.append("any of \(n)")
                 case .mOfN: parts.append("≥\(task.threshold ?? n) of \(n)")
-                default: break // AND: no suffix
+                case .and, .none: parts.append("all of \(n)")
                 }
                 return parts.joined(separator: " · ")
             case .achievement:
