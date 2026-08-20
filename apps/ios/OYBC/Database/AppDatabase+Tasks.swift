@@ -874,6 +874,13 @@ extension AppDatabase {
     }
 
     /// Soft-delete a task. See `deleteBoard` for the version-bump rationale.
+    /// Enqueues a `tasks` DELETE sync item so the tombstone reaches
+    /// Firestore, mirroring `deleteBoard`'s fix — without this the deletion
+    /// never propagates and the task resurrects on another device. NOTE:
+    /// there is currently no production caller of this bare method — all
+    /// task-delete UI routes through `deleteTaskWithCascade`, which already
+    /// enqueues its own sync items — but this closes the same latent trap
+    /// for any future direct caller.
     func deleteTask(id: String) throws {
         try write { db in
             guard var task = try Task.fetchOne(db, key: id) else { return }
@@ -883,6 +890,13 @@ extension AppDatabase {
             task.updatedAt = now
             task.version += 1
             try task.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: id,
+                operationType: .delete,
+                payload: task,
+                now: now
+            ).enqueue(db)
         }
     }
 
