@@ -13,6 +13,8 @@ on:
       - 'apps/coming-soon/**'
       - 'packages/**'
       - 'scripts/check-coming-soon-tokens.mjs'
+      - 'scripts/check-knip.mjs'
+      - 'scripts/audit/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'turbo.json'
@@ -24,6 +26,8 @@ on:
       - 'apps/coming-soon/**'
       - 'packages/**'
       - 'scripts/check-coming-soon-tokens.mjs'
+      - 'scripts/check-knip.mjs'
+      - 'scripts/audit/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'turbo.json'
@@ -80,6 +84,12 @@ jobs:
         # VALUES under unprefixed names (by design — zero build dependency).
         # Fails if the two ever diverge in value. See docs/COMING_SOON.md.
         run: node scripts/check-coming-soon-tokens.mjs
+
+      - name: Dead-code drift-check (knip)
+        # Fails on NEW unused web exports/types beyond the frozen baseline
+        # (scripts/audit/knip-baseline.json) and on any unused file/dependency.
+        # The mechanical half of the 2026-08 audit's dead-code findings.
+        run: node scripts/check-knip.mjs
 
   e2e:
     # Playwright end-to-end suite (Chromium) — drives the real UI via the

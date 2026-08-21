@@ -1,0 +1,41 @@
+name: Drift guardrails
+
+# Cross-cutting "never drift out of spec" checks from the 2026-08 deep-dive
+# audit. Pure Node (no install), so they run fast on EVERY PR — these span
+# multiple platforms/files and shouldn't be gated behind a path filter:
+#   - file-size ceiling (god-file regrowth; spans iOS + web + shared)
+#   - sync-contract ↔ firestore.rules consistency (spans rules + shared)
+# The web-only dead-code (knip) guardrail lives in web.yml, where deps are
+# already installed. See docs/ROADMAP.md and CLAUDE.md § Drift guardrails.
+
+on:
+  pull_request:
+    branches: [dev]
+  push:
+    branches: [dev]
+
+concurrency:
+  group: drift-guardrails-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: File-size ceiling
+        # No source file may exceed the ceiling; known offenders are frozen in
+        # scripts/audit/file-size-allowlist.json (ROADMAP Track B6 roster).
+        run: node scripts/check-file-sizes.mjs
+
+      - name: Sync-contract ↔ firestore.rules consistency
+        # SYNC_COLLECTIONS / USER_SCOPED_SYNC_COLLECTIONS (packages/shared) must
+        # match isKnownCollection() / requiresUserIdField() in firestore.rules.
+        run: node scripts/check-sync-contract-rules.mjs
