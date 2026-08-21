@@ -22,19 +22,6 @@ struct ProfileView: View {
 
     // MARK: - Inputs
 
-    /// Phase 6.2: cross-tab edit handler. Optional so #Preview / tests
-    /// that mount ProfileView in isolation don't need cross-tab plumbing.
-    var onEditRecurringTemplate: ((String) -> Void)? = nil
-
-    /// Cross-tab "+ New template" route from the Recurring templates
-    /// sub-page — opens the wizard's recurring flow on the Create tab.
-    var onNewRecurringTemplate: (() -> Void)? = nil
-
-    /// Cross-tab "Add tasks" route (issue #321) from a template card's
-    /// Add-tasks button — same wizard deep-link as edit, but lands on the
-    /// Tasks step instead of Setup.
-    var onAddTasksRecurringTemplate: ((String) -> Void)? = nil
-
     /// Opens the Getting Started tutorial board (cross-tab to Boards).
     /// Optional so #Preview / tests can mount ProfileView standalone.
     var onOpenTutorial: (() -> Void)? = nil
@@ -46,10 +33,6 @@ struct ProfileView: View {
     @State private var signOutError: String?
     /// Whether the Sync detail sheet is presented.
     @State private var showSyncSheet = false
-
-    /// Async-loaded counts for the Preferences rows.
-    @State private var recurringTemplateCount: Int? = nil
-    @State private var defaultPoolCount: Int? = nil
 
     /// Async-loaded per-timeframe bingo + greenlog streaks for the "Your
     /// streaks" card. Empty until `loadCounts()` computes it.
@@ -288,24 +271,22 @@ struct ProfileView: View {
 
             rowDivider
 
-            // Recurring templates (with async count)
+            // Board settings (Task Pools + Recurring Boards Rework, P7) —
+            // replaces the separate "Recurring templates" / "Default
+            // pools" rows: per-timeframe core-board defaults + the
+            // repeating-boards roster now live on one page. No count
+            // badge — a single number spanning two different entity
+            // types (defaults vs. repeating boards) isn't meaningful.
             NavigationLink {
-                RecurringTemplatesView(
-                    onEditTemplate: onEditRecurringTemplate,
-                    onNewTemplate: onNewRecurringTemplate,
-                    onAddTasksTemplate: onAddTasksRecurringTemplate
-                )
+                BoardSettingsView()
             } label: {
                 RisoProfileRow(
-                    icon: "calendar.badge.clock",
-                    label: "Recurring templates",
-                    countBadge: recurringTemplateCount,
+                    icon: "slider.horizontal.3",
+                    label: "Board settings",
                     chevron: true
                 )
             }
             .buttonStyle(.plain)
-
-            rowDivider
 
             rowDivider
 
@@ -316,21 +297,6 @@ struct ProfileView: View {
                 RisoProfileRow(
                     icon: "arrow.triangle.2.circlepath",
                     label: "Shared counters",
-                    chevron: true
-                )
-            }
-            .buttonStyle(.plain)
-
-            rowDivider
-
-            // Default pools (with async count)
-            NavigationLink {
-                DefaultPoolsListView()
-            } label: {
-                RisoProfileRow(
-                    icon: "tray.full",
-                    label: "Default pools",
-                    countBadge: defaultPoolCount,
                     chevron: true
                 )
             }
@@ -471,23 +437,16 @@ struct ProfileView: View {
         )
     }
 
-    // MARK: - Count loading
+    // MARK: - Streak loading
 
-    /// Loads the preference-row count badges async on appear. Single-shot,
-    /// same queries the sub-views use. No live-query harness needed for a
-    /// one-time badge count.
+    /// Loads the "Your streaks" card data async on appear. P7 (Task Pools
+    /// + Recurring Boards Rework) dropped the two Preferences-row count
+    /// badges this used to also load (`recurringTemplateCount`/
+    /// `defaultPoolCount`) — the merged "Board settings" row shows no
+    /// count (a single number spanning defaults + repeating boards isn't
+    /// meaningful) — so this is streaks-only now.
     private func loadCounts() {
         guard let userId = authService.currentUser?.id else { return }
-        // Push the GRDB reads off the main actor (both fetches already filter
-        // isDeleted at the SQL level — no in-memory re-filter needed).
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let templates = try? AppDatabase.shared.fetchRecurringBoardTemplates(userId: userId)
-            await MainActor.run { recurringTemplateCount = templates?.count }
-        }
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let pools = try? AppDatabase.shared.fetchDefaultPools(userId: userId)
-            await MainActor.run { defaultPoolCount = pools?.count }
-        }
         // Per-timeframe streaks for the "Your streaks" card. `computeAllStreaks`
         // is pure (safe off-main); `fetchBoards` returns all boards and the
         // algorithm re-filters to core/non-deleted internally.

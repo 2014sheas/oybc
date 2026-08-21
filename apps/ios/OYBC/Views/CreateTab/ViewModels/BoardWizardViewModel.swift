@@ -532,6 +532,33 @@ final class BoardWizardViewModel {
         }
         let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
 
+        return Self.resolveCoreBoardDefaultPrefill(
+            corePoolIds: corePoolIds,
+            coreDefaultTaskIds: coreDefaultTaskIds,
+            poolsById: poolsById,
+            tasksById: tasksById
+        )
+    }
+
+    /// Pure core of `resolveCoreBoardDefaultPrefill(corePoolIds:coreDefaultTaskIds:database:)`
+    /// above, taking pre-fetched lookups instead of hitting the DB itself.
+    /// `internal` (not `private`) so the P7 Board-settings surfaces
+    /// (`BoardSettingsView`'s per-timeframe summary line,
+    /// `CoreDefaultsEditSheetView`'s seed selection) can reuse the EXACT
+    /// same resolution logic the wizard's core-setup prefill uses, rather
+    /// than a second hand-rolled union — those callers already have
+    /// `pools`/`tasks` loaded for the whole screen (batched once, not
+    /// per-row), so a DB round-trip per call would be wasteful.
+    static func resolveCoreBoardDefaultPrefill(
+        corePoolIds: [String],
+        coreDefaultTaskIds: [String],
+        poolsById: [String: Pool],
+        tasksById: [String: Task]
+    ) -> (selectedTaskIds: Set<String>, poolOrder: [String], pulledPoolIds: [String]) {
+        guard !corePoolIds.isEmpty || !coreDefaultTaskIds.isEmpty else {
+            return (Set(), [], [])
+        }
+
         var selected = Set<String>()
         var order: [String] = []
         var pulled: [String] = []

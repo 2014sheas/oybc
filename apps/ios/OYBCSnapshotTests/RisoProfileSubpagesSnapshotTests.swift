@@ -3,29 +3,36 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot tests for the Riso Profile sub-pages (handoff §5a) — the two new
-/// editor sheets + Board Preferences. Renders the REAL views, seeded via
-/// fixtures + an injected `AuthService`. The list pages
-/// (`RecurringTemplatesView` / `DefaultPoolsListView`) self-load from
-/// `AppDatabase.shared`, so they're not snapshotted here (covered by the
-/// editors they present + Board Preferences).
+/// Snapshot tests for the Riso Profile sub-pages (handoff §5a) — Board
+/// Preferences + the `RecurringTemplateCard` component that now powers the
+/// P7 Board-settings "Repeating boards" roster. Renders the REAL views,
+/// seeded via fixtures + an injected `AuthService`.
+///
+/// P7 (Task Pools + Recurring Boards Rework) retired the `RecurringTemplatesView`
+/// / `DefaultPoolsListView` pages (and the `PoolEditSheet` /
+/// `DefaultPool`-scoped tests that used to guard the latter's editor) in
+/// favor of `BoardSettingsView`. `BoardSettingsView` itself self-loads
+/// from `AppDatabase.shared` + `@EnvironmentObject AuthService` (same
+/// reason the two retired list pages were never snapshotted here — see
+/// the CLAUDE.md snapshot-testing sharp edges section), so it's not
+/// snapshotted directly; its two DB-free, props-only sheets
+/// (`CoreDefaultsEditSheetView`, `RepeatingBoardEditSheetView`) and the
+/// shared `PoolPickerSheetView` are covered in
+/// `BoardSettingsSnapshotTests.swift` instead, following the exact
+/// pattern `PoolEditSheetView` already proved safe in `RisoPoolsSnapshotTests`.
 @MainActor
 final class RisoProfileSubpagesSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
-    private let ts = SnapshotFixtures.fixedTimestamp
-
-    private func pool(_ id: String, _ tf: Timeframe, taskIds: [String]) -> DefaultPool {
-        DefaultPool(id: id, userId: SnapshotFixtures.userId, timeframe: tf, taskIds: taskIds,
-                    createdAt: ts, updatedAt: ts, lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil)
-    }
 
     // MARK: - Recurring template card
     //
     // The inline TemplateEditSheet was retired (pool-only sheet could
-    // underfill); creation/edit now route to the wizard. These guard the
-    // list card component (`RecurringTemplateCard`) — the net-new surface
-    // — in its healthy and "needs attention" states.
+    // underfill); creation/edit now route to a local sheet
+    // (`RepeatingBoardEditSheetView`, P7). These guard the list card
+    // component (`RecurringTemplateCard`) — reused verbatim as the P7
+    // Board-settings roster's row — in its healthy and "needs attention"
+    // states, plus a multi-row "list" arrangement (active + paused).
 
     /// Issue #321 — pool-preview chip row (first 3 resolved titles + "+{k}
     /// more" overflow) and the "Add tasks" affordance in `metaRow`. Both
@@ -62,27 +69,43 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
         assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 230), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
     }
 
-    // MARK: - Pool editor
+    // MARK: - Roster list (P7) — active + paused rows together, standing
+    // in for `BoardSettingsView`'s "Repeating boards" section (which
+    // itself can't be snapshotted — see the file header doc).
 
-    private func poolEdit(existing: Bool) -> some View {
-        let tasks = [
-            SnapshotFixtures.makeTask(id: "t1", title: "Drink water", type: .normal),
-            SnapshotFixtures.makeTask(id: "t2", title: "Read 30 min", type: .normal),
-            SnapshotFixtures.makeTask(id: "t3", title: "Run 5 km", type: .counting, action: "Run", unit: "km", maxCount: 5),
-        ]
-        let p = existing ? pool("p-w", .weekly, taskIds: ["t1", "t2"]) : nil
-        return PoolEditSheet(pool: p, allTasks: tasks, onSave: { _ in }, onDelete: { _ in }, userId: SnapshotFixtures.userId)
+    private func rosterList() -> some View {
+        let active = SnapshotFixtures.makeRecurringTemplate(
+            id: "tpl-active", name: "Morning Routine", timeframe: .weekly,
+            boardSize: 5, seedTaskCount: 9, isActive: true
+        )
+        let paused = SnapshotFixtures.makeRecurringTemplate(
+            id: "tpl-paused", name: "Weekend Reset", timeframe: .weekly,
+            boardSize: 3, seedTaskCount: 8, isActive: false
+        )
+        return VStack(spacing: 10) {
+            RecurringTemplateCard(
+                template: active, attentionReason: nil,
+                poolPreview: ["Drink water", "Read 30 min"], poolPreviewOverflow: 0,
+                onEdit: {}, onToggleActive: { _ in }, onDelete: {}, onAddTasks: {}
+            )
+            RecurringTemplateCard(
+                template: paused, attentionReason: nil,
+                poolPreview: ["Meal prep"], poolPreviewOverflow: 0,
+                onEdit: {}, onToggleActive: { _ in }, onDelete: {}, onAddTasks: {}
+            )
+        }
+        .padding(Riso.gutter)
+        .background(Color.risoPaper)
     }
 
-    func testPoolEditExistingLight() {
-        assertSnapshot(of: poolEdit(existing: true), as: .image(layout: .fixed(width: 393, height: 640)), record: recordMode)
+    func testRosterListLight() {
+        assertSnapshot(of: rosterList(), as: .image(layout: .fixed(width: 393, height: 300)), record: recordMode)
     }
-    func testPoolEditExistingDark() {
-        assertSnapshot(of: poolEdit(existing: true), as: .image(layout: .fixed(width: 393, height: 640), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+    func testRosterListDark() {
+        assertSnapshot(of: rosterList(), as: .image(layout: .fixed(width: 393, height: 300), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
     }
 
     // BoardPreferencesView is deferred — it reads `@EnvironmentObject
     // AuthService` (+ AppDatabase.shared), which can't be constructed in a
-    // snapshot test without FirebaseApp.configure(). Covered by manual review;
-    // the two new editor sheets above are the net-new UI worth guarding.
+    // snapshot test without FirebaseApp.configure(). Covered by manual review.
 }

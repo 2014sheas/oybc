@@ -1,13 +1,11 @@
 import { useCallback, useState } from 'react';
 import {
   type Board,
-  type RecurringBoardTemplate,
   type Timeframe,
   type UserPreferences,
 } from '@oybc/shared';
 import { useDrafts } from './createHub/useDrafts';
 import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframeParam';
-import { useEditTemplateParam } from './createHub/useEditTemplateParam';
 import { useResumableDraft } from './createHub/useResumableDraft';
 import { useResumeDraftParam } from './createHub/useResumeDraftParam';
 import { useCoreBoardSlots } from '../hooks';
@@ -29,8 +27,8 @@ export interface CreateHubPageProps {
   onBoardCompleted?: (boardId: string, status: 'active' | 'draft') => void;
   /** Phase 6.2: called when a recurring template was saved without a
    *  spawnable board (skip or edit). Parent should navigate to the
-   *  Profile templates list (`/profile/recurring-templates`) rather
-   *  than `/boards/${id}`. */
+   *  Board-settings page (`/profile/board-settings`) rather than
+   *  `/boards/${id}`. */
   onTemplateCompleted?: (templateId: string) => void;
 }
 
@@ -48,15 +46,6 @@ type HubMode =
        *  Threaded as a `Date` into the wizard so `resolveWizardDates`
        *  picks the right window. Always paired with `prefilledRecurringTimeframe`. */
       targetWindowDate?: Date;
-      /** Set when the wizard was launched from Profile → Recurring
-       *  templates → Edit (`/create?editTemplate=<uuid>`). All fields
-       *  hydrate from the template, `isRecurring` is forced ON, and
-       *  Save updates the template instead of creating a new board. */
-      editingTemplate?: RecurringBoardTemplate;
-      /** Optional starting step (defaults to 1). Set to 2 by the template
-       *  row's "Add tasks" affordance (`&step=tasks`) so the wizard opens
-       *  directly on the Tasks step. */
-      initialStep?: 1 | 2;
     };
 
 /**
@@ -73,17 +62,23 @@ type HubMode =
  * Task library + quick-add moved out of this hub when the dedicated
  * `/tasks` tab landed — Create is now board-creation-only.
  *
- * Two deep-link entry points are handled by dedicated hooks:
- * - `?recurringTimeframe=daily` → `useRecurringTimeframeParam`
- * - `?editTemplate=<uuid>[&step=tasks]` → `useEditTemplateParam`
- *   (`step=tasks` = the template row's "Add tasks", lands on step 2)
- * Each consumes its param(s) exactly once and clears them from the URL
- * so a wizard cancel + manual re-entry doesn't re-arm the prefill.
+ * One deep-link entry point remains, handled by a dedicated hook:
+ * `?recurringTimeframe=daily` → `useRecurringTimeframeParam`. It consumes
+ * its param(s) exactly once and clears them from the URL so a wizard
+ * cancel + manual re-entry doesn't re-arm the prefill.
  *
  * P4 (Task Pools + Recurring Boards Rework) retired the separate
  * "Create a recurring board" CTA + its `?newRecurring=1` deep link —
  * there's now ONE "Start a new board" CTA; recurrence is chosen via the
- * wizard's Step 1 "Repeats" segmented (`useBoardWizard.setRepeats`).
+ * wizard's Step 1 "Repeats" segmented (`useBoardWizard.setRepeats`). P7
+ * retired the second remaining deep link, `?editTemplate=<uuid>[&step=tasks]`
+ * (`useEditTemplateParam`), along with the "Recurring templates" Profile
+ * page whose Edit/Add-tasks buttons emitted it — repeating-board task
+ * edits now happen in place via the Board-settings roster's
+ * `RosterEditSheet`, never a wizard round-trip. `BoardWizardPage` /
+ * `useBoardWizard` still ACCEPT an `editingTemplate` prop (a generalized
+ * "edit an existing repeating board via the wizard" capability with its
+ * own tests) — this hub just no longer has any caller that sets it.
  */
 export function CreateHubPage({
   userId,
@@ -103,12 +98,6 @@ export function CreateHubPage({
         prefilledRecurringTimeframe: timeframe,
         targetWindowDate: windowDate,
       });
-    }, []),
-  );
-
-  useEditTemplateParam(
-    useCallback((template: RecurringBoardTemplate, initialStep: 1 | 2) => {
-      setMode({ kind: 'wizard', editingTemplate: template, initialStep });
     }, []),
   );
 
@@ -182,8 +171,6 @@ export function CreateHubPage({
         draft={mode.draft}
         prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
         targetWindowDate={mode.targetWindowDate}
-        editingTemplate={mode.editingTemplate}
-        initialStep={mode.initialStep}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
         onTemplateComplete={handleTemplateComplete}

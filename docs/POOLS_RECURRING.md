@@ -132,8 +132,10 @@ old rows are inert:
    `LEGACY_PULL_SKIP_COLLECTIONS` (composite-tables precedent), drops from
    live UI.
 4. Routes `/profile/default-pools`(+`/:timeframe`) and
-   `/profile/recurring-templates` removed; `/profile/board-settings` added
-   (P7 — the old pages survive until then).
+   `/profile/recurring-templates` removed; `/profile/board-settings` added.
+   **Done as of P7** — both old pages/routes (and their iOS twins) are
+   deleted; the new page carries the defaults sheet + roster described in
+   §Surfaces item 9.
 
 **`seedTaskIds` end state**: left VERBATIM on migrated records (decode-compat,
 `lastSyncedCount` precedent) and **never read after P1** — no fallback. This
@@ -295,20 +297,35 @@ acceptance above; not treated as a bug to fix.
   writes the linked Pool's taskIds — see §Migration `seedTaskIds` end state),
   `defaultPools` → pull-skip.
 - **P2 — Tasks tab Pools segment + pool edit sheet** (+ iOS pill segmented;
-  health warnings).
+  health warnings). SHIPPED.
 - **P3 — Wizard**: pull-in-a-pool card, provenance subtitles,
-  save-selection-as-pool.
+  save-selection-as-pool. SHIPPED (PR #425).
 - **P4 — Setup step**: Repeats segmented one-flow; retire recurring CTA +
   `?newRecurring=1`; `?editTemplate=` survives to P7 but re-points into the
   new wizard's edit mode (all record shapes editable from P4 on); post-save
-  navigation lands on the spawned board.
+  navigation lands on the spawned board. SHIPPED (PR #426).
 - **P5 — Core setup**: pool pre-fill + one-off quick-add + "Start every…"
-  checkbox writing `CoreBoardDefault`.
+  checkbox writing `CoreBoardDefault`. SHIPPED (PR #427).
 - **P6 — Board screen**: manage row w/ Pause/Resume, "Repeat this board…",
-  provenance note, paused badge variants, dimmed paused boards.
+  provenance note, paused badge variants, dimmed paused boards. SHIPPED
+  (PR #428).
 - **P7 — Board settings page**: defaults sheet + roster + roster edit sheet;
   delete both old Profile pages/routes/deep-link plumbing; achievement picker
-  re-point. Migration cleanup notes.
+  re-point. Migration cleanup notes. **SHIPPED** (both platforms, branch
+  `feature/pools-p7-board-settings`, PR pending review) — this is the LAST
+  phase; the rework is functionally complete on both platforms. Both old
+  Profile pages (`/profile/recurring-templates`, `/profile/default-pools`
+  (+`/:timeframe`)) and their iOS twins (`RecurringTemplatesView`,
+  `DefaultPoolsListView`) are deleted; `/profile/board-settings` /
+  `BoardSettingsView` replace them with the merged defaults-sheet + roster
+  surface described in §Surfaces item 9. `coreDefaultTaskIds` is now
+  authored (the defaults sheet is its first writer, per §Data model). The
+  achievement picker re-labels "recurring template" → "repeating board"
+  everywhere it enumerates spawn records by name (`referencedTemplateId`
+  unchanged). The P5 iOS `upsertCorePoolIdsAndEnqueue` fetch-then-write race
+  (flagged during P7 hardening) is closed — the fetch now happens inside the
+  same GRDB `write` transaction as the merge+write, via a shared
+  `upsertCoreBoardDefault(db:...)` helper both entry points call.
 
 Locked decisions log: direction 2a; pools are storage-first (no board actions
 on pool surfaces); prototype baselined on iOS; `removedTaskIds` field added to

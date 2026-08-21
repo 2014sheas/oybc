@@ -1,12 +1,24 @@
 import Foundation
 import Observation
 
-/// Owns the user's non-deleted recurring board templates. iOS twin of
-/// the web `useRecurringBoardTemplates` hook (Phase 6.2b).
+/// Owns the user's non-deleted recurring board templates ("repeating
+/// boards" in P7 user-facing copy — the underlying type/table name is
+/// unchanged). iOS twin of the web `useRecurringBoardTemplates` hook
+/// (Phase 6.2b).
 ///
 /// Loading is imperative — the view calls `reloadAsync(userId:)` on
 /// appear and after any save/delete from the form. Mirrors the pattern
 /// used by `ParentBoardTasksViewModel`.
+///
+/// **P7 (Task Pools + Recurring Boards Rework)**: this used to be
+/// instantiated only by the retired `Views/ProfileTab/RecurringTemplatesView.swift`
+/// page. That page is gone (folded into `BoardSettingsView`'s
+/// "Repeating boards" roster section), but every computed property here
+/// (`templates`, `attentionByTemplateId`, `poolPreviewByTemplateId`,
+/// `poolPreviewOverflowByTemplateId`, `mixByTemplateId`) is exactly what
+/// the roster needs too, so this VM was ADAPTED in place (reused
+/// verbatim, not reinvented) rather than deleted — `BoardSettingsView`
+/// now owns the single live instance.
 @Observable
 final class RecurringBoardTemplatesViewModel {
 

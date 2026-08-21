@@ -4,9 +4,15 @@ import Foundation
 struct TutorialRoute: Hashable {}
 
 /// Navigation routes for tutorial deep-links into Profile sub-pages.
+///
+/// P7 (Task Pools + Recurring Boards Rework): the former `.recurringTemplates`
+/// and `.defaultPools` cases collapsed into one `.boardSettings` case —
+/// both pages retired in favor of the single `BoardSettingsView`. Lower
+/// risk than merging the two tutorial LESSONS that used to target them
+/// (see `tutorialLessons` below): the 3×3 tutorial grid has exactly 8
+/// fixed positions, and collapsing lessons would leave a hole to fill.
 enum ProfileRoute: Hashable {
-    case recurringTemplates
-    case defaultPools
+    case boardSettings
     /// Streaks & history page (handoff §5e).
     case streaks
 }
@@ -14,13 +20,12 @@ enum ProfileRoute: Hashable {
 /// Where a tutorial lesson's "Try it" button deep-links. Routed by
 /// `MainTabView` (see its `handleTutorialTry`).
 enum TutorialDeepLink {
-    case createBoard        // → Create wizard
-    case addTasks           // → Tasks tab / library
-    case openABoard         // → newest board, else Create
-    case recurringTemplates // → Profile › Recurring templates
-    case defaultPools       // → Profile › Default pools
-    case settings           // → Profile tab
-    case shareGreenlog      // → sample GREENLOG preview overlay
+    case createBoard     // → Create wizard
+    case addTasks        // → Tasks tab / library
+    case openABoard      // → newest board, else Create
+    case boardSettings   // → Profile › Board settings (P7 — was recurringTemplates/defaultPools)
+    case settings        // → Profile tab
+    case shareGreenlog   // → sample GREENLOG preview overlay
 }
 
 /// One square on the Getting Started tutorial board. Port of `TUT_LESSONS`
@@ -75,17 +80,17 @@ let tutorialLessons: [TutorialLesson] = [
     // index 4 = FREE center
     TutorialLesson(
         id: "recurring", pos: 5, systemImage: "repeat", tag: "Automate",
-        title: "Recurring templates",
-        blurb: "Templates reprint a fresh board each cycle from a pool you pick — set it once and a new card is waiting every week.",
-        steps: ["You → Recurring templates", "New template", "Pick a timeframe & pool"],
-        cta: "Set up a template", target: .recurringTemplates
+        title: "Repeating boards",
+        blurb: "A repeating board prints a fresh card each cycle from a pool you pick — set it once and a new board is waiting every week.",
+        steps: ["Create a board → set Repeats", "You → Board settings", "Pause, resume, or edit its mix"],
+        cta: "Open Board settings", target: .boardSettings
     ),
     TutorialLesson(
         id: "pools", pos: 6, systemImage: "square.grid.3x3", tag: "Automate",
         title: "Core boards & pools",
-        blurb: "Default pools are the task decks your recurring core boards deal from. Curate a pool and every renewed board pulls from it.",
-        steps: ["You → Default pools", "New pool", "Add the tasks it deals"],
-        cta: "Build a pool", target: .defaultPools
+        blurb: "Board settings holds your core boards' defaults — curate a pool or a few tasks and every renewed board deals from it.",
+        steps: ["You → Board settings", "Tap a timeframe's defaults", "Attach a pool or add tasks"],
+        cta: "Set up your defaults", target: .boardSettings
     ),
     TutorialLesson(
         id: "settings", pos: 7, systemImage: "gearshape", tag: "Settings",

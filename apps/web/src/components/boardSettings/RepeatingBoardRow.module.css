@@ -1,68 +1,6 @@
-/* Recurring templates sub-page (Riso, Phase 5a-ii). Visual re-skin; logic kept. */
-.page {
-  padding: 0;
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.header {
-  margin-bottom: 16px;
-}
-.backLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--riso-font-head);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--riso-muted);
-  text-decoration: none;
-  margin-bottom: 10px;
-}
-.backLink:hover {
-  color: var(--riso-ink);
-}
-.backLink:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-.title {
-  margin: 0;
-  font-family: var(--riso-font-head);
-  font-weight: 800;
-  font-size: clamp(26px, 3.5vw, 38px);
-  letter-spacing: -0.03em;
-  line-height: 0.94;
-  color: var(--riso-ink);
-}
-
-.emptyState {
-  padding: 28px 20px;
-  background: var(--riso-paper-2);
-  border: 2px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  text-align: center;
-}
-.emptyTitle {
-  margin: 0 0 8px;
-  font-family: var(--riso-font-head);
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--riso-ink);
-}
-.emptyBody {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.5;
-  color: var(--riso-muted);
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+/* RepeatingBoardRow — Board-settings roster row (P7). Row/chip/badge/action
+   classes carried over verbatim from the retired RecurringTemplatesPage's
+   row styling (docs/POOLS_RECURRING.md §Migration). */
 
 .row {
   display: flex;
@@ -98,7 +36,7 @@
   font-weight: 500;
   color: var(--riso-muted);
 }
-/* Compact pool preview — first few task-title chips + a "+k more" tail. */
+
 .poolPreview {
   display: flex;
   flex-wrap: wrap;
@@ -188,29 +126,6 @@
 }
 .editButton:focus-visible,
 .deleteButton:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-
-/* "+ New template" — dashed entry point, iOS twin: RisoDashedButton. */
-.newTemplateButton {
-  width: 100%;
-  margin-top: 14px;
-  padding: 14px;
-  background: var(--riso-paper-2);
-  border: 1.5px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  font-family: var(--riso-font-head);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--riso-ink);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.newTemplateButton:hover {
-  background: var(--riso-paper);
-}
-.newTemplateButton:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }

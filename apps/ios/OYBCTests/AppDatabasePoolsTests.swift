@@ -296,4 +296,78 @@ final class AppDatabasePoolsTests: XCTestCase {
         // Still preserved even on the uncheck-to-clear path.
         XCTAssertEqual(cleared.coreDefaultTaskIds, ["d1"])
     }
+
+    // MARK: - Atomicity fix (Task Pools + Recurring Boards Rework, P7)
+    //
+    // `upsertCorePoolIdsAndEnqueue` used to do its `fetchCoreBoardDefault`
+    // read in a SEPARATE GRDB transaction from the `upsertCoreBoardDefaultAndEnqueue`
+    // write it fed into — a concurrent write landing in that gap (e.g. a
+    // sync pull applying a peer's P7 defaults-sheet edit) could get
+    // silently reverted once the stale-read write committed. The fix
+    // moves the fetch INSIDE the same `write` block as the merge+write
+    // (see `AppDatabase+Pools.swift`'s private `upsertCoreBoardDefault`
+    // helper, called from both public entry points).
+    //
+    // This test dispatches the two writers on real concurrent queues
+    // (the closest a synchronous XCTest can get to "concurrent-style
+    // sequencing") rather than calling them sequentially in-line —
+    // sequential calls can't reproduce the two-transaction gap at all
+    // (nothing runs "in between" a single thread's two statements), so
+    // this only proves something if the writes actually race. It's not
+    // flaky-by-timing, though: GRDB's `DatabaseQueue` fully SERIALIZES
+    // writer transactions on one connection, so whichever of the two
+    // async blocks' write-transactions commits SECOND is guaranteed (by
+    // that serialization, not by luck) to have its fetch observe the
+    // first one's fully-committed row — never a pre-commit snapshot. The
+    // assertion is therefore unconditionally true under the fix
+    // regardless of which block happens to run first; it is exactly the
+    // property that was NOT true before the fix (a genuine gap existed
+    // between the old code's separate `read` and `write` transactions).
+    func testUpsertCorePoolIdsAndEnqueue_ConcurrentWithCoreDefaultTaskIdsWrite_NeverLosesData() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Freshly-migrated row: corePoolIds only, no individual defaults yet.
+        _ = try db.upsertCoreBoardDefaultAndEnqueue(
+            userId: userId, timeframe: .weekly, corePoolIds: ["p1"], coreDefaultTaskIds: [], now: now
+        )
+
+        let group = DispatchGroup()
+        group.enter()
+        group.enter()
+        // P5 checkbox path: corePoolIds-only write (must preserve whatever
+        // coreDefaultTaskIds exists at the moment it actually runs).
+        DispatchQueue.global().async {
+            _ = try? db.upsertCorePoolIdsAndEnqueue(
+                userId: self.userId, timeframe: .weekly, corePoolIds: ["p1", "p2"],
+                now: AppDatabase.currentTimestamp()
+            )
+            group.leave()
+        }
+        // "Concurrent" writer: a sync pull (or the P7 defaults sheet)
+        // writing coreDefaultTaskIds.
+        DispatchQueue.global().async {
+            _ = try? db.upsertCoreBoardDefaultAndEnqueue(
+                userId: self.userId, timeframe: .weekly, corePoolIds: ["p1"], coreDefaultTaskIds: ["d1"],
+                now: AppDatabase.currentTimestamp()
+            )
+            group.leave()
+        }
+        group.wait()
+
+        let final = try XCTUnwrap(try db.fetchCoreBoardDefault(userId: userId, timeframe: .weekly))
+        XCTAssertTrue(final.corePoolIds.contains("p1"))
+        // The property the atomicity fix specifically protects: if the
+        // corePoolIds-only writer happened to commit LAST, it must have
+        // observed the other writer's already-committed `coreDefaultTaskIds`
+        // (fetched inside its OWN single transaction) rather than a stale
+        // pre-fetch snapshot from before that write landed.
+        if final.corePoolIds == ["p1", "p2"] {
+            XCTAssertEqual(
+                final.coreDefaultTaskIds, ["d1"],
+                "corePoolIds-only writer must preserve a concurrently-committed coreDefaultTaskIds write"
+            )
+        }
+    }
 }

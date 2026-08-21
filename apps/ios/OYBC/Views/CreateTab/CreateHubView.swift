@@ -34,18 +34,6 @@ struct CreateHubView: View {
     /// banner is the entry point. Read + cleared on the same `.onAppear`
     /// that consumes the timeframe binding.
     var pendingTargetWindowDate: Binding<Date?> = .constant(nil)
-    /// Phase 6.2 UX rework: cross-tab edit deep-link. When non-nil on
-    /// appear, the hub fetches the template and immediately enters the
-    /// wizard in template-edit mode, then resets the binding to nil
-    /// so a wizard cancel + manual re-entry doesn't re-arm the edit.
-    /// Set by `MainTabView` from `RecurringTemplatesView`'s row Edit
-    /// callback.
-    var pendingEditTemplateId: Binding<String?> = .constant(nil)
-    /// "Add tasks" cross-tab deep-link (issue #321) — mirrors
-    /// `pendingEditTemplateId` exactly, except the hub lands the wizard
-    /// on the Tasks step (2) instead of Setup (1). Set by `MainTabView`
-    /// from `RecurringTemplatesView`'s per-card "Add tasks" button.
-    var pendingAddTasksTemplateId: Binding<String?> = .constant(nil)
     /// Draft-resume cross-tab deep-link. When non-nil on appear, the hub
     /// hydrates the wizard from that draft board id (via the same resume
     /// path as the drafts list) and clears the binding. Set by
@@ -93,21 +81,6 @@ struct CreateHubView: View {
                         vm.enterCoreBoardWizard(timeframe: timeframe, targetWindowDate: date)
                         return
                     }
-                    // Consume the edit-template deep link, if any.
-                    // Fetch the template first; mount the wizard only
-                    // after hydration so its view-model sees real data.
-                    if let templateId = pendingEditTemplateId.wrappedValue {
-                        pendingEditTemplateId.wrappedValue = nil
-                        vm.loadTemplateAndEnterWizard(templateId: templateId)
-                        return
-                    }
-                    // Consume the "Add tasks" deep link, if any (issue #321)
-                    // — same hydration as edit, but lands on the Tasks step.
-                    if let templateId = pendingAddTasksTemplateId.wrappedValue {
-                        pendingAddTasksTemplateId.wrappedValue = nil
-                        vm.loadTemplateAndEnterWizard(templateId: templateId, initialStep: 2)
-                        return
-                    }
                     // Consume the draft-resume deep link, if any. Fetch the
                     // draft board + its placements, then enter wizardResume —
                     // same hydration path as tapping a row in the drafts list.
@@ -117,23 +90,11 @@ struct CreateHubView: View {
                     }
                 }
         case .wizardFresh:
-            wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: nil)
+            wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil)
         case .wizardResume:
-            wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: nil)
+            wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, targetWindowDate: nil)
         case .wizardCoreBoard(let timeframe, let targetWindowDate):
-            wizard(draft: nil, prefilledRecurringTimeframe: timeframe, targetWindowDate: targetWindowDate, editingTemplate: nil)
-        case .wizardEditTemplate(_, let initialStep):
-            // The mode is set BEFORE `editingTemplate` is set (when
-            // hydration is in flight) and AFTER (once loaded). Render
-            // a thin loading state in the in-flight window so the
-            // wizard doesn't mount with stale state.
-            if let template = vm.editingTemplate {
-                wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, editingTemplate: template, initialStep: initialStep)
-            } else {
-                ProgressView("Loading template…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(20)
-            }
+            wizard(draft: nil, prefilledRecurringTimeframe: timeframe, targetWindowDate: targetWindowDate)
         }
     }
 
@@ -142,13 +103,20 @@ struct CreateHubView: View {
     /// so the hub-side cleanup lives in exactly one place: view-model
     /// reset (mode + drafts + library count) plus the
     /// pending-recurring refresh that's intentionally view-owned.
+    ///
+    /// P7 (Task Pools + Recurring Boards Rework): dropped the
+    /// `editingTemplate` parameter — its only feeder was the
+    /// `.wizardEditTemplate` hub mode, which was itself only reachable
+    /// from the now-retired Profile → Recurring templates page's cross-tab
+    /// Edit/"Add tasks" callbacks. `BoardWizardView`/`BoardWizardViewModel`
+    /// still support `editingTemplate:` as a general capability (exercised
+    /// directly by `BoardWizardViewModel` unit tests) — only this one dead
+    /// UI trigger path is gone.
     @ViewBuilder
     private func wizard(
         draft: (board: Board, boardTasks: [BoardTask])?,
         prefilledRecurringTimeframe: Timeframe?,
-        targetWindowDate: Date?,
-        editingTemplate: RecurringBoardTemplate?,
-        initialStep: WizardStep = 1
+        targetWindowDate: Date?
     ) -> some View {
         BoardWizardView(
             userId: userId,
@@ -156,8 +124,6 @@ struct CreateHubView: View {
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
-            editingTemplate: editingTemplate,
-            initialStep: initialStep,
             onCancel: { handleHubReturn() },
             onComplete: { boardId, status in
                 onBoardCompleted?(boardId, status)

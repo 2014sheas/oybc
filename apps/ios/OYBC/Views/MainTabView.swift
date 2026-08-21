@@ -51,19 +51,6 @@ struct MainTabView: View {
     /// banner-click path (today's window).
     @State private var pendingTargetWindowDate: Date? = nil
 
-    /// Phase 6.2 UX rework: cross-tab edit deep-link from the Profile
-    /// → Recurring templates page. RecurringTemplatesView writes the
-    /// template id and switches `selectedTab` to Create; CreateHubView
-    /// fetches + hydrates the wizard in template-edit mode, then clears
-    /// the binding. Same pattern as `pendingRecurringTimeframe`.
-    @State private var pendingEditTemplateId: String? = nil
-
-    /// "Add tasks" cross-tab deep-link (issue #321) — mirrors
-    /// `pendingEditTemplateId` exactly, except `CreateHubView` lands the
-    /// wizard on the Tasks step (2) instead of Setup (1). Set by the
-    /// Profile → Recurring templates page's per-card "Add tasks" button.
-    @State private var pendingAddTasksTemplateId: String? = nil
-
     /// Draft-resume cross-tab deep-link. Set when the user taps a DRAFT
     /// board on the Boards tab (list card or core-grid slot); we stash the
     /// board id and switch to the Create tab. `CreateHubView` consumes it on
@@ -114,7 +101,7 @@ struct MainTabView: View {
                     if let id = newestId { openBoard(id) } else { selectedTab = 2 }
                 }
             }
-        case .recurringTemplates:
+        case .boardSettings:
             selectedTab = 3
             // Reset + push together, deferred one runloop so the Profile
             // NavigationStack is mounted before its bound path is mutated (first
@@ -122,13 +109,7 @@ struct MainTabView: View {
             // stacking duplicate routes on repeated deep-links.
             DispatchQueue.main.async {
                 profilePath = NavigationPath()
-                profilePath.append(ProfileRoute.recurringTemplates)
-            }
-        case .defaultPools:
-            selectedTab = 3
-            DispatchQueue.main.async {
-                profilePath = NavigationPath()
-                profilePath.append(ProfileRoute.defaultPools)
+                profilePath.append(ProfileRoute.boardSettings)
             }
         case .settings:
             selectedTab = 3
@@ -331,8 +312,6 @@ struct MainTabView: View {
                             preferences: authService.userPreferences,
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
                             pendingTargetWindowDate: $pendingTargetWindowDate,
-                            pendingEditTemplateId: $pendingEditTemplateId,
-                            pendingAddTasksTemplateId: $pendingAddTasksTemplateId,
                             pendingDraftId: $pendingDraftId,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
@@ -361,57 +340,19 @@ struct MainTabView: View {
 
             NavigationStack(path: $profilePath) {
                 ProfileView(
-                    onEditRecurringTemplate: { templateId in
-                        // Phase 6.2 UX rework: cross-tab edit. The
-                        // Profile tab's RecurringTemplatesView wires
-                        // its card taps here; we stash the id
-                        // and switch to Create. CreateHubView consumes
-                        // the binding and opens the wizard hydrated.
-                        pendingEditTemplateId = templateId
-                        selectedTab = 2
-                    },
-                    onNewRecurringTemplate: {
-                        // Task Pools + Recurring Boards Rework (P4) — the
-                        // separate recurring-wizard deep link retired along
-                        // with the CTA (recurrence is now the Step-1
-                        // "Repeats" control inside the one wizard entry
-                        // point). "+ New template" now just lands the user
-                        // on the plain Create-tab hub, mirroring web's
-                        // `navigate('/create')` — no special binding.
-                        selectedTab = 2
-                    },
-                    onAddTasksRecurringTemplate: { templateId in
-                        // Issue #321 — same cross-tab route as edit, but
-                        // CreateHubView lands the wizard on the Tasks step.
-                        pendingAddTasksTemplateId = templateId
-                        selectedTab = 2
-                    },
                     onOpenTutorial: { openTutorial() }
                 )
                 // Tutorial deep-links (and any future direct nav) push these
                 // Profile sub-pages onto the bound stack.
                 .navigationDestination(for: ProfileRoute.self) { route in
                     switch route {
-                    case .recurringTemplates:
-                        RecurringTemplatesView(
-                            onEditTemplate: { templateId in
-                                pendingEditTemplateId = templateId
-                                selectedTab = 2
-                            },
-                            onNewTemplate: {
-                                // Task Pools + Recurring Boards Rework (P4)
-                                // — see the identical comment on
-                                // `ProfileView`'s `onNewRecurringTemplate`
-                                // above.
-                                selectedTab = 2
-                            },
-                            onAddTasksTemplate: { templateId in
-                                pendingAddTasksTemplateId = templateId
-                                selectedTab = 2
-                            }
-                        )
-                    case .defaultPools:
-                        DefaultPoolsListView()
+                    case .boardSettings:
+                        // Task Pools + Recurring Boards Rework (P7) —
+                        // replaces the retired RecurringTemplatesView /
+                        // DefaultPoolsListView pages. Edit/pause/resume are
+                        // all local sheets now, so there's no cross-tab
+                        // wizard-hop plumbing left to wire here.
+                        BoardSettingsView()
                     case .streaks:
                         StreaksView()
                     }

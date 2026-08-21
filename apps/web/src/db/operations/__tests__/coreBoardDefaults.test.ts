@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { SyncOperationType, Timeframe } from '@oybc/shared';
+import { SyncOperationType, TaskType, Timeframe, type Pool, type Task } from '@oybc/shared';
 import { db } from '../../internal';
 import {
   createCoreBoardDefault,
@@ -9,6 +9,7 @@ import {
   updateCoreBoardDefault,
   upsertCoreBoardDefault,
 } from '../coreBoardDefaults';
+import { applyCoreBoardDefaultPrefill } from '../../../pages/createHub/poolPullLogic';
 
 /**
  * CoreBoardDefault CRUD (Task Pools + Recurring Boards Rework, P1).
@@ -138,5 +139,91 @@ describe('coreBoardDefaults CRUD', () => {
     expect(stored?.isDeleted).toBe(true);
     expect(stored?.deletedAt).toBeTruthy();
     expect(stored?.version).toBe(2);
+  });
+});
+
+/**
+ * P7 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+ * §Surfaces item 9 "defaults sheet") — `CoreDefaultsSheet` is the FIRST
+ * writer of `coreDefaultTaskIds` (P1 shipped the field synced-but-unwritten;
+ * P5's core-setup prefill already reads it). This round-trips the sheet's
+ * exact save call — both fields together in one `upsertCoreBoardDefault`
+ * call — through to the P5 prefill function that resolves them back out,
+ * confirming the two features actually connect end to end.
+ */
+describe('P7 defaults-sheet round trip', () => {
+  function buildTask(id: string, overrides: Partial<Task> = {}): Task {
+    return {
+      id,
+      userId: 'user-1',
+      title: `Task ${id}`,
+      type: TaskType.NORMAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+      ...overrides,
+    };
+  }
+
+  function buildPool(id: string, taskIds: string[]): Pool {
+    return {
+      id,
+      userId: 'user-1',
+      name: `Pool ${id}`,
+      taskIds,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    };
+  }
+
+  it('upsertCoreBoardDefault saves corePoolIds and coreDefaultTaskIds together in one call', async () => {
+    const saved = await upsertCoreBoardDefault('user-1', Timeframe.DAILY, {
+      corePoolIds: ['pool-1'],
+      coreDefaultTaskIds: ['task-manual'],
+    });
+    expect(saved.corePoolIds).toEqual(['pool-1']);
+    expect(saved.coreDefaultTaskIds).toEqual(['task-manual']);
+
+    const refetched = await fetchCoreBoardDefault('user-1', Timeframe.DAILY);
+    expect(refetched?.corePoolIds).toEqual(['pool-1']);
+    expect(refetched?.coreDefaultTaskIds).toEqual(['task-manual']);
+  });
+
+  it('the freshly-authored coreDefaultTaskIds is picked up by the P5 core-setup prefill', async () => {
+    const poolTask = buildTask('pool-task');
+    const manualTask = buildTask('task-manual');
+    const pool = buildPool('pool-1', ['pool-task']);
+    const poolsById: Record<string, Pool> = { [pool.id]: pool };
+    const tasksById: Record<string, Task> = {
+      [poolTask.id]: poolTask,
+      [manualTask.id]: manualTask,
+    };
+
+    // Before P7, coreDefaultTaskIds is synced-but-unwritten — prefill only
+    // ever resolves pool-sourced tasks.
+    const beforeSave = await fetchCoreBoardDefault('user-1', Timeframe.WEEKLY);
+    expect(beforeSave).toBeUndefined();
+
+    await upsertCoreBoardDefault('user-1', Timeframe.WEEKLY, {
+      corePoolIds: ['pool-1'],
+      coreDefaultTaskIds: ['task-manual'],
+    });
+
+    const saved = await fetchCoreBoardDefault('user-1', Timeframe.WEEKLY);
+    expect(saved).toBeDefined();
+    const prefill = applyCoreBoardDefaultPrefill(
+      saved!.corePoolIds,
+      saved!.coreDefaultTaskIds,
+      poolsById,
+      tasksById,
+    );
+    expect(prefill.selectedTaskIds).toEqual(new Set(['pool-task', 'task-manual']));
+    expect(prefill.pulledPoolIds).toEqual(['pool-1']);
   });
 });

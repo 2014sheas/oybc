@@ -178,49 +178,14 @@ extension AppDatabase {
         now: String
     ) throws -> CoreBoardDefault {
         return try write { db in
-            let coreDefault: CoreBoardDefault
-            let op: SyncOperationType
-            if var existing = try CoreBoardDefault
-                .filter(
-                    Column("userId") == userId
-                        && Column("timeframe") == timeframe.rawValue
-                        && Column("isDeleted") == false
-                )
-                .fetchOne(db)
-            {
-                existing.corePoolIds = corePoolIds
-                existing.coreDefaultTaskIds = coreDefaultTaskIds
-                existing.updatedAt = now
-                existing.version += 1
-                try existing.update(db)
-                coreDefault = existing
-                op = .update
-            } else {
-                let fresh = CoreBoardDefault(
-                    id: Self.generateUUID(),
-                    userId: userId,
-                    timeframe: timeframe,
-                    corePoolIds: corePoolIds,
-                    coreDefaultTaskIds: coreDefaultTaskIds,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastSyncedAt: nil,
-                    version: 1,
-                    isDeleted: false,
-                    deletedAt: nil
-                )
-                try fresh.insert(db)
-                coreDefault = fresh
-                op = .create
-            }
-            try SyncQueueBuilder.makeItem(
-                entityType: "coreBoardDefaults",
-                entityId: coreDefault.id,
-                operationType: op,
-                payload: coreDefault,
+            try Self.upsertCoreBoardDefault(
+                db: db,
+                userId: userId,
+                timeframe: timeframe,
+                corePoolIds: corePoolIds,
+                coreDefaultTaskIds: coreDefaultTaskIds,
                 now: now
-            ).enqueue(db)
-            return coreDefault
+            )
         }
     }
 
@@ -230,12 +195,21 @@ extension AppDatabase {
     /// `upsertCoreBoardDefaultAndEnqueue` unconditionally overwrites BOTH
     /// fields on every call — there's no partial-update variant. But
     /// `coreDefaultTaskIds` is P7-authored-only (individual default tasks,
-    /// set from the future Board-settings defaults sheet); the core-setup
+    /// set from the Board-settings defaults sheet); the core-setup
     /// checkbox (P5, docs/POOLS_RECURRING.md §Surfaces item 6) only ever
     /// persists `corePoolIds`. Calling the raw upsert directly from the
     /// checkbox path would silently zero out `coreDefaultTaskIds` the
-    /// moment it exists — this wrapper fetches the current row first and
-    /// passes its `coreDefaultTaskIds` straight through unchanged.
+    /// moment it exists — this wrapper reads the current row's
+    /// `coreDefaultTaskIds` and passes it straight through unchanged.
+    ///
+    /// **Atomicity (P7 hardening)**: the fetch-existing-then-write used to
+    /// be two separate GRDB transactions (a `read` here, then a nested
+    /// `write` inside `upsertCoreBoardDefaultAndEnqueue`) — a concurrent
+    /// sync pull landing between them could revert `coreDefaultTaskIds` to
+    /// a value that was already stale by the time this write committed.
+    /// The fetch now happens INSIDE the same `write` block as the upsert
+    /// (via the shared `Self.upsertCoreBoardDefault` helper), so the whole
+    /// read-merge-write is one transaction.
     @discardableResult
     func upsertCorePoolIdsAndEnqueue(
         userId: String,
@@ -243,14 +217,82 @@ extension AppDatabase {
         corePoolIds: [String],
         now: String
     ) throws -> CoreBoardDefault {
-        let existingTaskIds = try fetchCoreBoardDefault(userId: userId, timeframe: timeframe)?.coreDefaultTaskIds ?? []
-        return try upsertCoreBoardDefaultAndEnqueue(
-            userId: userId,
-            timeframe: timeframe,
-            corePoolIds: corePoolIds,
-            coreDefaultTaskIds: existingTaskIds,
+        return try write { db in
+            let existingTaskIds = try CoreBoardDefault
+                .filter(
+                    Column("userId") == userId
+                        && Column("timeframe") == timeframe.rawValue
+                        && Column("isDeleted") == false
+                )
+                .fetchOne(db)?.coreDefaultTaskIds ?? []
+            return try Self.upsertCoreBoardDefault(
+                db: db,
+                userId: userId,
+                timeframe: timeframe,
+                corePoolIds: corePoolIds,
+                coreDefaultTaskIds: existingTaskIds,
+                now: now
+            )
+        }
+    }
+
+    /// Shared read-merge-write body for both `CoreBoardDefault` upsert
+    /// entry points above — MUST be called from inside an existing `write`
+    /// block (never opens its own transaction) so a caller that needs to
+    /// read something else first (e.g. `upsertCorePoolIdsAndEnqueue`'s
+    /// existing `coreDefaultTaskIds`) can do so in the SAME transaction as
+    /// the write, closing the two-transaction race described above.
+    private static func upsertCoreBoardDefault(
+        db: Database,
+        userId: String,
+        timeframe: Timeframe,
+        corePoolIds: [String],
+        coreDefaultTaskIds: [String],
+        now: String
+    ) throws -> CoreBoardDefault {
+        let coreDefault: CoreBoardDefault
+        let op: SyncOperationType
+        if var existing = try CoreBoardDefault
+            .filter(
+                Column("userId") == userId
+                    && Column("timeframe") == timeframe.rawValue
+                    && Column("isDeleted") == false
+            )
+            .fetchOne(db)
+        {
+            existing.corePoolIds = corePoolIds
+            existing.coreDefaultTaskIds = coreDefaultTaskIds
+            existing.updatedAt = now
+            existing.version += 1
+            try existing.update(db)
+            coreDefault = existing
+            op = .update
+        } else {
+            let fresh = CoreBoardDefault(
+                id: Self.generateUUID(),
+                userId: userId,
+                timeframe: timeframe,
+                corePoolIds: corePoolIds,
+                coreDefaultTaskIds: coreDefaultTaskIds,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+            try fresh.insert(db)
+            coreDefault = fresh
+            op = .create
+        }
+        try SyncQueueBuilder.makeItem(
+            entityType: "coreBoardDefaults",
+            entityId: coreDefault.id,
+            operationType: op,
+            payload: coreDefault,
             now: now
-        )
+        ).enqueue(db)
+        return coreDefault
     }
 
     /// Soft-delete a CoreBoardDefault row and enqueue the delete op

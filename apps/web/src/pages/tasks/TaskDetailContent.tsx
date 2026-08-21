@@ -7,6 +7,7 @@ import {
   type Board,
   type BoardTask,
   type CompoundChild,
+  type RecurringBoardTemplate,
   type Task,
 } from '@oybc/shared';
 import {
@@ -23,7 +24,10 @@ import {
   updateTaskAndCascade,
   type TaskDeletionImpact,
 } from '../../db/operations/tasks';
-import { fetchTemplatesReferencingTask } from '../../db/operations/recurringBoardTemplates';
+import {
+  fetchRecurringBoardTemplate,
+  fetchTemplatesReferencingTask,
+} from '../../db/operations/recurringBoardTemplates';
 import { TypeBadge } from '../../components/TypeBadge';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import { TaskEditSheet } from './TaskEditSheet';
@@ -125,6 +129,44 @@ function CountingSourceCaption({ sharedCounterId }: { sharedCounterId: string })
   );
 }
 
+/**
+ * Resolves an Achievement task's `referencedTemplateId` to its repeating
+ * board's name, matching iOS `RisoTaskDetailContentView`'s
+ * `templates.first { $0.id == tplId }?.name ?? "a template"` lookup — the
+ * web detail view previously rendered the raw UUID (`Watches template ID:
+ * {task.referencedTemplateId}`), which isn't user-facing. Same
+ * loading/not-found/found three-state pattern as `CountingSourceCaption`.
+ */
+function AchievementTemplateFact({
+  templateId,
+  requiredCount,
+}: {
+  templateId: string;
+  requiredCount?: number;
+}): React.ReactElement {
+  const rawResult = useLiveQuery(
+    () => fetchRecurringBoardTemplate(templateId),
+    [templateId],
+  );
+  const isLoading = rawResult === undefined;
+  const template = (rawResult as RecurringBoardTemplate | undefined) ?? null;
+  const found = template !== null && !template.isDeleted;
+
+  return (
+    <p className={styles.metaLine}>
+      Watches repeating board:{' '}
+      {isLoading ? (
+        <em>loading…</em>
+      ) : found ? (
+        <strong>{(template as RecurringBoardTemplate).name}</strong>
+      ) : (
+        <em>a repeating board (deleted or not found)</em>
+      )}
+      {requiredCount !== undefined && ` · ${requiredCount} required`}
+    </p>
+  );
+}
+
 function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null {
   if (task.type === TaskType.COUNTING) {
     const current = task.currentCount ?? 0;
@@ -165,10 +207,10 @@ function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null 
           </p>
         )}
         {task.referencedTemplateId && (
-          <p className={styles.metaLine}>
-            Watches template ID: {task.referencedTemplateId}
-            {task.requiredCount !== undefined && ` · ${task.requiredCount} required`}
-          </p>
+          <AchievementTemplateFact
+            templateId={task.referencedTemplateId}
+            requiredCount={task.requiredCount}
+          />
         )}
       </section>
     );
@@ -381,17 +423,17 @@ export function TaskDetailContent({
         </section>
       )}
 
-      {/* Part of recurring template */}
+      {/* Part of a repeating board */}
       {referencingTemplates && referencingTemplates.length > 0 && (
         <section className={styles.section}>
-          <h2 className={styles.sectionHeading}>Part of recurring template</h2>
+          <h2 className={styles.sectionHeading}>Part of a repeating board</h2>
           <div className={styles.chipRow}>
             {referencingTemplates.map((tmpl) => (
               <Link
                 key={tmpl.id}
-                to="/profile/recurring-templates"
+                to="/profile/board-settings"
                 className={styles.templateChip}
-                aria-label={`Part of template: ${tmpl.name}`}
+                aria-label={`Part of repeating board: ${tmpl.name}`}
               >
                 Part of: {tmpl.name}
               </Link>

@@ -201,7 +201,13 @@ enum SnapshotFixtures {
         isRandomized: Bool = true,
         seedTaskCount: Int = 24,
         isActive: Bool = true,
-        lastSpawnedWindowKey: String? = nil
+        lastSpawnedWindowKey: String? = nil,
+        // P7 (Board settings roster edit sheet) — optional pool-mix fields.
+        // `nil` (the default) preserves every existing call site's
+        // "genuinely un-migrated" decode shape unchanged.
+        poolIds: [String]? = nil,
+        manualTaskIds: [String]? = nil,
+        removedTaskIds: [String]? = nil
     ) -> RecurringBoardTemplate {
         RecurringBoardTemplate(
             id: id,
@@ -212,6 +218,9 @@ enum SnapshotFixtures {
             centerSquareType: centerSquareType,
             isRandomized: isRandomized,
             seedTaskIds: (0..<seedTaskCount).map { "\(id)-task-\($0)" },
+            poolIds: poolIds,
+            manualTaskIds: manualTaskIds,
+            removedTaskIds: removedTaskIds,
             lastSpawnedWindowKey: lastSpawnedWindowKey,
             isActive: isActive,
             createdAt: fixedTimestamp,
@@ -228,6 +237,20 @@ enum SnapshotFixtures {
     static func makeTestPool(id: String, name: String, taskIds: [String]) -> Pool {
         Pool(
             id: id, userId: userId, name: name, taskIds: taskIds,
+            createdAt: fixedTimestamp, updatedAt: fixedTimestamp,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    static func makeCoreBoardDefault(
+        id: String,
+        timeframe: Timeframe,
+        corePoolIds: [String] = [],
+        coreDefaultTaskIds: [String] = []
+    ) -> CoreBoardDefault {
+        CoreBoardDefault(
+            id: id, userId: userId, timeframe: timeframe,
+            corePoolIds: corePoolIds, coreDefaultTaskIds: coreDefaultTaskIds,
             createdAt: fixedTimestamp, updatedAt: fixedTimestamp,
             lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
         )

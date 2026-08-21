@@ -251,8 +251,8 @@ export function CreateNewTaskForm({
                   board/template it watches hits the trigger, not by check-off. */}
               <span className={`${styles.helpText} ${styles.helpTextLead}`}>
                 An Achievement is an auto-completing square: place it on a board,
-                and it completes on its own when the board or template you pick
-                below reaches the trigger — instead of you checking it off.
+                and it completes on its own when the board or repeating board you
+                pick below reaches the trigger — instead of you checking it off.
               </span>
               <label className={styles.label}>
                 Watch
@@ -277,7 +277,7 @@ export function CreateNewTaskForm({
                     checked={form.achievementMode === 'recurringTemplate'}
                     onChange={() => form.setAchievementMode('recurringTemplate')}
                   />
-                  Template
+                  Repeating board
                 </label>
               </div>
               {form.achievementMode === 'specificBoard' ? (
@@ -311,8 +311,8 @@ export function CreateNewTaskForm({
                 >
                   <option value="">
                     {templates.length === 0
-                      ? 'No templates'
-                      : 'Select a template…'}
+                      ? 'No repeating boards yet'
+                      : 'Select a repeating board…'}
                   </option>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>
