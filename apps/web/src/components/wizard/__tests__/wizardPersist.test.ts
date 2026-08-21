@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   CenterSquareType,
+  OperatorType,
   Timeframe,
   TaskType,
   resolveMix,
@@ -9,9 +10,11 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../../../db/internal';
-import { persistRecurringTemplate } from '../wizardPersist';
+import { emptyPatch, type ChildPatch, type TaskEditPatch } from '../../../db/taskEditPatch';
+import { buildWizardPlacement, persistRecurringTemplate, persistWizardBoard } from '../wizardPersist';
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { PendingTaskPayload } from '../../../pages/createPage/useCreateFormState';
+import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
 import {
   applyManualBookkeepingOnSelect,
 } from '../../../pages/createHub/poolPullLogic';
@@ -419,5 +422,171 @@ describe('persistRecurringTemplate — P4 regression (finishing a repeating wiza
     expect(boards[0].id).toBe(result.spawnedBoardId);
     expect(boards[0].status).not.toBe('draft');
     expect(boards[0].spawnedFromTemplateId).toBe(templates[0].id);
+  });
+});
+
+/**
+ * Inline Task Editing (web PR-2) — staged edits threaded through the
+ * wizard-level persist entry points. `wizardBoard.test.ts` already covers
+ * the transaction-layer apply in isolation; these tests confirm the
+ * `wizardPersist.ts` glue (the pending-edit pre-merge + the active/draft
+ * gate + the recurring-template call site) wires it correctly end to end —
+ * this is the exact seam where the analogous iOS bugs (dropped
+ * `stagedEdits`, dropped pending tasks) hid.
+ */
+function emptyTaskLibrary(allTasks: Task[] = []): TaskLibrary {
+  const taskMap: Record<string, Task> = {};
+  for (const t of allTasks) taskMap[t.id] = t;
+  return {
+    allTasks,
+    allCompoundChildren: [],
+    taskMap,
+    compoundChildrenByCompound: {},
+    childTaskIds: new Set(),
+    childToParents: {},
+  };
+}
+
+function simpleChild(over: Partial<ChildPatch>): ChildPatch {
+  return { id: 'x', childTaskId: null, title: '', isCounting: false, action: '', goal: '', unit: '', markedDeleted: false, ...over };
+}
+
+describe('buildWizardPlacement — staged-edit overlay (Inline Task Editing PR-2)', () => {
+  it('overlays a staged rename onto the Step-3 preview without touching the DB', async () => {
+    const task = makeTask('t1', { title: 'Old title' });
+    await db.tasks.add(task);
+    const stagedEdits = new Map<string, TaskEditPatch>([['t1', emptyPatch('New title')]]);
+    const controller = makeController({
+      selectedTaskIds: new Set(['t1']),
+      stagedEdits,
+    } as Partial<BoardWizardController>);
+
+    const placement = buildWizardPlacement(controller, emptyTaskLibrary([task]));
+    const placed = placement.find((t) => t?.id === 't1');
+    expect(placed?.title).toBe('New title');
+
+    // The DB itself is untouched — only the preview is overlaid.
+    const stored = await db.tasks.get('t1');
+    expect(stored?.title).toBe('Old title');
+  });
+});
+
+describe('persistWizardBoard — staged edits (Inline Task Editing PR-2)', () => {
+  it('applies a staged edit to a LIBRARY task on an ACTIVE create, but not on a DRAFT save', async () => {
+    const task = makeTask('lib-1', { title: 'Old title' });
+    await db.tasks.add(task);
+    const controller = makeController({
+      selectedTaskIds: new Set(['lib-1']),
+      isRecurring: false,
+      stagedEdits: new Map<string, TaskEditPatch>([['lib-1', emptyPatch('New title')]]),
+    } as Partial<BoardWizardController>);
+
+    await persistWizardBoard({
+      controller,
+      library: emptyTaskLibrary([task]),
+      userId: 'user-1',
+      placement: buildWizardPlacement(controller, emptyTaskLibrary([task])),
+      dates: { startDate: NOW },
+      status: 'draft',
+    });
+    expect((await db.tasks.get('lib-1'))?.title).toBe('Old title'); // draft: untouched
+
+    await persistWizardBoard({
+      controller,
+      library: emptyTaskLibrary([task]),
+      userId: 'user-1',
+      placement: buildWizardPlacement(controller, emptyTaskLibrary([task])),
+      dates: { startDate: NOW },
+      status: 'active',
+    });
+    expect((await db.tasks.get('lib-1'))?.title).toBe('New title'); // active: applied
+  });
+
+  it('merges a staged edit into a PENDING task\'s payload before it is ever written, so the row lands with the edited values in one shot', async () => {
+    const pendingTask = makeTask('pending-1', { title: 'Original pending title' });
+    const controller = makeController({
+      selectedTaskIds: new Set(['pending-1']),
+      isRecurring: false,
+      pendingTasks: new Map<string, PendingTaskPayload>([
+        ['pending-1', { task: pendingTask, childTasks: [], childLinks: [] }],
+      ]),
+      stagedEdits: new Map<string, TaskEditPatch>([['pending-1', emptyPatch('Edited before it ever existed')]]),
+    } as Partial<BoardWizardController>);
+
+    const library = emptyTaskLibrary([]);
+    await persistWizardBoard({
+      controller,
+      library,
+      userId: 'user-1',
+      placement: buildWizardPlacement(controller, library),
+      dates: { startDate: NOW },
+      status: 'active',
+    });
+
+    const written = await db.tasks.get('pending-1');
+    expect(written?.title).toBe('Edited before it ever existed');
+    expect(written?.version).toBe(1); // written once, already carrying the edit — no separate re-save/version bump.
+  });
+});
+
+describe('persistRecurringTemplate — staged edits (Inline Task Editing PR-2)', () => {
+  it('a PENDING compound with an inline sub-task, plus a staged edit adding a second inline sub-task, persists correctly through the recurring path', async () => {
+    const libraryTaskIds = await seedTasks(POOL_SIZE - 1);
+    const compoundId = 'pending-compound-1';
+    const originalChildId = 'pending-compound-1-child-a';
+
+    const originalChild = makeTask(originalChildId, { title: 'Warm up' });
+    const compoundTask: Task = {
+      ...makeTask(compoundId, { title: 'Morning routine' }),
+      type: TaskType.COMPOUND,
+      operator: OperatorType.AND,
+    };
+    const originalLink = {
+      id: 'link-1',
+      compoundTaskId: compoundId,
+      childTaskId: originalChildId,
+      childIndex: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+
+    const selectedTaskIds = new Set([...libraryTaskIds, compoundId]);
+    const controller = makeController({
+      selectedTaskIds,
+      manualTaskIds: new Set([...libraryTaskIds, compoundId]),
+      pendingTasks: new Map<string, PendingTaskPayload>([
+        [compoundId, { task: compoundTask, childTasks: [originalChild], childLinks: [originalLink] }],
+      ]),
+      stagedEdits: new Map<string, TaskEditPatch>([
+        [
+          compoundId,
+          {
+            ...emptyPatch('Morning routine v2'),
+            operator: OperatorType.AND,
+            children: [
+              simpleChild({ id: originalChildId, childTaskId: originalChildId, title: 'Warm up' }),
+              simpleChild({ id: 'new-child-draft', childTaskId: null, title: 'Cool down' }),
+            ],
+          },
+        ],
+      ]),
+    } as Partial<BoardWizardController>);
+
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
+    expect(result.spawnedBoardId).not.toBeNull();
+
+    const savedCompound = await db.tasks.get(compoundId);
+    expect(savedCompound?.title).toBe('Morning routine v2');
+
+    const links = (await db.compoundChildren.where('compoundTaskId').equals(compoundId).toArray()).filter(
+      (l) => !l.isDeleted,
+    );
+    expect(links).toHaveLength(2);
+    const newChildId = links.find((l) => l.childTaskId !== originalChildId)?.childTaskId;
+    expect(newChildId).toBeTruthy();
+    const newChildTask = newChildId ? await db.tasks.get(newChildId) : undefined;
+    expect(newChildTask?.title).toBe('Cool down');
   });
 });

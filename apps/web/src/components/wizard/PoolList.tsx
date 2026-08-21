@@ -23,6 +23,23 @@ export interface PoolListProps {
    *  the Bug #85 `pendingTasks` purge still fires on a pending task. */
   onRemove: (taskId: string) => void;
   onContextMenu: (taskId: string, x: number, y: number) => void;
+
+  /**
+   * Web inline-editing port PR-2 — the currently-open editor row (at most
+   * one at a time), or `null` when no row is being edited. Mirrors iOS
+   * `RisoPoolListView.editingTaskId`.
+   */
+  editingTaskId?: string | null;
+  /** Opens the inline editor for a row (the ✎ pencil). Ignored for
+   *  Achievement rows (read-only in the pool). */
+  onEdit?: (taskId: string) => void;
+  /**
+   * Render-prop for the open row's editor body — owned by the container
+   * (`BoardWizardTasksStep`) so this component stays a pure list renderer
+   * and doesn't need its own draft state. Mirrors iOS `RisoPoolListView`'s
+   * `editor` closure parameter.
+   */
+  editor?: (task: Task) => React.ReactNode;
 }
 
 /**
@@ -36,9 +53,8 @@ export interface PoolListProps {
  * sub-task preview on body click. Trailing gutter is exactly three 46px
  * slots with hairline dividers — ☆/★ center radio (only rendered at all
  * when `centerTaskMode` is on, so the gutter is consistently 2 or 3 slots
- * across the whole list, never per-row) · ✎ edit (PR-1 stub: rendered
- * disabled so PR-2's inline editor can drop in without an unrelated
- * layout shift; achievement rows get an empty placeholder instead, since
+ * across the whole list, never per-row) · ✎ edit (opens the inline editor
+ * in place, PR-2; achievement rows get an empty placeholder instead, since
  * achievements are never inline-editable) · ✕ remove.
  */
 export function PoolList({
@@ -52,6 +68,9 @@ export function PoolList({
   onCenterClick,
   onRemove,
   onContextMenu,
+  editingTaskId = null,
+  onEdit,
+  editor,
 }: PoolListProps): React.ReactElement {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const poolTasks = poolOrder
@@ -88,6 +107,14 @@ export function PoolList({
               : boardCount === 0
                 ? 'unused'
                 : `${boardCount} board${boardCount === 1 ? '' : 's'}`;
+
+            if (editingTaskId === task.id && editor) {
+              return (
+                <li key={task.id} className={styles.row}>
+                  {editor(task)}
+                </li>
+              );
+            }
 
             return (
               <li key={task.id} className={styles.row}>
@@ -143,11 +170,11 @@ export function PoolList({
                     <button
                       type="button"
                       className={styles.gutterSlot}
-                      disabled
-                      aria-label="Edit task (coming soon)"
-                      title="Inline editing is coming soon — edit from the Tasks page for now"
+                      onClick={() => onEdit?.(task.id)}
+                      aria-label={`Edit ${task.title || 'task'}`}
+                      title="Edit task"
                     >
-                      <span className={styles.pencilDisabled}>✎</span>
+                      <span className={styles.pencilGlyph}>✎</span>
                     </button>
                   )}
                   <button

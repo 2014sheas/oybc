@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { TaskType, OperatorType, Timeframe, type Pool } from '@oybc/shared';
 import { createTask, createCompound } from '../../db/operations/tasks';
+import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { usePools } from '../../hooks';
+import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import {
   applyManualBookkeepingOnDeselect,
@@ -57,6 +59,47 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
   const [pulledPoolIds, setPulledPoolIds] = useState<string[]>([]);
   const [manualTaskIds, setManualTaskIds] = useState<Set<string>>(new Set());
   const [removedTaskIds, setRemovedTaskIds] = useState<Set<string>>(new Set());
+
+  // Web inline-editing port PR-2 — simulated staged-edits state, mirroring
+  // `useBoardWizard.stagedEdits`/`stageEdit`/`revertEdit`/`restoreToPool`
+  // (simplified — no manual-bookkeeping recovery on restore) so the
+  // harness exercises the inline editor without the full wizard hook.
+  const [stagedEdits, setStagedEdits] = useState<Map<string, TaskEditPatch>>(new Map());
+  const handleStageEdit = useCallback((taskId: string, patch: TaskEditPatch): TaskEditPatch | undefined => {
+    let previous: TaskEditPatch | undefined;
+    setStagedEdits((prev) => {
+      previous = prev.get(taskId);
+      const next = new Map(prev);
+      next.set(taskId, patch);
+      return next;
+    });
+    return previous;
+  }, []);
+  const handleRevertEdit = useCallback((taskId: string, previous: TaskEditPatch | undefined) => {
+    setStagedEdits((prev) => {
+      const next = new Map(prev);
+      if (previous === undefined) next.delete(taskId);
+      else next.set(taskId, previous);
+      return next;
+    });
+  }, []);
+  const handleRestoreToPool = useCallback(
+    (taskId: string, index: number, _payload: PendingTaskPayload | undefined) => {
+      setSelectedTaskIds((prev) => {
+        if (prev.has(taskId)) return prev;
+        const next = new Set(prev);
+        next.add(taskId);
+        return next;
+      });
+      setPoolOrder((prev) => {
+        if (prev.includes(taskId)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(Math.max(index, 0), next.length), 0, taskId);
+        return next;
+      });
+    },
+    [],
+  );
   const taskProvenance = useMemo(
     () => deriveTaskProvenance(selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, library.taskMap),
     [selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, library.taskMap],
@@ -81,6 +124,14 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
       setPoolOrder((prev) =>
         wasSelected ? prev.filter((id) => id !== taskId) : prev.includes(taskId) ? prev : [...prev, taskId],
       );
+      if (wasSelected) {
+        setStagedEdits((prev) => {
+          if (!prev.has(taskId)) return prev;
+          const next = new Map(prev);
+          next.delete(taskId);
+          return next;
+        });
+      }
       if (wasSelected) {
         const result = applyManualBookkeepingOnDeselect(
           taskId,
@@ -290,6 +341,10 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         // isCore-only UI (chip strip, "Start every…" checkbox, "Add N
         // more" copy) is exercised via the real wizard flow instead.
         isCore={false}
+        stagedEdits={stagedEdits}
+        onStageEdit={handleStageEdit}
+        onRevertEdit={handleRevertEdit}
+        onRestoreToPool={handleRestoreToPool}
         onBack={() => setNavMessage('« Back tapped (would return to Step 1: Setup)')}
         onNext={() =>
           setNavMessage('» Next tapped (would advance to Step 3: Preview & Activate)')

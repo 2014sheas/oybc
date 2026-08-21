@@ -179,12 +179,12 @@
   font-size: 1.15rem;
 }
 
-/* PR-1 stub — visually present, non-functional. PR-2 replaces this slot's
-   contents with a working pencil that opens the inline editor. */
-.pencilDisabled {
+.pencilGlyph {
   color: var(--riso-muted);
-  opacity: 0.4;
   font-size: 0.95rem;
+}
+.gutterSlot:hover .pencilGlyph {
+  color: var(--riso-ink);
 }
 
 .removeGlyph {

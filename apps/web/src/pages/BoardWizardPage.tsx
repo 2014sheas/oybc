@@ -286,6 +286,10 @@ export function BoardWizardPage({
             taskProvenance={wizard.taskProvenance}
             manualTaskIds={wizard.manualTaskIds}
             isCore={wizard.isCore}
+            stagedEdits={wizard.stagedEdits}
+            onStageEdit={wizard.stageEdit}
+            onRevertEdit={wizard.revertEdit}
+            onRestoreToPool={wizard.restoreToPool}
             onBack={wizard.goBack}
             onNext={wizard.goNext}
           />

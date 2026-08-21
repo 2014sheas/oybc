@@ -14,6 +14,7 @@ import {
   type WeekStartDay,
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
+import type { TaskEditPatch } from '../../db/taskEditPatch';
 import {
   applyCoreBoardDefaultPrefill,
   applyManualBookkeepingOnDeselect,
@@ -150,6 +151,17 @@ export interface BoardWizardState {
    */
   pendingTasks: Map<string, PendingTaskPayload>;
 
+  /**
+   * Inline Task Editing (web PR-2) — staged, not-yet-persisted inline edits
+   * to pooled tasks. Keyed by taskId. Mirrors iOS
+   * `BoardWizardViewModel.stagedEdits`: applied ONLY inside the board-create
+   * transaction (`persistWizardBoardRows` / the recurring-template persist
+   * path) — never while the board is a draft. A task leaving the pool
+   * (deselect, or a pool untoggle that drops it) always purges its entry
+   * here — see `toggleTaskSelection` / `untogglePool`.
+   */
+  stagedEdits: Map<string, TaskEditPatch>;
+
   // Wizard navigation
   currentStep: WizardStep;
 
@@ -228,6 +240,28 @@ export interface BoardWizardActions {
    * automatically removes its pending payload.
    */
   addPendingTask: (payload: PendingTaskPayload) => void;
+  /**
+   * Inline Task Editing (web PR-2) — stage an inline edit for `taskId`
+   * (no DB write). Returns the PREVIOUS patch (or `undefined` if this is
+   * the first edit for this task) so the caller's Save toast can offer an
+   * Undo that reverts to it via `revertEdit`. Mirrors iOS
+   * `BoardWizardViewModel.stageEdit`.
+   */
+  stageEdit: (taskId: string, patch: TaskEditPatch) => TaskEditPatch | undefined;
+  /**
+   * Inline Task Editing (web PR-2) — undo a staged edit: restores
+   * `previous` (or removes the entry entirely when `previous` is
+   * `undefined` — i.e. this task had no prior staged edit). Mirrors iOS
+   * `BoardWizardViewModel.revertEdit`.
+   */
+  revertEdit: (taskId: string, previous: TaskEditPatch | undefined) => void;
+  /**
+   * Inline Task Editing (web PR-2) — restore a removed task to the pool at
+   * its original index (re-adding its pending payload when non-`null`).
+   * Backs the Remove ✕ toast's Undo. Mirrors iOS
+   * `BoardWizardViewModel.restoreToPool`.
+   */
+  restoreToPool: (taskId: string, index: number, payload: PendingTaskPayload | undefined) => void;
 }
 
 /** Computed flags exposed to step components for validation + display. */
@@ -606,6 +640,12 @@ export function useBoardWizard({
     () => new Map(),
   );
 
+  /**
+   * Inline Task Editing (web PR-2) — staged inline task edits. See
+   * `BoardWizardState.stagedEdits`'s doc for the full contract.
+   */
+  const [stagedEdits, setStagedEdits] = useState<Map<string, TaskEditPatch>>(() => new Map());
+
   const [currentStep, setCurrentStep] = useState<WizardStep>(initialStep);
   const draftBoardId = draftBoard?.id ?? null;
   const editingTemplateId = effectiveTemplate?.id ?? null;
@@ -725,6 +765,15 @@ export function useBoardWizard({
         next.delete(taskId);
         return next;
       });
+      // Inline Task Editing (web PR-2) — a task leaving the pool always
+      // purges its staged edit too (mirrors iOS's exact invariant note on
+      // `saveWizardBoard`'s `stagedEdits` parameter).
+      setStagedEdits((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Map(prev);
+        next.delete(taskId);
+        return next;
+      });
 
       // P3 — manual/removed bookkeeping. `wasSelected` (captured above,
       // pre-toggle) decides which side of the select/deselect we're on.
@@ -802,6 +851,20 @@ export function useBoardWizard({
           }
           return changed ? next : prev;
         });
+        // Inline Task Editing (web PR-2) — a pool untoggle can drop tasks
+        // from the selection too; purge their staged edits the same as a
+        // manual deselect does.
+        setStagedEdits((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const id of result.removedIds) {
+            if (next.has(id)) {
+              next.delete(id);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
       }
     },
     [selectedTaskIds, pulledPoolIds, manualTaskIds, removedTaskIds, poolsById, tasksById],
@@ -822,6 +885,77 @@ export function useBoardWizard({
       return next;
     });
   }, []);
+
+  /**
+   * Inline Task Editing (web PR-2) — stage an inline edit. See
+   * `BoardWizardActions.stageEdit`.
+   */
+  const stageEdit = useCallback((taskId: string, patch: TaskEditPatch): TaskEditPatch | undefined => {
+    let previous: TaskEditPatch | undefined;
+    setStagedEdits((prev) => {
+      previous = prev.get(taskId);
+      const next = new Map(prev);
+      next.set(taskId, patch);
+      return next;
+    });
+    return previous;
+  }, []);
+
+  /**
+   * Inline Task Editing (web PR-2) — undo a staged edit. See
+   * `BoardWizardActions.revertEdit`.
+   */
+  const revertEdit = useCallback((taskId: string, previous: TaskEditPatch | undefined) => {
+    setStagedEdits((prev) => {
+      const next = new Map(prev);
+      if (previous === undefined) {
+        next.delete(taskId);
+      } else {
+        next.set(taskId, previous);
+      }
+      return next;
+    });
+  }, []);
+
+  /**
+   * Inline Task Editing (web PR-2) — restore a removed task to the pool at
+   * its original index. See `BoardWizardActions.restoreToPool`.
+   *
+   * Deliberately does NOT route through `toggleTaskSelection` (which always
+   * appends at the end of `poolOrder`) — Undo must restore the task at the
+   * exact index it was removed from, mirroring iOS
+   * `BoardWizardViewModel.restoreToPool`.
+   */
+  const restoreToPool = useCallback(
+    (taskId: string, index: number, payload: PendingTaskPayload | undefined) => {
+      setSelectedTaskIds((prev) => {
+        if (prev.has(taskId)) return prev;
+        const next = new Set(prev);
+        next.add(taskId);
+        return next;
+      });
+      setPoolOrder((prev) => {
+        if (prev.includes(taskId)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(Math.max(index, 0), next.length), 0, taskId);
+        return next;
+      });
+      if (payload !== undefined) {
+        setPendingTasks((prev) => {
+          const next = new Map(prev);
+          next.set(taskId, payload);
+          return next;
+        });
+      }
+      // A restored task was hand-removed (its own manual-bookkeeping state
+      // is otherwise unrecoverable here) — treat it as manually re-added,
+      // matching `applyManualBookkeepingOnSelect`'s "select" branch.
+      const result = applyManualBookkeepingOnSelect(taskId, manualTaskIds, removedTaskIds);
+      setManualTaskIds(result.manualTaskIds);
+      setRemovedTaskIds(result.removedTaskIds);
+    },
+    [manualTaskIds, removedTaskIds],
+  );
 
   const setCenterTaskId = useCallback((id: string | null) => {
     setCenterTaskIdRaw(id);
@@ -865,6 +999,7 @@ export function useBoardWizard({
     setPoolOrder([]);
     setCenterTaskIdRaw(null);
     setPendingTasks(new Map());
+    setStagedEdits(new Map());
     setCurrentStep(1);
     // P3 — reset the pool-mix bookkeeping alongside the selection it describes.
     setPulledPoolIds([]);
@@ -964,6 +1099,7 @@ export function useBoardWizard({
     manualTaskIds,
     removedTaskIds,
     pendingTasks,
+    stagedEdits,
     currentStep,
     draftBoardId,
     editingTemplateId,
@@ -983,6 +1119,9 @@ export function useBoardWizard({
     pullPool,
     untogglePool,
     addPendingTask,
+    stageEdit,
+    revertEdit,
+    restoreToPool,
     goToStep,
     goNext,
     goBack,

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
@@ -11,6 +11,15 @@ import {
 import { fetchAllBoardTasks } from '../../db/operations';
 import { createTask } from '../../db/operations/tasks';
 import { upsertCoreBoardDefault } from '../../db/operations/coreBoardDefaults';
+import {
+  overlayCompoundChildrenWithStagedEdits,
+  overlayTaskMapWithStagedEdits,
+  patchesEqual,
+  seedPatchForEditor,
+  stagedNewChildPlaceholders,
+  childPatchFromTask,
+  type TaskEditPatch,
+} from '../../db/taskEditPatch';
 import {
   useCoreBoardDefault,
   useParentBoardTasks,
@@ -25,6 +34,7 @@ import { DeriveCounterModal } from './DeriveCounterModal';
 import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import { LibrarySheet } from './LibrarySheet';
 import { PoolList } from './PoolList';
+import { PoolRowEditor } from './PoolRowEditor';
 import { RowContextMenu } from './RowContextMenu';
 import { SpecialTaskPanel } from './SpecialTaskPanel';
 import { mergeSuggestionPool } from './suggestionPool';
@@ -166,6 +176,23 @@ export interface BoardWizardTasksStepProps {
    */
   isCore: boolean;
 
+  /**
+   * Web inline-editing port PR-2 — the wizard's staged inline task edits
+   * (`useBoardWizard.stagedEdits`). Overlaid onto `effectiveTaskMap` /
+   * `effectiveChildrenByCompound` so rows + the Step-3 preview reflect an
+   * unsaved edit immediately.
+   */
+  stagedEdits: Map<string, TaskEditPatch>;
+  /** Stage an inline edit; returns the previous patch (or `undefined`) for
+   *  the Save toast's Undo. Routes to `useBoardWizard.stageEdit`. */
+  onStageEdit: (taskId: string, patch: TaskEditPatch) => TaskEditPatch | undefined;
+  /** Undo a staged edit. Routes to `useBoardWizard.revertEdit`. */
+  onRevertEdit: (taskId: string, previous: TaskEditPatch | undefined) => void;
+  /** Restore a removed task to the pool at its original index (re-adding
+   *  its pending payload when non-`undefined`). Routes to
+   *  `useBoardWizard.restoreToPool`. */
+  onRestoreToPool: (taskId: string, index: number, payload: PendingTaskPayload | undefined) => void;
+
   /** Navigates to the previous wizard step. */
   onBack: () => void;
   /** Navigates to the next wizard step. Disabled when validation fails. */
@@ -228,6 +255,10 @@ export function BoardWizardTasksStep({
   taskProvenance,
   manualTaskIds,
   isCore,
+  stagedEdits,
+  onStageEdit,
+  onRevertEdit,
+  onRestoreToPool,
   onBack,
   onNext,
 }: BoardWizardTasksStepProps): React.ReactElement {
@@ -240,16 +271,31 @@ export function BoardWizardTasksStep({
   // leaf previews / expanded leaves for a pending compound would fail
   // to resolve child titles via taskMap lookup.
   const effectiveTaskMap = useMemo<Record<string, Task>>(() => {
-    if (!pendingTasks || pendingTasks.size === 0) return library.taskMap;
-    const merged = { ...library.taskMap };
-    for (const payload of pendingTasks.values()) {
-      merged[payload.task.id] = payload.task;
-      for (const childTask of payload.childTasks) {
-        merged[childTask.id] = childTask;
+    let merged = library.taskMap;
+    if (pendingTasks && pendingTasks.size > 0) {
+      merged = { ...merged };
+      for (const payload of pendingTasks.values()) {
+        merged[payload.task.id] = payload.task;
+        for (const childTask of payload.childTasks) {
+          merged[childTask.id] = childTask;
+        }
+      }
+    }
+    // Web inline-editing port PR-2 — overlay staged inline edits so rows +
+    // the Step-3 preview reflect unsaved changes (the DB is untouched
+    // until board create), then synthesize placeholder Task entries for
+    // brand-new staged compound sub-tasks (no real Task row yet) so a
+    // type-dependent lookup (e.g. the pool subtitle's "N with a goal"
+    // subcount) resolves them. Mirrors iOS `effectiveTaskById`.
+    merged = overlayTaskMapWithStagedEdits(merged, stagedEdits);
+    if (stagedEdits.size > 0) {
+      const placeholders = stagedNewChildPlaceholders(userId, stagedEdits);
+      if (Object.keys(placeholders).length > 0) {
+        merged = { ...merged, ...placeholders };
       }
     }
     return merged;
-  }, [library.taskMap, pendingTasks]);
+  }, [library.taskMap, pendingTasks, stagedEdits, userId]);
   const browsableTasks = useBrowsableTasks(library.allTasks, library.childToParents);
   const effectiveAllTasks = useMemo<Task[]>(() => {
     // Browse the draft-filtered set (hides other drafts' wizard-orphans), but
@@ -305,6 +351,20 @@ export function BoardWizardTasksStep({
    *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
    *  affordance. */
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
+
+  // ── Inline pool-row editor (Web inline-editing port PR-2) ──────────────
+  // At most one row open at a time.
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<TaskEditPatch | null>(null);
+  /** The draft as it was when the editor opened — used to tell whether the
+   *  user actually changed anything on Discard (comparing against a fresh
+   *  `patchFromTask` would never carry compound children, so it would
+   *  falsely report "changed" for every compound). Mirrors iOS
+   *  `editBaseline`. */
+  const [editBaseline, setEditBaseline] = useState<TaskEditPatch | null>(null);
+  const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   /** P3 — "Save these N as a new pool…" affordance. Opens `PoolEditSheet`
    *  in create mode, pre-seeded from the current selection. */
   const [showSaveAsPoolSheet, setShowSaveAsPoolSheet] = useState(false);
@@ -389,21 +449,23 @@ export function BoardWizardTasksStep({
   // expandable leaves. Without this, a pending compound rendered with 0
   // steps and couldn't expand.
   const effectiveChildrenByCompound = useMemo<Record<string, CompoundChild[]>>(() => {
-    if (!pendingTasks || pendingTasks.size === 0) {
-      return library.compoundChildrenByCompound;
+    let merged = library.compoundChildrenByCompound;
+    if (pendingTasks && pendingTasks.size > 0) {
+      merged = { ...merged };
+      for (const payload of pendingTasks.values()) {
+        if (payload.childLinks.length === 0) continue;
+        // childLinks are pre-sorted by childIndex when assembled in
+        // useCreateFormState. Use them as-is (matching how
+        // useTaskLibrary returns library compoundChildren).
+        merged[payload.task.id] = payload.childLinks;
+      }
     }
-    const merged: Record<string, CompoundChild[]> = {
-      ...library.compoundChildrenByCompound,
-    };
-    for (const payload of pendingTasks.values()) {
-      if (payload.childLinks.length === 0) continue;
-      // childLinks are pre-sorted by childIndex when assembled in
-      // useCreateFormState. Use them as-is (matching how
-      // useTaskLibrary returns library compoundChildren).
-      merged[payload.task.id] = payload.childLinks;
-    }
-    return merged;
-  }, [library.compoundChildrenByCompound, pendingTasks]);
+    // Web inline-editing port PR-2 — a staged compound edit's KEPT
+    // sub-tasks replace the base entry so the pool subtitle + expanded
+    // preview reflect an unsaved add/remove/rename immediately. Mirrors
+    // iOS `effectiveCompoundChildrenByCompound`.
+    return overlayCompoundChildrenWithStagedEdits(merged, stagedEdits);
+  }, [library.compoundChildrenByCompound, pendingTasks, stagedEdits]);
 
   const selectedCount = selectedTaskIds.size;
   const isCountSatisfied = selectedCount >= tasksRequired;
@@ -421,6 +483,107 @@ export function BoardWizardTasksStep({
 
   function handleCenterRadio(taskId: string): void {
     onCenterTaskChange(centerTaskId === taskId ? null : taskId);
+  }
+
+  // ── Inline pool-row editor (Web inline-editing port PR-2) ──────────────
+
+  function showToast(text: string, undo?: () => void): void {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ text, undo });
+    toastTimerRef.current = setTimeout(() => setToast(null), 6000);
+  }
+
+  /** Open the inline editor for a row. Closes any other open editor (only
+   *  one at a time). Seeds the draft from the effective (staged-overlaid)
+   *  task. Mirrors iOS `BoardWizardTasksStepView.openEditor`. */
+  function openEditor(taskId: string): void {
+    const task = effectiveTaskMap[taskId];
+    if (!task) return;
+    let draft: TaskEditPatch;
+    const staged = stagedEdits.get(taskId);
+    if (staged) {
+      // Reopen: reuse the staged patch verbatim. `effectiveTaskMap`'s
+      // overlay carries scalar edits (title/counting) but NOT compound
+      // child edits, so reconstructing children here would silently
+      // revert a prior sub-task rename/add/delete.
+      draft = staged;
+    } else {
+      // First open: `seedPatchForEditor` blanks a Counting task's Title
+      // field when it still matches its auto-generated form, so the title
+      // keeps re-deriving as Action/Goal/Unit change in the editor.
+      draft = seedPatchForEditor(task);
+      if (task.type === TaskType.COMPOUND) {
+        const links = [...(effectiveChildrenByCompound[taskId] ?? [])].sort(
+          (a, b) => a.childIndex - b.childIndex,
+        );
+        draft = {
+          ...draft,
+          children: links
+            .map((link) => effectiveTaskMap[link.childTaskId])
+            .filter((t): t is Task => t !== undefined)
+            .map((t) => childPatchFromTask(t)),
+        };
+      }
+    }
+    setEditDraft(draft);
+    setEditBaseline(draft);
+    setEditingTaskId(taskId);
+  }
+
+  /** Save the edit into the wizard's staged map (no DB write) and toast
+   *  with undo to the previous snapshot. */
+  function saveEdit(taskId: string): void {
+    if (!editDraft) return;
+    const previous = onStageEdit(taskId, editDraft);
+    setEditingTaskId(null);
+    // "edited" (not "updated") — the change is captured for this board's
+    // creation, not yet written to the DB; don't overclaim persistence.
+    const boardCount = taskBoardCounts[taskId] ?? 0;
+    showToast(
+      boardCount > 0
+        ? `Staged · updates ${boardCount} board${boardCount === 1 ? '' : 's'} when you create`
+        : 'Staged · saves when you create the board',
+      () => onRevertEdit(taskId, previous),
+    );
+  }
+
+  /** Discard the edit. If the draft differs from the task, toast "Edit
+   *  discarded" with undo that reopens the row with the typing intact. */
+  function discardEdit(taskId: string): void {
+    if (!editDraft || !editBaseline) {
+      setEditingTaskId(null);
+      return;
+    }
+    // Compare against the draft as it opened — not a fresh `patchFromTask`,
+    // which never carries compound children and so always reads as
+    // "changed".
+    const changed = !patchesEqual(editDraft, editBaseline);
+    const keptDraft = editDraft;
+    setEditingTaskId(null);
+    if (changed) {
+      showToast('Edit discarded', () => {
+        setEditDraft(keptDraft);
+        setEditBaseline(keptDraft);
+        setEditingTaskId(taskId);
+      });
+    }
+  }
+
+  /** Remove a row immediately, closing its editor if open, and toast with
+   *  undo that restores it at its original index. Keeps routing through
+   *  `handleToggle` so the Bug #85 `pendingTasks` purge still fires. */
+  function removeWithUndo(taskId: string): void {
+    const index = poolOrder.indexOf(taskId);
+    const name = effectiveTaskMap[taskId]?.title || 'task';
+    // Capture the deferred (Bug #85) pending payload BEFORE removal purges
+    // it, so Undo can restore it — otherwise the restored id can't resolve
+    // and the board under-fills. `undefined` for library tasks.
+    const payload = pendingTasks?.get(taskId);
+    if (editingTaskId === taskId) setEditingTaskId(null);
+    handleToggle(taskId);
+    showToast(`Removed "${name}"`, () =>
+      onRestoreToPool(taskId, index === -1 ? poolOrder.length : index, payload),
+    );
   }
 
   return (
@@ -579,9 +742,43 @@ export function BoardWizardTasksStep({
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}
-        onRemove={handleToggle}
+        onRemove={removeWithUndo}
         onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
+        editingTaskId={editingTaskId}
+        onEdit={openEditor}
+        editor={(task) =>
+          editDraft && (
+            <PoolRowEditor
+              taskType={task.type}
+              draft={editDraft}
+              onDraftChange={setEditDraft}
+              onSave={() => saveEdit(task.id)}
+              onDiscard={() => discardEdit(task.id)}
+              usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
+            />
+          )
+        }
       />
+
+      {toast && (
+        <div className={styles.toast} role="status">
+          <span className={styles.toastText}>{toast.text}</span>
+          {toast.undo && (
+            <button
+              type="button"
+              className={styles.toastUndo}
+              onClick={() => {
+                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                const undo = toast.undo;
+                setToast(null);
+                undo?.();
+              }}
+            >
+              UNDO
+            </button>
+          )}
+        </div>
+      )}
 
       {/* P3 — "Save these N as a new pool…" — mints a Pool from the
           current selection, independent of the board. */}
@@ -661,6 +858,19 @@ export function BoardWizardTasksStep({
             y={rowContextMenu.y}
             onClose={close}
             items={[
+              // Web inline-editing port PR-2 — "Edit task…" is FIRST,
+              // mirroring the design handoff. Only meaningful for a
+              // pooled (selected), non-Achievement task — Achievement
+              // tasks are always read-only here (edited on the Tasks
+              // page), and an unselected library row has nothing staged
+              // to edit yet.
+              ...(isSelected && target.type !== TaskType.ACHIEVEMENT
+                ? [{
+                    label: 'Edit task…',
+                    glyph: '✎',
+                    action: () => { openEditor(target.id); close(); },
+                  }]
+                : []),
               {
                 label: isSelected ? 'Remove from board' : 'Add to board',
                 glyph: isSelected ? '−' : '+',
