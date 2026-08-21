@@ -7,6 +7,7 @@ import {
   isTimeframeExpired,
   formatTimeframeLabel,
   formatRecurringCadence,
+  formatCadenceAdverb,
   stepWindow,
 } from '../../src/algorithms/calendarBoundaries';
 import { Timeframe } from '../../src/constants/enums';
@@ -224,4 +225,31 @@ describe('formatRecurringCadence (fixture-driven, tests/fixtures/calendarBoundar
       expect(formatRecurringCadence(v.timeframe as Timeframe)).toBe(v.expected);
     });
   }
+});
+
+// ─── formatCadenceAdverb (P6 — Task Pools + Recurring Boards Rework) ──────────
+//
+// New in this PR — not yet in the shared fixture file (that's a hand-picked
+// cross-platform vector set curated over time; this is a small, purely
+// enumerable switch so a hand-written table suffices here).
+
+describe('formatCadenceAdverb', () => {
+  it('DAILY → "daily"', () => {
+    expect(formatCadenceAdverb(Timeframe.DAILY)).toBe('daily');
+  });
+  it('WEEKLY → "weekly"', () => {
+    expect(formatCadenceAdverb(Timeframe.WEEKLY)).toBe('weekly');
+  });
+  it('MONTHLY → "monthly"', () => {
+    expect(formatCadenceAdverb(Timeframe.MONTHLY)).toBe('monthly');
+  });
+  it('YEARLY → "yearly"', () => {
+    expect(formatCadenceAdverb(Timeframe.YEARLY)).toBe('yearly');
+  });
+  it('CUSTOM → "regularly" (defensive fallback — the repeat-cadence picker never offers Custom)', () => {
+    expect(formatCadenceAdverb(Timeframe.CUSTOM)).toBe('regularly');
+  });
+  it('INDEFINITE → "regularly" (defensive fallback)', () => {
+    expect(formatCadenceAdverb(Timeframe.INDEFINITE)).toBe('regularly');
+  });
 });

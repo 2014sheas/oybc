@@ -207,6 +207,29 @@ func getCoreBoardSlots(
     return slots
 }
 
+/// Whether a board is still "freshly dealt" — i.e. the user hasn't logged
+/// any real progress on it yet. Gates the Board-screen spawn-provenance
+/// note (Task Pools + Recurring Boards Rework, P6) and, in the future, the
+/// "↻ Deal again" affordance the doc describes (not built yet — this gate
+/// is the only piece of that feature that exists today).
+///
+/// A FREE center on an odd-sized board auto-completes at spawn via
+/// derivation (docs/WINDOWED_COMPLETION.md) — that one auto-completed cell
+/// must never count as "user progress", so the baseline is 1 in that case,
+/// 0 otherwise.
+///
+/// - Parameters:
+///   - completedTasks: The board's current `completedTasks` count.
+///   - boardSize: The board's grid size.
+///   - centerSquareType: The board's center square type.
+/// - Returns: `true` while `completedTasks` is at or below the
+///   auto-complete baseline (i.e. no user-driven completion yet).
+func isFreshlyDealtBoard(completedTasks: Int, boardSize: Int, centerSquareType: CenterSquareType) -> Bool {
+    let hasFreeCenterAutoComplete = boardSize % 2 == 1 && centerSquareType == .free
+    let baseline = hasFreeCenterAutoComplete ? 1 : 0
+    return completedTasks <= baseline
+}
+
 /// Returns the currently-active longer-window "parent" boards for a given
 /// child timeframe. Used by the wizard's "From parent boards" filter to
 /// surface candidate tasks the user can place on the new child board.

@@ -63,4 +63,42 @@ final class RisoRecurringBadgeSnapshotTests: XCTestCase {
     func testBoardCardWithRecurringBadgeDark() {
         assertSnapshot(of: recurringBoardCard(), as: .image(layout: .fixed(width: 393, height: 200), traits: darkTraits), record: recordMode)
     }
+
+    // MARK: - Paused variant (P6, docs/POOLS_RECURRING.md §Surfaces item 8)
+
+    /// A paused repeating board's card: muted "↻ PAUSED" badge, a "· repeats
+    /// <cadence>" subtitle appended to the timeframe label, and the whole
+    /// card dimmed to 0.7 opacity (still fully tappable — no special
+    /// routing at the card level).
+    private func pausedRecurringBoardCard() -> some View {
+        let board = SnapshotFixtures.makeBoard(
+            id: "b-paused",
+            name: "Weekly Wellness",
+            boardSize: 5,
+            timeframe: .weekly,
+            status: .active,
+            spawnedFromTemplateId: "tpl-1"
+        )
+        let template = SnapshotFixtures.makeRecurringTemplate(
+            id: "tpl-1",
+            name: "Morning Kickstart",
+            timeframe: .weekly,
+            isActive: false
+        )
+        return RisoBoardCard(
+            board: board, timeframeLabel: "This week · 4 days left", isExpiring: false,
+            previewCells: SnapshotFixtures.makePreviewCells(completed: board.completedTasks, size: board.boardSize),
+            template: template
+        )
+            .padding(Riso.gutter)
+            .background(Color.risoPaper)
+    }
+
+    func testBoardCardPausedLight() {
+        assertSnapshot(of: pausedRecurringBoardCard(), as: .image(layout: .fixed(width: 393, height: 200), traits: lightTraits), record: recordMode)
+    }
+
+    func testBoardCardPausedDark() {
+        assertSnapshot(of: pausedRecurringBoardCard(), as: .image(layout: .fixed(width: 393, height: 200), traits: darkTraits), record: recordMode)
+    }
 }

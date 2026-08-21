@@ -79,6 +79,13 @@ struct BoardListView: View {
     /// (nil lookup) renders as `RisoBoardCard`'s all-empty placeholder until
     /// the batch fetch resolves.
     @State private var previewCellsByBoardId: [String: BoardPreviewCellsResult] = [:]
+    /// P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+    /// §Surfaces item 8) — recurring-board templates keyed by id, batch-
+    /// loaded once per `loadBoards()` reload (same lifecycle as
+    /// `previewCellsByBoardId`) so each `RisoBoardCard` can resolve its
+    /// `board.spawnedFromTemplateId` into a template for the paused-badge
+    /// variant + cadence subtitle without a per-card DB read.
+    @State private var templatesById: [String: RecurringBoardTemplate] = [:]
     @State private var activeFilter: String = "active"
     @State private var loadError: String?
     @State private var boardPendingDelete: Board?
@@ -229,7 +236,8 @@ struct BoardListView: View {
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
                                     isExpiring: isBoardExpiringSoon(board),
-                                    previewCells: previewCells(for: board)
+                                    previewCells: previewCells(for: board),
+                                    template: template(for: board)
                                 )
                             }
                         } else {
@@ -247,7 +255,8 @@ struct BoardListView: View {
                                     board: board,
                                     timeframeLabel: boardTimeframeLabel(board),
                                     isExpiring: isBoardExpiringSoon(board),
-                                    previewCells: previewCells(for: board)
+                                    previewCells: previewCells(for: board),
+                                    template: template(for: board)
                                 )
                             }
                         }
@@ -536,6 +545,14 @@ struct BoardListView: View {
         )
     }
 
+    /// Resolves a board's source recurring template via `templatesById`, or
+    /// `nil` for a non-recurring board OR an unresolved (soft-deleted)
+    /// template — `RisoBoardCard` falls back to the plain badge in either
+    /// case. P6, docs/POOLS_RECURRING.md §Surfaces item 8.
+    private func template(for board: Board) -> RecurringBoardTemplate? {
+        board.spawnedFromTemplateId.flatMap { templatesById[$0] }
+    }
+
     /// Human-readable label for a board's timeframe window (e.g. "This week · 4 days left").
     private func boardTimeframeLabel(_ board: Board) -> String {
         guard let startDate = parseISO8601Date(board.startDate) else {
@@ -605,8 +622,22 @@ struct BoardListView: View {
                     loadError = nil
                 }
                 loadPreviewCells(boards: result, userId: userId)
+                loadTemplates(userId: userId)
             } catch {
                 await MainActor.run { loadError = error.localizedDescription }
+            }
+        }
+    }
+
+    /// Batch-loads `templatesById` for the paused-badge / cadence-subtitle
+    /// resolution (P6). One workspace-scoped fetch, same lifecycle as
+    /// `loadPreviewCells` — called after every `loadBoards()` reload.
+    private func loadTemplates(userId: String) {
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let templates = (try? AppDatabase.shared.fetchRecurringBoardTemplates(userId: userId)) ?? []
+            let byId = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
+            await MainActor.run {
+                self.templatesById = byId
             }
         }
     }

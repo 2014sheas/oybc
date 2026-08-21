@@ -346,6 +346,76 @@ export function mergeLegacyPoolTaskIds(
 }
 
 /**
+ * Result of `summarizeSpawnProvenance` — the raw counts behind the
+ * spawn-success provenance note (docs/POOLS_RECURRING.md §Surfaces item 7,
+ * e.g. "Dealt 8 of 10 — 7 from the pool, 1 added today").
+ */
+export interface SpawnProvenanceSummary {
+  /** Cells actually filled on the spawned board. */
+  dealt: number;
+  /** Size of the resolved mix the spawn drew from (`resolveMix(...).taskIds.length`). */
+  mixSize: number;
+  /** Of the dealt cells, how many came from a pool (mix minus manual-sourced). */
+  poolSourcedCount: number;
+  /** Of the dealt cells, how many came from the manual layer. */
+  manualSourcedCount: number;
+}
+
+/**
+ * Computes the pool-vs-manual breakdown of a freshly-dealt board's placed
+ * tasks, for the spawn-success provenance note. Generic over ANY spawn
+ * record shape (`PoolMixSource`) — including a "Repeat this board…" record,
+ * which has zero pools and is 100% manual (see `buildRepeatBoardTemplateInput`
+ * in `./recurringBoardTemplates`).
+ *
+ * @param spawnSource - The record's pool-mix fields (`poolIds`/
+ *   `manualTaskIds`/`removedTaskIds`).
+ * @param poolsById - Lookup used by `resolveMix` to size the full resolvable mix.
+ * @param tasksById - Lookup used by `resolveMix`.
+ * @param dealtTaskIds - The task ids actually placed on the spawned board
+ *   (i.e. the board's live non-deleted BoardTask rows' `taskId`s) — may be a
+ *   strict subset of the mix when the mix overfills the board (loose-fit).
+ */
+export function summarizeSpawnProvenance(
+  spawnSource: PoolMixSource,
+  poolsById: Record<string, Pool>,
+  tasksById: Record<string, Task>,
+  dealtTaskIds: string[],
+): SpawnProvenanceSummary {
+  const mix = resolveMix(spawnSource, poolsById, tasksById);
+  const manualSet = new Set(spawnSource.manualTaskIds ?? []);
+  const manualSourcedCount = dealtTaskIds.filter((id) => manualSet.has(id)).length;
+  return {
+    dealt: dealtTaskIds.length,
+    mixSize: mix.taskIds.length,
+    poolSourcedCount: dealtTaskIds.length - manualSourcedCount,
+    manualSourcedCount,
+  };
+}
+
+/**
+ * Formats the spawn-success provenance note copy, e.g.
+ * `"Dealt 8 of 10 — 7 from the pool, 1 added today"`.
+ *
+ * Deliberate deviation from docs/POOLS_RECURRING.md's illustrative example
+ * ("9 from defaults") — that wording is specific to the P5 CoreBoardDefault
+ * feature. This note is generic to ANY freshly-spawned board, including a
+ * "repeat this board" spawn that has no pool involvement at all (100%
+ * manual) — "from defaults" would be nonsensical there, so this uses the
+ * generic "from the pool" wording instead. "added today" is kept verbatim
+ * (that phrasing is accurate generically).
+ *
+ * @param summary - From `summarizeSpawnProvenance`.
+ */
+export function formatSpawnProvenanceNote(summary: SpawnProvenanceSummary): string {
+  const parts: string[] = [];
+  if (summary.poolSourcedCount > 0) parts.push(`${summary.poolSourcedCount} from the pool`);
+  if (summary.manualSourcedCount > 0) parts.push(`${summary.manualSourcedCount} added today`);
+  const breakdown = parts.length > 0 ? ` — ${parts.join(', ')}` : '';
+  return `Dealt ${summary.dealt} of ${summary.mixSize}${breakdown}`;
+}
+
+/**
  * `PoolSchema.name` is bounded to 120 chars (`z.string().min(1).max(120)`,
  * `schemas.ts`). Every site that MINTS a Pool by appending a fixed suffix
  * word to a source name (a `RecurringBoardTemplate.name` — itself bounded

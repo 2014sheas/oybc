@@ -481,6 +481,11 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
+/* P6 — paused repeating board: dimmed but still fully tappable/navigable
+   (mirrors the iOS RecurringTemplateCard opacity(0.7) precedent). */
+.bcardPaused {
+  opacity: 0.65;
+}
 .bcardTop {
   display: flex;
   align-items: flex-start;

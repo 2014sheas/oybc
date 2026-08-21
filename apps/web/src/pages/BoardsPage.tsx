@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
 import {
@@ -9,6 +9,7 @@ import {
   useBackstopAutoSeal,
   useClosingOutBoards,
   useBoardsPreviewCells,
+  useRecurringBoardTemplates,
 } from '../hooks';
 import { boardMatchesListFilter } from '../utils/boardDisplayUtils';
 import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
@@ -48,6 +49,16 @@ export function BoardsPage(): React.ReactElement {
   const pendingRecurring = usePendingRecurringBoards(user?.id);
   // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
   useRecurringBoardSpawn(user?.id);
+
+  // P6 (Task Pools + Recurring Boards Rework) — resolve each board's source
+  // template (for the paused badge + "· repeats {cadence}" subtitle) without
+  // a per-card fetch.
+  const templates = useRecurringBoardTemplates(user?.id);
+  const templatesById = useMemo(() => {
+    const map = new Map<string, (typeof templates)[number]>();
+    for (const t of templates) map.set(t.id, t);
+    return map;
+  }, [templates]);
 
   // Windowed Completion — lazy auto-seal backstop (docs §Sealing). Same
   // lazy-detection posture as recurring spawn: boards past their backstop
@@ -160,6 +171,11 @@ export function BoardsPage(): React.ReactElement {
                 key={board.id}
                 board={board}
                 previewCells={previewCellsByBoardId[board.id]}
+                template={
+                  board.spawnedFromTemplateId != null
+                    ? templatesById.get(board.spawnedFromTemplateId)
+                    : undefined
+                }
                 onOpen={(id) => {
                   // Drafts never open as a playable board — tap routes to
                   // the wizard resume flow (cross-tab via ?resumeDraft).

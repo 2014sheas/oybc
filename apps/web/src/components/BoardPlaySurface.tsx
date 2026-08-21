@@ -4,8 +4,14 @@ import {
   BoardStatus,
   CenterSquareType,
   TaskType,
+  Timeframe,
   generateCounterTaskTitle,
+  formatCadenceAdverb,
+  isFreshlyDealtBoard,
+  summarizeSpawnProvenance,
+  formatSpawnProvenanceNote,
   type Board,
+  type Pool,
   type Task,
 } from '@oybc/shared';
 import {
@@ -36,16 +42,19 @@ import { ArrangeGrid } from './boardEdit/ArrangeGrid';
 import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
 import { usePreferences } from '../hooks/usePreferences';
+import { usePools } from '../hooks/usePools';
 import { useNavigate } from 'react-router-dom';
 import { compactStreakLabel, computeStreak, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
-import { RisoIcon } from './riso';
+import { RisoIcon, RisoSegmented, type RisoSegmentedOption } from './riso';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
 import { CounterLogToast } from './counters/CounterLogToast';
 import { RisoArrivalBanner } from './play/RisoArrivalBanner';
 import { ShareBoardSheet } from './share/ShareBoardSheet';
+import { updateRecurringBoardTemplate } from '../db/operations/recurringBoardTemplates';
+import { repeatBoardAsRecurring } from '../db/operations/repeatBoard';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
 
@@ -60,6 +69,22 @@ const FLASH_MS = 3000;
  * monthly) matches the rest of the app (CoreBoardWindowBar, StreaksPage).
  */
 const CORE_STREAK_TIMEFRAMES = new Set<string>(['daily', 'weekly', 'monthly', 'yearly']);
+
+/**
+ * P6 (Task Pools + Recurring Boards Rework) — "Repeat this board…" cadence
+ * picker options. Same 4 options + labels as the wizard's Repeats segmented
+ * (`BoardSetupForm.tsx`'s `REPEATS_OPTIONS`, minus "Once" — this picker only
+ * ever turns recurrence ON). No option is pre-selected (the picker isn't a
+ * persistent toggle — picking a cadence immediately writes and the picker
+ * is replaced by the manage row), so callers pass a value that matches none
+ * of these.
+ */
+const REPEAT_CADENCE_OPTIONS: RisoSegmentedOption<Timeframe>[] = [
+  { value: Timeframe.DAILY, label: 'Daily' },
+  { value: Timeframe.WEEKLY, label: 'Weekly' },
+  { value: Timeframe.MONTHLY, label: 'Monthly' },
+  { value: Timeframe.YEARLY, label: 'Yearly' },
+];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,6 +144,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     btByPosition,
     isExpired,
     squareWindowContext,
+    sourceTemplate,
   } = useBoardPlayData(board, userId);
 
   // Windowed Completion — sealed boards are a frozen, read-only historical
@@ -205,6 +231,41 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
 
   // User preferences (weekStartDay is forwarded to BoardEditPanel + BoardSetupForm).
   const [prefs] = usePreferences();
+
+  // P6 (Task Pools + Recurring Boards Rework) — the manage row / "Repeat
+  // this board…" CTA / spawn-provenance note. Pools are fetched here (not
+  // in useBoardPlayData) since only this provenance-note computation needs
+  // them.
+  const pools = usePools(userId);
+  const poolsById = useMemo<Record<string, Pool>>(() => {
+    const map: Record<string, Pool> = {};
+    for (const p of pools) map[p.id] = p;
+    return map;
+  }, [pools]);
+  const [repeatPickerOpen, setRepeatPickerOpen] = useState(false);
+  const [repeatBusy, setRepeatBusy] = useState(false);
+  const [manageBusy, setManageBusy] = useState(false);
+
+  const handleToggleTemplateActive = useCallback(async (): Promise<void> => {
+    if (!sourceTemplate || manageBusy) return;
+    setManageBusy(true);
+    try {
+      await updateRecurringBoardTemplate(sourceTemplate.id, { isActive: !sourceTemplate.isActive });
+    } finally {
+      setManageBusy(false);
+    }
+  }, [sourceTemplate, manageBusy]);
+
+  const handleRepeatThisBoard = useCallback(async (cadence: Timeframe): Promise<void> => {
+    if (!userId || repeatBusy) return;
+    setRepeatBusy(true);
+    try {
+      await repeatBoardAsRecurring(board, cadence, userId, prefs.weekStartDay);
+      setRepeatPickerOpen(false);
+    } finally {
+      setRepeatBusy(false);
+    }
+  }, [board, userId, prefs.weekStartDay, repeatBusy]);
 
   // Clean up timers on unmount.
   useEffect(() => {
@@ -513,9 +574,81 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               ) : (
                 <BoardStatusBadge status={board.status} />
               )}
-              {board.spawnedFromTemplateId != null && <RecurringBadge />}
+              {board.spawnedFromTemplateId != null && (
+                <RecurringBadge paused={sourceTemplate != null && !sourceTemplate.isActive} />
+              )}
             </div>
           </div>
+
+          {/* P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+              §Surfaces item 7) — manage row for a repeating board, OR the
+              "Repeat this board…" CTA for a one-off board. */}
+          {board.spawnedFromTemplateId != null ? (
+            sourceTemplate && (
+              <div className={styles.repeatManageRow}>
+                <span className={styles.repeatManageText}>
+                  ↻ Repeats {formatCadenceAdverb(sourceTemplate.timeframe)} · from "{sourceTemplate.name}"
+                </span>
+                <button
+                  type="button"
+                  className={styles.repeatManageBtn}
+                  disabled={manageBusy}
+                  onClick={() => void handleToggleTemplateActive()}
+                >
+                  {sourceTemplate.isActive ? 'Pause' : 'Resume'}
+                </button>
+              </div>
+            )
+          ) : (
+            !isSealed &&
+            board.centerSquareType !== CenterSquareType.CHOSEN && (
+              <div className={styles.repeatCta}>
+                {!repeatPickerOpen ? (
+                  <button
+                    type="button"
+                    className={styles.repeatCtaBtn}
+                    onClick={() => setRepeatPickerOpen(true)}
+                  >
+                    ↻ Repeat this board…
+                  </button>
+                ) : (
+                  <div className={styles.repeatPicker}>
+                    <span className={styles.repeatPickerLabel}>Repeat this board</span>
+                    <RisoSegmented
+                      aria-label="Repeat cadence"
+                      options={REPEAT_CADENCE_OPTIONS}
+                      value={'' as Timeframe}
+                      onChange={(cadence) => void handleRepeatThisBoard(cadence)}
+                    />
+                    <button
+                      type="button"
+                      className={styles.repeatPickerCancel}
+                      onClick={() => setRepeatPickerOpen(false)}
+                      disabled={repeatBusy}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          )}
+
+          {/* Spawn-success provenance note — visible only while the board is
+              still "freshly dealt" (docs §Behavior invariants) and its
+              source template resolves. */}
+          {sourceTemplate && isFreshlyDealtBoard(board) && (
+            <div className={styles.repeatProvenanceNote}>
+              {formatSpawnProvenanceNote(
+                summarizeSpawnProvenance(
+                  sourceTemplate,
+                  poolsById,
+                  taskMap,
+                  sortedBoardTasks.map((bt) => bt.taskId),
+                ),
+              )}
+            </div>
+          )}
 
           {isExpired && !isSealed && (
             <div className={styles.expiredBanner}>

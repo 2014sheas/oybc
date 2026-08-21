@@ -84,6 +84,7 @@ export {
   isTimeframeExpired,
   formatTimeframeLabel,
   formatRecurringCadence,
+  formatCadenceAdverb,
 } from './calendarBoundaries';
 
 export type {
@@ -96,6 +97,7 @@ export {
   findPendingRecurringBoards,
   getCoreBoardSlots,
   getParentBoards,
+  isFreshlyDealtBoard,
 } from './recurringBoards';
 
 export type { CoreBoardSlot, PendingRecurringBoard } from './recurringBoards';
@@ -115,6 +117,7 @@ export {
   validateSpawnPool,
   buildSpawnPlacement,
   deriveSpawnedBoardName,
+  buildRepeatBoardTemplateInput,
 } from './recurringBoardTemplates';
 
 export type {
@@ -122,6 +125,7 @@ export type {
   SpawnPoolValidation,
   SpawnPoolFailureReason,
   BuildSpawnPlacementArgs,
+  RepeatBoardTemplateInput,
 } from './recurringBoardTemplates';
 
 // ===== Task Pools + Recurring Boards Rework (P1) — mix resolver =====
@@ -134,9 +138,11 @@ export {
   clampMintedPoolName,
   resolvePoolPullAdditions,
   resolvePoolUntoggleRemovals,
+  summarizeSpawnProvenance,
+  formatSpawnProvenanceNote,
 } from './poolMix';
 
-export type { PoolMixSource, ResolveMixResult } from './poolMix';
+export type { PoolMixSource, ResolveMixResult, SpawnProvenanceSummary } from './poolMix';
 
 // ===== Task Pools + Recurring Boards Rework (P2) — pool health =====
 export { computePoolHealth, formatPoolShortSummary } from './poolHealth';

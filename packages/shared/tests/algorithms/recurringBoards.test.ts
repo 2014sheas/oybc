@@ -3,6 +3,7 @@ import {
   findPendingRecurringBoards,
   getCoreBoardSlots,
   getParentBoards,
+  isFreshlyDealtBoard,
 } from '../../src/algorithms/recurringBoards';
 import { getTimeframeBoundaries } from '../../src/algorithms/calendarBoundaries';
 import {
@@ -554,5 +555,62 @@ describe('getCoreBoardSlots', () => {
     expect(monthly?.windowLabel).toBe('May 2026');
     const yearly = slots.find((s) => s.timeframe === Timeframe.YEARLY);
     expect(yearly?.windowLabel).toBe('2026');
+  });
+});
+
+// ─── isFreshlyDealtBoard (P6) ─────────────────────────────────────────────────
+//
+// docs/POOLS_RECURRING.md §Behavior invariants — the "↻ Deal again" gate
+// (not yet built) and the P6 spawn-provenance note share this predicate: a
+// board reads as "fresh" only while zero **user** completions exist. The
+// FREE-center auto-complete at spawn must not count as a user touch.
+
+describe('isFreshlyDealtBoard', () => {
+  it('odd board + FREE center: baseline is 1 (the auto-completed center) — still fresh', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 1, boardSize: 3, centerSquareType: CenterSquareType.FREE }),
+    ).toBe(true);
+  });
+
+  it('odd board + FREE center: zero completions is also fresh (defensive — pre-derivation snapshot)', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 0, boardSize: 3, centerSquareType: CenterSquareType.FREE }),
+    ).toBe(true);
+  });
+
+  it('odd board + FREE center: 2 completions (1 real + the auto center) is NOT fresh', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 2, boardSize: 3, centerSquareType: CenterSquareType.FREE }),
+    ).toBe(false);
+  });
+
+  it('odd board + NONE center: baseline is 0 — one real completion is NOT fresh', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 1, boardSize: 3, centerSquareType: CenterSquareType.NONE }),
+    ).toBe(false);
+  });
+
+  it('odd board + NONE center: zero completions is fresh', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 0, boardSize: 3, centerSquareType: CenterSquareType.NONE }),
+    ).toBe(true);
+  });
+
+  it('even board (no center at all): baseline is 0 regardless of centerSquareType — one completion is NOT fresh', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 1, boardSize: 4, centerSquareType: CenterSquareType.FREE }),
+    ).toBe(false);
+  });
+
+  it('even board: zero completions is fresh', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 0, boardSize: 4, centerSquareType: CenterSquareType.NONE }),
+    ).toBe(true);
+  });
+
+  it('odd board + CHOSEN center: baseline is 0 (CHOSEN does not auto-complete) — one completion is NOT fresh', () => {
+    expect(
+      isFreshlyDealtBoard({ completedTasks: 1, boardSize: 5, centerSquareType: CenterSquareType.CHOSEN }),
+    ).toBe(false);
   });
 });

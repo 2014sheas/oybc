@@ -82,6 +82,17 @@ export interface BoardPlayData {
    * green onto a freshly-spawned board.
    */
   squareWindowContext: SquareWindowContext;
+  /**
+   * P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+   * §Surfaces item 7) — the `RecurringBoardTemplate` this board was spawned
+   * from (`board.spawnedFromTemplateId`), looked up from `allTemplates`
+   * (already fetched above for the achievement-badge lookup). `undefined`
+   * for a one-off board, OR a repeating board whose template was hard-gone
+   * (shouldn't happen — templates only soft-delete). Lets
+   * `BoardPlaySurface` render the manage row / spawn-provenance note
+   * without a second template fetch.
+   */
+  sourceTemplate: RecurringBoardTemplate | undefined;
 }
 
 /**
@@ -122,6 +133,13 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   const allBoards: Board[] = useBoards(userId) ?? EMPTY_BOARDS;
   const allTemplates: RecurringBoardTemplate[] =
     useRecurringBoardTemplates(userId) ?? EMPTY_TEMPLATES;
+
+  // P6 — resolve this board's source template (undefined for a one-off
+  // board). Reuses the same `allTemplates` fetch above rather than a
+  // second query.
+  const sourceTemplate: RecurringBoardTemplate | undefined = board.spawnedFromTemplateId
+    ? allTemplates.find((t) => t.id === board.spawnedFromTemplateId)
+    : undefined;
 
   // Windowed Completion — all non-deleted TaskEvents grouped by taskId, plus
   // the board's window start. `taskToSquareState` uses this to resolve each
@@ -328,5 +346,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     btByPosition,
     isExpired,
     squareWindowContext,
+    sourceTemplate,
   };
 }

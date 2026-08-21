@@ -3,6 +3,7 @@ import {
   validateSpawnPool,
   buildSpawnPlacement,
   deriveSpawnedBoardName,
+  buildRepeatBoardTemplateInput,
 } from '../../src/algorithms/recurringBoardTemplates';
 import { getTimeframeBoundaries } from '../../src/algorithms/calendarBoundaries';
 import {
@@ -640,4 +641,106 @@ describe("buildSpawnPlacement golden-parity matrix (seed " + String(SPAWN_GOLDEN
       expect(placement.map((t) => t?.id ?? null)).toEqual(expected);
     },
   );
+});
+
+// ─── buildRepeatBoardTemplateInput ────────────────────────────────────────────
+//
+// P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md §Surfaces
+// item 7) — "Repeat this board…" write. The critical invariant under test:
+// `lastSpawnedWindowKey` is computed from the CHOSEN cadence evaluated
+// against the board's own startDate, never from `board.timeframe`. Getting
+// this wrong silently double-spawns mid-window on the next Boards-tab open.
+
+describe('buildRepeatBoardTemplateInput', () => {
+  function buildSourceBoard(overrides: Partial<{
+    name: string;
+    boardSize: 3 | 4 | 5;
+    centerSquareType: CenterSquareType;
+    isRandomized: boolean;
+    startDate: string;
+  }> = {}) {
+    return {
+      name: 'Morning Routine',
+      boardSize: 3 as const,
+      centerSquareType: CenterSquareType.FREE,
+      isRandomized: true,
+      startDate: '2026-05-07T00:00:00.000',
+      ...overrides,
+    };
+  }
+
+  it('cadence === board.timeframe: lastSpawnedWindowKey is that same-granularity window', () => {
+    // A DAILY board repeated Daily — the window key is just that day's start,
+    // matching the "trivial" case where cadence and the board's own
+    // timeframe happen to coincide.
+    const board = buildSourceBoard({ startDate: '2026-05-07T00:00:00.000' });
+    const input = buildRepeatBoardTemplateInput(
+      board,
+      ['task-a', 'task-b'],
+      Timeframe.DAILY,
+      'monday',
+    );
+    const expectedWindow = getTimeframeBoundaries(
+      Timeframe.DAILY,
+      new Date('2026-05-07T00:00:00.000'),
+      'monday',
+    );
+    expect(input.lastSpawnedWindowKey).toBe(expectedWindow.startDate);
+    expect(input.timeframe).toBe(Timeframe.DAILY);
+  });
+
+  it('cadence !== board.timeframe: a DAILY board on a Wednesday repeated WEEKLY keys off that WEEK, not the day (critical window-alignment vector)', () => {
+    // 2026-05-06 is a Wednesday, inside the Mon May 4 – Sun May 10 week
+    // (Monday week start) — mirrors the "multi-window spawn simulation"
+    // fixture above. The source board's OWN timeframe is DAILY (a one-off
+    // daily board), but the user is choosing to repeat it WEEKLY — the
+    // window key must be the WEEK's Monday, not the Wednesday itself.
+    const wednesdayStart = '2026-05-06T00:00:00.000';
+    const board = buildSourceBoard({ startDate: wednesdayStart });
+    const input = buildRepeatBoardTemplateInput(
+      board,
+      ['task-a'],
+      Timeframe.WEEKLY,
+      'monday',
+    );
+
+    const expectedWeekWindow = getTimeframeBoundaries(
+      Timeframe.WEEKLY,
+      new Date(wednesdayStart),
+      'monday',
+    );
+    // Sanity: the week's Monday must NOT equal the Wednesday source date —
+    // otherwise this vector wouldn't actually distinguish cadence from
+    // board.timeframe.
+    expect(expectedWeekWindow.startDate).not.toBe(wednesdayStart);
+    expect(input.lastSpawnedWindowKey).toBe(expectedWeekWindow.startDate);
+    expect(input.timeframe).toBe(Timeframe.WEEKLY);
+  });
+
+  it('field-shape assertions: manualTaskIds mirrors seedTaskIds, poolIds/removedTaskIds empty, isActive true, board config copied through', () => {
+    const board = buildSourceBoard({
+      name: 'Evening Wind-down',
+      boardSize: 5,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      startDate: '2026-06-01T00:00:00.000',
+    });
+    const boardTaskIds = ['t1', 't2', 't3'];
+    const input = buildRepeatBoardTemplateInput(board, boardTaskIds, Timeframe.MONTHLY, 'sunday');
+
+    expect(input.name).toBe('Evening Wind-down');
+    expect(input.boardSize).toBe(5);
+    expect(input.centerSquareType).toBe(CenterSquareType.NONE);
+    expect(input.isRandomized).toBe(false);
+    expect(input.manualTaskIds).toEqual(boardTaskIds);
+    expect(input.seedTaskIds).toEqual(input.manualTaskIds);
+    expect(input.poolIds).toEqual([]);
+    expect(input.removedTaskIds).toEqual([]);
+    expect(input.isActive).toBe(true);
+
+    // Mutating the caller's array must not alias the builder's output
+    // (defensive copy — see `[...boardTaskIds]` in the implementation).
+    boardTaskIds.push('t4');
+    expect(input.manualTaskIds).not.toContain('t4');
+  });
 });

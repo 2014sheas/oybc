@@ -10,16 +10,26 @@ import SwiftUI
 ///
 /// Dark-mode note: `Color.risoInk` is used here only as TEXT/BORDER, never
 /// as a FILL behind cream content — see `docs/RISO_UI_CHECKLIST.md`.
+///
+/// **Paused variant** (Task Pools + Recurring Boards Rework, P6 —
+/// docs/POOLS_RECURRING.md §Surfaces item 8): pass `paused: true` for a
+/// board whose source template is currently paused (`!template.isActive`).
+/// Same shell (fill/capsule/keyline weight), swapped to `Color.risoMuted`
+/// for both text and border so it reads as de-emphasized rather than a
+/// second "recurring" tag. Default `false` — every existing call site
+/// keeps the unchanged "RECURRING" rendering with no changes needed.
 struct RisoRecurringBadge: View {
+    var paused: Bool = false
+
     var body: some View {
-        Text("RECURRING")
+        Text(paused ? "↻ PAUSED" : "RECURRING")
             .font(.risoHead(9, .bold))
             .tracking(0.5)
-            .foregroundStyle(Color.risoInk)
+            .foregroundStyle(paused ? Color.risoMuted : Color.risoInk)
             .padding(.vertical, 3)
             .padding(.horizontal, 8)
             .background(Capsule().fill(Color.risoPaper2))
-            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+            .overlay(Capsule().strokeBorder(paused ? Color.risoMuted : Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 
     /// Pure derivation predicate — no schema change needed, badge visibility
@@ -37,6 +47,7 @@ struct RisoRecurringBadge: View {
         RisoPaperBackground()
         VStack(spacing: 14) {
             RisoRecurringBadge()
+            RisoRecurringBadge(paused: true)
             HStack(spacing: 8) {
                 RisoBoardStatusBadge(kind: .active)
                 RisoRecurringBadge()

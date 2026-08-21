@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BoardStatus, formatTimeframeLabel, type Board } from '@oybc/shared';
+import { BoardStatus, formatCadenceAdverb, formatTimeframeLabel, type Board, type RecurringBoardTemplate } from '@oybc/shared';
 import { isBoardExpired, isBoardExpiringSoon, statusLabel } from '../../utils/boardDisplayUtils';
 import { RisoBadge, RisoIcon, type RisoBadgeKind } from '../riso';
 import { RecurringBadge } from '../RecurringBadge';
@@ -17,6 +17,14 @@ export interface BoardCardProps {
    * affordance is not rendered (e.g., read-only contexts).
    */
   onDelete?: (boardId: string) => void | Promise<void>;
+  /**
+   * P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+   * §Surfaces item 8) — the board's source `RecurringBoardTemplate`, when
+   * `board.spawnedFromTemplateId != null` AND the template resolves.
+   * Drives the paused badge variant, the "· repeats {cadence}" subtitle,
+   * and the dimmed-when-paused card styling. Omitted for one-off boards.
+   */
+  template?: RecurringBoardTemplate;
 }
 
 /** Exhaustive status→badge mapping — adding a BoardStatus without a badge kind
@@ -57,13 +65,14 @@ function badgeFor(board: Board): { kind: RisoBadgeKind; text: string } {
  * When `onDelete` is provided a hover-revealed trash button appears; confirming
  * it opens a Riso-styled alert dialog before committing the soft-delete.
  */
-export function BoardCard({ board, previewCells, onOpen, onDelete }: BoardCardProps): React.ReactElement {
+export function BoardCard({ board, previewCells, onOpen, onDelete, template }: BoardCardProps): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const pct = board.totalTasks > 0 ? Math.round((board.completedTasks / board.totalTasks) * 100) : 0;
   const isComplete = board.status === BoardStatus.COMPLETED || board.status === BoardStatus.ARCHIVED;
   const badge = badgeFor(board);
+  const isPaused = template != null && !template.isActive;
 
   const handleConfirm = async (): Promise<void> => {
     if (!onDelete) return;
@@ -78,14 +87,21 @@ export function BoardCard({ board, previewCells, onOpen, onDelete }: BoardCardPr
 
   return (
     <div className={styles.bcardWrap}>
-      <button type="button" className={styles.bcard} onClick={() => onOpen(board.id)}>
+      <button
+        type="button"
+        className={`${styles.bcard} ${isPaused ? styles.bcardPaused : ''}`}
+        onClick={() => onOpen(board.id)}
+      >
         <div className={styles.bcardTop}>
           <div>
             <div className={styles.bcardName}>{board.name}</div>
-            <div className={styles.bcardTf}>{formatTimeframeLabel(board.timeframe, board.startDate)}</div>
+            <div className={styles.bcardTf}>
+              {formatTimeframeLabel(board.timeframe, board.startDate)}
+              {template != null && ` · repeats ${formatCadenceAdverb(template.timeframe)}`}
+            </div>
           </div>
           <div className={styles.bcardBadges}>
-            {board.spawnedFromTemplateId != null && <RecurringBadge />}
+            {board.spawnedFromTemplateId != null && <RecurringBadge paused={isPaused} />}
             {board.sealedAt != null ? (
               // Windowed Completion — a sealed board is a frozen historical
               // record; one functional badge (OQ1 resolution), shown in

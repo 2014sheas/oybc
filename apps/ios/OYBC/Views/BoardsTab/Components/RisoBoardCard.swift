@@ -28,6 +28,16 @@ struct RisoBoardCard: View {
     /// were deleted rather than left as a footgun for the next call site.
     /// Snapshot tests inject a fixture value so the DB is never touched.
     let previewCells: BoardPreviewCellsResult
+    /// The board's source recurring template, resolved by the caller
+    /// (`board.spawnedFromTemplateId.flatMap { templatesById[$0] }`) — Task
+    /// Pools + Recurring Boards Rework, P6 (docs/POOLS_RECURRING.md
+    /// §Surfaces item 8). `nil` for a non-recurring board OR when the
+    /// template can't be resolved (soft-deleted edge case) — in either case
+    /// the card falls back to the plain `RisoRecurringBadge()` rendering
+    /// with no cadence subtitle and no dimming. Defaults to `nil` so every
+    /// pre-existing call site (`CoreBoardWindowCellView`, most snapshot
+    /// tests) compiles unchanged.
+    var template: RecurringBoardTemplate? = nil
 
     private var progressValue: Double {
         guard board.totalTasks > 0 else { return 0 }
@@ -54,7 +64,7 @@ struct RisoBoardCard: View {
                         .foregroundStyle(Color.risoInk)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(timeframeLabel)
+                    Text(timeframeSubtitle)
                         .font(.risoBody(11.5, .bold))
                         .foregroundStyle(Color.risoMuted)
                 }
@@ -74,8 +84,10 @@ struct RisoBoardCard: View {
                             RisoBoardStatusBadge(kind: badgeKind)
                         }
                         // Issue #321 — provenance tag for recurring-spawned boards.
+                        // P6 — a resolved paused template swaps in the muted
+                        // "↻ PAUSED" variant of the same badge.
                         if RisoRecurringBadge.shouldShow(for: board) {
-                            RisoRecurringBadge()
+                            RisoRecurringBadge(paused: template.map { !$0.isActive } ?? false)
                         }
                     }
                     RisoMiniGrid(gridSize: previewCells.size, cells: previewCells.cells)
@@ -94,6 +106,20 @@ struct RisoBoardCard: View {
         .padding(15)
         .risoCard()
         .risoHardShadow(Riso.Shadow.card)
+        // P6 — a paused repeating board dims the whole card (still fully
+        // tappable/navigable; Resume lives on the board screen's manage
+        // row, not here). Mirrors `RecurringTemplateCard`'s existing
+        // `opacity(active ? 1.0 : 0.7)` precedent
+        // (Views/Components/RecurringTemplateCardView.swift).
+        .opacity(template?.isActive == false ? 0.7 : 1.0)
+    }
+
+    /// Timeframe label, with a cadence suffix appended for a repeating
+    /// board whose source template resolved — e.g. "This week · repeats
+    /// daily" (P6, docs/POOLS_RECURRING.md §Surfaces item 8).
+    private var timeframeSubtitle: String {
+        guard let template else { return timeframeLabel }
+        return "\(timeframeLabel) · repeats \(formatCadenceAdverb(template.timeframe))"
     }
 
     @ViewBuilder
