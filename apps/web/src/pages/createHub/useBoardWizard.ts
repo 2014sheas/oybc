@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDefaultPool, useTemplateMix } from '../../hooks';
+import { useCoreBoardDefault, useTemplateMix } from '../../hooks';
 import {
   CenterSquareType,
   Timeframe,
@@ -15,6 +15,7 @@ import {
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import {
+  applyCoreBoardDefaultPrefill,
   applyManualBookkeepingOnDeselect,
   applyManualBookkeepingOnSelect,
   applyPullPool,
@@ -260,11 +261,13 @@ export interface UseBoardWizardArgs {
   /** Synced user preferences — used to seed defaults when no draft
    *  is supplied, or as a fallback for fields missing on a draft. */
   preferences: UserPreferences;
-  /** Authenticated user id. Used by the Phase 6.X default-pool prefill
-   *  path: when the wizard is launched from the recurring banner and a
-   *  `DefaultPool` exists for `(userId, timeframe)`, `selectedTaskIds`
-   *  is hydrated from `pool.taskIds`. Optional so the wizard still
-   *  compiles for tests / playgrounds that don't have an auth context. */
+  /** Authenticated user id. Used by the P5 core-board-default prefill
+   *  path: when the wizard is launched from the recurring banner / core-
+   *  board browser and a `CoreBoardDefault` exists for
+   *  `(userId, timeframe)`, `selectedTaskIds`/`pulledPoolIds` are hydrated
+   *  from its `corePoolIds` + `coreDefaultTaskIds`. Optional so the
+   *  wizard still compiles for tests / playgrounds that don't have an
+   *  auth context. */
   userId?: string;
   /** Optional starting step (defaults to 1). Useful for tests / drafts. */
   initialStep?: WizardStep;
@@ -526,38 +529,47 @@ export function useBoardWizard({
     () => new Set(effectiveTemplate?.removedTaskIds ?? []),
   );
 
-  // Phase 6.X — Default Pool prefill. When the wizard is banner-launched
-  // (`effectivePrefill` set) AND no draft/template hydrated the
-  // selection, look up the user's DefaultPool for that timeframe and
-  // seed `selectedTaskIds` from `pool.taskIds`. One-shot via a ref flag
-  // so user edits after prefill aren't stomped on later renders — and
-  // so a pool that arrives later via sync can't replace selections the
-  // user already made.
+  // P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+  // §Surfaces item 6 "Core-board setup") — CoreBoardDefault prefill.
+  // Replaces the legacy DefaultPool prefill. When the wizard is
+  // banner-launched (`effectivePrefill` set) AND no draft/template
+  // hydrated the selection, look up the user's CoreBoardDefault for that
+  // timeframe and fold its `corePoolIds` + `coreDefaultTaskIds` into
+  // `selectedTaskIds`/`pulledPoolIds` via `applyCoreBoardDefaultPrefill`.
+  // One-shot via the SAME ref flag `pullPool`/`untogglePool`/
+  // `toggleTaskSelection` already set — a user who starts interacting
+  // with pool chips before this resolves is respected; a CoreBoardDefault
+  // that arrives later via sync can never stomp their edits.
   //
-  // `useDefaultPool` returns a tri-state: `undefined` while loading,
-  // `null` when there is no pool for this timeframe, a `DefaultPool`
-  // when one exists. Both `null` and a pool object resolve the one-shot
-  // decision; only `undefined` should keep the effect waiting.
-  const defaultPool = useDefaultPool(
-    userId,
-    effectivePrefill ?? undefined,
-  );
+  // `useCoreBoardDefault` returns a tri-state: `undefined` while loading,
+  // `null` when there is no default for this timeframe, a
+  // `CoreBoardDefault` when one exists. Both `null` and a resolved row
+  // are load-complete signals that resolve the one-shot decision; only
+  // `undefined` should keep the effect waiting.
+  //
+  // Deliberately does NOT touch `manualTaskIds` — every prefilled id here
+  // is pool- or default-sourced, never hand-added. This is the actual
+  // bug fix vs. the legacy DefaultPool effect, which stuffed the entire
+  // prefill into `manualTaskIds` (making every prefilled task read as
+  // "added by hand" in the Tasks-step provenance subtitles).
+  const coreBoardDefault = useCoreBoardDefault(userId, effectivePrefill ?? undefined);
   const poolPrefillAppliedRef = useRef(false);
   useEffect(() => {
     if (poolPrefillAppliedRef.current) return;
     if (draft || effectiveTemplate || effectivePrefill === null) return;
-    if (defaultPool === undefined) return; // still loading
+    if (coreBoardDefault === undefined) return; // still loading
     poolPrefillAppliedRef.current = true;
-    if (defaultPool !== null && defaultPool.taskIds.length > 0) {
-      setSelectedTaskIds(new Set(defaultPool.taskIds));
-      // P3 — the legacy DefaultPool prefill has no pool-mix concept to
-      // attribute provenance to; treat the whole prefill as hand-picked
-      // (matches the fallback `deriveTaskProvenance` would produce anyway,
-      // but keeps `manualTaskIds` accurate if the user later pulls a real
-      // Pool that happens to overlap one of these ids).
-      setManualTaskIds(new Set(defaultPool.taskIds));
-    }
-  }, [defaultPool, draft, effectiveTemplate, effectivePrefill]);
+    if (coreBoardDefault === null) return; // no default configured for this timeframe
+    const result = applyCoreBoardDefaultPrefill(
+      coreBoardDefault.corePoolIds,
+      coreBoardDefault.coreDefaultTaskIds,
+      poolsById,
+      tasksById,
+    );
+    if (result.selectedTaskIds.size === 0 && result.pulledPoolIds.length === 0) return;
+    setSelectedTaskIds(result.selectedTaskIds);
+    setPulledPoolIds(result.pulledPoolIds);
+  }, [coreBoardDefault, draft, effectiveTemplate, effectivePrefill, poolsById, tasksById]);
   const [centerTaskId, setCenterTaskIdRaw] = useState<string | null>(
     () => draftBoard?.centerTaskId ?? null,
   );

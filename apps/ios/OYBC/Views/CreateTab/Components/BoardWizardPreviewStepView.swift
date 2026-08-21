@@ -367,6 +367,18 @@ struct BoardWizardPreviewStepView: View {
         "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (random subset each window)."
     }
 
+    /// Task Pools + Recurring Boards Rework (P5) — core-board setup's
+    /// fillable-floor gate on Step 3's Activate button
+    /// (docs/POOLS_RECURRING.md §Behavior invariants "Fillable floor
+    /// everywhere"). Confirmed gap: before this, Activate was only
+    /// `.disabled(isCreating)` — a core board below the floor could reach
+    /// Step 3 (Step 2's Next is already gated, but a jump via the stepper
+    /// or summary "Edit" links bypasses it) and Activate anyway. Save as
+    /// Draft is intentionally NOT gated — drafts may be incomplete.
+    private var isBelowCoreFloor: Bool {
+        controller.isCore && controller.selectedTaskIds.count < controller.tasksRequired
+    }
+
     private var recurringPrimaryLabel: String {
         if isCreating { return "Saving…" }
         if controller.editingTemplateId != nil { return "Save changes" }
@@ -671,21 +683,27 @@ private extension BoardWizardPreviewStepView {
     /// One-off: ‹ Back · Save as Draft · Activate Board
     @ViewBuilder
     private var oneOffFooter: some View {
-        HStack(spacing: 10) {
-            RisoButton(title: "‹ Back", kind: .neutral, action: onBack)
+        VStack(alignment: .trailing, spacing: 8) {
+            if isBelowCoreFloor {
+                RisoCoreFloorGateView(remaining: controller.tasksRequired - controller.selectedTaskIds.count)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            HStack(spacing: 10) {
+                RisoButton(title: "‹ Back", kind: .neutral, action: onBack)
+                    .disabled(isCreating)
+
+                Spacer()
+
+                RisoButton(title: isCreating ? "Saving…" : "Save as Draft", kind: .neutral) {
+                    performCreation(status: .draft)
+                }
                 .disabled(isCreating)
 
-            Spacer()
-
-            RisoButton(title: isCreating ? "Saving…" : "Save as Draft", kind: .neutral) {
-                performCreation(status: .draft)
+                RisoButton(title: isCreating ? "Activating…" : "Activate Board", kind: .primary) {
+                    performCreation(status: .active)
+                }
+                .disabled(isCreating || isBelowCoreFloor)
             }
-            .disabled(isCreating)
-
-            RisoButton(title: isCreating ? "Activating…" : "Activate Board", kind: .primary) {
-                performCreation(status: .active)
-            }
-            .disabled(isCreating)
         }
         .padding(.horizontal, Riso.gutter)
         .padding(.top, 16)

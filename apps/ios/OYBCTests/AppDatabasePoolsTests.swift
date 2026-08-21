@@ -226,4 +226,74 @@ final class AppDatabasePoolsTests: XCTestCase {
         let rows = try syncRows(db)
         XCTAssertEqual(count(rows, type: "coreBoardDefaults", op: .delete), 1)
     }
+
+    // MARK: - upsertCorePoolIdsAndEnqueue (Task Pools + Recurring Boards
+    // Rework, P5) — the core-setup checkbox's write path. Preserves
+    // `coreDefaultTaskIds` (P7-authored-only) untouched: the raw
+    // `upsertCoreBoardDefaultAndEnqueue` unconditionally overwrites BOTH
+    // fields, so this wrapper must fetch-then-preserve rather than pass
+    // an empty array through.
+
+    func testUpsertCorePoolIdsAndEnqueue_PreservesExistingCoreDefaultTaskIds() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Seed a row that already has P7-authored `coreDefaultTaskIds` —
+        // simulates a future world where the Board-settings defaults sheet
+        // (P7) has written individual defaults, and the P5 core-setup
+        // checkbox now updates `corePoolIds` independently.
+        _ = try db.upsertCoreBoardDefaultAndEnqueue(
+            userId: userId, timeframe: .daily, corePoolIds: ["p1"], coreDefaultTaskIds: ["d1", "d2"], now: now
+        )
+
+        let later = AppDatabase.currentTimestamp()
+        let updated = try db.upsertCorePoolIdsAndEnqueue(
+            userId: userId, timeframe: .daily, corePoolIds: ["p1", "p2"], now: later
+        )
+
+        XCTAssertEqual(updated.corePoolIds, ["p1", "p2"])
+        // The mandatory assertion: coreDefaultTaskIds survives UNTOUCHED —
+        // never zeroed out by a corePoolIds-only write.
+        XCTAssertEqual(updated.coreDefaultTaskIds, ["d1", "d2"])
+        XCTAssertEqual(updated.version, 2)
+
+        let refetched = try XCTUnwrap(try db.fetchCoreBoardDefault(userId: userId, timeframe: .daily))
+        XCTAssertEqual(refetched.coreDefaultTaskIds, ["d1", "d2"])
+    }
+
+    func testUpsertCorePoolIdsAndEnqueue_NoExistingRow_CreatesWithEmptyCoreDefaultTaskIds() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        let created = try db.upsertCorePoolIdsAndEnqueue(
+            userId: userId, timeframe: .weekly, corePoolIds: ["p1"], now: now
+        )
+
+        XCTAssertEqual(created.corePoolIds, ["p1"])
+        XCTAssertEqual(created.coreDefaultTaskIds, [])
+        XCTAssertEqual(created.version, 1)
+
+        let rows = try syncRows(db).filter { $0.entityType == "coreBoardDefaults" && $0.entityId == created.id }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.operationType, .create)
+    }
+
+    func testUpsertCorePoolIdsAndEnqueue_UncheckClearsToEmpty() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+        _ = try db.upsertCoreBoardDefaultAndEnqueue(
+            userId: userId, timeframe: .monthly, corePoolIds: ["p1", "p2"], coreDefaultTaskIds: ["d1"], now: now
+        )
+
+        let cleared = try db.upsertCorePoolIdsAndEnqueue(
+            userId: userId, timeframe: .monthly, corePoolIds: [], now: AppDatabase.currentTimestamp()
+        )
+
+        XCTAssertEqual(cleared.corePoolIds, [])
+        // Still preserved even on the uncheck-to-clear path.
+        XCTAssertEqual(cleared.coreDefaultTaskIds, ["d1"])
+    }
 }

@@ -10,6 +10,7 @@ import {
 } from '@oybc/shared';
 import type { CompoundChild, Task } from '@oybc/shared';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
+import { computeCoreFloorGate } from '../../pages/createHub/poolPullLogic';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { taskToSquareState, type SquareWindowContext } from '../../db/adapters';
 import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
@@ -304,6 +305,18 @@ export function BoardWizardPreviewStep({
     () => formatDeckPreview(controller.selectedTaskIds.size, deckFloor),
     [controller.selectedTaskIds, deckFloor],
   );
+  // P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+  // §Surfaces item 6 "Core-board setup") — Activate-button floor gate for
+  // core-board setup. `deckFloor.floor` is already `fillableCellCount`
+  // (never a hardcoded constant, see above); this is a real gap-closer —
+  // today's Activate button isn't gated by the floor at all. isCore-only;
+  // never affects a non-core one-off board's Activate button.
+  const coreFloorGate = useMemo(
+    () => computeCoreFloorGate(controller.selectedTaskIds.size, deckFloor.floor),
+    [controller.selectedTaskIds, deckFloor],
+  );
+  const isCoreFloorBlocked =
+    controller.isCore && !controller.isRecurring && !coreFloorGate.isSatisfied;
   // Resolved Task objects for every selected id, including this-session
   // pending (not-yet-persisted) tasks — mirrors the Tasks step's
   // `effectiveTaskMap` merge so a just-created task still shows up here.
@@ -652,6 +665,13 @@ export function BoardWizardPreviewStep({
 
       {errorMessage && <div className={styles.errorMessage}>{errorMessage}</div>}
 
+      {/* P5 — core-board-setup floor gate. Only ever shown for a one-off
+          core board short of `fillableCellCount` — a recurring board's
+          Activate button has no such gate (loose-fit spawn). */}
+      {isCoreFloorBlocked && (
+        <div className={styles.coreFloorWarning}>{coreFloorGate.message}</div>
+      )}
+
       {/* Footer — three button-set variants:
           - one-off: Save as Draft + Activate Board (existing)
           - recurring create: single primary "Create template & spawn first board"
@@ -682,7 +702,7 @@ export function BoardWizardPreviewStep({
                 type="button"
                 className={styles.activateButton}
                 onClick={() => void performCreation('active')}
-                disabled={isCreating}
+                disabled={isCreating || isCoreFloorBlocked}
               >
                 {isCreating ? 'Activating…' : 'Activate Board'}
               </button>

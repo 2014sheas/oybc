@@ -224,6 +224,35 @@ extension AppDatabase {
         }
     }
 
+    /// Task Pools + Recurring Boards Rework (P5) — writes `corePoolIds`
+    /// ONLY, preserving whatever `coreDefaultTaskIds` already exists.
+    ///
+    /// `upsertCoreBoardDefaultAndEnqueue` unconditionally overwrites BOTH
+    /// fields on every call — there's no partial-update variant. But
+    /// `coreDefaultTaskIds` is P7-authored-only (individual default tasks,
+    /// set from the future Board-settings defaults sheet); the core-setup
+    /// checkbox (P5, docs/POOLS_RECURRING.md §Surfaces item 6) only ever
+    /// persists `corePoolIds`. Calling the raw upsert directly from the
+    /// checkbox path would silently zero out `coreDefaultTaskIds` the
+    /// moment it exists — this wrapper fetches the current row first and
+    /// passes its `coreDefaultTaskIds` straight through unchanged.
+    @discardableResult
+    func upsertCorePoolIdsAndEnqueue(
+        userId: String,
+        timeframe: Timeframe,
+        corePoolIds: [String],
+        now: String
+    ) throws -> CoreBoardDefault {
+        let existingTaskIds = try fetchCoreBoardDefault(userId: userId, timeframe: timeframe)?.coreDefaultTaskIds ?? []
+        return try upsertCoreBoardDefaultAndEnqueue(
+            userId: userId,
+            timeframe: timeframe,
+            corePoolIds: corePoolIds,
+            coreDefaultTaskIds: existingTaskIds,
+            now: now
+        )
+    }
+
     /// Soft-delete a CoreBoardDefault row and enqueue the delete op
     /// atomically.
     func softDeleteCoreBoardDefaultAndEnqueue(id: String, now: String) throws {

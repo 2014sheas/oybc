@@ -19,6 +19,7 @@ export * from './useRecurringBoardTemplates';
 export * from './useRecurringBoardSpawn';
 export * from './useBackstopAutoSeal';
 export * from './useDefaultPools';
+export * from './useCoreBoardDefaults';
 export * from './usePools';
 export * from './useTemplateMix';
 export * from './useTemplateMixes';

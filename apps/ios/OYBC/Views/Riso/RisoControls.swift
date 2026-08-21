@@ -357,6 +357,49 @@ private extension View {
     }
 }
 
+// MARK: - Checkbox
+
+/// Square checkbox row — ink-filled square + paper checkmark when on,
+/// keylined paper square when off, followed by a label. Distinct from a
+/// switch/toggle (none exist in the kit) — for affordances that are
+/// genuinely a checkbox, not a live on/off setting (Task Pools +
+/// Recurring Boards Rework, P5 core-board setup: "Start every <TF> board
+/// with 'X'", docs/POOLS_RECURRING.md §Surfaces item 6).
+struct RisoCheckboxRow: View {
+    let label: String
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(isOn ? Color.risoInk : Color.risoPaper)
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+                    if isOn {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.risoPaper)
+                    }
+                }
+                .frame(width: 22, height: 22)
+
+                Text(label)
+                    .font(.risoBody(12.5, .semibold))
+                    .foregroundStyle(Color.risoInk)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? [.isSelected] : [])
+    }
+}
+
 // MARK: - Type badge
 
 enum RisoTaskKind {

@@ -108,6 +108,23 @@ describe('coreBoardDefaults CRUD', () => {
     expect(all).toHaveLength(1);
   });
 
+  it('upsertCoreBoardDefault with only corePoolIds leaves an existing coreDefaultTaskIds untouched (P5 checkbox write path)', async () => {
+    const created = await createCoreBoardDefault('user-1', {
+      timeframe: Timeframe.DAILY,
+      corePoolIds: [],
+      coreDefaultTaskIds: ['task-1', 'task-2'],
+    });
+
+    const updated = await upsertCoreBoardDefault('user-1', Timeframe.DAILY, {
+      corePoolIds: ['pool-1'],
+    });
+
+    expect(updated.id).toBe(created.id);
+    expect(updated.corePoolIds).toEqual(['pool-1']);
+    // The P7-authored-only field must survive a corePoolIds-only write.
+    expect(updated.coreDefaultTaskIds).toEqual(['task-1', 'task-2']);
+  });
+
   it('softDeleteCoreBoardDefault sets isDeleted/deletedAt and bumps version', async () => {
     const row = await createCoreBoardDefault('user-1', {
       timeframe: Timeframe.DAILY,
