@@ -309,7 +309,12 @@ struct RisoBoardPlayCell: View {
     // MARK: - Computed style helpers
 
     private var cellFill: Color {
-        if isCenter { return Color.risoInk }
+        // Non-inverting ink: the center cell's content is gold (star + "FREE"),
+        // so the fill must stay dark in BOTH themes. Adaptive `risoInk` flips to
+        // cream in dark mode → gold-on-cream washout (the documented
+        // adaptive-ink-fill trap; see RISO_UI_CHECKLIST.md). `taskCellContent`
+        // dodges the same trap with `risoInkStatic`.
+        if isCenter { return Color.risoInkStatic }
         if !isCompleted {
             return isBingoLine ? Color.risoGold : Color.risoPaper2
         }

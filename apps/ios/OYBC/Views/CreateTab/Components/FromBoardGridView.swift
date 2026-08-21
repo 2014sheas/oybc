@@ -196,7 +196,9 @@ struct FromBoardGridView: View {
         }
         .frame(maxWidth: .infinity)
         .aspectRatio(1, contentMode: .fit)
-        .background(Color.risoInk)
+        // Non-inverting ink so the gold star/label stays legible in dark mode —
+        // adaptive `risoInk` would flip to cream (adaptive-ink-fill trap).
+        .background(Color.risoInkStatic)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cellRadius))
         .overlay(
             RoundedRectangle(cornerRadius: Riso.cellRadius)
