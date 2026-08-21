@@ -7,13 +7,15 @@ import {
   generateCounterTaskTitle,
   isTaskExpired,
   type CompoundChild,
+  type Pool,
   type Task,
 } from '@oybc/shared';
 import { fetchAllBoardTasks } from '../../db/operations';
 import { createTask } from '../../db/operations/tasks';
-import { useParentBoardTasks } from '../../hooks';
+import { useParentBoardTasks, useRecurringBoardTemplates } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import { PoolEditSheet } from '../pools/PoolEditSheet';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
@@ -119,6 +121,25 @@ export interface BoardWizardTasksStepProps {
    *  Under the unified model composites are Tasks, so the callback uses Task. */
   onCompositeCreated: (task: Task) => void;
 
+  /**
+   * P3 (Task Pools + Recurring Boards Rework) — the user's non-deleted
+   * pools, for the "PULL IN A POOL" toggle-chip card. Loaded ONCE at
+   * `BoardWizardPage` (`usePools`) and passed down rather than
+   * re-subscribed here, mirroring the `PoolsBrowse`/`TasksPage`
+   * "load once, pass down" precedent (avoids a second concurrent
+   * `usePools` live query).
+   */
+  pools: Pool[];
+  /** P3 — pool ids currently pulled into the selection, in pull order. */
+  pulledPoolIds: string[];
+  /** P3 — toggle a pool ON: unions its resolvable tasks into the selection. */
+  onPullPool: (poolId: string) => void;
+  /** P3 — toggle a pool OFF: removes its non-manual, non-still-supplied tasks. */
+  onUntogglePool: (poolId: string) => void;
+  /** P3 — provenance label ("from X" / "added by hand") for every
+   *  currently-selected task id. */
+  taskProvenance: Map<string, string>;
+
   /** Navigates to the previous wizard step. */
   onBack: () => void;
   /** Navigates to the next wizard step. Disabled when validation fails. */
@@ -164,6 +185,11 @@ export function BoardWizardTasksStep({
   onPendingCreated,
   pendingTasks,
   onCompositeCreated,
+  pools,
+  pulledPoolIds,
+  onPullPool,
+  onUntogglePool,
+  taskProvenance,
   onBack,
   onNext,
 }: BoardWizardTasksStepProps): React.ReactElement {
@@ -285,6 +311,12 @@ export function BoardWizardTasksStep({
    *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
    *  affordance. */
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
+  /** P3 — "Save these N as a new pool…" affordance. Opens `PoolEditSheet`
+   *  in create mode, pre-seeded from the current selection. */
+  const [showSaveAsPoolSheet, setShowSaveAsPoolSheet] = useState(false);
+  // P3 — recurring-board templates, needed only for `PoolEditSheet`'s
+  // deck-preview-floor computation (mirrors `PoolsBrowse`'s call site).
+  const recurringTemplatesForPoolSheet = useRecurringBoardTemplates(userId);
 
   // Usage-hint data — "N boards" / "unused" / "N steps" / "N subtasks".
   // Matches the composite wizard's library row hints so the two
@@ -503,6 +535,32 @@ export function BoardWizardTasksStep({
           </button>
         </div>
 
+        {/* P3 — "PULL IN A POOL" card. Unions a pool's tasks into the
+            selection; toggling a pulled pool off removes only its
+            non-manual, non-still-supplied tasks. The saved pool itself is
+            never modified by either action. */}
+        <div className={styles.poolPullCard}>
+          <span className={styles.poolPullKicker}>Pull in a pool</span>
+          {pools.length === 0 ? (
+            <p className={styles.poolPullEmpty}>You don&apos;t have any pools yet.</p>
+          ) : (
+            <div className={styles.poolPullChips} role="group" aria-label="Pull in a pool">
+              {pools.map((pool) => {
+                const isPulled = pulledPoolIds.includes(pool.id);
+                return (
+                  <RisoChip
+                    key={pool.id}
+                    on={isPulled}
+                    onClick={() => (isPulled ? onUntogglePool(pool.id) : onPullPool(pool.id))}
+                  >
+                    {pool.name}
+                  </RisoChip>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {activeFilter !== 'from-board' && (
           <input
             type="search"
@@ -648,6 +706,7 @@ export function BoardWizardTasksStep({
                   showCenterStar: centerTaskMode && isSelected,
                   isCenter,
                   onCenterClick: () => handleCenterRadio(task.id),
+                  provenance: isSelected ? taskProvenance.get(task.id) : undefined,
                 })}
               </li>
             );
@@ -685,6 +744,9 @@ export function BoardWizardTasksStep({
                       <span className={styles.rowTitle}>{ct.title}</span>
                       {previewSubtitle && (
                         <span className={styles.rowSubtitle}>{previewSubtitle}</span>
+                      )}
+                      {isCompoundSelected && taskProvenance.get(ct.id) && (
+                        <span className={styles.rowProvenance}>{taskProvenance.get(ct.id)}</span>
                       )}
                     </div>
                     <span className={styles.rowUsage}>
@@ -734,6 +796,7 @@ export function BoardWizardTasksStep({
                             showCenterStar: centerTaskMode && isSelected,
                             isCenter,
                             onCenterClick: () => handleCenterRadio(leafTask.id),
+                            provenance: isSelected ? taskProvenance.get(leafTask.id) : undefined,
                           })}
                         </li>
                       );
@@ -745,6 +808,17 @@ export function BoardWizardTasksStep({
           })}
         </ul>
       )}
+
+      {/* P3 — "Save these N as a new pool…" — mints a Pool from the
+          current selection, independent of the board. */}
+      <button
+        type="button"
+        className={styles.savePoolButton}
+        disabled={selectedTaskIds.size === 0}
+        onClick={() => setShowSaveAsPoolSheet(true)}
+      >
+        Save these {selectedTaskIds.size} as a new pool…
+      </button>
 
       {/* Footer — actions */}
       <div className={styles.footer}>
@@ -974,6 +1048,27 @@ export function BoardWizardTasksStep({
           }}
         />
       )}
+
+      {/* P3 — "Save these N as a new pool…" sheet. Create mode only
+          (no `pool` prop), pre-seeded from the current selection minus
+          any still-pending (not-yet-persisted) tasks — a Pool.taskIds
+          reference can't point at a task that doesn't exist in the DB
+          yet. Independent of the board: saving here never mutates
+          `pulledPoolIds`/`selectedTaskIds`. */}
+      {showSaveAsPoolSheet && (
+        <PoolEditSheet
+          userId={userId}
+          templates={recurringTemplatesForPoolSheet}
+          allTasks={library.allTasks}
+          browsableTasks={browsableTasks}
+          initialTaskIds={Array.from(selectedTaskIds).filter(
+            (id) => !(pendingTasks?.has(id) ?? false),
+          )}
+          onClose={() => setShowSaveAsPoolSheet(false)}
+          onSaved={() => setShowSaveAsPoolSheet(false)}
+          onDeleted={() => setShowSaveAsPoolSheet(false)}
+        />
+      )}
     </div>
   );
 }
@@ -992,6 +1087,10 @@ interface TaskRowProps {
   showCenterStar: boolean;
   isCenter: boolean;
   onCenterClick: () => void;
+  /** P3 — provenance label ("from X" / "added by hand"), rendered only
+   *  when the row is selected. `undefined` renders nothing (unselected
+   *  rows never pass this). */
+  provenance?: string;
 }
 
 function renderTaskRow({
@@ -1003,6 +1102,7 @@ function renderTaskRow({
   showCenterStar,
   isCenter,
   onCenterClick,
+  provenance,
 }: TaskRowProps): React.ReactElement {
   const subtitle = buildTaskSubtitle(task);
   const boards = taskBoardCounts[task.id] ?? 0;
@@ -1020,6 +1120,7 @@ function renderTaskRow({
         <div className={styles.rowCenter}>
           <span className={styles.rowTitle}>{task.title}</span>
           {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
+          {isSelected && provenance && <span className={styles.rowProvenance}>{provenance}</span>}
         </div>
         <span className={styles.rowUsage}>{usageHint}</span>
       </button>

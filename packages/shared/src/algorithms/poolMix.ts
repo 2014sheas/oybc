@@ -87,6 +87,81 @@ function resolvablePoolSupply(
 }
 
 /**
+ * Wizard "PULL IN A POOL" action (P3) — computes the taskIds to ADD to the
+ * wizard's flat `selectedTaskIds` when the user toggles a pool ON.
+ *
+ * Returns the pool's resolvable supply minus anything currently suppressed
+ * by `removedTaskIds` — a removal persists across a fresh pull (the worked
+ * example's "re-pull clears the removal" only happens via
+ * `clearRemovalsForUntoggle` at UNTOGGLE time, never at pull time; see the
+ * module docstring's worked example).
+ *
+ * Has a Swift twin: `PoolMix.resolvePoolPullAdditions` — keep in sync.
+ *
+ * @param poolId The pool being pulled in.
+ * @param removedTaskIds The wizard's current removal bookkeeping.
+ * @param poolsById Lookup for `poolId`. Missing or soft-deleted ⇒ no additions.
+ * @param tasksById Lookup used to filter the pool's `taskIds` to resolvable tasks.
+ * @returns Task ids to union into the selection, in the pool's own stored order.
+ */
+export function resolvePoolPullAdditions(
+  poolId: string,
+  removedTaskIds: string[],
+  poolsById: Record<string, Pool>,
+  tasksById: Record<string, Task>,
+): string[] {
+  const pool = poolsById[poolId];
+  if (pool === undefined || pool.isDeleted) return [];
+  const removedSet = new Set(removedTaskIds);
+  return resolvablePoolSupply(pool, tasksById).filter((id) => !removedSet.has(id));
+}
+
+/**
+ * Wizard "untoggle a pool" action (P3) — computes the taskIds to REMOVE
+ * from the wizard's flat `selectedTaskIds` when the user toggles a pool
+ * OFF. Per docs/POOLS_RECURRING.md §Data model "Union rule": untoggling
+ * removes ONLY that pool's non-manual tasks that aren't ALSO supplied by
+ * another currently-pulled pool. The manual layer is NEVER touched by a
+ * pool toggle.
+ *
+ * Supply is checked STRUCTURALLY (raw `taskIds` membership, not filtered
+ * for task-deletion) for the "still supplied elsewhere" check — matching
+ * `clearRemovalsForUntoggle`'s "remaining supply" semantics — so a
+ * soft-deleted remaining pool contributes no supply either.
+ *
+ * Has a Swift twin: `PoolMix.resolvePoolUntoggleRemovals` — keep in sync.
+ *
+ * @param poolId The pool being untoggled (pulled out).
+ * @param remainingPoolIds `pulledPoolIds` with `poolId` already excluded.
+ * @param manualTaskIds The wizard's current manual-layer bookkeeping —
+ *   a manual task is never removed by a pool toggle.
+ * @param poolsById Lookup for `poolId` and `remainingPoolIds`.
+ * @param tasksById Lookup used to filter `poolId`'s own `taskIds` to
+ *   resolvable tasks (the candidate removal set).
+ * @returns Task ids to remove from the selection.
+ */
+export function resolvePoolUntoggleRemovals(
+  poolId: string,
+  remainingPoolIds: string[],
+  manualTaskIds: string[],
+  poolsById: Record<string, Pool>,
+  tasksById: Record<string, Task>,
+): string[] {
+  const pool = poolsById[poolId];
+  if (pool === undefined || pool.isDeleted) return [];
+  const manualSet = new Set(manualTaskIds);
+  const remainingSupply = new Set<string>();
+  for (const otherId of remainingPoolIds) {
+    const other = poolsById[otherId];
+    if (other === undefined || other.isDeleted) continue;
+    for (const taskId of other.taskIds) remainingSupply.add(taskId);
+  }
+  return resolvablePoolSupply(pool, tasksById).filter(
+    (id) => !manualSet.has(id) && !remainingSupply.has(id),
+  );
+}
+
+/**
  * Resolves a spawn record's `poolIds` / `manualTaskIds` / `removedTaskIds`
  * into the concrete mix per the normative formula (see module docstring).
  *

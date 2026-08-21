@@ -17,6 +17,20 @@ func tasksNeededForBoard(size: Int, centerType: CenterSquareType) -> Int {
     return size * size - (hasReservedCenter ? 1 : 0)
 }
 
+/// Minimal `PoolMixSource` wrapper for the wizard's raw pool-mix state,
+/// which isn't itself a `RecurringBoardTemplate`. Used by
+/// `BoardWizardViewModel.untogglePool`'s `PoolMix.clearRemovalsForUntoggle`
+/// call, and reused by `BoardWizardPersist.persistRecurringTemplate` to
+/// evaluate `PoolMix.isLegacyShapedRecord` against the wizard's TRACKED
+/// final shape rather than the pre-edit `existing` template's shape.
+/// Mirrors the ad-hoc fixture pattern `OYBCTests/PoolMixTests.swift`'s
+/// `PoolMixInput` already uses. Internal (not `private`) so both files see it.
+struct WizardPoolMixRecord: PoolMixSource {
+    var poolIds: [String]?
+    var manualTaskIds: [String]?
+    var removedTaskIds: [String]?
+}
+
 /// BoardWizardViewModel — Owns the full board-creation wizard state.
 ///
 /// iOS twin of web's `useBoardWizard` hook. Initializes from the
@@ -86,6 +100,33 @@ final class BoardWizardViewModel {
     ///
     /// iOS twin of web's `pendingTasks: Map<string, PendingTaskPayload>`.
     var pendingTasks: [String: PendingTaskPayload] = [:]
+
+    // MARK: - Pool mix (Task Pools + Recurring Boards Rework, P3)
+    //
+    // Wizard "PULL IN A POOL" support (docs/POOLS_RECURRING.md §Surfaces
+    // item 5). `pullPool`/`untogglePool`/`provenanceByTaskId` take
+    // `poolsById`/`tasksById` as call-site parameters rather than storing a
+    // live cache on the VM — mirrors how `TaskLibraryViewModel` itself is
+    // owned by the container view (`BoardWizardView`) and threaded into
+    // free functions like `buildWizardPlacement(controller:library:)`
+    // rather than cached here, so this state can't silently go stale
+    // relative to the caller's freshly-loaded pools/library.
+
+    /// Pools currently pulled into the selection, in pull order — this
+    /// doubles as the exact array persisted as the spawn record's
+    /// `poolIds` (see `BoardWizardPersist.persistRecurringTemplate`).
+    var pulledPoolIds: [String] = []
+
+    /// Tasks explicitly hand-added to the selection — never pool-sourced.
+    /// `toggleTaskSelection` maintains this alongside `selectedTaskIds`.
+    var manualTaskIds: Set<String> = []
+
+    /// Tasks explicitly removed from the selection while still supplied by
+    /// a pulled pool — bookkeeping so re-pulling an overlapping pool
+    /// doesn't resurrect them, and so `untogglePool` clears exactly the
+    /// right entries. See `PoolMix`'s type doc for the full removals
+    /// semantics (docs/POOLS_RECURRING.md §Data model "Union rule").
+    var removedTaskIds: Set<String> = []
 
     // MARK: - Wizard navigation
 
@@ -192,6 +233,12 @@ final class BoardWizardViewModel {
                     .sorted { ($0.row, $0.col) < ($1.row, $1.col) }
                     .map { $0.taskId }
             )
+            // P3 — a one-off Board carries no persisted pool-mix fields, so
+            // there's no better provenance to recover: every resumed row
+            // defaults to "added by hand" until the user touches the new
+            // pull card. `pulledPoolIds`/`removedTaskIds` stay at their `[]`
+            // defaults. Explicit, flagged judgment call (must match web).
+            self.manualTaskIds = self.selectedTaskIds
             if d.board.timeframe == .custom {
                 self.customStartDate = String(d.board.startDate.prefix(10))
                 // A custom board always has an endDate; default defensively.
@@ -206,6 +253,12 @@ final class BoardWizardViewModel {
             // Template hydration returns a Set (order not preserved); use a
             // deterministic order so the pool is stable within the session.
             self.poolOrder = self.selectedTaskIds.sorted()
+            // P3 — hydrate directly from the template's own pool-mix fields
+            // so editing a repeating board's pool card round-trips its real
+            // provenance instead of collapsing to "added by hand".
+            self.pulledPoolIds = t.poolIds ?? []
+            self.manualTaskIds = Set(t.manualTaskIds ?? [])
+            self.removedTaskIds = Set(t.removedTaskIds ?? [])
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -253,6 +306,12 @@ final class BoardWizardViewModel {
                 size: initialSize,
                 desired: Self.resolveCenterType(preferences.defaultCenterType)
             )
+            // P3 — a fresh wizard (including the DefaultPool/banner prefill
+            // above, if it populated `selectedTaskIds`) has no pool-mix
+            // history yet: every pre-filled or hand-picked row starts in the
+            // manual layer until the user touches the pull card.
+            // `pulledPoolIds`/`removedTaskIds` stay at their `[]` defaults.
+            self.manualTaskIds = self.selectedTaskIds
         }
     }
 
@@ -389,7 +448,22 @@ final class BoardWizardViewModel {
     /// is deselecting the current center. Also removes the task from
     /// `pendingTasks` when the user deselects a newly-created (not-yet-
     /// persisted) task — Bug #85.
-    func toggleTaskSelection(_ taskId: String) {
+    ///
+    /// P3 — also maintains the manual/removed pool-mix bookkeeping:
+    /// selecting a task marks it manual; deselecting it drops the manual
+    /// mark and, if it's still supplied by a currently-pulled pool, records
+    /// a removal so a later `untogglePool`/re-pull behaves correctly.
+    /// `poolsById`/`tasksById` default to empty — every EXISTING call site
+    /// (new-task-created, from-a-board copy, context-menu add) adds a task
+    /// that by construction can't already be a pool member, so the
+    /// removed-bookkeeping check trivially no-ops for them; only the
+    /// Tasks-step's row-remove path (routed through `BoardWizardView`'s
+    /// `onToggleSelection` closure) needs to pass the real lookups.
+    func toggleTaskSelection(
+        _ taskId: String,
+        poolsById: [String: Pool] = [:],
+        tasksById: [String: Task] = [:]
+    ) {
         if selectedTaskIds.contains(taskId) {
             selectedTaskIds.remove(taskId)
             if centerTaskId == taskId { centerTaskId = nil }
@@ -400,10 +474,107 @@ final class BoardWizardViewModel {
             // A task that leaves the pool drops any staged edit — re-adding it
             // starts clean, matching the removal-purges-pending semantics.
             stagedEdits.removeValue(forKey: taskId)
+            manualTaskIds.remove(taskId)
+            if Self.isSuppliedByPulledPool(
+                taskId, pulledPoolIds: pulledPoolIds, poolsById: poolsById, tasksById: tasksById
+            ) {
+                removedTaskIds.insert(taskId)
+            }
         } else {
             selectedTaskIds.insert(taskId)
             if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
+            manualTaskIds.insert(taskId)
+            removedTaskIds.remove(taskId)
         }
+    }
+
+    /// True when `taskId` is in the resolvable supply of any pool currently
+    /// pulled into the mix — a non-deleted pool in `pulledPoolIds` whose raw
+    /// `taskIds` contains it, and the task itself isn't soft-deleted. Used
+    /// by `toggleTaskSelection`'s deselect branch to decide whether the
+    /// removal needs `removedTaskIds` bookkeeping.
+    private static func isSuppliedByPulledPool(
+        _ taskId: String,
+        pulledPoolIds: [String],
+        poolsById: [String: Pool],
+        tasksById: [String: Task]
+    ) -> Bool {
+        if let task = tasksById[taskId], task.isDeleted { return false }
+        for poolId in pulledPoolIds {
+            guard let pool = poolsById[poolId], !pool.isDeleted else { continue }
+            if pool.taskIds.contains(taskId) { return true }
+        }
+        return false
+    }
+
+    /// "PULL IN A POOL" action (P3, docs/POOLS_RECURRING.md §Surfaces item
+    /// 5) — unions the pool's resolvable supply (minus current removals)
+    /// into the selection. No-op if the pool is missing, soft-deleted, or
+    /// already pulled. `poolsById`/`tasksById` are supplied by the caller
+    /// (see the type doc's "Pool mix" section header above).
+    func pullPool(_ poolId: String, poolsById: [String: Pool], tasksById: [String: Task]) {
+        guard poolsById[poolId]?.isDeleted == false, !pulledPoolIds.contains(poolId) else { return }
+        let additions = PoolMix.resolvePoolPullAdditions(
+            poolId, removedTaskIds: Array(removedTaskIds), poolsById: poolsById, tasksById: tasksById
+        )
+        for taskId in additions where !selectedTaskIds.contains(taskId) {
+            selectedTaskIds.insert(taskId)
+            if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
+        }
+        pulledPoolIds.append(poolId)
+    }
+
+    /// "Untoggle a pool" action (P3) — removes only that pool's non-manual
+    /// tasks that aren't still supplied by another currently-pulled pool.
+    /// The manual layer is never touched; the saved `Pool` itself is never
+    /// modified by this or `pullPool` (locked decision,
+    /// docs/POOLS_RECURRING.md §Data model "Union rule").
+    func untogglePool(_ poolId: String, poolsById: [String: Pool], tasksById: [String: Task]) {
+        let remainingPoolIds = pulledPoolIds.filter { $0 != poolId }
+        let removals = PoolMix.resolvePoolUntoggleRemovals(
+            poolId,
+            remainingPoolIds: remainingPoolIds,
+            manualTaskIds: Array(manualTaskIds),
+            poolsById: poolsById,
+            tasksById: tasksById
+        )
+        for taskId in removals {
+            selectedTaskIds.remove(taskId)
+            poolOrder.removeAll { $0 == taskId }
+            if centerTaskId == taskId { centerTaskId = nil }
+            pendingTasks.removeValue(forKey: taskId)
+            stagedEdits.removeValue(forKey: taskId)
+        }
+        removedTaskIds = Set(PoolMix.clearRemovalsForUntoggle(
+            WizardPoolMixRecord(poolIds: pulledPoolIds, manualTaskIds: nil, removedTaskIds: Array(removedTaskIds)),
+            untoggledPoolId: poolId,
+            poolsById: poolsById
+        ))
+        pulledPoolIds = remainingPoolIds
+    }
+
+    /// Provenance label for every currently-selected task — `"added by
+    /// hand"` or `"from <Pool name>"` — for the pool list's subtitle line.
+    /// Only meaningful for ids in `selectedTaskIds` (what `RisoPoolListView`
+    /// renders); a manual mark always wins, then the first pulled pool (in
+    /// pull order) whose resolvable supply includes the task.
+    func provenanceByTaskId(poolsById: [String: Pool], tasksById: [String: Task]) -> [String: String] {
+        var result: [String: String] = [:]
+        for taskId in selectedTaskIds {
+            if manualTaskIds.contains(taskId) {
+                result[taskId] = "added by hand"
+                continue
+            }
+            var label: String?
+            for poolId in pulledPoolIds {
+                guard let pool = poolsById[poolId], !pool.isDeleted, pool.taskIds.contains(taskId) else { continue }
+                if let task = tasksById[taskId], task.isDeleted { continue }
+                label = "from \(pool.name)"
+                break
+            }
+            result[taskId] = label ?? "added by hand"
+        }
+        return result
     }
 
     /// Stage an inline edit; returns the previous patch (or nil) so the Save
@@ -504,6 +675,9 @@ final class BoardWizardViewModel {
         stagedEdits = [:]
         centerTaskId = nil
         pendingTasks = [:]
+        pulledPoolIds = []
+        manualTaskIds = []
+        removedTaskIds = []
         currentStep = 1
     }
 

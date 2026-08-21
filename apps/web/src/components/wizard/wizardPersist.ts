@@ -295,14 +295,27 @@ export interface PersistRecurringTemplateArgs {
  *   and the next Boards-tab open will retry. Locked decision: first-spawn
  *   timing = immediate.
  *
+ *   Note: P3's "PULL IN A POOL" card (`controller.pulledPoolIds` /
+ *   `manualTaskIds` / `removedTaskIds`) exists purely as in-session UI /
+ *   provenance state for the Tasks step — it drives the "from <pool>" vs
+ *   "added by hand" row labels and lets the user pull an existing pool's
+ *   tasks into the flat selection. It does NOT drive a persisted native
+ *   multi-pool shape here; per docs/POOLS_RECURRING.md, that richer
+ *   persisted shape can't exist before P4. This function only ever
+ *   consults `controller.selectedTaskIds` (the flattened result), never
+ *   `pulledPoolIds`/`manualTaskIds`/`removedTaskIds`.
+ *
  * - **Edit** (`editingTemplateId` set): the P1 legacy-editor write-through
- *   is SHAPE-SCOPED (`isLegacyShapedRecord` from `@oybc/shared`):
+ *   is SHAPE-SCOPED (`isLegacyShapedRecord` from `@oybc/shared`), evaluated
+ *   against the FETCHED template's own persisted shape:
  *     - legacy-shaped WITH a linked pool (the normal post-P1 case: exactly
  *       one pool, no manual additions, no removals) → writes the
  *       selection straight through to that Pool's `taskIds` via
  *       `updatePool` — the shared Pool IS the source of truth, so the
  *       template's own `poolIds`/`manualTaskIds`/`removedTaskIds` don't
- *       need to change.
+ *       need to change. If the user used "PULL IN A POOL" during this
+ *       edit session, that's already reflected in the flattened
+ *       `selectedTaskIds`, so it naturally flows into the linked pool.
  *     - legacy-shaped WITHOUT a pool yet (defensive — shouldn't occur
  *       post-migration, since migration always mints one, but a record
  *       edited before its first-launch migration ran would hit this) →

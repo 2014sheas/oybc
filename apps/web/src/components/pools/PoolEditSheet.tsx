@@ -28,6 +28,15 @@ export interface PoolEditSheetProps {
    *  source list (P2 I-2). Pickers are browse surfaces: they shouldn't
    *  offer a wizard-born draft task the Library tab itself hides. */
   browsableTasks: Task[];
+  /**
+   * P3 (Task Pools + Recurring Boards Rework, wizard "Save these N as a
+   * new pool…") — pre-seeds `taskIds` in CREATE mode only (`pool ===
+   * undefined`); ignored in edit mode, where `pool.taskIds` always wins.
+   * Callers should already exclude ids that can't yet resolve to a
+   * persisted task (e.g. the wizard's in-memory Bug #85 pending tasks) —
+   * this sheet doesn't re-filter.
+   */
+  initialTaskIds?: string[];
   /** Backdrop click / Escape / Cancel / Close. */
   onClose: () => void;
   /** Fired after a successful create or save. */
@@ -77,6 +86,7 @@ export function PoolEditSheet({
   templates,
   allTasks,
   browsableTasks,
+  initialTaskIds,
   onClose,
   onSaved,
   onDeleted,
@@ -88,8 +98,10 @@ export function PoolEditSheet({
   // `allTasks` (soft-deleted or otherwise missing) so a save preserves
   // them per `Pool.taskIds`'s docstring contract (consumers filter at
   // read time; a write must never prune). Chips/counts below render only
-  // the RESOLVABLE subset — never this list directly.
-  const [taskIds, setTaskIds] = useState<string[]>(() => pool?.taskIds ?? []);
+  // the RESOLVABLE subset — never this list directly. `initialTaskIds`
+  // (P3) only applies in create mode — `pool?.taskIds` always wins when
+  // editing an existing pool.
+  const [taskIds, setTaskIds] = useState<string[]>(() => pool?.taskIds ?? initialTaskIds ?? []);
   // Supplements `allTasks` for freshly quick-added/library-picked tasks
   // that may not have round-tripped through the `allTasks` prop's live
   // query yet — sidesteps a title flash. Never the persistence source.

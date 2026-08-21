@@ -17,13 +17,17 @@ private struct PoolEditToast: Identifiable {
 ///
 /// Layout (top to bottom, per README §3 + screenshot 04):
 ///   1. Pool header card  — "YOUR TASK POOL" kicker, N/required, progress bar, model note.
-///   2. "ADD TASKS" section — quick-add row + special-type panel button.
-///   3. Library entry button (dashed) → bottom sheet at .fraction(0.76).
-///   4. Pool list — Riso rows for each selected task.
-///   5. Footer — Riso Back + Next (Next disabled when !canAdvance).
+///   2. "PULL IN A POOL" card — toggle chips unioning a pool's tasks into the
+///      selection (Task Pools + Recurring Boards Rework, P3).
+///   3. "ADD TASKS" section — quick-add row + special-type panel button.
+///   4. Library entry button (dashed) → bottom sheet at .fraction(0.76).
+///   5. Pool list — Riso rows for each selected task, with provenance subtitles.
+///   6. "Save these N as a new pool…" dashed affordance (P3).
+///   7. Footer — Riso Back + Next (Next disabled when !canAdvance).
 ///
 /// Sub-views (separate files):
 ///   - `RisoTasksPoolHeaderView`   — pool header card
+///   - `RisoPoolPullCardView`     — "PULL IN A POOL" toggle-chip card (P3)
 ///   - `RisoQuickAddRowView`       — text input + red Add button
 ///   - `RisoSpecialTaskPanel`      — collapsed/expanded type-specific panel
 ///   - `RisoLibrarySheetView`      — dashed entry button + bottom sheet (owns search,
@@ -106,6 +110,34 @@ struct BoardWizardTasksStepView: View {
     /// Navigates to the next wizard step. Disabled when validation fails.
     let onNext: () -> Void
 
+    // MARK: - Pool mix (Task Pools + Recurring Boards Rework, P3)
+
+    /// The user's non-deleted pools, for the "PULL IN A POOL" card. Loaded
+    /// and owned by the container (`BoardWizardView`) — this view does no
+    /// pool I/O itself, mirroring how `library` is owned by the container
+    /// and passed straight through.
+    var pools: [Pool] = []
+    /// Pools currently pulled into the selection
+    /// (`BoardWizardViewModel.pulledPoolIds`) — drives the pull card's chip
+    /// on/off state.
+    var pulledPoolIds: [String] = []
+    /// taskId → provenance label ("added by hand" / "from <Pool name>") for
+    /// every currently-selected row, threaded into `RisoPoolListView`.
+    var provenanceByTaskId: [String: String] = [:]
+    /// Fired when the user toggles a pool ON in the pull card. Routes to
+    /// `BoardWizardViewModel.pullPool`.
+    var onPullPool: (_ poolId: String) -> Void = { _ in }
+    /// Fired when the user toggles a pool OFF in the pull card. Routes to
+    /// `BoardWizardViewModel.untogglePool`.
+    var onUntogglePool: (_ poolId: String) -> Void = { _ in }
+    /// Active recurring-board templates — passed through to the "Save as
+    /// pool" sheet for its deck-preview floor. Empty is acceptable (falls
+    /// back to the generic 3×3-FREE floor default).
+    var templates: [RecurringBoardTemplate] = []
+    /// Fired after the "Save as pool" sheet successfully creates a pool, so
+    /// the container can refresh `pools` for the pull card.
+    var onPoolsReloadRequested: () -> Void = {}
+
     // MARK: - Internal state
 
     /// Drives the task-detail sheet opened from a library row's "Open in library".
@@ -128,6 +160,10 @@ struct BoardWizardTasksStepView: View {
     @State private var editBaseline = TaskEditPatch(title: "")
     @State private var toast: PoolEditToast? = nil
     @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
+
+    // Task Pools + Recurring Boards Rework (P3) — "Save these N as a new
+    // pool…" sheet.
+    @State private var showSaveAsPoolSheet = false
 
     // MARK: - Derived
 
@@ -259,7 +295,22 @@ struct BoardWizardTasksStepView: View {
                     centerSatisfied: isCenterSatisfied
                 )
 
-                // 2. ADD TASKS section
+                // 2. PULL IN A POOL card (Task Pools + Recurring Boards
+                // Rework, P3) — kept visible even with zero pools so the
+                // user always has a route to "Save as pool" below.
+                RisoPoolPullCardView(
+                    pools: pools,
+                    pulledPoolIds: pulledPoolIds,
+                    onToggle: { poolId in
+                        if pulledPoolIds.contains(poolId) {
+                            onUntogglePool(poolId)
+                        } else {
+                            onPullPool(poolId)
+                        }
+                    }
+                )
+
+                // 3. ADD TASKS section
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Add tasks")
                         .risoSectionLabel()
@@ -315,7 +366,7 @@ struct BoardWizardTasksStepView: View {
                     )
                 }
 
-                // 3. Library entry button (dashed) → bottom sheet
+                // 4. Library entry button (dashed) → bottom sheet
                 RisoLibrarySheetView(
                     library: library,
                     selectedTaskIds: selectedTaskIds,
@@ -341,7 +392,7 @@ struct BoardWizardTasksStepView: View {
                     onOpenInLibrary: { taskId in openedTaskInLibrary = TaskIdItem(id: taskId) }
                 )
 
-                // 4. Pool list
+                // 5. Pool list
                 RisoPoolListView(
                     selectedTaskIds: selectedTaskIds,
                     orderedTaskIds: poolOrder,
@@ -367,8 +418,17 @@ struct BoardWizardTasksStepView: View {
                                 onDiscard: { discardEdit(task) }
                             )
                         )
-                    }
+                    },
+                    provenanceByTaskId: provenanceByTaskId
                 )
+
+                // 6. "Save these N as a new pool…" (P3) — hidden when the
+                // pool is empty, matching the design's disabled/hidden call.
+                if !selectedTaskIds.isEmpty {
+                    RisoDashedButton(label: "Save these \(selectedTaskIds.count) as a new pool…") {
+                        showSaveAsPoolSheet = true
+                    }
+                }
             }
             .padding(Riso.gutter)
             }
@@ -383,6 +443,30 @@ struct BoardWizardTasksStepView: View {
         }
         .overlay(alignment: .bottom) {
             if let toast { toastOverlay(toast) }
+        }
+        // "Save these N as a new pool…" (P3) — mints a new Pool from the
+        // current selection, independent of the board. Excludes in-memory
+        // (Bug #85) pending tasks not yet written to GRDB — a Pool.taskIds
+        // reference can't point at a task that doesn't exist in the DB yet;
+        // silently dropping them from the new pool is acceptable (they stay
+        // on this board's own selection, just not copied into the pool).
+        .sheet(isPresented: $showSaveAsPoolSheet) {
+            PoolEditSheetView(
+                pool: nil,
+                templates: templates,
+                library: library,
+                userId: userId,
+                initialTaskIds: poolOrder.filter { taskId in
+                    selectedTaskIds.contains(taskId) && !(pendingTasks?.keys.contains(taskId) ?? false)
+                },
+                onSaved: {
+                    showSaveAsPoolSheet = false
+                    onPoolsReloadRequested()
+                },
+                onDeleted: {
+                    showSaveAsPoolSheet = false
+                }
+            )
         }
         // Task detail sheet (opened from a library row's "Open in library").
         .sheet(item: $openedTaskInLibrary) { item in
