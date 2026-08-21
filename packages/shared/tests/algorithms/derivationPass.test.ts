@@ -354,3 +354,189 @@ describe('computeBoardStatsUpdate (fixture-driven, tests/fixtures/derivationPass
     });
   }
 });
+
+/**
+ * Compound-as-center-square (feature/compound-center-squares) — hand-built
+ * scenario, NOT fixture-driven. Web was the only platform gating a COMPOUND
+ * task out of `CenterSquareType.CHOSEN`; the engine (this file's target)
+ * was never type-aware about center placement. This proves it directly: a
+ * compound task sitting at the CHOSEN center of a 3x3 board is evaluated by
+ * its own `evaluateCompound` path exactly like any other cell — not a
+ * stub/default `true` — and its outcome genuinely drives line completion.
+ *
+ * Kept identical in shape to the iOS mirror scenario in
+ * `DerivationPassVectorTests.swift` (same task ids / placements / operator)
+ * so both platforms prove the same claim.
+ */
+describe('computeBoardStatsUpdate — compound task at CHOSEN center (issue: compound center squares)', () => {
+  const BOARD_ID = 'board-compound-center';
+
+  function buildScenario(c2Completed: boolean): {
+    board: Board;
+    boardTasksOnBoard: BoardTask[];
+    childrenByCompound: Record<string, CompoundChild[]>;
+    taskById: Record<string, Task>;
+  } {
+    const board = toBoard({
+      id: BOARD_ID,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.CHOSEN,
+      startDate: BASE_TS,
+      endDate: null,
+      status: BoardStatus.ACTIVE,
+      linesCompleted: 0,
+      completedLineIds: [],
+      isDeleted: false,
+      spawnedFromTemplateId: null,
+    });
+
+    const t1 = toTask({
+      id: 't1',
+      type: TaskType.NORMAL,
+      isCompleted: true,
+      isDeleted: false,
+      operator: null,
+      threshold: null,
+      referencedBoardId: null,
+      referencedTemplateId: null,
+      achievementTrigger: null,
+      requiredCount: null,
+    });
+    const t2 = toTask({
+      id: 't2',
+      type: TaskType.NORMAL,
+      isCompleted: true,
+      isDeleted: false,
+      operator: null,
+      threshold: null,
+      referencedBoardId: null,
+      referencedTemplateId: null,
+      achievementTrigger: null,
+      requiredCount: null,
+    });
+    const c1 = toTask({
+      id: 'c1',
+      type: TaskType.NORMAL,
+      isCompleted: true,
+      isDeleted: false,
+      operator: null,
+      threshold: null,
+      referencedBoardId: null,
+      referencedTemplateId: null,
+      achievementTrigger: null,
+      requiredCount: null,
+    });
+    const c2 = toTask({
+      id: 'c2',
+      type: TaskType.NORMAL,
+      isCompleted: c2Completed,
+      isDeleted: false,
+      operator: null,
+      threshold: null,
+      referencedBoardId: null,
+      referencedTemplateId: null,
+      achievementTrigger: null,
+      requiredCount: null,
+    });
+    const comp = toTask({
+      id: 'comp',
+      type: TaskType.COMPOUND,
+      isCompleted: false,
+      isDeleted: false,
+      operator: 'AND',
+      threshold: null,
+      referencedBoardId: null,
+      referencedTemplateId: null,
+      achievementTrigger: null,
+      requiredCount: null,
+    });
+
+    const boardTasksOnBoard: BoardTask[] = [
+      toBoardTaskFull({ taskId: 't1', row: 1, col: 0 }, BOARD_ID),
+      // The center cell of a 3x3 board is (row 1, col 1).
+      toBoardTaskFull({ taskId: 'comp', row: 1, col: 1 }, BOARD_ID),
+      toBoardTaskFull({ taskId: 't2', row: 1, col: 2 }, BOARD_ID),
+    ];
+
+    const childrenByCompound: Record<string, CompoundChild[]> = {
+      comp: [
+        toChild({ compoundTaskId: 'comp', childTaskId: 'c1', isDeleted: false }, 0),
+        toChild({ compoundTaskId: 'comp', childTaskId: 'c2', isDeleted: false }, 1),
+      ],
+    };
+
+    const taskById: Record<string, Task> = {
+      t1,
+      t2,
+      c1,
+      c2,
+      comp,
+    };
+
+    return { board, boardTasksOnBoard, childrenByCompound, taskById };
+  }
+
+  it('resolves the compound at center via its own AND evaluator and completes row_1 when both children are done', () => {
+    const { board, boardTasksOnBoard, childrenByCompound, taskById } = buildScenario(true);
+
+    const result = computeBoardStatsUpdate(
+      board,
+      boardTasksOnBoard,
+      childrenByCompound,
+      taskById,
+      [],
+      undefined,
+    );
+
+    // t1, t2, and comp all resolve true. c1/c2 aren't independently placed
+    // on this board, so they don't contribute their own cells/count.
+    expect(result.completedTasks).toBe(3);
+    expect(result.completedLineIds).toContain('row_1');
+    expect(result.linesCompleted).toBe(1);
+
+    const gridResult = computeBoardGrid(
+      board,
+      boardTasksOnBoard,
+      childrenByCompound,
+      taskById,
+      [],
+      undefined,
+    );
+    const compCell = gridResult.cells.find((c) => c.taskId === 'comp');
+    expect(compCell).toBeDefined();
+    // Proves the compound's OWN AND evaluator ran at the center position —
+    // not a stub/default `true` for whatever happens to sit at center.
+    expect(compCell?.isCompleted).toBe(true);
+  });
+
+  it('fails the compound (and therefore row_1) when one AND child is incomplete', () => {
+    const { board, boardTasksOnBoard, childrenByCompound, taskById } = buildScenario(false);
+
+    const result = computeBoardStatsUpdate(
+      board,
+      boardTasksOnBoard,
+      childrenByCompound,
+      taskById,
+      [],
+      undefined,
+    );
+
+    // Only t1 and t2 resolve true now; the compound's AND fails because c2
+    // is incomplete, so no line completes through the center cell.
+    expect(result.completedTasks).toBe(2);
+    expect(result.completedLineIds).toEqual([]);
+    expect(result.linesCompleted).toBe(0);
+
+    const gridResult = computeBoardGrid(
+      board,
+      boardTasksOnBoard,
+      childrenByCompound,
+      taskById,
+      [],
+      undefined,
+    );
+    const compCell = gridResult.cells.find((c) => c.taskId === 'comp');
+    expect(compCell).toBeDefined();
+    expect(compCell?.isCompleted).toBe(false);
+  });
+});
