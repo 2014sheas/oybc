@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  PARENT_TIMEFRAMES,
-  TaskType,
   Timeframe,
+  TaskType,
   generateCounterTaskTitle,
-  isTaskExpired,
   type CompoundChild,
   type Pool,
   type Task,
@@ -21,16 +19,16 @@ import {
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { PoolEditSheet } from '../pools/PoolEditSheet';
-import { RisoChip, RisoTypeBadge } from '../riso';
+import { RisoChip, RisoSectionLabel } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
 import { resolveDeriveLinkTarget } from './deriveCounterLink';
-import { FromBoardGrid } from './FromBoardGrid';
-import { FromBoardPicker } from './FromBoardPicker';
-import { NewTaskSheet } from './NewTaskSheet';
+import { LibrarySheet } from './LibrarySheet';
+import { PoolList } from './PoolList';
 import { RowContextMenu } from './RowContextMenu';
+import { SpecialTaskPanel } from './SpecialTaskPanel';
 import { mergeSuggestionPool } from './suggestionPool';
-import { renderTaskRow } from './TaskRow';
+import { TasksPoolHeader } from './TasksPoolHeader';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import {
@@ -59,39 +57,19 @@ const CORE_CADENCE_LABEL: Partial<Record<Timeframe, string>> = {
   [Timeframe.YEARLY]: 'Yearly',
 };
 
-const BASE_FILTER_TABS: { value: TasksFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: TaskType.NORMAL, label: 'Normal' },
-  { value: TaskType.COUNTING, label: 'Counting' },
-  // 'compound' matches ALL compound tasks (both ordered and unordered).
-  // The ordered/unordered distinction is an internal model detail; users
-  // see a single "Compound" chip here and in the Tasks-tab filters.
-  { value: 'compound', label: 'Compound' },
-];
-
-const FROM_PARENTS_TAB: { value: TasksFilter; label: string } = {
-  value: 'from-parents',
-  label: 'From parent boards',
-};
-
-const FROM_BOARD_TAB: { value: TasksFilter; label: string } = {
-  value: 'from-board',
-  label: 'From a board…',
-};
-
-export type TasksFilter =
-  | 'all'
-  | TaskType
-  | 'compound'
-  | 'from-parents'
-  | 'from-board';
-
 export interface BoardWizardTasksStepProps {
   /** User's full task + composite library (from `useTaskLibrary`). */
   library: TaskLibrary;
 
   /** Currently-selected task ids — controlled by the wizard. */
   selectedTaskIds: Set<string>;
+  /**
+   * Web inline-editing port PR-1 — insertion order of the pool
+   * (`useBoardWizard.poolOrder`). The pool list renders in this order,
+   * never re-sorted, so a task keeps its position across the session (a
+   * later PR's inline rename must not reshuffle the list).
+   */
+  poolOrder: string[];
   /** Called when the user toggles a task's selection state. */
   onToggleSelection: (taskId: string) => void;
 
@@ -119,36 +97,37 @@ export interface BoardWizardTasksStepProps {
    *  monthly) and what timeframe to feed `useParentBoardTasks`. */
   currentTimeframe: Timeframe;
   /** Phase 6.Y — Timeboxed Tasks. The resolved start/end dates the
-   *  wizard will write on the board. Threaded into NewTaskSheet so
-   *  any new task created from inside the wizard inherits the same
-   *  timeboxed window as its parent board. */
+   *  wizard will write on the board. Threaded into quick-add / the
+   *  special-type panel so any new task created from inside the wizard
+   *  inherits the same timeboxed window as its parent board. */
   currentStartDate?: string;
   currentEndDate?: string;
-  /** Fired after a non-composite task is created from the sheet — the
-   *  wizard should auto-add the new id to `selectedTaskIds`. */
+  /** Fired after a non-composite task is created — the wizard should
+   *  auto-add the new id to `selectedTaskIds`. */
   onTaskCreated: (task: Task) => void;
   /**
-   * Bug #85 — Deferred-persist supplemental callback. When provided,
-   * the Tasks step enables deferPersist mode on the New Task sheet so
-   * no DB write occurs at creation time. The full pending payload
-   * (task + any compound child tasks + links) is passed here so the
-   * wizard can store it for atomic board-save later. Called alongside
-   * `onTaskCreated` for every deferred create.
+   * Bug #85 — Deferred-persist supplemental callback. When provided, the
+   * quick-add row + special-type panel enable deferPersist mode so no DB
+   * write occurs at creation time. The full pending payload (task + any
+   * compound child tasks + links) is passed here so the wizard can store
+   * it for atomic board-save later. Called alongside `onTaskCreated` for
+   * every deferred create.
    */
   onPendingCreated?: (payload: PendingTaskPayload) => void;
   /**
    * Bug #85 — In-memory pending tasks owned by the wizard. Passed here
    * so the Tasks step can surface newly-created (not-yet-persisted)
    * tasks in the visible list as selected rows. Without this, the user
-   * creates a task via the New Task sheet and it appears to vanish until
-   * the board is saved (because it's not yet in the DB that the live
-   * library query reads from). When omitted, pending tasks won't be
+   * creates a task via the special-type panel and it appears to vanish
+   * until the board is saved (because it's not yet in the DB that the
+   * live library query reads from). When omitted, pending tasks won't be
    * shown in the list (safe fallback — the count is still correct).
    */
   pendingTasks?: Map<string, PendingTaskPayload>;
-  /** Fired after a compound (formerly composite) task is created from the
-   *  sheet — the wizard should reload the library so the compound shows up.
-   *  Under the unified model composites are Tasks, so the callback uses Task. */
+  /** Fired after a compound (formerly composite) task is created — the
+   *  wizard should reload the library so the compound shows up under
+   *  filters. Under the unified model composites are Tasks, so the
+   *  callback uses Task. */
   onCompositeCreated: (task: Task) => void;
 
   /**
@@ -169,9 +148,9 @@ export interface BoardWizardTasksStepProps {
   /** P3 — provenance label ("from X" / "added by hand") for every
    *  currently-selected task id. */
   taskProvenance: Map<string, string>;
-  /** P3 — task ids explicitly hand-added this session (quick-add, New
-   *  task sheet, or picking an existing library task) as opposed to
-   *  pool-/default-sourced. Drives the P5 core-setup chip strip's plain
+  /** P3 — task ids explicitly hand-added this session (quick-add, the
+   *  special-type panel, or picking an existing library task) as opposed
+   *  to pool-/default-sourced. Drives the P5 core-setup chip strip's plain
    *  vs. blue-removable classification (see `classifyChipProvenance`). */
   manualTaskIds: Set<string>;
 
@@ -196,28 +175,38 @@ export interface BoardWizardTasksStepProps {
 /**
  * BoardWizardTasksStep — Step 2 of the board-creation wizard.
  *
- * Renders the user's task library with multi-select, search, type
- * filter, and an inline "+ New task" sheet. Row layout matches the
- * composite wizard's Build step exactly: `[toggle] [BADGE letterOnly]
- * title + subtitle [usage hint]`, with a 3pt leading blue bar +
- * tinted background for the selected state. Hairline dividers between
- * rows — no per-row borders.
+ * Pool-first restructure (Web inline-editing port PR-1 — the RESTRUCTURE
+ * half; the inline row editor is PR-2). Order (mirrors iOS
+ * `BoardWizardTasksStepView` so the two platforms stop diverging):
  *
- * Composites can't be added to a board directly (boards accept flat
- * tasks). The composite row uses a chevron instead of a checkbox and
- * expands inline to show its leaves; each leaf is rendered as a
- * normal task row, indented, so selection semantics are identical.
- * Replaces the earlier `CompositeDerivationPanel` + "+ Add to pool"
- * pattern which read as a different UI language.
+ *   1. `TasksPoolHeader` — kicker, N/required count, progress bar, note.
+ *   2. "PULL IN A POOL" card (+ P5 core-setup section) — unchanged.
+ *   3. "Add tasks" — quick-add row + `SpecialTaskPanel`.
+ *   4. `LibrarySheet` — dashed entry button → bottom sheet. The library
+ *      (search, filters, from-a-board, compound expand) lives ENTIRELY
+ *      inside the sheet now; it's no longer primary content.
+ *   5. `PoolList` — the tasks actually on this board, in `poolOrder`.
+ *      Each row's ✎ slot is a disabled PR-1 stub (PR-2 wires the inline
+ *      editor); the slot is still rendered so the trailing gutter's
+ *      column alignment doesn't shift when PR-2 lands.
+ *   6. "Save these N as a new pool…" (P3) — unchanged.
+ *   7. Footer — Back / Next.
  *
- * The component is controlled — `selectedTaskIds`, `centerTaskId`,
- * and navigation callbacks are owned by the wizard's state controller.
- * Internal state is UI-only (search query, active filter, expanded
- * composite, sheet open).
+ * Cross-cutting overlays (right-click menu, derive-smaller modal, copy
+ * modal, task-detail sheet, save-as-pool sheet) stay owned here since the
+ * SAME `RowContextMenu` instance now serves both `LibrarySheet` and
+ * `PoolList` rows.
+ *
+ * The component is controlled — `selectedTaskIds`, `poolOrder`,
+ * `centerTaskId`, and navigation callbacks are owned by the wizard's
+ * state controller. Internal state here is limited to the shared overlay
+ * modals; `LibrarySheet`/`SpecialTaskPanel`/`PoolList` each own their own
+ * UI-local state (search, filters, expand, panel-open).
  */
 export function BoardWizardTasksStep({
   library,
   selectedTaskIds,
+  poolOrder,
   onToggleSelection,
   tasksRequired,
   isRecurring,
@@ -275,66 +264,27 @@ export function BoardWizardTasksStep({
 
   // R1 counters refresh (review fix) — unfiltered (non-browsable-filtered)
   // task pool + this session's pending tasks, used ONLY as the counter-link
-  // suggestion pool passed to `NewTaskSheet` → `CreateNewTaskForm`. Unlike
-  // `effectiveAllTasks` (built from `browsableTasks` for pickers/autocomplete),
-  // this uses `library.allTasks` so goal-less hub-born counters — which
-  // `computeBrowsableTasks` excludes — still surface a link suggestion in the
-  // wizard, AND so a same-session pending counter (created earlier in this
-  // wizard visit, not yet persisted) is matchable too — otherwise creating
-  // counting task A (pending) then a same-pair task B silently duplicates
-  // instead of linking. Mirrors iOS `BoardWizardTasksStepView.effectiveSuggestionPool`.
+  // suggestion pool passed to `SpecialTaskPanel`. Unlike `effectiveAllTasks`
+  // (built from `browsableTasks` for pickers/autocomplete), this uses
+  // `library.allTasks` so goal-less hub-born counters — which
+  // `computeBrowsableTasks` excludes — still surface a link suggestion in
+  // the wizard, AND so a same-session pending counter (created earlier in
+  // this wizard visit, not yet persisted) is matchable too. Mirrors iOS
+  // `BoardWizardTasksStepView.effectiveSuggestionPool`.
   const effectiveSuggestionPool = useMemo<Task[]>(
     () => mergeSuggestionPool(library.allTasks, pendingTasks),
     [library.allTasks, pendingTasks],
   );
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<TasksFilter>('all');
-
-  // "From parent boards" filter chip is only meaningful when the current
-  // timeframe HAS parents — yearly has none; custom is excluded from
-  // recurrence. Hide the chip otherwise to avoid an always-empty filter.
-  const hasParentTimeframes = PARENT_TIMEFRAMES[currentTimeframe].length > 0;
-
-  // `From a board…` is unconditionally available (no timeframe gating)
-  // since any wizard timeframe is a valid context for browsing another
-  // board. Sits AFTER `From parent boards` so the parent-tasks chip
-  // stays in its established position.
-  const filterTabs = useMemo(
-    () =>
-      hasParentTimeframes
-        ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB, FROM_BOARD_TAB]
-        : [...BASE_FILTER_TABS, FROM_BOARD_TAB],
-    [hasParentTimeframes]
-  );
-
-  // Coerce the active filter back to 'all' if the user picked
-  // 'from-parents' on a timeframe with parents (e.g., daily) and then
-  // backed out to Step 1 and switched to a parentless timeframe (yearly /
-  // custom). Without this, the chip disappears from the tab row but
-  // `activeFilter` remains 'from-parents' — leaving no tab visually
-  // selected and showing the "No parent boards" empty state instead of
-  // the user's library.
-  useEffect(() => {
-    if (!hasParentTimeframes && activeFilter === 'from-parents') {
-      setActiveFilter('all');
-    }
-  }, [hasParentTimeframes, activeFilter]);
-
   // Reactive list of unique tasks placed on currently-active parent boards.
-  // Always called (hooks rule) but returns [] when timeframe has no parents,
-  // so it's effectively a no-op for yearly/custom.
+  // Always called (hooks rule) but returns [] when the timeframe has no
+  // parents, so it's effectively a no-op for yearly/custom.
   const parentBoardTasks = useParentBoardTasks(userId, currentTimeframe);
-  const [expandedCompositeId, setExpandedCompositeId] = useState<string | null>(null);
-  /** #73 — default on. Hides compound children from the primitives pool;
-   *  they're reachable by expanding the parent compound in the composites region.
-   *  Wizard rule: no independently-placed exception (simpler than Tasks tab). */
-  const [groupByCompound, setGroupByCompound] = useState(true);
-  const [isSheetOpen, setIsSheetOpen] = useState(false);
+
   /** Right-click context menu state. Null when no menu is open. Stores
    *  the target task's id + cursor position; actions are derived at render
-   *  time from the task's type (compound vs primitive). Mirrors the iOS
-   *  `.contextMenu` long-press affordance on `BoardWizardTasksStepView`. */
+   *  time from the task's type (compound vs primitive). Shared by both
+   *  `LibrarySheet` and `PoolList` rows. */
   const [rowContextMenu, setRowContextMenu] = useState<
     { taskId: string; x: number; y: number } | null
   >(null);
@@ -343,15 +293,10 @@ export function BoardWizardTasksStep({
   const [derivingFromTask, setDerivingFromTask] = useState<Task | null>(null);
   const [deriveMaxCountInput, setDeriveMaxCountInput] = useState('');
   const [deriveError, setDeriveError] = useState<string | null>(null);
-  /** `From a board…` filter state. `null` = picker mode (no source
-   *  chosen yet); set = grid mode for that board. Selection itself
-   *  lives in `selectedTaskIds` (wizard-owned), so swapping sources
-   *  doesn't lose what the user has already linked. */
-  const [pickedSourceBoardId, setPickedSourceBoardId] = useState<string | null>(null);
   /** Task ids copied via the From-a-board grid's `⎘ Add a copy…`
-   *  this session. Used to render the amber-tint indicator on source
-   *  squares whose original we've already copied. Cleared on remount
-   *  (session-scoped). */
+   *  this session (surfaced inside `LibrarySheet`). Used to render the
+   *  amber-tint indicator on source squares whose original we've already
+   *  copied. Cleared on remount (session-scoped). */
   const [copiedTaskIds, setCopiedTaskIds] = useState<Set<string>>(new Set());
   /** Source task whose Copy modal is currently mounted. Null = no modal. */
   const [copyingTask, setCopyingTask] = useState<Task | null>(null);
@@ -418,10 +363,9 @@ export function BoardWizardTasksStep({
     [selectedTaskIds, tasksRequired],
   );
 
-  // Usage-hint data — "N boards" / "unused" / "N steps" / "N subtasks".
-  // Matches the composite wizard's library row hints so the two
-  // surfaces agree at a glance. Board counts require a live query
-  // since `useTaskLibrary` doesn't expose boardTasks.
+  // Usage-hint data — "N boards" / "unused" — shared by LibrarySheet and
+  // PoolList rows. Requires a live query since `useTaskLibrary` doesn't
+  // expose boardTasks.
   const allBoardTasks = useLiveQuery(() => fetchAllBoardTasks(), []) ?? [];
 
   const taskBoardCounts = useMemo(() => {
@@ -442,8 +386,8 @@ export function BoardWizardTasksStep({
   // Bug #85 — Merge in-memory pending `childLinks` with the live
   // `compoundChildrenByCompound` map so a newly-created (not-yet-
   // persisted) compound shows the right step count + leaf previews +
-  // expandable leaves in the Tasks step. Without this, a pending
-  // compound rendered with 0 steps and couldn't expand.
+  // expandable leaves. Without this, a pending compound rendered with 0
+  // steps and couldn't expand.
   const effectiveChildrenByCompound = useMemo<Record<string, CompoundChild[]>>(() => {
     if (!pendingTasks || pendingTasks.size === 0) {
       return library.compoundChildrenByCompound;
@@ -460,122 +404,6 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.compoundChildrenByCompound, pendingTasks]);
-
-  // Subtask counts for compounds (formerly composites + progress). Both
-  // tabs render counts from the same `compound_children` source — the
-  // legacy `compositeSubtaskCounts` collapses into one map keyed by the
-  // parent compoundTaskId. Sources from the effective map so pending
-  // compounds show real counts.
-  const compoundChildCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const [compoundId, children] of Object.entries(effectiveChildrenByCompound)) {
-      counts[compoundId] = children.length;
-    }
-    return counts;
-  }, [effectiveChildrenByCompound]);
-
-  // Alias kept for the existing call sites that still pass
-  // `compositeSubtaskCounts` separately. Resolves to the same
-  // compound-children-derived count under the unified model.
-  const compositeSubtaskCounts = compoundChildCounts;
-
-  // First-3 child titles + total subtask count, keyed by parent
-  // compoundTaskId. Looks each child up via `effectiveTaskMap` — under
-  // the unified model, composites *are* tasks, so a single map handles
-  // both primitive and nested compound children. Sources from the
-  // effective children map so pending compounds get their previews.
-  const compositeLeafPreviews = useMemo(() => {
-    const previews: Record<string, { titles: string[]; totalLeaves: number }> = {};
-    for (const [compoundId, children] of Object.entries(effectiveChildrenByCompound)) {
-      // children are pre-sorted by childIndex in useTaskLibrary.
-      const titles: string[] = [];
-      for (const child of children.slice(0, 3)) {
-        const t = effectiveTaskMap[child.childTaskId];
-        if (t) titles.push(t.title);
-      }
-      previews[compoundId] = { titles, totalLeaves: children.length };
-    }
-    return previews;
-  }, [effectiveChildrenByCompound, effectiveTaskMap]);
-
-  // Resolve a compound's primitive task leaves (flat — nested compounds
-  // aren't boardable). Mirrors the legacy "taskId-only" semantic of
-  // CompositeNode leaves. Sources from the effective children map so
-  // pending compounds expand correctly.
-  const compositeLeafTasks = useMemo(() => {
-    const byCompound: Record<string, Task[]> = {};
-    for (const [compoundId, children] of Object.entries(effectiveChildrenByCompound)) {
-      const tasks: Task[] = [];
-      for (const child of children) {
-        const t = effectiveTaskMap[child.childTaskId];
-        if (!t) continue;
-        // Skip nested compounds — only flat primitive task leaves can be
-        // placed directly on a board.
-        if (t.type === TaskType.COMPOUND) continue;
-        tasks.push(t);
-      }
-      byCompound[compoundId] = tasks;
-    }
-    return byCompound;
-  }, [effectiveChildrenByCompound, effectiveTaskMap]);
-
-  const visible = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const matches = (title: string): boolean =>
-      q.length === 0 || title.toLowerCase().includes(q);
-    // Phase 6.Y — Timeboxed Tasks: hide expired tasks from every
-    // wizard pool branch. Same default as the Tasks-tab list. There's
-    // no "show expired" toggle here — the wizard is "tasks I might
-    // want on this new board", and an expired task by definition
-    // shouldn't be added to a fresh board. A user who genuinely needs
-    // to backfill an expired task can re-extend its window from the
-    // Tasks tab first.
-    const notExpired = (t: Task): boolean => !isTaskExpired(t);
-
-    // "From parent boards" surfaces tasks already placed on currently-
-    // active longer-window parent boards (e.g. tasks on the active monthly
-    // when creating a daily). Per Phase 6.1's locked design, selecting one
-    // places the SAME task — completion is shared globally. Compounds
-    // surfaced through this filter render in the primitives region too:
-    // expanded leaves aren't useful here since the user is picking from
-    // an existing curated set.
-    if (activeFilter === 'from-parents') {
-      const filtered = parentBoardTasks.filter((t) => notExpired(t) && matches(t.title));
-      return { tasks: filtered, composites: [] };
-    }
-
-    // Issue #73 — when grouping is on, hide ALL children from the primitives pool
-    // (wizard rule: no independently-placed exception — children are reachable via
-    // the composites region expand). fromParents is excluded from this rule since
-    // it uses its own curated source list.
-    const notGroupedChild = (t: Task): boolean =>
-      !groupByCompound || !library.childTaskIds.has(t.id);
-
-    // Under the unified compound model:
-    //   - "Compound" filter = all tasks with type=COMPOUND → shown in composites region
-    //   - "Normal"/"Counting" = primitives
-    //   - "All" pool = primitives only (all compounds render in the composites region)
-    const tasks =
-      activeFilter === 'all'
-        ? effectiveAllTasks.filter(
-            (t) => notExpired(t) && t.type !== TaskType.COMPOUND && notGroupedChild(t) && matches(t.title)
-          )
-        : activeFilter === 'compound'
-          ? []
-          : effectiveAllTasks.filter(
-              (t) => notExpired(t) && t.type === activeFilter && notGroupedChild(t) && matches(t.title)
-            );
-
-    // Composites region shows ALL compound tasks under "All" and under
-    // the "Compound" filter so every compound is reachable, selectable,
-    // and expandable into its leaves.
-    const composites =
-      activeFilter === 'all' || activeFilter === 'compound'
-        ? effectiveAllTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t.title))
-        : [];
-
-    return { tasks, composites };
-  }, [effectiveAllTasks, activeFilter, searchQuery, parentBoardTasks, groupByCompound, library.childTaskIds]);
 
   const selectedCount = selectedTaskIds.size;
   const isCountSatisfied = selectedCount >= tasksRequired;
@@ -597,48 +425,17 @@ export function BoardWizardTasksStep({
 
   return (
     <div className={styles.container}>
-      {/* Header — selection count, search, filter */}
-      <div className={styles.header}>
-        <div className={styles.countRow}>
-          <div className={styles.countGroup}>
-            <span className={styles.countLabel}>
-              Selected:{' '}
-              <span className={isCountSatisfied ? styles.countOk : styles.countShort}>
-                {selectedCount} / {tasksRequired}
-                {/* Suffix only in recurring mode — the spawn picks N
-                    from the larger pool each window, so the user can
-                    add more than N and the count is "min". One-off
-                    boards keep the bare count. */}
-                {isRecurring ? ' min' : null}
-              </span>
-            </span>
-            {centerTaskMode && (
-              <span
-                className={
-                  centerTaskId !== null && selectedTaskIds.has(centerTaskId)
-                    ? styles.centerBadgeOk
-                    : styles.centerBadgeWarn
-                }
-              >
-                {centerTaskId !== null && selectedTaskIds.has(centerTaskId)
-                  ? '★ Center picked'
-                  : '★ Center required'}
-              </span>
-            )}
-          </div>
-          <button
-            type="button"
-            className={styles.newTaskButton}
-            onClick={() => setIsSheetOpen(true)}
-          >
-            + New task
-          </button>
-        </div>
+      {/* 1. Pool header card */}
+      <TasksPoolHeader
+        selectedCount={selectedCount}
+        tasksRequired={tasksRequired}
+        isRecurring={isRecurring}
+        centerTaskMode={centerTaskMode}
+        centerSatisfied={isCenterSatisfied}
+      />
 
-        {/* P3 — "PULL IN A POOL" card. Unions a pool's tasks into the
-            selection; toggling a pulled pool off removes only its
-            non-manual, non-still-supplied tasks. The saved pool itself is
-            never modified by either action. */}
+      {/* 2. "PULL IN A POOL" card (P3) + P5 core-setup section */}
+      <div className={styles.header}>
         <div className={styles.poolPullCard}>
           <span className={styles.poolPullKicker}>
             {isCore ? 'Start with a pool — optional' : 'Pull in a pool'}
@@ -663,20 +460,11 @@ export function BoardWizardTasksStep({
           )}
         </div>
 
-        {/* P5 — Core-board-setup-only: the selected-tasks chip strip
-            (plain = pool-/default-sourced, blue-removable = hand-added
-            this session) + the "Start every <Timeframe> board with 'X'"
-            checkbox. Judgment call: placed directly below the pool-pull
-            card (above search/filters/list) rather than duplicating or
-            relocating the single `WizardQuickAddRow` instance further
-            down — that row already renders just below this header block,
-            which reads as "near" this section without touching layout
-            for non-core wizard sessions. */}
         {isCore && (
           <div className={styles.coreDefaultsSection}>
             {selectedTaskIds.size > 0 && (
               <div className={styles.coreChipStrip} role="group" aria-label="Tasks in this board">
-                {Array.from(selectedTaskIds).map((taskId) => {
+                {poolOrder.map((taskId) => {
                   const task = effectiveTaskMap[taskId];
                   const title = task?.title || '(untitled task)';
                   const kind = classifyChipProvenance(taskId, manualTaskIds);
@@ -718,267 +506,82 @@ export function BoardWizardTasksStep({
             )}
           </div>
         )}
-
-        {activeFilter !== 'from-board' && (
-          <input
-            type="search"
-            className={styles.search}
-            placeholder="Search your tasks…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        )}
-
-        <div className={styles.filterChips} role="group" aria-label="Filter tasks">
-          {filterTabs.map((t) => (
-            <RisoChip
-              key={t.value}
-              on={activeFilter === t.value}
-              onClick={() => {
-                const next = t.value;
-                setActiveFilter(next);
-                setExpandedCompositeId(null);
-                // Re-entering the From-a-board flow resets the picker so
-                // the user always lands in "pick a board" mode.
-                if (next === 'from-board') {
-                  setPickedSourceBoardId(null);
-                }
-              }}
-            >
-              {t.label}
-            </RisoChip>
-          ))}
-        </div>
-
-        {/* Issue #73 — Group subtasks chip. When on (default), compound children
-            are hidden from the primitives pool — reach them via the composites
-            region expand. */}
-        <div className={styles.groupRow}>
-          <button
-            type="button"
-            className={`${styles.groupChip} ${groupByCompound ? styles.groupChipActive : ''}`}
-            aria-pressed={groupByCompound}
-            onClick={() => {
-              setGroupByCompound((v) => !v);
-              setExpandedCompositeId(null);
-            }}
-            title={
-              groupByCompound
-                ? 'Grouping ON — subtasks hidden from flat list'
-                : 'Grouping OFF — show all tasks at top level'
-            }
-          >
-            {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
-          </button>
-        </div>
       </div>
 
-      {/* Quick-add row — inline NORMAL task entry. Hidden in "From a board…"
-          mode since that flow has its own grid interaction. The full modal
-          (NewTaskSheet) remains for Counting/Compound/Achievement types.
-          Web twin of iOS RisoQuickAddRowView.
-          Library polling (owner decision 2026-07-21): `effectiveAllTasks`
-          is the SAME browsable+pending set the picker/autocomplete surfaces
-          below already use, so a typed title that matches an existing task
-          offers a reuse match instead of a duplicate. `onExistingTaskPicked`
-          reuses the exact `onTaskCreated` seam — both add the (new or
-          existing) task id to `selectedTaskIds` via the wizard's
-          `toggleTaskSelection`, and the dropdown already excludes selected
-          ids so this can never toggle one off. */}
-      {activeFilter !== 'from-board' && (
-        <WizardQuickAddRow
+      {/* 3. "Add tasks" — quick-add row + special-type panel */}
+      <div className={styles.addTasksSection}>
+        <RisoSectionLabel>Add tasks</RisoSectionLabel>
+
+        <div className={styles.quickAddCard}>
+          <WizardQuickAddRow
+            userId={userId}
+            currentTimeframe={currentTimeframe}
+            currentStartDate={currentStartDate}
+            currentEndDate={currentEndDate}
+            onTaskCreated={onTaskCreated}
+            onPendingCreated={onPendingCreated}
+            // Library polling (owner decision 2026-07-21): the SAME
+            // browsable+pending set the library sheet / compound
+            // autocomplete already use, so a typed title that matches an
+            // existing task offers a reuse match instead of a duplicate.
+            libraryTasks={effectiveAllTasks}
+            selectedIds={selectedTaskIds}
+            onExistingTaskPicked={onTaskCreated}
+          />
+        </div>
+
+        <SpecialTaskPanel
           userId={userId}
-          currentTimeframe={currentTimeframe}
-          currentStartDate={currentStartDate}
-          currentEndDate={currentEndDate}
+          defaultTimeframe={currentTimeframe}
+          defaultStartDate={currentStartDate}
+          defaultEndDate={currentEndDate}
           onTaskCreated={onTaskCreated}
           onPendingCreated={onPendingCreated}
-          libraryTasks={effectiveAllTasks}
-          selectedIds={selectedTaskIds}
-          onExistingTaskPicked={onTaskCreated}
+          onCompoundCreated={onCompositeCreated}
+          suggestionPool={effectiveSuggestionPool}
         />
-      )}
+      </div>
 
-      {/* From-a-board flow — picker (no source) or grid (source picked) */}
-      {activeFilter === 'from-board' ? (
-        pickedSourceBoardId === null ? (
-          <FromBoardPicker
-            userId={userId}
-            onPickBoard={(id) => setPickedSourceBoardId(id)}
-          />
-        ) : (
-          <FromBoardGrid
-            boardId={pickedSourceBoardId}
-            userId={userId}
-            selectedTaskIds={selectedTaskIds}
-            copiedTaskIds={copiedTaskIds}
-            onToggleSelection={handleToggle}
-            onCopyTask={(task) => setCopyingTask(task)}
-            onAddAllSubtasks={(_compoundTask, leafTaskIds) => {
-              // Grid passes its already-resolved leaf ids (from the
-              // SOURCE board's compound, which may not be in the
-              // wizard's own library). Don't fall back to a parent-
-              // side lookup — it would silently no-op for compounds
-              // not yet in the library map.
-              for (const leafId of leafTaskIds) {
-                if (!selectedTaskIds.has(leafId)) {
-                  onToggleSelection(leafId);
-                }
-              }
-            }}
-            onOpenInLibrary={(id) => setOpenedTaskInLibrary(id)}
-            onChangeSource={() => setPickedSourceBoardId(null)}
-            onTaskCreated={(task) => {
-              // Derived counter — auto-add to selection like the list
-              // flow does.
-              if (!selectedTaskIds.has(task.id)) {
-                onToggleSelection(task.id);
-              }
-            }}
-          />
-        )
-      ) : visible.tasks.length === 0 && visible.composites.length === 0 ? (
-        <div className={styles.emptyState}>
-          {searchQuery.trim().length > 0
-            ? `No tasks match "${searchQuery}".`
-            : activeFilter === 'from-parents'
-              ? 'No parent boards. Create a weekly/monthly/yearly board first.'
-              : 'Library is empty. Tap "New task" to create one.'}
-        </div>
-      ) : (
-        <ul className={styles.list}>
-          {visible.tasks.map((task) => {
-            const isSelected = selectedTaskIds.has(task.id);
-            const isCenter = centerTaskId === task.id;
-            return (
-              <li key={task.id}>
-                {renderTaskRow({
-                  task,
-                  isSelected,
-                  onToggle: () => handleToggle(task.id),
-                  onContextMenu: (e) => {
-                    e.preventDefault();
-                    setRowContextMenu({ taskId: task.id, x: e.clientX, y: e.clientY });
-                  },
-                  taskBoardCounts,
-                  showCenterStar: centerTaskMode && isSelected,
-                  isCenter,
-                  onCenterClick: () => handleCenterRadio(task.id),
-                  provenance: isSelected ? taskProvenance.get(task.id) : undefined,
-                })}
-              </li>
-            );
-          })}
+      {/* 4. Library entry button → bottom sheet */}
+      <LibrarySheet
+        effectiveAllTasks={effectiveAllTasks}
+        childTaskIds={library.childTaskIds}
+        effectiveChildrenByCompound={effectiveChildrenByCompound}
+        effectiveTaskMap={effectiveTaskMap}
+        taskBoardCounts={taskBoardCounts}
+        selectedTaskIds={selectedTaskIds}
+        onToggleSelection={handleToggle}
+        centerTaskMode={centerTaskMode}
+        centerTaskId={centerTaskId}
+        onCenterClick={handleCenterRadio}
+        taskProvenance={taskProvenance}
+        onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
+        onDeriveRequested={(task) => {
+          setDerivingFromTask(task);
+          setDeriveMaxCountInput('');
+          setDeriveError(null);
+        }}
+        onOpenInLibrary={(id) => setOpenedTaskInLibrary(id)}
+        onCopyTaskRequested={(task) => setCopyingTask(task)}
+        copiedTaskIds={copiedTaskIds}
+        userId={userId}
+        currentTimeframe={currentTimeframe}
+        parentBoardTasks={parentBoardTasks}
+      />
 
-          {visible.composites.map((ct) => {
-            const isExpanded = expandedCompositeId === ct.id;
-            const isCompoundSelected = selectedTaskIds.has(ct.id);
-            const isCenter = centerTaskId === ct.id;
-            const leafCount = compositeSubtaskCounts[ct.id] ?? 0;
-            const preview = compositeLeafPreviews[ct.id];
-            const previewSubtitle = preview && preview.titles.length > 0
-              ? (preview.totalLeaves > preview.titles.length
-                  ? `${preview.titles.join(', ')}, +${preview.totalLeaves - preview.titles.length} more`
-                  : preview.titles.join(', '))
-              : '';
-            const leaves = compositeLeafTasks[ct.id] ?? [];
-            return (
-              <li key={ct.id}>
-                {/* Compound header row — two independent interaction zones:
-                 *  1. Row body (select toggle) — adds/removes the compound task itself.
-                 *  2. Disclosure button (chevron) — expands/collapses the leaf list. */}
-                <div className={isCompoundSelected ? styles.rowSelectedWrap : styles.rowWrap}>
-                  <button
-                    type="button"
-                    className={styles.row}
-                    onClick={() => handleToggle(ct.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setRowContextMenu({ taskId: ct.id, x: e.clientX, y: e.clientY });
-                    }}
-                    aria-pressed={isCompoundSelected}
-                  >
-                    <RisoTypeBadge type="compound" />
-                    <div className={styles.rowCenter}>
-                      <span className={styles.rowTitle}>{ct.title}</span>
-                      {previewSubtitle && (
-                        <span className={styles.rowSubtitle}>{previewSubtitle}</span>
-                      )}
-                      {isCompoundSelected && taskProvenance.get(ct.id) && (
-                        <span className={styles.rowProvenance}>{taskProvenance.get(ct.id)}</span>
-                      )}
-                    </div>
-                    <span className={styles.rowUsage}>
-                      {leafCount} subtask{leafCount === 1 ? '' : 's'}
-                    </span>
-                  </button>
-                  {centerTaskMode && isCompoundSelected && (
-                    <button
-                      type="button"
-                      className={`${styles.centerRadio} ${isCenter ? styles.centerRadioOn : ''}`}
-                      onClick={() => handleCenterRadio(ct.id)}
-                      aria-label={isCenter ? 'Center task' : 'Mark as center task'}
-                      aria-pressed={isCenter}
-                      title={isCenter ? 'Center task' : 'Mark as center task'}
-                    >
-                      {isCenter ? '★' : '☆'}
-                    </button>
-                  )}
-                  {/* Disclosure button — separate from the select tap target */}
-                  <button
-                    type="button"
-                    className={styles.disclosureButton}
-                    onClick={() =>
-                      setExpandedCompositeId((prev) => (prev === ct.id ? null : ct.id))
-                    }
-                    aria-expanded={isExpanded}
-                    aria-label={isExpanded ? 'Collapse subtasks' : 'Expand subtasks'}
-                  >
-                    <span
-                      className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ''}`}
-                      aria-hidden="true"
-                    >
-                      ▶
-                    </span>
-                  </button>
-                </div>
-
-                {isExpanded && (
-                  <ul className={styles.leafList}>
-                    {leaves.length === 0 && (
-                      <li className={styles.leafEmpty}>
-                        This composite has no task leaves — nothing boardable here.
-                      </li>
-                    )}
-                    {leaves.map((leafTask) => {
-                      const isSelected = selectedTaskIds.has(leafTask.id);
-                      const isCenter = centerTaskId === leafTask.id;
-                      return (
-                        <li key={leafTask.id} className={styles.leafItem}>
-                          {renderTaskRow({
-                            task: leafTask,
-                            isSelected,
-                            onToggle: () => handleToggle(leafTask.id),
-                            onContextMenu: (e) => {
-                              e.preventDefault();
-                              setRowContextMenu({ taskId: leafTask.id, x: e.clientX, y: e.clientY });
-                            },
-                            taskBoardCounts,
-                            showCenterStar: centerTaskMode && isSelected,
-                            isCenter,
-                            onCenterClick: () => handleCenterRadio(leafTask.id),
-                            provenance: isSelected ? taskProvenance.get(leafTask.id) : undefined,
-                          })}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {/* 5. Pool list — the tasks actually on this board */}
+      <PoolList
+        poolOrder={poolOrder}
+        effectiveTaskMap={effectiveTaskMap}
+        effectiveChildrenByCompound={effectiveChildrenByCompound}
+        taskBoardCounts={taskBoardCounts}
+        taskProvenance={taskProvenance}
+        centerTaskMode={centerTaskMode}
+        centerTaskId={centerTaskId}
+        onCenterClick={handleCenterRadio}
+        onRemove={handleToggle}
+        onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
+      />
 
       {/* P3 — "Save these N as a new pool…" — mints a Pool from the
           current selection, independent of the board. */}
@@ -1034,24 +637,6 @@ export function BoardWizardTasksStep({
         </button>
       </div>
 
-      <NewTaskSheet
-        isOpen={isSheetOpen}
-        onClose={() => setIsSheetOpen(false)}
-        userId={userId}
-        onTaskCreated={(task) => {
-          onTaskCreated(task);
-        }}
-        onPendingCreated={onPendingCreated}
-        onCompositeCreated={(ct) => {
-          onCompositeCreated(ct);
-        }}
-        defaultTimeframe={currentTimeframe}
-        defaultStartDate={currentStartDate}
-        defaultEndDate={currentEndDate}
-        deferPersist={onPendingCreated !== undefined}
-        suggestionPool={effectiveSuggestionPool}
-      />
-
       {rowContextMenu && (() => {
         // Use effectiveTaskMap (library + this-session pending tasks), not
         // library.taskMap — otherwise right-clicking a just-created pending
@@ -1066,8 +651,9 @@ export function BoardWizardTasksStep({
           && target.action != null && target.unit != null && target.maxCount != null;
         const isSelected = selectedTaskIds.has(target.id);
         const isCenter = centerTaskId === target.id;
-        const isExpanded = expandedCompositeId === target.id;
-        const leaves = compositeLeafTasks[target.id] ?? [];
+        const leaves = (effectiveChildrenByCompound[target.id] ?? [])
+          .map((c) => effectiveTaskMap[c.childTaskId])
+          .filter((t): t is Task => t !== undefined && t.type !== TaskType.COMPOUND);
         const close = (): void => setRowContextMenu(null);
         return (
           <RowContextMenu
@@ -1094,14 +680,6 @@ export function BoardWizardTasksStep({
                 : []),
               ...(isCompound
                 ? [
-                    {
-                      label: isExpanded ? 'Collapse subtasks' : 'Expand subtasks',
-                      glyph: isExpanded ? '▲' : '▼',
-                      action: () => {
-                        setExpandedCompositeId(isExpanded ? null : target.id);
-                        close();
-                      },
-                    },
                     ...(leaves.length > 0
                       ? [{
                           label: 'Add all subtasks to board',
@@ -1117,7 +695,7 @@ export function BoardWizardTasksStep({
                         }]
                       : []),
                     // Per-subtask quick-add — flat-listed so the user can
-                    // pick a single leaf without expanding the row first.
+                    // pick a single leaf without opening the library sheet.
                     // Already-selected leaves render as disabled checkmarks.
                     ...leaves.map((leaf) => {
                       const leafIsSelected = selectedTaskIds.has(leaf.id);
@@ -1238,7 +816,7 @@ export function BoardWizardTasksStep({
           templates={recurringTemplatesForPoolSheet}
           allTasks={library.allTasks}
           browsableTasks={browsableTasks}
-          initialTaskIds={Array.from(selectedTaskIds).filter(
+          initialTaskIds={poolOrder.filter(
             (id) => !(pendingTasks?.has(id) ?? false),
           )}
           onClose={() => setShowSaveAsPoolSheet(false)}
@@ -1249,7 +827,3 @@ export function BoardWizardTasksStep({
     </div>
   );
 }
-
-// Row renderer (shared between top-level tasks and expanded leaves) now
-// lives in `./TaskRow` — extracted (P4) so the Preview step's repeating-
-// board deck list can reuse the exact same row instead of a second copy.

@@ -80,6 +80,18 @@ export interface CreateNewTaskFormProps {
    * behavior there is unchanged.
    */
   suggestionPool?: Task[];
+  /**
+   * Web inline-editing port PR-1 — restricts the Type selector to a subset
+   * of `TASK_TYPES`. `SpecialTaskPanel` (the wizard Tasks step's inline
+   * "counting, compound or achievement" panel) passes
+   * `[COUNTING, COMPOUND, ACHIEVEMENT]` so Normal — already covered by the
+   * step's separate quick-add row — never appears there. Defaults to the
+   * full 4-type list, so every other call site (`NewTaskSheet`,
+   * `PoolEditSheet`'s "New task" button) is unaffected. Reuses this same
+   * form/validation/creation logic verbatim rather than forking a second
+   * copy — see CLAUDE.md "reuse before creating".
+   */
+  typeOptions?: TaskType[];
 }
 
 export function CreateNewTaskForm({
@@ -89,7 +101,11 @@ export function CreateNewTaskForm({
   submitLabel = 'Create & Add to Pool',
   onCreateLinked,
   suggestionPool,
+  typeOptions,
 }: CreateNewTaskFormProps): React.ReactElement {
+  const visibleTypes = typeOptions
+    ? TASK_TYPES.filter((t) => typeOptions.includes(t.value))
+    : TASK_TYPES;
   // Phase 6.3 — Workspace lookups for the Achievement-task picker.
   // Both hooks return non-deleted rows for `userId` (or `[]` while
   // auth is loading); the dropdowns render the empty state below
@@ -189,7 +205,7 @@ export function CreateNewTaskForm({
           Type<span className={styles.required}>*</span>
         </label>
         <TaskTypeSelector
-          types={TASK_TYPES}
+          types={visibleTypes}
           selectedType={form.taskType}
           onTypeChange={(value) => form.handleTypeChange(value as TaskType)}
         />

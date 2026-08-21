@@ -1,0 +1,222 @@
+/* PoolList — "ON YOUR BOARD" section of the wizard Tasks step (Web
+   inline-editing port PR-1). Ports iOS RisoPoolListView's resting rows;
+   the inline editor swap is PR-2. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sectionLabel {
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.countPill {
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+}
+
+.emptyNote {
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  border: 2px dashed color-mix(in srgb, var(--riso-muted) 50%, transparent);
+  border-radius: var(--riso-r-card);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  overflow: hidden;
+  background: var(--riso-paper);
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  /* Every row here is on the board — blue tint + 4px leading bar always on. */
+  background: color-mix(in srgb, var(--riso-blue) 13%, var(--riso-paper));
+}
+.row + .row {
+  border-top: 1.5px solid var(--riso-hair);
+}
+.row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--riso-blue);
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 13px 15px;
+  cursor: default;
+}
+.rowBody[role='button'] {
+  cursor: pointer;
+}
+.rowBody[role='button']:hover {
+  background: color-mix(in srgb, var(--riso-blue) 6%, transparent);
+}
+.rowBody[role='button']:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rowTitle {
+  font-family: var(--riso-font-head);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowSubtitle {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowUsage {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+
+.chevron,
+.chevronOpen {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--riso-muted);
+  transition: transform 0.15s;
+}
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+/* ── Trailing gutter — exactly 2 or 3 fixed 46px slots ── */
+.gutter {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+}
+.gutterSlot {
+  flex: 0 0 46px;
+  width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-left: 1.5px solid var(--riso-hair);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.gutterSlot:hover:not(:disabled) {
+  background: var(--riso-paper-2);
+}
+.gutterSlot:disabled {
+  cursor: default;
+}
+.gutterSlot:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+
+.starOn {
+  color: var(--riso-gold);
+  font-size: 1.15rem;
+}
+.starOff {
+  color: var(--riso-muted);
+  font-size: 1.15rem;
+}
+
+/* PR-1 stub — visually present, non-functional. PR-2 replaces this slot's
+   contents with a working pencil that opens the inline editor. */
+.pencilDisabled {
+  color: var(--riso-muted);
+  opacity: 0.4;
+  font-size: 0.95rem;
+}
+
+.removeGlyph {
+  color: var(--riso-muted);
+  font-size: 0.9rem;
+}
+.gutterSlot:hover .removeGlyph {
+  color: var(--riso-red);
+}
+
+.childrenPreview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 15px 12px;
+  border-top: 1.5px solid var(--riso-hair);
+  padding-top: 8px;
+}
+.childrenEmpty {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.childPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--riso-ink);
+  padding: 4px 9px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+}

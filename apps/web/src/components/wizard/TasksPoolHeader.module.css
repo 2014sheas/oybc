@@ -1,0 +1,115 @@
+/* TasksPoolHeader — pool-header card for the wizard Tasks step (Web
+   inline-editing port PR-1). Ports iOS RisoTasksPoolHeaderView. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.headRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kicker {
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--riso-ink);
+}
+
+.countBadge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+}
+.countInk,
+.countOk {
+  font-family: var(--riso-font-head);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.44px;
+}
+.countInk {
+  color: var(--riso-ink);
+}
+.countOk {
+  color: var(--riso-green);
+}
+.countDenominator {
+  font-family: var(--riso-font-head);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+
+.progressTrack {
+  margin-top: 9px;
+  margin-bottom: 8px;
+  height: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 6px;
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+.progressFill {
+  height: 100%;
+  transition: width 0.2s ease-out, background-color 0.2s ease-out;
+}
+
+.note {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.noteOk {
+  color: var(--riso-green);
+  font-weight: 700;
+}
+.noteShort {
+  color: var(--riso-muted);
+}
+
+.centerLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--riso-hair);
+}
+.centerGlyphOn,
+.centerGlyphOff {
+  font-size: 11px;
+  font-weight: 700;
+}
+.centerGlyphOn {
+  color: var(--riso-gold);
+}
+.centerGlyphOff {
+  color: var(--riso-muted);
+}
+/* Deliberate divergence from iOS (handoff §1) — the label stays ink/muted,
+   never gold, since gold is a fill color in this system and reads at
+   1.33:1 contrast (unreadable) as text on paper. Only the glyph above
+   carries the gold state cue. */
+.centerLabelOn {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.centerLabelOff {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
