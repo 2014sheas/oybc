@@ -39,6 +39,15 @@ struct BoardWizardView: View {
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
 
+    // Task Pools + Recurring Boards Rework (P3) — the user's pools + active
+    // recurring templates, for the Tasks step's "PULL IN A POOL" card and
+    // "Save as pool" sheet. Owned here (mirrors `library`) rather than on
+    // the wizard VM, so `pullPool`/`untogglePool`/`provenanceByTaskId` stay
+    // pure functions of caller-supplied lookups instead of a VM-cached copy
+    // that could go stale relative to a fresh load.
+    @State private var pools: [Pool] = []
+    @State private var templates: [RecurringBoardTemplate] = []
+
     init(
         userId: String,
         preferences: UserPreferences,
@@ -75,6 +84,40 @@ struct BoardWizardView: View {
             startRecurring: startRecurring,
             userId: userId
         ))
+    }
+
+    // MARK: - Pool mix lookups (Task Pools + Recurring Boards Rework, P3)
+
+    private var poolsById: [String: Pool] {
+        Dictionary(pools.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private var tasksById: [String: OYBC.Task] {
+        Dictionary(library.libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Loads the user's pools + active recurring templates for the Tasks
+    /// step. Fire-and-forget, mirroring `library.loadLibrary`'s shim —
+    /// silent on error (the pull card just renders empty/stale, same
+    /// resilience posture as the DefaultPool prefill in the wizard VM's init).
+    private func loadPools() {
+        let uid = userId
+        _Concurrency.Task {
+            do {
+                let loadedPools = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try AppDatabase.shared.fetchPools(userId: uid)
+                }.value
+                let loadedTemplates = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
+                }.value
+                await MainActor.run {
+                    pools = loadedPools
+                    templates = loadedTemplates
+                }
+            } catch {
+                // Non-fatal: the pull card renders with whatever it already had.
+            }
+        }
     }
 
     // MARK: - Cancel / save-draft helpers
@@ -232,6 +275,7 @@ struct BoardWizardView: View {
         }
         .onAppear {
             library.loadLibrary(userId: userId)
+            loadPools()
         }
         .sheet(isPresented: $showCancelDialog) {
             BoardWizardCancelDialogView(
@@ -278,7 +322,10 @@ struct BoardWizardView: View {
                 currentStartDate: { if case .ok(let s, _) = currentDates { return s }; return nil }(),
                 currentEndDate: { if case .ok(_, let e) = currentDates { return e }; return nil }(),
                 onToggleSelection: { taskId in
-                    wizard.toggleTaskSelection(taskId)
+                    // P3 — pass the real pools/tasks lookups so a row-remove
+                    // that's still supplied by a pulled pool gets recorded
+                    // in `removedTaskIds` bookkeeping.
+                    wizard.toggleTaskSelection(taskId, poolsById: poolsById, tasksById: tasksById)
                 },
                 onTaskCreated: { taskId, _, _ in
                     wizard.toggleTaskSelection(taskId)
@@ -296,7 +343,18 @@ struct BoardWizardView: View {
                 },
                 pendingTasks: wizard.pendingTasks,
                 onBack: { wizard.goBack() },
-                onNext: { wizard.goNext() }
+                onNext: { wizard.goNext() },
+                pools: pools,
+                pulledPoolIds: wizard.pulledPoolIds,
+                provenanceByTaskId: wizard.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById),
+                onPullPool: { poolId in
+                    wizard.pullPool(poolId, poolsById: poolsById, tasksById: tasksById)
+                },
+                onUntogglePool: { poolId in
+                    wizard.untogglePool(poolId, poolsById: poolsById, tasksById: tasksById)
+                },
+                templates: templates,
+                onPoolsReloadRequested: { loadPools() }
             )
         default:
             BoardWizardPreviewStepView(

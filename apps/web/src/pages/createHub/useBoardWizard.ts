@@ -7,12 +7,27 @@ import {
   getTimeframeBoundaries,
   type Board,
   type BoardTask,
+  type Pool,
   type RecurringBoardTemplate,
+  type Task,
   type UserPreferences,
   type WeekStartDay,
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
+import {
+  applyManualBookkeepingOnDeselect,
+  applyManualBookkeepingOnSelect,
+  applyPullPool,
+  applyUntogglePool,
+  deriveTaskProvenance,
+} from './poolPullLogic';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
+
+/** Stable empty fallback so a caller that omits `tasksById` doesn't cause
+ *  a new object identity (and downstream memo churn) every render. */
+const EMPTY_TASKS_BY_ID: Record<string, Task> = {};
+/** Stable empty fallback for a caller that omits `pools`. */
+const EMPTY_POOLS: Pool[] = [];
 
 /** A wizard step. 1 = Setup, 2 = Tasks, 3 = Preview & Activate. */
 export type WizardStep = 1 | 2 | 3;
@@ -80,6 +95,33 @@ export interface BoardWizardState {
   centerTaskId: string | null;
 
   /**
+   * P3 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+   * §Surfaces item 5 "Wizard step 2") — pool ids the user has pulled into
+   * the current selection, in pull order (this order doubles as the exact
+   * array persisted as `RecurringBoardTemplate.poolIds`). Empty for a
+   * fresh wizard / one-off board / any session where the user never opens
+   * the "PULL IN A POOL" card.
+   */
+  pulledPoolIds: string[];
+  /**
+   * P3 — task ids explicitly hand-added (not pool-sourced). Hydrated from
+   * `RecurringBoardTemplate.manualTaskIds` when editing an existing
+   * template; for a fresh wizard / draft resume it starts as the initial
+   * `selectedTaskIds` (draft boardTasks, or a legacy DefaultPool prefill —
+   * see `useBoardWizard`'s hydration comments) since there's no pool-mix
+   * provenance to recover for those sources.
+   */
+  manualTaskIds: Set<string>;
+  /**
+   * P3 — task ids explicitly removed from the selection while still
+   * pool-supplied (bookkeeping only — never rendered directly). Hydrated
+   * from `RecurringBoardTemplate.removedTaskIds` when editing an existing
+   * template; starts empty otherwise. See `@oybc/shared`'s `poolMix`
+   * module docstring for the full removals semantics.
+   */
+  removedTaskIds: Set<string>;
+
+  /**
    * Bug #85 — In-memory pending tasks created inside the wizard.
    *
    * Keyed by task id. These have NOT been written to the DB yet.
@@ -136,6 +178,19 @@ export interface BoardWizardActions {
   setCenterType: (t: CenterSquareType) => void;
   toggleTaskSelection: (taskId: string) => void;
   setCenterTaskId: (id: string | null) => void;
+  /**
+   * P3 — "PULL IN A POOL" toggle ON. Unions the pool's resolvable,
+   * not-currently-removed supply into `selectedTaskIds` and appends the
+   * pool id to `pulledPoolIds`. No-ops for a missing/soft-deleted/
+   * already-pulled pool.
+   */
+  pullPool: (poolId: string) => void;
+  /**
+   * P3 — "PULL IN A POOL" toggle OFF. Removes only the pool's non-manual
+   * tasks not also supplied by a remaining pulled pool; the manual layer
+   * and the saved Pool itself are never touched.
+   */
+  untogglePool: (poolId: string) => void;
   goToStep: (step: WizardStep) => void;
   goNext: () => void;
   goBack: () => void;
@@ -169,6 +224,13 @@ export interface BoardWizardDerived {
    *  is always `false`: closing a resumed draft is always a decision
    *  worth confirming. */
   isPristine: boolean;
+  /**
+   * P3 — provenance label ("from Morning Kickstart" / "added by hand")
+   * for every currently-selected task id, for the Tasks step's row
+   * subtitles. Only ids in `selectedTaskIds` are populated. See
+   * `deriveTaskProvenance` for the resolution rule.
+   */
+  taskProvenance: Map<string, string>;
 }
 
 export type BoardWizardController = BoardWizardState &
@@ -241,6 +303,29 @@ export interface UseBoardWizardArgs {
    *  which now creates a one-off *core* board for a timeframe window
    *  (#70 decoupled core boards from recurring templates). */
   startRecurring?: boolean;
+  /**
+   * P3 (Task Pools + Recurring Boards Rework) — the user's non-deleted
+   * pools, used to resolve `pullPool`/`untogglePool` and the provenance
+   * derivation. Callers should load this ONCE via `usePools(userId)` and
+   * pass it here — `BoardWizardPage` also threads the same array to
+   * `BoardWizardTasksStep`'s "PULL IN A POOL" card so the wizard doesn't
+   * run two concurrent `usePools` live queries (mirrors the
+   * `PoolsBrowse`/`TasksPage` "load once, pass down" precedent). Defaults
+   * to `[]` when omitted — pool actions become no-ops, which is a safe
+   * fallback for callers (tests, future playgrounds) that don't have a
+   * pools source.
+   */
+  pools?: Pool[];
+  /**
+   * P3 — id→Task lookup used to resolve pool-pull/untoggle additions/
+   * removals and provenance labels. Callers should pass
+   * `useTaskLibrary(userId).taskMap` (already loaded at `BoardWizardPage`
+   * for the Tasks step — reusing it here avoids a duplicate live task
+   * query). Defaults to `{}` when omitted (pool actions degrade to "no
+   * resolvable tasks" — harmless, since the affected UI always has the
+   * library loaded in production).
+   */
+  tasksById?: Record<string, Task>;
 }
 
 /**
@@ -265,8 +350,18 @@ export function useBoardWizard({
   targetWindowDate,
   editingTemplate,
   startRecurring,
+  pools = EMPTY_POOLS,
+  tasksById = EMPTY_TASKS_BY_ID,
 }: UseBoardWizardArgs): BoardWizardController {
   const draftBoard = draft?.board;
+
+  // P3 — id→Pool lookup for pull/untoggle/provenance. Rebuilt only when
+  // the `pools` array identity changes (the caller's live query).
+  const poolsById = useMemo<Record<string, Pool>>(() => {
+    const map: Record<string, Pool> = {};
+    for (const p of pools) map[p.id] = p;
+    return map;
+  }, [pools]);
 
   // Hydration priority: draft > editingTemplate > prefilledRecurringTimeframe.
   // When a draft is being resumed we ignore the other two — drafts already
@@ -400,6 +495,35 @@ export function useBoardWizard({
     setSelectedTaskIds(templateMix);
   }, [effectiveTemplate, templateMix]);
 
+  /**
+   * P3 (Task Pools + Recurring Boards Rework) — "PULL IN A POOL" state.
+   *
+   * Editing an existing recurring template hydrates directly from the
+   * template's own fields (already resolved, synchronous — unlike
+   * `selectedTaskIds`'s `useTemplateMix` resolution above, these three
+   * fields need no pool/task lookup to read). A fresh wizard / draft
+   * resume (one-off board) carries no persisted pool-mix fields, so
+   * `pulledPoolIds`/`removedTaskIds` start empty and `manualTaskIds`
+   * starts as the initial `selectedTaskIds` (draft boardTasks, or — via
+   * the DefaultPool-prefill effect below — a legacy DefaultPool prefill):
+   * every row defaults to "added by hand" until the user touches the new
+   * pull-card. This is an explicit, flagged judgment call (P3 spec) —
+   * one-off boards have no better provenance to recover. Declared ahead
+   * of the prefill effect below since that effect's `setManualTaskIds`
+   * needs it in scope.
+   */
+  const [pulledPoolIds, setPulledPoolIds] = useState<string[]>(
+    () => effectiveTemplate?.poolIds ?? [],
+  );
+  const [manualTaskIds, setManualTaskIds] = useState<Set<string>>(() => {
+    if (effectiveTemplate) return new Set(effectiveTemplate.manualTaskIds ?? []);
+    if (draft) return new Set(draft.boardTasks.map((bt) => bt.taskId));
+    return new Set();
+  });
+  const [removedTaskIds, setRemovedTaskIds] = useState<Set<string>>(
+    () => new Set(effectiveTemplate?.removedTaskIds ?? []),
+  );
+
   // Phase 6.X — Default Pool prefill. When the wizard is banner-launched
   // (`effectivePrefill` set) AND no draft/template hydrated the
   // selection, look up the user's DefaultPool for that timeframe and
@@ -424,6 +548,12 @@ export function useBoardWizard({
     poolPrefillAppliedRef.current = true;
     if (defaultPool !== null && defaultPool.taskIds.length > 0) {
       setSelectedTaskIds(new Set(defaultPool.taskIds));
+      // P3 — the legacy DefaultPool prefill has no pool-mix concept to
+      // attribute provenance to; treat the whole prefill as hand-picked
+      // (matches the fallback `deriveTaskProvenance` would produce anyway,
+      // but keeps `manualTaskIds` accurate if the user later pulls a real
+      // Pool that happens to overlap one of these ids).
+      setManualTaskIds(new Set(defaultPool.taskIds));
     }
   }, [defaultPool, draft, effectiveTemplate, effectivePrefill]);
   const [centerTaskId, setCenterTaskIdRaw] = useState<string | null>(
@@ -497,35 +627,115 @@ export function useBoardWizard({
     [isRecurring],
   );
 
-  const toggleTaskSelection = useCallback((taskId: string) => {
-    // Phase 6.X — user has touched the selection, so any DefaultPool
-    // that arrives later via `useLiveQuery` MUST NOT overwrite their
-    // edits. Marking the ref here closes the race where the user picks
-    // tasks while `defaultPool === undefined` (still loading) and the
-    // pool resolution would otherwise re-fire the prefill effect.
-    poolPrefillAppliedRef.current = true;
-    setSelectedTaskIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(taskId)) {
+  const toggleTaskSelection = useCallback(
+    (taskId: string) => {
+      // Phase 6.X — user has touched the selection, so any DefaultPool
+      // that arrives later via `useLiveQuery` MUST NOT overwrite their
+      // edits. Marking the ref here closes the race where the user picks
+      // tasks while `defaultPool === undefined` (still loading) and the
+      // pool resolution would otherwise re-fire the prefill effect.
+      poolPrefillAppliedRef.current = true;
+      const wasSelected = selectedTaskIds.has(taskId);
+      setSelectedTaskIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(taskId)) {
+          next.delete(taskId);
+        } else {
+          next.add(taskId);
+        }
+        return next;
+      });
+      // Clear center mark if the task being deselected was the center.
+      setCenterTaskIdRaw((prev) => (prev === taskId ? null : prev));
+      // Bug #85 — When the user deselects a pending (not-yet-persisted)
+      // task, remove it from the pending map so it won't be written at
+      // board-save time. If it was never pending (library task), this is
+      // a no-op because `pendingTasks` won't contain its id.
+      setPendingTasks((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Map(prev);
         next.delete(taskId);
+        return next;
+      });
+
+      // P3 — manual/removed bookkeeping. `wasSelected` (captured above,
+      // pre-toggle) decides which side of the select/deselect we're on.
+      if (wasSelected) {
+        const result = applyManualBookkeepingOnDeselect(
+          taskId,
+          manualTaskIds,
+          removedTaskIds,
+          pulledPoolIds,
+          poolsById,
+          tasksById,
+        );
+        setManualTaskIds(result.manualTaskIds);
+        setRemovedTaskIds(result.removedTaskIds);
       } else {
-        next.add(taskId);
+        const result = applyManualBookkeepingOnSelect(taskId, manualTaskIds, removedTaskIds);
+        setManualTaskIds(result.manualTaskIds);
+        setRemovedTaskIds(result.removedTaskIds);
       }
-      return next;
-    });
-    // Clear center mark if the task being deselected was the center.
-    setCenterTaskIdRaw((prev) => (prev === taskId ? null : prev));
-    // Bug #85 — When the user deselects a pending (not-yet-persisted)
-    // task, remove it from the pending map so it won't be written at
-    // board-save time. If it was never pending (library task), this is
-    // a no-op because `pendingTasks` won't contain its id.
-    setPendingTasks((prev) => {
-      if (!prev.has(taskId)) return prev;
-      const next = new Map(prev);
-      next.delete(taskId);
-      return next;
-    });
-  }, []);
+    },
+    [selectedTaskIds, manualTaskIds, removedTaskIds, pulledPoolIds, poolsById, tasksById],
+  );
+
+  /**
+   * P3 — "PULL IN A POOL" toggle ON. See `BoardWizardActions.pullPool`.
+   */
+  const pullPool = useCallback(
+    (poolId: string) => {
+      poolPrefillAppliedRef.current = true;
+      const result = applyPullPool(
+        poolId,
+        selectedTaskIds,
+        pulledPoolIds,
+        removedTaskIds,
+        poolsById,
+        tasksById,
+      );
+      setSelectedTaskIds(result.selectedTaskIds);
+      setPulledPoolIds(result.pulledPoolIds);
+    },
+    [selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, tasksById],
+  );
+
+  /**
+   * P3 — "PULL IN A POOL" toggle OFF. See `BoardWizardActions.untogglePool`.
+   */
+  const untogglePool = useCallback(
+    (poolId: string) => {
+      poolPrefillAppliedRef.current = true;
+      const result = applyUntogglePool(
+        poolId,
+        selectedTaskIds,
+        pulledPoolIds,
+        manualTaskIds,
+        removedTaskIds,
+        poolsById,
+        tasksById,
+      );
+      setSelectedTaskIds(result.selectedTaskIds);
+      setPulledPoolIds(result.pulledPoolIds);
+      setRemovedTaskIds(result.removedTaskIds);
+      if (result.removedIds.length > 0) {
+        const removedSet = new Set(result.removedIds);
+        setCenterTaskIdRaw((prev) => (prev !== null && removedSet.has(prev) ? null : prev));
+        setPendingTasks((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const id of result.removedIds) {
+            if (next.has(id)) {
+              next.delete(id);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
+    },
+    [selectedTaskIds, pulledPoolIds, manualTaskIds, removedTaskIds, poolsById, tasksById],
+  );
 
   /**
    * Bug #85 — Store a pending task payload in the wizard's in-memory
@@ -585,6 +795,10 @@ export function useBoardWizard({
     setCenterTaskIdRaw(null);
     setPendingTasks(new Map());
     setCurrentStep(1);
+    // P3 — reset the pool-mix bookkeeping alongside the selection it describes.
+    setPulledPoolIds([]);
+    setManualTaskIds(new Set());
+    setRemovedTaskIds(new Set());
   }, [preferences]);
 
   // ── Derived flags ─────────────────────────────────────────────────────
@@ -654,6 +868,13 @@ export function useBoardWizard({
     return true;
   }, [draftBoardId, trimmedName, selectedTaskIds, currentStep]);
 
+  // P3 — provenance label per currently-selected task id, for the Tasks
+  // step's row subtitles.
+  const taskProvenance = useMemo(
+    () => deriveTaskProvenance(selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, tasksById),
+    [selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, tasksById],
+  );
+
   return {
     // State
     name,
@@ -667,6 +888,9 @@ export function useBoardWizard({
     weekStartDay,
     selectedTaskIds,
     centerTaskId,
+    pulledPoolIds,
+    manualTaskIds,
+    removedTaskIds,
     pendingTasks,
     currentStep,
     draftBoardId,
@@ -683,6 +907,8 @@ export function useBoardWizard({
     setCenterType,
     toggleTaskSelection,
     setCenterTaskId,
+    pullPool,
+    untogglePool,
     addPendingTask,
     goToStep,
     goNext,
@@ -697,5 +923,6 @@ export function useBoardWizard({
     step1ValidationMessage,
     step2ValidationMessage,
     isPristine,
+    taskProvenance,
   };
 }

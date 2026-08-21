@@ -213,6 +213,78 @@ export async function clearTemplates(page: Page): Promise<void> {
   });
 }
 
+// ─── Task Pools + Recurring Boards Rework (P1/P3) — Pool seed helper ───────
+
+/** Shape of a `Pool` row (P1). Same loose-typed-Record convention as
+ *  `SeedTemplate` above — avoids importing `@oybc/shared`'s Zod-generated
+ *  type into the e2e module graph. */
+export interface SeedPool {
+  id: string;
+  name: string;
+  taskIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  version?: number;
+  isDeleted?: boolean;
+}
+
+/**
+ * Inserts a `Pool` row directly into Dexie via the raw IndexedDB API
+ * (same pattern as `seedTemplate`). Used by the P3 wizard "PULL IN A
+ * POOL" e2e coverage to seed pools without going through the Tasks-tab
+ * Pool-create UI.
+ */
+export async function seedPool(page: Page, pool: SeedPool): Promise<void> {
+  const now = new Date().toISOString();
+  const row = {
+    userId: BYPASS_USER_ID,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    isDeleted: false,
+    ...pool,
+  };
+  await page.evaluate(async (rowToInsert) => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['pools'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('pools').put(rowToInsert);
+      };
+    });
+  }, row);
+}
+
+/**
+ * Clears all rows from the `pools` table without tearing down the Dexie
+ * connection. Mirrors `clearTemplates`.
+ */
+export async function clearPools(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    return new Promise<void>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['pools'], 'readwrite');
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore('pools').clear();
+      };
+    });
+  });
+}
+
 // ─── Phase 6.3 — Board / Task / BoardTask seed helpers ──────────────────────
 //
 // Same raw-IDB pattern as `seedTemplate` above. The Phase 6.3

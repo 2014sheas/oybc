@@ -415,4 +415,143 @@ final class PoolMixTests: XCTestCase {
         )
         XCTAssertEqual(merged, ["a", "orphan"])
     }
+
+    // MARK: - resolvePoolPullAdditions / resolvePoolUntoggleRemovals (P3 wizard actions)
+    //
+    // Both operate on the SAME worked-example-shaped fixtures as resolveMix
+    // above, but drive the wizard's flat `selectedTaskIds` mutation directly
+    // (rather than recomputing the whole mix) — see
+    // docs/POOLS_RECURRING.md §Surfaces item 5 (Wizard step 2) + §Data model
+    // "Union rule". Line-for-line mirror of poolMix.test.ts's
+    // `resolvePoolPullAdditions` / `resolvePoolUntoggleRemovals` describe blocks.
+
+    func testResolvePoolPullAdditions_FreshPool_ReturnsFullResolvableSupply() {
+        let (poolsById, tasksById) = pullAdditionsFixtures()
+        XCTAssertEqual(
+            PoolMix.resolvePoolPullAdditions("A", removedTaskIds: [], poolsById: poolsById, tasksById: tasksById),
+            ["x", "y"]
+        )
+    }
+
+    func testResolvePoolPullAdditions_RemovedTaskStaysSuppressedAcrossAPull() {
+        let (poolsById, tasksById) = pullAdditionsFixtures()
+        XCTAssertEqual(
+            PoolMix.resolvePoolPullAdditions("A", removedTaskIds: ["y"], poolsById: poolsById, tasksById: tasksById),
+            ["x"]
+        )
+    }
+
+    func testResolvePoolPullAdditions_RepullAfterRemovalCleared_ReturnsFullSupplyAgain() {
+        let (poolsById, tasksById) = pullAdditionsFixtures()
+        XCTAssertEqual(
+            PoolMix.resolvePoolPullAdditions("A", removedTaskIds: [], poolsById: poolsById, tasksById: tasksById),
+            ["x", "y"]
+        )
+    }
+
+    func testResolvePoolPullAdditions_SoftDeletedTaskInPool_ExcludedFromAdditions() {
+        let (poolsById, _) = pullAdditionsFixtures()
+        let tasksWithDeleted = byId([buildTask("x"), buildTask("y", isDeleted: true)], id: { $0.id })
+        XCTAssertEqual(
+            PoolMix.resolvePoolPullAdditions("A", removedTaskIds: [], poolsById: poolsById, tasksById: tasksWithDeleted),
+            ["x"]
+        )
+    }
+
+    func testResolvePoolPullAdditions_MissingOrSoftDeletedPool_ContributesNoAdditionsNotAnError() {
+        let (poolsById, tasksById) = pullAdditionsFixtures()
+        XCTAssertEqual(
+            PoolMix.resolvePoolPullAdditions("ghost", removedTaskIds: [], poolsById: poolsById, tasksById: tasksById),
+            []
+        )
+        var deletedPoolsById = poolsById
+        deletedPoolsById["A"]?.isDeleted = true
+        XCTAssertEqual(
+            PoolMix.resolvePoolPullAdditions("A", removedTaskIds: [], poolsById: deletedPoolsById, tasksById: tasksById),
+            []
+        )
+    }
+
+    private func pullAdditionsFixtures() -> (poolsById: [String: Pool], tasksById: [String: Task]) {
+        let x = buildTask("x")
+        let y = buildTask("y")
+        let z = buildTask("z")
+        let poolA = buildPool("A", ["x", "y"])
+        let poolB = buildPool("B", ["y", "z"])
+        return (byId([poolA, poolB]) { $0.id }, byId([x, y, z]) { $0.id })
+    }
+
+    func testResolvePoolUntoggleRemovals_OnlyPulledPool_RemovesWholeNonManualSupply() {
+        let (poolsById, tasksById) = untoggleRemovalsFixtures()
+        XCTAssertEqual(
+            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: [], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
+            ["x", "y"]
+        )
+    }
+
+    func testResolvePoolUntoggleRemovals_ManualWins_ManuallyAddedTaskNeverInRemovalSet() {
+        let (poolsById, tasksById) = untoggleRemovalsFixtures()
+        XCTAssertEqual(
+            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: [], manualTaskIds: ["x"], poolsById: poolsById, tasksById: tasksById),
+            ["y"]
+        )
+    }
+
+    func testResolvePoolUntoggleRemovals_TaskStillSuppliedByRemainingPool_NotRemoved() {
+        let (poolsById, tasksById) = untoggleRemovalsFixtures()
+        // Untoggling A while B stays pulled: y is also supplied by B → keep it.
+        XCTAssertEqual(
+            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: ["B"], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
+            ["x"]
+        )
+    }
+
+    func testResolvePoolUntoggleRemovals_UntoggleBWithARemaining_RemovesOnlyZ() {
+        let (poolsById, tasksById) = untoggleRemovalsFixtures()
+        // y stays (A still supplies it).
+        XCTAssertEqual(
+            PoolMix.resolvePoolUntoggleRemovals("B", remainingPoolIds: ["A"], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
+            ["z"]
+        )
+    }
+
+    func testResolvePoolUntoggleRemovals_RemainingSupplyCheckedStructurally_EvenIfTaskSoftDeleted() {
+        let (poolsById, _) = untoggleRemovalsFixtures()
+        // y is soft-deleted (unresolvable) but B's RAW taskIds still list it, so
+        // it still counts as "remaining supply" and is not removed by A's untoggle.
+        let deletedY = byId([buildTask("x"), buildTask("y", isDeleted: true), buildTask("z"), buildTask("w")], id: { $0.id })
+        XCTAssertEqual(
+            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: ["B"], manualTaskIds: [], poolsById: poolsById, tasksById: deletedY),
+            ["x"]
+        )
+    }
+
+    func testResolvePoolUntoggleRemovals_SoftDeletedRemainingPool_ContributesNoSupply() {
+        let (poolsById, tasksById) = untoggleRemovalsFixtures()
+        var poolsWithDeletedB = poolsById
+        poolsWithDeletedB["B"]?.isDeleted = true
+        // B is soft-deleted, so its previously-shared task (y) is now removed too.
+        XCTAssertEqual(
+            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: ["B"], manualTaskIds: [], poolsById: poolsWithDeletedB, tasksById: tasksById),
+            ["x", "y"]
+        )
+    }
+
+    func testResolvePoolUntoggleRemovals_MissingOrSoftDeletedTargetPool_ContributesNoRemovalsNotAnError() {
+        let (poolsById, tasksById) = untoggleRemovalsFixtures()
+        XCTAssertEqual(
+            PoolMix.resolvePoolUntoggleRemovals("ghost", remainingPoolIds: ["A"], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
+            []
+        )
+    }
+
+    private func untoggleRemovalsFixtures() -> (poolsById: [String: Pool], tasksById: [String: Task]) {
+        let x = buildTask("x")
+        let y = buildTask("y")
+        let z = buildTask("z")
+        let w = buildTask("w")
+        let poolA = buildPool("A", ["x", "y"])
+        let poolB = buildPool("B", ["y", "z"])
+        return (byId([poolA, poolB]) { $0.id }, byId([x, y, z, w]) { $0.id })
+    }
 }

@@ -223,6 +223,16 @@ enum SnapshotFixtures {
         )
     }
 
+    // MARK: - Pool (Task Pools + Recurring Boards Rework, P1+)
+
+    static func makeTestPool(id: String, name: String, taskIds: [String]) -> Pool {
+        Pool(
+            id: id, userId: userId, name: name, taskIds: taskIds,
+            createdAt: fixedTimestamp, updatedAt: fixedTimestamp,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
     // MARK: - Wizard controller
 
     /// Stage hint for the controller — Setup blank, Setup valid, or

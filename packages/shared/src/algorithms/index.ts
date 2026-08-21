@@ -125,12 +125,15 @@ export type {
 } from './recurringBoardTemplates';
 
 // ===== Task Pools + Recurring Boards Rework (P1) — mix resolver =====
+// ===== P3 adds resolvePoolPullAdditions / resolvePoolUntoggleRemovals =====
 export {
   resolveMix,
   clearRemovalsForUntoggle,
   isLegacyShapedRecord,
   mergeLegacyPoolTaskIds,
   clampMintedPoolName,
+  resolvePoolPullAdditions,
+  resolvePoolUntoggleRemovals,
 } from './poolMix';
 
 export type { PoolMixSource, ResolveMixResult } from './poolMix';

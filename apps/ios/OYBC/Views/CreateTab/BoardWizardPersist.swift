@@ -511,6 +511,16 @@ enum RecurringTemplatePersistOutcome {
 ///   change previously-spawned boards, and the next window's spawn will
 ///   pick up the new mix naturally.
 ///
+/// Note (Task Pools + Recurring Boards Rework, P3): the wizard's "PULL IN A
+/// POOL" card tracks session state on `BoardWizardViewModel`
+/// (`pulledPoolIds` / `manualTaskIds` / `removedTaskIds`) purely for the
+/// Tasks-step UI and provenance labels ("from <pool>" / "added by hand").
+/// That state does NOT drive persistence here — a richer native
+/// `poolIds`/`manualTaskIds`/`removedTaskIds` persisted shape must not exist
+/// before P4 ships the generalized wizard (see `docs/POOLS_RECURRING.md`).
+/// This function only ever reads the flattened `controller.selectedTaskIds`
+/// (`seedTaskIds`), exactly as it did pre-P3.
+///
 /// Runs on a background queue; dispatches callbacks on the main queue.
 func persistRecurringTemplate(
     controller: BoardWizardViewModel,

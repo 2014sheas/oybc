@@ -4,6 +4,7 @@ import type {
   Timeframe,
   UserPreferences,
 } from '@oybc/shared';
+import { usePools } from '../hooks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useBoardWizard, type BoardWizardDraft } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
@@ -98,6 +99,13 @@ export function BoardWizardPage({
   onTemplateComplete,
   onDeleteDraft,
 }: BoardWizardPageProps): React.ReactElement {
+  const library = useTaskLibrary(userId);
+  // P3 (Task Pools + Recurring Boards Rework) — loaded ONCE here and
+  // threaded into BOTH `useBoardWizard` (pull/untoggle actions +
+  // provenance) and `BoardWizardTasksStep`'s "PULL IN A POOL" card, so the
+  // wizard doesn't run two concurrent `usePools` live queries (mirrors the
+  // `PoolsBrowse`/`TasksPage` "load once, pass down" precedent).
+  const pools = usePools(userId);
   const wizard = useBoardWizard({
     preferences,
     userId,
@@ -107,8 +115,9 @@ export function BoardWizardPage({
     editingTemplate,
     initialStep,
     startRecurring,
+    pools,
+    tasksById: library.taskMap,
   });
-  const library = useTaskLibrary(userId);
 
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelDialogError, setCancelDialogError] = useState<string | null>(null);
@@ -234,6 +243,11 @@ export function BoardWizardPage({
               /* Composites are not boardable; the live library query
                  will surface the new composite automatically. */
             }}
+            pools={pools}
+            pulledPoolIds={wizard.pulledPoolIds}
+            onPullPool={wizard.pullPool}
+            onUntogglePool={wizard.untogglePool}
+            taskProvenance={wizard.taskProvenance}
             onBack={wizard.goBack}
             onNext={wizard.goNext}
           />

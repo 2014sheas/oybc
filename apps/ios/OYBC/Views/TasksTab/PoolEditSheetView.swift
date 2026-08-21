@@ -35,6 +35,12 @@ struct PoolEditSheetView: View {
     /// task's title resolves immediately once the library reloads.
     let library: TaskLibraryViewModel
     let userId: String
+    /// Task Pools + Recurring Boards Rework (P3) — pre-seeds the CREATE-mode
+    /// form's task chips (e.g. the wizard's "Save these N as a new pool…"
+    /// affordance). Ignored in edit mode (`pool` non-nil always seeds from
+    /// `pool.taskIds`). Existing call sites omit this (defaults to `[]`,
+    /// today's unchanged "New pool" behavior).
+    var initialTaskIds: [String] = []
     /// Fired after a successful create or save.
     let onSaved: () -> Void
     /// Fired after a successful delete.
@@ -521,7 +527,7 @@ struct PoolEditSheetView: View {
 
     private func seedForm() {
         guard let pool else {
-            name = ""; poolTaskIds = []
+            name = ""; poolTaskIds = initialTaskIds
             return
         }
         name = pool.name

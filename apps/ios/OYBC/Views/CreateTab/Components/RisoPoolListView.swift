@@ -45,6 +45,14 @@ struct RisoPoolListView: View {
     /// it holds the draft/focus/toast state). nil ⇒ never swaps.
     var editor: ((OYBC.Task) -> AnyView)? = nil
 
+    /// Task Pools + Recurring Boards Rework (P3) — taskId → provenance label
+    /// ("added by hand" / "from <Pool name>"), appended to each row's detail
+    /// subtitle. Every row this view renders is a currently-selected task,
+    /// so every row gets a provenance suffix — no extra selected-check
+    /// needed. Defaults empty so every existing call site (snapshot tests,
+    /// center-mode tests) keeps compiling and rendering unchanged.
+    var provenanceByTaskId: [String: String] = [:]
+
     // MARK: - Ordered pool
 
     /// Pool in insertion order (from the parent's `poolOrder`). No sort — a
@@ -265,10 +273,17 @@ struct RisoPoolListView: View {
             }
         }()
 
+        // P3 — append the provenance label after the existing detail line,
+        // before the isCenter prefix logic runs. Matches the compound row's
+        // existing multi-part " · " join style.
+        let provenance = provenanceByTaskId[task.id]
+        let combined = [base, provenance].compactMap { $0 }.joined(separator: " · ")
+        let withProvenance = combined.isEmpty ? nil : combined
+
         if isCenter {
-            return base.map { "Center square · \($0)" } ?? "Center square"
+            return withProvenance.map { "Center square · \($0)" } ?? "Center square"
         }
-        return base
+        return withProvenance
     }
 
     private func risoKind(for type: TaskType) -> RisoTaskKind {

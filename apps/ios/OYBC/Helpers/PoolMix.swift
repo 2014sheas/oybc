@@ -39,6 +39,77 @@ enum PoolMix {
         }
     }
 
+    /// Wizard "PULL IN A POOL" action (P3) — computes the taskIds to ADD to
+    /// the wizard's flat `selectedTaskIds` when the user toggles a pool ON.
+    ///
+    /// Returns the pool's resolvable supply minus anything currently
+    /// suppressed by `removedTaskIds` — a removal persists across a fresh
+    /// pull (the worked example's "re-pull clears the removal" only happens
+    /// via `clearRemovalsForUntoggle` at UNTOGGLE time, never at pull time;
+    /// see the type doc's worked example).
+    ///
+    /// TS twin: `poolMix.ts`'s `resolvePoolPullAdditions` — keep in sync.
+    ///
+    /// - Parameters:
+    ///   - poolId: The pool being pulled in.
+    ///   - removedTaskIds: The wizard's current removal bookkeeping.
+    ///   - poolsById: Lookup for `poolId`. Missing or soft-deleted ⇒ no additions.
+    ///   - tasksById: Lookup used to filter the pool's `taskIds` to resolvable tasks.
+    /// - Returns: Task ids to union into the selection, in the pool's own stored order.
+    static func resolvePoolPullAdditions(
+        _ poolId: String,
+        removedTaskIds: [String],
+        poolsById: [String: Pool],
+        tasksById: [String: Task]
+    ) -> [String] {
+        guard let pool = poolsById[poolId], !pool.isDeleted else { return [] }
+        let removedSet = Set(removedTaskIds)
+        return resolvablePoolSupply(pool, tasksById: tasksById).filter { !removedSet.contains($0) }
+    }
+
+    /// Wizard "untoggle a pool" action (P3) — computes the taskIds to
+    /// REMOVE from the wizard's flat `selectedTaskIds` when the user
+    /// toggles a pool OFF. Per docs/POOLS_RECURRING.md §Data model "Union
+    /// rule": untoggling removes ONLY that pool's non-manual tasks that
+    /// aren't ALSO supplied by another currently-pulled pool. The manual
+    /// layer is NEVER touched by a pool toggle.
+    ///
+    /// Supply is checked STRUCTURALLY (raw `taskIds` membership, not
+    /// filtered for task-deletion) for the "still supplied elsewhere"
+    /// check — matching `clearRemovalsForUntoggle`'s "remaining supply"
+    /// semantics — so a soft-deleted remaining pool contributes no supply
+    /// either.
+    ///
+    /// TS twin: `poolMix.ts`'s `resolvePoolUntoggleRemovals` — keep in sync.
+    ///
+    /// - Parameters:
+    ///   - poolId: The pool being untoggled (pulled out).
+    ///   - remainingPoolIds: `pulledPoolIds` with `poolId` already excluded.
+    ///   - manualTaskIds: The wizard's current manual-layer bookkeeping —
+    ///     a manual task is never removed by a pool toggle.
+    ///   - poolsById: Lookup for `poolId` and `remainingPoolIds`.
+    ///   - tasksById: Lookup used to filter `poolId`'s own `taskIds` to
+    ///     resolvable tasks (the candidate removal set).
+    /// - Returns: Task ids to remove from the selection.
+    static func resolvePoolUntoggleRemovals(
+        _ poolId: String,
+        remainingPoolIds: [String],
+        manualTaskIds: [String],
+        poolsById: [String: Pool],
+        tasksById: [String: Task]
+    ) -> [String] {
+        guard let pool = poolsById[poolId], !pool.isDeleted else { return [] }
+        let manualSet = Set(manualTaskIds)
+        var remainingSupply = Set<String>()
+        for otherId in remainingPoolIds {
+            guard let other = poolsById[otherId], !other.isDeleted else { continue }
+            for taskId in other.taskIds { remainingSupply.insert(taskId) }
+        }
+        return resolvablePoolSupply(pool, tasksById: tasksById).filter {
+            !manualSet.contains($0) && !remainingSupply.contains($0)
+        }
+    }
+
     /// Resolves a spawn record's `poolIds` / `manualTaskIds` /
     /// `removedTaskIds` into the concrete mix per the normative formula
     /// (see type doc above).

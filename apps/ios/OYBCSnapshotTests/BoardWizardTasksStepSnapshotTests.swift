@@ -254,6 +254,33 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Full-step: PULL IN A POOL card + provenance (P3)
+
+    /// Proves the new "PULL IN A POOL" card renders with real pools, one
+    /// pulled, and that pool-sourced + hand-added rows both get correct
+    /// provenance subtitles in situ (not just at the leaf-view level below).
+    func testDenseLibraryWithPoolsPulledAndProvenance() {
+        let view = makeView(
+            libraryState: .dense,
+            initialSelection: ["t-normal-1", "t-counting-1", "t-compound-and"],
+            pools: [
+                SnapshotFixtures.makeTestPool(id: "p1", name: "Morning Kickstart", taskIds: ["t-normal-1", "t-counting-1"]),
+                SnapshotFixtures.makeTestPool(id: "p2", name: "Evening wind-down", taskIds: ["t-compound-and"]),
+            ],
+            pulledPoolIds: ["p1"],
+            provenanceByTaskId: [
+                "t-normal-1": "from Morning Kickstart",
+                "t-counting-1": "from Morning Kickstart",
+                "t-compound-and": "added by hand",
+            ]
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Builders
 
     private func makeView(
@@ -261,7 +288,10 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         initialSelection: Set<String> = [],
         centerTaskMode: Bool = false,
         initialCenterTaskId: String? = nil,
-        isRecurring: Bool = false
+        isRecurring: Bool = false,
+        pools: [Pool] = [],
+        pulledPoolIds: [String] = [],
+        provenanceByTaskId: [String: String] = [:]
     ) -> some View {
         let library = SnapshotFixtures.makeTaskLibrary(state: libraryState)
         return TasksStepHost(
@@ -269,13 +299,17 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             initialSelection: initialSelection,
             initialCenterTaskId: initialCenterTaskId,
             centerTaskMode: centerTaskMode,
-            isRecurring: isRecurring
+            isRecurring: isRecurring,
+            pools: pools,
+            pulledPoolIds: pulledPoolIds,
+            provenanceByTaskId: provenanceByTaskId
         )
     }
 
     private func makePoolListView(
         centerTaskMode: Bool = false,
-        centerTaskId: String? = nil
+        centerTaskId: String? = nil,
+        provenanceByTaskId: [String: String] = [:]
     ) -> some View {
         // Build a stable set of tasks for the pool list
         let normalTask = SnapshotFixtures.makeTask(id: "t-normal-1", title: "Meditate 10 min", type: .normal)
@@ -323,7 +357,43 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             centerTaskMode: centerTaskMode,
             centerTaskId: centerTaskId,
             onSetCenter: { _ in },
-            onEdit: { _ in }
+            onEdit: { _ in },
+            provenanceByTaskId: provenanceByTaskId
+        )
+    }
+
+    // MARK: - Leaf: Pool list provenance subtitles (P3)
+
+    func testPoolListWithProvenanceLight() {
+        let view = makePoolListView(provenanceByTaskId: [
+            "t-normal-1": "from Morning Kickstart",
+            "t-counting-1": "from Morning Kickstart",
+            "t-compound-and": "added by hand",
+        ])
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 300)),
+            record: recordMode
+        )
+    }
+
+    func testPoolListWithProvenanceDark() {
+        let view = makePoolListView(provenanceByTaskId: [
+            "t-normal-1": "from Morning Kickstart",
+            "t-counting-1": "from Morning Kickstart",
+            "t-compound-and": "added by hand",
+        ])
+        .padding(20)
+        .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 300),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
         )
     }
 }
@@ -337,19 +407,29 @@ private struct TasksStepHost: View {
     @State var centerTaskId: String?
     let centerTaskMode: Bool
     let isRecurring: Bool
+    // Task Pools + Recurring Boards Rework (P3) — pull-card fixtures.
+    let pools: [Pool]
+    let pulledPoolIds: [String]
+    let provenanceByTaskId: [String: String]
 
     init(
         library: TaskLibraryViewModel,
         initialSelection: Set<String>,
         initialCenterTaskId: String?,
         centerTaskMode: Bool,
-        isRecurring: Bool
+        isRecurring: Bool,
+        pools: [Pool] = [],
+        pulledPoolIds: [String] = [],
+        provenanceByTaskId: [String: String] = [:]
     ) {
         self.library = library
         self._selectedTaskIds = State(initialValue: initialSelection)
         self._centerTaskId = State(initialValue: initialCenterTaskId)
         self.centerTaskMode = centerTaskMode
         self.isRecurring = isRecurring
+        self.pools = pools
+        self.pulledPoolIds = pulledPoolIds
+        self.provenanceByTaskId = provenanceByTaskId
     }
 
     /// Reproduce the previous alphabetical-by-title pool order so baselines are
@@ -380,7 +460,10 @@ private struct TasksStepHost: View {
             onCompoundCreated: { _ in },
             onLibraryReloadRequested: { },
             onBack: { },
-            onNext: { }
+            onNext: { },
+            pools: pools,
+            pulledPoolIds: pulledPoolIds,
+            provenanceByTaskId: provenanceByTaskId
         )
     }
 }

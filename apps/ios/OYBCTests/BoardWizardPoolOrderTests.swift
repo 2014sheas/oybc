@@ -19,7 +19,7 @@ final class BoardWizardPoolOrderTests: XCTestCase {
 
     func test_remove_drops_from_order() {
         let vm = makeVM()
-        ["a", "b", "c"].forEach(vm.toggleTaskSelection)
+        ["a", "b", "c"].forEach { vm.toggleTaskSelection($0) }
         vm.toggleTaskSelection("b") // remove
         XCTAssertEqual(vm.poolOrder, ["a", "c"])
         XCTAssertFalse(vm.selectedTaskIds.contains("b"))
@@ -27,7 +27,7 @@ final class BoardWizardPoolOrderTests: XCTestCase {
 
     func test_restore_reinserts_at_index() {
         let vm = makeVM()
-        ["a", "b", "c"].forEach(vm.toggleTaskSelection)
+        ["a", "b", "c"].forEach { vm.toggleTaskSelection($0) }
         vm.toggleTaskSelection("b") // remove -> ["a","c"]
         vm.restoreToPool("b", at: 1)
         XCTAssertEqual(vm.poolOrder, ["a", "b", "c"])

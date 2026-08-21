@@ -4,6 +4,8 @@ import {
   isLegacyShapedRecord,
   mergeLegacyPoolTaskIds,
   clampMintedPoolName,
+  resolvePoolPullAdditions,
+  resolvePoolUntoggleRemovals,
 } from '../../src/algorithms/poolMix';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
@@ -326,6 +328,93 @@ describe('clearRemovalsForUntoggle', () => {
     );
     // A is soft-deleted, so it no longer counts as supply — x's removal clears.
     expect(cleared).toEqual([]);
+  });
+});
+
+// ─── resolvePoolPullAdditions / resolvePoolUntoggleRemovals (P3 wizard actions) ──
+//
+// Both operate on the SAME worked-example fixtures as `resolveMix` above,
+// but drive the wizard's flat `selectedTaskIds` mutation directly (rather
+// than recomputing the whole mix) — see docs/POOLS_RECURRING.md §Surfaces
+// item 5 (Wizard step 2) + §Data model "Union rule".
+
+describe('resolvePoolPullAdditions', () => {
+  const x = buildTask('x');
+  const y = buildTask('y');
+  const z = buildTask('z');
+  const poolA = buildPool('A', ['x', 'y']);
+  const poolB = buildPool('B', ['y', 'z']);
+  const tasksById = byId([x, y, z]);
+  const poolsById = byId([poolA, poolB]);
+
+  it('pulling a fresh pool returns its full resolvable supply', () => {
+    expect(resolvePoolPullAdditions('A', [], poolsById, tasksById)).toEqual(['x', 'y']);
+  });
+
+  it('a removed task stays suppressed across a pull (removal persists until untoggle clears it)', () => {
+    expect(resolvePoolPullAdditions('A', ['y'], poolsById, tasksById)).toEqual(['x']);
+  });
+
+  it('re-pulling after the removal was cleared (empty removedTaskIds) returns the full supply again', () => {
+    expect(resolvePoolPullAdditions('A', [], poolsById, tasksById)).toEqual(['x', 'y']);
+  });
+
+  it('a soft-deleted task in the pool is excluded from the additions', () => {
+    const tasksWithDeleted = byId([x, buildTask('y', { isDeleted: true })]);
+    expect(resolvePoolPullAdditions('A', [], poolsById, tasksWithDeleted)).toEqual(['x']);
+  });
+
+  it('a missing or soft-deleted pool contributes no additions, not an error', () => {
+    expect(resolvePoolPullAdditions('ghost', [], poolsById, tasksById)).toEqual([]);
+    const deletedPoolsById = byId([{ ...poolA, isDeleted: true }, poolB]);
+    expect(resolvePoolPullAdditions('A', [], deletedPoolsById, tasksById)).toEqual([]);
+  });
+});
+
+describe('resolvePoolUntoggleRemovals', () => {
+  const x = buildTask('x');
+  const y = buildTask('y');
+  const z = buildTask('z');
+  const w = buildTask('w');
+  const poolA = buildPool('A', ['x', 'y']);
+  const poolB = buildPool('B', ['y', 'z']);
+  const tasksById = byId([x, y, z, w]);
+  const poolsById = byId([poolA, poolB]);
+
+  it('untoggling the only pulled pool removes its whole non-manual supply', () => {
+    expect(resolvePoolUntoggleRemovals('A', [], [], poolsById, tasksById)).toEqual(['x', 'y']);
+  });
+
+  it('manual-wins: a manually-added task is never in the removal set', () => {
+    expect(resolvePoolUntoggleRemovals('A', [], ['x'], poolsById, tasksById)).toEqual(['y']);
+  });
+
+  it('a task still supplied by a REMAINING pulled pool is not removed', () => {
+    // Untoggling A while B stays pulled: y is also supplied by B → keep it.
+    expect(resolvePoolUntoggleRemovals('A', ['B'], [], poolsById, tasksById)).toEqual(['x']);
+  });
+
+  it('untoggling B (with A remaining) removes only z — y stays (A still supplies it)', () => {
+    expect(resolvePoolUntoggleRemovals('B', ['A'], [], poolsById, tasksById)).toEqual(['z']);
+  });
+
+  it('"remaining supply" is checked structurally (raw taskIds), even if the task is soft-deleted', () => {
+    const deletedY = byId([x, buildTask('y', { isDeleted: true }), z, w]);
+    // y is soft-deleted (unresolvable) but B's RAW taskIds still list it, so
+    // it still counts as "remaining supply" and is not removed by A's untoggle.
+    expect(resolvePoolUntoggleRemovals('A', ['B'], [], poolsById, deletedY)).toEqual(['x']);
+  });
+
+  it('a soft-deleted remaining pool contributes no supply — its previously-shared task is removed', () => {
+    const deletedB = byId([{ ...poolB, isDeleted: true }]);
+    const poolsWithDeletedB = { A: poolA, ...deletedB };
+    expect(
+      resolvePoolUntoggleRemovals('A', ['B'], [], poolsWithDeletedB, tasksById),
+    ).toEqual(['x', 'y']);
+  });
+
+  it('a missing or soft-deleted target pool contributes no removals, not an error', () => {
+    expect(resolvePoolUntoggleRemovals('ghost', ['A'], [], poolsById, tasksById)).toEqual([]);
   });
 });
 

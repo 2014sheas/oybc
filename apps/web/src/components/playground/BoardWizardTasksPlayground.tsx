@@ -1,7 +1,15 @@
-import { useCallback, useState } from 'react';
-import { TaskType, OperatorType, Timeframe } from '@oybc/shared';
+import { useCallback, useMemo, useState } from 'react';
+import { TaskType, OperatorType, Timeframe, type Pool } from '@oybc/shared';
 import { createTask, createCompound } from '../../db/operations/tasks';
+import { usePools } from '../../hooks';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
+import {
+  applyManualBookkeepingOnDeselect,
+  applyManualBookkeepingOnSelect,
+  applyPullPool,
+  applyUntogglePool,
+  deriveTaskProvenance,
+} from '../../pages/createHub/poolPullLogic';
 import { BoardWizardTasksStep } from '../wizard/BoardWizardTasksStep';
 import { PLAYGROUND_USER_ID } from './playgroundUtils';
 import styles from './BoardWizardTasksPlayground.module.css';
@@ -35,6 +43,23 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [centerTaskId, setCenterTaskId] = useState<string | null>(null);
 
+  // P3 (Task Pools + Recurring Boards Rework) — simulated pool-mix
+  // bookkeeping, mirroring `useBoardWizard`'s real state shape so the
+  // playground exercises the same pull/untoggle/provenance logic.
+  const pools = usePools(PLAYGROUND_USER_ID);
+  const poolsById = useMemo<Record<string, Pool>>(() => {
+    const map: Record<string, Pool> = {};
+    for (const p of pools) map[p.id] = p;
+    return map;
+  }, [pools]);
+  const [pulledPoolIds, setPulledPoolIds] = useState<string[]>([]);
+  const [manualTaskIds, setManualTaskIds] = useState<Set<string>>(new Set());
+  const [removedTaskIds, setRemovedTaskIds] = useState<Set<string>>(new Set());
+  const taskProvenance = useMemo(
+    () => deriveTaskProvenance(selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, library.taskMap),
+    [selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, library.taskMap],
+  );
+
   // Harness controls ──────────────────────────────────────────────────
   const [tasksRequired, setTasksRequired] = useState<number>(16);
   const [centerTaskMode, setCenterTaskMode] = useState(false);
@@ -42,14 +67,64 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
   const [seedStatus, setSeedStatus] = useState<string | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
 
-  const handleToggle = useCallback((taskId: string): void => {
-    setSelectedTaskIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(taskId)) next.delete(taskId);
-      else next.add(taskId);
-      return next;
-    });
-  }, []);
+  const handleToggle = useCallback(
+    (taskId: string): void => {
+      const wasSelected = selectedTaskIds.has(taskId);
+      setSelectedTaskIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(taskId)) next.delete(taskId);
+        else next.add(taskId);
+        return next;
+      });
+      if (wasSelected) {
+        const result = applyManualBookkeepingOnDeselect(
+          taskId,
+          manualTaskIds,
+          removedTaskIds,
+          pulledPoolIds,
+          poolsById,
+          library.taskMap,
+        );
+        setManualTaskIds(result.manualTaskIds);
+        setRemovedTaskIds(result.removedTaskIds);
+      } else {
+        const result = applyManualBookkeepingOnSelect(taskId, manualTaskIds, removedTaskIds);
+        setManualTaskIds(result.manualTaskIds);
+        setRemovedTaskIds(result.removedTaskIds);
+      }
+    },
+    [selectedTaskIds, manualTaskIds, removedTaskIds, pulledPoolIds, poolsById, library.taskMap],
+  );
+
+  const handlePullPool = useCallback(
+    (poolId: string): void => {
+      const result = applyPullPool(poolId, selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, library.taskMap);
+      setSelectedTaskIds(result.selectedTaskIds);
+      setPulledPoolIds(result.pulledPoolIds);
+    },
+    [selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, library.taskMap],
+  );
+
+  const handleUntogglePool = useCallback(
+    (poolId: string): void => {
+      const result = applyUntogglePool(
+        poolId,
+        selectedTaskIds,
+        pulledPoolIds,
+        manualTaskIds,
+        removedTaskIds,
+        poolsById,
+        library.taskMap,
+      );
+      setSelectedTaskIds(result.selectedTaskIds);
+      setPulledPoolIds(result.pulledPoolIds);
+      setRemovedTaskIds(result.removedTaskIds);
+      if (centerTaskId !== null && result.removedIds.includes(centerTaskId)) {
+        setCenterTaskId(null);
+      }
+    },
+    [selectedTaskIds, pulledPoolIds, manualTaskIds, removedTaskIds, poolsById, library.taskMap, centerTaskId],
+  );
 
   const handleSeedSampleTasks = useCallback(async (): Promise<void> => {
     setIsSeeding(true);
@@ -143,6 +218,9 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
               setSelectedTaskIds(new Set());
               setCenterTaskId(null);
               setNavMessage(null);
+              setPulledPoolIds([]);
+              setManualTaskIds(new Set());
+              setRemovedTaskIds(new Set());
             }}
           >
             Reset selection
@@ -192,6 +270,11 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
           // The library hook's live query will surface the new composite
           // automatically when the sheet closes.
         }}
+        pools={pools}
+        pulledPoolIds={pulledPoolIds}
+        onPullPool={handlePullPool}
+        onUntogglePool={handleUntogglePool}
+        taskProvenance={taskProvenance}
         onBack={() => setNavMessage('« Back tapped (would return to Step 1: Setup)')}
         onNext={() =>
           setNavMessage('» Next tapped (would advance to Step 3: Preview & Activate)')
