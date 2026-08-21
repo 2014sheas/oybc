@@ -305,4 +305,50 @@ final class RecurringBoardsTests: XCTestCase {
             ).isEmpty
         )
     }
+
+    // MARK: - isFreshlyDealtBoard (Task Pools + Recurring Boards Rework, P6)
+
+    func testIsFreshlyDealtBoard_OddBoardWithFreeCenter_ZeroCompleted_IsFresh() {
+        XCTAssertTrue(isFreshlyDealtBoard(completedTasks: 0, boardSize: 5, centerSquareType: .free))
+    }
+
+    func testIsFreshlyDealtBoard_OddBoardWithFreeCenter_OnlyAutoCompletedCenter_StillFresh() {
+        // The FREE center auto-completes at spawn via derivation — that one
+        // completion must not disqualify the board from "freshly dealt".
+        XCTAssertTrue(isFreshlyDealtBoard(completedTasks: 1, boardSize: 5, centerSquareType: .free))
+    }
+
+    func testIsFreshlyDealtBoard_OddBoardWithFreeCenter_OneRealCompletion_NotFresh() {
+        // Baseline is 1 (the auto-completed center); a second completion is
+        // real user progress.
+        XCTAssertFalse(isFreshlyDealtBoard(completedTasks: 2, boardSize: 5, centerSquareType: .free))
+    }
+
+    func testIsFreshlyDealtBoard_OddBoardWithChosenCenter_ZeroCompleted_IsFresh() {
+        // A CHOSEN center is an ordinary task square, not an auto-complete —
+        // baseline is 0, same as an even board.
+        XCTAssertTrue(isFreshlyDealtBoard(completedTasks: 0, boardSize: 5, centerSquareType: .chosen))
+    }
+
+    func testIsFreshlyDealtBoard_OddBoardWithChosenCenter_OneCompletion_NotFresh() {
+        XCTAssertFalse(isFreshlyDealtBoard(completedTasks: 1, boardSize: 5, centerSquareType: .chosen))
+    }
+
+    func testIsFreshlyDealtBoard_EvenBoard_ZeroCompleted_IsFresh() {
+        // No center at all on an even board — baseline is 0 regardless of
+        // `centerSquareType`.
+        XCTAssertTrue(isFreshlyDealtBoard(completedTasks: 0, boardSize: 4, centerSquareType: .free))
+    }
+
+    func testIsFreshlyDealtBoard_EvenBoard_OneCompletion_NotFresh() {
+        XCTAssertFalse(isFreshlyDealtBoard(completedTasks: 1, boardSize: 4, centerSquareType: .free))
+    }
+
+    func testIsFreshlyDealtBoard_OddBoardWithNoneCenter_ZeroCompleted_IsFresh() {
+        XCTAssertTrue(isFreshlyDealtBoard(completedTasks: 0, boardSize: 3, centerSquareType: .none))
+    }
+
+    func testIsFreshlyDealtBoard_OddBoardWithNoneCenter_OneCompletion_NotFresh() {
+        XCTAssertFalse(isFreshlyDealtBoard(completedTasks: 1, boardSize: 3, centerSquareType: .none))
+    }
 }

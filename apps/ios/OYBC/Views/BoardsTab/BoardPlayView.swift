@@ -137,6 +137,9 @@ struct BoardPlayView: View {
     private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
     private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
     private var allBoardTasksInWorkspace: [BoardTask] { viewModel.allBoardTasksInWorkspace }
+    // P6 (Task Pools + Recurring Boards Rework) — pools feed the spawn-
+    // provenance note's `poolsById` lookup.
+    private var allPoolsInWorkspace: [Pool] { viewModel.allPoolsInWorkspace }
 
     // Interaction write-state now lives on the view model (B2-I2). Read-only
     // shim so the many render sites that gate on `isProcessing` are untouched;
@@ -451,6 +454,16 @@ struct BoardPlayView: View {
                     risoPlayHeader
                         .padding(.horizontal, Riso.gutter)
                         .padding(.top, 12)
+
+                    // ── Recurring management (P6) ──
+                    // Manage row (repeating board) / "Repeat this board…" CTA
+                    // (one-off board) + spawn-provenance note. Never shown for
+                    // a draft (never playable, never repeatable).
+                    if let b = board, b.status != .draft {
+                        recurringManagementSection(board: b)
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.top, 10)
+                    }
 
                     if let b = board, b.status == .draft, !embedded {
                         // ── Draft guard ──
@@ -1159,6 +1172,118 @@ struct BoardPlayView: View {
                     }
                 }
                 .padding(.top, 4)
+            }
+        }
+    }
+
+    // MARK: - Recurring management (Task Pools + Recurring Boards Rework, P6)
+
+    /// The board's source recurring template, resolved from the workspace-
+    /// wide templates the view model already loads for the achievement
+    /// badge lookup (same precedent, `allTemplatesInWorkspace`). `nil` for
+    /// a non-recurring board OR an unresolved (soft-deleted) template.
+    private func sourceTemplate(for board: Board) -> RecurringBoardTemplate? {
+        guard let templateId = board.spawnedFromTemplateId else { return nil }
+        return allTemplatesInWorkspace.first { $0.id == templateId }
+    }
+
+    /// The task ids currently dealt onto `board` — its live, non-deleted
+    /// `BoardTask` placements (which never include a row for an
+    /// auto-completed FREE center — see `makeWizardBoardTaskRows`). Feeds
+    /// the spawn-provenance note's `dealtTaskIds` input.
+    private var dealtTaskIds: [String] {
+        boardTasks.map { $0.taskId }
+    }
+
+    /// Renders the manage row (repeating board) or the "Repeat this
+    /// board…" CTA (one-off board), plus the spawn-provenance note when
+    /// applicable. docs/POOLS_RECURRING.md §Surfaces item 7.
+    @ViewBuilder
+    private func recurringManagementSection(board: Board) -> some View {
+        if let template = sourceTemplate(for: board) {
+            VStack(alignment: .leading, spacing: 6) {
+                RisoRecurringManageRow(
+                    cadenceAdverb: formatCadenceAdverb(template.timeframe),
+                    templateName: template.name,
+                    isActive: template.isActive,
+                    onToggleActive: { toggleTemplateActive(template) }
+                )
+                if isFreshlyDealtBoard(
+                    completedTasks: board.completedTasks,
+                    boardSize: board.boardSize,
+                    centerSquareType: board.centerSquareType
+                ) {
+                    Text(spawnProvenanceNote(board: board, template: template))
+                        .font(.risoBody(11.5, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .padding(.horizontal, 4)
+                }
+            }
+        } else if board.sealedAt == nil, board.centerSquareType != .chosen {
+            // One-off, still-live, non-CHOSEN-center board — offer to make
+            // it repeating. A CHOSEN center can never validate a spawn pool
+            // (`validateSpawnPool` rejects it as `.unsupportedCenter`), so
+            // it's excluded here defensively (owner-flagged judgment call —
+            // see delivery notes).
+            RisoRepeatBoardCTA(onConfirm: { cadence in
+                handleRepeatBoardConfirm(board: board, cadence: cadence)
+            })
+        }
+    }
+
+    /// Renders the spawn-success provenance note (e.g. "Dealt 8 of 10 — 7
+    /// from the pool, 1 added today") for a freshly-dealt repeating board.
+    private func spawnProvenanceNote(board: Board, template: RecurringBoardTemplate) -> String {
+        let poolsById = Dictionary(uniqueKeysWithValues: allPoolsInWorkspace.map { ($0.id, $0) })
+        let summary = PoolMix.summarizeSpawnProvenance(
+            spawnSource: template,
+            poolsById: poolsById,
+            tasksById: taskMap,
+            dealtTaskIds: dealtTaskIds
+        )
+        return PoolMix.formatSpawnProvenanceNote(summary)
+    }
+
+    /// Pause / resume the board's source template. Mirrors
+    /// `RecurringTemplatesView.setActive(_:_:)` verbatim: flip `isActive`,
+    /// bump version, save + enqueue, reload.
+    private func toggleTemplateActive(_ template: RecurringBoardTemplate) {
+        let now = AppDatabase.currentTimestamp()
+        var updated = template
+        updated.isActive.toggle()
+        updated.updatedAt = now
+        updated.version += 1
+        _Concurrency.Task.detached {
+            do {
+                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                    updated, operation: .update, now: now
+                )
+                await MainActor.run { viewModel.reload() }
+            } catch {
+                dlog("[BoardPlayView] toggleTemplateActive failed: \(error)")
+            }
+        }
+    }
+
+    /// "↻ Repeat this board…" confirm handler — writes the new spawn
+    /// record + back-stamps the board, then reloads so the manage row
+    /// replaces the CTA immediately.
+    private func handleRepeatBoardConfirm(board: Board, cadence: Timeframe) {
+        guard let userId = authService.currentUser?.id else { return }
+        let weekStartDay = authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday"
+        let now = AppDatabase.currentTimestamp()
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            do {
+                _ = try AppDatabase.shared.repeatBoardAsTemplate(
+                    board: board,
+                    cadence: cadence,
+                    userId: userId,
+                    weekStartDay: weekStartDay,
+                    now: now
+                )
+                await MainActor.run { viewModel.reload() }
+            } catch {
+                dlog("[BoardPlayView] repeatBoardAsTemplate failed: \(error)")
             }
         }
     }

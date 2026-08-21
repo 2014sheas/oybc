@@ -82,6 +82,138 @@
   text-transform: uppercase;
 }
 
+/* ─── P6 (Task Pools + Recurring Boards Rework) — manage row / repeat CTA /
+       spawn-provenance note ─────────────────────────────────────────────── */
+
+/* Manage row for a repeating board: cadence + source name + inline
+   Pause/Resume. Same outline-pill vocabulary as the sealed badge above,
+   but as a full-width row rather than a pill. */
+.repeatManageRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  margin-bottom: 12px;
+}
+.repeatManageText {
+  font-family: var(--riso-font-head);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--riso-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repeatManageBtn {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 5px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  cursor: pointer;
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.repeatManageBtn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.repeatManageBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.repeatManageBtn:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* "Repeat this board…" CTA — dashed outline (matches the Pools tab's
+   "+ New pool" dashed-button precedent, PoolsBrowse.module.css). */
+.repeatCta {
+  margin-bottom: 12px;
+}
+.repeatCtaBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: transparent;
+  color: var(--riso-muted);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.repeatCtaBtn:hover {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+.repeatCtaBtn:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.repeatPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+}
+.repeatPickerLabel {
+  font-family: var(--riso-font-head);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.repeatPickerCancel {
+  align-self: flex-start;
+  font-family: var(--riso-font-head);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--riso-muted);
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.repeatPickerCancel:hover:not(:disabled) {
+  color: var(--riso-ink);
+}
+.repeatPickerCancel:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.repeatPickerCancel:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* Spawn-success provenance note — quiet, informational, not a call to
+   action. */
+.repeatProvenanceNote {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--riso-muted);
+  margin-bottom: 12px;
+}
+
 /* ─── Interactive grid ──────────────────────────────────────────────────────── */
 
 /* Riso board frame (Phase 3b) — the inline gridTemplateColumns sets the columns. */

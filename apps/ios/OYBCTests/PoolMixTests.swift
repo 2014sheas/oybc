@@ -554,4 +554,65 @@ final class PoolMixTests: XCTestCase {
         let poolB = buildPool("B", ["y", "z"])
         return (byId([poolA, poolB]) { $0.id }, byId([x, y, z, w]) { $0.id })
     }
+
+    // MARK: - summarizeSpawnProvenance / formatSpawnProvenanceNote (P6)
+
+    func testSummarizeSpawnProvenance_PurePool_AllDealtAreFromThePool() {
+        let poolTaskIds = (0..<10).map { "p\($0)" }
+        let pool = buildPool("pool-1", poolTaskIds)
+        let tasks = poolTaskIds.map { buildTask($0) }
+        let source = PoolMixInput(poolIds: ["pool-1"], manualTaskIds: [], removedTaskIds: [])
+        let poolsById = byId([pool]) { $0.id }
+        let tasksById = byId(tasks) { $0.id }
+
+        // Loose-fit overfill: the mix has 10 resolvable tasks but only 8
+        // cells were actually dealt.
+        let dealt = Array(poolTaskIds.prefix(8))
+        let summary = PoolMix.summarizeSpawnProvenance(
+            spawnSource: source, poolsById: poolsById, tasksById: tasksById, dealtTaskIds: dealt
+        )
+        XCTAssertEqual(summary.dealt, 8)
+        XCTAssertEqual(summary.mixSize, 10)
+        XCTAssertEqual(summary.poolSourcedCount, 8)
+        XCTAssertEqual(summary.manualSourcedCount, 0)
+        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Dealt 8 of 10 — 8 from the pool")
+    }
+
+    func testSummarizeSpawnProvenance_PureManual_AllDealtAreAddedToday() {
+        // "Repeat this board…" shape: zero pools, everything manual.
+        let manualIds = (0..<5).map { "m\($0)" }
+        let tasks = manualIds.map { buildTask($0) }
+        let source = PoolMixInput(poolIds: [], manualTaskIds: manualIds, removedTaskIds: [])
+        let tasksById = byId(tasks) { $0.id }
+
+        let summary = PoolMix.summarizeSpawnProvenance(
+            spawnSource: source, poolsById: [:], tasksById: tasksById, dealtTaskIds: manualIds
+        )
+        XCTAssertEqual(summary.dealt, 5)
+        XCTAssertEqual(summary.mixSize, 5)
+        XCTAssertEqual(summary.poolSourcedCount, 0)
+        XCTAssertEqual(summary.manualSourcedCount, 5)
+        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Dealt 5 of 5 — 5 added today")
+    }
+
+    func testSummarizeSpawnProvenance_Mixed_CountsSplitAccurately() {
+        let poolTaskIds = (0..<6).map { "p\($0)" }
+        let manualIds = ["m0", "m1"]
+        let pool = buildPool("pool-1", poolTaskIds)
+        let tasks = (poolTaskIds + manualIds).map { buildTask($0) }
+        let source = PoolMixInput(poolIds: ["pool-1"], manualTaskIds: manualIds, removedTaskIds: [])
+        let poolsById = byId([pool]) { $0.id }
+        let tasksById = byId(tasks) { $0.id }
+
+        // mix = 6 pool + 2 manual = 8. Dealt: 5 pool-sourced + both manual = 7.
+        let dealt = Array(poolTaskIds.prefix(5)) + manualIds
+        let summary = PoolMix.summarizeSpawnProvenance(
+            spawnSource: source, poolsById: poolsById, tasksById: tasksById, dealtTaskIds: dealt
+        )
+        XCTAssertEqual(summary.dealt, 7)
+        XCTAssertEqual(summary.mixSize, 8)
+        XCTAssertEqual(summary.poolSourcedCount, 5)
+        XCTAssertEqual(summary.manualSourcedCount, 2)
+        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Dealt 7 of 8 — 5 from the pool, 2 added today")
+    }
 }

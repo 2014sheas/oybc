@@ -308,6 +308,127 @@ extension AppDatabase {
         return outcome ?? .skipped(templateId: template.id, reason: .spawnFailed)
     }
 
+    /// "Repeat this board…" (Task Pools + Recurring Boards Rework, P6 —
+    /// docs/POOLS_RECURRING.md §Surfaces item 7). Mints a NEW
+    /// `RecurringBoardTemplate` from a one-off board's current live tasks
+    /// (an own-mix, zero-pool repeating board) and back-stamps the
+    /// board's `spawnedFromTemplateId` — both atomically in ONE
+    /// transaction, mirroring `saveRecurringBoardTemplateAndEnqueue`'s
+    /// model-write-plus-sync-enqueue pattern.
+    ///
+    /// Deliberately does **not** call `spawnRecurringBoard` — the board
+    /// being repeated IS this window's board already; an immediate spawn
+    /// would double it up. The correctly-computed (cadence-window, not
+    /// board-timeframe-window) `lastSpawnedWindowKey` is exactly what
+    /// keeps `findTemplatesPendingSpawn` from firing on the next
+    /// Boards-tab open until the NEXT window arrives.
+    ///
+    /// - Parameters:
+    ///   - board: The source one-off board. Only its display fields
+    ///     (name/size/center/randomize/startDate) are read here — its
+    ///     current BoardTask placements are read fresh, inside the
+    ///     transaction, so a concurrent sync can't race a stale snapshot.
+    ///   - cadence: The user-chosen repeat cadence.
+    ///   - userId: The template's owner.
+    ///   - weekStartDay: `"monday"` / `"sunday"` — only affects `.weekly`.
+    ///   - now: ISO8601 timestamp stamped on every row written here.
+    /// - Returns: The newly-created template, or `nil` if `board.startDate`
+    ///   is unparseable (should never happen for a live board — the same
+    ///   defensive branch as `buildRepeatBoardTemplateInput`).
+    @discardableResult
+    func repeatBoardAsTemplate(
+        board: Board,
+        cadence: Timeframe,
+        userId: String,
+        weekStartDay: String,
+        now: String
+    ) throws -> RecurringBoardTemplate? {
+        var result: RecurringBoardTemplate?
+        try write { db in
+            // Fresh in-txn read of the board's live placements — never the
+            // caller's possibly-stale `board` snapshot (mirrors the
+            // `spawnRecurringBoard` posture of resolving supply data
+            // inside the write).
+            let placements = try BoardTask
+                .filter(Column("boardId") == board.id && Column("isDeleted") == false)
+                .order(Column("row"), Column("col"), Column("id"))
+                .fetchAll(db)
+
+            // Distinct, in placement order — a shared task placed twice
+            // (shouldn't happen post board-integrity hardening, but this
+            // mirrors makeWizardBoardTaskRows' dedup posture defensively)
+            // must not appear twice in manualTaskIds.
+            var seen = Set<String>()
+            var boardTaskIds: [String] = []
+            for bt in placements where !seen.contains(bt.taskId) {
+                seen.insert(bt.taskId)
+                boardTaskIds.append(bt.taskId)
+            }
+
+            guard let input = buildRepeatBoardTemplateInput(
+                boardName: board.name,
+                boardSize: board.boardSize,
+                centerSquareType: board.centerSquareType,
+                isRandomized: board.isRandomized,
+                boardStartDate: board.startDate,
+                boardTaskIds: boardTaskIds,
+                cadence: cadence,
+                weekStartDay: weekStartDay
+            ) else { return }
+
+            let template = RecurringBoardTemplate(
+                id: Self.generateUUID(),
+                userId: userId,
+                name: input.name,
+                timeframe: input.timeframe,
+                boardSize: input.boardSize,
+                centerSquareType: input.centerSquareType,
+                isRandomized: input.isRandomized,
+                seedTaskIds: input.seedTaskIds,
+                poolIds: input.poolIds,
+                manualTaskIds: input.manualTaskIds,
+                removedTaskIds: input.removedTaskIds,
+                lastSpawnedWindowKey: input.lastSpawnedWindowKey,
+                isActive: input.isActive,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: nil,
+                version: 1,
+                isDeleted: false,
+                deletedAt: nil
+            )
+            try template.insert(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "recurringBoardTemplates",
+                entityId: template.id,
+                operationType: .create,
+                payload: template,
+                now: now
+            ).enqueue(db)
+
+            // Back-stamp the source board — the badge, manage row, and the
+            // spawn idempotency belt all key off `spawnedFromTemplateId`.
+            guard var liveBoard = try Board.fetchOne(db, key: board.id) else {
+                result = template
+                return
+            }
+            liveBoard.spawnedFromTemplateId = template.id
+            liveBoard.updatedAt = now
+            liveBoard.version += 1
+            try liveBoard.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "boards",
+                entityId: liveBoard.id,
+                operationType: .update,
+                payload: liveBoard,
+                now: now
+            ).enqueue(db)
+
+            result = template
+        }
+        return result
+    }
+
     /// Soft-delete a template and enqueue the delete op atomically.
     func softDeleteRecurringBoardTemplateAndEnqueue(id: String, now: String) throws {
         try write { db in

@@ -331,3 +331,31 @@ export function formatRecurringCadence(timeframe: Timeframe): string {
     case Timeframe.INDEFINITE: return 'Ongoing';
   }
 }
+
+/**
+ * Cadence ADVERB for a repeating board — the lowercase, no-leading-verb form
+ * used inline in prose: the board-screen manage row ("Repeats daily · from
+ * ...") and the Boards-tab card subtitle ("repeats daily"). Distinct from
+ * {@link formatRecurringCadence}, whose "Every day" phrasing reads as a
+ * standalone label, not as a fragment inside a sentence.
+ *
+ * `CUSTOM`/`INDEFINITE` fall back to `'regularly'` defensively — the
+ * repeat-cadence picker (board screen's "Repeat this board…" flow, and the
+ * wizard's Repeats segmented) only ever offers Daily/Weekly/Monthly/Yearly,
+ * so this branch is unreachable in production, but a stale/malformed record
+ * decoding a legacy timeframe should still render *something* sane rather
+ * than `undefined`.
+ *
+ * Docs: docs/POOLS_RECURRING.md §Surfaces item 7 (Board screen) + item 8
+ * (Boards tab) — locked decision A.
+ */
+export function formatCadenceAdverb(timeframe: Timeframe): string {
+  switch (timeframe) {
+    case Timeframe.DAILY:   return 'daily';
+    case Timeframe.WEEKLY:  return 'weekly';
+    case Timeframe.MONTHLY: return 'monthly';
+    case Timeframe.YEARLY:  return 'yearly';
+    case Timeframe.CUSTOM:  return 'regularly';
+    case Timeframe.INDEFINITE: return 'regularly';
+  }
+}

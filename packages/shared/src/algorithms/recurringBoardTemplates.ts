@@ -25,7 +25,7 @@
  * Canonical design: docs/ARCHITECTURE.md §Phase 6.2.
  */
 
-import { placeBoard, fillableCellCount, CenterSquareType } from '@oybc/bingo-core';
+import { placeBoard, fillableCellCount, CenterSquareType, type BoardSize } from '@oybc/bingo-core';
 import { getTimeframeBoundaries, formatTimeframeLabel } from './calendarBoundaries';
 import { Timeframe } from '../constants/enums';
 import type { Board } from '../types/board';
@@ -249,4 +249,95 @@ export function buildSpawnPlacement(
     randomize: template.isRandomized,
     rng,
   });
+}
+
+/**
+ * Result of {@link buildRepeatBoardTemplateInput} — everything the
+ * "Repeat this board…" write (docs/POOLS_RECURRING.md §Surfaces item 7)
+ * needs to insert a new `RecurringBoardTemplate` directly (NOT via
+ * `createRecurringBoardTemplate`, which always starts
+ * `lastSpawnedWindowKey: null` — this record is born with it already set,
+ * see the field doc below for why).
+ */
+export interface RepeatBoardTemplateInput {
+  name: string;
+  timeframe: Timeframe; // the CHOSEN cadence, not board.timeframe
+  boardSize: BoardSize;
+  centerSquareType: CenterSquareType;
+  isRandomized: boolean;
+  manualTaskIds: string[];
+  isActive: true;
+  /**
+   * Pre-seeded to the CADENCE's window containing the board's start date —
+   * critically NOT the board's own timeframe's window. The existing board
+   * IS this window's spawn; setting this up front (rather than leaving it
+   * `null`) is precisely what stops `findTemplatesPendingSpawn` from
+   * generating a duplicate spawn for the same window the very next time
+   * the Boards tab opens.
+   */
+  lastSpawnedWindowKey: string;
+  /** Decode-compat snapshot — always equals `manualTaskIds` for a
+   *  repeat-this-board record (there is no pool to seed from). */
+  seedTaskIds: string[];
+  poolIds: string[];
+  removedTaskIds: string[];
+}
+
+/**
+ * Builds the `RecurringBoardTemplate` insert payload for "Repeat this
+ * board…" (docs/POOLS_RECURRING.md §Surfaces item 7): a one-off board
+ * gaining a repeat cadence AFTER the fact, with its current placed tasks as
+ * the record's entire (manual-only, zero-pool) mix.
+ *
+ * `lastSpawnedWindowKey` is computed from `cadence` — the newly-chosen
+ * repeat cadence — evaluated against the board's OWN `startDate`, never
+ * from `board.timeframe`. A one-off Tuesday DAILY board repeated Weekly
+ * must key off that Tuesday's WEEK window, not the day: using the board's
+ * timeframe here would produce a window key for the wrong granularity,
+ * and the next `findTemplatesPendingSpawn` check would see a mismatched
+ * (or already-elapsed) window and spawn a duplicate board mid-window.
+ *
+ * No persistence; no id/timestamps — the caller (`repeatBoardAsRecurring`)
+ * fills those in as part of a single atomic write that also back-stamps
+ * the source board's `spawnedFromTemplateId`.
+ *
+ * @param board - The source one-off board. Only `name`/`boardSize`/
+ *   `centerSquareType`/`isRandomized`/`startDate` are read.
+ * @param boardTaskIds - Caller-resolved: distinct, non-deleted, non-FREE-
+ *   center task ids currently placed on the board (in placement order).
+ * @param cadence - The newly-chosen repeat cadence (DAILY/WEEKLY/MONTHLY/
+ *   YEARLY — never CUSTOM, which the picker excludes).
+ * @param weekStartDay - Only relevant when `cadence === WEEKLY`.
+ */
+export function buildRepeatBoardTemplateInput(
+  board: {
+    name: string;
+    boardSize: BoardSize;
+    centerSquareType: CenterSquareType;
+    isRandomized: boolean;
+    startDate: string;
+  },
+  boardTaskIds: string[],
+  cadence: Timeframe,
+  weekStartDay: WeekStartDay,
+): RepeatBoardTemplateInput {
+  const { startDate: lastSpawnedWindowKey } = getTimeframeBoundaries(
+    cadence,
+    new Date(board.startDate),
+    weekStartDay,
+  );
+
+  return {
+    name: board.name,
+    timeframe: cadence,
+    boardSize: board.boardSize,
+    centerSquareType: board.centerSquareType,
+    isRandomized: board.isRandomized,
+    manualTaskIds: [...boardTaskIds],
+    isActive: true,
+    lastSpawnedWindowKey,
+    seedTaskIds: [...boardTaskIds],
+    poolIds: [],
+    removedTaskIds: [],
+  };
 }

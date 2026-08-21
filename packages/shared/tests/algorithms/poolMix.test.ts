@@ -6,6 +6,8 @@ import {
   clampMintedPoolName,
   resolvePoolPullAdditions,
   resolvePoolUntoggleRemovals,
+  summarizeSpawnProvenance,
+  formatSpawnProvenanceNote,
 } from '../../src/algorithms/poolMix';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
@@ -552,5 +554,72 @@ describe('mergeLegacyPoolTaskIds', () => {
     const tasksById = byId([a]); // `orphan` resolves to nothing
     const merged = mergeLegacyPoolTaskIds(['a', 'orphan'], ['a'], tasksById);
     expect(merged).toEqual(['a', 'orphan']);
+  });
+});
+
+// ─── summarizeSpawnProvenance + formatSpawnProvenanceNote (P6) ────────────────
+//
+// docs/POOLS_RECURRING.md §Surfaces item 7 — the board-screen spawn-success
+// provenance note, e.g. "Dealt 8 of 10 — 7 from the pool, 1 added today".
+// Locked decision C: generic "from the pool" wording (not the doc's
+// "defaults"-specific example text), since this note also covers a
+// "repeat this board" spawn with zero pool involvement.
+
+describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
+  it('pure-pool spawn: manualSourcedCount is 0, note reads "N from the pool" only', () => {
+    const poolA = buildPool('pool-a', ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
+    const tasksById = byId(poolA.taskIds.map((id) => buildTask(id)));
+    const poolsById = byId([poolA]);
+    const spawnSource = { poolIds: ['pool-a'], manualTaskIds: [], removedTaskIds: [] };
+    // Board only fit 8 of the 10-task mix (loose-fit overfill).
+    const dealtTaskIds = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'];
+
+    const summary = summarizeSpawnProvenance(spawnSource, poolsById, tasksById, dealtTaskIds);
+    expect(summary).toEqual({
+      dealt: 8,
+      mixSize: 10,
+      poolSourcedCount: 8,
+      manualSourcedCount: 0,
+    });
+    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 8 of 10 — 8 from the pool');
+  });
+
+  it('pure-manual spawn (e.g. "repeat this board", zero pools): poolSourcedCount is 0, note reads "N added today" only', () => {
+    const tasksById = byId(['m1', 'm2', 'm3', 'm4', 'm5'].map((id) => buildTask(id)));
+    const spawnSource = { poolIds: [], manualTaskIds: ['m1', 'm2', 'm3', 'm4', 'm5'], removedTaskIds: [] };
+    const dealtTaskIds = ['m1', 'm2', 'm3', 'm4', 'm5'];
+
+    const summary = summarizeSpawnProvenance(spawnSource, {}, tasksById, dealtTaskIds);
+    expect(summary).toEqual({
+      dealt: 5,
+      mixSize: 5,
+      poolSourcedCount: 0,
+      manualSourcedCount: 5,
+    });
+    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 5 of 5 — 5 added today');
+  });
+
+  it('mixed spawn: pool + manual both present, counts match the doc\'s numeric structure', () => {
+    const poolA = buildPool('pool-a', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7']);
+    const tasksById = byId([...poolA.taskIds.map((id) => buildTask(id)), buildTask('m1')]);
+    const poolsById = byId([poolA]);
+    const spawnSource = { poolIds: ['pool-a'], manualTaskIds: ['m1'], removedTaskIds: [] };
+    // Mix size = 7 pool + 1 manual = 8; board dealt all 8 (exact fit).
+    const dealtTaskIds = [...poolA.taskIds, 'm1'];
+
+    const summary = summarizeSpawnProvenance(spawnSource, poolsById, tasksById, dealtTaskIds);
+    expect(summary).toEqual({
+      dealt: 8,
+      mixSize: 8,
+      poolSourcedCount: 7,
+      manualSourcedCount: 1,
+    });
+    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 8 of 8 — 7 from the pool, 1 added today');
+  });
+
+  it('zero-dealt edge case: note reads "Dealt 0 of N" with no breakdown clause', () => {
+    const summary = summarizeSpawnProvenance({ poolIds: [], manualTaskIds: [], removedTaskIds: [] }, {}, {}, []);
+    expect(summary).toEqual({ dealt: 0, mixSize: 0, poolSourcedCount: 0, manualSourcedCount: 0 });
+    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 0 of 0');
   });
 });

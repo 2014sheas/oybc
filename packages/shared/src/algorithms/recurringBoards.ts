@@ -22,7 +22,8 @@ import {
   getTimeframeBoundaries,
   isWithinTimeframe,
 } from './calendarBoundaries';
-import { BoardStatus, Timeframe } from '../constants/enums';
+import { BoardStatus, CenterSquareType, Timeframe } from '../constants/enums';
+import type { BoardSize } from '@oybc/bingo-core';
 import type { Board } from '../types/board';
 import type { UserPreferences } from '../types/user';
 
@@ -289,4 +290,30 @@ export function getParentBoards(
       b.status === BoardStatus.ACTIVE &&
       isWithinTimeframe(now, b.startDate, b.endDate)
   );
+}
+
+/**
+ * True when a board is still in its "just dealt" state — zero **user**
+ * completions, where the auto-completed FREE center (odd board + FREE
+ * center only) doesn't count against that (docs/POOLS_RECURRING.md
+ * §Behavior invariants — "↻ Deal again" + the P6 spawn-provenance note
+ * share this gate).
+ *
+ * The FREE center auto-fills at spawn via the derivation pass (see
+ * `computeBoardStatsUpdate`), so a fresh odd+FREE board's
+ * `completedTasks` starts at 1, not 0. This function accounts for that
+ * baseline rather than hard-coding a magic "1" everywhere a caller needs
+ * to ask "has the user touched this board yet."
+ *
+ * @param board - Only `completedTasks`/`boardSize`/`centerSquareType` are read.
+ */
+export function isFreshlyDealtBoard(board: {
+  completedTasks: number;
+  boardSize: BoardSize;
+  centerSquareType: CenterSquareType;
+}): boolean {
+  const hasFreeCenterAutoComplete =
+    board.boardSize % 2 === 1 && board.centerSquareType === CenterSquareType.FREE;
+  const baseline = hasFreeCenterAutoComplete ? 1 : 0;
+  return board.completedTasks <= baseline;
 }

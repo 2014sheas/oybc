@@ -326,6 +326,73 @@ enum PoolMix {
     }
 }
 
+/// One freshly-spawned board's provenance breakdown — how many of the
+/// dealt cells came from the pool union vs. the manual layer. Powers the
+/// Board-screen spawn-success note (Task Pools + Recurring Boards Rework,
+/// P6 — docs/POOLS_RECURRING.md §Surfaces item 7).
+struct SpawnProvenanceSummary {
+    /// Cells actually dealt onto the board (excludes the FREE-center cell,
+    /// which is never a Task placement).
+    let dealt: Int
+    /// The resolved mix size the deal was drawn from — may exceed `dealt`
+    /// (loose-fit: extras shuffle in per window, per docs/POOLS_RECURRING.md
+    /// §Behavior invariants).
+    let mixSize: Int
+    /// Of the dealt cells, how many came from the pool union (i.e. NOT in
+    /// `manualTaskIds`).
+    let poolSourcedCount: Int
+    /// Of the dealt cells, how many came from the manual layer.
+    let manualSourcedCount: Int
+}
+
+extension PoolMix {
+    /// Computes the provenance breakdown for a freshly-spawned board.
+    ///
+    /// - Parameters:
+    ///   - spawnSource: The spawn record (`poolIds`/`manualTaskIds`/
+    ///     `removedTaskIds`) the board was dealt from.
+    ///   - poolsById: Lookup for `spawnSource.poolIds`.
+    ///   - tasksById: Lookup used to resolve pool supply.
+    ///   - dealtTaskIds: The task ids actually placed on the board (from its
+    ///     live, non-deleted `BoardTask` rows) — NOT the full resolved mix,
+    ///     which may be larger under loose-fit overfill.
+    /// - Returns: The dealt/mix counts split by pool-sourced vs manual-sourced.
+    static func summarizeSpawnProvenance(
+        spawnSource: PoolMixSource,
+        poolsById: [String: Pool],
+        tasksById: [String: Task],
+        dealtTaskIds: [String]
+    ) -> SpawnProvenanceSummary {
+        let mix = resolveMix(spawnSource, poolsById: poolsById, tasksById: tasksById)
+        let manualSet = Set(spawnSource.manualTaskIds ?? [])
+        let manualSourcedCount = dealtTaskIds.filter { manualSet.contains($0) }.count
+        return SpawnProvenanceSummary(
+            dealt: dealtTaskIds.count,
+            mixSize: mix.taskIds.count,
+            poolSourcedCount: dealtTaskIds.count - manualSourcedCount,
+            manualSourcedCount: manualSourcedCount
+        )
+    }
+
+    /// Renders a `SpawnProvenanceSummary` into the Board-screen note copy,
+    /// e.g. `"Dealt 8 of 10 — 7 from the pool, 1 added today"`.
+    ///
+    /// Deliberate wording deviation from docs/POOLS_RECURRING.md §Surfaces
+    /// item 7's illustrative example ("9 from **defaults**") — that phrasing
+    /// is specific to the P5 `CoreBoardDefault` feature. This note is
+    /// generic to ANY freshly-spawned board, including a "repeat this
+    /// board" spawn (100% manual, no pool involved), so it always says
+    /// "from the pool" for pool-sourced cells. "added today" is verbatim
+    /// per the copy rules ("from" never "deals from").
+    static func formatSpawnProvenanceNote(_ summary: SpawnProvenanceSummary) -> String {
+        var parts: [String] = []
+        if summary.poolSourcedCount > 0 { parts.append("\(summary.poolSourcedCount) from the pool") }
+        if summary.manualSourcedCount > 0 { parts.append("\(summary.manualSourcedCount) added today") }
+        let breakdown = parts.isEmpty ? "" : " — " + parts.joined(separator: ", ")
+        return "Dealt \(summary.dealt) of \(summary.mixSize)\(breakdown)"
+    }
+}
+
 /// The subset of a spawn record's fields `PoolMix.resolveMix` /
 /// `clearRemovalsForUntoggle` / `isLegacyShapedRecord` need. Matches
 /// `RecurringBoardTemplate`'s additive P1 fields directly (all optional, so

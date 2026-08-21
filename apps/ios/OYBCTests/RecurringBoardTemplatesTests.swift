@@ -468,4 +468,236 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         XCTAssertNotNil(fetched)
         XCTAssertEqual(fetched?.seedTaskIds, ["a", "b", "c", "d"])
     }
+
+    // MARK: - "Repeat this board…" (Task Pools + Recurring Boards Rework, P6)
+
+    /// A Wednesday — `2026-06-24` — used for the cadence≠timeframe vector
+    /// (a `.daily` board dated a Wednesday, repeated `.weekly` with
+    /// `weekStartDay: "monday"` must key off that week's Monday, `2026-06-22`,
+    /// not the Wednesday itself).
+    private let wednesdayBoardStart = "2026-06-24T00:00:00.000"
+
+    func testBuildRepeatBoardTemplateInput_CadenceEqualsTimeframe_WindowKeyMatchesBoardWindow() {
+        // A .daily board repeated .daily — the cadence window IS the board's
+        // own day, so the window key is just that day's start.
+        let input = buildRepeatBoardTemplateInput(
+            boardName: "Tuesday Focus",
+            boardSize: 3,
+            centerSquareType: .free,
+            isRandomized: false,
+            boardStartDate: wednesdayBoardStart,
+            boardTaskIds: ["t1", "t2"],
+            cadence: .daily,
+            weekStartDay: "monday"
+        )
+        XCTAssertNotNil(input)
+        XCTAssertEqual(input?.lastSpawnedWindowKey, "2026-06-24T00:00:00.000")
+        XCTAssertEqual(input?.timeframe, .daily)
+    }
+
+    func testBuildRepeatBoardTemplateInput_CadenceDiffersFromTimeframe_WindowKeyIsCadenceWeekNotDay() {
+        // The board itself is a one-off .daily board dated a Wednesday
+        // (2026-06-24). Repeating it .weekly must key off that week's
+        // MONDAY (2026-06-22), never the Wednesday — the load-bearing
+        // assertion from docs/POOLS_RECURRING.md §Surfaces item 7.
+        let input = buildRepeatBoardTemplateInput(
+            boardName: "Wednesday Board",
+            boardSize: 3,
+            centerSquareType: .free,
+            isRandomized: false,
+            boardStartDate: wednesdayBoardStart,
+            boardTaskIds: ["t1", "t2"],
+            cadence: .weekly,
+            weekStartDay: "monday"
+        )
+        XCTAssertNotNil(input)
+        XCTAssertEqual(input?.timeframe, .weekly)
+        XCTAssertEqual(input?.lastSpawnedWindowKey, "2026-06-22T00:00:00.000")
+        // Never the board's own day.
+        XCTAssertNotEqual(input?.lastSpawnedWindowKey, wednesdayBoardStart)
+    }
+
+    func testBuildRepeatBoardTemplateInput_FieldShape() {
+        let input = buildRepeatBoardTemplateInput(
+            boardName: "My Board",
+            boardSize: 5,
+            centerSquareType: .none,
+            isRandomized: true,
+            boardStartDate: "2026-06-24T00:00:00.000",
+            boardTaskIds: ["a", "b", "c"],
+            cadence: .monthly,
+            weekStartDay: "sunday"
+        )
+        XCTAssertNotNil(input)
+        guard let input else { return }
+        XCTAssertEqual(input.name, "My Board")
+        XCTAssertEqual(input.boardSize, 5)
+        XCTAssertEqual(input.centerSquareType, .none)
+        XCTAssertTrue(input.isRandomized)
+        XCTAssertEqual(input.manualTaskIds, ["a", "b", "c"])
+        XCTAssertEqual(input.manualTaskIds, input.seedTaskIds)
+        XCTAssertEqual(input.poolIds, [])
+        XCTAssertEqual(input.removedTaskIds, [])
+        XCTAssertTrue(input.isActive)
+    }
+
+    func testBuildRepeatBoardTemplateInput_UnparseableStartDate_ReturnsNil() {
+        let input = buildRepeatBoardTemplateInput(
+            boardName: "Bad Date Board",
+            boardSize: 3,
+            centerSquareType: .free,
+            isRandomized: false,
+            boardStartDate: "not-a-date",
+            boardTaskIds: ["t1"],
+            cadence: .daily,
+            weekStartDay: "monday"
+        )
+        XCTAssertNil(input)
+    }
+
+    // MARK: - repeatBoardAsTemplate (integration, in-memory GRDB)
+
+    private func seedUser(_ db: AppDatabase, id: String = "u1") throws {
+        let now = AppDatabase.currentTimestamp()
+        let user = User(
+            id: id,
+            email: "test@example.com",
+            displayName: "Test User",
+            photoURL: nil,
+            preferences: User.encodePreferences(.defaults),
+            createdAt: now,
+            updatedAt: now,
+            lastSyncedAt: nil,
+            version: 1
+        )
+        try db.saveUser(user)
+    }
+
+    private func seedOneOffBoard(
+        _ db: AppDatabase,
+        id: String = "board-1",
+        userId: String = "u1",
+        timeframe: Timeframe = .daily,
+        startDate: String = "2026-06-24T00:00:00.000",
+        centerSquareType: CenterSquareType = .free
+    ) throws -> Board {
+        let dict: [String: Any] = [
+            "id": id,
+            "userId": userId,
+            "name": "One-off Board",
+            "status": BoardStatus.active.rawValue,
+            "boardSize": 3,
+            "timeframe": timeframe.rawValue,
+            "startDate": startDate,
+            "endDate": "2026-06-24T23:59:59.999",
+            "centerSquareType": centerSquareType.rawValue,
+            "isRandomized": false,
+            "totalTasks": 9,
+            "completedTasks": 0,
+            "linesCompleted": 0,
+            "createdAt": startDate,
+            "updatedAt": startDate,
+            "version": 1,
+            "isDeleted": false,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        let board = try JSONDecoder().decode(Board.self, from: data)
+        try db.saveBoard(board)
+        return board
+    }
+
+    private func seedPlacement(
+        _ db: AppDatabase,
+        id: String,
+        boardId: String,
+        taskId: String,
+        row: Int,
+        col: Int,
+        userId: String = "u1"
+    ) throws {
+        try db.saveTask(makeTask(taskId))
+        let now = AppDatabase.currentTimestamp()
+        try db.saveBoardTask(BoardTask(
+            id: id, boardId: boardId, taskId: taskId, row: row, col: col,
+            isCenter: false, createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+    }
+
+    func testRepeatBoardAsTemplate_ManualTaskIdsMatchBoardTasks() throws {
+        let testDb = try AppDatabase.makeTestInstance()
+        try seedUser(testDb)
+        let board = try seedOneOffBoard(testDb)
+        try seedPlacement(testDb, id: "bt1", boardId: board.id, taskId: "t1", row: 0, col: 0)
+        try seedPlacement(testDb, id: "bt2", boardId: board.id, taskId: "t2", row: 0, col: 1)
+
+        let template = try testDb.repeatBoardAsTemplate(
+            board: board, cadence: .weekly, userId: "u1", weekStartDay: "monday",
+            now: "2026-06-24T12:00:00.000"
+        )
+
+        XCTAssertNotNil(template)
+        XCTAssertEqual(Set(template?.manualTaskIds ?? []), Set(["t1", "t2"]))
+        XCTAssertEqual(template?.poolIds, [])
+        XCTAssertEqual(template?.removedTaskIds, [])
+        XCTAssertTrue(template?.isActive ?? false)
+    }
+
+    func testRepeatBoardAsTemplate_LastSpawnedWindowKey_UsesCadenceWindow_NotBoardTimeframe() throws {
+        let testDb = try AppDatabase.makeTestInstance()
+        try seedUser(testDb)
+        // A .daily board dated Wednesday 2026-06-24, repeated .weekly.
+        let board = try seedOneOffBoard(testDb, timeframe: .daily, startDate: wednesdayBoardStart)
+        try seedPlacement(testDb, id: "bt1", boardId: board.id, taskId: "t1", row: 0, col: 0)
+
+        let template = try testDb.repeatBoardAsTemplate(
+            board: board, cadence: .weekly, userId: "u1", weekStartDay: "monday",
+            now: "2026-06-24T12:00:00.000"
+        )
+
+        XCTAssertEqual(template?.lastSpawnedWindowKey, "2026-06-22T00:00:00.000")
+        XCTAssertEqual(template?.timeframe, .weekly)
+    }
+
+    func testRepeatBoardAsTemplate_BackStampsSourceBoard() throws {
+        let testDb = try AppDatabase.makeTestInstance()
+        try seedUser(testDb)
+        let board = try seedOneOffBoard(testDb)
+        try seedPlacement(testDb, id: "bt1", boardId: board.id, taskId: "t1", row: 0, col: 0)
+
+        let template = try testDb.repeatBoardAsTemplate(
+            board: board, cadence: .daily, userId: "u1", weekStartDay: "monday",
+            now: "2026-06-24T12:00:00.000"
+        )
+
+        let updatedBoard = try testDb.fetchBoard(id: board.id)
+        XCTAssertEqual(updatedBoard?.spawnedFromTemplateId, template?.id)
+    }
+
+    func testRepeatBoardAsTemplate_NoDuplicateSpawnPendingImmediatelyAfter() throws {
+        let testDb = try AppDatabase.makeTestInstance()
+        try seedUser(testDb)
+        let board = try seedOneOffBoard(testDb, timeframe: .daily, startDate: wednesdayBoardStart)
+        try seedPlacement(testDb, id: "bt1", boardId: board.id, taskId: "t1", row: 0, col: 0)
+
+        let template = try testDb.repeatBoardAsTemplate(
+            board: board, cadence: .weekly, userId: "u1", weekStartDay: "monday",
+            now: "2026-06-24T12:00:00.000"
+        )
+        guard let template else { return XCTFail("expected a template") }
+
+        let updatedBoard = try testDb.fetchBoard(id: board.id)
+        XCTAssertNotNil(updatedBoard)
+
+        // "Now" is still within the same week the template's
+        // lastSpawnedWindowKey was stamped for — no pending spawn until the
+        // window rolls over.
+        let referenceDate = parseISO8601Date(wednesdayBoardStart)!
+        let pending = findTemplatesPendingSpawn(
+            templates: [template],
+            boards: [updatedBoard!],
+            weekStartDay: "monday",
+            now: referenceDate
+        )
+        XCTAssertTrue(pending.isEmpty)
+    }
 }

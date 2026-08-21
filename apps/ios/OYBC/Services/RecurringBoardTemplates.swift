@@ -227,3 +227,96 @@ func buildSpawnPlacement(
         rng: rng
     )
 }
+
+// MARK: - "Repeat this board…" (Task Pools + Recurring Boards Rework, P6)
+//
+// docs/POOLS_RECURRING.md §Surfaces item 7 — a one-off board's Board screen
+// offers `↻ Repeat this board…`, which mints a NEW spawn record from the
+// board's current live tasks (as `manualTaskIds`, an own-mix repeating
+// board with zero pools) and back-stamps the board's
+// `spawnedFromTemplateId`. Unlike Phase 6.2's fresh-create spawn path, this
+// does NOT spawn a new board immediately — the board being repeated IS this
+// window's board, so an immediate spawn would double it up.
+
+/// The fields needed to construct a new `RecurringBoardTemplate` from an
+/// existing one-off board. Pure value object — `AppDatabase.repeatBoardAsTemplate`
+/// is responsible for minting the id/timestamps and performing the write.
+struct RepeatBoardTemplateInput {
+    let name: String
+    /// The CHOSEN cadence, NOT `board.timeframe` — a repeating board's
+    /// cadence becomes its timeframe going forward.
+    let timeframe: Timeframe
+    let boardSize: Int
+    let centerSquareType: CenterSquareType
+    let isRandomized: Bool
+    let manualTaskIds: [String]
+    /// Always `true` — a freshly-repeated board starts active.
+    let isActive: Bool
+    let lastSpawnedWindowKey: String
+    /// Decode-compat snapshot, mirrors `manualTaskIds` verbatim (see
+    /// `RecurringBoardTemplate`'s `seedTaskIds` doc — never read live).
+    let seedTaskIds: [String]
+    /// Always empty — an own-mix repeating board pulls no pools.
+    let poolIds: [String]
+    /// Always empty — nothing to remove from an empty pool union.
+    let removedTaskIds: [String]
+}
+
+/// Builds the `RepeatBoardTemplateInput` for "Repeat this board…".
+///
+/// `lastSpawnedWindowKey` is computed against the CADENCE's window
+/// (`computeTimeframeBoundaries(timeframe: cadence, ...)`), never the
+/// board's own `timeframe` — a one-off Tuesday `.daily` board repeated
+/// `.weekly` must key off that Tuesday's WEEK window, not the day. Getting
+/// this wrong silently double-spawns mid-window on the next Boards-tab
+/// open (`findTemplatesPendingSpawn` would see a stale key and fire).
+///
+/// - Parameters:
+///   - boardName: The source board's name — carried forward as the
+///     template's name.
+///   - boardSize: The source board's grid size.
+///   - centerSquareType: The source board's center type.
+///   - isRandomized: The source board's shuffle setting.
+///   - boardStartDate: The source board's `startDate` (ISO8601) — the
+///     anchor for locating the cadence window that contains it.
+///   - boardTaskIds: Caller-resolved distinct, non-deleted, non-FREE-center
+///     task ids currently placed on the board, in placement order.
+///   - cadence: The user-chosen repeat cadence (Daily/Weekly/Monthly/Yearly
+///     — `.custom`/`.indefinite` never reach here; the picker doesn't offer
+///     them).
+///   - weekStartDay: `"monday"` / `"sunday"` — only affects `.weekly`.
+/// - Returns: `nil` only on an unparseable `boardStartDate` (should never
+///   happen for a live board).
+func buildRepeatBoardTemplateInput(
+    boardName: String,
+    boardSize: Int,
+    centerSquareType: CenterSquareType,
+    isRandomized: Bool,
+    boardStartDate: String,
+    boardTaskIds: [String],
+    cadence: Timeframe,
+    weekStartDay: String
+) -> RepeatBoardTemplateInput? {
+    guard let anchor = parseISO8601Date(boardStartDate) else { return nil }
+    guard let window = computeTimeframeBoundaries(
+        timeframe: cadence,
+        referenceDate: anchor,
+        weekStartDay: weekStartDay
+    ) else { return nil } // cadence is never .custom/.indefinite in practice — defensive
+
+    let windowKey = wizardLocalISOString(window.start)
+
+    return RepeatBoardTemplateInput(
+        name: boardName,
+        timeframe: cadence,
+        boardSize: boardSize,
+        centerSquareType: centerSquareType,
+        isRandomized: isRandomized,
+        manualTaskIds: boardTaskIds,
+        isActive: true,
+        lastSpawnedWindowKey: windowKey,
+        seedTaskIds: boardTaskIds,
+        poolIds: [],
+        removedTaskIds: []
+    )
+}

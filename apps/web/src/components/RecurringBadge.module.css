@@ -17,3 +17,11 @@
   background: var(--riso-paper-2);
   color: var(--riso-ink);
 }
+
+/* P6 — paused variant: same shell, muted border + text (never --riso-ink,
+   which would read as "still active"). --riso-muted is border+text only —
+   never a fill — matching the same dark-mode-safe rule as the base pill. */
+.badgePaused {
+  border-color: var(--riso-muted);
+  color: var(--riso-muted);
+}
