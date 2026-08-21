@@ -41,8 +41,8 @@ service cloud.firestore {
       // Only allow known collections
       function isKnownCollection() {
         return collection in [
-          'boards', 'tasks', 'taskSteps',
-          'boardTasks', 'compositeTasks', 'compositeNodes',
+          'boards', 'tasks',
+          'boardTasks',
           'compoundChildren',
           'recurringBoardTemplates',
           'defaultPools',
@@ -58,13 +58,13 @@ service cloud.firestore {
         ];
       }
 
-      // Top-level entities (Board, Task, CompositeTask, RecurringBoardTemplate,
+      // Top-level entities (Board, Task, RecurringBoardTemplate,
       // DefaultPool, TaskEvent, Pool, CoreBoardDefault) carry a `userId` field
-      // in their payload. Child entities (TaskStep, BoardTask, CompositeNode)
+      // in their payload. Child entities (BoardTask, CompoundChild)
       // are scoped via their parent and do not.
       function requiresUserIdField() {
         return collection in [
-          'boards', 'tasks', 'compositeTasks', 'recurringBoardTemplates',
+          'boards', 'tasks', 'recurringBoardTemplates',
           'defaultPools',
           'taskEvents',
           'pools',

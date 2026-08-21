@@ -179,27 +179,3 @@ export async function fetchTemplatesReferencingTask(
     .toArray();
 }
 
-/**
- * Updates `lastSpawnedWindowKey` after a successful spawn. Used inside
- * the spawn transaction (see `recurringBoardSpawn.ts`) so this helper
- * does NOT enqueue a sync entry — the caller's transaction does that.
- *
- * IMPORTANT: must be called inside a Dexie transaction that already
- * scopes `recurringBoardTemplates` + `syncQueue`. The caller is
- * responsible for the sync queue entry to keep ordering atomic.
- */
-export async function setLastSpawnedWindowKey(
-  templateId: string,
-  windowKey: string,
-): Promise<RecurringBoardTemplate | undefined> {
-  const existing = await db.recurringBoardTemplates.get(templateId);
-  if (!existing) return undefined;
-
-  await db.recurringBoardTemplates.update(templateId, {
-    lastSpawnedWindowKey: windowKey,
-    updatedAt: currentTimestamp(),
-    version: (existing.version ?? 0) + 1,
-  });
-
-  return db.recurringBoardTemplates.get(templateId);
-}

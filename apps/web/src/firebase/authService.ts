@@ -171,10 +171,3 @@ export function onAuthStateChanged(
     }
   });
 }
-
-/**
- * Get the current authenticated user's local record, or null.
- */
-export function getCurrentUser(): FirebaseUser | null {
-  return auth.currentUser;
-}

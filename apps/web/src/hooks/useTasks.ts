@@ -17,16 +17,3 @@ export function useTasks(userId: string | undefined) {
     []
   );
 }
-
-/**
- * React hook to fetch a single task (reactive)
- */
-export function useTask(taskId: string | undefined) {
-  return useLiveQuery(
-    async () => {
-      if (!taskId) return undefined;
-      return db.tasks.get(taskId);
-    },
-    [taskId]
-  );
-}

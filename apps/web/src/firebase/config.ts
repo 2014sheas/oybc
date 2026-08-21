@@ -30,12 +30,3 @@ export const auth = getAuth(app);
 
 /** Firestore instance — used by syncService for cloud persistence. */
 export const firestore = getFirestore(app);
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Returns the current authenticated user's UID, or null if not signed in.
- */
-export function getCurrentUserId(): string | null {
-  return auth.currentUser?.uid ?? null;
-}
