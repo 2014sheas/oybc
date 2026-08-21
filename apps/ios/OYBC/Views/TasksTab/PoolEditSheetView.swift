@@ -45,6 +45,13 @@ struct PoolEditSheetView: View {
     let onSaved: () -> Void
     /// Fired after a successful delete.
     let onDeleted: () -> Void
+    /// Fired ONLY on a successful CREATE (never on an edit-mode save), with
+    /// the newly-created `Pool`. Added for the P7 `PoolPickerSheetView`'s
+    /// "+ Build a new pool…" round-trip (docs/POOLS_RECURRING.md §Surfaces
+    /// item 10) — the picker has no other way to learn the new pool's id
+    /// to auto-select it. `nil` (default) preserves every existing call
+    /// site's behavior unchanged.
+    var onCreated: ((Pool) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -409,6 +416,7 @@ struct PoolEditSheetView: View {
         _Concurrency.Task {
             do {
                 let now = AppDatabase.currentTimestamp()
+                var created: Pool?
                 if let existing {
                     _ = try await _Concurrency.Task.detached(priority: .userInitiated) {
                         try AppDatabase.shared.updatePoolAndEnqueue(
@@ -416,7 +424,7 @@ struct PoolEditSheetView: View {
                         )
                     }.value
                 } else {
-                    _ = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    created = try await _Concurrency.Task.detached(priority: .userInitiated) {
                         try AppDatabase.shared.createPoolAndEnqueue(
                             userId: uid, name: trimmed, taskIds: taskIds, now: now
                         )
@@ -424,6 +432,7 @@ struct PoolEditSheetView: View {
                 }
                 await MainActor.run {
                     busy = false
+                    if let created { onCreated?(created) }
                     onSaved()
                 }
             } catch {

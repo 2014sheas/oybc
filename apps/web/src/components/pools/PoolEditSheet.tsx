@@ -39,8 +39,14 @@ export interface PoolEditSheetProps {
   initialTaskIds?: string[];
   /** Backdrop click / Escape / Cancel / Close. */
   onClose: () => void;
-  /** Fired after a successful create or save. */
-  onSaved: () => void;
+  /** Fired after a successful create or save, with the persisted `Pool`.
+   *  P7's `PoolPickerSheet` uses the argument to select the newly-created
+   *  pool in the launching context ("+ Build a new pool…" round-trips back
+   *  with the new pool selected) — existing callers that only care about
+   *  closing the sheet can keep passing a zero-arg `() => void` (a
+   *  function with fewer declared params is assignable to a callback type
+   *  expecting more; JS ignores the extra argument). */
+  onSaved: (pool: Pool) => void;
   /** Fired after a successful delete. */
   onDeleted: () => void;
 }
@@ -177,8 +183,8 @@ export function PoolEditSheet({
       // explicit removals and plus any additions — never the resolved
       // display subset — so a stale/soft-deleted reference the user never
       // touched survives the save (Pool.taskIds docstring contract).
-      await savePoolFromSheet(userId, pool, { name: trimmedName, taskIds });
-      onSaved();
+      const saved = await savePoolFromSheet(userId, pool, { name: trimmedName, taskIds });
+      onSaved(saved);
     } catch (e) {
       setError(`Could not save pool: ${(e as Error).message}`);
       setBusy(false);

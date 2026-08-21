@@ -128,12 +128,12 @@ export function validateForm(
     // submit pipeline serializes the mode + reference id into either
     // `referencedBoardId` or `referencedTemplateId` on the new Task.
     if (!achievementMode) {
-      errors.achievementReference = 'Pick a mode (specific board or recurring template)';
+      errors.achievementReference = 'Pick a mode (specific board or a repeating board)';
     } else if (!achievementReferenceId) {
       errors.achievementReference =
         achievementMode === 'specificBoard'
           ? 'Pick a board to watch'
-          : 'Pick a recurring template to watch';
+          : 'Pick a repeating board to watch';
     }
     // Recurring-template mode also requires a positive count.
     // Specific-board mode ignores the count input entirely.

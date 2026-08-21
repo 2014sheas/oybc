@@ -561,7 +561,7 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 
 **Navigation**: bottom tab bar — Boards (default), Tasks, Create, Profile.
 
-**Routes (web)**: `/boards`, `/boards/:id`, `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/profile/recurring-templates`, `/playground` (dev tool).
+**Routes (web)**: `/boards`, `/boards/:id`, `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/profile/board-settings`, `/playground` (dev tool). (`/profile/recurring-templates` and `/profile/default-pools`(+`/:timeframe`) retired in the Task Pools + Recurring Boards Rework P7 — see [`docs/POOLS_RECURRING.md`](docs/POOLS_RECURRING.md) §Surfaces item 9 — merged into the one `/profile/board-settings` page; iOS twin is `Views/ProfileTab/BoardSettingsView.swift`, replacing the deleted `RecurringTemplatesView`/`DefaultPoolsListView`.)
 
 ### Known follow-ups
 

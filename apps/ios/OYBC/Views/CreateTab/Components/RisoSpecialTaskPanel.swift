@@ -384,7 +384,7 @@ struct RisoSpecialTaskPanel: View {
                     ruleChip("Specific board", isOn: achievementMode == .specificBoard) {
                         achievementMode = .specificBoard
                     }
-                    ruleChip("Recurring template", isOn: achievementMode == .recurringTemplate) {
+                    ruleChip("Repeating board", isOn: achievementMode == .recurringTemplate) {
                         achievementMode = .recurringTemplate
                     }
                 }
@@ -392,7 +392,7 @@ struct RisoSpecialTaskPanel: View {
 
             // Target picker
             VStack(alignment: .leading, spacing: 5) {
-                fieldLabel(achievementMode == .specificBoard ? "Which board" : "Which template")
+                fieldLabel(achievementMode == .specificBoard ? "Which board" : "Which repeating board")
                 if isLoadingAchievementData {
                     ProgressView()
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -451,12 +451,12 @@ struct RisoSpecialTaskPanel: View {
             }
         case .recurringTemplate:
             if templates.isEmpty {
-                Text("No recurring templates found.")
+                Text("No repeating boards found.")
                     .font(.risoBody(12, .semibold))
                     .foregroundStyle(Color.risoMuted)
             } else {
                 risoTargetMenu(
-                    title: templates.first(where: { $0.id == achievementTemplateId })?.name ?? "Pick a template…",
+                    title: templates.first(where: { $0.id == achievementTemplateId })?.name ?? "Pick a repeating board…",
                     items: templates.map { ($0.id, $0.name) },
                     selectedId: $achievementTemplateId
                 )

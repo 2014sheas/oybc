@@ -2,9 +2,6 @@ import {
   test,
   expect,
   seedBoard,
-  seedTask,
-  seedTemplate,
-  clearTemplates,
   openCreateHub,
 } from './_fixtures/bypass';
 
@@ -13,13 +10,15 @@ import {
  *  - Step 1 (Setup) shows the live task-count requirement line, updating
  *    with size + center selection ("A 5×5 board needs 24 tasks."), with
  *    "at least" phrasing in recurring mode.
- *  - Template rows show a compact pool preview (title chips + "+k more")
- *    and an "Add tasks" affordance that deep-links to the wizard's
- *    Tasks step.
- *  - The templates page regained a "+ New template" entry point routing
- *    to the recurring wizard.
  *  - Boards spawned from a template (spawnedFromTemplateId set) carry a
  *    RECURRING badge on the Boards-list card and the play header.
+ *
+ * (The old "templates page" describe block — pool-preview chips, the
+ * "Add tasks" deep-link, "+ New template" — tested the standalone
+ * `/profile/recurring-templates` page, which P7 (Task Pools + Recurring
+ * Boards Rework) retired in favor of `/profile/board-settings`'s
+ * "Repeating boards" roster. See `board-settings.spec.ts` for its
+ * coverage.)
  */
 
 const today = new Date();
@@ -64,98 +63,6 @@ test.describe('Recurring UX pass', () => {
     await expect(
       page.getByText('A 5×5 board needs at least 24 tasks.'),
     ).toBeVisible();
-  });
-
-  test.describe('templates page', () => {
-    const TEMPLATE_ID = '22222222-3333-4444-5555-666666666666';
-
-    test.beforeEach(async ({ page }) => {
-      await clearTemplates(page);
-      // 9 resolvable pool tasks → healthy 3×3/FREE template (needs 8).
-      for (let i = 1; i <= 9; i++) {
-        await seedTask(page, {
-          id: `dddddddd-0000-0000-0000-${String(i).padStart(12, '0')}`,
-          title: `Pool Task ${i}`,
-          type: 'normal',
-        });
-      }
-      await seedTemplate(page, {
-        id: TEMPLATE_ID,
-        name: 'Morning Routine',
-        timeframe: 'weekly',
-        boardSize: 3,
-        centerSquareType: 'free',
-        isRandomized: true,
-        seedTaskIds: Array.from({ length: 9 }, (_, i) =>
-          `dddddddd-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
-        ),
-        isActive: true,
-      });
-      await page.goto('/profile/recurring-templates?__oybc_test_bypass=1');
-    });
-
-    test('row shows pool count + first-3 title chips + "+k more"', async ({ page }) => {
-      await expect(page.getByText('Morning Routine')).toBeVisible();
-      await expect(page.getByText('9-task pool')).toBeVisible();
-      // First three resolved titles, in seedTaskIds order, then the tail.
-      await expect(page.getByText('Pool Task 1', { exact: true })).toBeVisible();
-      await expect(page.getByText('Pool Task 2', { exact: true })).toBeVisible();
-      await expect(page.getByText('Pool Task 3', { exact: true })).toBeVisible();
-      await expect(page.getByText('Pool Task 4', { exact: true })).not.toBeVisible();
-      await expect(page.getByText('+6 more')).toBeVisible();
-    });
-
-    test('"Add tasks" deep-links to the wizard Tasks step for the template', async ({ page }) => {
-      await page
-        .getByRole('button', { name: `Add tasks to Morning Routine` })
-        .click();
-
-      // Param consumed + cleared; wizard mounts in template-edit mode
-      // directly on step 2 (Tasks).
-      await expect(page).toHaveURL(/\/create$/);
-      await expect(
-        page.getByRole('heading', { name: /edit recurring board/i }),
-      ).toBeVisible();
-      const tasksStep = page
-        .getByRole('navigation', { name: 'Wizard progress' })
-        .getByText('Tasks');
-      await expect(tasksStep).toBeVisible();
-      // The Tasks step is the ACTIVE step — its selection counter renders
-      // (hydrated from the 9-task pool; 3×3 FREE needs 8, so "9 / 8 min").
-      await expect(page.getByText(/Selected:/)).toBeVisible();
-      await expect(page.getByText(/9 \/ 8 min/)).toBeVisible();
-    });
-
-    test('"+ New template" routes to the Create hub; "Start a new board" + a Repeats cadence enters recurring mode', async ({ page }) => {
-      // P4 retired `?newRecurring=1` — "+ New template" now navigates
-      // PLAINLY to `/create`, landing on the Create hub itself (not
-      // straight into the wizard). The user then taps the hub's single
-      // "Start a new board" CTA and picks a cadence from "Repeats"
-      // themselves.
-      await page.getByRole('button', { name: '+ New template' }).click();
-      await expect(page).toHaveURL(/\/create$/);
-      await expect(page.getByRole('heading', { name: 'Create', level: 1 })).toBeVisible();
-
-      await page.getByRole('button', { name: /start a new board/i }).click();
-      await expect(page.getByRole('heading', { name: /new board/i })).toBeVisible();
-      await expect(
-        page.getByRole('group', { name: 'Timeframe' }).getByRole('button', { name: 'Custom', exact: true }),
-      ).toBeVisible();
-
-      await page
-        .getByRole('group', { name: 'Repeats' })
-        .getByRole('button', { name: 'Daily', exact: true })
-        .click();
-
-      await expect(
-        page.getByRole('heading', { name: /new recurring board/i }),
-      ).toBeVisible();
-      // Recurring mode: the whole Timeframe segmented (incl. Custom) hides.
-      await expect(page.getByRole('group', { name: 'Timeframe' })).toHaveCount(0);
-      await expect(
-        page.getByRole('button', { name: 'Custom', exact: true }),
-      ).toHaveCount(0);
-    });
   });
 
   test.describe('recurring badge on spawned boards', () => {

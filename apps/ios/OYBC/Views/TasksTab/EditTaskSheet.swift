@@ -244,7 +244,7 @@ struct EditTaskSheet: View {
                     RisoSegmented(
                         options: [
                             (value: Patch.RefMode.board,    label: "Specific board"),
-                            (value: Patch.RefMode.template, label: "Recurring template"),
+                            (value: Patch.RefMode.template, label: "Repeating board"),
                         ],
                         selection: $refMode
                     )
@@ -260,9 +260,9 @@ struct EditTaskSheet: View {
                         )
                     }
                 } else {
-                    fieldRow(label: "Template") {
+                    fieldRow(label: "Repeating board") {
                         risoMenuPicker(
-                            placeholder: "— select a template —",
+                            placeholder: "— select a repeating board —",
                             items: availableTemplates.map { ($0.id, $0.name) },
                             selectedId: $selectedTemplateId
                         )

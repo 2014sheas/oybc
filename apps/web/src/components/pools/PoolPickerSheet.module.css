@@ -1,0 +1,135 @@
+/* PoolPickerSheet — shared "choose pools" selector (P7). Chrome mirrors
+   PoolEditSheet.module.css's backdrop/sheet/header pattern; z-index tiers
+   follow the same recursive-nesting convention as PoolEditSheet's own
+   `.newTaskLayer` (a caller wraps this sheet in an elevated stacking
+   context so its 1100/1200 tiers land above whatever opened it). */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.sheet {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  animation: slideUp 0.2s ease-out;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 2px solid var(--riso-ink);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+.body {
+  padding: 16px 24px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.empty {
+  margin: 4px 0 0;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  color: var(--riso-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rowMeta {
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+
+.rowWarning {
+  color: var(--riso-red);
+}
+
+.newPoolButton {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1.5px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: transparent;
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.newPoolButton:hover {
+  background: var(--riso-paper);
+}
+.newPoolButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .sheet {
+    animation: none;
+  }
+}
+
+/* Third-tier stacking context for "+ Build a new pool…"'s nested
+   PoolEditSheet (create mode) — same convention as PoolEditSheet's own
+   `.newTaskLayer`. */
+.createLayer {
+  position: relative;
+  z-index: 1200;
+}

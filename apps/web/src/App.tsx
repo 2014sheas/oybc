@@ -12,9 +12,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { StreaksPage } from './pages/StreaksPage';
 import { AccountSecurityPage } from './pages/AccountSecurityPage';
 import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
-import { RecurringTemplatesPage } from './pages/RecurringTemplatesPage';
-import { DefaultPoolsListPage } from './pages/DefaultPoolsListPage';
-import { DefaultPoolEditorPage } from './pages/DefaultPoolEditorPage';
+import { BoardSettingsPage } from './pages/BoardSettingsPage';
 import { CountersHubPage } from './pages/CountersHubPage';
 import { CounterDetailPage } from './pages/CounterDetailPage';
 import { CoreBoardBrowserPage } from './pages/core-board-browser/CoreBoardBrowserPage';
@@ -57,11 +55,13 @@ function CreateRoute(): React.ReactElement | null {
       }}
       onTemplateCompleted={() => {
         // Phase 6.2: recurring-template completions without a spawned
-        // board (skip OR edit) land on the templates list so the user
-        // sees their newly-saved/edited template (with attention badge
-        // on skip). The earlier contract overloaded `onBoardCompleted`
-        // with templateId, navigating to /boards/<templateId> = 404.
-        navigate('/profile/recurring-templates');
+        // board (skip OR edit) land on the Board-settings roster so the
+        // user sees their newly-saved repeating board (with attention
+        // badge on skip). The earlier contract overloaded
+        // `onBoardCompleted` with templateId, navigating to
+        // /boards/<templateId> = 404. P7 retired the dedicated
+        // "Recurring templates" Profile page in favor of Board settings.
+        navigate('/profile/board-settings');
       }}
     />
   );
@@ -112,9 +112,7 @@ function AuthenticatedLayout(): React.ReactElement {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/streaks" element={<StreaksPage />} />
         <Route path="/profile/board-preferences" element={<BoardPreferencesPage />} />
-        <Route path="/profile/recurring-templates" element={<RecurringTemplatesPage />} />
-        <Route path="/profile/default-pools" element={<DefaultPoolsListPage />} />
-        <Route path="/profile/default-pools/:timeframe" element={<DefaultPoolEditorPage />} />
+        <Route path="/profile/board-settings" element={<BoardSettingsPage />} />
         <Route path="/profile/account-security" element={<AccountSecurityPage />} />
         <Route path="/profile/counters" element={<CountersHubPage />} />
         <Route path="/profile/counters/:counterId" element={<CounterDetailPage />} />

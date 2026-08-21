@@ -171,7 +171,7 @@ export function TaskEditSheet({
         patch.referencedTemplateId = null;
       } else {
         if (!selectedTemplateId) {
-          setValidationError('Please select a recurring template to watch.');
+          setValidationError('Please select a repeating board to watch.');
           return;
         }
         const result = parsePositiveInt(requiredCountStr);
@@ -288,7 +288,7 @@ export function TaskEditSheet({
                 className={styles.fieldInput}
               >
                 <option value="board">Specific board</option>
-                <option value="template">Recurring template</option>
+                <option value="template">Repeating board</option>
               </select>
             </label>
 
@@ -313,13 +313,13 @@ export function TaskEditSheet({
             {refMode === 'template' && (
               <>
                 <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Template</span>
+                  <span className={styles.fieldLabel}>Repeating board</span>
                   <select
                     value={selectedTemplateId}
                     onChange={(e) => setSelectedTemplateId(e.target.value)}
                     className={styles.fieldInput}
                   >
-                    <option value="">— select a template —</option>
+                    <option value="">— select a repeating board —</option>
                     {availableTemplates.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.name}

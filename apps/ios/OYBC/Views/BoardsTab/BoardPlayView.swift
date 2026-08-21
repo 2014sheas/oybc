@@ -1245,8 +1245,9 @@ struct BoardPlayView: View {
     }
 
     /// Pause / resume the board's source template. Mirrors
-    /// `RecurringTemplatesView.setActive(_:_:)` verbatim: flip `isActive`,
-    /// bump version, save + enqueue, reload.
+    /// `BoardSettingsView.setActive(_:_:)` (P7 — was `RecurringTemplatesView.setActive`
+    /// before that page retired) verbatim: flip `isActive`, bump version,
+    /// save + enqueue, reload.
     private func toggleTemplateActive(_ template: RecurringBoardTemplate) {
         let now = AppDatabase.currentTimestamp()
         var updated = template

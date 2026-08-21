@@ -6,10 +6,14 @@ import XCTest
 /// size, timeframe, center, selected task ids) and records the template
 /// id so completion updates the template rather than creating a board.
 ///
-/// iOS twin of web's `useBoardWizard` editTemplate branch — this is the
-/// destination the Profile "Recurring templates" card tap routes to
-/// (via `CreateHubViewModel.loadTemplateAndEnterWizard`). Guarding it
-/// here proves the seam hydrates before the wizard mounts.
+/// iOS twin of web's `useBoardWizard` editTemplate branch. P7 (Task
+/// Pools + Recurring Boards Rework) retired the Profile "Recurring
+/// templates" page and its cross-tab wizard-edit hop
+/// (`CreateHubViewModel.loadTemplateAndEnterWizard`) — editing a
+/// repeating board's mix is now a local sheet
+/// (`RepeatingBoardEditSheetView`) on `BoardSettingsView`. This test
+/// keeps guarding `BoardWizardViewModel`'s `editingTemplate:` hydration
+/// as a general capability, independent of which UI (if any) triggers it.
 final class BoardWizardTemplateEditTests: XCTestCase {
 
     private func makeTemplate(
