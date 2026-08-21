@@ -541,13 +541,15 @@ The `docs/superpowers/specs/` folder is **not in active use** — design docs fo
 
 ## CI/CD
 
-Three GitHub Actions workflows run on PRs to `dev` and on merge:
+GitHub Actions workflows run on PRs to `dev` and on merge:
 
 | Workflow | File | Trigger |
 | --- | --- | --- |
-| **Web** | `.github/workflows/web.yml` | PRs/pushes touching `apps/web/`, `packages/shared/`, lockfile, turbo config |
+| **Web** | `.github/workflows/web.yml` | PRs/pushes touching `apps/web/`, `packages/shared/`, lockfile, turbo config, `scripts/check-knip.mjs`/`scripts/audit/**` |
 | **iOS** | `.github/workflows/ios.yml` | PRs/pushes touching `apps/ios/` |
 | **Firestore rules** | `.github/workflows/firestore-rules.yml` | Push to `dev` touching `firestore.rules` / `firestore.indexes.json` (deploy only, no PR trigger) |
+| **Drift guardrails** | `.github/workflows/drift-guardrails.yml` | Every PR/push to `dev` (no path filter — cross-cutting; see below) |
+| **Monthly audit reminder** | `.github/workflows/audit-reminder.yml` | `schedule` (1st of month) + `workflow_dispatch`; files a `drift-audit` reminder issue |
 
 **Dependabot** (`.github/dependabot.yml`): npm weekly (minor/patch grouped, majors separate), GitHub Actions monthly. SPM not supported — iOS deps bumped manually.
 
@@ -560,6 +562,22 @@ Three GitHub Actions workflows run on PRs to `dev` and on merge:
 - **Remedy**: the fix in ≤ 1 sentence, or `Declined — <reason>`. Declining is fine; silent dismissal is not.
 
 **pnpm version**: pinned to 9.15.4 via `package.json#packageManager`. CI uses `pnpm/action-setup@v6`, which reads the version from `packageManager` and ignores any `version:` workflow input — so the workflows don't set one. To bump the pnpm major across local + CI, change the `packageManager` field; the workflows pick it up automatically.
+
+### Drift guardrails (never-drift-out-of-spec automation)
+
+Output of the 2026-08 deep-dive audit: the findings that a machine can check are enforced every PR so they can't recur; the judgment-level sweep is a repeatable skill + a monthly reminder. Two layers:
+
+**Mechanical (CI, enforced per-PR)** — three pure-Node checks (no build/deps except knip), each with a *freeze-and-shrink* baseline so it fails only on NEW drift and documents existing debt as a shrinkable backlog:
+
+| Check | Script | Baseline | Catches |
+| --- | --- | --- | --- |
+| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (23 known-dead exports) | new unused web exports/types; any unused file/dependency (never baselined) |
+| God-file regrowth | `scripts/check-file-sizes.mjs` (in `drift-guardrails.yml`) | `scripts/audit/file-size-allowlist.json` (9 frozen offenders = ROADMAP B6 roster) | any source file >1000 lines; any allowlisted file growing past its frozen count |
+| Sync-contract ↔ rules | `scripts/check-sync-contract-rules.mjs` (in `drift-guardrails.yml`) | none (must be exactly equal) | `SYNC_COLLECTIONS`/`USER_SCOPED_SYNC_COLLECTIONS` (shared) diverging from `isKnownCollection()`/`requiresUserIdField()` (`firestore.rules`) |
+
+Rule for all three: **shrink the baseline as you clean up (the scripts emit a note when an entry is stale); never grow it to dodge a fix.** Bumping a file-size cap or adding a knip-baseline entry is a deliberate, reviewed act.
+
+**Judgment (on demand + scheduled)** — the `/audit` skill (`.claude/skills/audit/SKILL.md`) re-runs the four-dimension parallel-agent sweep (code quality / architecture / iOS-guidelines+x-platform / security), consolidates one prioritized report, and stops for you to pick fixes (diagnosis-first). It carries the audit's verified-safe baseline so re-runs focus on new drift, and it assumes the mechanical guardrails hold (don't re-derive them by hand). The `audit-reminder.yml` workflow files a monthly `drift-audit` issue nudging a run (a session-only assistant cron can't do this durably). Canonical record of the founding sweep: memory `project_deep_dive_audit_2026_08`.
 
 ## Development Status
 

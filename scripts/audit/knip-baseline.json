@@ -1,0 +1,28 @@
+{
+  "_comment": "Drift guardrail baseline for knip (see scripts/check-knip.mjs). Each entry is a known unused web export/type frozen as accepted debt: the guardrail fails only on NEW unused exports not listed here. Shrink this list as dead code is deleted (the guardrail notes when a baselined entry is gone). New unused FILES/DEPENDENCIES/unlisted-imports fail immediately and are never baselined.",
+  "unusedExports": [
+    "e2e/_fixtures/bypass.ts::clearPools",
+    "e2e/_fixtures/bypass.ts::clearTemplates",
+    "src/db/index.ts::AppDatabase",
+    "src/db/index.ts::Board",
+    "src/db/index.ts::BoardTask",
+    "src/db/index.ts::SyncQueueItem",
+    "src/db/index.ts::Task",
+    "src/db/index.ts::User",
+    "src/db/operations/boardTasks.ts::fetchBoardTask",
+    "src/db/operations/boardTasks.ts::fetchBoardTasksForBoards",
+    "src/db/operations/boardTasks.ts::fetchBoardsUsingTask",
+    "src/db/operations/boards.ts::countBingos",
+    "src/db/operations/boards.ts::countCompletedBoards",
+    "src/db/operations/boards.ts::fetchBoards",
+    "src/db/operations/boards.ts::fetchBoardsByTimeframe",
+    "src/db/operations/compoundChildren.ts::fetchCompoundChild",
+    "src/db/operations/compoundChildren.ts::findCompoundChildrenByChildTaskId",
+    "src/db/operations/compoundChildren.ts::reorderCompoundChildren",
+    "src/db/operations/compoundChildren.ts::softDeleteCompoundChild",
+    "src/db/operations/recurringBoardTemplates.ts::fetchRecurringBoardTemplates",
+    "src/db/operations/syncQueue.ts::deleteSyncItem",
+    "src/db/operations/tasks.crud.ts::fetchTasks",
+    "src/db/operations/tasks.deletion.ts::deleteTask"
+  ]
+}

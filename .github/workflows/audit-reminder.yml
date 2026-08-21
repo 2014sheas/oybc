@@ -1,0 +1,56 @@
+name: Monthly audit reminder
+
+# Durable, hands-off cadence for the judgment-level deep-dive audit.
+#
+# The mechanical guardrails (web.yml knip + drift-guardrails.yml file-size /
+# sync-contract) run every PR. The four-dimension JUDGMENT audit needs Claude
+# and can't run in CI — so this workflow just files a monthly reminder issue
+# nudging a human to run the `/audit` skill (`.claude/skills/audit`). It's
+# idempotent: if last month's reminder is still open, it skips instead of
+# stacking duplicates.
+#
+# (A session-only assistant cron can't do this — it dies with the session and
+# caps at 7 days; a scheduled workflow is the only durable monthly trigger.)
+
+on:
+  schedule:
+    # 1st of each month, 14:13 UTC (off the :00 mark). Adjust freely.
+    - cron: '13 14 1 * *'
+  workflow_dispatch: {}
+
+permissions:
+  issues: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Open a drift-audit reminder (if none is open)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list --label drift-audit --state open --limit 1 --json number --jq 'length')
+          if [ "$existing" != "0" ]; then
+            echo "An open drift-audit reminder already exists — skipping."
+            exit 0
+          fi
+          # Ensure the label exists (no-op if it already does).
+          gh label create drift-audit --color 5319e7 --description "Periodic deep-dive audit reminder" 2>/dev/null || true
+          gh issue create \
+            --label drift-audit \
+            --title "Monthly drift audit — run /audit" \
+            --body "$(cat <<'BODY'
+          Time for the monthly deep-dive audit. In a Claude Code session on `dev`, run:
+
+          > `/audit`
+
+          It fans out four read-only agents (code quality, architecture, iOS-guidelines/x-platform, security), consolidates a prioritized report, and stops for you to pick fixes — diagnosis-first. See `.claude/skills/audit/SKILL.md`.
+
+          The mechanical guardrails already run every PR (knip dead-code, file-size ceiling, sync-contract ↔ firestore.rules) — this covers the judgment-level drift they can't.
+
+          Close this issue once the audit run is done (record outcomes in `docs/ROADMAP.md` / memory). The reminder re-files next month.
+          BODY
+          )"
