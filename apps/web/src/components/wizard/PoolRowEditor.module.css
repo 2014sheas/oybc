@@ -1,0 +1,319 @@
+/* PoolRowEditor — inline pool-row editor (Web inline-editing port PR-2).
+   Replaces a resting PoolList row in place. Values ported directly from
+   the design handoff prototype (`Inline Task Editing Web.dc.html`). */
+
+.editor {
+  position: relative;
+  background: var(--riso-paper-2);
+  border-left: 4px solid var(--riso-blue);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 15px;
+  border-bottom: 1.5px solid var(--riso-hair);
+}
+.headerLabel {
+  flex: 1;
+  font-family: var(--riso-font-body);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.headerHint {
+  font-family: var(--riso-font-body);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+
+/* ── Mini type badge (N/C/K) — distinct from TypeBadge's 4-letter list
+   abbreviation; used in the editor header + sub-task rows. ── */
+.miniBadge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+}
+.miniBadgeHeader {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.miniBadgeSub {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.miniBadgeNormal {
+  background: var(--riso-paper);
+  color: var(--riso-muted);
+}
+.miniBadgeCounting {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.miniBadgeCompound {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+
+.body {
+  padding: 16px 15px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Title (+ counting Action/Goal/Unit on the same line) ── */
+.titleRow {
+  display: flex;
+  gap: 12px;
+}
+.titleField {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.countingTrio {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+}
+.actionField {
+  flex: 1.4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.goalField {
+  flex: 0.7;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.unitField {
+  flex: 0.9;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  font-family: var(--riso-font-body);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  caret-color: var(--riso-blue);
+}
+.field:focus-visible,
+.field:focus {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 0;
+}
+
+.readsAs {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--riso-blue);
+}
+
+/* ── Compound section ── */
+.compoundSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ruleGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.subtaskList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.subtaskCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+}
+.subtaskCardRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.subtaskIndex {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--riso-ink);
+  border-radius: 6px;
+  background: var(--riso-paper-2);
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+.subtaskTitleField {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 11px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  font-family: var(--riso-font-body);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  caret-color: var(--riso-blue);
+}
+.subtaskTitleField:focus-visible,
+.subtaskTitleField:focus {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 0;
+}
+.subtaskRemove {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+  color: var(--riso-muted);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.subtaskRemove:hover {
+  color: var(--riso-red);
+}
+.subtaskRemove:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+
+.subtaskCountingRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-left: 33px;
+}
+.subtaskField {
+  padding: 7px 11px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  font-family: var(--riso-font-body);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  caret-color: var(--riso-blue);
+  min-width: 0;
+}
+.subtaskField:focus-visible,
+.subtaskField:focus {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 0;
+}
+.subtaskReadsAs {
+  flex: 1.3;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--riso-blue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.addRow {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.addButton {
+  padding: 9px 14px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.addButton:hover {
+  background: var(--riso-paper-2);
+}
+.addButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+.subtaskNote {
+  flex: 1;
+  min-width: 230px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+
+/* ── Footer ── */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 13px;
+  border-top: 1.5px solid var(--riso-hair);
+}
+.stagingLine {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 250px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.stagingLine svg {
+  flex: none;
+}
+.errorText {
+  font-family: var(--riso-font-head);
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--riso-red);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}

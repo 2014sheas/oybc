@@ -1,5 +1,6 @@
 import {
   CenterSquareType,
+  TaskType,
   Timeframe,
   deriveSpawnedBoardName,
   getTimeframeBoundaries,
@@ -14,15 +15,17 @@ import {
 } from '../../db/operations/recurringBoardTemplates';
 import {
   persistWizardBoardRows,
-  persistWizardPendingTasks,
+  persistWizardPendingTasksAndStagedEdits,
   type WizardPendingTaskWrite,
 } from '../../db/operations/wizardBoard';
 import {
   spawnTemplateBoard,
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
+import { applyPatchToTask, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
 // `generateUUID` / `currentTimestamp` no longer needed here — pending-task
 // sync writes now route through `addToSyncQueue` which owns both.
+import { currentTimestamp } from '../../db/utils';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../pages/createPage/useTaskLibrary';
@@ -76,7 +79,23 @@ export function buildWizardPlacement(
     const t = libraryById.get(id);
     if (t !== undefined) pendingExtras.push(t);
   }
-  const selected: Task[] = [...fromLibrary, ...pendingExtras];
+  const preOverlay: Task[] = [...fromLibrary, ...pendingExtras];
+
+  // Inline Task Editing (web PR-2) — overlay staged edits (Inline
+  // pool-row edits, unsaved to the DB) so the Step-3 preview grid +
+  // summary reflect unsaved renames/goal/compound changes, exactly like
+  // the pool-row subtitles on Step 2. The DB is untouched until create;
+  // the real patch applies inside the board-create transaction. Mirrors
+  // iOS `buildWizardPlacement`'s staged-edit overlay.
+  const stagedEdits = controller.stagedEdits;
+  const selected: Task[] =
+    stagedEdits === undefined || stagedEdits.size === 0
+      ? preOverlay
+      : preOverlay.map((t) => {
+          const patch = stagedEdits.get(t.id);
+          if (!patch || validatePatch(patch, t.type) !== null) return t;
+          return applyPatchToTask(patch, t);
+        });
 
   const chosenCenter: Task | null =
     isOdd && centerType === CenterSquareType.CHOSEN && centerTaskId !== null
@@ -182,6 +201,14 @@ export interface PersistWizardBoardArgs {
    * state may not be current (e.g., after a `reset()` call).
    */
   pendingTasks?: Map<string, PendingTaskPayload>;
+  /**
+   * Inline Task Editing (web PR-2) — staged inline task edits to apply
+   * atomically inside the board-create transaction. When omitted, falls
+   * back to `controller.stagedEdits`. Applied ONLY when `status ===
+   * 'active'` — a draft must never carry a task edit (see
+   * `persistWizardBoardRows`'s doc).
+   */
+  stagedEdits?: Map<string, TaskEditPatch>;
 }
 
 /**
@@ -203,6 +230,7 @@ export async function persistWizardBoard({
   dates,
   status,
   pendingTasks: pendingTasksArg,
+  stagedEdits: stagedEditsArg,
 }: PersistWizardBoardArgs): Promise<string> {
   const trimmedName = controller.name.trim();
   const centerTaskId =
@@ -226,12 +254,36 @@ export async function persistWizardBoard({
   // controller property for callers that don't thread it separately.
   const pendingMap: Map<string, PendingTaskPayload> =
     pendingTasksArg ?? controller.pendingTasks;
-  const pendingTasks: WizardPendingTaskWrite[] = Array.from(pendingMap.values());
+  const rawPendingTasks: WizardPendingTaskWrite[] = Array.from(pendingMap.values());
 
-  // The atomic write (board + BoardTask rows + Bug-#85 pending tasks, all in
-  // one Dexie transaction) lives in the `persistWizardBoardRows` operation.
-  // Everything above is wizard UI policy (name/center/date resolution,
-  // pending-task snapshotting); the operation owns the DB write so this
+  // Inline Task Editing (web PR-2) — resolve the staged-edits snapshot the
+  // same way (explicit arg wins; falls back to the controller property).
+  const stagedEditsMap: Map<string, TaskEditPatch> =
+    stagedEditsArg ?? controller.stagedEdits ?? new Map();
+  const isActiveCreate = status === 'active';
+
+  // Merge staged simple/counting edits into their pending payload
+  // in-memory (mirrors iOS `persistWizardBoard`'s `pendingForSave` map) so
+  // an inline-created (this-session) task is written with its edited
+  // values in one shot. Compound edits (parent fields AND child/link CRUD)
+  // are applied once inside `persistWizardBoardRows`, against the
+  // just-written pending rows — so DON'T pre-merge them here (that would
+  // double-apply the parent + bump its version twice). ONLY on an active
+  // create — a draft must never carry a task edit.
+  const pendingTasks: WizardPendingTaskWrite[] = isActiveCreate
+    ? rawPendingTasks.map((payload) => {
+        if (payload.task.type === TaskType.COMPOUND) return payload;
+        const patch = stagedEditsMap.get(payload.task.id);
+        if (!patch || validatePatch(patch, payload.task.type) !== null) return payload;
+        return { ...payload, task: applyPatchToTask(patch, payload.task) };
+      })
+    : rawPendingTasks;
+
+  // The atomic write (board + BoardTask rows + Bug-#85 pending tasks +
+  // Inline Task Editing staged edits, all in one Dexie transaction) lives
+  // in the `persistWizardBoardRows` operation. Everything above is wizard
+  // UI policy (name/center/date resolution, pending-task snapshotting, the
+  // pending-edit pre-merge); the operation owns the DB write so this
   // component-tree helper no longer reaches the raw Dexie instance (B3).
   return persistWizardBoardRows({
     userId,
@@ -245,6 +297,7 @@ export async function persistWizardBoard({
     size: controller.size,
     centerType: controller.centerType,
     pendingTasks,
+    stagedEdits: isActiveCreate ? stagedEditsMap : new Map(),
   });
 }
 
@@ -280,6 +333,14 @@ export interface PersistRecurringTemplateArgs {
    * cancel dialog's "Save" action.
    */
   pendingTasks?: Map<string, PendingTaskPayload>;
+  /**
+   * Inline Task Editing (web PR-2) — staged inline task edits to apply
+   * atomically alongside the pending-task drain. When omitted, falls back
+   * to `controller.stagedEdits`. Unlike the one-off path, a recurring
+   * template has no draft/active distinction, so staged edits always
+   * apply here — no status gate to mirror.
+   */
+  stagedEdits?: Map<string, TaskEditPatch>;
 }
 
 /**
@@ -328,14 +389,43 @@ export async function persistRecurringTemplate({
   controller,
   userId,
   pendingTasks: pendingTasksArg,
+  stagedEdits: stagedEditsArg,
 }: PersistRecurringTemplateArgs): Promise<PersistRecurringTemplateResult> {
   const trimmedName = controller.name.trim();
 
   // ── THE FIX — drain pending tasks for the FULL selection first ────────
   const pendingMap: Map<string, PendingTaskPayload> = pendingTasksArg ?? controller.pendingTasks;
-  await persistWizardPendingTasks(
-    Array.from(pendingMap.values()),
+  const pendingToPersist = Array.from(pendingMap.values()).filter((p) =>
+    controller.selectedTaskIds.has(p.task.id),
+  );
+
+  // Inline Task Editing (web PR-2) — merge staged simple/counting edits
+  // into their pending payload in-memory (mirrors `persistWizardBoard`'s
+  // pre-merge above) so an inline-created task is written with its edited
+  // values in one shot. Compound edits (parent fields AND child/link CRUD)
+  // are applied once inside `persistWizardPendingTasksAndStagedEdits`,
+  // against the just-written pending rows — so DON'T pre-merge them here.
+  const stagedEditsMap: Map<string, TaskEditPatch> =
+    stagedEditsArg ?? controller.stagedEdits ?? new Map();
+  const pendingForSave: WizardPendingTaskWrite[] = pendingToPersist.map((payload) => {
+    if (payload.task.type === TaskType.COMPOUND) return payload;
+    const patch = stagedEditsMap.get(payload.task.id);
+    if (!patch || validatePatch(patch, payload.task.type) !== null) return payload;
+    return { ...payload, task: applyPatchToTask(patch, payload.task) };
+  });
+
+  // Drain pending (Bug #85) tasks FIRST — before the edit path's template
+  // re-save or the fresh-create path's spawn, both of which resolve the
+  // mix / read tasks by id. Staged edits (library tasks + pending
+  // compounds) are applied in the SAME transaction — see
+  // `persistWizardPendingTasksAndStagedEdits`'s doc. Unlike the one-off
+  // path there's no draft/active gate to mirror: a `RecurringBoardTemplate`
+  // has no draft state, so staged edits always apply.
+  await persistWizardPendingTasksAndStagedEdits(
+    pendingForSave,
     controller.selectedTaskIds,
+    stagedEditsMap,
+    currentTimestamp(),
   );
 
   const poolIds = [...controller.pulledPoolIds];

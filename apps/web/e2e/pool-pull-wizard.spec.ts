@@ -59,6 +59,11 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
     await page.getByRole('button', { name: /^Next/ }).click();
 
     // Step 2 mounted — the pull-card renders the seeded pool as a chip.
+    // Web inline-editing port PR-1 (pool-first restructure): the pool is
+    // no longer a flat selectable library list — selected tasks live in
+    // the separate `PoolList` ("ON YOUR BOARD") section, and the header's
+    // "Selected: N / M" text became a `TasksPoolHeader` count badge
+    // exposed via `aria-label` for stable e2e targeting.
     const poolChip = page.getByRole('button', { name: 'Morning Kickstart', exact: true });
     await expect(poolChip).toBeVisible();
     await expect(poolChip).toHaveAttribute('aria-pressed', 'false');
@@ -66,23 +71,33 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
     await page.screenshot({ path: '.playwright-mcp/pool-pull-01-card-untouched.png' });
 
     // Pull it in: all 8 tasks join the selection, satisfying the 3×3
-    // floor, and each pool task's row shows "from Morning Kickstart".
+    // floor, and each pool task's row (now in the Pool List) shows
+    // "from Morning Kickstart".
     await poolChip.click();
     await expect(poolChip).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByText('Selected:')).toContainText('8 / 8');
+    await expect(page.getByLabel('Selected 8 of 8 tasks')).toBeVisible();
 
-    const firstPoolTaskRow = page.getByRole('button', { name: /Pool Task 1/ });
-    await expect(firstPoolTaskRow).toHaveAttribute('aria-pressed', 'true');
+    const firstPoolTaskRow = page.getByRole('listitem').filter({ hasText: 'Pool Task 1' });
+    await expect(firstPoolTaskRow).toBeVisible();
     await expect(firstPoolTaskRow).toContainText('from Morning Kickstart');
     await page.waitForTimeout(200);
     await page.screenshot({ path: '.playwright-mcp/pool-pull-02-pulled-with-provenance.png' });
 
-    // Manually add an unrelated task — its row shows "added by hand".
-    const manualRow = page.getByRole('button', { name: /Manual Task/ });
-    await manualRow.click();
-    await expect(manualRow).toHaveAttribute('aria-pressed', 'true');
+    // Manually add an unrelated (already-existing) task via the quick-add
+    // row's library-poll dropdown — the pool-first restructure's real
+    // "add an existing task by hand" path when the library sheet isn't
+    // already open. Its Pool List row shows "added by hand".
+    await page.getByLabel('New normal task title').fill('Manual Task');
+    const manualMatch = page
+      .getByRole('list', { name: 'Matching library tasks' })
+      .getByRole('button', { name: /Manual Task/ });
+    await expect(manualMatch).toBeVisible();
+    await manualMatch.click();
+
+    const manualRow = page.getByRole('listitem').filter({ hasText: 'Manual Task' });
+    await expect(manualRow).toBeVisible();
     await expect(manualRow).toContainText('added by hand');
-    await expect(page.getByText('Selected:')).toContainText('9 / 8');
+    await expect(page.getByLabel('Selected 9 of 8 tasks')).toBeVisible();
     await page.waitForTimeout(200);
     await page.screenshot({ path: '.playwright-mcp/pool-pull-03-manual-add.png' });
 
@@ -90,9 +105,10 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
     // task survives (manual layer is never touched by a pool toggle).
     await poolChip.click();
     await expect(poolChip).toHaveAttribute('aria-pressed', 'false');
-    await expect(firstPoolTaskRow).toHaveAttribute('aria-pressed', 'false');
-    await expect(manualRow).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByText('Selected:')).toContainText('1 / 8');
+    await expect(firstPoolTaskRow).toHaveCount(0);
+    await expect(manualRow).toBeVisible();
+    await expect(manualRow).toContainText('added by hand');
+    await expect(page.getByLabel('Selected 1 of 8 tasks')).toBeVisible();
     await page.waitForTimeout(200);
     await page.screenshot({ path: '.playwright-mcp/pool-pull-04-untoggled-manual-survives.png' });
 
@@ -114,7 +130,7 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
 
     // Independent of the board: saving didn't touch selectedTaskIds
     // (still just the Manual Task).
-    await expect(page.getByText('Selected:')).toContainText('1 / 8');
+    await expect(page.getByLabel('Selected 1 of 8 tasks')).toBeVisible();
 
     // The new pool is immediately pullable — the live `usePools` query
     // surfaces it in the card without a reload.

@@ -2,6 +2,7 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  TaskType,
   computeBoardStatsUpdate,
   isGoalLessCounter,
   type CompoundChild,
@@ -9,11 +10,20 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../internal';
+import { currentTimestamp, generateUUID } from '../utils';
+import {
+  type TaskEditPatch,
+  applyPatchToTask,
+  applyStepToChildTask,
+  buildNewChildTask,
+  isNewChild,
+  validatePatch,
+} from '../taskEditPatch';
 import { activateBoard, createBoard, updateBoard } from './boards';
 import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
+import { runBoardCascadeForTask, runBoardCascadeForTasks } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
-import { currentTimestamp } from '../utils';
 
 /**
  * One not-yet-persisted task created inside the wizard's New Task sheet
@@ -44,6 +54,13 @@ export interface PersistWizardBoardRowsInput {
   centerType: CenterSquareType;
   /** In-memory pending tasks; only those actually placed are written. */
   pendingTasks: WizardPendingTaskWrite[];
+  /**
+   * Inline Task Editing (web PR-2) — staged inline task edits to apply.
+   * Applied ONLY when `status === 'active'` — a draft must never carry a
+   * task edit (invariant mirrored from iOS `saveWizardBoard`: "a draft
+   * must never carry a task edit"). Defaults to an empty map.
+   */
+  stagedEdits?: Map<string, TaskEditPatch>;
 }
 
 /**
@@ -123,6 +140,229 @@ export async function persistWizardPendingTasks(
 }
 
 /**
+ * Standalone-transaction variant of the pending-task drain (Bug #85) PLUS
+ * the Inline Task Editing (web PR-2) staged-edits apply, both in ONE
+ * transaction — the recurring-template persist path's call site
+ * (`wizardPersist.ts`'s `persistRecurringTemplate`). A repeating board has
+ * no single Board row to share a transaction with (the spawn path resolves
+ * the mix fresh from Dexie), so this drains pending tasks + applies staged
+ * edits in its own transaction ahead of everything else that reads tasks
+ * for mix resolution or persisted `seedTaskIds`. Web port of iOS
+ * `AppDatabase.writeWizardPendingTasksAndEnqueue`.
+ *
+ * Unlike the one-off path (`persistWizardBoardRows`, gated on
+ * `status === 'active'`), a `RecurringBoardTemplate` has no draft/active
+ * distinction — the cancel dialog's "Save Draft" and the Preview step's
+ * "Create" both persist a live template — so staged edits always apply
+ * here; there's no gate to mirror.
+ *
+ * `wizardPersist.ts` cannot open a `db.transaction(...)` itself (the raw
+ * Dexie instance is internal to the data layer — B3, issue #284), so this
+ * wrapper is what lets that caller get one atomic write covering both
+ * steps instead of two separate transactions (which would let a crash
+ * between them leave pending tasks written but their staged edits lost).
+ *
+ * @param pendingTasks - The FULL set of pending payloads whose task is in
+ *   the wizard's final `selectedTaskIds` (not a placement-based subset — a
+ *   repeating board's future windows draw from the whole pool).
+ * @param allowedTaskIds - Only pending payloads whose id is in this set are
+ *   written (mirrors `persistWizardPendingTasks`).
+ * @param stagedEdits - The wizard's full `stagedEdits` snapshot. A task
+ *   leaving the pool always purges its staged edit (`toggleTaskSelection`/
+ *   `untogglePool`), so every remaining key is still in `allowedTaskIds` —
+ *   no extra filtering needed here, matching the one-off path.
+ * @param now - ISO8601 timestamp for the sync-queue rows / version bumps.
+ */
+export async function persistWizardPendingTasksAndStagedEdits(
+  pendingTasks: WizardPendingTaskWrite[],
+  allowedTaskIds: ReadonlySet<string>,
+  stagedEdits: Map<string, TaskEditPatch>,
+  now: string,
+): Promise<void> {
+  // `skipIfPendingIds` for the staged-edits apply is the set of PENDING
+  // task ids specifically (not `allowedTaskIds`, which also contains
+  // ordinary library task ids that are merely selected) — a library task's
+  // id must never be skipped just because it happens to share the
+  // selection with a pending one.
+  const pendingIds = new Set(pendingTasks.map((p) => p.task.id));
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
+    async () => {
+      await persistWizardPendingTasks(pendingTasks, allowedTaskIds);
+      await applyStagedTaskEditsForWizardPersist(stagedEdits, pendingIds, now);
+    },
+  );
+}
+
+/**
+ * Applies a staged compound patch's child edits to its `compound_children`
+ * links + child Task rows. Called by {@link applyStagedTaskEditsForWizardPersist}
+ * for a staged compound edit (library or already-written pending compound).
+ * The parent Task itself is saved by the caller AFTER this returns. Web
+ * port of iOS `AppDatabase.applyStagedCompoundChildEdits`.
+ *
+ * Semantics: a kept new sub-task mints a child Task + link; a kept existing
+ * sub-task edits its child Task GLOBALLY (reindexing its link to display
+ * order); a removed sub-task (deleted or blank-titled) soft-deletes the
+ * LINK only — the child Task survives (orphans acceptable). Sub-tasks
+ * persist in `patch.children` order.
+ *
+ * Must run inside an active Dexie transaction covering `tasks` and
+ * `compoundChildren` (plus `syncQueue` for the enqueues below).
+ *
+ * @returns The ids of existing child Tasks whose fields actually changed —
+ *   the caller batches these into ONE cascade pass alongside the parent id
+ *   (mirrors `orchestration.ts`'s "recompute each affected task's caches
+ *   once" guidance) rather than cascading per-child inline.
+ */
+async function applyStagedCompoundChildEdits(
+  parentId: string,
+  parentUserId: string,
+  patch: TaskEditPatch,
+  now: string,
+): Promise<string[]> {
+  const existingLinks = (
+    await db.compoundChildren.where('compoundTaskId').equals(parentId).toArray()
+  ).filter((c) => !c.isDeleted);
+  const linkByChildId = new Map(existingLinks.map((l) => [l.childTaskId, l]));
+
+  const keptChildIds = new Set<string>();
+  const touchedChildIds: string[] = [];
+  let displayIndex = 0;
+
+  for (const step of patch.children) {
+    const title = step.title.trim();
+    // Removed = explicitly deleted OR blank-titled ("dropped on save").
+    if (step.markedDeleted || title.length === 0) continue;
+    const index = displayIndex++;
+
+    if (isNewChild(step)) {
+      const childId = generateUUID();
+      const child = buildNewChildTask(childId, step, title, parentUserId, now);
+      await db.tasks.add(child);
+      await addToSyncQueue('tasks', childId, SyncOperationType.CREATE, child);
+      const link: CompoundChild = {
+        id: generateUUID(),
+        compoundTaskId: parentId,
+        childTaskId: childId,
+        childIndex: index,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        isDeleted: false,
+      };
+      await db.compoundChildren.add(link);
+      await addToSyncQueue('compoundChildren', link.id, SyncOperationType.CREATE, link);
+      keptChildIds.add(childId);
+    } else if (step.childTaskId) {
+      const childId = step.childTaskId;
+      keptChildIds.add(childId);
+      // Global child edit (rename / goal / unit).
+      const existingChild = await db.tasks.get(childId);
+      if (existingChild) {
+        const updated = applyStepToChildTask(existingChild, step, title);
+        const changed =
+          updated.title !== existingChild.title ||
+          updated.action !== existingChild.action ||
+          updated.unit !== existingChild.unit ||
+          updated.maxCount !== existingChild.maxCount;
+        if (changed) {
+          const saved: Task = { ...updated, version: (existingChild.version ?? 1) + 1, updatedAt: now };
+          await db.tasks.update(childId, saved);
+          await addToSyncQueue('tasks', childId, SyncOperationType.UPDATE, saved);
+          touchedChildIds.push(childId);
+        }
+      }
+      // Reindex the link to display order if it moved.
+      const link = linkByChildId.get(childId);
+      if (link && link.childIndex !== index) {
+        const updatedLink: CompoundChild = { ...link, childIndex: index, version: link.version + 1, updatedAt: now };
+        await db.compoundChildren.update(link.id, updatedLink);
+        await addToSyncQueue('compoundChildren', link.id, SyncOperationType.UPDATE, updatedLink);
+      }
+    }
+  }
+
+  // Soft-delete links whose child is no longer kept (link only — the child
+  // Task stays in the library; orphans are acceptable per product decision).
+  for (const link of existingLinks) {
+    if (keptChildIds.has(link.childTaskId)) continue;
+    const updatedLink: CompoundChild = { ...link, isDeleted: true, deletedAt: now, version: link.version + 1, updatedAt: now };
+    await db.compoundChildren.update(link.id, updatedLink);
+    await addToSyncQueue('compoundChildren', link.id, SyncOperationType.UPDATE, updatedLink);
+  }
+
+  return touchedChildIds;
+}
+
+/**
+ * Applies every staged inline task edit (Inline Task Editing, web PR-2) in
+ * the SAME transaction as the wizard's pending-task drain — mirroring iOS
+ * `AppDatabase.saveWizardBoard`'s staged-edits block / `writeWizardPendingTasksAndEnqueue`.
+ * Edits are GLOBAL (same Task on every board), so each mutation runs the
+ * board derivation cascade in this same transaction — a bare write with no
+ * cascade would leave other boards / the parent compound stale until the
+ * next app-open self-heal.
+ *
+ * Per-type handling:
+ *   - **compound** (library OR pending) — the compound branch owns the full
+ *     apply: parent fields (`applyPatchToTask`) + child/link CRUD
+ *     (`applyStagedCompoundChildEdits`), then ONE batched cascade covering
+ *     the parent + every child Task whose fields actually changed. Applies
+ *     regardless of `skipIfPendingIds` — a pending compound's rows already
+ *     exist by the time this runs (the pending-task drain loop runs
+ *     first), so this is its one and only apply.
+ *   - **normal/counting** — a PENDING one was already merged into its
+ *     `PendingTaskPayload` in-memory by the caller (mirrors iOS's
+ *     `pendingForSave` map), so it's skipped here via `skipIfPendingIds`;
+ *     a LIBRARY one is applied + cascaded.
+ *
+ * Defensive: an invalid patch (should never happen — the editor blocks
+ * Save on validation failure) is silently skipped rather than corrupting
+ * the row, and a patch whose target Task no longer exists is skipped too.
+ *
+ * Must run inside an active Dexie transaction covering `boards`,
+ * `boardTasks`, `tasks`, `compoundChildren`, `taskEvents`, and `syncQueue`
+ * (the contract `runBoardCascadeForTask(s)` requires).
+ *
+ * @param stagedEdits - The wizard's staged edits (`useBoardWizard.stagedEdits`).
+ * @param skipIfPendingIds - Ids of pending (this-session, not-yet-existing-
+ *   until-the-drain-above) NON-COMPOUND tasks whose edit was already merged
+ *   into their `PendingTaskPayload` — skipped here to avoid double-apply.
+ * @param now - ISO8601 timestamp for version bumps + sync-queue rows.
+ */
+export async function applyStagedTaskEditsForWizardPersist(
+  stagedEdits: Map<string, TaskEditPatch>,
+  skipIfPendingIds: ReadonlySet<string>,
+  now: string,
+): Promise<void> {
+  if (stagedEdits.size === 0) return;
+
+  for (const [taskId, patch] of stagedEdits) {
+    const task = await db.tasks.get(taskId);
+    if (!task) continue;
+    if (validatePatch(patch, task.type) !== null) continue;
+
+    if (task.type === TaskType.COMPOUND) {
+      const updated = applyPatchToTask(patch, task);
+      const touchedChildIds = await applyStagedCompoundChildEdits(taskId, task.userId, patch, now);
+      const saved: Task = { ...updated, version: (task.version ?? 1) + 1, updatedAt: now };
+      await db.tasks.update(taskId, saved);
+      await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, saved);
+      await runBoardCascadeForTasks([taskId, ...touchedChildIds]);
+    } else {
+      if (skipIfPendingIds.has(taskId)) continue;
+      const updated = applyPatchToTask(patch, task);
+      const saved: Task = { ...updated, version: (task.version ?? 1) + 1, updatedAt: now };
+      await db.tasks.update(taskId, saved);
+      await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, saved);
+      await runBoardCascadeForTask(taskId);
+    }
+  }
+}
+
+/**
  * Atomically persist the wizard's board, its placements, and any pending
  * tasks in a single Dexie transaction (moved out of `wizardPersist.ts` for
  * B3, issue #284 — the transaction previously lived in a component-tree
@@ -152,6 +392,7 @@ export async function persistWizardBoardRows({
   size,
   centerType,
   pendingTasks,
+  stagedEdits,
 }: PersistWizardBoardRowsInput): Promise<string> {
   const isOddBoard = size % 2 !== 0;
   const centerRow = Math.floor(size / 2);
@@ -160,8 +401,10 @@ export async function persistWizardBoardRows({
   let boardId = '';
   await db.transaction(
     'rw',
-    // `taskEvents` is read-only here — the post-write derivation pass below
-    // resolves the just-written placements against the board's window.
+    // `taskEvents` is in scope for two reasons: the post-write derivation
+    // pass below resolves the just-written placements against the board's
+    // window, and a staged-edit cascade (below) may re-derive OTHER boards
+    // that share an edited task.
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       // ── Bug #85: write pending tasks first ──────────────────────────────
@@ -173,6 +416,16 @@ export async function persistWizardBoardRows({
         placement.map((t) => t?.id).filter((id): id is string => id != null),
       );
       await persistWizardPendingTasks(pendingTasks, placedTaskIds);
+
+      // ── Staged inline edits (Inline Task Editing, web PR-2) ─────────────
+      // ONLY on an active board create — a draft must never carry a task
+      // edit (mirrors iOS `saveWizardBoard`'s exact gate). Runs BEFORE the
+      // derivation pass below so a changed counting goal (or a compound's
+      // sub-task edits) feed into the freshly-computed stored stats.
+      if (status === 'active' && stagedEdits && stagedEdits.size > 0) {
+        const pendingTaskIds = new Set(pendingTasks.map((p) => p.task.id));
+        await applyStagedTaskEditsForWizardPersist(stagedEdits, pendingTaskIds, currentTimestamp());
+      }
 
       // ── Board + BoardTask rows ──────────────────────────────────────────
       if (draftBoardId !== null) {
