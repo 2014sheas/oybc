@@ -123,3 +123,30 @@ function evaluateCompoundInner(
       return false;
   }
 }
+
+/**
+ * Clamp a compound "at least N" (M_OF_N) threshold into the valid **stored**
+ * range `[1, max(1, childCount)]`.
+ *
+ * Pure and platform-shared: this is the single source of truth for the
+ * threshold clamp that both web and iOS apply before persisting a compound.
+ * It replaces ~8 hand-rolled `min(max(1, t), max(1|2, count))` clamps that had
+ * drifted apart on the upper-bound floor (`max(1)` vs `max(2)`), which could
+ * store a different threshold across platforms for edge child-counts.
+ *
+ * Semantics:
+ * - lower bound 1 — a threshold below 1 would make M_OF_N vacuously true
+ *   (matches `evaluateCompound`'s `max(1, threshold)` floor);
+ * - upper bound `max(1, childCount)` — a threshold can't exceed the real child
+ *   count; the `max(1, …)` avoids a degenerate empty range when `childCount`
+ *   is 0 (a compound mid-build with no children yet);
+ * - non-integer input is truncated toward zero before clamping.
+ *
+ * The stepper's *display* max (a UI affordance that may sit above the stored
+ * ceiling while the user is still adding sub-tasks) is a separate concern and
+ * is not this function's job.
+ */
+export function clampCompoundThreshold(threshold: number, childCount: number): number {
+  const maxN = Math.max(1, childCount);
+  return Math.min(Math.max(1, Math.trunc(threshold)), maxN);
+}

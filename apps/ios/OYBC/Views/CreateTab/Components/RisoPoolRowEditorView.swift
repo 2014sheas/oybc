@@ -221,7 +221,7 @@ struct RisoPoolRowEditorView: View {
                     // Mirror the create panel: shrinking the sub-task set below an
                     // "At least N" threshold clamps N down so the rule stays valid.
                     if draft.operatorType == .mOfN {
-                        draft.threshold = min(draft.threshold ?? 2, max(1, draft.liveChildren.count))
+                        draft.threshold = CompoundEvaluation.clampCompoundThreshold(draft.threshold ?? 2, childCount: draft.liveChildren.count)
                     }
                 } label: {
                     Text("✕")

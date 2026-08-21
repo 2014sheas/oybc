@@ -13,6 +13,7 @@ export { formatCounterName } from './counterName';
 // ===== Compound tasks unification =====
 export {
   evaluateCompound,
+  clampCompoundThreshold,
 } from './compoundEvaluation';
 
 export {

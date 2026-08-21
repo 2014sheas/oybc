@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { evaluateCompound } from '../../src/algorithms/compoundEvaluation';
+import { evaluateCompound, clampCompoundThreshold } from '../../src/algorithms/compoundEvaluation';
 import { OperatorType, TaskType } from '../../src/constants/enums';
 import type { Task, CompoundChild } from '../../src';
 
@@ -102,6 +102,29 @@ describe('evaluateCompound (fixture-driven, tests/fixtures/compoundEvaluationVec
 
       const compound = taskById[v.compoundId];
       expect(evaluateCompound(compound, childrenByCompound, taskById)).toBe(v.expected);
+    });
+  }
+});
+
+// Shared cross-platform vector for the compound threshold clamp. The Swift
+// mirror (CompoundEvaluation.clampCompoundThreshold) must produce identical
+// results for every row here — this is the pin that keeps the two platforms
+// from drifting apart on the upper-bound floor again.
+describe('clampCompoundThreshold', () => {
+  const vectors: Array<{ t: number; count: number; expected: number; note: string }> = [
+    { t: 3, count: 5, expected: 3, note: 'in range → unchanged' },
+    { t: 99, count: 5, expected: 5, note: 'above count → clamped to count' },
+    { t: 0, count: 5, expected: 1, note: 'below 1 → floored at 1' },
+    { t: -4, count: 5, expected: 1, note: 'negative → floored at 1' },
+    { t: 5, count: 5, expected: 5, note: 'equal to count (== "All") allowed' },
+    { t: 2, count: 1, expected: 1, note: 'single child → clamped to 1' },
+    { t: 2, count: 0, expected: 1, note: 'no children yet → max(1,0)=1 (no empty range)' },
+    { t: 1, count: 0, expected: 1, note: 'threshold 1 with 0 children → 1' },
+    { t: 2.9, count: 5, expected: 2, note: 'fractional → truncated toward zero' },
+  ];
+  for (const v of vectors) {
+    it(`clamp(${v.t}, ${v.count}) === ${v.expected} — ${v.note}`, () => {
+      expect(clampCompoundThreshold(v.t, v.count)).toBe(v.expected);
     });
   }
 });

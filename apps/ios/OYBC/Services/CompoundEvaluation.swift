@@ -136,4 +136,27 @@ enum CompoundEvaluation {
             return false
         }
     }
+
+    /// Clamp a compound "at least N" (M_OF_N) threshold into the valid
+    /// **stored** range `1...max(1, childCount)`.
+    ///
+    /// Swift twin of `@oybc/shared`'s `clampCompoundThreshold` — the single
+    /// source of truth for the threshold clamp both platforms apply before
+    /// persisting. It replaces the hand-rolled `min(max(1, t), max(1|2, count))`
+    /// clamps that had drifted on the upper-bound floor (`max(1)` vs `max(2)`),
+    /// which could store a different threshold across platforms at edge child
+    /// counts. Pinned by the shared `clampCompoundThreshold` test vector.
+    ///
+    /// - lower bound 1 (a threshold below 1 makes M_OF_N vacuously true — see
+    ///   the `max(1, …)` floor in `evaluate` above);
+    /// - upper bound `max(1, childCount)` (a threshold can't exceed the real
+    ///   child count; `max(1, …)` avoids a degenerate empty range at 0 children).
+    ///
+    /// The stepper's *display* max (a UI affordance that may sit above the
+    /// stored ceiling while sub-tasks are still being added) is a separate
+    /// concern and not this function's job.
+    static func clampCompoundThreshold(_ threshold: Int, childCount: Int) -> Int {
+        let maxN = max(1, childCount)
+        return min(max(1, threshold), maxN)
+    }
 }
