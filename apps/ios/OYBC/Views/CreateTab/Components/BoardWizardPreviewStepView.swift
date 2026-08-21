@@ -45,6 +45,14 @@ struct BoardWizardPreviewStepView: View {
     let onBack: () -> Void
     let onComplete: (_ boardId: String, _ status: WizardStatus) -> Void
     var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
+    /// Task Pools + Recurring Boards Rework (P4) — the user's pools, needed
+    /// for the recurring "deck" branch's `onRemove`/provenance lookups
+    /// (`controller.toggleTaskSelection`/`provenanceByTaskId` both take a
+    /// `poolsById` map so removing a pool-sourced task records the right
+    /// `removedTaskIds` bookkeeping). Mirrors `BoardWizardView`'s own
+    /// `poolsById` derivation. Defaults empty so one-off callers (snapshot
+    /// tests, the non-recurring branch) don't need to thread it.
+    var pools: [Pool] = []
 
     @State private var isCreating: Bool = false
     @State private var errorMessage: String? = nil
@@ -182,6 +190,52 @@ struct BoardWizardPreviewStepView: View {
             map[id] = task
         }
         return map
+    }
+
+    // MARK: - Recurring "deck" branch lookups (Task Pools + Recurring
+    // Boards Rework, P4)
+
+    private var poolsById: [String: Pool] {
+        Dictionary(pools.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private var tasksById: [String: OYBC.Task] {
+        Dictionary(library.libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Task lookup for the deck's `RisoPoolListView`, independent of
+    /// `placement` — unlike `previewTaskById`, this must resolve EVERY
+    /// selected task, including any beyond a repeating board's fillable
+    /// floor that `placement`'s truncated grid never places (overfill is
+    /// the variety mechanism for a repeating board's mix, per
+    /// docs/POOLS_RECURRING.md §Behavior invariants). Same staged-edit
+    /// overlay + staged-new-child-placeholder handling as `previewTaskById`.
+    private var deckTaskById: [String: Task] {
+        var map: [String: Task] = [:]
+        for task in library.libraryTasks { map[task.id] = task }
+        for payload in controller.pendingTasks.values { map[payload.task.id] = payload.task }
+        for (id, patch) in controller.stagedEdits {
+            if let base = map[id] { map[id] = patch.applied(to: base) }
+        }
+        for (id, task) in stagedNewChildPlaceholders(userId: userId, stagedEdits: controller.stagedEdits) {
+            map[id] = task
+        }
+        return map
+    }
+
+    /// `"{N} tasks in the deck · fills a {S}×{S}"` / `"· short on required
+    /// tasks"` — the deckFloor is the CURRENT board's own geometry
+    /// (`tasksNeededForBoard`), not the multi-consumer floor
+    /// `PoolEditSheetView` uses (this is the one board the user is
+    /// creating/editing right now, not every board that pulls a shared
+    /// pool). Health = `controller.selectedTaskIds.count >=
+    /// controller.tasksRequired`, matching `formatDeckPreview`'s own
+    /// `taskCount >= deckFloor.floor` comparison.
+    private var deckPreviewText: String {
+        PoolHealth.formatDeckPreview(
+            taskCount: controller.selectedTaskIds.count,
+            deckFloor: PoolHealth.DeckFloor(boardSize: controller.size, floor: controller.tasksRequired)
+        )
     }
 
     /// Compound-children map, staged-edit-aware — the Step-3 twin of
@@ -328,33 +382,42 @@ struct BoardWizardPreviewStepView: View {
                     // Centred name + meta
                     previewHeader
 
-                    // Preview ⇄ Rearrange toggle + optional Shuffle button
-                    arrangeControlBar
+                    if controller.isRecurring {
+                        // Task Pools + Recurring Boards Rework (P4) — a
+                        // repeating board's mix isn't a fixed grid (extras
+                        // shuffle in per window), so Preview shows the
+                        // DECK, not an arrange/shuffle grid. One-off boards
+                        // keep the grid below unchanged.
+                        deckSection
+                    } else {
+                        // Preview ⇄ Rearrange toggle + optional Shuffle button
+                        arrangeControlBar
 
-                    // Rearrange hint — visible only in Rearrange mode
-                    if arrangeSubMode == .rearrange {
-                        Text("Drag to rearrange · tap two squares to swap")
-                            .font(.risoBody(12, .regular))
-                            .foregroundStyle(Color.risoMuted)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // Rearrange hint — visible only in Rearrange mode
+                        if arrangeSubMode == .rearrange {
+                            Text("Drag to rearrange · tap two squares to swap")
+                                .font(.risoBody(12, .regular))
+                                .foregroundStyle(Color.risoMuted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        // Arrangeable board grid — display-only in Preview mode,
+                        // drag+tap interactive in Rearrange mode.
+                        // sideLength is passed explicitly: GeometryReader inside RearrangeGrid
+                        // does not correctly derive the inset width when nested inside
+                        // .padding() modifier chains in a ScrollView context. The caller
+                        // provides the known side length (screen width minus gutters) directly.
+                        RearrangeGrid(
+                            cells: wizardCells,
+                            gridSize: controller.size,
+                            taskMap: wizardTaskMap,
+                            centerSquareType: controller.centerType,
+                            rearrange: arrangeSubMode == .rearrange,
+                            sideLength: gridSideLength,
+                            onReorder: { handleReorder($0) },
+                            windowedIsCompleted: { previewIsCompleted($0) }
+                        )
                     }
-
-                    // Arrangeable board grid — display-only in Preview mode,
-                    // drag+tap interactive in Rearrange mode.
-                    // sideLength is passed explicitly: GeometryReader inside RearrangeGrid
-                    // does not correctly derive the inset width when nested inside
-                    // .padding() modifier chains in a ScrollView context. The caller
-                    // provides the known side length (screen width minus gutters) directly.
-                    RearrangeGrid(
-                        cells: wizardCells,
-                        gridSize: controller.size,
-                        taskMap: wizardTaskMap,
-                        centerSquareType: controller.centerType,
-                        rearrange: arrangeSubMode == .rearrange,
-                        sideLength: gridSideLength,
-                        onReorder: { handleReorder($0) },
-                        windowedIsCompleted: { previewIsCompleted($0) }
-                    )
 
                     // Dashed note
                     previewNote
@@ -410,6 +473,43 @@ struct BoardWizardPreviewStepView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
+    }
+
+    // MARK: - Deck section (Task Pools + Recurring Boards Rework, P4)
+
+    /// Recurring-board Preview branch: the deck-preview header line (health
+    /// note, matching `PoolEditSheetView`'s deck line verbatim) plus the
+    /// full selected-task list with provenance subtitles, reusing
+    /// `RisoPoolListView` (the exact list the Tasks step already renders)
+    /// rather than a second list renderer. No grid/rearrange/shuffle here —
+    /// a repeating board's mix isn't a fixed grid (docs/POOLS_RECURRING.md
+    /// §Behavior invariants: "extras shuffle into the mix").
+    @ViewBuilder
+    private var deckSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(deckPreviewText)
+                .font(.risoBody(12.5, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoPaper2))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(Color.risoInk.opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                )
+
+            RisoPoolListView(
+                selectedTaskIds: controller.selectedTaskIds,
+                orderedTaskIds: controller.poolOrder,
+                effectiveTaskById: deckTaskById,
+                effectiveChildrenByCompound: previewChildrenByCompound,
+                isRecurring: controller.isRecurring,
+                onRemove: { taskId in
+                    controller.toggleTaskSelection(taskId, poolsById: poolsById, tasksById: tasksById)
+                },
+                provenanceByTaskId: controller.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById)
+            )
+        }
     }
 
     // MARK: - Arrange control bar

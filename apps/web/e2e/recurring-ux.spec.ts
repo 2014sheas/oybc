@@ -49,8 +49,15 @@ test.describe('Recurring UX pass', () => {
 
   test('recurring wizard requirement line uses "at least" (pool may overfill)', async ({ page }) => {
     await openCreateHub(page);
-    await page.getByRole('button', { name: /create a recurring board/i }).click();
+    await page.getByRole('button', { name: /start a new board/i }).click();
     await expect(page.getByLabel(/board name/i)).toBeVisible();
+
+    // P4 — the "Create a recurring board" entry point retired; a cadence
+    // picked from the "Repeats" segmented is what enters recurring mode.
+    await page
+      .getByRole('group', { name: 'Repeats' })
+      .getByRole('button', { name: 'Daily', exact: true })
+      .click();
 
     await page.getByRole('button', { name: '5×5' }).click();
     await page.getByLabel(/center square/i).selectOption('free');
@@ -119,14 +126,32 @@ test.describe('Recurring UX pass', () => {
       await expect(page.getByText(/9 \/ 8 min/)).toBeVisible();
     });
 
-    test('"+ New template" routes into the recurring wizard', async ({ page }) => {
+    test('"+ New template" routes to the Create hub; "Start a new board" + a Repeats cadence enters recurring mode', async ({ page }) => {
+      // P4 retired `?newRecurring=1` — "+ New template" now navigates
+      // PLAINLY to `/create`, landing on the Create hub itself (not
+      // straight into the wizard). The user then taps the hub's single
+      // "Start a new board" CTA and picks a cadence from "Repeats"
+      // themselves.
       await page.getByRole('button', { name: '+ New template' }).click();
-
       await expect(page).toHaveURL(/\/create$/);
+      await expect(page.getByRole('heading', { name: 'Create', level: 1 })).toBeVisible();
+
+      await page.getByRole('button', { name: /start a new board/i }).click();
+      await expect(page.getByRole('heading', { name: /new board/i })).toBeVisible();
+      await expect(
+        page.getByRole('group', { name: 'Timeframe' }).getByRole('button', { name: 'Custom', exact: true }),
+      ).toBeVisible();
+
+      await page
+        .getByRole('group', { name: 'Repeats' })
+        .getByRole('button', { name: 'Daily', exact: true })
+        .click();
+
       await expect(
         page.getByRole('heading', { name: /new recurring board/i }),
       ).toBeVisible();
-      // Recurring mode: Custom timeframe absent.
+      // Recurring mode: the whole Timeframe segmented (incl. Custom) hides.
+      await expect(page.getByRole('group', { name: 'Timeframe' })).toHaveCount(0);
       await expect(
         page.getByRole('button', { name: 'Custom', exact: true }),
       ).toHaveCount(0);

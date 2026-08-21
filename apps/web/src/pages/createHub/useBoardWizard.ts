@@ -20,6 +20,7 @@ import {
   applyPullPool,
   applyUntogglePool,
   deriveTaskProvenance,
+  resolveRepeatsChange,
 } from './poolPullLogic';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
@@ -179,6 +180,16 @@ export interface BoardWizardActions {
   toggleTaskSelection: (taskId: string) => void;
   setCenterTaskId: (id: string | null) => void;
   /**
+   * P4 (Task Pools + Recurring Boards Rework) — Step 1's "Repeats"
+   * segmented, the single entry point for recurrence (the separate
+   * "Create a recurring board" CTA is retired). `null` = "Once" (a
+   * one-off board — the Timeframe segmented governs the window);
+   * a `Timeframe` = a repeating cadence (the cadence IS the window).
+   * See `resolveRepeatsChange` for the full semantics (center-type
+   * coercion, one-off-timeframe memory).
+   */
+  setRepeats: (cadence: Timeframe | null) => void;
+  /**
    * P3 — "PULL IN A POOL" toggle ON. Unions the pool's resolvable,
    * not-currently-removed supply into `selectedTaskIds` and appends the
    * pool id to `pulledPoolIds`. No-ops for a missing/soft-deleted/
@@ -295,14 +306,6 @@ export interface UseBoardWizardArgs {
    *  `updateRecurringBoardTemplate` rather than spawning a fresh
    *  template + board. Mutually exclusive with `draft`. */
   editingTemplate?: RecurringBoardTemplate;
-  /** Issue #71 — when true, the wizard was launched from the Create
-   *  hub's dedicated "Create a recurring board" CTA. Forces
-   *  `isRecurring` ON at entry (the in-form "Make recurring" toggle was
-   *  removed — recurrence is now an explicit entry choice, not a
-   *  mid-wizard switch). Distinct from `prefilledRecurringTimeframe`,
-   *  which now creates a one-off *core* board for a timeframe window
-   *  (#70 decoupled core boards from recurring templates). */
-  startRecurring?: boolean;
   /**
    * P3 (Task Pools + Recurring Boards Rework) — the user's non-deleted
    * pools, used to resolve `pullPool`/`untogglePool` and the provenance
@@ -349,7 +352,6 @@ export function useBoardWizard({
   prefilledRecurringTimeframe,
   targetWindowDate,
   editingTemplate,
-  startRecurring,
   pools = EMPTY_POOLS,
   tasksById = EMPTY_TASKS_BY_ID,
 }: UseBoardWizardArgs): BoardWizardController {
@@ -378,14 +380,14 @@ export function useBoardWizard({
       ? prefilledRecurringTimeframe
       : null;
 
-  // Recurring mode is an explicit entry choice now (#71): the Create-hub
-  // "Create a recurring board" CTA passes `startRecurring`, or we're
-  // editing an existing template. A `prefilledRecurringTimeframe`
-  // (banner / core-board browser) creates a one-off *core* board for
-  // that window — NOT a recurring template — so it no longer flips
-  // `isRecurring` (#70 decoupled the two concepts).
-  const initialIsRecurring =
-    effectiveTemplate !== undefined || startRecurring === true;
+  // P4 (Task Pools + Recurring Boards Rework) — the separate "Create a
+  // recurring board" CTA is retired; recurrence is now chosen via Step
+  // 1's "Repeats" segmented (`setRepeats`). The only way a wizard session
+  // starts recurring is editing an existing template. A
+  // `prefilledRecurringTimeframe` (banner / core-board browser) creates a
+  // one-off *core* board for that window — NOT a recurring template — so
+  // it never flips `isRecurring` (#70 decoupled the two concepts).
+  const initialIsRecurring = effectiveTemplate !== undefined;
 
   const [name, setName] = useState(() => {
     if (draftBoard) return draftBoard.name;
@@ -625,6 +627,32 @@ export function useBoardWizard({
       setTimeframeRaw(t);
     },
     [isRecurring],
+  );
+
+  // P4 — remembers the last one-off `timeframe` across a Once→cadence
+  // flip so switching back to "Once" restores the user's prior pick
+  // instead of losing it. A ref (not state) since it's write-only
+  // bookkeeping for `setRepeats` — nothing renders off it directly.
+  const rememberedOneOffTimeframeRef = useRef<Timeframe | null>(null);
+
+  const setRepeats = useCallback(
+    (cadence: Timeframe | null) => {
+      const result = resolveRepeatsChange({
+        cadence,
+        isRecurring,
+        timeframe,
+        centerType,
+        centerTaskId,
+        rememberedOneOffTimeframe: rememberedOneOffTimeframeRef.current,
+        defaultOneOffTimeframe: preferences.defaultTimeframe,
+      });
+      rememberedOneOffTimeframeRef.current = result.rememberedOneOffTimeframe;
+      setIsRecurringRaw(result.isRecurring);
+      setTimeframeRaw(result.timeframe);
+      setCenterTypeRaw(result.centerType);
+      setCenterTaskIdRaw(result.centerTaskId);
+    },
+    [isRecurring, timeframe, centerType, centerTaskId, preferences.defaultTimeframe],
   );
 
   const toggleTaskSelection = useCallback(
@@ -907,6 +935,7 @@ export function useBoardWizard({
     setCenterType,
     toggleTaskSelection,
     setCenterTaskId,
+    setRepeats,
     pullPool,
     untogglePool,
     addPendingTask,

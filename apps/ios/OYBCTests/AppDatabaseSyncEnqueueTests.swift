@@ -662,6 +662,130 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         XCTAssertEqual(count(rows, type: "boardTasks", op: .create), 1)
     }
 
+    // MARK: - writeWizardPendingTasksAndEnqueue staged inline edits (P4 recurring parity fix)
+    //
+    // `persistRecurringTemplate` (`BoardWizardPersist.swift`) has no single
+    // Board row to share a transaction with, so it drains pending tasks AND
+    // applies staged inline edits via this method instead of
+    // `saveWizardBoard`. These tests hit the same per-type branches as the
+    // `saveWizardBoard staged inline edits` section above, directly against
+    // this method, to pin the fix at the data-layer unit-test level (the
+    // higher-level regression through the real `persistRecurringTemplate`
+    // free function lives in `BoardWizardPersistRecurringTemplateTests`).
+
+    func test_writeWizardPendingTasksAndEnqueue_stagedEdit_updatesLibraryTaskAndEnqueues() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        try db.saveTask(makeTask("rlib1"))
+        let original = try XCTUnwrap(try db.fetchTask(id: "rlib1"))
+
+        try db.writeWizardPendingTasksAndEnqueue(
+            [], stagedEdits: ["rlib1": TaskEditPatch(title: "Renamed recurring task")], now: now
+        )
+
+        let updated = try XCTUnwrap(try db.fetchTask(id: "rlib1"))
+        XCTAssertEqual(updated.title, "Renamed recurring task")
+        XCTAssertEqual(updated.version, original.version + 1)
+        XCTAssertEqual(count(try syncRows(db), type: "tasks", op: .update), 1)
+    }
+
+    func test_writeWizardPendingTasksAndEnqueue_stagedEdit_skipsPendingTaskId() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // The caller (`persistRecurringTemplate`) already merges a pending
+        // simple/counting task's patch into its payload in-memory, so this
+        // must NOT re-apply the same id — only the create row should land.
+        let merged = PendingTaskPayload(task: makeTask("rpend1"), childTasks: [], childLinks: [])
+
+        try db.writeWizardPendingTasksAndEnqueue(
+            [merged], stagedEdits: ["rpend1": TaskEditPatch(title: "X")], now: now
+        )
+
+        let rows = try syncRows(db)
+        XCTAssertEqual(count(rows, type: "tasks", op: .create), 1)
+        XCTAssertEqual(count(rows, type: "tasks", op: .update), 0)
+    }
+
+    func test_writeWizardPendingTasksAndEnqueue_stagedCompoundEdit_appliesChildCRUD() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // Library compound "rcmp" with two children: rc1 (normal), rc2 (counting).
+        try db.saveTask(makeTask("rcmp", type: .compound))
+        try db.saveTask(makeTask("rc1", type: .normal))
+        try db.saveTask(makeTask("rc2", type: .counting, maxCount: 5))
+        try db.write { d in
+            try makeLink(id: "rl1", parent: "rcmp", child: "rc1", index: 0).save(d)
+            try makeLink(id: "rl2", parent: "rcmp", child: "rc2", index: 1).save(d)
+        }
+
+        var patch = TaskEditPatch(title: "Morning routine (recurring)")
+        patch.operatorType = .and
+        var deletedRc2 = ChildPatch(id: "rc2", childTaskId: "rc2", title: "Old counting", isCounting: true)
+        deletedRc2.markedDeleted = true
+        patch.children = [
+            ChildPatch(id: "rc1", childTaskId: "rc1", title: "Renamed step", isCounting: false),
+            deletedRc2,
+            ChildPatch(id: "rnew-1", childTaskId: nil, title: "Brand new step", isCounting: false),
+        ]
+
+        try db.writeWizardPendingTasksAndEnqueue([], stagedEdits: ["rcmp": patch], now: now)
+
+        let cmp = try XCTUnwrap(try db.fetchTask(id: "rcmp"))
+        XCTAssertEqual(cmp.title, "Morning routine (recurring)")
+        XCTAssertEqual(try db.fetchTask(id: "rc1")?.title, "Renamed step")
+
+        let liveLinks = try db.fetchCompoundChildren(compoundTaskId: "rcmp")
+        XCTAssertEqual(liveLinks.count, 2)
+        XCTAssertTrue(liveLinks.contains { $0.childTaskId == "rc1" })
+        XCTAssertFalse(liveLinks.contains { $0.childTaskId == "rc2" }, "rc2 link should be soft-deleted")
+        XCTAssertNotNil(try db.fetchTask(id: "rc2"), "orphaned child Task survives")
+        let newLink = try XCTUnwrap(liveLinks.first { $0.childTaskId != "rc1" })
+        XCTAssertEqual(try db.fetchTask(id: newLink.childTaskId)?.title, "Brand new step")
+    }
+
+    func test_writeWizardPendingTasksAndEnqueue_pendingCompoundEdit_appliesChildCRUDOnce() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let now = AppDatabase.currentTimestamp()
+
+        // A pending (deferred) compound with two inline children + links.
+        let payload = PendingTaskPayload(
+            task: makeTask("rpcmp", type: .compound),
+            childTasks: [makeTask("rpc1", type: .normal), makeTask("rpc2", type: .normal)],
+            childLinks: [
+                makeLink(id: "rpl1", parent: "rpcmp", child: "rpc1", index: 0),
+                makeLink(id: "rpl2", parent: "rpcmp", child: "rpc2", index: 1),
+            ]
+        )
+
+        var patch = TaskEditPatch(title: "Edited pending recurring compound")
+        patch.operatorType = .and
+        var deleted = ChildPatch(id: "rpc2", childTaskId: "rpc2", title: "gone", isCounting: false)
+        deleted.markedDeleted = true
+        patch.children = [
+            ChildPatch(id: "rpc1", childTaskId: "rpc1", title: "Renamed pending", isCounting: false),
+            deleted,
+            ChildPatch(id: "rnewp", childTaskId: nil, title: "New pending step", isCounting: false),
+        ]
+
+        try db.writeWizardPendingTasksAndEnqueue([payload], stagedEdits: ["rpcmp": patch], now: now)
+
+        // Applied exactly once (not double-applied via a pre-merge): parent
+        // fields set, rpc1 renamed, rpc2 unlinked, new step minted.
+        let cmp = try XCTUnwrap(try db.fetchTask(id: "rpcmp"))
+        XCTAssertEqual(cmp.title, "Edited pending recurring compound")
+        XCTAssertEqual(try db.fetchTask(id: "rpc1")?.title, "Renamed pending")
+        let liveLinks = try db.fetchCompoundChildren(compoundTaskId: "rpcmp")
+        XCTAssertEqual(liveLinks.count, 2)
+        XCTAssertFalse(liveLinks.contains { $0.childTaskId == "rpc2" })
+    }
+
     // MARK: - saveWizardBoard: isCenter uniqueness guard (board-integrity PR-5, Item 3)
 
     /// A single `isCenter: true` row (the normal CHOSEN-center case) must

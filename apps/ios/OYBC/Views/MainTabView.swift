@@ -64,13 +64,6 @@ struct MainTabView: View {
     /// Profile → Recurring templates page's per-card "Add tasks" button.
     @State private var pendingAddTasksTemplateId: String? = nil
 
-    /// Cross-tab new-recurring-template deep-link. Set when the user taps
-    /// "+ New template" on the Profile → Recurring templates page; we flip
-    /// this and switch `selectedTab` to Create, where `CreateHubView`
-    /// opens the wizard's recurring flow and clears it. Mirrors
-    /// `pendingEditTemplateId`.
-    @State private var pendingNewRecurringTemplate: Bool = false
-
     /// Draft-resume cross-tab deep-link. Set when the user taps a DRAFT
     /// board on the Boards tab (list card or core-grid slot); we stash the
     /// board id and switch to the Create tab. `CreateHubView` consumes it on
@@ -340,7 +333,6 @@ struct MainTabView: View {
                             pendingTargetWindowDate: $pendingTargetWindowDate,
                             pendingEditTemplateId: $pendingEditTemplateId,
                             pendingAddTasksTemplateId: $pendingAddTasksTemplateId,
-                            pendingNewRecurringTemplate: $pendingNewRecurringTemplate,
                             pendingDraftId: $pendingDraftId,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
@@ -379,9 +371,13 @@ struct MainTabView: View {
                         selectedTab = 2
                     },
                     onNewRecurringTemplate: {
-                        // "+ New template" cross-tab route: open the
-                        // wizard's fresh recurring flow on the Create tab.
-                        pendingNewRecurringTemplate = true
+                        // Task Pools + Recurring Boards Rework (P4) — the
+                        // separate recurring-wizard deep link retired along
+                        // with the CTA (recurrence is now the Step-1
+                        // "Repeats" control inside the one wizard entry
+                        // point). "+ New template" now just lands the user
+                        // on the plain Create-tab hub, mirroring web's
+                        // `navigate('/create')` — no special binding.
                         selectedTab = 2
                     },
                     onAddTasksRecurringTemplate: { templateId in
@@ -403,7 +399,10 @@ struct MainTabView: View {
                                 selectedTab = 2
                             },
                             onNewTemplate: {
-                                pendingNewRecurringTemplate = true
+                                // Task Pools + Recurring Boards Rework (P4)
+                                // — see the identical comment on
+                                // `ProfileView`'s `onNewRecurringTemplate`
+                                // above.
                                 selectedTab = 2
                             },
                             onAddTasksTemplate: { templateId in

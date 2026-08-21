@@ -25,6 +25,7 @@ import { FromBoardPicker } from './FromBoardPicker';
 import { NewTaskSheet } from './NewTaskSheet';
 import { RowContextMenu } from './RowContextMenu';
 import { mergeSuggestionPool } from './suggestionPool';
+import { renderTaskRow } from './TaskRow';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import styles from './BoardWizardTasksStep.module.css';
@@ -1073,85 +1074,6 @@ export function BoardWizardTasksStep({
   );
 }
 
-// ─── Row renderer (shared between top-level tasks and expanded leaves) ────────
-
-interface TaskRowProps {
-  task: Task;
-  isSelected: boolean;
-  onToggle: () => void;
-  /** Right-click handler — surfaces the same actions as a tap (toggle)
-   *  plus center-task pinning when applicable. Mirrors iOS's
-   *  `.contextMenu` long-press affordance. */
-  onContextMenu?: (e: React.MouseEvent) => void;
-  taskBoardCounts: Record<string, number>;
-  showCenterStar: boolean;
-  isCenter: boolean;
-  onCenterClick: () => void;
-  /** P3 — provenance label ("from X" / "added by hand"), rendered only
-   *  when the row is selected. `undefined` renders nothing (unselected
-   *  rows never pass this). */
-  provenance?: string;
-}
-
-function renderTaskRow({
-  task,
-  isSelected,
-  onToggle,
-  onContextMenu,
-  taskBoardCounts,
-  showCenterStar,
-  isCenter,
-  onCenterClick,
-  provenance,
-}: TaskRowProps): React.ReactElement {
-  const subtitle = buildTaskSubtitle(task);
-  const boards = taskBoardCounts[task.id] ?? 0;
-  const usageHint = boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`;
-  return (
-    <div className={isSelected ? styles.rowSelectedWrap : styles.rowWrap}>
-      <button
-        type="button"
-        className={styles.row}
-        onClick={onToggle}
-        onContextMenu={onContextMenu}
-        aria-pressed={isSelected}
-      >
-        <RisoTypeBadge type={task.type} />
-        <div className={styles.rowCenter}>
-          <span className={styles.rowTitle}>{task.title}</span>
-          {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
-          {isSelected && provenance && <span className={styles.rowProvenance}>{provenance}</span>}
-        </div>
-        <span className={styles.rowUsage}>{usageHint}</span>
-      </button>
-      {showCenterStar && (
-        <button
-          type="button"
-          className={`${styles.centerRadio} ${isCenter ? styles.centerRadioOn : ''}`}
-          onClick={onCenterClick}
-          aria-label={isCenter ? 'Center task' : 'Mark as center task'}
-          aria-pressed={isCenter}
-          title={isCenter ? 'Center task' : 'Mark as center task'}
-        >
-          {isCenter ? '★' : '☆'}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ─── Subtitle helper (ported from compound wizard) ────────────────────────────
-
-function buildTaskSubtitle(task: Task): string {
-  if (task.type === TaskType.COUNTING) {
-    const { action, maxCount, unit } = task;
-    if (!action || !unit || maxCount === undefined) return '';
-    const derived = generateCounterTaskTitle(action, maxCount, unit);
-    return derived.toLowerCase() === task.title.trim().toLowerCase() ? '' : derived;
-  }
-  // Compound-typed tasks never reach this helper — both call sites
-  // (`visible.tasks` and expanded-leaf lists) filter TaskType.COMPOUND
-  // out upstream; compound rows render their own subtitle via
-  // `compositeLeafPreviews` instead.
-  return '';
-}
+// Row renderer (shared between top-level tasks and expanded leaves) now
+// lives in `./TaskRow` — extracted (P4) so the Preview step's repeating-
+// board deck list can reuse the exact same row instead of a second copy.

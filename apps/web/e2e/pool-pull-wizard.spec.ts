@@ -49,7 +49,13 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
     await page.getByRole('button', { name: /start a new board/i }).click();
     await page.getByLabel(/board name/i).fill('Pool Pull Test Board');
     await page.getByRole('button', { name: '3×3', exact: true }).click();
-    await page.getByRole('button', { name: 'Daily', exact: true }).click();
+    // Scoped to the Timeframe group — "Daily" also appears in the
+    // Repeats segmented (P4) while repeats === null, so the bare
+    // selector would be ambiguous.
+    await page
+      .getByRole('group', { name: 'Timeframe' })
+      .getByRole('button', { name: 'Daily', exact: true })
+      .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
     // Step 2 mounted — the pull-card renders the seeded pool as a chip.
@@ -123,7 +129,10 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
     await openCreateHub(page);
     await page.getByRole('button', { name: /start a new board/i }).click();
     await page.getByLabel(/board name/i).fill('No Pools Yet Board');
-    await page.getByRole('button', { name: 'Daily', exact: true }).click();
+    await page
+      .getByRole('group', { name: 'Timeframe' })
+      .getByRole('button', { name: 'Daily', exact: true })
+      .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
     await expect(page.getByText(/you don.t have any pools yet/i)).toBeVisible();

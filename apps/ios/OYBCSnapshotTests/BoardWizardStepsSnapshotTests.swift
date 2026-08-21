@@ -166,10 +166,15 @@ final class BoardWizardStepsSnapshotTests: XCTestCase {
         )
     }
 
-    /// Preview step with `isRecurring=true`. Verifies the Timeframe row
-    /// shows "Every week · starting Week of …" (instead of the bare
-    /// window label, which would be indistinguishable from a one-off
-    /// board for that week) and the Recurring summary row appears.
+    /// Preview step with `isRecurring=true`. Task Pools + Recurring Boards
+    /// Rework (P4) replaced the arrange/shuffle grid with the "deck" branch
+    /// — a health-note header ("N tasks in the deck · …") plus the full
+    /// selection rendered via `RisoPoolListView` with provenance subtitles
+    /// — so this also verifies that list renders (not the grid) alongside
+    /// the Timeframe row's "Every week · starting Week of …" cadence
+    /// prefix and the Recurring summary row. Height increased from the
+    /// pre-P4 900pt (sized for the grid) to fit the 15-row deck list plus
+    /// the summary card and footer.
     func testPreviewStepRecurring() {
         let library = SnapshotFixtures.makeTaskLibrary(state: .dense)
         let controller = SnapshotFixtures.makeWizardController(stage: .previewRecurring)
@@ -182,7 +187,7 @@ final class BoardWizardStepsSnapshotTests: XCTestCase {
         )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits),
+            as: .image(layout: .fixed(width: 393, height: 2300), traits: lightTraits),
             record: recordMode
         )
     }
@@ -218,7 +223,7 @@ final class BoardWizardStepsSnapshotTests: XCTestCase {
         )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 900), traits: darkTraits),
+            as: .image(layout: .fixed(width: 393, height: 2300), traits: darkTraits),
             record: recordMode
         )
     }

@@ -22,9 +22,12 @@ import styles from './RecurringTemplatesPage.module.css';
  * there was deliberately no "+ New template" button here). The
  * recurring-UX pass (#321) REVERSED that: hiding creation from the
  * management surface contributed to the "templates don't do anything"
- * finding, so "+ New template" is back — it routes to the same wizard
- * recurring flow as the Create hub's CTA (`/create?newRecurring=1`),
- * matching iOS's dashed "+ New template" button.
+ * finding, so "+ New template" is back. P4 (Task Pools + Recurring
+ * Boards Rework) retired the dedicated `?newRecurring=1` deep link
+ * (and the Create hub's separate "Create a recurring board" CTA it
+ * fed) — "+ New template" now navigates plainly to `/create`, landing
+ * on the unified wizard's Step 1, where the "Repeats" segmented is how
+ * the user picks a cadence.
  *
  * Edit handler navigates cross-tab: `/create?editTemplate=<id>` opens
  * the Create-tab wizard hydrated from the template, in template-edit
@@ -89,10 +92,11 @@ export function RecurringTemplatesPage(): React.ReactElement {
     navigate(`/create?editTemplate=${encodeURIComponent(template.id)}&step=tasks`);
   };
 
-  // "+ New template" — the wizard's fresh recurring flow (same entry as
-  // the Create hub's "Create a recurring board" CTA).
+  // "+ New template" — P4 retired the `?newRecurring=1` deep link; this
+  // now navigates plainly to the Create hub, where the wizard's Step 1
+  // "Repeats" segmented is how the user picks a cadence.
   const handleNewTemplate = () => {
-    navigate('/create?newRecurring=1');
+    navigate('/create');
   };
 
   return (
@@ -109,7 +113,8 @@ export function RecurringTemplatesPage(): React.ReactElement {
           <p className={styles.emptyTitle}>No recurring templates yet.</p>
           <p className={styles.emptyBody}>
             Create one below, or from the Create tab — tap{' '}
-            <strong>"Create a recurring board"</strong>.
+            <strong>"Start a new board"</strong> and choose a repeat cadence
+            in Setup.
           </p>
         </div>
       ) : (

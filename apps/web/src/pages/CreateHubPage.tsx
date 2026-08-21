@@ -8,7 +8,6 @@ import {
 import { useDrafts } from './createHub/useDrafts';
 import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframeParam';
 import { useEditTemplateParam } from './createHub/useEditTemplateParam';
-import { useNewRecurringParam } from './createHub/useNewRecurringParam';
 import { useResumableDraft } from './createHub/useResumableDraft';
 import { useResumeDraftParam } from './createHub/useResumeDraftParam';
 import { useCoreBoardSlots } from '../hooks';
@@ -58,10 +57,6 @@ type HubMode =
        *  row's "Add tasks" affordance (`&step=tasks`) so the wizard opens
        *  directly on the Tasks step. */
       initialStep?: 1 | 2;
-      /** Issue #71 — set when launched from the "Create a recurring
-       *  board" CTA. Forces `isRecurring` ON at entry; the user picks
-       *  timeframe/size/center + pool. */
-      startRecurring?: boolean;
     };
 
 /**
@@ -78,14 +73,17 @@ type HubMode =
  * Task library + quick-add moved out of this hub when the dedicated
  * `/tasks` tab landed — Create is now board-creation-only.
  *
- * Three deep-link entry points are handled by dedicated hooks:
+ * Two deep-link entry points are handled by dedicated hooks:
  * - `?recurringTimeframe=daily` → `useRecurringTimeframeParam`
  * - `?editTemplate=<uuid>[&step=tasks]` → `useEditTemplateParam`
  *   (`step=tasks` = the template row's "Add tasks", lands on step 2)
- * - `?newRecurring=1` → `useNewRecurringParam` (Profile templates
- *   page's "+ New template")
  * Each consumes its param(s) exactly once and clears them from the URL
  * so a wizard cancel + manual re-entry doesn't re-arm the prefill.
+ *
+ * P4 (Task Pools + Recurring Boards Rework) retired the separate
+ * "Create a recurring board" CTA + its `?newRecurring=1` deep link —
+ * there's now ONE "Start a new board" CTA; recurrence is chosen via the
+ * wizard's Step 1 "Repeats" segmented (`useBoardWizard.setRepeats`).
  */
 export function CreateHubPage({
   userId,
@@ -114,25 +112,10 @@ export function CreateHubPage({
     }, []),
   );
 
-  // "+ New template" from Profile → Recurring templates. Same entry as
-  // the Create-hub "Create a recurring board" CTA (`startRecurring`).
-  useNewRecurringParam(
-    useCallback(() => {
-      setMode({ kind: 'wizard', startRecurring: true });
-    }, []),
-  );
-
   const returnToHub = useCallback(() => setMode({ kind: 'hub' }), []);
 
   const handleStartBoard = useCallback(() => {
     setMode({ kind: 'wizard' });
-  }, []);
-
-  // Issue #71 — dedicated recurring-board entry point. Launches the
-  // same wizard with `startRecurring` so `isRecurring` is ON from the
-  // start (the in-wizard "Make recurring" toggle was removed).
-  const handleStartRecurringBoard = useCallback(() => {
-    setMode({ kind: 'wizard', startRecurring: true });
   }, []);
 
   const handleResumeDraft = useCallback(
@@ -201,7 +184,6 @@ export function CreateHubPage({
         targetWindowDate={mode.targetWindowDate}
         editingTemplate={mode.editingTemplate}
         initialStep={mode.initialStep}
-        startRecurring={mode.startRecurring}
         onCancel={returnToHub}
         onComplete={handleWizardComplete}
         onTemplateComplete={handleTemplateComplete}
@@ -239,18 +221,8 @@ export function CreateHubPage({
       />
 
       <CreateHubBoardCTA
-        kind="oneOff"
         onClick={handleStartBoard}
         variant={hasUncreatedCoreBoards ? 'secondary' : 'primary'}
-      />
-
-      {/* Issue #71 — recurring-board creation is its own deliberate
-          entry point, always rendered as the lighter secondary card
-          below the one-off CTA. */}
-      <CreateHubBoardCTA
-        kind="recurring"
-        onClick={handleStartRecurringBoard}
-        variant="secondary"
       />
 
       {drafts.length > 0 && (

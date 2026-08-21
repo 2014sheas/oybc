@@ -14,6 +14,7 @@ import { BoardWizardPreviewStep } from '../components/wizard/BoardWizardPreviewS
 import { BoardWizardCancelDialog } from '../components/wizard/BoardWizardCancelDialog';
 import {
   buildWizardPlacement,
+  persistRecurringTemplate,
   persistWizardBoard,
   resolveWizardDates,
 } from '../components/wizard/wizardPersist';
@@ -48,11 +49,6 @@ export interface BoardWizardPageProps {
   /** Optional starting step (defaults to 1). The template row's "Add
    *  tasks" affordance passes 2 so the wizard opens on the Tasks step. */
   initialStep?: 1 | 2;
-  /** Issue #71 — when set, the wizard was opened from the Create hub's
-   *  "Create a recurring board" CTA. Forces `isRecurring` ON at entry
-   *  (no in-form toggle). The user picks the timeframe/size/center +
-   *  pool, and Save creates a template + spawns the first board. */
-  startRecurring?: boolean;
   /** Called when the user dismisses the wizard without persisting —
    *  either because they're in a pristine state (no edits) or they
    *  explicitly chose "Discard" in the smart-cancel dialog. */
@@ -93,7 +89,6 @@ export function BoardWizardPage({
   targetWindowDate,
   editingTemplate,
   initialStep,
-  startRecurring,
   onCancel,
   onComplete,
   onTemplateComplete,
@@ -114,7 +109,6 @@ export function BoardWizardPage({
     targetWindowDate,
     editingTemplate,
     initialStep,
-    startRecurring,
     pools,
     tasksById: library.taskMap,
   });
@@ -128,12 +122,18 @@ export function BoardWizardPage({
   // the Board record we write is well-formed. Partial task selection
   // is fine — drafts can have fewer BoardTasks than the geometry asks
   // for, and Activate will validate on the way out.
+  //
+  // P4 — the same gate covers a recurring session: `wizard.timeframe` is
+  // always DAILY/WEEKLY/MONTHLY/YEARLY while `isRecurring` is true (the
+  // Repeats segmented's `setRepeats` never sets CUSTOM/INDEFINITE), so
+  // `resolveWizardDates` always resolves and `canSaveDraft` reduces to
+  // just `hasName` — no separate recurring branch needed here.
   const dates = resolveWizardDates(wizard, wizard.targetWindowDate ?? undefined);
   const hasResolvableDates = !('error' in dates);
   const hasName = wizard.name.trim().length > 0;
   const canSaveDraft = hasName && hasResolvableDates;
   const saveBlockedReason: string | undefined = !hasName
-    ? 'Add a board name before saving as a draft.'
+    ? 'Add a board name before saving.'
     : !hasResolvableDates && 'error' in dates
       ? String(dates.error)
       : undefined;
@@ -152,6 +152,41 @@ export function BoardWizardPage({
   async function handleDialogSaveDraft(): Promise<void> {
     setCancelDialogError(null);
     if (!canSaveDraft) return;
+
+    // P4 (Task Pools + Recurring Boards Rework) — a recurring wizard
+    // session has no "draft" concept (`RecurringBoardTemplate` isn't a
+    // Board). Before this fix, "Save Draft" unconditionally called the
+    // one-off `persistWizardBoard` regardless of `wizard.isRecurring`,
+    // silently saving a plain one-off draft Board instead of a recurring
+    // spawn record. Branch here exactly like `BoardWizardPreviewStep`'s
+    // `performCreation` does.
+    if (wizard.isRecurring) {
+      setIsSavingFromCancel(true);
+      try {
+        const result = await persistRecurringTemplate({
+          controller: wizard,
+          userId,
+          pendingTasks: wizard.pendingTasks,
+        });
+        setShowCancelDialog(false);
+        if (result.spawnedBoardId !== null) {
+          onComplete(result.spawnedBoardId, 'active');
+        } else {
+          onTemplateComplete?.(result.templateId);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error.';
+        setCancelDialogError(
+          wizard.editingTemplateId === null
+            ? `Failed to create recurring template: ${msg}`
+            : `Failed to update recurring template: ${msg}`,
+        );
+      } finally {
+        setIsSavingFromCancel(false);
+      }
+      return;
+    }
+
     if ('error' in dates) {
       setCancelDialogError(String(dates.error));
       return;
@@ -272,9 +307,13 @@ export function BoardWizardPage({
         saveDraftLabel={
           isSavingFromCancel
             ? 'Saving…'
-            : wizard.draftBoardId !== null
-              ? 'Save Changes'
-              : 'Save Draft'
+            : wizard.isRecurring
+              ? wizard.editingTemplateId !== null
+                ? 'Save changes'
+                : 'Create template & spawn first board'
+              : wizard.draftBoardId !== null
+                ? 'Save Changes'
+                : 'Save Draft'
         }
         onSaveDraft={() => void handleDialogSaveDraft()}
         onDiscard={handleDialogDiscard}

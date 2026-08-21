@@ -580,6 +580,137 @@ extension AppDatabase {
         }
     }
 
+    /// Core write for a single deferred (Bug #85) pending-task payload: saves
+    /// the parent task, any inline-created child tasks, and any
+    /// `compound_children` links, enqueuing a sync item for each. Shared by
+    /// `saveWizardBoard` (called inline, inside that method's own
+    /// transaction — the one-off / draft-resume wizard-save path) and
+    /// `writeWizardPendingTasksAndEnqueue` below (its own standalone
+    /// transaction — the Task Pools + Recurring Boards Rework P4 unified
+    /// persist path, `BoardWizardPersist.persistRecurringTemplate`, which
+    /// has no Board row to share a transaction with).
+    private static func writePendingTaskPayload(
+        _ payload: PendingTaskPayload, db: Database, now: String
+    ) throws {
+        try payload.task.save(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "tasks",
+            entityId: payload.task.id,
+            operationType: .create,
+            payload: payload.task,
+            now: now
+        ).enqueue(db)
+        for childTask in payload.childTasks {
+            try childTask.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: childTask.id,
+                operationType: .create,
+                payload: childTask,
+                now: now
+            ).enqueue(db)
+        }
+        for link in payload.childLinks {
+            try link.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "compoundChildren",
+                entityId: link.id,
+                operationType: .create,
+                payload: link,
+                now: now
+            ).enqueue(db)
+        }
+    }
+
+    /// Standalone-transaction variant of the pending-task drain (Bug #85) —
+    /// Task Pools + Recurring Boards Rework, P4. `persistRecurringTemplate`
+    /// (`BoardWizardPersist.swift`) calls this to write any in-memory
+    /// `PendingTaskPayload`s created via the wizard's inline "New Task" sheet
+    /// BEFORE it mints/updates a `RecurringBoardTemplate` — a repeating
+    /// board has no single Board row to share a transaction with (the spawn
+    /// path resolves the mix fresh from GRDB), so this drains in its own
+    /// transaction ahead of everything else that reads tasks for mix
+    /// resolution or persisted `seedTaskIds`.
+    ///
+    /// Without this, a pending task selected into a repeating board's pool
+    /// was NEVER written to GRDB — `PoolMix.resolveMix`/the spawn path's
+    /// `tasksById` lookup silently drops any id that doesn't resolve, so the
+    /// pending task fell out of the mix permanently (and could push the mix
+    /// below the fillable floor, skipping the whole window). See P4's
+    /// scope note in docs/POOLS_RECURRING.md.
+    ///
+    /// Also applies any staged inline task edits (Inline Task Editing), in
+    /// the SAME transaction as the pending-task drain — mirroring
+    /// `saveWizardBoard`'s staged-edits block. Unlike the one-off path,
+    /// recurring templates have no draft/active distinction (both the
+    /// Preview step and the cancel dialog's "Save Draft" call this same
+    /// function unconditionally — see `BoardWizardView.handleDialogSaveDraft`),
+    /// so staged edits always apply here; there's no gate to mirror. Per-type
+    /// handling matches `saveWizardBoard` exactly:
+    ///   • compound (library OR pending) — apply parent-field + child/link
+    ///     CRUD via `applyStagedCompoundChildEdits`, then `saveTaskAndCascade`.
+    ///     A pending compound's rows already exist by this point (the drain
+    ///     loop above runs first), so this is its one and only apply.
+    ///   • simple/counting — a PENDING one is merged into its payload
+    ///     in-memory by the caller (`persistRecurringTemplate`, mirroring
+    ///     `persistWizardBoard`'s merge) so it's skipped here via
+    ///     `pendingIds`; a LIBRARY one is applied via `saveTaskAndCascade`.
+    ///
+    /// Without this, an inline edit staged while building/editing a
+    /// repeating board's task pool (rename, goal change, compound sub-task
+    /// edit) was silently dropped on save — the pre-edit task values
+    /// persisted even though the Preview step showed the edit applied.
+    ///
+    /// - Parameters:
+    ///   - pendingTasks: The FULL set of pending payloads whose task is in
+    ///     the wizard's final `selectedTaskIds` (not a placement-based
+    ///     subset — a repeating board's future windows draw from the whole
+    ///     pool, not just what's on today's spawned board). Simple/counting
+    ///     payloads should already carry any staged edit merged in (see
+    ///     `persistRecurringTemplate`); compound payloads are edited here.
+    ///   - stagedEdits: The wizard's full `controller.stagedEdits` snapshot
+    ///     (keyed by taskId). A task leaving the pool always purges its
+    ///     staged edit (`toggleTaskSelection`/`untogglePool`), so every
+    ///     remaining key is still in `selectedTaskIds` — no extra filtering
+    ///     needed, matching the one-off path's unfiltered application.
+    ///   - now: ISO8601 timestamp for the sync-queue rows.
+    func writeWizardPendingTasksAndEnqueue(
+        _ pendingTasks: [PendingTaskPayload],
+        stagedEdits: [String: TaskEditPatch] = [:],
+        now: String
+    ) throws {
+        try write { db in
+            for payload in pendingTasks {
+                try Self.writePendingTaskPayload(payload, db: db, now: now)
+            }
+
+            guard !stagedEdits.isEmpty else { return }
+            let pendingIds = Set(pendingTasks.map { $0.task.id })
+            for (taskId, patch) in stagedEdits {
+                guard var task = try Task.fetchOne(db, key: taskId) else { continue }
+                // Defensive: never persist an invalid edit (the UI blocks
+                // Save, but a stale draft shouldn't corrupt the row).
+                guard patch.validate(type: task.type) == nil else { continue }
+                if task.type == .compound {
+                    task = patch.applied(to: task)
+                    task.version += 1
+                    task.updatedAt = now
+                    try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: patch, now: now)
+                    try Self.saveTaskAndCascade(db: db, task: task)
+                } else {
+                    // simple/counting: a pending task's edit is merged into
+                    // its payload already by the caller, so skip it here;
+                    // apply library-task edits.
+                    if pendingIds.contains(taskId) { continue }
+                    task = patch.applied(to: task)
+                    task.version += 1
+                    task.updatedAt = now
+                    try Self.saveTaskAndCascade(db: db, task: task)
+                }
+            }
+        }
+    }
+
     /// Persist a wizard-built board in a single atomic transaction: any
     /// deferred (Bug #85) pending tasks that are actually placed, then any
     /// staged inline task edits (active create only), then the `Board` row + its
@@ -619,34 +750,7 @@ extension AppDatabase {
         try write { db in
             // ── Bug #85: pending tasks (placed-only) ───────────────
             for payload in pendingTasks {
-                try payload.task.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "tasks",
-                    entityId: payload.task.id,
-                    operationType: .create,
-                    payload: payload.task,
-                    now: now
-                ).enqueue(db)
-                for childTask in payload.childTasks {
-                    try childTask.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "tasks",
-                        entityId: childTask.id,
-                        operationType: .create,
-                        payload: childTask,
-                        now: now
-                    ).enqueue(db)
-                }
-                for link in payload.childLinks {
-                    try link.save(db)
-                    try SyncQueueBuilder.makeItem(
-                        entityType: "compoundChildren",
-                        entityId: link.id,
-                        operationType: .create,
-                        payload: link,
-                        now: now
-                    ).enqueue(db)
-                }
+                try Self.writePendingTaskPayload(payload, db: db, now: now)
             }
 
             // ── Staged inline edits (Inline Task Editing) ──────────

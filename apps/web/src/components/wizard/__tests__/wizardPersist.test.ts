@@ -3,6 +3,7 @@ import {
   CenterSquareType,
   Timeframe,
   TaskType,
+  resolveMix,
   type Pool,
   type RecurringBoardTemplate,
   type Task,
@@ -10,56 +11,38 @@ import {
 import { db } from '../../../db/internal';
 import { persistRecurringTemplate } from '../wizardPersist';
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
+import type { PendingTaskPayload } from '../../../pages/createPage/useCreateFormState';
 import {
   applyManualBookkeepingOnSelect,
-  applyPullPool,
-  applyUntogglePool,
 } from '../../../pages/createHub/poolPullLogic';
 
 /**
- * P1 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
- * §Migration "seedTaskIds end state") — covers the legacy template
- * editor's rewired write-through in `persistRecurringTemplate`:
+ * P4 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md §P4)
+ * rewrote `persistRecurringTemplate` to unify the recurring-template
+ * persist path with the one-off `persistWizardBoard`/`persistWizardBoardRows`
+ * path. Two things changed from the P1/P3 behavior the old version of this
+ * file covered:
  *
- *   - CREATE mints a Pool named "<template name> pool" + writes
- *     `poolIds: [pool.id]`.
- *   - EDIT of a legacy-shaped record (exactly one pool, no manual
- *     additions, no removals) writes straight through to the linked
- *     Pool's `taskIds`.
- *   - EDIT of a non-legacy-shaped record (defensive — cannot occur
- *     before P4 ships, but handled anyway) flattens the selection to
- *     `manualTaskIds` and clears `poolIds`/`removedTaskIds`, never
- *     touching a Pool it didn't mint.
- *
- * P3 (same doc, §Surfaces item 5 "Wizard step 2") added the "PULL IN A
- * POOL" wizard-session UI (`pulledPoolIds`/`manualTaskIds`/
- * `removedTaskIds` on `BoardWizardController`, driven by
- * `poolPullLogic.ts`'s pure functions). That UI/session layer is
- * unaffected by `persistRecurringTemplate`, which — per this revert —
- * only ever reads the flattened `controller.selectedTaskIds`, exactly as
- * in P1. The two regression tests below ("P3 regression") exist because
- * an earlier version of this branch mistakenly made
- * `persistRecurringTemplate` consult `pulledPoolIds`/`manualTaskIds`/
- * `removedTaskIds` directly, which (a) broke the legacy write-through the
- * moment a user added a single ordinary task during an edit, since
- * `manualTaskIds` is populated by every ordinary select, not just pool
- * pulls, and (b) could write a live-but-untoggled pool's tasks into the
- * WRONG (stale, template-linked) pool. Both tests drive the real
- * `toggleTaskSelection`-equivalent pure functions rather than hand-setting
- * controller state, so they actually exercise the bug's trigger path.
- *
- * `persistRecurringTemplate` only reads a handful of `BoardWizardController`
- * fields (`name`, `centerType`, `selectedTaskIds`,
- * `editingTemplateId`, `timeframe`, `size`, `isRandomized`,
- * `targetWindowDate`, `weekStartDay`) — `useBoardWizard` itself is a hook
- * with no DOM harness in this repo (see `wizardTimeframeSeed.test.ts`), so
- * a minimal controller-shaped object is built directly rather than
- * rendering the hook.
+ * 1. **The bug fix**: pending (in-memory, wizard-inline-created) tasks are
+ *    now drained via `persistWizardPendingTasks` for the FULL
+ *    `controller.selectedTaskIds` before anything else runs. Previously
+ *    this path read `controller.selectedTaskIds` straight into a
+ *    Pool/template without ever writing the underlying Task row for a
+ *    pending task, so `resolveMix`'s resolvable-id filter silently and
+ *    permanently dropped it from the mix.
+ * 2. **The P1 legacy write-through retires**: `controller.pulledPoolIds` /
+ *    `manualTaskIds` / `removedTaskIds` (P3's "PULL IN A POOL" session
+ *    state) are now the ONLY shape this path writes — no more minting a
+ *    Pool on create, no more shape-scoped write-through-to-the-linked-Pool
+ *    on edit. `useBoardWizard` itself is a hook with no DOM harness in
+ *    this repo (see `wizardTimeframeSeed.test.ts`), so a minimal
+ *    controller-shaped object is built directly rather than rendering the
+ *    hook — same convention as this file used pre-P4.
  */
 
 const NOW = '2026-07-19T00:00:00.000Z';
 
-// A 3×3 FREE-center board needs 8 fillable cells.
+// A 3×3 FREE-center board needs 8 fillable cells (`fillableCellCount`).
 const POOL_SIZE = 8;
 
 function makeController(overrides: Partial<BoardWizardController> = {}): BoardWizardController {
@@ -75,10 +58,6 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
     isRecurring: true,
     selectedTaskIds: new Set<string>(),
     centerTaskId: null,
-    // P3 (Task Pools + Recurring Boards Rework) added these fields to
-    // `BoardWizardController` for the "PULL IN A POOL" session UI.
-    // `persistRecurringTemplate` does not read them (see this file's
-    // top docstring); default to "untouched" so the type is satisfied.
     pulledPoolIds: [],
     manualTaskIds: new Set<string>(),
     removedTaskIds: new Set<string>(),
@@ -92,27 +71,67 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
   } as unknown as BoardWizardController;
 }
 
+function makeTask(id: string, overrides: Partial<Task> = {}): Task {
+  return {
+    id,
+    userId: 'user-1',
+    title: `Task ${id}`,
+    type: TaskType.NORMAL,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+    ...overrides,
+  };
+}
+
 async function seedTasks(n: number, prefix = 'task'): Promise<string[]> {
   const ids: string[] = [];
   for (let i = 0; i < n; i += 1) {
     const id = `${prefix}-${i}`;
-    const task: Task = {
-      id,
-      userId: 'user-1',
-      title: `Task ${id}`,
-      type: TaskType.NORMAL,
-      isCompleted: false,
-      totalCompletions: 0,
-      totalInstances: 0,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
-    await db.tasks.add(task);
+    await db.tasks.add(makeTask(id));
     ids.push(id);
   }
   return ids;
+}
+
+function makePool(id: string, name: string, taskIds: string[]): Pool {
+  return {
+    id,
+    userId: 'user-1',
+    name,
+    taskIds,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+  };
+}
+
+function makeTemplate(overrides: Partial<RecurringBoardTemplate> = {}): RecurringBoardTemplate {
+  return {
+    id: 'tmpl-1',
+    userId: 'user-1',
+    name: 'Daily Workout',
+    timeframe: Timeframe.DAILY,
+    boardSize: 3,
+    centerSquareType: CenterSquareType.FREE,
+    isRandomized: true,
+    seedTaskIds: [],
+    poolIds: [],
+    manualTaskIds: [],
+    removedTaskIds: [],
+    lastSpawnedWindowKey: null,
+    isActive: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+    ...overrides,
+  };
 }
 
 afterEach(async () => {
@@ -126,151 +145,137 @@ afterEach(async () => {
   await db.syncQueue.clear();
 });
 
-describe('persistRecurringTemplate — P1 legacy write-through', () => {
-  it('CREATE mints a Pool named "<template name> pool" and writes poolIds/manualTaskIds/removedTaskIds', async () => {
-    const taskIds = await seedTasks(POOL_SIZE);
+describe('persistRecurringTemplate — P4 native shape (no legacy write-through)', () => {
+  it('CREATE writes poolIds/manualTaskIds/removedTaskIds straight from controller state — no Pool is minted', async () => {
+    const poolTaskIds = await seedTasks(6, 'pool');
+    const pool = makePool('pool-existing', 'Morning Kickstart', poolTaskIds);
+    await db.pools.add(pool);
+    const manualTaskIds = await seedTasks(2, 'manual');
+
+    const selectedTaskIds = new Set([...poolTaskIds, ...manualTaskIds]);
     const controller = makeController({
       name: 'Daily Workout',
-      selectedTaskIds: new Set(taskIds),
+      selectedTaskIds,
+      pulledPoolIds: ['pool-existing'],
+      manualTaskIds: new Set(manualTaskIds),
+      removedTaskIds: new Set(),
     });
 
     const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
 
+    // No Pool minted — the pre-existing pool is the only one in the DB.
     const pools = await db.pools.toArray();
     expect(pools).toHaveLength(1);
-    expect(pools[0].name).toBe('Daily Workout pool');
-    expect(new Set(pools[0].taskIds)).toEqual(new Set(taskIds));
+    expect(pools[0].id).toBe('pool-existing');
+    expect(pools[0].taskIds).toEqual(poolTaskIds); // untouched
 
     const template = await db.recurringBoardTemplates.get(result.templateId);
-    expect(template?.poolIds).toEqual([pools[0].id]);
-    expect(template?.manualTaskIds).toEqual([]);
+    expect(template?.poolIds).toEqual(['pool-existing']);
+    expect(new Set(template?.manualTaskIds)).toEqual(new Set(manualTaskIds));
     expect(template?.removedTaskIds).toEqual([]);
-    expect(new Set(template?.seedTaskIds)).toEqual(new Set(taskIds));
+    // Decode-compat snapshot only.
+    expect(new Set(template?.seedTaskIds)).toEqual(selectedTaskIds);
 
-    // Bonus: the immediate spawn also resolves through the minted pool
-    // (mix formula), matching the pre-P1 seedTaskIds-based spawn output.
     expect(result.spawnedBoardId).not.toBeNull();
   });
 
-  it('EDIT of a legacy-shaped record (exactly one pool, no manual/removed) writes straight through to the linked Pool', async () => {
-    const originalTaskIds = await seedTasks(POOL_SIZE);
-    const pool: Pool = {
-      id: 'pool-1',
-      userId: 'user-1',
-      name: 'Daily Workout pool',
-      taskIds: originalTaskIds,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
+  it('EDIT writes the native fields directly and never mutates a linked Pool\'s own taskIds', async () => {
+    const poolTaskIds = await seedTasks(POOL_SIZE, 'pool');
+    const pool = makePool('pool-1', 'Daily Workout pool', poolTaskIds);
     await db.pools.add(pool);
-    const template: RecurringBoardTemplate = {
+    const template = makeTemplate({
       id: 'tmpl-1',
-      userId: 'user-1',
-      name: 'Daily Workout',
-      timeframe: Timeframe.DAILY,
-      boardSize: 3,
-      centerSquareType: CenterSquareType.FREE,
-      isRandomized: true,
-      seedTaskIds: originalTaskIds,
       poolIds: ['pool-1'],
       manualTaskIds: [],
       removedTaskIds: [],
-      lastSpawnedWindowKey: '2026-07-18T00:00:00.000Z',
-      isActive: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 2,
-      isDeleted: false,
-    };
+    });
     await db.recurringBoardTemplates.add(template);
 
-    // The user removed one task and added a new one in the wizard.
-    const extraTaskIds = await seedTasks(1, 'extra');
-    const editedSelection = [...originalTaskIds.slice(1), ...extraTaskIds];
+    // The user removes one pool-sourced task and hand-adds a new one —
+    // exactly the session state `useBoardWizard` would produce.
+    const [newManualId] = await seedTasks(1, 'extra');
+    const removedId = poolTaskIds[0];
+    const selectedTaskIds = new Set([...poolTaskIds.slice(1), newManualId]);
 
     const controller = makeController({
-      name: 'Daily Workout',
       editingTemplateId: 'tmpl-1',
-      selectedTaskIds: new Set(editedSelection),
+      selectedTaskIds,
+      pulledPoolIds: ['pool-1'],
+      manualTaskIds: new Set([newManualId]),
+      removedTaskIds: new Set([removedId]),
     });
 
     const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
     expect(result.templateId).toBe('tmpl-1');
     expect(result.spawnedBoardId).toBeNull(); // edits never spawn
 
-    // The linked Pool now carries the edited selection.
-    const updatedPool = await db.pools.get('pool-1');
-    expect(new Set(updatedPool?.taskIds)).toEqual(new Set(editedSelection));
+    // The linked Pool's OWN taskIds are untouched — P1's write-through is
+    // retired; the template's own poolIds/manualTaskIds/removedTaskIds are
+    // now the source of truth.
+    const storedPool = await db.pools.get('pool-1');
+    expect(storedPool?.taskIds).toEqual(poolTaskIds);
+    expect(storedPool?.version).toBe(1);
 
-    // The template's own poolIds/manualTaskIds/removedTaskIds are
-    // untouched — the Pool is the source of truth for a legacy-shaped
-    // record's mix.
     const updatedTemplate = await db.recurringBoardTemplates.get('tmpl-1');
     expect(updatedTemplate?.poolIds).toEqual(['pool-1']);
-    expect(updatedTemplate?.manualTaskIds).toEqual([]);
-    expect(updatedTemplate?.removedTaskIds).toEqual([]);
+    expect(updatedTemplate?.manualTaskIds).toEqual([newManualId]);
+    expect(updatedTemplate?.removedTaskIds).toEqual([removedId]);
     // seedTaskIds left verbatim/stale — never read after P1.
-    expect(updatedTemplate?.seedTaskIds).toEqual(originalTaskIds);
+    expect(updatedTemplate?.seedTaskIds).toEqual([]);
   });
 
-  it('EDIT of a non-legacy-shaped record (2 pools) flattens to manualTaskIds and clears poolIds/removedTaskIds — never writes a Pool it did not mint', async () => {
+  it('editing a template with 2 pools + manual tasks preserves the multi-pool shape (not flattened, not pool-mutated)', async () => {
+    // §4 required test — the `?editTemplate=` re-point round-trip: a
+    // native multi-pool/manual record must stay editable without
+    // collapsing to a single flattened list.
     const poolATaskIds = await seedTasks(4, 'poolA');
     const poolBTaskIds = await seedTasks(4, 'poolB');
-    const poolA: Pool = {
-      id: 'pool-a',
-      userId: 'user-1',
-      name: 'Pool A',
-      taskIds: poolATaskIds,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
-    const poolB: Pool = {
-      id: 'pool-b',
-      userId: 'user-1',
-      name: 'Pool B',
-      taskIds: poolBTaskIds,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
+    const poolA = makePool('pool-a', 'Pool A', poolATaskIds);
+    const poolB = makePool('pool-b', 'Pool B', poolBTaskIds);
     await db.pools.bulkAdd([poolA, poolB]);
-    const template: RecurringBoardTemplate = {
-      id: 'tmpl-rich',
-      userId: 'user-1',
+    const [originalManualId] = await seedTasks(1, 'manual');
+    const template = makeTemplate({
+      id: 'tmpl-multi',
       name: 'Two-Pool Board',
-      timeframe: Timeframe.DAILY,
-      boardSize: 3,
-      centerSquareType: CenterSquareType.FREE,
-      isRandomized: true,
-      seedTaskIds: [...poolATaskIds, ...poolBTaskIds],
-      // 2 pools ⇒ NOT legacy-shaped per isLegacyShapedRecord.
       poolIds: ['pool-a', 'pool-b'],
-      manualTaskIds: [],
+      manualTaskIds: [originalManualId],
       removedTaskIds: [],
-      lastSpawnedWindowKey: '2026-07-18T00:00:00.000Z',
-      isActive: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 2,
-      isDeleted: false,
-    };
+    });
     await db.recurringBoardTemplates.add(template);
 
-    const editedSelection = [...poolATaskIds, ...poolBTaskIds.slice(0, 2)];
+    // Hydration on wizard-open, exactly as `useBoardWizard`'s
+    // `useTemplateMix` resolves it: real `resolveMix` against the real
+    // pools/tasks, not a hand-rolled union.
+    const poolsById: Record<string, Pool> = { 'pool-a': poolA, 'pool-b': poolB };
+    const allTaskIds = [...poolATaskIds, ...poolBTaskIds, originalManualId];
+    const tasksById: Record<string, Task> = {};
+    for (const id of allTaskIds) tasksById[id] = makeTask(id);
+    let selectedTaskIds = new Set(resolveMix(template, poolsById, tasksById).taskIds);
+    expect(selectedTaskIds.size).toBe(9); // 4 + 4 + 1 manual
+
+    // "Make a small edit": hand-add one more manual task via the REAL
+    // select-side bookkeeping function `toggleTaskSelection` delegates to.
+    const [newManualId] = await seedTasks(1, 'newmanual');
+    selectedTaskIds = new Set(selectedTaskIds);
+    selectedTaskIds.add(newManualId);
+    let manualTaskIds = new Set([originalManualId]);
+    let removedTaskIds = new Set<string>();
+    const bookkeeping = applyManualBookkeepingOnSelect(newManualId, manualTaskIds, removedTaskIds);
+    manualTaskIds = bookkeeping.manualTaskIds;
+    removedTaskIds = bookkeeping.removedTaskIds;
+
     const controller = makeController({
       name: 'Two-Pool Board',
-      editingTemplateId: 'tmpl-rich',
-      selectedTaskIds: new Set(editedSelection),
+      editingTemplateId: 'tmpl-multi',
+      selectedTaskIds,
+      pulledPoolIds: ['pool-a', 'pool-b'],
+      manualTaskIds,
+      removedTaskIds,
     });
 
     await persistRecurringTemplate({ controller, userId: 'user-1' });
 
-    // Neither pool was touched.
+    // Neither pool was touched — never flattened, never pool-mutated.
     const storedPoolA = await db.pools.get('pool-a');
     const storedPoolB = await db.pools.get('pool-b');
     expect(storedPoolA?.taskIds).toEqual(poolATaskIds);
@@ -278,257 +283,141 @@ describe('persistRecurringTemplate — P1 legacy write-through', () => {
     expect(storedPoolA?.version).toBe(1);
     expect(storedPoolB?.version).toBe(1);
 
-    // The template flattened to manualTaskIds and cleared poolIds/removedTaskIds.
-    const updatedTemplate = await db.recurringBoardTemplates.get('tmpl-rich');
-    expect(new Set(updatedTemplate?.manualTaskIds)).toEqual(new Set(editedSelection));
-    expect(updatedTemplate?.poolIds).toEqual([]);
+    const updatedTemplate = await db.recurringBoardTemplates.get('tmpl-multi');
+    // Still a native 2-pool shape — not flattened to a single manual list.
+    expect(updatedTemplate?.poolIds).toHaveLength(2);
+    expect(new Set(updatedTemplate?.poolIds)).toEqual(new Set(['pool-a', 'pool-b']));
+    expect(new Set(updatedTemplate?.manualTaskIds)).toEqual(
+      new Set([originalManualId, newManualId]),
+    );
     expect(updatedTemplate?.removedTaskIds).toEqual([]);
   });
 });
 
-describe('persistRecurringTemplate — P3 regression (pool-pull session state must not drive persistence)', () => {
+describe('persistRecurringTemplate — P4 pending-task drain (the bug this phase fixes)', () => {
   /**
-   * Critical-1 regression. A shipped version of this branch evaluated the
-   * legacy-shape gate against `controller.pulledPoolIds`/`manualTaskIds`/
-   * `removedTaskIds` instead of the fetched template's own persisted
-   * shape. Since `applyManualBookkeepingOnSelect` (the exact function
-   * `toggleTaskSelection` delegates to for every ordinary row select, not
-   * just pool-pull actions) unconditionally adds the toggled id to
-   * `manualTaskIds`, editing a legacy single-pool template and simply
-   * adding ONE ordinary task flipped the wizard-shape gate to
-   * non-legacy — silently switching the edit from "write through to the
-   * shared Pool" to "write a native poolIds/manualTaskIds/removedTaskIds
-   * shape onto the template", which P1/P3 spec forbids before P4.
+   * Regression test A. Before the fix, this path read
+   * `controller.selectedTaskIds` straight into the persisted record
+   * without ever writing the underlying Task row for a pending
+   * (wizard-inline-"New Task"-created) task. `resolveMix` /
+   * `resolvablePoolSupply` filter a mix down to ids that actually resolve
+   * in `tasksById` — so the pending task was silently and PERMANENTLY
+   * dropped from every future spawn. If the drop takes the mix below the
+   * fillable floor, the window skips forever with `pool_too_small`
+   * (`spawnedBoardId` stays null).
    *
-   * This test drives the exact sequence `useBoardWizard.toggleTaskSelection`
-   * runs (see `useBoardWizard.ts` lines ~630-676): hydrate the edit session
-   * the way it hydrates a legacy single-pool template (`pulledPoolIds:
-   * [pool.id]`, empty manual/removed), then call the real
-   * `applyManualBookkeepingOnSelect` pure function — never hand-set
-   * `manualTaskIds` directly — to add one ordinary task. The fix must keep
-   * writing through to the linked Pool.
+   * Drives the exact sequence the wizard's real actions produce
+   * (`toggleTaskSelection` + `addPendingTask` for an inline "New Task"),
+   * without rendering `useBoardWizard` itself (no DOM harness in this
+   * repo — see this file's top docstring), then calls
+   * `persistRecurringTemplate` exactly as `BoardWizardPreviewStep`'s
+   * `performCreation` does (no explicit `pendingTasks` arg — falls back to
+   * `controller.pendingTasks`).
    */
-  it('editing a legacy single-pool template and adding one ordinary task still writes through to the Pool, not a native shape', async () => {
-    const originalTaskIds = await seedTasks(POOL_SIZE);
-    const pool: Pool = {
-      id: 'pool-1',
-      userId: 'user-1',
-      name: 'Daily Workout pool',
-      taskIds: originalTaskIds,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
+  it('a pending (not-yet-persisted) task in the selection is written to the DB and reaches the spawned board', async () => {
+    // One short of the 3×3 FREE-center floor (8) with real library tasks.
+    const libraryTaskIds = await seedTasks(POOL_SIZE - 1);
+
+    // Simulate the wizard's inline "New Task" sheet: `toggleTaskSelection`
+    // adds the id to the selection + `manualTaskIds`; `addPendingTask`
+    // stores the in-memory payload. Neither writes to `db.tasks`.
+    const pendingTaskId = 'pending-task-1';
+    const pendingPayload: PendingTaskPayload = {
+      task: makeTask(pendingTaskId, { title: 'Just typed this' }),
+      childTasks: [],
+      childLinks: [],
     };
-    await db.pools.add(pool);
-    const template: RecurringBoardTemplate = {
-      id: 'tmpl-1',
-      userId: 'user-1',
-      name: 'Daily Workout',
-      timeframe: Timeframe.DAILY,
-      boardSize: 3,
-      centerSquareType: CenterSquareType.FREE,
-      isRandomized: true,
-      seedTaskIds: originalTaskIds,
-      poolIds: ['pool-1'],
-      manualTaskIds: [],
-      removedTaskIds: [],
-      lastSpawnedWindowKey: '2026-07-18T00:00:00.000Z',
-      isActive: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 2,
-      isDeleted: false,
-    };
-    await db.recurringBoardTemplates.add(template);
-
-    // Hydration on wizard-open (as `useBoardWizard` does for an edit
-    // session): the template's one linked pool is pulled in, nothing
-    // manual/removed yet.
-    let selectedTaskIds = new Set(originalTaskIds);
-    let manualTaskIds = new Set<string>();
-    let removedTaskIds = new Set<string>();
-    const pulledPoolIds = ['pool-1'];
-
-    // The user adds ONE ordinary task via `toggleTaskSelection`'s real
-    // select-side path — not a pool-pull action.
-    const [extraTaskId] = await seedTasks(1, 'extra');
-    const wasSelected = selectedTaskIds.has(extraTaskId); // false
-    selectedTaskIds = new Set(selectedTaskIds);
-    selectedTaskIds.add(extraTaskId);
-    expect(wasSelected).toBe(false);
-    const bookkeeping = applyManualBookkeepingOnSelect(
-      extraTaskId,
-      manualTaskIds,
-      removedTaskIds,
-    );
-    manualTaskIds = bookkeeping.manualTaskIds;
-    removedTaskIds = bookkeeping.removedTaskIds;
-
-    // Confirms the trigger condition: an ordinary select DOES populate
-    // manualTaskIds (this is what made the old wizard-shape gate flip).
-    expect(manualTaskIds.has(extraTaskId)).toBe(true);
+    const selectedTaskIds = new Set([...libraryTaskIds, pendingTaskId]);
+    expect(selectedTaskIds.size).toBe(POOL_SIZE); // reaches the floor exactly
 
     const controller = makeController({
-      name: 'Daily Workout',
-      editingTemplateId: 'tmpl-1',
       selectedTaskIds,
-      pulledPoolIds,
-      manualTaskIds,
-      removedTaskIds,
+      manualTaskIds: new Set(selectedTaskIds), // every ordinary select populates this
+      pendingTasks: new Map([[pendingTaskId, pendingPayload]]),
     });
 
-    await persistRecurringTemplate({ controller, userId: 'user-1' });
+    // No `pendingTasks` arg — reproduces the Preview step's call site.
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
 
-    // Still writes through to the linked Pool — no native shape leaked
-    // onto the template.
-    const updatedPool = await db.pools.get('pool-1');
-    expect(new Set(updatedPool?.taskIds)).toEqual(new Set(selectedTaskIds));
+    // (a) The pending task now exists as a real row.
+    const persistedTask = await db.tasks.get(pendingTaskId);
+    expect(persistedTask).toBeDefined();
+    expect(persistedTask?.title).toBe('Just typed this');
 
-    const updatedTemplate = await db.recurringBoardTemplates.get('tmpl-1');
-    expect(updatedTemplate?.poolIds).toEqual(['pool-1']);
-    expect(updatedTemplate?.manualTaskIds).toEqual([]);
-    expect(updatedTemplate?.removedTaskIds).toEqual([]);
+    // (b) The spawn succeeded — the mix reached the floor.
+    expect(result.spawnedBoardId).not.toBeNull();
+    const boardId = result.spawnedBoardId as string;
+
+    // (c) The spawned board is filled to exactly the fillable-floor count
+    // (all 8 mix tasks — no missing cells) and includes a cell for the
+    // pending task's id specifically.
+    const boardTasks = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(boardTasks).toHaveLength(POOL_SIZE);
+    expect(boardTasks.some((bt) => bt.taskId === pendingTaskId)).toBe(true);
   });
+});
 
+describe('persistRecurringTemplate — P4 regression (finishing a repeating wizard never saves a plain draft Board)', () => {
   /**
-   * Critical-2 regression. A shipped version of this branch's fresh-create
-   * native-write path (and the edit richer-shape path) read
-   * `controller.pulledPoolIds` for the Pool lookup, while a defensive
-   * write-through elsewhere read `existingTemplate.poolIds?.[0]` (a
-   * DIFFERENT, stale pool reference) — a latent cross-pool corruption
-   * risk if those two ever diverged. This test drives the real
-   * pull/untoggle session sequence (`applyPullPool` then `applyUntogglePool`,
-   * the exact functions `useBoardWizard`'s `pullPool`/`untogglePool`
-   * delegate to) for a FRESH create, and asserts a completely unrelated,
-   * never-pulled pool B is left untouched and no native pool-mix shape
-   * leaks onto the template — only ONE freshly-minted pool exists,
-   * exactly like the P1 legacy create path.
+   * Regression test B. `BoardWizardPage.handleDialogSaveDraft` used to
+   * call the one-off `persistWizardBoard` UNCONDITIONALLY, ignoring
+   * `wizard.isRecurring` entirely — so backing out of a recurring-board-
+   * in-progress via the cancel dialog's "Save Draft" silently saved a
+   * plain one-off draft Board instead of a recurring spawn record. The
+   * fix branches on `wizard.isRecurring` and calls `persistRecurringTemplate`
+   * (this file's function) with the exact same argument shape
+   * (`{ controller, userId, pendingTasks: wizard.pendingTasks }`) the
+   * cancel dialog now uses.
+   *
+   * This repo has no DOM/component-rendering harness (see this file's top
+   * docstring), so the cancel-dialog's button-click plumbing itself isn't
+   * exercised here — that's a two-line, directly-reviewable
+   * `if (wizard.isRecurring)` branch in `BoardWizardPage.tsx`. What IS
+   * exercised, end-to-end, twice (matching both call sites verbatim) is
+   * the actual persisted OUTCOME: a `recurringBoardTemplates` row, never a
+   * `boards` row with `status: 'draft'`.
    */
-  it('fresh CREATE after a pull+untoggle session mints exactly one pool and never touches an unrelated pool', async () => {
-    const poolATaskIds = await seedTasks(POOL_SIZE, 'poolA');
-    const poolA: Pool = {
-      id: 'pool-a',
-      userId: 'user-1',
-      name: 'Pool A',
-      taskIds: poolATaskIds,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
-    const poolBTaskIds = await seedTasks(4, 'poolB');
-    const poolB: Pool = {
-      id: 'pool-b',
-      userId: 'user-1',
-      name: 'Pool B (unrelated, never pulled)',
-      taskIds: poolBTaskIds,
-      createdAt: NOW,
-      updatedAt: NOW,
-      version: 1,
-      isDeleted: false,
-    };
-    await db.pools.bulkAdd([poolA, poolB]);
-
-    const poolsById: Record<string, Pool> = { 'pool-a': poolA, 'pool-b': poolB };
-    const tasksById: Record<string, Task> = {};
-    for (const id of [...poolATaskIds, ...poolBTaskIds]) {
-      tasksById[id] = {
-        id,
-        userId: 'user-1',
-        title: `Task ${id}`,
-        type: TaskType.NORMAL,
-        isCompleted: false,
-        totalCompletions: 0,
-        totalInstances: 0,
-        createdAt: NOW,
-        updatedAt: NOW,
-        version: 1,
-        isDeleted: false,
-      };
-    }
-
-    // Fresh-create session: pull pool A in, then untoggle it again, then
-    // hand-pick tasks to fill the board.
-    let selectedTaskIds = new Set<string>();
-    let pulledPoolIds: string[] = [];
-    let manualTaskIds = new Set<string>();
-    let removedTaskIds = new Set<string>();
-
-    const pulled = applyPullPool(
-      'pool-a',
-      selectedTaskIds,
-      pulledPoolIds,
-      removedTaskIds,
-      poolsById,
-      tasksById,
-    );
-    selectedTaskIds = pulled.selectedTaskIds;
-    pulledPoolIds = pulled.pulledPoolIds;
-    expect(pulledPoolIds).toEqual(['pool-a']);
-    expect(selectedTaskIds.size).toBe(POOL_SIZE);
-
-    const untoggled = applyUntogglePool(
-      'pool-a',
-      selectedTaskIds,
-      pulledPoolIds,
-      manualTaskIds,
-      removedTaskIds,
-      poolsById,
-      tasksById,
-    );
-    selectedTaskIds = untoggled.selectedTaskIds;
-    pulledPoolIds = untoggled.pulledPoolIds;
-    removedTaskIds = untoggled.removedTaskIds;
-    expect(pulledPoolIds).toEqual([]);
-    expect(selectedTaskIds.size).toBe(0);
-
-    // Hand-pick a fresh set of tasks (real select-side bookkeeping).
-    const [handPicked] = await seedTasks(POOL_SIZE, 'hand');
-    const handPickedIds = await seedTasks(POOL_SIZE - 1, 'hand2');
-    const allHandPicked = [handPicked, ...handPickedIds];
-    for (const id of allHandPicked) {
-      selectedTaskIds = new Set(selectedTaskIds);
-      selectedTaskIds.add(id);
-      const bookkeeping = applyManualBookkeepingOnSelect(id, manualTaskIds, removedTaskIds);
-      manualTaskIds = bookkeeping.manualTaskIds;
-      removedTaskIds = bookkeeping.removedTaskIds;
-    }
-    expect(selectedTaskIds.size).toBe(POOL_SIZE);
-
+  it('the Preview step\'s direct call produces a RecurringBoardTemplate + an ACTIVE spawned board, never a draft Board', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
     const controller = makeController({
-      name: 'Fresh Recurring Board',
-      selectedTaskIds,
-      pulledPoolIds,
-      manualTaskIds,
-      removedTaskIds,
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
     });
 
     const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
 
-    // Exactly ONE new pool minted from the final flattened selection.
-    const pools = await db.pools.toArray();
-    const mintedPools = pools.filter((p) => p.id !== 'pool-a' && p.id !== 'pool-b');
-    expect(mintedPools).toHaveLength(1);
-    expect(new Set(mintedPools[0].taskIds)).toEqual(new Set(allHandPicked));
-    expect(mintedPools[0].name).toBe('Fresh Recurring Board pool');
+    const templates = await db.recurringBoardTemplates.toArray();
+    expect(templates).toHaveLength(1);
 
-    // Pool A (pulled then untoggled) and pool B (never touched) are both
-    // completely unaffected.
-    const storedPoolA = await db.pools.get('pool-a');
-    const storedPoolB = await db.pools.get('pool-b');
-    expect(storedPoolA?.taskIds).toEqual(poolATaskIds);
-    expect(storedPoolA?.version).toBe(1);
-    expect(storedPoolB?.taskIds).toEqual(poolBTaskIds);
-    expect(storedPoolB?.version).toBe(1);
+    const boards = await db.boards.toArray();
+    expect(boards).toHaveLength(1); // only the spawned board — no draft
+    expect(boards[0].id).toBe(result.spawnedBoardId);
+    expect(boards[0].status).not.toBe('draft');
+    expect(boards[0].spawnedFromTemplateId).toBe(templates[0].id);
+  });
 
-    // No native multi-pool shape leaks onto the template — legacy shape,
-    // one minted pool, exactly like the P1 create path.
-    const template = await db.recurringBoardTemplates.get(result.templateId);
-    expect(template?.poolIds).toEqual([mintedPools[0].id]);
-    expect(template?.manualTaskIds).toEqual([]);
-    expect(template?.removedTaskIds).toEqual([]);
+  it('the cancel dialog\'s equivalent call (explicit pendingTasks arg) produces the same outcome', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const controller = makeController({
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+    });
 
-    expect(result.spawnedBoardId).not.toBeNull();
+    // Mirrors `BoardWizardPage.handleDialogSaveDraft`'s exact call:
+    // `persistRecurringTemplate({ controller: wizard, userId, pendingTasks: wizard.pendingTasks })`.
+    const result = await persistRecurringTemplate({
+      controller,
+      userId: 'user-1',
+      pendingTasks: controller.pendingTasks,
+    });
+
+    const templates = await db.recurringBoardTemplates.toArray();
+    expect(templates).toHaveLength(1);
+
+    const boards = await db.boards.toArray();
+    expect(boards).toHaveLength(1);
+    expect(boards[0].id).toBe(result.spawnedBoardId);
+    expect(boards[0].status).not.toBe('draft');
+    expect(boards[0].spawnedFromTemplateId).toBe(templates[0].id);
   });
 });

@@ -305,6 +305,12 @@ enum SnapshotFixtures {
             // determinism (every render produces a different grid).
             controller.isRandomized = false
             controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
+            // Keep `poolOrder` in lockstep with `selectedTaskIds`, matching
+            // the invariant every real mutator (`toggleTaskSelection` etc.)
+            // maintains — sorted (not raw Set order) for the same
+            // determinism reason `buildWizardPlacement` sorts when
+            // `isRandomized == false`.
+            controller.poolOrder = Array(controller.selectedTaskIds).sorted()
         case .previewRecurring:
             controller.name = "Weekly Workout"
             controller.timeframe = .weekly
@@ -312,6 +318,11 @@ enum SnapshotFixtures {
             controller.isRandomized = false
             controller.isRecurring = true
             controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
+            // P4 — the Preview step's recurring "deck" branch renders via
+            // `RisoPoolListView`, which reads `poolOrder` (not raw
+            // `selectedTaskIds`) for row order; without this the deck
+            // rendered as an empty list despite a non-empty selection.
+            controller.poolOrder = Array(controller.selectedTaskIds).sorted()
         }
         return controller
     }

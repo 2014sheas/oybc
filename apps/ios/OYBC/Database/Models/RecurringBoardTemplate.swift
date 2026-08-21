@@ -33,11 +33,18 @@ import GRDB
 ///   (mirrors `lastSpawnedWindowKey`'s force-encode-null pattern, NOT
 ///   `seedTaskIds`'s always-`[]` pattern): `nil` means "genuinely
 ///   un-migrated" (the field is absent on the wire); `[]` is a real empty
-///   array. `PoolMix.isLegacyShapedRecord` distinguishes both from a
-///   richer post-P4 shape. `RecurringBoardTemplate` conforms to
-///   `PoolMixSource` (see `PoolMix.swift`) so it can be passed to
-///   `resolveMix` / `clearRemovalsForUntoggle` / `isLegacyShapedRecord`
-///   directly.
+///   array. `RecurringBoardTemplate` conforms to `PoolMixSource` (see
+///   `PoolMix.swift`) so it can be passed to `resolveMix` /
+///   `clearRemovalsForUntoggle` directly.
+///
+/// - **P4** made this the ONLY shape `persistRecurringTemplate`
+///   (`BoardWizardPersist.swift`) ever writes, for both fresh-create AND
+///   edit — the P1→P3 shape-scoped legacy write-through
+///   (`PoolMix.isLegacyShapedRecord`, which still exists as a pure helper
+///   for the retired call site's shape check and its own unit tests, but
+///   is no longer read by any production write path) is retired. A
+///   fresh-create no longer mints a Pool at all; an own-mix, zero-pool
+///   repeating board is first-class.
 struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     // Identity
     var id: String
