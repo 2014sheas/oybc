@@ -66,27 +66,16 @@ final class BoardWizardViewModel {
     /// purely so snapshot tests can pin deterministic placement.
     /// Retained on Board/RecurringBoardTemplate for schema stability.
     var isRandomized: Bool = true
-    /// Task Pools + Recurring Boards Rework (P4) — when true, the wizard
-    /// saves a recurring board (a "repeating" board — spawns a fresh
-    /// window each cadence) instead of a one-off Board. Set via the
-    /// Step-1 "Repeats" segmented control (`setRepeats(_:)`) — recurrence
-    /// is now a board PROPERTY chosen at setup, not a separate entry
-    /// point (the old "Create a recurring board" CTA / `startRecurring`
-    /// init flag retired in P4; see `setRepeats(_:)`). Hides Custom from
-    /// the timeframe selector (recurring schema rejects it) and CHOSEN
-    /// from the center-type selector.
-    var isRecurring: Bool = false
-    /// Task Pools + Recurring Boards Rework (P4) — the timeframe to
-    /// restore when the user flips "Repeats" back to Once
-    /// (`setRepeats(nil)`). Captured by `setRepeats(_:)` the moment the
-    /// user leaves Once for a cadence; seeded at `init` to the coerced
-    /// one-off default (mirroring the fresh-wizard timeframe-resolution
-    /// branch below) so a wizard that starts in recurring mode
-    /// (`editingTemplate` hydration) and is immediately flipped back to
-    /// Once without ever having been in Once first still lands on a
-    /// sane, non-CUSTOM timeframe rather than crashing or carrying over
-    /// the template's own cadence.
-    private var lastOneOffTimeframe: Timeframe
+    /// Board Creation Split (iOS PR A) — whether this wizard instance is
+    /// the recurring (BLUE) flow or the one-off (RED) flow. **Fixed at
+    /// init, for the lifetime of this VM** — there is no mid-wizard
+    /// "Repeats" control anymore (the old Step-1 segmented + `setRepeats(_:)`
+    /// toggle machinery retired). The two Create-hub CTAs launch separate
+    /// wizard instances with mode already decided; editing an existing
+    /// recurring board always starts recurring (`editingTemplate` hydration).
+    /// Hides Custom from the timeframe selector (recurring schema rejects
+    /// it) and CHOSEN from the center-type selector.
+    let isRecurring: Bool
     let weekStartDay: String
 
     // MARK: - Step 2 fields
@@ -204,6 +193,13 @@ final class BoardWizardViewModel {
         prefilledRecurringTimeframe: Timeframe? = nil,
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
+        /// Board Creation Split (iOS PR A) — the recurring-hub-card entry
+        /// point: a fresh wizard with no draft/template/prefill starts in
+        /// recurring mode when true. Ignored (mode is derived from the
+        /// hydration source instead) whenever `draft`, `editingTemplate`,
+        /// or `prefilledRecurringTimeframe` is supplied. Defaults to
+        /// `false` so every existing one-off call site is unaffected.
+        startRecurring: Bool = false,
         userId: String? = nil,
         database: AppDatabase = .shared
     ) {
@@ -213,20 +209,13 @@ final class BoardWizardViewModel {
         self.currentStep = initialStep
         self.draftBoardId = draft?.board.id
         self.targetWindowDate = targetWindowDate
-        // Seeded here (before the timeframe-resolution branches below,
-        // which don't depend on it) to the same CUSTOM/INDEFINITE
-        // coercion the fresh-wizard branch applies to its own default —
-        // see the stored-property doc for why this matters for a wizard
-        // that starts in recurring mode.
-        let resolvedOneOffDefault = Self.resolveTimeframe(preferences.defaultTimeframe)
-        self.lastOneOffTimeframe = (resolvedOneOffDefault == .custom || resolvedOneOffDefault == .indefinite)
-            ? .indefinite
-            : resolvedOneOffDefault
 
-        // Hydration priority: draft > editingTemplate > prefilledRecurringTimeframe.
-        // Mirrors web's `useBoardWizard` rule. Drafts hydrate the full
-        // record; templates supply their own seed; banner-prefill is the
-        // weakest signal. CUSTOM prefill is rejected (defensive).
+        // Hydration priority: draft > editingTemplate > prefilledRecurringTimeframe
+        // > startRecurring. Mirrors web's `useBoardWizard` rule. Drafts hydrate
+        // the full record; templates supply their own seed; banner-prefill is
+        // the next-weakest signal; a bare `startRecurring` flag (recurring
+        // hub-card tap) is the weakest — it only matters for a truly fresh
+        // wizard. CUSTOM prefill is rejected (defensive).
         let effectiveTemplate: RecurringBoardTemplate? = (draft == nil) ? editingTemplate : nil
         let effectivePrefill: Timeframe? =
             (draft == nil
@@ -236,17 +225,18 @@ final class BoardWizardViewModel {
                 ? prefilledRecurringTimeframe
                 : nil
 
-        // Task Pools + Recurring Boards Rework (P4) — recurring mode is now
-        // a Step-1 board PROPERTY chosen via the "Repeats" segmented
-        // control (`setRepeats(_:)`), not a separate wizard entry point.
-        // The only way a wizard *starts* in recurring mode is editing an
-        // existing recurring board's template. A `prefilledRecurringTimeframe`
-        // (banner / core-board browser) creates a one-off *core* board for
-        // that window — NOT a repeating board — so it does not flip
-        // isRecurring (#70). Captured into a local first so the
-        // timeframe-coercion below can read it before `init` finishes
-        // (Swift forbids `self.` reads until every stored property is set).
+        // Board Creation Split (iOS PR A) — mode is now decided ONCE at
+        // init and never changes for the lifetime of this VM (no more
+        // Step-1 "Repeats" segmented / `setRepeats(_:)` toggle). A wizard
+        // *starts* recurring when editing an existing template, OR when
+        // launched fresh from the recurring hub card (`startRecurring`).
+        // A `prefilledRecurringTimeframe` (banner / core-board browser)
+        // creates a one-off *core* board for that window — NOT a
+        // repeating board — so it does not flip isRecurring (#70) and
+        // takes priority over `startRecurring` (mutually exclusive in
+        // practice: callers never pass both).
         let isRecurringAtEntry = effectiveTemplate != nil
+            || (draft == nil && effectiveTemplate == nil && effectivePrefill == nil && startRecurring)
         self.isRecurring = isRecurringAtEntry
         self.editingTemplateId = effectiveTemplate?.id
 
@@ -374,16 +364,21 @@ final class BoardWizardViewModel {
                 // non-prefill `else` branch, where the selection is empty
                 // anyway (a true no-op there).
                 self.manualTaskIds = []
+            } else if isRecurringAtEntry {
+                // Board Creation Split (iOS PR A) — a fresh wizard launched
+                // from the recurring hub card seeds a default cadence
+                // rather than resolving the one-off `defaultTimeframe`
+                // preference (Custom/Indefinite aren't valid cadences
+                // anyway). The Setup step's "REPEATS EVERY" segmented lets
+                // the user change it to Day/Month/Year before Next.
+                self.timeframe = .weekly
+                self.manualTaskIds = self.selectedTaskIds
             } else {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
                 // The "Custom" segment defaults to an ongoing board (End date =
                 // None); a dated range is opt-in via the End-date control. So a
                 // CUSTOM (or already-INDEFINITE) default resolves to .indefinite
-                // for a fresh board. (P4: a fresh wizard is never recurring at
-                // entry — `isRecurringAtEntry` is always false in this branch,
-                // since the `effectiveTemplate` branch above is the only path
-                // that starts recurring — so there's no more "fall back to
-                // daily" case to consider here.)
+                // for a fresh board.
                 if resolved == .custom || resolved == .indefinite {
                     self.timeframe = .indefinite
                 } else {
@@ -666,40 +661,15 @@ final class BoardWizardViewModel {
 
     /// Recurring templates exclude `.custom` and `.indefinite` (no computed
     /// window / no cadence). Mirrors the web `setTimeframe` defensive guard.
+    ///
+    /// Board Creation Split (iOS PR A) — this is now ALSO the recurring
+    /// flow's "REPEATS EVERY" cadence setter (Day/Week/Month/Year). Mode
+    /// itself (`isRecurring`) is fixed at init and can never be changed
+    /// through this or any other mutator — the retired `setRepeats(_:)`
+    /// was the only path that flipped it, and it's gone.
     func updateTimeframe(_ t: Timeframe) {
         if isRecurring && (t == .custom || t == .indefinite) { return }
         timeframe = t
-    }
-
-    /// Task Pools + Recurring Boards Rework (P4) — Step-1 "Repeats"
-    /// segmented control: `nil` = "Once" (a one-off board), a `Timeframe`
-    /// = the repeat cadence (also the board's window unit — a repeating
-    /// board's cadence IS its timeframe, so this sets both `isRecurring`
-    /// and `timeframe` together).
-    ///
-    /// - Leaving Once for a cadence captures the current `timeframe` as
-    ///   `lastOneOffTimeframe` (coercing CUSTOM → INDEFINITE, since a
-    ///   repeating board can't use either) so a later `setRepeats(nil)`
-    ///   restores it. The capture only fires when NOT already recurring —
-    ///   switching cadence-to-cadence (Daily → Weekly) must not clobber
-    ///   the remembered one-off value with the cadence itself.
-    /// - CHOSEN center is incompatible with recurring boards (the
-    ///   center-type selector suppresses it in recurring mode) — picking a
-    ///   cadence while CHOSEN is active coerces to FREE and clears the mark,
-    ///   mirroring `updateCenterType`'s own CHOSEN-clear behavior.
-    /// - Returning to Once restores `lastOneOffTimeframe` verbatim.
-    var repeatsValue: Timeframe? { isRecurring ? timeframe : nil }
-
-    func setRepeats(_ cadence: Timeframe?) {
-        if let cadence {
-            if !isRecurring { lastOneOffTimeframe = (timeframe == .custom) ? .indefinite : timeframe }
-            isRecurring = true
-            timeframe = cadence
-            if centerType == .chosen { centerType = .free; centerTaskId = nil }
-        } else {
-            isRecurring = false
-            timeframe = lastOneOffTimeframe
-        }
     }
 
     /// Toggles a task's selection; clears the center mark if the user
@@ -915,10 +885,18 @@ final class BoardWizardViewModel {
         name = ""
         let nextSize = initialPreferences.defaultBoardSize.rawValue
         size = nextSize
-        // Mirror init's CUSTOM→INDEFINITE default so a reset wizard opens
-        // ongoing (End date = None), not on .custom with empty dates.
-        let resolvedReset = Self.resolveTimeframe(initialPreferences.defaultTimeframe)
-        timeframe = resolvedReset == .custom ? .indefinite : resolvedReset
+        // Board Creation Split (iOS PR A) — `isRecurring` is fixed for this
+        // VM's lifetime, so reset() must respect the current mode rather
+        // than resolving the one-off `defaultTimeframe` preference
+        // unconditionally. Mirrors init's own per-mode default.
+        if isRecurring {
+            timeframe = .weekly
+        } else {
+            // Mirror init's CUSTOM→INDEFINITE default so a reset wizard opens
+            // ongoing (End date = None), not on .custom with empty dates.
+            let resolvedReset = Self.resolveTimeframe(initialPreferences.defaultTimeframe)
+            timeframe = resolvedReset == .custom ? .indefinite : resolvedReset
+        }
         customStartDate = ""
         customEndDate = ""
         // Same coercion the initial factory uses, so reset can never
@@ -927,7 +905,6 @@ final class BoardWizardViewModel {
             size: nextSize,
             desired: Self.resolveCenterType(initialPreferences.defaultCenterType)
         )
-        isRecurring = false
         selectedTaskIds = []
         poolOrder = []
         stagedEdits = [:]

@@ -246,11 +246,15 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             )
         }
 
-        let vm = BoardWizardViewModel(preferences: .defaults, userId: userId, database: AppDatabase.shared)
+        // Board Creation Split (iOS PR A) — recurring mode is now fixed at
+        // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
+        // toggle is gone. Cadence is still adjustable post-init via
+        // `updateTimeframe(_:)` (used below where a test wants Daily).
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
         vm.name = "Test Recurring"
         vm.size = 2
         vm.centerType = .none
-        vm.setRepeats(.daily)
+        vm.updateTimeframe(.daily)
 
         let poolsById = [poolA.id: poolA, poolB.id: poolB]
         let tasksById = Dictionary(
@@ -347,7 +351,11 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             )
         }
 
-        let vm = BoardWizardViewModel(preferences: .defaults, userId: userId, database: AppDatabase.shared)
+        // Board Creation Split (iOS PR A) — recurring mode is now fixed at
+        // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
+        // toggle is gone. Cadence is still adjustable post-init via
+        // `updateTimeframe(_:)` (used below where a test wants Daily).
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
         vm.name = "Daily Habits"
         vm.size = 3
         vm.centerType = .free // fillable floor = 3*3 - 1 = 8
@@ -367,7 +375,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         vm.addPendingTask(PendingTaskPayload(task: pendingTask, childTasks: [], childLinks: []))
         XCTAssertEqual(vm.selectedTaskIds.count, 8)
 
-        vm.setRepeats(.daily)
+        vm.updateTimeframe(.daily)
         XCTAssertTrue(vm.isRecurring)
 
         // Sanity: the pending task does NOT exist in GRDB yet.
@@ -423,12 +431,16 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             )
         }
 
-        let vm = BoardWizardViewModel(preferences: .defaults, userId: userId, database: AppDatabase.shared)
+        // Board Creation Split (iOS PR A) — recurring mode is now fixed at
+        // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
+        // toggle is gone. Cadence is still adjustable post-init via
+        // `updateTimeframe(_:)` (used below where a test wants Daily).
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
         vm.name = "Weekly Reset"
         vm.size = 2
         vm.centerType = .none
         for id in taskIds { vm.toggleTaskSelection(id) }
-        vm.setRepeats(.weekly)
+        vm.updateTimeframe(.weekly)
 
         let outcome = try runPersist(controller: vm, userId: userId)
         guard case .createdAndSpawned(let templateId, let boardId) = outcome else {
@@ -616,7 +628,11 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             )
         }
 
-        let vm = BoardWizardViewModel(preferences: .defaults, userId: userId, database: AppDatabase.shared)
+        // Board Creation Split (iOS PR A) — recurring mode is now fixed at
+        // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
+        // toggle is gone. Cadence is still adjustable post-init via
+        // `updateTimeframe(_:)` (used below where a test wants Daily).
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
         vm.name = "Daily Chores"
         vm.size = 2
         vm.centerType = .none // fillable floor = 2*2 = 4, matches taskIds.count
@@ -635,7 +651,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         countingPatch.goal = "25"
         vm.stageEdit(countingPatch, for: "counting-1")
 
-        vm.setRepeats(.daily)
+        vm.updateTimeframe(.daily)
         XCTAssertTrue(vm.isRecurring)
 
         let outcome = try runPersist(controller: vm, userId: userId)
@@ -687,7 +703,11 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             )
         }
 
-        let vm = BoardWizardViewModel(preferences: .defaults, userId: userId, database: AppDatabase.shared)
+        // Board Creation Split (iOS PR A) — recurring mode is now fixed at
+        // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
+        // toggle is gone. Cadence is still adjustable post-init via
+        // `updateTimeframe(_:)` (used below where a test wants Daily).
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
         vm.name = "Weekly Habits"
         vm.size = 2
         vm.centerType = .none
@@ -708,7 +728,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         patch.title = "Edited before create"
         vm.stageEdit(patch, for: pendingId)
 
-        vm.setRepeats(.weekly)
+        vm.updateTimeframe(.weekly)
 
         let outcome = try runPersist(controller: vm, userId: userId)
         switch outcome {

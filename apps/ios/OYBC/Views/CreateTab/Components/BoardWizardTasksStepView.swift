@@ -701,7 +701,9 @@ struct BoardWizardTasksStepView: View {
             RisoButton(title: "Back", kind: .neutral, fullWidth: true) {
                 onBack()
             }
-            RisoButton(title: "Next ›", kind: .primary, fullWidth: true) {
+            // Board Creation Split (iOS PR A) — accent tracks the wizard's
+            // fixed mode: red one-off / blue recurring.
+            RisoButton(title: "Next ›", kind: isRecurring ? .blue : .primary, fullWidth: true) {
                 onNext()
             }
             // Real disabled state (not just .allowsHitTesting) so VoiceOver

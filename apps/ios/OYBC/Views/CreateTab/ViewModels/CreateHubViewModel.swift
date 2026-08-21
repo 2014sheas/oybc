@@ -22,7 +22,11 @@ final class CreateHubViewModel {
 
     enum HubMode: Equatable {
         case hub
-        case wizardFresh
+        /// Board Creation Split (iOS PR A) — `startRecurring` distinguishes
+        /// which hub CTA launched this wizard: `false` for the RED one-off
+        /// card, `true` for the BLUE recurring card. Threaded straight
+        /// through to `BoardWizardViewModel.init(startRecurring:)`.
+        case wizardFresh(startRecurring: Bool)
         case wizardResume(boardId: String)
         /// Wizard launched for a specific timeframe *window* — a one-off
         /// **core** board (Boards-tab banner / core-board browser /
@@ -62,9 +66,12 @@ final class CreateHubViewModel {
         reloadDrafts(userId: userId)
     }
 
-    func enterFreshWizard() {
+    /// Board Creation Split (iOS PR A) — `startRecurring` fixes which
+    /// wizard mode the hub launches: `false` for the one-off (RED) CTA,
+    /// `true` for the recurring (BLUE) CTA.
+    func enterFreshWizard(startRecurring: Bool = false) {
         resumeDraft = nil
-        mode = .wizardFresh
+        mode = .wizardFresh(startRecurring: startRecurring)
     }
 
     /// Enter the wizard for a one-off core board scoped to a timeframe
@@ -117,7 +124,7 @@ final class CreateHubViewModel {
             } catch {
                 DispatchQueue.main.async {
                     self.resumeDraft = nil
-                    self.mode = .wizardFresh
+                    self.mode = .wizardFresh(startRecurring: false)
                     dlog("⚠️ Failed to load draft \(board.id): \(error.localizedDescription)")
                 }
             }
@@ -137,7 +144,7 @@ final class CreateHubViewModel {
                     self.loadDraftAndEnterWizard(board: board)
                 } else {
                     self.resumeDraft = nil
-                    self.mode = .wizardFresh
+                    self.mode = .wizardFresh(startRecurring: false)
                     dlog("⚠️ Failed to load draft board \(boardId) for resume")
                 }
             }

@@ -12,18 +12,28 @@ import SwiftUI
 /// (`updateSize`, `updateTimeframe`, `updateCenterType`), keeping all
 /// validation / VM state consistent.
 ///
-/// Sections (per README §3 Step 1 + prototype `wizard.jsx`):
+/// Board Creation Split (iOS PR A) — this form now renders ONE of two fixed
+/// shapes per `controller.isRecurring` (mode is locked at wizard init;
+/// there's no more mid-form "Repeats" control that morphs the rest of the
+/// fields):
+///   - **One-off**: name → TIMEFRAME segmented (Daily/Weekly/Monthly/Yearly/
+///     Custom) + date note/custom pickers → board size → center (Free/
+///     Choose/None).
+///   - **Recurring**: name → REPEATS EVERY segmented (Day/Week/Month/Year,
+///     no Custom/ongoing) + dashed cadence note → board size → center
+///     (Free/None — Choose is never offered).
+///
+/// Sections (per README §3 Step 1 + Handoff Spec's mode-difference table):
 ///   1. Board name — keyline input, red `*` required marker.
-///   2. Timeframe — `RisoSegmented` (Daily/Weekly/Monthly/Yearly; adds Custom unless
-///      recurring) + dashed-keyline date note.
-///   3. Board size — three size cards with dot-matrix previews; selected = gold
-///      fill + hard shadow, dots turn red.
+///   2. Schedule — one-off's Timeframe segmented + date note, OR recurring's
+///      Repeats-every segmented + cadence note. Mutually exclusive.
+///   3. Board size — `RisoBoardSizeCards` (3×3/4×4/5×5 dot-matrix cards).
 ///   4. Center square — `RisoSegmented` (Free Space / I'll choose / None); visible
 ///      only on odd boards. CHOSEN is suppressed in recurring mode.
-///   5. Custom date pickers (when timeframe == .custom), in Riso cards.
+///   5. Custom date pickers (one-off, when timeframe == .custom), in Riso cards.
 ///
-/// Core boards skip sections 1–2 (name/timeframe) and show a locked-name chip
-/// instead.
+/// Core boards skip sections 1–2 (name/schedule) and show a locked-name chip
+/// instead. Core boards are always one-off (never recurring).
 struct RisoBoardSetupForm: View {
 
     @Bindable var controller: BoardWizardViewModel
@@ -46,8 +56,11 @@ struct RisoBoardSetupForm: View {
     private var standardLayout: some View {
         VStack(alignment: .leading, spacing: 20) {
             nameSection
-            repeatsSection
-            timeframeSection
+            if controller.isRecurring {
+                recurringScheduleSection
+            } else {
+                timeframeSection
+            }
             sizeSection
             if controller.isOddBoard {
                 centerSection
@@ -98,125 +111,64 @@ struct RisoBoardSetupForm: View {
         }
     }
 
-    // MARK: - Section: Repeats (Task Pools + Recurring Boards Rework, P4)
+    // MARK: - Section: Timeframe (one-off only)
 
-    /// "Repeats" segmented — the entry point for recurring mode now that
-    /// the separate "Create a recurring board" CTA has retired (P4). `nil`
-    /// = Once (a one-off board using the Timeframe picker below); a
-    /// `Timeframe` = the repeat cadence, which becomes the board's own
-    /// timeframe (a repeating board's cadence IS its window — see
-    /// `timeframeSection`, which hides its segmented picker once a cadence
-    /// is chosen here). docs/POOLS_RECURRING.md §Surfaces item 4.
-    @ViewBuilder
-    private var repeatsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("REPEATS")
-                .risoSectionLabel()
-
-            RisoSegmented(
-                options: repeatsOptions,
-                selection: Binding(
-                    get: { controller.repeatsValue },
-                    set: { controller.setRepeats($0) }
-                )
-            )
-
-            Text(repeatsNoteText)
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoMuted)
-        }
-    }
-
-    private var repeatsOptions: [(value: Timeframe?, label: String)] {
-        [
-            (nil, "Once"),
-            (.daily, "Daily"),
-            (.weekly, "Weekly"),
-            (.monthly, "Monthly"),
-            (.yearly, "Yearly"),
-        ]
-    }
-
-    /// Byte-identical to the web copy (parity-critical, same spec) — see
-    /// docs/POOLS_RECURRING.md §Surfaces item 4.
-    private var repeatsNoteText: String {
-        guard let cadence = controller.repeatsValue else {
-            return "A one-off board for the timeframe you pick below."
-        }
-        return "\(formatRecurringCadence(timeframe: cadence)), drawn from a task pool."
-    }
-
-    // MARK: - Section: Timeframe
-
+    /// One-off Setup's schedule field. Board Creation Split (iOS PR A) —
+    /// this view is only ever mounted when `controller.isRecurring == false`
+    /// (the caller branches in `standardLayout`), so the old repeatsValue
+    /// gate + Custom-suppression are gone: Custom is always offered here.
     @ViewBuilder
     private var timeframeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if controller.repeatsValue == nil {
-                Text("TIMEFRAME")
-                    .risoSectionLabel()
+            Text("TIMEFRAME")
+                .risoSectionLabel()
 
-                // Segmented options — Custom is always available here since
-                // this branch only renders when Once (repeatsValue == nil),
-                // i.e. never in recurring mode. The "Custom" segment covers
-                // both a dated range AND an ongoing (indefinite) board; the
-                // End-date control inside the custom section is where the
-                // user chooses "None" (ongoing) vs a date — so indefinite is
-                // never a separate segment cluttering the row.
-                RisoSegmented(
-                    options: timeframeOptions,
-                    selection: Binding(
-                        get: { controller.timeframe == .indefinite ? .custom : controller.timeframe },
-                        set: { newValue in
-                            // "Custom" defaults to an ongoing board (End date =
-                            // None); a date is opt-in. Only set it when arriving
-                            // from a calendar timeframe — re-tapping Custom keeps the
-                            // user's current End-date choice (date or None) intact.
-                            if newValue == .custom {
-                                if controller.timeframe != .custom && controller.timeframe != .indefinite {
-                                    controller.updateTimeframe(.indefinite)
-                                }
-                            } else {
-                                controller.updateTimeframe(newValue)
+            // The "Custom" segment covers both a dated range AND an ongoing
+            // (indefinite) board; the End-date control inside the custom
+            // section is where the user chooses "None" (ongoing) vs a date —
+            // so indefinite is never a separate segment cluttering the row.
+            RisoSegmented(
+                options: timeframeOptions,
+                selection: Binding(
+                    get: { controller.timeframe == .indefinite ? .custom : controller.timeframe },
+                    set: { newValue in
+                        // "Custom" defaults to an ongoing board (End date =
+                        // None); a date is opt-in. Only set it when arriving
+                        // from a calendar timeframe — re-tapping Custom keeps the
+                        // user's current End-date choice (date or None) intact.
+                        if newValue == .custom {
+                            if controller.timeframe != .custom && controller.timeframe != .indefinite {
+                                controller.updateTimeframe(.indefinite)
                             }
+                        } else {
+                            controller.updateTimeframe(newValue)
                         }
-                    )
+                    }
                 )
+            )
 
-                // Date region: custom pickers (covers dated + ongoing via the
-                // End-date "None" option), or the computed-window note.
-                switch controller.timeframe {
-                case .custom, .indefinite:
-                    customDateSection
-                default:
-                    timeframeDateNote
-                }
-            } else {
-                // A repeating board's cadence IS its window (docs/
-                // POOLS_RECURRING.md §Surfaces item 4: "Timeframe segmented
-                // only when Once") — no picker, just the computed-window
-                // note, which already reads `isRecurring`/`timeframe` (both
-                // consistent now via `setRepeats`) to prefix the cadence.
+            // Date region: custom pickers (covers dated + ongoing via the
+            // End-date "None" option), or the computed-window note.
+            switch controller.timeframe {
+            case .custom, .indefinite:
+                customDateSection
+            default:
                 timeframeDateNote
             }
         }
     }
 
     private var timeframeOptions: [(value: Timeframe, label: String)] {
-        var opts: [(value: Timeframe, label: String)] = [
+        [
             (.daily,   "Daily"),
             (.weekly,  "Weekly"),
             (.monthly, "Monthly"),
             (.yearly,  "Yearly"),
+            (.custom,  "Custom"),
         ]
-        // Custom (which also hosts the ongoing/no-end-date option) is excluded
-        // from recurring boards — recurrence needs a computed window cadence.
-        if !controller.isRecurring {
-            opts.append((.custom, "Custom"))
-        }
-        return opts
     }
 
-    /// Dashed-keyline note card: "This week · Jun 8 – 14" (mirrors `.r-note`).
+    /// Dashed-keyline note card: "Week of Aug 17 – 23, 2026" (mirrors `.r-note`).
     @ViewBuilder
     private var timeframeDateNote: some View {
         if let label = controller.timeframeDisplayLabel {
@@ -224,10 +176,7 @@ struct RisoBoardSetupForm: View {
                 Image(systemName: "calendar")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.risoMuted)
-                // For recurring boards, prefix with cadence ("Every week · …").
-                Text(controller.isRecurring
-                     ? "\(formatRecurringCadence(timeframe: controller.timeframe)) · starting \(label)"
-                     : label)
+                Text(label)
                     .font(.risoBody(12, .semibold))
                     .foregroundStyle(Color.risoMuted)
                     .lineLimit(2)
@@ -240,6 +189,80 @@ struct RisoBoardSetupForm: View {
                     .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
                     .foregroundStyle(Color.risoInk)
             )
+        }
+    }
+
+    // MARK: - Section: Repeats every (recurring only)
+
+    /// Recurring Setup's schedule field — Board Creation Split (iOS PR A).
+    /// Replaces the retired mid-form "Repeats" segmented: a recurring
+    /// wizard's cadence is set here directly via `updateTimeframe(_:)` (the
+    /// wizard's mode itself, `isRecurring`, is fixed at init and can't be
+    /// changed from this or any control). No Custom, no ongoing option —
+    /// recurrence needs a computed window cadence.
+    @ViewBuilder
+    private var recurringScheduleSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("REPEATS EVERY")
+                .risoSectionLabel()
+
+            RisoSegmented(
+                options: repeatsCadenceOptions,
+                selection: Binding(
+                    get: { controller.timeframe },
+                    set: { controller.updateTimeframe($0) }
+                )
+            )
+
+            recurringScheduleNote
+        }
+    }
+
+    private var repeatsCadenceOptions: [(value: Timeframe, label: String)] {
+        [
+            (.daily,   "Day"),
+            (.weekly,  "Week"),
+            (.monthly, "Month"),
+            (.yearly,  "Year"),
+        ]
+    }
+
+    /// Canonical copy (README §Copy strings): "A fresh board every {day|
+    /// week|month|year} · starts {window}".
+    @ViewBuilder
+    private var recurringScheduleNote: some View {
+        if let label = controller.timeframeDisplayLabel {
+            HStack(spacing: 8) {
+                Image(systemName: "repeat")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                Text("A fresh board every \(recurringCadenceNoun) · starts \(label)")
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
+                    .foregroundStyle(Color.risoInk)
+            )
+        }
+    }
+
+    /// Lowercase singular cadence noun for the recurring note's "every
+    /// {noun}" slot. `.custom`/`.indefinite` are unreachable while
+    /// `isRecurring` (guarded by `updateTimeframe`) — `"week"` is a
+    /// defensive fallback, never actually shown.
+    private var recurringCadenceNoun: String {
+        switch controller.timeframe {
+        case .daily:   return "day"
+        case .weekly:  return "week"
+        case .monthly: return "month"
+        case .yearly:  return "year"
+        case .custom, .indefinite: return "week"
         }
     }
 
@@ -348,12 +371,11 @@ struct RisoBoardSetupForm: View {
             Text("BOARD SIZE")
                 .risoSectionLabel()
 
-            HStack(spacing: 8) {
-                ForEach([3, 4, 5], id: \.self) { n in
-                    SizeCard(n: n, isSelected: controller.size == n) {
-                        controller.updateSize(n)
-                    }
-                }
+            // Board Creation Split (iOS PR A) — extracted to the reusable
+            // `RisoBoardSizeCards` component (`Views/Components/`) so it's
+            // shared, not re-implemented per surface.
+            RisoBoardSizeCards(selectedSize: controller.size) { n in
+                controller.updateSize(n)
             }
 
             Text(tasksRequiredCaption)
@@ -363,18 +385,21 @@ struct RisoBoardSetupForm: View {
     }
 
     /// Live requirement line, recomputed from `size` + `centerType` via the
-    /// shared `tasksNeededForBoard` helper (never hardcoded). Recurring
-    /// boards get "at least" copy since an overfilled pool is valid and
-    /// intended (spawns draw a random subset each window); one-off boards
-    /// need exactly this many, so plain copy. Renders under the size
-    /// selector in both the standard and core-board layouts (both call
-    /// `sizeSection`) — this is what pre-empts the Tasks-step's dead-Next
-    /// problem, so `RisoTasksPoolHeaderView` is left untouched (issue #321).
+    /// shared `tasksNeededForBoard` helper (never hardcoded). Renders under
+    /// the size selector in both the standard and core-board layouts (both
+    /// call `sizeSection`) — this is what pre-empts the Tasks-step's
+    /// dead-Next problem, so `RisoTasksPoolHeaderView` is left untouched
+    /// (issue #321).
+    ///
+    /// Board Creation Split (iOS PR A) — copy diverges per mode (README
+    /// §Copy strings): one-off states the exact requirement against the
+    /// board's own geometry; recurring drops the "A n×n board" framing
+    /// entirely since overfill is the intended variety mechanism there.
     private var tasksRequiredCaption: String {
         let n = controller.size
         let count = controller.tasksRequired
         return controller.isRecurring
-            ? "A \(n)×\(n) board needs at least \(count) tasks."
+            ? "Needs at least \(count) tasks — extras rotate in."
             : "A \(n)×\(n) board needs \(count) tasks."
     }
 
@@ -452,57 +477,5 @@ private struct RisoNameInput: View {
             )
             .focused($isFocused)
             .autocorrectionDisabled()
-    }
-}
-
-// MARK: - SizeCard
-
-/// Dot-matrix size card: 3×3 / 4×4 / 5×5.
-///
-/// CSS equivalent: `.r-sizecard` + `.r-sizecard.on { background: gold; box-shadow: 3px 3px 0 ink }`.
-/// Dots are 7×7 pt squares with 2pt gaps; selected = gold background, dots turn red.
-private struct SizeCard: View {
-    let n: Int
-    let isSelected: Bool
-    let action: () -> Void
-
-    private let dotSize: CGFloat = 7
-    private let dotGap: CGFloat = 2
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                dotMatrix
-                Text("\(n)×\(n)")
-                    .font(.risoHead(14, .extraBold))
-                    // Selected card is gold — non-inverting ink for dark mode.
-                    .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoInk)
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity)
-            .risoCard(fill: isSelected ? .risoGold : .risoPaper2)
-        }
-        .buttonStyle(isSelected ? RisoButtonStyle(offset: Riso.Shadow.button) : RisoButtonStyle(offset: 0))
-    }
-
-    /// n×n grid of tiny squares (dot-matrix preview).
-    @ViewBuilder
-    private var dotMatrix: some View {
-        VStack(spacing: dotGap) {
-            ForEach(0..<n, id: \.self) { _ in
-                HStack(spacing: dotGap) {
-                    ForEach(0..<n, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(isSelected ? Color.risoRed : Color.risoPaper)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 1)
-                                    .strokeBorder(Color.risoInk, lineWidth: 1)
-                            )
-                            .frame(width: dotSize, height: dotSize)
-                    }
-                }
-            }
-        }
     }
 }

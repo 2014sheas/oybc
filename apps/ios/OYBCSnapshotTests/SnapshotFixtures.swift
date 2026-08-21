@@ -262,7 +262,7 @@ enum SnapshotFixtures {
     /// Preview with a full selection. Add narrower stages when a test
     /// needs to capture a partially-filled state (e.g. tasks step
     /// halfway selected).
-    enum WizardStage {
+    enum WizardStage: Equatable {
         case setupBlank
         case setupValid
         case setupRecurring
@@ -289,12 +289,17 @@ enum SnapshotFixtures {
 
     static func makeWizardController(stage: WizardStage = .setupBlank) -> BoardWizardViewModel {
         let prefs = makeUserPreferences()
+        // Board Creation Split (iOS PR A) — `isRecurring` is now fixed at
+        // init, so the recurring stages must pass `startRecurring: true`
+        // here rather than assigning `controller.isRecurring` afterward.
+        let startRecurring = (stage == .setupRecurring || stage == .previewRecurring)
         // Pass a fixed targetWindowDate so computedBoundaries (and the Riso
         // date note in RisoBoardSetupForm) resolves to a deterministic calendar
         // window instead of Date() — prevents month-rollover snapshot flakiness.
         let controller = BoardWizardViewModel(
             preferences: prefs,
-            targetWindowDate: fixedReferenceDate
+            targetWindowDate: fixedReferenceDate,
+            startRecurring: startRecurring
         )
         switch stage {
         case .setupBlank:
@@ -303,15 +308,13 @@ enum SnapshotFixtures {
             controller.name = "April Reading Sprint"
             controller.timeframe = .monthly
         case .setupRecurring:
-            // Recurring-template entry (the "Create a recurring board"
-            // CTA — #71). Verifies the cadence card renders + Custom is
-            // hidden from the timeframe selector. Weekly chosen so the
-            // cadence label and the "Starting: Week of …" caption both
-            // differ from a daily/monthly variant. (Timeframe is already
-            // non-custom, so no entry-time coercion is needed.)
+            // Recurring hub-card entry (Board Creation Split — mode fixed
+            // at init via `startRecurring`, set above). Verifies the
+            // "REPEATS EVERY" card renders + Custom/ongoing are absent.
+            // Weekly chosen so the cadence label and the "starts …" caption
+            // both differ from a daily/monthly variant.
             controller.name = "Weekly Workout"
-            controller.timeframe = .weekly
-            controller.isRecurring = true
+            controller.updateTimeframe(.weekly)
         case .setupIndefinite:
             // Ongoing board — the "Custom" segment is selected and the End-date
             // control reads "None". Pin a fixed customStartDate so the Start
@@ -336,10 +339,9 @@ enum SnapshotFixtures {
             controller.poolOrder = Array(controller.selectedTaskIds).sorted()
         case .previewRecurring:
             controller.name = "Weekly Workout"
-            controller.timeframe = .weekly
+            controller.updateTimeframe(.weekly)
             controller.currentStep = 3
             controller.isRandomized = false
-            controller.isRecurring = true
             controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
             // P4 — the Preview step's recurring "deck" branch renders via
             // `RisoPoolListView`, which reads `poolOrder` (not raw
