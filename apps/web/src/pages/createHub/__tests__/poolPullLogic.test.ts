@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { CenterSquareType, Timeframe, TaskType, type Pool, type Task } from '@oybc/shared';
 import {
+  applyCoreBoardDefaultPrefill,
   applyManualBookkeepingOnDeselect,
   applyManualBookkeepingOnSelect,
   applyPullPool,
   applyUntogglePool,
+  classifyChipProvenance,
+  computeCoreFloorGate,
   deriveTaskProvenance,
+  isCorePoolDefaultSaved,
   resolveRepeatsChange,
 } from '../poolPullLogic';
 
@@ -373,5 +377,111 @@ describe('resolveRepeatsChange', () => {
     });
     expect(result.centerType).toBe(CenterSquareType.FREE);
     expect(result.centerTaskId).toBeNull();
+  });
+});
+
+/**
+ * P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+ * §Surfaces item 6 "Core-board setup") — the CoreBoardDefault prefill,
+ * the "Start every <Timeframe> board with 'X'" checkbox's derived checked
+ * state, the fillable-floor gate math, and the chip-strip provenance
+ * classification. Reuses this file's shared `x`/`y`/`z`/`w` /
+ * `poolA`{x,y}/`poolB`{y,z} / `tasksById` / `poolsById` fixtures.
+ */
+describe('applyCoreBoardDefaultPrefill', () => {
+  it('unions a single pool\'s resolvable supply and records it as pulled', () => {
+    const result = applyCoreBoardDefaultPrefill(['A'], [], poolsById, tasksById);
+    expect(result.selectedTaskIds).toEqual(new Set(['x', 'y']));
+    expect(result.pulledPoolIds).toEqual(['A']);
+  });
+
+  it('folds multiple pools (union, not last-write-wins) — proves the fold, not a loop over the stateful callback', () => {
+    const result = applyCoreBoardDefaultPrefill(['A', 'B'], [], poolsById, tasksById);
+    expect(result.selectedTaskIds).toEqual(new Set(['x', 'y', 'z']));
+    expect(result.pulledPoolIds).toEqual(['A', 'B']);
+  });
+
+  it('unions coreDefaultTaskIds on top of the pool supply, skipping deleted/missing ids', () => {
+    const result = applyCoreBoardDefaultPrefill(
+      ['A'],
+      ['w', 'ghost', 'z'],
+      poolsById,
+      { ...tasksById, z: { ...tasksById.z, isDeleted: true } },
+    );
+    // w resolves and is added; ghost doesn't exist; z is soft-deleted.
+    expect(result.selectedTaskIds).toEqual(new Set(['x', 'y', 'w']));
+    expect(result.pulledPoolIds).toEqual(['A']);
+  });
+
+  it('is a pure resolution — never mentions or implies manualTaskIds (caller decides that)', () => {
+    const result = applyCoreBoardDefaultPrefill(['A'], ['w'], poolsById, tasksById);
+    expect(result).not.toHaveProperty('manualTaskIds');
+    expect(Object.keys(result).sort()).toEqual(['pulledPoolIds', 'selectedTaskIds']);
+  });
+
+  it('with no corePoolIds and no coreDefaultTaskIds, resolves to an empty prefill', () => {
+    const result = applyCoreBoardDefaultPrefill([], [], poolsById, tasksById);
+    expect(result.selectedTaskIds).toEqual(new Set());
+    expect(result.pulledPoolIds).toEqual([]);
+  });
+});
+
+describe('isCorePoolDefaultSaved', () => {
+  it('is true when both sets are non-empty and match regardless of order', () => {
+    expect(isCorePoolDefaultSaved(['A', 'B'], ['B', 'A'])).toBe(true);
+  });
+
+  it('is false when the sets differ', () => {
+    expect(isCorePoolDefaultSaved(['A', 'B'], ['A'])).toBe(false);
+    expect(isCorePoolDefaultSaved(['A'], ['A', 'B'])).toBe(false);
+    expect(isCorePoolDefaultSaved(['A'], ['B'])).toBe(false);
+  });
+
+  it('is false when either side is empty', () => {
+    expect(isCorePoolDefaultSaved([], [])).toBe(false);
+    expect(isCorePoolDefaultSaved(['A'], [])).toBe(false);
+    expect(isCorePoolDefaultSaved([], ['A'])).toBe(false);
+  });
+});
+
+describe('computeCoreFloorGate', () => {
+  it('is satisfied with a zero remaining + empty message when selection meets the floor', () => {
+    expect(computeCoreFloorGate(8, 8)).toEqual({
+      remaining: 0,
+      isSatisfied: true,
+      message: '',
+    });
+    expect(computeCoreFloorGate(10, 8)).toEqual({
+      remaining: 0,
+      isSatisfied: true,
+      message: '',
+    });
+  });
+
+  it('reports the exact "Add N more" copy when short, for a 3x3+FREE floor (8)', () => {
+    expect(computeCoreFloorGate(5, 8)).toEqual({
+      remaining: 3,
+      isSatisfied: false,
+      message: 'Add 3 more',
+    });
+  });
+
+  it('is symmetric for a DIFFERENT geometry (4x4 = 16), proving the floor is never hardcoded to 8', () => {
+    expect(computeCoreFloorGate(10, 16)).toEqual({
+      remaining: 6,
+      isSatisfied: false,
+      message: 'Add 6 more',
+    });
+  });
+});
+
+describe('classifyChipProvenance', () => {
+  it('classifies a manually-added id as "manual"', () => {
+    expect(classifyChipProvenance('x', new Set(['x']))).toBe('manual');
+  });
+
+  it('classifies a pool-/default-sourced id (not in manualTaskIds) as "plain"', () => {
+    expect(classifyChipProvenance('y', new Set(['x']))).toBe('plain');
+    expect(classifyChipProvenance('y', new Set())).toBe('plain');
   });
 });

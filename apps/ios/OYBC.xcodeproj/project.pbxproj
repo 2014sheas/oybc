@@ -26,6 +26,7 @@
 		0AD00F177166675ACEFA4FC2 /* TimeframeFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2241CE9069C5B296837472 /* TimeframeFormatting.swift */; };
 		0BF5FB181157FCDC92BBD5A2 /* OperatorType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DD08A5EA4BACEBCD439A100 /* OperatorType.swift */; };
 		0C3287E955D033EC2088196D /* CoreBoardWindowBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBCE1CC0703B0CD66CE04FEB /* CoreBoardWindowBarView.swift */; };
+		0DCE919F53FDA36DD5C2B803 /* BoardWizardCoreDefaultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B857CC5C625C059C4119590 /* BoardWizardCoreDefaultsTests.swift */; };
 		0F8ED5ADB7E9B9BA9AE766B1 /* RecurringBoardSpawnViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6506B5C60898D47EEB97D97 /* RecurringBoardSpawnViewModel.swift */; };
 		0FB106FCC11F08745403CECC /* RisoSpecialTaskPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0F18426DD52B7065967115 /* RisoSpecialTaskPanel.swift */; };
 		0FCB7645EEEAA576354C3E03 /* TaskEventVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4AC2C553E9B80B11A03CA5 /* TaskEventVectorTests.swift */; };
@@ -156,6 +157,7 @@
 		6E39B08C3C71DBFFB6B8FBF0 /* CompoundEvaluationVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7020B4B001365079503C3A01 /* CompoundEvaluationVectorTests.swift */; };
 		6F438204BAE34451A7DECFCD /* CycleDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F714DD146988F2C085D5EA4 /* CycleDetection.swift */; };
 		6F9E232E9D134D4CB2848397 /* PlacementIntegrity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB3DAF7983A135572932FD6 /* PlacementIntegrity.swift */; };
+		7102BA86D9DA632AE8E466BC /* RisoCoreDefaultChipStripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23F0BED637A1F78E8F63B8E8 /* RisoCoreDefaultChipStripView.swift */; };
 		710F2C0C93FFC3DD44C19739 /* SyncSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB232C1863B435E292BEC505 /* SyncSheet.swift */; };
 		72B17BF3817EE6738B076EA1 /* CenterSquareTypeDecodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4685A959F0EDDAB5623837 /* CenterSquareTypeDecodeTests.swift */; };
 		72D3E079C97AD509EE1BC5F3 /* BoardWizardPoolOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD55457A8953DCE642000CC /* BoardWizardPoolOrderTests.swift */; };
@@ -342,6 +344,7 @@
 		F4A3AEFE3A410C4AA8908058 /* SharedCounter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B8730D4C0C7548BA5E1E7B /* SharedCounter.swift */; };
 		F4F351F9F1B7DC69FFB4DC42 /* TaskDeleteConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */; };
 		F5233E88174E2B4BF78352A7 /* calendarBoundariesVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 328C91BAACD32F042B13A2E8 /* calendarBoundariesVectors.json */; };
+		F5CCE41E45203E561F6F2C2A /* RisoCoreDefaultsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB3F14B57C1700B82BFD3D9 /* RisoCoreDefaultsSnapshotTests.swift */; };
 		F5E2465F70AE719F0B3757D6 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57E4812F35B465F49A15FFAB /* NetworkMonitor.swift */; };
 		F88AA4099C8847C184B66D45 /* BoardWizardStepsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0197805BBDEC8D2A8EE5BD /* BoardWizardStepsSnapshotTests.swift */; };
 		F97E65E0B821D661AFB7E6F1 /* SealingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F2BFA06807748E4689A8588 /* SealingTests.swift */; };
@@ -355,6 +358,7 @@
 		FC7BEDF1FCF984B6F6B22C6C /* PoolEditSheetViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4FA130367B849EC15361A13 /* PoolEditSheetViewTests.swift */; };
 		FCC1F1AEF3467B42B1E6EC46 /* SyncPullApplyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1481315E8E8BB325D17E95 /* SyncPullApplyTests.swift */; };
 		FD4404E6405E900A1F30EADB /* RisoCompoundRulePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4DB41AE5FFAAF4FD8CCAC0 /* RisoCompoundRulePicker.swift */; };
+		FDAEE01EEC9B3ACB1DD4C53E /* RisoCoreFloorGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55202B60B43C35803169F299 /* RisoCoreFloorGateView.swift */; };
 		FE3D646B3ED285B6ACE31CF5 /* SharedCounterGroups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96202B364CADC03FDF1FB01C /* SharedCounterGroups.swift */; };
 		FEBBF9F723CD918B8BBFFD6B /* SharedCounterVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33855A737F08EE864CDAC321 /* SharedCounterVectorTests.swift */; };
 		FFAEE25C642894969332F1C1 /* AppDatabaseSharedCounterDecrementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 305E4375AB55928634B9E76B /* AppDatabaseSharedCounterDecrementTests.swift */; };
@@ -424,6 +428,7 @@
 		19D42631B7EC4BD7190B29A0 /* PoolRowEditorSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoolRowEditorSnapshotTests.swift; sourceTree = "<group>"; };
 		1B37DB9688050E788877CC59 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		1B9B2902751B15B77ADB6E9C /* BoardEditPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardEditPanel.swift; sourceTree = "<group>"; };
+		1BB3F14B57C1700B82BFD3D9 /* RisoCoreDefaultsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreDefaultsSnapshotTests.swift; sourceTree = "<group>"; };
 		1BD8EF863BD47553C5200D65 /* TombstoneSealImmunityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TombstoneSealImmunityTests.swift; sourceTree = "<group>"; };
 		1BE4A2078E0FB711D2CC4E47 /* CompoundEvaluationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompoundEvaluationTests.swift; sourceTree = "<group>"; };
 		1C357533A685D897575D4D12 /* RecurringBoardsUXPassTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoardsUXPassTests.swift; sourceTree = "<group>"; };
@@ -435,6 +440,7 @@
 		203AE5267A55ED4243F65F16 /* StreaksVectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreaksVectorTests.swift; sourceTree = "<group>"; };
 		2105A8784F87D62C29C28B7A /* CounterArrivals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterArrivals.swift; sourceTree = "<group>"; };
 		2232B1C969BD2F72C24A4848 /* SharedCounterLedgerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedCounterLedgerCard.swift; sourceTree = "<group>"; };
+		23F0BED637A1F78E8F63B8E8 /* RisoCoreDefaultChipStripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreDefaultChipStripView.swift; sourceTree = "<group>"; };
 		2657746FBB2A2ACDE23FA7F7 /* TaskTitleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskTitleTests.swift; sourceTree = "<group>"; };
 		26EE4B8EDF11E06925B9A37B /* RisoControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoControls.swift; sourceTree = "<group>"; };
 		2822E1DBF15699974C2F70C5 /* OYBCTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OYBCTests.swift; sourceTree = "<group>"; };
@@ -493,6 +499,7 @@
 		4A828189482984A4CE4B9489 /* StreaksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreaksTests.swift; sourceTree = "<group>"; };
 		4ADD7157FF545AFEC6EF9588 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B55F24D17BE0A2E4D024288 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
+		4B857CC5C625C059C4119590 /* BoardWizardCoreDefaultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardCoreDefaultsTests.swift; sourceTree = "<group>"; };
 		4C1481315E8E8BB325D17E95 /* SyncPullApplyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPullApplyTests.swift; sourceTree = "<group>"; };
 		4C85054E57A078D4AAEC7EB6 /* OYBC.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OYBC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4CAD224E189EE22D76BAC695 /* BoardWizardCenterSquareTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardCenterSquareTests.swift; sourceTree = "<group>"; };
@@ -511,6 +518,7 @@
 		5292953ADD53EE7BC3EE7557 /* BoardWizardPoolMixActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardPoolMixActionsTests.swift; sourceTree = "<group>"; };
 		542F39EF93A3299BD85C4A24 /* CreateHubViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateHubViewModel.swift; sourceTree = "<group>"; };
 		54A189702B24A78A09947236 /* RisoRecurringBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoRecurringBadge.swift; sourceTree = "<group>"; };
+		55202B60B43C35803169F299 /* RisoCoreFloorGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreFloorGateView.swift; sourceTree = "<group>"; };
 		55F195718ED7274B0E34F1BD /* RisoTaskDetailContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTaskDetailContentView.swift; sourceTree = "<group>"; };
 		56F7E900ABE30003B057CD43 /* RearrangeGridSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RearrangeGridSnapshotTests.swift; sourceTree = "<group>"; };
 		571C2202A6D9F03A23BDDC96 /* RisoTasksPoolHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTasksPoolHeaderView.swift; sourceTree = "<group>"; };
@@ -730,7 +738,7 @@
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_43149FB9-0357-4B45-829E-56A9F60BAF9F" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_D7596D0C-E9D8-4A07-AD67-1BBE8C0E5D0C" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -989,6 +997,7 @@
 				99D5417C875AF6561E4BB27D /* BoardPlayViewModelTests.swift */,
 				A61537DE8CEC60B696A0C297 /* BoardPreviewCellsTests.swift */,
 				4CAD224E189EE22D76BAC695 /* BoardWizardCenterSquareTests.swift */,
+				4B857CC5C625C059C4119590 /* BoardWizardCoreDefaultsTests.swift */,
 				5FB3A9467894E9F8866E9AC5 /* BoardWizardPersistRecurringTemplateTests.swift */,
 				5292953ADD53EE7BC3EE7557 /* BoardWizardPoolMixActionsTests.swift */,
 				5DD55457A8953DCE642000CC /* BoardWizardPoolOrderTests.swift */,
@@ -1079,6 +1088,8 @@
 				A485098013BB2A456DE1A55D /* RisoBoardWizardStepperView.swift */,
 				E0805FB6A426E25DAF0CEB91 /* RisoCompoundFieldsView.swift */,
 				AA4DB41AE5FFAAF4FD8CCAC0 /* RisoCompoundRulePicker.swift */,
+				23F0BED637A1F78E8F63B8E8 /* RisoCoreDefaultChipStripView.swift */,
+				55202B60B43C35803169F299 /* RisoCoreFloorGateView.swift */,
 				08D27AC8377DDCF2159B8E29 /* RisoCounterLinkHintView.swift */,
 				8AD0FA8AF9A534BEF98B1789 /* RisoLibrarySheetView.swift */,
 				327D582928CDFEDCD3AAD7FA /* RisoPoolListView.swift */,
@@ -1172,6 +1183,7 @@
 				9B3105D4EA5550DB813921E7 /* RisoCompoundPanelSnapshotTests.swift */,
 				E4EDAA6C4C2CCF6C15150F5D /* RisoCoreBoardsSectionSnapshotTests.swift */,
 				2F691584B652D508557FDC99 /* RisoCoreChromeSnapshotTests.swift */,
+				1BB3F14B57C1700B82BFD3D9 /* RisoCoreDefaultsSnapshotTests.swift */,
 				78B0F87453558614267A6C84 /* RisoCreateHubSnapshotTests.swift */,
 				7FB541D58B80F15DA344FAF1 /* RisoDeleteConfirmSnapshotTests.swift */,
 				8D16DCDA3A1D3F5B68FAA0FE /* RisoEditBoardSnapshotTests.swift */,
@@ -1322,10 +1334,10 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
-		"TEMP_34795C86-75A4-433A-B0B6-64E99C519BB4" /* ios */ = {
+		"TEMP_D88B1D4A-9C83-46ED-A77A-8D698595CA49" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_43149FB9-0357-4B45-829E-56A9F60BAF9F" /* Signing.xcconfig */,
+				"TEMP_D7596D0C-E9D8-4A07-AD67-1BBE8C0E5D0C" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1648,6 +1660,8 @@
 				62CCBE5BCF0CEF587899E4E1 /* RisoCompoundGroupRowView.swift in Sources */,
 				FD4404E6405E900A1F30EADB /* RisoCompoundRulePicker.swift in Sources */,
 				BA698D3FB2C75B3656760BBF /* RisoControls.swift in Sources */,
+				7102BA86D9DA632AE8E466BC /* RisoCoreDefaultChipStripView.swift in Sources */,
+				FDAEE01EEC9B3ACB1DD4C53E /* RisoCoreFloorGateView.swift in Sources */,
 				46B7D1A0330F151622B3D549 /* RisoCoreTimeframeGrid.swift in Sources */,
 				01DC61B31BA33B12D2AF771D /* RisoCounterLinkHintView.swift in Sources */,
 				353E7CF0B61095BA933EF13E /* RisoCountingStepperSheet.swift in Sources */,
@@ -1731,6 +1745,7 @@
 				8724A7D36DC01998DE1F9D6E /* BoardPlayViewModelTests.swift in Sources */,
 				764D778A7280F1C5D8FBF087 /* BoardPreviewCellsTests.swift in Sources */,
 				C99809A4B18FECEC77797593 /* BoardWizardCenterSquareTests.swift in Sources */,
+				0DCE919F53FDA36DD5C2B803 /* BoardWizardCoreDefaultsTests.swift in Sources */,
 				268FD46302FF7C7767C4F76D /* BoardWizardPersistRecurringTemplateTests.swift in Sources */,
 				A9A6CA6C6C38AC74D282CBD1 /* BoardWizardPoolMixActionsTests.swift in Sources */,
 				72D3E079C97AD509EE1BC5F3 /* BoardWizardPoolOrderTests.swift in Sources */,
@@ -1823,6 +1838,7 @@
 				568C2AC5CE7F2B9D13B9340B /* RisoCompoundPanelSnapshotTests.swift in Sources */,
 				813875852351F232A8522CDA /* RisoCoreBoardsSectionSnapshotTests.swift in Sources */,
 				27EE4E80E3D08C1B96ED240C /* RisoCoreChromeSnapshotTests.swift in Sources */,
+				F5CCE41E45203E561F6F2C2A /* RisoCoreDefaultsSnapshotTests.swift in Sources */,
 				9BCEA4D84FF2DE1E2C2F0167 /* RisoCreateHubSnapshotTests.swift in Sources */,
 				68FFEF909E60EBDE6F6E9968 /* RisoDeleteConfirmSnapshotTests.swift in Sources */,
 				B5CFE92406295B8455D8E804 /* RisoEditBoardSnapshotTests.swift in Sources */,
@@ -1870,7 +1886,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_43149FB9-0357-4B45-829E-56A9F60BAF9F" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_D7596D0C-E9D8-4A07-AD67-1BBE8C0E5D0C" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -1967,7 +1983,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_43149FB9-0357-4B45-829E-56A9F60BAF9F" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_D7596D0C-E9D8-4A07-AD67-1BBE8C0E5D0C" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

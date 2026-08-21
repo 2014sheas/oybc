@@ -283,6 +283,8 @@ export function BoardWizardPage({
             onPullPool={wizard.pullPool}
             onUntogglePool={wizard.untogglePool}
             taskProvenance={wizard.taskProvenance}
+            manualTaskIds={wizard.manualTaskIds}
+            isCore={wizard.isCore}
             onBack={wizard.goBack}
             onNext={wizard.goNext}
           />

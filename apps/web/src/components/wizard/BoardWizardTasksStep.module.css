@@ -95,6 +95,92 @@
   color: var(--riso-muted);
 }
 
+/* ── Core-board-setup section (P5) — chip strip + "Start every…" checkbox ── */
+.coreDefaultsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.coreChipStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+/* Plain chip — pool-/coreDefaultTaskIds-sourced, no dismiss action. */
+.coreChipPlain {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--riso-font-body);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 5px 11px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+/* Manual chip — hand-added this session; blue-tinted, removable. Dark
+   contract: blue fill carries static on-color content + static ink
+   border (never the adaptive --riso-ink, which would go invisible/low
+   contrast against a colored fill in dark mode). */
+.coreChipManual {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--riso-font-body);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 5px 7px 5px 11px;
+  border: 1.5px solid var(--riso-ink-static);
+  border-radius: 999px;
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+.coreChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--riso-on-color);
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1;
+}
+.coreChipRemove:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+.coreDefaultRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--riso-font-body);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--riso-ink);
+  cursor: pointer;
+}
+.coreDefaultCheckbox {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--riso-blue);
+  cursor: pointer;
+}
+
+/* isCore-only red floor-gate copy ("Add N more") — same red as
+   `.countShort`, distinct class so the non-core `.footerMessage` styling
+   (muted color) is never touched. */
+.footerMessageCore {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--riso-red);
+  margin-right: auto;
+}
+
 .search {
   width: 100%;
   padding: 11px 14px;

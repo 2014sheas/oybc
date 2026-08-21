@@ -138,6 +138,23 @@ struct BoardWizardTasksStepView: View {
     /// the container can refresh `pools` for the pull card.
     var onPoolsReloadRequested: () -> Void = {}
 
+    // MARK: - Core-board setup (Task Pools + Recurring Boards Rework, P5)
+
+    /// `BoardWizardViewModel.isCore` — gates the whole core-setup section
+    /// below (provenance chip strip, red floor-gate, "Start every <TF>
+    /// board with 'X'" checkbox). `false` for every other wizard shape.
+    var isCore: Bool = false
+    /// Hand-added task ids (`BoardWizardViewModel.manualTaskIds`) — drives
+    /// the chip strip's plain-vs-blue+✕ split.
+    var manualTaskIds: Set<String> = []
+    /// The `CoreBoardDefault`'s currently-saved `corePoolIds`
+    /// (`BoardWizardViewModel.savedCorePoolIds`) — compared against
+    /// `pulledPoolIds` to derive the checkbox's checked state.
+    var savedCorePoolIds: [String] = []
+    /// Fired when the user taps the "Start every <TF> board with 'X'"
+    /// checkbox. Routes to `BoardWizardViewModel.setCorePoolDefaultSaved`.
+    var onSetCorePoolDefaultSaved: (_ saved: Bool) -> Void = { _ in }
+
     // MARK: - Internal state
 
     /// Drives the task-detail sheet opened from a library row's "Open in library".
@@ -223,6 +240,62 @@ struct BoardWizardTasksStepView: View {
     }
     private var canAdvance: Bool { isCountSatisfied && isCenterSatisfied }
 
+    // MARK: - Core-board setup (Task Pools + Recurring Boards Rework, P5)
+
+    /// Whether the core-setup card has anything to show. Avoids rendering
+    /// an empty keylined card in the (practically impossible) case where
+    /// the pool is both satisfied and empty with nothing pulled.
+    private var showCoreSetupSection: Bool {
+        isCore && (!poolOrder.isEmpty || !isCountSatisfied || !pulledPoolIds.isEmpty)
+    }
+
+    /// "Start every <TF> board with 'X'" checkbox label — singular pool
+    /// name when exactly one is pulled, generic plural otherwise. Owner
+    /// judgment call on exact wording (docs/POOLS_RECURRING.md §Surfaces
+    /// item 6 names the pattern but not the multi-pool phrasing verbatim).
+    private var startEveryPoolsLabel: String {
+        let tfLabel = timeframeNounLabel(currentTimeframe)
+        if pulledPoolIds.count == 1,
+           let poolId = pulledPoolIds.first,
+           let pool = pools.first(where: { $0.id == poolId }) {
+            return "Start every \(tfLabel) board with \"\(pool.name)\""
+        }
+        return "Start every \(tfLabel) board with these pools"
+    }
+
+    private var isCorePoolDefaultChecked: Bool {
+        BoardWizardViewModel.isCorePoolDefaultSaved(
+            pulledPoolIds: pulledPoolIds, savedCorePoolIds: savedCorePoolIds
+        )
+    }
+
+    @ViewBuilder
+    private var coreSetupSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !poolOrder.isEmpty {
+                RisoCoreDefaultChipStripView(
+                    orderedTaskIds: poolOrder,
+                    manualTaskIds: manualTaskIds,
+                    taskById: effectiveTaskById,
+                    onRemove: { taskId in onToggleSelection(taskId) }
+                )
+            }
+            if !isCountSatisfied {
+                RisoCoreFloorGateView(remaining: tasksRequired - selectedCount)
+            }
+            if !pulledPoolIds.isEmpty {
+                RisoCheckboxRow(
+                    label: startEveryPoolsLabel,
+                    isOn: isCorePoolDefaultChecked,
+                    action: { onSetCorePoolDefaultSaved(!isCorePoolDefaultChecked) }
+                )
+            }
+        }
+        .padding(12)
+        .risoCard(fill: .risoPaper2)
+        .risoHardShadow(Riso.Shadow.small)
+    }
+
     /// taskId → count of distinct boards it's placed on (library usage hint).
     private var taskBoardCounts: [String: Int] {
         var buckets: [String: Set<String>] = [:]
@@ -301,6 +374,7 @@ struct BoardWizardTasksStepView: View {
                 RisoPoolPullCardView(
                     pools: pools,
                     pulledPoolIds: pulledPoolIds,
+                    title: isCore ? "Start with a pool — optional" : "Pull in a pool",
                     onToggle: { poolId in
                         if pulledPoolIds.contains(poolId) {
                             onUntogglePool(poolId)
@@ -309,6 +383,14 @@ struct BoardWizardTasksStepView: View {
                         }
                     }
                 )
+
+                // 2b. Core-board setup only (Task Pools + Recurring Boards
+                // Rework, P5, docs/POOLS_RECURRING.md §Surfaces item 6):
+                // provenance chip strip + red fillable-floor gate + "Start
+                // every <TF> board with 'X'" checkbox.
+                if showCoreSetupSection {
+                    coreSetupSection
+                }
 
                 // 3. ADD TASKS section
                 VStack(alignment: .leading, spacing: 10) {

@@ -20,13 +20,18 @@ struct RisoPoolPullCardView: View {
     /// Pools currently pulled into the selection
     /// (`BoardWizardViewModel.pulledPoolIds`) — drives each chip's on/off state.
     let pulledPoolIds: [String]
+    /// Section header. Defaults to the standard wizard-step-2 copy;
+    /// core-board setup (Task Pools + Recurring Boards Rework, P5,
+    /// docs/POOLS_RECURRING.md §Surfaces item 6) overrides this to
+    /// "Start with a pool — optional" — same card, different context copy.
+    var title: String = "Pull in a pool"
     /// Fired when the user taps a pool's chip (either direction — the
     /// caller decides pull vs. untoggle based on current membership).
     let onToggle: (_ poolId: String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pull in a pool")
+            Text(title)
                 .risoSectionLabel()
 
             if pools.isEmpty {

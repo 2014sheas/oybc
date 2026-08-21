@@ -281,6 +281,129 @@ export function resolveRepeatsChange(input: RepeatsChangeInput): RepeatsChangeRe
   };
 }
 
+export interface CoreBoardDefaultPrefillResult {
+  selectedTaskIds: Set<string>;
+  pulledPoolIds: string[];
+}
+
+/**
+ * P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+ * §Surfaces item 6 "Core-board setup") — resolves a `CoreBoardDefault`'s
+ * `corePoolIds` + `coreDefaultTaskIds` into the wizard's initial
+ * `selectedTaskIds` / `pulledPoolIds` for a fresh core-board-setup session.
+ *
+ * Folds `applyPullPool` across `corePoolIds` in local variables — this
+ * does NOT call the wizard's `pullPool` callback in a loop, which would
+ * read stale closure state on every iteration within the same render tick
+ * and only end up applying the LAST pool. `coreDefaultTaskIds` are unioned
+ * in afterward, in their own order, filtered to ids that resolve to a
+ * non-deleted `Task` in `tasksById` (mirrors the `Pool.taskIds`
+ * resolvable-at-read convention — a stale/missing default is silently
+ * skipped, never an error).
+ *
+ * Callers must NOT feed this result's `selectedTaskIds` into
+ * `manualTaskIds` — every id here is pool- or default-sourced, never
+ * hand-added. `manualTaskIds` starts (and stays) empty for this prefill
+ * path; that's the whole point of P5 replacing the legacy DefaultPool
+ * prefill, which incorrectly treated the entire prefill as manual.
+ */
+export function applyCoreBoardDefaultPrefill(
+  corePoolIds: string[],
+  coreDefaultTaskIds: string[],
+  poolsById: Record<string, Pool>,
+  tasksById: Record<string, Task>,
+): CoreBoardDefaultPrefillResult {
+  let selectedTaskIds = new Set<string>();
+  let pulledPoolIds: string[] = [];
+  for (const poolId of corePoolIds) {
+    const result = applyPullPool(
+      poolId,
+      selectedTaskIds,
+      pulledPoolIds,
+      new Set(),
+      poolsById,
+      tasksById,
+    );
+    selectedTaskIds = result.selectedTaskIds;
+    pulledPoolIds = result.pulledPoolIds;
+  }
+  for (const taskId of coreDefaultTaskIds) {
+    const task = tasksById[taskId];
+    if (task === undefined || task.isDeleted) continue;
+    selectedTaskIds.add(taskId);
+  }
+  return { selectedTaskIds, pulledPoolIds };
+}
+
+/**
+ * P5 — derives the "Start every &lt;Timeframe&gt; board with 'X'"
+ * checkbox's checked state. True iff `pulledPoolIds` and
+ * `savedCorePoolIds` are BOTH non-empty and represent the SAME set
+ * (order-insensitive). This is a point-in-time snapshot comparison, not a
+ * live binding — the checkbox's `checked` prop should recompute this on
+ * every render from the wizard's live `pulledPoolIds` plus the fetched
+ * `CoreBoardDefault.corePoolIds` (defaulting to `[]` when no default
+ * exists yet); nothing here is independently tracked as UI state.
+ */
+export function isCorePoolDefaultSaved(
+  pulledPoolIds: string[],
+  savedCorePoolIds: string[],
+): boolean {
+  if (pulledPoolIds.length === 0 || savedCorePoolIds.length === 0) return false;
+  if (pulledPoolIds.length !== savedCorePoolIds.length) return false;
+  const a = new Set(pulledPoolIds);
+  const b = new Set(savedCorePoolIds);
+  if (a.size !== b.size) return false;
+  for (const id of a) {
+    if (!b.has(id)) return false;
+  }
+  return true;
+}
+
+export interface CoreFloorGate {
+  /** How many more tasks are needed to reach the floor. 0 when satisfied. */
+  remaining: number;
+  isSatisfied: boolean;
+  /** "Add N more" — empty string when satisfied (nothing to render). */
+  message: string;
+}
+
+/**
+ * P5 — the core-board-setup fillable-floor gate math, shared between the
+ * Tasks step's red count and the Preview step's Activate-button gate.
+ * `required` must always be `fillableCellCount(size, centerType)` (never a
+ * hardcoded constant) — callers are responsible for passing the live
+ * value; this function only owns the remaining/satisfied/message
+ * arithmetic. Copy is deliberately "Add N more" (isCore-specific),
+ * distinct from the non-core wizard's "Pick N more".
+ */
+export function computeCoreFloorGate(selectedCount: number, required: number): CoreFloorGate {
+  const remaining = Math.max(0, required - selectedCount);
+  return {
+    remaining,
+    isSatisfied: remaining === 0,
+    message: remaining > 0 ? `Add ${remaining} more` : '',
+  };
+}
+
+export type ChipProvenanceKind = 'plain' | 'manual';
+
+/**
+ * P5 — classifies a single selected task id for the core-board-setup chip
+ * strip: `'manual'` (hand-added this session — blue-tinted, removable ✕)
+ * when the id is in `manualTaskIds`, otherwise `'plain'` (pool- or
+ * `coreDefaultTaskIds`-sourced — no dismiss action). Pure passthrough over
+ * `manualTaskIds.has(taskId)`, extracted as its own function purely so the
+ * classification rule has one direct, testable name instead of being
+ * inlined at every chip-rendering call site.
+ */
+export function classifyChipProvenance(
+  taskId: string,
+  manualTaskIds: Set<string>,
+): ChipProvenanceKind {
+  return manualTaskIds.has(taskId) ? 'manual' : 'plain';
+}
+
 /**
  * Provenance label for every currently-selected task — the Tasks-step row
  * subtitle ("from Morning Kickstart" / "added by hand"). Manual wins;

@@ -172,6 +172,20 @@
   font-size: 0.85rem;
 }
 
+/* ---- Core-board-setup floor-gate warning (P5) — distinct from
+   .errorMessage (red border, not ink) so it reads as a validation
+   notice rather than a save failure. ---- */
+.coreFloorWarning {
+  background: var(--riso-paper);
+  color: var(--riso-red);
+  border: 2px solid var(--riso-red);
+  border-radius: var(--riso-r-card);
+  padding: 10px 14px;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
 /* ---- Footer: Back / Save Draft / Activate ---- */
 .footer {
   display: flex;

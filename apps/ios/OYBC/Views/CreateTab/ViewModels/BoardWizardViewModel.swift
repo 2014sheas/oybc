@@ -145,6 +145,16 @@ final class BoardWizardViewModel {
     /// semantics (docs/POOLS_RECURRING.md §Data model "Union rule").
     var removedTaskIds: Set<String> = []
 
+    /// Task Pools + Recurring Boards Rework (P5) — the `CoreBoardDefault`'s
+    /// currently-saved `corePoolIds` (as of the last fetch/write), for the
+    /// core-setup "Start every <TF> board with 'X'" checkbox's derived
+    /// checked-state (`isCorePoolDefaultSaved`). Distinct from
+    /// `pulledPoolIds` (the wizard's live in-session pull state) — the two
+    /// coincide (checkbox shows checked) only right after a prefill/save
+    /// with no later pool-toggle edits. Only meaningful when `isCore` is
+    /// true; stays `[]` for every other wizard shape.
+    var savedCorePoolIds: [String] = []
+
     // MARK: - Wizard navigation
 
     var currentStep: WizardStep = 1
@@ -270,6 +280,23 @@ final class BoardWizardViewModel {
                 // A custom board always has an endDate; default defensively.
                 self.customEndDate = String((d.board.endDate ?? "").prefix(10))
             }
+            // Task Pools + Recurring Boards Rework (P5) — a resumed CORE
+            // draft's `pulledPoolIds` is empty by the P3 limitation noted
+            // above, so the checkbox naturally starts unchecked (correct:
+            // nothing is "pulled" yet this session). But `savedCorePoolIds`
+            // still needs to be populated here so that if the user re-pulls
+            // the SAME pool that's already the saved default mid-session,
+            // the checkbox correctly reflects "already saved" rather than
+            // staying stuck unchecked. Judgment call: not explicitly in the
+            // handoff's core-setup section (which is framed around the
+            // fresh-wizard path), but required for basic checkbox
+            // correctness on a resumed core board — no P6/P7 surface pulled
+            // forward. Silent on DB error, matching the fresh-wizard prefill.
+            if d.board.isCore, let userId = userId {
+                self.savedCorePoolIds = (try? database.fetchCoreBoardDefault(
+                    userId: userId, timeframe: d.board.timeframe
+                ))?.corePoolIds ?? []
+            }
         } else if let t = effectiveTemplate {
             self.name = t.name
             self.size = t.boardSize
@@ -288,6 +315,15 @@ final class BoardWizardViewModel {
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
+            // Moved ahead of the timeframe if/else below (both prefill
+            // branches now read `self.selectedTaskIds`, which Swift forbids
+            // until every stored property — including `centerType` — has a
+            // value; `centerType` doesn't depend on anything the branches
+            // below compute, so hoisting it here is behavior-preserving.
+            self.centerType = Self.coerceCenterType(
+                size: initialSize,
+                desired: Self.resolveCenterType(preferences.defaultCenterType)
+            )
             // When prefilled from the recurring banner, the timeframe
             // overrides the user's default. Name is also seeded with the
             // human-readable label (e.g. "Today", "May 2026") — user can
@@ -304,17 +340,40 @@ final class BoardWizardViewModel {
                         startDate: window.start
                     )
                 }
-                // Phase 6.X — Default Pool prefill: when banner-launched
-                // and a DefaultPool exists for `(userId, timeframe)`,
-                // hydrate `selectedTaskIds` from the pool's taskIds.
-                // Silent on DB error — the wizard still opens with an
-                // empty selection so the user can build a board manually.
-                if let userId = userId,
-                   let pool = try? database.fetchDefaultPool(userId: userId, timeframe: timeframe),
-                   !pool.taskIds.isEmpty {
-                    self.selectedTaskIds = Set(pool.taskIds)
-                    self.poolOrder = Self.dedupePreservingOrder(pool.taskIds)
+                // Task Pools + Recurring Boards Rework (P5) — Core-board
+                // setup prefill: hydrate from the user's `CoreBoardDefault`
+                // for this timeframe (replaces the retired `DefaultPool`
+                // prefill this superseded). BOTH `corePoolIds` (resolved
+                // pool supply) and `coreDefaultTaskIds` (individual
+                // defaults, P7-authored) pre-fill the selection as plain
+                // chips — they never auto-own the board (see
+                // docs/POOLS_RECURRING.md §Data model "CoreBoardDefault").
+                // Silent on any DB error / no-row — the wizard still opens
+                // with an empty selection so the user can build a board
+                // manually.
+                if let userId = userId {
+                    let coreDefault = try? database.fetchCoreBoardDefault(userId: userId, timeframe: timeframe)
+                    let corePoolIds = coreDefault?.corePoolIds ?? []
+                    let coreDefaultTaskIds = coreDefault?.coreDefaultTaskIds ?? []
+                    let prefill = Self.resolveCoreBoardDefaultPrefill(
+                        corePoolIds: corePoolIds,
+                        coreDefaultTaskIds: coreDefaultTaskIds,
+                        database: database
+                    )
+                    self.selectedTaskIds = prefill.selectedTaskIds
+                    self.poolOrder = prefill.poolOrder
+                    self.pulledPoolIds = prefill.pulledPoolIds
+                    self.savedCorePoolIds = corePoolIds
                 }
+                // Every prefilled row (pool-sourced or an individual
+                // default) is NOT hand-added — nothing has been manually
+                // touched yet at init time. This is the fix for the prior
+                // unconditional `self.manualTaskIds = self.selectedTaskIds`
+                // below, which stomped a core prefill into looking
+                // hand-added; that assignment now lives ONLY in the
+                // non-prefill `else` branch, where the selection is empty
+                // anyway (a true no-op there).
+                self.manualTaskIds = []
             } else {
                 let resolved = Self.resolveTimeframe(preferences.defaultTimeframe)
                 // The "Custom" segment defaults to an ongoing board (End date =
@@ -330,17 +389,13 @@ final class BoardWizardViewModel {
                 } else {
                     self.timeframe = resolved
                 }
+                // P3 — a fresh, non-prefilled wizard has no pool-mix history
+                // yet and nothing selected: `selectedTaskIds` is empty here,
+                // so this is a no-op today, but keeps `manualTaskIds`
+                // doc-consistent with `selectedTaskIds` for whatever a
+                // future non-prefill entry point might seed.
+                self.manualTaskIds = self.selectedTaskIds
             }
-            self.centerType = Self.coerceCenterType(
-                size: initialSize,
-                desired: Self.resolveCenterType(preferences.defaultCenterType)
-            )
-            // P3 — a fresh wizard (including the DefaultPool/banner prefill
-            // above, if it populated `selectedTaskIds`) has no pool-mix
-            // history yet: every pre-filled or hand-picked row starts in the
-            // manual layer until the user touches the pull card.
-            // `pulledPoolIds`/`removedTaskIds` stay at their `[]` defaults.
-            self.manualTaskIds = self.selectedTaskIds
         }
     }
 
@@ -433,6 +488,122 @@ final class BoardWizardViewModel {
         let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
 
         return Set(PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById).taskIds)
+    }
+
+    /// Resolves a `CoreBoardDefault` row's `corePoolIds` +
+    /// `coreDefaultTaskIds` into the core-board setup wizard's initial
+    /// selection. Task Pools + Recurring Boards Rework (P5),
+    /// docs/POOLS_RECURRING.md §Surfaces item 6 ("pre-filled chips plain").
+    /// iOS twin of web's core-setup prefill resolver; mirrors
+    /// `resolveTemplateHydrationTaskIds`'s shape and fallback posture.
+    ///
+    /// - Folds `PoolMix.resolvePoolPullAdditions` across `corePoolIds` (no
+    ///   removals at this stage — a fresh wizard has none yet), unioning
+    ///   each pool's resolvable supply into `selected`/`order` in
+    ///   first-seen order, and appending each RESOLVABLE (non-deleted)
+    ///   pool id to `pulled` — a deleted pool contributes nothing and is
+    ///   skipped (derived detachment, matching `PoolMix`'s own posture).
+    /// - Then unions `coreDefaultTaskIds` (filtered to resolvable —
+    ///   present + non-deleted — tasks) in their own stored order,
+    ///   appended AFTER the pool-resolved tasks, deduped against what's
+    ///   already selected.
+    /// - Silent on any DB error (`try?`) or empty input — mirrors the
+    ///   retired `DefaultPool` prefill's fallback posture: the wizard
+    ///   still opens with an empty selection rather than blocking.
+    private static func resolveCoreBoardDefaultPrefill(
+        corePoolIds: [String],
+        coreDefaultTaskIds: [String],
+        database: AppDatabase
+    ) -> (selectedTaskIds: Set<String>, poolOrder: [String], pulledPoolIds: [String]) {
+        guard !corePoolIds.isEmpty || !coreDefaultTaskIds.isEmpty else {
+            return (Set(), [], [])
+        }
+        guard let pools = try? database.fetchPools(ids: corePoolIds) else {
+            return (Set(), [], [])
+        }
+        let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
+
+        var referencedIds = Set<String>()
+        for pool in pools { referencedIds.formUnion(pool.taskIds) }
+        referencedIds.formUnion(coreDefaultTaskIds)
+
+        guard let tasks = try? database.fetchTasks(ids: Array(referencedIds)) else {
+            return (Set(), [], [])
+        }
+        let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+
+        var selected = Set<String>()
+        var order: [String] = []
+        var pulled: [String] = []
+
+        for poolId in corePoolIds {
+            guard let pool = poolsById[poolId], !pool.isDeleted else { continue }
+            pulled.append(poolId)
+            let additions = PoolMix.resolvePoolPullAdditions(
+                poolId, removedTaskIds: [], poolsById: poolsById, tasksById: tasksById
+            )
+            for taskId in additions where !selected.contains(taskId) {
+                selected.insert(taskId)
+                order.append(taskId)
+            }
+        }
+
+        for taskId in coreDefaultTaskIds {
+            guard let task = tasksById[taskId], !task.isDeleted else { continue }
+            if !selected.contains(taskId) {
+                selected.insert(taskId)
+                order.append(taskId)
+            }
+        }
+
+        return (selected, order, pulled)
+    }
+
+    /// Whether the core-setup "Start every <TF> board with 'X'" checkbox
+    /// should render checked — true iff both `pulledPoolIds` and
+    /// `savedCorePoolIds` are non-empty AND represent the same SET
+    /// (order-independent). Task Pools + Recurring Boards Rework (P5).
+    ///
+    /// Deliberately DERIVED rather than independently tracked: recomputed
+    /// on every render from the wizard's live `pulledPoolIds` against
+    /// whatever is currently persisted, so toggling a pool after checking
+    /// immediately (and correctly) shows unchecked again without any extra
+    /// bookkeeping to keep in sync.
+    static func isCorePoolDefaultSaved(pulledPoolIds: [String], savedCorePoolIds: [String]) -> Bool {
+        guard !pulledPoolIds.isEmpty, !savedCorePoolIds.isEmpty else { return false }
+        return Set(pulledPoolIds) == Set(savedCorePoolIds)
+    }
+
+    /// Core-setup "Start every <TF> board with 'X'" checkbox write path
+    /// (Task Pools + Recurring Boards Rework, P5,
+    /// docs/POOLS_RECURRING.md §Surfaces item 6). Persists `corePoolIds`
+    /// ONLY via `AppDatabase.upsertCorePoolIdsAndEnqueue`, which preserves
+    /// whatever `coreDefaultTaskIds` already exists (that field is
+    /// P7-authored-only — never written from here). `userId` is a
+    /// call-site parameter rather than a stored property, mirroring
+    /// `toggleTaskSelection`'s caller-supplied-lookups pattern.
+    ///
+    /// - `saved == true`: persists the CURRENT `pulledPoolIds` snapshot at
+    ///   check-time — not a live binding to further pool toggles. A later
+    ///   pool-toggle does NOT retroactively update the saved default; the
+    ///   user must re-check to capture a new snapshot.
+    /// - `saved == false`: clears `corePoolIds` to `[]`. Symmetric
+    ///   uncheck-to-clear is a coordinator judgment call — the handoff
+    ///   spec only explicitly describes the check-to-save direction, but a
+    ///   checkbox that can only ever be checked isn't a real checkbox.
+    ///
+    /// Silent on DB error (mirrors the rest of the wizard's pool-mix I/O
+    /// resilience posture) — `savedCorePoolIds` simply doesn't update, so
+    /// the checkbox visually stays wherever it was.
+    func setCorePoolDefaultSaved(_ saved: Bool, userId: String) {
+        let idsToSave = saved ? pulledPoolIds : []
+        guard let result = try? database.upsertCorePoolIdsAndEnqueue(
+            userId: userId,
+            timeframe: timeframe,
+            corePoolIds: idsToSave,
+            now: AppDatabase.currentTimestamp()
+        ) else { return }
+        savedCorePoolIds = result.corePoolIds
     }
 
     // MARK: - Coupled mutators
@@ -738,6 +909,7 @@ final class BoardWizardViewModel {
         pulledPoolIds = []
         manualTaskIds = []
         removedTaskIds = []
+        savedCorePoolIds = []
         currentStep = 1
     }
 

@@ -134,6 +134,32 @@ func formatRecurringCadence(timeframe: Timeframe) -> String {
     }
 }
 
+/// Plain capitalized noun for a timeframe ("Daily"/"Weekly"/"Monthly"/
+/// "Yearly"/"Custom"/"Ongoing") — distinct from `formatTimeframeLabel`
+/// (a specific window's label, e.g. "Today") and `formatRecurringCadence`
+/// (the "Every day" cadence phrasing). Added for the core-board setup
+/// "Start every <TF> board with 'X'" checkbox copy
+/// (docs/POOLS_RECURRING.md §Surfaces item 6, Task Pools + Recurring
+/// Boards Rework P5).
+///
+/// Several call sites already hand-roll this exact 6-case switch
+/// privately (`RisoYourStreaksCard.label(_:)`,
+/// `PendingCoreBoardsSectionView.label(for:)`,
+/// `RisoCoreTimeframeGrid.timeframeLabel`, `EditTaskSheet.timeframeLabel`
+/// — the last one also adds a `.none` case). Not consolidated onto this
+/// helper here to keep this change scoped to P5; a future cleanup could
+/// route them through this one function.
+func timeframeNounLabel(_ timeframe: Timeframe) -> String {
+    switch timeframe {
+    case .daily:      return "Daily"
+    case .weekly:     return "Weekly"
+    case .monthly:    return "Monthly"
+    case .yearly:     return "Yearly"
+    case .custom:     return "Custom"
+    case .indefinite: return "Ongoing"
+    }
+}
+
 // MARK: - Board Expiry Helpers
 
 /// Returns whether a board is expired (past its end date).

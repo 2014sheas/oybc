@@ -397,7 +397,13 @@ struct BoardWizardView: View {
                     wizard.untogglePool(poolId, poolsById: poolsById, tasksById: tasksById)
                 },
                 templates: templates,
-                onPoolsReloadRequested: { loadPools() }
+                onPoolsReloadRequested: { loadPools() },
+                isCore: wizard.isCore,
+                manualTaskIds: wizard.manualTaskIds,
+                savedCorePoolIds: wizard.savedCorePoolIds,
+                onSetCorePoolDefaultSaved: { saved in
+                    wizard.setCorePoolDefaultSaved(saved, userId: userId)
+                }
             )
         default:
             BoardWizardPreviewStepView(

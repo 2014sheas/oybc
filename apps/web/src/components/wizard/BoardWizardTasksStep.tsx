@@ -12,7 +12,12 @@ import {
 } from '@oybc/shared';
 import { fetchAllBoardTasks } from '../../db/operations';
 import { createTask } from '../../db/operations/tasks';
-import { useParentBoardTasks, useRecurringBoardTemplates } from '../../hooks';
+import { upsertCoreBoardDefault } from '../../db/operations/coreBoardDefaults';
+import {
+  useCoreBoardDefault,
+  useParentBoardTasks,
+  useRecurringBoardTemplates,
+} from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { PoolEditSheet } from '../pools/PoolEditSheet';
@@ -28,7 +33,31 @@ import { mergeSuggestionPool } from './suggestionPool';
 import { renderTaskRow } from './TaskRow';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
+import {
+  classifyChipProvenance,
+  computeCoreFloorGate,
+  isCorePoolDefaultSaved,
+} from '../../pages/createHub/poolPullLogic';
 import styles from './BoardWizardTasksStep.module.css';
+
+/**
+ * P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+ * §Surfaces item 6 "Core-board setup") — plain cadence words for the
+ * "Start every &lt;Timeframe&gt; board with 'X'" checkbox label. No
+ * shared helper produces this exact shape (`formatTimeframeLabel` formats
+ * a WINDOW — "Today" / "Week of…" — and `formatRecurringCadence` formats
+ * a sentence — "Every day"); every other web surface that needs a plain
+ * cadence word (`CoreBoardBrowserPage`, `CoreBoardsSection`, `CoreStrip`,
+ * `RecurringTemplateRow`, …) already duplicates its own local map, so this
+ * follows the same established precedent rather than introducing a new
+ * shared export for a single UI string.
+ */
+const CORE_CADENCE_LABEL: Partial<Record<Timeframe, string>> = {
+  [Timeframe.DAILY]: 'Daily',
+  [Timeframe.WEEKLY]: 'Weekly',
+  [Timeframe.MONTHLY]: 'Monthly',
+  [Timeframe.YEARLY]: 'Yearly',
+};
 
 const BASE_FILTER_TABS: { value: TasksFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -140,6 +169,23 @@ export interface BoardWizardTasksStepProps {
   /** P3 — provenance label ("from X" / "added by hand") for every
    *  currently-selected task id. */
   taskProvenance: Map<string, string>;
+  /** P3 — task ids explicitly hand-added this session (quick-add, New
+   *  task sheet, or picking an existing library task) as opposed to
+   *  pool-/default-sourced. Drives the P5 core-setup chip strip's plain
+   *  vs. blue-removable classification (see `classifyChipProvenance`). */
+  manualTaskIds: Set<string>;
+
+  /**
+   * P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+   * §Surfaces item 6 "Core-board setup") — true when this wizard session
+   * is creating/resuming a core (recurring-timeframe) board. Gates the
+   * core-setup-only UI: the "Start with a pool — optional" pool-pull
+   * header text, the selected-tasks chip strip (plain vs. hand-added
+   * blue-removable), the "Start every &lt;Timeframe&gt; board with 'X'"
+   * checkbox, and the red "Add N more" floor-gate copy. Never changes
+   * behavior for a non-core wizard session.
+   */
+  isCore: boolean;
 
   /** Navigates to the previous wizard step. */
   onBack: () => void;
@@ -191,6 +237,8 @@ export function BoardWizardTasksStep({
   onPullPool,
   onUntogglePool,
   taskProvenance,
+  manualTaskIds,
+  isCore,
   onBack,
   onNext,
 }: BoardWizardTasksStepProps): React.ReactElement {
@@ -318,6 +366,57 @@ export function BoardWizardTasksStep({
   // P3 — recurring-board templates, needed only for `PoolEditSheet`'s
   // deck-preview-floor computation (mirrors `PoolsBrowse`'s call site).
   const recurringTemplatesForPoolSheet = useRecurringBoardTemplates(userId);
+
+  // P5 — the current timeframe's CoreBoardDefault, ONLY looked up when
+  // this is a core-setup session (isCore). Backs the "Start every
+  // <Timeframe> board with 'X'" checkbox's derived checked state. Tri-
+  // state (`undefined`/loading, `null`/none, value) — treated as "no
+  // saved default" (`[]`) until it resolves, so the checkbox starts
+  // unchecked rather than flashing checked.
+  const coreBoardDefault = useCoreBoardDefault(
+    isCore ? userId : undefined,
+    isCore ? currentTimeframe : undefined,
+  );
+  const savedCorePoolIds = coreBoardDefault?.corePoolIds ?? [];
+  const isCoreDefaultSaved = isCorePoolDefaultSaved(pulledPoolIds, savedCorePoolIds);
+  const [coreDefaultBusy, setCoreDefaultBusy] = useState(false);
+
+  /**
+   * P5 — "Start every <Timeframe> board with 'X'" checkbox handler.
+   * Writes `corePoolIds` ONLY (never `coreDefaultTaskIds`, which is
+   * P7-authored-only) — `upsertCoreBoardDefault`'s partial-update
+   * semantics leave any existing `coreDefaultTaskIds` untouched. This is
+   * a point-in-time snapshot write, not a live binding: `pulledPoolIds`
+   * can keep changing afterward via further pool toggling without
+   * re-writing the saved default. Unchecking clears `corePoolIds` to
+   * `[]` — a deliberate, symmetric "stop starting every board with
+   * this" action (a checkbox that can't be unchecked isn't a checkbox).
+   */
+  async function handleToggleCoreDefault(checked: boolean): Promise<void> {
+    setCoreDefaultBusy(true);
+    try {
+      await upsertCoreBoardDefault(userId, currentTimeframe, {
+        corePoolIds: checked ? pulledPoolIds : [],
+      });
+    } finally {
+      setCoreDefaultBusy(false);
+    }
+  }
+
+  const coreCadenceLabel = CORE_CADENCE_LABEL[currentTimeframe] ?? currentTimeframe;
+  const coreDefaultCheckboxLabel = useMemo(() => {
+    if (pulledPoolIds.length === 1) {
+      const pool = pools.find((p) => p.id === pulledPoolIds[0]);
+      const name = pool?.name ?? 'this pool';
+      return `Start every ${coreCadenceLabel} board with "${name}"`;
+    }
+    return `Start every ${coreCadenceLabel} board with these pools`;
+  }, [pulledPoolIds, pools, coreCadenceLabel]);
+
+  const coreFloorGate = useMemo(
+    () => computeCoreFloorGate(selectedTaskIds.size, tasksRequired),
+    [selectedTaskIds, tasksRequired],
+  );
 
   // Usage-hint data — "N boards" / "unused" / "N steps" / "N subtasks".
   // Matches the composite wizard's library row hints so the two
@@ -541,7 +640,9 @@ export function BoardWizardTasksStep({
             non-manual, non-still-supplied tasks. The saved pool itself is
             never modified by either action. */}
         <div className={styles.poolPullCard}>
-          <span className={styles.poolPullKicker}>Pull in a pool</span>
+          <span className={styles.poolPullKicker}>
+            {isCore ? 'Start with a pool — optional' : 'Pull in a pool'}
+          </span>
           {pools.length === 0 ? (
             <p className={styles.poolPullEmpty}>You don&apos;t have any pools yet.</p>
           ) : (
@@ -561,6 +662,62 @@ export function BoardWizardTasksStep({
             </div>
           )}
         </div>
+
+        {/* P5 — Core-board-setup-only: the selected-tasks chip strip
+            (plain = pool-/default-sourced, blue-removable = hand-added
+            this session) + the "Start every <Timeframe> board with 'X'"
+            checkbox. Judgment call: placed directly below the pool-pull
+            card (above search/filters/list) rather than duplicating or
+            relocating the single `WizardQuickAddRow` instance further
+            down — that row already renders just below this header block,
+            which reads as "near" this section without touching layout
+            for non-core wizard sessions. */}
+        {isCore && (
+          <div className={styles.coreDefaultsSection}>
+            {selectedTaskIds.size > 0 && (
+              <div className={styles.coreChipStrip} role="group" aria-label="Tasks in this board">
+                {Array.from(selectedTaskIds).map((taskId) => {
+                  const task = effectiveTaskMap[taskId];
+                  const title = task?.title || '(untitled task)';
+                  const kind = classifyChipProvenance(taskId, manualTaskIds);
+                  if (kind === 'manual') {
+                    return (
+                      <span key={taskId} className={styles.coreChipManual}>
+                        {title}
+                        <button
+                          type="button"
+                          className={styles.coreChipRemove}
+                          onClick={() => handleToggle(taskId)}
+                          aria-label={`Remove ${title} from this board`}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    );
+                  }
+                  return (
+                    <span key={taskId} className={styles.coreChipPlain}>
+                      {title}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {pulledPoolIds.length > 0 && (
+              <label className={styles.coreDefaultRow}>
+                <input
+                  type="checkbox"
+                  className={styles.coreDefaultCheckbox}
+                  checked={isCoreDefaultSaved}
+                  disabled={coreDefaultBusy}
+                  onChange={(e) => void handleToggleCoreDefault(e.target.checked)}
+                />
+                <span>{coreDefaultCheckboxLabel}</span>
+              </label>
+            )}
+          </div>
+        )}
 
         {activeFilter !== 'from-board' && (
           <input
@@ -826,12 +983,18 @@ export function BoardWizardTasksStep({
         {/* Visible dead-Next reason — the tooltip alone is invisible on
             touch, and a quietly greyed-out Next reads as "broken". */}
         {!canAdvance && (
-          <span className={styles.footerMessage}>
+          <span
+            className={
+              isCore && !isCountSatisfied ? styles.footerMessageCore : styles.footerMessage
+            }
+          >
             {!isCountSatisfied
-              ? (() => {
-                  const n = tasksRequired - selectedCount;
-                  return `Pick ${n} more task${n === 1 ? '' : 's'} to continue (${tasksRequired}${isRecurring ? ' minimum' : ''} needed).`;
-                })()
+              ? isCore
+                ? coreFloorGate.message
+                : (() => {
+                    const n = tasksRequired - selectedCount;
+                    return `Pick ${n} more task${n === 1 ? '' : 's'} to continue (${tasksRequired}${isRecurring ? ' minimum' : ''} needed).`;
+                  })()
               : 'Mark one selected task as the center.'}
           </span>
         )}

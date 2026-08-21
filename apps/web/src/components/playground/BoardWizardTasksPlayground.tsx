@@ -275,6 +275,11 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         onPullPool={handlePullPool}
         onUntogglePool={handleUntogglePool}
         taskProvenance={taskProvenance}
+        manualTaskIds={manualTaskIds}
+        // P5 — the playground harness has no core-setup simulation; the
+        // isCore-only UI (chip strip, "Start every…" checkbox, "Add N
+        // more" copy) is exercised via the real wizard flow instead.
+        isCore={false}
         onBack={() => setNavMessage('« Back tapped (would return to Step 1: Setup)')}
         onNext={() =>
           setNavMessage('» Next tapped (would advance to Step 3: Preview & Activate)')
