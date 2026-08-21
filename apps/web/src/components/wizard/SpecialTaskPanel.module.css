@@ -1,0 +1,77 @@
+/* SpecialTaskPanel — collapsible counting/compound/achievement entry point
+   for the wizard Tasks step (Web inline-editing port PR-1). Ports iOS
+   RisoSpecialTaskPanel's collapsed dashed-button / expanded-card chrome. */
+
+.collapsedButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.collapsedButton:hover {
+  background: var(--riso-paper-2);
+}
+.collapsedButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.collapsedPlus {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--riso-blue);
+}
+.collapsedLabel {
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+
+.expandedCard {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 12px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dismissButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--riso-muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 999px;
+}
+.dismissButton:hover {
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+}
+.dismissButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+}

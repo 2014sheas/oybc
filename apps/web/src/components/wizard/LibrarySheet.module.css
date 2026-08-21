@@ -1,0 +1,200 @@
+/* LibrarySheet — dashed entry button + bottom sheet for the wizard Tasks
+   step (Web inline-editing port PR-1). Ports iOS RisoLibrarySheetView. */
+
+.entryButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--riso-ink);
+  transition: background 0.15s;
+}
+.entryButton:hover {
+  background: var(--riso-paper-2);
+}
+.entryButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+.entryIcon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--riso-muted);
+}
+.entryLabel {
+  flex: 1;
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+}
+.entryCount {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+}
+
+/* ── Sheet chrome ── */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(24, 18, 11, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.sheet {
+  width: min(760px, 100%);
+  height: 76vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-bottom: none;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  overflow: hidden;
+  animation: slideUp 0.2s ease-out;
+}
+
+.grabHandle {
+  width: 38px;
+  height: 5px;
+  margin: 10px auto 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--riso-ink) 30%, transparent);
+  flex: 0 0 auto;
+}
+
+.sheetHeader {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 16px 12px;
+  flex: 0 0 auto;
+}
+.sheetTitle {
+  font-family: var(--riso-font-head);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+.donePill {
+  position: absolute;
+  right: 16px;
+  top: 0;
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 13px;
+  border: 2px solid var(--riso-ink-static);
+  border-radius: 999px;
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  cursor: pointer;
+}
+.donePill:hover {
+  filter: brightness(1.03);
+}
+.donePill:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.searchBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--riso-paper-2);
+  border-bottom: 2px solid var(--riso-ink);
+  color: var(--riso-muted);
+  flex: 0 0 auto;
+}
+.searchInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  caret-color: var(--riso-blue);
+}
+.searchInput::placeholder {
+  color: var(--riso-muted);
+  font-weight: 600;
+}
+
+/* filterChips / groupRow / list / row classes are reused verbatim from
+   BoardWizardTasksStep.module.css (imported here as `stepStyles`) — no
+   duplicate CSS needed for them beyond this sheet's own chrome. */
+.filtersWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 16px;
+  flex: 0 0 auto;
+}
+
+.sheetBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 20px;
+}
+
+.deriveRow {
+  padding: 0 15px 8px;
+  margin-top: -6px;
+}
+.deriveLink {
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-blue);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.deriveLink:hover {
+  text-decoration: underline;
+}
+.deriveLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes slideUp {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

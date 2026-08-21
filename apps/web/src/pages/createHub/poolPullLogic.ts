@@ -386,6 +386,31 @@ export function computeCoreFloorGate(selectedCount: number, required: number): C
   };
 }
 
+/**
+ * Web inline-editing port PR-1 (docs: CLAUDE.md §Board wizard "From a
+ * board" picker's sibling section on the pool-first Tasks-step restructure)
+ * — derives the pool's insertion-order array from the previous order plus
+ * the NEW `selectedTaskIds` set, after ANY action that can add/remove
+ * members (`toggleTaskSelection`, `pullPool`, `untogglePool`, the
+ * template-mix / CoreBoardDefault prefill effects, `reset`).
+ *
+ * Rule: ids already in `prevOrder` that are STILL selected keep their
+ * existing position (so a later inline rename — PR-2 — never reshuffles
+ * the list); ids newly present in `nextSelectedIds` are appended in the
+ * Set's iteration order (which is insertion order for every code path that
+ * builds these Sets — `new Set()` + `.add()`, never reconstructed from an
+ * unordered source). Ids no longer selected are dropped. Pure and
+ * self-contained so it can run after every selection-changing action
+ * without each call site re-deriving the same diff by hand.
+ */
+export function syncPoolOrder(prevOrder: string[], nextSelectedIds: Set<string>): string[] {
+  const kept = prevOrder.filter((id) => nextSelectedIds.has(id));
+  if (kept.length === nextSelectedIds.size) return kept;
+  const keptSet = new Set(kept);
+  const appended = Array.from(nextSelectedIds).filter((id) => !keptSet.has(id));
+  return [...kept, ...appended];
+}
+
 export type ChipProvenanceKind = 'plain' | 'manual';
 
 /**

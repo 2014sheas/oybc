@@ -9,6 +9,7 @@ import {
   applyPullPool,
   applyUntogglePool,
   deriveTaskProvenance,
+  syncPoolOrder,
 } from '../../pages/createHub/poolPullLogic';
 import { BoardWizardTasksStep } from '../wizard/BoardWizardTasksStep';
 import { PLAYGROUND_USER_ID } from './playgroundUtils';
@@ -41,6 +42,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
 
   // Simulated wizard state ────────────────────────────────────────────
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [poolOrder, setPoolOrder] = useState<string[]>([]);
   const [centerTaskId, setCenterTaskId] = useState<string | null>(null);
 
   // P3 (Task Pools + Recurring Boards Rework) — simulated pool-mix
@@ -76,6 +78,9 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         else next.add(taskId);
         return next;
       });
+      setPoolOrder((prev) =>
+        wasSelected ? prev.filter((id) => id !== taskId) : prev.includes(taskId) ? prev : [...prev, taskId],
+      );
       if (wasSelected) {
         const result = applyManualBookkeepingOnDeselect(
           taskId,
@@ -100,6 +105,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
     (poolId: string): void => {
       const result = applyPullPool(poolId, selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, library.taskMap);
       setSelectedTaskIds(result.selectedTaskIds);
+      setPoolOrder((prev) => syncPoolOrder(prev, result.selectedTaskIds));
       setPulledPoolIds(result.pulledPoolIds);
     },
     [selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, library.taskMap],
@@ -117,6 +123,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
         library.taskMap,
       );
       setSelectedTaskIds(result.selectedTaskIds);
+      setPoolOrder((prev) => syncPoolOrder(prev, result.selectedTaskIds));
       setPulledPoolIds(result.pulledPoolIds);
       setRemovedTaskIds(result.removedTaskIds);
       if (centerTaskId !== null && result.removedIds.includes(centerTaskId)) {
@@ -216,6 +223,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
             className={styles.harnessButton}
             onClick={() => {
               setSelectedTaskIds(new Set());
+              setPoolOrder([]);
               setCenterTaskId(null);
               setNavMessage(null);
               setPulledPoolIds([]);
@@ -244,6 +252,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
       <BoardWizardTasksStep
         library={library}
         selectedTaskIds={selectedTaskIds}
+        poolOrder={poolOrder}
         onToggleSelection={handleToggle}
         tasksRequired={tasksRequired}
         // Playground simulates the default one-off behavior; the
@@ -264,6 +273,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
             next.add(task.id);
             return next;
           });
+          setPoolOrder((prev) => (prev.includes(task.id) ? prev : [...prev, task.id]));
         }}
         onCompositeCreated={() => {
           // Composites can't be auto-selected (not boardable as a unit).

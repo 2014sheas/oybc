@@ -11,6 +11,7 @@ import {
   deriveTaskProvenance,
   isCorePoolDefaultSaved,
   resolveRepeatsChange,
+  syncPoolOrder,
 } from '../poolPullLogic';
 
 /**
@@ -483,5 +484,47 @@ describe('classifyChipProvenance', () => {
   it('classifies a pool-/default-sourced id (not in manualTaskIds) as "plain"', () => {
     expect(classifyChipProvenance('y', new Set(['x']))).toBe('plain');
     expect(classifyChipProvenance('y', new Set())).toBe('plain');
+  });
+});
+
+/**
+ * Web inline-editing port PR-1 — `syncPoolOrder` backs the wizard's
+ * `poolOrder` state (`useBoardWizard.ts`), kept in sync with
+ * `selectedTaskIds` after every add/remove action. The pool list renders
+ * in this order so a later inline rename (PR-2) never reshuffles rows.
+ */
+describe('syncPoolOrder', () => {
+  it('appends a newly-added id at the end, preserving prior order', () => {
+    expect(syncPoolOrder(['a', 'b'], new Set(['a', 'b', 'c']))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('drops a removed id without disturbing the order of the rest', () => {
+    expect(syncPoolOrder(['a', 'b', 'c'], new Set(['a', 'c']))).toEqual(['a', 'c']);
+  });
+
+  it('keeps a task\'s position when it stays selected (no reshuffle)', () => {
+    // 'b' stays selected — must not jump to the end even though the
+    // underlying Set iterates in a different order than prevOrder.
+    expect(syncPoolOrder(['a', 'b', 'c'], new Set(['c', 'b', 'a']))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('handles simultaneous add + remove in one action (e.g. an untoggle)', () => {
+    expect(syncPoolOrder(['a', 'b', 'c'], new Set(['a', 'd']))).toEqual(['a', 'd']);
+  });
+
+  it('returns an empty array when nothing is selected', () => {
+    expect(syncPoolOrder(['a', 'b'], new Set())).toEqual([]);
+  });
+
+  it('builds order from Set iteration order when starting from empty', () => {
+    const s = new Set<string>();
+    s.add('x');
+    s.add('y');
+    s.add('z');
+    expect(syncPoolOrder([], s)).toEqual(['x', 'y', 'z']);
+  });
+
+  it('is a no-op (same membership, same order) when nothing changed', () => {
+    expect(syncPoolOrder(['a', 'b'], new Set(['a', 'b']))).toEqual(['a', 'b']);
   });
 });

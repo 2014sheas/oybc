@@ -261,6 +261,7 @@ export function BoardWizardPage({
           <BoardWizardTasksStep
             library={library}
             selectedTaskIds={wizard.selectedTaskIds}
+            poolOrder={wizard.poolOrder}
             onToggleSelection={wizard.toggleTaskSelection}
             tasksRequired={wizard.tasksRequired}
             isRecurring={wizard.isRecurring}

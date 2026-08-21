@@ -22,6 +22,7 @@ import {
   applyUntogglePool,
   deriveTaskProvenance,
   resolveRepeatsChange,
+  syncPoolOrder,
 } from './poolPullLogic';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
@@ -95,6 +96,18 @@ export interface BoardWizardState {
   // Step 2 fields
   selectedTaskIds: Set<string>;
   centerTaskId: string | null;
+
+  /**
+   * Web inline-editing port PR-1 — insertion order of the pool, kept in
+   * sync with `selectedTaskIds` by `syncPoolOrder` after every action that
+   * can add/remove members. Mirrors iOS `BoardWizardViewModel.poolOrder`:
+   * the Tasks step's pool list renders in THIS order (never alphabetical
+   * or re-sorted) so a task keeps its position when a later PR's inline
+   * editor renames it in place. No drag-reorder — placement is decided at
+   * board generation and reshuffles per spawn, so this only needs to
+   * survive add/remove, not user-driven reordering.
+   */
+  poolOrder: string[];
 
   /**
    * P3 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
@@ -482,6 +495,12 @@ export function useBoardWizard({
     if (effectiveTemplate) return new Set(effectiveTemplate.seedTaskIds);
     return new Set();
   });
+  // Web inline-editing port PR-1 — pool insertion order. Derived from
+  // `selectedTaskIds`'s OWN initializer (not re-reading `draft`/
+  // `effectiveTemplate` separately) so the two can never disagree on
+  // first paint or silently duplicate an id. Every subsequent mutation
+  // goes through `syncPoolOrder`.
+  const [poolOrder, setPoolOrder] = useState<string[]>(() => Array.from(selectedTaskIds));
 
   // P1 (Task Pools + Recurring Boards Rework) — resolve the template's
   // CURRENT pool-mix task ids and replace the seedTaskIds-based initial
@@ -498,6 +517,7 @@ export function useBoardWizard({
     if (templateMix === undefined) return; // still loading
     templateMixAppliedRef.current = true;
     setSelectedTaskIds(templateMix);
+    setPoolOrder((prev) => syncPoolOrder(prev, templateMix));
   }, [effectiveTemplate, templateMix]);
 
   /**
@@ -568,6 +588,7 @@ export function useBoardWizard({
     );
     if (result.selectedTaskIds.size === 0 && result.pulledPoolIds.length === 0) return;
     setSelectedTaskIds(result.selectedTaskIds);
+    setPoolOrder((prev) => syncPoolOrder(prev, result.selectedTaskIds));
     setPulledPoolIds(result.pulledPoolIds);
   }, [coreBoardDefault, draft, effectiveTemplate, effectivePrefill, poolsById, tasksById]);
   const [centerTaskId, setCenterTaskIdRaw] = useState<string | null>(
@@ -685,6 +706,13 @@ export function useBoardWizard({
         }
         return next;
       });
+      // Web inline-editing port PR-1 — keep pool order in lockstep. Cheaper
+      // than re-deriving from `selectedTaskIds` via `syncPoolOrder` (which
+      // would need the freshly-computed Set in scope); a single toggle only
+      // ever adds-or-removes exactly `taskId`.
+      setPoolOrder((prev) =>
+        wasSelected ? prev.filter((id) => id !== taskId) : prev.includes(taskId) ? prev : [...prev, taskId],
+      );
       // Clear center mark if the task being deselected was the center.
       setCenterTaskIdRaw((prev) => (prev === taskId ? null : prev));
       // Bug #85 — When the user deselects a pending (not-yet-persisted)
@@ -735,6 +763,7 @@ export function useBoardWizard({
         tasksById,
       );
       setSelectedTaskIds(result.selectedTaskIds);
+      setPoolOrder((prev) => syncPoolOrder(prev, result.selectedTaskIds));
       setPulledPoolIds(result.pulledPoolIds);
     },
     [selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, tasksById],
@@ -756,6 +785,7 @@ export function useBoardWizard({
         tasksById,
       );
       setSelectedTaskIds(result.selectedTaskIds);
+      setPoolOrder((prev) => syncPoolOrder(prev, result.selectedTaskIds));
       setPulledPoolIds(result.pulledPoolIds);
       setRemovedTaskIds(result.removedTaskIds);
       if (result.removedIds.length > 0) {
@@ -832,6 +862,7 @@ export function useBoardWizard({
     setCustomEndDate('');
     setIsRecurringRaw(false);
     setSelectedTaskIds(new Set());
+    setPoolOrder([]);
     setCenterTaskIdRaw(null);
     setPendingTasks(new Map());
     setCurrentStep(1);
@@ -928,6 +959,7 @@ export function useBoardWizard({
     weekStartDay,
     selectedTaskIds,
     centerTaskId,
+    poolOrder,
     pulledPoolIds,
     manualTaskIds,
     removedTaskIds,
