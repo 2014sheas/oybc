@@ -11,6 +11,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import {
+  fetchBoard,
   fetchBoardsByIds,
   fetchBoardTasksForTask,
   fetchCompoundChildren,
@@ -130,6 +131,43 @@ function CountingSourceCaption({ sharedCounterId }: { sharedCounterId: string })
 }
 
 /**
+ * Resolves an Achievement task's `referencedBoardId` to that board's name
+ * — mirroring `AchievementTemplateFact` below (loading/found/not-found
+ * three-state pattern) so a board-referenced achievement shows the same
+ * kind of human-readable fact as a template-referenced one, matching iOS
+ * `RisoTaskDetailContentView.typeSubtitle`'s board-name resolution
+ * (`affectedBoards.first { $0.id == boardId }?.name ?? "a board"`). Keeps
+ * the existing "View" link alongside the name.
+ */
+function AchievementBoardFact({ boardId }: { boardId: string }): React.ReactElement {
+  const rawResult = useLiveQuery(
+    () => fetchBoard(boardId),
+    [boardId],
+  );
+  const isLoading = rawResult === undefined;
+  const board = (rawResult as Board | undefined) ?? null;
+  const found = board !== null && !board.isDeleted;
+
+  return (
+    <p className={styles.metaLine}>
+      Watches board:{' '}
+      {isLoading ? (
+        <em>loading…</em>
+      ) : found ? (
+        <>
+          <strong>{(board as Board).name}</strong>{' '}
+          <Link to={`/boards/${boardId}`} className={styles.boardLink}>
+            View
+          </Link>
+        </>
+      ) : (
+        <em>a board (deleted or not found)</em>
+      )}
+    </p>
+  );
+}
+
+/**
  * Resolves an Achievement task's `referencedTemplateId` to its repeating
  * board's name, matching iOS `RisoTaskDetailContentView`'s
  * `templates.first { $0.id == tplId }?.name ?? "a template"` lookup — the
@@ -199,12 +237,7 @@ function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null 
           Trigger: {trigger === AchievementTrigger.BINGO ? 'Bingo' : 'Greenlog'}
         </p>
         {task.referencedBoardId && (
-          <p className={styles.metaLine}>
-            Watches board:{' '}
-            <Link to={`/boards/${task.referencedBoardId}`} className={styles.boardLink}>
-              View
-            </Link>
-          </p>
+          <AchievementBoardFact boardId={task.referencedBoardId} />
         )}
         {task.referencedTemplateId && (
           <AchievementTemplateFact

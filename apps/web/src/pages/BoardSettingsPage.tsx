@@ -21,6 +21,7 @@ import { useTaskLibrary, useBrowsableTasks } from './createPage/useTaskLibrary';
 import { applyCoreBoardDefaultPrefill } from './createHub/poolPullLogic';
 import { computeTemplateAttention } from '../components/recurringTemplates/templateHealth';
 import { computePoolPreview, type PoolPreview } from '../components/recurringTemplates/poolPreview';
+import { formatDefaultsSummary } from '../components/boardSettings/formatDefaultsSummary';
 import { RepeatingBoardRow } from '../components/boardSettings/RepeatingBoardRow';
 import { CoreDefaultsSheet } from '../components/boardSettings/CoreDefaultsSheet';
 import { RosterEditSheet } from '../components/boardSettings/RosterEditSheet';
@@ -112,8 +113,8 @@ export function BoardSettingsPage(): React.ReactElement {
     return m;
   }, [pools]);
 
-  const defaultsPreviewByTimeframe = useMemo(() => {
-    const out: Partial<Record<Timeframe, PoolPreview>> = {};
+  const defaultsSummaryByTimeframe = useMemo(() => {
+    const out: Partial<Record<Timeframe, string>> = {};
     const rows: [Timeframe, CoreBoardDefault | null | undefined][] = [
       [Timeframe.DAILY, dailyDefault],
       [Timeframe.WEEKLY, weeklyDefault],
@@ -121,14 +122,16 @@ export function BoardSettingsPage(): React.ReactElement {
       [Timeframe.YEARLY, yearlyDefault],
     ];
     for (const [tf, row] of rows) {
-      if (!row) continue;
       const resolved = applyCoreBoardDefaultPrefill(
-        row.corePoolIds,
-        row.coreDefaultTaskIds,
+        row?.corePoolIds ?? [],
+        row?.coreDefaultTaskIds ?? [],
         poolsById,
         library.taskMap,
       );
-      out[tf] = computePoolPreview(Array.from(resolved.selectedTaskIds), library.taskMap);
+      const poolNames = resolved.pulledPoolIds
+        .map((id) => poolsById[id]?.name)
+        .filter((name): name is string => name != null);
+      out[tf] = formatDefaultsSummary(resolved.selectedTaskIds.size, poolNames);
     }
     return out;
   }, [dailyDefault, weeklyDefault, monthlyDefault, yearlyDefault, poolsById, library.taskMap]);
@@ -247,13 +250,7 @@ export function BoardSettingsPage(): React.ReactElement {
       <div className={styles.sectionLabel}>Core-board defaults</div>
       <div className={styles.card}>
         {CORE_TIMEFRAMES.map(({ value, label }) => {
-          const preview = defaultsPreviewByTimeframe[value];
-          const summary =
-            !preview || (preview.titles.length === 0 && preview.overflow === 0)
-              ? 'No default tasks'
-              : preview.overflow > 0
-                ? `${preview.titles.join(', ')} +${preview.overflow} more`
-                : preview.titles.join(', ');
+          const summary = defaultsSummaryByTimeframe[value] ?? 'No default tasks';
           return (
             <button
               key={value}

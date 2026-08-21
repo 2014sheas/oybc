@@ -89,6 +89,16 @@ struct BoardSettingsView: View {
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 20)
 
+                    sectionLabel("Recurring board reminders")
+                    Text("When enabled, the Boards tab will prompt you to create a board for each new window. Detection runs only when you open the app — no background notifications.")
+                        .font(.risoBody(13, .regular))
+                        .foregroundStyle(Color.risoMuted)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 10)
+                    recurringRemindersCard
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 20)
+
                     if let loadError {
                         Text(loadError)
                             .font(.risoBody(12, .regular)).foregroundStyle(Color.risoRed)
@@ -158,6 +168,8 @@ struct BoardSettingsView: View {
                              (DefaultBoardSize.five, "5×5")],
                    selection: bind(\.defaultBoardSize))
             rowDivider
+            defaultTimeframeRow
+            rowDivider
             segRow(label: "Center square",
                    options: [(DefaultCenterSquareType.free, "Free"),
                              (DefaultCenterSquareType.none, "None")],
@@ -201,6 +213,31 @@ struct BoardSettingsView: View {
             .padding(.horizontal, Riso.cardPadding)
     }
 
+    /// "Default timeframe" — mirrors web's New-board-defaults `<select>`
+    /// (`BoardSettingsPage.tsx` "Default timeframe" row) exactly: Custom /
+    /// Daily / Weekly / Monthly / Yearly, bound to `UserPreferences.
+    /// defaultTimeframe`, which seeds the wizard's one-off Timeframe picker
+    /// (`BoardWizardViewModel.resolveTimeframe`). Five segments are too
+    /// cramped to sit beside a label in `segRow`'s HStack, so this stacks
+    /// the label above a full-width `RisoSegmented` instead — the same
+    /// layout the wizard's own timeframe picker uses
+    /// (`RisoBoardSetupForm.timeframeSection`).
+    private var defaultTimeframeRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Default timeframe").font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+            RisoSegmented(
+                options: [(DefaultTimeframe.custom, "Custom"),
+                          (DefaultTimeframe.daily, "Daily"),
+                          (DefaultTimeframe.weekly, "Weekly"),
+                          (DefaultTimeframe.monthly, "Monthly"),
+                          (DefaultTimeframe.yearly, "Yearly")],
+                selection: bind(\.defaultTimeframe)
+            )
+        }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
+    }
+
     /// Two-way Binding for a UserPreferences field that writes through
     /// AppDatabase.updateUserPreferences (bumps version/updatedAt + enqueues sync).
     private func bind<Value>(
@@ -221,6 +258,40 @@ struct BoardSettingsView: View {
                 }
             }
         )
+    }
+
+    // MARK: - Recurring board reminders card
+    //
+    // Phase 6.1 "prompt me" toggles (§Recurring Boards, CLAUDE.md) — drive
+    // the Boards-tab banner, gated per-timeframe. iOS already HELD and
+    // CONSUMED these four `UserPreferences` fields (banner gating in
+    // `RecurringBoards.swift`, notification planning in
+    // `NotificationPlanner.swift`) with no UI to change them; this card
+    // closes that parity gap. Labels/copy mirror web's
+    // `BoardSettingsPage.tsx` `RECURRING_TOGGLES` verbatim.
+
+    private var recurringRemindersCard: some View {
+        VStack(spacing: 0) {
+            reminderToggleRow(label: "Prompt for daily board", value: bind(\.recurringDailyEnabled))
+            rowDivider
+            reminderToggleRow(label: "Prompt for weekly board", value: bind(\.recurringWeeklyEnabled))
+            rowDivider
+            reminderToggleRow(label: "Prompt for monthly board", value: bind(\.recurringMonthlyEnabled))
+            rowDivider
+            reminderToggleRow(label: "Prompt for yearly board", value: bind(\.recurringYearlyEnabled))
+        }
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+    }
+
+    private func reminderToggleRow(label: String, value: Binding<Bool>) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+            Spacer()
+            RisoPillSwitch(isOn: value)
+        }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Core-board defaults rows
