@@ -174,8 +174,7 @@ struct TaskEditPatch: Equatable {
             t.title = trimmedTitle
             t.operatorType = operatorType
             if operatorType == .mOfN {
-                let maxN = Swift.max(1, liveChildren.count)
-                t.threshold = Swift.min(Swift.max(1, threshold ?? 1), maxN)
+                t.threshold = CompoundEvaluation.clampCompoundThreshold(threshold ?? 1, childCount: liveChildren.count)
             } else {
                 t.threshold = nil
             }

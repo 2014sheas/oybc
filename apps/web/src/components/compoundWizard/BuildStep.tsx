@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Task } from '@oybc/shared';
-import { OperatorType, TaskType, generateCounterTaskTitle } from '@oybc/shared';
+import { OperatorType, TaskType, generateCounterTaskTitle, clampCompoundThreshold } from '@oybc/shared';
 import { CounterStepper } from '../CounterStepper';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { SubtaskCard } from './SubtaskCard';
@@ -132,9 +132,9 @@ export function BuildStep({
   const stepperMax = Math.max(1, subtasks.length);
   useEffect(() => {
     if (operator !== OperatorType.M_OF_N) return;
-    const target = Math.min(Math.max(1, threshold), stepperMax);
+    const target = clampCompoundThreshold(threshold, subtasks.length);
     if (target !== threshold) onThresholdChange(target);
-  }, [operator, threshold, stepperMax, onThresholdChange]);
+  }, [operator, threshold, subtasks.length, onThresholdChange]);
 
   // ─── Library rows ─────────────────────────────────────────────────────────
 

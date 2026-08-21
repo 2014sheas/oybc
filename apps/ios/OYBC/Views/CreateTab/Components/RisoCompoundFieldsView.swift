@@ -245,10 +245,13 @@ struct RisoCompoundFieldsView: View {
             .map { $0 }
     }
 
-    /// The effective threshold for "At least N" (clamped to valid range).
+    /// The effective threshold for "At least N", clamped to the valid stored
+    /// range via the shared `clampCompoundThreshold` (used at persist, line
+    /// ~610). "At least N" is only selectable at ≥2 sub-tasks, so this matches
+    /// the old `max(2, …)` ceiling for every reachable state while staying
+    /// byte-identical to web's stored value.
     private var effectiveThreshold: Int {
-        let maxN = Swift.max(2, compoundSubs.count)
-        return Swift.min(Swift.max(1, compoundThreshold), maxN)
+        CompoundEvaluation.clampCompoundThreshold(compoundThreshold, childCount: compoundSubs.count)
     }
 
     // MARK: - Body
@@ -428,7 +431,7 @@ struct RisoCompoundFieldsView: View {
                         compoundSubs.remove(at: index)
                         // Clamp threshold when sub count drops below it
                         if compoundRule == .atLeastN {
-                            compoundThreshold = Swift.min(compoundThreshold, Swift.max(1, compoundSubs.count))
+                            compoundThreshold = CompoundEvaluation.clampCompoundThreshold(compoundThreshold, childCount: compoundSubs.count)
                         }
                     } label: {
                         Image(systemName: "xmark")

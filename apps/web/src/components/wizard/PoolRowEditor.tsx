@@ -230,7 +230,7 @@ function CompoundFields({ draft, onDraftChange, onUpdateChild, onRemoveChild, on
 
   function handleOperatorChange(next: OperatorType): void {
     if (next === OperatorType.M_OF_N) {
-      onDraftChange({ ...draft, operator: next, threshold: draft.threshold ?? Math.max(1, Math.min(2, subCount)) });
+      onDraftChange({ ...draft, operator: next, threshold: draft.threshold ?? clampThreshold(2, subCount) });
     } else {
       onDraftChange({ ...draft, operator: next, threshold: undefined });
     }
@@ -243,7 +243,7 @@ function CompoundFields({ draft, onDraftChange, onUpdateChild, onRemoveChild, on
         <OperatorSelector selectedOperator={operator} onOperatorChange={handleOperatorChange} />
         {operator === OperatorType.M_OF_N && (
           <CounterStepper
-            value={Math.min(threshold, Math.max(1, subCount))}
+            value={clampThreshold(threshold, subCount)}
             min={1}
             max={Math.max(1, subCount)}
             onChange={(v) => onDraftChange({ ...draft, threshold: v })}

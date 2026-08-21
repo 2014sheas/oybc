@@ -1,4 +1,4 @@
-import { OperatorType, TaskType, generateCounterTaskTitle, type CompoundChild, type Task } from '@oybc/shared';
+import { OperatorType, TaskType, generateCounterTaskTitle, clampCompoundThreshold, type CompoundChild, type Task } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from './utils';
 
 /**
@@ -165,11 +165,11 @@ export function countingPreview(patch: TaskEditPatch): string | undefined {
 }
 
 /** Clamp an "at least N" threshold into `[1, max(1, count)]` — shared by
- *  the rule-picker's live clamp and a sub-task delete's clamp (mirrors
- *  iOS's `min(max(1, threshold ?? 2), max(1, liveChildren.count))`). */
+ *  the rule-picker's live clamp and a sub-task delete's clamp. Thin web
+ *  alias over the cross-platform `clampCompoundThreshold` (`@oybc/shared`)
+ *  so web and iOS can't drift on the clamp bounds. */
 export function clampThreshold(threshold: number, subtaskCount: number): number {
-  const maxN = Math.max(1, subtaskCount);
-  return Math.min(Math.max(1, threshold), maxN);
+  return clampCompoundThreshold(threshold, subtaskCount);
 }
 
 /**
@@ -241,8 +241,7 @@ export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
       let operator = patch.operator;
       let threshold: number | undefined;
       if (operator === OperatorType.M_OF_N) {
-        const maxN = Math.max(1, liveChildren(patch).length);
-        threshold = Math.min(Math.max(1, patch.threshold ?? 1), maxN);
+        threshold = clampCompoundThreshold(patch.threshold ?? 1, liveChildren(patch).length);
       } else {
         threshold = undefined;
       }

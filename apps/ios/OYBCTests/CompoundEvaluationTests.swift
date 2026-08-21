@@ -283,4 +283,30 @@ final class CompoundEvaluationTests: XCTestCase {
         )
         XCTAssertTrue(result)
     }
+
+    // MARK: - clampCompoundThreshold (mirror of the shared vector)
+
+    /// Must match `clampCompoundThreshold` in
+    /// `packages/shared/tests/algorithms/compoundEvaluation.test.ts`
+    /// row-for-row — the pin that keeps the two platforms from drifting on
+    /// the threshold clamp's upper-bound floor again.
+    func testClampCompoundThresholdVector() {
+        let vectors: [(t: Int, count: Int, expected: Int)] = [
+            (3, 5, 3),    // in range → unchanged
+            (99, 5, 5),   // above count → clamped to count
+            (0, 5, 1),    // below 1 → floored at 1
+            (-4, 5, 1),   // negative → floored at 1
+            (5, 5, 5),    // equal to count (== "All") allowed
+            (2, 1, 1),    // single child → clamped to 1
+            (2, 0, 1),    // no children yet → max(1,0)=1 (no empty range)
+            (1, 0, 1),    // threshold 1 with 0 children → 1
+        ]
+        for v in vectors {
+            XCTAssertEqual(
+                CompoundEvaluation.clampCompoundThreshold(v.t, childCount: v.count),
+                v.expected,
+                "clamp(\(v.t), \(v.count)) should be \(v.expected)"
+            )
+        }
+    }
 }
