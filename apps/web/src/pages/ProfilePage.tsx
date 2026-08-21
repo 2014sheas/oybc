@@ -13,10 +13,12 @@ import styles from './ProfilePage.module.css';
 /**
  * ProfilePage — Account info, app-level settings, and sign out.
  *
- * Board-creation defaults (timeframe, size, center type, randomize, custom
- * center name, week-start) live in a dedicated sub-page at
- * `/profile/board-preferences` — they're a related cluster that governs the
- * new-board form and don't belong on the top-level settings surface.
+ * Board-creation defaults (timeframe, size, center type, week-start) live
+ * on the Board settings sub-page (`/profile/board-settings`, "New board
+ * defaults" section) — they're a related cluster that governs the
+ * new-board form and don't belong on the top-level settings surface. (The
+ * separate `/profile/board-preferences` sub-page that used to host them was
+ * retired; its fields moved into Board settings.)
  */
 export function ProfilePage(): React.ReactElement {
   const { user, signOut } = useAuth();
@@ -191,13 +193,6 @@ export function ProfilePage(): React.ReactElement {
       {/* Preferences sub-pages */}
       <div className={styles.sectionLabel}>Preferences</div>
       <div className={styles.card}>
-        <Link
-          to="/profile/board-preferences"
-          className={`${styles.settingsRow} ${styles.rowLink}`}
-        >
-          <span className={styles.rowLabel}>Board preferences</span>
-          <span className={styles.rowArrow}>&rarr;</span>
-        </Link>
         <Link
           to="/profile/board-settings"
           className={`${styles.settingsRow} ${styles.rowLink}`}

@@ -487,7 +487,7 @@ Core / board-creation defaults:
 
 Recurring boards (Phase 6.1): `recurringDailyEnabled` / `recurringWeeklyEnabled` / `recurringMonthlyEnabled` / `recurringYearlyEnabled` — `boolean` (default true).
 
-Board Preferences (Riso 5a): `celebrationIntensity` — `number` 1–10 (default 7); `haptics` — `boolean`; `expiringReminders` — `boolean` (default true). (`expiringReminders` originated here in 5a as a dead toggle and became live in Phase 7 as the expiry-notification gate — it's a 5a field, not a Phase 7 one. A fourth 5a field, `autoArchiveCompleted`, was removed as a never-consumed dead pref — see the obsolete-controls removal.)
+Board Preferences (Riso 5a): `expiringReminders` — `boolean` (default true). (This field originated here in 5a as a dead toggle and became live in Phase 7 as the expiry-notification gate — it's a 5a field, not a Phase 7 one. The other three original 5a fields are gone: `autoArchiveCompleted` was removed as a never-consumed dead pref — see the obsolete-controls removal — and `celebrationIntensity` / `haptics` were removed for the same reason, since neither was ever meant to be user-configurable. `UserPreferencesSchema` still accepts (and silently strips) those two keys on an old cached/synced record — Zod's default `z.object()` behavior — rather than rejecting the whole payload.)
 
 Notifications (Phase 7): `notificationsEnabled` — `boolean` (default false); `recurringWindowReminders` — `boolean` (default true); `dailyPlayReminderEnabled` — `boolean` (default false); `dailyPlayReminderTime` — `string` `"HH:mm"` (default `"20:00"`).
 

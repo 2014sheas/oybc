@@ -13,6 +13,40 @@ describe('UserPreferencesSchema', () => {
     expect(() => UserPreferencesSchema.parse(DEFAULT_USER_PREFERENCES)).not.toThrow();
   });
 
+  // Forward-compat: an old cached/synced record may still carry the retired
+  // celebrationIntensity/haptics keys (removed from UserPreferences — never
+  // meant to be user-configurable, see docs/SYNC_STRATEGY.md §User
+  // Preferences Sync). `UserPreferencesSchema` is a plain `z.object()`
+  // (never `.strict()`), so Zod's default behavior — silently stripping
+  // unrecognized keys — means such a payload is accepted rather than
+  // rejected, and the retired keys don't survive onto the parsed/merged
+  // result.
+  it('tolerates retired celebrationIntensity/haptics keys from an old record, stripping them rather than rejecting the payload', () => {
+    const legacyPayload = {
+      ...DEFAULT_USER_PREFERENCES,
+      celebrationIntensity: 7,
+      haptics: true,
+    } as Record<string, unknown>;
+
+    expect(() => UserPreferencesSchema.parse(legacyPayload)).not.toThrow();
+    const parsed = UserPreferencesSchema.safeParse(legacyPayload);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).not.toHaveProperty('celebrationIntensity');
+      expect(parsed.data).not.toHaveProperty('haptics');
+    }
+
+    expect(() =>
+      mergeUserPreferences(legacyPayload as Partial<typeof DEFAULT_USER_PREFERENCES>)
+    ).not.toThrow();
+    const merged = mergeUserPreferences(
+      legacyPayload as Partial<typeof DEFAULT_USER_PREFERENCES>
+    );
+    expect(merged).toEqual(DEFAULT_USER_PREFERENCES);
+    expect(merged).not.toHaveProperty('celebrationIntensity');
+    expect(merged).not.toHaveProperty('haptics');
+  });
+
   it.each([
     ['weekStartDay', { weekStartDay: 'tuesday' }],
     ['defaultBoardSize (6)', { defaultBoardSize: 6 }],
@@ -37,8 +71,6 @@ describe('UserPreferencesSchema', () => {
       'recurringMonthlyEnabled',
       'recurringYearlyEnabled',
       // Board Preferences (Riso 5a) — optional for forward-compat too.
-      'celebrationIntensity',
-      'haptics',
       'expiringReminders',
       // Notifications (Phase 7) — optional for forward-compat too.
       'notificationsEnabled',
@@ -65,8 +97,6 @@ describe('UserPreferencesSchema', () => {
     'recurringWeeklyEnabled',
     'recurringMonthlyEnabled',
     'recurringYearlyEnabled',
-    'celebrationIntensity',
-    'haptics',
     'expiringReminders',
     'notificationsEnabled',
     'recurringWindowReminders',
@@ -83,9 +113,6 @@ describe('UserPreferencesSchema', () => {
     ['recurringWeeklyEnabled (number)', { recurringWeeklyEnabled: 1 }],
     ['recurringMonthlyEnabled (null)', { recurringMonthlyEnabled: null }],
     ['recurringYearlyEnabled (object)', { recurringYearlyEnabled: {} }],
-    ['celebrationIntensity (out of range)', { celebrationIntensity: 99 }],
-    ['celebrationIntensity (non-integer)', { celebrationIntensity: 5.5 }],
-    ['haptics (string)', { haptics: 'on' }],
     ['expiringReminders (number)', { expiringReminders: 0 }],
     ['notificationsEnabled (string)', { notificationsEnabled: 'yes' }],
     ['recurringWindowReminders (number)', { recurringWindowReminders: 1 }],
@@ -140,12 +167,6 @@ describe('mergeUserPreferences', () => {
     });
   });
 
-  it('clamps celebrationIntensity into the 1–10 range', () => {
-    expect(mergeUserPreferences({ celebrationIntensity: 99 }).celebrationIntensity).toBe(10);
-    expect(mergeUserPreferences({ celebrationIntensity: -5 }).celebrationIntensity).toBe(1);
-    expect(mergeUserPreferences({ celebrationIntensity: 4 }).celebrationIntensity).toBe(4);
-  });
-
   it('preserves every field when provided', () => {
     const full = {
       weekStartDay: 'sunday' as const,
@@ -158,8 +179,6 @@ describe('mergeUserPreferences', () => {
       recurringWeeklyEnabled: true,
       recurringMonthlyEnabled: true,
       recurringYearlyEnabled: true,
-      celebrationIntensity: 7,
-      haptics: true,
       expiringReminders: true,
       notificationsEnabled: true,
       recurringWindowReminders: false,

@@ -38,14 +38,11 @@ export interface UserPreferences {
   recurringMonthlyEnabled: boolean;
   recurringYearlyEnabled: boolean;
 
-  // Riso Phase 5a — Board Preferences sub-page (iOS-first; web UI pending the
-  // web Riso pass). Mirrored here so a web prefs round-trip preserves them
-  // (forward-compat decode in mergeUserPreferences) instead of dropping the
-  // iOS-set values. Keep in lock-step with the iOS `UserPreferences` fields.
-  /** Celebration intensity 1–10; scales GREENLOG/bingo confetti. Default 7. */
-  celebrationIntensity: number;
-  /** Device haptics on cell completion + bingo detection. */
-  haptics: boolean;
+  // Riso Phase 5a — Board Preferences sub-page. `celebrationIntensity` and
+  // `haptics` (the other two 5a fields) were removed as never-meant-to-be-
+  // user-configurable controls (same pattern as the earlier
+  // `autoArchiveCompleted` removal) — see docs/SYNC_STRATEGY.md
+  // §User Preferences Sync.
   /** Nudge the day before a board expires. */
   expiringReminders: boolean;
 
@@ -86,8 +83,6 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   recurringWeeklyEnabled: true,
   recurringMonthlyEnabled: true,
   recurringYearlyEnabled: true,
-  celebrationIntensity: 7,
-  haptics: true,
   expiringReminders: true,
   notificationsEnabled: false,
   recurringWindowReminders: true,
@@ -178,19 +173,6 @@ export function mergeUserPreferences(
       ? partial.recurringYearlyEnabled
       : DEFAULT_USER_PREFERENCES.recurringYearlyEnabled;
 
-  // Riso Phase 5a — Board Preferences fields (forward-compat decode).
-  // Clamp to the valid 1–10 range — a misbehaving peer could push an
-  // out-of-range value that would otherwise reach the celebration UI.
-  const celebrationIntensity: number =
-    typeof partial.celebrationIntensity === 'number'
-      ? Math.max(1, Math.min(10, partial.celebrationIntensity))
-      : DEFAULT_USER_PREFERENCES.celebrationIntensity;
-
-  const haptics: boolean =
-    typeof partial.haptics === 'boolean'
-      ? partial.haptics
-      : DEFAULT_USER_PREFERENCES.haptics;
-
   const expiringReminders: boolean =
     typeof partial.expiringReminders === 'boolean'
       ? partial.expiringReminders
@@ -231,8 +213,6 @@ export function mergeUserPreferences(
     recurringWeeklyEnabled,
     recurringMonthlyEnabled,
     recurringYearlyEnabled,
-    celebrationIntensity,
-    haptics,
     expiringReminders,
     notificationsEnabled,
     recurringWindowReminders,
