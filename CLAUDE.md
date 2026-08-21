@@ -252,15 +252,18 @@ apps/web/src/                                        apps/ios/OYBC/
     │   (FilterTabs.tsx — REMOVED, dead code; iOS already removed — Riso uses RisoChip)
     ├── TaskTypeSelector.tsx    ←→                  (iOS: removed — Riso uses RisoSegmented)
     │   (SelectableTaskItem.tsx — REMOVED, dead code; iOS SelectableTaskItemView.swift also removed)
-    ├── PoolItem.tsx            ←→                  PoolItemView.swift
+    │   (PoolItem.tsx / PoolItemView.swift — superseded by the pools rework;
+    │    pools UI now lives in web components/pools/ ←→ iOS pool views —
+    │    PoolCard/PoolEditSheet/PoolPickerSheet ←→ PoolEditSheetView/
+    │    PoolsBrowseView/PoolPickerSheetView + CreateTab/Components/RisoPool*)
     │   (SubtaskChip.tsx — REMOVED, dead code; iOS SubtaskChipView.swift also removed)
     ├── OperatorSelector.tsx    ←→                  OperatorSelectorView.swift
     ├── CounterStepper.tsx      ←→                  CounterStepperView.swift
     │   (ProgressStepRow.tsx — REMOVED, dead code; helpers live on in subtaskDraftUtils.ts)
     ├── CountingStepFields.tsx  ←→                  CountingStepFieldsView.swift
     │   (CountingDerivationPanel.tsx — REMOVED, dead code; iOS CountingDerivationPanelView.swift also removed)
-    ├── ProgressDerivationPanel.tsx ←→               ProgressDerivationPanelView.swift
-    ├── CompositeDerivationPanel.tsx ←→              CompositeDerivationPanelView.swift
+    │   (ProgressDerivationPanel.tsx / *View.swift + CompositeDerivationPanel.tsx /
+    │    *View.swift — all REMOVED in the progress/composite teardown, PRs #404–#415)
     ├── AuthGate.tsx               ←→               Views/AuthGateView.swift
     │   └── signedOut/ (SignedOutHome,              (web-only: a signed-out marketing
     │       SignInModal, SignedOutArt,               landing + sign-in modal — no iOS
@@ -305,7 +308,11 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 ├── TasksPage.tsx              ←→                Views/TasksTab/TasksTabView.swift
 ├── TaskDetailPage.tsx         ←→                Views/TasksTab/TaskDetailView.swift
 ├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
-├── BoardPreferencesPage.tsx   ←→                Views/ProfileTab/BoardPreferencesView.swift
+├── BoardSettingsPage.tsx      ←→                Views/ProfileTab/BoardSettingsView.swift
+│   (pools/recurring rework P7 + #430: replaced BoardPreferencesPage/View +
+│    the retired RecurringTemplates/DefaultPools pages. New-board defaults +
+│    per-timeframe core defaults + repeating-boards roster. Feature components:
+│    web components/boardSettings/ ←→ iOS Views/ProfileTab/Components/)
 └── Playground.tsx             (web dev-only)    (no iOS counterpart — Views/PlaygroundView.swift removed in #119)
 ```
 
@@ -314,6 +321,7 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 - **Account & security is iOS-only (handoff §5c)**: `Views/ProfileTab/AccountSecurityView.swift` (container + `AccountSecurityContent` leaf) + the supporting AuthService methods (reauth ×3, `updatePassword`/`updateEmail` via `verifyBeforeUpdateEmail`, link/unlink, `deleteAccount`) + `Services/ProviderState.swift` + `Services/AppleNonce.swift` (shared nonce/coordinator/rootVC helpers, lifted out of `AuthGateView`) have no web counterpart yet. The screen does change-email/password (provider-gated), real Apple/Google account linking, and account deletion. The handoff's 2FA + Active-sessions rows are intentionally **omitted** — Firebase has no client API to back them and fake toggles are dishonest UI (App Store 4.5.4-adjacent). The **Cloud Function backend (`functions/`) is shared** — a future web account-security effort reuses `deleteUserData`. Apple's Guideline 5.1.1(v) (in-app account deletion) makes this a launch prerequisite. Deliberate rule-6 exception.
 - **Notifications are iOS-only (Phase 7)**: `Services/Notification{Service,Planner,Delegate}.swift` + `Views/ProfileTab/NotificationPreferencesView.swift` have no web counterpart yet. iOS has local OS-scheduled notifications; web would need a PWA + service worker + FCM/VAPID + a backend scheduler (which also reintroduces server push, against the offline-first invariant). The four notification prefs are in shared types and round-trip via sync on both platforms, but only iOS acts on them. This is a deliberate, documented rule-6 exception — see [§Notifications](#notifications-phase-7--ios-local-reminders) + `docs/NOTIFICATIONS.md`. Web is a separately-scoped follow-up.
 - **`apps/coming-soon/` is a standalone web-only marketing placeholder** (not an app feature): a Vite + vanilla-TS risograph "Coming Soon" page for the `oybc.com` apex domain — the only public route on the apex until launch (the app relocates to `app.oybc.com`). Deliberately NOT part of `apps/web` (so the app bundle never ships to the apex) and has no iOS counterpart. Self-contained Riso tokens (byte-identical to `apps/web` values), no React/Firebase-SDK/app code. Email capture → the `subscribe` v2 `onRequest` Cloud Function → `signups/{sha256(email)}` (Admin SDK; `firestore.rules` unchanged — `signups` is default-denied to clients). Hosting rewrite `/api/subscribe` → the function + catch-all → the page. On a new signup the function also sends a one-time confirmation email via **Resend** (best-effort; `RESEND_API_KEY` is a `defineSecret` Functions secret; from-address must be a Resend-verified domain); duplicates aren't re-sent. Canonical doc: `docs/COMING_SOON.md` (+ `apps/coming-soon/README.md` for the Resend/DNS/launch-flip ops checklist). Double opt-in / unsubscribe / rate-limiting are still deferred to the bulk launch send. Shipped via PR #200 (page); confirmation email added in a follow-up PR.
+- **Onboarding tutorial is iOS-only**: `Views/BoardsTab/TutorialBoardView.swift` + `TutorialLessons.swift` + `Views/BoardsTab/Components/{TutorialCard,TutorialGreenlogOverlay,TutorialLessonSheet}.swift` (Riso handoff §0a, PR #155; a bespoke Getting-Started 3×3 backed by a UserDefaults `TutorialProgressStore`). No web counterpart. Pre-existing intentional divergence surfaced by the 2026-08 parity audit — a richer rework is tracked as GitHub #157 / ROADMAP F2. Not new drift.
 - `Home.tsx` is web-only: React Router boots to `/home`, while iOS launches `AuthGateView` → `MainTabView` directly. (The old web-only `Navbar.tsx` was removed as dead code — the Riso `appShell/` nav replaced it.)
 - `appShell/` (web Riso: `AppTopNav` desktop top nav that detaches into the `AppBottomNav` mobile bottom tab bar) ←→ `MainTabView.swift` (SwiftUI `TabView`). Same UX, platform-native implementation. The old `TabBar.tsx` was removed in the Riso pass.
 - `authService.ts` exports pure async functions; iOS `AuthService` is an `@ObservableObject` to integrate with SwiftUI's state model. Same behavior and sign-out semantics on both.
