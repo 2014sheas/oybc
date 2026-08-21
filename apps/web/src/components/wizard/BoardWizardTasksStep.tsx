@@ -873,6 +873,7 @@ export function BoardWizardTasksStep({
           {visible.composites.map((ct) => {
             const isExpanded = expandedCompositeId === ct.id;
             const isCompoundSelected = selectedTaskIds.has(ct.id);
+            const isCenter = centerTaskId === ct.id;
             const leafCount = compositeSubtaskCounts[ct.id] ?? 0;
             const preview = compositeLeafPreviews[ct.id];
             const previewSubtitle = preview && preview.titles.length > 0
@@ -911,6 +912,18 @@ export function BoardWizardTasksStep({
                       {leafCount} subtask{leafCount === 1 ? '' : 's'}
                     </span>
                   </button>
+                  {centerTaskMode && isCompoundSelected && (
+                    <button
+                      type="button"
+                      className={`${styles.centerRadio} ${isCenter ? styles.centerRadioOn : ''}`}
+                      onClick={() => handleCenterRadio(ct.id)}
+                      aria-label={isCenter ? 'Center task' : 'Mark as center task'}
+                      aria-pressed={isCenter}
+                      title={isCenter ? 'Center task' : 'Mark as center task'}
+                    >
+                      {isCenter ? '★' : '☆'}
+                    </button>
+                  )}
                   {/* Disclosure button — separate from the select tap target */}
                   <button
                     type="button"
@@ -1122,7 +1135,7 @@ export function BoardWizardTasksStep({
                     }),
                   ]
                 : []),
-              ...(centerTaskMode && isSelected && !isCompound
+              ...(centerTaskMode && isSelected
                 ? [{
                     label: isCenter ? 'Unset as center task' : 'Set as center task',
                     glyph: isCenter ? '☆' : '★',

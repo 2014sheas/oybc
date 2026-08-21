@@ -365,6 +365,90 @@ final class DerivationPassTests: XCTestCase {
         XCTAssertEqual(result.completedTasks, 0)
     }
 
+    // MARK: - computeBoardStatsUpdate: CHOSEN center compound — real evaluation, not a stub
+
+    /// A COMPOUND task pinned as a CHOSEN center square must be evaluated
+    /// through the real `CompoundEvaluation` path exactly like any other
+    /// cell — no center-position special-casing exists in `DerivationPass`
+    /// (the only center special-case is the FREE-center auto-fill, which is
+    /// centerSquareType-gated and irrelevant here). Proves iOS places no
+    /// gate preventing a compound task from being the center: a 3x3 board
+    /// with `comp` (AND, children c1+c2 both complete) pinned at (1,1)
+    /// completes the middle row exactly as if `comp` were a primitive task.
+    func testComputeBoardStats_ChosenCenterCompoundAllChildrenCompleteCompletesLine() {
+        let b = board("b1", boardSize: 3, centerSquareType: .chosen)
+        let t1 = task("t1", isCompleted: true)
+        let t2 = task("t2", isCompleted: true)
+        let c1 = task("c1", isCompleted: true)
+        let c2 = task("c2", isCompleted: true)
+        let comp = compoundTask("comp", operator: .and)
+        let bts = [
+            boardTask("b1", "t1", 1, 0),
+            boardTask("b1", "comp", 1, 1),
+            boardTask("b1", "t2", 1, 2),
+        ]
+        let taskById = ["t1": t1, "t2": t2, "c1": c1, "c2": c2, "comp": comp]
+        let childrenByCompound = ["comp": [child("comp", "c1", 0), child("comp", "c2", 1)]]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            windowContext: nil
+        )
+        // t1, t2, comp all resolve true; c1/c2 aren't separately placed on
+        // the board so they don't double-count.
+        XCTAssertEqual(result.completedTasks, 3)
+        XCTAssertTrue(result.completedLineIds.contains("row_1"))
+        XCTAssertEqual(result.linesCompleted, 1)
+
+        // Confirm via computeBoardGrid that the center cell's completion
+        // comes from the real compound evaluator, not a stub — matching
+        // how testComputeBoardGrid_Compound_CellStateMatchesEvaluator
+        // verifies the non-center case.
+        let built = DerivationPass.computeBoardGrid(
+            board: b, boardTasksOnBoard: bts, childrenByCompound: childrenByCompound,
+            taskById: taskById, allBoards: [], windowContext: nil
+        )
+        let centerCell = built.cells.first { $0.boardTaskId == "b1-comp" }
+        XCTAssertEqual(centerCell?.isCompleted, true)
+        XCTAssertEqual(centerCell?.row, 1)
+        XCTAssertEqual(centerCell?.col, 1)
+    }
+
+    /// Same CHOSEN-center compound setup, but c2 is incomplete — the AND
+    /// fails, so the center cell must genuinely flip to incomplete and the
+    /// row bingo must not fire. Proves the center cell's completion tracks
+    /// the compound's real evaluation rather than being pinned true once
+    /// placed.
+    func testComputeBoardStats_ChosenCenterCompoundOneChildIncompleteBreaksLine() {
+        let b = board("b1", boardSize: 3, centerSquareType: .chosen)
+        let t1 = task("t1", isCompleted: true)
+        let t2 = task("t2", isCompleted: true)
+        let c1 = task("c1", isCompleted: true)
+        let c2 = task("c2", isCompleted: false)
+        let comp = compoundTask("comp", operator: .and)
+        let bts = [
+            boardTask("b1", "t1", 1, 0),
+            boardTask("b1", "comp", 1, 1),
+            boardTask("b1", "t2", 1, 2),
+        ]
+        let taskById = ["t1": t1, "t2": t2, "c1": c1, "c2": c2, "comp": comp]
+        let childrenByCompound = ["comp": [child("comp", "c1", 0), child("comp", "c2", 1)]]
+
+        let result = DerivationPass.computeBoardStatsUpdate(
+            board: b,
+            boardTasksOnBoard: bts,
+            childrenByCompound: childrenByCompound,
+            taskById: taskById,
+            windowContext: nil
+        )
+        XCTAssertEqual(result.completedTasks, 2)
+        XCTAssertEqual(result.completedLineIds, [])
+        XCTAssertEqual(result.linesCompleted, 0)
+    }
+
     // MARK: - computeBoardStatsUpdate: linesCompleted matches BingoDetection
 
     func testComputeBoardStats_LinesCompletedMatchesBingoDetection() {
