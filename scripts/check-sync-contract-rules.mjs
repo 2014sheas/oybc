@@ -61,7 +61,9 @@ function diff(aSet, bSet) {
 const checks = [
   {
     name: 'SYNC_COLLECTIONS ↔ firestore.rules isKnownCollection()',
-    ts: quotedAfter(contractSrc, 'SYNC_COLLECTIONS = [', 'SYNC_COLLECTIONS'),
+    // `const ` prefix disambiguates from `USER_SCOPED_SYNC_COLLECTIONS = [`
+    // regardless of declaration order (that string is `const USER_SCOPED_…`).
+    ts: quotedAfter(contractSrc, 'const SYNC_COLLECTIONS = [', 'SYNC_COLLECTIONS'),
     rules: quotedAfter(rulesSrc, 'function isKnownCollection()', 'isKnownCollection()'),
     tsLabel: 'SYNC_COLLECTIONS (contract)',
     rulesLabel: 'isKnownCollection() (rules)',

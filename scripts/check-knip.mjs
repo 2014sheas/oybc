@@ -58,6 +58,15 @@ for (const it of report.issues) {
   for (const d of it.devDependencies || []) hardIssues.push(`unused devDependency: ${it.file} → ${d.name || d}`);
   for (const u of it.unlisted || []) hardIssues.push(`unlisted dependency: ${it.file} → ${u.name || u}`);
   for (const u of it.unresolved || []) hardIssues.push(`unresolved import: ${it.file} → ${u.name || u}`);
+  // Duplicate exports: knip's JSON reporter emits these as arrays-of-arrays
+  // (each group is the set of names bound to the same symbol). Enabled by
+  // default, so a new duplicate must hard-fail, never baselined.
+  for (const grp of it.duplicates || []) {
+    const names = Array.isArray(grp)
+      ? grp.map((s) => (s && s.name) || s).join(' / ')
+      : (grp && grp.name) || grp;
+    hardIssues.push(`duplicate export: ${it.file} → ${names}`);
+  }
 }
 
 const newDrift = [...currentKeys].filter((k) => !baselineSet.has(k)).sort();
