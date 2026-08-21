@@ -438,7 +438,6 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           boardSize={board.boardSize}
           bingos={board.linesCompleted}
           streak={greenlogStreak}
-          celebrationIntensity={prefs.celebrationIntensity}
           onShare={() => setShareSheetOpen(true)}
           onNewBoard={() => navigate('/create')}
           onClose={() => setGreenlogOpen(false)}

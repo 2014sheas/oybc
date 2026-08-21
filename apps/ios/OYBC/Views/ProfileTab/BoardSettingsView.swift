@@ -70,6 +70,11 @@ struct BoardSettingsView: View {
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 14)
 
+                    sectionLabel("New board defaults")
+                    newBoardsCard
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 20)
+
                     sectionLabel("Core board defaults")
                     VStack(spacing: 10) {
                         ForEach(Self.coreTimeframes, id: \.self) { tf in
@@ -135,6 +140,87 @@ struct BoardSettingsView: View {
             .risoSectionLabel()
             .padding(.horizontal, Riso.gutter)
             .padding(.bottom, 8)
+    }
+
+    // MARK: - New board defaults card
+    //
+    // Ported verbatim from the retired `BoardPreferencesView` (Default size /
+    // Center square / Week starts). All controls write through
+    // `AppDatabase.updateUserPreferences` via the `bind(_:)` helper below.
+
+    private var preferences: UserPreferences { authService.userPreferences }
+
+    private var newBoardsCard: some View {
+        VStack(spacing: 0) {
+            segRow(label: "Default size",
+                   options: [(DefaultBoardSize.three, "3×3"),
+                             (DefaultBoardSize.four, "4×4"),
+                             (DefaultBoardSize.five, "5×5")],
+                   selection: bind(\.defaultBoardSize))
+            rowDivider
+            segRow(label: "Center square",
+                   options: [(DefaultCenterSquareType.free, "Free"),
+                             (DefaultCenterSquareType.none, "None")],
+                   selection: bind(\.defaultCenterType))
+            rowDivider
+            VStack(alignment: .leading, spacing: 4) {
+                segRow(label: "Week starts",
+                       options: [(WeekStartDay.monday, "Mon"),
+                                 (WeekStartDay.sunday, "Sun")],
+                       selection: bind(\.weekStartDay))
+                Text("Sets when weekly boards reset and renew.")
+                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
+                    .padding(.horizontal, Riso.cardPadding).padding(.bottom, 10)
+            }
+        }
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+    }
+
+    private func segRow<V: Hashable>(
+        label: String,
+        options: [(V, String)],
+        selection: Binding<V>
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+                .frame(minWidth: 80, alignment: .leading)
+            Spacer()
+            // Sizes-to-content (not `.fixedSize()`, which collapsed the
+            // equal-width layout into mismatched, clipping pills).
+            RisoSegmented(options: options.map { (value: $0.0, label: $0.1) },
+                          selection: selection,
+                          equalWidth: false)
+        }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
+    }
+
+    private var rowDivider: some View {
+        Divider().background(Color.risoInk.opacity(0.12))
+            .padding(.horizontal, Riso.cardPadding)
+    }
+
+    /// Two-way Binding for a UserPreferences field that writes through
+    /// AppDatabase.updateUserPreferences (bumps version/updatedAt + enqueues sync).
+    private func bind<Value>(
+        _ keyPath: WritableKeyPath<UserPreferences, Value>
+    ) -> Binding<Value> {
+        Binding(
+            get: { preferences[keyPath: keyPath] },
+            set: { newValue in
+                guard let userId = authService.currentUser?.id else { return }
+                do {
+                    _ = try AppDatabase.shared.updateUserPreferences(userId: userId) { current in
+                        var next = current
+                        next[keyPath: keyPath] = newValue
+                        return next
+                    }
+                } catch {
+                    dlog("⚠️ BoardSettingsView updateUserPreferences failed: \(error)")
+                }
+            }
+        )
     }
 
     // MARK: - Core-board defaults rows

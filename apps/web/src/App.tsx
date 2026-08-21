@@ -11,7 +11,6 @@ import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { StreaksPage } from './pages/StreaksPage';
 import { AccountSecurityPage } from './pages/AccountSecurityPage';
-import { BoardPreferencesPage } from './pages/BoardPreferencesPage';
 import { BoardSettingsPage } from './pages/BoardSettingsPage';
 import { CountersHubPage } from './pages/CountersHubPage';
 import { CounterDetailPage } from './pages/CounterDetailPage';
@@ -111,7 +110,6 @@ function AuthenticatedLayout(): React.ReactElement {
         <Route path="/tasks/:id" element={<TaskDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/profile/streaks" element={<StreaksPage />} />
-        <Route path="/profile/board-preferences" element={<BoardPreferencesPage />} />
         <Route path="/profile/board-settings" element={<BoardSettingsPage />} />
         <Route path="/profile/account-security" element={<AccountSecurityPage />} />
         <Route path="/profile/counters" element={<CountersHubPage />} />

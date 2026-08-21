@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  CenterSquareType,
   Timeframe,
   type CoreBoardDefault,
   type Pool,
   type RecurringBoardTemplate,
   type SpawnPoolFailureReason,
+  type UserPreferences,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import {
   useCoreBoardDefault,
   usePools,
+  usePreferences,
   useRecurringBoardTemplates,
   useTemplateMixes,
 } from '../hooks';
@@ -31,6 +34,24 @@ const CORE_TIMEFRAMES: { value: Timeframe; label: string }[] = [
 ];
 
 /**
+ * Phase 6.1 recurring-window "prompt me" toggles — independent of the
+ * new-board defaults above because these drive the Boards-tab banner, not
+ * the new-board form. When enabled, the Boards tab prompts the user to
+ * create a board for each new window (daily/weekly/monthly/yearly) on
+ * first open inside that window.
+ */
+const RECURRING_TOGGLES: {
+  key: 'recurringDailyEnabled' | 'recurringWeeklyEnabled' | 'recurringMonthlyEnabled' | 'recurringYearlyEnabled';
+  label: string;
+  timeframe: Timeframe;
+}[] = [
+  { key: 'recurringDailyEnabled', label: 'Prompt for daily board', timeframe: Timeframe.DAILY },
+  { key: 'recurringWeeklyEnabled', label: 'Prompt for weekly board', timeframe: Timeframe.WEEKLY },
+  { key: 'recurringMonthlyEnabled', label: 'Prompt for monthly board', timeframe: Timeframe.MONTHLY },
+  { key: 'recurringYearlyEnabled', label: 'Prompt for yearly board', timeframe: Timeframe.YEARLY },
+];
+
+/**
  * BoardSettingsPage — /profile/board-settings (Task Pools + Recurring
  * Boards Rework, P7, docs/POOLS_RECURRING.md §Surfaces item 9). Replaces
  * BOTH retired Profile sub-pages — "Recurring templates"
@@ -47,10 +68,26 @@ const CORE_TIMEFRAMES: { value: Timeframe; label: string }[] = [
  *   retired templates page used (`RepeatingBoardRow`, `computeTemplateAttention`,
  *   `computePoolPreview`, `useTemplateMixes`). "Edit tasks" opens
  *   `RosterEditSheet` in place instead of navigating to the wizard.
+ *
+ * Also absorbs the two sections that used to live on the now-deleted
+ * `/profile/board-preferences` sub-page (`BoardPreferencesPage`):
+ * "New board defaults" (week-start / board size / timeframe / center square —
+ * every field on the new-board form) at the top, and "Recurring board
+ * reminders" (the Phase 6.1 prompt-me toggles) at the bottom. Neither is a
+ * P7 concept; they're relocated here because the old sub-page was deleted
+ * and they otherwise had no other home.
  */
 export function BoardSettingsPage(): React.ReactElement {
   const { user } = useAuth();
   const userId = user?.id;
+
+  const [prefs, updatePrefs] = usePreferences();
+  const setPref = <K extends keyof UserPreferences>(
+    key: K,
+    value: UserPreferences[K]
+  ): void => {
+    updatePrefs({ [key]: value } as Partial<UserPreferences>);
+  };
 
   const library = useTaskLibrary(userId);
   const browsableTasks = useBrowsableTasks(library.allTasks, library.childToParents);
@@ -128,6 +165,85 @@ export function BoardSettingsPage(): React.ReactElement {
         <h1 className={styles.title}>Board settings</h1>
       </header>
 
+      <div className={styles.sectionLabel}>New board defaults</div>
+      <div className={styles.card}>
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-week-start">
+            Week starts on
+          </label>
+          <select
+            id="pref-week-start"
+            className={styles.select}
+            value={prefs.weekStartDay}
+            onChange={(e) =>
+              setPref('weekStartDay', e.target.value as UserPreferences['weekStartDay'])
+            }
+          >
+            <option value="monday">Monday</option>
+            <option value="sunday">Sunday</option>
+          </select>
+        </div>
+
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-board-size">
+            Default board size
+          </label>
+          <select
+            id="pref-board-size"
+            className={styles.select}
+            value={prefs.defaultBoardSize}
+            onChange={(e) =>
+              setPref(
+                'defaultBoardSize',
+                Number(e.target.value) as UserPreferences['defaultBoardSize']
+              )
+            }
+          >
+            <option value={3}>3 × 3</option>
+            <option value={4}>4 × 4</option>
+            <option value={5}>5 × 5</option>
+          </select>
+        </div>
+
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-timeframe">
+            Default timeframe
+          </label>
+          <select
+            id="pref-timeframe"
+            className={styles.select}
+            value={prefs.defaultTimeframe}
+            onChange={(e) => setPref('defaultTimeframe', e.target.value as Timeframe)}
+          >
+            <option value={Timeframe.CUSTOM}>Custom</option>
+            <option value={Timeframe.DAILY}>Daily</option>
+            <option value={Timeframe.WEEKLY}>Weekly</option>
+            <option value={Timeframe.MONTHLY}>Monthly</option>
+            <option value={Timeframe.YEARLY}>Yearly</option>
+          </select>
+        </div>
+
+        <div className={styles.settingsRow}>
+          <label className={styles.rowLabel} htmlFor="pref-center-type">
+            Default center square
+          </label>
+          <select
+            id="pref-center-type"
+            className={styles.select}
+            value={prefs.defaultCenterType}
+            onChange={(e) =>
+              setPref(
+                'defaultCenterType',
+                e.target.value as UserPreferences['defaultCenterType']
+              )
+            }
+          >
+            <option value={CenterSquareType.FREE}>Free</option>
+            <option value={CenterSquareType.NONE}>None</option>
+          </select>
+        </div>
+      </div>
+
       <div className={styles.sectionLabel}>Core-board defaults</div>
       <div className={styles.card}>
         {CORE_TIMEFRAMES.map(({ value, label }) => {
@@ -177,6 +293,36 @@ export function BoardSettingsPage(): React.ReactElement {
           ))}
         </div>
       )}
+
+      <div className={styles.sectionLabel}>Recurring board reminders</div>
+      <p className={styles.sectionIntro}>
+        When enabled, the Boards tab will prompt you to create a board for
+        each new window. Detection runs only when you open the app — no
+        background notifications.
+      </p>
+      <div className={styles.card}>
+        {RECURRING_TOGGLES.map(({ key, label, timeframe }) => (
+          <div className={styles.settingsRow} key={key}>
+            <label className={styles.rowLabel} htmlFor={`pref-${key}`}>
+              {label}
+            </label>
+            <label className={styles.toggleSwitch}>
+              <input
+                id={`pref-${key}`}
+                type="checkbox"
+                checked={prefs[key]}
+                onChange={(e) => setPref(key, e.target.checked)}
+              />
+              <span className={styles.toggleTrack} />
+            </label>
+            {prefs[key] && (
+              <Link to={`/boards/core/${timeframe}`} className={styles.browseLink}>
+                Browse →
+              </Link>
+            )}
+          </div>
+        ))}
+      </div>
 
       {userId && defaultsSheetTimeframe !== null && (
         <CoreDefaultsSheet

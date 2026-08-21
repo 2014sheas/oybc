@@ -1,5 +1,10 @@
-/* Profile (You tab) + shared sub-page styles (Riso, Phase 5a-i). Also consumed
-   by BoardPreferencesPage. Visual re-skin; all logic preserved. */
+/* Profile (You tab) + shared sub-page header/intro styles (Riso, Phase 5a-i),
+   the latter (.subPageHeader/.backLink/.subPageIntro/.header) also consumed
+   by StreaksPage, CountersHubPage, and CounterDetailPage via `profileStyles`.
+   (The settings-row/select/toggle/intensity-strip rules that used to live
+   here for the now-deleted BoardPreferencesPage were removed along with it;
+   BoardSettingsPage keeps its own self-contained copies — see its
+   module.css.) */
 .container {
   padding: 0;
 }
@@ -190,24 +195,6 @@
   color: var(--riso-ink);
 }
 
-/* Browse link (BoardPreferencesPage per-timeframe jump) */
-.browseLink {
-  margin-left: 12px;
-  font-family: var(--riso-font-head);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--riso-blue);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.browseLink:hover {
-  text-decoration: underline;
-}
-.browseLink:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-
 .rowLink {
   display: flex;
   align-items: center;
@@ -225,92 +212,6 @@
   font-weight: 800;
   font-size: 16px;
   color: var(--riso-muted);
-}
-
-/* ─── Select / input controls in settings rows ─────────────── */
-.select,
-.textInput {
-  background: var(--riso-paper);
-  border: 2px solid var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  color: var(--riso-ink);
-  font-family: var(--riso-font-head);
-  font-weight: 700;
-  font-size: 14px;
-  padding: 7px 10px;
-}
-.select {
-  min-width: 112px;
-  cursor: pointer;
-}
-.textInput {
-  font-family: var(--riso-font-body);
-  font-weight: 500;
-  width: 160px;
-}
-.select:focus-visible,
-.textInput:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 1px;
-}
-
-.stackedRow {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 13px 16px;
-  border-bottom: 1.5px solid var(--riso-hair);
-}
-.stackedRow:last-child {
-  border-bottom: none;
-}
-.stackedRow .textInput {
-  width: 100%;
-}
-
-/* toggle switch */
-.toggleSwitch {
-  position: relative;
-  display: inline-block;
-  width: 46px;
-  height: 26px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.toggleSwitch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.toggleTrack {
-  position: absolute;
-  inset: 0;
-  background: var(--riso-paper);
-  border: 2px solid var(--riso-ink);
-  border-radius: 999px;
-  transition: background 0.15s;
-}
-.toggleTrack::before {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  background: var(--riso-ink);
-  border-radius: 50%;
-  transition: transform 0.15s, background 0.15s;
-}
-.toggleSwitch input:checked + .toggleTrack {
-  background: var(--riso-green);
-}
-.toggleSwitch input:checked + .toggleTrack::before {
-  transform: translateX(20px);
-  background: var(--riso-on-color);
-}
-.toggleSwitch input:focus-visible + .toggleTrack {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
 }
 
 /* ─── Version footer ────────────────────────────────────────── */
@@ -429,74 +330,3 @@
   outline-offset: 2px;
 }
 
-/* ─── Celebration intensity strip (BoardPreferencesPage) ───── */
-
-/*
- * The "Playing" card intensity row — stacked layout inside a .stackedRow.
- * iOS parity: 10 equal-width clickable ticks, gold for 1–7 (active),
- * red for 8–10 (active), paper for inactive. Borders follow the
- * dark-mode contract: ink-static on colored fills, adaptive ink on paper.
- */
-.intensityHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.intensityLabel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--riso-font-head);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--riso-ink);
-}
-.intensityLabelIcon {
-  font-size: 16px;
-  line-height: 1;
-}
-.intensityValue {
-  font-family: var(--riso-font-head);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--riso-muted);
-  white-space: nowrap;
-}
-.intensityStrip {
-  display: flex;
-  gap: 5px;
-  margin-top: 2px;
-}
-.intensityTick {
-  flex: 1;
-  height: 28px;
-  border-radius: 4px;
-  border-width: 2px;
-  border-style: solid;
-  cursor: pointer;
-  padding: 0;
-  transition: transform 0.07s, box-shadow 0.07s;
-}
-.intensityTick:hover {
-  transform: translateY(-2px);
-}
-.intensityTick:active {
-  transform: translateY(1px);
-}
-.intensityTick:focus-visible {
-  /* Inset ring so it reads clearly on both gold and paper ticks. */
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-.intensityCaption {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--riso-muted);
-  line-height: 1.45;
-  margin-top: 4px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .intensityTick {
-    transition: none;
-  }
-}

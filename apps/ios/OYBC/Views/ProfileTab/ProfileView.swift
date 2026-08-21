@@ -228,20 +228,6 @@ struct ProfileView: View {
 
             rowDivider
 
-            // Board preferences (no count)
-            NavigationLink {
-                BoardPreferencesView()
-            } label: {
-                RisoProfileRow(
-                    icon: "square.grid.3x3",
-                    label: "Board preferences",
-                    chevron: true
-                )
-            }
-            .buttonStyle(.plain)
-
-            rowDivider
-
             // Notifications (Phase 7 — local reminders)
             NavigationLink {
                 NotificationPreferencesView()

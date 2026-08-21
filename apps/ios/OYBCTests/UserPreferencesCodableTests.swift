@@ -205,4 +205,34 @@ final class UserPreferencesCodableTests: XCTestCase {
         XCTAssertTrue(decoded.recurringMonthlyEnabled)
         XCTAssertTrue(decoded.recurringYearlyEnabled)
     }
+
+    // MARK: - Retired fields (celebrationIntensity / haptics)
+
+    func testLegacyCelebrationIntensityAndHapticsKeysAreIgnoredOnDecode() throws {
+        // `celebrationIntensity`/`haptics` were retired from UserPreferences
+        // (the "Playing" card that configured them was removed). A payload
+        // written by an old local cache or synced from a peer that hasn't
+        // upgraded yet may still carry these keys — the decoder has no
+        // CodingKeys case for them, so they're simply ignored rather than
+        // throwing, and every other field in the same payload decodes normally.
+        let json = """
+        {
+          "weekStartDay": "sunday",
+          "defaultBoardSize": 4,
+          "defaultCenterType": "none",
+          "defaultTimeframe": "weekly",
+          "defaultRandomize": false,
+          "theme": "dark",
+          "celebrationIntensity": 5,
+          "haptics": false
+        }
+        """
+        let decoded = try decode(json)
+        XCTAssertEqual(decoded.weekStartDay, .sunday)
+        XCTAssertEqual(decoded.defaultBoardSize, .four)
+        XCTAssertEqual(decoded.defaultCenterType, .none)
+        XCTAssertEqual(decoded.defaultTimeframe, .weekly)
+        XCTAssertEqual(decoded.defaultRandomize, false)
+        XCTAssertEqual(decoded.theme, .dark)
+    }
 }

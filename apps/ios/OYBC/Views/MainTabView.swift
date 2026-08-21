@@ -161,7 +161,6 @@ struct MainTabView: View {
                     totalTasks: 25,
                     linesCompleted: 12,
                     boardName: "Sample board",
-                    celebrationIntensity: authService.userPreferences.celebrationIntensity,
                     // Preview only — both buttons just close it (no real share).
                     onShare: { showGreenlogPreview = false },
                     onDismiss: { showGreenlogPreview = false }

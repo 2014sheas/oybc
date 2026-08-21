@@ -34,10 +34,17 @@ export interface RisoGreenlogProps {
   /** Timeframe greenlog streak (incl. this clear). */
   streak: number;
   /**
-   * Celebration intensity from Board Preferences (1–10, default 7).
-   * Scales confetti count: count = 8 + intensity × 8 → 16…88 pieces.
-   * Mirrors the iOS RisoGreenlogOverlay formula exactly.
-   * prefers-reduced-motion: confetti is hidden via CSS regardless of count.
+   * Celebration intensity (1–10, default 7). Scales confetti count:
+   * count = 8 + intensity × 8 → 16…88 pieces. Mirrors the iOS
+   * RisoGreenlogOverlay formula exactly. prefers-reduced-motion: confetti
+   * is hidden via CSS regardless of count.
+   *
+   * No caller currently passes this — it was previously wired to the
+   * (now-removed) `UserPreferences.celebrationIntensity` field, which was
+   * never meant to be user-configurable. Kept as an optional prop with its
+   * default intact rather than hardcoding 7 inline, in case a future
+   * caller wants to vary it (e.g. a bigger celebration for a bigger
+   * board), but nothing currently supplies a non-default value.
    */
   celebrationIntensity?: number;
   onShare: () => void;

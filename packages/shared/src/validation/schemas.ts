@@ -967,10 +967,12 @@ export const UserPreferencesSchema = z.object({
   recurringMonthlyEnabled: z.boolean().optional(),
   recurringYearlyEnabled: z.boolean().optional(),
   // Board Preferences (Riso Phase 5a): optional for forward-compat with peers
-  // that wrote their user doc before these fields existed. mergeUserPreferences
-  // fills defaults on the pull path and clamps celebrationIntensity to 1–10.
-  celebrationIntensity: z.number().int().min(1).max(10).optional(),
-  haptics: z.boolean().optional(),
+  // that wrote their user doc before this field existed. mergeUserPreferences
+  // fills the default on the pull path. (The other two 5a fields,
+  // celebrationIntensity and haptics, were removed as never-meant-to-be-
+  // user-configurable — see docs/SYNC_STRATEGY.md §User Preferences Sync.
+  // No schema entry is needed to tolerate old records that still carry
+  // those keys — z.object() strips unrecognized keys by default.)
   expiringReminders: z.boolean().optional(),
   // Notifications (Phase 7 — iOS local reminders): optional for forward-compat
   // with peers that wrote their user doc before these fields existed.

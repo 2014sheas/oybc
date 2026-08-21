@@ -72,14 +72,6 @@ struct UserPreferences: Codable, Equatable {
     var recurringMonthlyEnabled: Bool
     var recurringYearlyEnabled: Bool
 
-    // Riso Phase 5a — Board Preferences sub-page additions.
-    // All new fields decode forward-compatibly via the custom `init(from:)`.
-
-    /// Celebration intensity 1–10. Scales confetti count on GREENLOG and
-    /// bingo-toast animations. Default 7 ("Full press") per the design spec.
-    var celebrationIntensity: Int
-    /// Whether device haptics fire on cell completion and bingo detection.
-    var haptics: Bool
     /// Whether the user wants a nudge the day before a board expires.
     var expiringReminders: Bool
 
@@ -114,8 +106,6 @@ struct UserPreferences: Codable, Equatable {
         recurringWeeklyEnabled: true,
         recurringMonthlyEnabled: true,
         recurringYearlyEnabled: true,
-        celebrationIntensity: 7,
-        haptics: true,
         expiringReminders: true,
         notificationsEnabled: false,
         recurringWindowReminders: true,
@@ -158,13 +148,6 @@ struct UserPreferences: Codable, Equatable {
             ?? Self.defaults.recurringMonthlyEnabled
         self.recurringYearlyEnabled = (try? c.decode(Bool.self, forKey: .recurringYearlyEnabled))
             ?? Self.defaults.recurringYearlyEnabled
-        // Clamp to the valid 1–10 range — a misbehaving peer could push an
-        // out-of-range value that would otherwise reach the celebration UI.
-        self.celebrationIntensity = max(1, min(10,
-            (try? c.decode(Int.self, forKey: .celebrationIntensity))
-                ?? Self.defaults.celebrationIntensity))
-        self.haptics = (try? c.decode(Bool.self, forKey: .haptics))
-            ?? Self.defaults.haptics
         self.expiringReminders = (try? c.decode(Bool.self, forKey: .expiringReminders))
             ?? Self.defaults.expiringReminders
         self.notificationsEnabled = (try? c.decode(Bool.self, forKey: .notificationsEnabled))
@@ -207,8 +190,6 @@ struct UserPreferences: Codable, Equatable {
         recurringWeeklyEnabled: Bool,
         recurringMonthlyEnabled: Bool,
         recurringYearlyEnabled: Bool,
-        celebrationIntensity: Int = 7,
-        haptics: Bool = true,
         expiringReminders: Bool = true,
         notificationsEnabled: Bool = false,
         recurringWindowReminders: Bool = true,
@@ -225,8 +206,6 @@ struct UserPreferences: Codable, Equatable {
         self.recurringWeeklyEnabled = recurringWeeklyEnabled
         self.recurringMonthlyEnabled = recurringMonthlyEnabled
         self.recurringYearlyEnabled = recurringYearlyEnabled
-        self.celebrationIntensity = celebrationIntensity
-        self.haptics = haptics
         self.expiringReminders = expiringReminders
         self.notificationsEnabled = notificationsEnabled
         self.recurringWindowReminders = recurringWindowReminders
