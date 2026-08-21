@@ -4,8 +4,9 @@ import SwiftUI
 /// web's `CreateHubPage`.
 ///
 /// Composes:
-/// - `CreateHubBoardCTAView`: primary "Start a new board" card that
-///   swaps the view into the 3-step wizard.
+/// - `CreateHubBoardCTAView` × 2 (Board Creation Split, iOS PR A): a RED
+///   one-off card and a BLUE recurring card, each swapping the view into
+///   its own mode-locked wizard instance.
 /// - `CreateHubDraftsListView` (conditional): lists DRAFT boards
 ///   loaded via GRDB; tapping a row hydrates the wizard from that
 ///   draft.
@@ -55,13 +56,14 @@ struct CreateHubView: View {
     @State private var vm = CreateHubViewModel()
 
     /// Phase 6.1d: pending core boards (daily/weekly/monthly/yearly) that
-    /// the user hasn't created yet for the current windows. When non-empty,
-    /// the prominent `PendingCoreBoardsSectionView` becomes the headline
-    /// action and the existing `CreateHubBoardCTAView` is demoted to a
-    /// secondary "Custom timeframe board" affordance below it. Kept as
-    /// its own observable on the view rather than embedding it in
-    /// `CreateHubViewModel` — it's already an `@Observable` and nesting
-    /// adds an indirection without removing state from the view.
+    /// the user hasn't created yet for the current windows, surfaced via
+    /// `CoreBoardsSectionView` above the two hub CTAs. Board Creation Split
+    /// (iOS PR A) retired the CTA-demotion behavior this once drove — the
+    /// CTAs are always shown at full strength now; only this section's own
+    /// presence/emptiness changes. Kept as its own observable on the view
+    /// rather than embedding it in `CreateHubViewModel` — it's already an
+    /// `@Observable` and nesting adds an indirection without removing state
+    /// from the view.
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
 
     var body: some View {
@@ -89,8 +91,8 @@ struct CreateHubView: View {
                         vm.loadDraftAndEnterWizard(boardId: draftId, userId: userId)
                     }
                 }
-        case .wizardFresh:
-            wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil)
+        case .wizardFresh(let startRecurring):
+            wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, startRecurring: startRecurring)
         case .wizardResume:
             wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, targetWindowDate: nil)
         case .wizardCoreBoard(let timeframe, let targetWindowDate):
@@ -116,7 +118,8 @@ struct CreateHubView: View {
     private func wizard(
         draft: (board: Board, boardTasks: [BoardTask])?,
         prefilledRecurringTimeframe: Timeframe?,
-        targetWindowDate: Date?
+        targetWindowDate: Date?,
+        startRecurring: Bool = false
     ) -> some View {
         BoardWizardView(
             userId: userId,
@@ -124,6 +127,7 @@ struct CreateHubView: View {
             draft: draft,
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
+            startRecurring: startRecurring,
             onCancel: { handleHubReturn() },
             onComplete: { boardId, status in
                 onBoardCompleted?(boardId, status)
@@ -160,14 +164,6 @@ struct CreateHubView: View {
     ///   kicker → H1 → content cards, all scrolling (no sticky header).
     @ViewBuilder
     private var hubContent: some View {
-        // Demote the custom-board CTA only when at least one core-board
-        // slot needs creation today — the persistent Core Boards section
-        // is the headline action in that case. When every enabled slot
-        // is already done (or no recurring timeframes are enabled at
-        // all), the CTA stays primary so the user has an obvious next
-        // action.
-        let hasUncreatedCoreBoards = pendingRecurringVM.slots.contains { $0.currentBoard == nil }
-
         ZStack {
             RisoPaperBackground()
 
@@ -189,10 +185,23 @@ struct CreateHubView: View {
                         subtitle: "Your standard board for each time period."
                     )
 
-                    CreateHubBoardCTAView(
-                        onTap: { vm.enterFreshWizard() },
-                        variant: hasUncreatedCoreBoards ? .secondary : .primary
-                    )
+                    // Board Creation Split (iOS PR A) — two stacked
+                    // full-width CTAs under a "NEW BOARD" section label,
+                    // mode locked at the tap. Always shown at full
+                    // strength; the retired primary/secondary demotion
+                    // logic lived here before the split.
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("New board")
+                            .risoSectionLabel()
+
+                        CreateHubBoardCTAView(kind: .oneOff) {
+                            vm.enterFreshWizard(startRecurring: false)
+                        }
+
+                        CreateHubBoardCTAView(kind: .recurring) {
+                            vm.enterFreshWizard(startRecurring: true)
+                        }
+                    }
 
                     if !vm.drafts.isEmpty {
                         CreateHubDraftsListView(

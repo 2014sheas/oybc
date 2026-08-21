@@ -50,7 +50,9 @@ struct BoardWizardSetupStepView: View {
                 RisoButton(title: "Cancel", kind: .neutral, action: onCancel)
                     .frame(maxWidth: .infinity)
 
-                RisoButton(title: "Next ›", kind: .primary, action: onNext)
+                // Board Creation Split (iOS PR A) — accent tracks the
+                // wizard's fixed mode: red one-off / blue recurring.
+                RisoButton(title: "Next ›", kind: controller.isRecurring ? .blue : .primary, action: onNext)
                     .frame(maxWidth: .infinity)
                     // Visual dim + a real disabled state (so VoiceOver also
                     // reports/blocks it) when Step 1 isn't valid yet.

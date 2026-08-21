@@ -77,6 +77,11 @@ struct RisoTasksPoolHeaderView: View {
 
     @ViewBuilder
     private var poolModelNote: some View {
+        // Board Creation Split (README §Copy strings) — this note's copy is
+        // now byte-identical across one-off and recurring: "✓ Fills your
+        // board · {X} extra rotate in" / "Add {X} more — extras shuffle
+        // into the mix". `isRecurring` no longer branches the text (it's
+        // kept as a parameter for any future per-mode divergence).
         if isSatisfied {
             // Satisfied: green "✓ Fills your board …" copy
             HStack(spacing: 4) {
@@ -90,7 +95,7 @@ struct RisoTasksPoolHeaderView: View {
                     + Text("\(extra) extra")
                         .font(.risoBody(11, .extraBold))
                         .foregroundStyle(Color.risoGreen)
-                    + Text(isRecurring ? " shuffle in each spawn" : " shuffle into the mix")
+                    + Text(" rotate in")
                         .font(.risoBody(11, .semibold))
                         .foregroundStyle(Color.risoGreen)
                 } else {
@@ -100,11 +105,11 @@ struct RisoTasksPoolHeaderView: View {
                 }
             }
         } else {
-            // Short: "Add N more — extras later just shuffle into the mix"
+            // Short: "Add N more — extras shuffle into the mix"
             Text("Add ") +
             Text("\(remaining)")
                 .fontWeight(.heavy) +
-            Text(" more — extras later just shuffle into the mix")
+            Text(" more — extras shuffle into the mix")
         }
     }
 

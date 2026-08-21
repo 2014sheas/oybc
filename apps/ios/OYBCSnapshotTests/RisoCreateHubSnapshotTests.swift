@@ -5,9 +5,9 @@ import SnapshotTesting
 
 /// Snapshot coverage for the three Riso Create-hub design gaps:
 ///
-/// 1. **CreateHubBoardCTAView** (both variants — Task Pools + Recurring
-///    Boards Rework P4 collapsed this to a single flow/copy, so there's no
-///    more "kind" axis) — rendered in isolation since it takes only props.
+/// 1. **CreateHubBoardCTAView** (both `kind`s — Board Creation Split, iOS PR
+///    A, replaced the single primary/secondary-variant CTA with two fixed-
+///    mode cards) — rendered in isolation since it takes only props.
 /// 2. **CreateHubDraftsListView** — rendered with seeded draft rows so the
 ///    Riso draft-row styling is exercised.
 /// 3. **BoardWizardCancelDialogView** — rendered in both the enabled and
@@ -34,9 +34,9 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
 
     // MARK: - 1. CreateHubBoardCTAView
 
-    /// Primary CTA — large Riso red card with gold icon.
-    func testCTAOneOffPrimary() {
-        let view = CreateHubBoardCTAView(onTap: { }, variant: .primary)
+    /// One-off CTA — full-width Riso RED card with gold icon.
+    func testCTAOneOff() {
+        let view = CreateHubBoardCTAView(kind: .oneOff, onTap: { })
             .padding(Riso.gutter)
         assertSnapshot(
             of: view,
@@ -45,8 +45,8 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
         )
     }
 
-    func testCTAOneOffPrimaryDark() {
-        let view = CreateHubBoardCTAView(onTap: { }, variant: .primary)
+    func testCTAOneOffDark() {
+        let view = CreateHubBoardCTAView(kind: .oneOff, onTap: { })
             .padding(Riso.gutter)
         assertSnapshot(
             of: view,
@@ -55,13 +55,23 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
         )
     }
 
-    /// Secondary CTA — compact paper2 card.
-    func testCTAOneOffSecondary() {
-        let view = CreateHubBoardCTAView(onTap: { }, variant: .secondary)
+    /// Recurring CTA — full-width Riso BLUE card with gold icon.
+    func testCTARecurring() {
+        let view = CreateHubBoardCTAView(kind: .recurring, onTap: { })
             .padding(Riso.gutter)
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 80), traits: lightTraits),
+            as: .image(layout: .fixed(width: 393, height: 100), traits: lightTraits),
+            record: recordMode
+        )
+    }
+
+    func testCTARecurringDark() {
+        let view = CreateHubBoardCTAView(kind: .recurring, onTap: { })
+            .padding(Riso.gutter)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 100), traits: darkTraits),
             record: recordMode
         )
     }

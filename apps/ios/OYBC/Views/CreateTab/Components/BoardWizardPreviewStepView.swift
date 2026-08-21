@@ -23,16 +23,17 @@ enum ArrangeSubMode: String, Hashable {
 ///   - Three button-set variants (one-off: Back/Draft/Activate; recurring: Back/Create or Save).
 ///   - `persistWizardBoard`, `persistRecurringTemplate` call sites unchanged.
 ///
-/// Layout (per README §3 Step-3 + wizard.jsx):
-///   - Centred board name (Bricolage 800 24px) + meta line (timeframe · size · task count).
-///   - Preview ⇄ Rearrange toggle + optional Shuffle button.
-///   - Rearrange hint line (when in Rearrange mode).
-///   - `RearrangeGrid` — display-only in Preview mode, interactive in Rearrange mode.
-///     Drag-to-insert + tap-to-swap; the center square is pinned.
-///   - Dashed note: "Tap Create and your board goes live right away."
-///   - Summary card rows: Name / Size / Timeframe / Center / Tasks [/ Recurring] with
-///     Edit jumps per step.
-///   - Riso footer buttons per variant.
+/// Layout (Board Creation Split, iOS PR A — per-mode; README §Screens "2. One-off
+/// wizard" / "3. Recurring wizard"):
+///   - Centred board name (Bricolage 800 24px) + meta line (mode-specific format).
+///   - **One-off**: Preview ⇄ Rearrange toggle + optional Shuffle button, then
+///     `RearrangeGrid` (display-only in Preview mode, interactive in Rearrange
+///     mode; drag-to-insert + tap-to-swap; center square pinned). NO summary card.
+///   - **Recurring**: the selected-task list (`RisoPoolListView`, no grid/
+///     rearrange/shuffle), then a 3-row Repeats/Size/Pool summary card with
+///     blue "Edit" jumps.
+///   - Riso footer buttons per mode (one-off: Back/Draft/Activate — red;
+///     recurring: Back/Create Board — blue, no draft).
 ///
 /// Persistence: `placement` (`@State`) is the single source of truth for both the
 /// grid and `persistWizardBoard`. Rearranging via drag/tap updates `placement` via
@@ -223,21 +224,6 @@ struct BoardWizardPreviewStepView: View {
         return map
     }
 
-    /// `"{N} tasks in the deck · fills a {S}×{S}"` / `"· short on required
-    /// tasks"` — the deckFloor is the CURRENT board's own geometry
-    /// (`tasksNeededForBoard`), not the multi-consumer floor
-    /// `PoolEditSheetView` uses (this is the one board the user is
-    /// creating/editing right now, not every board that pulls a shared
-    /// pool). Health = `controller.selectedTaskIds.count >=
-    /// controller.tasksRequired`, matching `formatDeckPreview`'s own
-    /// `taskCount >= deckFloor.floor` comparison.
-    private var deckPreviewText: String {
-        PoolHealth.formatDeckPreview(
-            taskCount: controller.selectedTaskIds.count,
-            deckFloor: PoolHealth.DeckFloor(boardSize: controller.size, floor: controller.tasksRequired)
-        )
-    }
-
     /// Compound-children map, staged-edit-aware — the Step-3 twin of
     /// `BoardWizardTasksStepView.effectiveChildrenByCompound` (both delegate
     /// to the shared `effectiveCompoundChildrenByCompound`), so an unsaved
@@ -332,39 +318,36 @@ struct BoardWizardPreviewStepView: View {
         max(0, UIScreen.main.bounds.width - 2 * Riso.gutter)
     }
 
-    private var timeframeSummary: String {
-        if controller.timeframe == .custom {
-            if !controller.customStartDate.isEmpty && !controller.customEndDate.isEmpty {
-                return "Custom · \(controller.customStartDate) → \(controller.customEndDate)"
-            }
-            return "Custom (no dates set)"
-        }
+    // MARK: - Recurring summary-card rows (Board Creation Split, iOS PR A)
+    //
+    // The one-off Preview has NO summary card at all (frame 1k) — these
+    // three rows are recurring-only, replacing the old shared Name/Size/
+    // Timeframe/Center/Tasks/Recurring rows. Canonical copy: README
+    // §Screens "3. Recurring wizard" — "Every week · first board Aug 17 –
+    // 23" / "5×5 · Free center" / "27 tasks · needs at least 25".
+
+    private var recurringRepeatsSummary: String {
         guard let b = controller.computedBoundaries else { return "—" }
         let windowLabel = formatTimeframeLabel(timeframe: controller.timeframe, startDate: b.start)
-        if controller.isRecurring {
-            return "\(formatRecurringCadence(timeframe: controller.timeframe)) · starting \(windowLabel)"
-        }
-        return windowLabel
+        return "\(formatRecurringCadence(timeframe: controller.timeframe)) · first board \(windowLabel)"
     }
 
-    private var centerSummary: String {
-        if !controller.isOddBoard { return "n/a (even board)" }
+    private var recurringSizeSummary: String {
+        "\(controller.size)×\(controller.size) · \(recurringCenterLabel)"
+    }
+
+    /// CHOSEN is unreachable while `isRecurring` (the center-type selector
+    /// suppresses it) — the `.chosen` case is a defensive fallback only.
+    private var recurringCenterLabel: String {
         switch controller.centerType {
-        case .free:
-            return "Free space"
-        case .chosen:
-            if let id = controller.centerTaskId,
-               let task = library.libraryTasks.first(where: { $0.id == id }) {
-                return "Chosen · \"\(task.title)\""
-            }
-            return "Chosen (none picked)"
-        case .none:
-            return "None"
+        case .free:   return "Free center"
+        case .none:   return "No center"
+        case .chosen: return "Free center"
         }
     }
 
-    private var recurringSummary: String {
-        "Spawns a new \(controller.timeframe.rawValue) board from a \(controller.selectedTaskIds.count)-task pool (random subset each window)."
+    private var recurringPoolSummary: String {
+        "\(controller.selectedTaskIds.count) tasks · needs at least \(controller.tasksRequired)"
     }
 
     /// Task Pools + Recurring Boards Rework (P5) — core-board setup's
@@ -379,10 +362,13 @@ struct BoardWizardPreviewStepView: View {
         controller.isCore && controller.selectedTaskIds.count < controller.tasksRequired
     }
 
+    /// Board Creation Split (iOS PR A) — "Create Board" replaces the
+    /// former "Create template & spawn" (banned mechanics words: no
+    /// "template", no "spawn" anywhere in UI copy).
     private var recurringPrimaryLabel: String {
         if isCreating { return "Saving…" }
         if controller.editingTemplateId != nil { return "Save changes" }
-        return "Create template & spawn"
+        return "Create Board"
     }
 
     // MARK: - Body
@@ -431,11 +417,14 @@ struct BoardWizardPreviewStepView: View {
                         )
                     }
 
-                    // Dashed note
-                    previewNote
-
-                    // Summary card
-                    summaryCard
+                    // Board Creation Split (iOS PR A) — neither mode's
+                    // Preview shows the old dashed "star" note anymore
+                    // (frames 1j/1k have no note card at all). One-off has
+                    // NO summary card either; recurring's summary is the
+                    // 3-row Repeats/Size/Pool card (see `recurringSummaryCard`).
+                    if controller.isRecurring {
+                        recurringSummaryCard
+                    }
 
                     // Error
                     if let msg = errorMessage {
@@ -479,7 +468,7 @@ struct BoardWizardPreviewStepView: View {
                 .foregroundStyle(Color.risoInk)
                 .multilineTextAlignment(.center)
 
-            Text("\(controller.timeframe.rawValue.capitalized) · \(controller.size)×\(controller.size) · \(controller.selectedTaskIds.count) tasks")
+            Text(previewMetaText)
                 .font(.risoBody(12, .bold))
                 .foregroundStyle(Color.risoMuted)
         }
@@ -487,29 +476,29 @@ struct BoardWizardPreviewStepView: View {
         .padding(.top, 4)
     }
 
-    // MARK: - Deck section (Task Pools + Recurring Boards Rework, P4)
+    /// Board Creation Split (iOS PR A) — meta line diverges per mode
+    /// (README §Screens): one-off "Weekly · 3×3 · 8 tasks"; recurring
+    /// "Every week · 5×5 · 27-task pool".
+    private var previewMetaText: String {
+        if controller.isRecurring {
+            return "\(formatRecurringCadence(timeframe: controller.timeframe)) · \(controller.size)×\(controller.size) · \(controller.selectedTaskIds.count)-task pool"
+        }
+        return "\(controller.timeframe.rawValue.capitalized) · \(controller.size)×\(controller.size) · \(controller.selectedTaskIds.count) tasks"
+    }
 
-    /// Recurring-board Preview branch: the deck-preview header line (health
-    /// note, matching `PoolEditSheetView`'s deck line verbatim) plus the
-    /// full selected-task list with provenance subtitles, reusing
-    /// `RisoPoolListView` (the exact list the Tasks step already renders)
-    /// rather than a second list renderer. No grid/rearrange/shuffle here —
-    /// a repeating board's mix isn't a fixed grid (docs/POOLS_RECURRING.md
-    /// §Behavior invariants: "extras shuffle into the mix").
+    // MARK: - Pool-list section (recurring — Board Creation Split, iOS PR A)
+
+    /// Recurring-board Preview branch: the full selected-task list (no
+    /// health-note header — frame 1j goes straight from the centred name/
+    /// meta to the list; `RisoPoolListView` renders its own "On your
+    /// board · N" header), reusing `RisoPoolListView` (the exact list the
+    /// Pool step already renders) rather than a second list renderer. No
+    /// grid/rearrange/shuffle here — a repeating board's mix isn't a fixed
+    /// grid (docs/POOLS_RECURRING.md §Behavior invariants: "extras shuffle
+    /// into the mix").
     @ViewBuilder
     private var deckSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(deckPreviewText)
-                .font(.risoBody(12.5, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: Riso.cardRadius).fill(Color.risoPaper2))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .strokeBorder(Color.risoInk.opacity(0.4), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                )
-
             RisoPoolListView(
                 selectedTaskIds: controller.selectedTaskIds,
                 orderedTaskIds: controller.poolOrder,
@@ -570,72 +559,19 @@ struct BoardWizardPreviewStepView: View {
 // The private extension below keeps the file self-contained.
 private extension BoardWizardPreviewStepView {
 
-    // MARK: - Note
+    // MARK: - Summary card (recurring only — Board Creation Split, iOS PR A)
 
-    /// Note copy matching the actual primary action for this flow, so it's
-    /// not misleading in the draft / recurring-edit states.
-    private var previewNoteText: String {
-        if controller.editingTemplateId != nil {
-            return "Save changes to update your recurring template."
-        }
-        if controller.isRecurring {
-            return "Create your template and spawn the first board."
-        }
-        return "Activate to go live now, or save it as a draft for later."
-    }
-
+    /// Three rows only — Repeats / Size / Pool — each with a blue "Edit"
+    /// jump back to Setup (Repeats, Size) or Pool (the task-count row).
+    /// The one-off Preview renders no summary card at all (see `body`).
     @ViewBuilder
-    private var previewNote: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "star.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.risoGold)
-            Text(previewNoteText)
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoMuted)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
-                .foregroundStyle(Color.risoInk)
-        )
-    }
-
-    // MARK: - Summary card
-
-    @ViewBuilder
-    private var summaryCard: some View {
+    private var recurringSummaryCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            previewRow(label: "Name",
-                       value: controller.name.isEmpty ? "(unset)" : controller.name,
-                       jumpTo: 1)
+            previewRow(label: "Repeats", value: recurringRepeatsSummary, jumpTo: 1)
             Divider().background(Color.risoInk.opacity(0.12))
-            previewRow(label: "Size",
-                       value: "\(controller.size)×\(controller.size)",
-                       jumpTo: 1)
+            previewRow(label: "Size", value: recurringSizeSummary, jumpTo: 1)
             Divider().background(Color.risoInk.opacity(0.12))
-            previewRow(label: "Timeframe",
-                       value: timeframeSummary,
-                       jumpTo: 1)
-            Divider().background(Color.risoInk.opacity(0.12))
-            previewRow(label: "Center",
-                       value: centerSummary,
-                       jumpTo: 1)
-            Divider().background(Color.risoInk.opacity(0.12))
-            previewRow(
-                label: "Tasks",
-                value: "\(controller.selectedTaskIds.count) selected · \(controller.tasksRequired) required",
-                jumpTo: 2
-            )
-            if controller.isRecurring {
-                Divider().background(Color.risoInk.opacity(0.12))
-                previewRow(label: "Recurring",
-                           value: recurringSummary,
-                           jumpTo: 1)
-            }
+            previewRow(label: "Pool", value: recurringPoolSummary, jumpTo: 2)
         }
         .risoCard()
     }
@@ -711,7 +647,9 @@ private extension BoardWizardPreviewStepView {
         .background(Color.risoPaper)
     }
 
-    /// Recurring: ‹ Back · Create template & spawn (or Save changes)
+    /// Recurring: ‹ Back · Create Board (or Save changes when editing).
+    /// Board Creation Split (iOS PR A) — no "Save as Draft" here (recurring
+    /// drafts are PR B); accent is blue, matching the wizard's fixed mode.
     @ViewBuilder
     private var recurringFooter: some View {
         HStack(spacing: 10) {
@@ -720,7 +658,7 @@ private extension BoardWizardPreviewStepView {
 
             Spacer()
 
-            RisoButton(title: recurringPrimaryLabel, kind: .primary) {
+            RisoButton(title: recurringPrimaryLabel, kind: .blue) {
                 performCreation(status: .active)
             }
             .disabled(isCreating)
@@ -756,8 +694,8 @@ private extension BoardWizardPreviewStepView {
                 onError: { msg in
                     isCreating = false
                     errorMessage = controller.editingTemplateId == nil
-                        ? "Failed to create recurring template: \(msg)"
-                        : "Failed to update recurring template: \(msg)"
+                        ? "Failed to create recurring board: \(msg)"
+                        : "Failed to update recurring board: \(msg)"
                 }
             )
             return

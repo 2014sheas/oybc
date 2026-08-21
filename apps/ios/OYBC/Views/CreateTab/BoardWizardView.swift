@@ -22,6 +22,10 @@ struct BoardWizardView: View {
     let prefilledRecurringTimeframe: Timeframe?
     let targetWindowDate: Date?
     let editingTemplate: RecurringBoardTemplate?
+    /// Board Creation Split (iOS PR A) — true when launched from the
+    /// recurring hub card. Only takes effect for a truly fresh wizard
+    /// (no draft/template/prefill) — see `BoardWizardViewModel.init`.
+    var startRecurring: Bool = false
     /// Which step the wizard opens on (issue #321). Defaults to 1 (Setup)
     /// for every existing entry point; the Recurring-templates card's
     /// "Add tasks" affordance passes 2 (Tasks) so the user lands directly
@@ -54,6 +58,7 @@ struct BoardWizardView: View {
         prefilledRecurringTimeframe: Timeframe? = nil,
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
+        startRecurring: Bool = false,
         initialStep: WizardStep = 1,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void,
@@ -66,6 +71,7 @@ struct BoardWizardView: View {
         self.prefilledRecurringTimeframe = prefilledRecurringTimeframe
         self.targetWindowDate = targetWindowDate
         self.editingTemplate = editingTemplate
+        self.startRecurring = startRecurring
         self.initialStep = initialStep
         self.onCancel = onCancel
         self.onComplete = onComplete
@@ -78,6 +84,7 @@ struct BoardWizardView: View {
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
             editingTemplate: editingTemplate,
+            startRecurring: startRecurring,
             userId: userId
         ))
     }
@@ -212,16 +219,17 @@ struct BoardWizardView: View {
         )
     }
 
-    /// Save-Draft button label for the cancel dialog — recurring boards
-    /// never say "Draft" (they save a `RecurringBoardTemplate`, not a
-    /// draft `Board`). Mirrors `BoardWizardPreviewStepView
-    /// .recurringPrimaryLabel` verbatim (minus its "Saving…" busy state,
-    /// which this dialog surfaces separately via `isSavingFromCancel`)
-    /// so the same action reads identically from either exit point.
+    /// Save-Draft button label for the cancel dialog. Recurring boards can't
+    /// yet save a draft (PR B), so from the cancel dialog a fresh recurring
+    /// board's action is to create it — "Create Board", matching
+    /// `BoardWizardPreviewStepView.recurringPrimaryLabel` verbatim (minus its
+    /// "Saving…" busy state, surfaced here via `isSavingFromCancel`) so the
+    /// same action reads identically from either exit point. No "template"/
+    /// "spawn" mechanics words in UI copy.
     private var saveDraftLabel: String {
         if isSavingFromCancel { return "Saving…" }
         if wizard.isRecurring {
-            return wizard.editingTemplateId != nil ? "Save changes" : "Create template & spawn"
+            return wizard.editingTemplateId != nil ? "Save Changes" : "Create Board"
         }
         return wizard.draftBoardId != nil ? "Save Changes" : "Save Draft"
     }
@@ -241,20 +249,35 @@ struct BoardWizardView: View {
     /// Header kicker: uppercase short label reflecting the launch mode.
     /// Mirrors the `step === 2 ? "Last look" : "New board"` pattern in
     /// `wizard.jsx`, extended to cover all OYBC launch modes.
+    ///
+    /// Board Creation Split (iOS PR A) — a fresh one-off wizard now reads
+    /// "NEW ONE-OFF BOARD" (was "NEW BOARD") to match the recurring side's
+    /// "NEW RECURRING BOARD" naming; the kicker's COLOR (see `kickerColor`)
+    /// carries the red/blue identity through every step, including "LAST
+    /// LOOK" / "RESUME DRAFT".
     private var kickerText: String {
         if wizard.currentStep == 3 { return "LAST LOOK" }
         if draft != nil { return "RESUME DRAFT" }
         if wizard.isRecurring {
             return editingTemplate != nil ? "EDIT RECURRING BOARD" : "NEW RECURRING BOARD"
         }
-        return "NEW BOARD"
+        return "NEW ONE-OFF BOARD"
     }
 
-    /// H2 title — the name of the current step.
+    /// Board Creation Split (iOS PR A) — the kicker's red/blue identity
+    /// tracks the wizard's fixed mode through every step (Setup/Tasks-or-
+    /// Pool/"Last look"), not just the fresh-launch label.
+    private var kickerColor: Color {
+        wizard.isRecurring ? .risoBlue : .risoRed
+    }
+
+    /// H2 title — the name of the current step. Board Creation Split
+    /// (iOS PR A) — step 2 reads "Pool" for a recurring board (matches the
+    /// stepper's per-mode label), "Tasks" for one-off.
     private var stepTitle: String {
         switch wizard.currentStep {
         case 1: return "Setup"
-        case 2: return "Tasks"
+        case 2: return wizard.isRecurring ? "Pool" : "Tasks"
         default: return "Preview"
         }
     }
@@ -271,7 +294,7 @@ struct BoardWizardView: View {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(kickerText)
-                                .risoKicker()
+                                .risoKicker(kickerColor)
                             Text(stepTitle)
                                 .risoH2()
                         }
@@ -299,6 +322,7 @@ struct BoardWizardView: View {
                     // ── Riso stepper ──────────────────────────────────
                     RisoBoardWizardStepperView(
                         currentStep: wizard.currentStep,
+                        isRecurring: wizard.isRecurring,
                         onStepClick: { wizard.goToStep($0) }
                     )
                     .padding(.horizontal, Riso.gutter)

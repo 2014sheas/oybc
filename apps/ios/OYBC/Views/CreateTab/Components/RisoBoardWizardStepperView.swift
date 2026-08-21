@@ -7,11 +7,16 @@ private struct WizardStepItem: Identifiable {
     let label: String
 }
 
-private let risoWizardSteps: [WizardStepItem] = [
-    WizardStepItem(id: 1, label: "Setup"),
-    WizardStepItem(id: 2, label: "Tasks"),
-    WizardStepItem(id: 3, label: "Preview"),
-]
+/// Board Creation Split (iOS PR A) — the middle step is "Tasks" for a
+/// one-off board (exact-count grid fill) and "Pool" for a recurring board
+/// (floor-fillable task pool, no grid). Setup/Preview labels are shared.
+private func risoWizardSteps(isRecurring: Bool) -> [WizardStepItem] {
+    [
+        WizardStepItem(id: 1, label: "Setup"),
+        WizardStepItem(id: 2, label: isRecurring ? "Pool" : "Tasks"),
+        WizardStepItem(id: 3, label: "Preview"),
+    ]
+}
 
 // MARK: - RisoBoardWizardStepperView
 
@@ -20,7 +25,8 @@ private let risoWizardSteps: [WizardStepItem] = [
 /// CSS equivalent: `.r-stepper-bar`, `.r-step`, `.r-step-dot`, `.r-step-lbl`,
 /// `.r-step-line`. Spec:
 ///   - Three 26pt circles, 2px ink keyline.
-///   - Active = red fill, paper text.
+///   - Active = mode accent fill (red one-off / blue recurring — Board
+///     Creation Split), paper text.
 ///   - Done = green fill, paper text + checkmark.
 ///   - Inactive = paper2 fill, muted text.
 ///   - Connectors = 2px 25%-ink lines (flex, fills available space).
@@ -28,12 +34,15 @@ private let risoWizardSteps: [WizardStepItem] = [
 ///   - Tapping a completed step jumps back (same as existing `BoardWizardStepperView`).
 struct RisoBoardWizardStepperView: View {
     let currentStep: WizardStep
+    /// Board Creation Split (iOS PR A) — drives both the active-dot accent
+    /// (red/blue) and the step-2 label (Tasks/Pool).
+    var isRecurring: Bool = false
     var onStepClick: ((WizardStep) -> Void)? = nil
     var readOnly: Bool = false
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(Array(risoWizardSteps.enumerated()), id: \.element.id) { index, step in
+            ForEach(Array(risoWizardSteps(isRecurring: isRecurring).enumerated()), id: \.element.id) { index, step in
                 if index > 0 {
                     // 2px connector at 25% ink opacity
                     Rectangle()
@@ -97,7 +106,7 @@ struct RisoBoardWizardStepperView: View {
     // MARK: - Colors
 
     private func dotFill(isActive: Bool, isDone: Bool) -> Color {
-        if isActive { return .risoRed }
+        if isActive { return isRecurring ? .risoBlue : .risoRed }
         if isDone   { return .risoGreen }
         return .risoPaper2
     }
