@@ -15,17 +15,3 @@ export function useBoardTasks(boardId: string | undefined) {
   );
 }
 
-/**
- * React hook to fetch a single non-deleted board task (reactive)
- */
-export function useBoardTask(boardTaskId: string | undefined) {
-  return useLiveQuery(
-    async () => {
-      if (!boardTaskId) return undefined;
-      const bt = await db.boardTasks.get(boardTaskId);
-      return bt && !bt.isDeleted ? bt : undefined;
-    },
-    [boardTaskId]
-  );
-}
-

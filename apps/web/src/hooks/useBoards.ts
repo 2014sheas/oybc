@@ -37,27 +37,3 @@ export function useBoard(boardId: string | undefined) {
     [boardId]
   );
 }
-
-/**
- * React hook to fetch boards with bingos by timeframe
- */
-export function useBoardsWithBingos(userId: string | undefined, timeframe: string) {
-  return useLiveQuery(
-    async () => {
-      if (!userId) return [];
-
-      return db.boards
-        .where('[userId+timeframe+linesCompleted]')
-        // Dexie's compound-index range types are under-specified; the
-        // tuple shape is correct but the library's typing wants a
-        // `readonly unknown[]` here.
-        .between(
-          [userId, timeframe, 1] as readonly unknown[],
-          [userId, timeframe, Infinity] as readonly unknown[]
-        )
-        .toArray();
-    },
-    [userId, timeframe],
-    []
-  );
-}

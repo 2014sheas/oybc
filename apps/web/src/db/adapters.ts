@@ -253,10 +253,3 @@ export function taskToSquareState(
     completedStepIds: new Set<string>(),
   };
 }
-
-/**
- * @deprecated Use `taskToSquareState` instead.
- * Kept for backward compatibility with callers outside the three Task 4.4
- * files; will be removed once playground files are migrated in Task 4.5.
- */
-export const boardTaskToSquareState = taskToSquareState;

@@ -693,7 +693,11 @@ final class BoardPlayViewModel: ObservableObject {
                 // explicit custom "#" entry (Global Constraints: one-tap chips
                 // never overwrite the counter's default). No-op if unchanged.
                 if persistAsDefault {
-                    try? database.setCounterDefaultLogAmount(sourceTaskId: sourceTaskId, amount: amount)
+                    do {
+                        try database.setCounterDefaultLogAmount(sourceTaskId: sourceTaskId, amount: amount)
+                    } catch {
+                        dlog("BoardPlayVM: failed to persist counter default log amount: \(error)")
+                    }
                 }
 
                 // Re-fetch the board after the write to detect bingo/greenlog changes.
@@ -797,7 +801,11 @@ final class BoardPlayViewModel: ObservableObject {
                 }
 
                 if persistAsDefault {
-                    try? database.setCounterDefaultLogAmount(sourceTaskId: sourceTaskId, amount: amount)
+                    do {
+                        try database.setCounterDefaultLogAmount(sourceTaskId: sourceTaskId, amount: amount)
+                    } catch {
+                        dlog("BoardPlayVM: failed to persist counter default log amount: \(error)")
+                    }
                 }
 
                 // Board-transition flash (F1): windowed completion is derived
