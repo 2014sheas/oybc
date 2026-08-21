@@ -112,4 +112,60 @@ enum PoolHealth {
         if consumers.count == 1 { return "Short on 1 board" }
         return "Short on \(consumers.count) boards"
     }
+
+    // MARK: - Deck preview (shared by `PoolEditSheetView` and the wizard
+    // Preview step's recurring "deck" summary, P4). Moved here from
+    // `PoolEditSheetView.swift` so both surfaces reuse ONE copy of the
+    // "{N} tasks in the deck · …" logic instead of hand-rolling a second
+    // one — docs/POOLS_RECURRING.md §Surfaces item 2 (owner decision,
+    // 2026-07-20: the short branch drops the missing-count and board-size
+    // detail).
+
+    /// The floor a deck-preview line measures a task count against, plus
+    /// the board size used in the "fills a S×S" copy when healthy.
+    struct DeckFloor: Equatable {
+        let boardSize: Int
+        let floor: Int
+    }
+
+    /// Fallback floor when there are no consuming templates yet — the
+    /// 3×3-FREE-center default (8 tasks).
+    static let defaultDeckFloor = DeckFloor(
+        boardSize: 3,
+        floor: recurringTemplateFillableCellCount(boardSize: 3, centerSquareType: .free)
+    )
+
+    /// The floor the Pool-edit sheet's deck-preview line measures against:
+    /// the SMALLEST fillable floor among the pool's active, non-deleted
+    /// consumers, or `defaultDeckFloor` when there are none. Mirrors web's
+    /// `poolDeckPreview.ts`.
+    static func computeDeckFloor(templates: [RecurringBoardTemplate], poolId: String) -> DeckFloor {
+        var best: DeckFloor?
+        for template in templates {
+            guard !template.isDeleted, template.isActive else { continue }
+            guard (template.poolIds ?? []).contains(poolId) else { continue }
+            let floor = recurringTemplateFillableCellCount(
+                boardSize: template.boardSize, centerSquareType: template.centerSquareType
+            )
+            if best == nil || floor < best!.floor {
+                best = DeckFloor(boardSize: template.boardSize, floor: floor)
+            }
+        }
+        return best ?? defaultDeckFloor
+    }
+
+    /// `"{N} tasks in the deck · fills a {S}×{S}"` / `"· short on required
+    /// tasks"` — byte-identical to web's `formatDeckPreview` (owner
+    /// decision, 2026-07-20: the short branch drops the missing-count and
+    /// board-size detail). Shared by `PoolEditSheetView` (deckFloor = the
+    /// smallest consuming template's floor, via `computeDeckFloor`) and the
+    /// wizard Preview step's recurring deck header (deckFloor = the
+    /// CURRENT board's own geometry, via `tasksNeededForBoard`).
+    static func formatDeckPreview(taskCount: Int, deckFloor: DeckFloor) -> String {
+        let base = "\(taskCount) task\(taskCount == 1 ? "" : "s") in the deck"
+        if taskCount >= deckFloor.floor {
+            return "\(base) · fills a \(deckFloor.boardSize)×\(deckFloor.boardSize)"
+        }
+        return "\(base) · short on required tasks"
+    }
 }

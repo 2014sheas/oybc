@@ -290,12 +290,14 @@ enum PoolMix {
     /// silently, since the mint itself succeeds locally (no local
     /// validation on write).
     ///
-    /// Used by all four mint sites, both platforms: the P1 migration
+    /// Used by the P1 migration's two mint sites, both platforms
     /// (`MigrationV25Helpers.swift` / `migrationV16.ts`, `" default"` /
-    /// `" pool"` suffixes) and the legacy-create wizard-persist mint
-    /// (`BoardWizardPersist.swift` / `wizardPersist.ts`, `" pool"` suffix).
-    /// Swift twin of `poolMix.ts`'s `clampMintedPoolName` — keep them in
-    /// sync.
+    /// `" pool"` suffixes). The legacy-create wizard-persist mint
+    /// (`BoardWizardPersist.swift` / `wizardPersist.ts`, `" pool"` suffix)
+    /// was RETIRED in the Task Pools + Recurring Boards Rework P4 rewrite —
+    /// `persistRecurringTemplate` no longer mints a Pool on fresh-create at
+    /// all (an own-mix, zero-pool repeating board is first-class). Swift
+    /// twin of `poolMix.ts`'s `clampMintedPoolName` — keep them in sync.
     ///
     /// - Parameters:
     ///   - sourceName: The un-suffixed source text (template name / timeframe label).

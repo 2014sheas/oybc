@@ -22,7 +22,6 @@ struct BoardWizardView: View {
     let prefilledRecurringTimeframe: Timeframe?
     let targetWindowDate: Date?
     let editingTemplate: RecurringBoardTemplate?
-    let startRecurring: Bool
     /// Which step the wizard opens on (issue #321). Defaults to 1 (Setup)
     /// for every existing entry point; the Recurring-templates card's
     /// "Add tasks" affordance passes 2 (Tasks) so the user lands directly
@@ -55,7 +54,6 @@ struct BoardWizardView: View {
         prefilledRecurringTimeframe: Timeframe? = nil,
         targetWindowDate: Date? = nil,
         editingTemplate: RecurringBoardTemplate? = nil,
-        startRecurring: Bool = false,
         initialStep: WizardStep = 1,
         onCancel: @escaping () -> Void,
         onComplete: @escaping (_ boardId: String, _ status: String) -> Void,
@@ -68,7 +66,6 @@ struct BoardWizardView: View {
         self.prefilledRecurringTimeframe = prefilledRecurringTimeframe
         self.targetWindowDate = targetWindowDate
         self.editingTemplate = editingTemplate
-        self.startRecurring = startRecurring
         self.initialStep = initialStep
         self.onCancel = onCancel
         self.onComplete = onComplete
@@ -81,7 +78,6 @@ struct BoardWizardView: View {
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
             editingTemplate: editingTemplate,
-            startRecurring: startRecurring,
             userId: userId
         ))
     }
@@ -154,9 +150,44 @@ struct BoardWizardView: View {
         showCancelDialog = true
     }
 
+    /// Task Pools + Recurring Boards Rework (P4) — the cancel dialog's
+    /// "Save Draft" action must branch on `wizard.isRecurring`: pre-P4 this
+    /// unconditionally called `persistWizardBoard` (the one-off path),
+    /// which for a recurring wizard silently saved a one-off DRAFT `Board`
+    /// instead of the `RecurringBoardTemplate` the user actually configured
+    /// (Repeats set to a cadence). Mirrors the Preview step's
+    /// `performCreation(status:)` branch verbatim — same
+    /// `persistRecurringTemplate` outcome handling — so both save-exit
+    /// points behave identically.
     private func handleDialogSaveDraft() {
         cancelDialogError = nil
         guard canSaveDraft else { return }
+
+        if wizard.isRecurring {
+            isSavingFromCancel = true
+            persistRecurringTemplate(
+                controller: wizard,
+                userId: userId,
+                onSuccess: { outcome in
+                    isSavingFromCancel = false
+                    showCancelDialog = false
+                    switch outcome {
+                    case .createdAndSpawned(_, let boardId):
+                        onComplete(boardId, WizardStatus.active.rawValue)
+                    case .createdSpawnSkipped(let templateId, _):
+                        onTemplateComplete?(templateId)
+                    case .updated(let templateId):
+                        onTemplateComplete?(templateId)
+                    }
+                },
+                onError: { message in
+                    isSavingFromCancel = false
+                    cancelDialogError = "Failed to save recurring board: \(message)"
+                }
+            )
+            return
+        }
+
         guard case .ok(let start, let end) = currentDates else {
             if case .error(let msg) = currentDates { cancelDialogError = msg }
             return
@@ -179,6 +210,20 @@ struct BoardWizardView: View {
                 cancelDialogError = "Failed to save draft: \(message)"
             }
         )
+    }
+
+    /// Save-Draft button label for the cancel dialog — recurring boards
+    /// never say "Draft" (they save a `RecurringBoardTemplate`, not a
+    /// draft `Board`). Mirrors `BoardWizardPreviewStepView
+    /// .recurringPrimaryLabel` verbatim (minus its "Saving…" busy state,
+    /// which this dialog surfaces separately via `isSavingFromCancel`)
+    /// so the same action reads identically from either exit point.
+    private var saveDraftLabel: String {
+        if isSavingFromCancel { return "Saving…" }
+        if wizard.isRecurring {
+            return wizard.editingTemplateId != nil ? "Save changes" : "Create template & spawn"
+        }
+        return wizard.draftBoardId != nil ? "Save Changes" : "Save Draft"
     }
 
     private func handleDialogDiscard() {
@@ -281,9 +326,7 @@ struct BoardWizardView: View {
             BoardWizardCancelDialogView(
                 canSaveDraft: canSaveDraft,
                 saveDraftBlockedReason: saveBlockedReason,
-                saveDraftLabel: isSavingFromCancel
-                    ? "Saving…"
-                    : (wizard.draftBoardId != nil ? "Save Changes" : "Save Draft"),
+                saveDraftLabel: saveDraftLabel,
                 onSaveDraft: handleDialogSaveDraft,
                 onDiscard: handleDialogDiscard,
                 onKeepEditing: handleDialogKeepEditing,
@@ -365,7 +408,8 @@ struct BoardWizardView: View {
                 onComplete: { boardId, status in
                     onComplete(boardId, status.rawValue)
                 },
-                onTemplateComplete: onTemplateComplete
+                onTemplateComplete: onTemplateComplete,
+                pools: pools
             )
         }
     }

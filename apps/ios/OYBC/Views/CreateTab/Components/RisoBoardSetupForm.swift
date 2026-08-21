@@ -46,6 +46,7 @@ struct RisoBoardSetupForm: View {
     private var standardLayout: some View {
         VStack(alignment: .leading, spacing: 20) {
             nameSection
+            repeatsSection
             timeframeSection
             sizeSection
             if controller.isOddBoard {
@@ -97,45 +98,104 @@ struct RisoBoardSetupForm: View {
         }
     }
 
+    // MARK: - Section: Repeats (Task Pools + Recurring Boards Rework, P4)
+
+    /// "Repeats" segmented — the entry point for recurring mode now that
+    /// the separate "Create a recurring board" CTA has retired (P4). `nil`
+    /// = Once (a one-off board using the Timeframe picker below); a
+    /// `Timeframe` = the repeat cadence, which becomes the board's own
+    /// timeframe (a repeating board's cadence IS its window — see
+    /// `timeframeSection`, which hides its segmented picker once a cadence
+    /// is chosen here). docs/POOLS_RECURRING.md §Surfaces item 4.
+    @ViewBuilder
+    private var repeatsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("REPEATS")
+                .risoSectionLabel()
+
+            RisoSegmented(
+                options: repeatsOptions,
+                selection: Binding(
+                    get: { controller.repeatsValue },
+                    set: { controller.setRepeats($0) }
+                )
+            )
+
+            Text(repeatsNoteText)
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoMuted)
+        }
+    }
+
+    private var repeatsOptions: [(value: Timeframe?, label: String)] {
+        [
+            (nil, "Once"),
+            (.daily, "Daily"),
+            (.weekly, "Weekly"),
+            (.monthly, "Monthly"),
+            (.yearly, "Yearly"),
+        ]
+    }
+
+    /// Byte-identical to the web copy (parity-critical, same spec) — see
+    /// docs/POOLS_RECURRING.md §Surfaces item 4.
+    private var repeatsNoteText: String {
+        guard let cadence = controller.repeatsValue else {
+            return "A one-off board for the timeframe you pick below."
+        }
+        return "\(formatRecurringCadence(timeframe: cadence)), drawn from a task pool."
+    }
+
     // MARK: - Section: Timeframe
 
     @ViewBuilder
     private var timeframeSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("TIMEFRAME")
-                .risoSectionLabel()
+            if controller.repeatsValue == nil {
+                Text("TIMEFRAME")
+                    .risoSectionLabel()
 
-            // Segmented options — omit Custom in recurring mode. The "Custom"
-            // segment covers both a dated range AND an ongoing (indefinite)
-            // board; the End-date control inside the custom section is where
-            // the user chooses "None" (ongoing) vs a date — so indefinite is
-            // never a separate segment cluttering the row.
-            RisoSegmented(
-                options: timeframeOptions,
-                selection: Binding(
-                    get: { controller.timeframe == .indefinite ? .custom : controller.timeframe },
-                    set: { newValue in
-                        // "Custom" defaults to an ongoing board (End date =
-                        // None); a date is opt-in. Only set it when arriving
-                        // from a calendar timeframe — re-tapping Custom keeps the
-                        // user's current End-date choice (date or None) intact.
-                        if newValue == .custom {
-                            if controller.timeframe != .custom && controller.timeframe != .indefinite {
-                                controller.updateTimeframe(.indefinite)
+                // Segmented options — Custom is always available here since
+                // this branch only renders when Once (repeatsValue == nil),
+                // i.e. never in recurring mode. The "Custom" segment covers
+                // both a dated range AND an ongoing (indefinite) board; the
+                // End-date control inside the custom section is where the
+                // user chooses "None" (ongoing) vs a date — so indefinite is
+                // never a separate segment cluttering the row.
+                RisoSegmented(
+                    options: timeframeOptions,
+                    selection: Binding(
+                        get: { controller.timeframe == .indefinite ? .custom : controller.timeframe },
+                        set: { newValue in
+                            // "Custom" defaults to an ongoing board (End date =
+                            // None); a date is opt-in. Only set it when arriving
+                            // from a calendar timeframe — re-tapping Custom keeps the
+                            // user's current End-date choice (date or None) intact.
+                            if newValue == .custom {
+                                if controller.timeframe != .custom && controller.timeframe != .indefinite {
+                                    controller.updateTimeframe(.indefinite)
+                                }
+                            } else {
+                                controller.updateTimeframe(newValue)
                             }
-                        } else {
-                            controller.updateTimeframe(newValue)
                         }
-                    }
+                    )
                 )
-            )
 
-            // Date region: custom pickers (covers dated + ongoing via the
-            // End-date "None" option), or the computed-window note.
-            switch controller.timeframe {
-            case .custom, .indefinite:
-                customDateSection
-            default:
+                // Date region: custom pickers (covers dated + ongoing via the
+                // End-date "None" option), or the computed-window note.
+                switch controller.timeframe {
+                case .custom, .indefinite:
+                    customDateSection
+                default:
+                    timeframeDateNote
+                }
+            } else {
+                // A repeating board's cadence IS its window (docs/
+                // POOLS_RECURRING.md §Surfaces item 4: "Timeframe segmented
+                // only when Once") — no picker, just the computed-window
+                // note, which already reads `isRecurring`/`timeframe` (both
+                // consistent now via `setRepeats`) to prefix the cadence.
                 timeframeDateNote
             }
         }

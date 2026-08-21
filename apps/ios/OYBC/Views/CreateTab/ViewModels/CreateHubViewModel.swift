@@ -34,11 +34,6 @@ final class CreateHubViewModel {
         /// browser pre-spawn), the wizard's `computedBoundaries` resolve
         /// against that date instead of "now".
         case wizardCoreBoard(timeframe: Timeframe, targetWindowDate: Date?)
-        /// Issue #71 — wizard launched from the "Create a recurring
-        /// board" CTA. `isRecurring` is forced ON at entry; the user
-        /// picks timeframe/size/center + pool and Save creates a
-        /// template + spawns the first board.
-        case wizardRecurringTemplate
         /// Wizard launched in template-edit mode (Profile → Recurring
         /// templates → Edit). The wizard hydrates from the template
         /// and Save updates the template instead of creating a board.
@@ -92,12 +87,6 @@ final class CreateHubViewModel {
     func enterCoreBoardWizard(timeframe: Timeframe, targetWindowDate: Date? = nil) {
         resumeDraft = nil
         mode = .wizardCoreBoard(timeframe: timeframe, targetWindowDate: targetWindowDate)
-    }
-
-    /// Issue #71 — enter the wizard to create a recurring-board template.
-    func enterRecurringTemplateWizard() {
-        resumeDraft = nil
-        mode = .wizardRecurringTemplate
     }
 
     // MARK: - Async loaders

@@ -47,6 +47,82 @@ export interface PersistWizardBoardRowsInput {
 }
 
 /**
+ * Atomically writes a set of Bug-#85 pending (in-memory, not-yet-persisted)
+ * tasks — created inside the wizard's inline "New Task" sheet — into
+ * `db.tasks` / `db.compoundChildren`, enqueuing sync for each row. Extracted
+ * from {@link persistWizardBoardRows}'s inline loop (P4, Task Pools +
+ * Recurring Boards Rework) so the recurring-template persist path
+ * (`wizardPersist.ts`'s `persistRecurringTemplate`) can reuse the exact
+ * same write instead of silently dropping pending tasks — the bug this
+ * closes: the recurring path used to read `controller.selectedTaskIds`
+ * straight into a `Pool`/template without ever writing the underlying Task
+ * rows for any pending (inline-created) task, so `resolveMix`'s
+ * resolvable-id filter silently and permanently dropped it from every
+ * future spawn.
+ *
+ * Only pending payloads whose task id is in `allowedTaskIds` are written —
+ * a stray pending payload the caller no longer wants placed/pooled must
+ * never be written as an orphan Task row. Callers pass the FULL relevant
+ * selection as `allowedTaskIds` (a one-off board's placed cells; a
+ * repeating board's entire pool-mix selection, since future windows draw
+ * from the whole pool, not just today's dealt cells).
+ *
+ * Opens its own `db.transaction(...)` when called standalone; when called
+ * from inside an already-open transaction that already scopes
+ * `[db.tasks, db.compoundChildren, db.syncQueue]` (as
+ * {@link persistWizardBoardRows} does), Dexie nests it into that
+ * transaction instead of opening a new one — so the pending-task write
+ * still commits/rolls back atomically with the board write on that path.
+ *
+ * @param pendingTasks - In-memory payloads to write (task + any inline
+ *   compound children + their link rows).
+ * @param allowedTaskIds - Only payloads whose `task.id` is in this set are
+ *   written; others are silently skipped.
+ */
+export async function persistWizardPendingTasks(
+  pendingTasks: WizardPendingTaskWrite[],
+  allowedTaskIds: ReadonlySet<string>,
+): Promise<void> {
+  await db.transaction('rw', [db.tasks, db.compoundChildren, db.syncQueue], async () => {
+    for (const payload of pendingTasks) {
+      if (!allowedTaskIds.has(payload.task.id)) continue;
+
+      // P5 guard: a `childLinks` row may reference either one of this
+      // payload's own `childTasks` (a brand-new inline child — always
+      // carries a `maxCount` if COUNTING, so never goal-less) or an
+      // EXISTING task elsewhere in the library. No live caller currently
+      // builds the latter (web's compound wizard writes immediately via
+      // `createCompound`, already guarded, rather than deferring through
+      // this pending-task shape) — but the shape permits it, and iOS's
+      // analogous `createTaskWithPairedChildrenAndEnqueue` guards the same
+      // case, so this mirrors that defensively for any future deferred
+      // web compound-authoring path.
+      const newChildIds = new Set(payload.childTasks.map((t) => t.id));
+      for (const link of payload.childLinks) {
+        if (newChildIds.has(link.childTaskId)) continue;
+        const existingChild = await db.tasks.get(link.childTaskId);
+        if (existingChild && isGoalLessCounter(existingChild)) {
+          throw new Error(
+            'persistWizardPendingTasks: goal-less counter tasks cannot be compound children',
+          );
+        }
+      }
+
+      await db.tasks.add(payload.task);
+      await addToSyncQueue('tasks', payload.task.id, SyncOperationType.CREATE, payload.task);
+      for (const childTask of payload.childTasks) {
+        await db.tasks.add(childTask);
+        await addToSyncQueue('tasks', childTask.id, SyncOperationType.CREATE, childTask);
+      }
+      for (const link of payload.childLinks) {
+        await db.compoundChildren.add(link);
+        await addToSyncQueue('compoundChildren', link.id, SyncOperationType.CREATE, link);
+      }
+    }
+  });
+}
+
+/**
  * Atomically persist the wizard's board, its placements, and any pending
  * tasks in a single Dexie transaction (moved out of `wizardPersist.ts` for
  * B3, issue #284 — the transaction previously lived in a component-tree
@@ -91,59 +167,12 @@ export async function persistWizardBoardRows({
       // ── Bug #85: write pending tasks first ──────────────────────────────
       // Only persist pending tasks that are actually placed on the board — a
       // stray pending payload must never be written as an orphan Task row.
+      // Nests into THIS transaction (it already scopes db.tasks/
+      // db.compoundChildren/db.syncQueue) rather than opening a separate one.
       const placedTaskIds = new Set(
         placement.map((t) => t?.id).filter((id): id is string => id != null),
       );
-      for (const payload of pendingTasks) {
-        if (!placedTaskIds.has(payload.task.id)) continue;
-
-        // P5 guard: a `childLinks` row may reference either one of this
-        // payload's own `childTasks` (a brand-new inline child — always
-        // carries a `maxCount` if COUNTING, so never goal-less) or an
-        // EXISTING task elsewhere in the library. No live caller currently
-        // builds the latter (web's compound wizard writes immediately via
-        // `createCompound`, already guarded, rather than deferring through
-        // this pending-task shape) — but the shape permits it, and iOS's
-        // analogous `createTaskWithPairedChildrenAndEnqueue` guards the same
-        // case, so this mirrors that defensively for any future deferred
-        // web compound-authoring path.
-        const newChildIds = new Set(payload.childTasks.map((t) => t.id));
-        for (const link of payload.childLinks) {
-          if (newChildIds.has(link.childTaskId)) continue;
-          const existingChild = await db.tasks.get(link.childTaskId);
-          if (existingChild && isGoalLessCounter(existingChild)) {
-            throw new Error(
-              'persistWizardBoardRows: goal-less counter tasks cannot be compound children',
-            );
-          }
-        }
-
-        await db.tasks.add(payload.task);
-        await addToSyncQueue(
-          'tasks',
-          payload.task.id,
-          SyncOperationType.CREATE,
-          payload.task,
-        );
-        for (const childTask of payload.childTasks) {
-          await db.tasks.add(childTask);
-          await addToSyncQueue(
-            'tasks',
-            childTask.id,
-            SyncOperationType.CREATE,
-            childTask,
-          );
-        }
-        for (const link of payload.childLinks) {
-          await db.compoundChildren.add(link);
-          await addToSyncQueue(
-            'compoundChildren',
-            link.id,
-            SyncOperationType.CREATE,
-            link,
-          );
-        }
-      }
+      await persistWizardPendingTasks(pendingTasks, placedTaskIds);
 
       // ── Board + BoardTask rows ──────────────────────────────────────────
       if (draftBoardId !== null) {

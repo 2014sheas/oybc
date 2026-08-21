@@ -6,51 +6,32 @@ enum CreateHubBoardCTAVariant {
     /// pending core boards to surface above.
     case primary
     /// Smaller flat card with muted styling. Used when
-    /// `CoreBoardsSectionView` is the headline action above this CTA,
-    /// and always for the recurring entry point (#71).
+    /// `CoreBoardsSectionView` is the headline action above this CTA.
     case secondary
-}
-
-/// Which creation flow the card launches (#71):
-///   - `.oneOff`: a single board (the wizard's default flow).
-///   - `.recurring`: a recurring-board template that auto-spawns a
-///     fresh board each window.
-enum CreateHubBoardCTAKind {
-    case oneOff
-    case recurring
 }
 
 /// CreateHubBoardCTAView — Riso-styled card that invites the user to start
 /// a new board. iOS twin of web's `CreateHubBoardCTA`.
 ///
-/// Two axes:
-///   - `kind` (#71): `.oneOff` (a single board) vs `.recurring` (a
-///     template that auto-spawns each window). The recurring entry
-///     replaced the in-wizard "Make recurring" toggle.
-///   - `variant`: `.primary` (risoCard + hard shadow, red system-image
-///     badge, Bricolage headline) vs `.secondary` (lighter flat card,
-///     muted icon square).
+/// Task Pools + Recurring Boards Rework (P4) — collapsed to a SINGLE flow:
+/// the separate "Create a recurring board" CTA (#71's `.recurring` kind)
+/// retired along with the `?newRecurring=1`-equivalent deep link
+/// (`pendingNewRecurringTemplate`) — recurrence is now a Step-1 "Repeats"
+/// board property (`BoardWizardViewModel.setRepeats(_:)`), chosen inside
+/// the one wizard entry point, not a separate CTA. `variant` (`.primary`
+/// risoCard + hard shadow, red system-image badge, Bricolage headline vs.
+/// `.secondary` lighter flat card, muted icon square) is unchanged.
 struct CreateHubBoardCTAView: View {
-    var kind: CreateHubBoardCTAKind = .oneOff
     let onTap: () -> Void
     var variant: CreateHubBoardCTAVariant = .primary
 
     // MARK: - Copy
 
-    private var title: String {
-        kind == .recurring ? "Create a recurring board" : "Start a new board"
-    }
-    private var subtitle: String {
-        // Issue #321 — sharpens the distinction from Core Boards (6.1), which
-        // shares near-identical "recurring" language today. Verbatim string
-        // is a cross-platform contract (web mirrors it exactly).
-        kind == .recurring
-            ? "A saved task pool that auto-creates a board each period."
-            : "Set it up, pick your tasks, and activate."
-    }
-    private var systemImageName: String {
-        kind == .recurring ? "repeat" : "plus"
-    }
+    /// Byte-identical to web's copy (parity-critical, same spec) —
+    /// docs/POOLS_RECURRING.md §Surfaces item 3.
+    private let title = "Start a new board"
+    private let subtitle = "One-off or repeating — decide in setup."
+    private let systemImageName = "plus"
 
     // MARK: - Body
 

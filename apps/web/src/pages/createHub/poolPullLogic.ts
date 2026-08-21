@@ -1,4 +1,6 @@
 import {
+  CenterSquareType,
+  Timeframe,
   clearRemovalsForUntoggle,
   resolvePoolPullAdditions,
   resolvePoolUntoggleRemovals,
@@ -179,6 +181,104 @@ export function applyManualBookkeepingOnDeselect(
   const nextRemoved = new Set(removedTaskIds);
   nextRemoved.add(taskId);
   return { manualTaskIds: nextManual, removedTaskIds: nextRemoved };
+}
+
+/**
+ * A one-off `Timeframe` never carries `CUSTOM` with no computed window as
+ * the "nothing explicit was chosen" default — mirrors `useBoardWizard`'s
+ * `reset()` seed rule (CUSTOM-only default → INDEFINITE/ongoing instead of
+ * CUSTOM with empty dates).
+ */
+function coerceOneOffTimeframe(t: Timeframe): Timeframe {
+  return t === Timeframe.CUSTOM ? Timeframe.INDEFINITE : t;
+}
+
+export interface RepeatsChangeInput {
+  /** The Repeats segmented value the user just picked: `null` = Once, a
+   *  Timeframe = a repeating cadence. */
+  cadence: Timeframe | null;
+  isRecurring: boolean;
+  timeframe: Timeframe;
+  centerType: CenterSquareType;
+  centerTaskId: string | null;
+  /** The last one-off timeframe remembered across a Once→cadence flip
+   *  (owned by the caller as a ref — this function is pure and only
+   *  reads/returns the value, never mutates anything itself). `null`
+   *  when the wizard has never made that flip yet. */
+  rememberedOneOffTimeframe: Timeframe | null;
+  /** Fallback used to restore Once when nothing has been remembered yet
+   *  (e.g. a template-edit session that opened directly into a cadence). */
+  defaultOneOffTimeframe: Timeframe;
+}
+
+export interface RepeatsChangeResult {
+  isRecurring: boolean;
+  timeframe: Timeframe;
+  centerType: CenterSquareType;
+  centerTaskId: string | null;
+  /** The value the caller should store back into its remembered-timeframe
+   *  ref for the next `resolveRepeatsChange` call. */
+  rememberedOneOffTimeframe: Timeframe | null;
+}
+
+/**
+ * P4 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
+ * §Surfaces item 4 "Wizard step 1") — pure resolution for the wizard's
+ * "Repeats" segmented (`Once / Daily / Weekly / Monthly / Yearly`), the
+ * single entry point that flips `isRecurring` now that the separate
+ * "Create a recurring board" CTA is retired.
+ *
+ * - `cadence !== null` (Once → a cadence, or cadence → a different
+ *   cadence): sets `isRecurring = true` and `timeframe = cadence`
+ *   TOGETHER — this bypasses `useBoardWizard`'s `setTimeframe` CUSTOM/
+ *   INDEFINITE guard on purpose, since a cadence is always a valid
+ *   recurring timeframe. Also coerces `centerType` away from CHOSEN (→
+ *   FREE) and clears `centerTaskId`, matching the recurring schema's
+ *   long-standing CHOSEN exclusion. On the FIRST flip out of Once
+ *   (`isRecurring` was false), the CURRENT one-off `timeframe` is
+ *   captured into `rememberedOneOffTimeframe` (coerced the same way
+ *   `reset()` seeds a fresh wizard) so a later flip back to Once restores
+ *   it. Switching between two cadences while already recurring leaves the
+ *   remembered value untouched.
+ * - `cadence === null` (back to Once): sets `isRecurring = false` and
+ *   restores `rememberedOneOffTimeframe` (or the coerced
+ *   `defaultOneOffTimeframe` when nothing was remembered yet).
+ *   `centerType`/`centerTaskId` are left as-is — CHOSEN becomes
+ *   selectable again but nothing forces it back on.
+ */
+export function resolveRepeatsChange(input: RepeatsChangeInput): RepeatsChangeResult {
+  const {
+    cadence,
+    isRecurring,
+    timeframe,
+    centerType,
+    centerTaskId,
+    rememberedOneOffTimeframe,
+    defaultOneOffTimeframe,
+  } = input;
+
+  if (cadence !== null) {
+    const nextRemembered = isRecurring
+      ? rememberedOneOffTimeframe
+      : coerceOneOffTimeframe(timeframe);
+    const centerIsChosen = centerType === CenterSquareType.CHOSEN;
+    return {
+      isRecurring: true,
+      timeframe: cadence,
+      centerType: centerIsChosen ? CenterSquareType.FREE : centerType,
+      centerTaskId: centerIsChosen ? null : centerTaskId,
+      rememberedOneOffTimeframe: nextRemembered,
+    };
+  }
+
+  const restored = rememberedOneOffTimeframe ?? coerceOneOffTimeframe(defaultOneOffTimeframe);
+  return {
+    isRecurring: false,
+    timeframe: restored,
+    centerType,
+    centerTaskId,
+    rememberedOneOffTimeframe,
+  };
 }
 
 /**

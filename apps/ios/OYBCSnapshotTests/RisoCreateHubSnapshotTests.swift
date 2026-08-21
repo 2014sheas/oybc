@@ -5,8 +5,9 @@ import SnapshotTesting
 
 /// Snapshot coverage for the three Riso Create-hub design gaps:
 ///
-/// 1. **CreateHubBoardCTAView** (both variants, both kinds) — rendered in
-///    isolation since it takes only props.
+/// 1. **CreateHubBoardCTAView** (both variants — Task Pools + Recurring
+///    Boards Rework P4 collapsed this to a single flow/copy, so there's no
+///    more "kind" axis) — rendered in isolation since it takes only props.
 /// 2. **CreateHubDraftsListView** — rendered with seeded draft rows so the
 ///    Riso draft-row styling is exercised.
 /// 3. **BoardWizardCancelDialogView** — rendered in both the enabled and
@@ -33,9 +34,9 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
 
     // MARK: - 1. CreateHubBoardCTAView
 
-    /// Primary one-off CTA — large Riso red card with gold icon.
+    /// Primary CTA — large Riso red card with gold icon.
     func testCTAOneOffPrimary() {
-        let view = CreateHubBoardCTAView(kind: .oneOff, onTap: { }, variant: .primary)
+        let view = CreateHubBoardCTAView(onTap: { }, variant: .primary)
             .padding(Riso.gutter)
         assertSnapshot(
             of: view,
@@ -45,7 +46,7 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
     }
 
     func testCTAOneOffPrimaryDark() {
-        let view = CreateHubBoardCTAView(kind: .oneOff, onTap: { }, variant: .primary)
+        let view = CreateHubBoardCTAView(onTap: { }, variant: .primary)
             .padding(Riso.gutter)
         assertSnapshot(
             of: view,
@@ -54,20 +55,9 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
         )
     }
 
-    /// Secondary one-off CTA — compact paper2 card.
+    /// Secondary CTA — compact paper2 card.
     func testCTAOneOffSecondary() {
-        let view = CreateHubBoardCTAView(kind: .oneOff, onTap: { }, variant: .secondary)
-            .padding(Riso.gutter)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 80), traits: lightTraits),
-            record: recordMode
-        )
-    }
-
-    /// Secondary recurring CTA — compact card with repeat icon.
-    func testCTARecurringSecondary() {
-        let view = CreateHubBoardCTAView(kind: .recurring, onTap: { }, variant: .secondary)
+        let view = CreateHubBoardCTAView(onTap: { }, variant: .secondary)
             .padding(Riso.gutter)
         assertSnapshot(
             of: view,

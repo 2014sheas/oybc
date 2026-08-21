@@ -3,6 +3,7 @@ import {
   CenterSquareType,
   TaskType,
   Timeframe,
+  fillableCellCount,
   formatRecurringCadence,
   formatTimeframeLabel,
   getTimeframeBoundaries,
@@ -15,8 +16,10 @@ import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
 import { ArrangeGrid } from '../boardEdit/ArrangeGrid';
 import type { ArrangeSlot } from '../boardEdit/ArrangeGrid';
 import type { BoardCellModel } from '../board/RisoBoardCell';
+import { formatDeckPreview, type DeckFloor } from '../pools/poolDeckPreview';
 import { RisoSegmented } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
+import { renderTaskRow } from './TaskRow';
 import {
   buildWizardPlacement,
   persistRecurringTemplate,
@@ -284,6 +287,38 @@ export function BoardWizardPreviewStep({
     return map;
   }, [placement]);
 
+  // ── Repeating-board deck view (P4) ────────────────────────────────────────
+  // A repeating board re-randomizes its cell layout every window, so a
+  // specific arrangement is meaningless — the Preview step shows the POOL
+  // (the deck) instead of `ArrangeGrid`. Health uses the same
+  // `fillableCellCount` floor as everywhere else in the app (never a
+  // hardcoded 8/Daily).
+  const deckFloor: DeckFloor = useMemo(
+    () => ({
+      boardSize: controller.size,
+      floor: fillableCellCount(controller.size, controller.centerType),
+    }),
+    [controller.size, controller.centerType],
+  );
+  const deckHeaderText = useMemo(
+    () => formatDeckPreview(controller.selectedTaskIds.size, deckFloor),
+    [controller.selectedTaskIds, deckFloor],
+  );
+  // Resolved Task objects for every selected id, including this-session
+  // pending (not-yet-persisted) tasks — mirrors the Tasks step's
+  // `effectiveTaskMap` merge so a just-created task still shows up here.
+  // Sorted by title for a stable, predictable list.
+  const deckTasks = useMemo<Task[]>(() => {
+    const merged: Record<string, Task> = { ...library.taskMap };
+    for (const payload of controller.pendingTasks.values()) {
+      merged[payload.task.id] = payload.task;
+    }
+    return Array.from(controller.selectedTaskIds)
+      .map((id) => merged[id])
+      .filter((t): t is Task => t !== undefined)
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [controller.selectedTaskIds, controller.pendingTasks, library.taskMap]);
+
   /**
    * Handle a committed reorder from ArrangeGrid (drag drop or tap-swap).
    * Maps the new ArrangeSlot[] back to WizardPlacement: center slots are
@@ -467,46 +502,70 @@ export function BoardWizardPreviewStep({
         </span>
       </div>
 
-      {/* Toggle bar: Preview ⇄ Rearrange + Shuffle */}
-      <div className={styles.arrangeBar}>
-        <RisoSegmented
-          options={ARRANGE_MODE_OPTIONS}
-          value={subMode}
-          onChange={setSubMode}
-          variant="pill"
-          aria-label="Board arrangement mode"
-        />
-        {canShuffle && (
-          <button
-            type="button"
-            className={styles.shuffleButton}
-            onClick={() => setShuffleNonce((n) => n + 1)}
-            disabled={isCreating}
-            aria-label="Shuffle board layout"
-          >
-            ⤮ Shuffle
-          </button>
-        )}
-      </div>
+      {controller.isRecurring ? (
+        /* P4 — a repeating board re-randomizes its layout every window, so
+           a specific arrangement is meaningless: show the deck (the pool
+           of resolved tasks) instead of an arrangeable grid. No Preview ⇄
+           Rearrange toggle, no Shuffle — nothing here is a fixed layout. */
+        <div className={styles.deckSection}>
+          <p className={styles.deckHeader}>{deckHeaderText}</p>
+          <ul className={styles.deckList}>
+            {deckTasks.map((task) => (
+              <li key={task.id}>
+                {renderTaskRow({
+                  task,
+                  isSelected: true,
+                  provenance: controller.taskProvenance.get(task.id),
+                  readOnly: true,
+                })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <>
+          {/* Toggle bar: Preview ⇄ Rearrange + Shuffle */}
+          <div className={styles.arrangeBar}>
+            <RisoSegmented
+              options={ARRANGE_MODE_OPTIONS}
+              value={subMode}
+              onChange={setSubMode}
+              variant="pill"
+              aria-label="Board arrangement mode"
+            />
+            {canShuffle && (
+              <button
+                type="button"
+                className={styles.shuffleButton}
+                onClick={() => setShuffleNonce((n) => n + 1)}
+                disabled={isCreating}
+                aria-label="Shuffle board layout"
+              >
+                ⤮ Shuffle
+              </button>
+            )}
+          </div>
 
-      {/* Static rearrange-mode hint. ArrangeGrid supplies its own in-progress
-          tap-swap hint (hintBar) when a tile is picked. */}
-      {subMode === 'rearrange' && (
-        <p className={styles.rearrangeHint}>
-          <b>Drag a square</b> to drop it in — the rest shift to make room.
-          Or <b>tap two squares</b> to swap them.
-        </p>
+          {/* Static rearrange-mode hint. ArrangeGrid supplies its own
+              in-progress tap-swap hint (hintBar) when a tile is picked. */}
+          {subMode === 'rearrange' && (
+            <p className={styles.rearrangeHint}>
+              <b>Drag a square</b> to drop it in — the rest shift to make room.
+              Or <b>tap two squares</b> to swap them.
+            </p>
+          )}
+
+          {/* ArrangeGrid — display-only in Preview, interactive in Rearrange */}
+          <div className={styles.previewWrapper}>
+            <ArrangeGrid
+              slots={arrangeSlots}
+              gridSize={controller.size}
+              rearrange={subMode === 'rearrange'}
+              onReorder={handleReorder}
+            />
+          </div>
+        </>
       )}
-
-      {/* ArrangeGrid — display-only in Preview, interactive in Rearrange */}
-      <div className={styles.previewWrapper}>
-        <ArrangeGrid
-          slots={arrangeSlots}
-          gridSize={controller.size}
-          rearrange={subMode === 'rearrange'}
-          onReorder={handleReorder}
-        />
-      </div>
 
       {/* Full summary card with edit-jump links */}
       <div className={styles.summary}>

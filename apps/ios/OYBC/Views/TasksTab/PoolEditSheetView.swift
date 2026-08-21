@@ -96,9 +96,9 @@ struct PoolEditSheetView: View {
     }
 
     private var deckPreviewText: String {
-        Self.formatDeckPreview(
+        PoolHealth.formatDeckPreview(
             taskCount: selectedTasks.count,
-            deckFloor: Self.computeDeckFloor(templates: templates, poolId: pool?.id ?? "")
+            deckFloor: PoolHealth.computeDeckFloor(templates: templates, poolId: pool?.id ?? "")
         )
     }
 
@@ -534,48 +534,12 @@ struct PoolEditSheetView: View {
         poolTaskIds = pool.taskIds
     }
 
-    // MARK: - Deck preview (page-local; mirrors web `poolDeckPreview.ts` —
-    // NOT the shared `PoolHealth.formatPoolShortSummary`, which combines
-    // short consumers into one board-count line for the pool-CARD warning
-    // instead)
-
-    private struct DeckFloor {
-        let boardSize: Int
-        let floor: Int
-    }
-
-    private static let defaultDeckFloor = DeckFloor(
-        boardSize: 3,
-        floor: recurringTemplateFillableCellCount(boardSize: 3, centerSquareType: .free)
-    )
-
-    /// The floor the deck-preview line measures against: the SMALLEST
-    /// fillable floor among the pool's active, non-deleted consumers, or
-    /// the 3×3-FREE default when there are none.
-    private static func computeDeckFloor(templates: [RecurringBoardTemplate], poolId: String) -> DeckFloor {
-        var best: DeckFloor?
-        for template in templates {
-            guard !template.isDeleted, template.isActive else { continue }
-            guard (template.poolIds ?? []).contains(poolId) else { continue }
-            let floor = recurringTemplateFillableCellCount(
-                boardSize: template.boardSize, centerSquareType: template.centerSquareType
-            )
-            if best == nil || floor < best!.floor {
-                best = DeckFloor(boardSize: template.boardSize, floor: floor)
-            }
-        }
-        return best ?? defaultDeckFloor
-    }
-
-    /// `"{N} tasks in the deck · fills a {S}×{S}"` / `"· short on required
-    /// tasks"` — byte-identical to web's `formatDeckPreview` (owner
-    /// decision, 2026-07-20: the short branch drops the missing-count and
-    /// board-size detail).
-    private static func formatDeckPreview(taskCount: Int, deckFloor: DeckFloor) -> String {
-        let base = "\(taskCount) task\(taskCount == 1 ? "" : "s") in the deck"
-        if taskCount >= deckFloor.floor {
-            return "\(base) · fills a \(deckFloor.boardSize)×\(deckFloor.boardSize)"
-        }
-        return "\(base) · short on required tasks"
-    }
+    // MARK: - Deck preview
+    //
+    // Task Pools + Recurring Boards Rework (P4): moved to the shared
+    // `PoolHealth.computeDeckFloor`/`formatDeckPreview`/`DeckFloor` so the
+    // wizard Preview step's recurring "deck" summary reuses the exact same
+    // logic/copy instead of a second hand-rolled copy — see PoolHealth.swift.
+    // NOT `PoolHealth.formatPoolShortSummary`, which combines short
+    // consumers into one board-count line for the pool-CARD warning instead.
 }

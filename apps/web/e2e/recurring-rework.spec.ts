@@ -24,30 +24,39 @@ import {
  */
 
 test.describe('Phase 6.2 rework', () => {
-  // The "Make recurring" Setup-step toggle was retired: one-off vs recurring
-  // board creation are now two distinct Create-hub entry points ("Start a new
-  // board" vs "Create a recurring board"), each opening its own wizard. The
-  // load-bearing invariant survives — recurring boards can't use the CUSTOM
-  // timeframe — so these two tests now assert it via the two entry points
-  // instead of a toggle.
+  // P4 (Task Pools + Recurring Boards Rework) retired the separate
+  // "Create a recurring board" Create-hub entry point: there's now ONE
+  // "Start a new board" CTA, and recurrence is chosen via Step 1's
+  // "Repeats" segmented (Once/Daily/Weekly/Monthly/Yearly). The
+  // load-bearing invariant survives — recurring boards can't use the
+  // CUSTOM timeframe — so these two tests now assert it via that
+  // segmented instead of a separate entry point.
 
   test('one-off board wizard offers the Custom timeframe', async ({ page }) => {
     await openCreateHub(page);
     await page.getByRole('button', { name: /start a new board/i }).click();
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
-    // The one-off wizard includes Custom in the timeframe segmented selector.
-    await expect(page.getByRole('button', { name: 'Custom', exact: true })).toBeVisible();
+    // "Once" (the default) shows the full Timeframe segmented, including
+    // Custom.
+    await expect(
+      page.getByRole('group', { name: 'Timeframe' }).getByRole('button', { name: 'Custom', exact: true }),
+    ).toBeVisible();
   });
 
-  test('recurring board wizard omits the Custom timeframe', async ({ page }) => {
+  test('choosing a Repeats cadence omits the Custom timeframe', async ({ page }) => {
     await openCreateHub(page);
-    await page.getByRole('button', { name: /create a recurring board/i }).click();
+    await page.getByRole('button', { name: /start a new board/i }).click();
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
-    // The recurring wizard exposes Daily/Weekly/Monthly/Yearly but NOT Custom
-    // (the recurring schema rejects it — its absence is the affordance).
-    await expect(page.getByRole('button', { name: 'Weekly', exact: true })).toBeVisible();
+    // Pick a cadence from the "Repeats" segmented (scoped so this doesn't
+    // collide with the separate Timeframe segmented's own "Weekly" button,
+    // both visible while repeats === null).
+    await page.getByRole('group', { name: 'Repeats' }).getByRole('button', { name: 'Weekly', exact: true }).click();
+
+    // The cadence IS the window now — the whole Timeframe segmented
+    // (including Custom) is hidden entirely.
+    await expect(page.getByRole('group', { name: 'Timeframe' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Custom', exact: true })).toHaveCount(0);
   });
 
@@ -63,9 +72,9 @@ test.describe('Phase 6.2 rework', () => {
     ).toBeVisible();
     // Empty-state copy from RecurringTemplatesPage.
     await expect(page.getByText(/no recurring templates yet/i)).toBeVisible();
-    // The empty-state body now points at the "Create a recurring board"
-    // Create-hub entry point (the retired "Make recurring in setup" toggle).
-    await expect(page.getByText(/create a recurring board/i)).toBeVisible();
+    // The empty-state body now points at the unified "Start a new board"
+    // CTA (the retired "Create a recurring board" entry point is gone).
+    await expect(page.getByText(/start a new board/i)).toBeVisible();
   });
 
   test('Profile templates page lists a seeded template + Edit deep-links into the wizard', async ({ page }) => {

@@ -23,13 +23,21 @@ const TIMEFRAME_OPTIONS: { value: Timeframe; label: string }[] = [
   { value: Timeframe.CUSTOM, label: "Custom" },
 ];
 
-/** Subset of `TIMEFRAME_OPTIONS` shown when `isRecurring=true`. The
- *  recurring template schema rejects `Timeframe.CUSTOM` (no computed
- *  window), so the form hides it. (Ongoing/indefinite isn't a segment —
- *  it lives behind the End-date "None" option inside the Custom section.) */
-const RECURRING_TIMEFRAME_OPTIONS = TIMEFRAME_OPTIONS.filter(
-  (o) => o.value !== Timeframe.CUSTOM,
-);
+/**
+ * P4 (Task Pools + Recurring Boards Rework) — Step 1's "Repeats"
+ * segmented: `null` = Once (the Timeframe segmented below governs the
+ * window); a Timeframe = a repeating cadence (the cadence IS the
+ * window — the Timeframe segmented is hidden entirely). Excludes
+ * `Timeframe.CUSTOM` — the recurring schema rejects it (no computed
+ * window/cadence).
+ */
+const REPEATS_OPTIONS: { value: Timeframe | null; label: string }[] = [
+  { value: null, label: "Once" },
+  { value: Timeframe.DAILY, label: "Daily" },
+  { value: Timeframe.WEEKLY, label: "Weekly" },
+  { value: Timeframe.MONTHLY, label: "Monthly" },
+  { value: Timeframe.YEARLY, label: "Yearly" },
+];
 
 const CENTER_TYPE_OPTIONS: { value: CenterSquareType; label: string }[] = [
   { value: CenterSquareType.FREE, label: "Free Space" },
@@ -77,11 +85,19 @@ export interface BoardSetupFormProps {
   centerType: CenterSquareType;
   onCenterTypeChange: (t: CenterSquareType) => void;
 
-  /** Phase 6.2 — read-only flag (set at wizard entry, no in-form
-   *  toggle since #71). When true the wizard saves a recurring template;
-   *  the form hides `Timeframe.CUSTOM` and `CenterSquareType.CHOSEN`
-   *  (the recurring schema rejects both) and shows the cadence label. */
-  isRecurring: boolean;
+  /**
+   * P4 (Task Pools + Recurring Boards Rework) — Step 1's "Repeats"
+   * segmented value: `null` = Once (one-off board — the Timeframe
+   * segmented below governs the window); a `Timeframe` = a repeating
+   * cadence (the cadence IS the window — the Timeframe segmented is
+   * hidden). The recurring schema rejects `Timeframe.CUSTOM` and
+   * `CenterSquareType.CHOSEN`; the form hides both when a cadence is
+   * chosen. Ignored (segmented not rendered) in `edit-active` mode and
+   * in the core layout.
+   */
+  repeats: Timeframe | null;
+  /** Called when the user picks a different Repeats segment. */
+  onRepeatsChange: (v: Timeframe | null) => void;
 
   /** Issue #70 — when true this is a *core* board for a specific
    *  timeframe window (launched from the Boards-tab banner / core-board
@@ -135,16 +151,17 @@ export function BoardSetupForm({
   onCustomEndDateChange,
   centerType,
   onCenterTypeChange,
-  isRecurring,
+  repeats,
+  onRepeatsChange,
   isCore,
   weekStartDay,
   chosenCenterDisabled = false,
 }: BoardSetupFormProps): React.ReactElement {
   const isEditActive = mode === 'edit-active';
   const isOddBoard = size % 2 !== 0;
-  const visibleTimeframeOptions = isRecurring
-    ? RECURRING_TIMEFRAME_OPTIONS
-    : TIMEFRAME_OPTIONS;
+  // Derived from the Repeats segmented value — every existing branch that
+  // used to read a plain `isRecurring` prop keeps working unchanged.
+  const isRecurring = repeats !== null;
   const visibleCenterTypeOptions = isRecurring
     ? RECURRING_CENTER_TYPE_OPTIONS
     : CENTER_TYPE_OPTIONS;
@@ -283,47 +300,85 @@ export function BoardSetupForm({
       {/* Board size */}
       {sizeBlock}
 
-      {/* Timeframe */}
-      <div className={styles.fieldGroup}>
-        <span className={styles.label}>Timeframe</span>
-        <div className={styles.segmented}>
-          {visibleTimeframeOptions.map((opt) => {
-            // The "Custom" segment also represents an ongoing (INDEFINITE)
-            // board — the End-date "None" option below is where that's chosen.
-            const active =
-              timeframe === opt.value ||
-              (opt.value === Timeframe.CUSTOM &&
-                timeframe === Timeframe.INDEFINITE);
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                className={`${styles.segmentedButton} ${
-                  active ? styles.segmentedButtonActive : ""
-                }`}
-                onClick={() => {
-                  // "Custom" defaults to an ongoing board (End date = None); a
-                  // date is opt-in. Arriving from a calendar timeframe lands on
-                  // None; re-tapping Custom keeps the current End-date choice.
-                  if (opt.value === Timeframe.CUSTOM) {
-                    if (
-                      timeframe !== Timeframe.CUSTOM &&
-                      timeframe !== Timeframe.INDEFINITE
-                    ) {
-                      onTimeframeChange(Timeframe.INDEFINITE);
-                    }
-                    return;
-                  }
-                  onTimeframeChange(opt.value);
-                }}
-                aria-pressed={active}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
+      {/* P4 (Task Pools + Recurring Boards Rework) — "Repeats" segmented,
+          the wizard's single entry point for recurrence (the separate
+          "Create a recurring board" CTA is retired). Hidden in
+          `edit-active` mode — recurrence isn't editable from the
+          active-board edit sheet. */}
+      {!isEditActive && (
+        <div className={styles.fieldGroup}>
+          <span className={styles.label}>Repeats</span>
+          <div className={styles.segmented} role="group" aria-label="Repeats">
+            {REPEATS_OPTIONS.map((opt) => {
+              const active = repeats === opt.value;
+              return (
+                <button
+                  key={opt.label}
+                  type="button"
+                  className={`${styles.segmentedButton} ${
+                    active ? styles.segmentedButtonActive : ""
+                  }`}
+                  onClick={() => onRepeatsChange(opt.value)}
+                  aria-pressed={active}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className={styles.hint}>
+            {repeats === null
+              ? "A one-off board for the timeframe you pick below."
+              : `${formatRecurringCadence(repeats)}, drawn from a task pool.`}
+          </p>
         </div>
-      </div>
+      )}
+
+      {/* Timeframe — only shown for a one-off board. A repeating
+          board's cadence (picked above) IS its window, so this segmented
+          would be redundant / misleading once a cadence is chosen. */}
+      {repeats === null && (
+        <div className={styles.fieldGroup}>
+          <span className={styles.label}>Timeframe</span>
+          <div className={styles.segmented} role="group" aria-label="Timeframe">
+            {TIMEFRAME_OPTIONS.map((opt) => {
+              // The "Custom" segment also represents an ongoing (INDEFINITE)
+              // board — the End-date "None" option below is where that's chosen.
+              const active =
+                timeframe === opt.value ||
+                (opt.value === Timeframe.CUSTOM &&
+                  timeframe === Timeframe.INDEFINITE);
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`${styles.segmentedButton} ${
+                    active ? styles.segmentedButtonActive : ""
+                  }`}
+                  onClick={() => {
+                    // "Custom" defaults to an ongoing board (End date = None); a
+                    // date is opt-in. Arriving from a calendar timeframe lands on
+                    // None; re-tapping Custom keeps the current End-date choice.
+                    if (opt.value === Timeframe.CUSTOM) {
+                      if (
+                        timeframe !== Timeframe.CUSTOM &&
+                        timeframe !== Timeframe.INDEFINITE
+                      ) {
+                        onTimeframeChange(Timeframe.INDEFINITE);
+                      }
+                      return;
+                    }
+                    onTimeframeChange(opt.value);
+                  }}
+                  aria-pressed={active}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Date display — auto for non-Custom, pickers for Custom.
           Recurring boards show a cadence label ("Every week") with

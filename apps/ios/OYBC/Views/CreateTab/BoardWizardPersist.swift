@@ -481,45 +481,64 @@ enum RecurringTemplatePersistOutcome {
 /// Persist path for `controller.isRecurring == true`. iOS twin of web
 /// `persistRecurringTemplate`.
 ///
-/// Branches on `editingTemplateId`:
+/// **Inline Task Editing parity fix** — this path used to never apply
+/// `controller.stagedEdits`, so an inline edit staged while building/editing
+/// a repeating board's task pool (rename, counting-goal change, compound
+/// sub-task edit) was silently dropped: the pre-edit task values persisted
+/// even though the Preview step showed the edit applied (via
+/// `buildWizardPlacement`'s staged-edit overlay). Fixed the same way P4
+/// fixed the analogous pending-task drop: staged edits are now applied in
+/// the SAME transaction as the pending-task drain
+/// (`writeWizardPendingTasksAndEnqueue`), mirroring `saveWizardBoard`'s
+/// staged-edits block exactly (see that function's doc for per-type
+/// handling). Applies to BOTH the fresh-create and edit branches below —
+/// staged edits are a property of the wizard session, not of which branch
+/// runs. Unlike the one-off path there's no draft/active gate to mirror:
+/// a `RecurringBoardTemplate` has no draft state (the cancel dialog's "Save
+/// Draft" action calls this exact function too — see
+/// `BoardWizardView.handleDialogSaveDraft`), so staged edits always apply.
 ///
-/// - **Fresh create** (no `editingTemplateId`): inserts the
-///   `RecurringBoardTemplate` row, then immediately spawns the current
-///   window's board via `RecurringBoardSpawn.spawnTemplateBoard`. The
-///   two writes are sequential GRDB transactions; if the spawn fails
-///   (e.g. soft-deleted task race), the template still exists with
-///   `lastSpawnedWindowKey=nil` and the next Boards-tab open will retry.
-/// - **Edit** (`editingTemplateId` set): the P1 legacy-editor write-through
-///   is SHAPE-SCOPED (`PoolMix.isLegacyShapedRecord`):
-///     - legacy-shaped WITH a linked pool (the normal post-P1 case: exactly
-///       one pool, no manual additions, no removals) → writes the
-///       selection straight through to that Pool's `taskIds` via
-///       `updatePoolAndEnqueue` — the shared Pool IS the source of truth,
-///       so the template's own `poolIds`/`manualTaskIds`/`removedTaskIds`
-///       don't need to change.
-///     - legacy-shaped WITHOUT a pool yet (defensive — shouldn't occur
-///       post-migration, since migration always mints one, but a record
-///       edited before its first-launch migration ran would hit this) →
-///       mints a Pool exactly like the create path / migration step 2.
-///     - non-legacy-shaped (2+ pools, any manual additions, any removals —
-///       cannot occur before P4 ships the generalized wizard, but handled
-///       defensively) → flattens the selection to `manualTaskIds` and
-///       clears `poolIds`/`removedTaskIds`. The legacy editor never writes
-///       a Pool it didn't mint.
-///   `seedTaskIds` itself is left untouched on edit — verbatim/stale,
-///   never read after P1. Does NOT spawn — edits don't retroactively
-///   change previously-spawned boards, and the next window's spawn will
-///   pick up the new mix naturally.
+/// **Task Pools + Recurring Boards Rework, P4 rewrite** — this used to be
+/// two separate persist paths (this function for recurring vs.
+/// `persistWizardBoard`/`saveWizardBoard` for one-off) that diverged in a
+/// load-bearing way: `saveWizardBoard` drained the wizard's in-memory
+/// (Bug #85) `pendingTasks` into GRDB before writing the board; this
+/// function never did, so a pending task selected into a repeating
+/// board's pool was silently dropped from the mix forever (see
+/// `AppDatabase.writeWizardPendingTasksAndEnqueue`'s doc for the full
+/// failure mode). P4 unifies the two paths' pending-task handling and
+/// retires the P1→P3 shape-scoped legacy write-through
+/// (`PoolMix.isLegacyShapedRecord` / pool-minting) entirely — the native
+/// `poolIds`/`manualTaskIds`/`removedTaskIds` shape (already tracked on
+/// `BoardWizardViewModel` since P3 for the Tasks-step UI) is now the ONLY
+/// shape this function ever writes, for both fresh-create AND edit.
 ///
-/// Note (Task Pools + Recurring Boards Rework, P3): the wizard's "PULL IN A
-/// POOL" card tracks session state on `BoardWizardViewModel`
-/// (`pulledPoolIds` / `manualTaskIds` / `removedTaskIds`) purely for the
-/// Tasks-step UI and provenance labels ("from <pool>" / "added by hand").
-/// That state does NOT drive persistence here — a richer native
-/// `poolIds`/`manualTaskIds`/`removedTaskIds` persisted shape must not exist
-/// before P4 ships the generalized wizard (see `docs/POOLS_RECURRING.md`).
-/// This function only ever reads the flattened `controller.selectedTaskIds`
-/// (`seedTaskIds`), exactly as it did pre-P3.
+/// Sequence:
+///   1. Drain the FULL selection's pending tasks (not a placement-based
+///      subset — a repeating board's future windows draw from the whole
+///      pool) via `writeWizardPendingTasksAndEnqueue`, in its own
+///      transaction, BEFORE anything below reads tasks for mix resolution
+///      or spawn.
+///   2. **Edit** (`editingTemplateId` set): re-saves the template with the
+///      controller's CURRENT `pulledPoolIds`/`manualTaskIds`/
+///      `removedTaskIds` — no Pool write-through, no shape branching, no
+///      pool minting. `seedTaskIds` is left untouched (verbatim/stale,
+///      never read after P1). Does NOT spawn — edits don't retroactively
+///      change previously-spawned boards, and the next window's spawn
+///      naturally picks up the new mix via `PoolMix.resolveMix`.
+///   3. **Fresh create** (no `editingTemplateId`): inserts the
+///      `RecurringBoardTemplate` row with the same native fields (no Pool
+///      is minted — an own-mix, zero-pool repeating board is first-class
+///      per docs/POOLS_RECURRING.md), then immediately spawns the current
+///      window's board via `RecurringBoardSpawn.spawnTemplateBoard`. The
+///      writes are sequential GRDB transactions; if the spawn fails (e.g.
+///      soft-deleted task race), the template still exists with
+///      `lastSpawnedWindowKey=nil` and the next Boards-tab open retries.
+///
+/// `seedTaskIds` is kept ONLY as a decode-compat snapshot of the final
+/// selection (mirrors `lastSyncedCount`'s inert-field precedent) — never
+/// read back by this function or by hydration (see
+/// `BoardWizardViewModel.resolveTemplateHydrationTaskIds`).
 ///
 /// Runs on a background queue; dispatches callbacks on the main queue.
 func persistRecurringTemplate(
@@ -533,13 +552,57 @@ func persistRecurringTemplate(
     let boardSize = controller.size
     let centerType = controller.centerType
     let isRandomized = controller.isRandomized
-    let seedTaskIds = Array(controller.selectedTaskIds)
+    let selectedTaskIds = controller.selectedTaskIds
+    let seedTaskIds = Array(selectedTaskIds)
+    let poolIds = controller.pulledPoolIds
+    let manualTaskIds = Array(controller.manualTaskIds)
+    let removedTaskIds = Array(controller.removedTaskIds)
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()
+    // Bug #85 — snapshot + filter to the FULL final selection (not a
+    // placement-based subset, unlike the one-off path — see
+    // `writeWizardPendingTasksAndEnqueue`'s doc). Value-type snapshot so
+    // this doesn't race concurrent mutations on the main actor.
+    let pendingToPersist = controller.pendingTasks.values.filter { selectedTaskIds.contains($0.task.id) }
+    // Inline Task Editing — snapshot staged edits alongside pending tasks
+    // (value types, safe O(n) copy) so the async write applies them
+    // atomically. See the function doc above for why this always applies
+    // (no draft/active gate for recurring templates).
+    let capturedStagedEdits = controller.stagedEdits
 
     DispatchQueue.global(qos: .userInitiated).async {
         do {
+            // Merge staged simple/counting edits into their pending payload
+            // in-memory (mirrors `persistWizardBoard`'s merge) so the
+            // inline-created task is written with its edited values in one
+            // shot. Compound edits (parent fields AND child/link CRUD) are
+            // applied once inside `writeWizardPendingTasksAndEnqueue`,
+            // against the just-written pending rows — so DON'T pre-merge
+            // them here (that would double-apply the parent + bump version
+            // twice).
+            let pendingForSave: [PendingTaskPayload] = pendingToPersist.map { payload -> PendingTaskPayload in
+                guard payload.task.type != .compound,
+                      let patch = capturedStagedEdits[payload.task.id],
+                      patch.validate(type: payload.task.type) == nil else { return payload }
+                return PendingTaskPayload(
+                    task: patch.applied(to: payload.task),
+                    childTasks: payload.childTasks,
+                    childLinks: payload.childLinks
+                )
+            }
+
+            // Drain pending (Bug #85) tasks FIRST — before the edit path's
+            // template re-save or the fresh-create path's spawn, both of
+            // which resolve the mix / read tasks by id. Staged edits
+            // (library tasks + pending compounds) are applied in the same
+            // transaction — see `writeWizardPendingTasksAndEnqueue`'s doc.
+            if !pendingForSave.isEmpty || !capturedStagedEdits.isEmpty {
+                try AppDatabase.shared.writeWizardPendingTasksAndEnqueue(
+                    pendingForSave, stagedEdits: capturedStagedEdits, now: now
+                )
+            }
+
             // ── Edit path ─────────────────────────────────────────────
             if let templateId = editingTemplateId {
                 guard let existing = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId) else {
@@ -549,118 +612,45 @@ func persistRecurringTemplate(
                     return
                 }
 
-                // Base field update — shared by every shape branch below.
-                // `seedTaskIds` is intentionally omitted (left
-                // verbatim/stale, never read after P1); poolIds/manual/
-                // removed are set per-branch.
-                func baseUpdate(
-                    poolIds: [String]?,
-                    manualTaskIds: [String]?,
-                    removedTaskIds: [String]?
-                ) -> RecurringBoardTemplate {
-                    RecurringBoardTemplate(
-                        id: existing.id,
-                        userId: existing.userId,
-                        name: trimmedName,
-                        timeframe: timeframe,
-                        boardSize: boardSize,
-                        centerSquareType: centerType,
-                        isRandomized: isRandomized,
-                        seedTaskIds: existing.seedTaskIds,
-                        poolIds: poolIds,
-                        manualTaskIds: manualTaskIds,
-                        removedTaskIds: removedTaskIds,
-                        // `isActive` isn't surfaced in the wizard form (the
-                        // templates list owns the pause toggle), so preserve.
-                        lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
-                        isActive: existing.isActive,
-                        createdAt: existing.createdAt,
-                        updatedAt: now,
-                        lastSyncedAt: existing.lastSyncedAt,
-                        version: existing.version + 1,
-                        isDeleted: false,
-                        deletedAt: nil
-                    )
-                }
-
-                if PoolMix.isLegacyShapedRecord(existing) {
-                    if let existingPoolId = existing.poolIds?.first {
-                        // Normal post-P1 case: write straight through to
-                        // the linked Pool. The Pool is the shared source
-                        // of truth for the mix — no change needed to the
-                        // template's own poolIds/manualTaskIds/removedTaskIds.
-                        //
-                        // `seedTaskIds` is hydrated from `resolveMix`, which
-                        // filters out soft-deleted tasks — so writing it
-                        // verbatim would prune soft-deleted-but-preserved refs
-                        // the Pool deliberately keeps (`Pool.taskIds` contract).
-                        // Preserve-merge against the existing pool so those refs
-                        // survive; resolvable tasks the user removed still drop.
-                        let existingPool = try AppDatabase.shared.fetchPool(id: existingPoolId)
-                        let tasksById = Dictionary(
-                            (try AppDatabase.shared.fetchTasks(userId: userId)).map { ($0.id, $0) },
-                            uniquingKeysWith: { first, _ in first }
-                        )
-                        let mergedTaskIds = PoolMix.mergeLegacyPoolTaskIds(
-                            existingPool?.taskIds ?? [],
-                            selectedTaskIds: seedTaskIds,
-                            tasksById: tasksById
-                        )
-                        try AppDatabase.shared.updatePoolAndEnqueue(
-                            id: existingPoolId, taskIds: mergedTaskIds, now: now
-                        )
-                        let updated = baseUpdate(
-                            poolIds: existing.poolIds,
-                            manualTaskIds: existing.manualTaskIds,
-                            removedTaskIds: existing.removedTaskIds
-                        )
-                        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                            updated, operation: .update, now: now
-                        )
-                    } else {
-                        // Defensive: a legacy-shaped record with no pool
-                        // yet (edited before its first-launch migration
-                        // ran). Mint a Pool exactly like the create path /
-                        // migration step 2.
-                        let pool = try AppDatabase.shared.createPoolAndEnqueue(
-                            userId: userId,
-                            name: PoolMix.clampMintedPoolName(trimmedName, suffix: "pool"),
-                            taskIds: seedTaskIds,
-                            now: now
-                        )
-                        let updated = baseUpdate(
-                            poolIds: [pool.id], manualTaskIds: [], removedTaskIds: []
-                        )
-                        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                            updated, operation: .update, now: now
-                        )
-                    }
-                } else {
-                    // Defensive flatten: a richer shape (2+ pools, manual
-                    // additions, or removals) reached by the legacy
-                    // editor. Never write a Pool this editor didn't mint —
-                    // flatten to manualTaskIds instead.
-                    let updated = baseUpdate(
-                        poolIds: [], manualTaskIds: seedTaskIds, removedTaskIds: []
-                    )
-                    try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                        updated, operation: .update, now: now
-                    )
-                }
+                let updated = RecurringBoardTemplate(
+                    id: existing.id,
+                    userId: existing.userId,
+                    name: trimmedName,
+                    timeframe: timeframe,
+                    boardSize: boardSize,
+                    centerSquareType: centerType,
+                    isRandomized: isRandomized,
+                    // Left verbatim/stale — decode-compat only, never read
+                    // after P1 (see the function doc above).
+                    seedTaskIds: existing.seedTaskIds,
+                    poolIds: poolIds,
+                    manualTaskIds: manualTaskIds,
+                    removedTaskIds: removedTaskIds,
+                    // `isActive` isn't surfaced in the wizard form (the
+                    // templates list owns the pause toggle), so preserve.
+                    lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
+                    isActive: existing.isActive,
+                    createdAt: existing.createdAt,
+                    updatedAt: now,
+                    lastSyncedAt: existing.lastSyncedAt,
+                    version: existing.version + 1,
+                    isDeleted: false,
+                    deletedAt: nil
+                )
+                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                    updated, operation: .update, now: now
+                )
 
                 DispatchQueue.main.async { onSuccess(.updated(templateId: templateId)) }
                 return
             }
 
             // ── Fresh-create path ─────────────────────────────────────
-            // Mint a Pool from the selection (mirrors migration step 2),
-            // then insert the template already in the migrated shape.
-            let pool = try AppDatabase.shared.createPoolAndEnqueue(
-                userId: userId,
-                name: PoolMix.clampMintedPoolName(trimmedName, suffix: "pool"),
-                taskIds: seedTaskIds,
-                now: now
-            )
+            // No Pool is minted (P4 retires the P1 auto-mint-on-create
+            // behavior) — an own-mix, zero-pool repeating board is
+            // first-class. `poolIds`/`manualTaskIds`/`removedTaskIds` come
+            // straight from the controller's own P3 pool-mix state, which
+            // is now authoritative end-to-end.
             let template = RecurringBoardTemplate(
                 id: AppDatabase.generateUUID(),
                 userId: userId,
@@ -670,9 +660,9 @@ func persistRecurringTemplate(
                 centerSquareType: centerType,
                 isRandomized: isRandomized,
                 seedTaskIds: seedTaskIds,
-                poolIds: [pool.id],
-                manualTaskIds: [],
-                removedTaskIds: [],
+                poolIds: poolIds,
+                manualTaskIds: manualTaskIds,
+                removedTaskIds: removedTaskIds,
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,
