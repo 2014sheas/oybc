@@ -16,7 +16,10 @@ import styles from './Play.module.css';
 function buildConfetti(intensity: number) {
   const clamped = Math.max(1, Math.min(10, intensity));
   const count = 8 + clamped * 8;
-  const colors = ['#FFC21F', '#EB4D2E', '#2C44C9', '#FBF6EA'];
+  // Riso palette via tokens so the confetti tracks the design system. Gold +
+  // on-color are theme-stable; red/blue shift value in dark mode but each piece
+  // keeps a fixed ink-static outline, so visibility holds in both themes.
+  const colors = ['var(--riso-gold)', 'var(--riso-red)', 'var(--riso-blue)', 'var(--riso-on-color)'];
   return Array.from({ length: count }, (_, i) => ({
     left: (i * 2.8 + (i % 5) * 3) % 100,
     color: colors[i % 4],
@@ -82,7 +85,7 @@ export function RisoGreenlog({
               width: c.size,
               height: c.size * 1.4,
               background: c.color,
-              border: '1.5px solid #18120B',
+              border: '1.5px solid var(--riso-ink-static)',
               transform: `rotate(${c.rot}deg)`,
               ['--dur' as string]: `${c.dur}s`,
               ['--delay' as string]: `${c.delay}s`,

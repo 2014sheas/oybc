@@ -10,8 +10,8 @@
   width: 90px;
   height: 90px;
   border-radius: 8px;
-  border: 2px solid var(--border-color);
-  background-color: var(--card-bg);
+  border: 2px solid var(--riso-ink);
+  background-color: var(--riso-paper-2);
   cursor: pointer;
   user-select: none;
   overflow: hidden;
@@ -32,14 +32,14 @@
 }
 
 .taskSquare:focus-visible {
-  outline: 3px solid #007aff;
+  outline: 3px solid var(--riso-ink);
   outline-offset: 2px;
 }
 
 /* Completed state */
 .taskSquareCompleted {
-  background-color: #34c759;
-  border-color: #28a745;
+  background-color: var(--riso-green);
+  border-color: var(--riso-green);
 }
 
 /* ── Checkmark (completed state) ─────────────────────────── */
@@ -56,7 +56,7 @@
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #ffffff;
+  color: var(--riso-on-color);
   z-index: 2;
 }
 
@@ -75,7 +75,7 @@
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.25;
-  color: var(--text-primary);
+  color: var(--riso-ink);
   padding: 6px;
   overflow: hidden;
   /* See BingoSquare.module.css — prefer word boundaries. */
@@ -83,14 +83,14 @@
 }
 
 .taskSquareCompleted .taskName {
-  color: #ffffff;
+  color: var(--riso-on-color);
 }
 
 /* ── Action hint (counting tasks, hover only) ────────────── */
 
 .actionHint {
   font-size: 0.58rem;
-  color: #999;
+  color: var(--riso-muted);
   text-align: center;
   margin-top: -2px;
   padding: 0 4px 2px;
@@ -114,7 +114,7 @@
   margin: 0 4px 4px;
   border-radius: 4px;
   overflow: hidden;
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: color-mix(in srgb, var(--riso-ink) 10%, transparent);
   flex-shrink: 0;
 }
 
@@ -129,15 +129,15 @@
 }
 
 .progressBarFillCounting {
-  background-color: #ff9500;
+  background-color: var(--riso-blue);
 }
 
 .progressBarFillProgress {
-  background-color: #af52de;
+  background-color: var(--riso-green);
 }
 
 .progressBarFillCompound {
-  background-color: var(--task-compound-color, #6366f1); /* indigo accent */
+  background-color: var(--riso-green);
 }
 
 .progressBarLabel {
@@ -150,7 +150,7 @@
   justify-content: center;
   font-size: 0.6rem;
   font-weight: 700;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   white-space: nowrap;
 }
 
@@ -199,7 +199,7 @@
 
 .modalDescription {
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   line-height: 1.5;
   margin: 0;
 }
@@ -207,12 +207,12 @@
 /* Phase 3 — Shared Counters: caption shown in the detail modal for linked tasks. */
 .linkedCounterCaption {
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   font-style: italic;
   margin: 0.5rem 0 0.5rem;
   padding: 0.4rem 0.75rem;
-  background: color-mix(in srgb, var(--accent-orange, #f97316) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-orange, #f97316) 20%, transparent);
+  background: color-mix(in srgb, var(--riso-blue) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--riso-blue) 20%, transparent);
   border-radius: var(--radius-sm);
   text-align: center;
 }
@@ -222,7 +222,7 @@
   height: 16px;
   border-radius: 6px;
   overflow: hidden;
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: color-mix(in srgb, var(--riso-ink) 10%, transparent);
 }
 
 .modalProgressFill {
@@ -236,15 +236,15 @@
 }
 
 .modalProgressFillCounting {
-  background-color: #ff9500;
+  background-color: var(--riso-blue);
 }
 
 .modalProgressFillProgress {
-  background-color: #af52de;
+  background-color: var(--riso-green);
 }
 
 .modalProgressFillCompound {
-  background-color: var(--task-compound-color, #6366f1);
+  background-color: var(--riso-green);
 }
 
 .modalProgressLabel {
@@ -257,7 +257,7 @@
   justify-content: center;
   font-size: 0.7rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--riso-on-color);
   white-space: nowrap;
   text-shadow: 0 0 3px rgba(0, 0, 0, 0.4);
 }
@@ -289,7 +289,11 @@
 }
 
 .counterButton:hover:not(:disabled) {
+  /* Gold is a FIXED fill — pin content to static ink or it goes cream-on-gold
+     in dark mode (the adaptive-ink-on-gold trap; mirrors .quickChip:hover). */
   background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  border-color: var(--riso-ink-static);
 }
 
 .counterButton:active:not(:disabled) {
@@ -454,13 +458,13 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
-  color: var(--text-primary);
+  color: var(--riso-ink);
   cursor: pointer;
 }
 
 .stepItem input[type='checkbox'] {
   cursor: pointer;
-  accent-color: #af52de;
+  accent-color: var(--riso-green);
   width: 16px;
   height: 16px;
   flex-shrink: 0;
@@ -508,7 +512,7 @@
   background: none;
   border: none;
   font-size: 1.1rem;
-  color: var(--text-secondary);
+  color: var(--riso-muted);
   cursor: pointer;
   line-height: 1;
   padding: 0.15rem 0.35rem;
@@ -517,7 +521,7 @@
 }
 
 .modalCloseButton:hover {
-  color: var(--text-primary);
+  color: var(--riso-ink);
 }
 
 /* ── Compound badge (grid square, top-left) ──────────────── */
@@ -529,8 +533,8 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background-color: var(--task-compound-color, #6366f1);
-  color: #ffffff;
+  background-color: var(--riso-green);
+  color: var(--riso-on-color);
   font-size: 0.6rem;
   font-weight: 700;
   display: flex;
@@ -552,8 +556,8 @@
   max-width: calc(100% - 26px); /* leave room for the checkmark */
   padding: 2px 6px;
   border-radius: 9px;
-  background-color: var(--achievement-badge-bg, rgba(99, 102, 241, 0.18));
-  color: var(--achievement-badge-text, var(--text-primary));
+  background-color: var(--achievement-badge-bg, color-mix(in srgb, var(--riso-blue) 18%, transparent));
+  color: var(--achievement-badge-text, var(--riso-ink));
   font-size: 0.62rem;
   font-weight: 600;
   line-height: 1.1;
@@ -567,7 +571,7 @@
 
 .compoundOperatorCaption {
   font-size: 0.85rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--riso-muted);
   margin: 0 0 12px;
 }
 
@@ -582,7 +586,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--riso-ink);
   cursor: pointer;
   border-radius: 4px;
   transition: background-color 0.1s;
@@ -593,12 +597,12 @@
 }
 
 .compoundChildItem:hover {
-  background-color: var(--hover-bg, rgba(0, 0, 0, 0.03));
+  background-color: color-mix(in srgb, var(--riso-ink) 8%, transparent);
 }
 
 .compoundChildCheck {
   font-size: 1.1rem;
-  color: var(--task-compound-color, #6366f1);
+  color: var(--riso-green);
   flex-shrink: 0;
   width: 1.2rem;
   text-align: center;
@@ -607,12 +611,12 @@
 .compoundChildLabel {
   flex: 1;
   font-size: 0.95rem;
-  color: var(--text-primary);
+  color: var(--riso-ink);
 }
 
 .compoundChildLabelDone {
   text-decoration: line-through;
-  color: var(--text-secondary, #6b7280);
+  color: var(--riso-muted);
 }
 
 .compoundChildInfoButton {
@@ -621,7 +625,7 @@
   border: none;
   cursor: pointer;
   font-size: 0.9rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--riso-muted);
   padding: 2px 4px;
   border-radius: 4px;
   line-height: 1;
@@ -631,12 +635,12 @@
 
 .compoundChildInfoButton:hover {
   opacity: 1;
-  background-color: var(--hover-bg, rgba(0, 0, 0, 0.06));
+  background-color: color-mix(in srgb, var(--riso-ink) 8%, transparent);
 }
 
 .compoundFooter {
   font-size: 0.8rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--riso-muted);
   text-align: center;
   margin-top: 12px;
   font-style: italic;
@@ -646,8 +650,8 @@
 
 .contextMenu {
   position: fixed;
-  background-color: var(--card-bg);
-  border: 1px solid var(--border-color);
+  background-color: var(--riso-paper-2);
+  border: 1px solid var(--riso-ink);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   min-width: 180px;
@@ -664,14 +668,14 @@
   border: none;
   background: none;
   font-size: 0.9rem;
-  color: var(--text-primary);
+  color: var(--riso-ink);
   cursor: pointer;
   transition: background-color 0.1s;
   white-space: nowrap;
 }
 
 .contextMenuItem:hover:not(:disabled) {
-  background-color: var(--hover-bg);
+  background-color: color-mix(in srgb, var(--riso-ink) 8%, transparent);
 }
 
 .contextMenuItem:disabled {
@@ -681,17 +685,17 @@
 
 .contextMenuDivider {
   height: 1px;
-  background-color: var(--border-color);
+  background-color: var(--riso-ink);
   margin: 4px 0;
 }
 
 /* Danger variant for destructive actions (e.g. Remove from board) */
 .contextMenuItemDanger {
-  color: var(--danger, #dc2626);
+  color: var(--riso-red);
 }
 
 .contextMenuItemDanger:hover:not(:disabled) {
-  background-color: var(--danger-bg, rgba(220, 38, 38, 0.07));
+  background-color: color-mix(in srgb, var(--riso-red) 8%, transparent);
 }
 
 /* Shared-counter hint pill — shown below counting controls in context menu + detail modal */
