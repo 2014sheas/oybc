@@ -367,7 +367,7 @@ struct BoardWizardPreviewStepView: View {
     /// "template", no "spawn" anywhere in UI copy).
     private var recurringPrimaryLabel: String {
         if isCreating { return "Saving…" }
-        if controller.editingTemplateId != nil { return "Save changes" }
+        if controller.editingTemplateId != nil { return "Save Changes" }
         return "Create Board"
     }
 
@@ -647,9 +647,11 @@ private extension BoardWizardPreviewStepView {
         .background(Color.risoPaper)
     }
 
-    /// Recurring: ‹ Back · Create Board (or Save changes when editing).
-    /// Board Creation Split (iOS PR A) — no "Save as Draft" here (recurring
-    /// drafts are PR B); accent is blue, matching the wizard's fixed mode.
+    /// Recurring: ‹ Back · Save as Draft · Create Board (or ‹ Back · Save
+    /// Changes when editing an existing repeating board — there's no
+    /// "draft" concept for an edit, so "Save as Draft" is omitted in that
+    /// case, mirroring the pre-PR-B footer exactly). Board Creation Split
+    /// (PR B) — accent is blue, matching the wizard's fixed mode.
     @ViewBuilder
     private var recurringFooter: some View {
         HStack(spacing: 10) {
@@ -657,6 +659,13 @@ private extension BoardWizardPreviewStepView {
                 .disabled(isCreating)
 
             Spacer()
+
+            if controller.editingTemplateId == nil {
+                RisoButton(title: isCreating ? "Saving…" : "Save as Draft", kind: .neutral) {
+                    performCreation(status: .draft)
+                }
+                .disabled(isCreating)
+            }
 
             RisoButton(title: recurringPrimaryLabel, kind: .blue) {
                 performCreation(status: .active)
@@ -675,6 +684,15 @@ private extension BoardWizardPreviewStepView {
         errorMessage = nil
 
         if controller.isRecurring {
+            if status == .draft {
+                // Board Creation Split (PR B) — "Save as Draft" now saves
+                // a real DRAFT `Board` (the same one-off persist path a
+                // one-off wizard uses) instead of creating — and
+                // immediately spawning — a `RecurringBoardTemplate`.
+                // Nothing runs until "Create Board".
+                performRecurringDraftSave()
+                return
+            }
             isCreating = true
             persistRecurringTemplate(
                 controller: controller,
@@ -732,6 +750,47 @@ private extension BoardWizardPreviewStepView {
                 errorMessage = controller.draftBoardId == nil
                     ? "Failed to create board: \(message)"
                     : "Failed to update draft: \(message)"
+            }
+        )
+    }
+
+    /// Board Creation Split (PR B) — recurring "Save as Draft". Reuses the
+    /// EXACT one-off persist path (`persistWizardBoard(status: .draft)`);
+    /// `controller.isRecurring` drives that function's own
+    /// `isRecurringDraft` + `recurringDraftMix` bookkeeping (see
+    /// `BoardWizardPersist.swift`), so this call site needs no special
+    /// casing beyond skipping the (grid-only) `placement` fallback message
+    /// wording, which stays the plain "Failed to save draft" — a recurring
+    /// draft is never "updating" in the one-off sense of resurrecting a
+    /// prior ACTIVE board.
+    private func performRecurringDraftSave() {
+        let resolved = resolveWizardDates(controller: controller)
+        let dates: (start: String, end: String?)
+        switch resolved {
+        case .ok(let start, let end):
+            dates = (start, end)
+        case .error(let msg):
+            errorMessage = msg
+            return
+        }
+
+        isCreating = true
+        let snapshot = placement.isEmpty
+            ? buildWizardPlacement(controller: controller, library: library)
+            : placement
+        persistWizardBoard(
+            controller: controller,
+            userId: userId,
+            placement: snapshot,
+            dates: dates,
+            status: .draft,
+            onSuccess: { boardId in
+                isCreating = false
+                onComplete(boardId, .draft)
+            },
+            onError: { message in
+                isCreating = false
+                errorMessage = "Failed to save draft: \(message)"
             }
         )
     }

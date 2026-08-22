@@ -9,11 +9,13 @@ import XCTest
 /// iOS twin of web's `useBoardWizard` editTemplate branch. P7 (Task
 /// Pools + Recurring Boards Rework) retired the Profile "Recurring
 /// templates" page and its cross-tab wizard-edit hop
-/// (`CreateHubViewModel.loadTemplateAndEnterWizard`) — editing a
-/// repeating board's mix is now a local sheet
-/// (`RepeatingBoardEditSheetView`) on `BoardSettingsView`. This test
-/// keeps guarding `BoardWizardViewModel`'s `editingTemplate:` hydration
-/// as a general capability, independent of which UI (if any) triggers it.
+/// (`CreateHubViewModel.loadTemplateAndEnterWizard`) in favor of a local
+/// sheet (`RepeatingBoardEditSheetView`) on `BoardSettingsView`; Board
+/// Creation Split (PR B) then retired THAT sheet too — `BoardSettingsView`'s
+/// "Edit tasks" now opens this same `editingTemplate:` hydration path via
+/// the full `BoardWizardView`. This test keeps guarding
+/// `BoardWizardViewModel`'s `editingTemplate:` hydration as a general
+/// capability, independent of which UI triggers it.
 final class BoardWizardTemplateEditTests: XCTestCase {
 
     private func makeTemplate(

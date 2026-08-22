@@ -228,28 +228,40 @@ struct RisoBoardSetupForm: View {
     }
 
     /// Canonical copy (README §Copy strings): "A fresh board every {day|
-    /// week|month|year} · starts {window}".
+    /// week|month|year} · starts {window}". Editing an EXISTING repeating
+    /// board (README §5 "Edit re-entry", frame 2e) swaps this for
+    /// "Changes apply from the next board · current board keeps playing" —
+    /// a cadence change here never retroactively edits the board already
+    /// in play, so the note says so instead of restating the (unchanged)
+    /// window.
     @ViewBuilder
     private var recurringScheduleNote: some View {
-        if let label = controller.timeframeDisplayLabel {
-            HStack(spacing: 8) {
-                Image(systemName: "repeat")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                Text("A fresh board every \(recurringCadenceNoun) · starts \(label)")
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .lineLimit(2)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
-                    .foregroundStyle(Color.risoInk)
-            )
+        if controller.editingTemplateId != nil {
+            scheduleNoteCard(icon: "repeat", text: "Changes apply from the next board · current board keeps playing")
+        } else if let label = controller.timeframeDisplayLabel {
+            scheduleNoteCard(icon: "repeat", text: "A fresh board every \(recurringCadenceNoun) · starts \(label)")
         }
+    }
+
+    @ViewBuilder
+    private func scheduleNoteCard(icon: String, text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.risoMuted)
+            Text(text)
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: Riso.cardRadius)
+                .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [6, 4]))
+                .foregroundStyle(Color.risoInk)
+        )
     }
 
     /// Lowercase singular cadence noun for the recurring note's "every

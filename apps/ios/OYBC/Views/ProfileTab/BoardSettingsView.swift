@@ -10,10 +10,10 @@ import SwiftUI
 ///    that opens `CoreDefaultsEditSheetView` on tap.
 /// 2. A repeating-boards roster — ALL spawn records, active AND paused
 ///    (the safety net for paused boards; unlike the old templates page
-///    there's no `+ New` here — creation happens via the wizard's
-///    Step-1 "Repeats" control, P4) — with Pause/Resume (reusing
-///    `RecurringTemplateCard`'s toggle) and Edit tasks (opens
-///    `RepeatingBoardEditSheetView`, a local sheet — no wizard hop).
+///    there's no `+ New` here — creation happens from the Create hub's
+///    "Start a recurring board" CTA) — with Pause/Resume (reusing
+///    `RecurringTemplateCard`'s toggle) and Edit tasks (opens the recurring
+///    wizard in edit mode via `fullScreenCover` — "EDIT RECURRING BOARD").
 ///
 /// Container view stays thin: it owns loading + the two sheet
 /// presentations; all form logic lives in the two sheet views.
@@ -127,15 +127,24 @@ struct BoardSettingsView: View {
                 )
             }
         }
-        .sheet(item: $rosterEditTarget) { target in
-            RepeatingBoardEditSheetView(
-                template: target.template,
-                pools: pools,
-                tasks: tasks,
-                templates: rosterVM.templates,
-                library: library,
+        .fullScreenCover(item: $rosterEditTarget) { target in
+            // Board Creation Split (PR B) — "Edit tasks" now opens the full
+            // recurring wizard in EDIT mode (kicker "EDIT RECURRING BOARD",
+            // schedule note "Changes apply from the next board · current
+            // board keeps playing", footer Cancel / "Save Changes") instead
+            // of the retired local `RepeatingBoardEditSheetView`. Pause/
+            // resume (`setActive`, below) is unaffected — it stays a
+            // direct roster-row toggle, no wizard hop.
+            BoardWizardView(
                 userId: authService.currentUser?.id ?? "",
-                onSaved: {
+                preferences: preferences,
+                editingTemplate: target.template,
+                onCancel: { rosterEditTarget = nil },
+                onComplete: { _, _ in
+                    rosterEditTarget = nil
+                    reload()
+                },
+                onTemplateComplete: { _ in
                     rosterEditTarget = nil
                     reload()
                 }

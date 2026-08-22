@@ -4,10 +4,27 @@ import SwiftUI
 /// draft Board with a precomputed task count. Supplied by
 /// `CreateHubView` which loads the rows on appear and after the
 /// wizard dismisses.
+///
+/// Board Creation Split (PR B) — `taskCount` means different things per
+/// `kind`: for a one-off draft it's the placed `BoardTask` row count
+/// (unchanged); for a recurring draft it's the FULL resolved pool size
+/// (`recurringDraftMix`, via `BoardWizardViewModel.resolvePoolMixHydration`)
+/// — never the placed-row count, which silently truncates an intentionally
+/// overfilled pool to the grid size. See `CreateHubViewModel.reloadDrafts`.
 struct DraftRowData: Identifiable {
+    /// One-off (red) vs recurring (blue) — drives the row's typed pill,
+    /// meta-line format, and which wizard mode `onResume` reopens
+    /// (resolved automatically by `BoardWizardViewModel.init` from
+    /// `board.isRecurringDraft`, so no separate routing is needed here).
+    enum Kind {
+        case oneOff
+        case recurring
+    }
+
     let board: Board
     let taskCount: Int
     var id: String { board.id }
+    var kind: Kind { board.isRecurringDraft ? .recurring : .oneOff }
 }
 
 /// CreateHubDraftsListView — Riso-styled list of the user's DRAFT boards
@@ -77,6 +94,25 @@ private struct RisoDraftRow: View {
     let onResume: (Board) -> Void
     let onDeleteTap: () -> Void
 
+    /// Board Creation Split (PR B) — "4×4 · 9 tasks" for a one-off draft;
+    /// "Every week · 5×5 · 12 tasks" for a recurring one (README §Screens
+    /// "1. Create hub"). `formatRecurringCadence` supplies the canonical
+    /// "Every {day|week|month|year}" prefix.
+    private var metaText: String {
+        let plural = row.taskCount == 1 ? "" : "s"
+        let sizeAndCount = "\(row.board.boardSize)×\(row.board.boardSize) · \(row.taskCount) task\(plural)"
+        guard row.kind == .recurring else { return sizeAndCount }
+        return "\(formatRecurringCadence(timeframe: row.board.timeframe)) · \(sizeAndCount)"
+    }
+
+    private var pillLabel: String {
+        row.kind == .recurring ? "RECURRING" : "ONE-OFF"
+    }
+
+    private var pillColor: Color {
+        row.kind == .recurring ? .risoBlue : .risoRed
+    }
+
     var body: some View {
         let displayName = row.board.name.isEmpty ? "(untitled draft)" : row.board.name
         let plural = row.taskCount == 1 ? "" : "s"
@@ -88,11 +124,15 @@ private struct RisoDraftRow: View {
             } label: {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(displayName)
-                            .font(.risoBody(14, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                            .lineLimit(1)
-                        Text("\(row.board.boardSize)×\(row.board.boardSize) · \(row.taskCount) task\(plural)")
+                        HStack(spacing: 6) {
+                            Text(displayName)
+                                .font(.risoBody(14, .semibold))
+                                .foregroundStyle(Color.risoInk)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            typePill
+                        }
+                        Text(metaText)
                             .font(.risoBody(11, .regular))
                             .foregroundStyle(Color.risoMuted)
                     }
@@ -106,7 +146,7 @@ private struct RisoDraftRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Resume \"\(displayName)\", \(row.board.boardSize) by \(row.board.boardSize) board with \(row.taskCount) task\(plural)")
+            .accessibilityLabel("Resume \"\(displayName)\", \(pillLabel.capitalized) draft, \(row.board.boardSize) by \(row.board.boardSize) board with \(row.taskCount) task\(plural)")
 
             // Vertical ink divider
             Rectangle()
@@ -126,5 +166,20 @@ private struct RisoDraftRow: View {
             .accessibilityLabel("Delete draft \"\(displayName)\"")
         }
         .risoCard(fill: .risoPaper2)
+    }
+
+    /// Typed pill (README §Screens "1. Create hub") — ONE-OFF (red) /
+    /// RECURRING (blue) fill + on-color text (`.risoPaper`, matching
+    /// `RecurringTemplateCard.timeframeTag`'s identical colored-capsule
+    /// pattern) — never adaptive ink on a colored fill.
+    private var typePill: some View {
+        Text(pillLabel)
+            .font(.risoHead(8.5, .bold))
+            .tracking(0.3)
+            .foregroundStyle(Color.risoPaper)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(pillColor))
+            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 }

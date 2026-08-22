@@ -45,6 +45,11 @@ final class CreateHubViewModel {
     var mode: HubMode = .hub
     var resumeDraft: (board: Board, boardTasks: [BoardTask])? = nil
     var drafts: [DraftRowData] = []
+    /// Board Creation Split (PR B) — which wizard step a resumed draft
+    /// should open on (`BoardWizardViewModel.resolveDraftInitialStep`),
+    /// computed alongside `resumeDraft` since the hub only has the raw
+    /// `(board, boardTasks)` tuple at hydration time, not a live VM to ask.
+    var resumeInitialStep: WizardStep = 1
 
     // MARK: - DB injection
 
@@ -99,7 +104,23 @@ final class CreateHubViewModel {
                 }
                 var rows: [DraftRowData] = []
                 for board in draftBoards {
-                    let count = try self.database.fetchBoardTasks(boardId: board.id).count
+                    let count: Int
+                    if board.isRecurringDraft {
+                        // Board Creation Split (PR B) — the true pool size
+                        // lives in `recurringDraftMix`, not the placed
+                        // BoardTask rows (which truncate an intentionally
+                        // overfilled pool to the grid size). See
+                        // `DraftRowData`'s doc.
+                        let mix = RecurringDraftMixPayload.decoded(from: board.recurringDraftMix)
+                        count = BoardWizardViewModel.resolvePoolMixHydration(
+                            poolIds: mix.poolIds,
+                            manualTaskIds: mix.manualTaskIds,
+                            removedTaskIds: mix.removedTaskIds,
+                            database: self.database
+                        ).selectedTaskIds.count
+                    } else {
+                        count = try self.database.fetchBoardTasks(boardId: board.id).count
+                    }
                     rows.append(DraftRowData(board: board, taskCount: count))
                 }
                 DispatchQueue.main.async { self.drafts = rows }
@@ -117,13 +138,23 @@ final class CreateHubViewModel {
             guard let self = self else { return }
             do {
                 let boardTasks = try self.database.fetchBoardTasks(boardId: board.id)
+                // Board Creation Split (PR B) — resume at the furthest
+                // useful step (README §Interactions & Behavior). Computed
+                // here (not on the VM) since the hub only has this raw
+                // tuple, not a live `BoardWizardViewModel`, at hydration
+                // time.
+                let initialStep = BoardWizardViewModel.resolveDraftInitialStep(
+                    board: board, boardTasks: boardTasks, database: self.database
+                )
                 DispatchQueue.main.async {
                     self.resumeDraft = (board, boardTasks)
+                    self.resumeInitialStep = initialStep
                     self.mode = .wizardResume(boardId: board.id)
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.resumeDraft = nil
+                    self.resumeInitialStep = 1
                     self.mode = .wizardFresh(startRecurring: false)
                     dlog("⚠️ Failed to load draft \(board.id): \(error.localizedDescription)")
                 }

@@ -157,20 +157,20 @@ struct BoardWizardView: View {
         showCancelDialog = true
     }
 
-    /// Task Pools + Recurring Boards Rework (P4) — the cancel dialog's
-    /// "Save Draft" action must branch on `wizard.isRecurring`: pre-P4 this
-    /// unconditionally called `persistWizardBoard` (the one-off path),
-    /// which for a recurring wizard silently saved a one-off DRAFT `Board`
-    /// instead of the `RecurringBoardTemplate` the user actually configured
-    /// (Repeats set to a cadence). Mirrors the Preview step's
-    /// `performCreation(status:)` branch verbatim — same
-    /// `persistRecurringTemplate` outcome handling — so both save-exit
-    /// points behave identically.
+    /// Board Creation Split (PR B) — the cancel dialog is now
+    /// byte-identical for both modes (README §4 "Cancel dialog"): a
+    /// recurring wizard's "Save Draft" saves a real DRAFT `Board` via the
+    /// SAME `persistWizardBoard` path a one-off wizard uses — nothing runs
+    /// until "Create Board". The one exception is editing an EXISTING
+    /// repeating board (`wizard.editingTemplateId != nil`): there's no
+    /// "draft" concept for an edit, so that branch still calls
+    /// `persistRecurringTemplate` to persist the edit directly, mirroring
+    /// the Preview step's "Save Changes" verbatim (same outcome handling).
     private func handleDialogSaveDraft() {
         cancelDialogError = nil
         guard canSaveDraft else { return }
 
-        if wizard.isRecurring {
+        if wizard.isRecurring && wizard.editingTemplateId != nil {
             isSavingFromCancel = true
             persistRecurringTemplate(
                 controller: wizard,
@@ -219,18 +219,15 @@ struct BoardWizardView: View {
         )
     }
 
-    /// Save-Draft button label for the cancel dialog. Recurring boards can't
-    /// yet save a draft (PR B), so from the cancel dialog a fresh recurring
-    /// board's action is to create it — "Create Board", matching
-    /// `BoardWizardPreviewStepView.recurringPrimaryLabel` verbatim (minus its
-    /// "Saving…" busy state, surfaced here via `isSavingFromCancel`) so the
-    /// same action reads identically from either exit point. No "template"/
-    /// "spawn" mechanics words in UI copy.
+    /// Save-Draft button label for the cancel dialog. Board Creation Split
+    /// (PR B) — the same rule now applies to BOTH modes (no more
+    /// recurring-only special case): "Save Changes" when editing an
+    /// existing repeating board OR resuming any draft (one-off or
+    /// recurring); "Save Draft" for a truly fresh wizard. This is what
+    /// makes the cancel dialog byte-identical across modes (README §4).
     private var saveDraftLabel: String {
         if isSavingFromCancel { return "Saving…" }
-        if wizard.isRecurring {
-            return wizard.editingTemplateId != nil ? "Save Changes" : "Create Board"
-        }
+        if wizard.editingTemplateId != nil { return "Save Changes" }
         return wizard.draftBoardId != nil ? "Save Changes" : "Save Draft"
     }
 

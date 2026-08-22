@@ -93,6 +93,29 @@ export interface Board {
   // seal (docs §Sealing → backstop, §Edge cases). Never mutated after the
   // activation that sets it.
   activatedAt?: string;          // ISO8601
+
+  // ── Board Creation Split (PR B) — recurring drafts ──────────────────
+  //
+  // Recurring boards used to commit immediately (a `RecurringBoardTemplate`
+  // spawns on create, no draft state). PR B reuses the existing DRAFT-Board
+  // path so a recurring board can be drafted like a one-off one: additive,
+  // optional, forward-compatible (mirrors `isCore` exactly — pre-PR-B peers
+  // without these fields decode as a plain one-off draft).
+  //
+  // `isRecurringDraft` discriminates a recurring draft from a one-off draft
+  // on the shared `status === 'draft'` Board row. Cadence itself rides on
+  // the existing `timeframe` field — no new column needed for that.
+  isRecurringDraft?: boolean;
+
+  // `recurringDraftMix` snapshots the recurring wizard's pool-mix
+  // (`poolIds` / `manualTaskIds` / `removedTaskIds`) as a JSON string so the
+  // FULL pool survives a save/resume round-trip — unlike a one-off board's
+  // `BoardTask` placements, a recurring pool can be larger than the grid
+  // (overfill is the variety mechanism), so the placed cells alone would
+  // silently truncate the pool on resume. Opaque to every reader except the
+  // wizard's own hydration/persist code; `undefined` for every non-recurring
+  // draft and for boards created before this field existed.
+  recurringDraftMix?: string;
 }
 
 /**

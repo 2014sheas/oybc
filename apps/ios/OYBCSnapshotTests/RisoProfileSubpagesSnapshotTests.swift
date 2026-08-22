@@ -15,11 +15,14 @@ import SnapshotTesting
 /// from `AppDatabase.shared` + `@EnvironmentObject AuthService` (same
 /// reason the two retired list pages were never snapshotted here — see
 /// the CLAUDE.md snapshot-testing sharp edges section), so it's not
-/// snapshotted directly; its two DB-free, props-only sheets
-/// (`CoreDefaultsEditSheetView`, `RepeatingBoardEditSheetView`) and the
-/// shared `PoolPickerSheetView` are covered in
+/// snapshotted directly; its DB-free, props-only `CoreDefaultsEditSheetView`
+/// and the shared `PoolPickerSheetView` are covered in
 /// `BoardSettingsSnapshotTests.swift` instead, following the exact
 /// pattern `PoolEditSheetView` already proved safe in `RisoPoolsSnapshotTests`.
+/// (Board Creation Split PR B retired the roster's third sheet,
+/// `RepeatingBoardEditSheetView` — "Edit tasks" now opens the full
+/// `BoardWizardView` in edit mode instead, covered by the wizard's own
+/// snapshot suite.)
 @MainActor
 final class RisoProfileSubpagesSnapshotTests: XCTestCase {
 
@@ -28,11 +31,13 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
     // MARK: - Recurring template card
     //
     // The inline TemplateEditSheet was retired (pool-only sheet could
-    // underfill); creation/edit now route to a local sheet
-    // (`RepeatingBoardEditSheetView`, P7). These guard the list card
-    // component (`RecurringTemplateCard`) — reused verbatim as the P7
-    // Board-settings roster's row — in its healthy and "needs attention"
-    // states, plus a multi-row "list" arrangement (active + paused).
+    // underfill); P7 routed creation/edit to a local sheet
+    // (`RepeatingBoardEditSheetView`), which Board Creation Split (PR B)
+    // then retired in favor of opening the full `BoardWizardView` in edit
+    // mode. These guard the list card component (`RecurringTemplateCard`)
+    // — reused verbatim as the Board-settings roster's row — in its
+    // healthy and "needs attention" states, plus a multi-row "list"
+    // arrangement (active + paused).
 
     /// Issue #321 — pool-preview chip row (first 3 resolved titles + "+{k}
     /// more" overflow) and the "Add tasks" affordance in `metaRow`. Both

@@ -330,6 +330,14 @@ func persistWizardBoard(
     let boardStatusRaw = status == .active ? "active" : "draft"
     let capturedTimeframe = controller.timeframe
     let capturedIsRandomized = controller.isRandomized
+    // Board Creation Split (PR B) — snapshot the recurring pool-mix state
+    // alongside the other value-type captures below, so a recurring
+    // draft's `recurringDraftMix` reflects exactly what the user had
+    // selected at Save time (never a later in-session mutation).
+    let capturedIsRecurring = controller.isRecurring
+    let capturedPulledPoolIds = controller.pulledPoolIds
+    let capturedManualTaskIds = controller.manualTaskIds
+    let capturedRemovedTaskIds = controller.removedTaskIds
     // Bug #85 — snapshot the pending tasks dictionary from the controller
     // before going async so we don't race against concurrent mutations on
     // the main actor. Dictionary is a value type (copy-on-write) so this
@@ -377,6 +385,16 @@ func persistWizardBoard(
                 // the recurring banner). Falls back to false for manual
                 // Create-tab opens.
                 "isCore": existing?.isCore ?? controller.isCore,
+                // Board Creation Split (PR B) — mirrors isCore's
+                // preserve-on-update / take-from-controller-on-create
+                // posture. `persistWizardBoard` only ever runs with
+                // `status == .active` for a ONE-OFF wizard (a recurring
+                // "Create Board" always goes through
+                // `persistRecurringTemplate` instead), so an active save
+                // here is never recurring — this is safe to derive
+                // straight from the controller for both create and
+                // update.
+                "isRecurringDraft": existing?.isRecurringDraft ?? capturedIsRecurring,
             ]
             // Omit endDate entirely for indefinite boards (nil) so the row and
             // its Firestore doc carry no deadline at all — no sentinel.
@@ -392,6 +410,22 @@ func persistWizardBoard(
             // endDate's representation above.
             if let deletedAt = existing?.deletedAt {
                 boardDict["deletedAt"] = deletedAt
+            }
+            // Board Creation Split (PR B) — a recurring wizard writes its
+            // CURRENT pool-mix snapshot fresh on every save (the user may
+            // have changed the pool mid-session; this is never merged with
+            // a prior snapshot). A one-off save never sets the key at all
+            // — decodes as nil, matching a plain draft's forward-compat
+            // shape.
+            if capturedIsRecurring {
+                let mixPayload = RecurringDraftMixPayload(
+                    poolIds: capturedPulledPoolIds,
+                    manualTaskIds: Array(capturedManualTaskIds),
+                    removedTaskIds: Array(capturedRemovedTaskIds)
+                )
+                if let encodedMix = mixPayload.encoded() {
+                    boardDict["recurringDraftMix"] = encodedMix
+                }
             }
 
             let boardData = try JSONSerialization.data(withJSONObject: boardDict)
@@ -560,6 +594,15 @@ func persistRecurringTemplate(
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()
+    // Board Creation Split (PR B) — "Convert draft → template on Create
+    // Board": when this session started as a resumed RECURRING draft
+    // (`controller.draftBoardId` set — mutually exclusive with
+    // `editingTemplateId`, see `BoardWizardViewModel`'s doc), a
+    // successful fresh-create tombstones the placeholder draft `Board`
+    // right after the real `RecurringBoardTemplate` is created, so the
+    // drafts list doesn't keep showing a "converted" draft alongside the
+    // board it just spawned.
+    let draftBoardIdToRetire = controller.draftBoardId
     // Bug #85 — snapshot + filter to the FULL final selection (not a
     // placement-based subset, unlike the one-off path — see
     // `writeWizardPendingTasksAndEnqueue`'s doc). Value-type snapshot so
@@ -572,6 +615,22 @@ func persistRecurringTemplate(
     let capturedStagedEdits = controller.stagedEdits
 
     DispatchQueue.global(qos: .userInitiated).async {
+        // Board Creation Split (PR B) — best-effort tombstone of the
+        // resumed draft, called from the fresh-create path's three exit
+        // points below. Silent on failure (mirrors the rest of this
+        // function's DB-read resilience posture): the template/board just
+        // created is the important write and has already succeeded by the
+        // time this runs, so a failed cleanup only leaves a stray
+        // now-redundant draft row visible in the list — not silently lost
+        // work.
+        func retireResumedDraftIfNeeded() {
+            guard let draftBoardIdToRetire else { return }
+            do {
+                try AppDatabase.shared.deleteDraftWithCascade(id: draftBoardIdToRetire)
+            } catch {
+                dlog("[persistRecurringTemplate] failed to retire resumed draft \(draftBoardIdToRetire): \(error)")
+            }
+        }
         do {
             // Merge staged simple/counting edits into their pending payload
             // in-memory (mirrors `persistWizardBoard`'s merge) so the
@@ -691,6 +750,7 @@ func persistRecurringTemplate(
                 // shouldn't happen in practice (the form excludes
                 // CUSTOM); template is saved either way, surface a
                 // meaningful skip outcome.
+                retireResumedDraftIfNeeded()
                 DispatchQueue.main.async {
                     onSuccess(.createdSpawnSkipped(
                         templateId: template.id,
@@ -707,6 +767,7 @@ func persistRecurringTemplate(
                 suggestedName: deriveSpawnedBoardName(template: template, windowStart: wizardLocalISOString(window.start))
             )
             let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn)
+            retireResumedDraftIfNeeded()
             switch outcome {
             case .spawned(let boardId, _, _):
                 DispatchQueue.main.async {
