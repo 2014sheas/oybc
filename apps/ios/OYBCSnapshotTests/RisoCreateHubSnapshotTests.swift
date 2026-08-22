@@ -126,7 +126,8 @@ final class RisoCreateHubSnapshotTests: XCTestCase {
     /// Multi-draft list — verifies stacked rows, count pill.
     func testDraftsListMultipleRows() {
         let boards = [
-            SnapshotFixtures.makeBoard(id: "draft-a", name: "Weekly Wellness", boardSize: 5, status: .draft),
+            // Recurring draft — exercises the blue RECURRING pill + cadence meta line.
+            SnapshotFixtures.makeBoard(id: "draft-a", name: "Weekly Wellness", boardSize: 5, timeframe: .weekly, status: .draft, isRecurringDraft: true),
             SnapshotFixtures.makeBoard(id: "draft-b", name: "", boardSize: 4, status: .draft),
             SnapshotFixtures.makeBoard(id: "draft-c", name: "Q2 Goals", boardSize: 3, status: .draft),
         ]

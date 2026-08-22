@@ -82,6 +82,30 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     // already expired gets one full prompt cycle before any silent seal.
     var activatedAt: String? // ISO8601
 
+    // ── Board Creation Split (PR B) — recurring drafts. Additive, optional,
+    //    forward-compatible — mirrors the `isCore` pattern exactly. ────────
+    //
+    // `isRecurringDraft` — discriminates a recurring draft from a one-off
+    // draft on the shared `status == .draft` Board row (recurring boards
+    // used to commit immediately with no draft state; PR B reuses this
+    // existing DRAFT-Board path instead of inventing a new one). Cadence
+    // itself rides on the existing `timeframe` field. Defaults to false;
+    // forward-compatible decode (missing column → false via
+    // `decodeIfPresent ?? false`, same as `isCore`).
+    var isRecurringDraft: Bool = false
+
+    // `recurringDraftMix` — a JSON-string snapshot of the recurring
+    // wizard's pool mix (`poolIds` / `manualTaskIds` / `removedTaskIds`,
+    // see `RecurringDraftMixPayload` in `BoardWizardPersist.swift`) so the
+    // FULL pool survives a save/resume round-trip. A recurring pool can be
+    // larger than the grid (overfill is the variety mechanism), so the
+    // placed `BoardTask` cells alone would silently truncate the pool on
+    // resume — this field is the source of truth for resuming a recurring
+    // draft's selection instead. Opaque to `Board` itself (plain optional
+    // string, like `description`); `nil` for every one-off draft and for
+    // boards created before this field existed.
+    var recurringDraftMix: String?
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "boards"
@@ -99,6 +123,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         case spawnedFromTemplateId
         case isCore
         case sealedAt, sealedCompletedCells, activatedAt
+        case isRecurringDraft, recurringDraftMix
     }
 
     // Custom decoding for completedLineIds (stored as JSON string)
@@ -153,6 +178,10 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         } else {
             sealedCompletedCells = nil
         }
+
+        // Board Creation Split (PR B) — forward-compatible, mirrors isCore.
+        isRecurringDraft = try container.decodeIfPresent(Bool.self, forKey: .isRecurringDraft) ?? false
+        recurringDraftMix = try container.decodeIfPresent(String.self, forKey: .recurringDraftMix)
     }
 
     // Custom encoding for completedLineIds (store as JSON string)
@@ -220,6 +249,13 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
            let jsonString = String(data: data, encoding: .utf8) {
             try container.encode(jsonString, forKey: .sealedCompletedCells)
         }
+
+        // Board Creation Split (PR B) — always encode isRecurringDraft
+        // (mirrors isCore); recurringDraftMix omits the key when nil
+        // (mirrors endDate/centerTaskId's representation) rather than
+        // encoding null.
+        try container.encode(isRecurringDraft, forKey: .isRecurringDraft)
+        try container.encodeIfPresent(recurringDraftMix, forKey: .recurringDraftMix)
     }
 }
 

@@ -33,6 +33,41 @@ struct WizardPoolMixRecord: PoolMixSource {
     var removedTaskIds: [String]?
 }
 
+/// Board Creation Split (PR B) — the JSON payload snapshotted into
+/// `Board.recurringDraftMix` so a recurring draft's FULL pool mix survives
+/// a save/resume round-trip. A recurring pool can be larger than its grid
+/// (overfill is the variety mechanism, per docs/POOLS_RECURRING.md
+/// §Behavior invariants), so the placed `BoardTask` rows alone would
+/// silently truncate the pool on resume — this payload is the source of
+/// truth for resuming a recurring draft's selection instead.
+struct RecurringDraftMixPayload: Codable {
+    var poolIds: [String]
+    var manualTaskIds: [String]
+    var removedTaskIds: [String]
+
+    /// Encodes to the JSON string stored on `Board.recurringDraftMix`.
+    /// Returns nil on an encoding failure so the caller can omit the
+    /// field entirely, matching the rest of the codebase's JSON-string
+    /// column encode-fallback posture (never a garbage/partial string).
+    func encoded() -> String? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Decodes from `Board.recurringDraftMix`. Returns an all-empty mix
+    /// (never nil) for a missing or malformed string so hydration always
+    /// has a well-formed shape to resolve against — an empty mix just
+    /// means "no tasks yet", not an error.
+    static func decoded(from jsonString: String?) -> RecurringDraftMixPayload {
+        guard let jsonString, let data = jsonString.data(using: .utf8),
+              let payload = try? JSONDecoder().decode(RecurringDraftMixPayload.self, from: data)
+        else {
+            return RecurringDraftMixPayload(poolIds: [], manualTaskIds: [], removedTaskIds: [])
+        }
+        return payload
+    }
+}
+
 /// BoardWizardViewModel — Owns the full board-creation wizard state.
 ///
 /// iOS twin of web's `useBoardWizard` hook. Initializes from the
@@ -235,7 +270,15 @@ final class BoardWizardViewModel {
         // repeating board — so it does not flip isRecurring (#70) and
         // takes priority over `startRecurring` (mutually exclusive in
         // practice: callers never pass both).
+        //
+        // Board Creation Split (PR B) — a resumed draft ALSO forces
+        // recurring mode when the draft `Board` itself is marked
+        // `isRecurringDraft`. This is checked ahead of `startRecurring`
+        // (which only matters for a truly fresh wizard anyway, per the
+        // `draft == nil` guard on that clause) so resuming a recurring
+        // draft always reopens the blue wizard, never the red one.
         let isRecurringAtEntry = effectiveTemplate != nil
+            || draft?.board.isRecurringDraft == true
             || (draft == nil && effectiveTemplate == nil && effectivePrefill == nil && startRecurring)
         self.isRecurring = isRecurringAtEntry
         self.editingTemplateId = effectiveTemplate?.id
@@ -252,19 +295,42 @@ final class BoardWizardViewModel {
             self.timeframe = d.board.timeframe
             self.centerType = d.board.centerSquareType
             self.centerTaskId = d.board.centerTaskId
-            self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
-            // Preserve placement order on resume so the pool doesn't reshuffle.
-            self.poolOrder = Self.dedupePreservingOrder(
-                d.boardTasks
-                    .sorted { ($0.row, $0.col) < ($1.row, $1.col) }
-                    .map { $0.taskId }
-            )
-            // P3 — a one-off Board carries no persisted pool-mix fields, so
-            // there's no better provenance to recover: every resumed row
-            // defaults to "added by hand" until the user touches the new
-            // pull card. `pulledPoolIds`/`removedTaskIds` stay at their `[]`
-            // defaults. Explicit, flagged judgment call (must match web).
-            self.manualTaskIds = self.selectedTaskIds
+
+            if d.board.isRecurringDraft {
+                // Board Creation Split (PR B) — a recurring draft's FULL
+                // pool lives in `recurringDraftMix`, not in the (possibly
+                // truncated — overfill is intentional) placed BoardTask
+                // rows. Resolve the mix the same way template edit-mode
+                // hydration does, so a resumed recurring draft round-trips
+                // its exact pool + provenance instead of collapsing every
+                // row to "added by hand".
+                let mix = RecurringDraftMixPayload.decoded(from: d.board.recurringDraftMix)
+                let resolved = Self.resolvePoolMixHydration(
+                    poolIds: mix.poolIds,
+                    manualTaskIds: mix.manualTaskIds,
+                    removedTaskIds: mix.removedTaskIds,
+                    database: database
+                )
+                self.selectedTaskIds = resolved.selectedTaskIds
+                self.poolOrder = resolved.poolOrder
+                self.pulledPoolIds = mix.poolIds
+                self.manualTaskIds = Set(mix.manualTaskIds)
+                self.removedTaskIds = Set(mix.removedTaskIds)
+            } else {
+                self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
+                // Preserve placement order on resume so the pool doesn't reshuffle.
+                self.poolOrder = Self.dedupePreservingOrder(
+                    d.boardTasks
+                        .sorted { ($0.row, $0.col) < ($1.row, $1.col) }
+                        .map { $0.taskId }
+                )
+                // P3 — a one-off Board carries no persisted pool-mix fields, so
+                // there's no better provenance to recover: every resumed row
+                // defaults to "added by hand" until the user touches the new
+                // pull card. `pulledPoolIds`/`removedTaskIds` stay at their `[]`
+                // defaults. Explicit, flagged judgment call (must match web).
+                self.manualTaskIds = self.selectedTaskIds
+            }
             if d.board.timeframe == .custom {
                 self.customStartDate = String(d.board.startDate.prefix(10))
                 // A custom board always has an endDate; default defensively.
@@ -483,6 +549,86 @@ final class BoardWizardViewModel {
         let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
 
         return Set(PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById).taskIds)
+    }
+
+    /// Resolves a recurring draft's raw `recurringDraftMix` fields into a
+    /// hydrated selection + display order. Board Creation Split (PR B) —
+    /// mirrors `resolveTemplateHydrationTaskIds`'s DB-lookup shape, but
+    /// (a) returns an ORDERED result (`poolOrder` needs a deterministic
+    /// sequence, unlike the template path's `Set`) and (b) has no
+    /// `seedTaskIds`-style legacy fallback to preserve — a fresh recurring
+    /// draft's mix is the only shape that has ever existed, so any lookup
+    /// failure just yields an empty selection (the wizard still opens;
+    /// the user rebuilds the pool) rather than a stale substitute.
+    static func resolvePoolMixHydration(
+        poolIds: [String],
+        manualTaskIds: [String],
+        removedTaskIds: [String],
+        database: AppDatabase
+    ) -> (selectedTaskIds: Set<String>, poolOrder: [String]) {
+        guard let pools = try? database.fetchPools(ids: poolIds) else {
+            return (Set(), [])
+        }
+        let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
+
+        var referencedIds = Set<String>()
+        for pool in pools { referencedIds.formUnion(pool.taskIds) }
+        referencedIds.formUnion(manualTaskIds)
+
+        guard let tasks = try? database.fetchTasks(ids: Array(referencedIds)) else {
+            return (Set(), [])
+        }
+        let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+
+        let result = PoolMix.resolveMix(
+            WizardPoolMixRecord(poolIds: poolIds, manualTaskIds: manualTaskIds, removedTaskIds: removedTaskIds),
+            poolsById: poolsById,
+            tasksById: tasksById
+        )
+        return (Set(result.taskIds), result.taskIds)
+    }
+
+    /// Board Creation Split (PR B) — computes which step a resumed draft
+    /// should open on: Setup (1) when nothing has been selected yet,
+    /// Tasks/Pool (2) when the selection is below the board's
+    /// requirement, Preview (3) once it can fill the board. README
+    /// §Interactions & Behavior / §State Management "Resume-step
+    /// selection". Completed steps stay reachable via the stepper's
+    /// existing jump-back behavior regardless of where this lands.
+    ///
+    /// Static (not an instance method) so `CreateHubViewModel` can compute
+    /// the step BEFORE constructing the `BoardWizardViewModel` that will
+    /// actually hydrate from this same draft — the hub only carries a
+    /// `(board, boardTasks)` tuple, not a live VM, at the point it decides
+    /// which step to open.
+    ///
+    /// A recurring draft's true selection count comes from
+    /// `recurringDraftMix` (resolved via `resolvePoolMixHydration`), never
+    /// `boardTasks.count` — the placed rows are a possibly-truncated grid
+    /// subset of an intentionally overfilled pool (see
+    /// `Board.recurringDraftMix`'s doc), so counting them would send an
+    /// already-fillable recurring draft back to the Pool step.
+    static func resolveDraftInitialStep(
+        board: Board,
+        boardTasks: [BoardTask],
+        database: AppDatabase
+    ) -> WizardStep {
+        let tasksRequired = tasksNeededForBoard(size: board.boardSize, centerType: board.centerSquareType)
+        let selectedCount: Int
+        if board.isRecurringDraft {
+            let mix = RecurringDraftMixPayload.decoded(from: board.recurringDraftMix)
+            selectedCount = Self.resolvePoolMixHydration(
+                poolIds: mix.poolIds,
+                manualTaskIds: mix.manualTaskIds,
+                removedTaskIds: mix.removedTaskIds,
+                database: database
+            ).selectedTaskIds.count
+        } else {
+            selectedCount = boardTasks.count
+        }
+        if selectedCount == 0 { return 1 }
+        if selectedCount < tasksRequired { return 2 }
+        return 3
     }
 
     /// Resolves a `CoreBoardDefault` row's `corePoolIds` +

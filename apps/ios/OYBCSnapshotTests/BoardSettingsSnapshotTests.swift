@@ -4,13 +4,18 @@ import SnapshotTesting
 @testable import OYBC
 
 /// Snapshot coverage for the Task Pools + Recurring Boards Rework (P7)
-/// Board-settings surfaces: `CoreDefaultsEditSheetView`,
-/// `RepeatingBoardEditSheetView`, and the shared `PoolPickerSheetView`.
-/// All three are DB-free, props-only leaf views during RENDER (writes only
-/// happen inside action closures, never on appear) — the exact pattern
-/// `PoolEditSheetView` already proved snapshot-safe in
+/// Board-settings surfaces: `CoreDefaultsEditSheetView` and the shared
+/// `PoolPickerSheetView`. Both are DB-free, props-only leaf views during
+/// RENDER (writes only happen inside action closures, never on appear) —
+/// the exact pattern `PoolEditSheetView` already proved snapshot-safe in
 /// `RisoPoolsSnapshotTests`. `BoardSettingsView` itself is NOT snapshotted
 /// here — see `RisoProfileSubpagesSnapshotTests`'s file header for why.
+///
+/// Board Creation Split (PR B) retired the local `RepeatingBoardEditSheetView`
+/// this file used to also cover (`testRosterEdit*`) — editing a repeating
+/// board's roster entry now opens the full `BoardWizardView` in edit mode
+/// instead, which is exercised by the wizard's own snapshot coverage, not
+/// re-snapshotted per entry point here.
 final class BoardSettingsSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
@@ -72,46 +77,6 @@ final class BoardSettingsSnapshotTests: XCTestCase {
     }
     func testDefaultsPopulatedDark() {
         assertSnapshot(of: defaultsSheet(hasDefault: true), as: .image(layout: .fixed(width: 393, height: 620), traits: darkTraits()), record: recordMode)
-    }
-
-    // MARK: - RepeatingBoardEditSheetView
-
-    private func rosterEditSheet(short: Bool) -> some View {
-        let pools = [pool("p1", "Morning Kickstart", taskIds: [t1.id, t2.id])]
-        // 3x3 FREE-center floor is 8. `short: true` supplies only 2 tasks
-        // (well under floor); `short: false` supplies enough manual tasks
-        // to clear it.
-        let manualExtra = short ? [] : (0..<6).map { "extra-\($0)" }
-        let extraTasks = manualExtra.map { id in
-            SnapshotFixtures.makeTask(id: id, title: "Extra task \(id)", type: .normal)
-        }
-        let template = SnapshotFixtures.makeRecurringTemplate(
-            id: "tpl1", name: "Morning Routine", timeframe: .daily, boardSize: 3,
-            centerSquareType: .free, seedTaskCount: 0, isActive: true,
-            poolIds: ["p1"], manualTaskIds: manualExtra, removedTaskIds: []
-        )
-        return RepeatingBoardEditSheetView(
-            template: template,
-            pools: pools,
-            tasks: [t1, t2, t3, t4] + extraTasks,
-            templates: [template],
-            library: makeLibrary([t1, t2, t3, t4] + extraTasks),
-            userId: SnapshotFixtures.userId,
-            onSaved: {}
-        )
-    }
-
-    func testRosterEditShortLight() {
-        assertSnapshot(of: rosterEditSheet(short: true), as: .image(layout: .fixed(width: 393, height: 620), traits: lightTraits()), record: recordMode)
-    }
-    func testRosterEditShortDark() {
-        assertSnapshot(of: rosterEditSheet(short: true), as: .image(layout: .fixed(width: 393, height: 620), traits: darkTraits()), record: recordMode)
-    }
-    func testRosterEditHealthyLight() {
-        assertSnapshot(of: rosterEditSheet(short: false), as: .image(layout: .fixed(width: 393, height: 700), traits: lightTraits()), record: recordMode)
-    }
-    func testRosterEditHealthyDark() {
-        assertSnapshot(of: rosterEditSheet(short: false), as: .image(layout: .fixed(width: 393, height: 700), traits: darkTraits()), record: recordMode)
     }
 
     // MARK: - PoolPickerSheetView

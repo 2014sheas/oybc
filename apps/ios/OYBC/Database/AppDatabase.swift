@@ -973,6 +973,20 @@ final class AppDatabase {
             try db.execute(sql: "DROP TABLE progress_counters")
         }
 
+        // v29: Board Creation Split (PR B) — recurring drafts. Adds
+        // `isRecurringDraft` (INTEGER 0/1, mirrors v12's `isCore`) and
+        // `recurringDraftMix` (nullable JSON-string TEXT column, mirrors
+        // `sealedCompletedCells`) to `boards` so a recurring board can be
+        // saved as a real DRAFT `Board` row — reusing the existing draft
+        // path instead of a `RecurringBoardTemplate`, which has no draft
+        // state. Pre-migration rows back-fill `isRecurringDraft` to 0
+        // (false) via the DEFAULT; `recurringDraftMix` stays NULL for
+        // every existing row (they're all one-off).
+        migrator.registerMigration("v29") { db in
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN isRecurringDraft INTEGER NOT NULL DEFAULT 0")
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN recurringDraftMix TEXT")
+        }
+
         return migrator
     }
 

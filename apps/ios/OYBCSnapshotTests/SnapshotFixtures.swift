@@ -164,6 +164,7 @@ enum SnapshotFixtures {
         endDate: String = "2026-04-30T23:59:59.000Z",
         spawnedFromTemplateId: String? = nil,
         isCore: Bool = false,
+        isRecurringDraft: Bool = false,
         isDeleted: Bool = false
     ) -> Board {
         var dict: [String: Any] = [
@@ -188,6 +189,7 @@ enum SnapshotFixtures {
             "isDeleted": isDeleted,
         ]
         if let tid = spawnedFromTemplateId { dict["spawnedFromTemplateId"] = tid }
+        if isRecurringDraft { dict["isRecurringDraft"] = true }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }

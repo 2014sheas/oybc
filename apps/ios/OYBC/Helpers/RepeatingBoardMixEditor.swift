@@ -18,6 +18,14 @@ import Foundation
 /// Every function returns a NEW `RecurringBoardTemplate` (never mutates in
 /// place) so the view can assign straight back to its `@State private var
 /// draft`.
+///
+/// Board Creation Split (PR B) retired `RepeatingBoardEditSheetView` (Board
+/// Settings' "Edit tasks" now opens the full `BoardWizardView` in edit mode
+/// instead), so this helper currently has no production caller — left in
+/// place (with `RepeatingBoardMixEditorTests` still guarding it) as a
+/// deferred cleanup rather than deleted alongside the view it was
+/// extracted from, since a future roster-only quick-edit surface could
+/// still want this exact pure logic.
 enum RepeatingBoardMixEditor {
 
     /// Pull a pool in — appends to `poolIds` if not already present and

@@ -7,16 +7,22 @@ import SwiftUI
 /// dashed "+ Build a new pool…" affordance that opens `PoolEditSheetView`
 /// in create mode and hands the new pool back to the caller SELECTED.
 ///
-/// Shared by two P7 consumers with different toggle semantics — so this
-/// view stays callback-based (never a raw `Binding<Set<String>>`):
-/// - `CoreDefaultsEditSheetView`: toggling is a flat set membership flip
-///   (`CoreBoardDefault.corePoolIds` has no manual/removed layer).
-/// - `RepeatingBoardEditSheetView`: toggling a pool ON/OFF must run
-///   `PoolMix.resolvePoolPullAdditions` / `resolvePoolUntoggleRemovals` /
-///   `clearRemovalsForUntoggle` against the spawn record's
-///   `manualTaskIds`/`removedTaskIds` (the union rule — never just a
-///   membership flip). Only the CALLER knows which bookkeeping applies,
-///   so `onToggle` is a plain "the user tapped this pool's row" signal.
+/// Deliberately callback-based (never a raw `Binding<Set<String>>`) rather
+/// than owning toggle semantics itself — different callers need different
+/// bookkeeping on a toggle:
+/// - `CoreDefaultsEditSheetView` (current consumer): toggling is a flat set
+///   membership flip (`CoreBoardDefault.corePoolIds` has no manual/removed
+///   layer).
+/// - A `manualTaskIds`/`removedTaskIds`-bearing record (e.g. the recurring
+///   wizard's own pool-mix state, `BoardWizardViewModel.pullPool`/
+///   `untogglePool`) instead needs `PoolMix.resolvePoolPullAdditions` /
+///   `resolvePoolUntoggleRemovals` / `clearRemovalsForUntoggle` against
+///   that union-rule bookkeeping — never just a membership flip. (P7's
+///   `RepeatingBoardEditSheetView` was this shape; Board Creation Split
+///   PR B retired it in favor of editing via the wizard directly, which
+///   uses its own pool-pull card rather than this sheet.)
+/// Only the CALLER knows which bookkeeping applies, so `onToggle` stays a
+/// plain "the user tapped this pool's row" signal.
 ///
 /// Props-only, DB-free (mirrors `RisoPoolPullCardView`'s leaf pattern)
 /// EXCEPT for presenting `PoolEditSheetView` itself, which owns its own

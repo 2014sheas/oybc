@@ -94,7 +94,12 @@ struct CreateHubView: View {
         case .wizardFresh(let startRecurring):
             wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, startRecurring: startRecurring)
         case .wizardResume:
-            wizard(draft: vm.resumeDraft, prefilledRecurringTimeframe: nil, targetWindowDate: nil)
+            wizard(
+                draft: vm.resumeDraft,
+                prefilledRecurringTimeframe: nil,
+                targetWindowDate: nil,
+                initialStep: vm.resumeInitialStep
+            )
         case .wizardCoreBoard(let timeframe, let targetWindowDate):
             wizard(draft: nil, prefilledRecurringTimeframe: timeframe, targetWindowDate: targetWindowDate)
         }
@@ -119,7 +124,8 @@ struct CreateHubView: View {
         draft: (board: Board, boardTasks: [BoardTask])?,
         prefilledRecurringTimeframe: Timeframe?,
         targetWindowDate: Date?,
-        startRecurring: Bool = false
+        startRecurring: Bool = false,
+        initialStep: WizardStep = 1
     ) -> some View {
         BoardWizardView(
             userId: userId,
@@ -128,6 +134,7 @@ struct CreateHubView: View {
             prefilledRecurringTimeframe: prefilledRecurringTimeframe,
             targetWindowDate: targetWindowDate,
             startRecurring: startRecurring,
+            initialStep: initialStep,
             onCancel: { handleHubReturn() },
             onComplete: { boardId, status in
                 onBoardCompleted?(boardId, status)
