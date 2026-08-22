@@ -206,7 +206,7 @@ describe('buildRisoBoardCells — ACHIEVEMENT squares resolve cross-board (#360)
   } as Task;
 
   it('resolves an achievement square DONE when its referenced board is greenlogged', () => {
-    const board = makeBoard({ id: 'b1', boardSize: 2, centerSquareType: CenterSquareType.NONE });
+    const board = makeBoard({ id: 'b1', boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const watched = makeBoard({ id: 'watched', status: BoardStatus.COMPLETED });
     const cells = buildRisoBoardCells(
       board,
@@ -220,7 +220,7 @@ describe('buildRisoBoardCells — ACHIEVEMENT squares resolve cross-board (#360)
   });
 
   it('degrades to not-done (never crashes) when allBoards is omitted', () => {
-    const board = makeBoard({ id: 'b1', boardSize: 2, centerSquareType: CenterSquareType.NONE });
+    const board = makeBoard({ id: 'b1', boardSize: 3, centerSquareType: CenterSquareType.NONE });
     const cells = buildRisoBoardCells(board, [place('ach', 0, 0)], { ach: achievement }, {}, ctx([]));
     expect(cells[0].done).toBe(false);
   });
