@@ -53,6 +53,17 @@ export function compareBoardsForList(a: Board, b: Board, now: Date = new Date())
   return activityDesc(a, b);
 }
 
+/**
+ * A board "still in play": ACTIVE status, not sealed, not past its endDate —
+ * the same "active" notion the Boards-tab list-filter and the comparator use.
+ * Exported so the Home screen's "active boards" sections stay in lock-step with
+ * the Boards tab instead of re-deriving their own (which drifted: a raw
+ * `status === ACTIVE` filter wrongly kept expired/sealed boards).
+ */
+export function isBoardActiveForList(board: Board, now: Date = new Date()): boolean {
+  return isActiveForSort(board, now);
+}
+
 /** A board "still in play": ACTIVE status, not sealed, not past its endDate. */
 function isActiveForSort(board: Board, now: Date): boolean {
   if (board.status !== BoardStatus.ACTIVE) return false;

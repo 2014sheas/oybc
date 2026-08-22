@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AchievementTrigger,
   CenterSquareType,
   TaskType,
   Timeframe,
@@ -186,5 +187,41 @@ describe('buildRisoBoardCells — sealed vs live (issue #376)', () => {
       ctx([completion('t2', '2026-08-05T00:00:00.000Z')]),
     );
     expect(cells.every((c) => !c.done && !c.isLine)).toBe(true);
+  });
+});
+
+/**
+ * board-integrity PR-3 (#360, finding 2): the RisoBoard poster must resolve an
+ * ACHIEVEMENT square's completion from the cross-board kernel pass, not the
+ * always-false plain-task fallback. This renderer originally missed that fix
+ * (it called taskToSquareState with no cellState), so achievement squares on
+ * the Home "Jump back in" poster always showed incomplete + broke bingo rings.
+ */
+describe('buildRisoBoardCells — ACHIEVEMENT squares resolve cross-board (#360)', () => {
+  const achievement = {
+    ...makeTask('ach'),
+    type: TaskType.ACHIEVEMENT,
+    achievementTrigger: AchievementTrigger.GREENLOG,
+    referencedBoardId: 'watched',
+  } as Task;
+
+  it('resolves an achievement square DONE when its referenced board is greenlogged', () => {
+    const board = makeBoard({ id: 'b1', boardSize: 2, centerSquareType: CenterSquareType.NONE });
+    const watched = makeBoard({ id: 'watched', status: BoardStatus.COMPLETED });
+    const cells = buildRisoBoardCells(
+      board,
+      [place('ach', 0, 0)],
+      { ach: achievement },
+      {},
+      ctx([]),
+      [board, watched],
+    );
+    expect(cells[0].done).toBe(true);
+  });
+
+  it('degrades to not-done (never crashes) when allBoards is omitted', () => {
+    const board = makeBoard({ id: 'b1', boardSize: 2, centerSquareType: CenterSquareType.NONE });
+    const cells = buildRisoBoardCells(board, [place('ach', 0, 0)], { ach: achievement }, {}, ctx([]));
+    expect(cells[0].done).toBe(false);
   });
 });
