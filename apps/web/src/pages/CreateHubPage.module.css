@@ -24,3 +24,25 @@
 }
 /* (the old .librarySection* classes were dead — the library moved to the Tasks
    tab before this re-skin — and were removed.) */
+
+/* Board Creation Split (web PR C) — "New board" section: two CTA cards,
+   side by side at >=760px, stacking under that (the wizard shell's own
+   breakpoint, and README §Web mirror's stated CTA-row behavior). */
+.newBoardSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ctaRow {
+  display: flex;
+  gap: 14px;
+}
+.ctaRow > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .ctaRow {
+    flex-direction: column;
+  }
+}

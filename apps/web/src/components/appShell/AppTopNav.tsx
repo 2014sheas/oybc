@@ -76,7 +76,11 @@ export function AppTopNav({ activeBoardCount, appliedTheme }: AppTopNavProps): R
             kind="primary"
             aria-label="New board"
             icon={<RisoIcon name="plus" size={16} />}
-            onClick={() => navigate('/create')}
+            // Board Creation Split (web PR C) — opens the ONE-OFF wizard
+            // directly (mode fixed at entry); `useNewWizardParam` on
+            // `CreateHubPage` consumes the deep link. The recurring
+            // entry point is the hub's own BLUE card.
+            onClick={() => navigate('/create?newBoard=one-off')}
           >
             <span className={styles.newBoardLabel}>New board</span>
           </RisoButton>

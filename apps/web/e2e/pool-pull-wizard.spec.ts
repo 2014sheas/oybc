@@ -4,6 +4,7 @@ import {
   openCreateHub,
   seedPool,
   seedTask,
+  startOneOffWizard,
 } from './_fixtures/bypass';
 
 /**
@@ -15,8 +16,7 @@ import {
  * untoggle; and "Save these N as a new pool…" mints a new pool that
  * then appears as a new pull-chip.
  *
- * Uses the one-off ("Start a new board") entry point — P3 doesn't touch
- * the Repeats/recurring setup step (that's P4), and the pull-card
+ * Uses the one-off ("Start a one-off board") entry point — the pull-card
  * behavior is identical for one-off and recurring boards.
  */
 
@@ -46,12 +46,9 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
     // Enter the one-off wizard, force 3×3 + Daily (avoids the CUSTOM
     // default's start/end date requirement), then advance to step 2.
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startOneOffWizard(page);
     await page.getByLabel(/board name/i).fill('Pool Pull Test Board');
     await page.getByRole('button', { name: '3×3', exact: true }).click();
-    // Scoped to the Timeframe group — "Daily" also appears in the
-    // Repeats segmented (P4) while repeats === null, so the bare
-    // selector would be ambiguous.
     await page
       .getByRole('group', { name: 'Timeframe' })
       .getByRole('button', { name: 'Daily', exact: true })
@@ -143,7 +140,7 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
 
   test('shows the empty-state line when the user has no pools yet', async ({ page }) => {
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startOneOffWizard(page);
     await page.getByLabel(/board name/i).fill('No Pools Yet Board');
     await page
       .getByRole('group', { name: 'Timeframe' })

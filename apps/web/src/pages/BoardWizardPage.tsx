@@ -46,6 +46,12 @@ export interface BoardWizardPageProps {
    *  `isRecurring` is forced ON, and Save updates the template
    *  instead of creating a new board. Phase 6.2 UX rework. */
   editingTemplate?: RecurringBoardTemplate;
+  /** Board Creation Split (web PR C) — true when launched from the
+   *  recurring hub card (or the `?newBoard=recurring` top-nav deep
+   *  link). Only takes effect for a truly fresh wizard (no
+   *  draft/template/prefill) — see `useBoardWizard`'s hydration
+   *  priority. */
+  startRecurring?: boolean;
   /** Optional starting step (defaults to 1). The template row's "Add
    *  tasks" affordance passes 2 so the wizard opens on the Tasks step. */
   initialStep?: 1 | 2;
@@ -88,6 +94,7 @@ export function BoardWizardPage({
   prefilledRecurringTimeframe,
   targetWindowDate,
   editingTemplate,
+  startRecurring,
   initialStep,
   onCancel,
   onComplete,
@@ -108,6 +115,7 @@ export function BoardWizardPage({
     prefilledRecurringTimeframe,
     targetWindowDate,
     editingTemplate,
+    startRecurring,
     initialStep,
     pools,
     tasksById: library.taskMap,
@@ -178,8 +186,8 @@ export function BoardWizardPage({
         const msg = err instanceof Error ? err.message : 'Unknown error.';
         setCancelDialogError(
           wizard.editingTemplateId === null
-            ? `Failed to create recurring template: ${msg}`
-            : `Failed to update recurring template: ${msg}`,
+            ? `Failed to create recurring board: ${msg}`
+            : `Failed to update recurring board: ${msg}`,
         );
       } finally {
         setIsSavingFromCancel(false);
@@ -224,18 +232,34 @@ export function BoardWizardPage({
     setCancelDialogError(null);
   }
 
+  // Board Creation Split (web PR C) — kicker carries the mode identity
+  // (red one-off / blue recurring) through every step; the H2 became the
+  // current step's own name (Setup / Tasks|Pool / Preview), mirroring
+  // iOS `BoardWizardView.kickerText` / `.stepTitle`. The old fixed
+  // "New board"/"New recurring board"/"Resume draft" mode label moved
+  // into the kicker.
+  const kickerText =
+    wizard.currentStep === 3
+      ? 'LAST LOOK'
+      : draft !== undefined
+        ? 'RESUME DRAFT'
+        : wizard.isRecurring
+          ? editingTemplate !== undefined
+            ? 'EDIT RECURRING BOARD'
+            : 'NEW RECURRING BOARD'
+          : 'NEW ONE-OFF BOARD';
+  const stepTitle =
+    wizard.currentStep === 1 ? 'Setup' : wizard.currentStep === 2 ? (wizard.isRecurring ? 'Pool' : 'Tasks') : 'Preview';
+
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <h2 className={styles.title}>
-          {draft !== undefined
-            ? 'Resume draft'
-            : wizard.isRecurring
-              ? editingTemplate !== undefined
-                ? 'Edit recurring board'
-                : 'New recurring board'
-              : 'New board'}
-        </h2>
+        <div className={styles.headerText}>
+          <p className={`${styles.kicker} ${wizard.isRecurring ? styles.kickerBlue : styles.kickerRed}`}>
+            {kickerText}
+          </p>
+          <h2 className={styles.title}>{stepTitle}</h2>
+        </div>
         <button
           type="button"
           className={styles.closeButton}
@@ -246,7 +270,11 @@ export function BoardWizardPage({
         </button>
       </header>
 
-      <BoardWizardStepper currentStep={wizard.currentStep} onStepClick={wizard.goToStep} />
+      <BoardWizardStepper
+        currentStep={wizard.currentStep}
+        isRecurring={wizard.isRecurring}
+        onStepClick={wizard.goToStep}
+      />
 
       <div className={styles.stepContainer}>
         {wizard.currentStep === 1 && (
@@ -317,7 +345,7 @@ export function BoardWizardPage({
             : wizard.isRecurring
               ? wizard.editingTemplateId !== null
                 ? 'Save changes'
-                : 'Create template & spawn first board'
+                : 'Create Board'
               : wizard.draftBoardId !== null
                 ? 'Save Changes'
                 : 'Save Draft'

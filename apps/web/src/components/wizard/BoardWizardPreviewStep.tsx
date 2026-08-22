@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CenterSquareType,
   TaskType,
-  Timeframe,
   fillableCellCount,
   formatRecurringCadence,
   formatTimeframeLabel,
@@ -17,7 +16,7 @@ import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
 import { ArrangeGrid } from '../boardEdit/ArrangeGrid';
 import type { ArrangeSlot } from '../boardEdit/ArrangeGrid';
 import type { BoardCellModel } from '../board/RisoBoardCell';
-import { formatDeckPreview, type DeckFloor } from '../pools/poolDeckPreview';
+import type { DeckFloor } from '../pools/poolDeckPreview';
 import { RisoSegmented } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
 import { renderTaskRow } from './TaskRow';
@@ -288,22 +287,18 @@ export function BoardWizardPreviewStep({
     return map;
   }, [placement]);
 
-  // ── Repeating-board deck view (P4) ────────────────────────────────────────
+  // ── Repeating-board deck view ─────────────────────────────────────────────
   // A repeating board re-randomizes its cell layout every window, so a
   // specific arrangement is meaningless — the Preview step shows the POOL
-  // (the deck) instead of `ArrangeGrid`. Health uses the same
-  // `fillableCellCount` floor as everywhere else in the app (never a
-  // hardcoded 8/Daily).
+  // (the deck) instead of `ArrangeGrid`. The floor uses the same
+  // `fillableCellCount` as everywhere else in the app (never a hardcoded
+  // 8/Daily).
   const deckFloor: DeckFloor = useMemo(
     () => ({
       boardSize: controller.size,
       floor: fillableCellCount(controller.size, controller.centerType),
     }),
     [controller.size, controller.centerType],
-  );
-  const deckHeaderText = useMemo(
-    () => formatDeckPreview(controller.selectedTaskIds.size, deckFloor),
-    [controller.selectedTaskIds, deckFloor],
   );
   // P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
   // §Surfaces item 6 "Core-board setup") — Activate-button floor gate for
@@ -358,75 +353,47 @@ export function BoardWizardPreviewStep({
       : controller.selectedTaskIds.size;
   const canShuffle = controller.isRandomized && shuffleableCount >= 2;
 
-  // ── Summary helpers ──────────────────────────────────────────────────────
+  // ── Header meta line (Board Creation Split, web PR C) ────────────────────
+  // Centered name + a single meta line under it — replaces the old compact
+  // chip row + full Name/Size/Timeframe/Center/Tasks summary card. Copy
+  // diverges per mode (README §Screens): one-off "Weekly · 3×3 · 8 tasks";
+  // recurring "Every week · 5×5 · 27-task pool". Mirrors iOS
+  // `BoardWizardPreviewStepView.previewMetaText`.
+  const previewMetaText = controller.isRecurring
+    ? `${formatRecurringCadence(controller.timeframe)} · ${controller.size}×${controller.size} · ${controller.selectedTaskIds.size}-task pool`
+    : `${controller.timeframe.charAt(0).toUpperCase()}${controller.timeframe.slice(1)} · ${controller.size}×${controller.size} · ${controller.selectedTaskIds.size} tasks`;
 
-  const timeframeSummary = useMemo<string>(() => {
-    if (controller.timeframe === Timeframe.CUSTOM) {
-      if (controller.customStartDate && controller.customEndDate) {
-        return `Custom · ${controller.customStartDate} → ${controller.customEndDate}`;
-      }
-      return 'Custom (no dates set)';
-    }
-    // Ongoing boards have no computed window either — getTimeframeBoundaries
-    // throws for INDEFINITE just like it does for CUSTOM, so this must be
-    // special-cased before the boundaries call below (sibling of the
-    // recurring-seed INDEFINITE guard elsewhere in the wizard).
-    if (controller.timeframe === Timeframe.INDEFINITE) {
-      return controller.customStartDate
-        ? `Ongoing · starting ${controller.customStartDate}`
-        : 'Ongoing (no start date set)';
-    }
+  // ── Recurring-only summary card (Board Creation Split, web PR C) ─────────
+  // Three rows only — Repeats / Size / Pool — each with a blue "Edit" jump
+  // back to Setup (Repeats, Size) or Pool (the task-count row). The one-off
+  // Preview renders no summary card at all. Mirrors iOS
+  // `BoardWizardPreviewStepView.recurring{Repeats,Size,Pool}Summary`.
+  const recurringSummary = useMemo(() => {
+    if (!controller.isRecurring) return null;
     const b = getTimeframeBoundaries(
       controller.timeframe,
       controller.targetWindowDate ?? new Date(),
       controller.weekStartDay,
     );
     const windowLabel = formatTimeframeLabel(controller.timeframe, b.startDate);
-    if (controller.isRecurring) {
-      return `${formatRecurringCadence(controller.timeframe)} · starting ${windowLabel}`;
-    }
-    return windowLabel;
+    // CHOSEN is unreachable while recurring (the center-type selector
+    // suppresses it) — the fallback is defensive only.
+    const centerLabel = controller.centerType === CenterSquareType.NONE ? 'No center' : 'Free center';
+    return {
+      repeats: `${formatRecurringCadence(controller.timeframe)} · first board ${windowLabel}`,
+      size: `${controller.size}×${controller.size} · ${centerLabel}`,
+      pool: `${controller.selectedTaskIds.size} tasks · needs at least ${controller.tasksRequired}`,
+    };
   }, [
-    controller.timeframe,
-    controller.customStartDate,
-    controller.customEndDate,
-    controller.weekStartDay,
     controller.isRecurring,
+    controller.timeframe,
     controller.targetWindowDate,
+    controller.weekStartDay,
+    controller.size,
+    controller.centerType,
+    controller.selectedTaskIds.size,
+    controller.tasksRequired,
   ]);
-
-  const isOddBoard = controller.size % 2 !== 0;
-  const centerSummary: string = (() => {
-    if (!isOddBoard) return 'n/a (even board)';
-    switch (controller.centerType) {
-      case CenterSquareType.FREE:
-        return 'Free space';
-      case CenterSquareType.CHOSEN:
-        if (controller.centerTaskId !== null) {
-          const t = library.taskMap[controller.centerTaskId];
-          return t ? `Chosen · "${t.title}"` : 'Chosen';
-        }
-        return 'Chosen (none picked)';
-      case CenterSquareType.NONE:
-        return 'None';
-    }
-  })();
-
-  // Short labels for the compact chip row above the board.
-  const centerChip: string = (() => {
-    if (!isOddBoard) return 'None';
-    switch (controller.centerType) {
-      case CenterSquareType.FREE:
-        return 'Free';
-      case CenterSquareType.CHOSEN:
-        return 'Chosen';
-      case CenterSquareType.NONE:
-        return 'None';
-    }
-  })();
-
-  const timeframeChip =
-    controller.timeframe.charAt(0).toUpperCase() + controller.timeframe.slice(1);
 
   // ── Async creation ────────────────────────────────────────────────────────
 
@@ -449,8 +416,8 @@ export function BoardWizardPreviewStep({
         const msg = err instanceof Error ? err.message : 'Unknown error.';
         setErrorMessage(
           controller.editingTemplateId === null
-            ? `Failed to create recurring template: ${msg}`
-            : `Failed to update recurring template: ${msg}`,
+            ? `Failed to create recurring board: ${msg}`
+            : `Failed to update recurring board: ${msg}`,
         );
       } finally {
         setIsCreating(false);
@@ -491,37 +458,24 @@ export function BoardWizardPreviewStep({
 
   return (
     <div className={styles.container}>
-      {/* Compact summary chips — quick-glance overview above the board */}
-      <div className={styles.chipRow}>
-        <span className={styles.chip}>
-          <span className={styles.chipKey}>Name</span>
-          <b>{controller.name || '(unset)'}</b>
-        </span>
-        <span className={styles.chip}>
-          <span className={styles.chipKey}>When</span>
-          <b>{timeframeChip}</b>
-        </span>
-        <span className={styles.chip}>
-          <span className={styles.chipKey}>Size</span>
-          <b>{controller.size}×{controller.size}</b>
-        </span>
-        <span className={styles.chip}>
-          <span className={styles.chipKey}>Center</span>
-          <b>{centerChip}</b>
-        </span>
-        <span className={styles.chip}>
-          <span className={styles.chipKey}>Tasks</span>
-          <b>{controller.selectedTaskIds.size}</b>
-        </span>
+      {/* Centered name + a single meta line (Board Creation Split, web PR
+          C) — replaces the old compact chip row. No summary/note card for
+          one-off (frame 1k); recurring's summary is the 3-row card below. */}
+      <div className={styles.header}>
+        <h3 className={styles.boardName}>{controller.name || '(unset)'}</h3>
+        <p className={styles.meta}>{previewMetaText}</p>
       </div>
 
       {controller.isRecurring ? (
-        /* P4 — a repeating board re-randomizes its layout every window, so
-           a specific arrangement is meaningless: show the deck (the pool
-           of resolved tasks) instead of an arrangeable grid. No Preview ⇄
+        /* A repeating board re-randomizes its layout every window, so a
+           specific arrangement is meaningless: show the pool (the deck of
+           resolved tasks) instead of an arrangeable grid. No Preview ⇄
            Rearrange toggle, no Shuffle — nothing here is a fixed layout. */
         <div className={styles.deckSection}>
-          <p className={styles.deckHeader}>{deckHeaderText}</p>
+          <div className={styles.deckSectionHeader}>
+            <span className={styles.deckSectionLabel}>On your board</span>
+            <span className={styles.deckCountPill}>{deckTasks.length}</span>
+          </div>
           <ul className={styles.deckList}>
             {deckTasks.map((task) => (
               <li key={task.id}>
@@ -580,78 +534,14 @@ export function BoardWizardPreviewStep({
         </>
       )}
 
-      {/* Full summary card with edit-jump links */}
-      <div className={styles.summary}>
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Name</span>
-          <span className={styles.summaryValue}>
-            {controller.name || '(unset)'}
-          </span>
-          <button
-            type="button"
-            className={styles.editLink}
-            onClick={() => controller.goToStep(1)}
-          >
-            Edit
-          </button>
-        </div>
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Size</span>
-          <span className={styles.summaryValue}>
-            {controller.size}×{controller.size}
-          </span>
-          <button
-            type="button"
-            className={styles.editLink}
-            onClick={() => controller.goToStep(1)}
-          >
-            Edit
-          </button>
-        </div>
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Timeframe</span>
-          <span className={styles.summaryValue}>{timeframeSummary}</span>
-          <button
-            type="button"
-            className={styles.editLink}
-            onClick={() => controller.goToStep(1)}
-          >
-            Edit
-          </button>
-        </div>
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Center</span>
-          <span className={styles.summaryValue}>{centerSummary}</span>
-          <button
-            type="button"
-            className={styles.editLink}
-            onClick={() => controller.goToStep(1)}
-          >
-            Edit
-          </button>
-        </div>
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Tasks</span>
-          <span className={styles.summaryValue}>
-            {controller.selectedTaskIds.size} selected ·{' '}
-            {controller.tasksRequired} required
-          </span>
-          <button
-            type="button"
-            className={styles.editLink}
-            onClick={() => controller.goToStep(2)}
-          >
-            Edit
-          </button>
-        </div>
-        {controller.isRecurring && (
+      {/* Recurring-only summary card — Repeats / Size / Pool, each with a
+          blue Edit jump. The one-off Preview renders no summary card at
+          all (Board Creation Split, web PR C). */}
+      {recurringSummary && (
+        <div className={styles.summary}>
           <div className={styles.summaryRow}>
-            <span className={styles.summaryLabel}>Recurring</span>
-            <span className={styles.summaryValue}>
-              Spawns a new {controller.timeframe} board from a{' '}
-              {controller.selectedTaskIds.size}-task pool (random subset
-              each window).
-            </span>
+            <span className={styles.summaryLabel}>Repeats</span>
+            <span className={styles.summaryValue}>{recurringSummary.repeats}</span>
             <button
               type="button"
               className={styles.editLink}
@@ -660,8 +550,30 @@ export function BoardWizardPreviewStep({
               Edit
             </button>
           </div>
-        )}
-      </div>
+          <div className={styles.summaryRow}>
+            <span className={styles.summaryLabel}>Size</span>
+            <span className={styles.summaryValue}>{recurringSummary.size}</span>
+            <button
+              type="button"
+              className={styles.editLink}
+              onClick={() => controller.goToStep(1)}
+            >
+              Edit
+            </button>
+          </div>
+          <div className={styles.summaryRow}>
+            <span className={styles.summaryLabel}>Pool</span>
+            <span className={styles.summaryValue}>{recurringSummary.pool}</span>
+            <button
+              type="button"
+              className={styles.editLink}
+              onClick={() => controller.goToStep(2)}
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+      )}
 
       {errorMessage && <div className={styles.errorMessage}>{errorMessage}</div>}
 
@@ -672,12 +584,13 @@ export function BoardWizardPreviewStep({
         <div className={styles.coreFloorWarning}>{coreFloorGate.message}</div>
       )}
 
-      {/* Footer — three button-set variants:
-          - one-off: Save as Draft + Activate Board (existing)
-          - recurring create: single primary "Create template & spawn first board"
-          - recurring edit: single primary "Save changes" (no spawn)
-          The actual write branching lives in `wizardPersist` (see
-          Commit B); this component only chooses the label. */}
+      {/* Footer — three button-set variants (Board Creation Split, web PR
+          C): one-off = Back / Save as Draft (neutral) / Activate Board
+          (RED); recurring create = Back / Create Board (BLUE, no draft —
+          that's web PR D); recurring edit = Back / Save changes (BLUE).
+          The actual write branching lives in `wizardPersist`; this
+          component only chooses the label + accent. No "template"/"spawn"
+          in UI copy. */}
       <div className={styles.footer}>
         <button
           type="button"
@@ -711,7 +624,7 @@ export function BoardWizardPreviewStep({
           {controller.isRecurring && (
             <button
               type="button"
-              className={styles.activateButton}
+              className={styles.createBoardButton}
               onClick={() => void performCreation('active')}
               disabled={isCreating}
             >
@@ -719,7 +632,7 @@ export function BoardWizardPreviewStep({
                 ? 'Saving…'
                 : controller.editingTemplateId !== null
                   ? 'Save changes'
-                  : 'Create template & spawn first board'}
+                  : 'Create Board'}
             </button>
           )}
         </div>

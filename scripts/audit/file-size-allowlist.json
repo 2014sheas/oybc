@@ -7,8 +7,8 @@
     "apps/web/src/components/BoardPlaySurface.tsx": 1392,
     "apps/ios/OYBC/Views/ProfileTab/CounterDetailView.swift": 1178,
     "apps/ios/OYBC/Database/AppDatabase+Tasks.swift": 1166,
-    "apps/web/src/pages/createHub/useBoardWizard.ts": 1140,
-    "apps/web/src/components/wizard/BoardWizardTasksStep.tsx": 1039,
+    "apps/web/src/pages/createHub/useBoardWizard.ts": 1146,
+    "apps/web/src/components/wizard/BoardWizardTasksStep.tsx": 1041,
     "apps/ios/OYBC/Views/CreateTab/ViewModels/BoardWizardViewModel.swift": 1159,
     "apps/ios/OYBC/Database/AppDatabase.swift": 1002,
     "packages/shared/src/validation/schemas.ts": 1009

@@ -37,7 +37,6 @@ export function BoardWizardSetupStep({
     centerType,
     setCenterType,
     isRecurring,
-    setRepeats,
     isCore,
     weekStartDay,
     isStep1Valid,
@@ -59,8 +58,7 @@ export function BoardWizardSetupStep({
         onCustomEndDateChange={setCustomEndDate}
         centerType={centerType}
         onCenterTypeChange={setCenterType}
-        repeats={isRecurring ? timeframe : null}
-        onRepeatsChange={setRepeats}
+        isRecurring={isRecurring}
         isCore={isCore}
         weekStartDay={weekStartDay}
       />
@@ -75,7 +73,9 @@ export function BoardWizardSetupStep({
           </button>
           <button
             type="button"
-            className={styles.nextButton}
+            // Board Creation Split (web PR C) — Next's accent tracks the
+            // wizard's fixed mode: red one-off / blue recurring.
+            className={`${styles.nextButton} ${isRecurring ? styles.nextButtonBlue : ''}`}
             onClick={onNext}
             disabled={!isStep1Valid}
             title={!isStep1Valid ? (step1ValidationMessage ?? undefined) : undefined}

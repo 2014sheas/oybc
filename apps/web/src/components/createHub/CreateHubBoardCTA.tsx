@@ -1,67 +1,65 @@
+import { RisoIcon, type RisoIconName } from '../riso';
 import styles from './CreateHubBoardCTA.module.css';
 
-export type CreateHubBoardCTAVariant = 'primary' | 'secondary';
+/**
+ * Which of the two board-creation entry points this card represents.
+ * Board Creation Split (web PR C) — mode is fixed per card; there is no
+ * shared "decide later" CTA anymore. Mirrors iOS `CreateHubBoardCTAKind`.
+ */
+export type CreateHubBoardCTAKind = 'oneOff' | 'recurring';
 
 export interface CreateHubBoardCTAProps {
+  /** Which entry point this card launches. */
+  kind: CreateHubBoardCTAKind;
   /** Called when the user taps the card — parent is responsible for
-   *  navigating to (or mounting) the wizard. */
+   *  navigating to (or mounting) the wizard in the matching mode. */
   onClick: () => void;
-  /** Phase 6.1d: when the parent renders `<CoreBoardsSection>` above
-   *  this CTA, it passes `secondary` so this becomes a smaller
-   *  affordance below the prominent core boards. Default `primary`
-   *  keeps the original headline-card visual. */
-  variant?: CreateHubBoardCTAVariant;
 }
 
-const ICON = '✨';
-const ICON_SECONDARY = '+';
-const TITLE = 'Start a new board';
-const SUBTITLE = 'One-off or repeating — decide in setup.';
+const COPY: Record<CreateHubBoardCTAKind, { title: string; subtitle: string; icon: RisoIconName }> = {
+  oneOff: {
+    title: 'Start a one-off board',
+    subtitle: 'Pick a timeframe, fill the grid, play it once.',
+    icon: 'grid',
+  },
+  recurring: {
+    title: 'Start a recurring board',
+    subtitle: 'A fresh board every day, week, month, or year.',
+    icon: 'repeat',
+  },
+};
 
 /**
- * CreateHubBoardCTA — Card that invites the user to start a new board.
- * Renders an action on the Create Hub; tapping it launches the 3-step
- * board-creation wizard. iOS twin: `CreateHubBoardCTAView`.
+ * CreateHubBoardCTA — Riso-styled full-width card that launches ONE of the
+ * two board-creation wizards, mode locked at the tap. iOS twin:
+ * `CreateHubBoardCTAView`.
  *
- * P4 (Task Pools + Recurring Boards Rework) collapsed the former
- * `oneOff`/`recurring` `kind` axis into this single CTA — recurrence is
- * now chosen from the wizard's own Step 1 "Repeats" segmented, not a
- * separate entry point (the `?newRecurring=1` deep link retired
- * alongside it). Only `variant` remains: `primary` (large gradient
- * headline card) vs `secondary` (smaller flat card) — same destination,
- * different visual weight.
+ * Board Creation Split (web PR C) replaced the single "Start a new board"
+ * CTA — whose Step-1 "Repeats" segmented silently morphed the rest of the
+ * wizard (Timeframe hidden, "Choose" center suppressed, task counts flip
+ * to "at least N") — with two entry points: a RED one-off card and a BLUE
+ * recurring card, always shown together at full strength. The retired
+ * `variant` (`primary`/`secondary` demotion when core boards need
+ * attention) is gone with it — only `CoreBoardsSection` above these cards
+ * changes prominence, never the cards themselves.
  */
-export function CreateHubBoardCTA({
-  onClick,
-  variant = 'primary',
-}: CreateHubBoardCTAProps): React.ReactElement {
-  if (variant === 'secondary') {
-    return (
-      <button type="button" className={styles.cardSecondary} onClick={onClick}>
-        <div className={styles.iconSecondary} aria-hidden="true">
-          {ICON_SECONDARY}
-        </div>
-        <div className={styles.text}>
-          <span className={styles.titleSecondary}>{TITLE}</span>
-          <span className={styles.subtitleSecondary}>{SUBTITLE}</span>
-        </div>
-        <div className={styles.chevronSecondary} aria-hidden="true">
-          ›
-        </div>
-      </button>
-    );
-  }
+export function CreateHubBoardCTA({ kind, onClick }: CreateHubBoardCTAProps): React.ReactElement {
+  const { title, subtitle, icon } = COPY[kind];
   return (
-    <button type="button" className={styles.card} onClick={onClick}>
-      <div className={styles.icon} aria-hidden="true">
-        {ICON}
+    <button
+      type="button"
+      className={`${styles.card} ${kind === 'recurring' ? styles.cardRecurring : styles.cardOneOff}`}
+      onClick={onClick}
+    >
+      <div className={styles.iconBadge} aria-hidden="true">
+        <RisoIcon name={icon} size={20} />
       </div>
       <div className={styles.text}>
-        <span className={styles.title}>{TITLE}</span>
-        <span className={styles.subtitle}>{SUBTITLE}</span>
+        <span className={styles.title}>{title}</span>
+        <span className={styles.subtitle}>{subtitle}</span>
       </div>
       <div className={styles.chevron} aria-hidden="true">
-        ›
+        <RisoIcon name="chevron" size={18} />
       </div>
     </button>
   );

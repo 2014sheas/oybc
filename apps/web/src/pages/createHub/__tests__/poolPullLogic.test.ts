@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CenterSquareType, Timeframe, TaskType, type Pool, type Task } from '@oybc/shared';
+import { TaskType, type Pool, type Task } from '@oybc/shared';
 import {
   applyCoreBoardDefaultPrefill,
   applyManualBookkeepingOnDeselect,
@@ -10,7 +10,6 @@ import {
   computeCoreFloorGate,
   deriveTaskProvenance,
   isCorePoolDefaultSaved,
-  resolveRepeatsChange,
   syncPoolOrder,
 } from '../poolPullLogic';
 
@@ -257,127 +256,6 @@ describe('deriveTaskProvenance', () => {
     const provenance = deriveTaskProvenance(new Set(['x']), new Set(), ['A'], poolsById, tasksById);
     expect(provenance.has('y')).toBe(false);
     expect(provenance.get('x')).toBe('from Pool A');
-  });
-});
-
-/**
- * P4 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
- * §Surfaces item 4 "Wizard step 1") — the "Repeats" segmented is now the
- * SINGLE entry point for recurrence (the separate "Create a recurring
- * board" CTA + `?newRecurring=1` retire alongside it). These tests cover
- * `resolveRepeatsChange`, the pure function `useBoardWizard.setRepeats`
- * delegates to.
- */
-describe('resolveRepeatsChange', () => {
-  it('Once → a cadence: flips isRecurring on, sets timeframe to the cadence, and remembers the prior one-off timeframe', () => {
-    const result = resolveRepeatsChange({
-      cadence: Timeframe.WEEKLY,
-      isRecurring: false,
-      timeframe: Timeframe.MONTHLY,
-      centerType: CenterSquareType.FREE,
-      centerTaskId: null,
-      rememberedOneOffTimeframe: null,
-      defaultOneOffTimeframe: Timeframe.DAILY,
-    });
-    expect(result.isRecurring).toBe(true);
-    expect(result.timeframe).toBe(Timeframe.WEEKLY);
-    expect(result.rememberedOneOffTimeframe).toBe(Timeframe.MONTHLY);
-  });
-
-  it('Once → a cadence coerces a CUSTOM one-off timeframe to INDEFINITE before remembering it (mirrors reset())', () => {
-    const result = resolveRepeatsChange({
-      cadence: Timeframe.DAILY,
-      isRecurring: false,
-      timeframe: Timeframe.CUSTOM,
-      centerType: CenterSquareType.FREE,
-      centerTaskId: null,
-      rememberedOneOffTimeframe: null,
-      defaultOneOffTimeframe: Timeframe.DAILY,
-    });
-    expect(result.rememberedOneOffTimeframe).toBe(Timeframe.INDEFINITE);
-  });
-
-  it('cadence → a different cadence (already recurring): leaves the remembered one-off timeframe untouched', () => {
-    const result = resolveRepeatsChange({
-      cadence: Timeframe.MONTHLY,
-      isRecurring: true,
-      timeframe: Timeframe.WEEKLY,
-      centerType: CenterSquareType.FREE,
-      centerTaskId: null,
-      rememberedOneOffTimeframe: Timeframe.YEARLY,
-      defaultOneOffTimeframe: Timeframe.DAILY,
-    });
-    expect(result.isRecurring).toBe(true);
-    expect(result.timeframe).toBe(Timeframe.MONTHLY);
-    expect(result.rememberedOneOffTimeframe).toBe(Timeframe.YEARLY);
-  });
-
-  it('a cadence coerces CHOSEN center away to FREE and clears centerTaskId', () => {
-    const result = resolveRepeatsChange({
-      cadence: Timeframe.DAILY,
-      isRecurring: false,
-      timeframe: Timeframe.DAILY,
-      centerType: CenterSquareType.CHOSEN,
-      centerTaskId: 'task-1',
-      rememberedOneOffTimeframe: null,
-      defaultOneOffTimeframe: Timeframe.DAILY,
-    });
-    expect(result.centerType).toBe(CenterSquareType.FREE);
-    expect(result.centerTaskId).toBeNull();
-  });
-
-  it('a cadence leaves a non-CHOSEN center type untouched', () => {
-    const result = resolveRepeatsChange({
-      cadence: Timeframe.DAILY,
-      isRecurring: false,
-      timeframe: Timeframe.DAILY,
-      centerType: CenterSquareType.NONE,
-      centerTaskId: null,
-      rememberedOneOffTimeframe: null,
-      defaultOneOffTimeframe: Timeframe.DAILY,
-    });
-    expect(result.centerType).toBe(CenterSquareType.NONE);
-  });
-
-  it('back to Once: restores the remembered one-off timeframe and flips isRecurring off', () => {
-    const result = resolveRepeatsChange({
-      cadence: null,
-      isRecurring: true,
-      timeframe: Timeframe.WEEKLY,
-      centerType: CenterSquareType.FREE,
-      centerTaskId: null,
-      rememberedOneOffTimeframe: Timeframe.MONTHLY,
-      defaultOneOffTimeframe: Timeframe.DAILY,
-    });
-    expect(result.isRecurring).toBe(false);
-    expect(result.timeframe).toBe(Timeframe.MONTHLY);
-  });
-
-  it('back to Once with nothing remembered yet: falls back to the coerced default one-off timeframe', () => {
-    const result = resolveRepeatsChange({
-      cadence: null,
-      isRecurring: true,
-      timeframe: Timeframe.WEEKLY,
-      centerType: CenterSquareType.FREE,
-      centerTaskId: null,
-      rememberedOneOffTimeframe: null,
-      defaultOneOffTimeframe: Timeframe.CUSTOM,
-    });
-    expect(result.timeframe).toBe(Timeframe.INDEFINITE);
-  });
-
-  it('back to Once does not touch center type/taskId — CHOSEN becomes selectable again but nothing forces it', () => {
-    const result = resolveRepeatsChange({
-      cadence: null,
-      isRecurring: true,
-      timeframe: Timeframe.WEEKLY,
-      centerType: CenterSquareType.FREE,
-      centerTaskId: null,
-      rememberedOneOffTimeframe: Timeframe.DAILY,
-      defaultOneOffTimeframe: Timeframe.DAILY,
-    });
-    expect(result.centerType).toBe(CenterSquareType.FREE);
-    expect(result.centerTaskId).toBeNull();
   });
 });
 

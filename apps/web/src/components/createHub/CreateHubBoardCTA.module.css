@@ -1,12 +1,14 @@
-/* Create-hub CTA cards (Riso). Primary = bold red board card; secondary =
-   neutral paper card. Both press into the paper. */
+/* Create-hub CTA cards (Riso, Board Creation Split — web PR C). Two
+   fixed-mode cards: red one-off / blue recurring, both full strength
+   (the old primary/secondary demotion is retired). Both press into the
+   paper. Sit side by side at >=760px (see CreateHubPage.module.css's
+   .ctaRow), stacking under that breakpoint. */
 .card {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   width: 100%;
   padding: 22px;
-  background: var(--riso-red);
   border: 2px solid var(--riso-ink);
   border-radius: 14px;
   color: var(--riso-on-color);
@@ -14,6 +16,12 @@
   text-align: left;
   box-shadow: 5px 5px 0 var(--riso-shadow-ink);
   transition: transform 0.09s, box-shadow 0.09s;
+}
+.cardOneOff {
+  background: var(--riso-red);
+}
+.cardRecurring {
+  background: var(--riso-blue);
 }
 .card:hover {
   transform: translate(-1px, -1px);
@@ -25,15 +33,26 @@
 }
 .card:focus-visible {
   /* blue, not cream: outline-offset is positive so the ring sits on the page
-     paper (not the red fill) — cream there is invisible in light mode. */
+     paper (not the colored fill) — cream there is invisible in light mode. */
   outline: 3px solid var(--riso-blue);
   outline-offset: 3px;
 }
-.icon {
+
+/* Gold icon square with an ink glyph — non-static-adaptive ink so the
+   glyph stays readable on gold in dark mode (mirrors iOS risoInkStatic). */
+.iconBadge {
   flex: 0 0 auto;
-  font-size: 2rem;
-  line-height: 1;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--riso-gold);
+  border: 2px solid var(--riso-ink);
+  border-radius: 8px;
+  color: var(--riso-ink-static);
 }
+
 .text {
   flex: 1;
   display: flex;
@@ -43,77 +62,16 @@
 }
 .title {
   font-family: var(--riso-font-head);
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 800;
 }
 .subtitle {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
   opacity: 0.85;
 }
 .chevron {
   flex: 0 0 auto;
-  font-family: var(--riso-font-head);
-  font-weight: 800;
-  font-size: 1.75rem;
-}
-
-/* ─── Secondary variant ─────────────────────────────────────────────────── */
-.cardSecondary {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 14px 16px;
-  background: var(--riso-paper-2);
-  border: 2px solid var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  color: var(--riso-ink);
-  cursor: pointer;
-  text-align: left;
-  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
-  transition: transform 0.09s, box-shadow 0.09s;
-}
-.cardSecondary:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
-}
-.cardSecondary:active {
-  transform: translate(3px, 3px);
-  box-shadow: 0 0 0 var(--riso-shadow-ink);
-}
-.cardSecondary:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-.iconSecondary {
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--riso-ink);
-  border: 2px solid var(--riso-ink);
-  border-radius: 8px;
-}
-.titleSecondary {
-  font-family: var(--riso-font-head);
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--riso-ink);
-}
-.subtitleSecondary {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--riso-muted);
-}
-.chevronSecondary {
-  flex: 0 0 auto;
-  font-family: var(--riso-font-head);
-  font-weight: 800;
-  font-size: 1.25rem;
-  color: var(--riso-muted);
+  opacity: 0.7;
 }

@@ -7,11 +7,15 @@ import type { BoardWizardController } from '../../../pages/createHub/useBoardWiz
 import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
 
 /**
- * P4 (Task Pools + Recurring Boards Rework) — a repeating board
- * re-randomizes its cell layout every window, so the Preview step shows
- * the resolved deck (pool of tasks) instead of the arrangeable
- * `ArrangeGrid` + Preview/Rearrange toggle + Shuffle. One-off boards keep
- * the existing ArrangeGrid behavior unchanged.
+ * A repeating board re-randomizes its cell layout every window, so the
+ * Preview step shows the resolved pool (task list) instead of the
+ * arrangeable `ArrangeGrid` + Preview/Rearrange toggle + Shuffle. One-off
+ * boards keep the existing ArrangeGrid behavior unchanged.
+ *
+ * Board Creation Split (web PR C) also diverges the footer + summary
+ * card per mode: one-off has NO summary card and a RED "Activate Board";
+ * recurring has a 3-row Repeats/Size/Pool summary card and a BLUE
+ * "Create Board" (no "Save as Draft" — that's web PR D).
  *
  * See `BoardSetupForm.test.ts`'s docstring for why this uses
  * `react-dom/server`'s `renderToStaticMarkup` (no jsdom/RTL harness in
@@ -96,8 +100,8 @@ function renderPreview(controller: BoardWizardController, tasks: Task[]): string
   );
 }
 
-describe('BoardWizardPreviewStep — repeating-board deck view (P4)', () => {
-  it('shows the deck header + task list, and hides ArrangeGrid/Preview⇄Rearrange/Shuffle, when isRecurring', () => {
+describe('BoardWizardPreviewStep — repeating-board pool-list view', () => {
+  it('shows the "On your board" pool header + task list, and hides ArrangeGrid/Preview⇄Rearrange/Shuffle, when isRecurring', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
     const controller = makeController({
       isRecurring: true,
@@ -110,8 +114,9 @@ describe('BoardWizardPreviewStep — repeating-board deck view (P4)', () => {
 
     const html = renderPreview(controller, tasks);
 
-    // Deck header (the shared `formatDeckPreview` copy) + both deck rows.
-    expect(html).toContain('in the deck');
+    // Pool-list header (no health-note line — Board Creation Split, web
+    // PR C — straight from name/meta to the list) + both rows.
+    expect(html).toContain('On your board');
     expect(html).toContain('Task t1');
     expect(html).toContain('Task t2');
     expect(html).toContain('added by hand');
@@ -122,7 +127,27 @@ describe('BoardWizardPreviewStep — repeating-board deck view (P4)', () => {
     expect(html).not.toContain('Preview ⇄ Rearrange');
   });
 
-  it('keeps the existing ArrangeGrid / Preview⇄Rearrange behavior for a one-off board', () => {
+  it('shows the recurring 3-row summary card (Repeats/Size/Pool) and a "Create Board" primary, never "Save as Draft"', () => {
+    const tasks = [makeTask('t1'), makeTask('t2')];
+    const controller = makeController({
+      isRecurring: true,
+      timeframe: Timeframe.WEEKLY,
+      selectedTaskIds: new Set(['t1', 't2']),
+      editingTemplateId: null,
+    });
+
+    const html = renderPreview(controller, tasks);
+
+    expect(html).toContain('Repeats');
+    expect(html).toContain('Size');
+    expect(html).toContain('Pool');
+    expect(html).toContain('Create Board');
+    expect(html).not.toContain('Save as Draft');
+    expect(html).not.toContain('template');
+    expect(html).not.toContain('spawn');
+  });
+
+  it('keeps the existing ArrangeGrid / Preview⇄Rearrange behavior for a one-off board, with no summary card', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
     const controller = makeController({
       isRecurring: false,
@@ -131,7 +156,11 @@ describe('BoardWizardPreviewStep — repeating-board deck view (P4)', () => {
 
     const html = renderPreview(controller, tasks);
 
-    expect(html).not.toContain('in the deck');
+    expect(html).not.toContain('On your board');
     expect(html).toContain('Rearrange');
+    expect(html).toContain('Activate Board');
+    expect(html).toContain('Save as Draft');
+    // No Repeats/Size/Pool summary card for a one-off board.
+    expect(html).not.toContain('>Repeats<');
   });
 });

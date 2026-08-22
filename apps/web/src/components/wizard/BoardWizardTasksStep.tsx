@@ -816,7 +816,9 @@ export function BoardWizardTasksStep({
         </button>
         <button
           type="button"
-          className={styles.nextButton}
+          // Board Creation Split (web PR C) — accent tracks the wizard's
+          // fixed mode: red one-off / blue recurring.
+          className={`${styles.nextButton} ${isRecurring ? styles.nextButtonBlue : ''}`}
           onClick={onNext}
           disabled={!canAdvance}
           title={

@@ -1,5 +1,7 @@
-/* Wizard Preview step (Riso, Phase 4). Arrangeable board preview (Preview ⇄
-   Rearrange toggle + Shuffle), compact chip row, summary card + footer actions.
+/* Wizard Preview step (Riso, Board Creation Split — web PR C). Centered
+   name + meta line, arrangeable board preview (one-off: Preview ⇄
+   Rearrange toggle + Shuffle) or task-pool list (recurring), an optional
+   recurring-only summary card, + footer actions.
    ArrangeGrid supplies its own styles via ArrangeGrid.module.css. */
 
 .container {
@@ -13,32 +15,26 @@
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
 
-/* ---- Compact summary chips (above the toggle bar) ---- */
-.chipRow {
+/* ---- Centered name + meta line (replaces the old chip row) ---- */
+.header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
 }
-
-.chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  border: 2px solid var(--riso-ink);
-  border-radius: 999px;
-  background: var(--riso-paper);
-  padding: 5px 13px;
+.boardName {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--riso-ink);
+}
+.meta {
+  margin: 0;
   font-family: var(--riso-font-head);
   font-weight: 700;
   font-size: 12px;
-  color: var(--riso-ink);
-}
-
-.chipKey {
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
   color: var(--riso-muted);
 }
 
@@ -74,21 +70,38 @@
   justify-content: center;
 }
 
-/* ---- Repeating-board deck view (P4) — replaces the arrange grid; a
-   specific cell arrangement is meaningless for a board that
-   re-randomizes every window. Rows reuse TaskRow's own styling
-   (BoardWizardTasksStep.module.css); this only wraps them. ---- */
+/* ---- Repeating-board deck view — replaces the arrange grid; a specific
+   cell arrangement is meaningless for a board that re-randomizes every
+   window. Rows reuse TaskRow's own styling (BoardWizardTasksStep.module.
+   css); this only wraps them. Header mirrors PoolList's "On your board"
+   header (Board Creation Split, web PR C — no health-note line here
+   anymore, just straight from the name/meta to the list). ---- */
 .deckSection {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.deckHeader {
-  margin: 0;
+.deckSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.deckSectionLabel {
   font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.deckCountPill {
+  font-family: var(--riso-font-head);
+  font-size: 10px;
   font-weight: 800;
-  font-size: 14px;
-  color: var(--riso-ink);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--riso-ink);
+  color: var(--riso-paper);
 }
 .deckList {
   display: flex;
@@ -201,10 +214,14 @@
   gap: 12px;
 }
 
-/* ---- Riso buttons (back / draft / activate / shuffle) ---- */
+/* ---- Riso buttons (back / draft / activate / create / shuffle) ----
+   Board Creation Split (web PR C) — Activate Board (one-off) is RED;
+   Create Board / Save changes (recurring) is BLUE. Was uniformly green
+   before the split. */
 .backButton,
 .draftButton,
 .activateButton,
+.createBoardButton,
 .shuffleButton {
   font-family: var(--riso-font-head);
   font-weight: 700;
@@ -215,6 +232,7 @@
   cursor: pointer;
   box-shadow: 3px 3px 0 var(--riso-shadow-ink);
   transition: transform 0.09s, box-shadow 0.09s;
+  white-space: nowrap;
 }
 .backButton,
 .draftButton {
@@ -222,7 +240,11 @@
   color: var(--riso-ink);
 }
 .activateButton {
-  background: var(--riso-green);
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+.createBoardButton {
+  background: var(--riso-blue);
   color: var(--riso-on-color);
 }
 /* Shuffle lives in the arrange bar — smaller than the footer buttons */
@@ -237,6 +259,7 @@
 .backButton:hover:not(:disabled),
 .draftButton:hover:not(:disabled),
 .activateButton:hover:not(:disabled),
+.createBoardButton:hover:not(:disabled),
 .shuffleButton:hover:not(:disabled) {
   transform: translate(-1px, -1px);
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
@@ -244,6 +267,7 @@
 .backButton:active:not(:disabled),
 .draftButton:active:not(:disabled),
 .activateButton:active:not(:disabled),
+.createBoardButton:active:not(:disabled),
 .shuffleButton:active:not(:disabled) {
   transform: translate(3px, 3px);
   box-shadow: 0 0 0 var(--riso-shadow-ink);
@@ -251,6 +275,7 @@
 .backButton:disabled,
 .draftButton:disabled,
 .activateButton:disabled,
+.createBoardButton:disabled,
 .shuffleButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -258,6 +283,7 @@
 .backButton:focus-visible,
 .draftButton:focus-visible,
 .activateButton:focus-visible,
+.createBoardButton:focus-visible,
 .shuffleButton:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;

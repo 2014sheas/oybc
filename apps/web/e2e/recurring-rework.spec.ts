@@ -2,13 +2,20 @@ import {
   test,
   expect,
   openCreateHub,
+  startOneOffWizard,
+  startRecurringWizard,
 } from './_fixtures/bypass';
 
 /**
- * E2E coverage for the Phase 6.2 UX rework.
+ * E2E coverage for the wizard's per-mode Setup schedule field.
  *
- * Covers the consolidation work — the wizard now hosts both one-off
- * and recurring board creation as a Setup-step toggle.
+ * Board Creation Split (web PR C) replaced the old single "Start a new
+ * board" CTA + mid-wizard "Repeats" segmented (Once/Daily/Weekly/Monthly
+ * /Yearly, P4) with two mode-locked entry points: mode is fixed at the
+ * Create-hub CTA tap, never toggled inside the wizard. The load-bearing
+ * invariant survives — recurring boards can't use the CUSTOM timeframe —
+ * so these two tests now assert it per-entry-point instead of via an
+ * in-wizard toggle.
  *
  * (This file originally also covered the standalone Profile "Recurring
  * templates" sub-page — empty state + seeded-row Edit deep-link. P7
@@ -26,39 +33,34 @@ import {
  *   — needs task seeding too. Add later if the suffix copy regresses.
  */
 
-test.describe('Phase 6.2 rework', () => {
-  // P4 (Task Pools + Recurring Boards Rework) retired the separate
-  // "Create a recurring board" Create-hub entry point: there's now ONE
-  // "Start a new board" CTA, and recurrence is chosen via Step 1's
-  // "Repeats" segmented (Once/Daily/Weekly/Monthly/Yearly). The
-  // load-bearing invariant survives — recurring boards can't use the
-  // CUSTOM timeframe — so these two tests now assert it via that
-  // segmented instead of a separate entry point.
-
-  test('one-off board wizard offers the Custom timeframe', async ({ page }) => {
+test.describe('Board Creation Split — per-mode Setup schedule field', () => {
+  test('one-off wizard offers the full Timeframe segmented, including Custom', async ({ page }) => {
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startOneOffWizard(page);
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
-    // "Once" (the default) shows the full Timeframe segmented, including
-    // Custom.
     await expect(
       page.getByRole('group', { name: 'Timeframe' }).getByRole('button', { name: 'Custom', exact: true }),
     ).toBeVisible();
+    // No "Repeats every" cadence field in the one-off flow.
+    await expect(page.getByRole('group', { name: 'Repeats every' })).toHaveCount(0);
   });
 
-  test('choosing a Repeats cadence omits the Custom timeframe', async ({ page }) => {
+  test('recurring wizard offers "Repeats every" (Day/Week/Month/Year) and omits the Timeframe/Custom segmented entirely', async ({ page }) => {
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startRecurringWizard(page);
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
-    // Pick a cadence from the "Repeats" segmented (scoped so this doesn't
-    // collide with the separate Timeframe segmented's own "Weekly" button,
-    // both visible while repeats === null).
-    await page.getByRole('group', { name: 'Repeats' }).getByRole('button', { name: 'Weekly', exact: true }).click();
+    const repeatsGroup = page.getByRole('group', { name: 'Repeats every' });
+    await expect(repeatsGroup).toBeVisible();
+    await expect(repeatsGroup.getByRole('button', { name: 'Day', exact: true })).toBeVisible();
+    await expect(repeatsGroup.getByRole('button', { name: 'Week', exact: true })).toBeVisible();
+    await expect(repeatsGroup.getByRole('button', { name: 'Month', exact: true })).toBeVisible();
+    await expect(repeatsGroup.getByRole('button', { name: 'Year', exact: true })).toBeVisible();
 
     // The cadence IS the window now — the whole Timeframe segmented
-    // (including Custom) is hidden entirely.
+    // (including Custom) is hidden entirely, and there's no Custom
+    // option anywhere in the recurring flow.
     await expect(page.getByRole('group', { name: 'Timeframe' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Custom', exact: true })).toHaveCount(0);
   });
