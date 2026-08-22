@@ -45,6 +45,24 @@ export interface PersistWizardBoardRowsInput {
   draftBoardId: string | null;
   /** Phase 6.1 provenance marker; only used on the fresh-create path. */
   isCore: boolean;
+  /**
+   * Board Creation Split (web PR D) — discriminates a recurring draft from
+   * a one-off draft on the shared `status === 'draft'` Board row. Derived
+   * straight from `controller.isRecurring` by the caller (`wizardPersist.ts`'s
+   * `persistWizardBoard`, which only ever runs with `status === 'active'`
+   * for a ONE-OFF wizard — a recurring "Create Board" always goes through
+   * `persistRecurringTemplate` instead — so this is safe for both the
+   * create and the draft-update branch below).
+   */
+  isRecurringDraft: boolean;
+  /**
+   * The recurring wizard's CURRENT pool-mix snapshot (`poolIds` /
+   * `manualTaskIds` / `removedTaskIds`, JSON-encoded), written fresh on
+   * every save — never merged with a prior snapshot. Omitted entirely
+   * (rather than passed as `undefined` explicitly) for a one-off save, so
+   * the field is never written for a non-recurring draft.
+   */
+  recurringDraftMix?: string;
   status: 'active' | 'draft';
   /** Board record fields (name, size, timeframe, dates, center, …). */
   boardFields: CreateBoardInput;
@@ -386,6 +404,8 @@ export async function persistWizardBoardRows({
   userId,
   draftBoardId,
   isCore,
+  isRecurringDraft,
+  recurringDraftMix,
   status,
   boardFields,
   placement,
@@ -437,13 +457,19 @@ export async function persistWizardBoardRows({
         await updateBoard(boardId, {
           ...boardFields,
           status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
+          isRecurringDraft,
+          ...(recurringDraftMix !== undefined ? { recurringDraftMix } : {}),
           ...(status === 'active' && !existingDraft?.activatedAt
             ? { activatedAt: currentTimestamp() }
             : {}),
         });
         await deleteBoardTasksForBoard(boardId);
       } else {
-        const board = await createBoard(userId, boardFields, { isCore });
+        const board = await createBoard(userId, boardFields, {
+          isCore,
+          isRecurringDraft,
+          recurringDraftMix,
+        });
         boardId = board.id;
       }
 

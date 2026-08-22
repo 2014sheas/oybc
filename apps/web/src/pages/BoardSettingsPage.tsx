@@ -24,7 +24,7 @@ import { computePoolPreview, type PoolPreview } from '../components/recurringTem
 import { formatDefaultsSummary } from '../components/boardSettings/formatDefaultsSummary';
 import { RepeatingBoardRow } from '../components/boardSettings/RepeatingBoardRow';
 import { CoreDefaultsSheet } from '../components/boardSettings/CoreDefaultsSheet';
-import { RosterEditSheet } from '../components/boardSettings/RosterEditSheet';
+import { RepeatingBoardWizardOverlay } from '../components/boardSettings/RepeatingBoardWizardOverlay';
 import styles from './BoardSettingsPage.module.css';
 
 const CORE_TIMEFRAMES: { value: Timeframe; label: string }[] = [
@@ -67,8 +67,11 @@ const RECURRING_TOGGLES: {
  *   this is the safety net for paused boards, so it must not filter on
  *   `isActive`), reusing the same row/health/pool-preview machinery the
  *   retired templates page used (`RepeatingBoardRow`, `computeTemplateAttention`,
- *   `computePoolPreview`, `useTemplateMixes`). "Edit tasks" opens
- *   `RosterEditSheet` in place instead of navigating to the wizard.
+ *   `computePoolPreview`, `useTemplateMixes`). "Edit tasks" opens the full
+ *   recurring wizard in EDIT mode (`RepeatingBoardWizardOverlay` wrapping
+ *   `BoardWizardPage` with `editingTemplate` set) — Board Creation Split
+ *   (web PR D) retired the local `RosterEditSheet` in favor of this,
+ *   mirroring iOS's `BoardSettingsView` fullScreenCover.
  *
  * Also absorbs the two sections that used to live on the now-deleted
  * `/profile/board-preferences` sub-page (`BoardPreferencesPage`):
@@ -157,7 +160,7 @@ export function BoardSettingsPage(): React.ReactElement {
   }, [templates, templateMixes]);
 
   const [defaultsSheetTimeframe, setDefaultsSheetTimeframe] = useState<Timeframe | null>(null);
-  const [rosterEditTemplate, setRosterEditTemplate] = useState<RecurringBoardTemplate | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<RecurringBoardTemplate | null>(null);
 
   return (
     <div className={styles.page}>
@@ -285,7 +288,7 @@ export function BoardSettingsPage(): React.ReactElement {
               attentionReason={attentionByTemplateId[t.id]}
               poolPreview={poolPreviewByTemplateId[t.id]?.titles}
               poolPreviewOverflow={poolPreviewByTemplateId[t.id]?.overflow}
-              onEditTasks={setRosterEditTemplate}
+              onEditTasks={setEditingTemplate}
             />
           ))}
         </div>
@@ -335,16 +338,12 @@ export function BoardSettingsPage(): React.ReactElement {
         />
       )}
 
-      {userId && rosterEditTemplate !== null && (
-        <RosterEditSheet
+      {userId && editingTemplate !== null && (
+        <RepeatingBoardWizardOverlay
           userId={userId}
-          template={rosterEditTemplate}
-          pools={pools}
-          templates={templates}
-          allTasks={library.allTasks}
-          browsableTasks={browsableTasks}
-          onClose={() => setRosterEditTemplate(null)}
-          onSaved={() => setRosterEditTemplate(null)}
+          preferences={prefs}
+          template={editingTemplate}
+          onClose={() => setEditingTemplate(null)}
         />
       )}
     </div>

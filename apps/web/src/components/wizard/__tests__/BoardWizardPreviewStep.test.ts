@@ -15,7 +15,10 @@ import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
  * Board Creation Split (web PR C) also diverges the footer + summary
  * card per mode: one-off has NO summary card and a RED "Activate Board";
  * recurring has a 3-row Repeats/Size/Pool summary card and a BLUE
- * "Create Board" (no "Save as Draft" — that's web PR D).
+ * "Create Board". Web PR D added recurring's own "Save as Draft" (neutral,
+ * same as one-off's) for a FRESH recurring session — omitted only when
+ * `editingTemplateId` is set (editing an existing repeating board has no
+ * "draft" concept; footer is Back / "Save Changes" only).
  *
  * See `BoardSetupForm.test.ts`'s docstring for why this uses
  * `react-dom/server`'s `renderToStaticMarkup` (no jsdom/RTL harness in
@@ -127,7 +130,7 @@ describe('BoardWizardPreviewStep — repeating-board pool-list view', () => {
     expect(html).not.toContain('Preview ⇄ Rearrange');
   });
 
-  it('shows the recurring 3-row summary card (Repeats/Size/Pool) and a "Create Board" primary, never "Save as Draft"', () => {
+  it('shows the recurring 3-row summary card (Repeats/Size/Pool), a "Create Board" primary, AND "Save as Draft" for a fresh recurring session (web PR D)', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
     const controller = makeController({
       isRecurring: true,
@@ -142,9 +145,26 @@ describe('BoardWizardPreviewStep — repeating-board pool-list view', () => {
     expect(html).toContain('Size');
     expect(html).toContain('Pool');
     expect(html).toContain('Create Board');
-    expect(html).not.toContain('Save as Draft');
+    expect(html).toContain('Save as Draft');
+    expect(html).not.toContain('Save Changes');
     expect(html).not.toContain('template');
     expect(html).not.toContain('spawn');
+  });
+
+  it('omits "Save as Draft" when editing an existing repeating board, showing "Save Changes" instead (no "draft" concept for an edit)', () => {
+    const tasks = [makeTask('t1'), makeTask('t2')];
+    const controller = makeController({
+      isRecurring: true,
+      timeframe: Timeframe.WEEKLY,
+      selectedTaskIds: new Set(['t1', 't2']),
+      editingTemplateId: 'tmpl-1',
+    });
+
+    const html = renderPreview(controller, tasks);
+
+    expect(html).toContain('Save Changes');
+    expect(html).not.toContain('Save as Draft');
+    expect(html).not.toContain('Create Board');
   });
 
   it('keeps the existing ArrangeGrid / Preview⇄Rearrange behavior for a one-off board, with no summary card', () => {

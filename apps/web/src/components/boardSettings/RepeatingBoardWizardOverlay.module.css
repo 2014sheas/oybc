@@ -1,0 +1,26 @@
+/* RepeatingBoardWizardOverlay — Board Creation Split (web PR D). A fixed,
+   full-viewport, opaque paper layer standing in for iOS's fullScreenCover —
+   this IS the content (not a dimmed backdrop), so it fully occludes the
+   app shell (including the fixed bottom tab bar) underneath. Canvas padding
+   mirrors AppShell.module.css's `.canvas` so BoardWizardPage's centered
+   760px shell renders with the same gutters it gets on /create. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: var(--riso-paper);
+  overflow-y: auto;
+}
+
+.canvas {
+  max-width: 1180px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 38px 40px 96px;
+}
+
+@media (max-width: 760px) {
+  .canvas {
+    padding: 24px 18px 60px;
+  }
+}

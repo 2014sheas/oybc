@@ -85,6 +85,7 @@ function baseInput(
     userId: USER,
     draftBoardId: null,
     isCore: false,
+    isRecurringDraft: false,
     status: 'active',
     boardFields: {
       name: 'Test board',

@@ -1,5 +1,7 @@
 /* CoreDefaultsSheet — per-timeframe core-defaults sheet (P7). Chrome
-   mirrors PoolEditSheet.module.css / RosterEditSheet.module.css. */
+   mirrors PoolEditSheet.module.css's backdrop/sheet/header/chip pattern
+   (the sibling RosterEditSheet.module.css this originally also mirrored
+   was retired in Board Creation Split, web PR D). */
 
 .backdrop {
   position: fixed;

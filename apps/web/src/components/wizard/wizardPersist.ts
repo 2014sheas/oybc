@@ -13,6 +13,7 @@ import {
   createRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
+import { deleteDraftWithCascade } from '../../db/operations/boards';
 import {
   persistWizardBoardRows,
   persistWizardPendingTasksAndStagedEdits,
@@ -23,6 +24,7 @@ import {
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
 import { applyPatchToTask, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
+import { encodeRecurringDraftMix } from '../../db/recurringDraftMix';
 // `generateUUID` / `currentTimestamp` no longer needed here — pending-task
 // sync writes now route through `addToSyncQueue` which owns both.
 import { currentTimestamp } from '../../db/utils';
@@ -279,6 +281,23 @@ export async function persistWizardBoard({
       })
     : rawPendingTasks;
 
+  // Board Creation Split (web PR D) — snapshot the recurring pool-mix
+  // state so a recurring draft's `recurringDraftMix` reflects exactly what
+  // the user had selected at Save time (never a later in-session
+  // mutation). `persistWizardBoard` only ever runs with `status ===
+  // 'active'` for a ONE-OFF wizard (a recurring "Create Board" always goes
+  // through `persistRecurringTemplate` instead), so deriving
+  // `isRecurringDraft` straight from `controller.isRecurring` is safe for
+  // both the create and the draft-update branch.
+  const isRecurringDraft = controller.isRecurring;
+  const recurringDraftMix = isRecurringDraft
+    ? encodeRecurringDraftMix({
+        poolIds: [...controller.pulledPoolIds],
+        manualTaskIds: Array.from(controller.manualTaskIds),
+        removedTaskIds: Array.from(controller.removedTaskIds),
+      })
+    : undefined;
+
   // The atomic write (board + BoardTask rows + Bug-#85 pending tasks +
   // Inline Task Editing staged edits, all in one Dexie transaction) lives
   // in the `persistWizardBoardRows` operation. Everything above is wizard
@@ -291,6 +310,8 @@ export async function persistWizardBoard({
     // resume + activate of a banner-launched draft stays core.
     draftBoardId: controller.draftBoardId,
     isCore: controller.isCore,
+    isRecurringDraft,
+    recurringDraftMix,
     status,
     boardFields: sharedFields,
     placement,
@@ -393,6 +414,16 @@ export async function persistRecurringTemplate({
 }: PersistRecurringTemplateArgs): Promise<PersistRecurringTemplateResult> {
   const trimmedName = controller.name.trim();
 
+  // Board Creation Split (PR B / web PR D) — "Convert draft → template on
+  // Create Board": when this session started as a resumed RECURRING draft
+  // (`controller.draftBoardId` set — mutually exclusive with
+  // `editingTemplateId`, see `useBoardWizard`'s hydration priority), a
+  // successful fresh-create tombstones the placeholder draft Board right
+  // after the real `RecurringBoardTemplate` (+ spawn) exists, so the drafts
+  // list doesn't keep showing a "converted" draft alongside the board it
+  // just spawned. Captured up front so it survives the awaits below.
+  const draftBoardIdToRetire = controller.draftBoardId;
+
   // ── THE FIX — drain pending tasks for the FULL selection first ────────
   const pendingMap: Map<string, PendingTaskPayload> = pendingTasksArg ?? controller.pendingTasks;
   const pendingToPersist = Array.from(pendingMap.values()).filter((p) =>
@@ -490,6 +521,11 @@ export async function persistRecurringTemplate({
   };
 
   const result = await spawnTemplateBoard(pendingSpawn);
+  // Retire the resumed draft (if any) regardless of whether the spawn
+  // succeeded — the template row itself is the important write and has
+  // already landed either way; a skipped spawn just means the Boards-tab
+  // driver retries the window later, same as any other fresh template.
+  await retireResumedDraftIfNeeded(draftBoardIdToRetire);
   if (result.ok) {
     return {
       templateId: template.id,
@@ -501,4 +537,22 @@ export async function persistRecurringTemplate({
     spawnedBoardId: null,
     spawnSkipReason: result.reason,
   };
+}
+
+/**
+ * Board Creation Split (PR B / web PR D) — best-effort tombstone of a
+ * resumed recurring draft once the real `RecurringBoardTemplate` (+ spawn)
+ * exists. Silent on failure (mirrors the rest of this function's
+ * DB-read/write resilience posture): the template/board has already been
+ * created by the time this runs, so a failed cleanup only leaves a stray
+ * now-redundant draft row visible in the drafts list — not lost work.
+ * Mirrors iOS `persistRecurringTemplate`'s inline `retireResumedDraftIfNeeded`.
+ */
+async function retireResumedDraftIfNeeded(draftBoardId: string | null): Promise<void> {
+  if (draftBoardId === null) return;
+  try {
+    await deleteDraftWithCascade(draftBoardId);
+  } catch (err) {
+    console.warn(`[persistRecurringTemplate] failed to retire resumed draft ${draftBoardId}:`, err);
+  }
 }

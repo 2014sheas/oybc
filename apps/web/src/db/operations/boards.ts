@@ -331,9 +331,11 @@ export async function createBoard(
   input: CreateBoardInput,
   /** Optional fields not on CreateBoardInput. Currently used by the
    *  wizard to carry the Phase 6.1 `isCore` marker when launched from
-   *  the recurring banner. Kept off CreateBoardInput so external
+   *  the recurring banner, and (Board Creation Split, web PR D) the
+   *  `isRecurringDraft`/`recurringDraftMix` pair a recurring wizard's
+   *  "Save as Draft" writes. Kept off CreateBoardInput so external
    *  callers don't need to think about provenance fields. */
-  options: { isCore?: boolean } = {},
+  options: { isCore?: boolean; isRecurringDraft?: boolean; recurringDraftMix?: string } = {},
 ): Promise<Board> {
   const board: Board = {
     id: generateUUID(),
@@ -357,6 +359,8 @@ export async function createBoard(
     version: 1,
     isDeleted: false,
     isCore: options.isCore === true,
+    isRecurringDraft: options.isRecurringDraft === true,
+    recurringDraftMix: options.recurringDraftMix,
   };
 
   await db.boards.add(board);

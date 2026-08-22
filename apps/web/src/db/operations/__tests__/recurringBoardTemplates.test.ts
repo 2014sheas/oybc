@@ -13,9 +13,11 @@ import {
  * operations layer. Added alongside P7 (Task Pools + Recurring Boards
  * Rework, docs/POOLS_RECURRING.md §Surfaces item 9) because the
  * Board-settings roster's Pause/Resume toggle (`RepeatingBoardRow`) and
- * "Edit tasks" save (`RosterEditSheet`) both rest on
- * `updateRecurringBoardTemplate` — it deserves direct coverage rather
- * than only being exercised incidentally through spawn-path tests.
+ * "Edit tasks" save (the recurring wizard's edit-mode `persistRecurringTemplate`
+ * path, since Board Creation Split web PR D — previously the now-retired
+ * `RosterEditSheet`) both rest on `updateRecurringBoardTemplate` — it
+ * deserves direct coverage rather than only being exercised incidentally
+ * through spawn-path tests.
  */
 
 afterEach(async () => {
