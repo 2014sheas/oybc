@@ -4,7 +4,6 @@ import { useAuth } from '../firebase/useAuth';
 import {
   useBoards,
   useCoreBoardSlots,
-  usePendingRecurringBoards,
   useRecurringBoardSpawn,
   useBackstopAutoSeal,
   useClosingOutBoards,
@@ -17,10 +16,8 @@ import { sealBoard } from '../db/operations/sealing';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
-import { RecurringWindowBanner } from '../components/boards/RecurringWindowBanner';
 import { ClosingOutBanner } from '../components/boards/ClosingOutBanner';
-import { WindowedCompletionNote } from '../components/boards/WindowedCompletionNote';
-import { BoardStatus, type PendingRecurringBoard } from '@oybc/shared';
+import { BoardStatus } from '@oybc/shared';
 import styles from '../components/boards/Boards.module.css';
 
 const FILTER_TABS = [
@@ -45,8 +42,6 @@ export function BoardsPage(): React.ReactElement {
   // per `BoardCard`.
   const previewCellsByBoardId = useBoardsPreviewCells(allBoards, user?.id);
   const coreBoardSlots = useCoreBoardSlots(user?.id);
-  // Phase 6.1: detect new recurring windows that need a board created.
-  const pendingRecurring = usePendingRecurringBoards(user?.id);
   // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
   useRecurringBoardSpawn(user?.id);
 
@@ -84,13 +79,6 @@ export function BoardsPage(): React.ReactElement {
       await deleteBoard(id);
     }
   };
-
-  /** Navigate to the wizard prefilled for the given pending window.
-   *  No board is written here — lazy/observed only, per the recurring-boards
-   *  invariant. The wizard creates the board when the user taps Save. */
-  function handleRecurringSetUp(p: PendingRecurringBoard): void {
-    navigate(`/create?recurringTimeframe=${p.timeframe}&windowDate=${p.startDate.slice(0, 10)}`);
-  }
 
   // Chip semantics (incl. "Completed = every board whose run is over") live in
   // the shared, unit-tested predicate — see boardDisplayUtils.ts.
@@ -131,19 +119,12 @@ export function BoardsPage(): React.ReactElement {
         }}
       />
 
-      <WindowedCompletionNote />
-
       <ClosingOutBanner
         boards={closingOutBoards}
         onLog={(id) => navigate(`/boards/${id}`)}
         onSeal={async (id) => {
           await sealBoard(id);
         }}
-      />
-
-      <RecurringWindowBanner
-        pending={pendingRecurring}
-        onSetUp={handleRecurringSetUp}
       />
 
       {filteredBoards.length === 0 ? (

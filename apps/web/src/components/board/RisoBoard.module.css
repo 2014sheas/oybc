@@ -32,7 +32,10 @@
 }
 .cellText {
   font-family: var(--riso-font-body);
-  font-size: 14px;
+  /* Scale with the cell (`--cell-size` set by RisoBoard) so task names fit the
+     small Home poster (~58px) instead of overflowing at a fixed 14px; capped
+     at 14px so larger play cells keep the intended size. */
+  font-size: clamp(8px, calc(var(--cell-size, 88px) * 0.165), 14px);
   font-weight: 700;
   line-height: 1.1;
   text-align: center;

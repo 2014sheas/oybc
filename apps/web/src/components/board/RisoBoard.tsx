@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { Board, BoardTask } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
+import { useBoards } from '../../hooks/useBoards';
 import { useBoardTasks } from '../../hooks/useBoardTasks';
 import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
@@ -30,6 +31,9 @@ export function RisoBoard({ board, cellSize, gap = 8 }: RisoBoardProps): React.R
   const { user } = useAuth();
   const boardTasks = useBoardTasks(board.id) ?? EMPTY_BOARD_TASKS;
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(user?.id);
+  // ACHIEVEMENT squares resolve via the kernel's cross-board pass, so the
+  // poster needs the workspace board list (board-integrity PR-3 #360).
+  const allBoards = useBoards(user?.id);
   // Windowed Completion (docs/WINDOWED_COMPLETION.md §Task caches): this poster
   // must resolve squares against THIS board's window, not tasks' lifetime
   // completion caches — otherwise a spawned/reused board shows lifetime-complete
@@ -41,14 +45,20 @@ export function RisoBoard({ board, cellSize, gap = 8 }: RisoBoardProps): React.R
   const size = board.boardSize;
 
   const cells = useMemo<BoardCellModel[]>(
-    () => buildRisoBoardCells(board, boardTasks, taskMap, compoundChildrenByCompound, squareWindowContext),
-    [board, boardTasks, taskMap, compoundChildrenByCompound, squareWindowContext],
+    () => buildRisoBoardCells(board, boardTasks, taskMap, compoundChildrenByCompound, squareWindowContext, allBoards),
+    [board, boardTasks, taskMap, compoundChildrenByCompound, squareWindowContext, allBoards],
   );
 
   return (
     <div
       className={styles.board}
-      style={{ gridTemplateColumns: `repeat(${size}, ${cellSize}px)`, gap }}
+      style={{
+        gridTemplateColumns: `repeat(${size}, ${cellSize}px)`,
+        gap,
+        // Cell text scales with cell size (fixes name overflow on the small
+        // Home poster, ~58px) instead of a fixed 14px regardless of cellSize.
+        ['--cell-size' as string]: `${cellSize}px`,
+      }}
     >
       {cells.map((cell) => (
         <RisoBoardCell key={cell.key} cell={cell} />

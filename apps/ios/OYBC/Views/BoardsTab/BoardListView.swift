@@ -181,28 +181,16 @@ struct BoardListView: View {
                         .listRowBackground(Color.clear)
                 }
 
-                // Windowed Completion — one-time dismissible upgrade note
-                // (docs §What changes visibly at upgrade). Self-hides via
-                // @AppStorage once dismissed.
-                WindowedCompletionNoteView()
-                    // Bottom inset matches the closing-out banner's so the
-                    // gap before the board cards holds when THIS is the only
-                    // banner showing (post-update, no expiring board), not
-                    // just when the closing-out banner is present.
-                    .listRowInsets(EdgeInsets(top: 14, leading: Riso.gutter, bottom: 14, trailing: Riso.gutter))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-
                 // Windowed Completion — closing-out prompt (docs §Sealing →
                 // Lifecycle → Prompt). One row per board whose window ended
                 // but isn't sealed yet (OQ3 resolution: not collapsed).
                 // Bottom inset (not the board cards' top inset) is what
                 // creates the gap between the banner group and the board
                 // cards: this row's top inset already gives it consistent
-                // ~14pt separation from whatever precedes it (visible or
-                // collapsed banner), so adding the same 14pt below it here
-                // guarantees a balanced gap before the first card whether
-                // zero, one, or both banners above are actually showing.
+                // ~14pt separation from whatever precedes it (the tutorial
+                // card, if not dismissed), so adding the same 14pt below it
+                // here guarantees a balanced gap before the first card
+                // whether zero or one banner above is actually showing.
                 ClosingOutBannerView(
                     boards: closingOutVM.boards,
                     sealingBoardId: closingOutVM.sealingBoardId,

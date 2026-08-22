@@ -1,5 +1,6 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AchievementTrigger, BoardStatus, Timeframe, computeStreak } from '@oybc/shared';
+import { AchievementTrigger, Timeframe, computeStreak, isBoardActiveForList } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useBoards } from '../hooks/useBoards';
 import { usePreferences } from '../hooks/usePreferences';
@@ -36,15 +37,23 @@ export function HomePage(): React.ReactElement {
   const [prefs] = usePreferences();
   const boards = useBoards(user?.id);
 
-  const activeBoards = boards
-    .filter((b) => b.status === BoardStatus.ACTIVE)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // `useBoards` already returns the shared `compareBoardsForList` order
+  // (active boards first, by soonest deadline, then recency) and filters
+  // soft-deletes. Reuse it directly and take the active group via the shared
+  // `isBoardActiveForList` predicate — do NOT re-sort by `updatedAt`, which
+  // churns during the first-login sync pull and reshuffled the featured/rail,
+  // and do NOT use a raw `status === ACTIVE` filter, which wrongly kept
+  // expired/sealed boards. Memoized so the rail's identity is stable across
+  // renders that don't change `boards` (otherwise the rail preview memo
+  // re-runs a full board-grid recompute every render).
+  const activeBoards = useMemo(
+    () => boards.filter((b) => isBoardActiveForList(b)),
+    [boards],
+  );
   const featured = activeBoards[0];
-  const rail = activeBoards.slice(1, 5);
-  // Perf follow-up (bugfix/board-preview-real-cells): ONE hoisted hook for
-  // the rail's mini-grid data, not one per `BoardRail` card. `ResumePanel`'s
-  // featured-board poster uses `RisoBoard` (Phase 3a renderer) directly, not
-  // `BoardMiniGrid`, so it isn't part of this hoist.
+  const rail = useMemo(() => activeBoards.slice(1, 5), [activeBoards]);
+  // ONE hoisted hook for the rail's mini-grid data, not one per `BoardRail`
+  // card. `ResumePanel`'s featured poster uses `RisoBoard` directly.
   const railPreviewCellsByBoardId = useBoardsPreviewCells(rail, user?.id);
 
   const streak = computeStreak(

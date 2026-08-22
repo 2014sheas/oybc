@@ -156,7 +156,7 @@ export type {
 
 export { isTaskExpired } from './taskExpiry';
 
-export { compareBoardsForList } from './boardListSort';
+export { compareBoardsForList, isBoardActiveForList } from './boardListSort';
 
 export { computeBrowsableTasks, isGoalLessCounter } from './browsableTasks';
 

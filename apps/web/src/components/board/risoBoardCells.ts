@@ -1,12 +1,15 @@
 import {
   TaskType,
+  computeBoardGrid,
   detectBingos,
   getHighlightedSquares,
   getCenterSquareIndex,
   isCenterAutoCompleted,
   getCenterDisplayText,
+  resolvePlacements,
   type Board,
   type BoardTask,
+  type CellState,
   type CompoundChild,
   type Task,
 } from '@oybc/shared';
@@ -39,13 +42,36 @@ export function buildRisoBoardCells(
   taskMap: Record<string, Task>,
   compoundChildrenByCompound: Record<string, CompoundChild[]>,
   squareWindowContext: SquareWindowContext,
+  allBoards: Board[] = [],
 ): BoardCellModel[] {
   const size = board.boardSize;
   const isSealed = board.sealedAt != null;
   const sealedCellSet = new Set(isSealed ? (board.sealedCompletedCells ?? []) : []);
 
+  // Resolve through the PR-2 winner rule (matches every other render surface)
+  // so a legacy duplicate placement can't pick a different winner than the grid.
+  const boardTasksOnBoard = resolvePlacements(
+    boardTasks.filter((bt) => bt.boardId === board.id),
+    size,
+  );
   const byPos = new Map<number, BoardTask>();
-  for (const bt of boardTasks) byPos.set(bt.row * size + bt.col, bt);
+  for (const bt of boardTasksOnBoard) byPos.set(bt.row * size + bt.col, bt);
+
+  // Kernel pass — the ONLY source of an ACHIEVEMENT square's completion
+  // (board-integrity PR-3 #360, finding 2). Without threading the resolved
+  // per-cell state into `taskToSquareState`, achievement squares fall through
+  // to the plain-task branch and always read `false` (this poster's bug).
+  const cellStateByBoardTaskId: Record<string, CellState> = {};
+  for (const c of computeBoardGrid(
+    board,
+    boardTasksOnBoard,
+    compoundChildrenByCompound,
+    taskMap,
+    allBoards,
+    { eventsByTaskId: squareWindowContext.eventsByTaskId },
+  ).cells) {
+    cellStateByBoardTaskId[c.boardTaskId] = c;
+  }
 
   const centerIndex = getCenterSquareIndex(size);
   const freeCenter = centerIndex >= 0 && isCenterAutoCompleted(board.centerSquareType);
@@ -68,7 +94,10 @@ export function buildRisoBoardCells(
     if (!bt || !task) {
       return { key: bt?.id ?? `empty-${i}`, label: '', type: 'normal', done: false, isFree: false, isLine: false, _done: false };
     }
-    const ss = taskToSquareState(task, undefined, taskMap, compoundChildrenByCompound, squareWindowContext);
+    const ss = taskToSquareState(
+      task, undefined, taskMap, compoundChildrenByCompound, squareWindowContext,
+      cellStateByBoardTaskId[bt.id],
+    );
     const type = cellType(task.type);
     // Sealed: `done` comes from the frozen snapshot, not live derivation —
     // and the counting display freezes too (post-seal increments on a shared
