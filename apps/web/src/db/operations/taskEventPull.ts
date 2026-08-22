@@ -1,5 +1,7 @@
 import {
   TaskEventSchema,
+  SyncOperationType,
+  buildBackfillTaskEvent,
   isEventOwningTask,
   resolveConflict,
   type SyncableEntity,
@@ -8,6 +10,7 @@ import {
 import { db } from '../internal';
 import { runBoardCascadeForTasks } from './orchestration';
 import { recomputeTaskCachesFromPull } from './taskEvents';
+import { addToSyncQueue } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 
@@ -116,4 +119,90 @@ export async function applyTaskEventsBatch(
 
   for (let i = 0; i < pulled; i += 1) recordSyncEvent('pulled');
   return { pulled, details };
+}
+
+/**
+ * Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull). Repairs the
+ * fresh-install backfill gap: the v13 event backfill runs as a Dexie migration,
+ * so on a fresh DB it fires on empty data and mints nothing; the sync pull then
+ * brings tasks whose `isCompleted` is true but whose backing `task_event` isn't
+ * in Firestore. Those completions render incomplete on every windowed surface
+ * (the derivation never falls back to the lifetime cache when a windowContext is
+ * present). `recomputeTaskCachesFromPull` only touches tasks whose *events* were
+ * in a pull, so a zero-event task KEEPS its pulled `isCompleted` cache — which is
+ * exactly the signal this sweep heals from.
+ *
+ * For every event-owning task (NORMAL / plain COUNTING) that is lifetime-complete
+ * (`isCompleted` or `currentCount > 0`) but has NO live event, it mints the event
+ * via the shared `buildBackfillTaskEvent` (deterministic id → converges with the
+ * migration + iOS + peers; idempotent), ENQUEUES a CREATE (so the repair
+ * propagates — the one authored write in the pull neighborhood), then runs the
+ * same recompute + board cascade + sealed re-derive the event-pull path uses.
+ *
+ * Idempotent + self-limiting: once healed, a task HAS a live event, so it's
+ * skipped on every subsequent run (the candidate set shrinks to empty). Safe to
+ * call after each pull cycle; cheap once the initial backlog is cleared.
+ *
+ * Carve-outs (derived counters / compound / achievement) return `null` from
+ * `buildBackfillTaskEvent` and are skipped — they don't own events.
+ *
+ * @param userId The authenticated user's uid (scope guard, mirrors the batch).
+ * @returns The number of completion/increment events minted this pass.
+ */
+export async function healMissingCompletionEvents(userId: string): Promise<number> {
+  let minted = 0;
+
+  // Everything — the candidate scan AND the writes — runs in ONE transaction so
+  // the whole sweep is atomic against concurrent local writes (matches the iOS
+  // twin; the atomic pull-path invariant, CLAUDE.md §Important Patterns). Once
+  // healed the candidate set is empty, so the in-txn full-scan is near-free.
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
+    async () => {
+      const [tasks, allEvents] = await Promise.all([db.tasks.toArray(), db.taskEvents.toArray()]);
+      const hasLiveEvent = new Set<string>();
+      for (const e of allEvents) if (!e.isDeleted) hasLiveEvent.add(e.taskId);
+
+      const healedTaskIds = new Set<string>();
+      for (const task of tasks) {
+        if (task.userId !== userId) continue;
+        if (task.isDeleted || !isEventOwningTask(task)) continue;
+        if (hasLiveEvent.has(task.id)) continue; // live events → they're authoritative
+        const complete = task.isCompleted === true || (task.currentCount ?? 0) > 0;
+        if (!complete) continue;
+        const ev = buildBackfillTaskEvent(task); // null for carve-outs / genuinely-incomplete
+        if (!ev) continue;
+
+        // Respect LWW against any existing local row with this deterministic id —
+        // in particular a TOMBSTONE from an explicit undo (not in `hasLiveEvent`
+        // because it's soft-deleted). Blind-overwriting it would resurrect undone
+        // state AND drive a wrong board cascade before self-correcting on the next
+        // round-trip. Treat the mint as "remote" (same as applyTaskEventsBatch):
+        // only proceed if it would actually win.
+        const existing = (await db.taskEvents.get(ev.id)) as SyncableEntity | undefined;
+        if (existing && resolveConflict(existing, ev as unknown as SyncableEntity).winner !== 'remote') {
+          continue;
+        }
+
+        // Deterministic id → put is an upsert; a concurrent real event with the
+        // same id just wins by LWW. Enqueue CREATE so the repair reaches Firestore
+        // and every peer converges.
+        await db.taskEvents.put(ev);
+        await addToSyncQueue('taskEvents', ev.id, SyncOperationType.CREATE, ev);
+        healedTaskIds.add(ev.taskId);
+        minted += 1;
+      }
+      if (healedTaskIds.size === 0) return;
+
+      // Recompute caches from the now-present events, then one board cascade +
+      // sealed re-derive over the healed set — same shape as applyTaskEventsBatch.
+      for (const taskId of healedTaskIds) await recomputeTaskCachesFromPull(taskId);
+      await runBoardCascadeForTasks(healedTaskIds);
+      await reDeriveSealedBoardsForTasks(healedTaskIds);
+    },
+  );
+
+  for (let i = 0; i < minted; i += 1) recordSyncEvent('pulled');
+  return minted;
 }

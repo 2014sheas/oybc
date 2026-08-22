@@ -476,6 +476,120 @@ final class WindowedCompletionTests: XCTestCase {
             "cascade must count only the resolved winner rows — the duplicate loser's completed task (raw-filter derivation) would make this 2"
         )
     }
+
+    // MARK: - 10. Heal-on-pull (fresh-install backfill gap, docs §Heal-on-pull)
+
+    private func queuedTaskEventIds(_ db: AppDatabase) throws -> [String] {
+        try db.read { d in
+            try String.fetchAll(
+                d,
+                sql: "SELECT entityId FROM sync_queue WHERE entityType = 'taskEvents'"
+            )
+        }
+    }
+
+    func test_healMissingCompletionEvents_mintsEnqueuesAndGreenlogs() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        // A lifetime-complete NORMAL task with NO backing event (the gap).
+        try db.saveTask(makeTask("t1", type: .normal, isCompleted: true,
+                                 completedAt: "2026-06-10T00:00:00.000"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1"))
+        let sut = SyncService(database: db)
+
+        let minted = sut.healMissingCompletionEvents(userId: userId)
+        XCTAssertEqual(minted, 1)
+
+        // Deterministic id present + non-deleted.
+        let expectedId = backfillTaskEventId(taskId: "t1", kind: .completion)
+        let ev = try db.read { try TaskEvent.fetchOne($0, key: expectedId) }
+        XCTAssertNotNil(ev)
+        XCTAssertEqual(ev?.kind, .completion)
+        XCTAssertFalse(ev?.isDeleted ?? true)
+
+        // Enqueued a CREATE so the repair propagates.
+        XCTAssertTrue(try queuedTaskEventIds(db).contains(expectedId))
+
+        // Board cascade greenlogged the 1x1 board from the minted event.
+        XCTAssertEqual(try db.fetchBoard(id: "b1")!.completedTasks, 1)
+    }
+
+    func test_healMissingCompletionEvents_isIdempotent() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1", type: .normal, isCompleted: true,
+                                 completedAt: "2026-06-10T00:00:00.000"))
+        let sut = SyncService(database: db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1)
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 0)
+        let rows = try db.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM task_events") ?? 0 }
+        XCTAssertEqual(rows, 1, "no duplicate — deterministic id already present")
+    }
+
+    func test_healMissingCompletionEvents_mintsIncrementForPlainCounting() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("c1", type: .counting, maxCount: 100, currentCount: 42))
+        let sut = SyncService(database: db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1)
+        let ev = try db.read { try TaskEvent.fetchOne($0, key: backfillTaskEventId(taskId: "c1", kind: .increment)) }
+        XCTAssertEqual(ev?.kind, .increment)
+        XCTAssertEqual(ev?.delta, 42)
+    }
+
+    func test_healMissingCompletionEvents_skipsTaskWithLiveEvent() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1", type: .normal, isCompleted: true,
+                                 completedAt: "2026-06-10T00:00:00.000"))
+        try db.write { d in
+            try makeEvent("real", taskId: "t1", kind: .completion,
+                          occurredAt: "2026-06-09T00:00:00.000").save(d)
+        }
+        let sut = SyncService(database: db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 0)
+        let backfill = try db.read { try TaskEvent.fetchOne($0, key: backfillTaskEventId(taskId: "t1", kind: .completion)) }
+        XCTAssertNil(backfill, "no backfill row when a live event already owns the task")
+    }
+
+    func test_healMissingCompletionEvents_skipsCarveOutsAndIncomplete() throws {
+        let db = try makeDb(); try seedUser(db)
+        // Incomplete normal — nothing to heal.
+        try db.saveTask(makeTask("incomplete", type: .normal, isCompleted: false))
+        // Derived counter (has a sharedCounterId) — carve-out.
+        try db.saveTask(makeTask("derived", type: .counting, maxCount: 5, currentCount: 3,
+                                 sharedCounterId: "src", baseline: 0))
+        // Compound — carve-out.
+        try db.saveTask(makeTask("comp", type: .compound, isCompleted: true,
+                                 completedAt: "2026-06-10T00:00:00.000"))
+        let sut = SyncService(database: db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 0)
+        let rows = try db.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM task_events") ?? 0 }
+        XCTAssertEqual(rows, 0)
+    }
+
+    func test_healMissingCompletionEvents_respectsWinningTombstone() throws {
+        let db = try makeDb(); try seedUser(db)
+        // Stale-complete cache, but the user explicitly UNDID it: only a version-
+        // bumped tombstone exists at the deterministic id. Heal must not resurrect it.
+        try db.saveTask(makeTask("t1", type: .normal, isCompleted: true,
+                                 completedAt: "2026-06-10T00:00:00.000"))
+        let tombId = backfillTaskEventId(taskId: "t1", kind: .completion)
+        try db.write { d in
+            var tomb = makeEvent(tombId, taskId: "t1", kind: .completion,
+                                 occurredAt: "2026-06-10T00:00:00.000", isDeleted: true)
+            tomb.version = 5
+            tomb.deletedAt = AppDatabase.currentTimestamp()
+            try tomb.save(d)
+        }
+        let sut = SyncService(database: db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 0)
+        let ev = try db.read { try TaskEvent.fetchOne($0, key: tombId) }
+        XCTAssertEqual(ev?.isDeleted, true, "tombstone survives — undone state not resurrected")
+        XCTAssertEqual(ev?.version, 5)
+    }
 }
 
 // Test-only convenience to resolve windowed state through the DB read path.

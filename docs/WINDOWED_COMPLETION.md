@@ -468,6 +468,59 @@ only for boards sealed by step 3. Be honest about the rest:
   window's work — squares completed before a board started no longer carry
   over") — copy at PR-B design time.
 
+## Heal-on-pull (fresh-install backfill gap — 2026-08)
+
+**The gap.** The event backfill (web Dexie v13 / iOS v20) runs as a DB
+*migration*. On a **fresh install** (new browser/device/cleared storage) the
+migration runs on an **empty** DB and mints nothing; the sync pull then arrives
+*after*. A task pulled `isCompleted=true` whose backing `task_event` isn't in
+Firestore therefore has no event locally — and every windowed surface derives it
+**incomplete** (with a windowContext the derivation never falls back to the
+lifetime cache, by design). The lifetime cache itself survives for such tasks
+(the pull recompute only runs for tasks whose *events* were in the pull, so a
+zero-event task keeps its pulled `isCompleted=true`), so the completion is
+recoverable *from the cache* — but only until something needs it.
+
+**The fix — a post-pull heal sweep.** `healMissingCompletionEvents(userId)` runs
+after a pull cycle: for every **event-owning** task (NORMAL / plain COUNTING)
+that is lifetime-complete (`isCompleted` / `currentCount > 0`) but has **zero
+live events**, it mints the event via the shared `buildBackfillTaskEvent(task)`,
+**enqueues a CREATE**, then runs the same recompute + board cascade + sealed
+re-derive the event-pull path uses. Properties:
+
+- **Convergent + idempotent.** The event id is the deterministic
+  `backfillTaskEventId = uuidv5(taskId|backfill|kind)` — identical to the
+  migration's and across platforms — so re-runs, the same-batch race, and a
+  peer's later pull all union to one row (no duplicates, no double-count).
+- **Self-healing network-wide.** Because it enqueues, the minted event pushes to
+  Firestore, so every peer converges (and it replaces the old, silently
+  destructive behavior where a completion could be dropped and never restored).
+- **Anchor (best-effort, never lose a completion).** `buildBackfillTaskEvent`
+  anchors NORMAL at `completedAt ?? updatedAt ?? createdAt` and COUNTING at
+  `completedAt ?? updatedAt ?? createdAt` (was: NORMAL required `completedAt`,
+  skipping event-less legacy rows). `completedAt` keeps exact-window placement;
+  the fallback trades window precision for never dropping a completion.
+- **Carve-outs unchanged.** Derived / compound / achievement return `nil` from
+  the builder — they don't own events and read caches directly.
+- **Respects an explicit undo (LWW, never resurrects).** A candidate has zero
+  *live* events, but a soft-deleted **tombstone** (from an un-complete) may still
+  sit at the deterministic id. Before minting, heal LWW-checks the mint (as
+  "remote") against any existing row and **skips** unless it would win — so a
+  version-bumped tombstone stands and undone state is never resurrected (nor is a
+  wrong board cascade transiently driven). Same `resolveConflict` semantics as
+  `applyTaskEventsBatch`'s upsert.
+- **Atomic.** The whole sweep — candidate scan + mint + enqueue + recompute +
+  cascade + sealed re-derive — runs in one transaction (the atomic pull-path
+  invariant), so a mid-sweep crash rolls back cleanly and re-heals next pull.
+- **Ceiling (honest).** It recovers any completion still asserted
+  `isCompleted=true` *anywhere* and stops all future loss, but cannot resurrect a
+  completion already zeroed to `false` on every device (no data remains).
+
+Both platforms mirror this (web `db/operations/taskEventPull.ts` +
+`firebase/syncService.ts` pull-cycle hook; iOS `SyncService.swift`). The v13/v20
+migrations stay (they heal in-place upgrades); heal-on-pull is the durable net
+for fresh installs, ongoing syncs, and pull races.
+
 ## What this closes / retires
 
 | Item | Disposition |
