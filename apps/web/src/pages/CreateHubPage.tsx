@@ -16,7 +16,7 @@ import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
 import { CreateHubDraftsList } from '../components/createHub/CreateHubDraftsList';
 import { CoreBoardsSection } from '../components/CoreBoardsSection';
 import { RisoSectionLabel } from '../components/riso';
-import type { BoardWizardDraft } from './createHub/useBoardWizard';
+import type { BoardWizardDraft, WizardStep } from './createHub/useBoardWizard';
 import styles from './CreateHubPage.module.css';
 
 export interface CreateHubPageProps {
@@ -39,6 +39,10 @@ type HubMode =
   | {
       kind: 'wizard';
       draft?: BoardWizardDraft;
+      /** Board Creation Split (web PR D) — the furthest useful step a
+       *  resumed draft should open on (`resolveDraftInitialStep`).
+       *  Undefined for every non-draft entry point (defaults to Setup). */
+      initialStep?: WizardStep;
       /** Set when the wizard was launched from the Boards-tab Recurring
        *  Boards banner (`/create?recurringTimeframe=daily`). The setup
        *  step locks the timeframe field to this value. */
@@ -84,12 +88,12 @@ type HubMode =
  * threaded as `startRecurring`. P7 retired the second remaining deep
  * link, `?editTemplate=<uuid>[&step=tasks]` (`useEditTemplateParam`),
  * along with the "Recurring templates" Profile page whose Edit/Add-tasks
- * buttons emitted it — repeating-board task edits now happen in place
- * via the Board-settings roster's `RosterEditSheet`, never a wizard
- * round-trip. `BoardWizardPage` / `useBoardWizard` still ACCEPT an
- * `editingTemplate` prop (a generalized "edit an existing repeating
- * board via the wizard" capability with its own tests) — this hub just
- * no longer has any caller that sets it.
+ * buttons emitted it. Board Creation Split (web PR D) went further and
+ * retired the Board-settings roster's local `RosterEditSheet` too —
+ * "Edit tasks" now opens `BoardWizardPage` itself in edit mode
+ * (`RepeatingBoardWizardOverlay`, `editingTemplate` set), so this hub's
+ * own `editingTemplate` support (still accepted here, just with no
+ * caller in THIS file) is the same code path both surfaces share.
  */
 export function CreateHubPage({
   userId,
@@ -129,8 +133,8 @@ export function CreateHubPage({
 
   const handleResumeDraft = useCallback(
     async (board: Board): Promise<void> => {
-      const draft = await resolveDraft(board);
-      setMode({ kind: 'wizard', draft });
+      const { board: resolvedBoard, boardTasks, initialStep } = await resolveDraft(board);
+      setMode({ kind: 'wizard', draft: { board: resolvedBoard, boardTasks }, initialStep });
     },
     [resolveDraft],
   );
@@ -189,6 +193,7 @@ export function CreateHubPage({
         userId={userId}
         preferences={preferences}
         draft={mode.draft}
+        initialStep={mode.initialStep}
         prefilledRecurringTimeframe={mode.prefilledRecurringTimeframe}
         targetWindowDate={mode.targetWindowDate}
         startRecurring={mode.startRecurring}

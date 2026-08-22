@@ -6,7 +6,7 @@ import type {
 } from '@oybc/shared';
 import { usePools } from '../hooks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
-import { useBoardWizard, type BoardWizardDraft } from './createHub/useBoardWizard';
+import { useBoardWizard, type BoardWizardDraft, type WizardStep } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
 import { BoardWizardSetupStep } from '../components/wizard/BoardWizardSetupStep';
 import { BoardWizardTasksStep } from '../components/wizard/BoardWizardTasksStep';
@@ -52,9 +52,10 @@ export interface BoardWizardPageProps {
    *  draft/template/prefill) — see `useBoardWizard`'s hydration
    *  priority. */
   startRecurring?: boolean;
-  /** Optional starting step (defaults to 1). The template row's "Add
-   *  tasks" affordance passes 2 so the wizard opens on the Tasks step. */
-  initialStep?: 1 | 2;
+  /** Optional starting step (defaults to 1). Board Creation Split (web PR
+   *  D) — a resumed draft passes the furthest-useful step
+   *  (`resolveDraftInitialStep`), which can be 1, 2, or 3. */
+  initialStep?: WizardStep;
   /** Called when the user dismisses the wizard without persisting —
    *  either because they're in a pristine state (no edits) or they
    *  explicitly chose "Discard" in the smart-cancel dialog. */
@@ -161,14 +162,16 @@ export function BoardWizardPage({
     setCancelDialogError(null);
     if (!canSaveDraft) return;
 
-    // P4 (Task Pools + Recurring Boards Rework) — a recurring wizard
-    // session has no "draft" concept (`RecurringBoardTemplate` isn't a
-    // Board). Before this fix, "Save Draft" unconditionally called the
-    // one-off `persistWizardBoard` regardless of `wizard.isRecurring`,
-    // silently saving a plain one-off draft Board instead of a recurring
-    // spawn record. Branch here exactly like `BoardWizardPreviewStep`'s
-    // `performCreation` does.
-    if (wizard.isRecurring) {
+    // Board Creation Split (web PR D) — the cancel dialog is now
+    // byte-identical for both modes (README §4 "Cancel dialog"): a
+    // recurring wizard's "Save Draft" saves a real DRAFT `Board` via the
+    // SAME `persistWizardBoard` path a one-off wizard uses below — nothing
+    // runs until "Create Board". The ONE exception is editing an EXISTING
+    // repeating board (`wizard.editingTemplateId !== null`): there's no
+    // "draft" concept for an edit, so that branch still calls
+    // `persistRecurringTemplate`, mirroring the Preview step's "Save
+    // Changes" verbatim.
+    if (wizard.isRecurring && wizard.editingTemplateId !== null) {
       setIsSavingFromCancel(true);
       try {
         const result = await persistRecurringTemplate({
@@ -184,11 +187,7 @@ export function BoardWizardPage({
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error.';
-        setCancelDialogError(
-          wizard.editingTemplateId === null
-            ? `Failed to create recurring board: ${msg}`
-            : `Failed to update recurring board: ${msg}`,
-        );
+        setCancelDialogError(`Failed to update recurring board: ${msg}`);
       } finally {
         setIsSavingFromCancel(false);
       }
@@ -339,16 +338,18 @@ export function BoardWizardPage({
         isOpen={showCancelDialog}
         canSaveDraft={canSaveDraft && !isSavingFromCancel}
         saveDraftBlockedReason={saveBlockedReason}
+        // Board Creation Split (web PR D) — the same rule now applies to
+        // BOTH modes (no more recurring-only "Create Board" special case):
+        // "Save Changes" when editing an existing repeating board OR
+        // resuming any draft (one-off or recurring); "Save Draft" for a
+        // truly fresh wizard. Mirrors iOS
+        // `BoardWizardView.saveDraftLabel` verbatim.
         saveDraftLabel={
           isSavingFromCancel
             ? 'Saving…'
-            : wizard.isRecurring
-              ? wizard.editingTemplateId !== null
-                ? 'Save changes'
-                : 'Create Board'
-              : wizard.draftBoardId !== null
-                ? 'Save Changes'
-                : 'Save Draft'
+            : wizard.editingTemplateId !== null || wizard.draftBoardId !== null
+              ? 'Save Changes'
+              : 'Save Draft'
         }
         onSaveDraft={() => void handleDialogSaveDraft()}
         onDiscard={handleDialogDiscard}

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  BoardStatus,
   CenterSquareType,
   OperatorType,
   Timeframe,
@@ -11,6 +12,7 @@ import {
 } from '@oybc/shared';
 import { db } from '../../../db/internal';
 import { emptyPatch, type ChildPatch, type TaskEditPatch } from '../../../db/taskEditPatch';
+import { decodeRecurringDraftMix } from '../../../db/recurringDraftMix';
 import { buildWizardPlacement, persistRecurringTemplate, persistWizardBoard } from '../wizardPersist';
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { PendingTaskPayload } from '../../../pages/createPage/useCreateFormState';
@@ -588,5 +590,192 @@ describe('persistRecurringTemplate — staged edits (Inline Task Editing PR-2)',
     expect(newChildId).toBeTruthy();
     const newChildTask = newChildId ? await db.tasks.get(newChildId) : undefined;
     expect(newChildTask?.title).toBe('Cool down');
+  });
+});
+
+/**
+ * Board Creation Split (web PR D) — recurring drafts. `persistWizardBoard`
+ * (the SAME one-off draft-save path) is now also the recurring wizard's
+ * "Save as Draft" / cancel-dialog "Save Draft" writer: it stamps
+ * `isRecurringDraft` + a JSON `recurringDraftMix` snapshot instead of
+ * spawning a `RecurringBoardTemplate` immediately. "Create Board" on a
+ * resumed recurring draft then converts it: `persistRecurringTemplate`'s
+ * fresh-create path creates the real template (+ spawn) and retires
+ * (soft-deletes) the placeholder draft Board.
+ */
+describe('Board Creation Split (web PR D) — recurring draft save writes isRecurringDraft + recurringDraftMix', () => {
+  it('a recurring "Save as Draft" writes isRecurringDraft=true and a mix snapshot; a one-off draft never sets the mix field', async () => {
+    const poolTaskIds = await seedTasks(3, 'pool');
+    await db.pools.add(makePool('pool-1', 'Morning Kickstart', poolTaskIds));
+    const [manualId] = await seedTasks(1, 'manual');
+
+    const recurringController = makeController({
+      isRecurring: true,
+      selectedTaskIds: new Set([...poolTaskIds, manualId]),
+      pulledPoolIds: ['pool-1'],
+      manualTaskIds: new Set([manualId]),
+      removedTaskIds: new Set(),
+    });
+
+    const boardId = await persistWizardBoard({
+      controller: recurringController,
+      library: emptyTaskLibrary(),
+      userId: 'user-1',
+      placement: buildWizardPlacement(recurringController, emptyTaskLibrary()),
+      dates: { startDate: NOW },
+      status: 'draft',
+    });
+
+    const board = await db.boards.get(boardId);
+    expect(board?.status).toBe(BoardStatus.DRAFT);
+    expect(board?.isRecurringDraft).toBe(true);
+    expect(board?.recurringDraftMix).toBeDefined();
+    expect(decodeRecurringDraftMix(board?.recurringDraftMix)).toEqual({
+      poolIds: ['pool-1'],
+      manualTaskIds: [manualId],
+      removedTaskIds: [],
+    });
+
+    // A one-off draft save (the pre-existing behavior) never sets the key
+    // at all — decodes as an empty mix, matching a plain draft's
+    // forward-compat shape.
+    const oneOffController = makeController({
+      isRecurring: false,
+      selectedTaskIds: new Set(poolTaskIds),
+      manualTaskIds: new Set(poolTaskIds),
+    });
+    const oneOffBoardId = await persistWizardBoard({
+      controller: oneOffController,
+      library: emptyTaskLibrary(),
+      userId: 'user-1',
+      placement: buildWizardPlacement(oneOffController, emptyTaskLibrary()),
+      dates: { startDate: NOW },
+      status: 'draft',
+    });
+    const oneOffBoard = await db.boards.get(oneOffBoardId);
+    expect(oneOffBoard?.isRecurringDraft).toBe(false);
+    expect(oneOffBoard?.recurringDraftMix).toBeUndefined();
+  });
+
+  it('re-saving a resumed recurring draft overwrites the mix with the CURRENT session state, never merging with the prior snapshot', async () => {
+    const [oldManualId, newManualId] = await seedTasks(2, 'manual');
+    const firstController = makeController({
+      isRecurring: true,
+      selectedTaskIds: new Set([oldManualId]),
+      manualTaskIds: new Set([oldManualId]),
+    });
+    const boardId = await persistWizardBoard({
+      controller: firstController,
+      library: emptyTaskLibrary(),
+      userId: 'user-1',
+      placement: buildWizardPlacement(firstController, emptyTaskLibrary()),
+      dates: { startDate: NOW },
+      status: 'draft',
+    });
+
+    // Resume: the user drops the old manual task and adds a new one, then
+    // saves again — same draftBoardId, fresh selection.
+    const resumedController = makeController({
+      isRecurring: true,
+      draftBoardId: boardId,
+      selectedTaskIds: new Set([newManualId]),
+      manualTaskIds: new Set([newManualId]),
+    });
+    await persistWizardBoard({
+      controller: resumedController,
+      library: emptyTaskLibrary(),
+      userId: 'user-1',
+      placement: buildWizardPlacement(resumedController, emptyTaskLibrary()),
+      dates: { startDate: NOW },
+      status: 'draft',
+    });
+
+    const board = await db.boards.get(boardId);
+    expect(decodeRecurringDraftMix(board?.recurringDraftMix).manualTaskIds).toEqual([newManualId]);
+  });
+});
+
+describe('Board Creation Split (web PR D) — convert draft → template on Create Board', () => {
+  it('a resumed recurring draft, once Created, produces a RecurringBoardTemplate + spawned board and retires (soft-deletes) the placeholder draft', async () => {
+    const taskIds = await seedTasks(POOL_SIZE, 'task');
+
+    // 1) Save as Draft — mirrors the recurring Preview step's "Save as
+    //    Draft" / the cancel dialog's unified "Save Draft".
+    const draftController = makeController({
+      isRecurring: true,
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+    });
+    const draftBoardId = await persistWizardBoard({
+      controller: draftController,
+      library: emptyTaskLibrary(),
+      userId: 'user-1',
+      placement: buildWizardPlacement(draftController, emptyTaskLibrary()),
+      dates: { startDate: NOW },
+      status: 'draft',
+    });
+    const savedDraft = await db.boards.get(draftBoardId);
+    expect(savedDraft?.status).toBe(BoardStatus.DRAFT);
+    expect(savedDraft?.isDeleted).toBe(false);
+
+    // 2) Resume: hydrate a fresh controller from the draft's decoded mix
+    //    exactly as `useBoardWizard`'s recurring-draft-resume hydration
+    //    would (poolIds/manualTaskIds/removedTaskIds straight off the
+    //    decoded payload; draftBoardId carried forward).
+    const decodedMix = decodeRecurringDraftMix(savedDraft?.recurringDraftMix);
+    const resumedController = makeController({
+      isRecurring: true,
+      draftBoardId,
+      selectedTaskIds: new Set(taskIds),
+      pulledPoolIds: decodedMix.poolIds,
+      manualTaskIds: new Set(decodedMix.manualTaskIds),
+      removedTaskIds: new Set(decodedMix.removedTaskIds),
+    });
+
+    // 3) "Create Board" — the fresh-create path, since editingTemplateId
+    //    is still null on a resumed DRAFT (mutually exclusive with
+    //    editingTemplateId per the hydration-priority rule).
+    const result = await persistRecurringTemplate({ controller: resumedController, userId: 'user-1' });
+    expect(result.spawnedBoardId).not.toBeNull();
+
+    const templates = await db.recurringBoardTemplates.toArray();
+    expect(templates).toHaveLength(1);
+    expect(new Set(templates[0].manualTaskIds)).toEqual(new Set(taskIds));
+
+    // The placeholder draft is now tombstoned — it must not linger
+    // alongside the board it just spawned.
+    const retiredDraft = await db.boards.get(draftBoardId);
+    expect(retiredDraft?.isDeleted).toBe(true);
+
+    // The spawned board is a SEPARATE, non-deleted, ACTIVE row.
+    const spawnedBoard = await db.boards.get(result.spawnedBoardId as string);
+    expect(spawnedBoard?.id).not.toBe(draftBoardId);
+    expect(spawnedBoard?.isDeleted).toBe(false);
+    expect(spawnedBoard?.status).not.toBe(BoardStatus.DRAFT);
+  });
+
+  it('editing an EXISTING repeating board (editingTemplateId set) never retires any draft — there is none to retire', async () => {
+    const taskIds = await seedTasks(POOL_SIZE, 'task');
+    const template = makeTemplate({
+      id: 'tmpl-edit-1',
+      manualTaskIds: taskIds,
+      poolIds: [],
+      removedTaskIds: [],
+    });
+    await db.recurringBoardTemplates.add(template);
+
+    const controller = makeController({
+      editingTemplateId: 'tmpl-edit-1',
+      draftBoardId: null,
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+    });
+
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
+    expect(result.spawnedBoardId).toBeNull(); // edits never spawn
+
+    // No board was created OR deleted by the edit path.
+    const boards = await db.boards.toArray();
+    expect(boards).toHaveLength(0);
   });
 });

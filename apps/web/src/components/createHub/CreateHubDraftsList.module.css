@@ -100,6 +100,12 @@
   flex: 1;
   min-width: 0;
 }
+.rowNameLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .rowName {
   font-family: var(--riso-font-head);
   font-size: 0.95rem;
@@ -108,6 +114,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+/* Board Creation Split (web PR D) — typed draft pill. Colored fills carry
+   static on-color text/keyline, never adaptive ink (see
+   reference_riso_adaptive_ink_fill_darkmode). */
+.typePill {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1.5px solid var(--riso-ink);
+  color: var(--riso-on-color);
+  white-space: nowrap;
+}
+.typePillOneOff {
+  background: var(--riso-red);
+}
+.typePillRecurring {
+  background: var(--riso-blue);
 }
 .rowMeta {
   font-size: 0.8rem;

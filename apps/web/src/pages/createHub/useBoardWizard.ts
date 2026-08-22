@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useCoreBoardDefault, useTemplateMix } from '../../hooks';
+import { useCoreBoardDefault, useRecurringDraftMix, useTemplateMix } from '../../hooks';
 import {
   CenterSquareType,
   Timeframe,
@@ -15,6 +15,7 @@ import {
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
+import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
 import {
   applyCoreBoardDefaultPrefill,
   applyManualBookkeepingOnDeselect,
@@ -458,7 +459,16 @@ export function useBoardWizard({
     effectiveTemplate === undefined &&
     effectivePrefill === null &&
     startRecurring === true;
-  const initialIsRecurring = effectiveTemplate !== undefined || isFreshRecurringFromHub;
+  // Board Creation Split (PR B / web PR D) — a resumed draft ALSO forces
+  // recurring mode when the draft `Board` itself is marked
+  // `isRecurringDraft`. Checked ahead of `isFreshRecurringFromHub` (which
+  // already short-circuits to `false` whenever a draft is present anyway)
+  // so resuming a recurring draft always reopens the blue wizard, never
+  // the red one. Mirrors iOS `BoardWizardViewModel.init`'s
+  // `isRecurringAtEntry`.
+  const isRecurringDraftResume = draftBoard?.isRecurringDraft === true;
+  const initialIsRecurring =
+    effectiveTemplate !== undefined || isRecurringDraftResume || isFreshRecurringFromHub;
 
   const [name, setName] = useState(() => {
     if (draftBoard) return draftBoard.name;
@@ -545,13 +555,26 @@ export function useBoardWizard({
   const isRecurring = initialIsRecurring;
   const weekStartDay = preferences.weekStartDay;
 
+  // Board Creation Split (web PR D) — a resumed recurring draft's mix is
+  // decoded synchronously (it's just a JSON string on the Board row, no
+  // DB lookup needed) so `pulledPoolIds`/`manualTaskIds`/`removedTaskIds`
+  // hydrate immediately; only the RESOLVED task-id set (which needs
+  // pool/task lookups) requires the async effect below. `null` for every
+  // non-recurring-draft session.
+  const decodedRecurringDraftMix = useMemo(
+    () => (isRecurringDraftResume ? decodeRecurringDraftMix(draftBoard?.recurringDraftMix) : null),
+    [isRecurringDraftResume, draftBoard?.recurringDraftMix],
+  );
+
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
+    // Synchronous fallback only for BOTH a template edit and a recurring
+    // draft resume — `effectiveTemplate.seedTaskIds` is stale once P1's
+    // legacy-editor write-through has run, and a recurring draft's placed
+    // `boardTasks` are a possibly-truncated subset of its (intentionally
+    // overfillable) pool (see `Board.recurringDraftMix`'s doc). The
+    // one-shot effects below replace this with the resolved mix as soon
+    // as it loads.
     if (draft) return new Set(draft.boardTasks.map((bt) => bt.taskId));
-    // Synchronous fallback only — `effectiveTemplate.seedTaskIds` is stale
-    // once P1's legacy-editor write-through has run (it writes through to
-    // the linked Pool, not this field; see `useTemplateMix`'s docstring).
-    // The one-shot effect below replaces this with the resolved mix as
-    // soon as it loads.
     if (effectiveTemplate) return new Set(effectiveTemplate.seedTaskIds);
     return new Set();
   });
@@ -580,14 +603,35 @@ export function useBoardWizard({
     setPoolOrder((prev) => syncPoolOrder(prev, templateMix));
   }, [effectiveTemplate, templateMix]);
 
+  // Board Creation Split (web PR D) — resolve a resumed recurring draft's
+  // FULL pool (never `draft.boardTasks`, which silently truncates an
+  // intentionally overfilled pool to the grid size) and replace the
+  // boardTasks-based initial state above once loaded. One-shot via its own
+  // ref flag, mirroring the template-mix effect above exactly. Mirrors iOS
+  // `BoardWizardViewModel.init`'s `resolvePoolMixHydration` call for a
+  // recurring draft.
+  const recurringDraftMixResolved = useRecurringDraftMix(
+    isRecurringDraftResume ? draftBoard?.recurringDraftMix : undefined,
+  );
+  const recurringDraftMixAppliedRef = useRef(false);
+  useEffect(() => {
+    if (recurringDraftMixAppliedRef.current) return;
+    if (!isRecurringDraftResume) return;
+    if (recurringDraftMixResolved === undefined) return; // still loading
+    recurringDraftMixAppliedRef.current = true;
+    setSelectedTaskIds(recurringDraftMixResolved);
+    setPoolOrder((prev) => syncPoolOrder(prev, recurringDraftMixResolved));
+  }, [isRecurringDraftResume, recurringDraftMixResolved]);
+
   /**
    * P3 (Task Pools + Recurring Boards Rework) — "PULL IN A POOL" state.
    *
-   * Editing an existing recurring template hydrates directly from the
-   * template's own fields (already resolved, synchronous — unlike
-   * `selectedTaskIds`'s `useTemplateMix` resolution above, these three
-   * fields need no pool/task lookup to read). A fresh wizard / draft
-   * resume (one-off board) carries no persisted pool-mix fields, so
+   * Editing an existing recurring template — or resuming a recurring
+   * draft (Board Creation Split, web PR D) — hydrates directly from the
+   * template's / decoded draft mix's own fields (already resolved,
+   * synchronous — unlike `selectedTaskIds`'s async resolution above,
+   * these three fields need no pool/task lookup to read). A fresh wizard
+   * / one-off draft resume carries no persisted pool-mix fields, so
    * `pulledPoolIds`/`removedTaskIds` start empty and `manualTaskIds`
    * starts as the initial `selectedTaskIds` (draft boardTasks, or — via
    * the DefaultPool-prefill effect below — a legacy DefaultPool prefill):
@@ -598,15 +642,16 @@ export function useBoardWizard({
    * needs it in scope.
    */
   const [pulledPoolIds, setPulledPoolIds] = useState<string[]>(
-    () => effectiveTemplate?.poolIds ?? [],
+    () => decodedRecurringDraftMix?.poolIds ?? effectiveTemplate?.poolIds ?? [],
   );
   const [manualTaskIds, setManualTaskIds] = useState<Set<string>>(() => {
+    if (decodedRecurringDraftMix) return new Set(decodedRecurringDraftMix.manualTaskIds);
     if (effectiveTemplate) return new Set(effectiveTemplate.manualTaskIds ?? []);
     if (draft) return new Set(draft.boardTasks.map((bt) => bt.taskId));
     return new Set();
   });
   const [removedTaskIds, setRemovedTaskIds] = useState<Set<string>>(
-    () => new Set(effectiveTemplate?.removedTaskIds ?? []),
+    () => new Set(decodedRecurringDraftMix?.removedTaskIds ?? effectiveTemplate?.removedTaskIds ?? []),
   );
 
   // P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md

@@ -33,6 +33,16 @@ import {
  * exercise the same union-rule edge cases as `poolPullLogic.test.ts`,
  * confirming the two extractions can't drift on behavior despite the
  * different state shape).
+ *
+ * Board Creation Split (web PR D) retired this module's only caller, the
+ * `RosterEditSheet` component (Board settings' "Edit tasks" now opens the
+ * full `BoardWizardPage` in edit mode instead —
+ * `RepeatingBoardWizardOverlay`). Left in place (with `rosterEditLogic.test.ts`
+ * still guarding it) as a deferred cleanup rather than deleted alongside
+ * the sheet it was extracted from, since a future roster-only quick-edit
+ * surface could still want this exact pure logic. Mirrors iOS's identical
+ * call on `RepeatingBoardMixEditor.swift` after PR B retired
+ * `RepeatingBoardEditSheetView`.
  */
 
 /** The roster's editable mix fields — exactly the persisted
