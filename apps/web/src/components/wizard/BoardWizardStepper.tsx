@@ -1,14 +1,24 @@
 import type { WizardStep } from '../../pages/createHub/useBoardWizard';
 import styles from './BoardWizardStepper.module.css';
 
-const STEPS: { id: WizardStep; label: string }[] = [
-  { id: 1, label: 'Setup' },
-  { id: 2, label: 'Tasks' },
-  { id: 3, label: 'Preview' },
-];
+/** Board Creation Split (web PR C) — the middle step is "Tasks" for a
+ *  one-off board (exact-count grid fill) and "Pool" for a recurring board
+ *  (floor-fillable task pool, no grid). Setup/Preview labels are shared.
+ *  Mirrors iOS `risoWizardSteps(isRecurring:)`. */
+function stepsFor(isRecurring: boolean): { id: WizardStep; label: string }[] {
+  return [
+    { id: 1, label: 'Setup' },
+    { id: 2, label: isRecurring ? 'Pool' : 'Tasks' },
+    { id: 3, label: 'Preview' },
+  ];
+}
 
 export interface BoardWizardStepperProps {
   currentStep: WizardStep;
+  /** Board Creation Split (web PR C) — drives both the active-chip accent
+   *  (red/blue) and the step-2 label (Tasks/Pool). Defaults to `false` so
+   *  every existing one-off call site is unaffected. */
+  isRecurring?: boolean;
   /** Called when the user taps a previous step's chip to jump back. Forward
    *  jumps are blocked (chip is rendered as disabled). */
   onStepClick?: (step: WizardStep) => void;
@@ -23,12 +33,14 @@ export interface BoardWizardStepperProps {
  */
 export function BoardWizardStepper({
   currentStep,
+  isRecurring = false,
   onStepClick,
   readOnly = false,
 }: BoardWizardStepperProps): React.ReactElement {
+  const steps = stepsFor(isRecurring);
   return (
     <nav className={styles.stepper} aria-label="Wizard progress">
-      {STEPS.map((step, index) => {
+      {steps.map((step, index) => {
         const isActive = step.id === currentStep;
         const isComplete = step.id < currentStep;
         const isJumpable = !readOnly && step.id < currentStep && onStepClick !== undefined;
@@ -39,7 +51,7 @@ export function BoardWizardStepper({
               type="button"
               className={`${styles.chip} ${isActive ? styles.chipActive : ''} ${
                 isComplete ? styles.chipComplete : ''
-              }`}
+              } ${isActive && isRecurring ? styles.chipActiveBlue : ''}`}
               onClick={isJumpable ? () => onStepClick!(step.id) : undefined}
               disabled={!isJumpable && !isActive}
               aria-current={isActive ? 'step' : undefined}

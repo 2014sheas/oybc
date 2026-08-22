@@ -22,7 +22,6 @@ import {
   applyPullPool,
   applyUntogglePool,
   deriveTaskProvenance,
-  resolveRepeatsChange,
   syncPoolOrder,
 } from './poolPullLogic';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
@@ -87,11 +86,22 @@ export interface BoardWizardState {
   isRandomized: boolean;
   weekStartDay: WeekStartDay;
 
-  // Phase 6.2 — recurring template fields. When `isRecurring` is true,
-  // the wizard saves a `RecurringBoardTemplate` (and immediately spawns
-  // the current window's board); when false, it saves a plain Board as
-  // before. The pool is always loose-fit (>= cell count); the spawn
-  // shuffles + slices, so any extras become the random subset.
+  // Board Creation Split (web PR C) — whether this wizard instance is
+  // the recurring (BLUE) flow or the one-off (RED) flow. **Fixed at
+  // entry, for the lifetime of this controller** — there is no
+  // mid-wizard "Repeats" control anymore (the old Step-1 segmented +
+  // `setRepeats` toggle machinery retired). The two Create-hub CTAs
+  // launch separate wizard sessions with mode already decided; editing
+  // an existing recurring board always starts recurring
+  // (`editingTemplate` hydration). Hides Custom from the timeframe
+  // selector (recurring schema rejects it) and CHOSEN from the
+  // center-type selector.
+  //
+  // When true, the wizard saves a `RecurringBoardTemplate` (and
+  // immediately spawns the current window's board); when false, it
+  // saves a plain Board as before. The pool is always loose-fit
+  // (>= cell count); the spawn shuffles + slices, so any extras become
+  // the random subset.
   isRecurring: boolean;
 
   // Step 2 fields
@@ -205,16 +215,6 @@ export interface BoardWizardActions {
   setCenterType: (t: CenterSquareType) => void;
   toggleTaskSelection: (taskId: string) => void;
   setCenterTaskId: (id: string | null) => void;
-  /**
-   * P4 (Task Pools + Recurring Boards Rework) — Step 1's "Repeats"
-   * segmented, the single entry point for recurrence (the separate
-   * "Create a recurring board" CTA is retired). `null` = "Once" (a
-   * one-off board — the Timeframe segmented governs the window);
-   * a `Timeframe` = a repeating cadence (the cadence IS the window).
-   * See `resolveRepeatsChange` for the full semantics (center-type
-   * coercion, one-off-timeframe memory).
-   */
-  setRepeats: (cadence: Timeframe | null) => void;
   /**
    * P3 — "PULL IN A POOL" toggle ON. Unions the pool's resolvable,
    * not-currently-removed supply into `selectedTaskIds` and appends the
@@ -357,6 +357,16 @@ export interface UseBoardWizardArgs {
    *  template + board. Mutually exclusive with `draft`. */
   editingTemplate?: RecurringBoardTemplate;
   /**
+   * Board Creation Split (web PR C) — the recurring-hub-card entry
+   * point: a fresh wizard with no draft/template/prefill starts in
+   * recurring mode when true. Ignored (mode is derived from the
+   * hydration source instead) whenever `draft`, `editingTemplate`, or
+   * `prefilledRecurringTimeframe` is supplied. Defaults to `false` so
+   * every existing one-off call site is unaffected. Mirrors iOS
+   * `BoardWizardViewModel.init`'s `startRecurring` parameter.
+   */
+  startRecurring?: boolean;
+  /**
    * P3 (Task Pools + Recurring Boards Rework) — the user's non-deleted
    * pools, used to resolve `pullPool`/`untogglePool` and the provenance
    * derivation. Callers should load this ONCE via `usePools(userId)` and
@@ -402,6 +412,7 @@ export function useBoardWizard({
   prefilledRecurringTimeframe,
   targetWindowDate,
   editingTemplate,
+  startRecurring = false,
   pools = EMPTY_POOLS,
   tasksById = EMPTY_TASKS_BY_ID,
 }: UseBoardWizardArgs): BoardWizardController {
@@ -415,12 +426,14 @@ export function useBoardWizard({
     return map;
   }, [pools]);
 
-  // Hydration priority: draft > editingTemplate > prefilledRecurringTimeframe.
-  // When a draft is being resumed we ignore the other two — drafts already
-  // hydrate the full record, so honoring extra prefills on top would
-  // confuse the user about which board they're editing. Editing a
-  // template wins over a banner-deep-link prefill since the template is
-  // a more-specific source.
+  // Hydration priority: draft > editingTemplate > prefilledRecurringTimeframe
+  // > startRecurring. When a draft is being resumed we ignore the other
+  // three — drafts already hydrate the full record, so honoring extra
+  // prefills on top would confuse the user about which board they're
+  // editing. Editing a template wins over a banner-deep-link prefill since
+  // the template is a more-specific source; a bare `startRecurring` flag
+  // (recurring hub-card tap) is the weakest signal — it only matters for a
+  // truly fresh wizard.
   const effectiveTemplate = !draftBoard ? editingTemplate ?? undefined : undefined;
   const effectivePrefill =
     !draftBoard &&
@@ -430,14 +443,22 @@ export function useBoardWizard({
       ? prefilledRecurringTimeframe
       : null;
 
-  // P4 (Task Pools + Recurring Boards Rework) — the separate "Create a
-  // recurring board" CTA is retired; recurrence is now chosen via Step
-  // 1's "Repeats" segmented (`setRepeats`). The only way a wizard session
-  // starts recurring is editing an existing template. A
-  // `prefilledRecurringTimeframe` (banner / core-board browser) creates a
-  // one-off *core* board for that window — NOT a recurring template — so
-  // it never flips `isRecurring` (#70 decoupled the two concepts).
-  const initialIsRecurring = effectiveTemplate !== undefined;
+  // Board Creation Split (web PR C) — mode is now decided ONCE, from the
+  // hydration source or the launch-time `startRecurring` flag, and never
+  // changes for the lifetime of this controller (no more Step-1 "Repeats"
+  // segmented / `setRepeats` toggle). A wizard *starts* recurring when
+  // editing an existing template, OR when launched fresh from the
+  // recurring hub card (`startRecurring`). A `prefilledRecurringTimeframe`
+  // (banner / core-board browser) creates a one-off *core* board for that
+  // window — NOT a repeating board — so it does not flip `isRecurring`
+  // (#70) and takes priority over `startRecurring` (mutually exclusive in
+  // practice: callers never pass both).
+  const isFreshRecurringFromHub =
+    draftBoard === undefined &&
+    effectiveTemplate === undefined &&
+    effectivePrefill === null &&
+    startRecurring === true;
+  const initialIsRecurring = effectiveTemplate !== undefined || isFreshRecurringFromHub;
 
   const [name, setName] = useState(() => {
     if (draftBoard) return draftBoard.name;
@@ -481,6 +502,7 @@ export function useBoardWizard({
       explicitSource,
       preferences.defaultTimeframe,
       initialIsRecurring,
+      isFreshRecurringFromHub,
     );
   });
   const [customStartDate, setCustomStartDate] = useState(() =>
@@ -516,7 +538,11 @@ export function useBoardWizard({
   // written `true`; `buildWizardPlacement` / template spawn shuffle
   // unconditionally.
   const isRandomized = true;
-  const [isRecurring, setIsRecurringRaw] = useState<boolean>(initialIsRecurring);
+  // Board Creation Split (web PR C) — fixed for the lifetime of this
+  // controller (recomputed identically every render from stable inputs,
+  // so a plain const is equivalent to "set once at init" without needing
+  // its own setState). Mirrors iOS's `let isRecurring`.
+  const isRecurring = initialIsRecurring;
   const weekStartDay = preferences.weekStartDay;
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
@@ -700,32 +726,6 @@ export function useBoardWizard({
       setTimeframeRaw(t);
     },
     [isRecurring],
-  );
-
-  // P4 — remembers the last one-off `timeframe` across a Once→cadence
-  // flip so switching back to "Once" restores the user's prior pick
-  // instead of losing it. A ref (not state) since it's write-only
-  // bookkeeping for `setRepeats` — nothing renders off it directly.
-  const rememberedOneOffTimeframeRef = useRef<Timeframe | null>(null);
-
-  const setRepeats = useCallback(
-    (cadence: Timeframe | null) => {
-      const result = resolveRepeatsChange({
-        cadence,
-        isRecurring,
-        timeframe,
-        centerType,
-        centerTaskId,
-        rememberedOneOffTimeframe: rememberedOneOffTimeframeRef.current,
-        defaultOneOffTimeframe: preferences.defaultTimeframe,
-      });
-      rememberedOneOffTimeframeRef.current = result.rememberedOneOffTimeframe;
-      setIsRecurringRaw(result.isRecurring);
-      setTimeframeRaw(result.timeframe);
-      setCenterTypeRaw(result.centerType);
-      setCenterTaskIdRaw(result.centerTaskId);
-    },
-    [isRecurring, timeframe, centerType, centerTaskId, preferences.defaultTimeframe],
   );
 
   const toggleTaskSelection = useCallback(
@@ -985,16 +985,23 @@ export function useBoardWizard({
     const nextSize = preferences.defaultBoardSize;
     setSizeRaw(nextSize);
     setCenterTypeRaw(coerceCenterType(nextSize, preferences.defaultCenterType));
-    // Mirror the init seed's CUSTOM→INDEFINITE default so a reset wizard
-    // opens ongoing (End date = None), not on CUSTOM with empty dates.
-    setTimeframeRaw(
-      preferences.defaultTimeframe === Timeframe.CUSTOM
-        ? Timeframe.INDEFINITE
-        : preferences.defaultTimeframe,
-    );
+    // Board Creation Split (web PR C) — `isRecurring` is fixed for this
+    // controller's lifetime, so reset() must respect the current mode
+    // rather than resolving the one-off `defaultTimeframe` preference
+    // unconditionally. Mirrors init's own per-mode default.
+    if (isRecurring) {
+      setTimeframeRaw(Timeframe.WEEKLY);
+    } else {
+      // Mirror the init seed's CUSTOM→INDEFINITE default so a reset wizard
+      // opens ongoing (End date = None), not on CUSTOM with empty dates.
+      setTimeframeRaw(
+        preferences.defaultTimeframe === Timeframe.CUSTOM
+          ? Timeframe.INDEFINITE
+          : preferences.defaultTimeframe,
+      );
+    }
     setCustomStartDate('');
     setCustomEndDate('');
-    setIsRecurringRaw(false);
     setSelectedTaskIds(new Set());
     setPoolOrder([]);
     setCenterTaskIdRaw(null);
@@ -1005,7 +1012,7 @@ export function useBoardWizard({
     setPulledPoolIds([]);
     setManualTaskIds(new Set());
     setRemovedTaskIds(new Set());
-  }, [preferences]);
+  }, [preferences, isRecurring]);
 
   // ── Derived flags ─────────────────────────────────────────────────────
 
@@ -1115,7 +1122,6 @@ export function useBoardWizard({
     setCenterType,
     toggleTaskSelection,
     setCenterTaskId,
-    setRepeats,
     pullPool,
     untogglePool,
     addPendingTask,

@@ -92,10 +92,13 @@ test.describe('Drafts are never playable (web parity A1b, issue #313)', () => {
 
     await page.getByText(DRAFT_BOARD_NAME).click();
 
-    // Lands on the wizard's resume-draft entry, not `/boards/:id`.
+    // Lands on the wizard's resume-draft entry, not `/boards/:id`. Board
+    // Creation Split (web PR C) moved the mode label into the kicker
+    // above the step title — the kicker reads "RESUME DRAFT" while the
+    // H2 itself now shows the step name ("Setup").
     await expect(page).toHaveURL(/\/create(\?|$)/);
     await expect(page).not.toHaveURL(new RegExp(`/boards/${DRAFT_BOARD_ID}`));
-    await expect(page.getByRole('heading', { name: 'Resume draft' })).toBeVisible();
+    await expect(page.getByText(/resume draft/i)).toBeVisible();
   });
 
   test('direct URL to a draft board renders the resume prompt, never the grid', async ({
@@ -116,7 +119,7 @@ test.describe('Drafts are never playable (web parity A1b, issue #313)', () => {
     // The button resumes the wizard.
     await page.getByRole('button', { name: 'Resume draft' }).click();
     await expect(page).toHaveURL(/\/create(\?|$)/);
-    await expect(page.getByRole('heading', { name: 'Resume draft' })).toBeVisible();
+    await expect(page.getByText(/resume draft/i)).toBeVisible();
   });
 
   test('an active board still opens as a playable grid', async ({ page }) => {

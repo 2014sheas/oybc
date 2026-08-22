@@ -63,4 +63,20 @@ describe('resolveInitialWizardTimeframe', () => {
       resolveInitialWizardTimeframe(Timeframe.MONTHLY, Timeframe.DAILY, false),
     ).toBe(Timeframe.MONTHLY);
   });
+
+  // Board Creation Split (web PR C) — `isFreshRecurringFromHub` (4th arg).
+  it('seeds WEEKLY unconditionally for a fresh recurring-hub launch, ignoring defaultTimeframe entirely', () => {
+    expect(
+      resolveInitialWizardTimeframe(null, Timeframe.DAILY, true, true),
+    ).toBe(Timeframe.WEEKLY);
+    expect(
+      resolveInitialWizardTimeframe(null, Timeframe.CUSTOM, true, true),
+    ).toBe(Timeframe.WEEKLY);
+  });
+
+  it('defaults isFreshRecurringFromHub to false, leaving existing call sites unaffected', () => {
+    expect(
+      resolveInitialWizardTimeframe(null, Timeframe.MONTHLY, true),
+    ).toBe(Timeframe.MONTHLY);
+  });
 });

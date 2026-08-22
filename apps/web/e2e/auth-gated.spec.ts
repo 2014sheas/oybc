@@ -1,4 +1,4 @@
-import { test, expect, openTab, openCreateHub } from './_fixtures/bypass';
+import { test, expect, openTab, openCreateHub, startOneOffWizard } from './_fixtures/bypass';
 
 /**
  * E2E coverage for auth-gated routes via the dev-only auth bypass
@@ -12,12 +12,9 @@ import { test, expect, openTab, openCreateHub } from './_fixtures/bypass';
  *     than the sign-in form, with no Firebase calls in flight.
  *   - The Boards / Create / Profile tabs all reach an interactive
  *     state from a clean Dexie.
- *   - The wizard's Setup step renders when the user taps the Create
- *     CTA — partial coverage of the in-flight Phase 6.2 UX rework
- *     (the recurring toggle isn't on `dev` yet, but will be after
- *     PR #52 merges; one of these tests already verifies the form's
- *     baseline shape so the toggle's addition produces a meaningful
- *     diff in CI).
+ *   - Board Creation Split (web PR C): the header "New board" button
+ *     deep-links straight into the mode-locked ONE-OFF wizard, and the
+ *     Create hub's own RED CTA reaches the same wizard.
  */
 
 test.describe('auth-gated routes via bypass', () => {
@@ -32,27 +29,35 @@ test.describe('auth-gated routes via bypass', () => {
     await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
   });
 
-  test('New board opens the wizard via Start a new board', async ({ page }) => {
-    // "Create" is no longer a tab; the header "New board" button opens the
-    // Create hub, which offers the one-off "Start a new board" CTA.
-    await openCreateHub(page);
+  test('header "New board" button opens the one-off wizard directly', async ({ page }) => {
+    // "Create" is no longer a tab; the header "New board" button
+    // deep-links straight into the mode-locked ONE-OFF wizard
+    // (`/create?newBoard=one-off`), skipping the hub landing entirely
+    // (Board Creation Split, web PR C).
+    await page.getByRole('banner').getByRole('button', { name: 'New board' }).click();
     await expect(page).toHaveURL(/\/create/);
-
-    // CreateHubBoardCTA renders one of two visual variants — primary
-    // (gradient card) or secondary (muted card) — depending on whether
-    // pending recurring boards exist above it. Post-Phase-6.2 rework
-    // both variants share the same "Start a new board" copy so this
-    // selector matches either visual presentation.
-    const cta = page.getByRole('button', { name: /start a new board/i });
-    await expect(cta).toBeVisible();
-    await cta.click();
 
     // Wizard mounts — Setup step's Board name input is the most stable
     // hook (the field label rarely changes).
     await expect(page.getByLabel(/board name/i)).toBeVisible();
-    // The wizard header surfaces "New board" or "Resume draft"; we
-    // chose fresh-create so it's "New board".
-    await expect(page.getByRole('heading', { name: 'New board', exact: true })).toBeVisible();
+    // The kicker (not the H2, which now reads the step name "Setup")
+    // carries the fresh one-off mode label.
+    await expect(page.getByText(/new one-off board/i)).toBeVisible();
+  });
+
+  test('Create hub renders both mode-locked CTAs, and the one-off card opens its wizard', async ({ page }) => {
+    await openCreateHub(page);
+    await expect(page).toHaveURL(/\/create/);
+
+    // Board Creation Split (web PR C) — two mode-locked cards, always
+    // shown together at full strength.
+    await expect(page.getByRole('button', { name: /start a one-off board/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /start a recurring board/i })).toBeVisible();
+
+    await startOneOffWizard(page);
+
+    await expect(page.getByLabel(/board name/i)).toBeVisible();
+    await expect(page.getByText(/new one-off board/i)).toBeVisible();
   });
 
   test('You tab renders the bypass user identity', async ({ page }) => {

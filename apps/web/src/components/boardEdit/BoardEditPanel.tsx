@@ -425,8 +425,7 @@ export function BoardEditPanel({
         onCustomEndDateChange={setCustomEndDate}
         centerType={centerType}
         onCenterTypeChange={onCenterTypeChange}
-        repeats={null}
-        onRepeatsChange={() => { /* no-op — recurrence isn't editable from the active-board edit sheet */ }}
+        isRecurring={false}
         isCore={false}
         weekStartDay={weekStartDay}
         chosenCenterDisabled={board.centerTaskId == null || !hasCandidateTasks}

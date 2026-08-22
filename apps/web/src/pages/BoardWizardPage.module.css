@@ -13,6 +13,30 @@
   gap: 16px;
 }
 
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Board Creation Split (web PR C) — kicker carries the wizard's fixed
+   mode identity (red one-off / blue recurring) above the step title. */
+.kicker {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.kickerRed {
+  color: var(--riso-red);
+}
+.kickerBlue {
+  color: var(--riso-blue);
+}
+
 .title {
   margin: 0;
   font-family: var(--riso-font-head);

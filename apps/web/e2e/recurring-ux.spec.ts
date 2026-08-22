@@ -3,6 +3,8 @@ import {
   expect,
   seedBoard,
   openCreateHub,
+  startOneOffWizard,
+  startRecurringWizard,
 } from './_fixtures/bypass';
 
 /**
@@ -29,7 +31,7 @@ const NEXT_WEEK = isoDay(new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000));
 test.describe('Recurring UX pass', () => {
   test('setup step shows the requirement line, live with size + center', async ({ page }) => {
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startOneOffWizard(page);
     await expect(page.getByLabel(/board name/i)).toBeVisible();
 
     // Pin a known geometry: 5×5 + Free Space center → 24 tasks.
@@ -46,22 +48,17 @@ test.describe('Recurring UX pass', () => {
     await expect(page.getByText('A 3×3 board needs 9 tasks.')).toBeVisible();
   });
 
-  test('recurring wizard requirement line uses "at least" (pool may overfill)', async ({ page }) => {
+  test('recurring wizard requirement line drops the "A n×n board" framing (pool may overfill)', async ({ page }) => {
+    // Board Creation Split (web PR C) — recurring mode is chosen at the
+    // Create-hub CTA, not a mid-wizard "Repeats" segmented.
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startRecurringWizard(page);
     await expect(page.getByLabel(/board name/i)).toBeVisible();
-
-    // P4 — the "Create a recurring board" entry point retired; a cadence
-    // picked from the "Repeats" segmented is what enters recurring mode.
-    await page
-      .getByRole('group', { name: 'Repeats' })
-      .getByRole('button', { name: 'Daily', exact: true })
-      .click();
 
     await page.getByRole('button', { name: '5×5' }).click();
     await page.getByLabel(/center square/i).selectOption('free');
     await expect(
-      page.getByText('A 5×5 board needs at least 24 tasks.'),
+      page.getByText('Needs at least 24 tasks — extras rotate in.'),
     ).toBeVisible();
   });
 

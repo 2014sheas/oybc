@@ -62,6 +62,10 @@
   background: var(--riso-red);
   color: var(--riso-on-color);
 }
+/* Board Creation Split (web PR C) — recurring wizard's accent. */
+.chipActiveBlue .dot {
+  background: var(--riso-blue);
+}
 .chipComplete .dot {
   background: var(--riso-green);
   color: var(--riso-on-color);

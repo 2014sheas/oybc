@@ -105,12 +105,34 @@ export async function openTab(page: Page, tab: PrimaryTab): Promise<void> {
 }
 
 /**
- * Open the Create hub via the header "New board" action button (scoped to the
- * banner so it never matches the Home screen's own "New board" card). Replaces
- * the retired "Create" tab link.
+ * Open the Create hub landing page (the "New board" section with its two
+ * mode-locked CTAs + the drafts list).
+ *
+ * Board Creation Split (web PR C) changed the header "New board" button
+ * (`AppTopNav`) to deep-link straight into the ONE-OFF wizard
+ * (`/create?newBoard=one-off`), skipping the hub landing entirely — so it
+ * can no longer be used to reach the hub itself. Navigate directly via
+ * the URL instead; the bypass session persists across in-app navigation
+ * (see the fixture's module doc), so a plain `page.goto('/create')`
+ * reaches the same authenticated hub a click would have.
  */
 export async function openCreateHub(page: Page): Promise<void> {
-  await page.getByRole('banner').getByRole('button', { name: 'New board' }).click();
+  await page.goto('/create');
+  await page.getByRole('heading', { name: 'Create', level: 1 }).waitFor({ state: 'visible' });
+}
+
+/** Click the RED "Start a one-off board" CTA on the Create hub landing
+ *  page, launching the mode-locked one-off wizard. Callers must already
+ *  be on the hub (e.g. via `openCreateHub`). */
+export async function startOneOffWizard(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /start a one-off board/i }).click();
+}
+
+/** Click the BLUE "Start a recurring board" CTA on the Create hub landing
+ *  page, launching the mode-locked recurring wizard. Callers must already
+ *  be on the hub (e.g. via `openCreateHub`). */
+export async function startRecurringWizard(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /start a recurring board/i }).click();
 }
 
 /** The bypass user's id — exported so tests that seed user-scoped

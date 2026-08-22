@@ -53,6 +53,10 @@
   background: var(--riso-red);
   color: var(--riso-on-color);
 }
+/* Board Creation Split (web PR C) — recurring wizard's accent. */
+.nextButtonBlue {
+  background: var(--riso-blue);
+}
 .cancelButton:hover:not(:disabled),
 .nextButton:hover:not(:disabled) {
   transform: translate(-1px, -1px);

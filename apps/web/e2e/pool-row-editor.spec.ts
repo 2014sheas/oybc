@@ -5,6 +5,7 @@ import {
   seedCompoundChild,
   seedPool,
   seedTask,
+  startOneOffWizard,
 } from './_fixtures/bypass';
 
 /**
@@ -15,7 +16,7 @@ import {
  * Discard-with-Undo (reopens with typing intact), and Remove-with-Undo
  * (restores the row at its original position).
  *
- * Uses the one-off ("Start a new board") entry point, 3×3 FREE-center
+ * Uses the one-off ("Start a one-off board") entry point, 3×3 FREE-center
  * (fillableCellCount = 8) so an 8-task pool exactly satisfies the floor —
  * mirrors `pool-pull-wizard.spec.ts`'s setup.
  */
@@ -56,7 +57,7 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
     });
 
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startOneOffWizard(page);
     await page.getByLabel(/board name/i).fill('Inline Editor Test Board');
     await page.getByRole('button', { name: '3×3', exact: true }).click();
     await page
@@ -182,7 +183,7 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
     });
 
     await openCreateHub(page);
-    await page.getByRole('button', { name: /start a new board/i }).click();
+    await startOneOffWizard(page);
     await page.getByLabel(/board name/i).fill('Dark Mode Editor Board');
     await page.getByRole('button', { name: '3×3', exact: true }).click();
     await page

@@ -42,7 +42,7 @@ test.describe('Create hub', () => {
       isRandomized: false,
     });
 
-    // Open the Create hub (header "New board") so `useDrafts`'s live-query
+    // Open the Create hub landing page so `useDrafts`'s live-query
     // observer picks up the seeded row. The bypass fixture already promoted
     // the session-storage flag during the root visit, so the in-app
     // navigation keeps the bypass live.
@@ -59,10 +59,14 @@ test.describe('Create hub', () => {
     // mode to `wizard` with the hydrated draft payload.
     await draftRow.click();
 
-    // The wizard mounts. Its setup-step header reads "Resume draft"
-    // (vs. "New board" in fresh-create mode) — that's the load-bearing
-    // signal that the draft path took.
-    await expect(page.getByRole('heading', { name: /resume draft/i })).toBeVisible();
+    // The wizard mounts. Board Creation Split (web PR C) moved the mode
+    // label into the kicker above the step title — the kicker reads
+    // "RESUME DRAFT" (vs. "NEW ONE-OFF BOARD" / "NEW RECURRING BOARD" in
+    // fresh-create mode) while the H2 itself now shows the step name
+    // ("Setup"). That kicker text is the load-bearing signal that the
+    // draft path took.
+    await expect(page.getByText(/resume draft/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: /setup/i })).toBeVisible();
 
     // Board-name field hydrated from the draft. Confirms the draft
     // payload actually threaded through `useResumableDraft` →
