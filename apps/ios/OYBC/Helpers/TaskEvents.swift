@@ -263,8 +263,9 @@ func backfillTaskEventId(taskId: String, kind: TaskEventKind) -> String {
 ///
 /// Rules (docs §Migration & backfill step 2):
 ///   - Derived / compound / achievement tasks are skipped (carve-out) → `nil`.
-///   - `.normal && isCompleted && completedAt` → one `.completion` event,
-///     `occurredAt = completedAt`.
+///   - `.normal && isCompleted` → one `.completion` event,
+///     `occurredAt = completedAt ?? updatedAt` (best-effort anchor, docs
+///     §Heal-on-pull — never dropped for a missing completedAt).
 ///   - `.counting && currentCount > 0` (plain/source only) → one `.increment`
 ///     event, `delta = currentCount`, `occurredAt = completedAt ?? updatedAt`.
 ///   - Otherwise (`.normal` never completed, counting at 0, etc.) → `nil`.
@@ -285,14 +286,19 @@ func buildBackfillTaskEvent(task: Task) -> TaskEvent? {
     if !isEventOwningTask(task) { return nil }
 
     if task.type == .normal {
-        guard task.isCompleted, let completedAt = task.completedAt else { return nil }
+        guard task.isCompleted else { return nil }
+        // Best-effort anchor (heal-on-pull, docs §Heal-on-pull): a completed
+        // task must never be lost for lack of a completedAt — fall back to
+        // updatedAt (always present) so a legacy isCompleted-without-completedAt
+        // row still mints an event instead of being dropped.
+        let occurredAt = task.completedAt ?? task.updatedAt
         return TaskEvent(
             id: backfillTaskEventId(taskId: task.id, kind: .completion),
             userId: task.userId,
             taskId: task.id,
             kind: .completion,
             delta: nil,
-            occurredAt: completedAt,
+            occurredAt: occurredAt,
             boardId: nil,
             createdAt: task.updatedAt,
             updatedAt: task.updatedAt,

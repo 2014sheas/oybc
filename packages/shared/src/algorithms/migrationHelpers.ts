@@ -64,12 +64,18 @@ export function buildBackfillTaskEvent(task: Task): TaskEvent | null {
   } as const;
 
   if (task.type === TaskType.NORMAL) {
-    if (!task.isCompleted || !task.completedAt) return null;
+    if (!task.isCompleted) return null;
+    // Best-effort anchor (heal-on-pull, docs §Heal-on-pull): a completed task
+    // should never be lost for lack of a `completedAt`. Prefer `completedAt`
+    // (exact-window placement); fall back to `updatedAt`, then `createdAt`
+    // (both always present) so a legacy `isCompleted`-without-`completedAt` row
+    // still mints an event instead of being dropped.
+    const occurredAt = task.completedAt ?? task.updatedAt ?? task.createdAt;
     return {
       ...base,
       id: backfillTaskEventId(task.id, 'completion'),
       kind: 'completion',
-      occurredAt: task.completedAt,
+      occurredAt,
     };
   }
 
@@ -81,7 +87,7 @@ export function buildBackfillTaskEvent(task: Task): TaskEvent | null {
     id: backfillTaskEventId(task.id, 'increment'),
     kind: 'increment',
     delta: count,
-    occurredAt: task.completedAt ?? task.updatedAt,
+    occurredAt: task.completedAt ?? task.updatedAt ?? task.createdAt,
   };
 }
 

@@ -42,7 +42,7 @@ import {
   type User,
   type SyncCollection,
 } from '@oybc/shared';
-import { applyTaskEventsBatch } from '../db/operations/taskEventPull';
+import { applyTaskEventsBatch, healMissingCompletionEvents } from '../db/operations/taskEventPull';
 import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -455,6 +455,22 @@ export async function pullSync(
   // Only advance the watermark if pull completed without errors,
   // otherwise we risk permanently skipping updates for failed collections.
   if (!hadPullError) {
+    // Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull): mint any
+    // completion event a fresh install is missing so completed squares don't
+    // render incomplete. Gated on a clean pull — a partial pull could be
+    // missing a task's real events, and we must not mint over that. Idempotent
+    // + self-limiting; runs before the watermark advances so a mid-heal crash
+    // simply re-heals next pull.
+    try {
+      const healed = await healMissingCompletionEvents(userId);
+      if (healed > 0) result.details.push(`Healed ${healed} missing completion event(s)`);
+    } catch (err) {
+      // Never let the heal fail the pull — it retries next cycle.
+      result.details.push(
+        `Heal-on-pull skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     const now = new Date().toISOString();
     const user = await db.users.get(userId);
     if (user) {

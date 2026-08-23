@@ -554,6 +554,19 @@ final class SyncService: ObservableObject {
         // Only advance watermark if no pull errors occurred
         let hadErrors = result.details.contains { $0.contains("Pull failed") }
         if !hadErrors {
+            // Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull): mint any
+            // completion event a fresh install is missing so completed squares
+            // don't render incomplete. Gated on a clean pull — a partial pull
+            // could be missing a task's real events, and we must not mint over
+            // that. Idempotent + self-limiting; before the watermark advances so
+            // a mid-heal failure simply re-heals next pull. Counts toward
+            // `result.pulled` so the changes-applied refresh fires.
+            let healed = healMissingCompletionEvents(userId: userId)
+            if healed > 0 {
+                result.pulled += healed
+                result.details.append("Healed \(healed) missing completion event(s)")
+            }
+
             let now = AppDatabase.currentTimestamp()
             do {
                 if var user = try AppDatabase.shared.fetchUser(id: userId) {
@@ -2267,6 +2280,107 @@ extension SyncService {
 
         for _ in 0..<pulled { recordEvent(.pulled) }
         return (pulled, details)
+    }
+
+    /// Heal-on-pull (docs/WINDOWED_COMPLETION.md §Heal-on-pull). Repairs the
+    /// fresh-install backfill gap: the v20 event backfill runs as a GRDB
+    /// migration, so on a fresh DB it fires on empty data and mints nothing; the
+    /// sync pull then brings tasks whose `isCompleted` is true but whose backing
+    /// `task_event` isn't in Firestore. Those completions render incomplete on
+    /// every windowed surface (the derivation never falls back to the lifetime
+    /// cache when a window is present). `recomputeTaskCachesFromPull` only touches
+    /// tasks whose *events* were in a pull, so a zero-event task KEEPS its pulled
+    /// `isCompleted` cache — exactly the signal this sweep heals from.
+    ///
+    /// For every event-owning task (NORMAL / plain COUNTING) that is
+    /// lifetime-complete (`isCompleted` or `currentCount > 0`) but has NO live
+    /// event, it mints the event via the shared `buildBackfillTaskEvent`
+    /// (deterministic id → converges with the migration + web + peers;
+    /// idempotent), ENQUEUES a CREATE (so the repair propagates), then runs the
+    /// same recompute + board cascade + sealed re-derive the event-pull path uses.
+    /// Idempotent + self-limiting: once healed, a task HAS a live event and is
+    /// skipped forever after. Swift twin of `healMissingCompletionEvents` in
+    /// `apps/web/src/db/operations/taskEventPull.ts`.
+    ///
+    /// - Parameter userId: The authenticated user's uid (scope guard).
+    /// - Returns: The number of completion/increment events minted this pass.
+    func healMissingCompletionEvents(userId: String) -> Int {
+        var minted = 0
+        do {
+            try database.write { db in
+                let tasks = try Task.fetchAll(db)
+                let allEvents = try TaskEvent.fetchAll(db)
+                var hasLiveEvent = Set<String>()
+                for e in allEvents where !e.isDeleted { hasLiveEvent.insert(e.taskId) }
+
+                var toMint: [TaskEvent] = []
+                for task in tasks {
+                    if task.userId != userId { continue }
+                    if task.isDeleted || !isEventOwningTask(task) { continue }
+                    if hasLiveEvent.contains(task.id) { continue } // events are authoritative
+                    let complete = task.isCompleted || (task.currentCount ?? 0) > 0
+                    if !complete { continue }
+                    if let ev = buildBackfillTaskEvent(task: task) { toMint.append(ev) }
+                }
+                if toMint.isEmpty { return }
+
+                let now = AppDatabase.currentTimestamp()
+                var healedTaskIds = Set<String>()
+                for ev in toMint {
+                    // Respect LWW against any existing local row with this
+                    // deterministic id — in particular a TOMBSTONE from an explicit
+                    // undo (not in `hasLiveEvent` because it's soft-deleted). Blind-
+                    // overwriting it would resurrect undone state AND drive a wrong
+                    // board cascade before self-correcting. Treat the mint as
+                    // "remote" (same as applyTaskEventsBatch): skip unless it wins.
+                    // Typed mirror of `resolveConflict` (lwwResolve.ts): higher
+                    // version wins; equal version → strictly-newer updatedAt, tie /
+                    // unparseable → remote(mint) wins.
+                    if let existing = try TaskEvent.fetchOne(db, key: ev.id) {
+                        let mintWins: Bool
+                        if ev.version != existing.version {
+                            mintWins = ev.version > existing.version
+                        } else if let existingDate = DateFormatting.parseISO(existing.updatedAt),
+                                  let mintDate = DateFormatting.parseISO(ev.updatedAt) {
+                            mintWins = mintDate >= existingDate
+                        } else {
+                            mintWins = true // unparseable → remote authority (canon #263)
+                        }
+                        if !mintWins { continue }
+                    }
+
+                    // Deterministic id → save is an upsert; a concurrent real event
+                    // with the same id just wins by LWW. Enqueue CREATE so the
+                    // repair reaches Firestore and every peer converges.
+                    try ev.save(db)
+                    try SyncQueueBuilder.makeItem(
+                        entityType: "taskEvents",
+                        entityId: ev.id,
+                        operationType: .create,
+                        payload: ev,
+                        now: now
+                    ).enqueue(db)
+                    healedTaskIds.insert(ev.taskId)
+                    minted += 1
+                }
+                // Recompute caches from the now-present events, then one board
+                // cascade + sealed re-derive over the healed set — same shape as
+                // applyTaskEventsBatch.
+                for taskId in healedTaskIds {
+                    try AppDatabase.recomputeTaskCachesFromPull(db: db, taskId: taskId)
+                }
+                if !healedTaskIds.isEmpty {
+                    try runPullCascadeForTasks(db: db, changedTaskIds: healedTaskIds)
+                    try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)
+                }
+            }
+        } catch {
+            // Never let the heal fail the pull — it retries next cycle.
+            log("Heal-on-pull skipped: \(error.localizedDescription)")
+            return 0
+        }
+        for _ in 0..<minted { recordEvent(.pulled) }
+        return minted
     }
 
     /// JSON-encode a `[String]` array to a compact JSON string.
