@@ -1,6 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { isOfflineError } from '../authService';
-import { isCredentialCollision, friendlyError } from '../accountSecurity';
+import { describe, it, expect, vi } from 'vitest';
+
+// `authService`/`accountSecurity` transitively import `./config`, which calls
+// `getAuth(initializeApp(...))` at module load — that throws `auth/invalid-api-key`
+// on CI, where there's no `.env.local` (the same firebase-free-import hazard that
+// keeps `db/operations` off firebase; see taskEventPull.ts's header). Stub the
+// config module so importing the pure predicates never initializes Firebase.
+// Dynamic imports (below) keep the static-import block clean for `import/first`.
+vi.mock('../config', () => ({ auth: {}, firestore: {} }));
+
+const { isOfflineError } = await import('../authService');
+const { isCredentialCollision, friendlyError } = await import('../accountSecurity');
 
 /**
  * Unit coverage for the pure predicates guest mode adds (docs/GUEST_MODE.md).
