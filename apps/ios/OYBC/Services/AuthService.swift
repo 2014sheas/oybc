@@ -29,6 +29,14 @@ final class AuthService: ObservableObject {
     /// (change email/password gated on `hasPassword`, unlink gated on count).
     @Published var providerState: ProviderState = .none
 
+    /// True when the current session is a Firebase anonymous (guest) user
+    /// (docs/GUEST_MODE.md). Session-derived from `firebaseUser.isAnonymous`,
+    /// never persisted on the local `User`. Drives the guest treatment of the
+    /// Profile/sync UI and the "Save your account" upgrade affordance. Flips to
+    /// false after a successful upgrade `link*` (recomputed in
+    /// `refreshProviderState()`, since linking fires no auth-state event).
+    @Published var isAnonymous: Bool = false
+
     // MARK: - Private
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
@@ -80,6 +88,7 @@ final class AuthService: ObservableObject {
                     let user = await self.upsertLocalUser(firebaseUser)
                     await MainActor.run {
                         self.currentUser = user
+                        self.isAnonymous = firebaseUser.isAnonymous
                         self.startUserRowObservation(userId: user.id)
                         self.syncService.start(userId: user.id)
                     }
@@ -87,6 +96,7 @@ final class AuthService: ObservableObject {
                 } else {
                     await MainActor.run {
                         self.currentUser = nil
+                        self.isAnonymous = false
                         self.stopUserRowObservation()
                         self.syncService.stop()
                         self.notificationService.clearAll()
@@ -219,6 +229,30 @@ final class AuthService: ObservableObject {
         let result = try await Auth.auth().signIn(withEmail: email, password: password)
         let user = await upsertLocalUser(result.user)
         currentUser = user
+        return user
+    }
+
+    // MARK: - Guest (anonymous)
+
+    /// Signs in as a guest via Firebase anonymous auth (docs/GUEST_MODE.md).
+    ///
+    /// Mints a real (hidden) anonymous uid so the whole `userId`-keyed app works
+    /// unchanged and sync runs to the anon-owned tree; upgrading later = linking a
+    /// provider, which preserves this uid (no data re-keying). The auth-state
+    /// listener also fires and bootstraps observation/sync, but we set
+    /// `currentUser`/`isAnonymous` here too so the caller's `await` reflects the
+    /// signed-in state immediately. Requires one network round-trip to mint the
+    /// account (the single offline-first exception); the session then persists.
+    ///
+    /// - Returns: The guest local `User`.
+    /// - Throws: A Firebase `AuthError` (e.g. `operation-not-allowed` if the
+    ///   Anonymous provider isn't enabled, `network-request-failed` if offline).
+    @discardableResult
+    func signInAnonymously() async throws -> User {
+        let result = try await Auth.auth().signInAnonymously()
+        let user = await upsertLocalUser(result.user)
+        currentUser = user
+        isAnonymous = result.user.isAnonymous
         return user
     }
 
@@ -357,6 +391,9 @@ final class AuthService: ObservableObject {
     func refreshProviderState() async {
         try? await Auth.auth().currentUser?.reload()
         providerState = Self.computeProviderState(Auth.auth().currentUser)
+        // Linking a provider to an anonymous user flips `isAnonymous` to false
+        // without firing the auth-state listener, so recompute it here too.
+        isAnonymous = Auth.auth().currentUser?.isAnonymous ?? false
     }
 
     /// Derives a `ProviderState` from a Firebase user's linked providers.
@@ -482,6 +519,14 @@ final class AuthService: ObservableObject {
                 return
             }
             throw error
+        }
+        // A guest→account upgrade mutates `currentUser` in place and fires NO
+        // auth-state event, so re-run the local upsert to populate email/
+        // displayName from the now-permanent user (docs/GUEST_MODE.md §Upgrade).
+        // Harmless for the Account & security link paths (name/email unchanged).
+        if let refreshed = Auth.auth().currentUser {
+            let updated = await upsertLocalUser(refreshed)
+            currentUser = updated
         }
         await refreshProviderState()
     }

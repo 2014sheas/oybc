@@ -1,6 +1,5 @@
 import SwiftUI
 import AuthenticationServices
-import CryptoKit
 import FirebaseAuth
 
 // MARK: - OnboardingView
@@ -372,10 +371,10 @@ struct OnboardingView: View {
             }
             .disabled(isSubmitting)
 
-            // Maybe later — muted text link (anonymous / local session).
-            // Signs in anonymously so AppDatabase gets a user row, then
-            // advances to the notif step.
-            SwiftUI.Button("Maybe later") {
+            // Continue as guest — muted text link (Firebase anonymous session).
+            // Signs in anonymously so AppDatabase gets a user row, then advances
+            // to the notif step. Upgradeable later via Profile → Save your account.
+            SwiftUI.Button("Continue as guest") {
                 _Concurrency.Task { await signInAnonymously() }
             }
             .font(.risoBody(14, .semibold))
@@ -399,10 +398,10 @@ struct OnboardingView: View {
         SignInWithAppleButton(
             .signIn,
             onRequest: { request in
-                let nonce = randomNonceString()
+                let nonce = AppleAuthNonce.randomNonceString()
                 currentNonce = nonce
                 request.requestedScopes = [.fullName, .email]
-                request.nonce = sha256(nonce)
+                request.nonce = AppleAuthNonce.sha256(nonce)
             },
             onCompletion: { result in
                 _Concurrency.Task { await handleAppleSignIn(result) }
@@ -443,29 +442,41 @@ struct OnboardingView: View {
 
     // MARK: - Auth actions
 
-    /// Signs in anonymously via Firebase so the user can use the app locally
-    /// without an account. `AuthService`'s auth-state listener picks up the
-    /// anonymous Firebase user and upserts a local GRDB `User` row. After
-    /// sign-in succeeds, advances to the notif-priming step.
+    /// Signs in as a guest via `AuthService.signInAnonymously()` (docs/GUEST_MODE.md)
+    /// so the app is usable without an account. The service upserts the local GRDB
+    /// `User` row and the auth-state listener bootstraps observation/sync. After
+    /// success, advances to the notif-priming step.
     ///
-    /// TODO: Extract to `AuthService.signInAnonymously()` when that method is
-    /// added to the service (currently AuthService has no anonymous path).
-    /// The raw `Auth.auth().signInAnonymously()` call here is intentional and
-    /// safe — the `AuthService` listener handles the rest exactly as it does
-    /// for any other provider.
+    /// Offline is the one dented-offline-first case: minting the anonymous uid
+    /// needs a single network round-trip, so we surface honest copy rather than a
+    /// silent broken state (after the first connect the session persists locally).
     private func signInAnonymously() async {
+        guard let authService else { return }
         isSubmitting = true
         errorMessage = nil
         defer { isSubmitting = false }
 
         do {
-            try await Auth.auth().signInAnonymously()
-            // Auth state listener in AuthService bootstraps the user row.
+            try await authService.signInAnonymously()
             // Advance to notif-priming (not straight to onDone).
             advanceToNotif()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.isOfflineError(error)
+                ? "You're offline. Connect once to start as a guest — then the app works offline."
+                : error.localizedDescription
         }
+    }
+
+    /// Whether an error is a "no network" failure (the guest first-launch case).
+    private static func isOfflineError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.code == AuthErrorCode.networkError.rawValue { return true }
+        if ns.domain == NSURLErrorDomain,
+           ns.code == NSURLErrorNotConnectedToInternet || ns.code == NSURLErrorNetworkConnectionLost
+               || ns.code == NSURLErrorTimedOut {
+            return true
+        }
+        return false
     }
 
     private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) async {
@@ -510,34 +521,10 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Nonce helpers (Apple Sign-In)
-
-    /// Generates a cryptographically random nonce string of the given byte length.
-    ///
-    /// - Parameter length: Number of random bytes (default 32).
-    /// - Returns: A URL-safe Base64-encoded nonce string.
-    private func randomNonceString(length: Int = 32) -> String {
-        var randomBytes = [UInt8](repeating: 0, count: length)
-        let errorCode = SecRandomCopyBytes(kSecRandomDefault, length, &randomBytes)
-        guard errorCode == errSecSuccess else {
-            return UUID().uuidString + UUID().uuidString
-        }
-        return Data(randomBytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Returns the SHA-256 hash of the given string as a lowercase hex string.
-    ///
-    /// - Parameter input: The raw nonce string.
-    /// - Returns: The SHA-256 hex digest.
-    private func sha256(_ input: String) -> String {
-        let inputData = Data(input.utf8)
-        let hashedData = SHA256.hash(data: inputData)
-        return hashedData.compactMap { String(format: "%02x", $0) }.joined()
-    }
+    // Apple Sign-In nonce helpers live in `Services/AppleNonce.swift`
+    // (`AppleAuthNonce.randomNonceString` / `.sha256`), shared with LoginView
+    // and AccountSecurity — no local reimplementation here (deduped in the
+    // guest-mode pass).
 }
 
 // MARK: - Slide model
