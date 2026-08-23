@@ -125,6 +125,29 @@
   color: var(--riso-muted);
   margin-top: 16px;
 }
+/* Guest-entry tertiary link on the hero (docs/GUEST_MODE.md) — opens the
+   same modal, which owns the canonical "Continue without an account" action. */
+.soGuestHomeLink {
+  display: block;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-top: 10px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--riso-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.soGuestHomeLink:hover {
+  color: var(--riso-ink);
+}
+.soGuestHomeLink:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 
 /* ---- poster board art (hero + modal) ---- */
 .soPosterWrap {
@@ -626,6 +649,22 @@
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+/* Guest entry (docs/GUEST_MODE.md) — tertiary, sits below the sign-in/up
+   footer so it reads as the least-committal option on the card. */
+.soGuestRow {
+  margin-top: 14px;
+}
+
+/* Confirm-step actions (UpgradeModal collision step) — side-by-side, equal
+   width, reusing the auth card's spacing rhythm. */
+.soConfirmActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.soConfirmActions > * {
+  flex: 1;
 }
 .soAuthX {
   position: absolute;

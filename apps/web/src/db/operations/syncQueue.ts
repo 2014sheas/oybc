@@ -311,6 +311,17 @@ export async function clearCompletedSyncItems(): Promise<void> {
 }
 
 /**
+ * Clear the entire sync queue. Used after a guest→account collision "switch"
+ * (docs/GUEST_MODE.md §Upgrade): once the user has signed into the pre-existing
+ * account, the discarded guest's anon-stamped PENDING pushes must not fire under
+ * the new uid (they'd fail the Firestore owner check and surface as "changes
+ * couldn't sync"). Mirrors iOS `AuthService.clearPendingSyncQueue`.
+ */
+export async function clearSyncQueue(): Promise<void> {
+  await db.syncQueue.clear();
+}
+
+/**
  * Promote FAILED sync queue items back to PENDING when their backoff
  * window has elapsed and they're under the retry cap.
  *

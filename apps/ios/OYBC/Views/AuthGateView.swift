@@ -1,5 +1,6 @@
 import SwiftUI
 import AuthenticationServices
+import FirebaseAuth
 
 /// AuthGateView - Wraps any content behind authentication
 ///
@@ -172,6 +173,18 @@ private struct LoginView: View {
         VStack(spacing: 12) {
             googleSignInButton
             appleSignInButton
+
+            // Continue as guest — Firebase anonymous session (docs/GUEST_MODE.md).
+            // Keeps guest mode reachable after first-run onboarding / after a
+            // sign-out, mirroring web's always-available "Continue without an
+            // account". Upgradeable later via Profile → Save your account.
+            SwiftUI.Button("Continue as guest") {
+                _Concurrency.Task { await signInAsGuest() }
+            }
+            .font(.risoBody(14, .semibold))
+            .foregroundStyle(Color.risoMuted)
+            .disabled(isSubmitting)
+            .padding(.top, 4)
         }
     }
 
@@ -255,6 +268,27 @@ private struct LoginView: View {
             try await authService.signInWithGoogle(presenting: rootVC)
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Guest sign-in (Firebase anonymous, docs/GUEST_MODE.md). Offline is the one
+    /// dented-offline-first case — minting the anon uid needs one network round-trip
+    /// — so show honest copy instead of a raw error.
+    private func signInAsGuest() async {
+        isSubmitting = true
+        errorMessage = nil
+        defer { isSubmitting = false }
+
+        do {
+            try await authService.signInAnonymously()
+        } catch {
+            let ns = error as NSError
+            let offline = ns.code == AuthErrorCode.networkError.rawValue
+                || (ns.domain == NSURLErrorDomain
+                    && [NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost, NSURLErrorTimedOut].contains(ns.code))
+            errorMessage = offline
+                ? "You're offline. Connect once to start as a guest — then the app works offline."
+                : error.localizedDescription
         }
     }
 

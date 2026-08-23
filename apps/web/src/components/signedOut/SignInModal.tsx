@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../firebase/useAuth';
+import { isOfflineError } from '../../firebase/authService';
 import { RisoButton } from '../riso';
 import { ModalArt } from './SignedOutArt';
 import styles from './SignedOut.module.css';
+
+/** Honest copy for the one offline-first exception (docs/GUEST_MODE.md):
+ *  minting the anonymous uid needs one network round-trip. */
+const GUEST_OFFLINE_MESSAGE =
+  'You’re offline. Connect once to start as a guest — then it works offline.';
 
 export type AuthMode = 'signin' | 'signup';
 
@@ -26,7 +32,7 @@ export interface SignInModalProps {
  * prototype's stub auth).
  */
 export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): React.ReactElement {
-  const { signIn, signUp, signInWithGoogle, signInWithApple } = useAuth();
+  const { signIn, signUp, signInWithGoogle, signInWithApple, signInAnonymously } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -54,8 +60,17 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
     };
   }, []);
 
-  /** Run an auth action with shared busy/error handling. */
-  async function run(action: () => Promise<unknown>, fallback: string): Promise<void> {
+  /**
+   * Run an auth action with shared busy/error handling. `mapError` lets a
+   * caller override the fallback message for a specific error (e.g. the
+   * guest button's offline copy) — return null to fall through to the
+   * default `err.message`/`fallback` handling.
+   */
+  async function run(
+    action: () => Promise<unknown>,
+    fallback: string,
+    mapError?: (err: unknown) => string | null
+  ): Promise<void> {
     if (busy) return;
     setError(null);
     setBusy(true);
@@ -63,7 +78,8 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
       await action();
       // On success the gate unmounts us; no further state work needed.
     } catch (err) {
-      setError(err instanceof Error ? err.message : fallback);
+      const mapped = mapError?.(err) ?? null;
+      setError(mapped ?? (err instanceof Error ? err.message : fallback));
     } finally {
       setBusy(false);
     }
@@ -171,6 +187,23 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
           <button type="button" onClick={() => onSwitchMode(isUp ? 'signin' : 'signup')}>
             {isUp ? 'Sign in' : 'Get started'}
           </button>
+        </div>
+
+        <div className={styles.soGuestRow}>
+          <RisoButton
+            kind="ghost"
+            fullWidth
+            disabled={busy}
+            onClick={() =>
+              void run(
+                signInAnonymously,
+                'Could not continue as a guest',
+                (err) => (isOfflineError(err) ? GUEST_OFFLINE_MESSAGE : null)
+              )
+            }
+          >
+            Continue without an account
+          </RisoButton>
         </div>
       </div>
     </div>

@@ -75,6 +75,52 @@ export function isRecentLoginRequired(error: unknown): boolean {
   return (error as AuthError | undefined)?.code === 'auth/requires-recent-login';
 }
 
+/**
+ * True when a `link*` call failed because the credential/email already
+ * belongs to a DIFFERENT account — the guest-upgrade collision edge
+ * (docs/GUEST_MODE.md §Upgrade). The caller's recovery path is "discard the
+ * anonymous user, then sign into the existing identity" (see `deleteAccount`
+ * + the normal `signIn*` functions), never a merge.
+ */
+export function isCredentialCollision(error: unknown): boolean {
+  const code = (error as AuthError | undefined)?.code;
+  return code === 'auth/credential-already-in-use' || code === 'auth/email-already-in-use';
+}
+
+/**
+ * Map a Firebase/Error to a user-facing string (never a raw provider code).
+ * Shared by `AccountSecurityPage` and the guest-upgrade `UpgradeModal` — both
+ * hit the same link/reauth/collision error surface.
+ */
+export function friendlyError(err: unknown): string {
+  if (isRecentLoginRequired(err)) {
+    return 'For your security, the current password didn’t match or your session is stale. Re-enter it and try again.';
+  }
+  // Connected-accounts (5b-ii) case.
+  if ((err as { message?: string } | undefined)?.message === LAST_PROVIDER_ERROR) {
+    return 'You can’t disconnect your only sign-in method — add another first.';
+  }
+  const code = (err as { code?: string } | undefined)?.code;
+  if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+    return 'That current password is incorrect.';
+  }
+  if (code === 'auth/weak-password') return 'Pick a stronger password (at least 6 characters).';
+  if (code === 'auth/email-already-in-use') return 'That email is already in use by another account.';
+  if (code === 'auth/invalid-email') return 'That email address looks invalid.';
+  if (code === 'auth/credential-already-in-use' || code === 'auth/account-exists-with-different-credential') {
+    return 'That account is already linked to a different On Your Bingo Card account.';
+  }
+  // Popup dismissed/cancelled — benign; don't alarm the user.
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return 'Connection cancelled.';
+  }
+  // Popup blocked — retrying won't help; the user must allow popups.
+  if (code === 'auth/popup-blocked') {
+    return 'Your browser blocked the sign-in popup — allow popups for this site, then try again.';
+  }
+  return 'Something went wrong. Please try again.';
+}
+
 // ─── Reauthentication ───────────────────────────────────────────────────────
 
 /** Reauthenticate a password user (refreshes login recency). */

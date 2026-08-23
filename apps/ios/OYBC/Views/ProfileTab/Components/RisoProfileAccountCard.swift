@@ -8,9 +8,16 @@ import SwiftUI
 /// This is a pure presentational view — it takes props and calls back.
 /// The name-edit alert is hosted in the caller (ProfileView) so the
 /// alert state doesn't need to live inside this component.
+///
+/// **Guest mode** (docs/GUEST_MODE.md §Phase 3): a Firebase anonymous session
+/// has no email. When `isGuest` is true, "Guest" renders where the email
+/// would go, regardless of what's passed for `email` (an anon `User.email`
+/// is always `""`, never a real address). Name edit stays available — it
+/// works the same for a guest's local row.
 struct RisoProfileAccountCard: View {
     let displayName: String
     let email: String?
+    var isGuest: Bool = false
     let onEditName: () -> Void
 
     var body: some View {
@@ -39,7 +46,10 @@ struct RisoProfileAccountCard: View {
                 }
                 .buttonStyle(.plain)
 
-                if let email {
+                if isGuest {
+                    Text("Guest")
+                        .risoSub()
+                } else if let email {
                     Text(email)
                         .risoSub()
                         .lineLimit(1)
@@ -61,6 +71,19 @@ struct RisoProfileAccountCard: View {
         RisoProfileAccountCard(
             displayName: "OYBC User",
             email: "you@example.com",
+            onEditName: {}
+        )
+        .padding(20)
+    }
+}
+
+#Preview("Guest") {
+    ZStack {
+        RisoPaperBackground()
+        RisoProfileAccountCard(
+            displayName: "OYBC User",
+            email: nil,
+            isGuest: true,
             onEditName: {}
         )
         .padding(20)

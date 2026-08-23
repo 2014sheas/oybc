@@ -29,6 +29,14 @@ final class AuthService: ObservableObject {
     /// (change email/password gated on `hasPassword`, unlink gated on count).
     @Published var providerState: ProviderState = .none
 
+    /// True when the current session is a Firebase anonymous (guest) user
+    /// (docs/GUEST_MODE.md). Session-derived from `firebaseUser.isAnonymous`,
+    /// never persisted on the local `User`. Drives the guest treatment of the
+    /// Profile/sync UI and the "Save your account" upgrade affordance. Flips to
+    /// false after a successful upgrade `link*` (recomputed in
+    /// `refreshProviderState()`, since linking fires no auth-state event).
+    @Published var isAnonymous: Bool = false
+
     // MARK: - Private
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
@@ -80,6 +88,7 @@ final class AuthService: ObservableObject {
                     let user = await self.upsertLocalUser(firebaseUser)
                     await MainActor.run {
                         self.currentUser = user
+                        self.isAnonymous = firebaseUser.isAnonymous
                         self.startUserRowObservation(userId: user.id)
                         self.syncService.start(userId: user.id)
                     }
@@ -87,6 +96,7 @@ final class AuthService: ObservableObject {
                 } else {
                     await MainActor.run {
                         self.currentUser = nil
+                        self.isAnonymous = false
                         self.stopUserRowObservation()
                         self.syncService.stop()
                         self.notificationService.clearAll()
@@ -219,6 +229,30 @@ final class AuthService: ObservableObject {
         let result = try await Auth.auth().signIn(withEmail: email, password: password)
         let user = await upsertLocalUser(result.user)
         currentUser = user
+        return user
+    }
+
+    // MARK: - Guest (anonymous)
+
+    /// Signs in as a guest via Firebase anonymous auth (docs/GUEST_MODE.md).
+    ///
+    /// Mints a real (hidden) anonymous uid so the whole `userId`-keyed app works
+    /// unchanged and sync runs to the anon-owned tree; upgrading later = linking a
+    /// provider, which preserves this uid (no data re-keying). The auth-state
+    /// listener also fires and bootstraps observation/sync, but we set
+    /// `currentUser`/`isAnonymous` here too so the caller's `await` reflects the
+    /// signed-in state immediately. Requires one network round-trip to mint the
+    /// account (the single offline-first exception); the session then persists.
+    ///
+    /// - Returns: The guest local `User`.
+    /// - Throws: A Firebase `AuthError` (e.g. `operation-not-allowed` if the
+    ///   Anonymous provider isn't enabled, `network-request-failed` if offline).
+    @discardableResult
+    func signInAnonymously() async throws -> User {
+        let result = try await Auth.auth().signInAnonymously()
+        let user = await upsertLocalUser(result.user)
+        currentUser = user
+        isAnonymous = result.user.isAnonymous
         return user
     }
 
@@ -357,6 +391,9 @@ final class AuthService: ObservableObject {
     func refreshProviderState() async {
         try? await Auth.auth().currentUser?.reload()
         providerState = Self.computeProviderState(Auth.auth().currentUser)
+        // Linking a provider to an anonymous user flips `isAnonymous` to false
+        // without firing the auth-state listener, so recompute it here too.
+        isAnonymous = Auth.auth().currentUser?.isAnonymous ?? false
     }
 
     /// Derives a `ProviderState` from a Firebase user's linked providers.
@@ -376,6 +413,29 @@ final class AuthService: ObservableObject {
         let nsError = error as NSError
         return nsError.domain == AuthErrorDomain
             && nsError.code == AuthErrorCode.requiresRecentLogin.rawValue
+    }
+
+    /// True when an error is a user-initiated cancellation of a provider
+    /// sign-in flow (Apple or Google) — callers should swallow these silently
+    /// rather than surface them as errors. Shared by Account & security
+    /// (link/reauth) and the guest upgrade sheet (docs/GUEST_MODE.md).
+    static func isAuthCancellation(_ error: Error) -> Bool {
+        if let asError = error as? ASAuthorizationError, asError.code == .canceled { return true }
+        if let gid = error as? GIDSignInError, gid.code == .canceled { return true }
+        return false
+    }
+
+    /// True for Firebase's `credentialAlreadyInUse` (OAuth) / `emailAlreadyInUse`
+    /// (password) — the chosen identity already belongs to a *different*
+    /// Firebase account than the one being linked onto. This is the guest
+    /// upgrade collision edge (docs/GUEST_MODE.md §Upgrade): merging two
+    /// Firestore trees is out of scope, so the caller offers to discard the
+    /// guest's local data and sign into the existing account instead.
+    static func isCredentialCollision(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == AuthErrorDomain else { return false }
+        return nsError.code == AuthErrorCode.credentialAlreadyInUse.rawValue
+            || nsError.code == AuthErrorCode.emailAlreadyInUse.rawValue
     }
 
     // MARK: - Account & Security: reauthentication
@@ -483,6 +543,14 @@ final class AuthService: ObservableObject {
             }
             throw error
         }
+        // A guest→account upgrade mutates `currentUser` in place and fires NO
+        // auth-state event, so re-run the local upsert to populate email/
+        // displayName from the now-permanent user (docs/GUEST_MODE.md §Upgrade).
+        // Harmless for the Account & security link paths (name/email unchanged).
+        if let refreshed = Auth.auth().currentUser {
+            let updated = await upsertLocalUser(refreshed)
+            currentUser = updated
+        }
         await refreshProviderState()
     }
 
@@ -528,14 +596,36 @@ final class AuthService: ObservableObject {
         providerState = .none
     }
 
+    /// Clears the local sync queue WITHOUT signing out — used after a guest→account
+    /// collision "switch" (docs/GUEST_MODE.md §Upgrade). Once the user has signed
+    /// into the pre-existing account, the discarded guest's anon-stamped PENDING
+    /// pushes must not fire under the new uid (they'd fail the Firestore owner
+    /// check and surface as "changes couldn't sync"). Best-effort; non-fatal.
+    func clearPendingSyncQueue() {
+        do {
+            try AppDatabase.shared.write { db in
+                try db.execute(sql: "DELETE FROM sync_queue")
+            }
+        } catch {
+            dlog("⚠️ AuthService.clearPendingSyncQueue failed: \(error)")
+        }
+    }
+
     /// Deletes every row across the local tables (preserving `schema_version` so
     /// the migrator stays intact). Row-deletes, not file deletion: the
     /// `AppDatabase` singleton has no reopen path and `fatalError`s on init.
     private func wipeLocalDatabase() {
+        // Every user-scoped / synced table. Kept in lockstep with the schema
+        // (migrations vN) — web wipes generically via `db.tables.map(clear)`, so
+        // any table added here must land on both platforms. `task_events`
+        // (windowed completion / streak history), `pools`, and
+        // `core_board_defaults` were missing pre-guest-mode; the guest "Discard
+        // guest data" copy promises full erasure, so they must be cleared too.
         let tables = [
             "users", "boards", "tasks", "board_tasks",
             "sync_queue", "compound_children",
-            "recurring_board_templates", "default_pools"
+            "recurring_board_templates", "default_pools",
+            "task_events", "pools", "core_board_defaults"
         ]
         do {
             try AppDatabase.shared.write { db in

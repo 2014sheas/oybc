@@ -29,14 +29,25 @@ struct SyncSheetContainer: View {
 
     var onClose: () -> Void = {}
 
+    /// Whether the guest→account upgrade sheet is presented (docs/GUEST_MODE.md
+    /// §Phase 3). Presented on top of this sheet rather than swapping content,
+    /// so "Sign in to sync" reuses the same `UpgradeAccountSheet` the Profile
+    /// "Save your account" CTA opens.
+    @State private var showUpgradeSheet = false
+
     var body: some View {
         SyncSheet(
             state: derivedState,
             exhaustedCount: syncService.exhaustedCount,
+            isGuest: authService.isAnonymous,
             onTryAgain: handleTryAgain,
             onRetryExhausted: handleRetryExhausted,
+            onSignIn: { showUpgradeSheet = true },
             onClose: onClose
         )
+        .sheet(isPresented: $showUpgradeSheet) {
+            UpgradeAccountSheet()
+        }
     }
 
     // MARK: - State derivation
@@ -91,8 +102,16 @@ struct SyncSheet: View {
     /// nothing new — existing snapshots are unaffected. When `> 0` an
     /// exhausted-item recovery block appears with a plain count + Retry button.
     var exhaustedCount: Int = 0
+    /// Guest (Firebase anonymous) session (docs/GUEST_MODE.md §Phase 3). When
+    /// true, the state block always shows the guest-specific "backed up on
+    /// this device, not across devices" copy + a "Sign in to sync" CTA —
+    /// independent of `state`, since sync genuinely does run for a guest and
+    /// showing "Offline"/"Sync failed" copy would be misleading about the one
+    /// thing actually missing (cross-device reach).
+    var isGuest: Bool = false
     var onTryAgain: () -> Void = {}
     var onRetryExhausted: () -> Void = {}
+    var onSignIn: () -> Void = {}
     var onClose: () -> Void = {}
 
     var body: some View {
@@ -115,12 +134,21 @@ struct SyncSheet: View {
                 .padding(.bottom, 24)
 
                 // State block
-                stateBlock
+                (isGuest ? AnyView(guestStateBlock) : AnyView(stateBlock))
                     .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, stateNeedsTryAgain ? 12 : 24)
+                    .padding(.bottom, (isGuest || stateNeedsTryAgain) ? 12 : 24)
 
-                // "Try again" button — only for offline/error
-                if stateNeedsTryAgain {
+                // "Sign in to sync" CTA — guest only.
+                if isGuest {
+                    RisoButton(title: "Sign in to sync across devices", kind: .primary, fullWidth: true) {
+                        onSignIn()
+                    }
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 24)
+                }
+
+                // "Try again" button — only for offline/error, never for a guest.
+                if !isGuest && stateNeedsTryAgain {
                     RisoButton(title: "Try again", kind: .neutral, fullWidth: true) {
                         onTryAgain()
                     }
@@ -132,7 +160,7 @@ struct SyncSheet: View {
                 // the retry cap. Independent of the connectivity state above:
                 // an item can be exhausted while the sheet reads "All synced".
                 // Plain count only — never a raw error (the #151 discipline).
-                if exhaustedCount > 0 {
+                if !isGuest && exhaustedCount > 0 {
                     exhaustedBlock
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 24)
@@ -191,6 +219,46 @@ struct SyncSheet: View {
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(stateTitle). \(stateSubtitle)")
+    }
+
+    // MARK: - Guest state block
+
+    /// The guest-only state block (docs/GUEST_MODE.md §Phase 3): same visual
+    /// shape as `stateBlock`, but a fixed message independent of `state` —
+    /// sync runs for a guest, it just doesn't reach another device yet.
+    private var guestStateBlock: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Image(systemName: "person.crop.circle.badge.questionmark")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Color.risoInk)
+                .frame(width: 52, height: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .fill(Color.risoGold.opacity(0.25))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Backed up on this device")
+                    .font(.risoHead(17, .extraBold))
+                    .tracking(-0.34)
+                    .foregroundStyle(Color.risoInk)
+                Text("Sign in to sync across your other devices too.")
+                    .font(.risoBody(13, .regular))
+                    .foregroundStyle(Color.risoMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(Riso.cardPadding)
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Backed up on this device. Sign in to sync across your other devices too.")
     }
 
     // MARK: - Exhausted-item recovery block
@@ -343,6 +411,11 @@ struct SyncSheet: View {
 
 #Preview("Error") {
     SyncSheet(state: .error)
+        .presentationDetents([.medium])
+}
+
+#Preview("Guest") {
+    SyncSheet(state: .synced(lastSyncedAt: Date().addingTimeInterval(-300)), isGuest: true)
         .presentationDetents([.medium])
 }
 #endif

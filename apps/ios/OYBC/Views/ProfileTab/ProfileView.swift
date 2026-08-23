@@ -34,6 +34,14 @@ struct ProfileView: View {
     /// Whether the Sync detail sheet is presented.
     @State private var showSyncSheet = false
 
+    // MARK: - Guest mode state (docs/GUEST_MODE.md §Phase 3/5)
+
+    /// Whether the guest→account upgrade sheet is presented.
+    @State private var showUpgradeSheet = false
+    @State private var showDiscardConfirm = false
+    @State private var discardError: String?
+    @State private var isDiscarding = false
+
     /// Async-loaded per-timeframe bingo + greenlog streaks for the "Your
     /// streaks" card. Empty until `loadCounts()` computes it.
     @State private var streaks: [Timeframe: StreakPair] = [:]
@@ -46,9 +54,15 @@ struct ProfileView: View {
         authService.currentUser?.displayName ?? "OYBC User"
     }
 
+    /// `nil` for both a signed-out edge case and a guest session — a Firebase
+    /// anonymous user's local `User.email` is always `""`, never a real
+    /// address (docs/GUEST_MODE.md §Phase 3: "empty string must render Guest").
     private var email: String? {
-        authService.currentUser?.email
+        guard let raw = authService.currentUser?.email, !raw.isEmpty else { return nil }
+        return raw
     }
+
+    private var isGuest: Bool { authService.isAnonymous }
 
     // MARK: - Body
 
@@ -67,6 +81,7 @@ struct ProfileView: View {
                     RisoProfileAccountCard(
                         displayName: displayName,
                         email: email,
+                        isGuest: isGuest,
                         onEditName: { showEditProfile = true }
                     )
                     .padding(.horizontal, Riso.gutter)
@@ -93,10 +108,23 @@ struct ProfileView: View {
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 18)
 
-                    // Sign Out card
-                    signOutCard
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 14)
+                    // Guest mode (docs/GUEST_MODE.md §Phase 3/5): "Save your account"
+                    // + "Discard guest data" replace the Sign Out card entirely — a
+                    // guest never gets a plain, reversible-looking sign-out (it would
+                    // orphan the anon tree with no way back in).
+                    if isGuest {
+                        guestUpgradeCard
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.bottom, 12)
+
+                        discardGuestDataCard
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.bottom, 14)
+                    } else {
+                        signOutCard
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.bottom, 14)
+                    }
 
                     // Version footer
                     versionFooter
@@ -145,6 +173,11 @@ struct ProfileView: View {
             SyncSheetContainer(onClose: { showSyncSheet = false })
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+        // Guest→account upgrade sheet (docs/GUEST_MODE.md §Phase 4) — opened
+        // from the "Save your account" CTA below.
+        .sheet(isPresented: $showUpgradeSheet) {
+            UpgradeAccountSheet()
         }
     }
 
@@ -240,20 +273,24 @@ struct ProfileView: View {
             }
             .buttonStyle(.plain)
 
-            rowDivider
-
             // Account & security — change email/password, linked providers,
-            // delete account (handoff §5c).
-            NavigationLink {
-                AccountSecurityView()
-            } label: {
-                RisoProfileRow(
-                    icon: "lock.shield",
-                    label: "Account & security",
-                    chevron: true
-                )
+            // delete account (handoff §5c). Hidden for a guest (docs/GUEST_MODE.md
+            // §Phase 3): there's no email/password/linked-provider identity to
+            // manage yet — that's exactly what "Save your account" below sets up.
+            if !isGuest {
+                rowDivider
+
+                NavigationLink {
+                    AccountSecurityView()
+                } label: {
+                    RisoProfileRow(
+                        icon: "lock.shield",
+                        label: "Account & security",
+                        chevron: true
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             rowDivider
 
@@ -360,6 +397,122 @@ struct ProfileView: View {
                 .buttonStyle(.plain)
                 .risoCard()
                 .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+            }
+        }
+    }
+
+    // MARK: - Guest mode cards (docs/GUEST_MODE.md §Phase 3/5)
+
+    /// Primary CTA replacing the hidden "Account & security" row + the Sign
+    /// Out card for a guest — the single most important thing a guest can do.
+    private var guestUpgradeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("You're using OYBC as a guest. Save your account so your boards, tasks, and streaks are backed up and available on your other devices.")
+                .font(.risoBody(12, .regular))
+                .foregroundStyle(Color.risoMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            RisoButton(title: "Save your account", kind: .primary, fullWidth: true, large: true) {
+                showUpgradeSheet = true
+            }
+        }
+        .padding(Riso.cardPadding)
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+    }
+
+    /// A guest's replacement for "Sign Out": since a plain sign-out would
+    /// orphan the anonymous Firebase tree with no way back in, the only
+    /// available exit is a destructive, explicitly-irreversible discard —
+    /// routed through `deleteAccount()` (not `signOut()`). This doubles as
+    /// the guest's App Store 5.1.1(v) in-app deletion affordance, since the
+    /// "Account & security" delete flow is hidden for guests.
+    private var discardGuestDataCard: some View {
+        Group {
+            if showDiscardConfirm {
+                // Same inline dashed-red confirm shape as the Sign Out card.
+                VStack(spacing: 12) {
+                    Text("Discard guest data?")
+                        .font(.risoBody(14, .bold))
+                        .foregroundStyle(Color.risoRed)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 14)
+
+                    Text("This permanently erases every board, task, and streak on this device. It can't be undone.")
+                        .font(.risoBody(12, .regular))
+                        .foregroundStyle(Color.risoMuted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let discardError {
+                        Text(discardError)
+                            .font(.risoBody(11, .regular))
+                            .foregroundStyle(Color.risoRed)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    HStack(spacing: 10) {
+                        RisoButton(title: "Cancel", kind: .neutral, fullWidth: true) {
+                            showDiscardConfirm = false
+                            discardError = nil
+                        }
+                        RisoButton(
+                            title: isDiscarding ? "Discarding…" : "Discard",
+                            kind: .primary,
+                            fullWidth: true
+                        ) {
+                            discardGuestData()
+                        }
+                        .disabled(isDiscarding)
+                        .opacity(isDiscarding ? 0.6 : 1)
+                    }
+                    .padding(.bottom, 14)
+                }
+                .padding(.horizontal, Riso.cardPadding)
+                .background(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .fill(Color.risoPaper2)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Riso.cardRadius)
+                        .strokeBorder(
+                            Color.risoRed.opacity(0.6),
+                            style: StrokeStyle(lineWidth: 2, dash: [6, 4])
+                        )
+                )
+                .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+            } else {
+                Button {
+                    discardError = nil
+                    showDiscardConfirm = true
+                } label: {
+                    RisoProfileRow(
+                        icon: "trash",
+                        label: "Discard guest data",
+                        danger: true
+                    )
+                }
+                .buttonStyle(.plain)
+                .risoCard()
+                .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+            }
+        }
+    }
+
+    /// Runs the discard: `deleteAccount()` deletes the Auth user (firing the
+    /// server-side `onUserDeleted` purge) and wipes local GRDB. On success
+    /// `authService.currentUser` becomes nil, so `AuthGateView` swaps back to
+    /// `LoginView` on its own — no local dismiss/navigation needed here.
+    private func discardGuestData() {
+        isDiscarding = true
+        discardError = nil
+        _Concurrency.Task {
+            defer { isDiscarding = false }
+            do {
+                try await authService.deleteAccount()
+            } catch {
+                discardError = error.localizedDescription
             }
         }
     }

@@ -124,6 +124,9 @@ export function SignedOutHome(): React.ReactElement {
             </RisoButton>
           </div>
           <div className={styles.soCtaNote}>Free to start · syncs across your devices</div>
+          <button type="button" className={styles.soGuestHomeLink} onClick={() => setAuthMode('signup')}>
+            Or continue without an account
+          </button>
         </div>
         <div className={styles.soPosterWrap}>
           <HeroBoard />

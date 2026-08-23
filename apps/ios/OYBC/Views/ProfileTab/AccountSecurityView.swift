@@ -226,7 +226,7 @@ struct AccountSecurityView: View {
                 try await op()
                 statusMessage = success.isEmpty ? nil : success
             } catch {
-                if isAuthCancellation(error) {
+                if AuthService.isAuthCancellation(error) {
                     // User backed out — no error.
                 } else if AuthService.isRecentLoginRequired(error) {
                     pendingRetry = op
@@ -674,21 +674,11 @@ private struct ReauthSheet: View {
                 onSuccess()
                 return
             } catch {
-                if !isAuthCancellation(error) {
+                if !AuthService.isAuthCancellation(error) {
                     self.error = error.localizedDescription
                 }
             }
             busy = false
         }
     }
-}
-
-// MARK: - Cancellation helper
-
-/// True when an error is a user-initiated cancellation of a provider flow
-/// (Apple or Google) — these should be swallowed silently, not shown as errors.
-private func isAuthCancellation(_ error: Error) -> Bool {
-    if let asError = error as? ASAuthorizationError, asError.code == .canceled { return true }
-    if let gid = error as? GIDSignInError, gid.code == .canceled { return true }
-    return false
 }

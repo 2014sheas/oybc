@@ -2,6 +2,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInAnonymously as firebaseSignInAnonymously,
   signOut as firebaseSignOut,
   onAuthStateChanged as firebaseOnAuthStateChanged,
   updateProfile,
@@ -108,6 +109,48 @@ export async function signInWithApple(): Promise<User> {
 }
 
 /**
+ * Sign in as a guest via Firebase anonymous auth (docs/GUEST_MODE.md).
+ *
+ * Mints a real (hidden) anonymous uid so the whole `userId`-keyed app works
+ * unchanged and sync runs to the anon-owned tree. Upgrading later = linking a
+ * provider, which preserves this uid (no data re-keying). Requires one network
+ * round-trip to mint the account; after that the session persists locally and
+ * the app is fully offline-first. The anon row has `email: ''` / no displayName.
+ *
+ * @returns The local User record
+ */
+export async function signInAnonymously(): Promise<User> {
+  const credential = await firebaseSignInAnonymously(auth);
+  return upsertLocalUser(credential.user);
+}
+
+/**
+ * True when an auth error is Firebase's network-request-failed — the one
+ * dented offline-first promise of guest mode (docs/GUEST_MODE.md §The one
+ * offline-first exception). Minting the anonymous uid needs one network
+ * round-trip; callers use this to show honest "you're offline" copy instead
+ * of a generic error or a silent half-created guest.
+ */
+export function isOfflineError(error: unknown): boolean {
+  return (error as { code?: string } | undefined)?.code === 'auth/network-request-failed';
+}
+
+/**
+ * Re-run the local-user upsert from the current Firebase user (docs/GUEST_MODE.md
+ * §Upgrade). Account linking (`link*`) mutates `auth.currentUser` in place and
+ * does NOT fire `onAuthStateChanged`, so after a guest→account upgrade the local
+ * row would keep `email: ''` / no name unless we reconcile explicitly. Callers
+ * invoke this immediately after a successful link. No-op if signed out.
+ *
+ * @returns The refreshed local User record, or null if no current Firebase user.
+ */
+export async function refreshLocalUserFromFirebase(): Promise<User | null> {
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) return null;
+  return upsertLocalUser(firebaseUser);
+}
+
+/**
  * Sign out the current user.
  *
  * Clears the sync queue to prevent cross-user data leakage if another
@@ -151,23 +194,28 @@ export async function signOut(): Promise<void> {
  * Fires immediately with the current state, then on every sign-in/sign-out.
  * When a user is present, their local record is upserted.
  *
- * @param callback - Called with the local User or null
+ * The second callback arg is the Firebase session's `isAnonymous` (guest mode,
+ * docs/GUEST_MODE.md) — session-derived, never persisted to the shared User type.
+ * Note: account linking does NOT fire this listener, so consumers must also flip
+ * their guest state after an upgrade (see `refreshLocalUserFromFirebase`).
+ *
+ * @param callback - Called with the local User (or null) and the anon flag
  * @returns Unsubscribe function
  */
 export function onAuthStateChanged(
-  callback: (user: User | null) => void,
+  callback: (user: User | null, isAnonymous: boolean) => void,
 ): Unsubscribe {
   return firebaseOnAuthStateChanged(auth, async (firebaseUser) => {
     try {
       if (firebaseUser) {
         const user = await upsertLocalUser(firebaseUser);
-        callback(user);
+        callback(user, firebaseUser.isAnonymous);
       } else {
-        callback(null);
+        callback(null, false);
       }
     } catch (err) {
       console.error('Auth state change handler failed:', err);
-      callback(null);
+      callback(null, false);
     }
   });
 }

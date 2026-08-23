@@ -5,9 +5,12 @@ import {
   signIn as authSignIn,
   signInWithGoogle as authSignInWithGoogle,
   signInWithApple as authSignInWithApple,
+  signInAnonymously as authSignInAnonymously,
   signOut as authSignOut,
+  refreshLocalUserFromFirebase,
   onAuthStateChanged,
 } from './authService';
+import { auth } from './config';
 import { AuthContext, type AuthContextValue } from './authContextValue';
 import { db } from '../db/internal';
 
@@ -111,6 +114,7 @@ async function ensureBypassUserRow(): Promise<User> {
 export function AuthProvider({ children }: { children: ReactNode }): React.ReactElement {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAnonymous, setIsAnonymous] = useState(false);
 
   useEffect(() => {
     if (isTestBypassActive()) {
@@ -123,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
           const bypassUser = await ensureBypassUserRow();
           if (cancelled) return;
           setUser(bypassUser);
+          setIsAnonymous(false);
           setIsLoading(false);
         } catch (err) {
           // Surface the failure rather than hanging in isLoading=true.
@@ -137,20 +142,33 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
       };
     }
 
-    const unsubscribe = onAuthStateChanged((authUser) => {
+    const unsubscribe = onAuthStateChanged((authUser, anon) => {
       setUser(authUser);
+      setIsAnonymous(anon);
       setIsLoading(false);
     });
     return unsubscribe;
   }, []);
 
+  // Reconcile after a guest→account upgrade: linking mutates auth.currentUser
+  // in place without firing onAuthStateChanged, so refresh the local row and
+  // clear the anon flag explicitly (docs/GUEST_MODE.md §Upgrade).
+  const refreshAfterUpgrade = async (): Promise<void> => {
+    const refreshed = await refreshLocalUserFromFirebase();
+    if (refreshed) setUser(refreshed);
+    setIsAnonymous(auth.currentUser?.isAnonymous ?? false);
+  };
+
   const value: AuthContextValue = {
     user,
     isLoading,
+    isAnonymous,
     signUp: authSignUp,
     signIn: authSignIn,
     signInWithGoogle: authSignInWithGoogle,
     signInWithApple: authSignInWithApple,
+    signInAnonymously: authSignInAnonymously,
+    refreshAfterUpgrade,
     signOut: authSignOut,
   };
 
