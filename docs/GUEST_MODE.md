@@ -80,11 +80,18 @@ place and does **not** fire `onAuthStateChanged`, so the local `User` row would 
 
 **Collision (`credential-already-in-use` / `email-already-in-use`):** if the guest
 links to an identity that already owns an account, the link fails. Merging two
-Firestore trees is out of scope; the chosen policy is **discard**: prompt "That
-account already exists. Sign into it instead? Your guest boards on this device will
-be discarded." On confirm, `deleteAccount()` the anonymous user **first** (purges
-the near-empty anon tree + wipes local DB — this also prevents orphan-account
-accrual), then sign into the existing identity normally.
+Firestore trees is out of scope; the policy is **switch to the existing account**,
+and the ordering is **verify before destroy**: on confirm, sign into the existing
+account **first** while still anonymous. A wrong password or cancelled OAuth throws
+harmlessly and leaves the guest session + local data intact — the naïve "delete the
+anon account first, then sign in" order could wipe guest data and *then* fail on a
+wrong password (the password the guest typed to create the email credential rarely
+matches the pre-existing account's). Only on a successful switch do we clear the
+stale anon sync queue (iOS `AuthService.clearPendingSyncQueue`; web
+`clearSyncQueue`) so its pending pushes don't fail the owner check under the new
+uid. The near-empty anonymous account orphans server-side (acceptable on a rare
+collision — the alternative is data loss), and the guest's local rows are
+`userId`-filtered out of every view under the signed-in account.
 
 ## Deletion / discard (Apple 5.1.1(v))
 

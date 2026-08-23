@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../firebase/useAuth';
 import {
-  deleteAccount,
   friendlyError,
   isCredentialCollision,
   linkApple,
   linkGoogle,
   linkPassword,
 } from '../../firebase/accountSecurity';
+import { clearSyncQueue } from '../../db/operations/syncQueue';
 import { RisoButton } from '../riso';
 import styles from './SignedOut.module.css';
 
@@ -99,21 +99,28 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
     void runLink(() => linkPassword(trimmed, password), { kind: 'password', email: trimmed, password });
   }
 
-  /** Collision confirm: discard the guest's local anon account, then sign
-   *  into the pre-existing identity normally. */
-  async function confirmDiscardAndSignIn(): Promise<void> {
+  /** Collision confirm — verify before destroy: sign into the pre-existing
+   *  account FIRST (while still anonymous). A wrong password / cancelled OAuth
+   *  throws here and leaves the guest session + local data intact — the old
+   *  "delete anon first" order could wipe guest data and THEN fail on a wrong
+   *  password (the anon email password rarely matches the existing account's).
+   *  On success we've switched accounts; clear the stale anon sync queue so its
+   *  pending pushes don't fail under the new uid. The near-empty anon account
+   *  orphans server-side; the guest's local rows are userId-filtered out. */
+  async function confirmSwitchAccount(): Promise<void> {
     if (!collision || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await deleteAccount();
       if (collision.kind === 'google') await signInWithGoogle();
       else if (collision.kind === 'apple') await signInWithApple();
       else await signIn(collision.email, collision.password);
+      await clearSyncQueue();
       onClose();
     } catch (err) {
+      // Sign-in failed (e.g. wrong password) — nothing was destroyed. Keep the
+      // confirm step open so the user can retry or cancel.
       setError(friendlyError(err));
-      setCollision(null);
     } finally {
       setBusy(false);
     }
@@ -140,8 +147,8 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
           <div className={styles.soKicker}>Account already exists</div>
           <div className={styles.soAuthH}>Sign into it instead?</div>
           <p className={styles.soAuthP}>
-            That account already exists. Your guest boards on this device will be discarded — they
-            can’t be merged into it.
+            You’ll switch to that account on this device. Your guest boards here won’t carry over —
+            they can’t be merged into it.
           </p>
 
           {error && <div className={styles.soError}>{error}</div>}
@@ -150,8 +157,8 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
             <RisoButton kind="ghost" disabled={busy} onClick={() => setCollision(null)}>
               Cancel
             </RisoButton>
-            <RisoButton kind="primary" disabled={busy} onClick={() => void confirmDiscardAndSignIn()}>
-              {busy ? 'Please wait…' : 'Discard & sign in'}
+            <RisoButton kind="primary" disabled={busy} onClick={() => void confirmSwitchAccount()}>
+              {busy ? 'Please wait…' : 'Sign in'}
             </RisoButton>
           </div>
         </div>

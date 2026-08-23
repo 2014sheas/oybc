@@ -13,10 +13,14 @@ import FirebaseAuth
 /// **Collision edge**: if the chosen identity already belongs to a *different*
 /// Firebase account (`credentialAlreadyInUse` for Apple/Google,
 /// `emailAlreadyInUse` for password), merging the two Firestore trees is out
-/// of scope. We confirm with the user, then `authService.deleteAccount()`
-/// FIRST — purging the near-empty anonymous tree and wiping local GRDB, which
-/// avoids orphan anon-account accrual — and only then run the normal
-/// `signInWith*` / `signIn(email:password:)` for the existing identity.
+/// of scope. We confirm, then **verify before destroy**: sign into the existing
+/// account FIRST while still anonymous — a wrong password / cancelled OAuth
+/// throws harmlessly and leaves the guest session + local data intact. Only on
+/// a successful switch do we clear the stale anon sync queue. (The earlier
+/// "delete anon first, then sign in" order could wipe guest data and THEN fail
+/// on a wrong password — the anon email password rarely matches the existing
+/// account's.) The near-empty anonymous account orphans server-side; the guest's
+/// local rows are `userId`-filtered out of every view under the new account.
 struct UpgradeAccountSheet: View {
     @EnvironmentObject private var authService: AuthService
     @Environment(\.dismiss) private var dismiss
@@ -107,7 +111,7 @@ struct UpgradeAccountSheet: View {
             SwiftUI.Button("Cancel", role: .cancel) { pendingCollision = nil }
             SwiftUI.Button("Sign in") { resolveCollision() }
         } message: {
-            Text("Sign into it instead? Your guest boards on this device will be discarded.")
+            Text("Sign into it instead? You'll switch to that account — your guest boards on this device won't carry over.")
         }
     }
 
@@ -259,11 +263,13 @@ struct UpgradeAccountSheet: View {
 
     // MARK: - Collision resolution
 
-    /// Runs on "Sign in" in the collision alert: discard the guest's local
-    /// data first (order is load-bearing — see the type doc), then perform
-    /// the normal sign-in for the pre-existing account. Apple's authorization
-    /// is single-use, so it's re-requested rather than reused from the failed
-    /// link attempt.
+    /// Runs on "Sign in" in the collision alert. **Verify before destroy**: sign
+    /// into the pre-existing account FIRST while still anonymous. A wrong password
+    /// or cancelled OAuth throws here and leaves the guest session + local data
+    /// intact (the old "delete anon first" order could wipe guest data and then
+    /// fail on a wrong password). On success we've switched accounts; clear the
+    /// stale anon sync queue so its pending pushes don't fail under the new uid.
+    /// Apple's authorization is single-use, so it's re-requested.
     private func resolveCollision() {
         guard let method = pendingCollision else { return }
         pendingCollision = nil
@@ -272,7 +278,6 @@ struct UpgradeAccountSheet: View {
         _Concurrency.Task {
             defer { isBusy = false }
             do {
-                try await authService.deleteAccount()
                 switch method {
                 case .apple:
                     let (authorization, nonce) = try await appleCoordinator.authenticate()
@@ -285,6 +290,9 @@ struct UpgradeAccountSheet: View {
                 case .email:
                     try await authService.signIn(email: email, password: password)
                 }
+                // Switched to the existing account — drop the discarded guest's
+                // anon-stamped pending pushes (see the type doc).
+                authService.clearPendingSyncQueue()
                 dismiss()
             } catch {
                 if !AuthService.isAuthCancellation(error) {

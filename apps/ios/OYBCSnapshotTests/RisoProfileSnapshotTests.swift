@@ -57,6 +57,29 @@ final class RisoProfileSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Account Card — guest (docs/GUEST_MODE.md)
+
+    func testAccountCardGuestLight() {
+        let view = accountCardView(displayName: "OYBC User", email: nil, isGuest: true)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 353, height: 96)),
+            record: recordMode
+        )
+    }
+
+    func testAccountCardGuestDark() {
+        let view = accountCardView(displayName: "OYBC User", email: nil, isGuest: true)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 353, height: 96),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - Your streaks card
 
     private func yourStreaksView() -> some View {
@@ -238,12 +261,13 @@ final class RisoProfileSnapshotTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func accountCardView(displayName: String, email: String?) -> some View {
+    private func accountCardView(displayName: String, email: String?, isGuest: Bool = false) -> some View {
         ZStack {
             Color.risoPaper
             RisoProfileAccountCard(
                 displayName: displayName,
                 email: email,
+                isGuest: isGuest,
                 onEditName: {}
             )
             .padding(20)

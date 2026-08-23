@@ -596,14 +596,36 @@ final class AuthService: ObservableObject {
         providerState = .none
     }
 
+    /// Clears the local sync queue WITHOUT signing out — used after a guest→account
+    /// collision "switch" (docs/GUEST_MODE.md §Upgrade). Once the user has signed
+    /// into the pre-existing account, the discarded guest's anon-stamped PENDING
+    /// pushes must not fire under the new uid (they'd fail the Firestore owner
+    /// check and surface as "changes couldn't sync"). Best-effort; non-fatal.
+    func clearPendingSyncQueue() {
+        do {
+            try AppDatabase.shared.write { db in
+                try db.execute(sql: "DELETE FROM sync_queue")
+            }
+        } catch {
+            dlog("⚠️ AuthService.clearPendingSyncQueue failed: \(error)")
+        }
+    }
+
     /// Deletes every row across the local tables (preserving `schema_version` so
     /// the migrator stays intact). Row-deletes, not file deletion: the
     /// `AppDatabase` singleton has no reopen path and `fatalError`s on init.
     private func wipeLocalDatabase() {
+        // Every user-scoped / synced table. Kept in lockstep with the schema
+        // (migrations vN) — web wipes generically via `db.tables.map(clear)`, so
+        // any table added here must land on both platforms. `task_events`
+        // (windowed completion / streak history), `pools`, and
+        // `core_board_defaults` were missing pre-guest-mode; the guest "Discard
+        // guest data" copy promises full erasure, so they must be cleared too.
         let tables = [
             "users", "boards", "tasks", "board_tasks",
             "sync_queue", "compound_children",
-            "recurring_board_templates", "default_pools"
+            "recurring_board_templates", "default_pools",
+            "task_events", "pools", "core_board_defaults"
         ]
         do {
             try AppDatabase.shared.write { db in
