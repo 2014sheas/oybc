@@ -214,6 +214,21 @@
   color: var(--riso-muted);
 }
 
+/* ─── Guest "Save your account" CTA (replaces Account & security) ─── */
+.saveAccountRow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.saveAccountCopy {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
 /* ─── Version footer ────────────────────────────────────────── */
 /* Mirrors iOS ProfileView "OYBC · v{version} ({build})" footer.
    Web omits the build number (no bundle metadata at runtime). */

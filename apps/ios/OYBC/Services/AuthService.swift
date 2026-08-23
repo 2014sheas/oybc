@@ -415,6 +415,29 @@ final class AuthService: ObservableObject {
             && nsError.code == AuthErrorCode.requiresRecentLogin.rawValue
     }
 
+    /// True when an error is a user-initiated cancellation of a provider
+    /// sign-in flow (Apple or Google) — callers should swallow these silently
+    /// rather than surface them as errors. Shared by Account & security
+    /// (link/reauth) and the guest upgrade sheet (docs/GUEST_MODE.md).
+    static func isAuthCancellation(_ error: Error) -> Bool {
+        if let asError = error as? ASAuthorizationError, asError.code == .canceled { return true }
+        if let gid = error as? GIDSignInError, gid.code == .canceled { return true }
+        return false
+    }
+
+    /// True for Firebase's `credentialAlreadyInUse` (OAuth) / `emailAlreadyInUse`
+    /// (password) — the chosen identity already belongs to a *different*
+    /// Firebase account than the one being linked onto. This is the guest
+    /// upgrade collision edge (docs/GUEST_MODE.md §Upgrade): merging two
+    /// Firestore trees is out of scope, so the caller offers to discard the
+    /// guest's local data and sign into the existing account instead.
+    static func isCredentialCollision(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == AuthErrorDomain else { return false }
+        return nsError.code == AuthErrorCode.credentialAlreadyInUse.rawValue
+            || nsError.code == AuthErrorCode.emailAlreadyInUse.rawValue
+    }
+
     // MARK: - Account & Security: reauthentication
 
     /// Reauthenticates a password-provider user (refreshes login recency so a

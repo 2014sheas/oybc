@@ -125,6 +125,17 @@ export async function signInAnonymously(): Promise<User> {
 }
 
 /**
+ * True when an auth error is Firebase's network-request-failed — the one
+ * dented offline-first promise of guest mode (docs/GUEST_MODE.md §The one
+ * offline-first exception). Minting the anonymous uid needs one network
+ * round-trip; callers use this to show honest "you're offline" copy instead
+ * of a generic error or a silent half-created guest.
+ */
+export function isOfflineError(error: unknown): boolean {
+  return (error as { code?: string } | undefined)?.code === 'auth/network-request-failed';
+}
+
+/**
  * Re-run the local-user upsert from the current Firebase user (docs/GUEST_MODE.md
  * §Upgrade). Account linking (`link*`) mutates `auth.currentUser` in place and
  * does NOT fire `onAuthStateChanged`, so after a guest→account upgrade the local

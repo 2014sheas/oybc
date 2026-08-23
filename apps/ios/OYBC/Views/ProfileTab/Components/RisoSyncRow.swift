@@ -10,9 +10,18 @@ import SwiftUI
 /// outage reads as "Offline"; an online sync error (which the background loop
 /// retries) reads as "Syncing…" — never "Offline" while the device is connected.
 ///
-/// Reads from the SyncService / NetworkMonitor environment directly so its
-/// status stays live without the parent passing through every field.
+/// **Guest mode** (docs/GUEST_MODE.md §Phase 3): a Firebase anonymous session
+/// genuinely syncs to Firestore under its hidden uid — it's just not
+/// reachable from another device without signing in. So a guest never reads
+/// "Offline"/error copy here; the row always shows the guest-specific status
+/// regardless of live sync/network state, and says "not synced *across
+/// devices*", never "not synced".
+///
+/// Reads from the AuthService / SyncService / NetworkMonitor environment
+/// directly so its status stays live without the parent passing through
+/// every field.
 struct RisoSyncRow: View {
+    @EnvironmentObject private var authService: AuthService
     @EnvironmentObject private var syncService: SyncService
     @EnvironmentObject private var networkMonitor: NetworkMonitor
 
@@ -54,6 +63,8 @@ struct RisoSyncRow: View {
     // MARK: - Derived
 
     private var statusDotColor: Color {
+        // Guest: an informational nudge, not a warning — gold, not orange/green.
+        if authService.isAnonymous { return .risoGold }
         // Orange only when attention may be warranted (offline, stuck items,
         // or a sync error); routine in-flight syncing stays green/calm.
         if !networkMonitor.isConnected
@@ -63,6 +74,10 @@ struct RisoSyncRow: View {
     }
 
     private var statusText: String {
+        // Guest: sync genuinely runs to this device's hidden anon uid — say
+        // "not synced across devices", never "not synced". Independent of
+        // live network/sync state (see doc comment above).
+        if authService.isAnonymous { return "Backed up · sign in to sync across devices" }
         // Only a real network outage is "Offline". Items stuck past the retry
         // cap surface as a plain count so the user has a reason to open the
         // sync sheet (where the Retry button lives) — never the raw error. An
