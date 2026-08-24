@@ -9,12 +9,14 @@
 /* Begin PBXBuildFile section */
 		003D2EBEB2FB29243F9D85DE /* NotificationPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DC94ED8745459B1A6BA69A /* NotificationPlannerTests.swift */; };
 		0058CBE04BE459A4BCC77A00 /* SharedCounterGroupsVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41442B14BB1F027B52C8C3DC /* SharedCounterGroupsVectorTests.swift */; };
+		00DD4F17D883D8294FEB438A /* ProGating.swift in Sources */ = {isa = PBXBuildFile; fileRef = D354F54905D6F14708C6B3C0 /* ProGating.swift */; };
 		01286C8FEEE06838B4023C96 /* RisoProfileAccountCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34761B2DB4EA51F81F221BC9 /* RisoProfileAccountCard.swift */; };
 		01397707BFD635BE3565E32A /* RisoRecurringBadgeSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870C6F69DAAAE82F88C36D2A /* RisoRecurringBadgeSnapshotTests.swift */; };
 		01AD752FA3279DFBAF0B7969 /* PoolRowEditorSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19D42631B7EC4BD7190B29A0 /* PoolRowEditorSnapshotTests.swift */; };
 		01DC61B31BA33B12D2AF771D /* RisoCounterLinkHintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08D27AC8377DDCF2159B8E29 /* RisoCounterLinkHintView.swift */; };
 		020E10C1F3BABC28404C7615 /* SyncExhaustedRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82CC793387A6846DCE84C89 /* SyncExhaustedRetryTests.swift */; };
 		031ED4BC75160A11C0B5B9B1 /* NotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE98FE8DA5998F25F01F6C0 /* NotificationDelegate.swift */; };
+		03355C41043FBA87FF24B3E8 /* EntitlementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE2853654120D7E16111DA40 /* EntitlementTests.swift */; };
 		037A2B0E4453AF68EA5769CE /* placementVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */; };
 		03A36FD2213104F20976AFD2 /* RisoPoolPullCardSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C40DB23E6544B4AB3F57DE /* RisoPoolPullCardSnapshotTests.swift */; };
 		03B8B91B1D8AF8EF6F22A607 /* AchievementSquareBadgeData.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */; };
@@ -284,6 +286,7 @@
 		BECA1D3017CA6E0A229E6533 /* UUIDv5.swift in Sources */ = {isa = PBXBuildFile; fileRef = E06C42D379970D782F6091C7 /* UUIDv5.swift */; };
 		BF25DF0D1007E0448FC56801 /* CreateFormViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DCC1B869DCD626A926C690 /* CreateFormViewModel.swift */; };
 		BF2BB2C6B7582D3ADB812F09 /* SharedCounterGroupsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD30625015C53C727A76F87 /* SharedCounterGroupsTests.swift */; };
+		BFF1418952AB17BC099EC6B3 /* Entitlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B28F23411F2E05BDA559CF4 /* Entitlement.swift */; };
 		C04DDC156AB5BC113E64D216 /* CompoundChild.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA63CF08D3413429AC5B9DCB /* CompoundChild.swift */; };
 		C0A46EFF73CDF0023708C549 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F0A3E6144798AD80EB9DAF /* SyncService.swift */; };
 		C1DECA45BCA68827BAEE301D /* MigrationV25Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6471911226A1A2B5B85C9C00 /* MigrationV25Helpers.swift */; };
@@ -437,6 +440,7 @@
 		192CEC91EF52115CF4281690 /* Archivo-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Archivo-OFL.txt"; sourceTree = "<group>"; };
 		1957D9315F3F7C928E467BA2 /* LinkableCounterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkableCounterTests.swift; sourceTree = "<group>"; };
 		19D42631B7EC4BD7190B29A0 /* PoolRowEditorSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoolRowEditorSnapshotTests.swift; sourceTree = "<group>"; };
+		1B28F23411F2E05BDA559CF4 /* Entitlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Entitlement.swift; sourceTree = "<group>"; };
 		1B37DB9688050E788877CC59 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		1B9B2902751B15B77ADB6E9C /* BoardEditPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardEditPanel.swift; sourceTree = "<group>"; };
 		1BB3F14B57C1700B82BFD3D9 /* RisoCoreDefaultsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreDefaultsSnapshotTests.swift; sourceTree = "<group>"; };
@@ -698,6 +702,7 @@
 		CFC8212667315B8E65232788 /* CycleDetectionVectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleDetectionVectorTests.swift; sourceTree = "<group>"; };
 		D1E19952808D89ADF5D4E7BB /* linkableCounterVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = linkableCounterVectors.json; sourceTree = "<group>"; };
 		D34DEC4D098D2FF5A7A56534 /* CounterDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterDetailView.swift; sourceTree = "<group>"; };
+		D354F54905D6F14708C6B3C0 /* ProGating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProGating.swift; sourceTree = "<group>"; };
 		D3CC8AF3A0BB5E9CAB8BBA73 /* RisoEditTaskSheetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoEditTaskSheetSnapshotTests.swift; sourceTree = "<group>"; };
 		D405995419454FD4EC82924D /* PendingRecurringBoardsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRecurringBoardsViewModel.swift; sourceTree = "<group>"; };
 		D42A2BC2F86BDCA61937AA8D /* AppDatabase+Sync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Sync.swift"; sourceTree = "<group>"; };
@@ -711,6 +716,7 @@
 		DB1B3618551FB9321876B28E /* TasksTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksTabView.swift; sourceTree = "<group>"; };
 		DB8DBA01AE362FA9AA69D1A2 /* BrowsableTasksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowsableTasksTests.swift; sourceTree = "<group>"; };
 		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
+		DE2853654120D7E16111DA40 /* EntitlementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementTests.swift; sourceTree = "<group>"; };
 		DF7B94F09C3473C58879F79F /* RisoBingoToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBingoToast.swift; sourceTree = "<group>"; };
 		DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = placementVectors.json; sourceTree = "<group>"; };
 		E06C42D379970D782F6091C7 /* UUIDv5.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UUIDv5.swift; sourceTree = "<group>"; };
@@ -756,7 +762,7 @@
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_E97C2A0C-335C-4637-988F-58CB557EA992" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_91ABB4F9-472F-4DF5-8B08-B8F4CF9F5788" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -878,6 +884,7 @@
 				122F83127D65EB023917FFAB /* Info.plist */,
 				596BB9E3FF9B2BD21EECCD16 /* OYBC.entitlements */,
 				C9AA2CED78BAF3773BDB4359 /* OYBCApp.swift */,
+				918ED35392291CF7A0D22A83 /* Constants */,
 				3AD387F508B024065D14DBAE /* Database */,
 				C3C7C5326B957BB16B552247 /* Helpers */,
 				196E18EB3182AED7499E824A /* Resources */,
@@ -970,6 +977,7 @@
 				BA63CF08D3413429AC5B9DCB /* CompoundChild.swift */,
 				FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */,
 				63C3B3ADF9D1C1AF84611D55 /* DefaultPool.swift */,
+				1B28F23411F2E05BDA559CF4 /* Entitlement.swift */,
 				4DD08A5EA4BACEBCD439A100 /* OperatorType.swift */,
 				BE93737F84E7A70BEF4F4499 /* Pool.swift */,
 				891B25AE4C8C98DE438088C7 /* RecurringBoardTemplate.swift */,
@@ -1004,6 +1012,14 @@
 				CC2241CE9069C5B296837472 /* TimeframeFormatting.swift */,
 			);
 			path = Utils;
+			sourceTree = "<group>";
+		};
+		918ED35392291CF7A0D22A83 /* Constants */ = {
+			isa = PBXGroup;
+			children = (
+				D354F54905D6F14708C6B3C0 /* ProGating.swift */,
+			);
+			path = Constants;
 			sourceTree = "<group>";
 		};
 		A287D5A503950699FE53C6E9 /* OYBCTests */ = {
@@ -1045,6 +1061,7 @@
 				2A1C4EA5947CE3A7D17BBFDF /* DerivationPassVectorTests.swift */,
 				0D4F7D448EFB75E5BD0AA686 /* DeriveCounterLinkTests.swift */,
 				F715654B51C84A71255FABA7 /* DraftTaskVisibilityTests.swift */,
+				DE2853654120D7E16111DA40 /* EntitlementTests.swift */,
 				80FABD55DC8F8998DED06E54 /* GoallessCounterEngineTests.swift */,
 				F4C078324F5B8A56A92E0D6D /* IndefiniteBoardTests.swift */,
 				4D4CDEAE2BB9F00B76298584 /* LastCounterLogEntryTests.swift */,
@@ -1361,10 +1378,10 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
-		"TEMP_08BE2E84-265A-4FA2-BE4D-AD2BBFCEEFE7" /* ios */ = {
+		"TEMP_109D1EE7-0851-4695-9034-417C3E703C8E" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_E97C2A0C-335C-4637-988F-58CB557EA992" /* Signing.xcconfig */,
+				"TEMP_91ABB4F9-472F-4DF5-8B08-B8F4CF9F5788" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1637,6 +1654,7 @@
 				9B2C32C24E8A5B31CF5026DE /* DeriveCounterLink.swift in Sources */,
 				DB32D137A02B2B9670C8BFE6 /* EditProfileSheet.swift in Sources */,
 				3203978B132B16868CDF7DAC /* EditTaskSheet.swift in Sources */,
+				BFF1418952AB17BC099EC6B3 /* Entitlement.swift in Sources */,
 				C58FAD0DE79D41DE3BF5BBE7 /* FromBoardGridView.swift in Sources */,
 				A559B86D15F48CF5C18FE5A1 /* FromBoardPickerView.swift in Sources */,
 				6B6DC777BDEA1792FF5E1D88 /* LastCounterLogEntry.swift in Sources */,
@@ -1665,6 +1683,7 @@
 				613B99553EA051DEEF1EB2BF /* PoolMix.swift in Sources */,
 				76584D986F97D8CFDF854CAD /* PoolPickerSheetView.swift in Sources */,
 				1B65543CAB0B32898018414D /* PoolsBrowseView.swift in Sources */,
+				00DD4F17D883D8294FEB438A /* ProGating.swift in Sources */,
 				82482EA7C8020E1CFF28D5EC /* ProfileView.swift in Sources */,
 				D5BDDF8EB3BA29CC5ECD4337 /* ProviderState.swift in Sources */,
 				84461656FECC0F4885206507 /* RearrangeGrid.swift in Sources */,
@@ -1802,6 +1821,7 @@
 				538D823FF84492B399D4F383 /* DerivationPassVectorTests.swift in Sources */,
 				D954ADDD28A3C6EAD80D6309 /* DeriveCounterLinkTests.swift in Sources */,
 				32380A5978F4A18B2C15943E /* DraftTaskVisibilityTests.swift in Sources */,
+				03355C41043FBA87FF24B3E8 /* EntitlementTests.swift in Sources */,
 				1BA18CBB8646691B58DDA9D3 /* GoallessCounterEngineTests.swift in Sources */,
 				59ABE29200DE152E3FBAB030 /* IndefiniteBoardTests.swift in Sources */,
 				354385C3A0F3D7DFCCC308BA /* LastCounterLogEntryTests.swift in Sources */,
@@ -1922,7 +1942,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_E97C2A0C-335C-4637-988F-58CB557EA992" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_91ABB4F9-472F-4DF5-8B08-B8F4CF9F5788" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2019,7 +2039,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_E97C2A0C-335C-4637-988F-58CB557EA992" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_91ABB4F9-472F-4DF5-8B08-B8F4CF9F5788" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
