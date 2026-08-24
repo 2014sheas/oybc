@@ -18,30 +18,30 @@
   "dependencies": {
     "@oybc/riso-tokens": "workspace:*",
     "@oybc/shared": "workspace:*",
-    "dexie": "^4.4.4",
+    "dexie": "^4.4.5",
     "dexie-react-hooks": "^4.4.0",
-    "firebase": "^12.16.0",
+    "firebase": "^12.18.0",
     "html-to-image": "^1.11.13",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.1"
+    "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.62.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
-    "@typescript-eslint/parser": "^8.65.0",
-    "@vitejs/plugin-react": "^6.0.4",
-    "eslint": "^10.8.0",
+    "@playwright/test": "^1.62.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/parser": "^8.67.0",
+    "@vitejs/plugin-react": "^6.1.0",
+    "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.3",
+    "eslint-plugin-react-refresh": "^0.5.4",
     "fake-indexeddb": "^6.2.5",
-    "globals": "^17.8.0",
+    "globals": "^17.11.0",
     "knip": "^6.32.2",
     "typescript": "^6.0.3",
-    "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }
