@@ -1007,36 +1007,3 @@ export const UserSchema = z.object({
   lastSyncedAt: z.string().datetime().optional(),
   version: z.number().int().min(1),
 });
-
-// ---------------------------------------------------------------------------
-// Monetization entitlement (docs/MONETIZATION.md)
-//
-// Validates the server-authoritative `entitlements/{uid}` doc shape — used by
-// the RevenueCat webhook Cloud Function on write and available to tests/clients
-// on decode. Mirrors `Entitlement` in ../types/entitlement.ts. `updatedAt` is a
-// plain string (not `.datetime()`) so the free-default's empty-string value and
-// the webhook's event timestamps both validate.
-// ---------------------------------------------------------------------------
-export const ProProductSchema = z.union([
-  z.literal('monthly'),
-  z.literal('yearly'),
-  z.literal('lifetime'),
-]);
-
-export const EntitlementStoreSchema = z.union([
-  z.literal('app_store'),
-  z.literal('play_store'),
-  z.literal('stripe'),
-  z.literal('promotional'),
-]);
-
-export const EntitlementSchema = z.object({
-  tier: z.union([z.literal('free'), z.literal('pro')]),
-  isPro: z.boolean(),
-  product: ProProductSchema.optional(),
-  expiresAt: z.string().datetime().nullable().optional(),
-  willRenew: z.boolean().optional(),
-  store: EntitlementStoreSchema.optional(),
-  updatedAt: z.string(),
-  source: z.union([z.literal('revenuecat-webhook'), z.literal('default')]),
-});

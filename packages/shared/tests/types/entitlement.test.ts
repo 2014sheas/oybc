@@ -3,7 +3,7 @@ import {
   mergeEntitlement,
   type Entitlement,
 } from '../../src/types/entitlement';
-import { EntitlementSchema } from '../../src/validation/schemas';
+import { EntitlementSchema } from '../../src/validation/entitlement';
 
 describe('mergeEntitlement', () => {
   it('returns the free default for null/undefined', () => {

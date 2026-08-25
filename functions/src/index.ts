@@ -33,6 +33,7 @@ import { confirmationEmailHtml, confirmationEmailText } from "./confirmEmail";
 import { buildSignupNotification } from "./signupNotify";
 
 export { validateWin } from "./validateWin";
+export { revenueCatWebhook } from "./revenueCatWebhook";
 
 initializeApp();
 
