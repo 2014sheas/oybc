@@ -20,7 +20,7 @@ enum ProFeature {
 
 enum ProGating {
     /// RevenueCat entitlement identifier that grants Pro. Same string both platforms.
-    static let entitlementID = "pro"
+    static let entitlementID = "oybc_pro"
 
     /// Max concurrently-ACTIVE boards on free (sealed / past-window boards excluded).
     static let maxActiveBoardsFree = 5

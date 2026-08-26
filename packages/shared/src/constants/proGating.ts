@@ -20,7 +20,7 @@ import type { Entitlement } from '../types/entitlement';
  */
 
 /** The RevenueCat entitlement identifier that grants Pro. Same string both platforms. */
-export const PRO_ENTITLEMENT_ID = 'pro';
+export const PRO_ENTITLEMENT_ID = 'oybc_pro';
 
 /**
  * Pro-only capabilities. Free users see these locked (with a Pro badge), never

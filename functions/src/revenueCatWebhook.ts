@@ -33,7 +33,7 @@ import { timingSafeEqual } from "crypto";
 export const REVENUECAT_WEBHOOK_AUTH = defineSecret("REVENUECAT_WEBHOOK_AUTH");
 
 /** Must match `PRO_ENTITLEMENT_ID` in packages/shared/src/constants/proGating.ts. */
-const PRO_ENTITLEMENT_ID = "pro";
+const PRO_ENTITLEMENT_ID = "oybc_pro";
 
 /** Event types that grant/continue Pro access (access persists until expiry). */
 const GRANT_TYPES = new Set([

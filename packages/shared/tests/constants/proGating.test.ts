@@ -86,7 +86,7 @@ describe('isFeatureGated', () => {
 
 describe('constants', () => {
   it('exposes the RevenueCat entitlement id and cap', () => {
-    expect(PRO_ENTITLEMENT_ID).toBe('pro');
+    expect(PRO_ENTITLEMENT_ID).toBe('oybc_pro');
     expect(FREE_TIER_LIMITS.maxActiveBoards).toBe(5);
     expect(GRACE_PERIOD_DAYS).toBe(3);
   });
