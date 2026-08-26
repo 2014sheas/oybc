@@ -57,6 +57,11 @@ final class AuthService: ObservableObject {
     /// one account's reminders never linger into another's session.
     let notificationService = NotificationService()
 
+    /// Client entitlement layer (monetization, docs/MONETIZATION.md). Auth-owned
+    /// like `syncService`; driven from the auth-state listener below and injected
+    /// into the view tree by `AuthGateView`. RevenueCat `appUserID` = Firebase uid.
+    let entitlementService = EntitlementService()
+
     // MARK: - Initialization
 
     init() {
@@ -91,6 +96,7 @@ final class AuthService: ObservableObject {
                         self.isAnonymous = firebaseUser.isAnonymous
                         self.startUserRowObservation(userId: user.id)
                         self.syncService.start(userId: user.id)
+                        self.entitlementService.identify(userId: user.id)
                     }
                     await self.refreshProviderState()
                 } else {
@@ -100,6 +106,7 @@ final class AuthService: ObservableObject {
                         self.stopUserRowObservation()
                         self.syncService.stop()
                         self.notificationService.clearAll()
+                        self.entitlementService.reset()
                         self.providerState = .none
                     }
                 }
@@ -550,6 +557,7 @@ final class AuthService: ObservableObject {
         if let refreshed = Auth.auth().currentUser {
             let updated = await upsertLocalUser(refreshed)
             currentUser = updated
+            entitlementService.identify(userId: updated.id)
         }
         await refreshProviderState()
     }
@@ -587,6 +595,7 @@ final class AuthService: ObservableObject {
         stopUserRowObservation()
         syncService.stop()
         notificationService.clearAll()
+        entitlementService.reset()
 
         // 3. Wipe device-local state.
         wipeLocalDatabase()

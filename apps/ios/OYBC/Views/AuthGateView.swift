@@ -29,6 +29,7 @@ struct AuthGateView<Content: View>: View {
                     .environmentObject(authService)
                     .environmentObject(authService.syncService)
                     .environmentObject(authService.notificationService)
+                    .environmentObject(authService.entitlementService)
                     .environmentObject(NotificationDelegate.shared)
                     .environmentObject(networkMonitor)
                     .environmentObject(tutorialStore)
