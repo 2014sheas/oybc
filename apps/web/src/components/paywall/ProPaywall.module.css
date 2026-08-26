@@ -1,0 +1,50 @@
+/* Pro paywall — plan-specific styling. Modal chrome (scrim/card/×/headings)
+   is reused from SignedOut.module.css; this covers the benefits list, the plan
+   buttons, and the legal line. Uses Riso tokens (see docs/RISO_WEB.md). */
+
+.benefits {
+  list-style: none;
+  margin: 4px 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.benefit {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-family: var(--riso-font-body);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--riso-ink);
+}
+
+.benefitTick {
+  flex: 0 0 auto;
+  font-weight: 800;
+  color: var(--riso-green);
+}
+
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+
+.legal {
+  margin: 0;
+  font-family: var(--riso-font-body);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--riso-muted);
+  text-align: center;
+}
+
+.legal a {
+  color: var(--riso-red);
+  font-weight: 700;
+  text-decoration: none;
+}
