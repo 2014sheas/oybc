@@ -110,6 +110,13 @@ jobs:
         # command runs vitest inside functions/ via --prefix so its
         # package.json scripts and node_modules resolve correctly while the
         # firebase CLI itself still resolves firebase.json at the root.
+        env:
+          # Test-only value for the RevenueCat webhook auth secret. The webhook
+          # reads REVENUECAT_WEBHOOK_AUTH via defineSecret in prod; in the
+          # emulator it falls back to process.env, so both the emulated function
+          # and the test process (children of emulators:exec) see this value and
+          # agree on the valid-auth path. NOT the production secret.
+          REVENUECAT_WEBHOOK_AUTH: test-rc-webhook-secret
         run: |
           firebase emulators:exec \
             --only functions,firestore \

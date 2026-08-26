@@ -131,6 +131,18 @@ service cloud.firestore {
                     && isKnownCollection();
     }
 
+    // Monetization entitlement (docs/MONETIZATION.md) - SERVER-AUTHORITATIVE.
+    // Written ONLY by the RevenueCat webhook Cloud Function via the Admin SDK
+    // (which bypasses these rules); a client may READ its own entitlement but
+    // never write it. Deliberately a TOP-LEVEL collection outside the synced
+    // users/{uid}/* space, so it is not enrolled in SYNC_COLLECTIONS / LWW and
+    // does not touch isKnownCollection()/requiresUserIdField() - the
+    // check-sync-contract-rules.mjs guardrail stays green.
+    match /entitlements/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
     // Deny all other access
     match /{document=**} {
       allow read, write: if false;

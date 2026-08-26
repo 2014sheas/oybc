@@ -497,3 +497,40 @@ describe("default-deny terminal match (firestore.rules:77-79)", () => {
     );
   });
 });
+
+describe("entitlements/{userId} — server-authoritative (docs/MONETIZATION.md)", () => {
+  it("allows the owner to read their own entitlement", async () => {
+    const uid = "alice";
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `entitlements/${uid}`), { tier: "pro", isPro: true });
+    });
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDoc(doc(db, `entitlements/${uid}`)));
+  });
+
+  it("denies an unauthenticated caller from reading an entitlement", async () => {
+    const anonDb = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(anonDb, "entitlements/alice")));
+  });
+
+  it("denies a different user from reading another user's entitlement", async () => {
+    const mallory = testEnv.authenticatedContext("mallory").firestore();
+    await assertFails(getDoc(doc(mallory, "entitlements/alice")));
+  });
+
+  it("denies the owner from WRITING their entitlement (allow write: if false)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertFails(setDoc(doc(db, `entitlements/${uid}`), { tier: "pro", isPro: true }));
+  });
+
+  it("denies the owner from updating or deleting their entitlement", async () => {
+    const uid = "alice";
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `entitlements/${uid}`), { tier: "pro", isPro: true });
+    });
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertFails(updateDoc(doc(db, `entitlements/${uid}`), { tier: "free" }));
+    await assertFails(deleteDoc(doc(db, `entitlements/${uid}`)));
+  });
+});
