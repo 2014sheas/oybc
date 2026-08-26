@@ -43,6 +43,9 @@ struct RisoSpecialTaskPanel: View {
     let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
     let onLibraryReloadRequested: () -> Void
 
+    @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var entitlementService: EntitlementService
+    @State private var showPaywall = false
     @State private var isExpanded: Bool = false
     @State private var selectedType: SpecialType = .counting
     @State private var form = CreateFormViewModel()
@@ -144,6 +147,11 @@ struct RisoSpecialTaskPanel: View {
         .padding(12)
         .risoCard(fill: .risoPaper2)
         .risoHardShadow(Riso.Shadow.small)
+        .sheet(isPresented: $showPaywall) {
+            ProPaywallView()
+                .environmentObject(authService)
+                .environmentObject(entitlementService)
+        }
     }
 
     // MARK: - Type chip
@@ -152,6 +160,14 @@ struct RisoSpecialTaskPanel: View {
         let isOn = selectedType == type
         let kind = type.risoKind
         return Button {
+            // Pro gate: compound + achievement are Pro-only (docs/MONETIZATION.md).
+            if type == .compound || type == .achievement {
+                let feature: ProFeature = (type == .compound) ? .compoundTasks : .achievementTasks
+                if ProGating.isFeatureGated(feature, entitlementService.entitlement, now: Date()) {
+                    showPaywall = true
+                    return
+                }
+            }
             selectedType = type
             if type == .achievement && boards.isEmpty && templates.isEmpty {
                 loadAchievementData()

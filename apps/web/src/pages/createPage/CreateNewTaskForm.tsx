@@ -3,6 +3,7 @@ import {
   AchievementTrigger,
   TaskType,
   findLinkableCounter,
+  isFeatureGated,
   generateCounterTaskTitle,
   type Board,
   type RecurringBoardTemplate,
@@ -15,6 +16,8 @@ import {
   type LinkedCounterInput,
 } from '../../components/wizard/CountingTemplatePicker';
 import { useBoards, useRecurringBoardTemplates, useTasks } from '../../hooks';
+import { useEntitlement } from '../../hooks/useEntitlement';
+import { ProPaywall } from '../../components/paywall/ProPaywall';
 import { getCharCountClass } from '../../components/playground/playgroundUtils';
 import {
   type UseCreateFormState,
@@ -106,6 +109,23 @@ export function CreateNewTaskForm({
   const visibleTypes = typeOptions
     ? TASK_TYPES.filter((t) => typeOptions.includes(t.value))
     : TASK_TYPES;
+
+  // Pro gate: compound + achievement task types (docs/MONETIZATION.md). Picking
+  // a locked type opens the paywall instead of switching.
+  const { entitlement } = useEntitlement();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const handleGatedTypeChange = (next: TaskType): void => {
+    if (
+      (next === TaskType.COMPOUND &&
+        isFeatureGated('compound-tasks', entitlement, Date.now())) ||
+      (next === TaskType.ACHIEVEMENT &&
+        isFeatureGated('achievement-tasks', entitlement, Date.now()))
+    ) {
+      setShowPaywall(true);
+      return;
+    }
+    form.handleTypeChange(next);
+  };
   // Phase 6.3 — Workspace lookups for the Achievement-task picker.
   // Both hooks return non-deleted rows for `userId` (or `[]` while
   // auth is loading); the dropdowns render the empty state below
@@ -207,9 +227,11 @@ export function CreateNewTaskForm({
         <TaskTypeSelector
           types={visibleTypes}
           selectedType={form.taskType}
-          onTypeChange={(value) => form.handleTypeChange(value as TaskType)}
+          onTypeChange={(value) => handleGatedTypeChange(value as TaskType)}
         />
       </div>
+
+      {showPaywall && <ProPaywall onClose={() => setShowPaywall(false)} />}
 
       {form.taskType === TaskType.COMPOUND ? (
         <CompoundTaskWizard userId={userId} onCreated={onCompositeCreated} />

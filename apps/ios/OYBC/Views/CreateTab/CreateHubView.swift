@@ -20,6 +20,10 @@ import SwiftUI
 /// and consumes the cross-tab deep-link bindings.
 struct CreateHubView: View {
     let userId: String
+
+    @EnvironmentObject private var authService: AuthService
+    @EnvironmentObject private var entitlementService: EntitlementService
+    @State private var showPaywall = false
     let preferences: UserPreferences
     /// Phase 6.1: when non-nil on appear, the hub immediately enters the
     /// wizard with this timeframe prefilled (and the field locked) and
@@ -66,12 +70,34 @@ struct CreateHubView: View {
     /// from the view.
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
 
+    // Pro gates (docs/MONETIZATION.md). Client gates are UX only.
+    private func startOneOffBoard() {
+        if ProGating.canCreateBoard(activeBoardCount: vm.activeBoardCount, entitlementService.entitlement, now: Date()) {
+            vm.enterFreshWizard(startRecurring: false)
+        } else {
+            showPaywall = true
+        }
+    }
+
+    private func startRecurringBoard(timeframe: Timeframe? = nil, targetWindowDate: Date? = nil) {
+        guard !ProGating.isFeatureGated(.recurringBoards, entitlementService.entitlement, now: Date()) else {
+            showPaywall = true
+            return
+        }
+        if let timeframe {
+            vm.enterCoreBoardWizard(timeframe: timeframe, targetWindowDate: targetWindowDate)
+        } else {
+            vm.enterFreshWizard(startRecurring: true)
+        }
+    }
+
     var body: some View {
         switch vm.mode {
         case .hub:
             hubContent
                 .onAppear {
                     vm.reloadDrafts(userId: userId)
+                    vm.reloadActiveBoardCount(userId: userId)
                     pendingRecurringVM.reloadAsync(userId: userId)
                     // Consume the recurring-banner deep link, if any.
                     // Same behavior as web's URL-param consumption +
@@ -80,7 +106,7 @@ struct CreateHubView: View {
                         let date = pendingTargetWindowDate.wrappedValue
                         pendingRecurringTimeframe.wrappedValue = nil
                         pendingTargetWindowDate.wrappedValue = nil
-                        vm.enterCoreBoardWizard(timeframe: timeframe, targetWindowDate: date)
+                        startRecurringBoard(timeframe: timeframe, targetWindowDate: date)
                         return
                     }
                     // Consume the draft-resume deep link, if any. Fetch the
@@ -90,6 +116,11 @@ struct CreateHubView: View {
                         pendingDraftId.wrappedValue = nil
                         vm.loadDraftAndEnterWizard(boardId: draftId, userId: userId)
                     }
+                }
+                .sheet(isPresented: $showPaywall) {
+                    ProPaywallView()
+                        .environmentObject(authService)
+                        .environmentObject(entitlementService)
                 }
         case .wizardFresh(let startRecurring):
             wizard(draft: nil, prefilledRecurringTimeframe: nil, targetWindowDate: nil, startRecurring: startRecurring)
@@ -187,7 +218,7 @@ struct CreateHubView: View {
                             // timeframe's current window, no cross-tab hop.
                             // To browse past/future windows the user goes to
                             // the Boards tab.
-                            vm.enterCoreBoardWizard(timeframe: slot.timeframe)
+                            startRecurringBoard(timeframe: slot.timeframe)
                         },
                         subtitle: "Your standard board for each time period."
                     )
@@ -202,11 +233,11 @@ struct CreateHubView: View {
                             .risoSectionLabel()
 
                         CreateHubBoardCTAView(kind: .oneOff) {
-                            vm.enterFreshWizard(startRecurring: false)
+                            startOneOffBoard()
                         }
 
                         CreateHubBoardCTAView(kind: .recurring) {
-                            vm.enterFreshWizard(startRecurring: true)
+                            startRecurringBoard()
                         }
                     }
 
