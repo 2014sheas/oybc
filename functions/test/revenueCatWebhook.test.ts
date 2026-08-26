@@ -57,11 +57,14 @@ async function postWebhook(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const auth = opts.auth === undefined ? AUTH : opts.auth;
   if (auth !== null) headers["Authorization"] = auth;
-  const res = await fetch(WEBHOOK_URL, {
-    method: opts.method ?? "POST",
-    headers,
-    body: event === null ? "{}" : JSON.stringify({ event }),
-  });
+  const method = opts.method ?? "POST";
+  const init: { method: string; headers: Record<string, string>; body?: string } = { method, headers };
+  // A GET/HEAD request must not carry a body — fetch throws before sending
+  // otherwise. The non-POST test exercises exactly that method path.
+  if (method !== "GET" && method !== "HEAD") {
+    init.body = event === null ? "{}" : JSON.stringify({ event });
+  }
+  const res = await fetch(WEBHOOK_URL, init);
   let json: Record<string, unknown> = {};
   try {
     json = (await res.json()) as Record<string, unknown>;
