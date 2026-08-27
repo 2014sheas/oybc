@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { identifyRevenueCat, resetRevenueCatUser } from '../entitlement/revenueCat';
 import type { User } from '@oybc/shared';
 import {
   signUp as authSignUp,
@@ -146,6 +147,11 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
       setUser(authUser);
       setIsAnonymous(anon);
       setIsLoading(false);
+      // Point RevenueCat at the Firebase uid (or detach on sign-out) so purchases
+      // resolve to the right entitlement. Covers sign-in, sign-out, and the
+      // collision account-switch — all of which fire this listener.
+      if (authUser) void identifyRevenueCat(authUser.id);
+      else void resetRevenueCatUser();
     });
     return unsubscribe;
   }, []);
@@ -155,7 +161,10 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
   // clear the anon flag explicitly (docs/GUEST_MODE.md §Upgrade).
   const refreshAfterUpgrade = async (): Promise<void> => {
     const refreshed = await refreshLocalUserFromFirebase();
-    if (refreshed) setUser(refreshed);
+    if (refreshed) {
+      setUser(refreshed);
+      void identifyRevenueCat(refreshed.id);
+    }
     setIsAnonymous(auth.currentUser?.isAnonymous ?? false);
   };
 

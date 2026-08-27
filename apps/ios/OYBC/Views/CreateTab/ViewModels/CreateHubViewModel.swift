@@ -53,6 +53,10 @@ final class CreateHubViewModel {
 
     // MARK: - DB injection
 
+    /// Count of currently-active boards, for the free-tier board cap
+    /// (monetization). Sealed / deleted / draft boards don't count.
+    var activeBoardCount = 0
+
     /// Injected for tests; defaults to the production singleton.
     @ObservationIgnored private let database: AppDatabase
 
@@ -87,6 +91,16 @@ final class CreateHubViewModel {
     }
 
     // MARK: - Async loaders
+
+    /// Recompute `activeBoardCount` off the main thread.
+    func reloadActiveBoardCount(userId: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let boards = (try? self.database.fetchBoards(userId: userId)) ?? []
+            let count = boards.filter { $0.status == .active && !$0.isDeleted && $0.sealedAt == nil }.count
+            DispatchQueue.main.async { self.activeBoardCount = count }
+        }
+    }
 
     func reloadDrafts(userId: String) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in

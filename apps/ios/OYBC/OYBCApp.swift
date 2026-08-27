@@ -31,6 +31,7 @@ struct OYBCApp: App {
 
         _ = AppDatabase.shared
         FirebaseApp.configure()
+        EntitlementService.configureRevenueCat()
 
         // Register the notification delegate synchronously at launch (NOT
         // lazily after auth) so a cold-launch-from-tap is captured before

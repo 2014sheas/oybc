@@ -1,5 +1,8 @@
 import { useCallback, useState } from 'react';
 import {
+  BoardStatus,
+  canCreateBoard,
+  isFeatureGated,
   type Board,
   type Timeframe,
   type UserPreferences,
@@ -10,6 +13,9 @@ import { useRecurringTimeframeParam } from './createHub/useRecurringTimeframePar
 import { useResumableDraft } from './createHub/useResumableDraft';
 import { useResumeDraftParam } from './createHub/useResumeDraftParam';
 import { useCoreBoardSlots } from '../hooks';
+import { useBoards } from '../hooks/useBoards';
+import { useEntitlement } from '../hooks/useEntitlement';
+import { ProPaywall } from '../components/paywall/ProPaywall';
 import { deleteDraftWithCascade } from '../db/operations/boards';
 import { BoardWizardPage } from './BoardWizardPage';
 import { CreateHubBoardCTA } from '../components/createHub/CreateHubBoardCTA';
@@ -102,33 +108,62 @@ export function CreateHubPage({
   onTemplateCompleted,
 }: CreateHubPageProps): React.ReactElement {
   const [mode, setMode] = useState<HubMode>({ kind: 'hub' });
+  const [showPaywall, setShowPaywall] = useState(false);
+  const { entitlement } = useEntitlement();
+  const boards = useBoards(userId);
+  const activeBoardCount = boards.filter(
+    (b) => b.status === BoardStatus.ACTIVE && !b.sealedAt,
+  ).length;
+
+  // Pro gate for any recurring/core board entry (docs/MONETIZATION.md). Opens
+  // the paywall and returns false when a free user tries a recurring board.
+  const ensureRecurringAllowed = useCallback((): boolean => {
+    if (isFeatureGated('recurring-boards', entitlement, Date.now())) {
+      setShowPaywall(true);
+      return false;
+    }
+    return true;
+  }, [entitlement]);
   const drafts = useDrafts(userId);
   const coreBoardSlots = useCoreBoardSlots(userId);
   const resolveDraft = useResumableDraft();
 
   useRecurringTimeframeParam(
-    useCallback((timeframe: Timeframe, windowDate?: Date) => {
-      setMode({
-        kind: 'wizard',
-        prefilledRecurringTimeframe: timeframe,
-        targetWindowDate: windowDate,
-      });
-    }, []),
+    useCallback(
+      (timeframe: Timeframe, windowDate?: Date) => {
+        if (!ensureRecurringAllowed()) return;
+        setMode({
+          kind: 'wizard',
+          prefilledRecurringTimeframe: timeframe,
+          targetWindowDate: windowDate,
+        });
+      },
+      [ensureRecurringAllowed],
+    ),
   );
 
   const returnToHub = useCallback(() => setMode({ kind: 'hub' }), []);
 
   // Board Creation Split (web PR C) — mode is fixed at the launch tap;
   // there's no in-wizard "Repeats" toggle to flip it later.
-  const handleStartBoard = useCallback((startRecurring: boolean) => {
-    setMode({ kind: 'wizard', startRecurring });
-  }, []);
+  const handleStartBoard = useCallback(
+    (startRecurring: boolean) => {
+      if (startRecurring) {
+        if (!ensureRecurringAllowed()) return;
+      } else if (!canCreateBoard(activeBoardCount, entitlement, Date.now())) {
+        setShowPaywall(true);
+        return;
+      }
+      setMode({ kind: 'wizard', startRecurring });
+    },
+    [ensureRecurringAllowed, activeBoardCount, entitlement],
+  );
 
   // Top-nav deep link: `/create?newBoard=one-off` (or `=recurring`).
   useNewWizardParam(
     useCallback((startRecurring: boolean) => {
-      setMode({ kind: 'wizard', startRecurring });
-    }, []),
+      handleStartBoard(startRecurring);
+    }, [handleStartBoard]),
   );
 
   const handleResumeDraft = useCallback(
@@ -219,9 +254,10 @@ export function CreateHubPage({
         // → tap current cell → wizard", just one step shorter for the
         // common "I'm here to create" intent. To browse past/future
         // windows the user goes to the Boards tab.
-        onSelect={(slot) =>
-          setMode({ kind: 'wizard', prefilledRecurringTimeframe: slot.timeframe })
-        }
+        onSelect={(slot) => {
+          if (!ensureRecurringAllowed()) return;
+          setMode({ kind: 'wizard', prefilledRecurringTimeframe: slot.timeframe });
+        }}
       />
 
       {/* Board Creation Split (web PR C) — two mode-locked entry points,
@@ -244,6 +280,8 @@ export function CreateHubPage({
           onDelete={(d) => void handleDeleteDraft(d)}
         />
       )}
+
+      {showPaywall && <ProPaywall onClose={() => setShowPaywall(false)} />}
     </div>
   );
 }

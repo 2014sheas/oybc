@@ -100,6 +100,40 @@ Invariants not to regress:
 - **One offline-first exception.** Minting the anon uid needs one network round-trip; the entry points detect the network error and show honest copy (never a silent half-state). After that the session persists and the app is offline-first.
 - **Ops prerequisite:** the Firebase **Anonymous** provider must be enabled per-project (else `auth/operation-not-allowed`).
 
+## Monetization — Pro paywall (RevenueCat, shipped)
+
+A paid **Pro** tier (monthly/yearly + a limited-time lifetime), unifying App Store
+(StoreKit 2) and web (RevenueCat Web Billing → Stripe) into one uid-keyed
+entitlement. Foundation + backend shipped in PR #451; client + paywall + gates in
+the Phase 3 branch. Canonical doc: [`docs/MONETIZATION.md`](docs/MONETIZATION.md).
+
+The one principle — **authority vs. display**: a paid entitlement must NOT live in
+`UserPreferences`/`SYNC_COLLECTIONS` (client-owned LWW, client-writable). It lives
+in a **server-authoritative** top-level `entitlements/{uid}` collection
+(`firestore.rules`: read-owner, `write: if false`), written ONLY by the RevenueCat
+webhook Cloud Function via the Admin SDK — the `signups` pattern. It's deliberately
+**outside** the sync engine and the drift guardrails. The client reads RevenueCat's
+cached `CustomerInfo` (fast/offline) OR that doc; **client `isPro` is UX only,
+never a security boundary.**
+
+Invariants not to regress:
+
+- **Entitlement id is `oybc_pro`** (`PRO_ENTITLEMENT_ID`, both platforms + the
+  webhook). The internal `EntitlementTier` `'pro'`/`'free'` literals are separate.
+- **One shared gating definition:** `packages/shared/src/constants/proGating.ts`
+  (caps + pure `isEntitlementActive`/`isFeatureGated`/`canCreateBoard`) ↔ iOS
+  `Constants/ProGating.swift`. Free = ≤5 active one-off boards + normal/counting
+  tasks + full streaks/greenlog/bingo; Pro = unlimited boards + all recurring/core
+  boards + achievement + compound tasks.
+- **Purchasing requires a real account** — guests route through the guest→account
+  upgrade first, so an entitlement is never on an anon uid ⇒ **no RevenueCat
+  TRANSFER handling**.
+- **Webhook is idempotent + monotonic + fails-closed** on a missing secret
+  (`REVENUECAT_WEBHOOK_AUTH`); it's the sole writer of `entitlements/{uid}`.
+- **App Store:** iOS = StoreKit IAP only (3.1.1), no in-app web-price steering
+  (3.1.3(b)), paywall carries Terms/Privacy + price/length (3.1.2).
+- **Emulator tests (webhook + rules) are CI-only** (no local Java).
+
 ## Code Quality Standards
 
 - Type hints and docstrings required for all functions and classes. Public APIs must document parameters, return values, and exceptions.
