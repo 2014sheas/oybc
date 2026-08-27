@@ -83,6 +83,13 @@ export function useEntitlement(): UseEntitlementResult {
     };
   }, [uid]);
 
-  const isPro = rcActive || isEntitlementActive(entitlement, Date.now());
+  // Recompute Pro status in an effect (not during render — Date.now() is impure).
+  // Re-runs whenever the authority doc or the RC cache changes; expiry/renewal
+  // both arrive as an entitlement change, so the grace boundary is covered.
+  const [isPro, setIsPro] = useState(false);
+  useEffect(() => {
+    setIsPro(rcActive || isEntitlementActive(entitlement, Date.now()));
+  }, [entitlement, rcActive]);
+
   return { entitlement, isPro, isReady };
 }
