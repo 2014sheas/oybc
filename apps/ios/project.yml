@@ -197,6 +197,18 @@ schemes:
         OYBC: all
     run:
       config: Debug
+      # StoreKit local testing (docs/MONETIZATION.md) — simulate monthly/yearly/
+      # lifetime + the 7-day trial in the SIMULATOR without a sandbox account.
+      # RevenueCat's SDK reflects these test transactions in CustomerInfo, so the
+      # client unlocks Pro; the webhook/entitlements doc only update on real
+      # sandbox/prod purchases.
+      #
+      # Path is REPO-ROOT-relative (not spec-relative): xcodegen emits the scheme
+      # reference as `../../` + this value, which Xcode resolves from the
+      # .xcodeproj's parent (apps/ios) — so `apps/ios/OYBC.storekit` →
+      # `../../apps/ios/OYBC.storekit` → the real file. A bare `OYBC.storekit`
+      # would wrongly resolve to the repo root.
+      storeKitConfiguration: apps/ios/OYBC.storekit
     test:
       config: Debug
       targets:

@@ -1,0 +1,89 @@
+{
+  "identifier": "9832FAC7-8476-42D3-A6E8-C3E9E2117E37",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "39.99",
+      "familyShareable": false,
+      "internalID": "F8A861A8-BB3A-4001-B840-3DBEA1CF52B5",
+      "localizations": [
+        {
+          "description": "Unlock everything, forever.",
+          "displayName": "OYBC Pro \u2014 Lifetime",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.oybc.pro.lifetime",
+      "referenceName": "OYBC Pro Lifetime",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "",
+    "_lastSynchronizedDate": 0
+  },
+  "subscriptionGroups": [
+    {
+      "id": "F3B7999D-574B-4CBD-A5BC-F0597939A96E",
+      "localizations": [],
+      "name": "OYBC Pro",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "2.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "318098F1-4D04-4A3E-BD32-6B43D28039A9",
+          "introductoryOffer": {
+            "internalID": "754C0B13-C9D6-4A7B-9FA5-81E8637CFE03",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W"
+          },
+          "localizations": [
+            {
+              "description": "OYBC Pro, billed monthly. 7-day free trial.",
+              "displayName": "OYBC Pro \u2014 Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.oybc.pro.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "OYBC Pro Monthly",
+          "subscriptionGroupID": "F3B7999D-574B-4CBD-A5BC-F0597939A96E",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "21.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "CCFD117E-7B4D-45CC-BFED-6865A3C4A427",
+          "introductoryOffer": {
+            "internalID": "FE3ECF2E-A73D-4E13-AB79-C4CCC79B3BEB",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P1W"
+          },
+          "localizations": [
+            {
+              "description": "OYBC Pro, billed yearly. 7-day free trial.",
+              "displayName": "OYBC Pro \u2014 Yearly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.oybc.pro.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "OYBC Pro Yearly",
+          "subscriptionGroupID": "F3B7999D-574B-4CBD-A5BC-F0597939A96E",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}
