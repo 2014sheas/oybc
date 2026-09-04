@@ -78,6 +78,51 @@ extension AppDatabase {
         }
     }
 
+    /// Board Sources P3 — the "Remove that source" action of the
+    /// deleted-source ask (docs/BOARD_SOURCES.md §Boards as sources).
+    /// Drops every board-kind source whose board is missing, soft-deleted,
+    /// or archived from the record's `sources`, recomputes the legacy trio
+    /// mirror, bumps version, and enqueues — one transaction. Returns true
+    /// when anything changed (the caller then re-runs the spawn pass).
+    func removeMissingBoardSources(templateId: String, now: String) throws -> Bool {
+        try write { db in
+            guard var template = try RecurringBoardTemplate.fetchOne(db, key: templateId) else {
+                return false
+            }
+            let sources = BoardSources.sourcesForRecord(
+                sources: template.sources,
+                poolIds: template.poolIds,
+                removedTaskIds: template.removedTaskIds
+            )
+            let boardIds = sources.filter { $0.kind == .board }.map { $0.sourceId }
+            guard !boardIds.isEmpty else { return false }
+            let boards = try Board.filter(boardIds.contains(Column("id"))).fetchAll(db)
+            let boardById = Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
+            let kept = sources.filter { source in
+                guard source.kind == .board else { return true }
+                guard let b = boardById[source.sourceId] else { return false }
+                return !b.isDeleted && b.status != .archived
+            }
+            guard kept.count != sources.count else { return false }
+            template.sources = kept
+            // Keep the P1 dual-write mirrors consistent with the new shape.
+            let mirror = BoardSources.mixFieldsFromSources(kept)
+            template.poolIds = mirror.poolIds
+            template.removedTaskIds = mirror.removedTaskIds
+            template.updatedAt = now
+            template.version += 1
+            try template.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "recurringBoardTemplates",
+                entityId: template.id,
+                operationType: .update,
+                payload: template,
+                now: now
+            ).enqueue(db)
+            return true
+        }
+    }
+
     /// Atomically spawn a Board + BoardTasks from a `PendingTemplateSpawn`
     /// and bump the template's `lastSpawnedWindowKey` — all sync-enqueued —
     /// in ONE transaction. Task resolution + pool validation happen INSIDE
@@ -135,21 +180,65 @@ extension AppDatabase {
                     poolIds: template.poolIds,
                     removedTaskIds: template.removedTaskIds
                 )
+
+                // Board Sources P3 — a pulled board that is DELETED or
+                // ARCHIVED blocks the window with an ask (the Boards-tab
+                // prompt), per docs/BOARD_SOURCES.md §Boards as sources.
+                // Distinct from an EMPTY source, which contributes nothing
+                // silently and never blocks.
+                let boardSourceIds = sources.filter { $0.kind == .board }.map { $0.sourceId }
+                var sourceBoardById: [String: Board] = [:]
+                if !boardSourceIds.isEmpty {
+                    let sourceBoards = try Board
+                        .filter(boardSourceIds.contains(Column("id")))
+                        .fetchAll(db)
+                    sourceBoardById = Dictionary(
+                        uniqueKeysWithValues: sourceBoards.map { ($0.id, $0) }
+                    )
+                    let anyGone = boardSourceIds.contains { id in
+                        guard let b = sourceBoardById[id] else { return true }
+                        return b.isDeleted || b.status == .archived
+                    }
+                    if anyGone {
+                        outcome = .skipped(templateId: template.id, reason: .sourceBoardMissing)
+                        throw RecurringSpawnAbort.skip
+                    }
+                }
+
                 let poolSourceIds = sources.filter { $0.kind == .pool }.map { $0.sourceId }
                 let pools = poolSourceIds.isEmpty
                     ? []
                     : try Pool.filter(poolSourceIds.contains(Column("id"))).fetchAll(db)
                 let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
 
-                let supplies: [BoardSources.Supply] = sources.map { source in
-                    BoardSources.Supply(
-                        source: source,
-                        supplyTaskIds: source.kind == .pool
-                            ? BoardSources.poolSourceSupplyById(
+                // Board Sources P3 — board-kind sources resolve LIVE per
+                // window: the source board's placed squares, with the
+                // 'todo' filter dropping squares complete in THAT board's
+                // window (the per-cell predicate, batched).
+                var supplies: [BoardSources.Supply] = []
+                for source in sources {
+                    switch source.kind {
+                    case .pool:
+                        supplies.append(BoardSources.Supply(
+                            source: source,
+                            supplyTaskIds: BoardSources.poolSourceSupplyById(
                                 source.sourceId, poolsById: poolsById, tasksById: tasksById
                             )
-                            : []
-                    )
+                        ))
+                    case .board:
+                        guard let sourceBoard = sourceBoardById[source.sourceId] else {
+                            // Unreachable after the gone-check above;
+                            // defensively contributes nothing.
+                            supplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
+                            continue
+                        }
+                        let info = try Self.resolveSupply(db: db, board: sourceBoard)
+                        var raw = info.supplyTaskIds
+                        if source.filter == .todo {
+                            raw.removeAll { info.doneTaskIds.contains($0) }
+                        }
+                        supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
+                    }
                 }
                 // The manual layer isn't deleted-filtered (caller-curated,
                 // matching resolveMix's old contract), but hard-gone ids

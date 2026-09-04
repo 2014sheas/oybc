@@ -92,6 +92,11 @@ struct BoardListView: View {
     @State private var deleteError: String?
     @State private var pendingRecurringVM = PendingRecurringBoardsViewModel()
     @State private var spawnVM = RecurringBoardSpawnViewModel()
+    /// Board Sources P3 — the deleted-source ask (docs/BOARD_SOURCES.md
+    /// §Boards as sources): when a repeating board's spawn was skipped
+    /// because a pulled board is deleted/archived, this holds the record
+    /// to ask about; drives the confirmation dialog below.
+    @State private var missingSourceAsk: RecurringBoardTemplate? = nil
     /// Windowed Completion — closing-out (Log/Seal) banner state.
     @State private var closingOutVM = ClosingOutBoardsViewModel()
     /// User's week-start pref ("monday"/"sunday") for the core grid's local
@@ -303,6 +308,56 @@ struct BoardListView: View {
             Button("OK", role: .cancel) { deleteError = nil }
         } message: { message in
             Text(message)
+        }
+        // Board Sources P3 — the deleted-source ask (docs/BOARD_SOURCES.md
+        // §Boards as sources): a repeating board pulling from a deleted/
+        // archived board never spawns silently — the user decides here.
+        // "Not now" re-asks on the next Boards-tab open.
+        .alert(
+            "\u{201C}\(missingSourceAsk?.name ?? "")\u{201D} can't make its next board",
+            isPresented: Binding(
+                get: { missingSourceAsk != nil },
+                set: { if !$0 { missingSourceAsk = nil } }
+            ),
+            presenting: missingSourceAsk
+        ) { template in
+            Button("Remove that source") { resolveMissingSource(template, pause: false) }
+            Button("Pause this board") { resolveMissingSource(template, pause: true) }
+            Button("Not now", role: .cancel) { missingSourceAsk = nil }
+        } message: { _ in
+            Text("It pulls squares from a board that was deleted or archived.")
+        }
+    }
+
+    /// Handles the deleted-source ask's actions: drop the dead board-kind
+    /// source(s) (then re-run the spawn pass so the window fills from the
+    /// remaining sources) or pause the repeating board. Off-main write,
+    /// mirrors `toggleTemplateActive`'s posture.
+    private func resolveMissingSource(_ template: RecurringBoardTemplate, pause: Bool) {
+        missingSourceAsk = nil
+        guard let userId = authService.currentUser?.id else { return }
+        let now = AppDatabase.currentTimestamp()
+        let weekStartDay = WeekStartDay(rawValue: weekStartDayPref) ?? .monday
+        _Concurrency.Task {
+            do {
+                if pause {
+                    var updated = template
+                    updated.isActive = false
+                    updated.updatedAt = now
+                    updated.version += 1
+                    try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                        updated, operation: .update, now: now
+                    )
+                } else {
+                    _ = try AppDatabase.shared.removeMissingBoardSources(
+                        templateId: template.id, now: now
+                    )
+                    await spawnVM.runSpawnPass(userId: userId, weekStartDay: weekStartDay)
+                }
+                await MainActor.run { loadBoards() }
+            } catch {
+                dlog("[BoardListView] resolveMissingSource failed: \(error)")
+            }
         }
     }
 
@@ -577,6 +632,13 @@ struct BoardListView: View {
                 let weekStartDay = user?.decodedPreferences.weekStartDay ?? .monday
                 await MainActor.run { weekStartDayPref = weekStartDay.rawValue }
                 await spawnVM.runSpawnPass(userId: userId, weekStartDay: weekStartDay)
+                // Board Sources P3 — one ask at a time; re-asks on the
+                // next tab open while unresolved (lazy, never background).
+                if missingSourceAsk == nil,
+                   let askId = spawnVM.attentionByTemplateId.first(where: { $0.value == .sourceBoardMissing })?.key,
+                   let askTemplate = (try? AppDatabase.shared.fetchRecurringBoardTemplate(id: askId)) ?? nil {
+                    await MainActor.run { missingSourceAsk = askTemplate }
+                }
                 // Windowed Completion — lazy auto-seal backstop (docs §Sealing).
                 // Same lazy-detection posture as recurring spawn: boards past
                 // their backstop deadline seal on Boards-tab open, never

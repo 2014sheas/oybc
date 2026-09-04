@@ -42,7 +42,7 @@ export interface RecurringSpawnDigest {
    */
   attentionByTemplateId: Record<
     string,
-    SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed'
+    SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed' | 'source_board_missing'
   >;
 }
 
