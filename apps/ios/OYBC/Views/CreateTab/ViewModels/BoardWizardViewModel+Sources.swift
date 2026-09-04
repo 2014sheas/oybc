@@ -311,28 +311,3 @@ extension BoardWizardViewModel {
     }
 }
 
-// MARK: - Source-picker sheet data
-
-extension BoardWizardViewModel {
-    /// Rows for the "Add a pool or board" sheet's BOARDS section: ACTIVE,
-    /// non-deleted boards (drafts and sealed/expired records are not
-    /// pull-able sources — the sheet lists active boards only, per the
-    /// design), each with its squares/done counts from the same
-    /// `fetchBoardSourceSupply` predicate the member rows use. Silent on
-    /// DB error (empty section), matching the wizard's I/O posture.
-    func sourceSheetBoardEntries(userId: String) -> [RisoSourcePickerSheetView.BoardEntry] {
-        guard let boards = try? database.fetchBoards(userId: userId) else { return [] }
-        return boards
-            .filter { $0.status == .active && !$0.isDeleted }
-            .compactMap { board in
-                guard let info = try? database.fetchBoardSourceSupply(boardId: board.id) else {
-                    return nil
-                }
-                return RisoSourcePickerSheetView.BoardEntry(
-                    board: board,
-                    squares: info.supplyTaskIds.count,
-                    done: info.doneTaskIds.count
-                )
-            }
-    }
-}

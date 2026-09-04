@@ -49,6 +49,9 @@ struct BoardWizardView: View {
     // pure functions of caller-supplied lookups instead of a VM-cached copy
     // that could go stale relative to a fresh load.
     @State private var pools: [Pool] = []
+    /// Board Sources P2 — the source sheet's BOARDS rows, loaded off-main
+    /// in `loadPools()` (walks every active board).
+    @State private var sheetBoardEntries: [RisoSourcePickerSheetView.BoardEntry] = []
     @State private var templates: [RecurringBoardTemplate] = []
 
     init(
@@ -113,9 +116,22 @@ struct BoardWizardView: View {
                 let loadedTemplates = try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
                 }.value
+                // Board Sources P2 — the source sheet's BOARDS rows walk
+                // every active board (batched reads), so they load here,
+                // off-main, alongside pools (review finding 2).
+                let loadedEntries = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try AppDatabase.shared.fetchSourceSheetBoardEntries(userId: uid).map {
+                        RisoSourcePickerSheetView.BoardEntry(
+                            board: $0.board,
+                            squares: $0.info.supplyTaskIds.count,
+                            done: $0.info.doneTaskIds.count
+                        )
+                    }
+                }.value
                 await MainActor.run {
                     pools = loadedPools
                     templates = loadedTemplates
+                    sheetBoardEntries = loadedEntries
                     // Board Sources P2 — re-resolve pulled sources' supplies
                     // against the fresh pools/library so ranges/counts track
                     // live edits.
@@ -429,7 +445,7 @@ struct BoardWizardView: View {
                 expandedSourceIds: wizard.expandedSourceIds,
                 availableCountForSource: { wizard.availableCount(forSourceId: $0) },
                 capacity: wizard.sourceCapacity,
-                sourceSheetBoardEntries: { wizard.sourceSheetBoardEntries(userId: userId) },
+                sheetBoardEntries: sheetBoardEntries,
                 onToggleSourceExpanded: { sourceId in
                     if wizard.expandedSourceIds.contains(sourceId) {
                         wizard.expandedSourceIds.remove(sourceId)

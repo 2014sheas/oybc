@@ -164,11 +164,40 @@ func buildWizardPlacement(
         case .ok(let taskIds): selectedIds = taskIds
         case .short: selectedIds = Array(controller.selectedTaskIds)
         }
-        // A CHOSEN center must survive the ranged pick — swap it in for
-        // the last non-center pick if the draw happened to skip it.
+        // A CHOSEN center must survive the ranged pick — swap it in if
+        // the draw skipped it. The victim is chosen MIN-AWARE (review
+        // finding 3): scanning from the end, prefer a pick whose removal
+        // keeps every source's membership ≥ its (clamped) min — blindly
+        // popping the last pick could undercut a "guarantee n of these"
+        // source by one. Falls back to the last pick only when every
+        // candidate is min-locked (then a min gives way to the explicit
+        // center choice — the center is the harder user intent).
         if isOdd, controller.centerType == .chosen, let cid = controller.centerTaskId,
-           !selectedIds.contains(cid), taskById[cid] != nil {
-            if !selectedIds.isEmpty { selectedIds.removeLast() }
+           !selectedIds.contains(cid), taskById[cid] != nil, !selectedIds.isEmpty {
+            let supplies = controller.algorithmSupplies()
+            let availSets = supplies.map { Set(BoardSources.resolveSourceAvailable($0)) }
+            let targets = supplies.enumerated().map { i, supply in
+                Swift.min(
+                    Swift.max(0, supply.source.min),
+                    availSets[i].count,
+                    BoardSources.effectiveSourceMax(supply.source, availableCount: availSets[i].count)
+                )
+            }
+            var memberCounts = availSets.map { set in
+                selectedIds.filter { set.contains($0) }.count
+            }
+            // The incoming center also counts toward memberships.
+            for i in availSets.indices where availSets[i].contains(cid) {
+                memberCounts[i] += 1
+            }
+            let victimIndex = selectedIds.indices.reversed().first { idx in
+                let candidate = selectedIds[idx]
+                for i in availSets.indices where availSets[i].contains(candidate) {
+                    if memberCounts[i] - 1 < targets[i] { return false }
+                }
+                return true
+            } ?? selectedIds.indices.last!
+            selectedIds.remove(at: victimIndex)
             selectedIds.append(cid)
         }
     } else {

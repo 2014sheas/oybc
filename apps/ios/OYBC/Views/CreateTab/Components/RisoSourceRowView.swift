@@ -47,43 +47,47 @@ struct RisoSourceRowView: View {
 
     // MARK: - Header
 
+    /// Plain container + SIBLING remove button — never a Button nested in
+    /// a Button (unreliable gesture arbitration; `RisoPoolListView`'s row
+    /// pattern). The ✕ wins its own taps; the row's tap gesture handles
+    /// the rest of the header area for expand/collapse.
     private var headerRow: some View {
-        Button(action: onToggleExpanded) {
-            HStack(spacing: 10) {
-                letterSquare
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(supply.displayName)
-                        .font(.risoBody(14, .bold))
-                        .foregroundStyle(Color.risoInk)
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .font(.risoBody(10.5, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+        HStack(spacing: 10) {
+            letterSquare
+            VStack(alignment: .leading, spacing: 1) {
+                Text(supply.displayName)
+                    .font(.risoBody(14, .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.risoBody(10.5, .semibold))
                     .foregroundStyle(Color.risoMuted)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 28, height: 28)
-                Button(action: onRemove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.risoMuted)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Remove \(supply.displayName)")
+                    .lineLimit(1)
             }
-            .padding(.vertical, 9)
-            .padding(.horizontal, 11)
-            .contentShape(Rectangle())
+            Spacer(minLength: 6)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color.risoMuted)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .frame(width: 28, height: 28)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(supply.displayName)")
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 9)
+        .padding(.horizontal, 11)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggleExpanded)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(supply.displayName), \(subtitle)")
         .accessibilityHint(isExpanded ? "Collapses the source" : "Expands the source")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// Pool = ink fill + paper "P"; board = gold fill + ink-static "B"

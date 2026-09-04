@@ -130,9 +130,11 @@ struct BoardWizardTasksStepView: View {
     /// The header/gate capacity (`BoardWizardViewModel.sourceCapacity`) —
     /// sum of source maxes + hand-added, deduped.
     var capacity: Int = 0
-    /// Resolves the source sheet's BOARDS rows (active boards + counts).
-    /// Called on step appear + sheet open so the counts stay fresh.
-    var sourceSheetBoardEntries: () -> [RisoSourcePickerSheetView.BoardEntry] = { [] }
+    /// The source sheet's BOARDS rows (active boards + counts) — loaded
+    /// off-main by the container alongside `loadPools()` (review finding:
+    /// the resolution walks every active board and must never run
+    /// synchronously on appear).
+    var sheetBoardEntries: [RisoSourcePickerSheetView.BoardEntry] = []
     var onToggleSourceExpanded: (_ sourceId: String) -> Void = { _ in }
     var onRemoveSource: (_ sourceId: String) -> Void = { _ in }
     var onSetSourceFilter: (_ sourceId: String, _ filter: BoardSource.Filter) -> Void = { _, _ in }
@@ -164,10 +166,8 @@ struct BoardWizardTasksStepView: View {
     @State private var toast: PoolEditToast? = nil
     @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
 
-    // Board Sources P2 — "Add a pool or board" sheet + its BOARDS rows
-    // (resolved on appear/open; cheap local reads).
+    // Board Sources P2 — "Add a pool or board" sheet.
     @State private var showSourceSheet = false
-    @State private var sheetBoardEntries: [RisoSourcePickerSheetView.BoardEntry] = []
 
     // MARK: - Derived
 
@@ -441,7 +441,6 @@ struct BoardWizardTasksStepView: View {
         .overlay(alignment: .bottom) {
             if let toast { toastOverlay(toast) }
         }
-        .onAppear { sheetBoardEntries = sourceSheetBoardEntries() }
         // Board Sources P2 — the "Add a pool or board" sheet (frames 2c/5c).
         .sheet(isPresented: $showSourceSheet) {
             RisoSourcePickerSheetView(
@@ -496,7 +495,6 @@ struct BoardWizardTasksStepView: View {
     /// pools + active boards).
     private var sourceSheetEntry: some View {
         Button {
-            sheetBoardEntries = sourceSheetBoardEntries()
             showSourceSheet = true
         } label: {
             HStack(spacing: 8) {
