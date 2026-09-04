@@ -6,6 +6,17 @@ Prototype.dc.html` is the primary visual reference, deliberately baselined on
 the **iOS** implementation). Direction 2a of the explored three; 2b
 ("Routines") explicitly rejected — core boards stay their own concept.
 
+> **⚠️ Partially superseded (2026-09-04) by [`BOARD_SOURCES.md`](BOARD_SOURCES.md)**
+> — the Board Sources rework replaces the spawn record's task-source model
+> (`poolIds`/`removedTaskIds` + the `(union − removals) + manual` mix formula
+> below), wizard step 2's pull-in-a-pool card / provenance subtitles /
+> save-as-pool (§Surfaces item 5), and the core-setup chip-strip pre-fill +
+> "Start every…" checkbox (§Surfaces item 6; core defaults now pre-pull as
+> *sources*, and the Board-settings defaults sheet is the sole author
+> surface). Still canonical here: the `Pool` entity, Tasks-tab pool surfaces
+> + pool edit sheet, `CoreBoardDefault`, pause/resume, lazy spawn, and the
+> Board-settings page.
+
 **The one-sentence model:** Pools live in the Tasks tab and just hold tasks;
 any board — one-off, core, or repeating — may *draw from* pools at creation;
 recurrence is a board setting chosen at setup (or flipped on later, on the
