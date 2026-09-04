@@ -1,13 +1,14 @@
 import XCTest
 @testable import OYBC
 
-/// BoardWizardPoolMixActionsTests — Task Pools + Recurring Boards Rework
-/// (P3). Covers `BoardWizardViewModel.pullPool` / `untogglePool` /
-/// `toggleTaskSelection`'s new manual/removed bookkeeping, and
-/// `provenanceByTaskId`. Uses the SAME worked-example fixtures (pools
-/// A{x,y}, B{y,z}) as `PoolMixTests`/`poolMix.test.ts` so the vectors
-/// visibly match across layers and platforms — see docs/POOLS_RECURRING.md
-/// §Changed: the spawn record for the canonical worked example.
+/// BoardWizardPoolMixActionsTests — Board Sources P2 (docs/BOARD_SOURCES.md).
+/// Covers the sources-native wizard actions: `pullPool` / `removeSource` /
+/// `toggleTaskSelection` / `toggleSourceExclude` / `setSourceRange` /
+/// `setSourceFilter`, the selection recompute, and the capacity gate. Uses
+/// the SAME worked-example fixtures (pools A{x,y}, B{y,z}) as
+/// `PoolMixTests`/`poolMix.test.ts` — the old flat-removal outcomes must
+/// survive through per-source excludes (untoggle-persist/clear, re-pull
+/// resurrection), which several tests here pin end-to-end.
 final class BoardWizardPoolMixActionsTests: XCTestCase {
 
     // MARK: - Fixtures
@@ -49,154 +50,144 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
 
     // MARK: - pullPool
 
-    func test_pullPool_unionsResolvableSupplyIntoSelection() {
+    func test_pullPool_addsSourceRowAndUnionsSupplyIntoSelection() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
 
         XCTAssertEqual(vm.selectedTaskIds, ["x", "y"])
-        XCTAssertEqual(vm.poolOrder, ["x", "y"])
-        XCTAssertEqual(vm.pulledPoolIds, ["A"])
-        // Pool-sourced additions are NOT manual.
+        XCTAssertEqual(vm.sources.map { $0.sourceId }, ["A"])
+        XCTAssertEqual(vm.sources.first?.kind, .pool)
+        // Default range = [0, all].
+        XCTAssertEqual(vm.sources.first?.min, 0)
+        XCTAssertNil(vm.sources.first?.max)
+        // Pool-sourced additions are NOT manual; the manual-row order
+        // (`poolOrder`) stays empty — source members render in the row's
+        // expanded panel, not as task rows.
         XCTAssertTrue(vm.manualTaskIds.isEmpty)
+        XCTAssertTrue(vm.poolOrder.isEmpty)
+        // Legacy mirror.
+        XCTAssertEqual(vm.pulledPoolIds, ["A"])
     }
 
     func test_pullPool_secondPoolUnionsAcrossOverlap() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.pullPool("B", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullPool(poolsById["B"]!, tasksById: tasksById)
 
         XCTAssertEqual(vm.selectedTaskIds, ["x", "y", "z"])
-        XCTAssertEqual(vm.poolOrder, ["x", "y", "z"])
         XCTAssertEqual(vm.pulledPoolIds, ["A", "B"])
-    }
-
-    func test_pullPool_respectsExistingRemovals_removedTaskStaysSuppressed() {
-        let vm = makeVM()
-        let (poolsById, tasksById) = workedExampleFixtures()
-        vm.removedTaskIds = ["y"]
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-
-        XCTAssertEqual(vm.selectedTaskIds, ["x"])
-        XCTAssertEqual(vm.poolOrder, ["x"])
-    }
-
-    func test_pullPool_missingPool_noOp() {
-        let vm = makeVM()
-        let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("ghost", poolsById: poolsById, tasksById: tasksById)
-
-        XCTAssertTrue(vm.selectedTaskIds.isEmpty)
-        XCTAssertTrue(vm.pulledPoolIds.isEmpty)
+        XCTAssertEqual(vm.sourceCapacity, 3)
     }
 
     func test_pullPool_softDeletedPool_noOp() {
         let vm = makeVM()
         var (poolsById, tasksById) = workedExampleFixtures()
         poolsById["A"]?.isDeleted = true
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
 
         XCTAssertTrue(vm.selectedTaskIds.isEmpty)
-        XCTAssertTrue(vm.pulledPoolIds.isEmpty)
+        XCTAssertTrue(vm.sources.isEmpty)
     }
 
-    func test_pullPool_alreadyPulled_noOp_doesNotDuplicateInPulledPoolIds() {
+    func test_pullPool_alreadyPulled_noOp_doesNotDuplicateSource() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
 
-        XCTAssertEqual(vm.pulledPoolIds, ["A"])
+        XCTAssertEqual(vm.sources.count, 1)
     }
 
-    // MARK: - untogglePool
+    // MARK: - removeSource
 
-    func test_untogglePool_onlyPulledPool_removesWholeSupply() {
+    func test_removeSource_onlySource_removesWholeSupply() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.untogglePool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.removeSource(sourceId: "A")
 
         XCTAssertTrue(vm.selectedTaskIds.isEmpty)
-        XCTAssertTrue(vm.poolOrder.isEmpty)
-        XCTAssertTrue(vm.pulledPoolIds.isEmpty)
+        XCTAssertTrue(vm.sources.isEmpty)
     }
 
-    func test_untogglePool_taskStillSuppliedByRemainingPool_isKept() {
+    func test_removeSource_taskStillSuppliedByRemainingSource_isKept() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.pullPool("B", poolsById: poolsById, tasksById: tasksById)
-        vm.untogglePool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullPool(poolsById["B"]!, tasksById: tasksById)
+        vm.removeSource(sourceId: "A")
 
-        // y is still supplied by B → kept. x is removed (only A supplied it).
+        // y is still supplied by B → kept. x drops (only A supplied it).
         XCTAssertEqual(vm.selectedTaskIds, ["y", "z"])
         XCTAssertEqual(vm.pulledPoolIds, ["B"])
     }
 
-    func test_untogglePool_manualTaskNeverRemoved() {
+    func test_removeSource_manualTaskNeverRemoved() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        // Hand-add x too (already pool-sourced, but simulate the user having
-        // also explicitly selected it before the pull — manual wins).
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
         vm.manualTaskIds.insert("x")
-        vm.untogglePool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.recomputeSelectionFromSources()
+        vm.removeSource(sourceId: "A")
 
         XCTAssertEqual(vm.selectedTaskIds, ["x"])
     }
 
-    func test_untogglePool_clearsCenterMarkPendingAndStagedEditsForRemovedRows() {
+    func test_removeSource_clearsCenterMarkAndStagedEditsForDroppedRows() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
         vm.centerTaskId = "x"
         vm.stagedEdits["x"] = TaskEditPatch(title: "Renamed")
 
-        vm.untogglePool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.removeSource(sourceId: "A")
 
         XCTAssertNil(vm.centerTaskId)
         XCTAssertNil(vm.stagedEdits["x"])
     }
 
-    /// The doc's worked example, driven end-to-end through the VM actions
-    /// rather than the raw `PoolMix` functions: pull A+B, mark w manual and
-    /// y removed (simulating a prior manual removal), untoggle B → y's
-    /// removal persists (still supplied by A); untoggle A too → y's
-    /// removal clears (no longer supplied anywhere); re-pull A → y returns.
-    func test_workedExample_pullBothRemoveY_untoggleBThenA_repullA() {
+    /// The doc's worked example, end-to-end through the sources actions:
+    /// pull A+B, deselect y (→ excluded on BOTH supplying sources), remove
+    /// B → y stays suppressed (A's exclude persists); remove A too → no
+    /// sources left; re-pull A → a FRESH source row with no excludes → y
+    /// is back. Observable outcomes match the old flat-removal model
+    /// exactly (per-source excludes reproduce untoggle-persist/clear).
+    func test_workedExample_pullBothRemoveY_removeBThenA_repullA() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.pullPool("B", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullPool(poolsById["B"]!, tasksById: tasksById)
         vm.manualTaskIds.insert("w")
-        // Simulate removing y by hand (still supplied by A and B).
-        vm.toggleTaskSelection("y", poolsById: poolsById, tasksById: tasksById)
-        XCTAssertEqual(vm.removedTaskIds, ["y"])
-        XCTAssertEqual(vm.selectedTaskIds, ["x", "z"])
+        vm.recomputeSelectionFromSources()
 
-        vm.untogglePool("B", poolsById: poolsById, tasksById: tasksById)
-        // y still supplied by A → removal persists.
-        XCTAssertEqual(vm.removedTaskIds, ["y"])
+        vm.toggleTaskSelection("y") // deselect → exclude everywhere
+        XCTAssertEqual(vm.removedTaskIds, ["y"]) // legacy mirror
+        XCTAssertEqual(vm.selectedTaskIds, ["x", "z", "w"])
+
+        vm.removeSource(sourceId: "B")
+        // y still excluded on A → stays suppressed.
+        XCTAssertFalse(vm.selectedTaskIds.contains("y"))
         XCTAssertEqual(vm.pulledPoolIds, ["A"])
 
-        vm.untogglePool("A", poolsById: poolsById, tasksById: tasksById)
-        // y no longer supplied by anyone → removal clears.
+        vm.removeSource(sourceId: "A")
         XCTAssertTrue(vm.removedTaskIds.isEmpty)
         XCTAssertTrue(vm.pulledPoolIds.isEmpty)
 
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        // Removal was cleared, not remembered — y is back.
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        // The fresh pull carries no excludes — y is back.
         XCTAssertTrue(vm.selectedTaskIds.contains("y"))
     }
 
-    // MARK: - toggleTaskSelection manual/removed bookkeeping
+    // MARK: - toggleTaskSelection
 
-    func test_toggleTaskSelection_select_marksManual() {
+    func test_toggleTaskSelection_select_marksManualAndOrders() {
         let vm = makeVM()
         vm.toggleTaskSelection("m")
         XCTAssertTrue(vm.manualTaskIds.contains("m"))
+        XCTAssertEqual(vm.poolOrder, ["m"])
+        XCTAssertTrue(vm.selectedTaskIds.contains("m"))
     }
 
     func test_toggleTaskSelection_deselect_clearsManualMark() {
@@ -204,95 +195,162 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         vm.toggleTaskSelection("m")
         vm.toggleTaskSelection("m") // remove
         XCTAssertFalse(vm.manualTaskIds.contains("m"))
+        XCTAssertFalse(vm.selectedTaskIds.contains("m"))
+        XCTAssertTrue(vm.poolOrder.isEmpty)
     }
 
-    func test_toggleTaskSelection_deselectPoolSuppliedTask_recordsRemoval() {
+    func test_toggleTaskSelection_deselectSourceSuppliedTask_excludesFromEverySupplier() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullPool(poolsById["B"]!, tasksById: tasksById)
 
-        vm.toggleTaskSelection("x", poolsById: poolsById, tasksById: tasksById) // remove
-        XCTAssertTrue(vm.removedTaskIds.contains("x"))
+        vm.toggleTaskSelection("y") // supplied by both A and B
+        XCTAssertFalse(vm.selectedTaskIds.contains("y"))
+        XCTAssertEqual(vm.sources[0].excludedTaskIds, ["y"])
+        XCTAssertEqual(vm.sources[1].excludedTaskIds, ["y"])
+    }
+
+    func test_toggleTaskSelection_reselectAfterExclude_manualWins() {
+        let vm = makeVM()
+        let (poolsById, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.toggleTaskSelection("x") // deselect → excluded on A
         XCTAssertFalse(vm.selectedTaskIds.contains("x"))
-    }
-
-    func test_toggleTaskSelection_deselectManualOnlyTask_noRemovalRecorded() {
-        let vm = makeVM()
-        vm.toggleTaskSelection("m") // select, manual
-        vm.toggleTaskSelection("m", poolsById: [:], tasksById: [:]) // remove
-        XCTAssertFalse(vm.removedTaskIds.contains("m"))
-    }
-
-    func test_toggleTaskSelection_deselectWithoutPoolLookups_defaultsToNoRemoval() {
-        // Existing call sites (onTaskCreated/onCompoundCreated) don't pass
-        // poolsById/tasksById — a freshly-created task can't already be
-        // pool-sourced, so the default-empty lookups correctly no-op.
-        let vm = makeVM()
-        vm.toggleTaskSelection("fresh")
-        vm.toggleTaskSelection("fresh")
-        XCTAssertTrue(vm.removedTaskIds.isEmpty)
-    }
-
-    func test_toggleTaskSelection_reselectAfterRemoval_clearsRemovalMark() {
-        let vm = makeVM()
-        let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.toggleTaskSelection("x", poolsById: poolsById, tasksById: tasksById) // remove
-        XCTAssertTrue(vm.removedTaskIds.contains("x"))
 
         vm.toggleTaskSelection("x") // re-add by hand
-        XCTAssertFalse(vm.removedTaskIds.contains("x"))
+        // Manual wins over the (persisting) exclude — resolveMix's rule.
+        XCTAssertTrue(vm.selectedTaskIds.contains("x"))
         XCTAssertTrue(vm.manualTaskIds.contains("x"))
+        XCTAssertEqual(vm.sources[0].excludedTaskIds, ["x"])
     }
 
-    // MARK: - provenanceByTaskId
+    // MARK: - Excludes / ranges / filter
 
-    func test_provenanceByTaskId_manualTask_reportsAddedByHand() {
-        let vm = makeVM()
-        vm.toggleTaskSelection("m")
-        let provenance = vm.provenanceByTaskId(poolsById: [:], tasksById: [:])
-        XCTAssertEqual(provenance["m"], "added by hand")
-    }
-
-    func test_provenanceByTaskId_poolSourcedTask_reportsFromPoolName() {
+    func test_toggleSourceExclude_singleSourceScope() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullPool(poolsById["B"]!, tasksById: tasksById)
 
-        let provenance = vm.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById)
-        XCTAssertEqual(provenance["x"], "from \(poolsById["A"]!.name)")
-        XCTAssertEqual(provenance["y"], "from \(poolsById["A"]!.name)")
+        vm.toggleSourceExclude(sourceId: "A", taskId: "y")
+        // y is excluded on A only — B still supplies it → stays selected.
+        XCTAssertTrue(vm.selectedTaskIds.contains("y"))
+        XCTAssertEqual(vm.sources[0].excludedTaskIds, ["y"])
+        XCTAssertTrue(vm.sources[1].excludedTaskIds.isEmpty)
+
+        vm.toggleSourceExclude(sourceId: "B", taskId: "y")
+        XCTAssertFalse(vm.selectedTaskIds.contains("y"))
+
+        vm.toggleSourceExclude(sourceId: "A", taskId: "y") // UNDO on A
+        XCTAssertTrue(vm.selectedTaskIds.contains("y"))
     }
 
-    func test_provenanceByTaskId_manualWinsEvenIfAlsoPoolSourced() {
+    func test_setSourceRange_clampsMinToAvailableAndRequired() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.manualTaskIds.insert("x")
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById) // available 2
 
-        let provenance = vm.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById)
-        XCTAssertEqual(provenance["x"], "added by hand")
+        vm.setSourceRange(sourceId: "A", min: 99, max: nil)
+        XCTAssertEqual(vm.sources[0].min, 2) // clamped to available
+
+        vm.setSourceRange(sourceId: "A", min: 1, max: 0)
+        XCTAssertEqual(vm.sources[0].min, 1)
+        XCTAssertEqual(vm.sources[0].max, 1) // max never below min
     }
 
-    func test_provenanceByTaskId_firstPulledPoolInPullOrderWins() {
+    func test_excludeReclampsMin() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.pullPool("A", poolsById: poolsById, tasksById: tasksById)
-        vm.pullPool("B", poolsById: poolsById, tasksById: tasksById)
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById) // {x, y}
+        vm.setSourceRange(sourceId: "A", min: 2, max: nil)
 
-        // y is supplied by both A and B, pulled in that order — A wins.
-        let provenance = vm.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById)
-        XCTAssertEqual(provenance["y"], "from \(poolsById["A"]!.name)")
+        vm.toggleSourceExclude(sourceId: "A", taskId: "y") // available → 1
+        XCTAssertEqual(vm.sources[0].min, 1)
     }
 
-    func test_provenanceByTaskId_defensiveFallback_notManualNotFoundInAnyPulledPool() {
-        // Shouldn't normally happen (a selected id is either manual or
-        // pool-sourced), but the fallback must still resolve to something
-        // sane rather than a missing dictionary entry.
+    func test_capacity_respectsNumericMax() {
         let vm = makeVM()
         let (poolsById, tasksById) = workedExampleFixtures()
-        vm.selectedTaskIds.insert("orphan")
-        let provenance = vm.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById)
-        XCTAssertEqual(provenance["orphan"], "added by hand")
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById) // 2 available
+        vm.pullPool(poolsById["B"]!, tasksById: tasksById) // +z (y overlaps)
+        XCTAssertEqual(vm.sourceCapacity, 3) // unique {x,y,z}
+
+        vm.setSourceRange(sourceId: "B", min: 0, max: 1)
+        // Bound = 2 (A) + 1 (B) = 3, unique = 3 → still 3; cap A too:
+        vm.setSourceRange(sourceId: "A", min: 0, max: 1)
+        XCTAssertEqual(vm.sourceCapacity, 2)
+    }
+
+    // MARK: - pullBoard (board-kind sources)
+
+    private func seedBoardWithTasks(
+        _ db: AppDatabase, boardId: String, name: String, taskIds: [String]
+    ) throws {
+        let now = "2026-01-01T00:00:00.000Z"
+        let boardDict: [String: Any] = [
+            "id": boardId, "userId": "u1", "name": name,
+            "status": "active", "boardSize": 3, "timeframe": "daily",
+            "startDate": now, "endDate": now,
+            "centerSquareType": "none", "isRandomized": true,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false,
+        ]
+        let board = try JSONDecoder().decode(
+            Board.self, from: JSONSerialization.data(withJSONObject: boardDict)
+        )
+        try db.write { grdb in
+            // boards.userId is a real FK — seed the owning user first.
+            try User(
+                id: "u1", email: "t@e.com", displayName: "T", photoURL: nil,
+                preferences: User.encodePreferences(.defaults),
+                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+            ).insert(grdb)
+            try board.insert(grdb)
+            for (i, taskId) in taskIds.enumerated() {
+                try makeTask(id: taskId).insert(grdb)
+                try BoardTask(
+                    id: "bt-\(taskId)", boardId: boardId, taskId: taskId,
+                    row: i / 3, col: i % 3, isCenter: false,
+                    createdAt: now, updatedAt: now,
+                    lastSyncedAt: nil, version: 1, isDeleted: false
+                ).insert(grdb)
+            }
+        }
+    }
+
+    func test_pullBoard_addsBoardSourceWithPlacedSupply() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1", "bt2", "bt3"])
+
+        vm.pullBoard(boardId: "b1")
+
+        XCTAssertEqual(vm.sources.map { $0.sourceId }, ["b1"])
+        XCTAssertEqual(vm.sources.first?.kind, .board)
+        XCTAssertEqual(vm.sources.first?.filter, .all)
+        XCTAssertEqual(vm.selectedTaskIds, ["bt1", "bt2", "bt3"])
+        XCTAssertEqual(vm.supplyInfoBySourceId["b1"]?.displayName, "Weekday Core")
+        // Board sources are NOT in the legacy poolIds mirror.
+        XCTAssertTrue(vm.pulledPoolIds.isEmpty)
+    }
+
+    func test_pullBoard_missingBoard_noOp() {
+        let vm = makeVM()
+        vm.pullBoard(boardId: "ghost")
+        XCTAssertTrue(vm.sources.isEmpty)
+        XCTAssertTrue(vm.selectedTaskIds.isEmpty)
+    }
+
+    func test_boardSource_todoFilter_dropsNothingWhenNoEvents() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1", "bt2"])
+        vm.pullBoard(boardId: "b1")
+
+        vm.setSourceFilter(sourceId: "b1", filter: .todo)
+        // No completions seeded → nothing is done → supply unchanged.
+        XCTAssertEqual(vm.selectedTaskIds, ["bt1", "bt2"])
+        XCTAssertEqual(vm.availableCount(forSourceId: "b1"), 2)
     }
 }

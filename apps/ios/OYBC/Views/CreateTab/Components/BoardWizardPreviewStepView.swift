@@ -506,11 +506,36 @@ struct BoardWizardPreviewStepView: View {
                 effectiveChildrenByCompound: previewChildrenByCompound,
                 isRecurring: controller.isRecurring,
                 onRemove: { taskId in
-                    controller.toggleTaskSelection(taskId, poolsById: poolsById, tasksById: tasksById)
+                    controller.toggleTaskSelection(taskId)
                 },
-                provenanceByTaskId: controller.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById)
+                countOverride: controller.sourceCapacity,
+                // Board Sources P2 interim — collapsed, read-only source
+                // rows so the recurring preview keeps showing the full mix
+                // (P3 replaces this deck with the summary card, frame 5b).
+                leadingRows: previewSourceRows
             )
         }
+    }
+
+    private var previewSourceRows: AnyView? {
+        guard !controller.sources.isEmpty else { return nil }
+        return AnyView(
+            ForEach(controller.sources, id: \.sourceId) { source in
+                RisoSourceRowView(
+                    source: source,
+                    supply: controller.supplyInfoBySourceId[source.sourceId]
+                        ?? WizardSourceSupply(displayName: "", rawSupplyTaskIds: [], doneTaskIds: []),
+                    availableCount: controller.availableCount(forSourceId: source.sourceId),
+                    isExpanded: false,
+                    taskById: deckTaskById,
+                    onToggleExpanded: {},
+                    onRemove: {},
+                    onSetFilter: { _ in },
+                    onSetRange: { _, _ in },
+                    onToggleExclude: { _ in }
+                )
+            }
+        )
     }
 
     // MARK: - Arrange control bar

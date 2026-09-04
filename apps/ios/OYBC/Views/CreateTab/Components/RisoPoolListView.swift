@@ -45,13 +45,14 @@ struct RisoPoolListView: View {
     /// it holds the draft/focus/toast state). nil ⇒ never swaps.
     var editor: ((OYBC.Task) -> AnyView)? = nil
 
-    /// Task Pools + Recurring Boards Rework (P3) — taskId → provenance label
-    /// ("added by hand" / "from <Pool name>"), appended to each row's detail
-    /// subtitle. Every row this view renders is a currently-selected task,
-    /// so every row gets a provenance suffix — no extra selected-check
-    /// needed. Defaults empty so every existing call site (snapshot tests,
-    /// center-mode tests) keeps compiling and rendering unchanged.
-    var provenanceByTaskId: [String: String] = [:]
+    /// Board Sources P2 — overrides the count pill (the CAPACITY, not the
+    /// flat selection size). Defaults to the legacy selection count so
+    /// existing call sites render unchanged.
+    var countOverride: Int? = nil
+    /// Board Sources P2 — source rows rendered ABOVE the hand-added task
+    /// rows inside the same "On your board" section (the step passes a
+    /// `ForEach` of `RisoSourceRowView`s). nil ⇒ task rows only.
+    var leadingRows: AnyView? = nil
 
     // MARK: - Ordered pool
 
@@ -63,7 +64,7 @@ struct RisoPoolListView: View {
     }
 
     var body: some View {
-        if selectedTaskIds.isEmpty {
+        if selectedTaskIds.isEmpty && leadingRows == nil {
             emptyPoolNote
         } else {
             VStack(alignment: .leading, spacing: 9) {
@@ -71,8 +72,8 @@ struct RisoPoolListView: View {
                 HStack(spacing: 6) {
                     Text("On your board")
                         .risoSectionLabel()
-                    // Count pill
-                    Text("\(selectedTaskIds.count)")
+                    // Count pill (capacity when sources are in play).
+                    Text("\(countOverride ?? selectedTaskIds.count)")
                         .font(.risoHead(10, .extraBold))
                         .foregroundStyle(Color.risoPaper)
                         .padding(.horizontal, 7)
@@ -81,6 +82,7 @@ struct RisoPoolListView: View {
                 }
 
                 VStack(spacing: 7) {
+                    if let leadingRows { leadingRows }
                     ForEach(poolTasks, id: \.id) { task in
                         if task.id == editingTaskId, let editor {
                             editor(task).id(task.id)
@@ -273,17 +275,12 @@ struct RisoPoolListView: View {
             }
         }()
 
-        // P3 — append the provenance label after the existing detail line,
-        // before the isCenter prefix logic runs. Matches the compound row's
-        // existing multi-part " · " join style.
-        let provenance = provenanceByTaskId[task.id]
-        let combined = [base, provenance].compactMap { $0 }.joined(separator: " · ")
-        let withProvenance = combined.isEmpty ? nil : combined
-
+        // Board Sources P2 — provenance subtitles removed (docs/
+        // BOARD_SOURCES.md §Removed: no "added by hand"/"from X" copy).
         if isCenter {
-            return withProvenance.map { "Center square · \($0)" } ?? "Center square"
+            return base.map { "Center square · \($0)" } ?? "Center square"
         }
-        return withProvenance
+        return base
     }
 
     private func risoKind(for type: TaskType) -> RisoTaskKind {

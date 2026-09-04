@@ -15,24 +15,26 @@ private struct PoolEditToast: Identifiable {
 /// from-a-board, copy, compound expand, library feed) is preserved intact;
 /// only the visual layer is rebuilt in the Riso design language.
 ///
-/// Layout (top to bottom, per README §3 + screenshot 04):
-///   1. Pool header card  — "YOUR TASK POOL" kicker, N/required, progress bar, model note.
-///   2. "PULL IN A POOL" card — toggle chips unioning a pool's tasks into the
-///      selection (Task Pools + Recurring Boards Rework, P3).
-///   3. "ADD TASKS" section — quick-add row + special-type panel button.
+/// Layout (top to bottom — Board Sources P2, docs/BOARD_SOURCES.md
+/// §Surfaces item 1 / handoff frame 2a):
+///   1. Pool header card — capacity/required, progress bar, model note.
+///   2. "ADD TASKS" section — quick-add row + special-type panel button.
+///   3. "Add a pool or board" dashed row → the source sheet (2c/5c).
 ///   4. Library entry button (dashed) → bottom sheet at .fraction(0.76).
-///   5. Pool list — Riso rows for each selected task, with provenance subtitles.
-///   6. "Save these N as a new pool…" dashed affordance (P3).
+///   5. "On your board" — SOURCE rows (expandable range/filter/member
+///      panels) + hand-added task rows.
+///   6. Red "! Add N more" gate line (only when capacity is short).
 ///   7. Footer — Riso Back + Next (Next disabled when !canAdvance).
 ///
 /// Sub-views (separate files):
-///   - `RisoTasksPoolHeaderView`   — pool header card
-///   - `RisoPoolPullCardView`     — "PULL IN A POOL" toggle-chip card (P3)
-///   - `RisoQuickAddRowView`       — text input + red Add button
-///   - `RisoSpecialTaskPanel`      — collapsed/expanded type-specific panel
-///   - `RisoLibrarySheetView`      — dashed entry button + bottom sheet (owns search,
-///                                    filters, derive, from-a-board, compound expand)
-///   - `RisoPoolListView`          — selected task rows + empty state
+///   - `RisoTasksPoolHeaderView`    — pool header card (capacity-based)
+///   - `RisoSourceRowView`          — one pulled source row + expanded panel
+///   - `RisoSourcePickerSheetView`  — "Add a pool or board" sheet
+///   - `RisoQuickAddRowView`        — text input + red Add button
+///   - `RisoSpecialTaskPanel`       — collapsed/expanded type-specific panel
+///   - `RisoLibrarySheetView`       — dashed entry button + bottom sheet (owns search,
+///                                     filters, derive, from-a-board, compound expand)
+///   - `RisoPoolListView`           — source + hand-added rows + empty state
 struct BoardWizardTasksStepView: View {
 
     // MARK: - Parameters
@@ -110,50 +112,36 @@ struct BoardWizardTasksStepView: View {
     /// Navigates to the next wizard step. Disabled when validation fails.
     let onNext: () -> Void
 
-    // MARK: - Pool mix (Task Pools + Recurring Boards Rework, P3)
+    // MARK: - Sources (Board Sources P2, docs/BOARD_SOURCES.md)
 
-    /// The user's non-deleted pools, for the "PULL IN A POOL" card. Loaded
-    /// and owned by the container (`BoardWizardView`) — this view does no
-    /// pool I/O itself, mirroring how `library` is owned by the container
-    /// and passed straight through.
+    /// The user's non-deleted pools — the source sheet's POOLS section.
+    /// Loaded and owned by the container (`BoardWizardView`), mirroring
+    /// how `library` is threaded through.
     var pools: [Pool] = []
-    /// Pools currently pulled into the selection
-    /// (`BoardWizardViewModel.pulledPoolIds`) — drives the pull card's chip
-    /// on/off state.
-    var pulledPoolIds: [String] = []
-    /// taskId → provenance label ("added by hand" / "from <Pool name>") for
-    /// every currently-selected row, threaded into `RisoPoolListView`.
-    var provenanceByTaskId: [String: String] = [:]
-    /// Fired when the user toggles a pool ON in the pull card. Routes to
-    /// `BoardWizardViewModel.pullPool`.
-    var onPullPool: (_ poolId: String) -> Void = { _ in }
-    /// Fired when the user toggles a pool OFF in the pull card. Routes to
-    /// `BoardWizardViewModel.untogglePool`.
-    var onUntogglePool: (_ poolId: String) -> Void = { _ in }
-    /// Active recurring-board templates — passed through to the "Save as
-    /// pool" sheet for its deck-preview floor. Empty is acceptable (falls
-    /// back to the generic 3×3-FREE floor default).
-    var templates: [RecurringBoardTemplate] = []
-    /// Fired after the "Save as pool" sheet successfully creates a pool, so
-    /// the container can refresh `pools` for the pull card.
-    var onPoolsReloadRequested: () -> Void = {}
-
-    // MARK: - Core-board setup (Task Pools + Recurring Boards Rework, P5)
-
-    /// `BoardWizardViewModel.isCore` — gates the whole core-setup section
-    /// below (provenance chip strip, red floor-gate, "Start every <TF>
-    /// board with 'X'" checkbox). `false` for every other wizard shape.
-    var isCore: Bool = false
-    /// Hand-added task ids (`BoardWizardViewModel.manualTaskIds`) — drives
-    /// the chip strip's plain-vs-blue+✕ split.
-    var manualTaskIds: Set<String> = []
-    /// The `CoreBoardDefault`'s currently-saved `corePoolIds`
-    /// (`BoardWizardViewModel.savedCorePoolIds`) — compared against
-    /// `pulledPoolIds` to derive the checkbox's checked state.
-    var savedCorePoolIds: [String] = []
-    /// Fired when the user taps the "Start every <TF> board with 'X'"
-    /// checkbox. Routes to `BoardWizardViewModel.setCorePoolDefaultSaved`.
-    var onSetCorePoolDefaultSaved: (_ saved: Bool) -> Void = { _ in }
+    /// Pulled sources in row order (`BoardWizardViewModel.sources`).
+    var sources: [BoardSource] = []
+    /// Per-source display/supply cache (`supplyInfoBySourceId`).
+    var supplyInfoBySourceId: [String: WizardSourceSupply] = [:]
+    /// Expanded row state (`expandedSourceIds` — UI-only, never persisted).
+    var expandedSourceIds: Set<String> = []
+    /// Post-exclude/post-filter available count per source — the range
+    /// slider's N. Routes to `BoardWizardViewModel.availableCount(forSourceId:)`.
+    var availableCountForSource: (_ sourceId: String) -> Int = { _ in 0 }
+    /// The header/gate capacity (`BoardWizardViewModel.sourceCapacity`) —
+    /// sum of source maxes + hand-added, deduped.
+    var capacity: Int = 0
+    /// The source sheet's BOARDS rows (active boards + counts) — loaded
+    /// off-main by the container alongside `loadPools()` (review finding:
+    /// the resolution walks every active board and must never run
+    /// synchronously on appear).
+    var sheetBoardEntries: [RisoSourcePickerSheetView.BoardEntry] = []
+    var onToggleSourceExpanded: (_ sourceId: String) -> Void = { _ in }
+    var onRemoveSource: (_ sourceId: String) -> Void = { _ in }
+    var onSetSourceFilter: (_ sourceId: String, _ filter: BoardSource.Filter) -> Void = { _, _ in }
+    var onSetSourceRange: (_ sourceId: String, _ min: Int, _ max: Int?) -> Void = { _, _, _ in }
+    var onToggleSourceExclude: (_ sourceId: String, _ taskId: String) -> Void = { _, _ in }
+    var onPullPoolSource: (_ pool: Pool) -> Void = { _ in }
+    var onPullBoardSource: (_ boardId: String) -> Void = { _ in }
 
     // MARK: - Internal state
 
@@ -178,9 +166,8 @@ struct BoardWizardTasksStepView: View {
     @State private var toast: PoolEditToast? = nil
     @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
 
-    // Task Pools + Recurring Boards Rework (P3) — "Save these N as a new
-    // pool…" sheet.
-    @State private var showSaveAsPoolSheet = false
+    // Board Sources P2 — "Add a pool or board" sheet.
+    @State private var showSourceSheet = false
 
     // MARK: - Derived
 
@@ -231,8 +218,7 @@ struct BoardWizardTasksStepView: View {
         return combined
     }
 
-    private var selectedCount: Int { selectedTaskIds.count }
-    private var isCountSatisfied: Bool { selectedCount >= tasksRequired }
+    private var isCountSatisfied: Bool { capacity >= tasksRequired }
     private var isCenterSatisfied: Bool {
         if !centerTaskMode { return true }
         guard let id = centerTaskId else { return false }
@@ -240,61 +226,10 @@ struct BoardWizardTasksStepView: View {
     }
     private var canAdvance: Bool { isCountSatisfied && isCenterSatisfied }
 
-    // MARK: - Core-board setup (Task Pools + Recurring Boards Rework, P5)
-
-    /// Whether the core-setup card has anything to show. Avoids rendering
-    /// an empty keylined card in the (practically impossible) case where
-    /// the pool is both satisfied and empty with nothing pulled.
-    private var showCoreSetupSection: Bool {
-        isCore && (!poolOrder.isEmpty || !isCountSatisfied || !pulledPoolIds.isEmpty)
-    }
-
-    /// "Start every <TF> board with 'X'" checkbox label — singular pool
-    /// name when exactly one is pulled, generic plural otherwise. Owner
-    /// judgment call on exact wording (docs/POOLS_RECURRING.md §Surfaces
-    /// item 6 names the pattern but not the multi-pool phrasing verbatim).
-    private var startEveryPoolsLabel: String {
-        let tfLabel = timeframeNounLabel(currentTimeframe)
-        if pulledPoolIds.count == 1,
-           let poolId = pulledPoolIds.first,
-           let pool = pools.first(where: { $0.id == poolId }) {
-            return "Start every \(tfLabel) board with \"\(pool.name)\""
-        }
-        return "Start every \(tfLabel) board with these pools"
-    }
-
-    private var isCorePoolDefaultChecked: Bool {
-        BoardWizardViewModel.isCorePoolDefaultSaved(
-            pulledPoolIds: pulledPoolIds, savedCorePoolIds: savedCorePoolIds
-        )
-    }
-
-    @ViewBuilder
-    private var coreSetupSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !poolOrder.isEmpty {
-                RisoCoreDefaultChipStripView(
-                    orderedTaskIds: poolOrder,
-                    manualTaskIds: manualTaskIds,
-                    taskById: effectiveTaskById,
-                    onRemove: { taskId in onToggleSelection(taskId) }
-                )
-            }
-            if !isCountSatisfied {
-                RisoCoreFloorGateView(remaining: tasksRequired - selectedCount)
-            }
-            if !pulledPoolIds.isEmpty {
-                RisoCheckboxRow(
-                    label: startEveryPoolsLabel,
-                    isOn: isCorePoolDefaultChecked,
-                    action: { onSetCorePoolDefaultSaved(!isCorePoolDefaultChecked) }
-                )
-            }
-        }
-        .padding(12)
-        .risoCard(fill: .risoPaper2)
-        .risoHardShadow(Riso.Shadow.small)
-    }
+    // Board Sources P2 — the core-setup chip strip / floor gate / "Start
+    // every…" checkbox were REMOVED from this step (docs/BOARD_SOURCES.md
+    // §Removed): core defaults now pre-pull as source rows, and the
+    // Board-settings defaults sheet is the sole author surface.
 
     /// taskId → count of distinct boards it's placed on (library usage hint).
     private var taskBoardCounts: [String: Int] {
@@ -361,38 +296,14 @@ struct BoardWizardTasksStepView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     // 1. Pool header card
                 RisoTasksPoolHeaderView(
-                    selectedCount: selectedCount,
+                    capacity: capacity,
                     tasksRequired: tasksRequired,
                     isRecurring: isRecurring,
                     centerTaskMode: centerTaskMode,
                     centerSatisfied: isCenterSatisfied
                 )
 
-                // 2. PULL IN A POOL card (Task Pools + Recurring Boards
-                // Rework, P3) — kept visible even with zero pools so the
-                // user always has a route to "Save as pool" below.
-                RisoPoolPullCardView(
-                    pools: pools,
-                    pulledPoolIds: pulledPoolIds,
-                    title: isCore ? "Start with a pool — optional" : "Pull in a pool",
-                    onToggle: { poolId in
-                        if pulledPoolIds.contains(poolId) {
-                            onUntogglePool(poolId)
-                        } else {
-                            onPullPool(poolId)
-                        }
-                    }
-                )
-
-                // 2b. Core-board setup only (Task Pools + Recurring Boards
-                // Rework, P5, docs/POOLS_RECURRING.md §Surfaces item 6):
-                // provenance chip strip + red fillable-floor gate + "Start
-                // every <TF> board with 'X'" checkbox.
-                if showCoreSetupSection {
-                    coreSetupSection
-                }
-
-                // 3. ADD TASKS section
+                // 2. ADD TASKS section
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Add tasks")
                         .risoSectionLabel()
@@ -448,6 +359,10 @@ struct BoardWizardTasksStepView: View {
                     )
                 }
 
+                // 3. Add a pool or board (Board Sources P2, frame 2a) —
+                // dashed row styled like the library row; opens the sheet.
+                sourceSheetEntry
+
                 // 4. Library entry button (dashed) → bottom sheet
                 RisoLibrarySheetView(
                     library: library,
@@ -501,15 +416,15 @@ struct BoardWizardTasksStepView: View {
                             )
                         )
                     },
-                    provenanceByTaskId: provenanceByTaskId
+                    countOverride: capacity,
+                    leadingRows: sourceRowsList
                 )
 
-                // 6. "Save these N as a new pool…" (P3) — hidden when the
-                // pool is empty, matching the design's disabled/hidden call.
-                if !selectedTaskIds.isEmpty {
-                    RisoDashedButton(label: "Save these \(selectedTaskIds.count) as a new pool…") {
-                        showSaveAsPoolSheet = true
-                    }
+                // 6. Red gate line (frame 2a item 6) — only when short.
+                if !isCountSatisfied {
+                    Text("! Add \(tasksRequired - capacity) more")
+                        .font(.risoBody(12, .extraBold))
+                        .foregroundStyle(Color.risoRed)
                 }
             }
             .padding(Riso.gutter)
@@ -526,27 +441,25 @@ struct BoardWizardTasksStepView: View {
         .overlay(alignment: .bottom) {
             if let toast { toastOverlay(toast) }
         }
-        // "Save these N as a new pool…" (P3) — mints a new Pool from the
-        // current selection, independent of the board. Excludes in-memory
-        // (Bug #85) pending tasks not yet written to GRDB — a Pool.taskIds
-        // reference can't point at a task that doesn't exist in the DB yet;
-        // silently dropping them from the new pool is acceptable (they stay
-        // on this board's own selection, just not copied into the pool).
-        .sheet(isPresented: $showSaveAsPoolSheet) {
-            PoolEditSheetView(
-                pool: nil,
-                templates: templates,
-                library: library,
-                userId: userId,
-                initialTaskIds: poolOrder.filter { taskId in
-                    selectedTaskIds.contains(taskId) && !(pendingTasks?.keys.contains(taskId) ?? false)
+        // Board Sources P2 — the "Add a pool or board" sheet (frames 2c/5c).
+        .sheet(isPresented: $showSourceSheet) {
+            RisoSourcePickerSheetView(
+                pools: pools,
+                boards: sheetBoardEntries,
+                pulledSourceIds: Set(sources.map { $0.sourceId }),
+                onTogglePool: { pool in
+                    if sources.contains(where: { $0.sourceId == pool.id }) {
+                        onRemoveSource(pool.id)
+                    } else {
+                        onPullPoolSource(pool)
+                    }
                 },
-                onSaved: {
-                    showSaveAsPoolSheet = false
-                    onPoolsReloadRequested()
-                },
-                onDeleted: {
-                    showSaveAsPoolSheet = false
+                onToggleBoard: { boardId in
+                    if sources.contains(where: { $0.sourceId == boardId }) {
+                        onRemoveSource(boardId)
+                    } else {
+                        onPullBoardSource(boardId)
+                    }
                 }
             )
         }
@@ -573,6 +486,66 @@ struct BoardWizardTasksStepView: View {
                 onCancel: { copyingTask = nil }
             )
         }
+    }
+
+    // MARK: - Sources UI (Board Sources P2)
+
+    /// Dashed "Add a pool or board" entry row — styled like the library
+    /// entry row (2pt dashed keyline, grid icon, trailing count badge =
+    /// pools + active boards).
+    private var sourceSheetEntry: some View {
+        Button {
+            showSourceSheet = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "square.grid.3x3")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Color.risoMuted)
+                Text("Add a pool or board")
+                    .font(.risoHead(13, .bold))
+                    .foregroundStyle(Color.risoInk)
+                Spacer()
+                Text("\(pools.count + sheetBoardEntries.count)")
+                    .font(.risoBody(11, .extraBold))
+                    .foregroundStyle(Color.risoPaper)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.risoInk))
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: Riso.cardRadius)
+                    .strokeBorder(
+                        Color.risoInk.opacity(0.5),
+                        style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [5, 4])
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add a pool or board")
+    }
+
+    /// The source rows rendered at the top of the "On your board" list.
+    private var sourceRowsList: AnyView? {
+        guard !sources.isEmpty else { return nil }
+        return AnyView(
+            ForEach(sources, id: \.sourceId) { source in
+                RisoSourceRowView(
+                    source: source,
+                    supply: supplyInfoBySourceId[source.sourceId]
+                        ?? WizardSourceSupply(displayName: "", rawSupplyTaskIds: [], doneTaskIds: []),
+                    availableCount: availableCountForSource(source.sourceId),
+                    isExpanded: expandedSourceIds.contains(source.sourceId),
+                    taskById: effectiveTaskById,
+                    onToggleExpanded: { onToggleSourceExpanded(source.sourceId) },
+                    onRemove: { onRemoveSource(source.sourceId) },
+                    onSetFilter: { onSetSourceFilter(source.sourceId, $0) },
+                    onSetRange: { onSetSourceRange(source.sourceId, $0, $1) },
+                    onToggleExclude: { onToggleSourceExclude(source.sourceId, $0) }
+                )
+            }
+        )
     }
 
     // MARK: - Inline editor (PR 1)

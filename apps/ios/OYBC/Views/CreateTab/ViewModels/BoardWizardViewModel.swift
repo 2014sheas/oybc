@@ -91,42 +91,47 @@ final class BoardWizardViewModel {
     /// iOS twin of web's `pendingTasks: Map<string, PendingTaskPayload>`.
     var pendingTasks: [String: PendingTaskPayload] = [:]
 
-    // MARK: - Pool mix (Task Pools + Recurring Boards Rework, P3)
+    // MARK: - Sources (Board Sources rework P2, docs/BOARD_SOURCES.md)
     //
-    // Wizard "PULL IN A POOL" support (docs/POOLS_RECURRING.md §Surfaces
-    // item 5). `pullPool`/`untogglePool`/`provenanceByTaskId` take
-    // `poolsById`/`tasksById` as call-site parameters rather than storing a
-    // live cache on the VM — mirrors how `TaskLibraryViewModel` itself is
-    // owned by the container view (`BoardWizardView`) and threaded into
-    // free functions like `buildWizardPlacement(controller:library:)`
-    // rather than cached here, so this state can't silently go stale
-    // relative to the caller's freshly-loaded pools/library.
+    // The wizard's task list is assembled from SOURCES — pulled pools and
+    // pulled boards, each one row with a membership range + per-board
+    // excludes (+ a done-filter for boards) — plus the hand-added manual
+    // layer. `sources` is the native state; the legacy trio
+    // (`pulledPoolIds`/`removedTaskIds`) is DERIVED from it below, for
+    // the P1 dual-write and any remaining legacy reader.
 
-    /// Pools currently pulled into the selection, in pull order — this
-    /// doubles as the exact array persisted as the spawn record's
-    /// `poolIds` (see `BoardWizardPersist.persistRecurringTemplate`).
-    var pulledPoolIds: [String] = []
+    /// Pulled sources, in row order — persisted verbatim as the record's
+    /// `sources` (see `BoardWizardPersist`).
+    var sources: [BoardSource] = []
 
-    /// Tasks explicitly hand-added to the selection — never pool-sourced.
+    /// Per-source display/supply cache: name + RAW supply (pre-exclude,
+    /// pre-filter) + done-set (boards only). Refreshed at pull time and by
+    /// `refreshSourceSupplies` on library/pool reloads; the wizard session
+    /// resolves supplies eagerly, while spawn re-resolves live per window.
+    var supplyInfoBySourceId: [String: WizardSourceSupply] = [:]
+
+    /// Expanded/collapsed row state — UI-only, never persisted (spec:
+    /// `expanded` is not part of `BoardSource`).
+    var expandedSourceIds: Set<String> = []
+
+    /// Legacy mirror — pool-kind source ids in row order. Persisted as the
+    /// record's decode-compat `poolIds` (P1 dual-write).
+    var pulledPoolIds: [String] {
+        sources.filter { $0.kind == .pool }.map { $0.sourceId }
+    }
+
+    /// Legacy mirror — the flat union of every source's excludes (order:
+    /// first-seen across sources). Persisted as the record's decode-compat
+    /// `removedTaskIds` (P1 dual-write).
+    var removedTaskIds: Set<String> {
+        var out = Set<String>()
+        for source in sources { out.formUnion(source.excludedTaskIds) }
+        return out
+    }
+
+    /// Tasks explicitly hand-added to the selection — never source-supplied.
     /// `toggleTaskSelection` maintains this alongside `selectedTaskIds`.
     var manualTaskIds: Set<String> = []
-
-    /// Tasks explicitly removed from the selection while still supplied by
-    /// a pulled pool — bookkeeping so re-pulling an overlapping pool
-    /// doesn't resurrect them, and so `untogglePool` clears exactly the
-    /// right entries. See `PoolMix`'s type doc for the full removals
-    /// semantics (docs/POOLS_RECURRING.md §Data model "Union rule").
-    var removedTaskIds: Set<String> = []
-
-    /// Task Pools + Recurring Boards Rework (P5) — the `CoreBoardDefault`'s
-    /// currently-saved `corePoolIds` (as of the last fetch/write), for the
-    /// core-setup "Start every <TF> board with 'X'" checkbox's derived
-    /// checked-state (`isCorePoolDefaultSaved`). Distinct from
-    /// `pulledPoolIds` (the wizard's live in-session pull state) — the two
-    /// coincide (checkbox shows checked) only right after a prefill/save
-    /// with no later pool-toggle edits. Only meaningful when `isCore` is
-    /// true; stays `[]` for every other wizard shape.
-    var savedCorePoolIds: [String] = []
 
     // MARK: - Wizard navigation
 
@@ -168,7 +173,9 @@ final class BoardWizardViewModel {
     private let initialPreferences: UserPreferences
 
     /// Injected for tests; defaults to the production singleton.
-    private let database: AppDatabase
+    // `internal` (not private) so the BoardWizardViewModel+Sources extension
+    // file can resolve board-source supplies through the same injected DB.
+    let database: AppDatabase
 
     init(
         preferences: UserPreferences,
@@ -261,17 +268,16 @@ final class BoardWizardViewModel {
                 // provenance instead of collapsing every row to "added by
                 // hand".
                 let mix = RecurringDraftMixPayload.decoded(from: d.board.recurringDraftMix)
-                let resolved = Self.resolvePoolMixHydration(
-                    poolIds: mix.poolIds,
+                let hydrated = Self.hydrateSourcesState(
+                    sources: mix.sources ?? [],
                     manualTaskIds: mix.manualTaskIds,
-                    removedTaskIds: mix.removedTaskIds,
                     database: database
                 )
-                self.selectedTaskIds = resolved.selectedTaskIds
-                self.poolOrder = resolved.poolOrder
-                self.pulledPoolIds = mix.poolIds
+                self.sources = hydrated.sources
+                self.supplyInfoBySourceId = hydrated.supplyInfo
+                self.selectedTaskIds = hydrated.selectedTaskIds
+                self.poolOrder = hydrated.poolOrder
                 self.manualTaskIds = Set(mix.manualTaskIds)
-                self.removedTaskIds = Set(mix.removedTaskIds)
             } else {
                 self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
                 // Preserve placement order on resume so the pool doesn't reshuffle.
@@ -293,38 +299,37 @@ final class BoardWizardViewModel {
                 // A custom board always has an endDate; default defensively.
                 self.customEndDate = String((d.board.endDate ?? "").prefix(10))
             }
-            // Task Pools + Recurring Boards Rework (P5) — a resumed CORE
-            // draft's `pulledPoolIds` is empty by the P3 limitation noted
-            // above, so the checkbox naturally starts unchecked (correct:
-            // nothing is "pulled" yet this session). But `savedCorePoolIds`
-            // still needs to be populated here so that if the user re-pulls
-            // the SAME pool that's already the saved default mid-session,
-            // the checkbox correctly reflects "already saved" rather than
-            // staying stuck unchecked. Judgment call: not explicitly in the
-            // handoff's core-setup section (which is framed around the
-            // fresh-wizard path), but required for basic checkbox
-            // correctness on a resumed core board — no P6/P7 surface pulled
-            // forward. Silent on DB error, matching the fresh-wizard prefill.
-            if d.board.isCore, let userId = userId {
-                self.savedCorePoolIds = (try? database.fetchCoreBoardDefault(
-                    userId: userId, timeframe: d.board.timeframe
-                ))?.corePoolIds ?? []
-            }
         } else if let t = effectiveTemplate {
             self.name = t.name
             self.size = t.boardSize
             self.timeframe = t.timeframe
             self.centerType = t.centerSquareType
-            self.selectedTaskIds = Self.resolveTemplateHydrationTaskIds(t, database: database)
-            // Template hydration returns a Set (order not preserved); use a
-            // deterministic order so the pool is stable within the session.
-            self.poolOrder = self.selectedTaskIds.sorted()
-            // P3 — hydrate directly from the template's own pool-mix fields
-            // so editing a repeating board's pool card round-trips its real
-            // provenance instead of collapsing to "added by hand".
-            self.pulledPoolIds = t.poolIds ?? []
-            self.manualTaskIds = Set(t.manualTaskIds ?? [])
-            self.removedTaskIds = Set(t.removedTaskIds ?? [])
+            // Board Sources P2 — hydrate the record's sources natively
+            // (stamped array, or the legacy trio derived via
+            // `sourcesForRecord`), so editing a repeating board round-trips
+            // ranges/excludes/filters exactly. A GENUINELY UN-MIGRATED
+            // record (every generalized field absent — pre-P1 rows pulled
+            // from an old client) falls back to `seedTaskIds` as hand-added
+            // rows, preserving the M2 fix-wave rule: `poolIds: []` resolves
+            // through the mix (empty), ONLY fully-absent fields fall back.
+            let isUnmigrated = t.sources == nil && t.poolIds == nil
+                && t.manualTaskIds == nil && t.removedTaskIds == nil
+            let recordManualIds = isUnmigrated ? t.seedTaskIds : (t.manualTaskIds ?? [])
+            let recordSources = isUnmigrated
+                ? []
+                : BoardSources.sourcesForRecord(
+                    sources: t.sources, poolIds: t.poolIds, removedTaskIds: t.removedTaskIds
+                )
+            let hydrated = Self.hydrateSourcesState(
+                sources: recordSources,
+                manualTaskIds: recordManualIds,
+                database: database
+            )
+            self.sources = hydrated.sources
+            self.supplyInfoBySourceId = hydrated.supplyInfo
+            self.selectedTaskIds = hydrated.selectedTaskIds
+            self.poolOrder = hydrated.poolOrder
+            self.manualTaskIds = Set(recordManualIds)
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -364,29 +369,43 @@ final class BoardWizardViewModel {
                 // Silent on any DB error / no-row — the wizard still opens
                 // with an empty selection so the user can build a board
                 // manually.
+                // Board Sources P2 (locked decision, docs/BOARD_SOURCES.md)
+                // — core defaults PRE-PULL AS SOURCES: each `corePoolIds`
+                // entry becomes a `[0, all]` pool source row, and
+                // `coreDefaultTaskIds` become hand-added rows. The
+                // Board-settings defaults sheet is now the SOLE author
+                // surface; the wizard never writes `CoreBoardDefault`.
                 if let userId = userId {
                     let coreDefault = try? database.fetchCoreBoardDefault(userId: userId, timeframe: timeframe)
-                    let corePoolIds = coreDefault?.corePoolIds ?? []
-                    let coreDefaultTaskIds = coreDefault?.coreDefaultTaskIds ?? []
-                    let prefill = Self.resolveCoreBoardDefaultPrefill(
-                        corePoolIds: corePoolIds,
-                        coreDefaultTaskIds: coreDefaultTaskIds,
+                    let rawPoolIds = coreDefault?.corePoolIds ?? []
+                    let rawDefaultIds = coreDefault?.coreDefaultTaskIds ?? []
+                    // A fresh prefill pre-pulls only sources/tasks that
+                    // RESOLVE — a deleted pool or task must not seed a dead
+                    // row. (Draft/template hydration deliberately keeps the
+                    // reference instead, so a sync-restored source returns.)
+                    let livePoolIds = Set(
+                        ((try? database.fetchPools(ids: rawPoolIds)) ?? [])
+                            .filter { !$0.isDeleted }.map { $0.id }
+                    )
+                    let liveDefaultIds = Set(
+                        ((try? database.fetchTasks(ids: rawDefaultIds)) ?? [])
+                            .filter { !$0.isDeleted }.map { $0.id }
+                    )
+                    let corePoolIds = rawPoolIds.filter { livePoolIds.contains($0) }
+                    let coreDefaultTaskIds = rawDefaultIds.filter { liveDefaultIds.contains($0) }
+                    let hydrated = Self.hydrateSourcesState(
+                        sources: corePoolIds.map { BoardSource(sourceId: $0, kind: .pool) },
+                        manualTaskIds: coreDefaultTaskIds,
                         database: database
                     )
-                    self.selectedTaskIds = prefill.selectedTaskIds
-                    self.poolOrder = prefill.poolOrder
-                    self.pulledPoolIds = prefill.pulledPoolIds
-                    self.savedCorePoolIds = corePoolIds
+                    self.sources = hydrated.sources
+                    self.supplyInfoBySourceId = hydrated.supplyInfo
+                    self.selectedTaskIds = hydrated.selectedTaskIds
+                    self.poolOrder = hydrated.poolOrder
+                    self.manualTaskIds = Set(coreDefaultTaskIds)
+                } else {
+                    self.manualTaskIds = []
                 }
-                // Every prefilled row (pool-sourced or an individual
-                // default) is NOT hand-added — nothing has been manually
-                // touched yet at init time. This is the fix for the prior
-                // unconditional `self.manualTaskIds = self.selectedTaskIds`
-                // below, which stomped a core prefill into looking
-                // hand-added; that assignment now lives ONLY in the
-                // non-prefill `else` branch, where the selection is empty
-                // anyway (a true no-op there).
-                self.manualTaskIds = []
             } else if isRecurringAtEntry {
                 // Board Creation Split (iOS PR A) — a fresh wizard launched
                 // from the recurring hub card seeds a default cadence
@@ -450,63 +469,6 @@ final class BoardWizardViewModel {
         }
     }
 
-    /// Resolves a template's CURRENT pool-mix task ids for edit-mode
-    /// hydration. iOS twin of web's `useTemplateMix`.
-    ///
-    /// P1 (Task Pools + Recurring Boards Rework,
-    /// docs/POOLS_RECURRING.md §Migration "seedTaskIds end state") rewired
-    /// the legacy template editor's persistence to write edits through to
-    /// the linked `Pool`'s `taskIds` instead of the template's own
-    /// `seedTaskIds` field — which is left VERBATIM (decode-compat only)
-    /// and never read again. That means this hydration can no longer read
-    /// `t.seedTaskIds` directly: after a first "Add tasks"/"Edit"
-    /// round-trip, that field is stale — it would silently drop whatever
-    /// the write-through already applied to the Pool, and re-opening the
-    /// wizard a second time would show (and then re-save, DESTRUCTIVELY)
-    /// the wrong selection.
-    ///
-    /// Un-migrated safety net (shouldn't occur post-migration — the
-    /// first-launch migration always stamps a length-1 `poolIds`): falls
-    /// back to `seedTaskIds` verbatim ONLY when `poolIds` is `nil`
-    /// (genuinely un-migrated — see `PoolMix.isLegacyShapedRecord`'s
-    /// docstring).
-    ///
-    /// Review finding M2: this must NOT also fall back for an empty-but-
-    /// present `poolIds: []` — that shape also covers the defensive
-    /// "flatten" write-through (`BoardWizardPersist.swift`'s richer-shape
-    /// branch: `manualTaskIds: seedTaskIds, poolIds: [], removedTaskIds:
-    /// []`). Falling back to stale `seedTaskIds` there would silently
-    /// drop whatever the flatten already wrote to `manualTaskIds` — a
-    /// destructive-edit bug (re-saving the hydrated-wrong selection
-    /// resurrects stale seeds). `poolIds: []` resolves correctly through
-    /// `PoolMix.resolveMix` below regardless of which case produced it.
-    ///
-    /// Any DB read failure also falls back to `seedTaskIds` (silent, like
-    /// the DefaultPool prefill above) so the wizard still opens with a
-    /// usable selection rather than an error.
-    private static func resolveTemplateHydrationTaskIds(
-        _ template: RecurringBoardTemplate,
-        database: AppDatabase
-    ) -> Set<String> {
-        guard let poolIds = template.poolIds else {
-            return Set(template.seedTaskIds)
-        }
-        guard let pools = try? database.fetchPools(ids: poolIds) else {
-            return Set(template.seedTaskIds)
-        }
-        let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
-
-        var referencedIds = Set<String>()
-        for pool in pools { referencedIds.formUnion(pool.taskIds) }
-        referencedIds.formUnion(template.manualTaskIds ?? [])
-
-        guard let tasks = try? database.fetchTasks(ids: Array(referencedIds)) else {
-            return Set(template.seedTaskIds)
-        }
-        let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-
-        return Set(PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById).taskIds)
-    }
 
     /// Resolves a recurring draft's raw `recurringDraftMix` fields into a
     /// hydrated selection + display order. Board Creation Split (PR B) —
@@ -686,52 +648,10 @@ final class BoardWizardViewModel {
         return (selected, order, pulled)
     }
 
-    /// Whether the core-setup "Start every <TF> board with 'X'" checkbox
-    /// should render checked — true iff both `pulledPoolIds` and
-    /// `savedCorePoolIds` are non-empty AND represent the same SET
-    /// (order-independent). Task Pools + Recurring Boards Rework (P5).
-    ///
-    /// Deliberately DERIVED rather than independently tracked: recomputed
-    /// on every render from the wizard's live `pulledPoolIds` against
-    /// whatever is currently persisted, so toggling a pool after checking
-    /// immediately (and correctly) shows unchecked again without any extra
-    /// bookkeeping to keep in sync.
-    static func isCorePoolDefaultSaved(pulledPoolIds: [String], savedCorePoolIds: [String]) -> Bool {
-        guard !pulledPoolIds.isEmpty, !savedCorePoolIds.isEmpty else { return false }
-        return Set(pulledPoolIds) == Set(savedCorePoolIds)
-    }
-
-    /// Core-setup "Start every <TF> board with 'X'" checkbox write path
-    /// (Task Pools + Recurring Boards Rework, P5,
-    /// docs/POOLS_RECURRING.md §Surfaces item 6). Persists `corePoolIds`
-    /// ONLY via `AppDatabase.upsertCorePoolIdsAndEnqueue`, which preserves
-    /// whatever `coreDefaultTaskIds` already exists (that field is
-    /// P7-authored-only — never written from here). `userId` is a
-    /// call-site parameter rather than a stored property, mirroring
-    /// `toggleTaskSelection`'s caller-supplied-lookups pattern.
-    ///
-    /// - `saved == true`: persists the CURRENT `pulledPoolIds` snapshot at
-    ///   check-time — not a live binding to further pool toggles. A later
-    ///   pool-toggle does NOT retroactively update the saved default; the
-    ///   user must re-check to capture a new snapshot.
-    /// - `saved == false`: clears `corePoolIds` to `[]`. Symmetric
-    ///   uncheck-to-clear is a coordinator judgment call — the handoff
-    ///   spec only explicitly describes the check-to-save direction, but a
-    ///   checkbox that can only ever be checked isn't a real checkbox.
-    ///
-    /// Silent on DB error (mirrors the rest of the wizard's pool-mix I/O
-    /// resilience posture) — `savedCorePoolIds` simply doesn't update, so
-    /// the checkbox visually stays wherever it was.
-    func setCorePoolDefaultSaved(_ saved: Bool, userId: String) {
-        let idsToSave = saved ? pulledPoolIds : []
-        guard let result = try? database.upsertCorePoolIdsAndEnqueue(
-            userId: userId,
-            timeframe: timeframe,
-            corePoolIds: idsToSave,
-            now: AppDatabase.currentTimestamp()
-        ) else { return }
-        savedCorePoolIds = result.corePoolIds
-    }
+    // Board Sources P2 — the core-setup "Start every…" checkbox and its
+    // `isCorePoolDefaultSaved` / `setCorePoolDefaultSaved` helpers were
+    // REMOVED (docs/BOARD_SOURCES.md §Removed): the Board-settings
+    // defaults sheet is the sole `CoreBoardDefault` author surface now.
 
     // MARK: - Coupled mutators
 
@@ -777,138 +697,11 @@ final class BoardWizardViewModel {
         timeframe = t
     }
 
-    /// Toggles a task's selection; clears the center mark if the user
-    /// is deselecting the current center. Also removes the task from
-    /// `pendingTasks` when the user deselects a newly-created (not-yet-
-    /// persisted) task — Bug #85.
-    ///
-    /// P3 — also maintains the manual/removed pool-mix bookkeeping:
-    /// selecting a task marks it manual; deselecting it drops the manual
-    /// mark and, if it's still supplied by a currently-pulled pool, records
-    /// a removal so a later `untogglePool`/re-pull behaves correctly.
-    /// `poolsById`/`tasksById` default to empty — every EXISTING call site
-    /// (new-task-created, from-a-board copy, context-menu add) adds a task
-    /// that by construction can't already be a pool member, so the
-    /// removed-bookkeeping check trivially no-ops for them; only the
-    /// Tasks-step's row-remove path (routed through `BoardWizardView`'s
-    /// `onToggleSelection` closure) needs to pass the real lookups.
-    func toggleTaskSelection(
-        _ taskId: String,
-        poolsById: [String: Pool] = [:],
-        tasksById: [String: Task] = [:]
-    ) {
-        if selectedTaskIds.contains(taskId) {
-            selectedTaskIds.remove(taskId)
-            if centerTaskId == taskId { centerTaskId = nil }
-            // Bug #85 — purge the pending payload if this was a not-yet-
-            // persisted task. No-op for library tasks (won't be in the map).
-            pendingTasks.removeValue(forKey: taskId)
-            poolOrder.removeAll { $0 == taskId }
-            // A task that leaves the pool drops any staged edit — re-adding it
-            // starts clean, matching the removal-purges-pending semantics.
-            stagedEdits.removeValue(forKey: taskId)
-            manualTaskIds.remove(taskId)
-            if Self.isSuppliedByPulledPool(
-                taskId, pulledPoolIds: pulledPoolIds, poolsById: poolsById, tasksById: tasksById
-            ) {
-                removedTaskIds.insert(taskId)
-            }
-        } else {
-            selectedTaskIds.insert(taskId)
-            if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
-            manualTaskIds.insert(taskId)
-            removedTaskIds.remove(taskId)
-        }
-    }
-
-    /// True when `taskId` is in the resolvable supply of any pool currently
-    /// pulled into the mix — a non-deleted pool in `pulledPoolIds` whose raw
-    /// `taskIds` contains it, and the task itself isn't soft-deleted. Used
-    /// by `toggleTaskSelection`'s deselect branch to decide whether the
-    /// removal needs `removedTaskIds` bookkeeping.
-    private static func isSuppliedByPulledPool(
-        _ taskId: String,
-        pulledPoolIds: [String],
-        poolsById: [String: Pool],
-        tasksById: [String: Task]
-    ) -> Bool {
-        if let task = tasksById[taskId], task.isDeleted { return false }
-        for poolId in pulledPoolIds {
-            guard let pool = poolsById[poolId], !pool.isDeleted else { continue }
-            if pool.taskIds.contains(taskId) { return true }
-        }
-        return false
-    }
-
-    /// "PULL IN A POOL" action (P3, docs/POOLS_RECURRING.md §Surfaces item
-    /// 5) — unions the pool's resolvable supply (minus current removals)
-    /// into the selection. No-op if the pool is missing, soft-deleted, or
-    /// already pulled. `poolsById`/`tasksById` are supplied by the caller
-    /// (see the type doc's "Pool mix" section header above).
-    func pullPool(_ poolId: String, poolsById: [String: Pool], tasksById: [String: Task]) {
-        guard poolsById[poolId]?.isDeleted == false, !pulledPoolIds.contains(poolId) else { return }
-        let additions = PoolMix.resolvePoolPullAdditions(
-            poolId, removedTaskIds: Array(removedTaskIds), poolsById: poolsById, tasksById: tasksById
-        )
-        for taskId in additions where !selectedTaskIds.contains(taskId) {
-            selectedTaskIds.insert(taskId)
-            if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
-        }
-        pulledPoolIds.append(poolId)
-    }
-
-    /// "Untoggle a pool" action (P3) — removes only that pool's non-manual
-    /// tasks that aren't still supplied by another currently-pulled pool.
-    /// The manual layer is never touched; the saved `Pool` itself is never
-    /// modified by this or `pullPool` (locked decision,
-    /// docs/POOLS_RECURRING.md §Data model "Union rule").
-    func untogglePool(_ poolId: String, poolsById: [String: Pool], tasksById: [String: Task]) {
-        let remainingPoolIds = pulledPoolIds.filter { $0 != poolId }
-        let removals = PoolMix.resolvePoolUntoggleRemovals(
-            poolId,
-            remainingPoolIds: remainingPoolIds,
-            manualTaskIds: Array(manualTaskIds),
-            poolsById: poolsById,
-            tasksById: tasksById
-        )
-        for taskId in removals {
-            selectedTaskIds.remove(taskId)
-            poolOrder.removeAll { $0 == taskId }
-            if centerTaskId == taskId { centerTaskId = nil }
-            pendingTasks.removeValue(forKey: taskId)
-            stagedEdits.removeValue(forKey: taskId)
-        }
-        removedTaskIds = Set(PoolMix.clearRemovalsForUntoggle(
-            WizardPoolMixRecord(poolIds: pulledPoolIds, manualTaskIds: nil, removedTaskIds: Array(removedTaskIds)),
-            untoggledPoolId: poolId,
-            poolsById: poolsById
-        ))
-        pulledPoolIds = remainingPoolIds
-    }
-
-    /// Provenance label for every currently-selected task — `"added by
-    /// hand"` or `"from <Pool name>"` — for the pool list's subtitle line.
-    /// Only meaningful for ids in `selectedTaskIds` (what `RisoPoolListView`
-    /// renders); a manual mark always wins, then the first pulled pool (in
-    /// pull order) whose resolvable supply includes the task.
-    func provenanceByTaskId(poolsById: [String: Pool], tasksById: [String: Task]) -> [String: String] {
-        var result: [String: String] = [:]
-        for taskId in selectedTaskIds {
-            if manualTaskIds.contains(taskId) {
-                result[taskId] = "added by hand"
-                continue
-            }
-            var label: String?
-            for poolId in pulledPoolIds {
-                guard let pool = poolsById[poolId], !pool.isDeleted, pool.taskIds.contains(taskId) else { continue }
-                if let task = tasksById[taskId], task.isDeleted { continue }
-                label = "from \(pool.name)"
-                break
-            }
-            result[taskId] = label ?? "added by hand"
-        }
-        return result
-    }
+    // Board Sources P2 — the pool-mix actions (`pullPool`/`untogglePool`/
+    // `toggleTaskSelection`) and every sources-native action live in
+    // `BoardWizardViewModel+Sources.swift` (kept out of this frozen
+    // god-file; ROADMAP B6 posture). `provenanceByTaskId` was removed with
+    // the provenance subtitles (docs/BOARD_SOURCES.md §Removed).
 
     /// Stage an inline edit; returns the previous patch (or nil) so the Save
     /// toast's Undo can revert to it.
@@ -1015,10 +808,10 @@ final class BoardWizardViewModel {
         stagedEdits = [:]
         centerTaskId = nil
         pendingTasks = [:]
-        pulledPoolIds = []
+        sources = []
+        supplyInfoBySourceId = [:]
+        expandedSourceIds = []
         manualTaskIds = []
-        removedTaskIds = []
-        savedCorePoolIds = []
         currentStep = 1
     }
 
@@ -1074,15 +867,14 @@ final class BoardWizardViewModel {
         return nil
     }
 
-    /// Pool-size enforcement is loose-fit on both branches:
-    ///   - One-off (isRecurring=false): `count >= tasksRequired` (existing
-    ///     behavior; extras are silently dropped by `BoardWizardPersist`).
-    ///   - Recurring (isRecurring=true): `count >= tasksRequired`. The
-    ///     spawn shuffles + slices, so any extras become the random
-    ///     subset for each window. The earlier strict-fit "Use every
-    ///     task" branch was dropped during the Phase 6.2 UX rework.
+    /// Board Sources P2 — the step-2 gate compares CAPACITY (sum of every
+    /// source's effective max + hand-added, deduped — docs/BOARD_SOURCES.md
+    /// §Selection step 3) against the fillable cell count. For all-[0,all]
+    /// sources this equals the old flat selection count, so pre-rework
+    /// behavior is unchanged; a numeric max caps what a source can
+    /// contribute and the gate respects it.
     var isStep2Valid: Bool {
-        guard selectedTaskIds.count >= tasksRequired else { return false }
+        guard sourceCapacity >= tasksRequired else { return false }
         if centerMode {
             guard let id = centerTaskId, selectedTaskIds.contains(id) else { return false }
         }
@@ -1090,11 +882,10 @@ final class BoardWizardViewModel {
     }
 
     var step2ValidationMessage: String? {
-        let short = tasksRequired - selectedTaskIds.count
+        let short = tasksRequired - sourceCapacity
         if short > 0 {
-            let noun = "task\(short == 1 ? "" : "s")"
-            if isRecurring { return "Pick \(short) more \(noun) (\(tasksRequired) minimum)." }
-            return "Pick \(short) more \(noun)."
+            // Design copy (docs/BOARD_SOURCES.md §Surfaces item 1).
+            return "\(short) more to fill the board."
         }
         if centerMode {
             if centerTaskId == nil || !selectedTaskIds.contains(centerTaskId!) {

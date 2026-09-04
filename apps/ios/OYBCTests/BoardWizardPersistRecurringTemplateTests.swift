@@ -264,10 +264,11 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         )
         // Pull pool A in, then untoggle it back out — exercising the REAL
         // pull/untoggle mutators, not hand-set VM state.
-        vm.pullPool(poolA.id, poolsById: poolsById, tasksById: tasksById)
+        _ = poolsById // sources actions take the Pool + tasks lookup directly
+        vm.pullPool(poolA, tasksById: tasksById)
         XCTAssertEqual(vm.pulledPoolIds, [poolA.id])
         XCTAssertEqual(vm.selectedTaskIds, ["a1", "a2"])
-        vm.untogglePool(poolA.id, poolsById: poolsById, tasksById: tasksById)
+        vm.removeSource(sourceId: poolA.id)
         XCTAssertTrue(vm.pulledPoolIds.isEmpty)
         XCTAssertTrue(vm.selectedTaskIds.isEmpty)
 
