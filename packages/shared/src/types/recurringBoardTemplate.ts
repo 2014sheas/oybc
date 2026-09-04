@@ -1,4 +1,5 @@
 import { Timeframe, CenterSquareType } from "../constants/enums";
+import type { BoardSource } from "./boardSource";
 import { BoardSize } from "../constants";
 
 /**
@@ -109,6 +110,20 @@ export interface RecurringBoardTemplate {
    */
   removedTaskIds?: string[];
 
+  /**
+   * Board Sources rework (docs/BOARD_SOURCES.md, P1) — the canonical
+   * persisted task-source shape going forward: one entry per pulled
+   * source (pool or board) with range/excludes/filter. Absent on records
+   * that predate the stamp — read through
+   * `sourcesForRecord(...)` (`../algorithms/boardSources`), which derives
+   * a `[0, all]` mapping from the legacy trio above. During P1 every
+   * write stamps BOTH `sources` and the trio (the trio is the legacy
+   * mirror for pre-rework readers + old clients; P2 retires it to
+   * decode-compat). `manualTaskIds` stays live — it is the hand-added
+   * layer in both models.
+   */
+  sources?: BoardSource[];
+
   // Spawn state
   lastSpawnedWindowKey: string | null; // local ISO startDate of last spawn, or null
   isActive: boolean; // User can pause/resume without deleting
@@ -145,6 +160,8 @@ export interface CreateRecurringBoardTemplateInput {
   poolIds?: string[];
   manualTaskIds?: string[];
   removedTaskIds?: string[];
+  /** Board Sources P1 — canonical sources shape (see the entity field). */
+  sources?: BoardSource[];
 }
 
 /**
@@ -164,4 +181,6 @@ export interface UpdateRecurringBoardTemplateInput {
   poolIds?: string[];
   manualTaskIds?: string[];
   removedTaskIds?: string[];
+  /** Board Sources P1 — canonical sources shape (see the entity field). */
+  sources?: BoardSource[];
 }

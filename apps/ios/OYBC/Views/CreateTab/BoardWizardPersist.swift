@@ -414,10 +414,14 @@ func persistWizardBoard(
             // Board Creation Split (PR B) — a recurring wizard writes its
             // CURRENT pool-mix snapshot fresh on every save (the user may
             // have changed the pool mid-session; this is never merged with
-            // a prior snapshot). A one-off save never sets the key at all
-            // — decodes as nil, matching a plain draft's forward-compat
-            // shape.
-            if capturedIsRecurring {
+            // a prior snapshot). Board Sources P1
+            // (docs/BOARD_SOURCES.md §Data model item 2): ONE-OFF draft
+            // saves snapshot the blob too, so an overfilled one-off
+            // draft's full pool survives resume; active one-off creates
+            // still skip it (the created board is concrete BoardTask
+            // rows). The v2 payload carries `sources` alongside the
+            // legacy trio.
+            if capturedIsRecurring || status == .draft {
                 let mixPayload = RecurringDraftMixPayload(
                     poolIds: capturedPulledPoolIds,
                     manualTaskIds: Array(capturedManualTaskIds),
@@ -591,6 +595,14 @@ func persistRecurringTemplate(
     let poolIds = controller.pulledPoolIds
     let manualTaskIds = Array(controller.manualTaskIds)
     let removedTaskIds = Array(controller.removedTaskIds)
+    // Board Sources P1 — the canonical persisted shape, stamped alongside
+    // the legacy trio on every template write (docs/BOARD_SOURCES.md §Data
+    // model; the wizard UI still expresses only [0, all] pool pulls until
+    // P2, so this mapping is lossless for anything it can produce).
+    let sources = BoardSources.sourcesFromMixFields(
+        poolIds: poolIds,
+        removedTaskIds: removedTaskIds
+    )
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()
@@ -685,6 +697,7 @@ func persistRecurringTemplate(
                     poolIds: poolIds,
                     manualTaskIds: manualTaskIds,
                     removedTaskIds: removedTaskIds,
+                    sources: sources,
                     // `isActive` isn't surfaced in the wizard form (the
                     // templates list owns the pause toggle), so preserve.
                     lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
@@ -722,6 +735,7 @@ func persistRecurringTemplate(
                 poolIds: poolIds,
                 manualTaskIds: manualTaskIds,
                 removedTaskIds: removedTaskIds,
+                sources: sources,
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,

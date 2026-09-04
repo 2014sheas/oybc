@@ -6,7 +6,11 @@ import {
   buildSpawnPlacement,
   validateSpawnPool,
   computeBoardStatsUpdate,
-  resolveMix,
+  fillableCellCount,
+  poolSourceSupplyById,
+  resolveSourceAvailable,
+  selectBoardTasks,
+  sourcesForRecord,
   type Board,
   type BoardTask,
   type CompoundChild,
@@ -83,40 +87,70 @@ export async function spawnTemplateBoard(
       db.syncQueue,
     ],
     async (): Promise<SpawnResult> => {
-      // P1 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
-      // §Changed: the spawn record) — the task source is the resolved
-      // pool-mix, not `template.seedTaskIds` directly. Post-migration EVERY
-      // live template has `poolIds` set, so `seedTaskIds` is never read
-      // here (left verbatim on the record for decode-compat only — see
-      // `RecurringBoardTemplate`'s docstring's "seedTaskIds end state").
+      // Board Sources P1 (docs/BOARD_SOURCES.md) — the task source is the
+      // record's SOURCES: the stamped `sources` array when present, else
+      // the legacy trio derived on the fly (`sourcesForRecord` — no data
+      // backfill required; rows written by old clients keep working). Pool
+      // sources supply their resolvable taskIds; board-source resolution
+      // lands with P2, and until then such an entry supplies nothing —
+      // it contributes nothing and never blocks (the design's
+      // empty-source rule).
       //
-      // Single full-table reads (tasks, pools) rather than a targeted
-      // `anyOf(seedTaskIds)` lookup: `resolveMix` needs a `tasksById` map
-      // to filter each pool's OWN resolvable supply (deleted tasks skipped
-      // — derived detachment), and the same `allTasks`/`tasksById` are
-      // reused below for the spawn-time derivation pass, so this is not an
-      // added read.
+      // Single full-table reads (tasks, pools): the supply resolvers need
+      // a `tasksById` map to filter each pool's OWN resolvable supply
+      // (deleted tasks skipped — derived detachment), and the same
+      // `allTasks`/`tasksById` are reused below for the spawn-time
+      // derivation pass, so this is not an added read.
       const allTasks = await db.tasks.toArray();
       const tasksById: Record<string, Task> = {};
       for (const t of allTasks) tasksById[t.id] = t;
 
-      const poolIds = template.poolIds ?? [];
-      const pools = poolIds.length > 0 ? await db.pools.where('id').anyOf(poolIds).toArray() : [];
+      const sources = sourcesForRecord(template);
+      const poolSourceIds = sources
+        .filter((s) => s.kind === 'pool')
+        .map((s) => s.sourceId);
+      const pools =
+        poolSourceIds.length > 0
+          ? await db.pools.where('id').anyOf(poolSourceIds).toArray()
+          : [];
       const poolsById: Record<string, Pool> = {};
       for (const p of pools) poolsById[p.id] = p;
 
-      const mix = resolveMix(template, poolsById, tasksById);
-      // Resolve mix task ids → Task[] in mix order. Drops any ids that
-      // don't resolve at all (e.g. a hard-gone manual reference — the
-      // manual layer isn't deleted-filtered by resolveMix itself); the
-      // validator below catches a resolved-but-deleted task (possible
-      // for a manual-sourced id, since resolveMix only filters deletion
-      // for pool-sourced supply) as `has_deleted_tasks`.
-      const orderedPool: Task[] = mix.taskIds
-        .map((id) => tasksById[id])
-        .filter((t): t is Task => t !== undefined);
+      const supplies = sources.map((source) => ({
+        source,
+        supplyTaskIds:
+          source.kind === 'pool'
+            ? poolSourceSupplyById(source.sourceId, poolsById, tasksById)
+            : [],
+      }));
+      // The manual layer isn't deleted-filtered (caller-curated, matching
+      // resolveMix's old contract), but hard-gone ids ARE dropped — the
+      // old path dropped them via its tasksById lookup the same way. A
+      // resolved-but-deleted manual task stays, for the validator below.
+      const manualTaskIds = (template.manualTaskIds ?? []).filter(
+        (id) => tasksById[id] !== undefined,
+      );
 
-      if (orderedPool.length === 0) {
+      // Validate the FULL candidate set (manual + every source's
+      // available list, deduped) BEFORE selecting — this preserves the
+      // pre-sources skip semantics exactly: a deleted manual task
+      // anywhere in the mix skips the window as `has_deleted_tasks`, and
+      // a too-small mix as `pool_too_small`, independent of which subset
+      // selection would have picked.
+      const candidateSeen = new Set<string>();
+      const candidateTasks: Task[] = [];
+      const addCandidate = (id: string): void => {
+        if (candidateSeen.has(id)) return;
+        candidateSeen.add(id);
+        const t = tasksById[id];
+        if (t !== undefined) candidateTasks.push(t);
+      };
+      for (const id of manualTaskIds) addCandidate(id);
+      for (const supply of supplies) {
+        for (const id of resolveSourceAvailable(supply)) addCandidate(id);
+      }
+
+      if (candidateTasks.length === 0) {
         return {
           ok: false,
           templateId: template.id,
@@ -124,7 +158,7 @@ export async function spawnTemplateBoard(
         };
       }
 
-      const validation = validateSpawnPool(template, orderedPool);
+      const validation = validateSpawnPool(template, candidateTasks);
       if (!validation.ok) {
         return {
           ok: false,
@@ -132,6 +166,27 @@ export async function spawnTemplateBoard(
           reason: validation.reason,
         };
       }
+
+      // Pick exactly the fillable cell count, honoring each source's
+      // membership range (min/max — [0, all] for every migrated shape, so
+      // this is the old uniform-subset draw until P2 writes real ranges).
+      // A range-infeasible pick (only possible with P2+ data) maps to the
+      // same skip-and-warn family as a small pool.
+      const selection = selectBoardTasks({
+        supplies,
+        manualTaskIds,
+        cellCount: fillableCellCount(template.boardSize, template.centerSquareType),
+      });
+      if (!selection.ok) {
+        return {
+          ok: false,
+          templateId: template.id,
+          reason: 'pool_too_small',
+        };
+      }
+      const orderedPool: Task[] = selection.taskIds
+        .map((id) => tasksById[id])
+        .filter((t): t is Task => t !== undefined);
 
       const placement = buildSpawnPlacement({
         template,

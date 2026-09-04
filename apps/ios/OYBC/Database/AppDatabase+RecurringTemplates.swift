@@ -112,48 +112,101 @@ extension AppDatabase {
         var outcome: RecurringSpawnOutcome?
         do {
             try write { db in
-                // P1 (Task Pools + Recurring Boards Rework,
-                // docs/POOLS_RECURRING.md §Changed: the spawn record) — the
-                // task source is the resolved pool-mix, not
-                // `template.seedTaskIds` directly. Post-migration EVERY
-                // live template has `poolIds` set, so `seedTaskIds` is
-                // never read here (left verbatim on the record for
-                // decode-compat only — see `RecurringBoardTemplate`'s
-                // "seedTaskIds end state" doc).
+                // Board Sources P1 (docs/BOARD_SOURCES.md) — the task
+                // source is the record's SOURCES: the stamped `sources`
+                // array when present, else the legacy trio derived on the
+                // fly (`BoardSources.sourcesForRecord` — no data backfill;
+                // rows written by old clients keep working). Pool sources
+                // supply their resolvable taskIds; board-source resolution
+                // lands with P2, and until then such an entry supplies
+                // nothing — it contributes nothing and never blocks.
                 //
-                // Full-table task read (not a targeted seedTaskIds lookup):
-                // `PoolMix.resolveMix` needs a `tasksById` map to filter
-                // each pool's OWN resolvable supply (deleted tasks skipped
-                // — derived detachment), and the same map is reused below
-                // for the spawn-time derivation pass, so this isn't an
-                // added read (mirrors web's `spawnTemplateBoard`).
+                // Full-table task read: the supply resolvers need a
+                // `tasksById` map to filter each pool's OWN resolvable
+                // supply (deleted tasks skipped — derived detachment), and
+                // the same map is reused below for the spawn-time
+                // derivation pass, so this isn't an added read (mirrors
+                // web's `spawnTemplateBoard`).
                 let allTasks = try Task.fetchAll(db)
                 let tasksById = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
 
-                let poolIds = template.poolIds ?? []
-                let pools = poolIds.isEmpty
+                let sources = BoardSources.sourcesForRecord(
+                    sources: template.sources,
+                    poolIds: template.poolIds,
+                    removedTaskIds: template.removedTaskIds
+                )
+                let poolSourceIds = sources.filter { $0.kind == .pool }.map { $0.sourceId }
+                let pools = poolSourceIds.isEmpty
                     ? []
-                    : try Pool.filter(poolIds.contains(Column("id"))).fetchAll(db)
+                    : try Pool.filter(poolSourceIds.contains(Column("id"))).fetchAll(db)
                 let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
 
-                let mix = PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById)
-                // Resolve mix task ids → Task[] in mix order. Drops any ids
-                // that don't resolve at all (e.g. a hard-gone manual
-                // reference — the manual layer isn't deleted-filtered by
-                // resolveMix itself); the validator below catches a
-                // resolved-but-deleted task (possible for a manual-sourced
-                // id) as `.hasDeletedTasks`.
-                let orderedPool: [Task] = mix.taskIds.compactMap { tasksById[$0] }
+                let supplies: [BoardSources.Supply] = sources.map { source in
+                    BoardSources.Supply(
+                        source: source,
+                        supplyTaskIds: source.kind == .pool
+                            ? BoardSources.poolSourceSupplyById(
+                                source.sourceId, poolsById: poolsById, tasksById: tasksById
+                            )
+                            : []
+                    )
+                }
+                // The manual layer isn't deleted-filtered (caller-curated,
+                // matching resolveMix's old contract), but hard-gone ids
+                // ARE dropped — the old path dropped them via its tasksById
+                // compactMap the same way. A resolved-but-deleted manual
+                // task stays, for the validator below.
+                let manualTaskIds = (template.manualTaskIds ?? []).filter { tasksById[$0] != nil }
 
-                if orderedPool.isEmpty {
+                // Validate the FULL candidate set (manual + every source's
+                // available list, deduped) BEFORE selecting — preserves the
+                // pre-sources skip semantics exactly: a deleted manual task
+                // anywhere in the mix skips as `.hasDeletedTasks`, a
+                // too-small mix as `.poolTooSmall`, independent of which
+                // subset selection would have picked.
+                var candidateSeen = Set<String>()
+                var candidateTasks: [Task] = []
+                func addCandidate(_ id: String) {
+                    guard !candidateSeen.contains(id) else { return }
+                    candidateSeen.insert(id)
+                    if let t = tasksById[id] { candidateTasks.append(t) }
+                }
+                for id in manualTaskIds { addCandidate(id) }
+                for supply in supplies {
+                    for id in BoardSources.resolveSourceAvailable(supply) { addCandidate(id) }
+                }
+
+                if candidateTasks.isEmpty {
                     outcome = .skipped(templateId: template.id, reason: .noPoolTasksResolved)
                     throw RecurringSpawnAbort.skip
                 }
 
-                let validation = validateSpawnPool(template: template, poolTasks: orderedPool)
+                let validation = validateSpawnPool(template: template, poolTasks: candidateTasks)
                 if case .failure(let reason) = validation {
                     outcome = .skipped(templateId: template.id, reason: SpawnAttentionReason(reason))
                     throw RecurringSpawnAbort.skip
+                }
+
+                // Pick exactly the fillable cell count, honoring each
+                // source's membership range ([0, all] for every migrated
+                // shape — the old uniform-subset draw — until P2 writes
+                // real ranges). A range-infeasible pick (P2+ data only)
+                // maps to the same skip-and-warn family as a small pool.
+                let selection = BoardSources.selectBoardTasks(
+                    supplies: supplies,
+                    manualTaskIds: manualTaskIds,
+                    cellCount: recurringTemplateFillableCellCount(
+                        boardSize: size,
+                        centerSquareType: template.centerSquareType
+                    )
+                )
+                let orderedPool: [Task]
+                switch selection {
+                case .short:
+                    outcome = .skipped(templateId: template.id, reason: .poolTooSmall)
+                    throw RecurringSpawnAbort.skip
+                case .ok(let taskIds):
+                    orderedPool = taskIds.compactMap { tasksById[$0] }
                 }
 
                 let placement = buildSpawnPlacement(template: template, poolTasks: orderedPool)

@@ -30,9 +30,12 @@ export function useResumableDraft(): (board: Board) => Promise<ResolvedResumable
   return useCallback(async (board: Board): Promise<ResolvedResumableDraft> => {
     const boardTasks = await fetchBoardTasks(board.id);
     const tasksRequired = tasksNeededFor(board.boardSize as 3 | 4 | 5, board.centerSquareType);
-    const selectedCount = board.isRecurringDraft
-      ? (await resolveRecurringDraftMixTaskIds(board.recurringDraftMix)).length
-      : boardTasks.length;
+    // Board Sources P1 — one-off drafts saved post-P1 carry the blob too;
+    // resolve from it whenever present (same truncation rationale).
+    const selectedCount =
+      board.isRecurringDraft || board.recurringDraftMix !== undefined
+        ? (await resolveRecurringDraftMixTaskIds(board.recurringDraftMix)).length
+        : boardTasks.length;
     const initialStep = computeDraftInitialStep(tasksRequired, selectedCount);
     return { board, boardTasks, initialStep };
   }, []);

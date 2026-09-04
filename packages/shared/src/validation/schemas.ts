@@ -678,14 +678,14 @@ export const SyncQueueItemSchema = z.object({
  * The schema enforces both at the field level so a malformed pull payload
  * is rejected before it reaches the spawn driver.
  */
-const RecurringTimeframeSchema = z.union([
+export const RecurringTimeframeSchema = z.union([
   z.literal(Timeframe.DAILY),
   z.literal(Timeframe.WEEKLY),
   z.literal(Timeframe.MONTHLY),
   z.literal(Timeframe.YEARLY),
 ]);
 
-const RecurringCenterSquareTypeSchema = z.preprocess(
+export const RecurringCenterSquareTypeSchema = z.preprocess(
   (v) => (v === LEGACY_CUSTOM_FREE ? CenterSquareType.FREE : v),
   z.union([
     z.literal(CenterSquareType.FREE),
@@ -693,113 +693,10 @@ const RecurringCenterSquareTypeSchema = z.preprocess(
   ])
 );
 
-/**
- * P1 (Task Pools rework) — the three generalized-source fields, additive
- * and optional on every RecurringBoardTemplate schema (create/update/full)
- * so a legacy (`seedTaskIds`-only) payload still validates. Each array
- * gets its own no-dup refine, mirroring `seedTaskIds`'s — a duplicate
- * `poolId`/`manualTaskId`/`removedTaskId` is a caller bug the schema
- * should catch before it reaches `resolveMix`.
- */
-const poolIdsNoDup = (data: { poolIds?: string[] }): boolean =>
-  data.poolIds === undefined || new Set(data.poolIds).size === data.poolIds.length;
-const manualTaskIdsNoDup = (data: { manualTaskIds?: string[] }): boolean =>
-  data.manualTaskIds === undefined ||
-  new Set(data.manualTaskIds).size === data.manualTaskIds.length;
-const removedTaskIdsNoDup = (data: { removedTaskIds?: string[] }): boolean =>
-  data.removedTaskIds === undefined ||
-  new Set(data.removedTaskIds).size === data.removedTaskIds.length;
-
-export const CreateRecurringBoardTemplateInputSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  timeframe: RecurringTimeframeSchema,
-  boardSize: BoardSizeSchema,
-  centerSquareType: RecurringCenterSquareTypeSchema,
-  isRandomized: z.boolean(),
-  seedTaskIds: z.array(z.string().uuid()).min(1),
-  isActive: z.boolean(),
-  poolIds: z.array(z.string().uuid()).optional(),
-  manualTaskIds: z.array(z.string().uuid()).optional(),
-  removedTaskIds: z.array(z.string().uuid()).optional(),
-}).refine(
-  (data) => {
-    // No duplicate seedTaskIds — each pool entry must reference a distinct
-    // Task. The spawn path treats duplicates as an error class equivalent
-    // to "pool too small" (a 25-pool with 5 dups only places 20 unique tasks).
-    return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
-  },
-  { message: 'seedTaskIds must not contain duplicates' },
-).refine(
-  poolIdsNoDup,
-  { message: 'poolIds must not contain duplicates' },
-).refine(
-  manualTaskIdsNoDup,
-  { message: 'manualTaskIds must not contain duplicates' },
-).refine(
-  removedTaskIdsNoDup,
-  { message: 'removedTaskIds must not contain duplicates' },
-);
-
-export const UpdateRecurringBoardTemplateInputSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  timeframe: RecurringTimeframeSchema.optional(),
-  boardSize: BoardSizeSchema.optional(),
-  centerSquareType: RecurringCenterSquareTypeSchema.optional(),
-  isRandomized: z.boolean().optional(),
-  seedTaskIds: z.array(z.string().uuid()).min(1).optional(),
-  isActive: z.boolean().optional(),
-  poolIds: z.array(z.string().uuid()).optional(),
-  manualTaskIds: z.array(z.string().uuid()).optional(),
-  removedTaskIds: z.array(z.string().uuid()).optional(),
-}).refine(
-  (data) => {
-    if (data.seedTaskIds === undefined) return true;
-    return new Set(data.seedTaskIds).size === data.seedTaskIds.length;
-  },
-  { message: 'seedTaskIds must not contain duplicates' },
-).refine(
-  poolIdsNoDup,
-  { message: 'poolIds must not contain duplicates' },
-).refine(
-  manualTaskIdsNoDup,
-  { message: 'manualTaskIds must not contain duplicates' },
-).refine(
-  removedTaskIdsNoDup,
-  { message: 'removedTaskIds must not contain duplicates' },
-);
-
-export const RecurringBoardTemplateSchema = z.object({
-  id: z.string().uuid(),
-  userId: z.string(),
-  name: z.string().min(1).max(120),
-  timeframe: RecurringTimeframeSchema,
-  boardSize: BoardSizeSchema,
-  centerSquareType: RecurringCenterSquareTypeSchema,
-  isRandomized: z.boolean(),
-  seedTaskIds: z.array(z.string().uuid()),
-  // P1 — additive, optional generalized-source fields. See
-  // types/recurringBoardTemplate.ts for the mix formula + "legacy shape".
-  poolIds: z.array(z.string().uuid()).optional(),
-  manualTaskIds: z.array(z.string().uuid()).optional(),
-  removedTaskIds: z.array(z.string().uuid()).optional(),
-  lastSpawnedWindowKey: z.string().nullable(),
-  isActive: z.boolean(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  lastSyncedAt: z.string().datetime().optional(),
-  version: z.number().int().min(1),
-  isDeleted: z.boolean(),
-  deletedAt: z.string().datetime().optional(),
-}).refine(
-  poolIdsNoDup,
-  { message: 'poolIds must not contain duplicates' },
-).refine(
-  manualTaskIdsNoDup,
-  { message: 'manualTaskIds must not contain duplicates' },
-).refine(
-  removedTaskIdsNoDup,
-  { message: 'removedTaskIds must not contain duplicates' },
-);
+// The RecurringBoardTemplate object schemas (Create/Update/full) moved to
+// `./recurringBoardTemplate.ts` in the Board Sources rework (P1) — this
+// frozen god-file only keeps the two field schemas above, which the
+// CoreBoardDefault + banner schemas below also use.
 
 // ===== Pool Schemas (P1 — Task Pools + Recurring Boards Rework) =====
 

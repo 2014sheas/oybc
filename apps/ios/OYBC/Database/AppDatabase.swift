@@ -987,6 +987,14 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN recurringDraftMix TEXT")
         }
 
+        // v30: Board Sources P1 (docs/BOARD_SOURCES.md) — JSON-string
+        // `sources` column on templates. Column-only, no backfill: reads
+        // go through `BoardSources.sourcesForRecord` (derives [0, all]
+        // from the legacy trio for pre-stamp rows); NULL = pre-stamp.
+        migrator.registerMigration("v30") { db in
+            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN sources TEXT")
+        }
+
         return migrator
     }
 

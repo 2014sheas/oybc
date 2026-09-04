@@ -555,15 +555,17 @@ export function useBoardWizard({
   const isRecurring = initialIsRecurring;
   const weekStartDay = preferences.weekStartDay;
 
-  // Board Creation Split (web PR D) — a resumed recurring draft's mix is
-  // decoded synchronously (it's just a JSON string on the Board row, no
-  // DB lookup needed) so `pulledPoolIds`/`manualTaskIds`/`removedTaskIds`
-  // hydrate immediately; only the RESOLVED task-id set (which needs
-  // pool/task lookups) requires the async effect below. `null` for every
-  // non-recurring-draft session.
+  // Board Creation Split (web PR D) — a resumed draft's mix decodes
+  // synchronously; only the RESOLVED task-id set needs the async effect
+  // below. Board Sources P1 (docs/BOARD_SOURCES.md §Data model item 2):
+  // ONE-OFF drafts carry the blob too now — legacy blob-less ones keep
+  // the boardTasks fallback (null here).
+  const hasDraftMixBlob =
+    isRecurringDraftResume ||
+    (draftBoard !== undefined && draftBoard.recurringDraftMix !== undefined);
   const decodedRecurringDraftMix = useMemo(
-    () => (isRecurringDraftResume ? decodeRecurringDraftMix(draftBoard?.recurringDraftMix) : null),
-    [isRecurringDraftResume, draftBoard?.recurringDraftMix],
+    () => (hasDraftMixBlob ? decodeRecurringDraftMix(draftBoard?.recurringDraftMix) : null),
+    [hasDraftMixBlob, draftBoard?.recurringDraftMix],
   );
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
@@ -603,25 +605,23 @@ export function useBoardWizard({
     setPoolOrder((prev) => syncPoolOrder(prev, templateMix));
   }, [effectiveTemplate, templateMix]);
 
-  // Board Creation Split (web PR D) — resolve a resumed recurring draft's
-  // FULL pool (never `draft.boardTasks`, which silently truncates an
-  // intentionally overfilled pool to the grid size) and replace the
-  // boardTasks-based initial state above once loaded. One-shot via its own
-  // ref flag, mirroring the template-mix effect above exactly. Mirrors iOS
-  // `BoardWizardViewModel.init`'s `resolvePoolMixHydration` call for a
-  // recurring draft.
+  // Board Creation Split (web PR D) — resolve a resumed draft's FULL pool
+  // (never `draft.boardTasks`, which truncates an overfilled pool to the
+  // grid size) and replace the boardTasks init above once loaded. One-shot
+  // ref flag, mirroring the template-mix effect / iOS
+  // `resolvePoolMixHydration`. Board Sources P1: ANY draft with the blob.
   const recurringDraftMixResolved = useRecurringDraftMix(
-    isRecurringDraftResume ? draftBoard?.recurringDraftMix : undefined,
+    hasDraftMixBlob ? draftBoard?.recurringDraftMix : undefined,
   );
   const recurringDraftMixAppliedRef = useRef(false);
   useEffect(() => {
     if (recurringDraftMixAppliedRef.current) return;
-    if (!isRecurringDraftResume) return;
+    if (!hasDraftMixBlob) return;
     if (recurringDraftMixResolved === undefined) return; // still loading
     recurringDraftMixAppliedRef.current = true;
     setSelectedTaskIds(recurringDraftMixResolved);
     setPoolOrder((prev) => syncPoolOrder(prev, recurringDraftMixResolved));
-  }, [isRecurringDraftResume, recurringDraftMixResolved]);
+  }, [hasDraftMixBlob, recurringDraftMixResolved]);
 
   /**
    * P3 (Task Pools + Recurring Boards Rework) — "PULL IN A POOL" state.

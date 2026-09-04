@@ -64,6 +64,14 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     var manualTaskIds: [String]?
     var removedTaskIds: [String]?
 
+    // Board Sources rework (docs/BOARD_SOURCES.md, P1) — the canonical
+    // persisted task-source shape going forward. Same tri-state contract
+    // as the trio above (`nil` ⇒ pre-stamp record; read through
+    // `BoardSources.sourcesForRecord`), stored as a JSON-string TEXT
+    // column (migration v30). During P1 every write stamps BOTH this and
+    // the trio; `manualTaskIds` stays live in both models.
+    var sources: [BoardSource]?
+
     // Spawn state
     var lastSpawnedWindowKey: String?
     var isActive: Bool
@@ -89,6 +97,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         case centerSquareType, isRandomized
         case seedTaskIds
         case poolIds, manualTaskIds, removedTaskIds
+        case sources
         case lastSpawnedWindowKey, isActive
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
@@ -106,6 +115,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         poolIds: [String]? = nil,
         manualTaskIds: [String]? = nil,
         removedTaskIds: [String]? = nil,
+        sources: [BoardSource]? = nil,
         lastSpawnedWindowKey: String? = nil,
         isActive: Bool,
         createdAt: String,
@@ -126,6 +136,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         self.poolIds = poolIds
         self.manualTaskIds = manualTaskIds
         self.removedTaskIds = removedTaskIds
+        self.sources = sources
         self.lastSpawnedWindowKey = lastSpawnedWindowKey
         self.isActive = isActive
         self.createdAt = createdAt
@@ -165,6 +176,17 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         poolIds = Self.decodeOptionalStringArray(container, forKey: .poolIds)
         manualTaskIds = Self.decodeOptionalStringArray(container, forKey: .manualTaskIds)
         removedTaskIds = Self.decodeOptionalStringArray(container, forKey: .removedTaskIds)
+
+        // Board Sources P1 — same tri-state contract as the trio: column
+        // NULL/absent OR malformed JSON ⇒ nil (pre-stamp record — never
+        // silently manufacture a "stamped, empty" shape); a valid JSON
+        // string (even "[]") ⇒ that array.
+        if let jsonString = (try? container.decodeIfPresent(String.self, forKey: .sources)) ?? nil,
+           let data = jsonString.data(using: .utf8) {
+            sources = try? JSONDecoder().decode([BoardSource].self, from: data)
+        } else {
+            sources = nil
+        }
 
         lastSpawnedWindowKey = try container.decodeIfPresent(String.self, forKey: .lastSpawnedWindowKey)
         isActive = try container.decode(Bool.self, forKey: .isActive)
@@ -249,6 +271,19 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
                 try container.encode(jsonString, forKey: .removedTaskIds)
             } else {
                 try container.encode("[]", forKey: .removedTaskIds)
+            }
+        }
+
+        // Board Sources P1 — JSON-string TEXT column, key OMITTED when nil
+        // (`.optional()` in the shared Zod schema — an explicit null would
+        // fail a peer's pull-side parse; omission = "pre-stamp" on the
+        // wire, matching the decode tri-state).
+        if let sources = sources {
+            if let data = try? JSONEncoder().encode(sources),
+               let jsonString = String(data: data, encoding: .utf8) {
+                try container.encode(jsonString, forKey: .sources)
+            } else {
+                try container.encode("[]", forKey: .sources)
             }
         }
 

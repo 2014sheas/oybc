@@ -634,11 +634,22 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
       poolIds: ['pool-1'],
       manualTaskIds: [manualId],
       removedTaskIds: [],
+      sources: [
+        {
+          sourceId: 'pool-1',
+          kind: 'pool',
+          min: 0,
+          max: null,
+          excludedTaskIds: [],
+          filter: 'all',
+        },
+      ],
     });
 
-    // A one-off draft save (the pre-existing behavior) never sets the key
-    // at all — decodes as an empty mix, matching a plain draft's
-    // forward-compat shape.
+    // Board Sources P1: a ONE-OFF draft save now snapshots the blob too
+    // (docs/BOARD_SOURCES.md §Data model item 2 — an overfilled one-off
+    // draft's full pool survives resume). `isRecurringDraft` stays the
+    // discriminator and stays false.
     const oneOffController = makeController({
       isRecurring: false,
       selectedTaskIds: new Set(poolTaskIds),
@@ -654,7 +665,13 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
     });
     const oneOffBoard = await db.boards.get(oneOffBoardId);
     expect(oneOffBoard?.isRecurringDraft).toBe(false);
-    expect(oneOffBoard?.recurringDraftMix).toBeUndefined();
+    expect(oneOffBoard?.recurringDraftMix).toBeDefined();
+    expect(decodeRecurringDraftMix(oneOffBoard?.recurringDraftMix)).toEqual({
+      poolIds: [],
+      manualTaskIds: poolTaskIds,
+      removedTaskIds: [],
+      sources: [],
+    });
   });
 
   it('re-saving a resumed recurring draft overwrites the mix with the CURRENT session state, never merging with the prior snapshot', async () => {
