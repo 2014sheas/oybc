@@ -29,9 +29,10 @@ enum ArrangeSubMode: String, Hashable {
 ///   - **One-off**: Preview ⇄ Rearrange toggle + optional Shuffle button, then
 ///     `RearrangeGrid` (display-only in Preview mode, interactive in Rearrange
 ///     mode; drag-to-insert + tap-to-swap; center square pinned). NO summary card.
-///   - **Recurring**: the selected-task list (`RisoPoolListView`, no grid/
-///     rearrange/shuffle), then a 3-row Repeats/Size/Pool summary card with
-///     blue "Edit" jumps.
+///   - **Recurring**: the frame-5b SUMMARY CARD (Board Sources P3,
+///     docs/BOARD_SOURCES.md §Surfaces item 4) — name, cadence + first-window
+///     line, one row per source with its range line, the hand-added rows,
+///     and the SQUARES total. No grid, no shuffle, no deck list.
 ///   - Riso footer buttons per mode (one-off: Back/Draft/Activate — red;
 ///     recurring: Back/Create Board — blue, no draft).
 ///
@@ -332,24 +333,6 @@ struct BoardWizardPreviewStepView: View {
         return "\(formatRecurringCadence(timeframe: controller.timeframe)) · first board \(windowLabel)"
     }
 
-    private var recurringSizeSummary: String {
-        "\(controller.size)×\(controller.size) · \(recurringCenterLabel)"
-    }
-
-    /// CHOSEN is unreachable while `isRecurring` (the center-type selector
-    /// suppresses it) — the `.chosen` case is a defensive fallback only.
-    private var recurringCenterLabel: String {
-        switch controller.centerType {
-        case .free:   return "Free center"
-        case .none:   return "No center"
-        case .chosen: return "Free center"
-        }
-    }
-
-    private var recurringPoolSummary: String {
-        "\(controller.selectedTaskIds.count) tasks · needs at least \(controller.tasksRequired)"
-    }
-
     /// Task Pools + Recurring Boards Rework (P5) — core-board setup's
     /// fillable-floor gate on Step 3's Activate button
     /// (docs/POOLS_RECURRING.md §Behavior invariants "Fillable floor
@@ -377,16 +360,22 @@ struct BoardWizardPreviewStepView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Centred name + meta
-                    previewHeader
+                    // Centred name + meta — ONE-OFF only; the recurring
+                    // frame-5b summary card carries name + cadence itself
+                    // (rendering both duplicated the header).
+                    if !controller.isRecurring {
+                        previewHeader
+                    }
 
                     if controller.isRecurring {
-                        // Task Pools + Recurring Boards Rework (P4) — a
-                        // repeating board's mix isn't a fixed grid (extras
-                        // shuffle in per window), so Preview shows the
-                        // DECK, not an arrange/shuffle grid. One-off boards
-                        // keep the grid below unchanged.
-                        deckSection
+                        // Board Sources P3 (docs/BOARD_SOURCES.md §Surfaces
+                        // item 4; handoff frame 5b) — a repeating board's
+                        // mix isn't a fixed grid, so Preview is a SUMMARY
+                        // CARD: name, cadence, one row per source with its
+                        // range line, the hand-added rows, and the SQUARES
+                        // total. No grid, no Shuffle. One-off boards keep
+                        // the grid below unchanged.
+                        recurringSourcesSummaryCard
                     } else {
                         // Preview ⇄ Rearrange toggle + optional Shuffle button
                         arrangeControlBar
@@ -417,14 +406,10 @@ struct BoardWizardPreviewStepView: View {
                         )
                     }
 
-                    // Board Creation Split (iOS PR A) — neither mode's
-                    // Preview shows the old dashed "star" note anymore
-                    // (frames 1j/1k have no note card at all). One-off has
-                    // NO summary card either; recurring's summary is the
-                    // 3-row Repeats/Size/Pool card (see `recurringSummaryCard`).
-                    if controller.isRecurring {
-                        recurringSummaryCard
-                    }
+                    // Board Sources P3 — the old 3-row Repeats/Size/Pool
+                    // card is folded into the frame-5b summary card above
+                    // (name + cadence line + SQUARES total); Setup/Pool
+                    // edits stay reachable via the stepper.
 
                     // Error
                     if let msg = errorMessage {
@@ -488,54 +473,110 @@ struct BoardWizardPreviewStepView: View {
 
     // MARK: - Pool-list section (recurring — Board Creation Split, iOS PR A)
 
-    /// Recurring-board Preview branch: the full selected-task list (no
-    /// health-note header — frame 1j goes straight from the centred name/
-    /// meta to the list; `RisoPoolListView` renders its own "On your
-    /// board · N" header), reusing `RisoPoolListView` (the exact list the
-    /// Pool step already renders) rather than a second list renderer. No
-    /// grid/rearrange/shuffle here — a repeating board's mix isn't a fixed
-    /// grid (docs/POOLS_RECURRING.md §Behavior invariants: "extras shuffle
-    /// into the mix").
+    /// Board Sources P3 — the frame-5b summary card (see call site above).
     @ViewBuilder
-    private var deckSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            RisoPoolListView(
-                selectedTaskIds: controller.selectedTaskIds,
-                orderedTaskIds: controller.poolOrder,
-                effectiveTaskById: deckTaskById,
-                effectiveChildrenByCompound: previewChildrenByCompound,
-                isRecurring: controller.isRecurring,
-                onRemove: { taskId in
-                    controller.toggleTaskSelection(taskId)
-                },
-                countOverride: controller.sourceCapacity,
-                // Board Sources P2 interim — collapsed, read-only source
-                // rows so the recurring preview keeps showing the full mix
-                // (P3 replaces this deck with the summary card, frame 5b).
-                leadingRows: previewSourceRows
-            )
+    private var recurringSourcesSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(controller.name.trimmingCharacters(in: .whitespacesAndNewlines))
+                .font(.risoHead(20, .extraBold))
+                .foregroundStyle(Color.risoInk)
+            Text("\(controller.size)\u{D7}\(controller.size) \u{B7} \(recurringRepeatsSummary)")
+                .font(.risoBody(12, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .padding(.top, 2)
+
+            summaryDivider.padding(.vertical, 10)
+
+            // One row per source, range line right-aligned.
+            VStack(spacing: 8) {
+                ForEach(controller.sources, id: \.sourceId) { source in
+                    HStack(spacing: 8) {
+                        summaryLetterSquare(kind: source.kind)
+                        Text(controller.supplyInfoBySourceId[source.sourceId]?.displayName ?? "")
+                            .font(.risoBody(14, .bold))
+                            .foregroundStyle(Color.risoInk)
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(summaryRangeLine(for: source))
+                            .font(.risoBody(12, .semibold))
+                            .foregroundStyle(Color.risoMuted)
+                    }
+                }
+                // Every hand-added task as its own row.
+                ForEach(controller.poolOrder, id: \.self) { taskId in
+                    if let task = deckTaskById[taskId] {
+                        HStack(spacing: 8) {
+                            RisoTypeBadge(kind: RisoTaskKind(taskType: task.type), style: .letterSquare)
+                            Text(task.title)
+                                .font(.risoBody(13, .semibold))
+                                .foregroundStyle(Color.risoInk)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
+            }
+
+            summaryDivider.padding(.vertical, 10)
+
+            HStack(alignment: .firstTextBaseline) {
+                Text("Squares")
+                    .risoKicker(.risoMuted)
+                Spacer()
+                Text("\(controller.sourceCapacity)")
+                    .font(.risoHead(18, .extraBold))
+                    .foregroundStyle(
+                        controller.sourceCapacity >= controller.tasksRequired
+                            ? Color.risoGreen : Color.risoInk
+                    )
+                + Text("/\(controller.tasksRequired)")
+                    .font(.risoHead(13, .bold))
+                    .foregroundStyle(Color.risoMuted)
+            }
         }
+        .padding(14)
+        .risoCard(fill: .risoPaper2)
+        .risoHardShadow(Riso.Shadow.small)
     }
 
-    private var previewSourceRows: AnyView? {
-        guard !controller.sources.isEmpty else { return nil }
-        return AnyView(
-            ForEach(controller.sources, id: \.sourceId) { source in
-                RisoSourceRowView(
-                    source: source,
-                    supply: controller.supplyInfoBySourceId[source.sourceId]
-                        ?? WizardSourceSupply(displayName: "", rawSupplyTaskIds: [], doneTaskIds: []),
-                    availableCount: controller.availableCount(forSourceId: source.sourceId),
-                    isExpanded: false,
-                    taskById: deckTaskById,
-                    onToggleExpanded: {},
-                    onRemove: {},
-                    onSetFilter: { _ in },
-                    onSetRange: { _, _ in },
-                    onToggleExclude: { _ in }
-                )
-            }
-        )
+    private var summaryDivider: some View {
+        Rectangle()
+            .fill(Color.risoInk.opacity(0.24))
+            .frame(height: Riso.Keyline.dense)
+    }
+
+    private func summaryLetterSquare(kind: BoardSource.Kind) -> some View {
+        RoundedRectangle(cornerRadius: Riso.cellRadius)
+            .fill(kind == .pool ? Color.risoInk : Color.risoGold)
+            .frame(width: 20, height: 20)
+            .overlay(
+                Text(kind == .pool ? "P" : "B")
+                    .font(.risoBody(11, .extraBold))
+                    .foregroundStyle(kind == .pool ? Color.risoPaper : Color.risoInkStatic)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+            )
+    }
+
+    /// The frame-5b range line: "up to 7" / "3\u{2013}5" / "4" /
+    /// "not done \u{B7} up to 2".
+    private func summaryRangeLine(for source: BoardSource) -> String {
+        let available = controller.availableCount(forSourceId: source.sourceId)
+        let effMax = source.max.map { min($0, available) } ?? available
+        let core: String
+        if source.min == 0 {
+            core = "up to \(effMax)"
+        } else if source.min >= effMax {
+            core = "\(effMax)"
+        } else {
+            core = "\(source.min)\u{2013}\(effMax)"
+        }
+        if source.kind == .board, source.filter == .todo {
+            return "not done \u{B7} " + core
+        }
+        return core
     }
 
     // MARK: - Arrange control bar
@@ -583,46 +624,6 @@ struct BoardWizardPreviewStepView: View {
 // Closing brace for BoardWizardPreviewStepView is above.
 // The private extension below keeps the file self-contained.
 private extension BoardWizardPreviewStepView {
-
-    // MARK: - Summary card (recurring only — Board Creation Split, iOS PR A)
-
-    /// Three rows only — Repeats / Size / Pool — each with a blue "Edit"
-    /// jump back to Setup (Repeats, Size) or Pool (the task-count row).
-    /// The one-off Preview renders no summary card at all (see `body`).
-    @ViewBuilder
-    private var recurringSummaryCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            previewRow(label: "Repeats", value: recurringRepeatsSummary, jumpTo: 1)
-            Divider().background(Color.risoInk.opacity(0.12))
-            previewRow(label: "Size", value: recurringSizeSummary, jumpTo: 1)
-            Divider().background(Color.risoInk.opacity(0.12))
-            previewRow(label: "Pool", value: recurringPoolSummary, jumpTo: 2)
-        }
-        .risoCard()
-    }
-
-    @ViewBuilder
-    private func previewRow(label: String, value: String, jumpTo step: WizardStep) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(label)
-                .risoSectionLabel()
-                .frame(width: 80, alignment: .leading)
-
-            Text(value)
-                .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoInk)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button("Edit") {
-                controller.goToStep(step)
-            }
-            .font(.risoHead(11, .bold))
-            .foregroundStyle(Color.risoBlue)
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-    }
 
     // MARK: - Footer
 

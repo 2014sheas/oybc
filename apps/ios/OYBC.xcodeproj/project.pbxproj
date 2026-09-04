@@ -88,6 +88,7 @@
 		3A567A23BA7F02A074F94926 /* BoardWizardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930B21C71FAB0140E9BE5960 /* BoardWizardViewModel.swift */; };
 		3BED634E51A00A3AB1B405FF /* lwwVectors.json in Resources */ = {isa = PBXBuildFile; fileRef = 0C2A995EBED205956CD51C82 /* lwwVectors.json */; };
 		3C523FE7122A485435C16813 /* RecurringBoardsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B31EFBC131E94BA5D5BB91DB /* RecurringBoardsTests.swift */; };
+		3D1A12E2D13AFBB6EE1F3826 /* BoardSourceSpawnAskTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6714DA32A2F67B2853D8A5D2 /* BoardSourceSpawnAskTests.swift */; };
 		3D1E96D35DF0BF6B1DE02EB4 /* Schema.sql in Resources */ = {isa = PBXBuildFile; fileRef = B70713D5FB25DE3392CD3CEE /* Schema.sql */; };
 		3E4B530EDC7FED850F51005E /* RepeatingBoardMixEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5CD1BB290138E2792CF1818 /* RepeatingBoardMixEditor.swift */; };
 		3E60098954DF1E908265ECFB /* BoardSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD7448156EC736F60E10041 /* BoardSettingsView.swift */; };
@@ -578,6 +579,7 @@
 		6517BE2E396F092A2E65383D /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		6646F7D2F0406435F190BB6F /* EditProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditProfileSheet.swift; sourceTree = "<group>"; };
 		66E920683B34BCA199B8339C /* RecurringBoards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringBoards.swift; sourceTree = "<group>"; };
+		6714DA32A2F67B2853D8A5D2 /* BoardSourceSpawnAskTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSourceSpawnAskTests.swift; sourceTree = "<group>"; };
 		672279842817679C05C429E7 /* CreateHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateHubView.swift; sourceTree = "<group>"; };
 		6838BB87E9F33CAA3183F631 /* CoreBoardWindowCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowCellView.swift; sourceTree = "<group>"; };
 		690BB345FCCADB24822DAB7B /* TaskEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEvent.swift; sourceTree = "<group>"; };
@@ -780,7 +782,7 @@
 		FDA9E71334D1D2001EA91878 /* RisoBoardStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBoardStatusBadge.swift; sourceTree = "<group>"; };
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
-		"TEMP_1AE4B3AD-3C40-4278-815A-906EA88B96EE" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_89D2F3A8-00A2-4D82-91FF-8E74FBD39359" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1057,6 +1059,7 @@
 				99D5417C875AF6561E4BB27D /* BoardPlayViewModelTests.swift */,
 				A61537DE8CEC60B696A0C297 /* BoardPreviewCellsTests.swift */,
 				B85FFA0B072C48A52DCA509D /* BoardSettingsRosterTests.swift */,
+				6714DA32A2F67B2853D8A5D2 /* BoardSourceSpawnAskTests.swift */,
 				05977FF9BB05984119DBD3D1 /* BoardSourceVectorTests.swift */,
 				4CAD224E189EE22D76BAC695 /* BoardWizardCenterSquareTests.swift */,
 				4B857CC5C625C059C4119590 /* BoardWizardCoreDefaultsTests.swift */,
@@ -1405,10 +1408,10 @@
 			path = Fixtures;
 			sourceTree = "<group>";
 		};
-		"TEMP_E700C2C7-6E02-4B17-9BB9-86AEB42F3AE2" /* ios */ = {
+		"TEMP_86DA7AB7-9AAC-4E72-A5E3-7B711FA25E56" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_1AE4B3AD-3C40-4278-815A-906EA88B96EE" /* Signing.xcconfig */,
+				"TEMP_89D2F3A8-00A2-4D82-91FF-8E74FBD39359" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1831,6 +1834,7 @@
 				8724A7D36DC01998DE1F9D6E /* BoardPlayViewModelTests.swift in Sources */,
 				764D778A7280F1C5D8FBF087 /* BoardPreviewCellsTests.swift in Sources */,
 				AA3BC13ADA4ADCB420BF3E3B /* BoardSettingsRosterTests.swift in Sources */,
+				3D1A12E2D13AFBB6EE1F3826 /* BoardSourceSpawnAskTests.swift in Sources */,
 				6F277C3D1BE1AB494B991F1D /* BoardSourceVectorTests.swift in Sources */,
 				C99809A4B18FECEC77797593 /* BoardWizardCenterSquareTests.swift in Sources */,
 				0DCE919F53FDA36DD5C2B803 /* BoardWizardCoreDefaultsTests.swift in Sources */,
@@ -1978,7 +1982,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_1AE4B3AD-3C40-4278-815A-906EA88B96EE" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_89D2F3A8-00A2-4D82-91FF-8E74FBD39359" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2075,7 +2079,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_1AE4B3AD-3C40-4278-815A-906EA88B96EE" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_89D2F3A8-00A2-4D82-91FF-8E74FBD39359" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

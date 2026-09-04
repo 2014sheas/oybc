@@ -316,14 +316,45 @@ defaults sheet are unchanged.
   the top stop), `RisoSourceRowView`, `RisoSourcePickerSheetView`;
   `RisoTaskKind.init(taskType:)` extracted (4th duplicate).
 
+## P3 implementation notes (as shipped)
+
+- **The recurring Preview is the frame-5b summary card** — name, a
+  cadence line reusing the shipped Repeats copy ("Every week · first
+  board Aug 17 – 23"), one row per source with its range line ("up to 7"
+  / "3–5" / "4" / "not done · up to 2"), the hand-added rows, and the
+  SQUARES total (green when filled). It absorbs the board-split's 3-row
+  Repeats/Size/Pool card (Setup/Pool edits stay reachable via the
+  stepper). No grid, no shuffle, no deck list.
+- **One-off Preview chrome is unchanged** — the shipped centred-header +
+  Preview⇄Rearrange bar wins over frame 2b's header-less minimalism
+  (§Fidelity: the shipped component wins), and Rearrange survives by
+  prior lock.
+- **Board-kind sources now resolve at SPAWN on both platforms** (the P1
+  stub supplied `[]`): the source board's live placed squares, with the
+  `'todo'` filter applied against THAT board's window via the shared
+  windowed predicate; batched reads inside the spawn transaction. The
+  wizard-time and spawn-time resolutions share the same code path
+  (`AppDatabase.resolveSupply` / web `resolveBoardSupply`).
+- **The deleted-source ask**: spawn skips with the new
+  `source_board_missing` reason when ANY pulled board is missing,
+  soft-deleted, or archived (checked before supply resolution — distinct
+  from the silent empty-source rule, which covers a LIVE board with
+  nothing left). iOS surfaces a Boards-tab alert — "Remove that source"
+  (drops dead board-kind entries via
+  `AppDatabase.removeMissingBoardSources`, keeps the P1 mirrors
+  consistent, re-runs the pass so the window fills from the remaining
+  sources) / "Pause this board" / "Not now" (re-asks next tab open;
+  lazy, never background). Web SKIPS identically (spawn semantics stay
+  lockstep) and shows roster attention copy; its ask UI lands in P4.
+
 ## Delivery — phases (docs-PR-first; iOS-first UI, web in-effort — locked)
 
 | Phase | Scope | Platforms |
 | --- | --- | --- |
-| **P0** | This document; POOLS_RECURRING.md supersession banner; CLAUDE.md pointer; ROADMAP F11. | docs |
-| **P1** | `BoardSource` type + Zod + Swift mirror; `sources` on the template; draft-blob v2 (incl. one-off drafts); GRDB v30 column + `sourcesForRecord` read-fallback (no data backfill, no Dexie bump); the selection algorithm + mirrored vectors; spawn + template persist read/write sources with the legacy-trio dual-write (UI unchanged, behavior-identical for existing records). | lockstep |
-| **P2** | Tasks step rework (2a) + source sheet (2c/5c) + the §Removals + core-defaults pre-pull + edit-mode note line. | iOS |
-| **P3** | Preview rework (2b/5b) + deleted-source spawn prompt + slider polish at scale (4a). | iOS |
+| **P0** | This document; POOLS_RECURRING.md supersession banner; CLAUDE.md pointer; ROADMAP F11. **SHIPPED** (#457). | docs |
+| **P1** | `BoardSource` type + Zod + Swift mirror; `sources` on the template; draft-blob v2 (incl. one-off drafts); GRDB v30 column + `sourcesForRecord` read-fallback (no data backfill, no Dexie bump); the selection algorithm + mirrored vectors; spawn + template persist read/write sources with the legacy-trio dual-write (UI unchanged, behavior-identical for existing records). **SHIPPED** (#458). | lockstep |
+| **P2** | Tasks step rework (2a) + source sheet (2c/5c) + the §Removals + core-defaults pre-pull + edit-mode note line. **IN PR** (#459, device-checked). | iOS |
+| **P3** | Preview rework (5b summary; 2b chrome kept as shipped) + deleted-source spawn ask + spawn-side board-supply resolution (BOTH platforms — spawn semantics lockstep). | iOS (+web spawn) |
 | **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). | web |
 | **P5** | Cleanup: retire dead components, update `pool-pull-wizard.spec.ts` + snapshot baselines (`RisoCoreDefaults*`, `RisoPoolPullCard*`, `BoardWizardTasksStep*`), shrink the file-size allowlist entries the rework rewrites, docs close-out. | both |
 

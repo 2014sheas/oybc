@@ -63,7 +63,9 @@ extension AppDatabase {
 
     /// Shared batched resolution: three queries per board (placements,
     /// tasks, events) instead of per-row fetches (review finding 2).
-    private static func resolveSupply(
+    /// Internal (not private) — the spawn path resolves board-kind source
+    /// supplies through this same predicate inside its own transaction.
+    static func resolveSupply(
         db: Database,
         board: Board
     ) throws -> BoardSourceSupplyInfo {
