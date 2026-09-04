@@ -81,22 +81,39 @@ lists) is unaffected, but the shared Zod + Swift decoders change in lockstep.
 Standard per-row LWW; the whole `sources` array is one field on its record —
 no per-source merge (same stance as `taskIds` on `Pool`).
 
-### Migration (hard cutover, single-user pre-release — the P1 precedent)
+### Migration (as shipped in P1 — fallback-on-read, no data backfill)
 
-Dexie **v18** / GRDB **v30**, first-launch backfill, idempotent:
+The original sketch here called for a first-launch data backfill; P1
+shipped something simpler and strictly safer:
 
-- Each template with `poolIds` →
-  `sources: poolIds.map(id => ({sourceId: id, kind: 'pool', min: 0, max: null, excludedTaskIds: <the record's removedTaskIds that this pool supplies>, filter: 'all'}))`.
-  Distributing each flat removal into **every** source that supplies the task
-  is semantically identical to the old global suppression (a task excluded
-  from all its supplies is out of the mix). `manualTaskIds` copies verbatim.
-- Result is **behavior-identical**: `[0, all]` ranges + distributed excludes
-  reproduce today's mix exactly, so migrated spawns don't change until the
-  user touches a slider.
-- v1 draft blobs upgrade lazily on hydrate (write-back on next save).
-- Old fields left verbatim, never read post-migration. Mixed-version note:
-  same accepted single-user risk as the P1 cutover (an old client writing
-  `poolIds` is stale-inert on new clients).
+- **GRDB v30 is column-only** (`ALTER TABLE recurring_board_templates ADD
+  COLUMN sources TEXT`); **Dexie needs no version bump at all** (the field
+  is unindexed — Dexie stores are schemaless beyond indexes). **No row is
+  rewritten by migration.**
+- Instead, every read goes through **`sourcesForRecord(record)`**
+  (`algorithms/boardSources.ts` / `BoardSources.swift`): the stamped
+  `sources` array when present, else
+  `poolIds.map(id => ({sourceId: id, kind: 'pool', min: 0, max: null, excludedTaskIds: [...removedTaskIds], filter: 'all'}))`
+  derived on the fly. Every write stamps `sources` going forward. This
+  covers pre-P1 rows AND rows later pulled from an old client, forever —
+  no backfill idempotency to test, no mixed-version window to reason about.
+- **Excludes are NOT distributed by supply** — the FULL flat
+  `removedTaskIds` list is copied to every derived source. Semantically
+  identical to the old global suppression (an exclude for a task the pool
+  doesn't supply subtracts nothing — stale-inert by design) and needs no
+  pool lookups, so the mapping is pure and synchronous.
+- Result is **behavior-identical**: `[0, all]` ranges + full-list excludes
+  reproduce the old mix exactly, so existing records spawn unchanged until
+  the user touches a slider (locked by the shared behavior-identity tests).
+- v1 draft blobs decode forward the same way (`sources` derived from the
+  trio inside the codec); write-back happens on the next save.
+- **Dual-write during P1:** every template/draft write stamps BOTH
+  `sources` (canonical) and the legacy trio (`poolIds`/`removedTaskIds`
+  mirrored via `mixFieldsFromSources`; `manualTaskIds` is live in both
+  models), so every pre-rework reader — roster health, provenance, an old
+  client build — keeps working untouched. P2 migrates those readers to
+  sources natively and retires the trio to decode-compat (the
+  `seedTaskIds` precedent).
 
 ## The selection algorithm (shared, both platforms)
 
@@ -113,28 +130,44 @@ P1 acceptance gate.
   window** (the unified per-cell resolver from BOARD_INTEGRITY — never the
   lifetime cache).
 
-**2. Candidates & dedupe:** hand-added (manual) tasks first, then each
-source's available list in row order; **dedupe first-seen by task id**. A
-task present in two sources, or by hand and in a source, counts once and
-appears once. (Note: `placeBoard` itself does no dedupe — it must never be
-fed duplicates; dedupe is this layer's job.)
+**2. Candidates & dedupe:** each source's available list in row order,
+then any manual-only ids appended — the same deterministic order the old
+`resolveMix` produced (pool union first, manual extras last), so the
+non-randomized path slices the identical first-N the old spawn did;
+**dedupe first-seen by task id**. A task present in two sources, or by
+hand and in a source, counts once and appears once. (Note: `placeBoard`
+itself does no dedupe — it must never be fed duplicates; dedupe is this
+layer's job.) Selection honors the template's `isRandomized` via a
+`randomize` flag: shuffled picks when true, candidate-order picks when
+false — preserving the `isRandomized: false` determinism contract.
 
-**3. Header math / gate:** capacity = |dedupe(manual ∪ each source capped at
-its effective max)| where effective max = `max ?? availableCount`. Short when
+**3. Header math / gate** (as shipped, `computeSourceCapacity`): capacity =
+`min(uniqueCandidateCount, cappedBound)` where `uniqueCandidateCount` =
+|dedupe(manual ∪ all availables)| and `cappedBound` = Σ per-source effective
+max (`max ?? availableCount`, capped at availability) **plus only the manual
+tasks no source supplies** — a manual task inside a source counts toward
+that source's membership cap, not separately (see step 4). Short when
 capacity < `fillableCellCount(size, center)` → red gate ("N more to fill the
 board"), Next/Create disabled. **Sum of maxes, not mins** — mins express
-"guarantee at least n from this source", not supply.
+"guarantee at least n from this source", not supply. With numeric caps AND
+heavy cross-source overlap this is an upper-bound estimate (exact
+feasibility is a matching problem); the fill is the final arbiter and never
+underfills.
 
-**4. Fill:** satisfy every source's `min` first (random picks from that
-source's available; a shared task may satisfy two mins at once and counts
-once), then fill the remaining cells at random from all remaining candidates,
-respecting each source's effective max. Boards are **always exactly filled**
-(unchanged invariant): capacity short at create is gated; short at spawn
-skips the window and warns (the existing `pool_too_small` path) — never an
-underfilled spawn. Overfill remains the variety mechanism; extras rotate.
-Exact tie-break/edge semantics (min > available after excludes, overlapping
-mins exceeding the board, etc.) are pinned by the P1 vector set — clamp
-defensively, never throw.
+**4. Fill** (as shipped, `selectBoardTasks`): ranges are **membership**
+constraints — for every source i, `min_i ≤ |board ∩ available_i| ≤
+effectiveMax_i`. No pick is "attributed" to one source: a task supplied by
+two sources counts toward both memberships (and may satisfy two mins at
+once); a hand-added task that a source also supplies counts toward that
+source's cap. Mins are satisfied first (sources in row order, random picks
+within the source, clamped to availability — never an error), then the
+remaining cells fill at random from all remaining admissible candidates.
+Boards are **always exactly filled** (unchanged invariant): capacity short
+at create is gated; a short pick at spawn skips the window and warns (the
+existing `pool_too_small` path) — never an underfilled spawn. Overfill
+remains the variety mechanism; extras rotate. Exact semantics are pinned by
+the shared vector set (`boardSourceVectors.json`, Jest ↔ XCTest over the
+identical seeded LCG).
 
 **5. Shuffle** (one-off preview only): re-run the fill with a fresh seed.
 Ranges, excludes, and filters never change; only which tasks are picked
@@ -249,7 +282,7 @@ defaults sheet are unchanged.
 | Phase | Scope | Platforms |
 | --- | --- | --- |
 | **P0** | This document; POOLS_RECURRING.md supersession banner; CLAUDE.md pointer; ROADMAP F11. | docs |
-| **P1** | `BoardSource` type + Zod + Swift mirror; `sources` on the template; draft-blob v2 (incl. one-off drafts); Dexie v18 / GRDB v30 migration; the selection algorithm + mirrored vectors; spawn + wizard persist read/write sources (UI unchanged, behavior-identical for migrated records). | lockstep |
+| **P1** | `BoardSource` type + Zod + Swift mirror; `sources` on the template; draft-blob v2 (incl. one-off drafts); GRDB v30 column + `sourcesForRecord` read-fallback (no data backfill, no Dexie bump); the selection algorithm + mirrored vectors; spawn + template persist read/write sources with the legacy-trio dual-write (UI unchanged, behavior-identical for existing records). | lockstep |
 | **P2** | Tasks step rework (2a) + source sheet (2c/5c) + the §Removals + core-defaults pre-pull + edit-mode note line. | iOS |
 | **P3** | Preview rework (2b/5b) + deleted-source spawn prompt + slider polish at scale (4a). | iOS |
 | **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). | web |

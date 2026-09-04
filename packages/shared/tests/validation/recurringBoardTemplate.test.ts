@@ -2,8 +2,8 @@ import {
   RecurringBoardTemplateSchema,
   CreateRecurringBoardTemplateInputSchema,
   UpdateRecurringBoardTemplateInputSchema,
-  BoardSchema,
-} from '../../src/validation/schemas';
+} from '../../src/validation/recurringBoardTemplate';
+import { BoardSchema } from '../../src/validation/schemas';
 import {
   Timeframe,
   CenterSquareType,

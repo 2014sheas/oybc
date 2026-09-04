@@ -41,9 +41,13 @@ export function useDrafts(userId: string | undefined): Board[] {
  */
 export function useDraftTaskCount(board: Board): number {
   const boardTasks: BoardTask[] = useBoardTasks(board.id) ?? [];
+  // Board Sources P1 — one-off drafts saved post-P1 carry the blob too;
+  // count from it whenever present (same truncation rationale). Legacy
+  // blob-less one-off drafts keep the boardTasks count.
+  const hasMixBlob = board.isRecurringDraft || board.recurringDraftMix !== undefined;
   const recurringMix = useRecurringDraftMix(
-    board.isRecurringDraft ? board.recurringDraftMix : undefined,
+    hasMixBlob ? board.recurringDraftMix : undefined,
   );
-  if (board.isRecurringDraft) return recurringMix?.size ?? 0;
+  if (hasMixBlob) return recurringMix?.size ?? 0;
   return boardTasks.length;
 }

@@ -1,0 +1,788 @@
+{
+  "capacityVectors": [
+    {
+      "name": "single [0,all] pool equals its supply size",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "expected": {
+        "uniqueCandidateCount": 4,
+        "cappedBound": 4,
+        "capacity": 4
+      }
+    },
+    {
+      "name": "excludes subtract; stale-inert exclude subtracts nothing",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [
+            "task-2",
+            "task-99"
+          ],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "expected": {
+        "uniqueCandidateCount": 2,
+        "cappedBound": 2,
+        "capacity": 2
+      }
+    },
+    {
+      "name": "two overlapping sources dedupe in unique count",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3"
+          ]
+        },
+        {
+          "sourceId": "board-1",
+          "kind": "board",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-3",
+            "task-4"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "expected": {
+        "uniqueCandidateCount": 4,
+        "cappedBound": 5,
+        "capacity": 4
+      }
+    },
+    {
+      "name": "numeric max caps the bound",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 2,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4",
+            "task-5"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "task-10"
+      ],
+      "expected": {
+        "uniqueCandidateCount": 6,
+        "cappedBound": 3,
+        "capacity": 3
+      }
+    },
+    {
+      "name": "manual inside a capped source does not inflate the bound",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "task-1"
+      ],
+      "expected": {
+        "uniqueCandidateCount": 2,
+        "cappedBound": 1,
+        "capacity": 1
+      }
+    },
+    {
+      "name": "manual outside every source adds to the bound",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "task-10",
+        "task-11"
+      ],
+      "expected": {
+        "uniqueCandidateCount": 4,
+        "cappedBound": 3,
+        "capacity": 3
+      }
+    }
+  ],
+  "selectionVectors": [
+    {
+      "name": "exact fit takes the whole pool",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 4,
+      "rngSeed": 1,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-4",
+          "task-3",
+          "task-2",
+          "task-1"
+        ]
+      }
+    },
+    {
+      "name": "overfill picks a subset of cellCount",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4",
+            "task-5",
+            "task-6",
+            "task-7",
+            "task-8",
+            "task-9",
+            "task-10"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 8,
+      "rngSeed": 7,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-4",
+          "task-10",
+          "task-6",
+          "task-2",
+          "task-8",
+          "task-1",
+          "task-7",
+          "task-5"
+        ]
+      }
+    },
+    {
+      "name": "min guarantees representation from a small source",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4",
+            "task-5",
+            "task-6",
+            "task-7",
+            "task-8"
+          ]
+        },
+        {
+          "sourceId": "board-1",
+          "kind": "board",
+          "min": 2,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "todo",
+          "supplyTaskIds": [
+            "task-20",
+            "task-21",
+            "task-22"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 4,
+      "rngSeed": 42,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-21",
+          "task-22",
+          "task-4",
+          "task-8"
+        ]
+      }
+    },
+    {
+      "name": "numeric max caps a source while others fill the rest",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-10",
+            "task-11",
+            "task-12",
+            "task-13",
+            "task-14"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 5,
+      "rngSeed": 3,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-14",
+          "task-1",
+          "task-11",
+          "task-13",
+          "task-12"
+        ]
+      }
+    },
+    {
+      "name": "a shared task can satisfy two mins at once",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 1,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 1,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 2,
+      "rngSeed": 5,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-1",
+          "task-2"
+        ]
+      }
+    },
+    {
+      "name": "excluded members are never picked",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [
+            "task-2",
+            "task-3"
+          ],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 2,
+      "rngSeed": 9,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-4",
+          "task-1"
+        ]
+      }
+    },
+    {
+      "name": "short candidates report shortBy",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "task-3"
+      ],
+      "cellCount": 8,
+      "rngSeed": 1,
+      "randomize": true,
+      "expected": {
+        "ok": false,
+        "shortBy": 5
+      }
+    },
+    {
+      "name": "membership cap binds manual-supplied tasks too",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "task-1"
+      ],
+      "cellCount": 2,
+      "rngSeed": 2,
+      "randomize": true,
+      "expected": {
+        "ok": false,
+        "shortBy": 1
+      }
+    },
+    {
+      "name": "min larger than available clamps instead of erroring",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 5,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-10",
+            "task-11",
+            "task-12"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 4,
+      "rngSeed": 11,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-2",
+          "task-1",
+          "task-11",
+          "task-12"
+        ]
+      }
+    },
+    {
+      "name": "randomize:false slices the deterministic first-N (resolveMix order) when overfilled",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4",
+            "task-5",
+            "task-6"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-3",
+            "task-7",
+            "task-8"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "task-20",
+        "task-21"
+      ],
+      "cellCount": 8,
+      "rngSeed": 1,
+      "randomize": false,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-1",
+          "task-2",
+          "task-3",
+          "task-4",
+          "task-5",
+          "task-6",
+          "task-7",
+          "task-8"
+        ]
+      }
+    },
+    {
+      "name": "randomize:false skips capped members in order",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 2,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-10",
+            "task-11"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 4,
+      "rngSeed": 1,
+      "randomize": false,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-1",
+          "task-2",
+          "task-10",
+          "task-11"
+        ]
+      }
+    },
+    {
+      "name": "randomize:false honors a later source min deterministically",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 2,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-10",
+            "task-11",
+            "task-12"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 4,
+      "rngSeed": 1,
+      "randomize": false,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-10",
+          "task-11",
+          "task-1",
+          "task-2"
+        ]
+      }
+    },
+    {
+      "name": "mins respect other sources caps (admissibility in phase A)",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 2,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 3,
+      "rngSeed": 13,
+      "randomize": true,
+      "expected": {
+        "ok": false,
+        "shortBy": 1
+      }
+    }
+  ],
+  "conversionVectors": [
+    {
+      "name": "trio maps to [0,all] pool sources carrying the flat removals",
+      "record": {
+        "poolIds": [
+          "pool-1",
+          "pool-2"
+        ],
+        "removedTaskIds": [
+          "task-9"
+        ]
+      },
+      "expectedSources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [
+            "task-9"
+          ],
+          "filter": "all"
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [
+            "task-9"
+          ],
+          "filter": "all"
+        }
+      ],
+      "expectedMixFields": {
+        "poolIds": [
+          "pool-1",
+          "pool-2"
+        ],
+        "removedTaskIds": [
+          "task-9"
+        ]
+      }
+    },
+    {
+      "name": "absent trio maps to no sources",
+      "record": {},
+      "expectedSources": [],
+      "expectedMixFields": {
+        "poolIds": [],
+        "removedTaskIds": []
+      }
+    },
+    {
+      "name": "stamped sources win over the trio",
+      "record": {
+        "poolIds": [
+          "pool-1"
+        ],
+        "removedTaskIds": [],
+        "sources": [
+          {
+            "sourceId": "board-9",
+            "kind": "board",
+            "min": 1,
+            "max": 3,
+            "excludedTaskIds": [
+              "task-5"
+            ],
+            "filter": "todo"
+          }
+        ]
+      },
+      "expectedSources": [
+        {
+          "sourceId": "board-9",
+          "kind": "board",
+          "min": 1,
+          "max": 3,
+          "excludedTaskIds": [
+            "task-5"
+          ],
+          "filter": "todo"
+        }
+      ],
+      "expectedMixFields": {
+        "poolIds": [],
+        "removedTaskIds": [
+          "task-5"
+        ]
+      }
+    }
+  ]
+}

@@ -231,3 +231,23 @@ export {
 } from './placementResolution';
 
 export type { PlacementIntegrityRepairResult } from './placementResolution';
+
+// ===== Board Sources rework (P1, docs/BOARD_SOURCES.md) =====
+export {
+  resolveSourceAvailable,
+  effectiveSourceMax,
+  computeSourceCapacity,
+  selectBoardTasks,
+  poolSourceSupplyById,
+  sourcesFromMixFields,
+  mixFieldsFromSources,
+  sourcesForRecord,
+} from './boardSources';
+
+export type {
+  BoardSourceSupply,
+  SourceCapacityResult,
+  SelectBoardTasksArgs,
+  SelectBoardTasksResult,
+  LegacyMixFields,
+} from './boardSources';

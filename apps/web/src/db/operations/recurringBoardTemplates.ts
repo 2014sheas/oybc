@@ -86,6 +86,13 @@ export async function createRecurringBoardTemplate(
   if (input.poolIds !== undefined) template.poolIds = [...input.poolIds];
   if (input.manualTaskIds !== undefined) template.manualTaskIds = [...input.manualTaskIds];
   if (input.removedTaskIds !== undefined) template.removedTaskIds = [...input.removedTaskIds];
+  // Board Sources P1 — canonical sources stamp (docs/BOARD_SOURCES.md).
+  if (input.sources !== undefined) {
+    template.sources = input.sources.map((s) => ({
+      ...s,
+      excludedTaskIds: [...s.excludedTaskIds],
+    }));
+  }
 
   await db.recurringBoardTemplates.add(template);
   await addToSyncQueue(

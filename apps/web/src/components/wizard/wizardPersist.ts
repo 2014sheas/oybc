@@ -5,6 +5,7 @@ import {
   deriveSpawnedBoardName,
   getTimeframeBoundaries,
   placeBoard,
+  sourcesFromMixFields,
   toLocalISO,
   type PendingTemplateSpawn,
   type Task,
@@ -290,13 +291,22 @@ export async function persistWizardBoard({
   // `isRecurringDraft` straight from `controller.isRecurring` is safe for
   // both the create and the draft-update branch.
   const isRecurringDraft = controller.isRecurring;
-  const recurringDraftMix = isRecurringDraft
-    ? encodeRecurringDraftMix({
-        poolIds: [...controller.pulledPoolIds],
-        manualTaskIds: Array.from(controller.manualTaskIds),
-        removedTaskIds: Array.from(controller.removedTaskIds),
-      })
-    : undefined;
+  // Board Sources P1 (docs/BOARD_SOURCES.md §Data model item 2) — ONE-OFF
+  // drafts snapshot the blob too, so an overfilled one-off draft's full
+  // pool survives resume (previously it silently truncated to the placed
+  // rows). Active one-off creates still skip it (the created board is
+  // concrete BoardTask rows; sources are a wizard-time device).
+  const poolIds = [...controller.pulledPoolIds];
+  const removedTaskIds = Array.from(controller.removedTaskIds);
+  const recurringDraftMix =
+    isRecurringDraft || status === 'draft'
+      ? encodeRecurringDraftMix({
+          poolIds,
+          manualTaskIds: Array.from(controller.manualTaskIds),
+          removedTaskIds,
+          // `sources` derived inside the codec — [0, all] until P2's UI.
+        })
+      : undefined;
 
   // The atomic write (board + BoardTask rows + Bug-#85 pending tasks +
   // Inline Task Editing staged edits, all in one Dexie transaction) lives
@@ -462,6 +472,11 @@ export async function persistRecurringTemplate({
   const poolIds = [...controller.pulledPoolIds];
   const manualTaskIds = Array.from(controller.manualTaskIds);
   const removedTaskIds = Array.from(controller.removedTaskIds);
+  // Board Sources P1 — the canonical persisted shape, stamped alongside
+  // the legacy trio on every template write (docs/BOARD_SOURCES.md §Data
+  // model; the wizard UI still expresses only [0, all] pool pulls until
+  // P2, so this mapping is lossless for anything it can produce).
+  const sources = sourcesFromMixFields({ poolIds, removedTaskIds });
   // Decode-compat snapshot only — never read back after this write (see
   // this function's docstring / docs/POOLS_RECURRING.md §Migration).
   const seedTaskIds = Array.from(controller.selectedTaskIds);
@@ -477,6 +492,7 @@ export async function persistRecurringTemplate({
       poolIds,
       manualTaskIds,
       removedTaskIds,
+      sources,
       // `isActive` isn't surfaced in the wizard form (the templates list
       // owns the pause toggle), so leave it untouched on edit.
       // `seedTaskIds` intentionally omitted — left verbatim/stale, never
@@ -497,6 +513,7 @@ export async function persistRecurringTemplate({
     poolIds,
     manualTaskIds,
     removedTaskIds,
+    sources,
   });
 
   // Compute the spawn window and create the board. `spawnTemplateBoard`

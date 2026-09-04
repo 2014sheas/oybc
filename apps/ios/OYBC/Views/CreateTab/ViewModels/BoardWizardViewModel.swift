@@ -17,57 +17,6 @@ func tasksNeededForBoard(size: Int, centerType: CenterSquareType) -> Int {
     return size * size - (hasReservedCenter ? 1 : 0)
 }
 
-/// Minimal `PoolMixSource` wrapper for the wizard's raw pool-mix state,
-/// which isn't itself a `RecurringBoardTemplate`. Used by
-/// `BoardWizardViewModel.untogglePool`'s `PoolMix.clearRemovalsForUntoggle`
-/// call. (Pre-P4, this was also reused by `BoardWizardPersist
-/// .persistRecurringTemplate` to evaluate `PoolMix.isLegacyShapedRecord`
-/// against the wizard's session shape — P4 retired that shape-scoped
-/// write-through entirely, so persistence now reads
-/// `pulledPoolIds`/`manualTaskIds`/`removedTaskIds` directly.)
-/// Mirrors the ad-hoc fixture pattern `OYBCTests/PoolMixTests.swift`'s
-/// `PoolMixInput` already uses. Internal (not `private`) so both files see it.
-struct WizardPoolMixRecord: PoolMixSource {
-    var poolIds: [String]?
-    var manualTaskIds: [String]?
-    var removedTaskIds: [String]?
-}
-
-/// Board Creation Split (PR B) — the JSON payload snapshotted into
-/// `Board.recurringDraftMix` so a recurring draft's FULL pool mix survives
-/// a save/resume round-trip. A recurring pool can be larger than its grid
-/// (overfill is the variety mechanism, per docs/POOLS_RECURRING.md
-/// §Behavior invariants), so the placed `BoardTask` rows alone would
-/// silently truncate the pool on resume — this payload is the source of
-/// truth for resuming a recurring draft's selection instead.
-struct RecurringDraftMixPayload: Codable {
-    var poolIds: [String]
-    var manualTaskIds: [String]
-    var removedTaskIds: [String]
-
-    /// Encodes to the JSON string stored on `Board.recurringDraftMix`.
-    /// Returns nil on an encoding failure so the caller can omit the
-    /// field entirely, matching the rest of the codebase's JSON-string
-    /// column encode-fallback posture (never a garbage/partial string).
-    func encoded() -> String? {
-        guard let data = try? JSONEncoder().encode(self) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    /// Decodes from `Board.recurringDraftMix`. Returns an all-empty mix
-    /// (never nil) for a missing or malformed string so hydration always
-    /// has a well-formed shape to resolve against — an empty mix just
-    /// means "no tasks yet", not an error.
-    static func decoded(from jsonString: String?) -> RecurringDraftMixPayload {
-        guard let jsonString, let data = jsonString.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(RecurringDraftMixPayload.self, from: data)
-        else {
-            return RecurringDraftMixPayload(poolIds: [], manualTaskIds: [], removedTaskIds: [])
-        }
-        return payload
-    }
-}
-
 /// BoardWizardViewModel — Owns the full board-creation wizard state.
 ///
 /// iOS twin of web's `useBoardWizard` hook. Initializes from the
@@ -296,14 +245,21 @@ final class BoardWizardViewModel {
             self.centerType = d.board.centerSquareType
             self.centerTaskId = d.board.centerTaskId
 
-            if d.board.isRecurringDraft {
-                // Board Creation Split (PR B) — a recurring draft's FULL
-                // pool lives in `recurringDraftMix`, not in the (possibly
-                // truncated — overfill is intentional) placed BoardTask
-                // rows. Resolve the mix the same way template edit-mode
-                // hydration does, so a resumed recurring draft round-trips
-                // its exact pool + provenance instead of collapsing every
-                // row to "added by hand".
+            // Board Sources P1 (docs/BOARD_SOURCES.md §Data model item 2)
+            // — ANY draft carrying the blob hydrates from it, one-off
+            // drafts included (their saves now snapshot it too, so an
+            // overfilled one-off draft's full pool survives resume).
+            // Legacy blob-less one-off drafts keep the boardTasks
+            // fallback below. Mirrors web `useBoardWizard`'s
+            // `hasDraftMixBlob`.
+            if d.board.isRecurringDraft || d.board.recurringDraftMix != nil {
+                // Board Creation Split (PR B) — a draft's FULL pool lives
+                // in `recurringDraftMix`, not in the (possibly truncated —
+                // overfill is intentional) placed BoardTask rows. Resolve
+                // the mix the same way template edit-mode hydration does,
+                // so a resumed draft round-trips its exact pool +
+                // provenance instead of collapsing every row to "added by
+                // hand".
                 let mix = RecurringDraftMixPayload.decoded(from: d.board.recurringDraftMix)
                 let resolved = Self.resolvePoolMixHydration(
                     poolIds: mix.poolIds,
@@ -324,10 +280,11 @@ final class BoardWizardViewModel {
                         .sorted { ($0.row, $0.col) < ($1.row, $1.col) }
                         .map { $0.taskId }
                 )
-                // P3 — a one-off Board carries no persisted pool-mix fields, so
-                // there's no better provenance to recover: every resumed row
-                // defaults to "added by hand" until the user touches the new
-                // pull card. `pulledPoolIds`/`removedTaskIds` stay at their `[]`
+                // P3 — a LEGACY one-off draft (saved before Board Sources
+                // P1) carries no persisted pool-mix fields, so there's no
+                // better provenance to recover: every resumed row defaults
+                // to "added by hand" until the user touches the new pull
+                // card. `pulledPoolIds`/`removedTaskIds` stay at their `[]`
                 // defaults. Explicit, flagged judgment call (must match web).
                 self.manualTaskIds = self.selectedTaskIds
             }
@@ -615,7 +572,9 @@ final class BoardWizardViewModel {
     ) -> WizardStep {
         let tasksRequired = tasksNeededForBoard(size: board.boardSize, centerType: board.centerSquareType)
         let selectedCount: Int
-        if board.isRecurringDraft {
+        // Board Sources P1 — one-off drafts saved post-P1 carry the blob
+        // too; count from it whenever present (same truncation rationale).
+        if board.isRecurringDraft || board.recurringDraftMix != nil {
             let mix = RecurringDraftMixPayload.decoded(from: board.recurringDraftMix)
             selectedCount = Self.resolvePoolMixHydration(
                 poolIds: mix.poolIds,

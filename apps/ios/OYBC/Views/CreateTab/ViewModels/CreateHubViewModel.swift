@@ -105,7 +105,9 @@ final class CreateHubViewModel {
                 var rows: [DraftRowData] = []
                 for board in draftBoards {
                     let count: Int
-                    if board.isRecurringDraft {
+                    // Board Sources P1 — one-off drafts saved post-P1 carry
+                    // the blob too; count from it whenever present.
+                    if board.isRecurringDraft || board.recurringDraftMix != nil {
                         // Board Creation Split (PR B) — the true pool size
                         // lives in `recurringDraftMix`, not the placed
                         // BoardTask rows (which truncate an intentionally
