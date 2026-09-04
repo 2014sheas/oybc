@@ -222,4 +222,30 @@ final class BoardSourceSpawnAskTests: XCTestCase {
         XCTAssertEqual(updated.sources?.map { $0.sourceId }, ["b-live"])
         XCTAssertEqual(updated.version, template.version)
     }
+
+    /// The empty-source rule (docs/BOARD_SOURCES.md §Boards as sources):
+    /// a LIVE board whose entire supply is excluded contributes nothing
+    /// and never blocks — the window fills from the manual layer. iOS
+    /// mirror of the web spawn-mix test of the same name (review-caught
+    /// coverage asymmetry).
+    func test_liveBoardWithEverythingExcluded_contributesNothingNeverBlocks() throws {
+        let db = try makeDb()
+        try seedBoard(db, boardId: "b-live", taskIds: ["s1"])
+        var emptySource = BoardSource(sourceId: "b-live", kind: .board)
+        emptySource.excludedTaskIds = ["s1"]
+        let template = try seedTemplate(
+            db,
+            sources: [emptySource],
+            manualTaskIds: ["m1", "m2", "m3", "m4"]
+        )
+        let outcome = try spawn(db, template)
+        guard case .spawned(let boardId, _, _) = outcome else {
+            return XCTFail("Expected a spawn, got \(outcome)")
+        }
+        let rows = try db.read { grdb in
+            try BoardTask.filter(Column("boardId") == boardId).fetchAll(grdb)
+        }
+        XCTAssertEqual(Set(rows.map { $0.taskId }), ["m1", "m2", "m3", "m4"])
+        XCTAssertFalse(rows.contains { $0.taskId == "s1" })
+    }
 }
