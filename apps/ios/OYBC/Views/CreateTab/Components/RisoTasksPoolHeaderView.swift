@@ -6,11 +6,19 @@ import SwiftUI
 /// satisfied), a blue progress bar, and pool-model copy.  When
 /// `centerTaskMode` is on it adds a center-task indicator line.
 ///
+/// Board Sources P2 (docs/BOARD_SOURCES.md §Surfaces item 1): the count is
+/// the CAPACITY — sum of every source's effective max + hand-added,
+/// deduped (`BoardWizardViewModel.sourceCapacity`) — and the copy is the
+/// design's: short → "N more to fill the board. Widen a pool's range or
+/// add tasks."; filled → "✓ Fills your board · N extras rotate in". No
+/// "min" suffix anymore.
+///
 /// All derived values are passed in as simple scalars — no VM dependency —
 /// so the view is trivially snapshot-testable and reusable.
 struct RisoTasksPoolHeaderView: View {
 
-    let selectedCount: Int
+    /// The sources capacity (see type doc). Named `selectedCount` before P2.
+    let capacity: Int
     let tasksRequired: Int
     let isRecurring: Bool
     let centerTaskMode: Bool
@@ -18,10 +26,10 @@ struct RisoTasksPoolHeaderView: View {
 
     // MARK: - Derived
 
-    private var remaining: Int { max(0, tasksRequired - selectedCount) }
-    private var extra: Int { max(0, selectedCount - tasksRequired) }
-    private var isSatisfied: Bool { selectedCount >= tasksRequired }
-    private var progress: Double { tasksRequired > 0 ? min(1.0, Double(selectedCount) / Double(tasksRequired)) : 0 }
+    private var remaining: Int { max(0, tasksRequired - capacity) }
+    private var extra: Int { max(0, capacity - tasksRequired) }
+    private var isSatisfied: Bool { capacity >= tasksRequired }
+    private var progress: Double { tasksRequired > 0 ? min(1.0, Double(capacity) / Double(tasksRequired)) : 0 }
 
     // MARK: - Body
 
@@ -65,7 +73,7 @@ struct RisoTasksPoolHeaderView: View {
 
     private var countBadge: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text("\(selectedCount)")
+            Text("\(capacity)")
                 .font(.risoHead(22, .extraBold))
                 .tracking(-0.44)
                 .foregroundStyle(isSatisfied ? Color.risoGreen : Color.risoInk)
@@ -92,7 +100,7 @@ struct RisoTasksPoolHeaderView: View {
                     Text("Fills your board · ")
                         .font(.risoBody(11, .semibold))
                         .foregroundStyle(Color.risoGreen)
-                    + Text("\(extra) extra")
+                    + Text("\(extra) extra\(extra == 1 ? "" : "s")")
                         .font(.risoBody(11, .extraBold))
                         .foregroundStyle(Color.risoGreen)
                     + Text(" rotate in")
@@ -105,11 +113,12 @@ struct RisoTasksPoolHeaderView: View {
                 }
             }
         } else {
-            // Short: "Add N more — extras shuffle into the mix"
-            Text("Add ") +
-            Text("\(remaining)")
-                .fontWeight(.heavy) +
-            Text(" more — extras shuffle into the mix")
+            // Short — red, per the design (frame 2a item 1).
+            (Text("\(remaining) more")
+                .font(.risoBody(11, .extraBold))
+             + Text(" to fill the board. Widen a pool's range or add tasks.")
+                .font(.risoBody(11, .semibold)))
+                .foregroundStyle(Color.risoRed)
         }
     }
 

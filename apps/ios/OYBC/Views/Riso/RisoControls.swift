@@ -470,3 +470,18 @@ struct RisoTypeBadge: View {
         }
     }
 }
+
+extension RisoTaskKind {
+    /// Shared TaskType → kit-kind mapping (extract-at-three: previously
+    /// duplicated privately in CopyTaskSheet / RisoLibrarySheetView /
+    /// RisoPoolListView; the Board Sources source-row panel is the fourth
+    /// caller).
+    init(taskType: TaskType) {
+        switch taskType {
+        case .normal: self = .normal
+        case .counting: self = .counting
+        case .compound: self = .compound
+        case .achievement: self = .achievement
+        }
+    }
+}

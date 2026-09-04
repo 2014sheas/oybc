@@ -146,7 +146,35 @@ func buildWizardPlacement(
         }
     }
 
-    let selected = controller.selectedTaskIds.compactMap { taskById[$0] }
+    // Board Sources P2 — when sources are in play, the pick honors each
+    // source's membership range via the shared selection algorithm (the
+    // same engine the recurring spawn uses); the capacity gate upstream
+    // makes a short pick unexpected, and the defensive fallback below
+    // (place the flat selection) can only OVERFILL toward placeBoard's
+    // truncation — it never underfills relative to the old behavior.
+    var selectedIds: [String]
+    if !controller.sources.isEmpty {
+        let selection = BoardSources.selectBoardTasks(
+            supplies: controller.algorithmSupplies(),
+            manualTaskIds: Array(controller.manualTaskIds),
+            cellCount: tasksNeededForBoard(size: size, centerType: controller.centerType),
+            randomize: controller.isRandomized
+        )
+        switch selection {
+        case .ok(let taskIds): selectedIds = taskIds
+        case .short: selectedIds = Array(controller.selectedTaskIds)
+        }
+        // A CHOSEN center must survive the ranged pick — swap it in for
+        // the last non-center pick if the draw happened to skip it.
+        if isOdd, controller.centerType == .chosen, let cid = controller.centerTaskId,
+           !selectedIds.contains(cid), taskById[cid] != nil {
+            if !selectedIds.isEmpty { selectedIds.removeLast() }
+            selectedIds.append(cid)
+        }
+    } else {
+        selectedIds = Array(controller.selectedTaskIds)
+    }
+    let selected = selectedIds.compactMap { taskById[$0] }
 
     let chosenCenter: Task? = {
         guard isOdd, controller.centerType == .chosen, let id = controller.centerTaskId else {
@@ -338,6 +366,9 @@ func persistWizardBoard(
     let capturedPulledPoolIds = controller.pulledPoolIds
     let capturedManualTaskIds = controller.manualTaskIds
     let capturedRemovedTaskIds = controller.removedTaskIds
+    // Board Sources P2 — the native sources snapshot (ranges/excludes/
+    // filters + board-kind sources) rides in the v2 blob.
+    let capturedSources = controller.sources
     // Bug #85 — snapshot the pending tasks dictionary from the controller
     // before going async so we don't race against concurrent mutations on
     // the main actor. Dictionary is a value type (copy-on-write) so this
@@ -425,7 +456,8 @@ func persistWizardBoard(
                 let mixPayload = RecurringDraftMixPayload(
                     poolIds: capturedPulledPoolIds,
                     manualTaskIds: Array(capturedManualTaskIds),
-                    removedTaskIds: Array(capturedRemovedTaskIds)
+                    removedTaskIds: Array(capturedRemovedTaskIds),
+                    sources: capturedSources
                 )
                 if let encodedMix = mixPayload.encoded() {
                     boardDict["recurringDraftMix"] = encodedMix
@@ -595,14 +627,10 @@ func persistRecurringTemplate(
     let poolIds = controller.pulledPoolIds
     let manualTaskIds = Array(controller.manualTaskIds)
     let removedTaskIds = Array(controller.removedTaskIds)
-    // Board Sources P1 — the canonical persisted shape, stamped alongside
-    // the legacy trio on every template write (docs/BOARD_SOURCES.md §Data
-    // model; the wizard UI still expresses only [0, all] pool pulls until
-    // P2, so this mapping is lossless for anything it can produce).
-    let sources = BoardSources.sourcesFromMixFields(
-        poolIds: poolIds,
-        removedTaskIds: removedTaskIds
-    )
+    // Board Sources P2 — the wizard's NATIVE sources state (ranges,
+    // excludes, filters, board-kind sources) persists verbatim; the legacy
+    // trio above is the derived decode-compat mirror (P1 dual-write).
+    let sources = controller.sources
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()

@@ -1,18 +1,16 @@
 import XCTest
 @testable import OYBC
 
-/// Task Pools + Recurring Boards Rework (P5) — core-board setup prefill +
-/// checkbox-derivation coverage for `BoardWizardViewModel`
-/// (docs/POOLS_RECURRING.md §Surfaces item 6, §Behavior invariants
-/// "Fillable floor everywhere").
+/// Core-board setup prefill coverage for `BoardWizardViewModel` — Board
+/// Sources P2 (docs/BOARD_SOURCES.md, locked decision "core defaults
+/// pre-pull as sources"): `corePoolIds` become `[0, all]` pool SOURCE
+/// rows, `coreDefaultTaskIds` become hand-added rows, and the wizard
+/// never writes `CoreBoardDefault` (the Board-settings defaults sheet is
+/// the sole author surface — the old "Start every…" checkbox is gone).
 ///
-/// The prefill resolver (`resolveCoreBoardDefaultPrefill`) is `private
-/// static`, so it's only reachable through the wizard's real init path —
-/// mirrors how `resolveTemplateHydrationTaskIds` is covered elsewhere.
 /// These tests seed a real in-memory `AppDatabase` and construct the VM
 /// via `prefilledRecurringTimeframe:` (the banner / core-board-browser
-/// launch path), matching `RecurringBoardsSnapshotTests
-/// .testSetupStepCoreBoard`'s construction shape.
+/// launch path).
 final class BoardWizardCoreDefaultsTests: XCTestCase {
 
     private let userId = "u1"
@@ -68,12 +66,14 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
         )
 
         XCTAssertEqual(vm.selectedTaskIds, ["t1", "t2", "t3"])
-        XCTAssertEqual(vm.poolOrder, ["t1", "t2", "t3"])
-        XCTAssertEqual(vm.pulledPoolIds, [pool.id])
-        // Critical fix under test: nothing is hand-added at init time — the
-        // prior code stomped this into `manualTaskIds == selectedTaskIds`.
-        XCTAssertTrue(vm.manualTaskIds.isEmpty)
-        XCTAssertEqual(vm.savedCorePoolIds, [pool.id])
+        // Board Sources P2 — the pool pre-pulls as a [0, all] SOURCE row;
+        // only the individual defaults are hand-added rows.
+        XCTAssertEqual(vm.sources.map { $0.sourceId }, [pool.id])
+        XCTAssertEqual(vm.sources.first?.min, 0)
+        XCTAssertNil(vm.sources.first?.max)
+        XCTAssertEqual(vm.poolOrder, ["t3"])
+        XCTAssertEqual(vm.manualTaskIds, ["t3"])
+        XCTAssertEqual(vm.pulledPoolIds, [pool.id]) // legacy mirror
         XCTAssertTrue(vm.isCore)
     }
 
@@ -93,11 +93,9 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
         )
 
         XCTAssertTrue(vm.selectedTaskIds.isEmpty)
+        // A deleted pool must not seed a dead source row on a FRESH prefill.
+        XCTAssertTrue(vm.sources.isEmpty)
         XCTAssertTrue(vm.pulledPoolIds.isEmpty)
-        // savedCorePoolIds reflects the raw stored default even though the
-        // pool no longer resolves — the checkbox correctly reads unchecked
-        // (pulledPoolIds is empty) rather than the derivation crashing.
-        XCTAssertEqual(vm.savedCorePoolIds, [pool.id])
     }
 
     func testPrefill_SkipsDeletedCoreDefaultTask() throws {
@@ -128,67 +126,13 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
 
         XCTAssertTrue(vm.selectedTaskIds.isEmpty)
         XCTAssertTrue(vm.poolOrder.isEmpty)
-        XCTAssertTrue(vm.pulledPoolIds.isEmpty)
-        XCTAssertTrue(vm.savedCorePoolIds.isEmpty)
+        XCTAssertTrue(vm.sources.isEmpty)
         XCTAssertTrue(vm.manualTaskIds.isEmpty)
     }
 
-    // MARK: - isCorePoolDefaultSaved (pure)
-
-    func testIsCorePoolDefaultSaved_TrueOnMatchingSetsOrderIndependent() {
-        XCTAssertTrue(BoardWizardViewModel.isCorePoolDefaultSaved(
-            pulledPoolIds: ["a", "b"], savedCorePoolIds: ["b", "a"]
-        ))
-    }
-
-    func testIsCorePoolDefaultSaved_FalseOnMismatch() {
-        XCTAssertFalse(BoardWizardViewModel.isCorePoolDefaultSaved(
-            pulledPoolIds: ["a", "b"], savedCorePoolIds: ["a"]
-        ))
-    }
-
-    func testIsCorePoolDefaultSaved_FalseWhenEitherEmpty() {
-        XCTAssertFalse(BoardWizardViewModel.isCorePoolDefaultSaved(pulledPoolIds: [], savedCorePoolIds: ["a"]))
-        XCTAssertFalse(BoardWizardViewModel.isCorePoolDefaultSaved(pulledPoolIds: ["a"], savedCorePoolIds: []))
-        XCTAssertFalse(BoardWizardViewModel.isCorePoolDefaultSaved(pulledPoolIds: [], savedCorePoolIds: []))
-    }
-
-    // MARK: - setCorePoolDefaultSaved write path
-
-    func testSetCorePoolDefaultSaved_CheckPersistsCurrentPulledSnapshot() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        let t1 = makeTask("t1")
-        try seedTask(db, t1)
-        let pool = try seedPool(db, name: "Pool A", taskIds: ["t1"])
-
-        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
-        vm.timeframe = .weekly
-        vm.pullPool(pool.id, poolsById: [pool.id: pool], tasksById: ["t1": t1])
-
-        vm.setCorePoolDefaultSaved(true, userId: userId)
-
-        XCTAssertEqual(vm.savedCorePoolIds, [pool.id])
-        let stored = try XCTUnwrap(try db.fetchCoreBoardDefault(userId: userId, timeframe: .weekly))
-        XCTAssertEqual(stored.corePoolIds, [pool.id])
-    }
-
-    func testSetCorePoolDefaultSaved_UncheckClears() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        _ = try db.upsertCoreBoardDefaultAndEnqueue(
-            userId: userId, timeframe: .daily, corePoolIds: ["p1"], coreDefaultTaskIds: [],
-            now: AppDatabase.currentTimestamp()
-        )
-        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
-        vm.timeframe = .daily
-
-        vm.setCorePoolDefaultSaved(false, userId: userId)
-
-        XCTAssertEqual(vm.savedCorePoolIds, [])
-        let stored = try XCTUnwrap(try db.fetchCoreBoardDefault(userId: userId, timeframe: .daily))
-        XCTAssertEqual(stored.corePoolIds, [])
-    }
+    // Board Sources P2 — the "Start every…" checkbox and its
+    // isCorePoolDefaultSaved/setCorePoolDefaultSaved helpers were removed
+    // (defaults sheet = sole author surface); their tests went with them.
 
     // MARK: - Floor-gate math (proves it's not hardcoded to 8/3x3)
 

@@ -277,6 +277,45 @@ defaults sheet are unchanged.
 - Sealed/windowed-completion rules unchanged: the 'todo' filter reads the
   per-cell resolver, never lifetime caches.
 
+## P2 implementation notes (iOS, as shipped)
+
+- **The wizard VM went sources-native**: `BoardWizardViewModel.sources`
+  (+ `supplyInfoBySourceId` cache and UI-only `expandedSourceIds`) is the
+  state; the legacy trio became *computed* mirrors (`pulledPoolIds` /
+  `removedTaskIds`), so the P1 dual-write falls out for free. All sources
+  behavior lives in `BoardWizardViewModel+Sources.swift` (the VM god-file
+  SHRANK 1118→909 and left the allowlist). `poolOrder` now orders
+  hand-added rows only — source members render inside their row's panel.
+- **Library-sheet deselect of a source-supplied task excludes it from
+  EVERY supplying source** (the sheet has no per-source scope) — this
+  reproduces the old flat-removal outcomes exactly, including the
+  untoggle-persist/clear worked example, now pinned end-to-end in
+  `BoardWizardPoolMixActionsTests`. The panel's ✕ is per-source.
+- **One-off creates honor ranges**: `buildWizardPlacement` picks via
+  `selectBoardTasks` when sources exist (randomize = the template flag;
+  a CHOSEN center is swapped into the pick if the draw skipped it; a
+  short pick falls back to the flat selection — can only overfill toward
+  `placeBoard` truncation, never underfill).
+- **Core prefill filters to resolvable entries** (a deleted pool/task
+  never seeds a dead row on a FRESH wizard) — draft/template hydration
+  deliberately keeps unresolvable references instead (a sync-restored
+  source returns).
+- **Genuinely un-migrated template edit** (every generalized field
+  absent) hydrates `seedTaskIds` as hand-added rows — preserving the
+  P1-era M2 rule (`poolIds: []` resolves to an empty mix; only
+  fully-absent fields fall back).
+- **Board-source "done"** uses the `windowedIsCompleted` predicate
+  (event-owning → windowed; compound/achievement/derived → lifetime
+  cache), via `AppDatabase.fetchBoardSourceSupply`.
+- **The recurring Preview interim**: until P3's summary card, the deck
+  list renders collapsed read-only source rows above the hand-added rows
+  so the full mix stays visible.
+- The "Changes apply from the next board." note renders under the wizard
+  stepper whenever `editingTemplateId != nil` (the frame-5a vehicle).
+- New kit pieces: `RisoRangeSlider` (two-handle, "all"-latch re-latch at
+  the top stop), `RisoSourceRowView`, `RisoSourcePickerSheetView`;
+  `RisoTaskKind.init(taskType:)` extracted (4th duplicate).
+
 ## Delivery — phases (docs-PR-first; iOS-first UI, web in-effort — locked)
 
 | Phase | Scope | Platforms |

@@ -183,7 +183,7 @@ final class BoardWizardRecurringDraftTests: XCTestCase {
                 (id, try XCTUnwrap(AppDatabase.shared.fetchTask(id: id)))
             }
         )
-        vm.pullPool(pool.id, poolsById: [pool.id: pool], tasksById: tasksById)
+        vm.pullPool(pool, tasksById: tasksById)
         XCTAssertEqual(vm.selectedTaskIds, Set(poolTaskIds))
         for id in manualTaskIds { vm.toggleTaskSelection(id) }
         XCTAssertEqual(vm.selectedTaskIds.count, 6, "3 pool + 3 manual = 6, overfilling the 4-cell grid")

@@ -116,6 +116,10 @@ struct BoardWizardView: View {
                 await MainActor.run {
                     pools = loadedPools
                     templates = loadedTemplates
+                    // Board Sources P2 — re-resolve pulled sources' supplies
+                    // against the fresh pools/library so ranges/counts track
+                    // live edits.
+                    wizard.refreshSourceSupplies(poolsById: poolsById, tasksById: tasksById)
                 }
             } catch {
                 // Non-fatal: the pull card renders with whatever it already had.
@@ -324,6 +328,17 @@ struct BoardWizardView: View {
                     )
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 8)
+
+                    // Board Sources P2 (locked decision) — editing an
+                    // existing repeating board IS the "Sources" surface;
+                    // the design's frame-5a note renders here.
+                    if wizard.editingTemplateId != nil {
+                        Text("Changes apply from the next board.")
+                            .font(.risoBody(11, .semibold))
+                            .foregroundStyle(Color.risoMuted)
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.bottom, 6)
+                    }
                 }
 
                 // ── Step content ────────────────────────────────────────
@@ -386,10 +401,10 @@ struct BoardWizardView: View {
                 currentStartDate: { if case .ok(let s, _) = currentDates { return s }; return nil }(),
                 currentEndDate: { if case .ok(_, let e) = currentDates { return e }; return nil }(),
                 onToggleSelection: { taskId in
-                    // P3 — pass the real pools/tasks lookups so a row-remove
-                    // that's still supplied by a pulled pool gets recorded
-                    // in `removedTaskIds` bookkeeping.
-                    wizard.toggleTaskSelection(taskId, poolsById: poolsById, tasksById: tasksById)
+                    // Board Sources P2 — a row-remove of a source-supplied
+                    // task now records per-source excludes internally (the
+                    // VM's supply caches replace the caller lookups).
+                    wizard.toggleTaskSelection(taskId)
                 },
                 onTaskCreated: { taskId, _, _ in
                     wizard.toggleTaskSelection(taskId)
@@ -409,22 +424,27 @@ struct BoardWizardView: View {
                 onBack: { wizard.goBack() },
                 onNext: { wizard.goNext() },
                 pools: pools,
-                pulledPoolIds: wizard.pulledPoolIds,
-                provenanceByTaskId: wizard.provenanceByTaskId(poolsById: poolsById, tasksById: tasksById),
-                onPullPool: { poolId in
-                    wizard.pullPool(poolId, poolsById: poolsById, tasksById: tasksById)
+                sources: wizard.sources,
+                supplyInfoBySourceId: wizard.supplyInfoBySourceId,
+                expandedSourceIds: wizard.expandedSourceIds,
+                availableCountForSource: { wizard.availableCount(forSourceId: $0) },
+                capacity: wizard.sourceCapacity,
+                sourceSheetBoardEntries: { wizard.sourceSheetBoardEntries(userId: userId) },
+                onToggleSourceExpanded: { sourceId in
+                    if wizard.expandedSourceIds.contains(sourceId) {
+                        wizard.expandedSourceIds.remove(sourceId)
+                    } else {
+                        wizard.expandedSourceIds.insert(sourceId)
+                    }
                 },
-                onUntogglePool: { poolId in
-                    wizard.untogglePool(poolId, poolsById: poolsById, tasksById: tasksById)
+                onRemoveSource: { wizard.removeSource(sourceId: $0) },
+                onSetSourceFilter: { wizard.setSourceFilter(sourceId: $0, filter: $1) },
+                onSetSourceRange: { wizard.setSourceRange(sourceId: $0, min: $1, max: $2) },
+                onToggleSourceExclude: { wizard.toggleSourceExclude(sourceId: $0, taskId: $1) },
+                onPullPoolSource: { pool in
+                    wizard.pullPool(pool, tasksById: tasksById)
                 },
-                templates: templates,
-                onPoolsReloadRequested: { loadPools() },
-                isCore: wizard.isCore,
-                manualTaskIds: wizard.manualTaskIds,
-                savedCorePoolIds: wizard.savedCorePoolIds,
-                onSetCorePoolDefaultSaved: { saved in
-                    wizard.setCorePoolDefaultSaved(saved, userId: userId)
-                }
+                onPullBoardSource: { wizard.pullBoard(boardId: $0) }
             )
         default:
             BoardWizardPreviewStepView(
