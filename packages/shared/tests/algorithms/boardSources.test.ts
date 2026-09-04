@@ -54,6 +54,7 @@ interface Fixture {
     manualTaskIds: string[];
     cellCount: number;
     rngSeed: number;
+    randomize: boolean;
     expected: { ok: true; taskIds: string[] } | { ok: false; shortBy: number };
   }>;
   conversionVectors: Array<{
@@ -100,6 +101,7 @@ describe('boardSourceVectors fixture', () => {
           supplies: v.sources.map(toSupply),
           manualTaskIds: v.manualTaskIds,
           cellCount: v.cellCount,
+          randomize: v.randomize,
           rng: makeSeededRng(v.rngSeed),
         }),
       ).toEqual(v.expected);

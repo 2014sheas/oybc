@@ -130,11 +130,16 @@ P1 acceptance gate.
   window** (the unified per-cell resolver from BOARD_INTEGRITY — never the
   lifetime cache).
 
-**2. Candidates & dedupe:** hand-added (manual) tasks first, then each
-source's available list in row order; **dedupe first-seen by task id**. A
-task present in two sources, or by hand and in a source, counts once and
-appears once. (Note: `placeBoard` itself does no dedupe — it must never be
-fed duplicates; dedupe is this layer's job.)
+**2. Candidates & dedupe:** each source's available list in row order,
+then any manual-only ids appended — the same deterministic order the old
+`resolveMix` produced (pool union first, manual extras last), so the
+non-randomized path slices the identical first-N the old spawn did;
+**dedupe first-seen by task id**. A task present in two sources, or by
+hand and in a source, counts once and appears once. (Note: `placeBoard`
+itself does no dedupe — it must never be fed duplicates; dedupe is this
+layer's job.) Selection honors the template's `isRandomized` via a
+`randomize` flag: shuffled picks when true, candidate-order picks when
+false — preserving the `isRandomized: false` determinism contract.
 
 **3. Header math / gate** (as shipped, `computeSourceCapacity`): capacity =
 `min(uniqueCandidateCount, cappedBound)` where `uniqueCandidateCount` =

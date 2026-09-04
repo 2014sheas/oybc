@@ -176,6 +176,11 @@ export async function spawnTemplateBoard(
         supplies,
         manualTaskIds,
         cellCount: fillableCellCount(template.boardSize, template.centerSquareType),
+        // Honor the template's determinism contract: an
+        // `isRandomized: false` template must keep its stable first-N
+        // subset + order (review-caught — `placeBoard`'s verbatim path
+        // is defeated if selection already shuffled).
+        randomize: template.isRandomized,
       });
       if (!selection.ok) {
         return {

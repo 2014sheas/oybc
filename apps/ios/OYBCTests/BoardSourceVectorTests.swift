@@ -77,6 +77,7 @@ final class BoardSourceVectorTests: XCTestCase {
         let manualTaskIds: [String]
         let cellCount: Int
         let rngSeed: UInt32
+        let randomize: Bool
         let expected: RawSelectionExpected
     }
 
@@ -144,6 +145,7 @@ final class BoardSourceVectorTests: XCTestCase {
                 supplies: v.sources.map { $0.supply },
                 manualTaskIds: v.manualTaskIds,
                 cellCount: v.cellCount,
+                randomize: v.randomize,
                 rng: { rng.next() }
             )
             switch result {

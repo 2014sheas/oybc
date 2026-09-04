@@ -149,6 +149,15 @@ export interface SelectBoardTasksArgs {
   manualTaskIds: string[];
   /** Cells to fill — `fillableCellCount(size, center)`. */
   cellCount: number;
+  /**
+   * Whether picks are shuffled (the template's `isRandomized`). Default
+   * true. When false the fill is fully deterministic in candidate order —
+   * for `[0, all]` shapes this reproduces the pre-sources
+   * `resolveMix`-order first-N slice exactly (same subset when
+   * overfilled, same order), preserving the `isRandomized: false`
+   * determinism contract `placeBoard` documents for its callers.
+   */
+  randomize?: boolean;
   /** Uniform `[0, 1)` RNG. Default `Math.random`; tests pass a seeded LCG
    *  (`makeSeededRng`) so vectors pin exact outputs on both platforms. */
   rng?: () => number;
@@ -168,7 +177,10 @@ export function selectBoardTasks(
   args: SelectBoardTasksArgs,
 ): SelectBoardTasksResult {
   const rng = args.rng ?? Math.random;
+  const randomize = args.randomize ?? true;
   const { supplies, manualTaskIds, cellCount } = args;
+  const order = (ids: string[]): string[] =>
+    randomize ? fisherYatesShuffle(ids, rng) : ids;
 
   // Per-source available lists + membership sets + effective caps.
   const availables = supplies.map(resolveSourceAvailable);
@@ -176,20 +188,26 @@ export function selectBoardTasks(
   const caps = supplies.map((s, i) => effectiveSourceMax(s.source, availables[i].length));
   const memberCounts = supplies.map(() => 0);
 
-  // Candidate universe, first-seen order: manual, then sources in row order.
+  // Candidate universe, first-seen order: sources in row order, then any
+  // manual-only ids appended — the SAME deterministic order `resolveMix`
+  // produced (pool union first, manual extras last), so the
+  // `randomize: false` path slices the identical first-N the old spawn
+  // did. (Membership caps are set-based, so candidate position never
+  // affects WHICH source a pick counts against — only deterministic
+  // ordering.)
   const candidateSeen = new Set<string>();
   const candidates: string[] = [];
-  for (const id of manualTaskIds) {
-    if (candidateSeen.has(id)) continue;
-    candidateSeen.add(id);
-    candidates.push(id);
-  }
   for (const available of availables) {
     for (const id of available) {
       if (candidateSeen.has(id)) continue;
       candidateSeen.add(id);
       candidates.push(id);
     }
+  }
+  for (const id of manualTaskIds) {
+    if (candidateSeen.has(id)) continue;
+    candidateSeen.add(id);
+    candidates.push(id);
   }
 
   const picked: string[] = [];
@@ -220,10 +238,7 @@ export function selectBoardTasks(
       cellCount,
     );
     if (memberCounts[i] >= target) continue;
-    const shuffledOwn = fisherYatesShuffle(
-      availables[i].filter((id) => !pickedSet.has(id)),
-      rng,
-    );
+    const shuffledOwn = order(availables[i].filter((id) => !pickedSet.has(id)));
     for (const id of shuffledOwn) {
       if (memberCounts[i] >= target || picked.length >= cellCount) break;
       if (!admissible(id)) continue;
@@ -231,12 +246,10 @@ export function selectBoardTasks(
     }
   }
 
-  // Phase B — fill the remaining cells at random from every remaining
-  // admissible candidate (manual and source-supplied alike).
-  const shuffledRest = fisherYatesShuffle(
-    candidates.filter((id) => !pickedSet.has(id)),
-    rng,
-  );
+  // Phase B — fill the remaining cells from every remaining admissible
+  // candidate (manual and source-supplied alike): at random when
+  // randomized, in candidate order when not.
+  const shuffledRest = order(candidates.filter((id) => !pickedSet.has(id)));
   for (const id of shuffledRest) {
     if (picked.length >= cellCount) break;
     if (!admissible(id)) continue;

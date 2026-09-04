@@ -103,14 +103,24 @@ enum BoardSources {
     ///   - manualTaskIds: Hand-added layer — unconstrained candidates
     ///     (but counting toward the cap of any source that supplies them).
     ///   - cellCount: `fillableCellCount(size, center)`.
+    ///   - randomize: The template's `isRandomized`. When false the fill
+    ///     is fully deterministic in candidate order — for `[0, all]`
+    ///     shapes this reproduces the pre-sources `resolveMix`-order
+    ///     first-N slice exactly (same subset when overfilled, same
+    ///     order), preserving `placeBoard`'s documented determinism
+    ///     contract for its callers.
     ///   - rng: Uniform `[0, 1)` generator. Tests pass the shared seeded
     ///     LCG so vectors pin exact outputs on both platforms.
     static func selectBoardTasks(
         supplies: [Supply],
         manualTaskIds: [String],
         cellCount: Int,
+        randomize: Bool = true,
         rng: () -> Double = { Double.random(in: 0..<1) }
     ) -> SelectionResult {
+        func order(_ ids: [String]) -> [String] {
+            randomize ? Shuffle.fisherYatesShuffle(ids, rng: rng) : ids
+        }
         let availables = supplies.map { resolveSourceAvailable($0) }
         let availableSets = availables.map { Set($0) }
         let caps = supplies.enumerated().map { i, supply in
@@ -118,18 +128,23 @@ enum BoardSources {
         }
         var memberCounts = [Int](repeating: 0, count: supplies.count)
 
-        // Candidate universe, first-seen order: manual, then sources.
+        // Candidate universe, first-seen order: sources in row order, then
+        // any manual-only ids appended — the SAME deterministic order
+        // `resolveMix` produced (pool union first, manual extras last), so
+        // the `randomize: false` path slices the identical first-N the old
+        // spawn did. (Membership caps are set-based, so candidate position
+        // never affects WHICH source a pick counts against.)
         var candidateSeen = Set<String>()
         var candidates: [String] = []
-        for id in manualTaskIds where !candidateSeen.contains(id) {
-            candidateSeen.insert(id)
-            candidates.append(id)
-        }
         for available in availables {
             for id in available where !candidateSeen.contains(id) {
                 candidateSeen.insert(id)
                 candidates.append(id)
             }
+        }
+        for id in manualTaskIds where !candidateSeen.contains(id) {
+            candidateSeen.insert(id)
+            candidates.append(id)
         }
 
         var picked: [String] = []
@@ -160,10 +175,7 @@ enum BoardSources {
                 cellCount
             )
             if memberCounts[i] >= target { continue }
-            let shuffledOwn = Shuffle.fisherYatesShuffle(
-                availables[i].filter { !pickedSet.contains($0) },
-                rng: rng
-            )
+            let shuffledOwn = order(availables[i].filter { !pickedSet.contains($0) })
             for id in shuffledOwn {
                 if memberCounts[i] >= target || picked.count >= cellCount { break }
                 if !admissible(id) { continue }
@@ -171,12 +183,10 @@ enum BoardSources {
             }
         }
 
-        // Phase B — fill the remaining cells at random from every
-        // remaining admissible candidate.
-        let shuffledRest = Shuffle.fisherYatesShuffle(
-            candidates.filter { !pickedSet.contains($0) },
-            rng: rng
-        )
+        // Phase B — fill the remaining cells from every remaining
+        // admissible candidate: at random when randomized, in candidate
+        // order when not.
+        let shuffledRest = order(candidates.filter { !pickedSet.contains($0) })
         for id in shuffledRest {
             if picked.count >= cellCount { break }
             if !admissible(id) { continue }

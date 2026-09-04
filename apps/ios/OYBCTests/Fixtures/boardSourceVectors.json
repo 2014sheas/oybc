@@ -190,6 +190,7 @@
       "manualTaskIds": [],
       "cellCount": 4,
       "rngSeed": 1,
+      "randomize": true,
       "expected": {
         "ok": true,
         "taskIds": [
@@ -227,6 +228,7 @@
       "manualTaskIds": [],
       "cellCount": 8,
       "rngSeed": 7,
+      "randomize": true,
       "expected": {
         "ok": true,
         "taskIds": [
@@ -279,6 +281,7 @@
       "manualTaskIds": [],
       "cellCount": 4,
       "rngSeed": 42,
+      "randomize": true,
       "expected": {
         "ok": true,
         "taskIds": [
@@ -325,6 +328,7 @@
       "manualTaskIds": [],
       "cellCount": 5,
       "rngSeed": 3,
+      "randomize": true,
       "expected": {
         "ok": true,
         "taskIds": [
@@ -366,6 +370,7 @@
       "manualTaskIds": [],
       "cellCount": 2,
       "rngSeed": 5,
+      "randomize": true,
       "expected": {
         "ok": true,
         "taskIds": [
@@ -398,6 +403,7 @@
       "manualTaskIds": [],
       "cellCount": 2,
       "rngSeed": 9,
+      "randomize": true,
       "expected": {
         "ok": true,
         "taskIds": [
@@ -427,6 +433,7 @@
       ],
       "cellCount": 8,
       "rngSeed": 1,
+      "randomize": true,
       "expected": {
         "ok": false,
         "shortBy": 5
@@ -453,6 +460,7 @@
       ],
       "cellCount": 2,
       "rngSeed": 2,
+      "randomize": true,
       "expected": {
         "ok": false,
         "shortBy": 1
@@ -490,6 +498,7 @@
       "manualTaskIds": [],
       "cellCount": 4,
       "rngSeed": 11,
+      "randomize": true,
       "expected": {
         "ok": true,
         "taskIds": [
@@ -497,6 +506,149 @@
           "task-1",
           "task-11",
           "task-12"
+        ]
+      }
+    },
+    {
+      "name": "randomize:false slices the deterministic first-N (resolveMix order) when overfilled",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4",
+            "task-5",
+            "task-6"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-3",
+            "task-7",
+            "task-8"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "task-20",
+        "task-21"
+      ],
+      "cellCount": 8,
+      "rngSeed": 1,
+      "randomize": false,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-1",
+          "task-2",
+          "task-3",
+          "task-4",
+          "task-5",
+          "task-6",
+          "task-7",
+          "task-8"
+        ]
+      }
+    },
+    {
+      "name": "randomize:false skips capped members in order",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": 2,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-10",
+            "task-11"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 4,
+      "rngSeed": 1,
+      "randomize": false,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-1",
+          "task-2",
+          "task-10",
+          "task-11"
+        ]
+      }
+    },
+    {
+      "name": "randomize:false honors a later source min deterministically",
+      "sources": [
+        {
+          "sourceId": "pool-1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-1",
+            "task-2",
+            "task-3",
+            "task-4"
+          ]
+        },
+        {
+          "sourceId": "pool-2",
+          "kind": "pool",
+          "min": 2,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "task-10",
+            "task-11",
+            "task-12"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 4,
+      "rngSeed": 1,
+      "randomize": false,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "task-10",
+          "task-11",
+          "task-1",
+          "task-2"
         ]
       }
     },
@@ -533,6 +685,7 @@
       "manualTaskIds": [],
       "cellCount": 3,
       "rngSeed": 13,
+      "randomize": true,
       "expected": {
         "ok": false,
         "shortBy": 1

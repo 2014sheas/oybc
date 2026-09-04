@@ -192,13 +192,18 @@ extension AppDatabase {
                 // shape — the old uniform-subset draw — until P2 writes
                 // real ranges). A range-infeasible pick (P2+ data only)
                 // maps to the same skip-and-warn family as a small pool.
+                // `randomize:` honors the template's determinism contract —
+                // an `isRandomized: false` template keeps its stable
+                // first-N subset + order (review-caught; `placeBoard`'s
+                // verbatim path is defeated if selection already shuffled).
                 let selection = BoardSources.selectBoardTasks(
                     supplies: supplies,
                     manualTaskIds: manualTaskIds,
                     cellCount: recurringTemplateFillableCellCount(
                         boardSize: size,
                         centerSquareType: template.centerSquareType
-                    )
+                    ),
+                    randomize: template.isRandomized
                 )
                 let orderedPool: [Task]
                 switch selection {

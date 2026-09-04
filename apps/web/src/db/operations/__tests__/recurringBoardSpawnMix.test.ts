@@ -352,3 +352,66 @@ describe('spawnTemplateBoard — Board Sources P1 (stamped sources)', () => {
     expect(new Set(boardTasks.map((bt) => bt.taskId))).toEqual(new Set(poolTaskIds));
   });
 });
+
+describe('spawnTemplateBoard — isRandomized: false determinism (review-caught regression lock)', () => {
+  it('an overfilled non-randomized template keeps its stable first-N subset AND order across spawns', async () => {
+    // 12-task pool on a 3×3 NONE board (9 cells). Pre-sources behavior:
+    // placeBoard received the deterministic resolveMix order verbatim and
+    // truncated — same first-9 subset, same cell order, every spawn.
+    const ids = Array.from({ length: 12 }, (_, i) => `t${String(i).padStart(2, '0')}`);
+    for (const id of ids) await seedTask(id);
+    await db.pools.add({
+      id: 'big-pool',
+      userId: 'user-1',
+      name: 'Big Pool',
+      taskIds: ids,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-det',
+      userId: 'user-1',
+      name: 'Deterministic Board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      seedTaskIds: [],
+      poolIds: ['big-pool'],
+      manualTaskIds: [],
+      removedTaskIds: [],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const spawnOnce = async (windowStart: string, windowEnd: string) => {
+      const result = await spawnTemplateBoard({
+        template: (await db.recurringBoardTemplates.get('tmpl-det'))!,
+        windowStart,
+        windowEnd,
+        suggestedName: `Deterministic — ${windowStart.slice(0, 10)}`,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('spawn failed');
+      const rows = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
+      return rows
+        .sort((a, b) => a.row - b.row || a.col - b.col)
+        .map((bt) => bt.taskId);
+    };
+
+    const first = await spawnOnce(WINDOW_START, WINDOW_END);
+    const second = await spawnOnce('2026-07-20T00:00:00.000Z', '2026-07-20T23:59:59.999Z');
+
+    // Deterministic first-9 slice in pool order, identical layout both spawns.
+    expect(first).toEqual(ids.slice(0, 9));
+    expect(second).toEqual(first);
+  });
+});
