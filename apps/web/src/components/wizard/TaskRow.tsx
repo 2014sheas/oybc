@@ -25,10 +25,6 @@ export interface TaskRowProps {
   showCenterStar?: boolean;
   isCenter?: boolean;
   onCenterClick?: () => void;
-  /** P3 — provenance label ("from X" / "added by hand"), rendered only
-   *  when the row is selected. `undefined` renders nothing (unselected
-   *  rows never pass this). */
-  provenance?: string;
   /**
    * P4 — when true, renders a non-interactive row (a `div`, not a
    * `button`; no usage-hint column, no center star) for read-only
@@ -48,7 +44,6 @@ export function renderTaskRow({
   showCenterStar = false,
   isCenter = false,
   onCenterClick,
-  provenance,
   readOnly = false,
 }: TaskRowProps): React.ReactElement {
   const subtitle = buildTaskSubtitle(task);
@@ -61,7 +56,6 @@ export function renderTaskRow({
           <div className={styles.rowCenter}>
             <span className={styles.rowTitle}>{task.title}</span>
             {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
-            {provenance && <span className={styles.rowProvenance}>{provenance}</span>}
           </div>
         </div>
       </div>
@@ -83,7 +77,6 @@ export function renderTaskRow({
         <div className={styles.rowCenter}>
           <span className={styles.rowTitle}>{task.title}</span>
           {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
-          {isSelected && provenance && <span className={styles.rowProvenance}>{provenance}</span>}
         </div>
         <span className={styles.rowUsage}>{usageHint}</span>
       </button>

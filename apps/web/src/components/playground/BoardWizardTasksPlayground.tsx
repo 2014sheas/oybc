@@ -1,18 +1,26 @@
 import { useCallback, useMemo, useState } from 'react';
-import { TaskType, OperatorType, Timeframe, type Pool } from '@oybc/shared';
+import {
+  TaskType,
+  OperatorType,
+  Timeframe,
+  type BoardSource,
+  type Pool,
+} from '@oybc/shared';
 import { createTask, createCompound } from '../../db/operations/tasks';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { usePools } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import {
-  applyManualBookkeepingOnDeselect,
-  applyManualBookkeepingOnSelect,
-  applyPullPool,
-  applyUntogglePool,
-  deriveTaskProvenance,
-  syncPoolOrder,
-} from '../../pages/createHub/poolPullLogic';
+  availableCountForSource,
+  clampSourceRange,
+  excludeFromEverySupplier,
+  poolSupplyEntry,
+  selectionUnion,
+  sourceCapacity,
+  toggleExcludeInSource,
+  type SupplyInfoMap,
+} from '../../pages/createHub/wizardSources';
 import { BoardWizardTasksStep } from '../wizard/BoardWizardTasksStep';
 import { PLAYGROUND_USER_ID } from './playgroundUtils';
 import styles from './BoardWizardTasksPlayground.module.css';
@@ -56,9 +64,22 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
     for (const p of pools) map[p.id] = p;
     return map;
   }, [pools]);
-  const [pulledPoolIds, setPulledPoolIds] = useState<string[]>([]);
+  // Board Sources P4 — simulated sources state, mirroring
+  // `useBoardWizard`'s real shape (pool-kind sources only — the
+  // playground has no board store to pull from).
+  const [sources, setSources] = useState<BoardSource[]>([]);
   const [manualTaskIds, setManualTaskIds] = useState<Set<string>>(new Set());
-  const [removedTaskIds, setRemovedTaskIds] = useState<Set<string>>(new Set());
+  const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(new Set());
+  const supplyInfoBySourceId = useMemo<SupplyInfoMap>(() => {
+    const info: SupplyInfoMap = {};
+    for (const source of sources) {
+      const pool = poolsById[source.sourceId];
+      info[source.sourceId] = pool
+        ? poolSupplyEntry(pool, library.taskMap)
+        : { displayName: '', rawSupplyTaskIds: [], doneTaskIds: new Set() };
+    }
+    return info;
+  }, [sources, poolsById, library.taskMap]);
 
   // Web inline-editing port PR-2 — simulated staged-edits state, mirroring
   // `useBoardWizard.stagedEdits`/`stageEdit`/`revertEdit`/`restoreToPool`
@@ -100,10 +121,6 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
     },
     [],
   );
-  const taskProvenance = useMemo(
-    () => deriveTaskProvenance(selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, library.taskMap),
-    [selectedTaskIds, manualTaskIds, pulledPoolIds, poolsById, library.taskMap],
-  );
 
   // Harness controls ──────────────────────────────────────────────────
   const [tasksRequired, setTasksRequired] = useState<number>(16);
@@ -132,56 +149,109 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
           return next;
         });
       }
+      // Board Sources P4 — deselect excludes from every supplier + drops
+      // any hand-add; select is a manual add (manual wins).
       if (wasSelected) {
-        const result = applyManualBookkeepingOnDeselect(
-          taskId,
-          manualTaskIds,
-          removedTaskIds,
-          pulledPoolIds,
-          poolsById,
-          library.taskMap,
+        setSources((prev) =>
+          excludeFromEverySupplier(prev, supplyInfoBySourceId, taskId, tasksRequired),
         );
-        setManualTaskIds(result.manualTaskIds);
-        setRemovedTaskIds(result.removedTaskIds);
+        setManualTaskIds((prev) => {
+          const next = new Set(prev);
+          next.delete(taskId);
+          return next;
+        });
       } else {
-        const result = applyManualBookkeepingOnSelect(taskId, manualTaskIds, removedTaskIds);
-        setManualTaskIds(result.manualTaskIds);
-        setRemovedTaskIds(result.removedTaskIds);
+        setManualTaskIds((prev) => new Set(prev).add(taskId));
       }
     },
-    [selectedTaskIds, manualTaskIds, removedTaskIds, pulledPoolIds, poolsById, library.taskMap],
+    [selectedTaskIds, supplyInfoBySourceId, tasksRequired],
+  );
+
+  // Board Sources P4 — recompute the selection union after any
+  // sources/manual change (the hook's recompute effect, simplified).
+  const recomputeSelection = useCallback(
+    (nextSources: BoardSource[], nextManual: Set<string>): void => {
+      const union = selectionUnion(nextSources, supplyInfoBySourceId, nextManual);
+      setSelectedTaskIds(union);
+      setCenterTaskId((prev) => (prev !== null && !union.has(prev) ? null : prev));
+    },
+    [supplyInfoBySourceId],
   );
 
   const handlePullPool = useCallback(
     (poolId: string): void => {
-      const result = applyPullPool(poolId, selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, library.taskMap);
-      setSelectedTaskIds(result.selectedTaskIds);
-      setPoolOrder((prev) => syncPoolOrder(prev, result.selectedTaskIds));
-      setPulledPoolIds(result.pulledPoolIds);
+      setSources((prev) =>
+        prev.some((source) => source.sourceId === poolId)
+          ? prev
+          : [
+              ...prev,
+              {
+                sourceId: poolId,
+                kind: 'pool' as const,
+                min: 0,
+                max: null,
+                excludedTaskIds: [],
+                filter: 'all' as const,
+              },
+            ],
+      );
     },
-    [selectedTaskIds, pulledPoolIds, removedTaskIds, poolsById, library.taskMap],
+    [],
   );
 
-  const handleUntogglePool = useCallback(
-    (poolId: string): void => {
-      const result = applyUntogglePool(
-        poolId,
-        selectedTaskIds,
-        pulledPoolIds,
-        manualTaskIds,
-        removedTaskIds,
-        poolsById,
-        library.taskMap,
-      );
-      setSelectedTaskIds(result.selectedTaskIds);
-      setPoolOrder((prev) => syncPoolOrder(prev, result.selectedTaskIds));
-      setPulledPoolIds(result.pulledPoolIds);
-      setRemovedTaskIds(result.removedTaskIds);
-      if (centerTaskId !== null && result.removedIds.includes(centerTaskId)) {
-        setCenterTaskId(null);
-      }
+  const handleRemoveSource = useCallback(
+    (sourceId: string): void => {
+      const next = sources.filter((source) => source.sourceId !== sourceId);
+      setSources(next);
+      recomputeSelection(next, manualTaskIds);
     },
-    [selectedTaskIds, pulledPoolIds, manualTaskIds, removedTaskIds, poolsById, library.taskMap, centerTaskId],
+    [sources, manualTaskIds, recomputeSelection],
+  );
+
+  const handleSetSourceRange = useCallback(
+    (sourceId: string, min: number, max: number | null): void => {
+      setSources((prev) =>
+        prev.map((source) =>
+          source.sourceId === sourceId
+            ? clampSourceRange(
+                { ...source, min, max },
+                availableCountForSource(prev, supplyInfoBySourceId, sourceId),
+                tasksRequired,
+              )
+            : source,
+        ),
+      );
+    },
+    [supplyInfoBySourceId, tasksRequired],
+  );
+
+  const handleToggleSourceExclude = useCallback(
+    (sourceId: string, taskId: string): void => {
+      const next = toggleExcludeInSource(
+        sources,
+        supplyInfoBySourceId,
+        sourceId,
+        taskId,
+        tasksRequired,
+      );
+      setSources(next);
+      recomputeSelection(next, manualTaskIds);
+    },
+    [sources, supplyInfoBySourceId, manualTaskIds, tasksRequired, recomputeSelection],
+  );
+
+  const handleToggleExpandedSource = useCallback((sourceId: string): void => {
+    setExpandedSourceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sourceId)) next.delete(sourceId);
+      else next.add(sourceId);
+      return next;
+    });
+  }, []);
+
+  const capacity = useMemo(
+    () => sourceCapacity(sources, supplyInfoBySourceId, manualTaskIds),
+    [sources, supplyInfoBySourceId, manualTaskIds],
   );
 
   const handleSeedSampleTasks = useCallback(async (): Promise<void> => {
@@ -277,9 +347,9 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
               setPoolOrder([]);
               setCenterTaskId(null);
               setNavMessage(null);
-              setPulledPoolIds([]);
+              setSources([]);
               setManualTaskIds(new Set());
-              setRemovedTaskIds(new Set());
+              setExpandedSourceIds(new Set());
             }}
           >
             Reset selection
@@ -332,15 +402,23 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
           // automatically when the sheet closes.
         }}
         pools={pools}
-        pulledPoolIds={pulledPoolIds}
-        onPullPool={handlePullPool}
-        onUntogglePool={handleUntogglePool}
-        taskProvenance={taskProvenance}
-        manualTaskIds={manualTaskIds}
-        // P5 — the playground harness has no core-setup simulation; the
-        // isCore-only UI (chip strip, "Start every…" checkbox, "Add N
-        // more" copy) is exercised via the real wizard flow instead.
-        isCore={false}
+        sources={sources}
+        supplyInfoBySourceId={supplyInfoBySourceId}
+        expandedSourceIds={expandedSourceIds}
+        availableCountForSource={(sourceId) =>
+          availableCountForSource(sources, supplyInfoBySourceId, sourceId)
+        }
+        capacity={capacity}
+        // The playground has no board store — the sheet's BOARDS section
+        // stays empty here; board-kind sources are exercised in the app.
+        sheetBoardEntries={[]}
+        onToggleSourceExpanded={handleToggleExpandedSource}
+        onRemoveSource={handleRemoveSource}
+        onSetSourceFilter={() => {}}
+        onSetSourceRange={handleSetSourceRange}
+        onToggleSourceExclude={handleToggleSourceExclude}
+        onPullPoolSource={handlePullPool}
+        onPullBoardSource={() => {}}
         stagedEdits={stagedEdits}
         onStageEdit={handleStageEdit}
         onRevertEdit={handleRevertEdit}

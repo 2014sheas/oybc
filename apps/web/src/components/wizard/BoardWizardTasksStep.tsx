@@ -4,13 +4,14 @@ import {
   Timeframe,
   TaskType,
   generateCounterTaskTitle,
+  type BoardSource,
   type CompoundChild,
   type Pool,
   type Task,
 } from '@oybc/shared';
 import { fetchAllBoardTasks } from '../../db/operations';
 import { createTask } from '../../db/operations/tasks';
-import { upsertCoreBoardDefault } from '../../db/operations/coreBoardDefaults';
+import type { SourceSheetBoardEntry } from '../../db/operations/boardSources';
 import {
   overlayCompoundChildrenWithStagedEdits,
   overlayTaskMapWithStagedEdits,
@@ -20,15 +21,11 @@ import {
   childPatchFromTask,
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
-import {
-  useCoreBoardDefault,
-  useParentBoardTasks,
-  useRecurringBoardTemplates,
-} from '../../hooks';
+import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
-import { PoolEditSheet } from '../pools/PoolEditSheet';
-import { RisoChip, RisoSectionLabel } from '../riso';
+import type { SupplyInfoMap } from '../../pages/createHub/wizardSources';
+import { RisoSectionLabel } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
 import { resolveDeriveLinkTarget } from './deriveCounterLink';
@@ -36,36 +33,14 @@ import { LibrarySheet } from './LibrarySheet';
 import { PoolList } from './PoolList';
 import { PoolRowEditor } from './PoolRowEditor';
 import { RowContextMenu } from './RowContextMenu';
+import { SourcePickerSheet } from './SourcePickerSheet';
+import { SourceRow } from './SourceRow';
 import { SpecialTaskPanel } from './SpecialTaskPanel';
 import { mergeSuggestionPool } from './suggestionPool';
 import { TasksPoolHeader } from './TasksPoolHeader';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
-import {
-  classifyChipProvenance,
-  computeCoreFloorGate,
-  isCorePoolDefaultSaved,
-} from '../../pages/createHub/poolPullLogic';
 import styles from './BoardWizardTasksStep.module.css';
-
-/**
- * P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
- * §Surfaces item 6 "Core-board setup") — plain cadence words for the
- * "Start every &lt;Timeframe&gt; board with 'X'" checkbox label. No
- * shared helper produces this exact shape (`formatTimeframeLabel` formats
- * a WINDOW — "Today" / "Week of…" — and `formatRecurringCadence` formats
- * a sentence — "Every day"); every other web surface that needs a plain
- * cadence word (`CoreBoardBrowserPage`, `CoreBoardsSection`, `CoreStrip`,
- * `RecurringTemplateRow`, …) already duplicates its own local map, so this
- * follows the same established precedent rather than introducing a new
- * shared export for a single UI string.
- */
-const CORE_CADENCE_LABEL: Partial<Record<Timeframe, string>> = {
-  [Timeframe.DAILY]: 'Daily',
-  [Timeframe.WEEKLY]: 'Weekly',
-  [Timeframe.MONTHLY]: 'Monthly',
-  [Timeframe.YEARLY]: 'Yearly',
-};
 
 export interface BoardWizardTasksStepProps {
   /** User's full task + composite library (from `useTaskLibrary`). */
@@ -141,40 +116,33 @@ export interface BoardWizardTasksStepProps {
   onCompositeCreated: (task: Task) => void;
 
   /**
-   * P3 (Task Pools + Recurring Boards Rework) — the user's non-deleted
-   * pools, for the "PULL IN A POOL" toggle-chip card. Loaded ONCE at
-   * `BoardWizardPage` (`usePools`) and passed down rather than
-   * re-subscribed here, mirroring the `PoolsBrowse`/`TasksPage`
-   * "load once, pass down" precedent (avoids a second concurrent
-   * `usePools` live query).
+   * Board Sources P4 — the user's non-deleted pools, for the source
+   * sheet's POOLS section. Loaded ONCE at `BoardWizardPage` (`usePools`)
+   * and passed down rather than re-subscribed here.
    */
   pools: Pool[];
-  /** P3 — pool ids currently pulled into the selection, in pull order. */
-  pulledPoolIds: string[];
-  /** P3 — toggle a pool ON: unions its resolvable tasks into the selection. */
-  onPullPool: (poolId: string) => void;
-  /** P3 — toggle a pool OFF: removes its non-manual, non-still-supplied tasks. */
-  onUntogglePool: (poolId: string) => void;
-  /** P3 — provenance label ("from X" / "added by hand") for every
-   *  currently-selected task id. */
-  taskProvenance: Map<string, string>;
-  /** P3 — task ids explicitly hand-added this session (quick-add, the
-   *  special-type panel, or picking an existing library task) as opposed
-   *  to pool-/default-sourced. Drives the P5 core-setup chip strip's plain
-   *  vs. blue-removable classification (see `classifyChipProvenance`). */
-  manualTaskIds: Set<string>;
-
-  /**
-   * P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
-   * §Surfaces item 6 "Core-board setup") — true when this wizard session
-   * is creating/resuming a core (recurring-timeframe) board. Gates the
-   * core-setup-only UI: the "Start with a pool — optional" pool-pull
-   * header text, the selected-tasks chip strip (plain vs. hand-added
-   * blue-removable), the "Start every &lt;Timeframe&gt; board with 'X'"
-   * checkbox, and the red "Add N more" floor-gate copy. Never changes
-   * behavior for a non-core wizard session.
-   */
-  isCore: boolean;
+  /** Board Sources P4 — pulled sources in row order (`useBoardWizard.sources`). */
+  sources: BoardSource[];
+  /** Board Sources P4 — per-source display/supply cache. */
+  supplyInfoBySourceId: SupplyInfoMap;
+  /** Board Sources P4 — expanded row state (UI-only, never persisted). */
+  expandedSourceIds: Set<string>;
+  /** Board Sources P4 — post-exclude/post-filter available count per
+   *  source (the range slider's N). */
+  availableCountForSource: (sourceId: string) => number;
+  /** Board Sources P4 — the header/gate capacity (sum of source maxes +
+   *  hand-added, deduped). */
+  capacity: number;
+  /** Board Sources P4 — the source sheet's BOARDS rows (ACTIVE boards +
+   *  squares/done counts), loaded by the page alongside `pools`. */
+  sheetBoardEntries: SourceSheetBoardEntry[];
+  onToggleSourceExpanded: (sourceId: string) => void;
+  onRemoveSource: (sourceId: string) => void;
+  onSetSourceFilter: (sourceId: string, filter: 'all' | 'todo') => void;
+  onSetSourceRange: (sourceId: string, min: number, max: number | null) => void;
+  onToggleSourceExclude: (sourceId: string, taskId: string) => void;
+  onPullPoolSource: (poolId: string) => void;
+  onPullBoardSource: (boardId: string) => void;
 
   /**
    * Web inline-editing port PR-2 — the wizard's staged inline task edits
@@ -249,12 +217,19 @@ export function BoardWizardTasksStep({
   pendingTasks,
   onCompositeCreated,
   pools,
-  pulledPoolIds,
-  onPullPool,
-  onUntogglePool,
-  taskProvenance,
-  manualTaskIds,
-  isCore,
+  sources,
+  supplyInfoBySourceId,
+  expandedSourceIds,
+  availableCountForSource,
+  capacity,
+  sheetBoardEntries,
+  onToggleSourceExpanded,
+  onRemoveSource,
+  onSetSourceFilter,
+  onSetSourceRange,
+  onToggleSourceExclude,
+  onPullPoolSource,
+  onPullBoardSource,
   stagedEdits,
   onStageEdit,
   onRevertEdit,
@@ -365,64 +340,6 @@ export function BoardWizardTasksStep({
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** P3 — "Save these N as a new pool…" affordance. Opens `PoolEditSheet`
-   *  in create mode, pre-seeded from the current selection. */
-  const [showSaveAsPoolSheet, setShowSaveAsPoolSheet] = useState(false);
-  // P3 — recurring-board templates, needed only for `PoolEditSheet`'s
-  // deck-preview-floor computation (mirrors `PoolsBrowse`'s call site).
-  const recurringTemplatesForPoolSheet = useRecurringBoardTemplates(userId);
-
-  // P5 — the current timeframe's CoreBoardDefault, ONLY looked up when
-  // this is a core-setup session (isCore). Backs the "Start every
-  // <Timeframe> board with 'X'" checkbox's derived checked state. Tri-
-  // state (`undefined`/loading, `null`/none, value) — treated as "no
-  // saved default" (`[]`) until it resolves, so the checkbox starts
-  // unchecked rather than flashing checked.
-  const coreBoardDefault = useCoreBoardDefault(
-    isCore ? userId : undefined,
-    isCore ? currentTimeframe : undefined,
-  );
-  const savedCorePoolIds = coreBoardDefault?.corePoolIds ?? [];
-  const isCoreDefaultSaved = isCorePoolDefaultSaved(pulledPoolIds, savedCorePoolIds);
-  const [coreDefaultBusy, setCoreDefaultBusy] = useState(false);
-
-  /**
-   * P5 — "Start every <Timeframe> board with 'X'" checkbox handler.
-   * Writes `corePoolIds` ONLY (never `coreDefaultTaskIds`, which is
-   * P7-authored-only) — `upsertCoreBoardDefault`'s partial-update
-   * semantics leave any existing `coreDefaultTaskIds` untouched. This is
-   * a point-in-time snapshot write, not a live binding: `pulledPoolIds`
-   * can keep changing afterward via further pool toggling without
-   * re-writing the saved default. Unchecking clears `corePoolIds` to
-   * `[]` — a deliberate, symmetric "stop starting every board with
-   * this" action (a checkbox that can't be unchecked isn't a checkbox).
-   */
-  async function handleToggleCoreDefault(checked: boolean): Promise<void> {
-    setCoreDefaultBusy(true);
-    try {
-      await upsertCoreBoardDefault(userId, currentTimeframe, {
-        corePoolIds: checked ? pulledPoolIds : [],
-      });
-    } finally {
-      setCoreDefaultBusy(false);
-    }
-  }
-
-  const coreCadenceLabel = CORE_CADENCE_LABEL[currentTimeframe] ?? currentTimeframe;
-  const coreDefaultCheckboxLabel = useMemo(() => {
-    if (pulledPoolIds.length === 1) {
-      const pool = pools.find((p) => p.id === pulledPoolIds[0]);
-      const name = pool?.name ?? 'this pool';
-      return `Start every ${coreCadenceLabel} board with "${name}"`;
-    }
-    return `Start every ${coreCadenceLabel} board with these pools`;
-  }, [pulledPoolIds, pools, coreCadenceLabel]);
-
-  const coreFloorGate = useMemo(
-    () => computeCoreFloorGate(selectedTaskIds.size, tasksRequired),
-    [selectedTaskIds, tasksRequired],
-  );
-
   // Usage-hint data — "N boards" / "unused" — shared by LibrarySheet and
   // PoolList rows. Requires a live query since `useTaskLibrary` doesn't
   // expose boardTasks.
@@ -467,8 +384,9 @@ export function BoardWizardTasksStep({
     return overlayCompoundChildrenWithStagedEdits(merged, stagedEdits);
   }, [library.compoundChildrenByCompound, pendingTasks, stagedEdits]);
 
-  const selectedCount = selectedTaskIds.size;
-  const isCountSatisfied = selectedCount >= tasksRequired;
+  // Board Sources P4 — the gate compares CAPACITY (sum of source maxes +
+  // hand-added, deduped) against the fillable cell count, mirroring iOS.
+  const isCountSatisfied = capacity >= tasksRequired;
   const isCenterSatisfied =
     !centerTaskMode || (centerTaskId !== null && selectedTaskIds.has(centerTaskId));
   const canAdvance = isCountSatisfied && isCenterSatisfied;
@@ -590,88 +508,15 @@ export function BoardWizardTasksStep({
     <div className={styles.container}>
       {/* 1. Pool header card */}
       <TasksPoolHeader
-        selectedCount={selectedCount}
+        capacity={capacity}
         tasksRequired={tasksRequired}
         isRecurring={isRecurring}
         centerTaskMode={centerTaskMode}
         centerSatisfied={isCenterSatisfied}
       />
 
-      {/* 2. "PULL IN A POOL" card (P3) + P5 core-setup section */}
-      <div className={styles.header}>
-        <div className={styles.poolPullCard}>
-          <span className={styles.poolPullKicker}>
-            {isCore ? 'Start with a pool — optional' : 'Pull in a pool'}
-          </span>
-          {pools.length === 0 ? (
-            <p className={styles.poolPullEmpty}>You don&apos;t have any pools yet.</p>
-          ) : (
-            <div className={styles.poolPullChips} role="group" aria-label="Pull in a pool">
-              {pools.map((pool) => {
-                const isPulled = pulledPoolIds.includes(pool.id);
-                return (
-                  <RisoChip
-                    key={pool.id}
-                    on={isPulled}
-                    onClick={() => (isPulled ? onUntogglePool(pool.id) : onPullPool(pool.id))}
-                  >
-                    {pool.name}
-                  </RisoChip>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {isCore && (
-          <div className={styles.coreDefaultsSection}>
-            {selectedTaskIds.size > 0 && (
-              <div className={styles.coreChipStrip} role="group" aria-label="Tasks in this board">
-                {poolOrder.map((taskId) => {
-                  const task = effectiveTaskMap[taskId];
-                  const title = task?.title || '(untitled task)';
-                  const kind = classifyChipProvenance(taskId, manualTaskIds);
-                  if (kind === 'manual') {
-                    return (
-                      <span key={taskId} className={styles.coreChipManual}>
-                        {title}
-                        <button
-                          type="button"
-                          className={styles.coreChipRemove}
-                          onClick={() => handleToggle(taskId)}
-                          aria-label={`Remove ${title} from this board`}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    );
-                  }
-                  return (
-                    <span key={taskId} className={styles.coreChipPlain}>
-                      {title}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-
-            {pulledPoolIds.length > 0 && (
-              <label className={styles.coreDefaultRow}>
-                <input
-                  type="checkbox"
-                  className={styles.coreDefaultCheckbox}
-                  checked={isCoreDefaultSaved}
-                  disabled={coreDefaultBusy}
-                  onChange={(e) => void handleToggleCoreDefault(e.target.checked)}
-                />
-                <span>{coreDefaultCheckboxLabel}</span>
-              </label>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 3. "Add tasks" — quick-add row + special-type panel */}
+      {/* 2. "Add tasks" — quick-add row + special-type panel */}
       <div className={styles.addTasksSection}>
         <RisoSectionLabel>Add tasks</RisoSectionLabel>
 
@@ -705,6 +550,25 @@ export function BoardWizardTasksStep({
         />
       </div>
 
+      {/* 3. "Add a pool or board" — dashed entry row + sheet (frames
+          2a/2c/5c). Sheet taps toggle: pull when absent, remove when
+          pulled (mirrors iOS's sheet wiring). */}
+      <SourcePickerSheet
+        pools={pools}
+        boardEntries={sheetBoardEntries}
+        pulledSourceIds={useMemo(() => new Set(sources.map((s) => s.sourceId)), [sources])}
+        onTogglePool={(poolId) =>
+          sources.some((s) => s.sourceId === poolId)
+            ? onRemoveSource(poolId)
+            : onPullPoolSource(poolId)
+        }
+        onToggleBoard={(boardId) =>
+          sources.some((s) => s.sourceId === boardId)
+            ? onRemoveSource(boardId)
+            : onPullBoardSource(boardId)
+        }
+      />
+
       {/* 4. Library entry button → bottom sheet */}
       <LibrarySheet
         effectiveAllTasks={effectiveAllTasks}
@@ -717,7 +581,6 @@ export function BoardWizardTasksStep({
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}
-        taskProvenance={taskProvenance}
         onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
         onDeriveRequested={(task) => {
           setDerivingFromTask(task);
@@ -738,7 +601,6 @@ export function BoardWizardTasksStep({
         effectiveTaskMap={effectiveTaskMap}
         effectiveChildrenByCompound={effectiveChildrenByCompound}
         taskBoardCounts={taskBoardCounts}
-        taskProvenance={taskProvenance}
         centerTaskMode={centerTaskMode}
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}
@@ -757,6 +619,32 @@ export function BoardWizardTasksStep({
               usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
             />
           )
+        }
+        countOverride={capacity}
+        leadingRows={
+          sources.length > 0
+            ? sources.map((source) => (
+                <SourceRow
+                  key={source.sourceId}
+                  source={source}
+                  supply={
+                    supplyInfoBySourceId[source.sourceId] ?? {
+                      displayName: '',
+                      rawSupplyTaskIds: [],
+                      doneTaskIds: new Set<string>(),
+                    }
+                  }
+                  availableCount={availableCountForSource(source.sourceId)}
+                  isExpanded={expandedSourceIds.has(source.sourceId)}
+                  taskById={effectiveTaskMap}
+                  onToggleExpanded={() => onToggleSourceExpanded(source.sourceId)}
+                  onRemove={() => onRemoveSource(source.sourceId)}
+                  onSetFilter={(filter) => onSetSourceFilter(source.sourceId, filter)}
+                  onSetRange={(min, max) => onSetSourceRange(source.sourceId, min, max)}
+                  onToggleExclude={(taskId) => onToggleSourceExclude(source.sourceId, taskId)}
+                />
+              ))
+            : undefined
         }
       />
 
@@ -780,34 +668,16 @@ export function BoardWizardTasksStep({
         </div>
       )}
 
-      {/* P3 — "Save these N as a new pool…" — mints a Pool from the
-          current selection, independent of the board. */}
-      <button
-        type="button"
-        className={styles.savePoolButton}
-        disabled={selectedTaskIds.size === 0}
-        onClick={() => setShowSaveAsPoolSheet(true)}
-      >
-        Save these {selectedTaskIds.size} as a new pool…
-      </button>
-
       {/* Footer — actions */}
       <div className={styles.footer}>
         {/* Visible dead-Next reason — the tooltip alone is invisible on
             touch, and a quietly greyed-out Next reads as "broken". */}
         {!canAdvance && (
           <span
-            className={
-              isCore && !isCountSatisfied ? styles.footerMessageCore : styles.footerMessage
-            }
+            className={!isCountSatisfied ? styles.footerMessageCore : styles.footerMessage}
           >
             {!isCountSatisfied
-              ? isCore
-                ? coreFloorGate.message
-                : (() => {
-                    const n = tasksRequired - selectedCount;
-                    return `Pick ${n} more task${n === 1 ? '' : 's'} to continue (${tasksRequired}${isRecurring ? ' minimum' : ''} needed).`;
-                  })()
+              ? `! Add ${tasksRequired - capacity} more`
               : 'Mark one selected task as the center.'}
           </span>
         )}
@@ -823,10 +693,7 @@ export function BoardWizardTasksStep({
           disabled={!canAdvance}
           title={
             !isCountSatisfied
-              ? (() => {
-                  const n = tasksRequired - selectedCount;
-                  return `Pick ${n} more task${n === 1 ? '' : 's'}`;
-                })()
+              ? `${tasksRequired - capacity} more to fill the board`
               : !isCenterSatisfied
                 ? 'Mark one selected task as the center'
                 : undefined
@@ -1016,26 +883,6 @@ export function BoardWizardTasksStep({
         />
       )}
 
-      {/* P3 — "Save these N as a new pool…" sheet. Create mode only
-          (no `pool` prop), pre-seeded from the current selection minus
-          any still-pending (not-yet-persisted) tasks — a Pool.taskIds
-          reference can't point at a task that doesn't exist in the DB
-          yet. Independent of the board: saving here never mutates
-          `pulledPoolIds`/`selectedTaskIds`. */}
-      {showSaveAsPoolSheet && (
-        <PoolEditSheet
-          userId={userId}
-          templates={recurringTemplatesForPoolSheet}
-          allTasks={library.allTasks}
-          browsableTasks={browsableTasks}
-          initialTaskIds={poolOrder.filter(
-            (id) => !(pendingTasks?.has(id) ?? false),
-          )}
-          onClose={() => setShowSaveAsPoolSheet(false)}
-          onSaved={() => setShowSaveAsPoolSheet(false)}
-          onDeleted={() => setShowSaveAsPoolSheet(false)}
-        />
-      )}
     </div>
   );
 }

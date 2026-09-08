@@ -51,7 +51,6 @@ export interface LibrarySheetProps {
   centerTaskMode: boolean;
   centerTaskId: string | null;
   onCenterClick: (taskId: string) => void;
-  taskProvenance: Map<string, string>;
 
   /** Right-click / context-menu handler — shared with the pool list so
    *  there's one `RowContextMenu` implementation for both surfaces. */
@@ -104,7 +103,6 @@ export function LibrarySheet({
   centerTaskMode,
   centerTaskId,
   onCenterClick,
-  taskProvenance,
   onContextMenu,
   onDeriveRequested,
   onOpenInLibrary,
@@ -365,7 +363,6 @@ export function LibrarySheet({
                           showCenterStar: centerTaskMode && isSelected,
                           isCenter,
                           onCenterClick: () => onCenterClick(task.id),
-                          provenance: isSelected ? taskProvenance.get(task.id) : undefined,
                         })}
                         {isCounting && (
                           <div className={styles.deriveRow}>
@@ -413,9 +410,6 @@ export function LibrarySheet({
                               <span className={stepStyles.rowTitle}>{ct.title}</span>
                               {previewSubtitle && (
                                 <span className={stepStyles.rowSubtitle}>{previewSubtitle}</span>
-                              )}
-                              {isCompoundSelected && taskProvenance.get(ct.id) && (
-                                <span className={stepStyles.rowProvenance}>{taskProvenance.get(ct.id)}</span>
                               )}
                             </div>
                             <span className={stepStyles.rowUsage}>
@@ -474,7 +468,6 @@ export function LibrarySheet({
                                     showCenterStar: centerTaskMode && leafIsSelected,
                                     isCenter: leafIsCenter,
                                     onCenterClick: () => onCenterClick(leafTask.id),
-                                    provenance: leafIsSelected ? taskProvenance.get(leafTask.id) : undefined,
                                   })}
                                 </li>
                               );

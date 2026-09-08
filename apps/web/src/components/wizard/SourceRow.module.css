@@ -1,0 +1,271 @@
+/* SourceRow — one pulled source in the wizard's "On your board" list
+   (Board Sources P4; handoff frames 2a/4a). Web port of RisoSourceRowView. */
+
+.card {
+  list-style: none;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+}
+.headerRow:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+
+.letterPool,
+.letterBoard {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: var(--riso-r-cell, 6px);
+  font-family: var(--riso-font-body);
+  font-size: 11px;
+  font-weight: 800;
+  box-sizing: border-box;
+}
+.letterPool {
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+}
+/* Gold fill always takes ink-static — the Riso dark contract. */
+.letterBoard {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.headerName {
+  font-family: var(--riso-font-body);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--riso-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.headerSubtitle {
+  font-family: var(--riso-font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  transition: transform 0.15s ease-out;
+}
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.removeButton {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--riso-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.removeButton:hover {
+  color: var(--riso-ink);
+}
+.removeButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* ── Expanded panel ── */
+.panel {
+  background: var(--riso-paper);
+  border-top: 1.5px solid color-mix(in srgb, var(--riso-ink) 24%, transparent);
+}
+
+.filterWrap {
+  margin: 10px 16px 0;
+}
+
+.rangeBlock {
+  padding: 10px 16px 8px;
+  border-bottom: 1.5px solid color-mix(in srgb, var(--riso-ink) 24%, transparent);
+}
+.rangeTitleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.rangeKicker {
+  font-family: var(--riso-font-body);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+  flex: 1;
+}
+.rangeLabel {
+  font-family: var(--riso-font-head);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+.rangeOf {
+  font-family: var(--riso-font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
+}
+.useAllButton {
+  border: none;
+  background: transparent;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--riso-blue);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.useAllButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.useAllButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.rangeNote {
+  margin: 0;
+  padding-bottom: 4px;
+  font-family: var(--riso-font-body);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--riso-ink);
+}
+
+/* ── Member rows ── */
+.memberList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.memberRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px 7px 40px;
+  border-top: 1.5px solid color-mix(in srgb, var(--riso-ink) 14%, transparent);
+}
+.memberRow:first-child {
+  border-top: none;
+}
+.memberDimmed {
+  opacity: 0.45;
+}
+.memberTitle {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.memberStruck {
+  text-decoration: line-through;
+}
+
+.memberExclude {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--riso-muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.memberExclude:hover {
+  color: var(--riso-ink);
+}
+.memberExclude:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.memberUndo {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--riso-font-body);
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--riso-ink);
+  cursor: pointer;
+}
+.memberUndo:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.memberDoneCheck {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--riso-green);
+  border-radius: 999px;
+  color: var(--riso-green);
+  font-size: 10px;
+  font-weight: 700;
+  box-sizing: border-box;
+}

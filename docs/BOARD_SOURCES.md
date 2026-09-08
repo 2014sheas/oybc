@@ -347,15 +347,76 @@ defaults sheet are unchanged.
   lazy, never background). Web SKIPS identically (spawn semantics stay
   lockstep) and shows roster attention copy; its ask UI lands in P4.
 
+## P4 implementation notes (web, as built)
+
+The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
+
+- **Hook** (`useBoardWizard.ts`): `sources` is the state; `pulledPoolIds`/
+  `removedTaskIds` are DERIVED memos (the P1 dual-write). Pool supplies
+  resolve synchronously from the live `pools`/`tasksById` props; board
+  supplies via an async `fetchBoardSourceSupply` effect (the one
+  structural divergence from iOS's sync GRDB reads). The selection-union
+  recompute effect never purges (transient-empty live-query hazard during
+  hydration) — purging of center/pending/staged state is ACTION-driven
+  (`commitSources`), mirroring iOS. Hydration: draft v2 blob > template
+  `sourcesForRecord` (with the un-migrated `seedTaskIds`-as-manual M2
+  fallback) > empty; the core-defaults prefill lands as sources + manual
+  with dead refs filtered. The controller's ~350-line type surface moved
+  to `boardWizardTypes.ts` (re-exported — no import-site churn) to keep
+  the hook under its size cap.
+- **Pure helpers** (`pages/createHub/wizardSources.ts`): the web port of
+  `BoardWizardViewModel+Sources.swift`'s testable core —
+  `algorithmSupplies` / `sourceCapacity` / `selectionUnion` /
+  `excludeFromEverySupplier` (library-sheet deselect = exclude from EVERY
+  supplier; manual wins on reselect) / `toggleExcludeInSource` / clamps /
+  `sourceRangeLine`. Unit-locked in `wizardSources.test.ts`.
+- **Board-supply resolution** (`db/operations/boardSources.ts`):
+  `resolveBoardSourceSupply` is pure over caller-supplied reads and shared
+  verbatim with the spawn path (the P3 wizard-time = spawn-time lock);
+  `fetchBoardSourceSupply` + `fetchSourceSheetBoardEntries` (ACTIVE-only)
+  are the async wrappers. Loaded off-render at `BoardWizardPage` (the same
+  batching rule as iOS's off-main `loadPools`).
+- **Components**: `RangeSlider` (pointer-driven two-handle slider, "all"
+  latch on the top stop, nearer-handle grab with ties-to-min),
+  `SourceRow` (header + expanded panel: board segmented filter, range
+  block, member ✕/UNDO/✓ rows), `SourcePickerSheet` (dashed entry +
+  bottom sheet, POOLS/BOARDS search, empty state) — all CSS-module +
+  Riso-token styled, following `LibrarySheet`'s sheet chrome. `PoolList`
+  gained `countOverride`/`leadingRows` (iOS parity); `TasksPoolHeader`
+  takes `capacity` with the design's short/filled copy; the step's gate is
+  capacity-based with the red "! Add N more" line.
+- **Preview 5b**: `BoardWizardPreviewStep` renders the summary card
+  (name, cadence, per-source range lines, hand-added rows, SQUARES
+  `capacity/required`) for recurring; the one-off header is hidden in
+  recurring mode (the card carries name + cadence). The old 3-row
+  Repeats/Size/Pool card and the deck list are retired.
+- **Placement**: `buildWizardPlacement` runs the shared `selectBoardTasks`
+  ranged pick when sources exist (short-pick fallback places the flat
+  selection — can only overfill), with the min-aware CHOSEN-center swap
+  ported from iOS. Persist writes native `sources` (template verbatim +
+  draft-blob v2); locked in `wizardPersist.test.ts`.
+- **Deleted-source ask**: `MissingSourceDialog` on `BoardsPage`
+  (Remove that source → `removeMissingBoardSources` op + spawn-pass
+  `rerun()`; Pause; Not now re-asks next tab open). The op mirrors iOS
+  (drop dead board sources, recompute trio mirror, bump + enqueue, one
+  transaction); `useRecurringBoardSpawn` gained the `rerun` trigger.
+- **Removals**: the "PULL IN A POOL" chip card, the P5 core chip strip +
+  "Start every…" checkbox + floor-gate copy, "Save these N as a new
+  pool…", and ALL provenance subtitles (`taskProvenance` is gone from the
+  controller; `TaskRow`/`LibrarySheet`/`PoolList` no longer render
+  provenance). e2e: `pool-pull-wizard.spec.ts` rewritten for the sheet +
+  source-row + exclude/UNDO flow; `pool-row-editor.spec.ts` hand-adds via
+  the library sheet (source members are not inline-editable).
+
 ## Delivery — phases (docs-PR-first; iOS-first UI, web in-effort — locked)
 
 | Phase | Scope | Platforms |
 | --- | --- | --- |
 | **P0** | This document; POOLS_RECURRING.md supersession banner; CLAUDE.md pointer; ROADMAP F11. **SHIPPED** (#457). | docs |
 | **P1** | `BoardSource` type + Zod + Swift mirror; `sources` on the template; draft-blob v2 (incl. one-off drafts); GRDB v30 column + `sourcesForRecord` read-fallback (no data backfill, no Dexie bump); the selection algorithm + mirrored vectors; spawn + template persist read/write sources with the legacy-trio dual-write (UI unchanged, behavior-identical for existing records). **SHIPPED** (#458). | lockstep |
-| **P2** | Tasks step rework (2a) + source sheet (2c/5c) + the §Removals + core-defaults pre-pull + edit-mode note line. **IN PR** (#459, device-checked). | iOS |
-| **P3** | Preview rework (5b summary; 2b chrome kept as shipped) + deleted-source spawn ask + spawn-side board-supply resolution (BOTH platforms — spawn semantics lockstep). | iOS (+web spawn) |
-| **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). | web |
+| **P2** | Tasks step rework (2a) + source sheet (2c/5c) + the §Removals + core-defaults pre-pull + edit-mode note line. **SHIPPED** (#459, device-checked). | iOS |
+| **P3** | Preview rework (5b summary; 2b chrome kept as shipped) + deleted-source spawn ask + spawn-side board-supply resolution (BOTH platforms — spawn semantics lockstep). **IN PR** (#460). | iOS (+web spawn) |
+| **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). **BUILT** (stacked on #460; see §P4 implementation notes). | web |
 | **P5** | Cleanup: retire dead components, update `pool-pull-wizard.spec.ts` + snapshot baselines (`RisoCoreDefaults*`, `RisoPoolPullCard*`, `BoardWizardTasksStep*`), shrink the file-size allowlist entries the rework rewrites, docs close-out. | both |
 
 Each UI phase: implement → independent review → device checklist relayed to

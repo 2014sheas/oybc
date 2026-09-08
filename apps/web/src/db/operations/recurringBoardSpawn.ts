@@ -7,9 +7,7 @@ import {
   validateSpawnPool,
   computeBoardStatsUpdate,
   fillableCellCount,
-  isEventOwningTask,
   poolSourceSupplyById,
-  resolveTaskWindowState,
   resolveSourceAvailable,
   selectBoardTasks,
   sourcesForRecord,
@@ -25,6 +23,7 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { resolveBoardSourceSupply } from './boardSources';
 
 /**
  * Recurring-board spawn (Phase 6.2).
@@ -158,36 +157,17 @@ export async function spawnTemplateBoard(
         (eventsByTaskId[e.taskId] ??= []).push(e);
       }
 
-      // Board Sources P3 — board-kind sources resolve LIVE per window:
-      // the source board's placed squares, with the 'todo' filter
-      // dropping squares complete in THAT board's window (event-owning →
-      // windowed via resolveTaskWindowState; compound/achievement/derived
-      // → lifetime cache — the documented per-cell carve-out).
+      // Board Sources P3/P4 — board-kind sources resolve LIVE per window
+      // through the SHARED resolver (`resolveBoardSourceSupply`, also the
+      // wizard's code path — the P3 lock): the source board's placed
+      // squares, with the 'todo' filter dropping squares complete in THAT
+      // board's window.
       const resolveBoardSupply = async (sourceBoard: Board, filter: 'all' | 'todo') => {
-        const rows = (
-          await db.boardTasks.where('boardId').equals(sourceBoard.id).toArray()
-        )
-          .filter((bt) => !bt.isDeleted)
-          .sort((a, b) => a.row - b.row || a.col - b.col);
-        const seen = new Set<string>();
-        const supply: string[] = [];
-        for (const bt of rows) {
-          const task = tasksById[bt.taskId];
-          if (task === undefined || task.isDeleted || seen.has(task.id)) continue;
-          seen.add(task.id);
-          if (filter === 'todo') {
-            const isDone = isEventOwningTask(task)
-              ? resolveTaskWindowState(
-                  task,
-                  eventsByTaskId[task.id] ?? [],
-                  sourceBoard.startDate,
-                ).isCompleted
-              : task.isCompleted;
-            if (isDone) continue;
-          }
-          supply.push(task.id);
-        }
-        return supply;
+        const rows = await db.boardTasks.where('boardId').equals(sourceBoard.id).toArray();
+        const info = resolveBoardSourceSupply(sourceBoard, rows, tasksById, eventsByTaskId);
+        return filter === 'todo'
+          ? info.supplyTaskIds.filter((id) => !info.doneTaskIds.has(id))
+          : info.supplyTaskIds;
       };
 
       const supplies = [];

@@ -51,10 +51,18 @@ const EMPTY_DIGEST: RecurringSpawnDigest = {
   attentionByTemplateId: {},
 };
 
+/** The digest plus a manual re-run trigger (Board Sources P4 — the
+ *  deleted-source ask's "Remove that source" re-runs the pass so the
+ *  window fills from the remaining sources without a tab round-trip). */
+export interface RecurringSpawnController extends RecurringSpawnDigest {
+  rerun: () => void;
+}
+
 export function useRecurringBoardSpawn(
   userId: string | undefined,
-): RecurringSpawnDigest {
+): RecurringSpawnController {
   const [digest, setDigest] = useState<RecurringSpawnDigest>(EMPTY_DIGEST);
+  const [runNonce, setRunNonce] = useState(0);
   const inFlightRef = useRef(false);
 
   useEffect(() => {
@@ -133,7 +141,10 @@ export function useRecurringBoardSpawn(
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, runNonce]);
 
-  return digest;
+  return {
+    ...digest,
+    rerun: () => setRunNonce((n) => n + 1),
+  };
 }

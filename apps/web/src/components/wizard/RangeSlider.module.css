@@ -1,0 +1,72 @@
+/* RangeSlider — two-handle membership-range slider (Board Sources P4;
+   handoff frame 2a "Range block"). Web port of iOS RisoRangeSlider. */
+
+.slider {
+  position: relative;
+  height: 60px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.slider:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  border-radius: var(--riso-r-card);
+}
+.dragging {
+  cursor: grabbing;
+}
+
+.track {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  box-sizing: border-box;
+}
+
+.fill {
+  position: absolute;
+  top: 14px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--riso-blue);
+}
+
+.tick {
+  position: absolute;
+  top: 14.5px;
+  width: 1.5px;
+  height: 5px;
+  background: color-mix(in srgb, var(--riso-muted) 50%, transparent);
+  transform: translateX(-50%);
+}
+
+.stopLabel {
+  position: absolute;
+  top: 38px;
+  transform: translateX(-50%);
+  font-family: var(--riso-font-head);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  pointer-events: none;
+}
+
+.knob {
+  position: absolute;
+  top: 6px;
+  width: 22px;
+  height: 22px;
+  transform: translateX(-50%);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  box-shadow: 1.5px 1.5px 0 var(--riso-ink);
+  box-sizing: border-box;
+  pointer-events: none;
+}
