@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   RecurringBoardTemplate,
   Timeframe,
   UserPreferences,
 } from '@oybc/shared';
 import { usePools } from '../hooks';
+import { availableCountForSource } from './createHub/wizardSources';
+import {
+  fetchSourceSheetBoardEntries,
+  type SourceSheetBoardEntry,
+} from '../db/operations/boardSources';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useBoardWizard, type BoardWizardDraft, type WizardStep } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
@@ -109,6 +114,21 @@ export function BoardWizardPage({
   // wizard doesn't run two concurrent `usePools` live queries (mirrors the
   // `PoolsBrowse`/`TasksPage` "load once, pass down" precedent).
   const pools = usePools(userId);
+  // Board Sources P4 — the source sheet's BOARDS rows (ACTIVE boards +
+  // squares/done counts). Loaded async once per mount + refreshed when
+  // the user id changes; the resolution walks every active board's
+  // placements, so it must never run synchronously in render (the same
+  // review rule as iOS's off-main `loadPools` batch).
+  const [sheetBoardEntries, setSheetBoardEntries] = useState<SourceSheetBoardEntry[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSourceSheetBoardEntries(userId).then((entries) => {
+      if (!cancelled) setSheetBoardEntries(entries);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
   const wizard = useBoardWizard({
     preferences,
     userId,
@@ -275,6 +295,13 @@ export function BoardWizardPage({
         onStepClick={wizard.goToStep}
       />
 
+      {/* Board Sources P4 (locked decision, frame 5a) — editing an
+          existing repeating board IS the "Sources" surface; the note
+          renders under the stepper, mirroring iOS `BoardWizardView`. */}
+      {wizard.editingTemplateId !== null && (
+        <p className={styles.editModeNote}>Changes apply from the next board.</p>
+      )}
+
       <div className={styles.stepContainer}>
         {wizard.currentStep === 1 && (
           <BoardWizardSetupStep
@@ -307,12 +334,21 @@ export function BoardWizardPage({
                  will surface the new composite automatically. */
             }}
             pools={pools}
-            pulledPoolIds={wizard.pulledPoolIds}
-            onPullPool={wizard.pullPool}
-            onUntogglePool={wizard.untogglePool}
-            taskProvenance={wizard.taskProvenance}
-            manualTaskIds={wizard.manualTaskIds}
-            isCore={wizard.isCore}
+            sources={wizard.sources}
+            supplyInfoBySourceId={wizard.supplyInfoBySourceId}
+            expandedSourceIds={wizard.expandedSourceIds}
+            availableCountForSource={(sourceId) =>
+              availableCountForSource(wizard.sources, wizard.supplyInfoBySourceId, sourceId)
+            }
+            capacity={wizard.capacity}
+            sheetBoardEntries={sheetBoardEntries}
+            onToggleSourceExpanded={wizard.toggleExpandedSource}
+            onRemoveSource={wizard.removeSource}
+            onSetSourceFilter={wizard.setSourceFilter}
+            onSetSourceRange={wizard.setSourceRange}
+            onToggleSourceExclude={wizard.toggleSourceExclude}
+            onPullPoolSource={wizard.pullPool}
+            onPullBoardSource={wizard.pullBoard}
             stagedEdits={wizard.stagedEdits}
             onStageEdit={wizard.stageEdit}
             onRevertEdit={wizard.revertEdit}

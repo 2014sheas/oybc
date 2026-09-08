@@ -796,3 +796,194 @@ describe('Board Creation Split (web PR D) — convert draft → template on Crea
     expect(boards).toHaveLength(0);
   });
 });
+
+// ─── Board Sources P4 — ranged pick + min-aware CHOSEN swap ────────────────
+
+/** Supply-cache entry for the controller's `supplyInfoBySourceId`. */
+function supplyEntry(displayName: string, ids: string[]): {
+  displayName: string;
+  rawSupplyTaskIds: string[];
+  doneTaskIds: Set<string>;
+} {
+  return { displayName, rawSupplyTaskIds: ids, doneTaskIds: new Set() };
+}
+
+function placedIds(placement: (Task | null)[]): string[] {
+  return placement.filter((t): t is Task => t !== null).map((t) => t.id);
+}
+
+describe('buildWizardPlacement — sources ranged pick (Board Sources P4)', () => {
+  it('honors a numeric max: the source contributes at most its cap', () => {
+    const sourceIds = ['s-0', 's-1', 's-2', 's-3'];
+    const manualIds = Array.from({ length: 6 }, (_, i) => `m-${i}`);
+    const tasks = [...sourceIds, ...manualIds].map((id) => makeTask(id));
+    const controller = makeController({
+      isRecurring: false,
+      centerType: CenterSquareType.FREE,
+      selectedTaskIds: new Set([...sourceIds, ...manualIds]),
+      sources: [
+        { sourceId: 'p1', kind: 'pool', min: 0, max: 2, excludedTaskIds: [], filter: 'all' },
+      ],
+      supplyInfoBySourceId: { p1: supplyEntry('Capped', sourceIds) },
+      manualTaskIds: new Set(manualIds),
+      tasksRequired: 8,
+    });
+
+    const placed = placedIds(buildWizardPlacement(controller, emptyTaskLibrary(tasks)));
+    expect(placed).toHaveLength(8);
+    const fromSource = placed.filter((id) => sourceIds.includes(id));
+    expect(fromSource.length).toBeLessThanOrEqual(2);
+    // Every manual task made it (6 manual + ≤2 source fills the 8).
+    for (const id of manualIds) expect(placed).toContain(id);
+  });
+
+  it('honors a min: the source is guaranteed its floor even among more candidates', () => {
+    const sourceIds = Array.from({ length: 6 }, (_, i) => `s-${i}`);
+    const manualIds = Array.from({ length: 6 }, (_, i) => `m-${i}`);
+    const tasks = [...sourceIds, ...manualIds].map((id) => makeTask(id));
+    const controller = makeController({
+      isRecurring: false,
+      centerType: CenterSquareType.FREE,
+      selectedTaskIds: new Set([...sourceIds, ...manualIds]),
+      sources: [
+        { sourceId: 'p1', kind: 'pool', min: 3, max: null, excludedTaskIds: [], filter: 'all' },
+      ],
+      supplyInfoBySourceId: { p1: supplyEntry('Floored', sourceIds) },
+      manualTaskIds: new Set(manualIds),
+      tasksRequired: 8,
+    });
+
+    const placed = placedIds(buildWizardPlacement(controller, emptyTaskLibrary(tasks)));
+    expect(placed).toHaveLength(8);
+    expect(placed.filter((id) => sourceIds.includes(id)).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('swaps a skipped CHOSEN center in min-aware: the victim is a pick whose removal keeps every min', () => {
+    // Deterministic (isRandomized: false): candidates are sources-then-
+    // manual, so the pick takes s-0..s-2 then m-0..m-5 — the center m-6
+    // misses the 9-task cut. The min-aware swap must evict a MANUAL pick
+    // (m-5, scanning from the end), never a source member (min 3 locks
+    // all three).
+    const sourceIds = ['s-0', 's-1', 's-2'];
+    const manualIds = Array.from({ length: 7 }, (_, i) => `m-${i}`);
+    const tasks = [...sourceIds, ...manualIds].map((id) => makeTask(id));
+    const controller = makeController({
+      isRecurring: false,
+      isRandomized: false,
+      centerType: CenterSquareType.CHOSEN,
+      centerTaskId: 'm-6',
+      selectedTaskIds: new Set([...sourceIds, ...manualIds]),
+      sources: [
+        { sourceId: 'p1', kind: 'pool', min: 3, max: 3, excludedTaskIds: [], filter: 'all' },
+      ],
+      supplyInfoBySourceId: { p1: supplyEntry('Locked', sourceIds) },
+      manualTaskIds: new Set(manualIds),
+      tasksRequired: 9,
+    });
+
+    const placement = buildWizardPlacement(controller, emptyTaskLibrary(tasks));
+    const placed = placedIds(placement);
+    expect(placed).toHaveLength(9);
+    expect(placed).toContain('m-6');
+    expect(placed).not.toContain('m-5');
+    for (const id of sourceIds) expect(placed).toContain(id);
+    // The center landed at the center cell (3×3 → index 4).
+    expect(placement[4]?.id).toBe('m-6');
+  });
+
+  it('falls back to the last pick when every candidate is min-locked (center intent wins over a min)', () => {
+    const sourceIds = Array.from({ length: 9 }, (_, i) => `s-${i}`);
+    const tasks = [...sourceIds.map((id) => makeTask(id)), makeTask('center')];
+    const controller = makeController({
+      isRecurring: false,
+      isRandomized: false,
+      centerType: CenterSquareType.CHOSEN,
+      centerTaskId: 'center',
+      selectedTaskIds: new Set([...sourceIds, 'center']),
+      sources: [
+        { sourceId: 'p1', kind: 'pool', min: 9, max: null, excludedTaskIds: [], filter: 'all' },
+      ],
+      supplyInfoBySourceId: { p1: supplyEntry('All locked', sourceIds) },
+      manualTaskIds: new Set(['center']),
+      tasksRequired: 9,
+    });
+
+    const placed = placedIds(buildWizardPlacement(controller, emptyTaskLibrary(tasks)));
+    expect(placed).toHaveLength(9);
+    expect(placed).toContain('center');
+    expect(placed).not.toContain('s-8');
+  });
+});
+
+describe('persist paths — native sources (Board Sources P4)', () => {
+  it('persistRecurringTemplate writes controller.sources verbatim (ranges/excludes intact)', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const sources = [
+      {
+        sourceId: 'pool-native',
+        kind: 'pool' as const,
+        min: 2,
+        max: 5,
+        excludedTaskIds: ['task-3'],
+        filter: 'all' as const,
+      },
+    ];
+    const controller = makeController({
+      selectedTaskIds: new Set(taskIds),
+      sources,
+      supplyInfoBySourceId: { 'pool-native': supplyEntry('Native', taskIds) },
+      manualTaskIds: new Set<string>(),
+      pulledPoolIds: ['pool-native'],
+      removedTaskIds: new Set(['task-3']),
+      tasksRequired: 8,
+    });
+
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
+    const template = await db.recurringBoardTemplates.get(result.templateId);
+    expect(template?.sources).toEqual(sources);
+    // The legacy dual-write mirrors ride along.
+    expect(template?.poolIds).toEqual(['pool-native']);
+    expect(template?.removedTaskIds).toEqual(['task-3']);
+  });
+
+  it('a recurring draft blob round-trips the native sources (v2)', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const sources = [
+      {
+        sourceId: 'board-src',
+        kind: 'board' as const,
+        min: 0,
+        max: 3,
+        excludedTaskIds: [],
+        filter: 'todo' as const,
+      },
+    ];
+    const controller = makeController({
+      name: 'Sourced Draft',
+      selectedTaskIds: new Set(taskIds),
+      sources,
+      supplyInfoBySourceId: { 'board-src': supplyEntry('Board Src', taskIds) },
+      manualTaskIds: new Set(taskIds),
+      pulledPoolIds: [],
+      removedTaskIds: new Set<string>(),
+      tasksRequired: 8,
+    });
+
+    const boardId = await persistWizardBoard({
+      controller,
+      library: emptyTaskLibrary(taskIds.map((id) => makeTask(id))),
+      userId: 'user-1',
+      placement: buildWizardPlacement(
+        controller,
+        emptyTaskLibrary(taskIds.map((id) => makeTask(id))),
+      ),
+      dates: { startDate: NOW },
+      status: 'draft',
+      pendingTasks: new Map(),
+    });
+
+    const board = await db.boards.get(boardId);
+    const decoded = decodeRecurringDraftMix(board?.recurringDraftMix);
+    expect(decoded?.sources).toEqual(sources);
+  });
+});

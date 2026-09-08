@@ -19,7 +19,11 @@ import type { BoardCellModel } from '../board/RisoBoardCell';
 import type { DeckFloor } from '../pools/poolDeckPreview';
 import { RisoSegmented } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
-import { renderTaskRow } from './TaskRow';
+import { TypeBadge } from '../TypeBadge';
+import {
+  availableCountForSource,
+  sourceRangeLine,
+} from '../../pages/createHub/wizardSources';
 import {
   buildWizardPlacement,
   persistRecurringTemplate,
@@ -312,20 +316,16 @@ export function BoardWizardPreviewStep({
   );
   const isCoreFloorBlocked =
     controller.isCore && !controller.isRecurring && !coreFloorGate.isSatisfied;
-  // Resolved Task objects for every selected id, including this-session
-  // pending (not-yet-persisted) tasks — mirrors the Tasks step's
-  // `effectiveTaskMap` merge so a just-created task still shows up here.
-  // Sorted by title for a stable, predictable list.
-  const deckTasks = useMemo<Task[]>(() => {
+  // Per-id task lookup including this-session pending (not-yet-persisted)
+  // tasks — mirrors the Tasks step's `effectiveTaskMap` merge so a
+  // just-created hand-added task still resolves in the 5b summary card.
+  const deckTaskById = useMemo<Record<string, Task>>(() => {
     const merged: Record<string, Task> = { ...library.taskMap };
     for (const payload of controller.pendingTasks.values()) {
       merged[payload.task.id] = payload.task;
     }
-    return Array.from(controller.selectedTaskIds)
-      .map((id) => merged[id])
-      .filter((t): t is Task => t !== undefined)
-      .sort((a, b) => a.title.localeCompare(b.title));
-  }, [controller.selectedTaskIds, controller.pendingTasks, library.taskMap]);
+    return merged;
+  }, [controller.pendingTasks, library.taskMap]);
 
   /**
    * Handle a committed reorder from ArrangeGrid (drag drop or tap-swap).
@@ -363,12 +363,10 @@ export function BoardWizardPreviewStep({
     ? `${formatRecurringCadence(controller.timeframe)} · ${controller.size}×${controller.size} · ${controller.selectedTaskIds.size}-task pool`
     : `${controller.timeframe.charAt(0).toUpperCase()}${controller.timeframe.slice(1)} · ${controller.size}×${controller.size} · ${controller.selectedTaskIds.size} tasks`;
 
-  // ── Recurring-only summary card (Board Creation Split, web PR C) ─────────
-  // Three rows only — Repeats / Size / Pool — each with a blue "Edit" jump
-  // back to Setup (Repeats, Size) or Pool (the task-count row). The one-off
-  // Preview renders no summary card at all. Mirrors iOS
-  // `BoardWizardPreviewStepView.recurring{Repeats,Size,Pool}Summary`.
-  const recurringSummary = useMemo(() => {
+  // ── Recurring cadence line (Board Sources P4, frame 5b) ──────────────────
+  // "Every week · first board Week of …" — folded into the 5b summary
+  // card's cadence line (the old 3-row Repeats/Size/Pool card is retired).
+  const recurringRepeats = useMemo(() => {
     if (!controller.isRecurring) return null;
     const b = getTimeframeBoundaries(
       controller.timeframe,
@@ -376,23 +374,12 @@ export function BoardWizardPreviewStep({
       controller.weekStartDay,
     );
     const windowLabel = formatTimeframeLabel(controller.timeframe, b.startDate);
-    // CHOSEN is unreachable while recurring (the center-type selector
-    // suppresses it) — the fallback is defensive only.
-    const centerLabel = controller.centerType === CenterSquareType.NONE ? 'No center' : 'Free center';
-    return {
-      repeats: `${formatRecurringCadence(controller.timeframe)} · first board ${windowLabel}`,
-      size: `${controller.size}×${controller.size} · ${centerLabel}`,
-      pool: `${controller.selectedTaskIds.size} tasks · needs at least ${controller.tasksRequired}`,
-    };
+    return `${formatRecurringCadence(controller.timeframe)} · first board ${windowLabel}`;
   }, [
     controller.isRecurring,
     controller.timeframe,
     controller.targetWindowDate,
     controller.weekStartDay,
-    controller.size,
-    controller.centerType,
-    controller.selectedTaskIds.size,
-    controller.tasksRequired,
   ]);
 
   // ── Async creation ────────────────────────────────────────────────────────
@@ -501,36 +488,85 @@ export function BoardWizardPreviewStep({
 
   return (
     <div className={styles.container}>
-      {/* Centered name + a single meta line (Board Creation Split, web PR
-          C) — replaces the old compact chip row. No summary/note card for
-          one-off (frame 1k); recurring's summary is the 3-row card below. */}
-      <div className={styles.header}>
-        <h3 className={styles.boardName}>{controller.name || '(unset)'}</h3>
-        <p className={styles.meta}>{previewMetaText}</p>
-      </div>
+      {/* Centered name + a single meta line — ONE-OFF only (Board Sources
+          P4): the recurring frame-5b summary card carries name + cadence
+          itself, so rendering both duplicated the header. */}
+      {!controller.isRecurring && (
+        <div className={styles.header}>
+          <h3 className={styles.boardName}>{controller.name || '(unset)'}</h3>
+          <p className={styles.meta}>{previewMetaText}</p>
+        </div>
+      )}
 
       {controller.isRecurring ? (
-        /* A repeating board re-randomizes its layout every window, so a
-           specific arrangement is meaningless: show the pool (the deck of
-           resolved tasks) instead of an arrangeable grid. No Preview ⇄
-           Rearrange toggle, no Shuffle — nothing here is a fixed layout. */
-        <div className={styles.deckSection}>
-          <div className={styles.deckSectionHeader}>
-            <span className={styles.deckSectionLabel}>On your board</span>
-            <span className={styles.deckCountPill}>{deckTasks.length}</span>
-          </div>
-          <ul className={styles.deckList}>
-            {deckTasks.map((task) => (
-              <li key={task.id}>
-                {renderTaskRow({
-                  task,
-                  isSelected: true,
-                  provenance: controller.taskProvenance.get(task.id),
-                  readOnly: true,
-                })}
+        /* Board Sources P4 (docs/BOARD_SOURCES.md §Surfaces item 4; handoff
+           frame 5b) — a repeating board's mix isn't a fixed grid, so
+           Preview is a SUMMARY CARD: name, cadence, one row per source
+           with its range line, the hand-added rows, and the SQUARES total.
+           No grid, no Shuffle. Mirrors iOS `recurringSourcesSummaryCard`. */
+        <div className={styles.sourcesSummaryCard}>
+          <h3 className={styles.sourcesSummaryName}>{controller.name.trim() || '(unset)'}</h3>
+          <p className={styles.sourcesSummaryCadence}>
+            {controller.size}×{controller.size} · {recurringRepeats}
+          </p>
+          <div className={styles.sourcesSummaryDivider} />
+          <ul className={styles.sourcesSummaryRows}>
+            {controller.sources.map((source) => (
+              <li key={source.sourceId} className={styles.sourcesSummarySourceRow}>
+                <span
+                  className={
+                    source.kind === 'pool'
+                      ? styles.sourcesSummaryLetterPool
+                      : styles.sourcesSummaryLetterBoard
+                  }
+                  aria-hidden="true"
+                >
+                  {source.kind === 'pool' ? 'P' : 'B'}
+                </span>
+                <span className={styles.sourcesSummarySourceName}>
+                  {controller.supplyInfoBySourceId[source.sourceId]?.displayName ?? ''}
+                </span>
+                <span className={styles.sourcesSummaryRangeLine}>
+                  {sourceRangeLine(
+                    source,
+                    availableCountForSource(
+                      controller.sources,
+                      controller.supplyInfoBySourceId,
+                      source.sourceId,
+                    ),
+                  )}
+                </span>
               </li>
             ))}
+            {controller.poolOrder.map((taskId) => {
+              const task = deckTaskById[taskId];
+              if (!task) return null;
+              return (
+                <li key={taskId} className={styles.sourcesSummaryTaskRow}>
+                  <TypeBadge type={task.type} letterOnly size="small" />
+                  <span className={styles.sourcesSummaryTaskTitle}>
+                    {task.title || '(untitled task)'}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
+          <div className={styles.sourcesSummaryDivider} />
+          <div className={styles.sourcesSummarySquaresRow}>
+            <span className={styles.sourcesSummarySquaresKicker}>Squares</span>
+            <span
+              className={
+                controller.capacity >= controller.tasksRequired
+                  ? styles.sourcesSummaryCountOk
+                  : styles.sourcesSummaryCountInk
+              }
+            >
+              {controller.capacity}
+              <span className={styles.sourcesSummaryCountDenominator}>
+                /{controller.tasksRequired}
+              </span>
+            </span>
+          </div>
         </div>
       ) : (
         <>
@@ -575,47 +611,6 @@ export function BoardWizardPreviewStep({
             />
           </div>
         </>
-      )}
-
-      {/* Recurring-only summary card — Repeats / Size / Pool, each with a
-          blue Edit jump. The one-off Preview renders no summary card at
-          all (Board Creation Split, web PR C). */}
-      {recurringSummary && (
-        <div className={styles.summary}>
-          <div className={styles.summaryRow}>
-            <span className={styles.summaryLabel}>Repeats</span>
-            <span className={styles.summaryValue}>{recurringSummary.repeats}</span>
-            <button
-              type="button"
-              className={styles.editLink}
-              onClick={() => controller.goToStep(1)}
-            >
-              Edit
-            </button>
-          </div>
-          <div className={styles.summaryRow}>
-            <span className={styles.summaryLabel}>Size</span>
-            <span className={styles.summaryValue}>{recurringSummary.size}</span>
-            <button
-              type="button"
-              className={styles.editLink}
-              onClick={() => controller.goToStep(1)}
-            >
-              Edit
-            </button>
-          </div>
-          <div className={styles.summaryRow}>
-            <span className={styles.summaryLabel}>Pool</span>
-            <span className={styles.summaryValue}>{recurringSummary.pool}</span>
-            <button
-              type="button"
-              className={styles.editLink}
-              onClick={() => controller.goToStep(2)}
-            >
-              Edit
-            </button>
-          </div>
-        </div>
       )}
 
       {errorMessage && <div className={styles.errorMessage}>{errorMessage}</div>}

@@ -1,11 +1,16 @@
 import styles from './TasksPoolHeader.module.css';
 
 export interface TasksPoolHeaderProps {
-  selectedCount: number;
+  /**
+   * Board Sources P4 — the sources CAPACITY: sum of every source's
+   * effective max + hand-added, deduped (`useBoardWizard.capacity`).
+   * Named `selectedCount` before P4.
+   */
+  capacity: number;
   tasksRequired: number;
-  /** Recurring mode appends " min" to the denominator + tweaks the
-   *  satisfied/over copy — the spawn shuffles + slices from a loose-fit
-   *  pool, so "extra" tasks become the random subset each window. */
+  /** Kept for any future per-mode divergence — the copy no longer
+   *  branches on it (no " min" suffix; docs/BOARD_SOURCES.md §Surfaces
+   *  item 1). */
   isRecurring: boolean;
   /** True when a center square must be picked from the pool (CHOSEN). */
   centerTaskMode: boolean;
@@ -21,6 +26,11 @@ export interface TasksPoolHeaderProps {
  * pool-model copy (short / exact / over), and — when `centerTaskMode` is
  * on — a center-task indicator line.
  *
+ * Board Sources P4 (docs/BOARD_SOURCES.md §Surfaces item 1): the count is
+ * the CAPACITY and the copy is the design's: short → "N more to fill the
+ * board. Widen a pool's range or add tasks."; filled → "✓ Fills your
+ * board · N extras rotate in". No "min" suffix anymore.
+ *
  * Deliberate divergence from iOS (recorded in the handoff, §1): iOS colors
  * the whole satisfied center-task line gold, which is 1.33:1 contrast on
  * paper — unreadable. Here only the ★ glyph stays gold as the state cue;
@@ -29,16 +39,16 @@ export interface TasksPoolHeaderProps {
  * color on paper.
  */
 export function TasksPoolHeader({
-  selectedCount,
+  capacity,
   tasksRequired,
-  isRecurring,
+  isRecurring: _isRecurring,
   centerTaskMode,
   centerSatisfied,
 }: TasksPoolHeaderProps): React.ReactElement {
-  const remaining = Math.max(0, tasksRequired - selectedCount);
-  const extra = Math.max(0, selectedCount - tasksRequired);
-  const isSatisfied = selectedCount >= tasksRequired;
-  const progress = tasksRequired > 0 ? Math.min(1, selectedCount / tasksRequired) : 0;
+  const remaining = Math.max(0, tasksRequired - capacity);
+  const extra = Math.max(0, capacity - tasksRequired);
+  const isSatisfied = capacity >= tasksRequired;
+  const progress = tasksRequired > 0 ? Math.min(1, capacity / tasksRequired) : 0;
 
   return (
     <div className={styles.card}>
@@ -46,14 +56,13 @@ export function TasksPoolHeader({
         <span className={styles.kicker}>Your task pool</span>
         <span
           className={styles.countBadge}
-          aria-label={`Selected ${selectedCount} of ${tasksRequired}${isRecurring ? ' minimum' : ''} tasks`}
+          aria-label={`Capacity ${capacity} of ${tasksRequired} tasks`}
         >
           <span className={isSatisfied ? styles.countOk : styles.countInk} aria-hidden="true">
-            {selectedCount}
+            {capacity}
           </span>
           <span className={styles.countDenominator} aria-hidden="true">
             /{tasksRequired}
-            {isRecurring ? ' min' : ''}
           </span>
         </span>
       </div>
@@ -72,15 +81,16 @@ export function TasksPoolHeader({
         {isSatisfied ? (
           extra > 0 ? (
             <span className={styles.noteOk}>
-              ✓ Fills your board · <strong>{extra} extra</strong>{' '}
-              {isRecurring ? 'shuffle in each spawn' : 'shuffle into the mix'}
+              ✓ Fills your board · <strong>{extra} extra{extra === 1 ? '' : 's'}</strong> rotate
+              in
             </span>
           ) : (
             <span className={styles.noteOk}>✓ Fills your board exactly</span>
           )
         ) : (
           <span className={styles.noteShort}>
-            Add <strong>{remaining}</strong> more — extras later just shuffle into the mix
+            <strong>{remaining} more</strong> to fill the board. Widen a pool&apos;s range or add
+            tasks.
           </span>
         )}
       </p>

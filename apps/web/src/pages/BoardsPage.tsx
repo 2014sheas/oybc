@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { RecurringBoardTemplate } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import {
   useBoards,
@@ -12,10 +13,15 @@ import {
 } from '../hooks';
 import { boardMatchesListFilter } from '../utils/boardDisplayUtils';
 import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
+import {
+  removeMissingBoardSources,
+  updateRecurringBoardTemplate,
+} from '../db/operations/recurringBoardTemplates';
 import { sealBoard } from '../db/operations/sealing';
 import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
+import { MissingSourceDialog } from '../components/boards/MissingSourceDialog';
 import { ClosingOutBanner } from '../components/boards/ClosingOutBanner';
 import { BoardStatus } from '@oybc/shared';
 import styles from '../components/boards/Boards.module.css';
@@ -43,7 +49,9 @@ export function BoardsPage(): React.ReactElement {
   const previewCellsByBoardId = useBoardsPreviewCells(allBoards, user?.id);
   const coreBoardSlots = useCoreBoardSlots(user?.id);
   // Phase 6.2: fire template spawns on Boards-tab mount (idempotent).
-  useRecurringBoardSpawn(user?.id);
+  // Board Sources P4 — the digest also feeds the deleted-source ask
+  // below; `rerun` re-runs the pass after "Remove that source".
+  const spawnController = useRecurringBoardSpawn(user?.id);
 
   // P6 (Task Pools + Recurring Boards Rework) — resolve each board's source
   // template (for the paused badge + "· repeats {cadence}" subtitle) without
@@ -63,6 +71,45 @@ export function BoardsPage(): React.ReactElement {
   // aren't sealed yet (still inside the backstop grace). Prompted, not silent.
   const closingOutBoards = useClosingOutBoards(user?.id);
   const [activeFilter, setActiveFilter] = useState<string>('active');
+
+  // Board Sources P4 — the deleted-source ask (docs/BOARD_SOURCES.md
+  // §Boards as sources; iOS twin `BoardListView.missingSourceAsk`): one
+  // ask at a time; "Not now" re-asks on the next Boards-tab open (lazy,
+  // never background). Templates already acted on this mount are
+  // suppressed so a stale digest entry can't reopen the dialog.
+  const [askDismissed, setAskDismissed] = useState(false);
+  const [handledAskIds, setHandledAskIds] = useState<Set<string>>(new Set());
+  const missingSourceAsk = useMemo<RecurringBoardTemplate | null>(() => {
+    if (askDismissed) return null;
+    const entry = Object.entries(spawnController.attentionByTemplateId).find(
+      ([templateId, reason]) =>
+        reason === 'source_board_missing' && !handledAskIds.has(templateId),
+    );
+    return entry ? (templatesById.get(entry[0]) ?? null) : null;
+  }, [askDismissed, handledAskIds, spawnController.attentionByTemplateId, templatesById]);
+
+  const markAskHandled = (templateId: string): void => {
+    setHandledAskIds((prev) => new Set(prev).add(templateId));
+  };
+
+  /** "Remove that source": drop the dead board-kind source(s), then
+   *  re-run the spawn pass so the window fills from the remaining
+   *  sources. */
+  const handleRemoveMissingSource = async (
+    template: RecurringBoardTemplate,
+  ): Promise<void> => {
+    markAskHandled(template.id);
+    await removeMissingBoardSources(template.id);
+    spawnController.rerun();
+  };
+
+  /** "Pause this board": set the repeating board inactive. */
+  const handlePauseMissingSource = async (
+    template: RecurringBoardTemplate,
+  ): Promise<void> => {
+    markAskHandled(template.id);
+    await updateRecurringBoardTemplate(template.id, { isActive: false });
+  };
 
   /** Delete a board from the boards list. Draft boards route through
    *  `deleteDraftWithCascade` so their placement rows are hard-deleted and
@@ -171,6 +218,13 @@ export function BoardsPage(): React.ReactElement {
           ))}
         </div>
       )}
+
+      <MissingSourceDialog
+        template={missingSourceAsk}
+        onRemoveSource={(t) => void handleRemoveMissingSource(t)}
+        onPause={(t) => void handlePauseMissingSource(t)}
+        onDismiss={() => setAskDismissed(true)}
+      />
     </div>
   );
 }

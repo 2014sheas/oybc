@@ -11,9 +11,6 @@ export interface PoolListProps {
   effectiveTaskMap: Record<string, Task>;
   effectiveChildrenByCompound: Record<string, CompoundChild[]>;
   taskBoardCounts: Record<string, number>;
-  /** P3 — provenance label ("from X" / "added by hand") appended to every
-   *  row's subtitle. */
-  taskProvenance: Map<string, string>;
 
   centerTaskMode: boolean;
   centerTaskId: string | null;
@@ -40,6 +37,18 @@ export interface PoolListProps {
    * `editor` closure parameter.
    */
   editor?: (task: Task) => React.ReactNode;
+
+  /**
+   * Board Sources P4 — when set, the header count pill shows THIS value
+   * (the sources capacity) instead of the hand-added row count. Mirrors
+   * iOS `RisoPoolListView.countOverride`.
+   */
+  countOverride?: number;
+  /**
+   * Board Sources P4 — source rows rendered at the TOP of the list,
+   * before the hand-added task rows. Mirrors iOS `leadingRows`.
+   */
+  leadingRows?: React.ReactNode;
 }
 
 /**
@@ -62,7 +71,6 @@ export function PoolList({
   effectiveTaskMap,
   effectiveChildrenByCompound,
   taskBoardCounts,
-  taskProvenance,
   centerTaskMode,
   centerTaskId,
   onCenterClick,
@@ -71,6 +79,8 @@ export function PoolList({
   editingTaskId = null,
   onEdit,
   editor,
+  countOverride,
+  leadingRows,
 }: PoolListProps): React.ReactElement {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const poolTasks = poolOrder
@@ -81,15 +91,16 @@ export function PoolList({
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
         <span className={styles.sectionLabel}>On your board</span>
-        <span className={styles.countPill}>{poolTasks.length}</span>
+        <span className={styles.countPill}>{countOverride ?? poolTasks.length}</span>
       </div>
 
-      {poolTasks.length === 0 ? (
+      {poolTasks.length === 0 && !leadingRows ? (
         <p className={styles.emptyNote}>
           Nothing in your pool yet — reuse a task, type your own, or add a special type.
         </p>
       ) : (
         <ul className={styles.list}>
+          {leadingRows}
           {poolTasks.map((task) => {
             const isCompound = task.type === TaskType.COMPOUND;
             const isCenter = centerTaskMode && centerTaskId === task.id;
@@ -97,7 +108,6 @@ export function PoolList({
             const subtitle = buildPoolRowSubtitle(
               task,
               effectiveChildrenByCompound[task.id] ?? [],
-              taskProvenance.get(task.id),
             );
             const boardCount = taskBoardCounts[task.id] ?? 0;
             const usageHint = isCompound
@@ -215,12 +225,12 @@ export function PoolList({
   );
 }
 
-/** Type-specific detail line, with the provenance label appended — mirrors
- *  iOS `RisoPoolListView.typeDetailSubtitle`. */
+/** Type-specific detail line — mirrors iOS
+ *  `RisoPoolListView.typeDetailSubtitle`. (Board Sources P4 dropped the
+ *  provenance suffix — the design's copy rule bans provenance subtitles.) */
 function buildPoolRowSubtitle(
   task: Task,
   children: CompoundChild[],
-  provenance: string | undefined,
 ): string | undefined {
   let base: string | undefined;
   switch (task.type) {
@@ -254,6 +264,5 @@ function buildPoolRowSubtitle(
     default:
       base = undefined;
   }
-  const parts = [base, provenance].filter((p): p is string => Boolean(p));
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+  return base;
 }

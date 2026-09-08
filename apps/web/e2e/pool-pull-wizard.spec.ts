@@ -8,25 +8,24 @@ import {
 } from './_fixtures/bypass';
 
 /**
- * P3 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
- * §Surfaces item 5 "Wizard step 2") — e2e coverage for the wizard's
- * Tasks step (step 2) "PULL IN A POOL" card: pulling a pool unions its
- * tasks into the selection with "from <pool>" provenance; untoggling
- * removes only the non-manual tasks; a hand-picked task survives an
- * untoggle; and "Save these N as a new pool…" mints a new pool that
- * then appears as a new pull-chip.
+ * Board Sources P4 (docs/BOARD_SOURCES.md §Surfaces items 1–2) — e2e
+ * coverage for the wizard's Tasks-step sources model: pulling a pool via
+ * the "Add a pool or board" sheet creates a source ROW (not a flat task
+ * union), the header counts CAPACITY, the expanded panel's member ✕
+ * excludes a task for this board only (UNDO restores), a hand-added task
+ * survives removing the source, and the sheet shows its empty state when
+ * nothing is pullable.
  *
- * Uses the one-off ("Start a one-off board") entry point — the pull-card
+ * Uses the one-off ("Start a one-off board") entry point — the sources
  * behavior is identical for one-off and recurring boards.
  */
 
-test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
-  test('pulling a pool unions its tasks with provenance; untoggling removes only non-manual tasks; saving as a new pool mints a pullable chip', async ({
+test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
+  test('pulling a pool adds a source row; exclude/UNDO adjust capacity; a hand-added task survives source removal', async ({
     page,
   }) => {
     // 8 tasks so pulling the pool exactly satisfies a 3×3-FREE board
-    // (fillableCellCount = 8) — makes the "Selected: 8 / 8" satisfied
-    // state visible in the same flow.
+    // (fillableCellCount = 8) — makes the "8/8" satisfied state visible.
     const poolTaskIds = Array.from(
       { length: 8 },
       (_, i) => `aaaaaaaa-0000-0000-0000-00000000000${i}`,
@@ -47,7 +46,7 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
     // default's start/end date requirement), then advance to step 2.
     await openCreateHub(page);
     await startOneOffWizard(page);
-    await page.getByLabel(/board name/i).fill('Pool Pull Test Board');
+    await page.getByLabel(/board name/i).fill('Sources Test Board');
     await page.getByRole('button', { name: '3×3', exact: true }).click();
     await page
       .getByRole('group', { name: 'Timeframe' })
@@ -55,35 +54,53 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    // Step 2 mounted — the pull-card renders the seeded pool as a chip.
-    // Web inline-editing port PR-1 (pool-first restructure): the pool is
-    // no longer a flat selectable library list — selected tasks live in
-    // the separate `PoolList` ("ON YOUR BOARD") section, and the header's
-    // "Selected: N / M" text became a `TasksPoolHeader` count badge
-    // exposed via `aria-label` for stable e2e targeting.
-    const poolChip = page.getByRole('button', { name: 'Morning Kickstart', exact: true });
-    await expect(poolChip).toBeVisible();
-    await expect(poolChip).toHaveAttribute('aria-pressed', 'false');
-    await page.waitForTimeout(200); // let the chip's CSS transition settle before capturing
-    await page.screenshot({ path: '.playwright-mcp/pool-pull-01-card-untouched.png' });
-
-    // Pull it in: all 8 tasks join the selection, satisfying the 3×3
-    // floor, and each pool task's row (now in the Pool List) shows
-    // "from Morning Kickstart".
-    await poolChip.click();
-    await expect(poolChip).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByLabel('Selected 8 of 8 tasks')).toBeVisible();
-
-    const firstPoolTaskRow = page.getByRole('listitem').filter({ hasText: 'Pool Task 1' });
-    await expect(firstPoolTaskRow).toBeVisible();
-    await expect(firstPoolTaskRow).toContainText('from Morning Kickstart');
+    // Step 2 mounted — the dashed "Add a pool or board" entry opens the
+    // source sheet with the seeded pool as a toggleable row.
+    await page.getByRole('button', { name: 'Add a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add a pool or board' });
+    await expect(sourceSheet).toBeVisible();
+    const sheetPoolRow = sourceSheet.getByRole('button', { name: /Morning Kickstart/ });
+    await expect(sheetPoolRow).toHaveAttribute('aria-pressed', 'false');
     await page.waitForTimeout(200);
-    await page.screenshot({ path: '.playwright-mcp/pool-pull-02-pulled-with-provenance.png' });
+    await page.screenshot({ path: '.playwright-mcp/sources-01-sheet-open.png' });
 
-    // Manually add an unrelated (already-existing) task via the quick-add
-    // row's library-poll dropdown — the pool-first restructure's real
-    // "add an existing task by hand" path when the library sheet isn't
-    // already open. Its Pool List row shows "added by hand".
+    // Pull it: the row checks, and after Done the source renders as ONE
+    // row in "On your board" with a live subtitle; the header counts
+    // CAPACITY (sum of source maxes + hand-added) — 8/8 satisfied.
+    await sheetPoolRow.click();
+    await expect(sheetPoolRow).toHaveAttribute('aria-pressed', 'true');
+    await sourceSheet.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(sourceSheet).toBeHidden();
+
+    const sourceRow = page.getByRole('button', { name: /Morning Kickstart, 8 tasks/ });
+    await expect(sourceRow).toBeVisible();
+    await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: '.playwright-mcp/sources-02-source-row.png' });
+
+    // Expand the row: the range block + member rows appear. Exclude one
+    // member for this board only — the subtitle gains "1 excluded", the
+    // capacity drops to 7/8, and the red gate line appears.
+    await sourceRow.click();
+    await expect(sourceRow).toHaveAttribute('aria-expanded', 'true');
+    await page
+      .getByRole('button', { name: 'Exclude Pool Task 1 for this board' })
+      .click();
+    await expect(
+      page.getByRole('button', { name: /Morning Kickstart, 8 tasks · 1 excluded/ }),
+    ).toBeVisible();
+    await expect(page.getByLabel('Capacity 7 of 8 tasks')).toBeVisible();
+    await expect(page.getByText('! Add 1 more')).toBeVisible();
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: '.playwright-mcp/sources-03-excluded.png' });
+
+    // UNDO restores the member; capacity returns to 8/8.
+    await page.getByRole('button', { name: 'Undo excluding Pool Task 1' }).click();
+    await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
+
+    // Hand-add an unrelated existing task via the quick-add row's
+    // library-poll dropdown; it renders as its own task row and bumps
+    // capacity to 9/8.
     await page.getByLabel('New normal task title').fill('Manual Task');
     const manualMatch = page
       .getByRole('list', { name: 'Matching library tasks' })
@@ -93,61 +110,38 @@ test.describe('Wizard Tasks step — PULL IN A POOL (P3)', () => {
 
     const manualRow = page.getByRole('listitem').filter({ hasText: 'Manual Task' });
     await expect(manualRow).toBeVisible();
-    await expect(manualRow).toContainText('added by hand');
-    await expect(page.getByLabel('Selected 9 of 8 tasks')).toBeVisible();
+    await expect(page.getByLabel('Capacity 9 of 8 tasks')).toBeVisible();
     await page.waitForTimeout(200);
-    await page.screenshot({ path: '.playwright-mcp/pool-pull-03-manual-add.png' });
+    await page.screenshot({ path: '.playwright-mcp/sources-04-manual-add.png' });
 
-    // Untoggle the pool: only the 8 pool-sourced tasks drop; the manual
-    // task survives (manual layer is never touched by a pool toggle).
-    await poolChip.click();
-    await expect(poolChip).toHaveAttribute('aria-pressed', 'false');
-    await expect(firstPoolTaskRow).toHaveCount(0);
+    // Remove the source via the row's ✕: the source's tasks drop; the
+    // hand-added task survives (the manual layer is never touched by a
+    // source removal).
+    await page.getByRole('button', { name: 'Remove Morning Kickstart' }).click();
+    await expect(sourceRow).toHaveCount(0);
     await expect(manualRow).toBeVisible();
-    await expect(manualRow).toContainText('added by hand');
-    await expect(page.getByLabel('Selected 1 of 8 tasks')).toBeVisible();
+    await expect(page.getByLabel('Capacity 1 of 8 tasks')).toBeVisible();
     await page.waitForTimeout(200);
-    await page.screenshot({ path: '.playwright-mcp/pool-pull-04-untoggled-manual-survives.png' });
-
-    // "Save these N as a new pool…" — only the Manual Task is selected
-    // right now (N=1).
-    const saveAsPoolButton = page.getByRole('button', { name: /Save these 1 as a new pool/ });
-    await expect(saveAsPoolButton).toBeEnabled();
-    await saveAsPoolButton.click();
-
-    const poolSheet = page.getByRole('dialog', { name: /new pool/i });
-    await expect(poolSheet).toBeVisible();
-    // Pre-seeded from the current selection (Manual Task).
-    await expect(poolSheet.getByText('Manual Task')).toBeVisible();
-    await poolSheet.getByLabel(/^name$/i).fill('Saved From Wizard');
-    await page.waitForTimeout(200);
-    await page.screenshot({ path: '.playwright-mcp/pool-pull-05-save-as-pool-sheet.png' });
-    await poolSheet.getByRole('button', { name: 'Create pool', exact: true }).click();
-    await expect(poolSheet).toBeHidden();
-
-    // Independent of the board: saving didn't touch selectedTaskIds
-    // (still just the Manual Task).
-    await expect(page.getByLabel('Selected 1 of 8 tasks')).toBeVisible();
-
-    // The new pool is immediately pullable — the live `usePools` query
-    // surfaces it in the card without a reload.
-    const newPoolChip = page.getByRole('button', { name: 'Saved From Wizard', exact: true });
-    await expect(newPoolChip).toBeVisible();
-    await newPoolChip.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(200);
-    await page.screenshot({ path: '.playwright-mcp/pool-pull-06-new-pool-pullable.png' });
+    await page.screenshot({ path: '.playwright-mcp/sources-05-source-removed.png' });
   });
 
-  test('shows the empty-state line when the user has no pools yet', async ({ page }) => {
+  test('shows the sheet empty state when the user has nothing to pull from', async ({
+    page,
+  }) => {
     await openCreateHub(page);
     await startOneOffWizard(page);
-    await page.getByLabel(/board name/i).fill('No Pools Yet Board');
+    await page.getByLabel(/board name/i).fill('No Sources Yet Board');
     await page
       .getByRole('group', { name: 'Timeframe' })
       .getByRole('button', { name: 'Daily', exact: true })
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    await expect(page.getByText(/you don.t have any pools yet/i)).toBeVisible();
+    await page.getByRole('button', { name: 'Add a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add a pool or board' });
+    await expect(sourceSheet.getByText('Nothing to pull from yet')).toBeVisible();
+    await expect(
+      sourceSheet.getByText('Boards you make and pools you save will show up here.'),
+    ).toBeVisible();
   });
 });

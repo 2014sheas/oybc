@@ -4,7 +4,12 @@ import type {
   CreateRecurringBoardTemplateInput,
   UpdateRecurringBoardTemplateInput,
 } from '@oybc/shared';
-import { SyncOperationType } from '@oybc/shared';
+import {
+  BoardStatus,
+  SyncOperationType,
+  mixFieldsFromSources,
+  sourcesForRecord,
+} from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -138,6 +143,56 @@ export async function updateRecurringBoardTemplate(
       updated,
     );
   }
+}
+
+/**
+ * Board Sources P4 — the "Remove that source" action of the
+ * deleted-source ask (docs/BOARD_SOURCES.md §Boards as sources; iOS twin
+ * `AppDatabase.removeMissingBoardSources`). Drops every board-kind
+ * source whose board is missing, soft-deleted, or archived from the
+ * record's `sources`, recomputes the legacy trio mirror, bumps version,
+ * and enqueues — one transaction. Returns true when anything changed
+ * (the caller then re-runs the spawn pass).
+ */
+export async function removeMissingBoardSources(templateId: string): Promise<boolean> {
+  return db.transaction(
+    'rw',
+    [db.recurringBoardTemplates, db.boards, db.syncQueue],
+    async () => {
+      const template = await db.recurringBoardTemplates.get(templateId);
+      if (!template || template.isDeleted) return false;
+      const sources = sourcesForRecord(template);
+      const boardIds = sources.filter((s) => s.kind === 'board').map((s) => s.sourceId);
+      if (boardIds.length === 0) return false;
+      const boards = await db.boards.where('id').anyOf(boardIds).toArray();
+      const boardById = new Map(boards.map((b) => [b.id, b]));
+      const kept = sources.filter((source) => {
+        if (source.kind !== 'board') return true;
+        const b = boardById.get(source.sourceId);
+        return b !== undefined && !b.isDeleted && b.status !== BoardStatus.ARCHIVED;
+      });
+      if (kept.length === sources.length) return false;
+      // Keep the P1 dual-write mirrors consistent with the new shape.
+      const mirror = mixFieldsFromSources(kept);
+      await db.recurringBoardTemplates.update(templateId, {
+        sources: kept,
+        poolIds: mirror.poolIds,
+        removedTaskIds: mirror.removedTaskIds,
+        updatedAt: currentTimestamp(),
+        version: (template.version ?? 0) + 1,
+      });
+      const updated = await db.recurringBoardTemplates.get(templateId);
+      if (updated) {
+        await addToSyncQueue(
+          'recurringBoardTemplates',
+          templateId,
+          SyncOperationType.UPDATE,
+          updated,
+        );
+      }
+      return true;
+    },
+  );
 }
 
 /**

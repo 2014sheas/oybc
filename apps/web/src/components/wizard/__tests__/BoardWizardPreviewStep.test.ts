@@ -1,24 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CenterSquareType, Timeframe, TaskType, type Task } from '@oybc/shared';
+import {
+  CenterSquareType,
+  Timeframe,
+  TaskType,
+  type BoardSource,
+  type Task,
+} from '@oybc/shared';
 import { BoardWizardPreviewStep } from '../BoardWizardPreviewStep';
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
 
 /**
  * A repeating board re-randomizes its cell layout every window, so the
- * Preview step shows the resolved pool (task list) instead of the
- * arrangeable `ArrangeGrid` + Preview/Rearrange toggle + Shuffle. One-off
- * boards keep the existing ArrangeGrid behavior unchanged.
+ * Preview step shows a SUMMARY CARD (Board Sources P4, handoff frame 5b:
+ * name, cadence, one row per source with its range line, the hand-added
+ * rows, and the SQUARES total) instead of the arrangeable `ArrangeGrid` +
+ * Preview/Rearrange toggle + Shuffle. One-off boards keep the existing
+ * ArrangeGrid behavior unchanged.
  *
- * Board Creation Split (web PR C) also diverges the footer + summary
- * card per mode: one-off has NO summary card and a RED "Activate Board";
- * recurring has a 3-row Repeats/Size/Pool summary card and a BLUE
- * "Create Board". Web PR D added recurring's own "Save as Draft" (neutral,
- * same as one-off's) for a FRESH recurring session — omitted only when
- * `editingTemplateId` is set (editing an existing repeating board has no
- * "draft" concept; footer is Back / "Save Changes" only).
+ * The footer still diverges per mode (Board Creation Split, web PR C+D):
+ * one-off has a RED "Activate Board"; recurring a BLUE "Create Board",
+ * with "Save as Draft" only for a FRESH recurring session (omitted when
+ * `editingTemplateId` is set — an edit has no "draft" concept).
  *
  * See `BoardSetupForm.test.ts`'s docstring for why this uses
  * `react-dom/server`'s `renderToStaticMarkup` (no jsdom/RTL harness in
@@ -56,9 +61,14 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
     isRecurring: true,
     selectedTaskIds: new Set<string>(),
     centerTaskId: null,
-    pulledPoolIds: [],
+    poolOrder: [],
+    sources: [] as BoardSource[],
     manualTaskIds: new Set<string>(),
+    supplyInfoBySourceId: {},
+    expandedSourceIds: new Set<string>(),
+    pulledPoolIds: [],
     removedTaskIds: new Set<string>(),
+    capacity: 8,
     pendingTasks: new Map(),
     currentStep: 3,
     draftBoardId: null,
@@ -72,7 +82,6 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
     step1ValidationMessage: null,
     step2ValidationMessage: null,
     isPristine: false,
-    taskProvenance: new Map<string, string>(),
     goToStep: () => {},
     ...overrides,
   } as unknown as BoardWizardController;
@@ -103,34 +112,54 @@ function renderPreview(controller: BoardWizardController, tasks: Task[]): string
   );
 }
 
-describe('BoardWizardPreviewStep — repeating-board pool-list view', () => {
-  it('shows the "On your board" pool header + task list, and hides ArrangeGrid/Preview⇄Rearrange/Shuffle, when isRecurring', () => {
+describe('BoardWizardPreviewStep — repeating-board summary-card view (frame 5b)', () => {
+  it('shows the summary card (source range lines + hand-added rows + Squares total), and hides ArrangeGrid/Preview⇄Rearrange/Shuffle, when isRecurring', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
+    const pool1Source: BoardSource = {
+      sourceId: 'pool-1',
+      kind: 'pool',
+      min: 3,
+      max: 5,
+      excludedTaskIds: [],
+      filter: 'all',
+    };
     const controller = makeController({
       isRecurring: true,
-      selectedTaskIds: new Set(['t1', 't2']),
-      taskProvenance: new Map([
-        ['t1', 'added by hand'],
-        ['t2', 'added by hand'],
-      ]),
+      sources: [pool1Source],
+      supplyInfoBySourceId: {
+        'pool-1': {
+          displayName: 'Morning Kickstart',
+          rawSupplyTaskIds: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'],
+          doneTaskIds: new Set<string>(),
+        },
+      },
+      poolOrder: ['t1', 't2'],
+      manualTaskIds: new Set(['t1', 't2']),
+      selectedTaskIds: new Set(['t1', 't2', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6']),
+      capacity: 7,
+      tasksRequired: 8,
     });
 
     const html = renderPreview(controller, tasks);
 
-    // Pool-list header (no health-note line — Board Creation Split, web
-    // PR C — straight from name/meta to the list) + both rows.
-    expect(html).toContain('On your board');
+    // Summary card: source row with its right-aligned range line, every
+    // hand-added task as its own row, and the SQUARES total.
+    expect(html).toContain('Morning Kickstart');
+    expect(html).toContain('3–5');
     expect(html).toContain('Task t1');
     expect(html).toContain('Task t2');
-    expect(html).toContain('added by hand');
+    expect(html).toContain('Squares');
+    expect(html).toContain('7');
+    expect(html).toContain('/8');
 
-    // No arrangeable-grid affordances for a repeating board.
+    // No arrangeable-grid affordances for a repeating board, no
+    // provenance subtitles (the design's copy rule).
     expect(html).not.toContain('Shuffle');
     expect(html).not.toContain('Rearrange');
-    expect(html).not.toContain('Preview ⇄ Rearrange');
+    expect(html).not.toContain('added by hand');
   });
 
-  it('shows the recurring 3-row summary card (Repeats/Size/Pool), a "Create Board" primary, AND "Save as Draft" for a fresh recurring session (web PR D)', () => {
+  it('shows a "Create Board" primary AND "Save as Draft" for a fresh recurring session (web PR D)', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
     const controller = makeController({
       isRecurring: true,
@@ -141,9 +170,6 @@ describe('BoardWizardPreviewStep — repeating-board pool-list view', () => {
 
     const html = renderPreview(controller, tasks);
 
-    expect(html).toContain('Repeats');
-    expect(html).toContain('Size');
-    expect(html).toContain('Pool');
     expect(html).toContain('Create Board');
     expect(html).toContain('Save as Draft');
     expect(html).not.toContain('Save Changes');
@@ -176,11 +202,9 @@ describe('BoardWizardPreviewStep — repeating-board pool-list view', () => {
 
     const html = renderPreview(controller, tasks);
 
-    expect(html).not.toContain('On your board');
+    expect(html).not.toContain('Squares');
     expect(html).toContain('Rearrange');
     expect(html).toContain('Activate Board');
     expect(html).toContain('Save as Draft');
-    // No Repeats/Size/Pool summary card for a one-off board.
-    expect(html).not.toContain('>Repeats<');
   });
 });

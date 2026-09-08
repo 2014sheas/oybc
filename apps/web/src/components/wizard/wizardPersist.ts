@@ -3,13 +3,16 @@ import {
   TaskType,
   Timeframe,
   deriveSpawnedBoardName,
+  effectiveSourceMax,
   getTimeframeBoundaries,
   placeBoard,
-  sourcesFromMixFields,
+  resolveSourceAvailable,
+  selectBoardTasks,
   toLocalISO,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
+import { algorithmSupplies } from '../../pages/createHub/wizardSources';
 import {
   createRecurringBoardTemplate,
   updateRecurringBoardTemplate,
@@ -66,18 +69,88 @@ export function buildWizardPlacement(
     libraryById.set(id, payload.task);
   }
 
+  // Board Sources P4 — when sources are in play, the pick honors each
+  // source's membership range via the shared selection algorithm (the
+  // same engine the recurring spawn uses); the capacity gate upstream
+  // makes a short pick unexpected, and the defensive fallback (place the
+  // flat selection) can only OVERFILL toward placeBoard's truncation —
+  // it never underfills relative to the old behavior. Mirrors iOS
+  // `buildWizardPlacement`.
+  let selectedIds: string[];
+  const sources = controller.sources ?? [];
+  if (sources.length > 0) {
+    const supplies = algorithmSupplies(sources, controller.supplyInfoBySourceId);
+    const selection = selectBoardTasks({
+      supplies,
+      manualTaskIds: Array.from(controller.manualTaskIds),
+      cellCount: controller.tasksRequired,
+      randomize: isRandomized,
+    });
+    selectedIds = selection.ok ? [...selection.taskIds] : Array.from(selectedTaskIds);
+    // A CHOSEN center must survive the ranged pick — swap it in if the
+    // draw skipped it. The victim is chosen MIN-AWARE: scanning from the
+    // end, prefer a pick whose removal keeps every source's membership ≥
+    // its (clamped) min — blindly popping the last pick could undercut a
+    // "guarantee n of these" source by one. Falls back to the last pick
+    // only when every candidate is min-locked (then a min gives way to
+    // the explicit center choice — the harder user intent).
+    if (
+      isOdd &&
+      centerType === CenterSquareType.CHOSEN &&
+      centerTaskId !== null &&
+      !selectedIds.includes(centerTaskId) &&
+      libraryById.has(centerTaskId) &&
+      selectedIds.length > 0
+    ) {
+      const availSets = supplies.map((supply) => new Set(resolveSourceAvailable(supply)));
+      const targets = supplies.map((supply, i) =>
+        Math.min(
+          Math.max(0, supply.source.min),
+          availSets[i].size,
+          effectiveSourceMax(supply.source, availSets[i].size),
+        ),
+      );
+      const memberCounts = availSets.map(
+        (set) => selectedIds.filter((id) => set.has(id)).length,
+      );
+      // The incoming center also counts toward memberships.
+      for (let i = 0; i < availSets.length; i += 1) {
+        if (availSets[i].has(centerTaskId)) memberCounts[i] += 1;
+      }
+      let victimIndex = selectedIds.length - 1;
+      for (let idx = selectedIds.length - 1; idx >= 0; idx -= 1) {
+        const candidate = selectedIds[idx];
+        let safe = true;
+        for (let i = 0; i < availSets.length; i += 1) {
+          if (availSets[i].has(candidate) && memberCounts[i] - 1 < targets[i]) {
+            safe = false;
+            break;
+          }
+        }
+        if (safe) {
+          victimIndex = idx;
+          break;
+        }
+      }
+      selectedIds.splice(victimIndex, 1);
+      selectedIds.push(centerTaskId);
+    }
+  } else {
+    selectedIds = Array.from(selectedTaskIds);
+  }
+  const selectedIdSet = new Set(selectedIds);
+
   // Preserve library order for non-randomized boards (post-`always-
   // randomize`, isRandomized is true everywhere in production, but the
   // ordering still matters for snapshot determinism and any legacy /
   // test path that toggles it). Library order is title-sorted in
-  // `useTaskLibrary`, so deterministic given the same selected set.
+  // `useTaskLibrary`, so deterministic given the same picked set.
   // Pending tasks (not in the library order) are appended after so
   // they still appear in the placement.
-  const selectedSet = selectedTaskIds;
-  const fromLibrary = library.allTasks.filter((t) => selectedSet.has(t.id));
+  const fromLibrary = library.allTasks.filter((t) => selectedIdSet.has(t.id));
   const fromLibraryIds = new Set(fromLibrary.map((t) => t.id));
   const pendingExtras: Task[] = [];
-  for (const id of selectedSet) {
+  for (const id of selectedIds) {
     if (fromLibraryIds.has(id)) continue;
     const t = libraryById.get(id);
     if (t !== undefined) pendingExtras.push(t);
@@ -296,15 +369,16 @@ export async function persistWizardBoard({
   // pool survives resume (previously it silently truncated to the placed
   // rows). Active one-off creates still skip it (the created board is
   // concrete BoardTask rows; sources are a wizard-time device).
-  const poolIds = [...controller.pulledPoolIds];
-  const removedTaskIds = Array.from(controller.removedTaskIds);
+  // Board Sources P4 — the NATIVE sources snapshot (ranges/excludes/
+  // filters + board-kind sources) rides in the v2 blob; the legacy trio
+  // is derived alongside for old-client decode compat.
   const recurringDraftMix =
     isRecurringDraft || status === 'draft'
       ? encodeRecurringDraftMix({
-          poolIds,
+          poolIds: [...controller.pulledPoolIds],
           manualTaskIds: Array.from(controller.manualTaskIds),
-          removedTaskIds,
-          // `sources` derived inside the codec — [0, all] until P2's UI.
+          removedTaskIds: Array.from(controller.removedTaskIds),
+          sources: controller.sources,
         })
       : undefined;
 
@@ -472,11 +546,10 @@ export async function persistRecurringTemplate({
   const poolIds = [...controller.pulledPoolIds];
   const manualTaskIds = Array.from(controller.manualTaskIds);
   const removedTaskIds = Array.from(controller.removedTaskIds);
-  // Board Sources P1 — the canonical persisted shape, stamped alongside
-  // the legacy trio on every template write (docs/BOARD_SOURCES.md §Data
-  // model; the wizard UI still expresses only [0, all] pool pulls until
-  // P2, so this mapping is lossless for anything it can produce).
-  const sources = sourcesFromMixFields({ poolIds, removedTaskIds });
+  // Board Sources P4 — the wizard's NATIVE sources state (ranges,
+  // excludes, filters, board-kind sources) persists verbatim; the legacy
+  // trio above is the derived P1 dual-write for old-client compat.
+  const sources = controller.sources;
   // Decode-compat snapshot only — never read back after this write (see
   // this function's docstring / docs/POOLS_RECURRING.md §Migration).
   const seedTaskIds = Array.from(controller.selectedTaskIds);

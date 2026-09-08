@@ -3,10 +3,27 @@ import {
   expect,
   openCreateHub,
   seedCompoundChild,
-  seedPool,
   seedTask,
   startOneOffWizard,
 } from './_fixtures/bypass';
+import type { Page } from '@playwright/test';
+
+/** Board Sources P4 — hand-add existing library tasks via the "Add from
+ *  your library" sheet (source-pulled tasks live inside their source
+ *  row's member panel now, without edit pencils — only hand-added rows
+ *  are inline-editable). */
+async function handAddFromLibrary(page: Page, titles: string[]): Promise<void> {
+  await page.getByRole('button', { name: /^Add from your library/ }).click();
+  const sheet = page.getByRole('dialog', { name: 'Your library' });
+  await expect(sheet).toBeVisible();
+  for (const title of titles) {
+    // Row buttons carry subtitle/usage text in their accessible name —
+    // match on the title substring (titles are unique per test).
+    await sheet.getByRole('button', { name: title }).first().click();
+  }
+  await sheet.getByRole('button', { name: /^Done/ }).click();
+  await expect(sheet).toBeHidden();
+}
 
 /**
  * Web inline-editing port PR-2 — e2e coverage for the wizard Tasks step's
@@ -17,8 +34,10 @@ import {
  * (restores the row at its original position).
  *
  * Uses the one-off ("Start a one-off board") entry point, 3×3 FREE-center
- * (fillableCellCount = 8) so an 8-task pool exactly satisfies the floor —
- * mirrors `pool-pull-wizard.spec.ts`'s setup.
+ * (fillableCellCount = 8) so 8 hand-added tasks exactly satisfy the floor.
+ * Board Sources P4: the tasks are HAND-ADDED via the library sheet —
+ * source-pulled tasks render inside their source row's member panel and
+ * are not inline-editable there.
  */
 
 test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing PR-2)', () => {
@@ -44,17 +63,9 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
       await seedTask(page, { id, title: `Filler Task ${i + 1}`, type: 'normal' });
     }
 
-    // A pool covering exactly the 8 pool-supplying tasks (counting +
-    // compound + 5 fillers + one more filler is 5 — count: counting(1) +
-    // compound(1) + fillers(5) = 7; need 8, so seed one more filler below.
+    // counting(1) + compound(1) + fillers(5) = 7; need 8, so one more.
     const extraFillerId = 'aaaaaaaa-1111-0000-0000-000000000099';
     await seedTask(page, { id: extraFillerId, title: 'Filler Task 6', type: 'normal' });
-
-    await seedPool(page, {
-      id: 'pool-inline-edit-1',
-      name: 'Inline Edit Pool',
-      taskIds: [countingId, compoundId, ...fillerIds, extraFillerId],
-    });
 
     await openCreateHub(page);
     await startOneOffWizard(page);
@@ -66,9 +77,18 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    // Pull the pool in — satisfies the 3×3 FREE floor (8) in one click.
-    await page.getByRole('button', { name: 'Inline Edit Pool', exact: true }).click();
-    await expect(page.getByLabel('Selected 8 of 8 tasks')).toBeVisible();
+    // Hand-add all 8 via the library sheet — satisfies the 3×3 FREE floor.
+    await handAddFromLibrary(page, [
+      'Run 5 km',
+      'Morning routine',
+      'Filler Task 1',
+      'Filler Task 2',
+      'Filler Task 3',
+      'Filler Task 4',
+      'Filler Task 5',
+      'Filler Task 6',
+    ]);
+    await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
 
     // ── Counting editor: open, edit the goal, save ──────────────────────
     const countingRow = page.getByRole('listitem').filter({ hasText: 'Run 5 km' });
@@ -149,9 +169,9 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
     const fillerRow = page.getByRole('listitem').filter({ hasText: 'Filler Task 1' });
     await fillerRow.getByRole('button', { name: /Remove Filler Task 1 from board/ }).click();
     await expect(page.getByText('Removed "Filler Task 1"')).toBeVisible();
-    await expect(page.getByLabel('Selected 7 of 8 tasks')).toBeVisible();
+    await expect(page.getByLabel('Capacity 7 of 8 tasks')).toBeVisible();
     await page.getByRole('button', { name: 'UNDO' }).click();
-    await expect(page.getByLabel('Selected 8 of 8 tasks')).toBeVisible();
+    await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
     await expect(page.getByRole('listitem').filter({ hasText: 'Filler Task 1' })).toBeVisible();
   });
 
@@ -176,12 +196,6 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
     for (const [i, id] of fillerIds.entries()) {
       await seedTask(page, { id, title: `Dark Filler ${i + 1}`, type: 'normal' });
     }
-    await seedPool(page, {
-      id: 'pool-dark-1',
-      name: 'Dark Mode Pool',
-      taskIds: [countingId, compoundId, ...fillerIds],
-    });
-
     await openCreateHub(page);
     await startOneOffWizard(page);
     await page.getByLabel(/board name/i).fill('Dark Mode Editor Board');
@@ -191,8 +205,12 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
       .getByRole('button', { name: 'Daily', exact: true })
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
-    await page.getByRole('button', { name: 'Dark Mode Pool', exact: true }).click();
-    await expect(page.getByLabel('Selected 8 of 8 tasks')).toBeVisible();
+    await handAddFromLibrary(page, [
+      'Read 20 pages',
+      'Clean house',
+      ...Array.from({ length: 6 }, (_, i) => `Dark Filler ${i + 1}`),
+    ]);
+    await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
 
     const countingRow = page.getByRole('listitem').filter({ hasText: 'Read 20 pages' });
     await countingRow.getByRole('button', { name: /^Edit Read 20 pages$/ }).click();
