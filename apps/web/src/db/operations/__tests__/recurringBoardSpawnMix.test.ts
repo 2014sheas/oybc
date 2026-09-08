@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  BoardStatus,
   CenterSquareType,
   Timeframe,
   TaskType,
@@ -287,7 +288,7 @@ describe('spawnTemplateBoard — Board Sources P1 (stamped sources)', () => {
     for (const id of [...poolBTaskIds, 'm1', 'm2']) expect(placed.has(id)).toBe(true);
   });
 
-  it('a sources-stamped board-kind entry contributes nothing yet (P2 wires resolution) and never blocks', async () => {
+  it('a LIVE board source with everything excluded contributes nothing and never blocks (empty-source rule)', async () => {
     const poolTaskIds = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'];
     for (const id of poolTaskIds) await seedTask(id);
     const pool: Pool = {
@@ -301,6 +302,40 @@ describe('spawnTemplateBoard — Board Sources P1 (stamped sources)', () => {
       isDeleted: false,
     };
     await db.pools.add(pool);
+
+    await seedTask('x1');
+    await db.boards.add({
+      id: 'live-src-board',
+      userId: 'user-1',
+      name: 'Live Source',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.DAILY,
+      startDate: NOW,
+      endDate: WINDOW_END,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      totalTasks: 9,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    await db.boardTasks.add({
+      id: 'bt-live-x1',
+      boardId: 'live-src-board',
+      taskId: 'x1',
+      row: 0,
+      col: 0,
+      isCenter: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
 
     const template: RecurringBoardTemplate = {
       id: 'tmpl-board-src',
@@ -322,12 +357,16 @@ describe('spawnTemplateBoard — Board Sources P1 (stamped sources)', () => {
           filter: 'all',
         },
         {
-          sourceId: 'some-board',
+          // A LIVE board whose entire supply is excluded — the design's
+          // "source with nothing left" case: contributes nothing, never
+          // blocks. (A MISSING/deleted/archived board now blocks with
+          // the P3 ask instead — covered below.)
+          sourceId: 'live-src-board',
           kind: 'board',
           min: 0,
           max: null,
-          excludedTaskIds: [],
-          filter: 'todo',
+          excludedTaskIds: ['x1'],
+          filter: 'all',
         },
       ],
       lastSpawnedWindowKey: null,
@@ -413,5 +452,124 @@ describe('spawnTemplateBoard — isRandomized: false determinism (review-caught 
     // Deterministic first-9 slice in pool order, identical layout both spawns.
     expect(first).toEqual(ids.slice(0, 9));
     expect(second).toEqual(first);
+  });
+});
+
+describe('spawnTemplateBoard — Board Sources P3 (deleted-source ask trigger)', () => {
+  const seedSourceBoard = async (
+    boardId: string,
+    taskIds: string[],
+    opts: { status?: BoardStatus; isDeleted?: boolean } = {},
+  ) => {
+    await db.boards.add({
+      id: boardId,
+      userId: 'user-1',
+      name: `Source ${boardId}`,
+      status: opts.status ?? BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.DAILY,
+      startDate: NOW,
+      endDate: WINDOW_END,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      totalTasks: 9,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: opts.isDeleted ?? false,
+    });
+    await db.boardTasks.bulkAdd(
+      taskIds.map((taskId, i) => ({
+        id: `bt-${boardId}-${taskId}`,
+        boardId,
+        taskId,
+        row: Math.floor(i / 3),
+        col: i % 3,
+        isCenter: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      })),
+    );
+  };
+
+  const askTemplate = (manualTaskIds: string[]): RecurringBoardTemplate => ({
+    id: 'tmpl-ask',
+    userId: 'user-1',
+    name: 'Ask Board',
+    timeframe: Timeframe.DAILY,
+    boardSize: 3,
+    centerSquareType: CenterSquareType.NONE,
+    isRandomized: true,
+    seedTaskIds: [],
+    manualTaskIds,
+    sources: [
+      {
+        sourceId: 'b-gone',
+        kind: 'board',
+        min: 0,
+        max: null,
+        excludedTaskIds: [],
+        filter: 'all',
+      },
+    ],
+    lastSpawnedWindowKey: null,
+    isActive: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+  });
+
+  it.each([
+    ['soft-deleted', { isDeleted: true }],
+    ['archived', { status: BoardStatus.ARCHIVED }],
+  ] as const)(
+    'a %s source board skips the window with source_board_missing',
+    async (_label, opts) => {
+      const manual = Array.from({ length: 9 }, (_, i) => `m${i}`);
+      for (const id of manual) await seedTask(id);
+      await seedSourceBoard('b-gone', ['m0'], opts);
+      const template = askTemplate(manual);
+      await db.recurringBoardTemplates.add(template);
+
+      const result = await spawnTemplateBoard({
+        template,
+        windowStart: WINDOW_START,
+        windowEnd: WINDOW_END,
+        suggestedName: 'Ask Board — July 19',
+      });
+      expect(result).toEqual({
+        ok: false,
+        templateId: 'tmpl-ask',
+        reason: 'source_board_missing',
+      });
+      // Nothing was written — the window waits for the user's answer
+      // (the only board is the seeded source board itself).
+      expect((await db.boards.toArray()).map((b) => b.id)).toEqual(['b-gone']);
+    },
+  );
+
+  it('a missing source-board row also triggers the ask', async () => {
+    const manual = Array.from({ length: 9 }, (_, i) => `m${i}`);
+    for (const id of manual) await seedTask(id);
+    const template = askTemplate(manual);
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Ask Board — July 19',
+    });
+    expect(result).toEqual({
+      ok: false,
+      templateId: 'tmpl-ask',
+      reason: 'source_board_missing',
+    });
   });
 });

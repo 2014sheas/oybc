@@ -345,11 +345,13 @@ enum SnapshotFixtures {
             controller.currentStep = 3
             controller.isRandomized = false
             controller.selectedTaskIds = Set(denseTaskSet().0.prefix(controller.size * controller.size).map { $0.id })
-            // P4 — the Preview step's recurring "deck" branch renders via
-            // `RisoPoolListView`, which reads `poolOrder` (not raw
-            // `selectedTaskIds`) for row order; without this the deck
-            // rendered as an empty list despite a non-empty selection.
+            // Board Sources P3 — the frame-5b summary card renders the
+            // hand-added rows from `poolOrder` and its SQUARES total from
+            // `sourceCapacity` (sources ∪ manual). Real mutators keep
+            // `manualTaskIds` in lockstep with a hand-built selection, so
+            // the fixture must too — without it the card showed 0/24.
             controller.poolOrder = Array(controller.selectedTaskIds).sorted()
+            controller.manualTaskIds = controller.selectedTaskIds
         }
         return controller
     }

@@ -21,7 +21,7 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = {
 };
 
 const ATTENTION_COPY: Record<
-  SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed',
+  SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed' | 'source_board_missing',
   string
 > = {
   pool_too_small: 'Mix is too small for the current configuration. Edit tasks to add more.',
@@ -30,6 +30,11 @@ const ATTENTION_COPY: Record<
   unsupported_center: "This board's center cell is no longer supported.",
   no_pool_tasks_resolved: "None of this board's tasks could be loaded. Edit tasks to refresh it.",
   spawn_failed: 'Spawn failed unexpectedly. Try editing tasks to refresh it.',
+  // Board Sources P3 — a pulled board-kind source's board is deleted or
+  // archived; the next window waits until the source is removed (Edit
+  // tasks) or the repeating board is paused.
+  source_board_missing:
+    'It pulls from a board that was deleted or archived. Edit tasks to remove that source.',
 };
 
 export interface RepeatingBoardRowProps {
@@ -41,7 +46,11 @@ export interface RepeatingBoardRowProps {
    *  state"). */
   taskCount: number;
   /** Set when this board's last spawn was skipped — surfaces a badge. */
-  attentionReason?: SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed';
+  attentionReason?:
+    | SpawnPoolFailureReason
+    | 'no_pool_tasks_resolved'
+    | 'spawn_failed'
+    | 'source_board_missing';
   /** First few resolved mix task titles (≤ POOL_PREVIEW_LIMIT, in mix
    *  order); the page resolves ids against the library. Empty/omitted
    *  renders no chip row. */

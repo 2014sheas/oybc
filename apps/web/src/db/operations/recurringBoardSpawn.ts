@@ -7,7 +7,9 @@ import {
   validateSpawnPool,
   computeBoardStatsUpdate,
   fillableCellCount,
+  isEventOwningTask,
   poolSourceSupplyById,
+  resolveTaskWindowState,
   resolveSourceAvailable,
   selectBoardTasks,
   sourcesForRecord,
@@ -46,7 +48,11 @@ export type SpawnResult =
   | {
       ok: false;
       templateId: string;
-      reason: SpawnPoolFailureReason | 'no_pool_tasks_resolved' | 'spawn_failed';
+      reason:
+        | SpawnPoolFailureReason
+        | 'no_pool_tasks_resolved'
+        | 'spawn_failed'
+        | 'source_board_missing';
     };
 
 /**
@@ -106,6 +112,33 @@ export async function spawnTemplateBoard(
       for (const t of allTasks) tasksById[t.id] = t;
 
       const sources = sourcesForRecord(template);
+
+      // Board Sources P3 — a pulled board that is DELETED or ARCHIVED
+      // blocks the window with an ask (docs/BOARD_SOURCES.md §Boards as
+      // sources; the prompt UI is iOS-first, web's lands in P4 — the
+      // SKIP semantics stay lockstep so the two platforms never disagree
+      // about whether a window spawned). Distinct from an EMPTY source,
+      // which contributes nothing silently and never blocks.
+      const boardSourceIds = sources
+        .filter((s) => s.kind === 'board')
+        .map((s) => s.sourceId);
+      const sourceBoardById = new Map<string, Board>();
+      if (boardSourceIds.length > 0) {
+        const sourceBoards = await db.boards.where('id').anyOf(boardSourceIds).toArray();
+        for (const b of sourceBoards) sourceBoardById.set(b.id, b);
+        const anyGone = boardSourceIds.some((id) => {
+          const b = sourceBoardById.get(id);
+          return b === undefined || b.isDeleted || b.status === BoardStatus.ARCHIVED;
+        });
+        if (anyGone) {
+          return {
+            ok: false,
+            templateId: template.id,
+            reason: 'source_board_missing',
+          };
+        }
+      }
+
       const poolSourceIds = sources
         .filter((s) => s.kind === 'pool')
         .map((s) => s.sourceId);
@@ -116,13 +149,64 @@ export async function spawnTemplateBoard(
       const poolsById: Record<string, Pool> = {};
       for (const p of pools) poolsById[p.id] = p;
 
-      const supplies = sources.map((source) => ({
-        source,
-        supplyTaskIds:
-          source.kind === 'pool'
-            ? poolSourceSupplyById(source.sourceId, poolsById, tasksById)
+      // Full event map — the board-source 'todo' filter resolves against
+      // the SOURCE board's window here, and the spawn-time derivation
+      // pass reuses the same map below (one read, two consumers).
+      const eventsByTaskId: Record<string, TaskEvent[]> = {};
+      for (const e of await db.taskEvents.toArray()) {
+        if (e.isDeleted) continue;
+        (eventsByTaskId[e.taskId] ??= []).push(e);
+      }
+
+      // Board Sources P3 — board-kind sources resolve LIVE per window:
+      // the source board's placed squares, with the 'todo' filter
+      // dropping squares complete in THAT board's window (event-owning →
+      // windowed via resolveTaskWindowState; compound/achievement/derived
+      // → lifetime cache — the documented per-cell carve-out).
+      const resolveBoardSupply = async (sourceBoard: Board, filter: 'all' | 'todo') => {
+        const rows = (
+          await db.boardTasks.where('boardId').equals(sourceBoard.id).toArray()
+        )
+          .filter((bt) => !bt.isDeleted)
+          .sort((a, b) => a.row - b.row || a.col - b.col);
+        const seen = new Set<string>();
+        const supply: string[] = [];
+        for (const bt of rows) {
+          const task = tasksById[bt.taskId];
+          if (task === undefined || task.isDeleted || seen.has(task.id)) continue;
+          seen.add(task.id);
+          if (filter === 'todo') {
+            const isDone = isEventOwningTask(task)
+              ? resolveTaskWindowState(
+                  task,
+                  eventsByTaskId[task.id] ?? [],
+                  sourceBoard.startDate,
+                ).isCompleted
+              : task.isCompleted;
+            if (isDone) continue;
+          }
+          supply.push(task.id);
+        }
+        return supply;
+      };
+
+      const supplies = [];
+      for (const source of sources) {
+        if (source.kind === 'pool') {
+          supplies.push({
+            source,
+            supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, tasksById),
+          });
+          continue;
+        }
+        const sourceBoard = sourceBoardById.get(source.sourceId);
+        supplies.push({
+          source,
+          supplyTaskIds: sourceBoard
+            ? await resolveBoardSupply(sourceBoard, source.filter)
             : [],
-      }));
+        });
+      }
       // The manual layer isn't deleted-filtered (caller-curated, matching
       // resolveMix's old contract), but hard-gone ids ARE dropped — the
       // old path dropped them via its tasksById lookup the same way. A
@@ -274,11 +358,8 @@ export async function spawnTemplateBoard(
       // mix resolution — no writes to `tasks` happen in between, so it's
       // still an accurate snapshot for the derivation pass.
       const taskById: Record<string, Task> = tasksById;
-      const eventsByTaskId: Record<string, TaskEvent[]> = {};
-      for (const e of await db.taskEvents.toArray()) {
-        if (e.isDeleted) continue;
-        (eventsByTaskId[e.taskId] ??= []).push(e);
-      }
+      // (eventsByTaskId hoisted above the supply resolution — board-kind
+      // sources need it for the 'todo' filter; reused here for stats.)
       const allBoards = await db.boards.toArray();
       const stats = computeBoardStatsUpdate(
         board,

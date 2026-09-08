@@ -61,6 +61,11 @@ enum SpawnAttentionReason: String, Equatable {
     case unsupportedCenter = "unsupported_center"
     case noPoolTasksResolved = "no_pool_tasks_resolved"
     case spawnFailed = "spawn_failed"
+    /// Board Sources P3 — a pulled board-kind source's board is deleted
+    /// or archived. Unlike an EMPTY source (contributes nothing, never
+    /// blocks), this blocks the window and the Boards tab ASKS the user
+    /// (docs/BOARD_SOURCES.md §Boards as sources).
+    case sourceBoardMissing = "source_board_missing"
 }
 
 extension SpawnAttentionReason {
