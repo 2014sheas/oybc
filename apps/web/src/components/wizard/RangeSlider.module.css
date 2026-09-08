@@ -70,3 +70,7 @@
   box-sizing: border-box;
   pointer-events: none;
 }
+.knob:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}

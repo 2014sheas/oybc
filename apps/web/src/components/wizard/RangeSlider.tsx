@@ -23,6 +23,10 @@ export interface RangeSliderProps {
  * the NEARER handle (ties go to min); a bare tap moves that handle to the
  * tapped stop. Min can't pass max; max can't pass min.
  *
+ * Keyboard: each knob is its own focusable `role="slider"` thumb (the
+ * WAI-ARIA two-thumb pattern) — ←/↓ −1, →/↑ +1, Home/End jump to the
+ * bound; End on the max thumb re-latches "all".
+ *
  * Value semantics: `maxValue === null` is the "all" latch. Dragging the
  * max handle to the top stop re-latches to null (a numeric N is visually
  * indistinguishable, and the latch is what makes excludes/pool edits
@@ -128,20 +132,48 @@ export function RangeSlider({
 
   const shownMin = Math.min(minValue, available);
 
+  /** Keyboard ops per thumb (min can't pass max; max can't pass min; the
+   *  max thumb's End re-latches the "all" state). */
+  const handleThumbKeyDown = useCallback(
+    (handle: 'min' | 'max') =>
+      (e: React.KeyboardEvent<HTMLDivElement>): void => {
+        const current = handle === 'min' ? Math.min(minValue, available) : effectiveMax;
+        let next: number;
+        switch (e.key) {
+          case 'ArrowLeft':
+          case 'ArrowDown':
+            next = current - 1;
+            break;
+          case 'ArrowRight':
+          case 'ArrowUp':
+            next = current + 1;
+            break;
+          case 'Home':
+            next = handle === 'min' ? 0 : minValue;
+            break;
+          case 'End':
+            next = handle === 'min' ? effectiveMax : available;
+            break;
+          default:
+            return;
+        }
+        e.preventDefault();
+        if (handle === 'min') {
+          onChange(Math.min(Math.max(next, 0), effectiveMax), maxValue);
+        } else {
+          const newMax = Math.max(Math.min(next, available), minValue);
+          onChange(minValue, newMax >= available ? null : newMax);
+        }
+      },
+    [minValue, maxValue, effectiveMax, available, onChange],
+  );
+
   return (
     <div
       ref={trackRef}
       className={`${styles.slider} ${dragging ? styles.dragging : ''}`}
-      role="slider"
+      role="group"
       aria-label="Range"
-      aria-valuemin={0}
-      aria-valuemax={available}
-      aria-valuenow={effectiveMax}
-      aria-valuetext={
-        maxValue === null
-          ? `${shownMin} to all ${available}`
-          : `${shownMin} to ${effectiveMax} of ${available}`
-      }
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={endDrag}
@@ -173,13 +205,32 @@ export function RangeSlider({
         </span>
       ))}
       {/* Min drawn under max so a fully-collapsed range still lets the max
-          handle be grabbed. */}
+          handle be grabbed. Each knob is a focusable ARIA slider thumb
+          (pointer input stays on the container; `pointer-events: none`
+          doesn't block keyboard focus). */}
       <div
         className={styles.knob}
+        role="slider"
+        tabIndex={0}
+        aria-label="Minimum on the board"
+        aria-valuemin={0}
+        aria-valuemax={effectiveMax}
+        aria-valuenow={shownMin}
+        onKeyDown={handleThumbKeyDown('min')}
         style={{ left: `calc(${KNOB / 2}px + ${pctFor(shownMin)} * (100% - ${KNOB}px) / 100)` }}
       />
       <div
         className={styles.knob}
+        role="slider"
+        tabIndex={0}
+        aria-label="Maximum on the board"
+        aria-valuemin={minValue}
+        aria-valuemax={available}
+        aria-valuenow={effectiveMax}
+        aria-valuetext={
+          maxValue === null ? `all ${available}` : `${effectiveMax} of ${available}`
+        }
+        onKeyDown={handleThumbKeyDown('max')}
         style={{ left: `calc(${KNOB / 2}px + ${pctFor(effectiveMax)} * (100% - ${KNOB}px) / 100)` }}
       />
     </div>

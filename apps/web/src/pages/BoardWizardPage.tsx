@@ -295,6 +295,13 @@ export function BoardWizardPage({
         onStepClick={wizard.goToStep}
       />
 
+      {/* Board Sources P4 (locked decision, frame 5a) — editing an
+          existing repeating board IS the "Sources" surface; the note
+          renders under the stepper, mirroring iOS `BoardWizardView`. */}
+      {wizard.editingTemplateId !== null && (
+        <p className={styles.editModeNote}>Changes apply from the next board.</p>
+      )}
+
       <div className={styles.stepContainer}>
         {wizard.currentStep === 1 && (
           <BoardWizardSetupStep
