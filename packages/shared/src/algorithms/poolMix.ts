@@ -348,7 +348,7 @@ export function mergeLegacyPoolTaskIds(
 /**
  * Result of `summarizeSpawnProvenance` — the raw counts behind the
  * spawn-success provenance note (docs/POOLS_RECURRING.md §Surfaces item 7,
- * e.g. "Dealt 8 of 10 — 7 from the pool, 1 added today").
+ * e.g. "Picked 8 of 10 — 7 from the pool, 1 added today").
  */
 export interface SpawnProvenanceSummary {
   /** Cells actually filled on the spawned board. */
@@ -395,7 +395,7 @@ export function summarizeSpawnProvenance(
 
 /**
  * Formats the spawn-success provenance note copy, e.g.
- * `"Dealt 8 of 10 — 7 from the pool, 1 added today"`.
+ * `"Picked 8 of 10 — 7 from the pool, 1 added today"`.
  *
  * Deliberate deviation from docs/POOLS_RECURRING.md's illustrative example
  * ("9 from defaults") — that wording is specific to the P5 CoreBoardDefault
@@ -412,7 +412,7 @@ export function formatSpawnProvenanceNote(summary: SpawnProvenanceSummary): stri
   if (summary.poolSourcedCount > 0) parts.push(`${summary.poolSourcedCount} from the pool`);
   if (summary.manualSourcedCount > 0) parts.push(`${summary.manualSourcedCount} added today`);
   const breakdown = parts.length > 0 ? ` — ${parts.join(', ')}` : '';
-  return `Dealt ${summary.dealt} of ${summary.mixSize}${breakdown}`;
+  return `Picked ${summary.dealt} of ${summary.mixSize}${breakdown}`;
 }
 
 /**

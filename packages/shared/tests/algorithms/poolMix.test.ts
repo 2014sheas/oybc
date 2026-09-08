@@ -560,7 +560,7 @@ describe('mergeLegacyPoolTaskIds', () => {
 // ─── summarizeSpawnProvenance + formatSpawnProvenanceNote (P6) ────────────────
 //
 // docs/POOLS_RECURRING.md §Surfaces item 7 — the board-screen spawn-success
-// provenance note, e.g. "Dealt 8 of 10 — 7 from the pool, 1 added today".
+// provenance note, e.g. "Picked 8 of 10 — 7 from the pool, 1 added today".
 // Locked decision C: generic "from the pool" wording (not the doc's
 // "defaults"-specific example text), since this note also covers a
 // "repeat this board" spawn with zero pool involvement.
@@ -581,7 +581,7 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
       poolSourcedCount: 8,
       manualSourcedCount: 0,
     });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 8 of 10 — 8 from the pool');
+    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 10 — 8 from the pool');
   });
 
   it('pure-manual spawn (e.g. "repeat this board", zero pools): poolSourcedCount is 0, note reads "N added today" only', () => {
@@ -596,7 +596,7 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
       poolSourcedCount: 0,
       manualSourcedCount: 5,
     });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 5 of 5 — 5 added today');
+    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 5 of 5 — 5 added today');
   });
 
   it('mixed spawn: pool + manual both present, counts match the doc\'s numeric structure', () => {
@@ -614,12 +614,12 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
       poolSourcedCount: 7,
       manualSourcedCount: 1,
     });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 8 of 8 — 7 from the pool, 1 added today');
+    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 8 — 7 from the pool, 1 added today');
   });
 
-  it('zero-dealt edge case: note reads "Dealt 0 of N" with no breakdown clause', () => {
+  it('zero-dealt edge case: note reads "Picked 0 of N" with no breakdown clause', () => {
     const summary = summarizeSpawnProvenance({ poolIds: [], manualTaskIds: [], removedTaskIds: [] }, {}, {}, []);
     expect(summary).toEqual({ dealt: 0, mixSize: 0, poolSourcedCount: 0, manualSourcedCount: 0 });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Dealt 0 of 0');
+    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 0 of 0');
   });
 });

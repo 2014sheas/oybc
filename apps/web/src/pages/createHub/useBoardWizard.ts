@@ -580,10 +580,8 @@ export function useBoardWizard({
         }
         return next;
       });
-      // Web inline-editing port PR-1 — keep pool order in lockstep. Cheaper
-      // than re-deriving from `selectedTaskIds` via `syncPoolOrder` (which
-      // would need the freshly-computed Set in scope); a single toggle only
-      // ever adds-or-removes exactly `taskId`.
+      // Web inline-editing port PR-1 — keep pool order in lockstep; a
+      // single toggle only ever adds-or-removes exactly `taskId`.
       setPoolOrder((prev) =>
         wasSelected ? prev.filter((id) => id !== taskId) : prev.includes(taskId) ? prev : [...prev, taskId],
       );

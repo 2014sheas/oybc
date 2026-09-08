@@ -199,7 +199,7 @@ test.describe('P6 — "Repeat this board…" CTA', () => {
     await expect(page.getByRole('button', { name: /Repeat this board/ })).not.toBeVisible();
 
     // Spawn-provenance note — 100% manual (no pools involved).
-    await expect(page.getByText(/Dealt 2 of 2 — 2 added today/)).toBeVisible();
+    await expect(page.getByText(/Picked 2 of 2 — 2 added today/)).toBeVisible();
 
     // Back-stamp landed in Dexie.
     const board = await readBoard(page, ONE_OFF_BOARD_ID);

@@ -4,13 +4,11 @@ import styles from './BoardWizardTasksStep.module.css';
 
 /**
  * TaskRow — shared task-row renderer, extracted from `BoardWizardTasksStep`
- * (P4, Task Pools + Recurring Boards Rework) so the Preview step's
- * repeating-board deck list (docs/POOLS_RECURRING.md §Surfaces item 5's
- * list-with-provenance UI) reuses the EXACT same row instead of a second
- * copy (CLAUDE.md "reuse before creating"). Deliberately keeps importing
- * `BoardWizardTasksStep.module.css` — the class names are just a CSS
- * Modules scope, not tied to which `.tsx` file imports them, so both
- * call sites render pixel-identical rows without duplicating CSS.
+ * for the library sheet's task/leaf rows. (The Preview-deck `readOnly`
+ * variant it once also served was retired with the deck in Board Sources
+ * P4 — the 5b summary card renders its own rows.) Deliberately keeps
+ * importing `BoardWizardTasksStep.module.css` — the class names are just
+ * a CSS Modules scope, not tied to which `.tsx` file imports them.
  */
 
 export interface TaskRowProps {
@@ -19,20 +17,12 @@ export interface TaskRowProps {
   onToggle?: () => void;
   /** Right-click handler — surfaces the same actions as a tap (toggle)
    *  plus center-task pinning when applicable. Mirrors iOS's
-   *  `.contextMenu` long-press affordance. Ignored when `readOnly`. */
+   *  `.contextMenu` long-press affordance. */
   onContextMenu?: (e: React.MouseEvent) => void;
   taskBoardCounts?: Record<string, number>;
   showCenterStar?: boolean;
   isCenter?: boolean;
   onCenterClick?: () => void;
-  /**
-   * P4 — when true, renders a non-interactive row (a `div`, not a
-   * `button`; no usage-hint column, no center star) for read-only
-   * contexts like the Preview step's repeating-board deck list, which
-   * shows the resolved selection but isn't a place to toggle it (that
-   * happens back on the Tasks step).
-   */
-  readOnly?: boolean;
 }
 
 export function renderTaskRow({
@@ -44,24 +34,8 @@ export function renderTaskRow({
   showCenterStar = false,
   isCenter = false,
   onCenterClick,
-  readOnly = false,
 }: TaskRowProps): React.ReactElement {
   const subtitle = buildTaskSubtitle(task);
-
-  if (readOnly) {
-    return (
-      <div className={styles.rowWrap}>
-        <div className={styles.row}>
-          <RisoTypeBadge type={task.type} />
-          <div className={styles.rowCenter}>
-            <span className={styles.rowTitle}>{task.title}</span>
-            {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const boards = taskBoardCounts[task.id] ?? 0;
   const usageHint = boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`;
   return (

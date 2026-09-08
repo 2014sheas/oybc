@@ -362,7 +362,7 @@ struct RisoTaskDetailContentView: View {
                 return "Watch \(name) · \(trig)"
             }
             if let tplId = task.referencedTemplateId {
-                let name = templates.first { $0.id == tplId }?.name ?? "a template"
+                let name = templates.first { $0.id == tplId }?.name ?? "a repeating board"
                 let req = task.requiredCount.map { " · \($0)×" } ?? ""
                 return "Watch \(name)\(req) · \(trig)"
             }

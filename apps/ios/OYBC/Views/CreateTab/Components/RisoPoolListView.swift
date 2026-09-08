@@ -270,7 +270,7 @@ struct RisoPoolListView: View {
                 // and the watched board/template isn't loaded here — describe the
                 // target kind + trigger rather than leaking a raw id.
                 let trigger = task.achievementTrigger == .bingo ? "First Bingo" : "GREENLOG"
-                let target = task.referencedBoardId != nil ? "a board" : "a template"
+                let target = task.referencedBoardId != nil ? "a board" : "a repeating board"
                 return "Watch \(target) · \(trigger)"
             }
         }()
