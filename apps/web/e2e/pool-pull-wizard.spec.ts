@@ -75,6 +75,13 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
     const sourceRow = page.getByRole('button', { name: /Morning Kickstart, 8 tasks/ });
     await expect(sourceRow).toBeVisible();
     await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
+
+    // P5 lock — the retired affordances are GONE: no pull-chip card, no
+    // "Save these N as a pool…", no provenance subtitles.
+    await expect(page.getByText('Pull in a pool')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Save these .* as a new pool/ })).toHaveCount(0);
+    await expect(page.getByText(/from Morning Kickstart/)).toHaveCount(0);
+    await expect(page.getByText('added by hand')).toHaveCount(0);
     await page.waitForTimeout(200);
     await page.screenshot({ path: '.playwright-mcp/sources-02-source-row.png' });
 

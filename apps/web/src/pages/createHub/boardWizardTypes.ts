@@ -62,7 +62,7 @@ export interface BoardWizardState {
 
   /**
    * Web inline-editing port PR-1 — insertion order of the pool, kept in
-   * sync with `selectedTaskIds` by `syncPoolOrder` after every action that
+   * sync with `selectedTaskIds` by every action that
    * can add/remove members. Mirrors iOS `BoardWizardViewModel.poolOrder`:
    * the Tasks step's pool list renders in THIS order (never alphabetical
    * or re-sorted) so a task keeps its position when a later PR's inline

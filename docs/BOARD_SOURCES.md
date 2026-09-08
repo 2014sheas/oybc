@@ -408,6 +408,41 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
   source-row + exclude/UNDO flow; `pool-row-editor.spec.ts` hand-adds via
   the library sheet (source members are not inline-editable).
 
+## P5 close-out (cleanup, as shipped)
+
+- **Web dead code retired:** the P3 pull/untoggle/manual-bookkeeping/
+  provenance/chip-classification/`syncPoolOrder` layer is gone —
+  `poolPullLogic.ts` keeps only `applyCoreBoardDefaultPrefill` (the
+  Board-settings defaults summary's resolver; its pull fold is now a
+  private helper) and `computeCoreFloorGate` (the Preview Activate gate).
+  `rosterEditLogic.ts` (caller-less since the roster edit sheet retired)
+  deleted with its test. `TaskRow`'s `readOnly` deck variant removed.
+  ~30 orphaned CSS rules pruned from the Tasks-step + Preview modules.
+- **iOS dead code retired:** `RisoCheckboxRow` (caller-less since the
+  "Start every…" checkbox removal) deleted from `RisoControls.swift`
+  with its five snapshot baselines. `RisoCoreFloorGateView` and
+  `RisoCoreDefaultChipStripView` deliberately KEPT (live callers:
+  Preview core gate; `CoreDefaultsEditSheetView`).
+- **Copy-rule sweep:** the spawn-provenance note's "Dealt N of M" →
+  "Picked N of M" (shared `formatSpawnProvenanceNote` + iOS mirror +
+  tests + e2e); the Achievement subtitle's "Watch a template" → "Watch a
+  repeating board" (both platforms) and the iOS detail fallback likewise.
+  (`isFreshlyDealtBoard` and other identifiers keep their names — the
+  copy rules govern user-facing strings.)
+- **e2e locks:** `pool-pull-wizard.spec.ts` asserts the removed
+  affordances are GONE (pull-chip card, save-as-pool, provenance
+  subtitles) alongside the new source-row flow; draft/template source
+  hydration is unit-locked (`wizardPersist.test.ts` round-trips,
+  `recurringDraftMix` codec tests) rather than e2e'd.
+- **Allowlist shrinks locked in:** `useBoardWizard.ts` 1191→1120,
+  `BoardWizardTasksStep.tsx` 1041→888 (with P1/P2's schemas.ts +
+  BoardWizardViewModel.swift removals, the rework retired four god-file
+  entries' worth of debt in total).
+- Deferred (recorded, not done): `@oybc/shared`'s
+  `clearRemovalsForUntoggle`/`resolvePoolUntoggleRemovals` still exist
+  for the legacy `resolveMix` spawn path shared with iOS — they retire
+  whenever `resolveMix` itself does (post-migration horizon).
+
 ## Delivery — phases (docs-PR-first; iOS-first UI, web in-effort — locked)
 
 | Phase | Scope | Platforms |
@@ -415,9 +450,9 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 | **P0** | This document; POOLS_RECURRING.md supersession banner; CLAUDE.md pointer; ROADMAP F11. **SHIPPED** (#457). | docs |
 | **P1** | `BoardSource` type + Zod + Swift mirror; `sources` on the template; draft-blob v2 (incl. one-off drafts); GRDB v30 column + `sourcesForRecord` read-fallback (no data backfill, no Dexie bump); the selection algorithm + mirrored vectors; spawn + template persist read/write sources with the legacy-trio dual-write (UI unchanged, behavior-identical for existing records). **SHIPPED** (#458). | lockstep |
 | **P2** | Tasks step rework (2a) + source sheet (2c/5c) + the §Removals + core-defaults pre-pull + edit-mode note line. **SHIPPED** (#459, device-checked). | iOS |
-| **P3** | Preview rework (5b summary; 2b chrome kept as shipped) + deleted-source spawn ask + spawn-side board-supply resolution (BOTH platforms — spawn semantics lockstep). **IN PR** (#460). | iOS (+web spawn) |
-| **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). **BUILT** (stacked on #460; see §P4 implementation notes). | web |
-| **P5** | Cleanup: retire dead components, update `pool-pull-wizard.spec.ts` + snapshot baselines (`RisoCoreDefaults*`, `RisoPoolPullCard*`, `BoardWizardTasksStep*`), shrink the file-size allowlist entries the rework rewrites, docs close-out. | both |
+| **P3** | Preview rework (5b summary; 2b chrome kept as shipped) + deleted-source spawn ask + spawn-side board-supply resolution (BOTH platforms — spawn semantics lockstep). **SHIPPED** (#460). | iOS (+web spawn) |
+| **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). **SHIPPED** (#463). | web |
+| **P5** | Cleanup: retire dead components, e2e/snapshot locks, allowlist shrinks, copy-rule sweep, docs close-out. **SHIPPED** (see §P5 close-out). | both |
 
 Each UI phase: implement → independent review → device checklist relayed to
 the user → CI-gated merge (the P2–P7 pools cadence). Rule-6 note: P2/P3

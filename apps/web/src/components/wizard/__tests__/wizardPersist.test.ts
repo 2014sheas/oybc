@@ -17,9 +17,7 @@ import { buildWizardPlacement, persistRecurringTemplate, persistWizardBoard } fr
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { PendingTaskPayload } from '../../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
-import {
-  applyManualBookkeepingOnSelect,
-} from '../../../pages/createHub/poolPullLogic';
+
 
 /**
  * P4 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md §P4)
@@ -258,16 +256,14 @@ describe('persistRecurringTemplate — P4 native shape (no legacy write-through)
     let selectedTaskIds = new Set(resolveMix(template, poolsById, tasksById).taskIds);
     expect(selectedTaskIds.size).toBe(9); // 4 + 4 + 1 manual
 
-    // "Make a small edit": hand-add one more manual task via the REAL
-    // select-side bookkeeping function `toggleTaskSelection` delegates to.
+    // "Make a small edit": hand-add one more manual task (Board Sources
+    // P4+: a select is a plain manual add — the retired bookkeeping
+    // helper's behavior, inlined).
     const [newManualId] = await seedTasks(1, 'newmanual');
     selectedTaskIds = new Set(selectedTaskIds);
     selectedTaskIds.add(newManualId);
-    let manualTaskIds = new Set([originalManualId]);
-    let removedTaskIds = new Set<string>();
-    const bookkeeping = applyManualBookkeepingOnSelect(newManualId, manualTaskIds, removedTaskIds);
-    manualTaskIds = bookkeeping.manualTaskIds;
-    removedTaskIds = bookkeeping.removedTaskIds;
+    const manualTaskIds = new Set([originalManualId, newManualId]);
+    const removedTaskIds = new Set<string>();
 
     const controller = makeController({
       name: 'Two-Pool Board',

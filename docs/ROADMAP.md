@@ -251,10 +251,10 @@ From the end-user review. Theme: the deep machinery is built — most opportunit
 ### F10 — Live shared boards / challenges — deferred, decision-gated
 - **Why deferred:** maximum appeal, maximum cost — breaks per-user data isolation, LWW sync, and the "only you write your data" assumption. Phase-sized, not feature-sized. Sequencing: ship F9 and let demand prove whether real-time social justifies the bill. Revisit only by explicit directive.
 
-### F11 — Board Sources rework (wizard pools & task selection) — `L`, **in flight (P0 docs)**
+### F11 — Board Sources rework (wizard pools & task selection) — `L`, **SHIPPED (P0–P5, 2026-09)**
 - **Why:** design handoff `Reworking pools and task selection.zip` (2026-09-04). The wizard's task pool becomes *sources* — pulled pools and pulled **boards**, each one row with a two-handle range, per-board exclusions, and a done/not-done filter — replacing the pull-card + chip-strip + save-as-pool surfaces; recurring boards store source references resolved live at each spawn.
-- **Canonical doc:** `docs/BOARD_SOURCES.md` (data model, selection algorithm, migration, phases P0–P5, locked decisions). iOS-first UI with web parity in-effort; P1 schema/algorithm lockstep.
-- **Acceptance:** both platforms on the sources model; migrated records spawn behavior-identically; the removed wizard affordances are gone; `pool-pull-wizard` e2e + snapshot baselines updated; the three wizard god-file allowlist entries shrink.
+- **Canonical doc:** `docs/BOARD_SOURCES.md` (data model, selection algorithm, migration, phase-by-phase implementation notes, locked decisions).
+- **Shipped:** P0 docs #457 · P1 schema/algorithm lockstep #458 · P2 iOS Tasks step #459 · P3 Preview 5b + deleted-source ask + spawn board supply #460 · P4 web parity #463 · P5 cleanup (dead-code retirement, copy-rule sweep, e2e/snapshot locks, allowlist shrinks). Acceptance met: both platforms on the sources model, migrated records spawn behavior-identically, removed affordances e2e-locked gone, and FOUR god-file allowlist entries shrank (schemas.ts + BoardWizardViewModel.swift off the list; useBoardWizard.ts 1191→1120; BoardWizardTasksStep.tsx 1041→888).
 
 ### Explicit non-goal: AI board generation
 "Describe a goal, get a board" demos well but fights the app's soul (offline-first, no server dependency, user-owned data), and F2's starter templates capture most of the same "help me begin" value with zero infrastructure. If ever, a launch-later cloud nicety — recorded here so it isn't re-litigated from scratch.

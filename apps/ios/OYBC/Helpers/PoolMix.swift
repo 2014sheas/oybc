@@ -375,7 +375,7 @@ extension PoolMix {
     }
 
     /// Renders a `SpawnProvenanceSummary` into the Board-screen note copy,
-    /// e.g. `"Dealt 8 of 10 — 7 from the pool, 1 added today"`.
+    /// e.g. `"Picked 8 of 10 — 7 from the pool, 1 added today"`.
     ///
     /// Deliberate wording deviation from docs/POOLS_RECURRING.md §Surfaces
     /// item 7's illustrative example ("9 from **defaults**") — that phrasing
@@ -389,7 +389,7 @@ extension PoolMix {
         if summary.poolSourcedCount > 0 { parts.append("\(summary.poolSourcedCount) from the pool") }
         if summary.manualSourcedCount > 0 { parts.append("\(summary.manualSourcedCount) added today") }
         let breakdown = parts.isEmpty ? "" : " — " + parts.joined(separator: ", ")
-        return "Dealt \(summary.dealt) of \(summary.mixSize)\(breakdown)"
+        return "Picked \(summary.dealt) of \(summary.mixSize)\(breakdown)"
     }
 }
 
