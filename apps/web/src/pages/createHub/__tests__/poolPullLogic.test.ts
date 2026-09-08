@@ -143,10 +143,3 @@ describe('computeCoreFloorGate', () => {
   });
 });
 
-
-/**
- * Web inline-editing port PR-1 — `syncPoolOrder` backs the wizard's
- * `poolOrder` state (`useBoardWizard.ts`), kept in sync with
- * `selectedTaskIds` after every add/remove action. The pool list renders
- * in this order so a later inline rename (PR-2) never reshuffles rows.
- */
