@@ -3,6 +3,7 @@ import {
   TaskType,
   OperatorType,
   Timeframe,
+  buildCounterFamilyMap,
   type BoardSource,
   type Pool,
 } from '@oybc/shared';
@@ -250,8 +251,14 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
   }, []);
 
   const capacity = useMemo(
-    () => sourceCapacity(sources, supplyInfoBySourceId, manualTaskIds),
-    [sources, supplyInfoBySourceId, manualTaskIds],
+    () =>
+      sourceCapacity(
+        sources,
+        supplyInfoBySourceId,
+        manualTaskIds,
+        buildCounterFamilyMap(Object.values(library.taskMap)),
+      ),
+    [sources, supplyInfoBySourceId, manualTaskIds, library.taskMap],
   );
 
   const handleSeedSampleTasks = useCallback(async (): Promise<void> => {

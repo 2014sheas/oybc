@@ -234,8 +234,12 @@ struct BoardWizardTasksStepView: View {
         }
         var out: [String: String] = [:]
         for members in membersByFamily.values where members.count >= 2 {
-            for id in members {
-                guard let other = members.first(where: { $0 != id }) else { continue }
+            // Sorted so the "other" title is stable across launches (Set
+            // iteration order isn't) — cosmetic determinism for 3+-member
+            // families, matching web's insertion-order stability.
+            let ordered = members.sorted()
+            for id in ordered {
+                guard let other = ordered.first(where: { $0 != id }) else { continue }
                 out[id] = byId[other]?.title ?? "another task"
             }
         }
