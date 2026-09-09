@@ -37,7 +37,7 @@ final class RecurringBoardTemplatesViewModel {
     /// Pool's `taskIds`, not this field), which could show a WRONG
     /// pool-health badge or preview chip row. Batched (one `fetchPools`
     /// call for every template's pools, not N calls) — mirrors the
-    /// boards-list perf lesson. iOS twin of web's `useTemplateMixes`.
+    /// boards-list perf lesson. iOS twin of web's `useTemplateRosterHealth`.
     var mixByTemplateId: [String: [String]] = [:]
 
     /// Per-template "needs attention" reason, keyed by template id.
@@ -49,7 +49,7 @@ final class RecurringBoardTemplatesViewModel {
     /// `hasDeletedTasks` (soft-delete is the only realistic cause, since
     /// the form can't add unknown ids), otherwise the validation failure
     /// reason is surfaced. Absent key ⇒ healthy, no badge.
-    var attentionByTemplateId: [String: SpawnPoolFailureReason] = [:]
+    var attentionByTemplateId: [String: SpawnAttentionReason] = [:]
 
     /// First-3 resolved task titles (in mix order) per template, for the
     /// card's pool-preview chip row (issue #321). Unresolved ids (e.g. a
@@ -86,21 +86,71 @@ final class RecurringBoardTemplatesViewModel {
 
         do {
             let result = try database.fetchRecurringBoardTemplates(userId: userId)
-            // Resolve pools against the live library (non-deleted tasks
-            // only) to compute the per-template mix, then attention +
-            // preview state from that mix — see `mixByTemplateId`'s doc.
+            // Loose-ends sweep (2026-09-09) — SOURCES-NATIVE roster health:
+            // resolve every template's supplies (pool + board kinds, the
+            // 'todo' filter applied, dead board sources flagged) and
+            // compute counts/attention from the honest ACHIEVABLE pool
+            // size — the spawn pass's static twin, `sourceBoardMissing`
+            // included. Replaces the legacy-trio resolveMix pair, under
+            // which a board-source-only repeating board showed a spurious
+            // warning and "0 tasks". Web twin: `useTemplateRosterHealth`.
             let liveTasks = try database.fetchTasks(userId: userId)
             let tasksById = Dictionary(liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
-            let allPoolIds = Set(result.flatMap { $0.poolIds ?? [] })
+            let perTemplateSources = result.map { t in
+                (template: t, sources: BoardSources.sourcesForRecord(
+                    sources: t.sources, poolIds: t.poolIds, removedTaskIds: t.removedTaskIds
+                ))
+            }
+            let allPoolIds = Set(perTemplateSources.flatMap { entry in
+                entry.sources.filter { $0.kind == .pool }.map { $0.sourceId }
+            })
             let pools = try database.fetchPools(ids: Array(allPoolIds))
             let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
 
-            let mixByTemplateId = Self.computeTemplateMixes(
-                templates: result, poolsById: poolsById, tasksById: tasksById
-            )
-            let attention = Self.computeAttention(
-                templates: result, liveTasks: liveTasks, mixByTemplateId: mixByTemplateId
+            var resolutionByTemplateId: [String: TemplateSupplyResolution] = [:]
+            for entry in perTemplateSources {
+                var supplies: [BoardSources.Supply] = []
+                var deadBoardSourceIds: [String] = []
+                for source in entry.sources {
+                    if source.kind == .pool {
+                        supplies.append(BoardSources.Supply(
+                            source: source,
+                            supplyTaskIds: BoardSources.poolSourceSupplyById(
+                                source.sourceId, poolsById: poolsById, tasksById: tasksById
+                            )
+                        ))
+                        continue
+                    }
+                    // Series binding — `fetchBoardSourceSupply` hops a
+                    // stored series instance to the live window; nil means
+                    // nothing live resolves (the spawn's ask, statically).
+                    let info = (try? database.fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil
+                    guard let info else {
+                        deadBoardSourceIds.append(source.sourceId)
+                        supplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
+                        continue
+                    }
+                    var raw = info.supplyTaskIds
+                    if source.filter == .todo {
+                        raw.removeAll { info.doneTaskIds.contains($0) }
+                    }
+                    supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
+                }
+                let t = entry.template
+                let isUnmigrated = t.sources == nil && t.poolIds == nil
+                    && t.manualTaskIds == nil && t.removedTaskIds == nil
+                resolutionByTemplateId[t.id] = TemplateSupplyResolution(
+                    supplies: supplies,
+                    deadBoardSourceIds: deadBoardSourceIds,
+                    manualTaskIds: isUnmigrated ? t.seedTaskIds : (t.manualTaskIds ?? [])
+                )
+            }
+
+            let (mixByTemplateId, attention) = Self.computeRosterHealth(
+                templates: result,
+                resolutionByTemplateId: resolutionByTemplateId,
+                tasksById: tasksById
             )
             let (preview, overflow) = Self.computePoolPreview(
                 templates: result, liveTasks: liveTasks, mixByTemplateId: mixByTemplateId
@@ -127,71 +177,70 @@ final class RecurringBoardTemplatesViewModel {
         }
     }
 
-    /// Batched, per-reload pool-mix resolution across every template.
-    /// `static` (like `computeAttention`/`computePoolPreview`) so unit
-    /// tests can exercise it directly without a database. iOS twin of
-    /// web's `computeTemplateMixes`.
-    ///
-    /// `poolIds == nil` ONLY falls back to `seedTaskIds` verbatim — the
-    /// same transient un-migrated safety net `resolveTemplateHydrationTaskIds`
-    /// uses (see that function's doc for the full rationale). Review
-    /// finding M2: an empty-but-present `poolIds: []` must NOT also fall
-    /// back — it also covers the defensive "flatten" write-through shape
-    /// (`manualTaskIds` populated, `poolIds: []`), which `PoolMix.resolveMix`
-    /// resolves correctly on its own.
-    static func computeTemplateMixes(
-        templates: [RecurringBoardTemplate],
-        poolsById: [String: Pool],
-        tasksById: [String: Task]
-    ) -> [String: [String]] {
-        var out: [String: [String]] = [:]
-        for template in templates {
-            guard template.poolIds != nil else {
-                out[template.id] = template.seedTaskIds
-                continue
-            }
-            out[template.id] = PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById).taskIds
-        }
-        return out
+    /// Per-template sources resolution input for `computeRosterHealth`
+    /// (loose-ends sweep 2026-09-09). Web twin: `TemplateSupplyResolution`
+    /// (`db/operations/boardSources.ts`).
+    struct TemplateSupplyResolution {
+        let supplies: [BoardSources.Supply]
+        let deadBoardSourceIds: [String]
+        let manualTaskIds: [String]
     }
 
-    /// Pure attention-map computation. Extracted (and `static`) so unit
-    /// tests can exercise it directly without a database. Strict mirror
-    /// of web's `computeTemplateAttention` in `templateHealth.ts`.
-    ///
-    /// - Parameters:
-    ///   - templates: The user's non-deleted templates.
-    ///   - liveTasks: The user's non-deleted task library.
-    ///   - mixByTemplateId: Each template's CURRENT resolved task-id mix
-    ///     (from `computeTemplateMixes`). A missing entry falls back to
-    ///     that template's own `seedTaskIds` (loading-state safety net so
-    ///     the badge doesn't flash "pool too small" before the batched
-    ///     mix resolves, AND so pre-P1 callers/tests that never pass this
-    ///     parameter keep their old seedTaskIds-based behavior verbatim).
-    /// - Returns: template id → failure reason (absent ⇒ healthy).
-    static func computeAttention(
+    /// Sources-native roster health — the spawn pass's static twin
+    /// (supersedes the legacy `computeTemplateMixes` + `computeAttention`
+    /// pair): mix = the honest ACHIEVABLE pick (ranges, cap overlap, the
+    /// counter-family rule); attention = dead board source →
+    /// `.sourceBoardMissing`, deleted hand-add → `.hasDeletedTasks`,
+    /// nothing resolvable → `.noPoolTasksResolved`, then
+    /// `validateSpawnPool` over the achievable pick. Pure + static for
+    /// direct unit testing. Web twin: `computeRosterHealth`
+    /// (`templateHealth.ts`).
+    static func computeRosterHealth(
         templates: [RecurringBoardTemplate],
-        liveTasks: [Task],
-        mixByTemplateId: [String: [String]] = [:]
-    ) -> [String: SpawnPoolFailureReason] {
-        let taskMap = Dictionary(liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var out: [String: SpawnPoolFailureReason] = [:]
+        resolutionByTemplateId: [String: TemplateSupplyResolution],
+        tasksById: [String: Task]
+    ) -> (mixByTemplateId: [String: [String]], attentionByTemplateId: [String: SpawnAttentionReason]) {
+        let counterFamilyByTaskId = BoardSources.buildCounterFamilyMap(tasksById.values)
+        var mixByTemplateId: [String: [String]] = [:]
+        var attention: [String: SpawnAttentionReason] = [:]
         for template in templates {
-            let mixTaskIds = mixByTemplateId[template.id] ?? template.seedTaskIds
-            var pool: [Task] = []
-            var hasMissingFromLibrary = false
-            for id in mixTaskIds {
-                if let found = taskMap[id] { pool.append(found) } else { hasMissingFromLibrary = true }
-            }
-            if hasMissingFromLibrary {
-                out[template.id] = .hasDeletedTasks
+            guard let resolution = resolutionByTemplateId[template.id] else {
+                // Still loading / unresolvable — raw seed list so the row
+                // renders a count instead of flashing empty.
+                mixByTemplateId[template.id] = template.seedTaskIds
                 continue
             }
+            // Resolvable manual layer (deleted manual ids stay OUT of the
+            // pick but flag attention below — the spawn validator's rule).
+            let manualResolvable = resolution.manualTaskIds.filter { id in
+                guard let task = tasksById[id] else { return false }
+                return !task.isDeleted
+            }
+            let achievable = BoardSources.computeAchievablePoolSize(
+                supplies: resolution.supplies,
+                manualTaskIds: manualResolvable,
+                counterFamilyByTaskId: counterFamilyByTaskId
+            )
+            mixByTemplateId[template.id] = achievable.taskIds
+
+            if !resolution.deadBoardSourceIds.isEmpty {
+                attention[template.id] = .sourceBoardMissing
+                continue
+            }
+            if manualResolvable.count < resolution.manualTaskIds.count {
+                attention[template.id] = .hasDeletedTasks
+                continue
+            }
+            if achievable.size == 0 {
+                attention[template.id] = .noPoolTasksResolved
+                continue
+            }
+            let pool = achievable.taskIds.compactMap { tasksById[$0] }
             if case .failure(let reason) = validateSpawnPool(template: template, poolTasks: pool) {
-                out[template.id] = reason
+                attention[template.id] = SpawnAttentionReason(reason)
             }
         }
-        return out
+        return (mixByTemplateId, attention)
     }
 
     func reloadAsync(userId: String) {

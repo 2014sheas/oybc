@@ -140,6 +140,7 @@ export {
   resolvePoolPullAdditions,
   resolvePoolUntoggleRemovals,
   summarizeSpawnProvenance,
+  summarizeSpawnProvenanceFromSupplies,
   formatSpawnProvenanceNote,
 } from './poolMix';
 
@@ -237,6 +238,8 @@ export {
   resolveSourceAvailable,
   effectiveSourceMax,
   computeSourceCapacity,
+  computeAchievablePoolSize,
+  buildCounterFamilyMap,
   selectBoardTasks,
   poolSourceSupplyById,
   sourcesFromMixFields,
@@ -247,6 +250,7 @@ export {
 export type {
   BoardSourceSupply,
   SourceCapacityResult,
+  AchievablePoolSizeResult,
   SelectBoardTasksArgs,
   SelectBoardTasksResult,
   LegacyMixFields,

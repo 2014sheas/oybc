@@ -200,13 +200,27 @@
 .memberDimmed {
   opacity: 0.45;
 }
-.memberTitle {
+.memberText {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.memberTitle {
   font-family: var(--riso-font-body);
   font-size: 13px;
   font-weight: 600;
   color: var(--riso-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.memberClashHint {
+  font-family: var(--riso-font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--riso-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -47,6 +47,15 @@ struct CellSwapSheet: View {
     var mode: CellSwapMode = .swap
     let currentTaskId: String
     let candidateTasks: [Task]
+    /// Loose-ends sweep (2026-09-09) — task ids currently placed on the
+    /// board (the staged draft in edit mode; live placements otherwise).
+    /// Placed tasks — and any member of a shared-counter family already
+    /// placed — are filtered out, except the outgoing square itself
+    /// (swapping "Read 20" → "Read 50" legitimately replaces the family's
+    /// slot). Web twin: `isSwapCandidate` (CellSwapModal.tsx).
+    var placedTaskIds: Set<String> = []
+    /// Task id → shared-counter family key (`buildCounterFamilyMap`).
+    var counterFamilyByTaskId: [String: String] = [:]
     let onDismiss: () -> Void
     let onConfirm: (String) -> Void
 
@@ -62,10 +71,24 @@ struct CellSwapSheet: View {
     // MARK: - Filtering
 
     private var filtered: [Task] {
-        candidateTasks.filter { task in
+        // Families already represented on the board (the outgoing square's
+        // own membership excepted — its slot is being replaced).
+        let outgoingId = mode == .swap ? currentTaskId : nil
+        var placedFamilies = Set<String>()
+        for placedId in placedTaskIds where placedId != outgoingId {
+            if let fam = counterFamilyByTaskId[placedId] { placedFamilies.insert(fam) }
+        }
+        return candidateTasks.filter { task in
             guard !task.isDeleted else { return false }
             // In swap mode, exclude the task currently occupying the square.
             if mode == .swap, task.id == currentTaskId { return false }
+            // Never offer a task the board already carries (the outgoing
+            // square excepted above), nor a shared-counter family-mate of
+            // one — the one-counter-per-board rule.
+            if placedTaskIds.contains(task.id), task.id != outgoingId { return false }
+            if let fam = counterFamilyByTaskId[task.id], placedFamilies.contains(fam) {
+                return false
+            }
             guard eligibleTypes.contains(task.type) else { return false }
             if query.trimmingCharacters(in: .whitespaces).isEmpty { return true }
             return task.title.localizedCaseInsensitiveContains(query)

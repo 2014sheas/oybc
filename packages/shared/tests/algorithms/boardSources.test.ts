@@ -25,6 +25,8 @@ import {
   type BoardSourceSupply,
   type Pool,
   type Task,
+  computeAchievablePoolSize,
+  buildCounterFamilyMap,
 } from '../../src';
 import { TaskType } from '../../src/constants/enums';
 
@@ -46,6 +48,8 @@ interface Fixture {
     name: string;
     sources: FixtureSource[];
     manualTaskIds: string[];
+    counterFamilyByTaskId?: Record<string, string>;
+    pinnedTaskId?: string;
     expected: { uniqueCandidateCount: number; cappedBound: number; capacity: number };
   }>;
   selectionVectors: Array<{
@@ -55,6 +59,8 @@ interface Fixture {
     cellCount: number;
     rngSeed: number;
     randomize: boolean;
+    counterFamilyByTaskId?: Record<string, string>;
+    pinnedTaskId?: string;
     expected: { ok: true; taskIds: string[] } | { ok: false; shortBy: number };
   }>;
   conversionVectors: Array<{
@@ -88,7 +94,12 @@ describe('boardSourceVectors fixture', () => {
     'capacity: %s',
     (_name, v) => {
       expect(
-        computeSourceCapacity(v.sources.map(toSupply), v.manualTaskIds),
+        computeSourceCapacity(
+          v.sources.map(toSupply),
+          v.manualTaskIds,
+          v.counterFamilyByTaskId,
+          v.pinnedTaskId,
+        ),
       ).toEqual(v.expected);
     },
   );
@@ -103,6 +114,8 @@ describe('boardSourceVectors fixture', () => {
           cellCount: v.cellCount,
           randomize: v.randomize,
           rng: makeSeededRng(v.rngSeed),
+          counterFamilyByTaskId: v.counterFamilyByTaskId,
+          pinnedTaskId: v.pinnedTaskId,
         }),
       ).toEqual(v.expected);
     },
@@ -259,5 +272,154 @@ describe('behavior-identity with the legacy resolveMix shapes', () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(new Set(result.taskIds)).toEqual(new Set(['x', 'y']));
+  });
+});
+
+// ─── Counter-family exclusivity + honest capacity (2026-09-08) ───────────────
+
+describe('counter-family exclusivity', () => {
+  const fam = { r20: 'root', r50: 'root' };
+  const pool = (ids: string[]): BoardSourceSupply => ({
+    source: {
+      sourceId: 'P',
+      kind: 'pool',
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'all',
+    },
+    supplyTaskIds: ids,
+  });
+
+  test('never places two members of one family, across every seed', () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const res = selectBoardTasks({
+        supplies: [pool(['r20', 'r50', 'a', 'b'])],
+        manualTaskIds: [],
+        cellCount: 3,
+        randomize: true,
+        rng: makeSeededRng(seed),
+        counterFamilyByTaskId: fam,
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        const famPicks = res.taskIds.filter((id) => id === 'r20' || id === 'r50');
+        expect(famPicks).toHaveLength(1);
+      }
+    }
+  });
+
+  test('a hand-added member always wins over a source-supplied mate', () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const res = selectBoardTasks({
+        supplies: [pool(['r50', 'a', 'b'])],
+        manualTaskIds: ['r20'],
+        cellCount: 3,
+        randomize: true,
+        rng: makeSeededRng(seed),
+        counterFamilyByTaskId: fam,
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.taskIds).toContain('r20');
+        expect(res.taskIds).not.toContain('r50');
+      }
+    }
+  });
+
+  test('a pinned center prunes its mates so the caller swap can never collide', () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const res = selectBoardTasks({
+        supplies: [pool(['r20', 'r50', 'a', 'b'])],
+        manualTaskIds: [],
+        cellCount: 3,
+        randomize: true,
+        rng: makeSeededRng(seed),
+        counterFamilyByTaskId: fam,
+        pinnedTaskId: 'r20',
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.taskIds).not.toContain('r50');
+    }
+  });
+
+  test('buildCounterFamilyMap maps counting tasks to sharedCounterId ?? id, others to nothing', () => {
+    const t = (id: string, type: TaskType, sharedCounterId?: string): Task =>
+      ({
+        id,
+        userId: 'u',
+        title: id,
+        type,
+        sharedCounterId,
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: 'now',
+        updatedAt: 'now',
+        version: 1,
+        isDeleted: false,
+      }) as Task;
+    const map = buildCounterFamilyMap([
+      t('root', TaskType.COUNTING),
+      t('derived', TaskType.COUNTING, 'root'),
+      t('plain', TaskType.NORMAL),
+    ]);
+    expect(map).toEqual({ root: 'root', derived: 'root' });
+  });
+});
+
+describe('the gate never overpromises (achievable capacity ⇒ the deal fills)', () => {
+  const capped = (id: string, ids: string[]): BoardSourceSupply => ({
+    source: {
+      sourceId: id,
+      kind: 'pool',
+      min: 0,
+      max: 1,
+      excludedTaskIds: [],
+      filter: 'all',
+    },
+    supplyTaskIds: ids,
+  });
+
+  test('every seed fills exactly what computeAchievablePoolSize promised', () => {
+    const supplies = [capped('A', ['x', 'y']), capped('B', ['y', 'z'])];
+    const achievable = computeAchievablePoolSize({ supplies, manualTaskIds: [] });
+    expect(achievable.size).toBe(2);
+    for (let seed = 0; seed < 40; seed++) {
+      const res = selectBoardTasks({
+        supplies,
+        manualTaskIds: [],
+        cellCount: achievable.size,
+        randomize: true,
+        rng: makeSeededRng(seed),
+      });
+      expect(res.ok).toBe(true);
+    }
+  });
+
+  test('identical capped sources: capacity is honest (1, not the naive bound 2)', () => {
+    const supplies = [capped('A', ['x', 'y']), capped('B', ['x', 'y'])];
+    const result = computeSourceCapacity(supplies, []);
+    expect(result.cappedBound).toBe(2);
+    expect(result.capacity).toBe(1);
+  });
+
+  test('family collision lowers capacity before the deal ever runs', () => {
+    const supplies: BoardSourceSupply[] = [
+      {
+        source: {
+          sourceId: 'P',
+          kind: 'pool',
+          min: 0,
+          max: null,
+          excludedTaskIds: [],
+          filter: 'all',
+        },
+        supplyTaskIds: ['r20', 'r50', 'a'],
+      },
+    ];
+    const result = computeSourceCapacity(supplies, [], { r20: 'root', r50: 'root' });
+    expect(result.uniqueCandidateCount).toBe(2);
+    expect(result.capacity).toBe(2);
   });
 });

@@ -166,6 +166,108 @@
         "cappedBound": 3,
         "capacity": 3
       }
+    },
+    {
+      "name": "a counter family counts once across sources",
+      "sources": [
+        {
+          "sourceId": "P1",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "r20"
+          ]
+        },
+        {
+          "sourceId": "P2",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "r50"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "m"
+      ],
+      "counterFamilyByTaskId": {
+        "r20": "root",
+        "r50": "root"
+      },
+      "expected": {
+        "uniqueCandidateCount": 2,
+        "cappedBound": 3,
+        "capacity": 2
+      }
+    },
+    {
+      "name": "a family inside one pool caps the honest capacity at one",
+      "sources": [
+        {
+          "sourceId": "P",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "r20",
+            "r50",
+            "a"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "counterFamilyByTaskId": {
+        "r20": "root",
+        "r50": "root"
+      },
+      "expected": {
+        "uniqueCandidateCount": 2,
+        "cappedBound": 3,
+        "capacity": 2
+      }
+    },
+    {
+      "name": "identical capped sources — dry-run capacity beats the naive bound",
+      "sources": [
+        {
+          "sourceId": "A",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "x",
+            "y"
+          ]
+        },
+        {
+          "sourceId": "B",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "x",
+            "y"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "expected": {
+        "uniqueCandidateCount": 2,
+        "cappedBound": 2,
+        "capacity": 1
+      }
     }
   ],
   "selectionVectors": [
@@ -689,6 +791,153 @@
       "expected": {
         "ok": false,
         "shortBy": 1
+      }
+    },
+    {
+      "name": "one counter family yields exactly one square",
+      "sources": [
+        {
+          "sourceId": "P",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "r20",
+            "r50",
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 3,
+      "rngSeed": 7,
+      "randomize": true,
+      "counterFamilyByTaskId": {
+        "r20": "root",
+        "r50": "root"
+      },
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "b",
+          "r50",
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "a hand-added family member beats the source-supplied one",
+      "sources": [
+        {
+          "sourceId": "P",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "r50",
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "manualTaskIds": [
+        "r20"
+      ],
+      "cellCount": 3,
+      "rngSeed": 11,
+      "randomize": true,
+      "counterFamilyByTaskId": {
+        "r20": "root",
+        "r50": "root"
+      },
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "a",
+          "b",
+          "r20"
+        ]
+      }
+    },
+    {
+      "name": "a pinned CHOSEN center prunes its family-mates",
+      "sources": [
+        {
+          "sourceId": "P",
+          "kind": "pool",
+          "min": 0,
+          "max": null,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "r20",
+            "r50",
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 3,
+      "rngSeed": 3,
+      "randomize": true,
+      "counterFamilyByTaskId": {
+        "r20": "root",
+        "r50": "root"
+      },
+      "pinnedTaskId": "r20",
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "b",
+          "a",
+          "r20"
+        ]
+      }
+    },
+    {
+      "name": "deterministic retry fills what an unlucky shuffle cannot (overlapping caps)",
+      "sources": [
+        {
+          "sourceId": "A",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "x",
+            "y"
+          ]
+        },
+        {
+          "sourceId": "B",
+          "kind": "pool",
+          "min": 0,
+          "max": 1,
+          "excludedTaskIds": [],
+          "filter": "all",
+          "supplyTaskIds": [
+            "y",
+            "z"
+          ]
+        }
+      ],
+      "manualTaskIds": [],
+      "cellCount": 2,
+      "rngSeed": 0,
+      "randomize": true,
+      "expected": {
+        "ok": true,
+        "taskIds": [
+          "x",
+          "z"
+        ]
       }
     }
   ],

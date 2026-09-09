@@ -49,6 +49,12 @@ export interface PoolListProps {
    * before the hand-added task rows. Mirrors iOS `leadingRows`.
    */
   leadingRows?: React.ReactNode;
+  /**
+   * Counter-family exclusivity — task id → the OTHER family member's
+   * title, for tasks whose shared-counter family has ≥2 members in the
+   * pool. Renders the "shares a counter with 'X' · one per board" hint.
+   */
+  counterClashByTaskId?: Map<string, string>;
 }
 
 /**
@@ -81,6 +87,7 @@ export function PoolList({
   editor,
   countOverride,
   leadingRows,
+  counterClashByTaskId,
 }: PoolListProps): React.ReactElement {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const poolTasks = poolOrder
@@ -105,9 +112,11 @@ export function PoolList({
             const isCompound = task.type === TaskType.COMPOUND;
             const isCenter = centerTaskMode && centerTaskId === task.id;
             const isExpanded = expandedId === task.id;
+            const clashTitle = counterClashByTaskId?.get(task.id);
             const subtitle = buildPoolRowSubtitle(
               task,
               effectiveChildrenByCompound[task.id] ?? [],
+              clashTitle,
             );
             const boardCount = taskBoardCounts[task.id] ?? 0;
             const usageHint = isCompound
@@ -227,10 +236,12 @@ export function PoolList({
 
 /** Type-specific detail line — mirrors iOS
  *  `RisoPoolListView.typeDetailSubtitle`. (Board Sources P4 dropped the
- *  provenance suffix — the design's copy rule bans provenance subtitles.) */
+ *  provenance suffix — the design's copy rule bans provenance subtitles.
+ *  `clashTitle` appends the counter-family "one per board" hint.) */
 function buildPoolRowSubtitle(
   task: Task,
   children: CompoundChild[],
+  clashTitle?: string,
 ): string | undefined {
   let base: string | undefined;
   switch (task.type) {
@@ -263,6 +274,10 @@ function buildPoolRowSubtitle(
     }
     default:
       base = undefined;
+  }
+  if (clashTitle !== undefined) {
+    const hint = `shares a counter with “${clashTitle}” · one per board`;
+    return base !== undefined ? `${base} · ${hint}` : hint;
   }
   return base;
 }

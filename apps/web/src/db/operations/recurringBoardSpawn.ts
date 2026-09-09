@@ -3,6 +3,7 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  buildCounterFamilyMap,
   buildSpawnPlacement,
   validateSpawnPool,
   computeBoardStatsUpdate,
@@ -23,7 +24,7 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { resolveBoardSourceSupply } from './boardSources';
+import { resolveBoardSourceSupply, resolveSourceBoard } from './boardSources';
 
 /**
  * Recurring-board spawn (Phase 6.2).
@@ -112,30 +113,28 @@ export async function spawnTemplateBoard(
 
       const sources = sourcesForRecord(template);
 
-      // Board Sources P3 — a pulled board that is DELETED or ARCHIVED
-      // blocks the window with an ask (docs/BOARD_SOURCES.md §Boards as
-      // sources; the prompt UI is iOS-first, web's lands in P4 — the
-      // SKIP semantics stay lockstep so the two platforms never disagree
-      // about whether a window spawned). Distinct from an EMPTY source,
-      // which contributes nothing silently and never blocks.
+      // Board Sources P3 + series binding (loose-ends sweep 2026-09-09) —
+      // each pulled board resolves through `resolveSourceBoard`: a stored
+      // instance of a recurring series HOPS to the series' live window
+      // (an archived old window never kills the pull), evaluated against
+      // THIS spawn's window start. Only a series with no live instance —
+      // or a one-off source that is deleted/archived — blocks the window
+      // with the ask. Distinct from an EMPTY source, which contributes
+      // nothing silently and never blocks.
       const boardSourceIds = sources
         .filter((s) => s.kind === 'board')
         .map((s) => s.sourceId);
       const sourceBoardById = new Map<string, Board>();
-      if (boardSourceIds.length > 0) {
-        const sourceBoards = await db.boards.where('id').anyOf(boardSourceIds).toArray();
-        for (const b of sourceBoards) sourceBoardById.set(b.id, b);
-        const anyGone = boardSourceIds.some((id) => {
-          const b = sourceBoardById.get(id);
-          return b === undefined || b.isDeleted || b.status === BoardStatus.ARCHIVED;
-        });
-        if (anyGone) {
+      for (const id of boardSourceIds) {
+        const live = await resolveSourceBoard(id, spawn.windowStart);
+        if (live === null) {
           return {
             ok: false,
             templateId: template.id,
             reason: 'source_board_missing',
           };
         }
+        sourceBoardById.set(id, live);
       }
 
       const poolSourceIds = sources
@@ -245,6 +244,10 @@ export async function spawnTemplateBoard(
         // subset + order (review-caught — `placeBoard`'s verbatim path
         // is defeated if selection already shuffled).
         randomize: template.isRandomized,
+        // Counter-family exclusivity (2026-09-08): at most one member of
+        // a shared-counter family per spawned board. Recurring boards
+        // have no CHOSEN center, so nothing is pinned here.
+        counterFamilyByTaskId: buildCounterFamilyMap(allTasks),
       });
       if (!selection.ok) {
         return {

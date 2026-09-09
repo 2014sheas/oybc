@@ -44,7 +44,7 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
     /// grow the card's height, so the fixed heights below are bumped from
     /// the pre-#321 130/180 baselines to avoid clipping.
     private func templateCard(
-        attention: SpawnPoolFailureReason?,
+        attention: SpawnAttentionReason?,
         isActive: Bool = true,
         poolPreview: [String] = ["Drink water", "Read 30 min", "Run 5 km"],
         poolPreviewOverflow: Int = 6

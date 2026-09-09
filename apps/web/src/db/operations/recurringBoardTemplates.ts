@@ -5,11 +5,11 @@ import type {
   UpdateRecurringBoardTemplateInput,
 } from '@oybc/shared';
 import {
-  BoardStatus,
   SyncOperationType,
   mixFieldsFromSources,
   sourcesForRecord,
 } from '@oybc/shared';
+import { resolveSourceBoard } from './boardSources';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -164,12 +164,16 @@ export async function removeMissingBoardSources(templateId: string): Promise<boo
       const sources = sourcesForRecord(template);
       const boardIds = sources.filter((s) => s.kind === 'board').map((s) => s.sourceId);
       if (boardIds.length === 0) return false;
-      const boards = await db.boards.where('id').anyOf(boardIds).toArray();
-      const boardById = new Map(boards.map((b) => [b.id, b]));
+      // Series binding — "missing" means the resolver finds NO live
+      // instance (a stored archived window with a live series sibling is
+      // NOT missing; the supply hops to the sibling instead).
+      const liveByStoredId = new Map<string, boolean>();
+      for (const id of boardIds) {
+        liveByStoredId.set(id, (await resolveSourceBoard(id)) !== null);
+      }
       const kept = sources.filter((source) => {
         if (source.kind !== 'board') return true;
-        const b = boardById.get(source.sourceId);
-        return b !== undefined && !b.isDeleted && b.status !== BoardStatus.ARCHIVED;
+        return liveByStoredId.get(source.sourceId) === true;
       });
       if (kept.length === sources.length) return false;
       // Keep the P1 dual-write mirrors consistent with the new shape.

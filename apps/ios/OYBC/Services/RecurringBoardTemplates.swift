@@ -145,7 +145,26 @@ func findTemplatesPendingSpawn(
         ))
     }
 
-    return pending
+    // Series binding (loose-ends sweep 2026-09-09) — PARENTS SPAWN FIRST
+    // (yearly → monthly → weekly → daily; stable within a tier): a child
+    // board pulling from a parent series must see the parent's FRESH
+    // window's instance in the same pass. TS twin:
+    // `findTemplatesPendingSpawn`'s tail sort.
+    func tier(_ timeframe: Timeframe) -> Int {
+        switch timeframe {
+        case .yearly: return 0
+        case .monthly: return 1
+        case .weekly: return 2
+        case .daily: return 3
+        default: return 4
+        }
+    }
+    return pending.enumerated().sorted { a, b in
+        let ta = tier(a.element.template.timeframe)
+        let tb = tier(b.element.template.timeframe)
+        if ta != tb { return ta < tb }
+        return a.offset < b.offset
+    }.map { $0.element }
 }
 
 /// "<template name> — <window label>" helper.

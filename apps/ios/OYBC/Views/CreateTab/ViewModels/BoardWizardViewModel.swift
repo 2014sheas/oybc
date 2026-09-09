@@ -91,6 +91,14 @@ final class BoardWizardViewModel {
     /// iOS twin of web's `pendingTasks: Map<string, PendingTaskPayload>`.
     var pendingTasks: [String: PendingTaskPayload] = [:]
 
+    /// Counter-family exclusivity (2026-09-08) — the LIBRARY half of the
+    /// task id → shared-counter family map, refreshed by the container
+    /// whenever the library reloads (`refreshCounterFamilies`). Pending
+    /// tasks merge in at read time via `counterFamilyByTaskId`
+    /// (+Sources.swift). Feeds the capacity dry-run + the placement pick
+    /// so two goals on one counter never share a board.
+    var libraryCounterFamilies: [String: String] = [:]
+
     // MARK: - Sources (Board Sources rework P2, docs/BOARD_SOURCES.md)
     //
     // The wizard's task list is assembled from SOURCES — pulled pools and

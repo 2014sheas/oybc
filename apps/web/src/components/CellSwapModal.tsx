@@ -11,6 +11,42 @@ import styles from './CellSwapModal.module.css';
  */
 export type CellSwapMode = 'swap' | 'add';
 
+/**
+ * Pure candidate predicate (loose-ends sweep 2026-09-09) — exported for
+ * unit tests. A task is pickable when it is:
+ *   - an eligible non-center type, not deleted;
+ *   - not the outgoing square's own task (swap mode);
+ *   - NOT already placed on the board (the outgoing square excepted — a
+ *     board never carries the same task twice);
+ *   - NOT a member of a shared-counter family already on the board — the
+ *     one-counter-per-board rule — except when the only placed family
+ *     member IS the outgoing square (swapping "Read 20" → "Read 50"
+ *     legitimately replaces the family's slot).
+ */
+export function isSwapCandidate(
+  task: Task,
+  args: {
+    currentTaskId?: string;
+    placedTaskIds?: Set<string>;
+    counterFamilyByTaskId?: Record<string, string>;
+  },
+): boolean {
+  const { currentTaskId, placedTaskIds, counterFamilyByTaskId } = args;
+  if (task.isDeleted) return false;
+  if (currentTaskId !== undefined && task.id === currentTaskId) return false;
+  if (placedTaskIds !== undefined) {
+    if (placedTaskIds.has(task.id) && task.id !== currentTaskId) return false;
+    const fam = counterFamilyByTaskId?.[task.id];
+    if (fam !== undefined) {
+      for (const placedId of placedTaskIds) {
+        if (placedId === currentTaskId) continue;
+        if (counterFamilyByTaskId?.[placedId] === fam) return false;
+      }
+    }
+  }
+  return true;
+}
+
 /** Shared props present in both modal modes. */
 interface CellSwapModalBaseProps {
   /**
@@ -19,6 +55,15 @@ interface CellSwapModalBaseProps {
    * ACHIEVEMENT) and excludes the current task in 'swap' mode.
    */
   candidateTasks: Task[];
+  /**
+   * Task ids currently placed on the board (the staged draft in edit
+   * mode; the live placements otherwise). Placed tasks — and any member
+   * of a shared-counter family already placed — are filtered out (see
+   * `isSwapCandidate`). Optional for legacy call sites/tests.
+   */
+  placedTaskIds?: Set<string>;
+  /** Task id → shared-counter family key (`buildCounterFamilyMap`). */
+  counterFamilyByTaskId?: Record<string, string>;
   /** Dismiss without making a change. */
   onClose: () => void;
   /**
@@ -77,6 +122,8 @@ export function CellSwapModal({
   mode = 'swap',
   currentTaskId,
   candidateTasks,
+  placedTaskIds,
+  counterFamilyByTaskId,
   onClose,
   onConfirm,
 }: CellSwapModalProps): React.ReactElement {
@@ -107,10 +154,16 @@ export function CellSwapModal({
   ]);
 
   const filtered = candidateTasks.filter((t) => {
-    if (t.isDeleted) return false;
-    // In swap mode, exclude the task currently in the square.
-    if (mode === 'swap' && currentTaskId && t.id === currentTaskId) return false;
     if (!ELIGIBLE_TYPES.has(t.type)) return false;
+    if (
+      !isSwapCandidate(t, {
+        currentTaskId: mode === 'swap' ? currentTaskId : undefined,
+        placedTaskIds,
+        counterFamilyByTaskId,
+      })
+    ) {
+      return false;
+    }
     if (query.trim()) {
       return t.title.toLowerCase().includes(query.trim().toLowerCase());
     }

@@ -17,6 +17,14 @@ import Foundation
 /// Mins clamp, never error. Fill order: mins first (sources in row order,
 /// random within the source), then remaining cells at random from all
 /// remaining admissible candidates. Never underfills silently.
+///
+/// **Counter-family exclusivity** (owner directive 2026-09-08): at most
+/// ONE member of a shared-counter family (`sharedCounterId` root + its
+/// derived versions) lands on a board. Priority: pinned CHOSEN center >
+/// hand-added > covering-an-unmet-min > the draw. **The gate never
+/// overpromises**: `computeSourceCapacity`'s `capacity` is a deterministic
+/// dry-run of this same fill, and a short randomized deal retries in the
+/// dry-run's deterministic order — gate-passed ⇒ the board fills.
 enum BoardSources {
 
     /// One source plus its platform-resolved RAW supply (before excludes).
@@ -30,14 +38,17 @@ enum BoardSources {
 
     /// Result of `computeSourceCapacity` — TS twin `SourceCapacityResult`.
     struct CapacityResult: Equatable {
-        /// Distinct tasks that could possibly appear (manual ∪ availables).
+        /// Distinct placeable things (manual ∪ availables), counting a
+        /// shared-counter family ONCE.
         let uniqueCandidateCount: Int
         /// Σ per-source effective max + distinct manual tasks NO source
-        /// supplies (a manual task inside a source counts toward that
-        /// source's membership cap instead).
+        /// supplies (informational; `capacity` is the honest number).
         let cappedBound: Int
-        /// `min(uniqueCandidateCount, cappedBound)` — what the header/gate
-        /// compares against the fillable cell count.
+        /// The honest achievable pool size: a deterministic dry-run of the
+        /// actual fill (caps, overlap, family rule, the pinned center) —
+        /// what the header/gate compares against the fillable cell count.
+        /// Gate-passed ⇒ the deal fills (the deal's deterministic retry is
+        /// a prefix of this dry-run).
         let capacity: Int
     }
 
@@ -67,30 +78,62 @@ enum BoardSources {
         return Swift.min(max, availableCount)
     }
 
-    /// The header/gate math (docs/BOARD_SOURCES.md §Selection step 3):
-    /// "sum of every source's max + hand-added, deduped by task".
+    /// The header/gate math (docs/BOARD_SOURCES.md §Selection step 3) —
+    /// with `capacity` computed as the achievable dry-run size. TS twin:
+    /// `computeSourceCapacity`.
     static func computeSourceCapacity(
         _ supplies: [Supply],
-        manualTaskIds: [String]
+        manualTaskIds: [String],
+        counterFamilyByTaskId: [String: String] = [:],
+        pinnedTaskId: String? = nil
     ) -> CapacityResult {
-        var unique = Set(manualTaskIds)
+        func familyKey(_ id: String) -> String { counterFamilyByTaskId[id] ?? id }
+        var unique = Set(manualTaskIds.map(familyKey))
         var suppliedAnywhere = Set<String>()
         var capSum = 0
         for supply in supplies {
             let available = resolveSourceAvailable(supply)
             capSum += effectiveSourceMax(supply.source, availableCount: available.count)
             for id in available {
-                unique.insert(id)
+                unique.insert(familyKey(id))
                 suppliedAnywhere.insert(id)
             }
         }
-        let manualOutside = Set(manualTaskIds.filter { !suppliedAnywhere.contains($0) }).count
+        let manualOutside = Set(
+            manualTaskIds.filter { !suppliedAnywhere.contains($0) }.map(familyKey)
+        ).count
         let cappedBound = capSum + manualOutside
         return CapacityResult(
             uniqueCandidateCount: unique.count,
             cappedBound: cappedBound,
-            capacity: Swift.min(unique.count, cappedBound)
+            capacity: computeAchievablePoolSize(
+                supplies: supplies,
+                manualTaskIds: manualTaskIds,
+                counterFamilyByTaskId: counterFamilyByTaskId,
+                pinnedTaskId: pinnedTaskId
+            ).size
         )
+    }
+
+    /// The honest pool size: a deterministic, uncapped dry-run of the
+    /// exact fill `selectBoardTasks` performs. TS twin:
+    /// `computeAchievablePoolSize`.
+    static func computeAchievablePoolSize(
+        supplies: [Supply],
+        manualTaskIds: [String],
+        counterFamilyByTaskId: [String: String] = [:],
+        pinnedTaskId: String? = nil
+    ) -> (size: Int, taskIds: [String]) {
+        let taskIds = runSelection(
+            supplies: supplies,
+            manualTaskIds: manualTaskIds,
+            cellCount: Int.max,
+            randomize: false,
+            rng: { 0 },
+            counterFamilyByTaskId: counterFamilyByTaskId,
+            pinnedTaskId: pinnedTaskId
+        )
+        return (taskIds.count, taskIds)
     }
 
     /// Picks exactly `cellCount` task ids satisfying every source's
@@ -111,13 +154,69 @@ enum BoardSources {
     ///     contract for its callers.
     ///   - rng: Uniform `[0, 1)` generator. Tests pass the shared seeded
     ///     LCG so vectors pin exact outputs on both platforms.
+    ///   - counterFamilyByTaskId: Counter-family exclusivity — task id →
+    ///     family key (`buildCounterFamilyMap`). At most one member of a
+    ///     family is picked; the pinned center's mates are pruned, a
+    ///     family with hand-added AND source-only members prunes the
+    ///     source-only ones, remaining ties resolve at draw time.
+    ///   - pinnedTaskId: The CHOSEN center — its family-mates are pruned
+    ///     so the caller-side center swap can never collide. Not
+    ///     force-picked here.
+    ///
+    /// A short RANDOMIZED run retries once in deterministic candidate
+    /// order (the capacity dry-run's order) — an unlucky shuffle under
+    /// pathological cap overlap costs that deal its variety, never its
+    /// board.
     static func selectBoardTasks(
         supplies: [Supply],
         manualTaskIds: [String],
         cellCount: Int,
         randomize: Bool = true,
-        rng: () -> Double = { Double.random(in: 0..<1) }
+        rng: () -> Double = { Double.random(in: 0..<1) },
+        counterFamilyByTaskId: [String: String] = [:],
+        pinnedTaskId: String? = nil
     ) -> SelectionResult {
+        let first = runSelection(
+            supplies: supplies,
+            manualTaskIds: manualTaskIds,
+            cellCount: cellCount,
+            randomize: randomize,
+            rng: rng,
+            counterFamilyByTaskId: counterFamilyByTaskId,
+            pinnedTaskId: pinnedTaskId
+        )
+        if first.count >= cellCount {
+            return .ok(taskIds: Array(first.prefix(cellCount)))
+        }
+        let fallback = randomize
+            ? runSelection(
+                supplies: supplies,
+                manualTaskIds: manualTaskIds,
+                cellCount: cellCount,
+                randomize: false,
+                rng: { 0 },
+                counterFamilyByTaskId: counterFamilyByTaskId,
+                pinnedTaskId: pinnedTaskId
+            )
+            : first
+        if fallback.count >= cellCount {
+            return .ok(taskIds: Array(fallback.prefix(cellCount)))
+        }
+        return .short(shortBy: cellCount - fallback.count)
+    }
+
+    /// The shared fill core — one code path for the deal, its
+    /// deterministic retry, and the capacity dry-run (the alignment
+    /// guarantee). TS twin: `runSelection`.
+    private static func runSelection(
+        supplies: [Supply],
+        manualTaskIds: [String],
+        cellCount: Int,
+        randomize: Bool,
+        rng: () -> Double,
+        counterFamilyByTaskId: [String: String],
+        pinnedTaskId: String?
+    ) -> [String] {
         func order(_ ids: [String]) -> [String] {
             randomize ? Shuffle.fisherYatesShuffle(ids, rng: rng) : ids
         }
@@ -150,7 +249,38 @@ enum BoardSources {
         var picked: [String] = []
         var pickedSet = Set<String>()
 
+        // Counter-family exclusivity — priority pruning up front, then a
+        // runtime one-per-family guard for whatever the pruning left tied.
+        func familyOf(_ id: String) -> String? { counterFamilyByTaskId[id] }
+        var blocked = Set<String>()
+        if !counterFamilyByTaskId.isEmpty {
+            var membersByFamily: [String: [String]] = [:]
+            for id in candidates {
+                guard let fam = familyOf(id) else { continue }
+                membersByFamily[fam, default: []].append(id)
+            }
+            let manualSet = Set(manualTaskIds)
+            let pinnedFamily = pinnedTaskId.flatMap { familyOf($0) }
+            for (fam, members) in membersByFamily {
+                if fam == pinnedFamily {
+                    // The pinned CHOSEN center wins its family outright.
+                    for id in members where id != pinnedTaskId { blocked.insert(id) }
+                    continue
+                }
+                if members.count < 2 { continue }
+                // Hand-added beats source-supplied; ties fall through to
+                // the runtime guard = the draw.
+                let handAdded = members.filter { manualSet.contains($0) }
+                if !handAdded.isEmpty && handAdded.count < members.count {
+                    for id in members where !manualSet.contains(id) { blocked.insert(id) }
+                }
+            }
+        }
+        var pickedFamilies = Set<String>()
+
         func admissible(_ id: String) -> Bool {
+            if blocked.contains(id) { return false }
+            if let fam = familyOf(id), pickedFamilies.contains(fam) { return false }
             for i in supplies.indices {
                 if availableSets[i].contains(id) && memberCounts[i] >= caps[i] { return false }
             }
@@ -159,6 +289,7 @@ enum BoardSources {
         func pick(_ id: String) {
             picked.append(id)
             pickedSet.insert(id)
+            if let fam = familyOf(id) { pickedFamilies.insert(fam) }
             for i in supplies.indices where availableSets[i].contains(id) {
                 memberCounts[i] += 1
             }
@@ -193,10 +324,20 @@ enum BoardSources {
             pick(id)
         }
 
-        if picked.count < cellCount {
-            return .short(shortBy: cellCount - picked.count)
+        return picked
+    }
+
+    /// Task id → counter-family key: counting tasks map to
+    /// `sharedCounterId ?? id`; other types get no entry. TS twin:
+    /// `buildCounterFamilyMap`.
+    static func buildCounterFamilyMap<S: Sequence>(
+        _ tasks: S
+    ) -> [String: String] where S.Element == Task {
+        var map: [String: String] = [:]
+        for task in tasks where task.type == .counting {
+            map[task.id] = task.sharedCounterId ?? task.id
         }
-        return .ok(taskIds: picked)
+        return map
     }
 
     /// Raw supply for a pool-kind source: the pool's own `taskIds`,

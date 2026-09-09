@@ -1,59 +1,94 @@
 import {
+  buildCounterFamilyMap,
+  computeAchievablePoolSize,
   validateSpawnPool,
   type RecurringBoardTemplate,
   type SpawnPoolFailureReason,
   type Task,
 } from '@oybc/shared';
+import type { TemplateSupplyResolution } from '../../db/operations/boardSources';
+
+/** Attention union for the sources-native roster health — the spawn's
+ *  static twin (loose-ends sweep 2026-09-09). */
+export type TemplateAttentionReason =
+  | SpawnPoolFailureReason
+  | 'no_pool_tasks_resolved'
+  | 'source_board_missing';
+
+/** Result of {@link computeRosterHealth}. */
+export interface RosterHealth {
+  /** Per-template ACHIEVABLE pool ids (the dry-run's picks) — feeds the
+   *  roster's "N tasks" count and the pool preview, honestly (ranges,
+   *  cap overlap, and the counter-family rule all applied). */
+  mixByTemplateId: Record<string, string[]>;
+  /** Per-template attention badge, `source_board_missing` included —
+   *  static parity with the spawn pass's skip reasons. */
+  attentionByTemplateId: Record<string, TemplateAttentionReason>;
+}
 
 /**
- * Computes the "needs attention" badge reason for every template on the
- * Recurring templates page.
+ * Sources-native roster health (supersedes `computeTemplateAttention` +
+ * the legacy `computeTemplateMixes` pair for the Board-settings page):
+ * evaluates each template exactly as the spawn pass would — dead board
+ * source → `source_board_missing`; a deleted hand-added task →
+ * `has_deleted_tasks`; nothing resolvable → `no_pool_tasks_resolved`;
+ * then `validateSpawnPool` over the achievable pick (which carries the
+ * honest size, so `pool_too_small` respects ranges/overlap/families).
  *
- * P1 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
- * §Migration "seedTaskIds end state" — "never read after P1" is
- * unconditional) — this used to walk `template.seedTaskIds` directly.
- * That went stale the first time the legacy-editor write-through ran
- * (it edits the linked Pool's `taskIds`, not this field), which meant
- * the badge could show a WRONG pool-health warning: a `pool_too_small`
- * that a prior "Add tasks" edit had already fixed (stale-small
- * `seedTaskIds` outliving a since-grown Pool), or silence over an
- * actually-short Pool the field never reflected. Callers must now pass
- * the resolved mix (from `useTemplateMixes`/`computeTemplateMixes`) per
- * template instead — "fix once, heals everywhere" applies to this badge
- * exactly as it does to the wizard hydration and the spawn path.
- *
- * @param templates - Templates to evaluate.
- * @param mixByTemplateId - Each template's CURRENT resolved task-id mix
- *   (id → `resolveMix(...).taskIds`, or the `seedTaskIds` fallback for an
- *   unresolvable/loading entry — see `computeTemplateMixes`). A missing
- *   entry falls back to that template's own `seedTaskIds` (loading-state
- *   safety net so the badge doesn't flash "pool too small" before the
- *   batched mix query resolves).
- * @param taskMap - id → Task lookup (the Tasks-tab library; only
- *   non-deleted, browsable tasks are present — an id missing here is
- *   either genuinely deleted or otherwise unresolvable).
+ * @param templates - The roster.
+ * @param resolutionByTemplateId - From `fetchTemplateSupplyResolution`.
+ * @param tasksById - The combined task universe from the same fetch.
  */
-export function computeTemplateAttention(
+export function computeRosterHealth(
   templates: RecurringBoardTemplate[],
-  mixByTemplateId: Record<string, string[]>,
-  taskMap: Record<string, Task | undefined>,
-): Record<string, SpawnPoolFailureReason> {
-  const out: Record<string, SpawnPoolFailureReason> = {};
+  resolutionByTemplateId: Record<string, TemplateSupplyResolution>,
+  tasksById: Record<string, Task | undefined>,
+): RosterHealth {
+  const counterFamilyByTaskId = buildCounterFamilyMap(
+    Object.values(tasksById).filter((t): t is Task => t !== undefined),
+  );
+  const mixByTemplateId: Record<string, string[]> = {};
+  const attentionByTemplateId: Record<string, TemplateAttentionReason> = {};
   for (const t of templates) {
-    const mixTaskIds = mixByTemplateId[t.id] ?? t.seedTaskIds;
-    const pool: Task[] = [];
-    let hasMissingFromLibrary = false;
-    for (const id of mixTaskIds) {
-      const found = taskMap[id];
-      if (found) pool.push(found);
-      else hasMissingFromLibrary = true;
-    }
-    if (hasMissingFromLibrary) {
-      out[t.id] = 'has_deleted_tasks';
+    const resolution = resolutionByTemplateId[t.id];
+    if (resolution === undefined) {
+      // Still loading / unresolvable — fall back to the raw seed list so
+      // the row renders a count instead of flashing empty.
+      mixByTemplateId[t.id] = t.seedTaskIds;
       continue;
     }
+    const { supplies, deadBoardSourceIds, manualTaskIds } = resolution;
+    // Resolvable manual layer (deleted manual ids stay OUT of the pick
+    // but flag attention below — the spawn validator's exact rule).
+    const manualResolvable = manualTaskIds.filter((id) => {
+      const task = tasksById[id];
+      return task !== undefined && !task.isDeleted;
+    });
+    const achievable = computeAchievablePoolSize({
+      supplies,
+      manualTaskIds: manualResolvable,
+      counterFamilyByTaskId,
+    });
+    mixByTemplateId[t.id] = achievable.taskIds;
+
+    if (deadBoardSourceIds.length > 0) {
+      attentionByTemplateId[t.id] = 'source_board_missing';
+      continue;
+    }
+    if (manualResolvable.length < manualTaskIds.length) {
+      attentionByTemplateId[t.id] = 'has_deleted_tasks';
+      continue;
+    }
+    if (achievable.size === 0) {
+      attentionByTemplateId[t.id] = 'no_pool_tasks_resolved';
+      continue;
+    }
+    const pool = achievable.taskIds
+      .map((id) => tasksById[id])
+      .filter((task): task is Task => task !== undefined);
     const v = validateSpawnPool(t, pool);
-    if (!v.ok) out[t.id] = v.reason;
+    if (!v.ok) attentionByTemplateId[t.id] = v.reason;
   }
-  return out;
+  return { mixByTemplateId, attentionByTemplateId };
 }
+

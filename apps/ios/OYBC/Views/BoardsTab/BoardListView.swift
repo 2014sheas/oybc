@@ -325,7 +325,7 @@ struct BoardListView: View {
             Button("Pause this board") { resolveMissingSource(template, pause: true) }
             Button("Not now", role: .cancel) { missingSourceAsk = nil }
         } message: { _ in
-            Text("It pulls squares from a board that was deleted or archived.")
+            Text("It pulls squares from a board that\u{2019}s no longer available.")
         }
     }
 

@@ -26,12 +26,65 @@ struct BoardSourceSupplyInfo: Equatable {
 }
 
 extension AppDatabase {
-    /// Resolve one board's source supply. Returns nil when the board is
-    /// missing or soft-deleted (an unresolvable source supplies nothing —
-    /// the caller renders/contributes an empty supply, never blocks).
-    func fetchBoardSourceSupply(boardId: String) throws -> BoardSourceSupplyInfo? {
+    /// Series binding (loose-ends sweep 2026-09-09 — docs/BOARD_SOURCES.md
+    /// §Boards as sources, now implemented as designed): resolve a STORED
+    /// board-source id to the board that should supply squares right now.
+    ///
+    /// - A one-off board (no `spawnedFromTemplateId`) resolves to itself
+    ///   while it is live, else nil.
+    /// - A board that belongs to a recurring series binds to the SERIES:
+    ///   the pull hops to the series' live instance — the one whose window
+    ///   contains `reference` when it exists, else the newest live
+    ///   instance whose window has started, else the newest live instance.
+    ///   Old archived windows never kill the pull; only a series with NO
+    ///   live instance (or a gone one-off) resolves nil — which the spawn
+    ///   maps to the `source_board_missing` ask.
+    ///
+    /// Web twin: `resolveSourceBoard` (`db/operations/boardSources.ts`).
+    static func resolveSourceBoard(
+        db: Database,
+        storedBoardId: String,
+        reference: String
+    ) throws -> Board? {
+        func isLive(_ board: Board) -> Bool {
+            !board.isDeleted && board.status != .archived
+        }
+        guard let stored = try Board.fetchOne(db, key: storedBoardId) else { return nil }
+        guard let seriesId = stored.spawnedFromTemplateId else {
+            return isLive(stored) ? stored : nil
+        }
+        let instances = try Board
+            .filter(Column("spawnedFromTemplateId") == seriesId)
+            .fetchAll(db)
+            .filter(isLive)
+        guard !instances.isEmpty else { return nil }
+        let containing = instances.filter { b in
+            b.startDate <= reference && (b.endDate == nil || reference <= b.endDate!)
+        }
+        if let hit = containing.max(by: { $0.startDate < $1.startDate }) { return hit }
+        let started = instances.filter { $0.startDate <= reference }
+        let pool = started.isEmpty ? instances : started
+        return pool.max(by: { $0.startDate < $1.startDate })
+    }
+
+    /// Resolve one board's source supply. Series-binding aware: the stored
+    /// id hops to the series' live instance (see `resolveSourceBoard`).
+    /// Returns nil when nothing live resolves (an unresolvable source
+    /// supplies nothing — the caller renders/contributes an empty supply,
+    /// never blocks).
+    /// `reference` MUST be in the LOCAL-wall-clock ISO format board
+    /// dates use (`wizardLocalISOString` — no Z suffix): the window
+    /// comparisons are lexicographic, and a UTC `currentTimestamp()`
+    /// instant mis-sorts against local boundaries near local midnight in
+    /// any non-UTC zone (review-caught Critical, 2026-09-09).
+    func fetchBoardSourceSupply(
+        boardId: String,
+        reference: String = wizardLocalISOString(Date())
+    ) throws -> BoardSourceSupplyInfo? {
         try read { db in
-            guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else {
+            guard let board = try Self.resolveSourceBoard(
+                db: db, storedBoardId: boardId, reference: reference
+            ) else {
                 return nil
             }
             return try Self.resolveSupply(db: db, board: board)
@@ -118,5 +171,51 @@ extension AppDatabase {
             supplyTaskIds: supply,
             doneTaskIds: done
         )
+    }
+}
+
+extension AppDatabase {
+    /// Computes the spawn-provenance note text for a freshly-spawned
+    /// board (loose-ends sweep 2026-09-09) — sources-native: board-kind
+    /// supplies resolve through the series-binding-aware reader with the
+    /// record's 'todo' filter, and "of M" is the honest achievable pool
+    /// size. Runs DB reads — call off-main.
+    func spawnProvenanceNote(
+        template: RecurringBoardTemplate,
+        poolsById: [String: Pool],
+        tasksById: [String: Task],
+        dealtTaskIds: [String]
+    ) -> String {
+        let sources = BoardSources.sourcesForRecord(
+            sources: template.sources,
+            poolIds: template.poolIds,
+            removedTaskIds: template.removedTaskIds
+        )
+        var supplies: [BoardSources.Supply] = []
+        for source in sources {
+            switch source.kind {
+            case .pool:
+                supplies.append(BoardSources.Supply(
+                    source: source,
+                    supplyTaskIds: BoardSources.poolSourceSupplyById(
+                        source.sourceId, poolsById: poolsById, tasksById: tasksById
+                    )
+                ))
+            case .board:
+                let info = (try? fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil
+                var raw = info?.supplyTaskIds ?? []
+                if source.filter == .todo, let done = info?.doneTaskIds {
+                    raw.removeAll { done.contains($0) }
+                }
+                supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
+            }
+        }
+        let summary = PoolMix.summarizeSpawnProvenance(
+            supplies: supplies,
+            manualTaskIds: template.manualTaskIds ?? [],
+            counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasksById.values),
+            dealtTaskIds: dealtTaskIds
+        )
+        return PoolMix.formatSpawnProvenanceNote(summary)
     }
 }

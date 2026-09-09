@@ -5,6 +5,7 @@ import {
   availableCountForSource,
   clampAllSourceRanges,
   clampSourceRange,
+  computeCounterClashes,
   excludeFromEverySupplier,
   isDefaultRange,
   poolSupplyEntry,
@@ -230,5 +231,52 @@ describe('poolSupplyEntry + isDefaultRange', () => {
     expect(isDefaultRange(makeSource({ sourceId: 'p' }))).toBe(true);
     expect(isDefaultRange(makeSource({ sourceId: 'p', min: 1 }))).toBe(false);
     expect(isDefaultRange(makeSource({ sourceId: 'p', max: 5 }))).toBe(false);
+  });
+});
+
+describe('counter-family exclusivity in the wizard math (2026-09-08)', () => {
+  const fam = { r20: 'root', r50: 'root' };
+
+  it('sourceCapacity counts a family once — the honest number before any deal', () => {
+    const sources = [makeSource({ sourceId: 'p1' })];
+    const info: SupplyInfoMap = { p1: supplyEntry('One', ['r20', 'r50', 'a']) };
+    expect(sourceCapacity(sources, info, new Set(), fam)).toBe(2);
+    // Without the family map the same shape counted 3.
+    expect(sourceCapacity(sources, info, new Set())).toBe(3);
+  });
+
+  it('a hand-added family member still counts once against a source-supplied mate', () => {
+    const sources = [makeSource({ sourceId: 'p1' })];
+    const info: SupplyInfoMap = { p1: supplyEntry('One', ['r50', 'a']) };
+    expect(sourceCapacity(sources, info, new Set(['r20']), fam)).toBe(2);
+  });
+
+  it('computeCounterClashes maps each colliding member to the OTHER title', () => {
+    const task = (id: string, title: string): Task =>
+      ({
+        id,
+        userId: 'u',
+        title,
+        type: TaskType.COUNTING,
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      }) as Task;
+    const clashes = computeCounterClashes(
+      ['r20', 'r50', 'a'],
+      fam,
+      { r20: task('r20', 'Read 20 pages'), r50: task('r50', 'Read 50 pages') },
+    );
+    expect(clashes.get('r20')).toBe('Read 50 pages');
+    expect(clashes.get('r50')).toBe('Read 20 pages');
+    expect(clashes.has('a')).toBe(false);
+  });
+
+  it('a lone family member is never flagged as a clash', () => {
+    expect(computeCounterClashes(['r20', 'a'], fam, {}).size).toBe(0);
   });
 });

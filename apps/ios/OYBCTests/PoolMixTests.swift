@@ -575,7 +575,7 @@ final class PoolMixTests: XCTestCase {
         XCTAssertEqual(summary.mixSize, 10)
         XCTAssertEqual(summary.poolSourcedCount, 8)
         XCTAssertEqual(summary.manualSourcedCount, 0)
-        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Picked 8 of 10 — 8 from the pool")
+        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Picked 8 of 10 — 8 pulled in")
     }
 
     func testSummarizeSpawnProvenance_PureManual_AllDealtAreAddedToday() {
@@ -613,6 +613,6 @@ final class PoolMixTests: XCTestCase {
         XCTAssertEqual(summary.mixSize, 8)
         XCTAssertEqual(summary.poolSourcedCount, 5)
         XCTAssertEqual(summary.manualSourcedCount, 2)
-        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Picked 7 of 8 — 5 from the pool, 2 added today")
+        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Picked 7 of 8 — 5 pulled in, 2 added today")
     }
 }

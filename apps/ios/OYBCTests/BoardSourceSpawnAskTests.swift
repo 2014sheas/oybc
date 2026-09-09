@@ -44,17 +44,23 @@ final class BoardSourceSpawnAskTests: XCTestCase {
         boardId: String,
         taskIds: [String],
         status: String = "active",
-        isDeleted: Bool = false
+        isDeleted: Bool = false,
+        spawnedFromTemplateId: String? = nil,
+        startDate: String? = nil,
+        endDate: String? = nil
     ) throws {
-        let boardDict: [String: Any] = [
+        var boardDict: [String: Any] = [
             "id": boardId, "userId": userId, "name": "Source \(boardId)",
             "status": status, "boardSize": 3, "timeframe": "daily",
-            "startDate": now, "endDate": now,
+            "startDate": startDate ?? now, "endDate": endDate ?? now,
             "centerSquareType": "none", "isRandomized": true,
             "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
             "createdAt": now, "updatedAt": now, "version": 1,
             "isDeleted": isDeleted,
         ]
+        if let spawnedFromTemplateId {
+            boardDict["spawnedFromTemplateId"] = spawnedFromTemplateId
+        }
         let board = try JSONDecoder().decode(
             Board.self, from: JSONSerialization.data(withJSONObject: boardDict)
         )
@@ -248,4 +254,112 @@ final class BoardSourceSpawnAskTests: XCTestCase {
         XCTAssertEqual(Set(rows.map { $0.taskId }), ["m1", "m2", "m3", "m4"])
         XCTAssertFalse(rows.contains { $0.taskId == "s1" })
     }
+    // MARK: - Counter-family exclusivity (2026-09-08)
+
+    private func makeCountingTask(
+        _ id: String, maxCount: Int, sharedCounterId: String? = nil
+    ) -> OYBC.Task {
+        OYBC.Task(
+            id: id, userId: userId, title: "Count \(id)", description: nil, type: .counting,
+            action: "Do", unit: "reps", maxCount: maxCount,
+            operatorType: nil, threshold: nil,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil, currentCount: nil,
+            createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil,
+            sharedCounterId: sharedCounterId,
+            baseline: sharedCounterId != nil ? 0 : nil
+        )
+    }
+
+    /// The iOS spawn call site must feed `buildCounterFamilyMap` into the
+    /// shared pick — a counting root + its derived version in one mix
+    /// place exactly ONE square (the vectors pin the algorithm; this pins
+    /// the WIRING).
+    func test_spawn_placesAtMostOneMemberOfASharedCounterFamily() throws {
+        let db = try makeDb()
+        try db.write { grdb in
+            try makeCountingTask("fam-root", maxCount: 50).insert(grdb)
+            try makeCountingTask("fam-derived", maxCount: 20, sharedCounterId: "fam-root")
+                .insert(grdb)
+        }
+        // 2×2 NONE = 4 cells; family pair + 3 fillers = 4 placeable things.
+        let template = try seedTemplate(
+            db,
+            sources: [],
+            manualTaskIds: ["fam-root", "fam-derived", "f1", "f2", "f3"]
+        )
+        let outcome = try spawn(db, template)
+        guard case .spawned(let boardId, _, _) = outcome else {
+            return XCTFail("Expected a spawn, got \(outcome)")
+        }
+        let placedIds = try db.read { grdb in
+            try BoardTask.filter(Column("boardId") == boardId).fetchAll(grdb)
+        }.map { $0.taskId }
+        XCTAssertEqual(placedIds.count, 4)
+        let famPlaced = placedIds.filter { $0 == "fam-root" || $0 == "fam-derived" }
+        XCTAssertEqual(famPlaced.count, 1, "one square per shared-counter family")
+        for id in ["f1", "f2", "f3"] {
+            XCTAssertTrue(placedIds.contains(id), "filler \(id) must fill the freed cell")
+        }
+    }
+
+    // MARK: - Series binding (loose-ends sweep 2026-09-09)
+
+    /// A pull stored against an ARCHIVED old window hops to the series'
+    /// live instance — the spawn pulls the NEW window's squares and never
+    /// asks. Web twin: the series-binding spawn tests in
+    /// `recurringBoardSpawnMix.test.ts`.
+    func test_archivedSeriesInstance_hopsToLiveSibling() throws {
+        let db = try makeDb()
+        try seedBoard(
+            db, boardId: "inst-old", taskIds: ["o1", "o2"],
+            status: "archived", spawnedFromTemplateId: "series-1",
+            startDate: "2026-08-28T00:00:00.000Z", endDate: "2026-08-28T23:59:59.999Z"
+        )
+        try seedBoard(
+            db, boardId: "inst-live", taskIds: ["n1", "n2", "n3", "n4"],
+            spawnedFromTemplateId: "series-1",
+            startDate: now, endDate: "2026-09-04T23:59:59.999Z"
+        )
+        let template = try seedTemplate(
+            db,
+            sources: [BoardSource(sourceId: "inst-old", kind: .board)],
+            manualTaskIds: []
+        )
+        let outcome = try spawn(db, template)
+        guard case .spawned(let boardId, _, _) = outcome else {
+            return XCTFail("Expected a spawn, got \(outcome)")
+        }
+        let placed = Set(try db.read { grdb in
+            try BoardTask.filter(Column("boardId") == boardId).fetchAll(grdb)
+        }.map { $0.taskId })
+        XCTAssertEqual(placed, ["n1", "n2", "n3", "n4"])
+    }
+
+    /// A series with NO live instance still asks — the hop has nowhere
+    /// to land.
+    func test_seriesWithNoLiveInstance_stillAsks() throws {
+        let db = try makeDb()
+        try seedBoard(
+            db, boardId: "inst-a", taskIds: ["o1"],
+            status: "archived", spawnedFromTemplateId: "series-dead"
+        )
+        try seedBoard(
+            db, boardId: "inst-b", taskIds: ["o1"],
+            status: "archived", spawnedFromTemplateId: "series-dead",
+            startDate: "2026-08-01T00:00:00.000Z"
+        )
+        let template = try seedTemplate(
+            db,
+            sources: [BoardSource(sourceId: "inst-a", kind: .board)],
+            manualTaskIds: ["m1", "m2", "m3", "m4"]
+        )
+        let outcome = try spawn(db, template)
+        guard case .skipped(_, let reason) = outcome else {
+            return XCTFail("Expected a skip, got \(outcome)")
+        }
+        XCTAssertEqual(reason, .sourceBoardMissing)
+    }
+
 }

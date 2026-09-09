@@ -280,48 +280,86 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         XCTAssertEqual(validateSpawnPool(template: tpl, poolTasks: pool), .failure(.unsupportedCenter))
     }
 
-    // MARK: - computeAttention (Profile list badge state)
+    // MARK: - computeRosterHealth (Board-settings list badge state)
     //
-    // Mirrors web's `attentionByTemplateId` memo in
-    // `RecurringTemplatesPage.tsx`: resolve each seed id against the live
-    // (non-deleted) library, flag any missing id as `hasDeletedTasks`,
-    // else surface the `validateSpawnPool` failure. Absent key ⇒ healthy.
+    // Sources-native (loose-ends sweep 2026-09-09; supersedes the legacy
+    // `computeAttention`): the manual layer resolves against `tasksById`
+    // (a deleted/missing hand-add flags `.hasDeletedTasks`), the
+    // achievable pick drives `.poolTooSmall`, absent key ⇒ healthy. The
+    // deeper source scenarios (board sources, ranges, families) live in
+    // `RecurringBoardTemplatesMixTests`.
 
-    func testComputeAttention_HealthyTemplate_NoBadge() {
-        // 5×5 free center → required 24; 24 present seed tasks.
-        let tpl = makeTemplate(seedTaskIds: (0..<24).map { "t\($0)" })
-        let live = tpl.seedTaskIds.map { makeTask($0) }
-        let out = RecurringBoardTemplatesViewModel.computeAttention(templates: [tpl], liveTasks: live)
+    private func manualResolution(_ ids: [String]) -> RecurringBoardTemplatesViewModel.TemplateSupplyResolution {
+        RecurringBoardTemplatesViewModel.TemplateSupplyResolution(
+            supplies: [], deadBoardSourceIds: [], manualTaskIds: ids
+        )
+    }
+
+    func testRosterHealth_HealthyTemplate_NoBadge() {
+        // 5×5 free center → required 24; 24 present hand-adds.
+        let ids = (0..<24).map { "t\($0)" }
+        let tpl = makeTemplate(seedTaskIds: ids)
+        let tasksById = Dictionary(uniqueKeysWithValues: ids.map { ($0, makeTask($0)) })
+        let (_, out) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: manualResolution(ids)],
+            tasksById: tasksById
+        )
         XCTAssertNil(out[tpl.id])
     }
 
-    func testComputeAttention_AllTasksMissing_HasDeletedTasks() {
-        let tpl = makeTemplate(seedTaskIds: (0..<24).map { "t\($0)" })
-        let out = RecurringBoardTemplatesViewModel.computeAttention(templates: [tpl], liveTasks: [])
+    func testRosterHealth_AllTasksMissing_HasDeletedTasks() {
+        let ids = (0..<24).map { "t\($0)" }
+        let tpl = makeTemplate(seedTaskIds: ids)
+        let (_, out) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: manualResolution(ids)],
+            tasksById: [:]
+        )
         XCTAssertEqual(out[tpl.id], .hasDeletedTasks)
     }
 
-    func testComputeAttention_OneTaskMissing_HasDeletedTasks() {
-        // A soft-deleted seed task drops out of the live library entirely.
-        let tpl = makeTemplate(seedTaskIds: (0..<24).map { "t\($0)" })
-        let live = tpl.seedTaskIds.dropLast().map { makeTask($0) }
-        let out = RecurringBoardTemplatesViewModel.computeAttention(templates: [tpl], liveTasks: live)
+    func testRosterHealth_OneTaskMissing_HasDeletedTasks() {
+        let ids = (0..<24).map { "t\($0)" }
+        let tpl = makeTemplate(seedTaskIds: ids)
+        let tasksById = Dictionary(uniqueKeysWithValues: ids.dropLast().map { ($0, makeTask($0)) })
+        let (_, out) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: manualResolution(ids)],
+            tasksById: tasksById
+        )
         XCTAssertEqual(out[tpl.id], .hasDeletedTasks)
     }
 
-    func testComputeAttention_UndersizePool_PoolTooSmall() {
+    func testRosterHealth_UndersizePool_PoolTooSmall() {
         // 3×3 free center → required 8; only 5 present tasks.
-        let tpl = makeTemplate(boardSize: 3, seedTaskIds: (0..<5).map { "s\($0)" })
-        let live = tpl.seedTaskIds.map { makeTask($0) }
-        let out = RecurringBoardTemplatesViewModel.computeAttention(templates: [tpl], liveTasks: live)
+        let ids = (0..<5).map { "s\($0)" }
+        let tpl = makeTemplate(boardSize: 3, seedTaskIds: ids)
+        let tasksById = Dictionary(uniqueKeysWithValues: ids.map { ($0, makeTask($0)) })
+        let (_, out) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: manualResolution(ids)],
+            tasksById: tasksById
+        )
         XCTAssertEqual(out[tpl.id], .poolTooSmall)
     }
 
-    func testComputeAttention_MixedTemplates_OnlyUnhealthyKeyed() {
-        let healthy = makeTemplate(id: "ok", seedTaskIds: (0..<24).map { "h\($0)" })
-        let small = makeTemplate(id: "small", boardSize: 3, seedTaskIds: (0..<4).map { "u\($0)" })
-        let live = (healthy.seedTaskIds + small.seedTaskIds).map { makeTask($0) }
-        let out = RecurringBoardTemplatesViewModel.computeAttention(templates: [healthy, small], liveTasks: live)
+    func testRosterHealth_MixedTemplates_OnlyUnhealthyKeyed() {
+        let healthyIds = (0..<24).map { "h\($0)" }
+        let smallIds = (0..<4).map { "u\($0)" }
+        let healthy = makeTemplate(id: "ok", seedTaskIds: healthyIds)
+        let small = makeTemplate(id: "small", boardSize: 3, seedTaskIds: smallIds)
+        let tasksById = Dictionary(
+            uniqueKeysWithValues: (healthyIds + smallIds).map { ($0, makeTask($0)) }
+        )
+        let (_, out) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [healthy, small],
+            resolutionByTemplateId: [
+                "ok": manualResolution(healthyIds),
+                "small": manualResolution(smallIds),
+            ],
+            tasksById: tasksById
+        )
         XCTAssertNil(out["ok"])
         XCTAssertEqual(out["small"], .poolTooSmall)
     }

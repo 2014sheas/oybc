@@ -80,13 +80,47 @@ export function buildWizardPlacement(
   const sources = controller.sources ?? [];
   if (sources.length > 0) {
     const supplies = algorithmSupplies(sources, controller.supplyInfoBySourceId);
+    // Counter-family exclusivity (2026-09-08): the pick never places two
+    // members of one shared-counter family, and a CHOSEN center is pinned
+    // so its family-mates are pruned before the draw.
+    const counterFamilyByTaskId = controller.counterFamilyByTaskId ?? {};
+    const pinnedTaskId =
+      isOdd && centerType === CenterSquareType.CHOSEN && centerTaskId !== null
+        ? centerTaskId
+        : undefined;
     const selection = selectBoardTasks({
       supplies,
       manualTaskIds: Array.from(controller.manualTaskIds),
       cellCount: controller.tasksRequired,
       randomize: isRandomized,
+      counterFamilyByTaskId,
+      pinnedTaskId,
     });
-    selectedIds = selection.ok ? [...selection.taskIds] : Array.from(selectedTaskIds);
+    if (selection.ok) {
+      selectedIds = [...selection.taskIds];
+    } else {
+      // Defensive fallback (the honest capacity gate makes a short pick
+      // unreachable when Next was enabled): place the flat selection,
+      // keeping at most ONE member per counter family — the family rule
+      // holds even on this path. Overfill-only relative to the old
+      // behavior; never underfills.
+      const seenFamilies = new Set<string>();
+      selectedIds = Array.from(selectedTaskIds).filter((id) => {
+        const fam = counterFamilyByTaskId[id];
+        if (fam === undefined) return true;
+        if (id === pinnedTaskId) {
+          seenFamilies.add(fam);
+          return true;
+        }
+        if (seenFamilies.has(fam)) return false;
+        // Reserve the family slot for a pinned mate ahead in the set.
+        if (pinnedTaskId !== undefined && counterFamilyByTaskId[pinnedTaskId] === fam) {
+          return false;
+        }
+        seenFamilies.add(fam);
+        return true;
+      });
+    }
     // A CHOSEN center must survive the ranged pick — swap it in if the
     // draw skipped it. The victim is chosen MIN-AWARE: scanning from the
     // end, prefer a pick whose removal keeps every source's membership ≥

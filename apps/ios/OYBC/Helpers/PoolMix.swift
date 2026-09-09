@@ -374,6 +374,31 @@ extension PoolMix {
         )
     }
 
+    /// Sources-native spawn-provenance summary (loose-ends sweep
+    /// 2026-09-09) — supersedes the legacy-trio overload for records that
+    /// may carry board-kind sources or ranges: `mixSize` is the honest
+    /// achievable pool size (caps, cap overlap, counter-family rule). TS
+    /// twin: `summarizeSpawnProvenanceFromSupplies`.
+    static func summarizeSpawnProvenance(
+        supplies: [BoardSources.Supply],
+        manualTaskIds: [String],
+        counterFamilyByTaskId: [String: String],
+        dealtTaskIds: [String]
+    ) -> SpawnProvenanceSummary {
+        let manualSet = Set(manualTaskIds)
+        let manualSourcedCount = dealtTaskIds.filter { manualSet.contains($0) }.count
+        return SpawnProvenanceSummary(
+            dealt: dealtTaskIds.count,
+            mixSize: BoardSources.computeAchievablePoolSize(
+                supplies: supplies,
+                manualTaskIds: manualTaskIds,
+                counterFamilyByTaskId: counterFamilyByTaskId
+            ).size,
+            poolSourcedCount: dealtTaskIds.count - manualSourcedCount,
+            manualSourcedCount: manualSourcedCount
+        )
+    }
+
     /// Renders a `SpawnProvenanceSummary` into the Board-screen note copy,
     /// e.g. `"Picked 8 of 10 — 7 from the pool, 1 added today"`.
     ///
@@ -386,7 +411,9 @@ extension PoolMix {
     /// per the copy rules ("from" never "deals from").
     static func formatSpawnProvenanceNote(_ summary: SpawnProvenanceSummary) -> String {
         var parts: [String] = []
-        if summary.poolSourcedCount > 0 { parts.append("\(summary.poolSourcedCount) from the pool") }
+        // "pulled in" (not "from the pool") — squares can come from pulled
+        // BOARDS too since Board Sources; the wizard's own verb is "pull".
+        if summary.poolSourcedCount > 0 { parts.append("\(summary.poolSourcedCount) pulled in") }
         if summary.manualSourcedCount > 0 { parts.append("\(summary.manualSourcedCount) added today") }
         let breakdown = parts.isEmpty ? "" : " — " + parts.joined(separator: ", ")
         return "Picked \(summary.dealt) of \(summary.mixSize)\(breakdown)"

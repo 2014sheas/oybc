@@ -1,19 +1,14 @@
 import XCTest
 @testable import OYBC
 
-/// `RecurringBoardTemplatesViewModel.computeTemplateMixes` — the batched,
-/// per-template mix resolver. iOS twin of web's `computeTemplateMixes`
-/// (`hooks/useTemplateMixes.ts`); see
-/// `apps/web/src/hooks/__tests__/useTemplateMixes.test.ts` for the mirror.
-///
-/// Review finding M2 (P1 final fix wave, docs/POOLS_RECURRING.md): the
-/// `poolIds`-absent-OR-empty fallback to `seedTaskIds` was too loose — an
-/// empty-but-PRESENT `poolIds: []` also covers the defensive "flattened"
-/// write-through shape (`manualTaskIds` populated, `poolIds: []`), and
-/// falling back to stale `seedTaskIds` there is a destructive-edit bug
-/// (re-editing resurrects stale seeds instead of the flatten's actual
-/// selection). The fix: fall back ONLY when `poolIds == nil`; `poolIds: []`
-/// resolves through `PoolMix.resolveMix` like any other shape.
+/// `RecurringBoardTemplatesViewModel.computeRosterHealth` — the
+/// sources-native roster mix + attention computation (loose-ends sweep
+/// 2026-09-09; supersedes the legacy `computeTemplateMixes` +
+/// `computeAttention` pair). Mirrors web's `computeRosterHealth` suite
+/// (`templateHealth.test.ts`): board-source-only templates are HEALTHY
+/// (the legacy path badged them with an empty mix), dead board sources
+/// badge `.sourceBoardMissing` statically, and counts respect ranges +
+/// the counter-family rule.
 final class RecurringBoardTemplatesMixTests: XCTestCase {
 
     private func makeTemplate(
@@ -74,75 +69,148 @@ final class RecurringBoardTemplatesMixTests: XCTestCase {
         )
     }
 
-    func testResolvesAMigratedTemplateThroughPoolsAndTasks_IgnoringSeedTaskIds() {
-        let tpl = makeTemplate(poolIds: ["pool-1"])
-        let poolsById = ["pool-1": makePool("pool-1", ["a1", "a2", "a3"])]
-        let tasksById = [
-            "a1": makeTask("a1"), "a2": makeTask("a2"), "a3": makeTask("a3"),
-        ]
-
-        let result = RecurringBoardTemplatesViewModel.computeTemplateMixes(
-            templates: [tpl], poolsById: poolsById, tasksById: tasksById
-        )
-
-        XCTAssertEqual(result[tpl.id], ["a1", "a2", "a3"])
+    private func poolSource(_ id: String, min: Int = 0, max: Int? = nil) -> BoardSource {
+        BoardSource(sourceId: id, kind: .pool, min: min, max: max)
     }
 
-    func testFallsBackToSeedTaskIds_WhenPoolIdsIsNil_GenuinelyUnmigrated() {
+    private func boardSource(_ id: String) -> BoardSource {
+        BoardSource(sourceId: id, kind: .board)
+    }
+
+    private func resolution(
+        supplies: [BoardSources.Supply] = [],
+        deadBoardSourceIds: [String] = [],
+        manualTaskIds: [String] = []
+    ) -> RecurringBoardTemplatesViewModel.TemplateSupplyResolution {
+        RecurringBoardTemplatesViewModel.TemplateSupplyResolution(
+            supplies: supplies,
+            deadBoardSourceIds: deadBoardSourceIds,
+            manualTaskIds: manualTaskIds
+        )
+    }
+
+    private let nine = (1...9).map { "s\($0)" }
+
+    private func nineTasks() -> [String: Task] {
+        Dictionary(uniqueKeysWithValues: nine.map { ($0, makeTask($0)) })
+    }
+
+    func testBoardSourceOnlyTemplate_IsHealthyWithSquaresCounted() {
+        // THE legacy-path regression: resolveMix saw no poolIds → empty mix
+        // → spurious badge + "0 tasks" for a board-source-only template.
         let tpl = makeTemplate(poolIds: nil, manualTaskIds: nil, removedTaskIds: nil)
-
-        let result = RecurringBoardTemplatesViewModel.computeTemplateMixes(
-            templates: [tpl], poolsById: [:], tasksById: [:]
+        let res = resolution(
+            supplies: [BoardSources.Supply(source: boardSource("b1"), supplyTaskIds: nine)]
         )
-
-        XCTAssertEqual(result[tpl.id], tpl.seedTaskIds)
+        let (mix, attention) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: res],
+            tasksById: nineTasks()
+        )
+        XCTAssertNil(attention[tpl.id])
+        XCTAssertEqual(mix[tpl.id]?.count, 9)
     }
 
-    func testResolvesViaEmptyMix_WhenPoolIdsIsEmptyArrayWithNoManualAdditions() {
-        // The "no pool yet" edge — must NOT fall back to seedTaskIds.
-        let tpl = makeTemplate(
-            seedTaskIds: ["stale-should-never-appear"],
-            poolIds: [], manualTaskIds: [], removedTaskIds: []
+    func testDeadBoardSource_BadgesSourceBoardMissing() {
+        let tpl = makeTemplate()
+        let res = resolution(
+            supplies: [
+                BoardSources.Supply(source: boardSource("b-gone"), supplyTaskIds: []),
+                BoardSources.Supply(source: poolSource("p1"), supplyTaskIds: nine),
+            ],
+            deadBoardSourceIds: ["b-gone"]
         )
-
-        let result = RecurringBoardTemplatesViewModel.computeTemplateMixes(
-            templates: [tpl], poolsById: [:], tasksById: [:]
+        let (_, attention) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: res],
+            tasksById: nineTasks()
         )
-
-        XCTAssertEqual(result[tpl.id], [])
-        XCTAssertNotEqual(result[tpl.id], tpl.seedTaskIds)
+        XCTAssertEqual(attention[tpl.id], .sourceBoardMissing)
     }
 
-    func testResolvesViaManualLayer_WhenPoolIdsIsEmptyArrayButManualTaskIdsPopulated() {
-        // The "flattened" defensive write-through shape. Falling back to
-        // seedTaskIds here would silently drop the manual selection —
-        // exactly the destructive-edit bug M2 fixes.
-        let tpl = makeTemplate(
-            seedTaskIds: ["stale-should-never-appear"],
-            poolIds: [], manualTaskIds: ["m1", "m2"], removedTaskIds: []
+    func testDeletedManualTask_BadgesHasDeletedTasks_AndStaysOutOfTheCount() {
+        let tpl = makeTemplate()
+        let tasks = nineTasks()
+        // "dead" is absent from tasksById entirely (deleted-and-purged).
+        let res = resolution(manualTaskIds: nine + ["dead"])
+        let (mix, attention) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: res],
+            tasksById: tasks
         )
-
-        let result = RecurringBoardTemplatesViewModel.computeTemplateMixes(
-            templates: [tpl], poolsById: [:], tasksById: [:]
-        )
-
-        XCTAssertEqual(result[tpl.id], ["m1", "m2"])
+        XCTAssertEqual(attention[tpl.id], .hasDeletedTasks)
+        XCTAssertEqual(mix[tpl.id]?.count, 9)
+        XCTAssertFalse(mix[tpl.id]?.contains("dead") ?? true)
     }
 
-    func testBatchesMultipleTemplatesIndependently() {
-        let t1 = makeTemplate(id: "tmpl-1", seedTaskIds: ["x"], poolIds: ["pool-1"])
-        let t2 = makeTemplate(id: "tmpl-2", seedTaskIds: ["y"], poolIds: ["pool-2"])
-        let poolsById = [
-            "pool-1": makePool("pool-1", ["a1"]),
-            "pool-2": makePool("pool-2", ["a2"]),
-        ]
-        let tasksById = ["a1": makeTask("a1"), "a2": makeTask("a2")]
-
-        let result = RecurringBoardTemplatesViewModel.computeTemplateMixes(
-            templates: [t1, t2], poolsById: poolsById, tasksById: tasksById
+    func testNumericRange_MakesPoolTooSmallHonest() {
+        // Raw union (9) ≥ the 3×3 FREE floor (8), but max: 4 caps the
+        // achievable pick below it — the legacy size check missed this.
+        let tpl = makeTemplate()
+        let res = resolution(
+            supplies: [BoardSources.Supply(source: poolSource("p1", max: 4), supplyTaskIds: nine)]
         )
+        let (mix, attention) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: res],
+            tasksById: nineTasks()
+        )
+        XCTAssertEqual(mix[tpl.id]?.count, 4)
+        XCTAssertEqual(attention[tpl.id], .poolTooSmall)
+    }
 
-        XCTAssertEqual(result["tmpl-1"], ["a1"])
-        XCTAssertEqual(result["tmpl-2"], ["a2"])
+    func testSharedCounterFamily_CountsOnceInTheRosterMix() {
+        let tpl = makeTemplate()
+        var tasks = nineTasks()
+        tasks["r50"] = Task(
+            id: "r50", userId: "u1", title: "Read 50", description: nil, type: .counting,
+            action: "Read", unit: "pages", maxCount: 50,
+            operatorType: nil, threshold: nil,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil, currentCount: nil,
+            createdAt: "2026-07-19T00:00:00.000Z", updatedAt: "2026-07-19T00:00:00.000Z",
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+        tasks["r20"] = Task(
+            id: "r20", userId: "u1", title: "Read 20", description: nil, type: .counting,
+            action: "Read", unit: "pages", maxCount: 20,
+            operatorType: nil, threshold: nil,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil, currentCount: nil,
+            createdAt: "2026-07-19T00:00:00.000Z", updatedAt: "2026-07-19T00:00:00.000Z",
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil,
+            sharedCounterId: "r50", baseline: 0
+        )
+        let res = resolution(manualTaskIds: ["r50", "r20"] + Array(nine.prefix(8)))
+        let (mix, attention) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: res],
+            tasksById: tasks
+        )
+        let famPicks = (mix[tpl.id] ?? []).filter { $0 == "r50" || $0 == "r20" }
+        XCTAssertEqual(famPicks.count, 1)
+        XCTAssertEqual(mix[tpl.id]?.count, 9)
+        XCTAssertNil(attention[tpl.id])
+    }
+
+    func testEmptyTemplate_BadgesNoPoolTasksResolved() {
+        let tpl = makeTemplate()
+        let (_, attention) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [tpl.id: resolution()],
+            tasksById: [:]
+        )
+        XCTAssertEqual(attention[tpl.id], .noPoolTasksResolved)
+    }
+
+    func testMissingResolutionEntry_FallsBackToSeedTaskIdsWithNoBadge() {
+        let tpl = makeTemplate(seedTaskIds: nine)
+        let (mix, attention) = RecurringBoardTemplatesViewModel.computeRosterHealth(
+            templates: [tpl],
+            resolutionByTemplateId: [:],
+            tasksById: [:]
+        )
+        XCTAssertEqual(mix[tpl.id], nine)
+        XCTAssertNil(attention[tpl.id])
     }
 }

@@ -62,16 +62,56 @@ export function availableCountForSource(
 }
 
 /** The header/gate capacity — replaces `selectedTaskIds.size` everywhere
- *  the step gates/counts (docs/BOARD_SOURCES.md §Selection step 3). */
+ *  the step gates/counts (docs/BOARD_SOURCES.md §Selection step 3).
+ *  Since the counter-family rework this is the HONEST number: a
+ *  deterministic dry-run of the actual fill, counting a shared-counter
+ *  family once and respecting cap overlap — computed before any
+ *  preview/deal, and never more than the deal can deliver. */
 export function sourceCapacity(
   sources: BoardSource[],
   supplyInfo: SupplyInfoMap,
   manualTaskIds: Set<string>,
+  counterFamilyByTaskId?: Record<string, string>,
+  pinnedTaskId?: string,
 ): number {
   return computeSourceCapacity(
     algorithmSupplies(sources, supplyInfo),
     Array.from(manualTaskIds),
+    counterFamilyByTaskId,
+    pinnedTaskId ?? undefined,
   ).capacity;
+}
+
+/**
+ * Counter-family collisions visible in the wizard pool: family key →
+ * member ids, for every family with ≥2 members among `taskIds`. Drives
+ * the "shares a counter with 'X' · one per board" row hints (owner
+ * directive 2026-09-08 — two goals on one counter never share a board).
+ */
+export function computeCounterClashes(
+  taskIds: Iterable<string>,
+  counterFamilyByTaskId: Record<string, string>,
+  taskById: Record<string, Task>,
+): Map<string, string> {
+  const membersByFamily = new Map<string, string[]>();
+  for (const id of taskIds) {
+    const fam = counterFamilyByTaskId[id];
+    if (fam === undefined) continue;
+    const members = membersByFamily.get(fam);
+    if (members === undefined) membersByFamily.set(fam, [id]);
+    else if (!members.includes(id)) members.push(id);
+  }
+  const out = new Map<string, string>();
+  for (const members of membersByFamily.values()) {
+    if (members.length < 2) continue;
+    for (const id of members) {
+      const other = members.find((m) => m !== id);
+      if (other === undefined) continue;
+      const title = taskById[other]?.title || 'another task';
+      out.set(id, title);
+    }
+  }
+  return out;
 }
 
 /** The selection union: dedupe(every source's available ∪ manual). */

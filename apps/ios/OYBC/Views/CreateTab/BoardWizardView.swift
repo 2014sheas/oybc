@@ -102,6 +102,15 @@ struct BoardWizardView: View {
         Dictionary(library.libraryTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// Counter-family exclusivity — a cheap Equatable signature over the
+    /// library's counting tasks, for the `.onChange` that refreshes the
+    /// wizard VM's family map.
+    private var counterFamilySignature: [String] {
+        library.libraryTasks.compactMap { task in
+            task.type == .counting ? "\(task.id)|\(task.sharedCounterId ?? "")" : nil
+        }
+    }
+
     /// Loads the user's pools + active recurring templates for the Tasks
     /// step. Fire-and-forget, mirroring `library.loadLibrary`'s shim —
     /// silent on error (the pull card just renders empty/stale, same
@@ -373,6 +382,14 @@ struct BoardWizardView: View {
         .onAppear {
             library.loadLibrary(userId: userId)
             loadPools()
+            wizard.refreshCounterFamilies(libraryTasks: library.libraryTasks)
+        }
+        // Counter-family exclusivity (2026-09-08) — keep the wizard VM's
+        // library-half family map in lockstep with the live library. The
+        // signature is only the counting tasks' id|sharedCounterId pairs,
+        // so unrelated library churn doesn't re-derive anything.
+        .onChange(of: counterFamilySignature) { _, _ in
+            wizard.refreshCounterFamilies(libraryTasks: library.libraryTasks)
         }
         .sheet(isPresented: $showCancelDialog) {
             BoardWizardCancelDialogView(

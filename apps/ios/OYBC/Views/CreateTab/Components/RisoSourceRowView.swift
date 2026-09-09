@@ -26,6 +26,10 @@ struct RisoSourceRowView: View {
     let onSetFilter: (BoardSource.Filter) -> Void
     let onSetRange: (_ min: Int, _ max: Int?) -> Void
     let onToggleExclude: (String) -> Void
+    /// Counter-family exclusivity (2026-09-08) — member id → the OTHER
+    /// family member's title, when both are visible in the pool ("one
+    /// per board" hint).
+    var counterClashByTaskId: [String: String] = [:]
 
     private var isDefaultRange: Bool { source.min == 0 && source.max == nil }
     private var effectiveMax: Int { source.max ?? availableCount }
@@ -248,11 +252,19 @@ struct RisoSourceRowView: View {
                 kind: RisoTaskKind(taskType: task?.type ?? .normal),
                 style: .letterSquare
             )
-            Text(task?.title ?? "")
-                .font(.risoBody(13, .semibold))
-                .foregroundStyle(Color.risoInk)
-                .strikethrough(state == .excluded)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(task?.title ?? "")
+                    .font(.risoBody(13, .semibold))
+                    .foregroundStyle(Color.risoInk)
+                    .strikethrough(state == .excluded)
+                    .lineLimit(1)
+                if let clashTitle = counterClashByTaskId[taskId] {
+                    Text("shares a counter with \u{201C}\(clashTitle)\u{201D} · one per board")
+                        .font(.risoBody(10.5, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .lineLimit(1)
+                }
+            }
             Spacer(minLength: 6)
             switch state {
             case .included:
