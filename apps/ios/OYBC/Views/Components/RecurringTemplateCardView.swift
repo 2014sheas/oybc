@@ -26,7 +26,7 @@ struct RecurringTemplateCard: View {
     let template: RecurringBoardTemplate
     /// Non-nil when this template's pool can't spawn — surfaces a badge.
     /// Strict mirror of web's `attentionReason` (see `RecurringTemplateRow`).
-    let attentionReason: SpawnPoolFailureReason?
+    let attentionReason: SpawnAttentionReason?
     /// First-3 resolved task titles from the pool, in mix order (issue
     /// #321). Empty ⇒ no chip row (e.g. zero resolvable titles).
     var poolPreview: [String] = []
@@ -170,7 +170,7 @@ struct RecurringTemplateCard: View {
 
     // MARK: - Attention badge
 
-    private func attentionBadge(_ reason: SpawnPoolFailureReason) -> some View {
+    private func attentionBadge(_ reason: SpawnAttentionReason) -> some View {
         HStack(alignment: .top, spacing: 5) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 10, weight: .bold))
@@ -190,19 +190,26 @@ struct RecurringTemplateCard: View {
     }
 
     /// Copy for each attention reason — mirrors web's `ATTENTION_COPY`
-    /// (`RecurringTemplateRow.tsx`). Only the four pure-validation
-    /// reasons are reachable from the template list (the two
-    /// driver-only reasons live on the spawn digest, not here).
-    static func attentionCopy(_ reason: SpawnPoolFailureReason) -> String {
+    /// (`RepeatingBoardRow.tsx`). Sources-native roster health (loose-ends
+    /// sweep 2026-09-09) can surface the full attention set here,
+    /// `sourceBoardMissing` included. No "template"/"spawn" in copy — the
+    /// rework's copy rules.
+    static func attentionCopy(_ reason: SpawnAttentionReason) -> String {
         switch reason {
         case .poolTooSmall:
-            return "Pool is too small for the current configuration. Edit to add tasks."
+            return "Mix is too small for the current configuration. Edit tasks to add more."
         case .hasDeletedTasks:
-            return "A task in this template was deleted. Edit to refresh the pool."
+            return "A task in this mix was deleted. Edit tasks to refresh it."
         case .unsupportedTimeframe:
-            return "This template's timeframe is no longer supported."
+            return "This board's timeframe is no longer supported."
         case .unsupportedCenter:
-            return "This template's center cell is no longer supported."
+            return "This board's center cell is no longer supported."
+        case .noPoolTasksResolved:
+            return "None of this board's tasks could be loaded. Edit tasks to refresh it."
+        case .spawnFailed:
+            return "Couldn't make the next board. Try editing tasks to refresh it."
+        case .sourceBoardMissing:
+            return "It pulls from a board that was deleted or archived. Edit tasks to remove that source."
         }
     }
 

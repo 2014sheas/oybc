@@ -6,7 +6,6 @@ import {
   type CoreBoardDefault,
   type Pool,
   type RecurringBoardTemplate,
-  type SpawnPoolFailureReason,
   type UserPreferences,
 } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
@@ -15,11 +14,11 @@ import {
   usePools,
   usePreferences,
   useRecurringBoardTemplates,
-  useTemplateMixes,
+  useTemplateRosterHealth,
 } from '../hooks';
 import { useTaskLibrary, useBrowsableTasks } from './createPage/useTaskLibrary';
 import { applyCoreBoardDefaultPrefill } from './createHub/poolPullLogic';
-import { computeTemplateAttention } from '../components/recurringTemplates/templateHealth';
+
 import { computePoolPreview, type PoolPreview } from '../components/recurringTemplates/poolPreview';
 import { formatDefaultsSummary } from '../components/boardSettings/formatDefaultsSummary';
 import { RepeatingBoardRow } from '../components/boardSettings/RepeatingBoardRow';
@@ -97,7 +96,12 @@ export function BoardSettingsPage(): React.ReactElement {
   const browsableTasks = useBrowsableTasks(library.allTasks, library.childToParents);
   const pools = usePools(userId);
   const templates = useRecurringBoardTemplates(userId);
-  const templateMixes = useTemplateMixes(templates);
+  // Loose-ends sweep (2026-09-09) — sources-native roster health: honest
+  // achievable counts/previews + the spawn's full attention set
+  // (`source_board_missing` included). Replaces the legacy-trio
+  // `useTemplateMixes` + `computeTemplateAttention` pair.
+  const rosterHealth = useTemplateRosterHealth(templates);
+  const templateMixes = rosterHealth?.mixByTemplateId;
 
   const dailyDefault = useCoreBoardDefault(userId, Timeframe.DAILY);
   const weeklyDefault = useCoreBoardDefault(userId, Timeframe.WEEKLY);
@@ -139,10 +143,7 @@ export function BoardSettingsPage(): React.ReactElement {
     return out;
   }, [dailyDefault, weeklyDefault, monthlyDefault, yearlyDefault, poolsById, library.taskMap]);
 
-  const attentionByTemplateId = useMemo<Record<string, SpawnPoolFailureReason>>(
-    () => computeTemplateAttention(templates, templateMixes ?? {}, library.taskMap),
-    [templates, templateMixes, library.taskMap],
-  );
+  const attentionByTemplateId = rosterHealth?.attentionByTemplateId ?? {};
   const poolPreviewByTemplateId = useMemo<Record<string, PoolPreview>>(() => {
     const out: Record<string, PoolPreview> = {};
     for (const t of templates) {

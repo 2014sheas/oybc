@@ -2,8 +2,12 @@ import { db } from '../internal';
 import {
   BoardStatus,
   isEventOwningTask,
+  poolSourceSupplyById,
   resolveTaskWindowState,
+  sourcesForRecord,
   type Board,
+  type BoardSourceSupply,
+  type RecurringBoardTemplate,
   type Task,
   type TaskEvent,
 } from '@oybc/shared';
@@ -144,4 +148,125 @@ export async function fetchSourceSheetBoardEntries(
     });
   }
   return entries.sort((a, b) => b.board.updatedAt.localeCompare(a.board.updatedAt));
+}
+
+/** Per-template result of {@link fetchTemplateSupplyResolution}. */
+export interface TemplateSupplyResolution {
+  /** The record's resolved supplies (pool + board kinds, 'todo' applied). */
+  supplies: BoardSourceSupply[];
+  /** Board-kind source ids whose board is missing/deleted/archived — the
+   *  spawn would skip this template with `source_board_missing`. */
+  deadBoardSourceIds: string[];
+  /** The record's effective hand-added layer (the un-migrated M2 rule:
+   *  a record with no generalized fields treats `seedTaskIds` as manual). */
+  manualTaskIds: string[];
+}
+
+/**
+ * Batched, sources-native supply resolution for a roster of templates
+ * (loose-ends sweep 2026-09-09 — the Board-settings health/preview used
+ * to resolve via the legacy trio, so board-kind sources read as empty
+ * and ranges/the counter-family rule were invisible). One boards fetch +
+ * one pools fetch + one tasks fetch across the whole roster; board
+ * supplies resolve through the same reader the spawn uses.
+ *
+ * @returns per-template resolutions plus a combined id → Task map
+ *   covering every pool member, board member, and manual id (for family
+ *   maps, previews, and deleted-manual checks).
+ */
+export async function fetchTemplateSupplyResolution(
+  templates: RecurringBoardTemplate[],
+): Promise<{
+  byTemplateId: Record<string, TemplateSupplyResolution>;
+  tasksById: Record<string, Task>;
+}> {
+  const perTemplateSources = templates.map((t) => {
+    const isUnmigrated =
+      t.sources === undefined &&
+      t.poolIds === undefined &&
+      t.manualTaskIds === undefined &&
+      t.removedTaskIds === undefined;
+    return {
+      template: t,
+      sources: sourcesForRecord(t),
+      manualTaskIds: isUnmigrated ? t.seedTaskIds : (t.manualTaskIds ?? []),
+    };
+  });
+
+  const allPoolIds = new Set<string>();
+  const allBoardIds = new Set<string>();
+  for (const entry of perTemplateSources) {
+    for (const source of entry.sources) {
+      if (source.kind === 'pool') allPoolIds.add(source.sourceId);
+      else allBoardIds.add(source.sourceId);
+    }
+  }
+
+  const pools =
+    allPoolIds.size > 0
+      ? await db.pools.where('id').anyOf([...allPoolIds]).toArray()
+      : [];
+  const poolsById = Object.fromEntries(pools.map((p) => [p.id, p]));
+
+  const boards =
+    allBoardIds.size > 0
+      ? await db.boards.where('id').anyOf([...allBoardIds]).toArray()
+      : [];
+  const boardById = new Map(boards.map((b) => [b.id, b]));
+  const supplyByBoardId = new Map<string, BoardSourceSupplyInfo>();
+  for (const board of boards) {
+    if (board.isDeleted || board.status === BoardStatus.ARCHIVED) continue;
+    supplyByBoardId.set(board.id, await resolveFromDb(board));
+  }
+
+  // Combined task universe: pool members + manual + board members.
+  const allTaskIds = new Set<string>();
+  for (const p of pools) for (const id of p.taskIds) allTaskIds.add(id);
+  for (const entry of perTemplateSources) {
+    for (const id of entry.manualTaskIds) allTaskIds.add(id);
+  }
+  for (const info of supplyByBoardId.values()) {
+    for (const id of info.supplyTaskIds) allTaskIds.add(id);
+  }
+  const tasks =
+    allTaskIds.size > 0
+      ? await db.tasks.where('id').anyOf([...allTaskIds]).toArray()
+      : [];
+  const tasksById: Record<string, Task> = Object.fromEntries(tasks.map((t) => [t.id, t]));
+
+  const byTemplateId: Record<string, TemplateSupplyResolution> = {};
+  for (const entry of perTemplateSources) {
+    const supplies: BoardSourceSupply[] = [];
+    const deadBoardSourceIds: string[] = [];
+    for (const source of entry.sources) {
+      if (source.kind === 'pool') {
+        supplies.push({
+          source,
+          supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, tasksById),
+        });
+        continue;
+      }
+      const board = boardById.get(source.sourceId);
+      if (board === undefined || board.isDeleted || board.status === BoardStatus.ARCHIVED) {
+        deadBoardSourceIds.push(source.sourceId);
+        supplies.push({ source, supplyTaskIds: [] });
+        continue;
+      }
+      const info = supplyByBoardId.get(source.sourceId);
+      const raw = info?.supplyTaskIds ?? [];
+      supplies.push({
+        source,
+        supplyTaskIds:
+          source.filter === 'todo' && info
+            ? raw.filter((id) => !info.doneTaskIds.has(id))
+            : raw,
+      });
+    }
+    byTemplateId[entry.template.id] = {
+      supplies,
+      deadBoardSourceIds,
+      manualTaskIds: entry.manualTaskIds,
+    };
+  }
+  return { byTemplateId, tasksById };
 }

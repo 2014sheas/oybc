@@ -1,25 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { CenterSquareType, Timeframe, TaskType, type RecurringBoardTemplate, type Task } from '@oybc/shared';
-import { computeTemplateAttention } from './templateHealth';
+import {
+  CenterSquareType,
+  Timeframe,
+  TaskType,
+  type BoardSource,
+  type RecurringBoardTemplate,
+  type Task,
+} from '@oybc/shared';
+import type { TemplateSupplyResolution } from '../../db/operations/boardSources';
+import { computeRosterHealth } from './templateHealth';
 
 /**
- * Covers the templates page's "needs attention" badge computation
- * (`computeTemplateAttention`), extracted from `RecurringTemplatesPage`
- * per the review fix: it used to read `template.seedTaskIds` directly,
- * which goes stale the first time the P1 legacy-editor write-through
- * edits a template's linked Pool (docs/POOLS_RECURRING.md §Migration
- * "seedTaskIds end state" — "never read after P1" is unconditional, not
- * just the wizard-hydration case). The badge must follow the CURRENT
- * resolved mix, not the frozen `seedTaskIds` snapshot.
+ * Covers the Board-settings roster's sources-native health computation
+ * (`computeRosterHealth`, loose-ends sweep 2026-09-09), which supersedes
+ * the legacy-trio `computeTemplateAttention` + `computeTemplateMixes`
+ * pair. The load-bearing regressions locked here: a board-source-only
+ * template is HEALTHY (the legacy path resolved it to an empty mix and
+ * badged it), a dead board source badges `source_board_missing`
+ * statically (the spawn ask's twin), and counts respect ranges + the
+ * counter-family rule.
  */
 
-const NOW = '2026-07-19T00:00:00.000Z';
+const NOW = '2026-09-09T00:00:00.000Z';
 
-function makeTask(id: string): Task {
+function makeTask(id: string, overrides: Partial<Task> = {}): Task {
   return {
     id,
-    userId: 'user-1',
-    title: id,
+    userId: 'u1',
+    title: `Task ${id}`,
     type: TaskType.NORMAL,
     isCompleted: false,
     totalCompletions: 0,
@@ -28,22 +36,21 @@ function makeTask(id: string): Task {
     updatedAt: NOW,
     version: 1,
     isDeleted: false,
+    ...overrides,
   };
 }
 
 function makeTemplate(overrides: Partial<RecurringBoardTemplate> = {}): RecurringBoardTemplate {
   return {
-    id: 'tmpl-1',
-    userId: 'user-1',
-    name: 'Daily Workout',
+    id: 'tpl-1',
+    userId: 'u1',
+    name: 'Roster Board',
     timeframe: Timeframe.DAILY,
     boardSize: 3,
-    centerSquareType: CenterSquareType.FREE, // 8 fillable
+    centerSquareType: CenterSquareType.NONE, // 9 fillable cells
     isRandomized: true,
-    // Deliberately kept STALE and unchanged across both scenarios below —
-    // this is exactly the field the fix stops reading from.
-    seedTaskIds: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'],
-    poolIds: ['pool-1'],
+    seedTaskIds: [],
+    poolIds: [],
     manualTaskIds: [],
     removedTaskIds: [],
     lastSpawnedWindowKey: null,
@@ -56,69 +63,111 @@ function makeTemplate(overrides: Partial<RecurringBoardTemplate> = {}): Recurrin
   };
 }
 
-describe('computeTemplateAttention', () => {
-  it('follows the resolved mix after an edit shrinks the linked Pool — NOT the frozen seedTaskIds snapshot', () => {
-    const template = makeTemplate();
-    const taskMap: Record<string, Task> = {};
-    for (const id of template.seedTaskIds) taskMap[id] = makeTask(id);
+function boardSource(sourceId: string, overrides: Partial<BoardSource> = {}): BoardSource {
+  return { sourceId, kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'all', ...overrides };
+}
 
-    // Before the edit: the mix (from the Pool, as it stood then) still
-    // has all 8 tasks — matches the fillable floor, no attention.
-    const mixBeforeEdit = { [template.id]: [...template.seedTaskIds] };
-    const beforeEdit = computeTemplateAttention([template], mixBeforeEdit, taskMap);
-    expect(beforeEdit[template.id]).toBeUndefined();
+function poolSource(sourceId: string, overrides: Partial<BoardSource> = {}): BoardSource {
+  return { sourceId, kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all', ...overrides };
+}
 
-    // The user "Add tasks"-edits the template down to 2 tasks — the
-    // write-through updates the linked Pool's taskIds (per
-    // wizardPersist.ts), but `template.seedTaskIds` itself is NEVER
-    // touched (left verbatim/stale). Only the resolved mix changes.
-    const mixAfterEdit = { [template.id]: ['a1', 'a2'] };
-    const afterEdit = computeTemplateAttention([template], mixAfterEdit, taskMap);
+function tasksById(ids: string[], overrides: Record<string, Partial<Task>> = {}): Record<string, Task> {
+  const out: Record<string, Task> = {};
+  for (const id of ids) out[id] = makeTask(id, overrides[id]);
+  return out;
+}
 
-    // The badge reflects the shrunk mix (2 < 8 fillable) — pool_too_small.
-    expect(afterEdit[template.id]).toBe('pool_too_small');
+const nine = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9'];
 
-    // Sanity: seedTaskIds itself never changed between the two calls —
-    // proving the differing result came from the mix input, not from any
-    // mutation of the template.
-    expect(template.seedTaskIds).toHaveLength(8);
-
-    // Contrast: a seedTaskIds-based computation (the pre-fix behavior)
-    // would have shown NO attention in either case, since seedTaskIds
-    // stayed at its original 8-task, fully-resolvable snapshot — i.e.
-    // it would have silently hidden a real pool_too_small regression.
-    const staleComputation = computeTemplateAttention([template], {}, taskMap); // {} ⇒ internal seedTaskIds fallback
-    expect(staleComputation[template.id]).toBeUndefined();
+describe('computeRosterHealth', () => {
+  it('a board-source-only template is healthy with its squares counted (THE legacy-path regression)', () => {
+    const t = makeTemplate({ sources: [boardSource('b1')] });
+    const resolution: Record<string, TemplateSupplyResolution> = {
+      [t.id]: {
+        supplies: [{ source: boardSource('b1'), supplyTaskIds: nine }],
+        deadBoardSourceIds: [],
+        manualTaskIds: [],
+      },
+    };
+    const health = computeRosterHealth([t], resolution, tasksById(nine));
+    expect(health.attentionByTemplateId[t.id]).toBeUndefined();
+    expect(health.mixByTemplateId[t.id]).toHaveLength(9);
   });
 
-  it('treats a mix id missing from the library as has_deleted_tasks (mirrors the old seedTaskIds heuristic)', () => {
-    const template = makeTemplate({ seedTaskIds: ['a1'] });
-    const taskMap: Record<string, Task> = { a1: makeTask('a1') };
-
-    // Mix includes an id not present in the (non-deleted) library —
-    // a manual-sourced deleted task, or any other unresolvable id.
-    const mix = { [template.id]: ['a1', 'gone'] };
-    const result = computeTemplateAttention([template], mix, taskMap);
-
-    expect(result[template.id]).toBe('has_deleted_tasks');
+  it('a dead board source badges source_board_missing — the spawn ask, statically', () => {
+    const t = makeTemplate({ sources: [boardSource('b-gone'), poolSource('p1')] });
+    const resolution: Record<string, TemplateSupplyResolution> = {
+      [t.id]: {
+        supplies: [
+          { source: boardSource('b-gone'), supplyTaskIds: [] },
+          { source: poolSource('p1'), supplyTaskIds: nine },
+        ],
+        deadBoardSourceIds: ['b-gone'],
+        manualTaskIds: [],
+      },
+    };
+    const health = computeRosterHealth([t], resolution, tasksById(nine));
+    expect(health.attentionByTemplateId[t.id]).toBe('source_board_missing');
   });
 
-  it('falls back to seedTaskIds when no mix entry exists yet (loading-state safety net)', () => {
-    const template = makeTemplate({ seedTaskIds: ['a1', 'a2'] });
-    const taskMap: Record<string, Task> = { a1: makeTask('a1'), a2: makeTask('a2') };
+  it('a deleted hand-added task badges has_deleted_tasks and stays out of the count', () => {
+    const t = makeTemplate({ manualTaskIds: [...nine, 'dead'] });
+    const resolution: Record<string, TemplateSupplyResolution> = {
+      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: [...nine, 'dead'] },
+    };
+    const health = computeRosterHealth(
+      [t],
+      resolution,
+      tasksById([...nine, 'dead'], { dead: { isDeleted: true } }),
+    );
+    expect(health.attentionByTemplateId[t.id]).toBe('has_deleted_tasks');
+    expect(health.mixByTemplateId[t.id]).toHaveLength(9);
+    expect(health.mixByTemplateId[t.id]).not.toContain('dead');
+  });
 
-    // No entry for this template id in mixByTemplateId (e.g. the batched
-    // useTemplateMixes query hasn't resolved yet) — falls back to
-    // seedTaskIds so a still-loading page doesn't flash a false badge.
-    const result = computeTemplateAttention([template], {}, taskMap);
+  it('a numeric range makes pool_too_small honest — raw union ≥ cells but achievable < cells', () => {
+    const t = makeTemplate({ sources: [poolSource('p1', { max: 4 })] });
+    const resolution: Record<string, TemplateSupplyResolution> = {
+      [t.id]: {
+        supplies: [{ source: poolSource('p1', { max: 4 }), supplyTaskIds: nine }],
+        deadBoardSourceIds: [],
+        manualTaskIds: [],
+      },
+    };
+    const health = computeRosterHealth([t], resolution, tasksById(nine));
+    expect(health.mixByTemplateId[t.id]).toHaveLength(4);
+    expect(health.attentionByTemplateId[t.id]).toBe('pool_too_small');
+  });
 
-    // 2 tasks < 8 fillable floor either way, but this proves the
-    // fallback path resolves via seedTaskIds rather than throwing/
-    // treating a missing entry as an empty mix that would ALSO read
-    // pool_too_small for the wrong reason (no data yet, not a real
-    // shortfall) — see the has_deleted_tasks test above for the
-    // "resolves, but a task is missing" case this is distinguishing
-    // from.
-    expect(result[template.id]).toBe('pool_too_small');
+  it('a shared-counter family counts once in the roster mix', () => {
+    const ids = ['r20', 'r50', ...nine.slice(0, 8)];
+    const t = makeTemplate({ manualTaskIds: ids });
+    const resolution: Record<string, TemplateSupplyResolution> = {
+      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: ids },
+    };
+    const health = computeRosterHealth([t], resolution, tasksById(ids, {
+      r20: { type: TaskType.COUNTING, maxCount: 20, sharedCounterId: 'r50', baseline: 0 },
+      r50: { type: TaskType.COUNTING, maxCount: 50 },
+    }));
+    const mix = health.mixByTemplateId[t.id];
+    expect(mix.filter((id) => id === 'r20' || id === 'r50')).toHaveLength(1);
+    expect(mix).toHaveLength(9);
+    expect(health.attentionByTemplateId[t.id]).toBeUndefined();
+  });
+
+  it('an empty template badges no_pool_tasks_resolved', () => {
+    const t = makeTemplate();
+    const resolution: Record<string, TemplateSupplyResolution> = {
+      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: [] },
+    };
+    const health = computeRosterHealth([t], resolution, {});
+    expect(health.attentionByTemplateId[t.id]).toBe('no_pool_tasks_resolved');
+  });
+
+  it('a missing resolution entry falls back to seedTaskIds with no badge (loading safety net)', () => {
+    const t = makeTemplate({ seedTaskIds: nine });
+    const health = computeRosterHealth([t], {}, {});
+    expect(health.mixByTemplateId[t.id]).toEqual(nine);
+    expect(health.attentionByTemplateId[t.id]).toBeUndefined();
   });
 });

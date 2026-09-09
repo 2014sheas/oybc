@@ -29,7 +29,7 @@ const ATTENTION_COPY: Record<
   unsupported_timeframe: "This board's timeframe is no longer supported.",
   unsupported_center: "This board's center cell is no longer supported.",
   no_pool_tasks_resolved: "None of this board's tasks could be loaded. Edit tasks to refresh it.",
-  spawn_failed: 'Spawn failed unexpectedly. Try editing tasks to refresh it.',
+  spawn_failed: "Couldn't make the next board. Try editing tasks to refresh it.",
   // Board Sources P3 — a pulled board-kind source's board is deleted or
   // archived; the next window waits until the source is removed (Edit
   // tasks) or the repeating board is paused.
