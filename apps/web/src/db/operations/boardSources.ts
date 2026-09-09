@@ -5,6 +5,7 @@ import {
   poolSourceSupplyById,
   resolveTaskWindowState,
   sourcesForRecord,
+  toLocalISO,
   type Board,
   type BoardSourceSupply,
   type RecurringBoardTemplate,
@@ -132,11 +133,16 @@ function isLiveSourceBoard(board: Board): boolean {
  *
  * @param storedBoardId - The id the source row stored at pull time.
  * @param reference - ISO instant to resolve "the live window" against —
- *   the spawn passes its window start; wizard/roster callers pass now.
+ *   the spawn passes its window start; wizard/roster callers default to
+ *   now. MUST be in the same LOCAL-wall-clock ISO format board
+ *   `startDate`/`endDate` use (`toLocalISO` — no Z suffix): the
+ *   comparisons are lexicographic, and a UTC `toISOString()` instant
+ *   mis-sorts against local boundaries near local midnight in any
+ *   non-UTC zone (review-caught Critical, 2026-09-09).
  */
 export async function resolveSourceBoard(
   storedBoardId: string,
-  reference: string = new Date().toISOString(),
+  reference: string = toLocalISO(new Date()),
 ): Promise<Board | null> {
   const stored = await db.boards.get(storedBoardId);
   if (stored === undefined) return null;

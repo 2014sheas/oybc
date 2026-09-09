@@ -905,3 +905,52 @@ describe('spawnTemplateBoard — series binding (loose-ends sweep 2026-09-09)', 
     });
   });
 });
+
+describe('resolveSourceBoard — local-wall-clock reference (review-caught Critical)', () => {
+  it("the default reference resolves today's LOCAL window, not a UTC-shifted one", async () => {
+    // Board dates are LOCAL wall-clock ISO strings (toLocalISO — no Z).
+    // The default reference must sort against them correctly regardless
+    // of the machine's UTC offset: build two series instances around the
+    // local now and assert the current one wins.
+    const { resolveSourceBoard } = await import('../boardSources');
+    const { toLocalISO } = await import('@oybc/shared');
+    const nowLocal = new Date();
+    const hourMs = 60 * 60 * 1000;
+    const mkBoard = (id: string, start: Date, end: Date, status = BoardStatus.ACTIVE) => ({
+      id,
+      userId: 'user-1',
+      name: id,
+      status,
+      boardSize: 3 as const,
+      timeframe: Timeframe.DAILY,
+      startDate: toLocalISO(start),
+      endDate: toLocalISO(end),
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      totalTasks: 0,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      spawnedFromTemplateId: 'series-local',
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    await db.boards.bulkAdd([
+      mkBoard(
+        'inst-yesterday',
+        new Date(nowLocal.getTime() - 30 * hourMs),
+        new Date(nowLocal.getTime() - 6 * hourMs),
+      ),
+      mkBoard(
+        'inst-today',
+        new Date(nowLocal.getTime() - 5 * hourMs),
+        new Date(nowLocal.getTime() + 5 * hourMs),
+      ),
+    ]);
+
+    const resolved = await resolveSourceBoard('inst-yesterday');
+    expect(resolved?.id).toBe('inst-today');
+  });
+});

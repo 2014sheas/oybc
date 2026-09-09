@@ -72,9 +72,14 @@ extension AppDatabase {
     /// Returns nil when nothing live resolves (an unresolvable source
     /// supplies nothing — the caller renders/contributes an empty supply,
     /// never blocks).
+    /// `reference` MUST be in the LOCAL-wall-clock ISO format board
+    /// dates use (`wizardLocalISOString` — no Z suffix): the window
+    /// comparisons are lexicographic, and a UTC `currentTimestamp()`
+    /// instant mis-sorts against local boundaries near local midnight in
+    /// any non-UTC zone (review-caught Critical, 2026-09-09).
     func fetchBoardSourceSupply(
         boardId: String,
-        reference: String = AppDatabase.currentTimestamp()
+        reference: String = wizardLocalISOString(Date())
     ) throws -> BoardSourceSupplyInfo? {
         try read { db in
             guard let board = try Self.resolveSourceBoard(

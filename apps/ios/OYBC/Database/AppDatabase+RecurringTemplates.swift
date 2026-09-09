@@ -99,10 +99,14 @@ extension AppDatabase {
             // Series binding — "missing" means the resolver finds NO live
             // instance (a stored archived window with a live series
             // sibling is NOT missing; the supply hops to the sibling).
+            // Reference in LOCAL wall-clock format (board-date format) —
+            // `now` is the UTC sync timestamp and mis-sorts near local
+            // midnight (review-caught Critical, 2026-09-09).
+            let reference = wizardLocalISOString(Date())
             var liveByStoredId: [String: Bool] = [:]
             for id in boardIds {
                 liveByStoredId[id] = try Self.resolveSourceBoard(
-                    db: db, storedBoardId: id, reference: now
+                    db: db, storedBoardId: id, reference: reference
                 ) != nil
             }
             let kept = sources.filter { source in
