@@ -110,16 +110,70 @@ async function resolveFromDb(board: Board): Promise<BoardSourceSupplyInfo> {
   return resolveBoardSourceSupply(board, liveRows, tasksById, eventsByTaskId);
 }
 
+/** True when a board row can serve as a live source instance. */
+function isLiveSourceBoard(board: Board): boolean {
+  return !board.isDeleted && board.status !== BoardStatus.ARCHIVED;
+}
+
 /**
- * Resolve one board's source supply for the wizard. `null` when the board
- * is missing or soft-deleted (an unresolvable source supplies nothing —
- * the caller renders/contributes an empty supply, never blocks).
+ * Series binding (loose-ends sweep 2026-09-09 — docs/BOARD_SOURCES.md
+ * §Boards as sources, now implemented as designed): resolve a STORED
+ * board-source id to the board that should supply squares right now.
+ *
+ * - A one-off board (no `spawnedFromTemplateId`) resolves to itself while
+ *   it is live, else `null`.
+ * - A board that belongs to a recurring series binds to the SERIES: the
+ *   pull hops to the series' live instance — the one whose window
+ *   contains `reference` when it exists, else the newest live instance
+ *   whose window has started, else the newest live instance. Old
+ *   archived windows therefore never kill the pull; only a series with
+ *   NO live instance (or a stored one-off that is gone) resolves `null`
+ *   — which the spawn maps to the `source_board_missing` ask.
+ *
+ * @param storedBoardId - The id the source row stored at pull time.
+ * @param reference - ISO instant to resolve "the live window" against —
+ *   the spawn passes its window start; wizard/roster callers pass now.
+ */
+export async function resolveSourceBoard(
+  storedBoardId: string,
+  reference: string = new Date().toISOString(),
+): Promise<Board | null> {
+  const stored = await db.boards.get(storedBoardId);
+  if (stored === undefined) return null;
+  const seriesId = stored.spawnedFromTemplateId;
+  if (!seriesId) {
+    return isLiveSourceBoard(stored) ? stored : null;
+  }
+  const instances = (
+    await db.boards.filter((b) => b.spawnedFromTemplateId === seriesId).toArray()
+  ).filter(isLiveSourceBoard);
+  if (instances.length === 0) return null;
+  const containing = instances.filter(
+    (b) => b.startDate <= reference && (b.endDate === undefined || reference <= b.endDate),
+  );
+  if (containing.length > 0) {
+    containing.sort((a, b) => b.startDate.localeCompare(a.startDate));
+    return containing[0];
+  }
+  const started = instances.filter((b) => b.startDate <= reference);
+  const pool = started.length > 0 ? started : instances;
+  pool.sort((a, b) => b.startDate.localeCompare(a.startDate));
+  return pool[0];
+}
+
+/**
+ * Resolve one board's source supply for the wizard. Series-binding aware:
+ * the stored id hops to the series' live instance (see
+ * `resolveSourceBoard`). `null` when nothing live resolves (an
+ * unresolvable source supplies nothing — the caller renders/contributes
+ * an empty supply, never blocks).
  */
 export async function fetchBoardSourceSupply(
   boardId: string,
+  reference?: string,
 ): Promise<BoardSourceSupplyInfo | null> {
-  const board = await db.boards.get(boardId);
-  if (board === undefined || board.isDeleted) return null;
+  const board = await resolveSourceBoard(boardId, reference);
+  if (board === null) return null;
   return resolveFromDb(board);
 }
 
@@ -208,15 +262,14 @@ export async function fetchTemplateSupplyResolution(
       : [];
   const poolsById = Object.fromEntries(pools.map((p) => [p.id, p]));
 
-  const boards =
-    allBoardIds.size > 0
-      ? await db.boards.where('id').anyOf([...allBoardIds]).toArray()
-      : [];
-  const boardById = new Map(boards.map((b) => [b.id, b]));
-  const supplyByBoardId = new Map<string, BoardSourceSupplyInfo>();
-  for (const board of boards) {
-    if (board.isDeleted || board.status === BoardStatus.ARCHIVED) continue;
-    supplyByBoardId.set(board.id, await resolveFromDb(board));
+  // Series binding — each stored board id resolves through
+  // `resolveSourceBoard` (hop to the series' live instance; null = dead).
+  const resolvedByStoredId = new Map<string, Board | null>();
+  const supplyByStoredId = new Map<string, BoardSourceSupplyInfo>();
+  for (const storedId of allBoardIds) {
+    const live = await resolveSourceBoard(storedId);
+    resolvedByStoredId.set(storedId, live);
+    if (live !== null) supplyByStoredId.set(storedId, await resolveFromDb(live));
   }
 
   // Combined task universe: pool members + manual + board members.
@@ -225,7 +278,7 @@ export async function fetchTemplateSupplyResolution(
   for (const entry of perTemplateSources) {
     for (const id of entry.manualTaskIds) allTaskIds.add(id);
   }
-  for (const info of supplyByBoardId.values()) {
+  for (const info of supplyByStoredId.values()) {
     for (const id of info.supplyTaskIds) allTaskIds.add(id);
   }
   const tasks =
@@ -246,13 +299,13 @@ export async function fetchTemplateSupplyResolution(
         });
         continue;
       }
-      const board = boardById.get(source.sourceId);
-      if (board === undefined || board.isDeleted || board.status === BoardStatus.ARCHIVED) {
+      const board = resolvedByStoredId.get(source.sourceId) ?? null;
+      if (board === null) {
         deadBoardSourceIds.push(source.sourceId);
         supplies.push({ source, supplyTaskIds: [] });
         continue;
       }
-      const info = supplyByBoardId.get(source.sourceId);
+      const info = supplyByStoredId.get(source.sourceId);
       const raw = info?.supplyTaskIds ?? [];
       supplies.push({
         source,

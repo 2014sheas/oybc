@@ -53,7 +53,7 @@ export function MissingSourceDialog({
           &ldquo;{template.name}&rdquo; can&rsquo;t make its next board
         </h3>
         <p className={styles.body}>
-          It pulls squares from a board that was deleted or archived.
+          It pulls squares from a board that&rsquo;s no longer available.
         </p>
         <div className={styles.actions}>
           <button

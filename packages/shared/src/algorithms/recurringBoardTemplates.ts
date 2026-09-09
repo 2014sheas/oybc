@@ -135,7 +135,22 @@ export function findTemplatesPendingSpawn(
     });
   }
 
-  return pending;
+  // Series binding (loose-ends sweep 2026-09-09) — PARENTS SPAWN FIRST
+  // (yearly → monthly → weekly → daily; stable within a tier): a child
+  // board pulling from a parent series must see the parent's FRESH
+  // window's instance in the same pass (Monday's daily pulls this
+  // week's weekly, not last week's). Stable sort keeps the historic
+  // template order within each timeframe.
+  const tier: Record<string, number> = { yearly: 0, monthly: 1, weekly: 2, daily: 3 };
+  return pending
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const ta = tier[a.entry.template.timeframe] ?? 4;
+      const tb = tier[b.entry.template.timeframe] ?? 4;
+      if (ta !== tb) return ta - tb;
+      return a.index - b.index;
+    })
+    .map(({ entry }) => entry);
 }
 
 /**

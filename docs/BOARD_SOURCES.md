@@ -205,13 +205,55 @@ vector-pinned:
   come up short / fall back with caps ignored). The one-off flat
   fallback also keeps one-per-family now.
 
+## Loose-ends sweep (owner directive 2026-09-09 — "resolve everything")
+
+Beyond the two rules above, the same sweep closed every remaining gap in
+the pool-generation surface, both platforms:
+
+- **Series binding implemented** (see §Boards as sources — previously a
+  shipped-vs-design gap) + parents-first spawn ordering.
+- **Roster health went sources-native**: the Board-settings repeating
+  roster resolved via the legacy trio, so a board-source-only record
+  showed a spurious badge and "0 tasks", and ranges/families were
+  invisible. Now: web `fetchTemplateSupplyResolution` +
+  `computeRosterHealth` + `useTemplateRosterHealth`; iOS
+  `RecurringBoardTemplatesViewModel.computeRosterHealth` — counts and
+  previews use the achievable pick; the badge is the spawn's static twin,
+  `source_board_missing` included. The dead legacy layer
+  (`useTemplateMix(es)`, `computeTemplateAttention`/`Mixes`) is retired.
+- **Board-play add/swap guard**: `CellSwapModal`/`CellSwapSheet` exclude
+  tasks already placed and family-mates of placed counters — with the
+  outgoing square's slot replaceable (swapping "Read 20" → "Read 50" is
+  legitimate). Pure predicate `isSwapCandidate` unit-locked.
+- **Spawn note sources-native**: `summarizeSpawnProvenanceFromSupplies`
+  (TS + Swift) computes "of M" as the achievable size; copy "pulled in"
+  (not "from the pool" — squares can come from pulled boards).
+- **Dead-source rows** name themselves ("Deleted pool"/"Deleted board")
+  instead of rendering blank; roster/card copy drops "template"/"Spawn".
+- Considered and deliberately excluded: a compound whose CHILD shares a
+  counter with a placed square (a checklist referencing the counter, not
+  a second counter square), and double-pinning a family in the defaults
+  sheet (the wizard hint + the deal already resolve it).
+
 ## Boards as sources (new capability)
 
-- **Binding is to the series, resolved live.** Pulling a board that belongs
-  to a recurring series (`spawnedFromTemplateId` set) binds to the series;
-  each spawn/create resolves the **live window's instance** and re-evaluates
-  filter, excludes, and range against it. Pulling a plain one-off board binds
-  to that board itself. The source sheet lists **active boards only**.
+- **Binding is to the series, resolved live** *(implemented in the
+  2026-09-09 loose-ends sweep — the initial P3/P4 ship bound to the stored
+  instance)*. Pulling a board that belongs to a recurring series
+  (`spawnedFromTemplateId` set) binds to the series: every resolution
+  (wizard, roster, spawn, the play-screen note) hops the stored id to the
+  series' **live instance** — the one whose window contains the reference
+  instant (the spawn's window start; "now" elsewhere), else the newest
+  started live instance — via `resolveSourceBoard` (web
+  `db/operations/boardSources.ts` / iOS `AppDatabase+BoardSources`). An
+  archived old window never kills the pull. Pulling a plain one-off board
+  binds to that board itself. The source sheet lists **active boards
+  only**. Two supporting rules: the spawn pass runs **parents first**
+  (yearly → monthly → weekly → daily, stable within a tier —
+  `findTemplatesPendingSpawn`'s tail sort) so a child board pulling a
+  parent series sees the parent's fresh window in the same pass; and
+  `removeMissingBoardSources` treats a source as missing only when the
+  resolver finds nothing live.
 - **Flatten one level:** a pulled board contributes its concrete `BoardTask`
   rows — never a recursive walk into that board's own sources.
 - **Completion is just windowed completion.** A pulled square is the same
@@ -220,12 +262,14 @@ vector-pinned:
 - **Source with nothing left** (all excluded / all done under 'todo' / pool
   emptied): contributes nothing, the board fills from its other sources —
   **never blocks the spawn, no notice**.
-- **Pulled board archived or deleted → ask on the next spawn.** The spawn
-  pass skips that template and surfaces a prompt on the Boards tab (the
-  `pool_too_small` warning family) offering to drop the source / adjust /
-  pause; no board row is written until the user answers. This respects the
-  lazy-spawn invariant (recurrence is observed on app open, a prompt is not
-  background work). Exact UX designed in its phase.
+- **Ask on the next spawn only when nothing live resolves.** With series
+  binding, the ask (`source_board_missing` → the Boards-tab prompt: Remove
+  that source / Pause this board / Not now; copy "…a board that's no
+  longer available") fires when the resolver finds NO live instance: a
+  gone/archived one-off source, or a series whose every instance is
+  deleted/archived. No board row is written until the user answers
+  (lazy-spawn invariant intact). The same rule surfaces statically as the
+  Board-settings roster badge.
 
 ## Surfaces (handoff README §Screens is the pixel spec; frame ids in parens)
 

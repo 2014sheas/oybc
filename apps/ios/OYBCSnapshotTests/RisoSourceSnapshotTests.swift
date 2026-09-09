@@ -32,7 +32,8 @@ final class RisoSourceSnapshotTests: XCTestCase {
         filter: BoardSource.Filter = .all,
         supply: [String] = ["t1", "t2", "t3", "t4"],
         done: Set<String> = [],
-        expanded: Bool
+        expanded: Bool,
+        counterClashByTaskId: [String: String] = [:]
     ) -> some View {
         var source = BoardSource(sourceId: "s1", kind: kind)
         source.min = min
@@ -54,7 +55,8 @@ final class RisoSourceSnapshotTests: XCTestCase {
             onRemove: {},
             onSetFilter: { _ in },
             onSetRange: { _, _ in },
-            onToggleExclude: { _ in }
+            onToggleExclude: { _ in },
+            counterClashByTaskId: counterClashByTaskId
         )
         .padding(20)
         .background(Color.risoPaper)
@@ -223,4 +225,21 @@ final class RisoSourceSnapshotTests: XCTestCase {
             record: recordMode
         )
     }
+    // MARK: - Counter-family clash hint (loose-ends sweep 2026-09-09)
+
+    /// A member whose shared-counter family has another member in the
+    /// pool shows the "shares a counter with … · one per board" hint
+    /// under its title.
+    func testPoolRowExpandedCounterClashHintLight() {
+        assertSnapshot(
+            of: sourceRow(
+                kind: .pool,
+                expanded: true,
+                counterClashByTaskId: ["t2": "Read 50 pages"]
+            ),
+            as: .image(layout: .fixed(width: 393, height: 330)),
+            record: recordMode
+        )
+    }
+
 }

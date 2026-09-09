@@ -96,12 +96,18 @@ extension AppDatabase {
             )
             let boardIds = sources.filter { $0.kind == .board }.map { $0.sourceId }
             guard !boardIds.isEmpty else { return false }
-            let boards = try Board.filter(boardIds.contains(Column("id"))).fetchAll(db)
-            let boardById = Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
+            // Series binding — "missing" means the resolver finds NO live
+            // instance (a stored archived window with a live series
+            // sibling is NOT missing; the supply hops to the sibling).
+            var liveByStoredId: [String: Bool] = [:]
+            for id in boardIds {
+                liveByStoredId[id] = try Self.resolveSourceBoard(
+                    db: db, storedBoardId: id, reference: now
+                ) != nil
+            }
             let kept = sources.filter { source in
                 guard source.kind == .board else { return true }
-                guard let b = boardById[source.sourceId] else { return false }
-                return !b.isDeleted && b.status != .archived
+                return liveByStoredId[source.sourceId] == true
             }
             guard kept.count != sources.count else { return false }
             template.sources = kept
@@ -186,23 +192,23 @@ extension AppDatabase {
                 // prompt), per docs/BOARD_SOURCES.md §Boards as sources.
                 // Distinct from an EMPTY source, which contributes nothing
                 // silently and never blocks.
+                // Series binding (loose-ends sweep 2026-09-09) — each
+                // pulled board resolves through `resolveSourceBoard`: a
+                // stored instance of a recurring series HOPS to the
+                // series' live window (an archived old window never kills
+                // the pull), evaluated against THIS spawn's window start.
+                // Only a series with no live instance — or a gone one-off
+                // source — blocks the window with the ask.
                 let boardSourceIds = sources.filter { $0.kind == .board }.map { $0.sourceId }
                 var sourceBoardById: [String: Board] = [:]
-                if !boardSourceIds.isEmpty {
-                    let sourceBoards = try Board
-                        .filter(boardSourceIds.contains(Column("id")))
-                        .fetchAll(db)
-                    sourceBoardById = Dictionary(
-                        uniqueKeysWithValues: sourceBoards.map { ($0.id, $0) }
-                    )
-                    let anyGone = boardSourceIds.contains { id in
-                        guard let b = sourceBoardById[id] else { return true }
-                        return b.isDeleted || b.status == .archived
-                    }
-                    if anyGone {
+                for id in boardSourceIds {
+                    guard let live = try Self.resolveSourceBoard(
+                        db: db, storedBoardId: id, reference: spawn.windowStart
+                    ) else {
                         outcome = .skipped(templateId: template.id, reason: .sourceBoardMissing)
                         throw RecurringSpawnAbort.skip
                     }
+                    sourceBoardById[id] = live
                 }
 
                 let poolSourceIds = sources.filter { $0.kind == .pool }.map { $0.sourceId }

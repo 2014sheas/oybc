@@ -744,3 +744,32 @@ describe('buildRepeatBoardTemplateInput', () => {
     expect(input.manualTaskIds).not.toContain('t4');
   });
 });
+
+describe('findTemplatesPendingSpawn — parents spawn first (series binding, 2026-09-09)', () => {
+  it('orders pending spawns yearly → monthly → weekly → daily, stable within a tier', () => {
+    const now = new Date('2026-09-07T12:00:00'); // a Monday
+    const mk = (id: string, timeframe: Timeframe): RecurringBoardTemplate => ({
+      id,
+      userId: 'u1',
+      name: id,
+      timeframe,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.FREE,
+      isRandomized: true,
+      seedTaskIds: ['a'],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    });
+    const pending = findTemplatesPendingSpawn(
+      [mk('d1', Timeframe.DAILY), mk('w1', Timeframe.WEEKLY), mk('m1', Timeframe.MONTHLY), mk('d2', Timeframe.DAILY)],
+      [],
+      'monday',
+      now,
+    );
+    expect(pending.map((entry) => entry.template.id)).toEqual(['m1', 'w1', 'd1', 'd2']);
+  });
+});

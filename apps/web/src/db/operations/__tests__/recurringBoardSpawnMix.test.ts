@@ -743,3 +743,165 @@ describe('spawnTemplateBoard — counter-family exclusivity (2026-09-08)', () =>
     expect(placedIds.has('win-root')).toBe(false);
   });
 });
+
+describe('spawnTemplateBoard — series binding (loose-ends sweep 2026-09-09)', () => {
+  const seedSeriesInstance = async (
+    boardId: string,
+    seriesId: string,
+    taskIds: string[],
+    opts: { status?: BoardStatus; startDate?: string; endDate?: string } = {},
+  ) => {
+    await db.boards.add({
+      id: boardId,
+      userId: 'user-1',
+      name: `Instance ${boardId}`,
+      status: opts.status ?? BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.WEEKLY,
+      startDate: opts.startDate ?? NOW,
+      endDate: opts.endDate ?? WINDOW_END,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      totalTasks: taskIds.length,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      spawnedFromTemplateId: seriesId,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    await db.boardTasks.bulkAdd(
+      taskIds.map((taskId, i) => ({
+        id: `bt-${boardId}-${taskId}`,
+        boardId,
+        taskId,
+        row: Math.floor(i / 3),
+        col: i % 3,
+        isCenter: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      })),
+    );
+  };
+
+  it('a pull stored against an ARCHIVED old window hops to the series\' live instance', async () => {
+    // Old window (archived) carried old-1..3; the live current window
+    // carries new-1..9. The pull stored the OLD instance's id — the hop
+    // must supply the NEW instance's squares and never trigger the ask.
+    const oldIds = ['old-1', 'old-2', 'old-3'];
+    const newIds = Array.from({ length: 9 }, (_, i) => `new-${i}`);
+    for (const id of [...oldIds, ...newIds]) await seedTask(id);
+    await seedSeriesInstance('inst-old', 'series-1', oldIds, {
+      status: BoardStatus.ARCHIVED,
+      startDate: '2026-07-06T00:00:00.000Z',
+      endDate: '2026-07-12T23:59:59.999Z',
+    });
+    await seedSeriesInstance('inst-live', 'series-1', newIds, {
+      startDate: '2026-07-13T00:00:00.000Z',
+      endDate: '2026-07-19T23:59:59.999Z',
+    });
+
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-hop',
+      userId: 'user-1',
+      name: 'Hop Board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      seedTaskIds: [],
+      manualTaskIds: [],
+      sources: [
+        {
+          sourceId: 'inst-old', // the STORED (stale) instance id
+          kind: 'board',
+          min: 0,
+          max: null,
+          excludedTaskIds: [],
+          filter: 'all',
+        },
+      ],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Hop Board — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const placed = new Set(
+      (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
+        (bt) => bt.taskId,
+      ),
+    );
+    expect(placed).toEqual(new Set(newIds));
+    for (const id of oldIds) expect(placed.has(id)).toBe(false);
+  });
+
+  it('a series with NO live instance still triggers the source_board_missing ask', async () => {
+    const manual = Array.from({ length: 9 }, (_, i) => `m${i}`);
+    for (const id of manual) await seedTask(id);
+    for (const id of ['dead-1']) await seedTask(id);
+    await seedSeriesInstance('inst-a', 'series-dead', ['dead-1'], {
+      status: BoardStatus.ARCHIVED,
+    });
+    await seedSeriesInstance('inst-b', 'series-dead', ['dead-1'], {
+      status: BoardStatus.ARCHIVED,
+      startDate: '2026-07-01T00:00:00.000Z',
+    });
+
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-dead-series',
+      userId: 'user-1',
+      name: 'Dead Series Board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      seedTaskIds: [],
+      manualTaskIds: manual,
+      sources: [
+        {
+          sourceId: 'inst-a',
+          kind: 'board',
+          min: 0,
+          max: null,
+          excludedTaskIds: [],
+          filter: 'all',
+        },
+      ],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Dead Series — July 19',
+    });
+    expect(result).toEqual({
+      ok: false,
+      templateId: 'tmpl-dead-series',
+      reason: 'source_board_missing',
+    });
+  });
+});

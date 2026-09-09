@@ -1245,53 +1245,20 @@ struct BoardPlayView: View {
         }
     }
 
-    /// Computes the spawn-success provenance note (e.g. "Picked 8 of 10 —
-    /// 7 pulled in, 1 added today") for a freshly-dealt repeating board —
-    /// SOURCES-NATIVE (loose-ends sweep 2026-09-09): board-kind supplies
-    /// resolve through the shared board-supply reader with the record's
-    /// 'todo' filter applied, and "of M" is the honest achievable pool
-    /// size (caps + counter-family rule), exactly what the spawn used.
-    /// Off-main (board-supply resolution reads the DB), cached in
-    /// `spawnNoteText`.
+    /// Recomputes the spawn-provenance note off-main (the sources-native
+    /// resolution reads the DB — `AppDatabase.spawnProvenanceNote`) and
+    /// caches it in `spawnNoteText`.
     private func recomputeSpawnNote(board: Board, template: RecurringBoardTemplate) {
         let poolsById = Dictionary(uniqueKeysWithValues: allPoolsInWorkspace.map { ($0.id, $0) })
         let tasksById = taskMap
         let dealt = dealtTaskIds
-        let manualTaskIds = template.manualTaskIds ?? []
-        let sources = BoardSources.sourcesForRecord(
-            sources: template.sources,
-            poolIds: template.poolIds,
-            removedTaskIds: template.removedTaskIds
-        )
         _Concurrency.Task.detached(priority: .utility) {
-            var supplies: [BoardSources.Supply] = []
-            for source in sources {
-                switch source.kind {
-                case .pool:
-                    supplies.append(BoardSources.Supply(
-                        source: source,
-                        supplyTaskIds: BoardSources.poolSourceSupplyById(
-                            source.sourceId, poolsById: poolsById, tasksById: tasksById
-                        )
-                    ))
-                case .board:
-                    let info = (try? AppDatabase.shared.fetchBoardSourceSupply(
-                        boardId: source.sourceId
-                    )) ?? nil
-                    var raw = info?.supplyTaskIds ?? []
-                    if source.filter == .todo, let done = info?.doneTaskIds {
-                        raw.removeAll { done.contains($0) }
-                    }
-                    supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
-                }
-            }
-            let summary = PoolMix.summarizeSpawnProvenance(
-                supplies: supplies,
-                manualTaskIds: manualTaskIds,
-                counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasksById.values),
+            let text = AppDatabase.shared.spawnProvenanceNote(
+                template: template,
+                poolsById: poolsById,
+                tasksById: tasksById,
                 dealtTaskIds: dealt
             )
-            let text = PoolMix.formatSpawnProvenanceNote(summary)
             await MainActor.run { spawnNoteText = text }
         }
     }

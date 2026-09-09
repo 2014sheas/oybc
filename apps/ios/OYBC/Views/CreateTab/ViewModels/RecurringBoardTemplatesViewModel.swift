@@ -108,12 +108,6 @@ final class RecurringBoardTemplatesViewModel {
             let pools = try database.fetchPools(ids: Array(allPoolIds))
             let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
 
-            let allBoardIds = Set(perTemplateSources.flatMap { entry in
-                entry.sources.filter { $0.kind == .board }.map { $0.sourceId }
-            })
-            let sourceBoards = try database.fetchBoards(ids: Array(allBoardIds))
-            let boardById = Dictionary(uniqueKeysWithValues: sourceBoards.map { ($0.id, $0) })
-
             var resolutionByTemplateId: [String: TemplateSupplyResolution] = [:]
             for entry in perTemplateSources {
                 var supplies: [BoardSources.Supply] = []
@@ -128,16 +122,18 @@ final class RecurringBoardTemplatesViewModel {
                         ))
                         continue
                     }
-                    let board = boardById[source.sourceId]
-                    if board == nil || board!.isDeleted || board!.status == .archived {
+                    // Series binding — `fetchBoardSourceSupply` hops a
+                    // stored series instance to the live window; nil means
+                    // nothing live resolves (the spawn's ask, statically).
+                    let info = (try? database.fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil
+                    guard let info else {
                         deadBoardSourceIds.append(source.sourceId)
                         supplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
                         continue
                     }
-                    let info = (try? database.fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil
-                    var raw = info?.supplyTaskIds ?? []
-                    if source.filter == .todo, let done = info?.doneTaskIds {
-                        raw.removeAll { done.contains($0) }
+                    var raw = info.supplyTaskIds
+                    if source.filter == .todo {
+                        raw.removeAll { info.doneTaskIds.contains($0) }
                     }
                     supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
                 }

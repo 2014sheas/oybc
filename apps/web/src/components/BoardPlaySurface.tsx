@@ -9,11 +9,8 @@ import {
   formatCadenceAdverb,
   isFreshlyDealtBoard,
   buildCounterFamilyMap,
-  poolSourceSupplyById,
-  sourcesForRecord,
   summarizeSpawnProvenanceFromSupplies,
   formatSpawnProvenanceNote,
-  type BoardSourceSupply,
   type Board,
   type Pool,
   type Task,
@@ -37,7 +34,7 @@ import {
 } from './boardPlaySharedCounterUtils';
 import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
 import { CellSwapModal } from './CellSwapModal';
-import { fetchBoardSourceSupply } from '../db/operations/boardSources';
+import { useSpawnNoteSupplies } from '../hooks/useSpawnNoteSupplies';
 import { BoardStatusBadge } from './BoardStatusBadge';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
@@ -247,47 +244,13 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     for (const p of pools) map[p.id] = p;
     return map;
   }, [pools]);
-  // Loose-ends sweep (2026-09-09) — the spawn-provenance note is
-  // sources-native: resolve the template's supplies (pool kinds sync from
-  // the live lookups; board kinds via the shared board-supply op, with
-  // the record's 'todo' filter applied exactly as the spawn does) and
-  // summarize against the honest achievable pool size. Only runs while
-  // the note is actually visible (fresh board + resolvable template).
-  const [spawnNoteSupplies, setSpawnNoteSupplies] = useState<BoardSourceSupply[] | null>(null);
-  const spawnNoteActive = sourceTemplate !== undefined && isFreshlyDealtBoard(board);
-  useEffect(() => {
-    if (!spawnNoteActive || sourceTemplate === undefined) {
-      setSpawnNoteSupplies(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      const sources = sourcesForRecord(sourceTemplate);
-      const supplies: BoardSourceSupply[] = [];
-      for (const source of sources) {
-        if (source.kind === 'pool') {
-          supplies.push({
-            source,
-            supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, taskMap),
-          });
-          continue;
-        }
-        const info = await fetchBoardSourceSupply(source.sourceId);
-        const raw = info?.supplyTaskIds ?? [];
-        supplies.push({
-          source,
-          supplyTaskIds:
-            source.filter === 'todo' && info
-              ? raw.filter((id) => !info.doneTaskIds.has(id))
-              : raw,
-        });
-      }
-      if (!cancelled) setSpawnNoteSupplies(supplies);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [spawnNoteActive, sourceTemplate, poolsById, taskMap]);
+  // Loose-ends sweep (2026-09-09) — sources-native spawn-note supplies,
+  // resolved off-render (see the hook's doc).
+  const spawnNoteSupplies = useSpawnNoteSupplies(
+    sourceTemplate !== undefined && isFreshlyDealtBoard(board) ? sourceTemplate : undefined,
+    poolsById,
+    taskMap,
+  );
 
   // Loose-ends sweep (2026-09-09) — shared-counter family map over the
   // library, for the add/swap picker's one-counter-per-board guard and
