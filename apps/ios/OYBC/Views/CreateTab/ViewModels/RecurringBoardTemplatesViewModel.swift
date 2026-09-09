@@ -37,7 +37,7 @@ final class RecurringBoardTemplatesViewModel {
     /// Pool's `taskIds`, not this field), which could show a WRONG
     /// pool-health badge or preview chip row. Batched (one `fetchPools`
     /// call for every template's pools, not N calls) — mirrors the
-    /// boards-list perf lesson. iOS twin of web's `useTemplateMixes`.
+    /// boards-list perf lesson. iOS twin of web's `useTemplateRosterHealth`.
     var mixByTemplateId: [String: [String]] = [:]
 
     /// Per-template "needs attention" reason, keyed by template id.

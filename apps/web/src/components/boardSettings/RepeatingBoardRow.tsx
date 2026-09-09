@@ -40,7 +40,7 @@ const ATTENTION_COPY: Record<
 export interface RepeatingBoardRowProps {
   template: RecurringBoardTemplate;
   /** The board's CURRENT resolved mix size, for the "N-task mix" meta
-   *  text. Computed at the page level from `useTemplateMixes` — NOT
+   *  text. Computed at the page level from `useTemplateRosterHealth` — NOT
    *  `template.seedTaskIds.length`, which goes stale after a Pool-linked
    *  write-through (docs/POOLS_RECURRING.md §Migration "seedTaskIds end
    *  state"). */
