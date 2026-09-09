@@ -205,6 +205,12 @@ vector-pinned:
   come up short / fall back with caps ignored). The one-off flat
   fallback also keeps one-per-family now.
 
+**Interactive companion**: the "Board Pool Assembly" artifact
+(https://claude.ai/code/artifact/bac50352-1f8f-4402-8e27-66ebb7e11900 —
+owner's private Claude artifact) carries the full explainer with live
+deal simulators (a verified line-for-line port of `selectBoardTasks`).
+Keep it in sync when the mechanics in this doc change.
+
 ## Loose-ends sweep (owner directive 2026-09-09 — "resolve everything")
 
 Beyond the two rules above, the same sweep closed every remaining gap in
