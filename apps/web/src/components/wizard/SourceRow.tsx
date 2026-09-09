@@ -19,6 +19,9 @@ export interface SourceRowProps {
   onSetFilter: (filter: 'all' | 'todo') => void;
   onSetRange: (min: number, max: number | null) => void;
   onToggleExclude: (taskId: string) => void;
+  /** Counter-family exclusivity — member id → the OTHER family member's
+   *  title, when both are visible in the pool ("one per board" hint). */
+  counterClashByTaskId?: Map<string, string>;
 }
 
 type MemberState = 'included' | 'excluded' | 'filteredDone';
@@ -50,6 +53,7 @@ export function SourceRow({
   onSetFilter,
   onSetRange,
   onToggleExclude,
+  counterClashByTaskId,
 }: SourceRowProps): React.ReactElement {
   const isDefaultRange = source.min === 0 && source.max === null;
   const effectiveMax = source.max ?? availableCount;
@@ -162,16 +166,24 @@ export function SourceRow({
               const state = memberState(taskId);
               const task = taskById[taskId];
               const title = task?.title || '(untitled task)';
+              const clashTitle = counterClashByTaskId?.get(taskId);
               return (
                 <li
                   key={taskId}
                   className={`${styles.memberRow} ${state !== 'included' ? styles.memberDimmed : ''}`}
                 >
                   <TypeBadge type={task?.type ?? TaskType.NORMAL} letterOnly size="small" />
-                  <span
-                    className={`${styles.memberTitle} ${state === 'excluded' ? styles.memberStruck : ''}`}
-                  >
-                    {title}
+                  <span className={styles.memberText}>
+                    <span
+                      className={`${styles.memberTitle} ${state === 'excluded' ? styles.memberStruck : ''}`}
+                    >
+                      {title}
+                    </span>
+                    {clashTitle !== undefined && (
+                      <span className={styles.memberClashHint}>
+                        shares a counter with &ldquo;{clashTitle}&rdquo; &middot; one per board
+                      </span>
+                    )}
                   </span>
                   {state === 'included' && (
                     <button

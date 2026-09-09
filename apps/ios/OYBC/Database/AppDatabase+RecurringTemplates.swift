@@ -292,7 +292,11 @@ extension AppDatabase {
                         boardSize: size,
                         centerSquareType: template.centerSquareType
                     ),
-                    randomize: template.isRandomized
+                    randomize: template.isRandomized,
+                    // Counter-family exclusivity (2026-09-08): at most one
+                    // member of a shared-counter family per spawned board.
+                    // Recurring boards have no CHOSEN center — no pin.
+                    counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasksById.values)
                 )
                 let orderedPool: [Task]
                 switch selection {

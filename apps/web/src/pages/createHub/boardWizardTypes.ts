@@ -255,12 +255,21 @@ export interface BoardWizardDerived {
    *  worth confirming. */
   isPristine: boolean;
   /**
-   * Board Sources P4 — the header/gate CAPACITY: sum of every source's
-   * effective max + hand-added, deduped by task (docs/BOARD_SOURCES.md
-   * §Selection step 3). Replaces `selectedTaskIds.size` everywhere the
-   * step counts or gates.
+   * Board Sources P4 — the header/gate CAPACITY. Since the counter-family
+   * rework (2026-09-08) this is the HONEST achievable pool size: a
+   * deterministic dry-run of the actual fill — source caps, cap overlap,
+   * counter-family exclusivity, the CHOSEN center pinned — computed
+   * before any preview/deal. Replaces `selectedTaskIds.size` everywhere
+   * the step counts or gates; gate-passed ⇒ the deal fills.
    */
   capacity: number;
+  /**
+   * Counter-family exclusivity — task id → shared-counter family key
+   * (`sharedCounterId ?? id`, counting tasks only) over the live library
+   * + this session's pending tasks. Threaded into the placement pick and
+   * the spawn so at most one member of a family lands on a board.
+   */
+  counterFamilyByTaskId: Record<string, string>;
 }
 
 export type BoardWizardController = BoardWizardState &

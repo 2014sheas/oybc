@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import {
   Timeframe,
   TaskType,
+  buildCounterFamilyMap,
   generateCounterTaskTitle,
   type BoardSource,
   type CompoundChild,
@@ -24,7 +25,10 @@ import {
 import { useParentBoardTasks } from '../../hooks';
 import type { PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { useBrowsableTasks, type TaskLibrary } from '../../pages/createPage/useTaskLibrary';
-import type { SupplyInfoMap } from '../../pages/createHub/wizardSources';
+import {
+  computeCounterClashes,
+  type SupplyInfoMap,
+} from '../../pages/createHub/wizardSources';
 import { RisoSectionLabel } from '../riso';
 import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
@@ -384,9 +388,18 @@ export function BoardWizardTasksStep({
     return overlayCompoundChildrenWithStagedEdits(merged, stagedEdits);
   }, [library.compoundChildrenByCompound, pendingTasks, stagedEdits]);
 
-  // Board Sources P4 — the gate compares CAPACITY (sum of source maxes +
-  // hand-added, deduped) against the fillable cell count, mirroring iOS.
+  // Board Sources P4 — the gate compares CAPACITY (the honest achievable
+  // pool size since the counter-family rework) against the fillable cell
+  // count, mirroring iOS.
   const isCountSatisfied = capacity >= tasksRequired;
+
+  // Counter-family exclusivity (2026-09-08) — collisions visible in the
+  // wizard pool, for the "shares a counter with 'X' · one per board" row
+  // hints. Computed over the staged-overlaid task map so renames show.
+  const counterClashByTaskId = useMemo<Map<string, string>>(() => {
+    const famMap = buildCounterFamilyMap(Object.values(effectiveTaskMap));
+    return computeCounterClashes(selectedTaskIds, famMap, effectiveTaskMap);
+  }, [effectiveTaskMap, selectedTaskIds]);
   const isCenterSatisfied =
     !centerTaskMode || (centerTaskId !== null && selectedTaskIds.has(centerTaskId));
   const canAdvance = isCountSatisfied && isCenterSatisfied;
@@ -620,6 +633,7 @@ export function BoardWizardTasksStep({
             />
           )
         }
+        counterClashByTaskId={counterClashByTaskId}
         countOverride={capacity}
         leadingRows={
           sources.length > 0
@@ -642,6 +656,7 @@ export function BoardWizardTasksStep({
                   onSetFilter={(filter) => onSetSourceFilter(source.sourceId, filter)}
                   onSetRange={(min, max) => onSetSourceRange(source.sourceId, min, max)}
                   onToggleExclude={(taskId) => onToggleSourceExclude(source.sourceId, taskId)}
+                  counterClashByTaskId={counterClashByTaskId}
                 />
               ))
             : undefined

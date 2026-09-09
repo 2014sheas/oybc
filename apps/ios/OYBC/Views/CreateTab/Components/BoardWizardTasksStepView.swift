@@ -219,6 +219,28 @@ struct BoardWizardTasksStepView: View {
     }
 
     private var isCountSatisfied: Bool { capacity >= tasksRequired }
+
+    /// Counter-family exclusivity (2026-09-08) — collisions visible in
+    /// the wizard pool, for the "shares a counter with 'X' · one per
+    /// board" row hints. Computed over the staged-overlaid task map so
+    /// renames show. Web twin: `computeCounterClashes`.
+    private var counterClashByTaskId: [String: String] {
+        let byId = effectiveTaskById
+        let familyMap = BoardSources.buildCounterFamilyMap(byId.values)
+        var membersByFamily: [String: [String]] = [:]
+        for id in selectedTaskIds {
+            guard let fam = familyMap[id] else { continue }
+            membersByFamily[fam, default: []].append(id)
+        }
+        var out: [String: String] = [:]
+        for members in membersByFamily.values where members.count >= 2 {
+            for id in members {
+                guard let other = members.first(where: { $0 != id }) else { continue }
+                out[id] = byId[other]?.title ?? "another task"
+            }
+        }
+        return out
+    }
     private var isCenterSatisfied: Bool {
         if !centerTaskMode { return true }
         guard let id = centerTaskId else { return false }
@@ -417,7 +439,8 @@ struct BoardWizardTasksStepView: View {
                         )
                     },
                     countOverride: capacity,
-                    leadingRows: sourceRowsList
+                    leadingRows: sourceRowsList,
+                    counterClashByTaskId: counterClashByTaskId
                 )
 
                 // 6. Red gate line (frame 2a item 6) — only when short.
@@ -542,7 +565,8 @@ struct BoardWizardTasksStepView: View {
                     onRemove: { onRemoveSource(source.sourceId) },
                     onSetFilter: { onSetSourceFilter(source.sourceId, $0) },
                     onSetRange: { onSetSourceRange(source.sourceId, $0, $1) },
-                    onToggleExclude: { onToggleSourceExclude(source.sourceId, $0) }
+                    onToggleExclude: { onToggleSourceExclude(source.sourceId, $0) },
+                    counterClashByTaskId: counterClashByTaskId
                 )
             }
         )

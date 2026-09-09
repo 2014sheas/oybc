@@ -36,6 +36,17 @@
  *   the flat legacy removals copied to each source's excludes yields
  *   exactly the old `resolveMix` candidate set, and an unconstrained fill
  *   is a uniform random subset — the pre-rework spawn distribution.
+ * - **Counter-family exclusivity** (owner directive 2026-09-08): at most
+ *   ONE member of a shared-counter family (`sharedCounterId` root + its
+ *   derived versions) lands on a board — two squares ticking together at
+ *   different goals makes no sense. Priority when a family collides:
+ *   pinned CHOSEN center > hand-added > covering-an-unmet-min > the draw
+ *   (see `counterFamilyByTaskId` / `pinnedTaskId`).
+ * - **The gate never overpromises**: `computeSourceCapacity`'s `capacity`
+ *   is a deterministic DRY-RUN of this same fill (uncapped), and a short
+ *   randomized deal retries in the dry-run's deterministic order — whose
+ *   bounded pick is a prefix of the dry-run — so gate-passed ⇒ the board
+ *   fills, even under pathological cap overlap.
  *
  * Has a Swift twin: `apps/ios/OYBC/Helpers/BoardSources.swift` — ported
  * case-for-case, pinned by the same vector fixture
@@ -43,6 +54,7 @@
  */
 
 import { fisherYatesShuffle } from '@oybc/bingo-core';
+import { TaskType } from '../constants/enums';
 import type { BoardSource } from '../types/boardSource';
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
@@ -89,54 +101,67 @@ export function effectiveSourceMax(
 
 /** Result of {@link computeSourceCapacity}. */
 export interface SourceCapacityResult {
-  /** Distinct tasks that could possibly appear (manual ∪ all availables). */
+  /** Distinct placeable things (manual ∪ all availables), counting a
+   *  shared-counter family ONCE — two goals on one counter can only ever
+   *  yield one square. */
   uniqueCandidateCount: number;
   /**
    * The design's header sum: Σ per-source effective max, plus the distinct
    * manual tasks **no source supplies** (a manual task inside a source
    * counts toward that source's membership cap, so counting it separately
    * would inflate the bound — the "membership cap binds manual-supplied
-   * tasks too" rule).
+   * tasks too" rule). Informational; `capacity` is the honest number.
    */
   cappedBound: number;
   /**
-   * What the header/gate compares against `fillableCellCount`:
-   * `min(uniqueCandidateCount, cappedBound)`. For all-`[0, all]` sources
-   * this equals the old flat mix size (behavior-identity). With numeric
-   * caps AND heavy cross-source overlap this is an upper-bound estimate
-   * (exact feasibility is a matching problem) — the fill itself is the
-   * final arbiter and never underfills.
+   * What the header/gate compares against `fillableCellCount`: the size
+   * of a deterministic DRY-RUN of the actual fill (uncapped, unshuffled),
+   * honoring source caps AND counter-family exclusivity. Always ≤
+   * `min(uniqueCandidateCount, cappedBound)`; equal to it for every
+   * non-pathological shape (and exactly the old flat mix size for
+   * all-`[0, all]` sources — behavior-identity). Because a short
+   * randomized deal retries in this same deterministic order,
+   * gate-passed ⇒ the board fills.
    */
   capacity: number;
 }
 
 /**
  * The header/gate math (docs/BOARD_SOURCES.md §Selection step 3): "sum of
- * every source's max + hand-added, deduped by task".
+ * every source's max + hand-added, deduped by task" — with `capacity`
+ * computed as the achievable dry-run size (see the field doc).
  */
 export function computeSourceCapacity(
   supplies: BoardSourceSupply[],
   manualTaskIds: string[],
+  counterFamilyByTaskId?: Record<string, string>,
+  pinnedTaskId?: string,
 ): SourceCapacityResult {
-  const unique = new Set<string>(manualTaskIds);
+  const familyKey = (id: string): string => counterFamilyByTaskId?.[id] ?? id;
+  const unique = new Set<string>(manualTaskIds.map(familyKey));
   const suppliedAnywhere = new Set<string>();
   let capSum = 0;
   for (const supply of supplies) {
     const available = resolveSourceAvailable(supply);
     capSum += effectiveSourceMax(supply.source, available.length);
     for (const id of available) {
-      unique.add(id);
+      unique.add(familyKey(id));
       suppliedAnywhere.add(id);
     }
   }
   const manualOutside = new Set(
-    manualTaskIds.filter((id) => !suppliedAnywhere.has(id)),
+    manualTaskIds.filter((id) => !suppliedAnywhere.has(id)).map(familyKey),
   ).size;
   const cappedBound = capSum + manualOutside;
   return {
     uniqueCandidateCount: unique.size,
     cappedBound,
-    capacity: Math.min(unique.size, cappedBound),
+    capacity: computeAchievablePoolSize({
+      supplies,
+      manualTaskIds,
+      counterFamilyByTaskId,
+      pinnedTaskId,
+    }).size,
   };
 }
 
@@ -161,6 +186,25 @@ export interface SelectBoardTasksArgs {
   /** Uniform `[0, 1)` RNG. Default `Math.random`; tests pass a seeded LCG
    *  (`makeSeededRng`) so vectors pin exact outputs on both platforms. */
   rng?: () => number;
+  /**
+   * Counter-family exclusivity (owner directive 2026-09-08): task id →
+   * family key (`sharedCounterId ?? id`, counting tasks only — build via
+   * `buildCounterFamilyMap`). At most one member of a family is ever
+   * picked. Collision priority: the pinned CHOSEN center's mates are
+   * pruned outright; a family with both hand-added and source-only
+   * members prunes the source-only ones (explicit intent wins); remaining
+   * ties resolve at draw time — Phase A reaches min-covering members
+   * first, so "covers an unmet min" beats a plain draw naturally. Absent
+   * map (or absent id) = unconstrained.
+   */
+  counterFamilyByTaskId?: Record<string, string>;
+  /**
+   * The CHOSEN center's task id, when the caller intends to pin it. Its
+   * counter-family mates are pruned from the universe so the caller-side
+   * center swap can never create a family violation. The pin itself is
+   * NOT force-picked here — `buildWizardPlacement`'s swap owns that.
+   */
+  pinnedTaskId?: string;
 }
 
 export type SelectBoardTasksResult =
@@ -169,16 +213,64 @@ export type SelectBoardTasksResult =
 
 /**
  * Picks exactly `cellCount` task ids satisfying every source's membership
- * range (see the module docstring's normative semantics), or reports how
- * short the candidate pool ran. Never returns an underfilled `ok: true` —
- * boards are always exactly filled (standing invariant).
+ * range AND counter-family exclusivity (see the module docstring), or
+ * reports how short the candidate pool ran. Never returns an underfilled
+ * `ok: true` — boards are always exactly filled (standing invariant).
+ *
+ * A short RANDOMIZED run retries once in deterministic candidate order —
+ * the same order `computeSourceCapacity`'s dry-run counts — whose bounded
+ * pick is a prefix of that dry-run. So a gate that passed on `capacity`
+ * can never see this fail: an unlucky shuffle under pathological cap
+ * overlap costs that deal its variety, never its board.
  */
 export function selectBoardTasks(
   args: SelectBoardTasksArgs,
 ): SelectBoardTasksResult {
-  const rng = args.rng ?? Math.random;
   const randomize = args.randomize ?? true;
-  const { supplies, manualTaskIds, cellCount } = args;
+  const first = runSelection(args, randomize);
+  if (first.length >= args.cellCount) {
+    return { ok: true, taskIds: first.slice(0, args.cellCount) };
+  }
+  const fallback = randomize ? runSelection(args, false) : first;
+  if (fallback.length >= args.cellCount) {
+    return { ok: true, taskIds: fallback.slice(0, args.cellCount) };
+  }
+  return { ok: false, shortBy: args.cellCount - fallback.length };
+}
+
+/** Result of {@link computeAchievablePoolSize}. */
+export interface AchievablePoolSizeResult {
+  /** How many squares this pool can ACTUALLY yield. */
+  size: number;
+  /** The dry-run's picks, in deterministic order (diagnostics/tests). */
+  taskIds: string[];
+}
+
+/**
+ * The honest pool size: a deterministic, uncapped dry-run of the exact
+ * fill `selectBoardTasks` performs — source caps, mins, and
+ * counter-family exclusivity all applied. This is what the wizard header,
+ * the Step-2 gate, and the Preview SQUARES count show, computed BEFORE
+ * any preview/deal.
+ */
+export function computeAchievablePoolSize(
+  args: Omit<SelectBoardTasksArgs, 'cellCount' | 'randomize' | 'rng'>,
+): AchievablePoolSizeResult {
+  const taskIds = runSelection(
+    { ...args, cellCount: Number.MAX_SAFE_INTEGER },
+    false,
+  );
+  return { size: taskIds.length, taskIds };
+}
+
+/** The shared fill core — one code path for the deal, its deterministic
+ *  retry, and the capacity dry-run (the alignment guarantee). */
+function runSelection(
+  args: Omit<SelectBoardTasksArgs, 'randomize'>,
+  randomize: boolean,
+): string[] {
+  const rng = args.rng ?? Math.random;
+  const { supplies, manualTaskIds, cellCount, counterFamilyByTaskId, pinnedTaskId } = args;
   const order = (ids: string[]): string[] =>
     randomize ? fisherYatesShuffle(ids, rng) : ids;
 
@@ -213,7 +305,47 @@ export function selectBoardTasks(
   const picked: string[] = [];
   const pickedSet = new Set<string>();
 
+  // Counter-family exclusivity — priority pruning up front, then a
+  // runtime one-per-family guard for whatever the pruning left tied.
+  const familyOf = (id: string): string | undefined => counterFamilyByTaskId?.[id];
+  const blocked = new Set<string>();
+  if (counterFamilyByTaskId !== undefined) {
+    const membersByFamily = new Map<string, string[]>();
+    for (const id of candidates) {
+      const fam = familyOf(id);
+      if (fam === undefined) continue;
+      const members = membersByFamily.get(fam);
+      if (members === undefined) membersByFamily.set(fam, [id]);
+      else members.push(id);
+    }
+    const manualSet = new Set(manualTaskIds);
+    const pinnedFamily = pinnedTaskId !== undefined ? familyOf(pinnedTaskId) : undefined;
+    for (const [fam, members] of membersByFamily) {
+      if (fam === pinnedFamily) {
+        // The pinned CHOSEN center wins its family outright — mates are
+        // pruned so the caller-side center swap can't collide.
+        for (const id of members) {
+          if (id !== pinnedTaskId) blocked.add(id);
+        }
+        continue;
+      }
+      if (members.length < 2) continue;
+      // Hand-added beats source-supplied; ties (all hand-added, or all
+      // source-only) fall through to the runtime guard = the draw.
+      const handAdded = members.filter((id) => manualSet.has(id));
+      if (handAdded.length > 0 && handAdded.length < members.length) {
+        for (const id of members) {
+          if (!manualSet.has(id)) blocked.add(id);
+        }
+      }
+    }
+  }
+  const pickedFamilies = new Set<string>();
+
   const admissible = (id: string): boolean => {
+    if (blocked.has(id)) return false;
+    const fam = familyOf(id);
+    if (fam !== undefined && pickedFamilies.has(fam)) return false;
     for (let i = 0; i < supplies.length; i++) {
       if (availableSets[i].has(id) && memberCounts[i] >= caps[i]) return false;
     }
@@ -222,6 +354,8 @@ export function selectBoardTasks(
   const pick = (id: string): void => {
     picked.push(id);
     pickedSet.add(id);
+    const fam = familyOf(id);
+    if (fam !== undefined) pickedFamilies.add(fam);
     for (let i = 0; i < supplies.length; i++) {
       if (availableSets[i].has(id)) memberCounts[i] += 1;
     }
@@ -256,10 +390,24 @@ export function selectBoardTasks(
     pick(id);
   }
 
-  if (picked.length < cellCount) {
-    return { ok: false, shortBy: cellCount - picked.length };
+  return picked;
+}
+
+/**
+ * Task id → counter-family key for {@link selectBoardTasks} /
+ * {@link computeSourceCapacity}: counting tasks map to
+ * `sharedCounterId ?? id` (a root and every version derived from it share
+ * one family); other types carry no family constraint and get no entry.
+ */
+export function buildCounterFamilyMap(
+  tasks: Iterable<Task>,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const task of tasks) {
+    if (task.type !== TaskType.COUNTING) continue;
+    map[task.id] = task.sharedCounterId ?? task.id;
   }
-  return { ok: true, taskIds: picked };
+  return map;
 }
 
 /**

@@ -41,14 +41,41 @@ extension BoardWizardViewModel {
         return BoardSources.resolveSourceAvailable(supply).count
     }
 
-    /// The header/gate capacity (docs/BOARD_SOURCES.md §Selection step 3):
-    /// sum of source maxes + hand-added, deduped. Replaces
-    /// `selectedTaskIds.count` everywhere the step gates/counts.
+    /// The header/gate capacity — since the counter-family rework
+    /// (2026-09-08) the HONEST achievable pool size: a deterministic
+    /// dry-run of the actual fill (source caps, cap overlap, one square
+    /// per shared-counter family, the CHOSEN center pinned), computed
+    /// before any preview/deal. Replaces `selectedTaskIds.count`
+    /// everywhere the step gates/counts; gate-passed ⇒ the deal fills.
     var sourceCapacity: Int {
         BoardSources.computeSourceCapacity(
             algorithmSupplies(),
-            manualTaskIds: Array(manualTaskIds)
+            manualTaskIds: Array(manualTaskIds),
+            counterFamilyByTaskId: counterFamilyByTaskId,
+            pinnedTaskId: centerType == .chosen ? centerTaskId : nil
         ).capacity
+    }
+
+    /// The full task id → shared-counter family map: the container-fed
+    /// library half plus this session's pending tasks. Web twin:
+    /// `useBoardWizard.counterFamilyByTaskId`.
+    var counterFamilyByTaskId: [String: String] {
+        var map = libraryCounterFamilies
+        for payload in pendingTasks.values {
+            if payload.task.type == .counting {
+                map[payload.task.id] = payload.task.sharedCounterId ?? payload.task.id
+            }
+            for child in payload.childTasks where child.type == .counting {
+                map[child.id] = child.sharedCounterId ?? child.id
+            }
+        }
+        return map
+    }
+
+    /// Container hook: rebuild the library half of the family map after a
+    /// library (re)load.
+    func refreshCounterFamilies(libraryTasks: [Task]) {
+        libraryCounterFamilies = BoardSources.buildCounterFamilyMap(libraryTasks)
     }
 
     // MARK: - Pull / remove

@@ -983,3 +983,81 @@ describe('persist paths — native sources (Board Sources P4)', () => {
     expect(decoded?.sources).toEqual(sources);
   });
 });
+
+describe('buildWizardPlacement — counter-family exclusivity (2026-09-08)', () => {
+  const FAM = { 'r-20': 'r-root', 'r-root': 'r-root' };
+
+  it('never places two members of one shared-counter family', () => {
+    const ids = ['r-root', 'r-20', 'f-0', 'f-1', 'f-2', 'f-3', 'f-4', 'f-5', 'f-6'];
+    const tasks = ids.map((id) => makeTask(id));
+    const controller = makeController({
+      isRecurring: false,
+      centerType: CenterSquareType.FREE,
+      selectedTaskIds: new Set(ids),
+      sources: [
+        { sourceId: 'p1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all' },
+      ],
+      supplyInfoBySourceId: { p1: supplyEntry('Fam', ids) },
+      manualTaskIds: new Set<string>(),
+      counterFamilyByTaskId: FAM,
+      tasksRequired: 8,
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      const placed = placedIds(buildWizardPlacement(controller, emptyTaskLibrary(tasks)));
+      expect(placed).toHaveLength(8);
+      const famPicks = placed.filter((id) => id === 'r-root' || id === 'r-20');
+      expect(famPicks).toHaveLength(1);
+    }
+  });
+
+  it('a CHOSEN center wins its family: the mate is pruned before the draw', () => {
+    const ids = ['r-root', 'r-20', 'f-0', 'f-1', 'f-2', 'f-3', 'f-4', 'f-5', 'f-6', 'f-7'];
+    const tasks = ids.map((id) => makeTask(id));
+    const controller = makeController({
+      isRecurring: false,
+      centerType: CenterSquareType.CHOSEN,
+      centerTaskId: 'r-20',
+      selectedTaskIds: new Set(ids),
+      sources: [
+        { sourceId: 'p1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all' },
+      ],
+      supplyInfoBySourceId: { p1: supplyEntry('Fam', ids) },
+      manualTaskIds: new Set<string>(),
+      counterFamilyByTaskId: FAM,
+      tasksRequired: 9,
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      const placement = buildWizardPlacement(controller, emptyTaskLibrary(tasks));
+      const placed = placedIds(placement);
+      expect(placed).toContain('r-20');
+      expect(placed).not.toContain('r-root');
+      expect(placement[4]?.id).toBe('r-20');
+    }
+  });
+
+  it('the defensive flat fallback also keeps one per family', () => {
+    // Force the fallback: an impossible min-per-cap shape that the gate
+    // would normally block (selection short), with a family duplicate in
+    // the flat selection.
+    const ids = ['r-root', 'r-20', 'f-0'];
+    const tasks = ids.map((id) => makeTask(id));
+    const controller = makeController({
+      isRecurring: false,
+      centerType: CenterSquareType.FREE,
+      selectedTaskIds: new Set(ids),
+      sources: [
+        { sourceId: 'p1', kind: 'pool', min: 0, max: 1, excludedTaskIds: [], filter: 'all' },
+      ],
+      supplyInfoBySourceId: { p1: supplyEntry('Fam', ids) },
+      manualTaskIds: new Set<string>(),
+      counterFamilyByTaskId: FAM,
+      tasksRequired: 8,
+    });
+
+    const placed = placedIds(buildWizardPlacement(controller, emptyTaskLibrary(tasks)));
+    const famPicks = placed.filter((id) => id === 'r-root' || id === 'r-20');
+    expect(famPicks).toHaveLength(1);
+  });
+});

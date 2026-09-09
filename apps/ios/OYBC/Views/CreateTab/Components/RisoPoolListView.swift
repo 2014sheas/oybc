@@ -53,6 +53,10 @@ struct RisoPoolListView: View {
     /// rows inside the same "On your board" section (the step passes a
     /// `ForEach` of `RisoSourceRowView`s). nil ⇒ task rows only.
     var leadingRows: AnyView? = nil
+    /// Counter-family exclusivity (2026-09-08) — task id → the OTHER
+    /// family member's title, for tasks whose shared-counter family has
+    /// ≥2 members in the pool ("one per board" hint).
+    var counterClashByTaskId: [String: String] = [:]
 
     // MARK: - Ordered pool
 
@@ -277,10 +281,16 @@ struct RisoPoolListView: View {
 
         // Board Sources P2 — provenance subtitles removed (docs/
         // BOARD_SOURCES.md §Removed: no "added by hand"/"from X" copy).
-        if isCenter {
-            return base.map { "Center square · \($0)" } ?? "Center square"
+        // Counter-family exclusivity — the "one per board" clash hint.
+        var detail = base
+        if let clashTitle = counterClashByTaskId[task.id] {
+            let hint = "shares a counter with \u{201C}\(clashTitle)\u{201D} · one per board"
+            detail = detail.map { "\($0) · \(hint)" } ?? hint
         }
-        return base
+        if isCenter {
+            return detail.map { "Center square · \($0)" } ?? "Center square"
+        }
+        return detail
     }
 
     private func risoKind(for type: TaskType) -> RisoTaskKind {

@@ -573,3 +573,173 @@ describe('spawnTemplateBoard — Board Sources P3 (deleted-source ask trigger)',
     });
   });
 });
+
+describe('spawnTemplateBoard — counter-family exclusivity (2026-09-08)', () => {
+  it('places at most ONE member of a shared-counter family per spawned board', async () => {
+    // A counting root + its derived version share a family; both sit in
+    // the pool alongside 8 fillers so the 3×3 NONE board (9 cells) has to
+    // choose — exactly one family member may land.
+    const root: Task = {
+      id: 'counter-root',
+      userId: 'user-1',
+      title: 'Read 50 pages',
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 50,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    const derived: Task = {
+      ...root,
+      id: 'counter-derived',
+      title: 'Read 20 pages',
+      maxCount: 20,
+      sharedCounterId: 'counter-root',
+    };
+    await db.tasks.bulkAdd([root, derived]);
+    const fillerIds: string[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const id = `fam-filler-${i}`;
+      fillerIds.push(id);
+      await seedTask(id);
+    }
+
+    const pool: Pool = {
+      id: 'pool-fam',
+      userId: 'user-1',
+      name: 'Family Pool',
+      taskIds: ['counter-root', 'counter-derived', ...fillerIds],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.pools.add(pool);
+
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-fam',
+      userId: 'user-1',
+      name: 'Family Board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      seedTaskIds: [],
+      poolIds: ['pool-fam'],
+      manualTaskIds: [],
+      removedTaskIds: [],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Family Board — today',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const placements = await db.boardTasks
+      .where('boardId')
+      .equals(result.boardId)
+      .toArray();
+    expect(placements).toHaveLength(9);
+    const famPlaced = placements.filter(
+      (bt) => bt.taskId === 'counter-root' || bt.taskId === 'counter-derived',
+    );
+    expect(famPlaced).toHaveLength(1);
+  });
+
+  it('a hand-added family member wins over the pool-supplied mate at spawn', async () => {
+    const root: Task = {
+      id: 'win-root',
+      userId: 'user-1',
+      title: 'Walk 10 km',
+      type: TaskType.COUNTING,
+      action: 'Walk',
+      unit: 'km',
+      maxCount: 10,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    const derived: Task = {
+      ...root,
+      id: 'win-derived',
+      title: 'Walk 4 km',
+      maxCount: 4,
+      sharedCounterId: 'win-root',
+    };
+    await db.tasks.bulkAdd([root, derived]);
+    const fillerIds: string[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const id = `win-filler-${i}`;
+      fillerIds.push(id);
+      await seedTask(id);
+    }
+    await db.pools.add({
+      id: 'pool-win',
+      userId: 'user-1',
+      name: 'Win Pool',
+      taskIds: ['win-root', ...fillerIds],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-win',
+      userId: 'user-1',
+      name: 'Win Board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      seedTaskIds: [],
+      poolIds: ['pool-win'],
+      manualTaskIds: ['win-derived'],
+      removedTaskIds: [],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Win Board — today',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const placements = await db.boardTasks
+      .where('boardId')
+      .equals(result.boardId)
+      .toArray();
+    const placedIds = new Set(placements.map((bt) => bt.taskId));
+    expect(placedIds.has('win-derived')).toBe(true);
+    expect(placedIds.has('win-root')).toBe(false);
+  });
+});

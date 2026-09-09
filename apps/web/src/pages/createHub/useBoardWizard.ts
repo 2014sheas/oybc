@@ -3,6 +3,7 @@ import { useCoreBoardDefault } from '../../hooks';
 import {
   CenterSquareType,
   Timeframe,
+  buildCounterFamilyMap,
   formatTimeframeLabel,
   getTimeframeBoundaries,
   sourcesForRecord,
@@ -1012,16 +1013,34 @@ export function useBoardWizard({
     return null;
   }, [trimmedName, timeframe, customStartDate, customEndDate]);
 
-  // Board Sources P4 — the step-2 gate compares CAPACITY (sum of every
-  // source's effective max + hand-added, deduped — docs/BOARD_SOURCES.md
-  // §Selection step 3) against the fillable cell count, mirroring iOS
-  // `BoardWizardViewModel.isStep2Valid`. For all-`[0,all]` sources this
-  // equals the old flat selection count, so pre-rework behavior is
-  // unchanged; a numeric max caps what a source can contribute and the
-  // gate respects it.
+  // Counter-family exclusivity (2026-09-08) — task id → shared-counter
+  // family key, over the live library plus this session's pending tasks.
+  // Feeds the capacity dry-run and the placement pick so two goals on one
+  // counter never (a) inflate the header or (b) land on one board.
+  const counterFamilyByTaskId = useMemo<Record<string, string>>(() => {
+    const tasks = Object.values(tasksById);
+    for (const payload of pendingTasks.values()) {
+      tasks.push(payload.task);
+      for (const child of payload.childTasks) tasks.push(child);
+    }
+    return buildCounterFamilyMap(tasks);
+  }, [tasksById, pendingTasks]);
+
+  // Board Sources P4 — the step-2 gate compares CAPACITY against the
+  // fillable cell count, mirroring iOS `BoardWizardViewModel.isStep2Valid`.
+  // Since the counter-family rework this is the HONEST achievable size: a
+  // deterministic dry-run of the actual fill (family rule + cap overlap
+  // included, the CHOSEN center pinned), so gate-passed ⇒ the deal fills.
   const capacity = useMemo(
-    () => sourceCapacity(sources, supplyInfoBySourceId, manualTaskIds),
-    [sources, supplyInfoBySourceId, manualTaskIds],
+    () =>
+      sourceCapacity(
+        sources,
+        supplyInfoBySourceId,
+        manualTaskIds,
+        counterFamilyByTaskId,
+        centerType === CenterSquareType.CHOSEN ? (centerTaskId ?? undefined) : undefined,
+      ),
+    [sources, supplyInfoBySourceId, manualTaskIds, counterFamilyByTaskId, centerType, centerTaskId],
   );
 
   const isStep2Valid = useMemo(() => {
@@ -1116,5 +1135,6 @@ export function useBoardWizard({
     step2ValidationMessage,
     isPristine,
     capacity,
+    counterFamilyByTaskId,
   };
 }

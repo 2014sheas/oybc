@@ -176,6 +176,35 @@ within them.
 Variety stays **memoryless** (locked): no rotation ledger, no
 least-recently-used state — per-spawn randomness, as today.
 
+## Counter-family exclusivity + honest capacity (owner directive 2026-09-08)
+
+Two post-ship rules layered onto the selection algorithm, both platforms,
+vector-pinned:
+
+- **One square per shared-counter family.** A counting root and its
+  derived versions (`sharedCounterId`) are distinct tasks that tick
+  together — two of them on one board makes no sense, so the fill places
+  at most ONE member of a family (`buildCounterFamilyMap`:
+  `sharedCounterId ?? id`, counting tasks only). Collision priority:
+  **pinned CHOSEN center** (its mates are pruned before the draw, so the
+  center swap can never collide) > **hand-added** (source-only mates are
+  pruned) > **covering an unmet min** (Phase A reaches those first) >
+  the draw. The wizard shows a "shares a counter with 'X' · one per
+  board" hint on colliding rows, and the capacity/unique counts count a
+  family once. Enforcement is the SELECTION PATH (wizard create + every
+  spawn); Board Edit / add-to-live-board surfaces are a tracked
+  follow-up.
+- **The gate never overpromises.** `computeSourceCapacity().capacity` is
+  now a deterministic DRY-RUN of the actual fill (uncapped, unshuffled —
+  `computeAchievablePoolSize`), honoring caps, cap overlap, the family
+  rule, and the pin — the real pool size, computed before any
+  preview/deal. A short RANDOMIZED deal retries once in that same
+  deterministic order, whose bounded pick is a prefix of the dry-run:
+  **gate-passed ⇒ the board fills**, closing the old upper-bound gap
+  (pathological cap overlap could previously pass the gate and then
+  come up short / fall back with caps ignored). The one-off flat
+  fallback also keeps one-per-family now.
+
 ## Boards as sources (new capability)
 
 - **Binding is to the series, resolved live.** Pulling a board that belongs

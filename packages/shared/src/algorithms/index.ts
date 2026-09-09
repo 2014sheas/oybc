@@ -237,6 +237,8 @@ export {
   resolveSourceAvailable,
   effectiveSourceMax,
   computeSourceCapacity,
+  computeAchievablePoolSize,
+  buildCounterFamilyMap,
   selectBoardTasks,
   poolSourceSupplyById,
   sourcesFromMixFields,
@@ -247,6 +249,7 @@ export {
 export type {
   BoardSourceSupply,
   SourceCapacityResult,
+  AchievablePoolSizeResult,
   SelectBoardTasksArgs,
   SelectBoardTasksResult,
   LegacyMixFields,

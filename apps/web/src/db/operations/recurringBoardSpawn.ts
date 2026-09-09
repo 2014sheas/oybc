@@ -3,6 +3,7 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  buildCounterFamilyMap,
   buildSpawnPlacement,
   validateSpawnPool,
   computeBoardStatsUpdate,
@@ -245,6 +246,10 @@ export async function spawnTemplateBoard(
         // subset + order (review-caught — `placeBoard`'s verbatim path
         // is defeated if selection already shuffled).
         randomize: template.isRandomized,
+        // Counter-family exclusivity (2026-09-08): at most one member of
+        // a shared-counter family per spawned board. Recurring boards
+        // have no CHOSEN center, so nothing is pinned here.
+        counterFamilyByTaskId: buildCounterFamilyMap(allTasks),
       });
       if (!selection.ok) {
         return {

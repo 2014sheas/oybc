@@ -154,15 +154,40 @@ func buildWizardPlacement(
     // truncation — it never underfills relative to the old behavior.
     var selectedIds: [String]
     if !controller.sources.isEmpty {
+        // Counter-family exclusivity (2026-09-08): the pick never places
+        // two members of one shared-counter family, and a CHOSEN center
+        // is pinned so its family-mates are pruned before the draw.
+        let counterFamilies = controller.counterFamilyByTaskId
+        let pinnedTaskId: String? =
+            isOdd && controller.centerType == .chosen ? controller.centerTaskId : nil
         let selection = BoardSources.selectBoardTasks(
             supplies: controller.algorithmSupplies(),
             manualTaskIds: Array(controller.manualTaskIds),
             cellCount: tasksNeededForBoard(size: size, centerType: controller.centerType),
-            randomize: controller.isRandomized
+            randomize: controller.isRandomized,
+            counterFamilyByTaskId: counterFamilies,
+            pinnedTaskId: pinnedTaskId
         )
         switch selection {
-        case .ok(let taskIds): selectedIds = taskIds
-        case .short: selectedIds = Array(controller.selectedTaskIds)
+        case .ok(let taskIds):
+            selectedIds = taskIds
+        case .short:
+            // Defensive fallback (the honest capacity gate makes a short
+            // pick unreachable when Next was enabled): the flat selection,
+            // keeping at most ONE member per counter family — the family
+            // rule holds even on this path. Overfill-only; never underfills.
+            var seenFamilies = Set<String>()
+            selectedIds = Array(controller.selectedTaskIds).filter { id in
+                guard let fam = counterFamilies[id] else { return true }
+                if id == pinnedTaskId {
+                    seenFamilies.insert(fam)
+                    return true
+                }
+                if seenFamilies.contains(fam) { return false }
+                if let pinned = pinnedTaskId, counterFamilies[pinned] == fam { return false }
+                seenFamilies.insert(fam)
+                return true
+            }
         }
         // A CHOSEN center must survive the ranged pick — swap it in if
         // the draw skipped it. The victim is chosen MIN-AWARE (review

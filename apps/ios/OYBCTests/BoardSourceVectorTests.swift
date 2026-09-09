@@ -62,6 +62,8 @@ final class BoardSourceVectorTests: XCTestCase {
         let name: String
         let sources: [RawSource]
         let manualTaskIds: [String]
+        let counterFamilyByTaskId: [String: String]?
+        let pinnedTaskId: String?
         let expected: RawCapacityExpected
     }
 
@@ -78,6 +80,8 @@ final class BoardSourceVectorTests: XCTestCase {
         let cellCount: Int
         let rngSeed: UInt32
         let randomize: Bool
+        let counterFamilyByTaskId: [String: String]?
+        let pinnedTaskId: String?
         let expected: RawSelectionExpected
     }
 
@@ -128,7 +132,9 @@ final class BoardSourceVectorTests: XCTestCase {
         for v in fixture.capacityVectors {
             let result = BoardSources.computeSourceCapacity(
                 v.sources.map { $0.supply },
-                manualTaskIds: v.manualTaskIds
+                manualTaskIds: v.manualTaskIds,
+                counterFamilyByTaskId: v.counterFamilyByTaskId ?? [:],
+                pinnedTaskId: v.pinnedTaskId
             )
             XCTAssertEqual(result.uniqueCandidateCount, v.expected.uniqueCandidateCount, v.name)
             XCTAssertEqual(result.cappedBound, v.expected.cappedBound, v.name)
@@ -146,7 +152,9 @@ final class BoardSourceVectorTests: XCTestCase {
                 manualTaskIds: v.manualTaskIds,
                 cellCount: v.cellCount,
                 randomize: v.randomize,
-                rng: { rng.next() }
+                rng: { rng.next() },
+                counterFamilyByTaskId: v.counterFamilyByTaskId ?? [:],
+                pinnedTaskId: v.pinnedTaskId
             )
             switch result {
             case .ok(let taskIds):
