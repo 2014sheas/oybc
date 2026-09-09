@@ -148,6 +148,9 @@ struct BoardPlayView: View {
     // MARK: Riso visual layer state
     /// Whether to show the GREENLOG full-bleed celebration overlay.
     @State private var showGreenlogOverlay: Bool = false
+    /// Loose-ends sweep (2026-09-09) — the sources-native spawn-provenance
+    /// note, computed off-main by `recomputeSpawnNote`.
+    @State private var spawnNoteText: String? = nil
     /// Compact greenlog-streak value (e.g. "3d"/"2w") for the celebration overlay
     /// + share poster. Non-nil only for core boards with a streak ≥ 1; nil hides
     /// the STREAK card. Computed when the GREENLOG overlay is triggered.
@@ -816,6 +819,8 @@ struct BoardPlayView: View {
                 mode: .swap,
                 currentTaskId: target.currentTaskId,
                 candidateTasks: allTasks,
+                placedTaskIds: Set(viewModel.editDraftBoardTasks.map { $0.taskId }),
+                counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(allTasks),
                 onDismiss: { editModeReplaceTarget = nil },
                 onConfirm: { newTaskId in
                     editModeReplaceTarget = nil
@@ -868,6 +873,8 @@ struct BoardPlayView: View {
                     mode: .add,
                     currentTaskId: "",
                     candidateTasks: allTasks,
+                    placedTaskIds: Set(viewModel.boardTasks.map { $0.taskId }),
+                    counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(allTasks),
                     onDismiss: { addCellPos = nil },
                     onConfirm: { taskId in
                         addTaskConfirmed = true
@@ -1212,10 +1219,18 @@ struct BoardPlayView: View {
                     boardSize: board.boardSize,
                     centerSquareType: board.centerSquareType
                 ) {
-                    Text(spawnProvenanceNote(board: board, template: template))
-                        .font(.risoBody(11.5, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .padding(.horizontal, 4)
+                    // Loose-ends sweep (2026-09-09) — the note is computed
+                    // off-main into `spawnNoteText` (sources-native supply
+                    // resolution reads the DB; never per-body-eval on main).
+                    Group {
+                        if let spawnNoteText {
+                            Text(spawnNoteText)
+                                .font(.risoBody(11.5, .semibold))
+                                .foregroundStyle(Color.risoMuted)
+                                .padding(.horizontal, 4)
+                        }
+                    }
+                    .onAppear { recomputeSpawnNote(board: board, template: template) }
                 }
             }
         } else if board.sealedAt == nil, board.centerSquareType != .chosen {
@@ -1230,17 +1245,55 @@ struct BoardPlayView: View {
         }
     }
 
-    /// Renders the spawn-success provenance note (e.g. "Dealt 8 of 10 — 7
-    /// from the pool, 1 added today") for a freshly-dealt repeating board.
-    private func spawnProvenanceNote(board: Board, template: RecurringBoardTemplate) -> String {
+    /// Computes the spawn-success provenance note (e.g. "Picked 8 of 10 —
+    /// 7 pulled in, 1 added today") for a freshly-dealt repeating board —
+    /// SOURCES-NATIVE (loose-ends sweep 2026-09-09): board-kind supplies
+    /// resolve through the shared board-supply reader with the record's
+    /// 'todo' filter applied, and "of M" is the honest achievable pool
+    /// size (caps + counter-family rule), exactly what the spawn used.
+    /// Off-main (board-supply resolution reads the DB), cached in
+    /// `spawnNoteText`.
+    private func recomputeSpawnNote(board: Board, template: RecurringBoardTemplate) {
         let poolsById = Dictionary(uniqueKeysWithValues: allPoolsInWorkspace.map { ($0.id, $0) })
-        let summary = PoolMix.summarizeSpawnProvenance(
-            spawnSource: template,
-            poolsById: poolsById,
-            tasksById: taskMap,
-            dealtTaskIds: dealtTaskIds
+        let tasksById = taskMap
+        let dealt = dealtTaskIds
+        let manualTaskIds = template.manualTaskIds ?? []
+        let sources = BoardSources.sourcesForRecord(
+            sources: template.sources,
+            poolIds: template.poolIds,
+            removedTaskIds: template.removedTaskIds
         )
-        return PoolMix.formatSpawnProvenanceNote(summary)
+        _Concurrency.Task.detached(priority: .utility) {
+            var supplies: [BoardSources.Supply] = []
+            for source in sources {
+                switch source.kind {
+                case .pool:
+                    supplies.append(BoardSources.Supply(
+                        source: source,
+                        supplyTaskIds: BoardSources.poolSourceSupplyById(
+                            source.sourceId, poolsById: poolsById, tasksById: tasksById
+                        )
+                    ))
+                case .board:
+                    let info = (try? AppDatabase.shared.fetchBoardSourceSupply(
+                        boardId: source.sourceId
+                    )) ?? nil
+                    var raw = info?.supplyTaskIds ?? []
+                    if source.filter == .todo, let done = info?.doneTaskIds {
+                        raw.removeAll { done.contains($0) }
+                    }
+                    supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
+                }
+            }
+            let summary = PoolMix.summarizeSpawnProvenance(
+                supplies: supplies,
+                manualTaskIds: manualTaskIds,
+                counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasksById.values),
+                dealtTaskIds: dealt
+            )
+            let text = PoolMix.formatSpawnProvenanceNote(summary)
+            await MainActor.run { spawnNoteText = text }
+        }
     }
 
     /// Pause / resume the board's source template. Mirrors

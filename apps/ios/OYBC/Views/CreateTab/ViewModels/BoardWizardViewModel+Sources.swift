@@ -237,9 +237,10 @@ extension BoardWizardViewModel {
             switch source.kind {
             case .pool:
                 let name = poolsById[source.sourceId]?.name
-                    ?? supplyInfoBySourceId[source.sourceId]?.displayName ?? ""
+                    ?? supplyInfoBySourceId[source.sourceId]?.displayName
+                let fallbackName = (name?.isEmpty == false) ? name! : "Deleted pool"
                 supplyInfoBySourceId[source.sourceId] = WizardSourceSupply(
-                    displayName: name,
+                    displayName: fallbackName,
                     rawSupplyTaskIds: BoardSources.poolSourceSupplyById(
                         source.sourceId, poolsById: poolsById, tasksById: tasksById
                     ),
@@ -253,8 +254,9 @@ extension BoardWizardViewModel {
                         doneTaskIds: info.doneTaskIds
                     )
                 } else {
+                    let kept = supplyInfoBySourceId[source.sourceId]?.displayName
                     supplyInfoBySourceId[source.sourceId] = WizardSourceSupply(
-                        displayName: supplyInfoBySourceId[source.sourceId]?.displayName ?? "",
+                        displayName: (kept?.isEmpty == false) ? kept! : "Deleted board",
                         rawSupplyTaskIds: [],
                         doneTaskIds: []
                     )
@@ -299,7 +301,7 @@ extension BoardWizardViewModel {
             switch source.kind {
             case .pool:
                 supplyInfo[source.sourceId] = WizardSourceSupply(
-                    displayName: poolsById[source.sourceId]?.name ?? "",
+                    displayName: poolsById[source.sourceId]?.name ?? "Deleted pool",
                     rawSupplyTaskIds: BoardSources.poolSourceSupplyById(
                         source.sourceId, poolsById: poolsById, tasksById: tasksById
                     ),
@@ -314,7 +316,7 @@ extension BoardWizardViewModel {
                     )
                 } else {
                     supplyInfo[source.sourceId] = WizardSourceSupply(
-                        displayName: "", rawSupplyTaskIds: [], doneTaskIds: []
+                        displayName: "Deleted board", rawSupplyTaskIds: [], doneTaskIds: []
                     )
                 }
             }

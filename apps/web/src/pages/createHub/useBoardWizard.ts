@@ -369,10 +369,16 @@ export function useBoardWizard({
         info[source.sourceId] =
           pool && !pool.isDeleted
             ? poolSupplyEntry(pool, tasksById)
-            : { displayName: pool?.name ?? '', rawSupplyTaskIds: [], doneTaskIds: new Set() };
+            : {
+                // A dead pool row keeps its last-known name when we still
+                // have it; a blank row is never honest UI.
+                displayName: pool?.name || 'Deleted pool',
+                rawSupplyTaskIds: [],
+                doneTaskIds: new Set(),
+              };
       } else {
         info[source.sourceId] = boardSupplyById[source.sourceId] ?? {
-          displayName: '',
+          displayName: 'Deleted board',
           rawSupplyTaskIds: [],
           doneTaskIds: new Set(),
         };
@@ -402,7 +408,7 @@ export function useBoardWizard({
               rawSupplyTaskIds: info.supplyTaskIds,
               doneTaskIds: info.doneTaskIds,
             }
-          : { displayName: '', rawSupplyTaskIds: [], doneTaskIds: new Set() };
+          : { displayName: 'Deleted board', rawSupplyTaskIds: [], doneTaskIds: new Set() };
       }
       if (!cancelled) setBoardSupplyById((prev) => ({ ...prev, ...next }));
     })();

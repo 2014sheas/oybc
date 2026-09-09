@@ -140,6 +140,7 @@ export {
   resolvePoolPullAdditions,
   resolvePoolUntoggleRemovals,
   summarizeSpawnProvenance,
+  summarizeSpawnProvenanceFromSupplies,
   formatSpawnProvenanceNote,
 } from './poolMix';
 

@@ -35,6 +35,10 @@
 
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
+import {
+  computeAchievablePoolSize,
+  type BoardSourceSupply,
+} from './boardSources';
 
 /**
  * The subset of a spawn record's fields `resolveMix` /
@@ -394,6 +398,42 @@ export function summarizeSpawnProvenance(
 }
 
 /**
+ * Sources-native spawn-provenance summary (loose-ends sweep 2026-09-09) —
+ * supersedes the legacy-trio overload above for records that may carry
+ * board-kind sources or ranges: `mixSize` is the honest achievable pool
+ * size (`computeAchievablePoolSize` — caps, cap overlap, counter-family
+ * rule), and the pulled/manual split classifies each dealt square by the
+ * manual layer exactly as before. The legacy overload stays for
+ * pool-trio-only callers/tests; new call sites use this one.
+ *
+ * @param supplies - The record's resolved source supplies (the SAME
+ *   platform resolution the spawn used — pool + board kinds).
+ * @param manualTaskIds - The record's hand-added layer.
+ * @param counterFamilyByTaskId - `buildCounterFamilyMap` over the task
+ *   universe (so `mixSize` counts a shared-counter family once).
+ * @param dealtTaskIds - Task ids actually placed on the spawned board.
+ */
+export function summarizeSpawnProvenanceFromSupplies(
+  supplies: BoardSourceSupply[],
+  manualTaskIds: string[],
+  counterFamilyByTaskId: Record<string, string>,
+  dealtTaskIds: string[],
+): SpawnProvenanceSummary {
+  const manualSet = new Set(manualTaskIds);
+  const manualSourcedCount = dealtTaskIds.filter((id) => manualSet.has(id)).length;
+  return {
+    dealt: dealtTaskIds.length,
+    mixSize: computeAchievablePoolSize({
+      supplies,
+      manualTaskIds,
+      counterFamilyByTaskId,
+    }).size,
+    poolSourcedCount: dealtTaskIds.length - manualSourcedCount,
+    manualSourcedCount,
+  };
+}
+
+/**
  * Formats the spawn-success provenance note copy, e.g.
  * `"Picked 8 of 10 — 7 from the pool, 1 added today"`.
  *
@@ -409,7 +449,9 @@ export function summarizeSpawnProvenance(
  */
 export function formatSpawnProvenanceNote(summary: SpawnProvenanceSummary): string {
   const parts: string[] = [];
-  if (summary.poolSourcedCount > 0) parts.push(`${summary.poolSourcedCount} from the pool`);
+  // "pulled in" (not "from the pool") — squares can come from pulled
+  // BOARDS too since Board Sources; the wizard's own verb is "pull".
+  if (summary.poolSourcedCount > 0) parts.push(`${summary.poolSourcedCount} pulled in`);
   if (summary.manualSourcedCount > 0) parts.push(`${summary.manualSourcedCount} added today`);
   const breakdown = parts.length > 0 ? ` — ${parts.join(', ')}` : '';
   return `Picked ${summary.dealt} of ${summary.mixSize}${breakdown}`;

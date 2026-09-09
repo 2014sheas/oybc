@@ -561,12 +561,12 @@ describe('mergeLegacyPoolTaskIds', () => {
 //
 // docs/POOLS_RECURRING.md §Surfaces item 7 — the board-screen spawn-success
 // provenance note, e.g. "Picked 8 of 10 — 7 from the pool, 1 added today".
-// Locked decision C: generic "from the pool" wording (not the doc's
+// Locked decision C: generic "pulled in" wording (not the doc's
 // "defaults"-specific example text), since this note also covers a
 // "repeat this board" spawn with zero pool involvement.
 
 describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
-  it('pure-pool spawn: manualSourcedCount is 0, note reads "N from the pool" only', () => {
+  it('pure-pool spawn: manualSourcedCount is 0, note reads "N pulled in" only', () => {
     const poolA = buildPool('pool-a', ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
     const tasksById = byId(poolA.taskIds.map((id) => buildTask(id)));
     const poolsById = byId([poolA]);
@@ -581,7 +581,7 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
       poolSourcedCount: 8,
       manualSourcedCount: 0,
     });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 10 — 8 from the pool');
+    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 10 — 8 pulled in');
   });
 
   it('pure-manual spawn (e.g. "repeat this board", zero pools): poolSourcedCount is 0, note reads "N added today" only', () => {
@@ -614,7 +614,7 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
       poolSourcedCount: 7,
       manualSourcedCount: 1,
     });
-    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 8 — 7 from the pool, 1 added today');
+    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 8 of 8 — 7 pulled in, 1 added today');
   });
 
   it('zero-dealt edge case: note reads "Picked 0 of N" with no breakdown clause', () => {

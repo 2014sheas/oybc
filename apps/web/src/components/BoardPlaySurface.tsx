@@ -8,8 +8,12 @@ import {
   generateCounterTaskTitle,
   formatCadenceAdverb,
   isFreshlyDealtBoard,
-  summarizeSpawnProvenance,
+  buildCounterFamilyMap,
+  poolSourceSupplyById,
+  sourcesForRecord,
+  summarizeSpawnProvenanceFromSupplies,
   formatSpawnProvenanceNote,
+  type BoardSourceSupply,
   type Board,
   type Pool,
   type Task,
@@ -33,6 +37,7 @@ import {
 } from './boardPlaySharedCounterUtils';
 import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
 import { CellSwapModal } from './CellSwapModal';
+import { fetchBoardSourceSupply } from '../db/operations/boardSources';
 import { BoardStatusBadge } from './BoardStatusBadge';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
@@ -242,6 +247,56 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     for (const p of pools) map[p.id] = p;
     return map;
   }, [pools]);
+  // Loose-ends sweep (2026-09-09) — the spawn-provenance note is
+  // sources-native: resolve the template's supplies (pool kinds sync from
+  // the live lookups; board kinds via the shared board-supply op, with
+  // the record's 'todo' filter applied exactly as the spawn does) and
+  // summarize against the honest achievable pool size. Only runs while
+  // the note is actually visible (fresh board + resolvable template).
+  const [spawnNoteSupplies, setSpawnNoteSupplies] = useState<BoardSourceSupply[] | null>(null);
+  const spawnNoteActive = sourceTemplate !== undefined && isFreshlyDealtBoard(board);
+  useEffect(() => {
+    if (!spawnNoteActive || sourceTemplate === undefined) {
+      setSpawnNoteSupplies(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const sources = sourcesForRecord(sourceTemplate);
+      const supplies: BoardSourceSupply[] = [];
+      for (const source of sources) {
+        if (source.kind === 'pool') {
+          supplies.push({
+            source,
+            supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, taskMap),
+          });
+          continue;
+        }
+        const info = await fetchBoardSourceSupply(source.sourceId);
+        const raw = info?.supplyTaskIds ?? [];
+        supplies.push({
+          source,
+          supplyTaskIds:
+            source.filter === 'todo' && info
+              ? raw.filter((id) => !info.doneTaskIds.has(id))
+              : raw,
+        });
+      }
+      if (!cancelled) setSpawnNoteSupplies(supplies);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [spawnNoteActive, sourceTemplate, poolsById, taskMap]);
+
+  // Loose-ends sweep (2026-09-09) — shared-counter family map over the
+  // library, for the add/swap picker's one-counter-per-board guard and
+  // the spawn note's honest "of M".
+  const counterFamilyByTaskId = useMemo(
+    () => buildCounterFamilyMap(Object.values(taskMap)),
+    [taskMap],
+  );
+
   const [repeatPickerOpen, setRepeatPickerOpen] = useState(false);
   const [repeatBusy, setRepeatBusy] = useState(false);
   const [manageBusy, setManageBusy] = useState(false);
@@ -636,13 +691,13 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           {/* Spawn-success provenance note — visible only while the board is
               still "freshly dealt" (docs §Behavior invariants) and its
               source template resolves. */}
-          {sourceTemplate && isFreshlyDealtBoard(board) && (
+          {sourceTemplate && isFreshlyDealtBoard(board) && spawnNoteSupplies !== null && (
             <div className={styles.repeatProvenanceNote}>
               {formatSpawnProvenanceNote(
-                summarizeSpawnProvenance(
-                  sourceTemplate,
-                  poolsById,
-                  taskMap,
+                summarizeSpawnProvenanceFromSupplies(
+                  spawnNoteSupplies,
+                  sourceTemplate.manualTaskIds ?? [],
+                  counterFamilyByTaskId,
                   sortedBoardTasks.map((bt) => bt.taskId),
                 ),
               )}
@@ -1098,6 +1153,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
             mode="swap"
             currentTaskId={replaceDraftCell.taskId}
             candidateTasks={Object.values(taskMap)}
+            placedTaskIds={new Set(squaresDraft.map((c) => c.taskId))}
+            counterFamilyByTaskId={counterFamilyByTaskId}
             onClose={() => setEditReplaceId(null)}
             onConfirm={(newTaskId) => {
               handleEditReplace(editReplaceId, newTaskId);
@@ -1370,6 +1427,8 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         <CellSwapModal
           mode="add"
           candidateTasks={Object.values(taskMap)}
+          placedTaskIds={new Set(sortedBoardTasks.map((bt) => bt.taskId))}
+          counterFamilyByTaskId={counterFamilyByTaskId}
           onClose={() => setAddCellPos(null)}
           onConfirm={async (taskId) => {
             const pos = addCellPos;
