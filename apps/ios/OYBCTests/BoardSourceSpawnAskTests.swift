@@ -248,4 +248,54 @@ final class BoardSourceSpawnAskTests: XCTestCase {
         XCTAssertEqual(Set(rows.map { $0.taskId }), ["m1", "m2", "m3", "m4"])
         XCTAssertFalse(rows.contains { $0.taskId == "s1" })
     }
+    // MARK: - Counter-family exclusivity (2026-09-08)
+
+    private func makeCountingTask(
+        _ id: String, maxCount: Int, sharedCounterId: String? = nil
+    ) -> OYBC.Task {
+        OYBC.Task(
+            id: id, userId: userId, title: "Count \(id)", description: nil, type: .counting,
+            action: "Do", unit: "reps", maxCount: maxCount,
+            operatorType: nil, threshold: nil,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil, currentCount: nil,
+            createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil,
+            sharedCounterId: sharedCounterId,
+            baseline: sharedCounterId != nil ? 0 : nil
+        )
+    }
+
+    /// The iOS spawn call site must feed `buildCounterFamilyMap` into the
+    /// shared pick — a counting root + its derived version in one mix
+    /// place exactly ONE square (the vectors pin the algorithm; this pins
+    /// the WIRING).
+    func test_spawn_placesAtMostOneMemberOfASharedCounterFamily() throws {
+        let db = try makeDb()
+        try db.write { grdb in
+            try makeCountingTask("fam-root", maxCount: 50).insert(grdb)
+            try makeCountingTask("fam-derived", maxCount: 20, sharedCounterId: "fam-root")
+                .insert(grdb)
+        }
+        // 2×2 NONE = 4 cells; family pair + 3 fillers = 4 placeable things.
+        let template = try seedTemplate(
+            db,
+            sources: [],
+            manualTaskIds: ["fam-root", "fam-derived", "f1", "f2", "f3"]
+        )
+        let outcome = try spawn(db, template)
+        guard case .spawned(let boardId, _, _) = outcome else {
+            return XCTFail("Expected a spawn, got \(outcome)")
+        }
+        let placedIds = try db.read { grdb in
+            try BoardTask.filter(Column("boardId") == boardId).fetchAll(grdb)
+        }.map { $0.taskId }
+        XCTAssertEqual(placedIds.count, 4)
+        let famPlaced = placedIds.filter { $0 == "fam-root" || $0 == "fam-derived" }
+        XCTAssertEqual(famPlaced.count, 1, "one square per shared-counter family")
+        for id in ["f1", "f2", "f3"] {
+            XCTAssertTrue(placedIds.contains(id), "filler \(id) must fill the freed cell")
+        }
+    }
+
 }
