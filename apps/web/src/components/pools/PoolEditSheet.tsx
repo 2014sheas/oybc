@@ -151,7 +151,12 @@ export function PoolEditSheet({
     () => computeDeckFloor(templates, pool?.id ?? ''),
     [templates, pool?.id],
   );
-  const deckPreviewText = formatDeckPreview(poolTasks.length, deckFloor);
+  // The preview line is a claim about what boards can PULL, so it counts
+  // supply-eligible tasks only (achievements are banned from supply) —
+  // while "TASKS (N)" and the chip row above stay what-you-see, including
+  // a removable legacy achievement chip.
+  const supplyCount = poolTasks.filter(isSourceSupplyTask).length;
+  const deckPreviewText = formatDeckPreview(supplyCount, deckFloor);
 
   // Achievements are banned from pools (owner decision 2026-09-10; the
   // supply-side twin is `isSourceSupplyTask` in the source resolvers) —

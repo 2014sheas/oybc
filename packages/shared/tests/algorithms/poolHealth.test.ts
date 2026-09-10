@@ -99,6 +99,42 @@ describe('computePoolHealth — taskCount', () => {
     expect(result.taskCount).toBe(1);
     expect(result.consumers).toEqual([]);
   });
+
+  it('excludes achievements from the count AND the shortBy mix (supply ban, 2026-09-10)', () => {
+    // 8 normals + 1 legacy achievement in the pool; a 3×3 FREE template
+    // (8 fillable) consumes it. The achievement must not count — the pool
+    // reads 8 pullable tasks and the template is NOT short (8 ≥ 8), while
+    // a naive unfiltered count would have claimed 9.
+    const normals = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8'].map((id) => buildTask(id));
+    const watcher = buildTask('watch', {
+      type: TaskType.ACHIEVEMENT,
+      referencedBoardId: 'b-elsewhere',
+    });
+    const pool = buildPool('p1', [...normals.map((t) => t.id), 'watch']);
+    const template = buildTemplate('tpl', { poolIds: ['p1'] }); // 3×3 FREE = 8
+
+    const result = computePoolHealth(pool, {
+      templates: [template],
+      poolsById: byId([pool]),
+      tasksById: byId([...normals, watcher]),
+    });
+
+    expect(result.taskCount).toBe(8);
+    expect(result.consumers).toEqual([]); // 8 pullable covers the 8-cell floor
+
+    // Drop one normal: now genuinely short by 1 — the watcher must not
+    // paper over the shortfall (the false-negative the ban would cause
+    // without the health-layer filter).
+    const smallerPool = buildPool('p2', [...normals.slice(0, 7).map((t) => t.id), 'watch']);
+    const shortResult = computePoolHealth(smallerPool, {
+      templates: [buildTemplate('tpl2', { poolIds: ['p2'] })],
+      poolsById: byId([smallerPool]),
+      tasksById: byId([...normals, watcher]),
+    });
+    expect(shortResult.taskCount).toBe(7);
+    expect(shortResult.consumers).toHaveLength(1);
+    expect(shortResult.consumers[0].shortBy).toBe(1);
+  });
 });
 
 // ─── computePoolHealth: consumer detection ─────────────────────────────────────

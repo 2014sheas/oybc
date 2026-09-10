@@ -107,9 +107,13 @@ struct PoolEditSheetView: View {
         )
     }
 
+    /// The preview line is a claim about what boards can PULL, so it
+    /// counts supply-eligible tasks only (achievements are banned from
+    /// supply) — while "TASKS (N)" and the chip row stay what-you-see,
+    /// including a removable legacy achievement chip.
     private var deckPreviewText: String {
         PoolHealth.formatDeckPreview(
-            taskCount: selectedTasks.count,
+            taskCount: selectedTasks.filter { BoardSources.isSourceSupplyTask($0) }.count,
             deckFloor: PoolHealth.computeDeckFloor(templates: templates, poolId: pool?.id ?? "")
         )
     }

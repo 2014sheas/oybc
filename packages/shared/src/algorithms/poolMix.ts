@@ -37,6 +37,7 @@ import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
 import {
   computeAchievablePoolSize,
+  isSourceSupplyTask,
   type BoardSourceSupply,
 } from './boardSources';
 
@@ -78,7 +79,11 @@ export interface ResolveMixResult {
 
 /**
  * Resolvable, non-deleted supply for one pool: its own `taskIds`, filtered
- * to tasks present in `tasksById` and not soft-deleted. Order preserved.
+ * to tasks present in `tasksById`, not soft-deleted, and supply-eligible
+ * ({@link isSourceSupplyTask} — achievements are banned from pools, owner
+ * decision 2026-09-10; matches `poolSourceSupplyById` so the legacy
+ * mix/health layer never counts what the sources layer won't deal).
+ * Order preserved.
  */
 function resolvablePoolSupply(
   pool: Pool,
@@ -86,7 +91,7 @@ function resolvablePoolSupply(
 ): string[] {
   return pool.taskIds.filter((taskId) => {
     const task = tasksById[taskId];
-    return task !== undefined && !task.isDeleted;
+    return task !== undefined && !task.isDeleted && isSourceSupplyTask(task);
   });
 }
 
