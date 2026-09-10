@@ -151,7 +151,11 @@ extension AppDatabase {
         var supply: [String] = []
         var done = Set<String>()
         for id in placedIds {
-            guard let task = taskById[id], !seen.contains(id) else { continue }
+            // `isSourceSupplyTask`: achievements never enter source supply —
+            // hand-placed watchers on the pulled board stay on that board only.
+            guard let task = taskById[id],
+                  BoardSources.isSourceSupplyTask(task),
+                  !seen.contains(id) else { continue }
             seen.insert(id)
             supply.append(id)
             let isDone: Bool

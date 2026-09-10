@@ -2,6 +2,7 @@ import { db } from '../internal';
 import {
   BoardStatus,
   isEventOwningTask,
+  isSourceSupplyTask,
   poolSourceSupplyById,
   resolveTaskWindowState,
   sourcesForRecord,
@@ -75,7 +76,10 @@ export function resolveBoardSourceSupply(
   const done = new Set<string>();
   for (const bt of rows) {
     const task = tasksById[bt.taskId];
-    if (task === undefined || task.isDeleted || seen.has(task.id)) continue;
+    // `isSourceSupplyTask`: achievements never enter source supply —
+    // hand-placed watchers on the pulled board stay on that board only.
+    if (task === undefined || task.isDeleted || !isSourceSupplyTask(task) || seen.has(task.id))
+      continue;
     seen.add(task.id);
     supply.push(task.id);
     const isDone = isEventOwningTask(task)

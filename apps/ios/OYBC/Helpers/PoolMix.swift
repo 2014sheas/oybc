@@ -30,12 +30,15 @@ import Foundation
 enum PoolMix {
 
     /// Resolvable, non-deleted supply for one pool: its own `taskIds`,
-    /// filtered to tasks present in `tasksById` and not soft-deleted.
-    /// Order preserved.
+    /// filtered to tasks present in `tasksById`, not soft-deleted, and
+    /// supply-eligible (`BoardSources.isSourceSupplyTask` — achievements
+    /// are banned from pools, owner decision 2026-09-10; matches
+    /// `poolSourceSupplyById` so the legacy mix/health layer never counts
+    /// what the sources layer won't deal). Order preserved.
     private static func resolvablePoolSupply(_ pool: Pool, tasksById: [String: Task]) -> [String] {
         pool.taskIds.filter { taskId in
             guard let task = tasksById[taskId] else { return false }
-            return !task.isDeleted
+            return !task.isDeleted && BoardSources.isSourceSupplyTask(task)
         }
     }
 

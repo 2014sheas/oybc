@@ -17,6 +17,7 @@
  */
 
 import { fillableCellCount } from '@oybc/bingo-core';
+import { isSourceSupplyTask } from './boardSources';
 import { resolveMix } from './poolMix';
 import { Timeframe } from '../constants/enums';
 import type { Pool } from '../types/pool';
@@ -89,9 +90,12 @@ export function computePoolHealth(
 ): PoolHealthResult {
   const { templates, poolsById, tasksById } = input;
 
+  // Supply-eligible only (`isSourceSupplyTask` — achievements are banned
+  // from pools) so the card's count and warnings agree with what the
+  // wizard/spawn can actually pull.
   const taskCount = pool.taskIds.filter((taskId) => {
     const task = tasksById[taskId];
-    return task !== undefined && !task.isDeleted;
+    return task !== undefined && !task.isDeleted && isSourceSupplyTask(task);
   }).length;
 
   const consumers: PoolHealthConsumer[] = [];

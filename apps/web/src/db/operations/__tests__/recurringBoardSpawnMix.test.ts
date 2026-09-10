@@ -392,6 +392,121 @@ describe('spawnTemplateBoard — Board Sources P1 (stamped sources)', () => {
   });
 });
 
+describe('spawnTemplateBoard — achievements banned from source supply (owner decision 2026-09-10)', () => {
+  it('a watcher in a pool AND on a pulled board never reaches the spawned board', async () => {
+    // Pool: 5 normals + 1 achievement. Pulled board: 4 normals + 1
+    // achievement placement. Eligible supply = 9 normals = exactly the
+    // 3×3 NONE cell count, so the deal is deterministic: the board fills
+    // completely and both watchers are excluded — proving the ban holds
+    // at BOTH supply resolvers (`poolSourceSupplyById` and
+    // `resolveBoardSourceSupply`), not just in the pickers.
+    const poolNormals = ['pn1', 'pn2', 'pn3', 'pn4', 'pn5'];
+    const boardNormals = ['bn1', 'bn2', 'bn3', 'bn4'];
+    for (const id of [...poolNormals, ...boardNormals]) await seedTask(id);
+    const watcher = (id: string): Task =>
+      ({
+        id,
+        userId: 'user-1',
+        title: id,
+        type: TaskType.ACHIEVEMENT,
+        referencedBoardId: 'some-other-board',
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      }) as Task;
+    await db.tasks.bulkAdd([watcher('watch-pool'), watcher('watch-board')]);
+
+    await db.pools.add({
+      id: 'pool-ach',
+      userId: 'user-1',
+      name: 'Pool With Watcher',
+      taskIds: [...poolNormals, 'watch-pool'],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+
+    await db.boards.add({
+      id: 'src-board-ach',
+      userId: 'user-1',
+      name: 'Source With Watcher',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.DAILY,
+      startDate: NOW,
+      endDate: WINDOW_END,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      totalTasks: 5,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    const placements = [...boardNormals, 'watch-board'].map((taskId, i) => ({
+      id: `bt-src-${taskId}`,
+      boardId: 'src-board-ach',
+      taskId,
+      row: Math.floor(i / 3),
+      col: i % 3,
+      isCenter: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    }));
+    await db.boardTasks.bulkAdd(placements);
+
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-no-watchers',
+      userId: 'user-1',
+      name: 'No Watchers Board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE, // 9 cells
+      isRandomized: false,
+      seedTaskIds: [],
+      manualTaskIds: [],
+      sources: [
+        { sourceId: 'pool-ach', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all' },
+        { sourceId: 'src-board-ach', kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'all' },
+      ],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'No Watchers — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const boardTasks = await db.boardTasks.where('boardId').equals(result.boardId).toArray();
+    const placed = new Set(
+      boardTasks.filter((bt) => bt.boardId === result.boardId).map((bt) => bt.taskId),
+    );
+    expect(placed.has('watch-pool')).toBe(false);
+    expect(placed.has('watch-board')).toBe(false);
+    expect(placed).toEqual(new Set([...poolNormals, ...boardNormals]));
+  });
+});
+
 describe('spawnTemplateBoard — isRandomized: false determinism (review-caught regression lock)', () => {
   it('an overfilled non-randomized template keeps its stable first-N subset AND order across spawns', async () => {
     // 12-task pool on a 3×3 NONE board (9 cells). Pre-sources behavior:

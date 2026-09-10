@@ -42,10 +42,24 @@ struct RisoSpecialTaskPanel: View {
     let onCompoundCreated: (OYBC.Task) -> Void
     let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
     let onLibraryReloadRequested: () -> Void
+    /// False in pool context (`PoolEditSheetView`): drops the Achievement
+    /// chip and shortens the collapsed label — achievements are banned
+    /// from pools (owner decision 2026-09-10; supply-side twin:
+    /// `BoardSources.isSourceSupplyTask`). Default true (wizard Tasks
+    /// step — boards hand-place achievements).
+    var allowAchievement: Bool = true
+    /// Submit-button copy — the wizard's "Add to board ✦" by default;
+    /// pool context passes "Add to pool ✦".
+    var submitLabel: String = "Add to board ✦"
 
     @State private var isExpanded: Bool = false
     @State private var selectedType: SpecialType = .counting
     @State private var form = CreateFormViewModel()
+
+    /// The type chips offered — Achievement drops out in pool context.
+    private var availableTypes: [SpecialType] {
+        SpecialType.allCases.filter { allowAchievement || $0 != .achievement }
+    }
 
     // Achievement board/template pickers
     @State private var boards: [Board] = []
@@ -86,7 +100,9 @@ struct RisoSpecialTaskPanel: View {
                 Text("＋")
                     .font(.risoHead(15, .extraBold))
                     .foregroundStyle(Color.risoBlue)
-                Text("Add a counting, compound or achievement task")
+                Text(allowAchievement
+                        ? "Add a counting, compound or achievement task"
+                        : "Add a counting or compound task")
                     .font(.risoHead(13, .bold))
                     .foregroundStyle(Color.risoInk)
                     .multilineTextAlignment(.leading)
@@ -126,7 +142,7 @@ struct RisoSpecialTaskPanel: View {
 
             // Type chips row
             HStack(spacing: 6) {
-                ForEach(SpecialType.allCases, id: \.self) { type in
+                ForEach(availableTypes, id: \.self) { type in
                     typeChip(type)
                 }
             }
@@ -247,7 +263,7 @@ struct RisoSpecialTaskPanel: View {
             counterLinkBanner
 
             // Add button
-            RisoButton(title: "Add to board ✦", kind: .blue, fullWidth: true) {
+            RisoButton(title: submitLabel, kind: .blue, fullWidth: true) {
                 submitCounting()
             }
             .opacity(canSubmitCounting ? 1 : 0.45)
@@ -347,7 +363,8 @@ struct RisoSpecialTaskPanel: View {
             onTaskCreated: onTaskCreated,
             onPendingCreated: onPendingCreated,
             onLibraryReloadRequested: onLibraryReloadRequested,
-            onSubmitted: { collapse() }
+            onSubmitted: { collapse() },
+            submitLabel: submitLabel
         )
     }
 
@@ -426,7 +443,7 @@ struct RisoSpecialTaskPanel: View {
                 }
             }
 
-            RisoButton(title: "Add to board ✦", kind: .blue, fullWidth: true) {
+            RisoButton(title: submitLabel, kind: .blue, fullWidth: true) {
                 submitAchievement()
             }
             .opacity(canSubmitAchievement ? 1 : 0.45)

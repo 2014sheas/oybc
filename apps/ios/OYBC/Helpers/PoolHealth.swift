@@ -70,9 +70,12 @@ enum PoolHealth {
         poolsById: [String: Pool],
         tasksById: [String: Task]
     ) -> Result {
+        // Supply-eligible only (`isSourceSupplyTask` — achievements are
+        // banned from pools) so the card's count and warnings agree with
+        // what the wizard/spawn can actually pull.
         let taskCount = pool.taskIds.filter { taskId in
             guard let task = tasksById[taskId] else { return false }
-            return !task.isDeleted
+            return !task.isDeleted && BoardSources.isSourceSupplyTask(task)
         }.count
 
         var consumers: [Consumer] = []

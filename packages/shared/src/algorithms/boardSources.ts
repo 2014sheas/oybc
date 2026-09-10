@@ -411,9 +411,26 @@ export function buildCounterFamilyMap(
 }
 
 /**
+ * True when a task type may enter source supply (pools and pulled
+ * boards). ACHIEVEMENT is banned (owner decision, 2026-09-10): watcher
+ * tasks are hand-placed only — the pool use case is too niche to carry,
+ * and the spawn/deal path runs no cycle check, so a dealt achievement
+ * watching its own series would deadlock its spawn (greenlog trigger).
+ * Enforced here at supply resolution (not just in pickers) so legacy
+ * pool members and synced data are excluded uniformly — capacity, roster
+ * health, and the deal all read through this. Mirrors the iOS
+ * `isSourceSupplyTask` in `Helpers/BoardSources.swift` — keep in
+ * lockstep.
+ */
+export function isSourceSupplyTask(task: Pick<Task, 'type'>): boolean {
+  return task.type !== TaskType.ACHIEVEMENT;
+}
+
+/**
  * Raw supply for a pool-kind source: the pool's own `taskIds`, filtered to
- * present + non-deleted tasks, order preserved. A missing or soft-deleted
- * pool supplies nothing (derived detachment — matches `resolveMix`).
+ * present + non-deleted + supply-eligible ({@link isSourceSupplyTask})
+ * tasks, order preserved. A missing or soft-deleted pool supplies nothing
+ * (derived detachment — matches `resolveMix`).
  */
 export function poolSourceSupplyById(
   sourceId: string,
@@ -424,7 +441,7 @@ export function poolSourceSupplyById(
   if (pool === undefined || pool.isDeleted) return [];
   return pool.taskIds.filter((taskId) => {
     const task = tasksById[taskId];
-    return task !== undefined && !task.isDeleted;
+    return task !== undefined && !task.isDeleted && isSourceSupplyTask(task);
   });
 }
 

@@ -9,12 +9,22 @@ import styles from './SpecialTaskPanel.module.css';
 /** Normal is deliberately excluded — the step's separate quick-add row
  *  already covers it (mirrors iOS `RisoSpecialTaskPanel.SpecialType`). */
 const SPECIAL_TYPES: TaskType[] = [TaskType.COUNTING, TaskType.COMPOUND, TaskType.ACHIEVEMENT];
+/** Pool-context types — achievements are banned from pools (owner
+ *  decision 2026-09-10; see `isSourceSupplyTask` in @oybc/shared). */
+const POOLABLE_TYPES: TaskType[] = [TaskType.COUNTING, TaskType.COMPOUND];
 
 export interface SpecialTaskPanelProps {
   userId: string;
   defaultTimeframe?: Timeframe;
   defaultStartDate?: string;
   defaultEndDate?: string;
+  /** False in pool context (`PoolEditSheet`): drops the Achievement type
+   *  option and shortens the collapsed label to match. Default true (the
+   *  wizard Tasks step — boards hand-place achievements). */
+  allowAchievement?: boolean;
+  /** Submit-button copy — defaults to the wizard's "Add to board ✦";
+   *  pool context passes "Add to pool ✦". */
+  submitLabel?: string;
   /** Fired when a COUNTING/ACHIEVEMENT task is created — the wizard
    *  auto-adds the new id to `selectedTaskIds`. */
   onTaskCreated: (task: Task) => void;
@@ -56,6 +66,7 @@ export interface SpecialTaskPanelProps {
  */
 export function SpecialTaskPanel(props: SpecialTaskPanelProps): React.ReactElement {
   const [isExpanded, setIsExpanded] = useState(false);
+  const allowAchievement = props.allowAchievement ?? true;
 
   if (!isExpanded) {
     return (
@@ -65,7 +76,11 @@ export function SpecialTaskPanel(props: SpecialTaskPanelProps): React.ReactEleme
         onClick={() => setIsExpanded(true)}
       >
         <span className={styles.collapsedPlus} aria-hidden="true">＋</span>
-        <span className={styles.collapsedLabel}>Add a counting, compound or achievement task</span>
+        <span className={styles.collapsedLabel}>
+          {allowAchievement
+            ? 'Add a counting, compound or achievement task'
+            : 'Add a counting or compound task'}
+        </span>
       </button>
     );
   }
@@ -81,6 +96,8 @@ function ExpandedPanel({
   defaultTimeframe,
   defaultStartDate,
   defaultEndDate,
+  allowAchievement = true,
+  submitLabel = 'Add to board ✦',
   onTaskCreated,
   onPendingCreated,
   onCompoundCreated,
@@ -140,10 +157,10 @@ function ExpandedPanel({
           onCompoundCreated(ct);
           onCollapse();
         }}
-        submitLabel="Add to board ✦"
+        submitLabel={submitLabel}
         onCreateLinked={handleCreateLinked}
         suggestionPool={suggestionPool}
-        typeOptions={SPECIAL_TYPES}
+        typeOptions={allowAchievement ? SPECIAL_TYPES : POOLABLE_TYPES}
       />
     </div>
   );
