@@ -113,13 +113,12 @@ enum PoolHealth {
         return "Short on \(consumers.count) boards"
     }
 
-    // MARK: - Deck preview (shared by `PoolEditSheetView` and the wizard
-    // Preview step's recurring "deck" summary, P4). Moved here from
-    // `PoolEditSheetView.swift` so both surfaces reuse ONE copy of the
-    // "{N} tasks in the deck · …" logic instead of hand-rolling a second
-    // one — docs/POOLS_RECURRING.md §Surfaces item 2 (owner decision,
-    // 2026-07-20: the short branch drops the missing-count and board-size
-    // detail).
+    // MARK: - Pool-size preview (consumed by `PoolEditSheetView`; the
+    // wizard Preview "deck" surface that also shared this was retired in
+    // the sources rework). Lives here rather than in the view — originally
+    // extracted per docs/POOLS_RECURRING.md §Surfaces item 2 (owner
+    // decision, 2026-07-20: the short branch drops the missing-count and
+    // board-size detail).
 
     /// The floor a deck-preview line measures a task count against, plus
     /// the board size used in the "fills a S×S" copy when healthy.
@@ -154,15 +153,15 @@ enum PoolHealth {
         return best ?? defaultDeckFloor
     }
 
-    /// `"{N} tasks in the deck · fills a {S}×{S}"` / `"· short on required
+    /// `"{N} tasks in the pool · fills a {S}×{S}"` / `"· short on required
     /// tasks"` — byte-identical to web's `formatDeckPreview` (owner
     /// decision, 2026-07-20: the short branch drops the missing-count and
-    /// board-size detail). Shared by `PoolEditSheetView` (deckFloor = the
-    /// smallest consuming template's floor, via `computeDeckFloor`) and the
-    /// wizard Preview step's recurring deck header (deckFloor = the
-    /// CURRENT board's own geometry, via `tasksNeededForBoard`).
+    /// board-size detail; "in the deck" → "in the pool" in the
+    /// sources-rework copy convergence). Consumed by `PoolEditSheetView`
+    /// (deckFloor = the smallest consuming board's floor, via
+    /// `computeDeckFloor`).
     static func formatDeckPreview(taskCount: Int, deckFloor: DeckFloor) -> String {
-        let base = "\(taskCount) task\(taskCount == 1 ? "" : "s") in the deck"
+        let base = "\(taskCount) task\(taskCount == 1 ? "" : "s") in the pool"
         if taskCount >= deckFloor.floor {
             return "\(base) · fills a \(deckFloor.boardSize)×\(deckFloor.boardSize)"
         }

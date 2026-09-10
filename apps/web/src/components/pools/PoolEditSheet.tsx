@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
-import { NewTaskSheet } from '../wizard/NewTaskSheet';
+import { SpecialTaskPanel } from '../wizard/SpecialTaskPanel';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import { computeDeckFloor, formatDeckPreview } from './poolDeckPreview';
@@ -54,14 +54,14 @@ export interface PoolEditSheetProps {
 /**
  * PoolEditSheet — the Tasks-tab pool editor (Task Pools + Recurring Boards
  * Rework, P2). Extends the iOS `PoolEditSheet` baseline for the new `Pool`
- * entity: a NAME field replaces the old timeframe-keyed FEEDS segmented,
- * and the task list offers a "New task" button (byte-matching the
- * Tasks-tab header button's label) opening the canonical full-type
- * `NewTaskSheet` (Normal/Counting/Compound/Achievement — same component
- * `pages/TasksPage.tsx` embeds for immediate-persist creation) alongside
- * the "reuse a task from your library" picker. See
- * docs/POOLS_RECURRING.md §Surfaces item 2 + the handoff screenshot
- * `02-pool-edit-sheet.png`.
+ * entity: a NAME field replaces the old timeframe-keyed FEEDS segmented.
+ * Task creation follows the interface-consistency rule (owner directive
+ * 2026-09-10): the SAME quick-add row + inline `SpecialTaskPanel` pair
+ * the board wizard's Tasks step uses — the earlier "New task" button +
+ * stacked `NewTaskSheet` modal (Tasks-tab lineage) hid the pool being
+ * built and used a different vocabulary for the same job. The
+ * "reuse a task from your library" picker below remains. See
+ * docs/POOLS_RECURRING.md §Surfaces item 2.
  *
  * The ADD TASKS section pairs the Normal-only `WizardQuickAddRow` (now with
  * library polling — owner decision 2026-07-21: typing polls
@@ -115,25 +115,23 @@ export function PoolEditSheet({
     () => new Map(),
   );
 
-  const [showNewTaskSheet, setShowNewTaskSheet] = useState(false);
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [librarySearch, setLibrarySearch] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Escape-to-cancel, mirroring `CreateCounterSheet`/`NewTaskSheet`. Guards
-  // against dismissing mid-write, AND while the "New task" creator is open on
-  // top — that sheet has its own Escape handler, and without this guard one
-  // keypress would bubble to both and tear down the whole pool-edit session
-  // (discarding in-progress edits, orphaning a just-created task).
+  // Escape-to-cancel, mirroring `CreateCounterSheet`. Guards against
+  // dismissing mid-write. (The old "New task" modal's extra Escape guard
+  // went with the modal — the special-type panel is inline, so there's no
+  // stacked sheet to double-dismiss anymore.)
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape' && !busy && !showNewTaskSheet) onClose();
+      if (e.key === 'Escape' && !busy) onClose();
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, busy, showNewTaskSheet]);
+  }, [onClose, busy]);
 
   const trimmedName = name.trim();
   const tasksById = useMemo(() => new Map(allTasks.map((t) => [t.id, t] as const)), [allTasks]);
@@ -243,7 +241,7 @@ export function PoolEditSheet({
             <span className={styles.kicker}>Tasks ({poolTasks.length})</span>
           </div>
           <p className={styles.helper}>
-            Add a few tasks — boards deal their squares from this list.
+            Add a few tasks — boards pull their squares from this list.
           </p>
 
           {poolTasks.length > 0 && (
@@ -281,16 +279,19 @@ export function PoolEditSheet({
               disabled={busy}
             />
           </div>
-          <div className={styles.quickAddRow}>
-            <RisoButton
-              kind="primary"
-              icon={<RisoIcon name="plus" size={16} />}
-              onClick={() => setShowNewTaskSheet(true)}
-              disabled={busy}
-            >
-              New task
-            </RisoButton>
-          </div>
+          {/* Interface-consistency rule (owner directive 2026-09-10) —
+              the SAME inline special-type panel the board wizard's Tasks
+              step uses, replacing the old "New task" button + stacked
+              modal (which hid the pool being built). Immediate persist
+              (no `onPendingCreated`): this sheet is not a board wizard,
+              so a created task is a real library task at once; compounds
+              land in the pool like any other type. */}
+          <SpecialTaskPanel
+            userId={userId}
+            onTaskCreated={addTask}
+            onCompoundCreated={addTask}
+            suggestionPool={allTasks}
+          />
 
           <button
             type="button"
@@ -397,27 +398,6 @@ export function PoolEditSheet({
       </div>
       </div>
 
-      {/* Third-tier stacking context (z 1200 > this sheet's 1100 backdrop) so
-          the creator paints ABOVE the pool sheet — its own backdrop is z 1000
-          and would otherwise be occluded. Kept a fragment-sibling (not nested
-          in the pool backdrop) so a click on the creator's scrim can't bubble
-          to the pool backdrop's close handler. Inert until opened
-          (NewTaskSheet renders null when closed). */}
-      <div className={styles.newTaskLayer}>
-        <NewTaskSheet
-          isOpen={showNewTaskSheet}
-          onClose={() => setShowNewTaskSheet(false)}
-          userId={userId}
-          // Same append-to-pool handler the retired quick-add row used —
-          // the new task (any of the 4 types) lands in `taskIds` exactly as
-          // before. Immediate-persist (no `onPendingCreated`/`deferPersist`):
-          // this sheet is not a board wizard, so the task is a real,
-          // already-saved library task from the moment it's created.
-          onTaskCreated={addTask}
-          onCompositeCreated={addTask}
-          submitLabel="Create & Select"
-        />
-      </div>
     </>
   );
 }

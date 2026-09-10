@@ -91,25 +91,25 @@ describe('computeDeckFloor', () => {
 describe('formatDeckPreview', () => {
   it('formats the "fills" branch when the task count meets the floor', () => {
     expect(formatDeckPreview(8, { boardSize: 3, floor: 8 })).toBe(
-      '8 tasks in the deck · fills a 3×3',
+      '8 tasks in the pool · fills a 3×3',
     );
     expect(formatDeckPreview(10, { boardSize: 3, floor: 8 })).toBe(
-      '10 tasks in the deck · fills a 3×3',
+      '10 tasks in the pool · fills a 3×3',
     );
   });
 
   it('formats the "short" branch when below the floor', () => {
     expect(formatDeckPreview(6, { boardSize: 3, floor: 8 })).toBe(
-      '6 tasks in the deck · short on required tasks',
+      '6 tasks in the pool · short on required tasks',
     );
   });
 
   it('handles the 0-task / singular-"task" edges', () => {
     expect(formatDeckPreview(0, { boardSize: 3, floor: 8 })).toBe(
-      '0 tasks in the deck · short on required tasks',
+      '0 tasks in the pool · short on required tasks',
     );
     expect(formatDeckPreview(1, { boardSize: 3, floor: 8 })).toBe(
-      '1 task in the deck · short on required tasks',
+      '1 task in the pool · short on required tasks',
     );
   });
 });
