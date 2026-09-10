@@ -17,6 +17,7 @@ import {
   selectBoardTasks,
   resolveSourceAvailable,
   effectiveSourceMax,
+  isSourceSupplyTask,
   poolSourceSupplyById,
   sourcesFromMixFields,
   mixFieldsFromSources,
@@ -226,6 +227,18 @@ describe('poolSourceSupplyById', () => {
     expect(
       poolSourceSupplyById('p1', { p1: pool('p1', ['a'], true) }, tasksById),
     ).toEqual([]);
+  });
+
+  test('achievements never enter pool supply (hand-placed only — owner decision 2026-09-10)', () => {
+    const withAchievement = {
+      ...tasksById,
+      watcher: { ...task('watcher'), type: TaskType.ACHIEVEMENT } as Task,
+    };
+    expect(isSourceSupplyTask(withAchievement.watcher)).toBe(false);
+    expect(isSourceSupplyTask(tasksById.a)).toBe(true);
+    expect(
+      poolSourceSupplyById('p1', { p1: pool('p1', ['watcher', 'a']) }, withAchievement),
+    ).toEqual(['a']);
   });
 });
 

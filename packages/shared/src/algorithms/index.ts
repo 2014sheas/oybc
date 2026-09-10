@@ -241,6 +241,7 @@ export {
   computeAchievablePoolSize,
   buildCounterFamilyMap,
   selectBoardTasks,
+  isSourceSupplyTask,
   poolSourceSupplyById,
   sourcesFromMixFields,
   mixFieldsFromSources,

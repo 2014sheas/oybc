@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
+import { isSourceSupplyTask, type Pool, type RecurringBoardTemplate, type Task } from '@oybc/shared';
 import { SpecialTaskPanel } from '../wizard/SpecialTaskPanel';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
@@ -67,10 +67,11 @@ export interface PoolEditSheetProps {
  * library polling — owner decision 2026-07-21: typing polls
  * `browsableTasks` and offers up to 4 reuse matches inline, so a duplicate
  * title reuses the existing task instead of creating a new one) ABOVE the
- * full-type "New task" creator, so every task type is still creatable
- * directly from the pool sheet, matching the Tasks-tab and board-wizard
- * creation surfaces. The "Reuse a task from your library" browse-all picker
- * below remains for finding a match without typing its exact title. Every
+ * special-type panel (`allowAchievement={false}` — achievements are banned
+ * from pools, owner decision 2026-09-10; every ADD surface here filters
+ * through `isSourceSupplyTask`). The "Reuse a task from your library"
+ * browse-all picker below remains for finding a match without typing its
+ * exact title. Every
  * created/reused task is a real, immediately-persisted library task (no
  * `createdInWizard` flag — this sheet isn't a board wizard) that lands in
  * the pool via the shared `addTask` append-to-pool handler.
@@ -152,10 +153,20 @@ export function PoolEditSheet({
   );
   const deckPreviewText = formatDeckPreview(poolTasks.length, deckFloor);
 
+  // Achievements are banned from pools (owner decision 2026-09-10; the
+  // supply-side twin is `isSourceSupplyTask` in the source resolvers) —
+  // every ADD surface on this sheet filters them out. `allTasks` stays
+  // unfiltered so a legacy achievement already in `taskIds` still
+  // resolves to a removable chip rather than vanishing silently.
+  const poolableBrowsableTasks = useMemo(
+    () => browsableTasks.filter(isSourceSupplyTask),
+    [browsableTasks],
+  );
+
   const libraryQuery = librarySearch.trim().toLowerCase();
   const libraryResults = useMemo(
-    () => selectLibraryPickerResults(browsableTasks, selectedIdSet, librarySearch),
-    [browsableTasks, selectedIdSet, librarySearch],
+    () => selectLibraryPickerResults(poolableBrowsableTasks, selectedIdSet, librarySearch),
+    [poolableBrowsableTasks, selectedIdSet, librarySearch],
   );
 
   function addTask(task: Task): void {
@@ -272,7 +283,7 @@ export function PoolEditSheet({
           <div className={styles.quickAddRow}>
             <WizardQuickAddRow
               userId={userId}
-              libraryTasks={browsableTasks}
+              libraryTasks={poolableBrowsableTasks}
               selectedIds={selectedIdSet}
               onTaskCreated={addTask}
               onExistingTaskPicked={addTask}
@@ -288,6 +299,8 @@ export function PoolEditSheet({
               land in the pool like any other type. */}
           <SpecialTaskPanel
             userId={userId}
+            allowAchievement={false}
+            submitLabel="Add to pool ✦"
             onTaskCreated={addTask}
             onCompoundCreated={addTask}
             suggestionPool={allTasks}

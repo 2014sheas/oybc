@@ -350,6 +350,21 @@ defaults sheet are unchanged.
   entry.
 - Dedupe by task id before placement — `placeBoard` must never receive
   duplicates.
+- **Achievements never enter source supply** (owner decision, 2026-09-10):
+  watcher tasks are hand-placed only. The pool use case (rotating
+  meta-squares) was judged too niche pre-launch, and the spawn/deal path
+  runs no cycle check — a dealt achievement watching its own series would
+  deadlock its spawn (greenlog trigger) — plus a completed template-mode
+  watcher would re-deal as a permanently-green square. Enforced at BOTH
+  supply resolvers (`isSourceSupplyTask` in shared `boardSources.ts` ↔
+  `BoardSources.isSourceSupplyTask` in Swift — filtered inside
+  `poolSourceSupplyById` and the board-supply readers, so legacy pool
+  members and synced data are excluded uniformly; capacity, roster
+  health, and the deal all read through them) AND in every pool-sheet ADD
+  surface (`allowAchievement={false}` on the special-type panel, filtered
+  quick-add/library pickers). The wizard's hand-add path still places
+  achievements — that path runs `hasCycle` at create/copy time. Revisit
+  post-launch if the meta-square use case earns its complexity.
 - Riso: platform tokens only; gold fills take **ink-static** content; where
   a handoff value conflicts with a shipped Riso component, the shipped
   component wins.

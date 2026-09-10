@@ -340,9 +340,24 @@ enum BoardSources {
         return map
     }
 
+    /// True when a task type may enter source supply (pools and pulled
+    /// boards). ACHIEVEMENT is banned (owner decision, 2026-09-10):
+    /// watcher tasks are hand-placed only — the pool use case is too
+    /// niche to carry, and the spawn/deal path runs no cycle check, so a
+    /// dealt achievement watching its own series would deadlock its spawn
+    /// (greenlog trigger). Enforced at supply resolution (not just in
+    /// pickers) so legacy pool members and synced data are excluded
+    /// uniformly. Mirrors web `isSourceSupplyTask` in
+    /// `packages/shared/src/algorithms/boardSources.ts` — keep in
+    /// lockstep.
+    static func isSourceSupplyTask(_ task: Task) -> Bool {
+        task.type != .achievement
+    }
+
     /// Raw supply for a pool-kind source: the pool's own `taskIds`,
-    /// filtered to present + non-deleted tasks, order preserved. A missing
-    /// or soft-deleted pool supplies nothing (derived detachment).
+    /// filtered to present + non-deleted + supply-eligible
+    /// (`isSourceSupplyTask`) tasks, order preserved. A missing or
+    /// soft-deleted pool supplies nothing (derived detachment).
     static func poolSourceSupplyById(
         _ sourceId: String,
         poolsById: [String: Pool],
@@ -351,7 +366,7 @@ enum BoardSources {
         guard let pool = poolsById[sourceId], !pool.isDeleted else { return [] }
         return pool.taskIds.filter { taskId in
             guard let task = tasksById[taskId] else { return false }
-            return !task.isDeleted
+            return !task.isDeleted && isSourceSupplyTask(task)
         }
     }
 

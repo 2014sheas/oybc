@@ -86,13 +86,22 @@ struct PoolEditSheetView: View {
         Self.resolveChips(taskIds: poolTaskIds, libraryTasks: library.libraryTasks)
     }
 
-    /// The library-reuse picker's candidate list — `library.browsableTasks`
+    /// Achievements are banned from pools (owner decision 2026-09-10; the
+    /// supply-side twin is `BoardSources.isSourceSupplyTask`) — every ADD
+    /// surface on this sheet reads this filtered list. `libraryTasks`
+    /// stays unfiltered for chip resolution, so a legacy achievement
+    /// already in `poolTaskIds` still resolves to a removable chip.
+    private var poolableBrowsableTasks: [Task] {
+        library.browsableTasks.filter { BoardSources.isSourceSupplyTask($0) }
+    }
+
+    /// The library-reuse picker's candidate list — `poolableBrowsableTasks`
     /// (never `library.libraryTasks`), since pickers are browse surfaces: a
     /// wizard-born draft task the Tasks-tab Library segment hides shouldn't
     /// be offered here either (P2 I-2).
     private var libraryResults: [Task] {
         Self.filterLibraryResults(
-            browsableTasks: library.browsableTasks,
+            browsableTasks: poolableBrowsableTasks,
             selectedIds: Set(poolTaskIds),
             query: librarySearch
         )
@@ -207,7 +216,7 @@ struct PoolEditSheetView: View {
                     },
                     onPendingCreated: nil,
                     onLibraryReloadRequested: { library.loadLibrary(userId: userId) },
-                    libraryTasks: library.browsableTasks,
+                    libraryTasks: poolableBrowsableTasks,
                     selectedIds: Set(poolTaskIds),
                     onExistingTaskPicked: { task in
                         if !poolTaskIds.contains(task.id) { poolTaskIds.append(task.id) }
@@ -231,7 +240,7 @@ struct PoolEditSheetView: View {
                 userId: userId,
                 defaultStartDate: nil,
                 defaultEndDate: nil,
-                taskLibrary: library.browsableTasks,
+                taskLibrary: poolableBrowsableTasks,
                 suggestionPool: library.libraryTasks,
                 onTaskCreated: { taskId, _, _ in
                     if !poolTaskIds.contains(taskId) { poolTaskIds.append(taskId) }
@@ -240,7 +249,9 @@ struct PoolEditSheetView: View {
                     if !poolTaskIds.contains(task.id) { poolTaskIds.append(task.id) }
                 },
                 onPendingCreated: nil,
-                onLibraryReloadRequested: { library.loadLibrary(userId: userId) }
+                onLibraryReloadRequested: { library.loadLibrary(userId: userId) },
+                allowAchievement: false,
+                submitLabel: "Add to pool ✦"
             )
             .disabled(busy)
 

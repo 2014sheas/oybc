@@ -304,6 +304,68 @@ final class BoardSourceSpawnAskTests: XCTestCase {
         }
     }
 
+    private func makeAchievementTask(_ id: String) -> OYBC.Task {
+        OYBC.Task(
+            id: id, userId: userId, title: "Watch \(id)", description: nil, type: .achievement,
+            action: nil, unit: nil, maxCount: nil,
+            operatorType: nil, threshold: nil,
+            referencedBoardId: "some-other-board",
+            achievementTrigger: .bingo,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil, currentCount: nil,
+            createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    /// Achievements are banned from source supply (owner decision
+    /// 2026-09-10) — a watcher in a pool AND on a pulled board never
+    /// reaches the spawned board. Eligible supply (2 pool normals + 2
+    /// board normals) = exactly the 2×2 NONE cell count, so the deal is
+    /// deterministic and proves the ban holds at BOTH supply resolvers
+    /// (`BoardSources.poolSourceSupplyById` and `AppDatabase.resolveSupply`),
+    /// not just in the pickers. Web twin: the achievements-banned spawn
+    /// test in `recurringBoardSpawnMix.test.ts`.
+    func test_spawn_excludesAchievementsFromPoolAndBoardSupply() throws {
+        let db = try makeDb()
+        try seedBoard(db, boardId: "b-src", taskIds: ["bn1", "bn2"])
+        try db.write { grdb in
+            for id in ["pn1", "pn2"] { try makeTask(id).insert(grdb) }
+            try makeAchievementTask("watch-pool").insert(grdb)
+            try makeAchievementTask("watch-board").insert(grdb)
+            try BoardTask(
+                id: "bt-b-src-watch-board", boardId: "b-src", taskId: "watch-board",
+                row: 0, col: 2, isCenter: false,
+                createdAt: now, updatedAt: now,
+                lastSyncedAt: nil, version: 1, isDeleted: false
+            ).insert(grdb)
+            try Pool(
+                id: "pool-w", userId: userId, name: "Pool With Watcher",
+                taskIds: ["pn1", "pn2", "watch-pool"],
+                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+                isDeleted: false, deletedAt: nil
+            ).insert(grdb)
+        }
+        let template = try seedTemplate(
+            db,
+            sources: [
+                BoardSource(sourceId: "pool-w", kind: .pool),
+                BoardSource(sourceId: "b-src", kind: .board),
+            ],
+            manualTaskIds: []
+        )
+        let outcome = try spawn(db, template)
+        guard case .spawned(let boardId, _, _) = outcome else {
+            return XCTFail("Expected a spawn, got \(outcome)")
+        }
+        let placed = Set(try db.read { grdb in
+            try BoardTask.filter(Column("boardId") == boardId).fetchAll(grdb)
+        }.map { $0.taskId })
+        XCTAssertEqual(placed, ["pn1", "pn2", "bn1", "bn2"])
+        XCTAssertFalse(placed.contains("watch-pool"))
+        XCTAssertFalse(placed.contains("watch-board"))
+    }
+
     // MARK: - Series binding (loose-ends sweep 2026-09-09)
 
     /// A pull stored against an ARCHIVED old window hops to the series'

@@ -81,6 +81,10 @@ struct RisoCompoundFieldsView: View {
     let onLibraryReloadRequested: () -> Void
     /// Called after a successful submit so the parent can collapse/reset.
     let onSubmitted: () -> Void
+    /// Submit-button copy — the wizard's "Add to board ✦" by default;
+    /// pool context (via `RisoSpecialTaskPanel.submitLabel`) passes
+    /// "Add to pool ✦".
+    let submitLabel: String
 
     // MARK: - Compound @State (all seedable from init)
 
@@ -125,7 +129,8 @@ struct RisoCompoundFieldsView: View {
         onTaskCreated: @escaping (_ taskId: String, _ title: String, _ type: String) -> Void,
         onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil,
         onLibraryReloadRequested: @escaping () -> Void,
-        onSubmitted: @escaping () -> Void
+        onSubmitted: @escaping () -> Void,
+        submitLabel: String = "Add to board ✦"
     ) {
         self.taskLibrary = taskLibrary
         self.suggestionPool = suggestionPool
@@ -137,6 +142,7 @@ struct RisoCompoundFieldsView: View {
         self.onPendingCreated = onPendingCreated
         self.onLibraryReloadRequested = onLibraryReloadRequested
         self.onSubmitted = onSubmitted
+        self.submitLabel = submitLabel
 
         // Default empty state
         _compoundTitle    = State(initialValue: "")
@@ -162,7 +168,8 @@ struct RisoCompoundFieldsView: View {
         onTaskCreated: @escaping (_ taskId: String, _ title: String, _ type: String) -> Void = { _, _, _ in },
         onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)? = nil,
         onLibraryReloadRequested: @escaping () -> Void = {},
-        onSubmitted: @escaping () -> Void = {}
+        onSubmitted: @escaping () -> Void = {},
+        submitLabel: String = "Add to board ✦"
     ) {
         self.taskLibrary = taskLibrary
         self.suggestionPool = suggestionPool
@@ -174,6 +181,7 @@ struct RisoCompoundFieldsView: View {
         self.onPendingCreated = onPendingCreated
         self.onLibraryReloadRequested = onLibraryReloadRequested
         self.onSubmitted = onSubmitted
+        self.submitLabel = submitLabel
 
         _compoundTitle    = State(initialValue: seed.title)
         _compoundRule     = State(initialValue: seed.rule)
@@ -394,8 +402,8 @@ struct RisoCompoundFieldsView: View {
                     .foregroundStyle(Color.risoRed)
             }
 
-            // Add to board button — green fill matches compound type color
-            RisoButton(title: "Add to board ✦", kind: .green, fullWidth: true) {
+            // Submit button — green fill matches compound type color
+            RisoButton(title: submitLabel, kind: .green, fullWidth: true) {
                 submitCompound()
             }
             .opacity(canSubmitCompound ? 1 : 0.45)
