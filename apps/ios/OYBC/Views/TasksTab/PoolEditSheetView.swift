@@ -62,11 +62,7 @@ struct PoolEditSheetView: View {
     @State private var confirmingDelete = false
     @State private var busy = false
     @State private var errorMessage: String?
-    /// Presents the canonical full-type `NewTaskSheetView` (Normal / Counting
-    /// / Compound / Achievement) — replaces the old Normal-only quick-add
-    /// row so pool creation offers the same creator as every other surface.
-    @State private var showNewTaskSheet = false
-
+ 
     private var isEditMode: Bool { pool != nil }
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var trimmedLibrarySearch: String {
@@ -144,23 +140,6 @@ struct PoolEditSheetView: View {
         // swipe-to-dismiss mid-save/delete would otherwise abandon the
         // sheet while a write is still in flight.
         .interactiveDismissDisabled(busy)
-        // "+ New task" — nested sheet presented from THIS view's own content
-        // so it stacks immediately on top of the pool sheet instead of
-        // queuing behind it (SwiftUI queues sibling `.sheet`s on one host;
-        // same fix as BoardPlayView's compoundChildDetailTaskId nested
-        // sheet). Immediate-persist (`onPendingCreated: nil` inside
-        // NewTaskSheetView) — the pool sheet is not a board wizard, so the
-        // created task is a real library task, not a wizard draft.
-        .sheet(isPresented: $showNewTaskSheet) {
-            NewTaskSheetView(
-                userId: userId,
-                onTaskCreated: { taskId, _, _ in
-                    if !poolTaskIds.contains(taskId) { poolTaskIds.append(taskId) }
-                },
-                onLibraryReloadRequested: { library.loadLibrary(userId: userId) },
-                taskLibrary: library.libraryTasks
-            )
-        }
     }
 
     // MARK: - Header
@@ -197,7 +176,7 @@ struct PoolEditSheetView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("TASKS (\(selectedTasks.count))")
                 .font(.risoBody(11, .bold)).tracking(1.1).foregroundStyle(Color.risoMuted)
-            Text("Add a few tasks — boards deal their squares from this list.")
+            Text("Add a few tasks — boards pull their squares from this list.")
                 .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
 
             if !selectedTasks.isEmpty {
@@ -240,12 +219,29 @@ struct PoolEditSheetView: View {
             .risoHardShadow(Riso.Shadow.small)
             .disabled(busy)
 
-            // Label "New task" (byte-matches web + the Tasks-tab a11y label);
-            // the "+" is a systemImage, not baked into the string — matches
-            // web's icon+text split.
-            RisoButton(title: "New task", kind: .neutral, systemImage: "plus", fullWidth: true) {
-                showNewTaskSheet = true
-            }
+            // Interface-consistency rule (owner directive 2026-09-10) —
+            // the SAME inline special-type panel the board wizard's Tasks
+            // step uses, replacing the old "New task" button + nested
+            // NewTaskSheetView (which stacked a second sheet over the pool
+            // being built). Immediate persist (`onPendingCreated: nil`):
+            // this sheet is not a board wizard, so a created task is a
+            // real library task at once; compounds land in the pool like
+            // any other type.
+            RisoSpecialTaskPanel(
+                userId: userId,
+                defaultStartDate: nil,
+                defaultEndDate: nil,
+                taskLibrary: library.browsableTasks,
+                suggestionPool: library.libraryTasks,
+                onTaskCreated: { taskId, _, _ in
+                    if !poolTaskIds.contains(taskId) { poolTaskIds.append(taskId) }
+                },
+                onCompoundCreated: { task in
+                    if !poolTaskIds.contains(task.id) { poolTaskIds.append(task.id) }
+                },
+                onPendingCreated: nil,
+                onLibraryReloadRequested: { library.loadLibrary(userId: userId) }
+            )
             .disabled(busy)
 
             libraryPickerToggle

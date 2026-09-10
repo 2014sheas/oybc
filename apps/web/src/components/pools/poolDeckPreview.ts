@@ -45,17 +45,19 @@ export function computeDeckFloor(
 }
 
 /**
- * Formats the pool-edit sheet's dashed deck-preview line:
- * `"{N} tasks in the deck · fills a {S}×{S}"` when the live task count
- * meets the floor, or `"{N} tasks in the deck · short on required tasks"`
+ * Formats the pool-edit sheet's dashed preview line:
+ * `"{N} tasks in the pool · fills a {S}×{S}"` when the live task count
+ * meets the floor, or `"{N} tasks in the pool · short on required tasks"`
  * when it doesn't (owner decision, 2026-07-20: the short branch drops the
  * missing-count and board-size detail — it only needs to say the pool is
- * short). Web-local copy (not the cross-platform `formatPoolShortSummary`,
- * which combines short consumers into one board-count line for the
- * pool-card warning instead).
+ * short). "in the deck" → "in the pool" in the sources-rework copy
+ * convergence (the deck vocabulary is retired everywhere else). Web-local
+ * copy (not the cross-platform `formatPoolShortSummary`, which combines
+ * short consumers into one board-count line for the pool-card warning
+ * instead).
  */
 export function formatDeckPreview(taskCount: number, deckFloor: DeckFloor): string {
-  const base = `${taskCount} task${taskCount === 1 ? '' : 's'} in the deck`;
+  const base = `${taskCount} task${taskCount === 1 ? '' : 's'} in the pool`;
   const { boardSize, floor } = deckFloor;
   if (taskCount >= floor) {
     return `${base} · fills a ${boardSize}×${boardSize}`;
