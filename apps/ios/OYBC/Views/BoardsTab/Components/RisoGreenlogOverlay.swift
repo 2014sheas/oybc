@@ -3,11 +3,14 @@ import SwiftUI
 // MARK: - RisoGreenlogOverlay
 
 /// Full-bleed blue celebration overlay triggered when every square on
-/// the board is completed (GREENLOG event). Shows a Blip mascot,
-/// "GREENLOG!" title, three stat cards, a confetti field, and two
-/// action buttons. Dismissed via the `onDismiss` closure (wired to the
-/// "Start a new board" button); the caller hides the overlay in response.
+/// the board is completed (GREENLOG event). Shows the 5×5 greenlog
+/// mini-board art (`RisoMiniBoardArt`), "GREENLOG!" title, three stat
+/// cards, a confetti field, and two action buttons. Dismissed via the
+/// `onDismiss` closure (wired to the "Start a new board" button); the
+/// caller hides the overlay in response.
 ///
+/// Sequencing (Blip-retirement handoff §Motion): the art's 25 cells pop
+/// in (30ms stagger), the frame tilts to −4°, THEN confetti starts.
 /// The confetti loops indefinitely while the overlay is visible.
 /// Animations (confetti fall) need user verification since they cannot
 /// be snapshot-tested in static mode.
@@ -32,6 +35,15 @@ struct RisoGreenlogOverlay: View {
 
     var onShare: (() -> Void)? = nil
     var onDismiss: (() -> Void)? = nil
+
+    // MARK: - Sequencing
+
+    /// Confetti waits for the art's pop-in (25 cells × 30ms + 0.34s pop)
+    /// plus the 0.32s tilt — ≈1.4s. Under Reduce Motion the art renders
+    /// final immediately, so confetti starts at once (it's the piece the
+    /// system setting doesn't govern here — matching the pre-art timing).
+    @State private var confettiStarted = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Confetti animation
 
@@ -66,26 +78,29 @@ struct RisoGreenlogOverlay: View {
                 .ignoresSafeArea()
                 .opacity(0.15)
 
-            // Confetti field
-            GeometryReader { geo in
-                ForEach(confettiPieces) { piece in
-                    confettiView(piece: piece, containerHeight: geo.size.height)
-                        .position(
-                            x: piece.x * geo.size.width,
-                            y: -20
-                        )
+            // Confetti field — starts after the mini-board art's pop-in +
+            // tilt complete (handoff §Motion: cells → tilt → confetti).
+            if confettiStarted {
+                GeometryReader { geo in
+                    ForEach(confettiPieces) { piece in
+                        confettiView(piece: piece, containerHeight: geo.size.height)
+                            .position(
+                                x: piece.x * geo.size.width,
+                                y: -20
+                            )
+                    }
                 }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
 
             // Main content
             VStack(spacing: 0) {
                 Spacer()
 
-                // Blip mascot (cheer mood)
-                blipCheer
-                    .frame(width: 108, height: 108)
+                // Mini-board art — full 5×5 greenlog grid, tilted like a
+                // poster once the cells finish popping in.
+                RisoMiniBoardArt(size: 108, grid: 5, state: .greenlog, tilt: .degrees(-4))
                     .padding(.bottom, 8)
 
                 // Kicker
@@ -173,6 +188,15 @@ struct RisoGreenlogOverlay: View {
             }
             .padding(.horizontal, Riso.gutter + 6)
         }
+        .onAppear {
+            if reduceMotion {
+                confettiStarted = true
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                    confettiStarted = true
+                }
+            }
+        }
     }
 
     // MARK: - Stat card
@@ -206,63 +230,6 @@ struct RisoGreenlogOverlay: View {
                 .fill(Color.risoInk)
                 .offset(x: Riso.Shadow.button, y: Riso.Shadow.button)
         )
-    }
-
-    // MARK: - Blip (cheer mood)
-
-    /// Overprint sticker character in "cheer" pose — arms-up energy.
-    private var blipCheer: some View {
-        ZStack {
-            // Gold star spark
-            StarShape()
-                .fill(Color.risoGold)
-                .frame(width: 16, height: 16)
-                .offset(x: 30, y: -36)
-
-            // Red backing circle (multiply)
-            Circle()
-                .fill(Color.risoRed.opacity(0.85))
-                .blendMode(.multiply)
-                .frame(width: 90, height: 90)
-                .offset(x: -8, y: 10)
-
-            // Blue halftone body
-            Circle()
-                .fill(Color.risoBlue)
-                .risoHalftone(tile: 6, layerOpacity: 0.35)
-                .clipShape(Circle())
-                .frame(width: 80, height: 80)
-
-            // Cream eyes
-            HStack(spacing: 20) {
-                Circle()
-                    .fill(Color.risoPaper)
-                    .frame(width: 12, height: 14)
-                Circle()
-                    .fill(Color.risoPaper)
-                    .frame(width: 12, height: 14)
-            }
-            .offset(y: -6)
-
-            // Ink pupils
-            HStack(spacing: 20) {
-                Circle().fill(Color.risoInk).frame(width: 5, height: 5)
-                Circle().fill(Color.risoInk).frame(width: 5, height: 5)
-            }
-            .offset(y: -6)
-
-            // Gold grin
-            Path { path in
-                path.move(to: CGPoint(x: 6, y: 10))
-                path.addQuadCurve(
-                    to: CGPoint(x: 46, y: 10),
-                    control: CGPoint(x: 26, y: 26)
-                )
-            }
-            .stroke(Color.risoGold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-            .frame(width: 52, height: 30)
-            .offset(y: 10)
-        }
     }
 
     // MARK: - Confetti

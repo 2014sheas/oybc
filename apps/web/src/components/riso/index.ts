@@ -28,6 +28,9 @@ export type { RisoIconName, RisoIconProps } from './RisoIcon';
 export { RisoBrandMark } from './RisoBrandMark';
 export type { RisoBrandMarkProps } from './RisoBrandMark';
 
+export { RisoMiniBoardArt } from './RisoMiniBoardArt';
+export type { RisoMiniBoardArtProps } from './RisoMiniBoardArt';
+
 export { RisoBadge } from './RisoBadge';
 export type { RisoBadgeKind, RisoBadgeProps } from './RisoBadge';
 

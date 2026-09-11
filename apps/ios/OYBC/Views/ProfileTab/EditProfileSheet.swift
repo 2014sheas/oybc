@@ -13,7 +13,7 @@ import SwiftUI
 ///
 /// Layout (over `Color.risoPaper`, inside a NavigationStack sheet):
 /// 1. Navigation bar — "Edit profile" title, gold-pill "Done" (dismiss)
-/// 2. Large Blip avatar (84 px) with circular ink keyline + hard shadow
+/// 2. Large initials avatar (92 px, `RisoInitialAvatar`) with hard shadow
 /// 3. DISPLAY NAME label + `RisoTextField`
 /// 4. EMAIL label + disabled text display + account-security hint
 /// 5. Red "Save profile" full-width button (disabled when name empty)
@@ -26,6 +26,10 @@ struct EditProfileSheet: View {
 
     /// Current email (shown read-only).
     let email: String?
+
+    /// Guest session (anonymous auth) — feeds the avatar's "G" fallback
+    /// when no name is set. Defaulted so pre-existing call sites compile.
+    var isGuest: Bool = false
 
     /// Async closure that persists the new display name. Typically wraps
     /// `AuthService.updateDisplayName(_:)` — separating the async persistence
@@ -56,6 +60,8 @@ struct EditProfileSheet: View {
     /// - Parameters:
     ///   - displayName: Current display name to pre-fill.
     ///   - email: User's email (shown read-only; nil falls back to empty).
+    ///   - isGuest: Anonymous session — the avatar falls back to "G" when
+    ///              no name is set. Defaults false.
     ///   - updateName: Async closure that commits the new name (e.g. wraps
     ///                 `AuthService.updateDisplayName`).
     ///   - onSave: Closure called after a successful save; dismiss here.
@@ -63,12 +69,14 @@ struct EditProfileSheet: View {
     init(
         displayName: String,
         email: String?,
+        isGuest: Bool = false,
         updateName: @escaping (_ newName: String) async throws -> Void,
         onSave: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.displayName = displayName
         self.email = email
+        self.isGuest = isGuest
         self.updateName = updateName
         self.onSave = onSave
         self.onCancel = onCancel
@@ -124,25 +132,19 @@ struct EditProfileSheet: View {
 
     // MARK: - Avatar preview
 
-    /// Large circular Blip at 84 px with an ink keyline ring and a hard
-    /// offset shadow — matching the spec's "keyline + hard shadow" avatar.
+    /// Large initials avatar (92 px) with a hard offset shadow — the
+    /// separate paper2 ring circle went with the Blip. The initial tracks
+    /// the live name field, so the preview reflects what a save produces.
     private var avatarPreview: some View {
-        ZStack {
-            // Hard offset shadow layer (drawn behind)
-            Circle()
-                .fill(Color.risoInk)
-                .frame(width: 92, height: 92)
-                .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
-
-            // Paper2 background + ink keyline ring
-            Circle()
-                .fill(Color.risoPaper2)
-                .frame(width: 92, height: 92)
-                .overlay(Circle().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-
-            BlipPlaceholder(size: 84, mood: .happy)
-        }
-        .frame(width: 92, height: 92)
+        RisoInitialAvatar(
+            initial: RisoInitialAvatar.initial(
+                displayName: nameValue.isEmpty ? displayName : nameValue,
+                email: email,
+                isGuest: isGuest
+            ),
+            size: 92
+        )
+        .risoHardShadow(Riso.Shadow.small, radius: 46)
     }
 
     // MARK: - Display name field

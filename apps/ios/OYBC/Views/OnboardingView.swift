@@ -28,7 +28,7 @@ import FirebaseAuth
 ///
 /// **Kit constraint**: does NOT modify `Views/Riso/*`. All Riso atoms —
 /// `RisoButton`, `RisoPaperBackground`, `Color.riso*`, `Font.risoHead/Body`,
-/// `Riso.*`, `.risoCard`, `.risoHardShadow`, `BlipPlaceholder` — are reused
+/// `Riso.*`, `.risoCard`, `.risoHardShadow`, `RisoMiniBoardArt` — are reused
 /// as-is. New private helpers live below the main struct.
 struct OnboardingView: View {
 
@@ -310,9 +310,9 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // Blip mascot + copy + buttons — centered
+            // Mini-board art (top row lit) + copy + buttons — centered
             VStack(spacing: 0) {
-                BlipPlaceholder(size: 84, mood: .happy)
+                RisoMiniBoardArt(size: 84, state: .bingo([0, 1, 2]))
                     .padding(.bottom, 20)
 
                 Text("One last thing")

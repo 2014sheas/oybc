@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Riso-styled account card — the top section of the Profile tab.
 ///
-/// Shows a circular Blip avatar, display name with a pencil edit affordance,
+/// Shows an initials avatar (`RisoInitialAvatar`, matching web's
+/// `ProfilePage` avatar), display name with a pencil edit affordance,
 /// and the user's email address. Tapping the name row fires `onEditName`.
 ///
 /// This is a pure presentational view — it takes props and calls back.
@@ -22,14 +23,12 @@ struct RisoProfileAccountCard: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Blip avatar — circular keyline around the placeholder mascot
-            ZStack {
-                Circle()
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-                    .frame(width: 58, height: 58)
-                BlipPlaceholder(size: 50, mood: .happy)
-            }
-            .frame(width: 58, height: 58)
+            RisoInitialAvatar(
+                initial: RisoInitialAvatar.initial(
+                    displayName: displayName, email: email, isGuest: isGuest
+                ),
+                size: 58
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 // Name row — tap anywhere on the row to edit

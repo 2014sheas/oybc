@@ -278,7 +278,12 @@ final class RisoPlayBoardSnapshotTests: XCTestCase {
     private func toastHost() -> some View {
         ZStack {
             RisoPaperBackground()
-            RisoBingoToast(subtitle: "Row 2 complete!", bingoCount: 2)
+            RisoBingoToast(
+                subtitle: "Row 2 complete!",
+                bingoCount: 2,
+                boardSize: 5,
+                lineCells: [5, 6, 7, 8, 9] // row 2 (0-based row 1)
+            )
                 .padding(Riso.gutter)
         }
     }

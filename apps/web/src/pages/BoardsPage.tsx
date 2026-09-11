@@ -18,7 +18,7 @@ import {
   updateRecurringBoardTemplate,
 } from '../db/operations/recurringBoardTemplates';
 import { sealBoard } from '../db/operations/sealing';
-import { RisoButton, RisoChip, RisoIcon } from '../components/riso';
+import { RisoButton, RisoChip, RisoIcon, RisoMiniBoardArt } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
 import { MissingSourceDialog } from '../components/boards/MissingSourceDialog';
@@ -176,6 +176,14 @@ export function BoardsPage(): React.ReactElement {
 
       {filteredBoards.length === 0 ? (
         <div className={styles.empty}>
+          {/* Mini-board art (Blip-retirement handoff §Web parity) — the
+              true "no boards at all" state only, mirroring iOS's
+              emptyStateCenteredRow. */}
+          {allBoards.length === 0 && (
+            <div className={styles.emptyArt}>
+              <RisoMiniBoardArt />
+            </div>
+          )}
           <h3 className={styles.emptyTitle}>
             {allBoards.length === 0 ? 'Nothing here yet.' : `No ${activeFilter} boards.`}
           </h3>
