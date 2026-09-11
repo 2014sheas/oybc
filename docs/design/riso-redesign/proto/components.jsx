@@ -1,3 +1,7 @@
+/* NOTE (2026-09-10): the Blip mascot below is RETIRED in the shipped app —
+   replaced by the RisoMiniBoardArt mini-board motif + RisoInitialAvatar
+   (Blip-retirement handoff). This prototype keeps it for historical
+   reference only.  */
 /* ============================================================
    OYBC · Riso prototype — shared components & art
    Exports to window: Blip, Icon, Star, Confetti

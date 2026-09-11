@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// Layout (over `RisoPaperBackground`, scrolling VStack of `.risoCard()` sections):
 /// 1. Header kicker + H1
-/// 2. Account card — Blip avatar, name ✎, email
+/// 2. Account card — initials avatar, name ✎, email
 /// 3. App card — Theme segmented + Sync row
 /// 4. Preferences section — 3 rows with count pills + NavigationLinks
 /// 5. Sign Out card — resting row → inline dashed confirm
@@ -159,6 +159,7 @@ struct ProfileView: View {
             EditProfileSheet(
                 displayName: displayName,
                 email: email,
+                isGuest: isGuest,
                 updateName: { name in
                     try await authService.updateDisplayName(name)
                 },

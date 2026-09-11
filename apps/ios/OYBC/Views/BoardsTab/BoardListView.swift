@@ -516,9 +516,7 @@ struct BoardListView: View {
 
     private var emptyStateCenteredRow: some View {
         VStack(spacing: 16) {
-            // Blip mascot placeholder — final illustrated asset TBD.
-            // Built from shapes using the overprint/halftone language.
-            BlipPlaceholder(size: 72, mood: .calm)
+            RisoMiniBoardArt(size: 72, state: .empty)
                 .padding(.bottom, 2)
 
             Text("Nothing here yet")
@@ -729,68 +727,6 @@ struct BoardListView: View {
                     deleteError = "Failed to delete: \(error.localizedDescription)"
                 }
             }
-        }
-    }
-}
-
-// MARK: - Blip mascot placeholder
-
-/// Shape-based placeholder for the Blip mascot — final illustrated asset TBD.
-/// Built from circles/shapes in the overprint/halftone language of the design.
-struct BlipPlaceholder: View {
-    enum Mood { case calm, happy, cheer }
-    var size: CGFloat = 72
-    var mood: Mood = .calm
-
-    var body: some View {
-        ZStack {
-            // Red multiply circle (back layer)
-            Circle()
-                .fill(Color.risoRed.opacity(0.35))
-                .blendMode(.multiply)
-                .frame(width: size * 0.9, height: size * 0.9)
-                .offset(x: -size * 0.05, y: size * 0.05)
-
-            // Blue circle body (main)
-            Circle()
-                .fill(Color.risoBlue)
-                .frame(width: size, height: size)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.risoInk, lineWidth: 2)
-                )
-
-            // Eyes
-            HStack(spacing: size * 0.18) {
-                Circle()
-                    .fill(Color.risoPaper)
-                    .frame(width: size * 0.14, height: size * 0.14)
-                Circle()
-                    .fill(Color.risoPaper)
-                    .frame(width: size * 0.14, height: size * 0.14)
-            }
-            .offset(y: -size * 0.06)
-
-            // Grin / expression
-            moodShape
-                .offset(y: size * 0.12)
-        }
-        .frame(width: size, height: size)
-    }
-
-    @ViewBuilder
-    private var moodShape: some View {
-        switch mood {
-        case .calm:
-            // Neutral line
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Color.risoGold)
-                .frame(width: size * 0.28, height: size * 0.06)
-        case .happy, .cheer:
-            // Simple arc grin via capsule
-            Capsule()
-                .fill(Color.risoGold)
-                .frame(width: size * 0.32, height: size * 0.1)
         }
     }
 }

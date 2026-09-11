@@ -6,8 +6,8 @@ import SwiftUI
 /// this view only surfaces the CTA. Past windows show "Backfill";
 /// current/future windows show "Set up".
 ///
-/// Rendered in the Riso design language: paper background, Blip
-/// mascot placeholder, Bricolage heading, and a Riso primary button.
+/// Rendered in the Riso design language: paper background, mini-board art,
+/// Bricolage heading, and a Riso primary button.
 ///
 /// Mirrors the web `CoreBoardSetupPrompt` component.
 struct CoreBoardSetupPromptView: View {
@@ -24,7 +24,9 @@ struct CoreBoardSetupPromptView: View {
         ZStack {
             RisoPaperBackground()
             VStack(spacing: 20) {
-                BlipPlaceholder(size: 64, mood: isPast ? .calm : .happy)
+                // Mini-board art replaces the mood-switched Blip (copy/CTA
+                // still vary by isPast/resumeDraft below).
+                RisoMiniBoardArt(size: 64, state: .started)
 
                 Text(resumeDraft ? "Draft in progress for \(label)." : "No board for \(label) yet.")
                     .risoH2()

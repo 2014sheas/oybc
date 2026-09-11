@@ -64,6 +64,11 @@ extension Color {
     /// `risoGold` accent and makes `.multiply` overprint dots vanish. Use this
     /// for content placed on gold and for halftone/overprint dots.
     static let risoInkStatic = Color("RisoInkStatic", bundle: .riso)
+    /// Non-inverting cream (`#FBF6EA` in both light and dark) — web's
+    /// `--riso-on-color`. Use for content sitting on the saturated accent
+    /// fills (blue/red), e.g. the initials avatar glyph, where `risoPaper`
+    /// would flip to near-black in dark mode.
+    static let risoOnColor = Color("RisoOnColor", bundle: .riso)
     static let risoMuted = Color("RisoMuted", bundle: .riso)
     static let risoBlue = Color("RisoBlue", bundle: .riso)
     static let risoRed = Color("RisoRed", bundle: .riso)

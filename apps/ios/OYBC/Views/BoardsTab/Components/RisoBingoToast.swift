@@ -3,8 +3,9 @@ import SwiftUI
 // MARK: - RisoBingoToast
 
 /// Drops-in from the top of the screen on a new bingo. Blue keyline card
-/// with a placeholder Blip art zone, "BINGO!" headline, subtitle, and the
-/// gold bingo-count badge. Auto-dismiss is managed by the caller.
+/// with a mini-board art slot showing the board's completed line(s),
+/// "BINGO!" headline, subtitle, and the gold bingo-count badge.
+/// Auto-dismiss is managed by the caller.
 ///
 /// Animation: the view slides in from translateY −90 to 0 with a slight
 /// spring overshoot (~500ms). Attach with `.transition(.move(edge: .top)
@@ -15,12 +16,23 @@ struct RisoBingoToast: View {
     let subtitle: String
     /// Current total number of bingos to display in the gold count badge.
     let bingoCount: Int
+    /// The board's grid size — the art mirrors the real geometry.
+    var boardSize: Int = 5
+    /// Completed-line cell indices (reading order) to light in the art —
+    /// the caller already derives these from `completedLineIds` via
+    /// `BingoDetection.getHighlightedSquares`.
+    var lineCells: Set<Int> = []
 
     var body: some View {
         HStack(spacing: 12) {
-            // ── Blip placeholder (42×42) ──
-            blipPlaceholder
-                .frame(width: 42, height: 42)
+            // ── Mini-board art (42×42, unframed, on-blue) ──
+            RisoMiniBoardArt(
+                size: 42,
+                grid: boardSize,
+                state: .bingo(lineCells),
+                framed: false,
+                onBlue: true
+            )
 
             // ── Text column ──
             VStack(alignment: .leading, spacing: 4) {
@@ -55,53 +67,6 @@ struct RisoBingoToast: View {
                 .offset(x: Riso.Shadow.card, y: Riso.Shadow.card)
         )
     }
-
-    // MARK: - Blip placeholder
-
-    /// Overprint sticker character — red circle (multiply) behind a blue
-    /// halftone body, ink eyes, gold grin. All shapes, no raster assets.
-    private var blipPlaceholder: some View {
-        ZStack {
-            // Red backing circle (multiply overprint effect)
-            Circle()
-                .fill(Color.risoRed.opacity(0.85))
-                .blendMode(.multiply)
-                .frame(width: 38, height: 38)
-                .offset(x: -3, y: 4)
-
-            // Blue halftone body
-            Circle()
-                .fill(Color.risoBlue)
-                .risoHalftone(tile: 5, layerOpacity: 0.4)
-                .clipShape(Circle())
-                .frame(width: 34, height: 34)
-
-            // Eyes
-            HStack(spacing: 8) {
-                Circle().fill(Color.risoInk).frame(width: 5, height: 5)
-                Circle().fill(Color.risoInk).frame(width: 5, height: 5)
-            }
-            .offset(y: -3)
-
-            // Grin
-            Path { path in
-                path.move(to: CGPoint(x: 8, y: 12))
-                path.addQuadCurve(
-                    to: CGPoint(x: 26, y: 12),
-                    control: CGPoint(x: 17, y: 20)
-                )
-            }
-            .stroke(Color.risoGold, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-            .frame(width: 34, height: 24)
-            .offset(y: 4)
-
-            // Gold star spark
-            StarShape()
-                .fill(Color.risoGold)
-                .frame(width: 8, height: 8)
-                .offset(x: 14, y: -15)
-        }
-    }
 }
 
 // MARK: - Preview
@@ -110,7 +75,12 @@ struct RisoBingoToast: View {
     ZStack {
         RisoPaperBackground()
         VStack {
-            RisoBingoToast(subtitle: "Row 2 complete!", bingoCount: 2)
+            RisoBingoToast(
+                subtitle: "Row 2 complete!",
+                bingoCount: 2,
+                boardSize: 5,
+                lineCells: [10, 11, 12, 13, 14]
+            )
                 .padding(.horizontal, Riso.gutter)
             Spacer()
         }

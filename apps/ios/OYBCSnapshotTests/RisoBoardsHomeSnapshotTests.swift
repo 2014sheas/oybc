@@ -6,7 +6,7 @@ import SnapshotTesting
 /// Snapshot coverage for the Riso Boards home screen (Phase 1).
 ///
 /// Snapshots the leaf components (RisoBoardCard, RisoMiniGrid,
-/// RisoCoreTimeframeGrid, BlipPlaceholder) with injected fixtures, plus
+/// RisoCoreTimeframeGrid, RisoMiniBoardArt) with injected fixtures, plus
 /// a composed home layout in both light and dark modes.
 ///
 /// These tests use the `record: .missing` strategy so the first run
@@ -305,29 +305,39 @@ final class RisoBoardsHomeSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - BlipPlaceholder
+    // MARK: - RisoMiniBoardArt (the Blip's replacement — all five states)
 
-    func testBlipPlaceholderLight() {
-        let view = ZStack {
+    private var miniBoardArtStrip: some View {
+        ZStack {
             Color.risoPaper
-            BlipPlaceholder(size: 72, mood: .calm)
+            VStack(spacing: 16) {
+                HStack(spacing: 16) {
+                    RisoMiniBoardArt(size: 72, state: .empty)
+                    RisoMiniBoardArt(size: 72, state: .started)
+                    RisoMiniBoardArt(size: 72, state: .draft)
+                }
+                HStack(spacing: 16) {
+                    RisoMiniBoardArt(size: 84, state: .bingo([0, 1, 2]))
+                    RisoMiniBoardArt(size: 108, grid: 5, state: .greenlog, tilt: .degrees(-4))
+                }
+            }
+            .padding(20)
         }
+    }
+
+    func testMiniBoardArtStatesLight() {
         assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 120, height: 120)),
+            of: miniBoardArtStrip,
+            as: .image(layout: .fixed(width: 340, height: 300)),
             record: recordMode
         )
     }
 
-    func testBlipPlaceholderDark() {
-        let view = ZStack {
-            Color.risoPaper
-            BlipPlaceholder(size: 72, mood: .calm)
-        }
+    func testMiniBoardArtStatesDark() {
         assertSnapshot(
-            of: view,
+            of: miniBoardArtStrip,
             as: .image(
-                layout: .fixed(width: 120, height: 120),
+                layout: .fixed(width: 340, height: 300),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode

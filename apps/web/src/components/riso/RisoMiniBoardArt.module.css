@@ -1,0 +1,48 @@
+/* Mini bingo-board motif — web twin of iOS `RisoMiniBoardArt` (Blip-
+   retirement handoff, 2026-09-10). Framed 3×3 grid of Riso cells with the
+   staggered `risoCellPop` entrance. Geometry per the handoff's web spec:
+   26px cells, 5px gap, 6px frame padding, 2px keyline, 3px hard shadow.
+   Sized via `--art-cell` (the `--mark-size` convention, per-cell here so
+   the grid stays square without division in CSS). */
+
+.art {
+  display: grid;
+  grid-template-columns: repeat(3, var(--art-cell, 26px));
+  gap: 5px;
+  padding: 6px;
+  width: fit-content;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+
+.cell {
+  width: var(--art-cell, 26px);
+  height: var(--art-cell, 26px);
+  border-radius: 4px;
+  background: var(--riso-paper-2);
+  border: 1.5px solid var(--riso-ink);
+  animation: risoCellPop var(--riso-anim-cell-pop) both;
+  animation-delay: calc(var(--i) * 55ms);
+}
+
+/* FREE center — ink-static fill (never adaptive ink: it flips to cream in
+   dark and would swallow the gold star), gold star glyph. */
+.free {
+  background: var(--riso-ink-static);
+  border: none;
+  display: grid;
+  place-items: center;
+}
+.free svg {
+  width: 55%;
+  height: 55%;
+  fill: var(--riso-gold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell {
+    animation: none;
+  }
+}

@@ -517,7 +517,11 @@ struct BoardPlayView: View {
             if showBingoToast {
                 RisoBingoToast(
                     subtitle: bingoToastSubtitle,
-                    bingoCount: board?.linesCompleted ?? 1
+                    bingoCount: board?.linesCompleted ?? 1,
+                    boardSize: gridSize,
+                    // All completed lines lit (the fresh one included) —
+                    // same derivation as the grid's gold-ring highlight.
+                    lineCells: highlightedSquareIndices
                 )
                 .padding(.horizontal, Riso.gutter)
                 .padding(.top, 54)
@@ -1314,7 +1318,7 @@ struct BoardPlayView: View {
     @ViewBuilder
     private func draftResumeSection(board: Board) -> some View {
         VStack(spacing: 16) {
-            BlipPlaceholder(size: 56, mood: .calm)
+            RisoMiniBoardArt(size: 56, state: .draft)
 
             Text("This board is still a draft.")
                 .risoH2()

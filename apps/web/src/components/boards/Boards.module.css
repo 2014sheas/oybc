@@ -460,6 +460,10 @@
   text-align: center;
   padding: 72px 24px;
 }
+/* Mini-board art above "Nothing here yet." (Blip-retirement handoff). */
+.emptyArt {
+  margin-bottom: 18px;
+}
 .emptyTitle {
   font-family: var(--riso-font-head);
   font-weight: 800;

@@ -12,7 +12,7 @@ The files in this bundle are **design references created in HTML** (React + JSX 
 
 ## Fidelity
 
-**High-fidelity.** Colors, typography, spacing, radii, shadows, copy, and interactions are final design intent. Recreate pixel-perfectly in SwiftUI. Two exceptions, noted inline below: the Blip mascot is a placeholder built from shapes (final illustrated asset TBD — but its **motion spec is final**, see Assets), and iOS-native conventions (swipe actions, sheets, haptics) should be used where the web prototype substituted tap-based equivalents.
+**High-fidelity.** Colors, typography, spacing, radii, shadows, copy, and interactions are final design intent. Recreate pixel-perfectly in SwiftUI. Two exceptions, noted inline below: the mascot slot is now the `RisoMiniBoardArt` mini-board motif (the Blip placeholder was retired — see Assets), and iOS-native conventions (swipe actions, sheets, haptics) should be used where the web prototype substituted tap-based equivalents.
 
 ## Design Tokens
 
@@ -73,7 +73,7 @@ Screen gutter 20px · card padding 13–16px · grid gap 7px (board cells) · li
 First-run only (gated on a persisted flag; cleared, it replays). Full-bleed paper, no tab bar.
 
 - **Three intro slides** (horizontal, swipe or Next): each is centered art + left-aligned copy. (1) red-filled poster grid + kicker "Welcome to" / wordmark **OYBC** (64px) / "Own Your Bingo Card…"; (2) a board with one row + a diagonal lit, gold rings on the bingo line + kicker "The idea" / "Fill squares, score bingos."; (3) full red board + "The payoff" / "Clear it for a GREENLOG." Progress is a row of dots (active dot is a stretched red pill). **Skip** top-right on every slide; **Back** appears from slide 2.
-- **Sign-in panel** (after slide 3 → "Get started"): centered Blip (happy), kicker "One last thing", "Save your streak.", body, then **Continue with Apple** (ink-fill pill, Apple glyph), **Continue with email** (keyline pill), and a muted **Maybe later**. All three dismiss onboarding into Boards home. Wire Apple to real Sign in with Apple; "Maybe later" = anonymous/local.
+- **Sign-in panel** (after slide 3 → "Get started"): centered mini-board art (top row lit), kicker "One last thing", "Save your streak.", body, then **Continue with Apple** (ink-fill pill, Apple glyph), **Continue with email** (keyline pill), and a muted **Maybe later**. All three dismiss onboarding into Boards home. Wire Apple to real Sign in with Apple; "Maybe later" = anonymous/local.
 - Entrance: each slide slides in (transform only — never gate content on opacity, so first paint and reduced-motion always show it).
 - Prototype: clears on the "Replay onboarding" tweak; hash `#onboard`.
 
@@ -83,7 +83,7 @@ First-run only (gated on a persisted flag; cleared, it replays). Full-bleed pape
 - **Core timeframe strip — 2×2 grid** (locked decision): four cards (Daily / Weekly / Monthly / Yearly) in a 2-column grid, each with uppercase label + status word ("Ready" / "Active" / "Expiring") and an 8px status dot (green=active, gold=expiring, paper=empty). There is exactly **one core board per timeframe** — show status, never counts. Custom boards appear in the list only.
 - **Filter chips**: All / Active / Completed / Draft — pill chips, 2px keyline, selected = ink fill, paper text.
 - **Board cards**: name (19px Bricolage 800, single line, ellipsis), timeframe subtitle, status badge (pill, 2px keyline: Active=blue, Completed=green, Draft=paper/muted, Expiring=gold), 5×5 **mini-grid thumbnail** (46px wide, 1px keylines, red filled = done squares), 12px progress bar (2px keyline, red fill; green when completed), meta line "14/25 squares · ★ 1 bingo".
-- **Empty state**: Blip mascot (calm mood), "Nothing here yet", body copy, red primary button.
+- **Empty state**: mini-board art (empty state), "Nothing here yet", body copy, red primary button.
 
 ### 2. Play board (`BoardPlayView.swift`) — the core screen
 
@@ -96,8 +96,8 @@ First-run only (gated on a persisted flag; cleared, it replays). Full-bleed pape
   - **Compound cells**: `C` green tag, green progress bar of completed subs.
   - **FREE (center)**: ink-black cell, gold star + "FREE" in gold caps. Night press: full black.
   - **Bingo-line cells**: 3px gold outer ring (`box-shadow: 0 0 0 3px gold` on top of the hard shadow), z-raised.
-- **Bingo toast**: drops from top (translateY −90→+6→0 with slight rotate, ~500ms), blue card, 2px keyline, 4px hard shadow: Blip art (42px) + "BINGO!" 19px + subtitle + gold `×2` count 26px. Auto-dismiss ~2.8s.
-- **GREENLOG overlay**: full-bleed blue takeover. Falling confetti (ink-keylined squares/circles in red/gold/green/paper, ~1.6–3.2s linear loops; count scales 16–88 with the celebration-intensity setting, default 7 → ~64). Blip (cheer mood, 108px), kicker "BOARD COMPLETE" (gold), "GREENLOG!" 52px/0.88, subtitle, three stat blocks (paper cards, keyline+shadow: 25/25 Squares · 5 Bingos · 7d Streak), red primary "Share my board" → **opens the Share sheet** + outlined-cream ghost "Start a new board".
+- **Bingo toast**: drops from top (translateY −90→+6→0 with slight rotate, ~500ms), blue card, 2px keyline, 4px hard shadow: mini-board art (42px, unframed on-blue, completed line lit) + "BINGO!" 19px + subtitle + gold `×2` count 26px. Auto-dismiss ~2.8s.
+- **GREENLOG overlay**: full-bleed blue takeover. Falling confetti (ink-keylined squares/circles in red/gold/green/paper, ~1.6–3.2s linear loops; count scales 16–88 with the celebration-intensity setting, default 7 → ~64). mini-board art (5×5 greenlog, 108px, −4° tilt), kicker "BOARD COMPLETE" (gold), "GREENLOG!" 52px/0.88, subtitle, three stat blocks (paper cards, keyline+shadow: 25/25 Squares · 5 Bingos · 7d Streak), red primary "Share my board" → **opens the Share sheet** + outlined-cream ghost "Start a new board".
 
 ### 2a. Share board sheet (`ShareBoardSheet.swift` — new)
 
@@ -138,7 +138,7 @@ Tab bar **stays visible** (Create is a tab, not a modal). Footer Cancel/Back + N
 
 ### 5. Profile tab (`ProfileView.swift`)
 
-- Account card: circular keyline avatar (Blip placeholder), name + ✎ (**tap name/✎ → Edit profile sheet**), email.
+- Account card: initials avatar (`RisoInitialAvatar` — blue circle, cream initial), name + ✎ (**tap name/✎ → Edit profile sheet**), email.
 - **App**: Theme row with **System / Light / Dark** segmented pill (drives night press app-wide) · Sync row with green status dot ("Synced · just now").
 - **Preferences**: Board preferences · Recurring templates `[3]` · Default pools `[2]` — keyline icon squares, count pills, chevrons. Each pushes a sub-page (below).
 - **Sign Out**: red row → inline dashed-red confirm (Cancel / solid-red Sign Out). **No Developer/Playground section** (removed by decision).
@@ -161,8 +161,8 @@ Tab bar **stays visible** (Create is a tab, not a modal). Footer Cancel/Back + N
 
 Bottom sheet from the account card's name/✎.
 
-- Large circular Blip avatar preview (keyline + hard shadow) reflecting the chosen mood.
-- **Blip mood** picker: three keyline cards (Happy / Cheer / Calm), each a small live Blip; selected = gold fill + hard shadow. (Blip is the avatar until the illustrated asset ships; mood is the user's avatar style.)
+- Large initials avatar preview (92px, hard shadow) tracking the live name field.
+- ~~**Blip mood** picker~~ — removed as a dead control in the obsolete-controls sweep, and the Blip avatar itself was retired with the mascot (Blip-retirement handoff, 2026-09-10).
 - **Display name** text field (live-updates the avatar preview's label on save).
 - **Email** field shown disabled with hint "Change your email from Account security."
 - Red **Save profile** (disabled until name non-empty) → writes back to the account card (name + avatar mood). Done dismisses.
@@ -185,12 +185,8 @@ Maps onto existing view models — no new architecture needed. Key points: board
 - **Screenshots** (`screenshots/`): visual reference for every screen, light + dark — `01` Boards home · `02` Play board · `03` Wizard Setup · `04` Wizard Tasks step · `05` Tasks tab · `06` Profile · `07` GREENLOG celebration · `08` Board preferences · `09` Recurring templates · `10` Default pools · `11` Task edit sheet · `12` Onboarding intro · `13` Onboarding sign-in · `14` Share board sheet · `15` Edit profile sheet · `16` Template editor · `17` Pool editor (08–17 light only). Note: these are DOM re-renders — entrance animations are frozen at frame 0 by the capture tool, so a couple were shot with motion suppressed; the live prototype is the source of truth.
 
 - **Fonts**: Bricolage Grotesque, Archivo (Google Fonts)
-- **Blip mascot** (placeholder): overprint sticker character — red circle (multiply) behind blue halftone circle body, cream/ink eyes, gold grin, gold star spark; moods: happy/cheer/calm. Built entirely from shapes in `components.jsx` — **final illustrated asset to be commissioned**; keep the overprint/halftone language.
-- **Blip motion** (final spec; user toggle "Animated Blip", default on, and respect Reduce Motion):
-  - *Idle*: whole character bobs ±3px, 3.4s ease-in-out loop (5s for calm mood); eyes blink (scaleY → .12 for ~90ms every ~4.6s); star spark pulses scale 1→1.22 with 16° rotate, same 3.4s period.
-  - *Cheer* (GREENLOG): squash-and-stretch hop on top of the bob — 0.9s loop, sink to scale(1.07,.9), hop −7px at scale(.95,1.08), settle; spark spins continuously (1.8s/turn).
-  - *Bingo toast*: one ±7° wiggle (~0.65s) as the toast lands, then back to idle.
-  - Mouth morphs between moods with a .25s ease (animate the shape, don't crossfade).
+- **Mini-board art** (`RisoMiniBoardArt`, replaced the Blip mascot — Blip-retirement handoff, 2026-09-10): framed grid of poster-grid cells (paper / red-halftone lit / ink-static FREE + gold star / dashed draft), states empty·started·draft·bingo·greenlog, framed + on-blue variants. No illustrated asset is planned anymore.
+- **Mini-board art motion** (`RisoMiniBoardArt` pop-in, replaced the Blip motion spec): each cell scales 0→1 on a 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.4) overshoot curve, staggered 55ms in reading order with the FREE cell last (greenlog: 25 cells at 30ms, then the frame tilts to −4° over 0.32s, then confetti starts). Plays once on appear, never loops; Reduce Motion renders the final state immediately. No user toggle (the prototype's "Animated Blip" switch never shipped).
 - **Icons**: simple 2px-stroke line icons (boards grid, tasks list, create ⊕, profile) — use SF Symbols equivalents at matching weights.
 - No raster images anywhere.
 
@@ -208,7 +204,7 @@ Maps onto existing view models — no new architecture needed. Key points: board
 | `proto/library.jsx` | Library browser + bottom sheet, derive, From-a-board |
 | `proto/tabs.jsx` | Tasks tab (incl. task edit sheet) + Profile tab |
 | `proto/profilepages.jsx` | Profile sub-pages: Board preferences, Recurring templates (+ editor), Default pools (+ editor) |
-| `proto/components.jsx` | Blip mascot (incl. motion structure), icons, confetti |
+| `proto/components.jsx` | Blip mascot (RETIRED in the app — see `RisoMiniBoardArt`; prototype-only), icons, confetti |
 | `proto/data.js` | Sample data shapes (boards, library, watch targets) |
 | `proto/ios-frame.jsx`, `proto/tweaks-panel.jsx` | Prototype scaffolding only — ignore for implementation |
 

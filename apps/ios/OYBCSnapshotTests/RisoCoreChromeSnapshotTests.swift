@@ -266,7 +266,7 @@ final class RisoCoreChromeSnapshotTests: XCTestCase {
 
     // MARK: - CoreBoardSetupPromptView
 
-    /// Current window prompt (isPast: false) — Blip happy mood + "Set up" CTA.
+    /// Current window prompt (isPast: false) — mini-board art (started) + "Set up" CTA.
     func testSetupPromptCurrentLight() {
         let view = CoreBoardSetupPromptView(
             label: "June 2026",
@@ -280,7 +280,7 @@ final class RisoCoreChromeSnapshotTests: XCTestCase {
         )
     }
 
-    /// Past window prompt (isPast: true) — Blip calm mood + "Backfill" CTA.
+    /// Past window prompt (isPast: true) — mini-board art (started) + "Backfill" CTA.
     func testSetupPromptPastLight() {
         let view = CoreBoardSetupPromptView(
             label: "May 2026",
