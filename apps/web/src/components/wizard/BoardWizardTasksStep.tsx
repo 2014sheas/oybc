@@ -657,6 +657,20 @@ export function BoardWizardTasksStep({
                   onSetRange={(min, max) => onSetSourceRange(source.sourceId, min, max)}
                   onToggleExclude={(taskId) => onToggleSourceExclude(source.sourceId, taskId)}
                   counterClashByTaskId={counterClashByTaskId}
+                  compoundChildrenByCompound={effectiveChildrenByCompound}
+                  selectedTaskIds={selectedTaskIds}
+                  onDeriveMember={(task) => {
+                    // Reuses the step's existing derive modal (the library
+                    // sheet's onDeriveRequested path). The created counter
+                    // is a hand-add; the counter-family guard prefers it
+                    // over the source-supplied original at the deal.
+                    setDerivingFromTask(task);
+                    setDeriveMaxCountInput('');
+                    setDeriveError(null);
+                  }}
+                  onAddTask={(taskId) => {
+                    if (!selectedTaskIds.has(taskId)) onToggleSelection(taskId);
+                  }}
                 />
               ))
             : undefined

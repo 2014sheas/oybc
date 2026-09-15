@@ -31,6 +31,23 @@ struct RisoSourceRowView: View {
     /// per board" hint).
     var counterClashByTaskId: [String: String] = [:]
 
+    // Per-member actions (owner report 2026-09-15: the member list offered
+    // ONLY the ✕ exclude — no way to derive a smaller counter or pull a
+    // compound's subtasks from a pulled board/pool; same ⋯-menu vocabulary
+    // as the From-a-board grid, #470). All defaulted so non-wizard mounts
+    // (recurring Preview's read-only rows) compile unchanged and show no ⋯.
+
+    /// Children per compound (the step's effective map) — gates the
+    /// subtask items and supplies the ids.
+    var compoundChildrenByCompound: [String: [CompoundChild]] = [:]
+    /// The wizard's current selection — subtask items render ✓/disabled
+    /// once the child is already on the board.
+    var selectedTaskIds: Set<String> = []
+    /// Counting member with template fields → open the derive sheet.
+    var onDeriveMember: ((Task) -> Void)? = nil
+    /// Hand-add a task id (a compound's subtask) to the wizard selection.
+    var onAddTask: ((String) -> Void)? = nil
+
     private var isDefaultRange: Bool { source.min == 0 && source.max == nil }
     private var effectiveMax: Int { source.max ?? availableCount }
 
@@ -266,6 +283,7 @@ struct RisoSourceRowView: View {
                 }
             }
             Spacer(minLength: 6)
+            memberActionsMenu(taskId: taskId, task: task)
             switch state {
             case .included:
                 Button {
@@ -308,5 +326,64 @@ struct RisoSourceRowView: View {
         .padding(.leading, 40)
         .padding(.trailing, 11)
         .overlay(alignment: .top) { hairline.opacity(0.6) }
+    }
+
+    /// ⋯ menu on counting-template / compound members — tap-driven
+    /// (`Menu`), matching the From-a-board grid's #470 affordance. Renders
+    /// nothing for members with no extra actions, and nothing when the
+    /// wizard callbacks aren't wired (read-only mounts).
+    @ViewBuilder
+    private func memberActionsMenu(taskId: String, task: Task?) -> some View {
+        let isCountingTemplate = task?.type == .counting
+            && task?.action != nil && task?.unit != nil && task?.maxCount != nil
+        let children = task?.type == .compound
+            ? (compoundChildrenByCompound[taskId] ?? []) : []
+        if let task, (isCountingTemplate && onDeriveMember != nil)
+            || (!children.isEmpty && onAddTask != nil) {
+            Menu {
+                if isCountingTemplate, let onDeriveMember {
+                    Button("Derive smaller version…", systemImage: "scalemass") {
+                        onDeriveMember(task)
+                    }
+                }
+                if !children.isEmpty, let onAddTask {
+                    Button("Add all subtasks to board", systemImage: "square.stack.3d.up") {
+                        for child in children where !selectedTaskIds.contains(child.childTaskId) {
+                            onAddTask(child.childTaskId)
+                        }
+                    }
+                    Menu {
+                        ForEach(children, id: \.id) { child in
+                            let added = selectedTaskIds.contains(child.childTaskId)
+                            Button {
+                                onAddTask(child.childTaskId)
+                            } label: {
+                                Label(
+                                    taskById[child.childTaskId]?.title ?? "Subtask",
+                                    systemImage: added ? "checkmark" : "plus"
+                                )
+                            }
+                            .disabled(added)
+                        }
+                    } label: {
+                        Label("Add a subtask…", systemImage: "square.on.square.dashed")
+                    }
+                }
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.risoPaper)
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.risoInk)
+                }
+                .frame(width: 18, height: 18)
+                .padding(3)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("More actions for \(task.title)")
+        }
     }
 }
