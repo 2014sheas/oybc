@@ -22,8 +22,8 @@ private struct BoardPlayTitleChrome: ViewModifier {
         if enabled {
             // Riso play board owns its header in-content (back square + name +
             // status badge), so suppress the system nav title AND back button
-            // to avoid duplicate back/name affordances. The Edit toolbar item
-            // (defined separately) is unaffected.
+            // to avoid duplicate back/name affordances. (Edit lives in the
+            // in-content title row too — the toolbar item is gone.)
             content
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationBarBackButtonHidden(true)
