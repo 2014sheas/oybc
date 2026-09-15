@@ -188,13 +188,6 @@ struct MainTabView: View {
                         pendingTargetWindowDate = windowDate
                         selectedTab = 2
                     },
-                    onBrowseTimeframe: { timeframe in
-                        // Push the per-timeframe Core Board Browser
-                        // onto the Boards-tab stack. Used by both the
-                        // Core Boards section (whole-row tap) and the
-                        // pending-recurring banner if it re-enables.
-                        boardsPath.append(CoreBrowserRoute(timeframe: timeframe))
-                    },
                     onOpenCoreWindow: { timeframe, windowStart in
                         // Core board row tap → per-window pager.
                         boardsPath.append(CoreWindowRoute(timeframe: timeframe, windowStart: windowStart))
@@ -221,23 +214,10 @@ struct MainTabView: View {
                         onComplete: { showTutorialGreenlog = true }
                     )
                 }
-                .navigationDestination(for: CoreBrowserRoute.self) { route in
-                    CoreBoardBrowserView(
-                        timeframe: route.timeframe,
-                        onCreate: { tf, date in
-                            pendingRecurringTimeframe = tf
-                            pendingTargetWindowDate = date
-                            selectedTab = 2
-                        },
-                        onOpenBoard: { boardId in
-                            // Push the board onto the same Boards-tab
-                            // stack so back returns to the browser,
-                            // not the list.
-                            boardsPath.append(boardId)
-                        },
-                        onResumeDraft: { boardId in openDraftInWizard(boardId) }
-                    )
-                }
+                // NOTE: the per-timeframe Core Board Browser
+                // (`CoreBrowserRoute` → `CoreBoardBrowserView`) was retired
+                // by the core-board surface rework — long-range window
+                // jumping now lives in the pager's picker sheet.
                 .navigationDestination(for: CoreWindowRoute.self) { route in
                     // Per-window core-board pager. Prev/next page by
                     // mutating the VM in place, so no .id() is needed
@@ -251,9 +231,6 @@ struct MainTabView: View {
                             pendingRecurringTimeframe = tf
                             pendingTargetWindowDate = date
                             selectedTab = 2
-                        },
-                        onBrowseTimeframe: { tf in
-                            boardsPath.append(CoreBrowserRoute(timeframe: tf))
                         },
                         onOpenBoard: { boardId in
                             boardsPath.append(boardId)
@@ -356,27 +333,10 @@ struct MainTabView: View {
                         StreaksView()
                     }
                 }
-                // Phase B — Browse links inside BoardPreferencesView
-                // push CoreBrowserRoute onto this stack. Same view
-                // tree as the Boards-tab browser; only the cross-tab
-                // launch closure differs (Profile-tab pushes still
-                // need to hop to the Create tab on a Create-cell tap).
-                .navigationDestination(for: CoreBrowserRoute.self) { route in
-                    CoreBoardBrowserView(
-                        timeframe: route.timeframe,
-                        onCreate: { tf, date in
-                            pendingRecurringTimeframe = tf
-                            pendingTargetWindowDate = date
-                            selectedTab = 2
-                        },
-                        onOpenBoard: { boardId in
-                            // Jump cross-tab to the Boards stack so
-                            // the user lands on the play view.
-                            openBoard(boardId)
-                        },
-                        onResumeDraft: { boardId in openDraftInWizard(boardId) }
-                    )
-                }
+                // NOTE: the Profile-stack `CoreBrowserRoute` destination was
+                // removed with the browser retirement (core-board surface
+                // rework) — nothing appended it since the BoardPreferencesView
+                // page itself retired (P7).
 
             }
             .tabItem {

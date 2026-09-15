@@ -18,7 +18,7 @@ struct RisoBoardCard: View {
     let isExpiring: Bool
     /// TRUE preview cells (bugfix/board-preview-real-cells) — REQUIRED, no
     /// self-loading fallback. Every production caller (`BoardListView`,
-    /// `CoreBoardWindowCellView` via `CoreBoardBrowserViewModel`) batch-builds
+    /// the retired browser cell before it) batch-builds
     /// these once for its whole list via `BoardPreviewCells.fetchWorkspaceData`/
     /// `buildMany` and passes an all-empty placeholder while the batch fetch
     /// is in flight — never `nil`. A prior revision let this be optional with
@@ -35,7 +35,7 @@ struct RisoBoardCard: View {
     /// template can't be resolved (soft-deleted edge case) — in either case
     /// the card falls back to the plain `RisoRecurringBadge()` rendering
     /// with no cadence subtitle and no dimming. Defaults to `nil` so every
-    /// pre-existing call site (`CoreBoardWindowCellView`, most snapshot
+    /// pre-existing call site (most snapshot
     /// tests) compiles unchanged.
     var template: RecurringBoardTemplate? = nil
 

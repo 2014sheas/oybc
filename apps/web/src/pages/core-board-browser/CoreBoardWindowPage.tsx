@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   AchievementTrigger,
@@ -9,36 +9,75 @@ import {
   stepWindow,
   formatTimeframeLabel,
   isTimeframeExpired,
+  type WeekStartDay,
 } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
 import { useBoards } from '../../hooks/useBoards';
 import { usePreferences } from '../../hooks';
 import { BoardPlaySurface } from '../../components/BoardPlaySurface';
 import { DraftResumePrompt } from '../../components/boards/DraftResumePrompt';
+import { RisoBadge, RisoIcon } from '../../components/riso';
 import { useCoreBoardForWindow } from './useCoreBoardForWindow';
-import { CoreBoardWindowBar } from './CoreBoardWindowBar';
+import { useCoreBoardsByStart } from './useCoreBoardsByStart';
 import { CoreBoardSetupPrompt } from './CoreBoardSetupPrompt';
-import styles from './CoreBoardBrowserPage.module.css';
+import { CoreWindowChip } from './CoreWindowChip';
+import { CoreWindowPositionCaption } from './CoreWindowPositionCaption';
+import { CoreWindowPickerPopover } from './CoreWindowPickerPopover';
+import {
+  buildWindowNeighborhood,
+  captionSideLabel,
+  chipLabelSuffix,
+} from './corePickerTiles';
+import { compactStreakLabel } from '@oybc/shared';
+import play from '../../components/play/Play.module.css';
+import styles from './CoreWindow.module.css';
 
 const VALID: ReadonlySet<string> = new Set([
   Timeframe.DAILY, Timeframe.WEEKLY, Timeframe.MONTHLY, Timeframe.YEARLY,
 ]);
 
+/** Human timeframe word for the streak chip's VoiceOver annotation. */
+const STREAK_A11Y_WORDS: Partial<Record<Timeframe, string>> = {
+  [Timeframe.DAILY]: 'daily',
+  [Timeframe.WEEKLY]: 'weekly',
+  [Timeframe.MONTHLY]: 'monthly',
+  [Timeframe.YEARLY]: 'yearly',
+};
+
 /**
- * CoreBoardWindowPage — per-window core-board pager. Route:
- * `/boards/core/:timeframe/:date`. Seeds the current window from `:date`
- * (any date inside the window normalizes to its start). Prev/next navigate
- * (replace) to the adjacent window — the component stays mounted, the board
- * lookup re-fires reactively. Board exists → `BoardPlaySurface`; none →
- * `CoreBoardSetupPrompt`. The `≡ List` button opens the full browser.
+ * CoreBoardBrowserRedirect — the retired `/boards/core/:timeframe`
+ * browser route now redirects to today's window in the pager (the
+ * picker sheet replaced the vertical browser list).
+ */
+export function CoreBoardBrowserRedirect(): React.ReactElement {
+  const { timeframe: rawTf } = useParams<{ timeframe: string }>();
+  const [preferences] = usePreferences();
+  if (!rawTf || !VALID.has(rawTf)) return <Navigate to="/boards" replace />;
+  const { startDate } = getTimeframeBoundaries(
+    rawTf as Timeframe,
+    new Date(),
+    preferences.weekStartDay,
+  );
+  return <Navigate to={`/boards/core/${rawTf}/${startDate.slice(0, 10)}`} replace />;
+}
+
+/**
+ * CoreBoardWindowPage — per-window core-board pager (masthead rework).
+ * Route: `/boards/core/:timeframe/:date`. Seeds the current window from
+ * `:date` (any date inside the window normalizes to its start).
+ *
+ * Chrome: a fixed header row (back + **window chip**), everything below
+ * as one window card. Stepping: ←/→ keys, horizontal trackpad wheel,
+ * and the position caption's side taps — each navigates (replace) to
+ * the adjacent window with a card-slide. The chip opens the window
+ * picker popover; tapping a tile lands on that window (setup prompt if
+ * empty — **no board row is ever created from navigation**).
  */
 export function CoreBoardWindowPage(): React.ReactElement {
   const navigate = useNavigate();
   const { timeframe: rawTf, date: rawDate } = useParams<{ timeframe: string; date: string }>();
   const { user } = useAuth();
   const [preferences] = usePreferences();
-  // Load all boards for the streak computation — `useBoards` is a live
-  // query that updates reactively when boards change.
   const allBoards = useBoards(user?.id);
 
   const routeDateOnly = rawDate?.slice(0, 10);
@@ -49,95 +88,251 @@ export function CoreBoardWindowPage(): React.ReactElement {
 
   const isValid = !!rawTf && VALID.has(rawTf) && isValidDate;
   const timeframe = (isValid ? rawTf : Timeframe.DAILY) as Timeframe;
+  const weekStartDay: WeekStartDay = preferences.weekStartDay;
 
   const now = useMemo(() => new Date(), []);
 
   const { startDate: windowStart, endDate: windowEnd } = useMemo(() => {
-    // Parse as local noon, not UTC midnight. A date-only ISO string
-    // ("YYYY-MM-DD") is specified to parse as UTC midnight, which shifts
-    // the calendar day backwards for users west of UTC (e.g. LA sees
-    // "2026-05-21" as May 20 @ 17:00 PDT). Appending T12:00:00 forces a
-    // local parse and noon safely avoids any DST-midnight edge cases.
+    // Parse as local noon, not UTC midnight — a date-only ISO string
+    // parses as UTC midnight, which shifts the day west of UTC.
     const seed = routeDateOnly ? new Date(`${routeDateOnly}T12:00:00`) : now;
-    return getTimeframeBoundaries(timeframe, seed, preferences.weekStartDay);
-  }, [routeDateOnly, timeframe, preferences.weekStartDay, now]);
+    return getTimeframeBoundaries(timeframe, seed, weekStartDay);
+  }, [routeDateOnly, timeframe, weekStartDay, now]);
 
   const board = useCoreBoardForWindow(user?.id, timeframe, windowStart);
+  const boardsByStart = useCoreBoardsByStart(user?.id, timeframe);
 
-  // Greenlog streak for this timeframe — shown in the window bar chip.
-  // Only recurrable timeframes have streaks; CUSTOM has no cadence.
-  const streakCount = useMemo(
-    () =>
-      computeStreak(
-        timeframe,
-        AchievementTrigger.GREENLOG,
-        allBoards,
-        preferences.weekStartDay,
-        now,
-      ),
-    [timeframe, allBoards, preferences.weekStartDay, now],
+  // UI state: picker popover, edit-mode lock, slide direction.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [childEditing, setChildEditing] = useState(false);
+  const [slideDir, setSlideDir] = useState<0 | -1 | 1>(0);
+
+  const todayWindowStart = useMemo(
+    () => getTimeframeBoundaries(timeframe, now, weekStartDay).startDate,
+    [timeframe, now, weekStartDay],
   );
 
-  const go = (offset: -1 | 1) => {
-    const { startDate } = stepWindow(timeframe, windowStart, offset, preferences.weekStartDay);
-    navigate(`/boards/core/${timeframe}/${startDate.slice(0, 10)}`, { replace: true });
-  };
+  const neighborhood = useMemo(
+    () => buildWindowNeighborhood(timeframe, windowStart, todayWindowStart, boardsByStart, weekStartDay),
+    [timeframe, windowStart, todayWindowStart, boardsByStart, weekStartDay],
+  );
 
-  const handleSetUp = () => {
-    const dateOnly = windowStart.slice(0, 10);
-    navigate(`/create?recurringTimeframe=${timeframe}&windowDate=${dateOnly}`);
-  };
+  const isCurrentWindow = windowStart === todayWindowStart;
+  const isPast = isTimeframeExpired(windowEnd, now);
+
+  // Greenlog streak for this timeframe (empty/draft title rows — the
+  // filled state's chip is rendered by BoardPlaySurface itself).
+  const streakCount = useMemo(
+    () => computeStreak(timeframe, AchievementTrigger.GREENLOG, allBoards, weekStartDay, now),
+    [timeframe, allBoards, weekStartDay, now],
+  );
+
+  const goTo = useCallback(
+    (startDate: string, dir: 0 | -1 | 1) => {
+      setSlideDir(dir);
+      setPickerOpen(false);
+      navigate(`/boards/core/${timeframe}/${startDate.slice(0, 10)}`, { replace: true });
+    },
+    [navigate, timeframe],
+  );
+
+  const go = useCallback(
+    (offset: -1 | 1) => {
+      if (childEditing) return;
+      const { startDate } = stepWindow(timeframe, windowStart, offset, weekStartDay);
+      goTo(startDate, offset);
+    },
+    [childEditing, timeframe, windowStart, weekStartDay, goTo],
+  );
+
+  // ←/→ keys + horizontal trackpad wheel step the window (spec 3b).
+  // Disabled while editing or while the picker is open; ignores keys
+  // typed into form fields.
+  const wheelAccum = useRef(0);
+  const wheelLock = useRef(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (childEditing || pickerOpen) return;
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === 'ArrowRight') go(1);
+    };
+    const onWheel = (e: WheelEvent): void => {
+      if (childEditing || pickerOpen) return;
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      if (wheelLock.current) return;
+      wheelAccum.current += e.deltaX;
+      if (Math.abs(wheelAccum.current) < 90) return;
+      const dir: -1 | 1 = wheelAccum.current > 0 ? 1 : -1;
+      wheelAccum.current = 0;
+      wheelLock.current = true;
+      setTimeout(() => { wheelLock.current = false; }, 500);
+      go(dir);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('wheel', onWheel, { passive: true });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('wheel', onWheel);
+    };
+  }, [go, childEditing, pickerOpen]);
 
   if (!isValid) return <Navigate to="/boards" replace />;
 
   const label = formatTimeframeLabel(timeframe, windowStart);
-  const isPast = isTimeframeExpired(windowEnd, now);
-  const bar = (
-    <CoreBoardWindowBar
-      label={label}
+  // No suffix while the board query is still resolving (avoids a
+  // "· next" flicker before the row loads).
+  const chipLabel =
+    board === undefined
+      ? label
+      : `${label}${chipLabelSuffix(board, isCurrentWindow, isPast)}`;
+  const chipA11y = `${label}${isCurrentWindow ? ', current window' : ''}. Opens window picker.`;
+
+  const prevStart = stepWindow(timeframe, windowStart, -1, weekStartDay).startDate;
+  const nextStart = stepWindow(timeframe, windowStart, 1, weekStartDay).startDate;
+
+  const picker = pickerOpen ? (
+    <CoreWindowPickerPopover
+      timeframe={timeframe}
+      weekStartDay={weekStartDay}
+      boardsByStart={boardsByStart}
+      displayedWindowStart={windowStart}
+      now={now}
+      onSelect={(start) => goTo(start, start > windowStart ? 1 : -1)}
+      onClose={() => setPickerOpen(false)}
+    />
+  ) : null;
+
+  const chip = (
+    <span className={styles.chipAnchor}>
+      <CoreWindowChip
+        label={chipLabel}
+        dots={neighborhood}
+        open={pickerOpen}
+        empty={board === null}
+        disabled={childEditing}
+        ariaLabel={chipA11y}
+        onClick={() => setPickerOpen((o) => !o)}
+      />
+      {picker}
+    </span>
+  );
+
+  const backButton = (
+    <button type="button" className={play.back} onClick={() => navigate('/boards')}>
+      <RisoIcon name="back" size={15} />
+      Boards
+    </button>
+  );
+
+  const caption = (
+    <CoreWindowPositionCaption
+      prevLabel={captionSideLabel(timeframe, prevStart)}
+      nextLabel={captionSideLabel(timeframe, nextStart)}
+      dots={neighborhood}
+      disabled={childEditing}
       onPrev={() => go(-1)}
       onNext={() => go(1)}
-      onOpenList={() => navigate(`/boards/core/${timeframe}`)}
-      streakCount={streakCount}
-      timeframe={timeframe}
     />
   );
 
+  const streakChip =
+    streakCount > 0 ? (
+      <span
+        className={styles.streakChip}
+        aria-label={`${streakCount} ${STREAK_A11Y_WORDS[timeframe] ?? ''} greenlog streak`}
+      >
+        <RisoIcon name="flame" size={10} aria-hidden="true" />
+        {compactStreakLabel(streakCount, timeframe)} streak
+      </span>
+    ) : null;
+
+  const slideClass = slideDir === 1 ? styles.slideFromRight : slideDir === -1 ? styles.slideFromLeft : '';
+
   if (board === undefined) {
-    return <div className={styles.page}>{bar}<p className={styles.emptyState}>Loading…</p></div>;
+    return (
+      <div className={styles.page}>
+        <div className={styles.headerRow}>{backButton}{chip}</div>
+        <p className={styles.emptyState}>Loading…</p>
+      </div>
+    );
   }
+
   if (board === null) {
+    // Empty window: muted title block + dashed frame around the lazy
+    // setup prompt. No board row exists (and none is created here).
     return (
       <div className={styles.page}>
-        {bar}
-        <CoreBoardSetupPrompt timeframe={timeframe} windowStart={windowStart} isPast={isPast} onSetUp={handleSetUp} />
+        <div className={styles.headerRow}>{backButton}{chip}</div>
+        <div key={windowStart} className={slideClass}>
+          <div className={styles.titleBlock}>
+            <div className={styles.titleKicker}>{timeframe.toUpperCase()} BOARD</div>
+            <div className={styles.titleRow}>
+              <span className={styles.mutedTitle}>{label}</span>
+              {streakChip}
+            </div>
+          </div>
+          <div className={styles.dashedFrame} style={{ marginTop: 14 }}>
+            <CoreBoardSetupPrompt
+              timeframe={timeframe}
+              windowStart={windowStart}
+              isPast={isPast}
+              onSetUp={() => {
+                navigate(`/create?recurringTimeframe=${timeframe}&windowDate=${windowStart.slice(0, 10)}`);
+              }}
+            />
+            {!isCurrentWindow && (
+              <span className={styles.frameHint}>
+                Swipe back to {captionSideLabel(timeframe, todayWindowStart)} to keep playing
+              </span>
+            )}
+          </div>
+          {caption}
+        </div>
       </div>
     );
   }
+
   if (board.status === BoardStatus.DRAFT) {
-    // Draft core boards in the pager show a resume prompt in place of
-    // the grid (keeping the window bar visible). Mirrors iOS BoardListView
-    // core-grid slot routing — onResumeDraft fires instead of the pager.
-    // Primary surfaces (CoreStrip tap on BoardsPage) already route to
-    // /create?resumeDraft before reaching here; this is the safety net for
-    // direct-URL and prev/next navigation landing on a draft window.
+    // Draft window: DRAFT badge beside the name, dashed frame around the
+    // existing resume prompt. Never renders a grid (drafts aren't playable).
     return (
       <div className={styles.page}>
-        {bar}
-        <DraftResumePrompt boardId={board.id} boardName={board.name} />
+        <div className={styles.headerRow}>{backButton}{chip}</div>
+        <div key={windowStart} className={slideClass}>
+          <div className={styles.titleBlock}>
+            <div className={styles.titleKicker}>{timeframe.toUpperCase()} BOARD</div>
+            <div className={styles.titleRow}>
+              <span className={`${styles.mutedTitle} ${styles.draftTitle}`}>{board.name}</span>
+              <RisoBadge kind="draft">Draft</RisoBadge>
+              {streakChip}
+            </div>
+          </div>
+          <div className={styles.dashedFrame} style={{ marginTop: 14 }}>
+            <DraftResumePrompt boardId={board.id} boardName={board.name} />
+          </div>
+          {caption}
+        </div>
       </div>
     );
   }
-  // Board-integrity PR-5 (Item 6): key by board.id — THIS site is the one
-  // where the underlying board genuinely changes without an unmount: the
-  // prev/next pager keeps CoreBoardWindowPage mounted and just swaps the
-  // date route param, so a same-component board.id change is reachable here
-  // (unlike BoardPlayPage's /boards/:id, where no in-page nav swaps :id).
-  // Without the key, BoardPlaySurface's local state — open context menu /
-  // detail modal, selectedSquareId, greenlog/share overlays, toasts — would
-  // carry over from the previous window's board into the new one, binding
-  // menus/modals to stale boardTaskIds. (Edit-mode drafts aren't the risk
-  // HERE — this site passes allowEdit={false} — but the same key guards
-  // them wherever editing is allowed.)
-  return <BoardPlaySurface key={board.id} board={board} userId={user?.id} header={bar} allowEdit={false} />;
+
+  // Board-integrity PR-5 (Item 6): key by board.id — the pager keeps
+  // this component mounted while the date route param swaps, so the
+  // surface's local state must not carry across boards. The outer div
+  // keys by windowStart to drive the card-slide animation.
+  return (
+    <div key={windowStart} className={slideClass}>
+      <BoardPlaySurface
+        key={board.id}
+        board={board}
+        userId={user?.id}
+        header={backButton}
+        kickerAccessory={chip}
+        boardFooter={caption}
+        onEditModeChange={setChildEditing}
+      />
+    </div>
+  );
 }

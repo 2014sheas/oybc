@@ -6,8 +6,12 @@ import SwiftUI
 /// this view only surfaces the CTA. Past windows show "Backfill";
 /// current/future windows show "Set up".
 ///
-/// Rendered in the Riso design language: paper background, mini-board art,
-/// Bricolage heading, and a Riso primary button.
+/// Rendered in the Riso design language: mini-board art, Bricolage
+/// heading, and a Riso primary button. Two containers:
+///   - `framed: false` (default): standalone full-bleed layout on a
+///     paper background (legacy pager behaviour, snapshot-covered).
+///   - `framed: true`: bare content column for embedding inside the
+///     pager's 2.5pt dashed empty-window frame (masthead rework).
 ///
 /// Mirrors the web `CoreBoardSetupPrompt` component.
 struct CoreBoardSetupPromptView: View {
@@ -18,45 +22,56 @@ struct CoreBoardSetupPromptView: View {
     /// the wizard rather than creating a fresh board. Drafts are never
     /// opened as a playable board, so this is how a draft window surfaces.
     var resumeDraft: Bool = false
+    /// When true, render as a bare content column (the pager wraps it in
+    /// a dashed frame) instead of the standalone full-bleed layout.
+    var framed: Bool = false
     let onSetUp: () -> Void
 
     var body: some View {
-        ZStack {
-            RisoPaperBackground()
-            VStack(spacing: 20) {
-                // Mini-board art replaces the mood-switched Blip (copy/CTA
-                // still vary by isPast/resumeDraft below).
-                RisoMiniBoardArt(size: 64, state: .started)
-
-                Text(resumeDraft ? "Draft in progress for \(label)." : "No board for \(label) yet.")
-                    .risoH2()
-                    .multilineTextAlignment(.center)
-
-                Text(
-                    resumeDraft
-                        ? "Pick up where you left off and finish setting up this board."
-                        : (isPast
-                            ? "Add a past board to fill in this window."
-                            : "Set up a board for this window to start tracking your goals.")
-                )
-                .risoSub()
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-
-                RisoButton(
-                    title: resumeDraft
-                        ? "Resume draft"
-                        : "\(isPast ? "Backfill" : "Set up") \(label)",
-                    kind: .primary,
-                    systemImage: resumeDraft
-                        ? "pencil.and.outline"
-                        : (isPast ? "clock.arrow.circlepath" : "plus"),
-                    action: onSetUp
-                )
-                .padding(.top, 4)
+        if framed {
+            content
+        } else {
+            ZStack {
+                RisoPaperBackground()
+                content
+                    .padding(Riso.gutter)
             }
-            .padding(Riso.gutter)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var content: some View {
+        VStack(spacing: 20) {
+            // Mini-board art replaces the mood-switched Blip (copy/CTA
+            // still vary by isPast/resumeDraft below).
+            RisoMiniBoardArt(size: 64, state: resumeDraft ? .draft : .started)
+
+            Text(resumeDraft ? "Draft in progress for \(label)." : "No board for \(label) yet.")
+                .risoH2()
+                .multilineTextAlignment(.center)
+
+            Text(
+                resumeDraft
+                    ? "Pick up where you left off and finish setting up this board."
+                    : (isPast
+                        ? "Add a past board to fill in this window."
+                        : "Set up a board for this window to start tracking your goals.")
+            )
+            .risoSub()
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+
+            RisoButton(
+                title: resumeDraft
+                    ? "Resume draft"
+                    : "\(isPast ? "Backfill" : "Set up") \(label)",
+                kind: .primary,
+                systemImage: resumeDraft
+                    ? "pencil.and.outline"
+                    : (isPast ? "clock.arrow.circlepath" : "plus"),
+                action: onSetUp
+            )
+            .padding(.top, 4)
+        }
     }
 }

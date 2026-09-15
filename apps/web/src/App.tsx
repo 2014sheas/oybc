@@ -14,8 +14,7 @@ import { AccountSecurityPage } from './pages/AccountSecurityPage';
 import { BoardSettingsPage } from './pages/BoardSettingsPage';
 import { CountersHubPage } from './pages/CountersHubPage';
 import { CounterDetailPage } from './pages/CounterDetailPage';
-import { CoreBoardBrowserPage } from './pages/core-board-browser/CoreBoardBrowserPage';
-import { CoreBoardWindowPage } from './pages/core-board-browser/CoreBoardWindowPage';
+import { CoreBoardBrowserRedirect, CoreBoardWindowPage } from './pages/core-board-browser/CoreBoardWindowPage';
 import { Playground } from './pages/Playground';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -102,7 +101,9 @@ function AuthenticatedLayout(): React.ReactElement {
       <Routes>
         <Route path="/home" element={<HomePage />} />
         <Route path="/boards" element={<BoardsPage />} />
-        <Route path="/boards/core/:timeframe" element={<CoreBoardBrowserPage />} />
+        {/* The vertical browser was retired by the core-board surface rework —
+            the old route redirects to today's window in the pager. */}
+        <Route path="/boards/core/:timeframe" element={<CoreBoardBrowserRedirect />} />
         <Route path="/boards/core/:timeframe/:date" element={<CoreBoardWindowPage />} />
         <Route path="/boards/:id" element={<BoardPlayPage />} />
         <Route path="/create" element={<CreateRoute />} />

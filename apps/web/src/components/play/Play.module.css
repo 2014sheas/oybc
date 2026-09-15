@@ -66,6 +66,47 @@
   text-transform: uppercase;
   color: var(--riso-red);
 }
+/* Kicker line + inline accessory (the pager's window chip). */
+.kickerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* Right-aligned slot in the rail top row (Edit board / Read-only). */
+.railRight {
+  margin-left: auto;
+  display: inline-flex;
+}
+/* Sealed boards: lock glyph + "Read-only" in the Edit slot. */
+.readOnly {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--riso-font-body);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+/* Gold flame streak chip, inline in the badge row. Ink-static content —
+   it sits on gold (see docs/RISO_WEB.md dark contract). */
+.streakChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  border: 1.5px solid var(--riso-ink-static);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
 .title {
   font-family: var(--riso-font-head);
   font-weight: 800;
@@ -119,6 +160,14 @@
   font-size: 16px;
   color: var(--riso-muted);
 }
+/* Small sub-caption inside a stat card ("permanent record"). */
+.statSub {
+  font-family: var(--riso-font-body);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  margin-top: 4px;
+}
 .starS {
   width: 22px;
   height: 22px;
@@ -143,6 +192,10 @@
 
 .boardWrap {
   position: relative;
+}
+/* Sealed boards: flat, slightly faded grid (a frozen record). */
+.sealedGrid {
+  opacity: 0.92;
 }
 
 /* achievement-watch corner badge on a play cell */

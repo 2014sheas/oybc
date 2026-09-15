@@ -152,7 +152,9 @@ test.describe('Core board pager navigation', () => {
     //    date for users west of UTC, causing this assertion to fail.
     await expect(page).toHaveURL(new RegExp(`/boards/core/daily/${todayLocal}`));
 
-    // 3. Window bar is visible: prev/next chevrons + list button.
+    // 3. Pager chrome is visible: caption prev/next steps + the window
+    //    chip (which opens the picker popover — the ≡ List browser is
+    //    retired by the core-board surface rework).
     await expect(
       page.getByRole('button', { name: 'Previous window' }),
     ).toBeVisible();
@@ -160,7 +162,7 @@ test.describe('Core board pager navigation', () => {
       page.getByRole('button', { name: 'Next window' }),
     ).toBeVisible();
     await expect(
-      page.getByRole('button', { name: 'Show all windows' }),
+      page.getByRole('button', { name: /Opens window picker/ }),
     ).toBeVisible();
 
     // 4. No board is seeded for today's daily window, so the setup
@@ -175,24 +177,34 @@ test.describe('Core board pager navigation', () => {
     ).toBeVisible();
   });
 
-  test('≡ List button navigates to the browser page', async ({ page }) => {
+  test('window chip opens the picker popover', async ({ page }) => {
     // Land on the pager first.
     const dailyRow = page.getByRole('button', { name: /daily/i });
     await expect(dailyRow).toBeVisible();
     await dailyRow.click();
     await expect(page).toHaveURL(/\/boards\/core\/daily\/\d{4}-\d{2}-\d{2}/);
 
-    // Confirm the ≡ List button is rendered.
-    const listButton = page.getByRole('button', { name: 'Show all windows' });
-    await expect(listButton).toBeVisible();
+    // The chip opens the window picker popover (a dialog).
+    const chip = page.getByRole('button', { name: /Opens window picker/ });
+    await expect(chip).toBeVisible();
+    await chip.click();
+    const picker = page.getByRole('dialog', { name: 'Jump to a day' });
+    await expect(picker).toBeVisible();
 
-    // Clicking it should navigate to the browser route (no date segment).
-    await listButton.click();
-    await expect(page).toHaveURL(/\/boards\/core\/daily$/);
+    // Esc closes it; the pager stays on the same window (no navigation,
+    // and — lazy creation — no board row was written by browsing).
+    await page.keyboard.press('Escape');
+    await expect(picker).not.toBeVisible();
+    await expect(page).toHaveURL(/\/boards\/core\/daily\/\d{4}-\d{2}-\d{2}/);
+  });
 
-    // The browser page renders its heading.
-    await expect(
-      page.getByRole('heading', { name: 'Daily browser' }),
-    ).toBeVisible();
+  test("the retired browser route redirects to today's window", async ({ page }) => {
+    // The `/boards/core/:timeframe` vertical browser was retired — the
+    // route now redirects to today's window in the pager.
+    const d = new Date();
+    const todayLocal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    await page.goto('/boards/core/daily?__oybc_test_bypass=1');
+    await expect(page).toHaveURL(new RegExp(`/boards/core/daily/${todayLocal}`));
+    await expect(page.getByText(/No board for/)).toBeVisible();
   });
 });

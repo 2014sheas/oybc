@@ -358,7 +358,7 @@ final class BoardPlayViewModel: ObservableObject {
     /// applies its result if `reloadToken` still matches when it completes on
     /// the main queue — so a slower earlier fetch can't overwrite a newer
     /// reload's result. Mirrors the identical pattern in
-    /// `CoreBoardWindowViewModel` / `CoreBoardBrowserViewModel`.
+    /// `CoreBoardWindowViewModel`.
     private var reloadToken: Int = 0
 
     // MARK: - Init

@@ -1,0 +1,491 @@
+/* ============================================================
+   OYBC · Riso Web — Core-board window pager chrome
+   (masthead rework: window chip, position caption, picker
+   popover, empty/draft dashed frames). All values are Riso
+   tokens — see packages/riso-tokens/riso.css.
+   ============================================================ */
+
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.emptyState {
+  color: var(--riso-muted);
+  font-weight: 600;
+  padding: 24px 0;
+}
+
+/* ---- window chip ------------------------------------------------ */
+
+.chipAnchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip:focus-visible {
+  outline: 2px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+/* Open: inverted ink fill, chevron flips (handled in JSX). */
+.chipOpen {
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+  box-shadow: none;
+}
+/* Empty window: dashed keyline, no shadow. */
+.chipEmpty {
+  border-style: dashed;
+  box-shadow: none;
+}
+/* Edit mode: dimmed + inert. */
+.chipDisabled {
+  opacity: 0.45;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+.chipDots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+/* Position dots (chip 5px base / caption 6px base). The "displayed"
+   dot is larger; the "today" dot carries a gold ring. */
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--riso-muted);
+  flex: none;
+}
+.dotEmpty {
+  background: transparent;
+  border: 1.5px solid var(--riso-muted);
+}
+.dotDisplayed {
+  width: 8px;
+  height: 8px;
+  background: var(--riso-ink);
+}
+.dotDisplayedEmpty {
+  background: transparent;
+  border: 2px solid var(--riso-ink);
+}
+.dotToday {
+  box-shadow: 0 0 0 2px var(--riso-gold);
+}
+/* Inverted (open chip) dot palette. */
+.chipOpen .dot {
+  background: var(--riso-paper);
+  opacity: 0.5;
+}
+.chipOpen .dotEmpty {
+  background: transparent;
+  border-color: var(--riso-paper);
+}
+.chipOpen .dotDisplayed {
+  background: var(--riso-paper);
+  opacity: 1;
+}
+
+.chipChevron {
+  flex: none;
+  display: inline-flex;
+}
+
+/* ---- position caption ------------------------------------------- */
+
+.caption {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  padding-top: 4px;
+}
+.captionSide {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.captionSide:hover {
+  color: var(--riso-ink);
+}
+.captionSide:focus-visible {
+  outline: 2px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+.captionSide:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.captionDots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.captionDots .dot {
+  width: 6px;
+  height: 6px;
+}
+.captionDots .dotDisplayed {
+  width: 8px;
+  height: 8px;
+}
+
+/* ---- picker popover ---------------------------------------------- */
+
+.popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  z-index: 30;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 10px;
+  box-shadow: 5px 5px 0 var(--riso-shadow-ink);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.popoverHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.popoverKicker {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--riso-red);
+}
+.popoverTitle {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--riso-ink);
+}
+
+.tileGrid {
+  display: grid;
+  gap: 6px;
+}
+.tileGridMonthly,
+.tileGridYearly {
+  grid-template-columns: repeat(4, 1fr);
+}
+.tileGridDaily {
+  grid-template-columns: repeat(7, 1fr);
+}
+.tileGridWeekly {
+  grid-template-columns: 1fr;
+}
+
+.dayHead {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+  text-align: center;
+}
+
+/* ---- tiles (six-state table) ------------------------------------- */
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 6px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.tile:focus-visible {
+  outline: 2px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+.tileLabel {
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1.1;
+  color: inherit;
+}
+.tileState {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--riso-font-body);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+.tileDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  flex: none;
+}
+
+/* Weekly rows: label + state inline. */
+.tileGridWeekly .tile {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+/* Daily cells: compact — center the day number. */
+.tileGridDaily .tile {
+  align-items: center;
+  gap: 3px;
+  padding: 6px 2px;
+}
+.tileGridDaily .tileState {
+  gap: 0;
+}
+
+/* state variants */
+.tileClosed .tileDot { background: var(--riso-red); border-color: var(--riso-red); }
+.tileDone .tileDot { background: var(--riso-green); border-color: var(--riso-green); }
+.tileInProgress .tileDot,
+.tileDraft .tileDot { background: var(--riso-blue); border-color: var(--riso-blue); }
+.tileDraft .tileDot { background: var(--riso-muted); border-color: var(--riso-muted); }
+
+.tilePastEmpty {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--riso-muted);
+  color: var(--riso-muted);
+}
+.tilePastEmpty .tileDot { background: transparent; border-color: var(--riso-muted); }
+
+.tileCurrent {
+  background: var(--riso-gold);
+  border-color: var(--riso-ink-static);
+  color: var(--riso-ink-static);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.tileCurrent .tileState { color: var(--riso-ink-static); }
+.tileCurrent .tileDot { background: var(--riso-blue); border-color: var(--riso-blue); }
+
+.tileNextEmpty {
+  border-style: dashed;
+}
+.tileNextEmpty .tileDot { background: transparent; border-color: var(--riso-ink); }
+
+.tileFutureEmpty {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--riso-muted);
+  color: var(--riso-muted);
+  opacity: 0.7;
+}
+
+.tileBlank {
+  visibility: hidden;
+}
+
+.popoverFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+.popoverFooterBtn {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.popoverFooterBtn:hover { color: var(--riso-ink); }
+.popoverFooterBtn:focus-visible {
+  outline: 2px solid var(--riso-blue);
+  outline-offset: 1px;
+}
+.popoverFooterToday {
+  font-family: var(--riso-font-head);
+  color: var(--riso-ink);
+}
+
+/* ---- empty / draft window states ---------------------------------- */
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.titleKicker {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mutedTitle {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--riso-muted);
+}
+.draftTitle {
+  color: var(--riso-ink);
+}
+
+.dashedFrame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  border: 2.5px dashed var(--riso-ink);
+  border-radius: 14px;
+  padding: 40px 20px;
+  min-height: 320px;
+}
+.frameHint {
+  font-family: var(--riso-font-body);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+
+/* ---- setup prompt (inside the dashed frame) ----------------------- */
+
+.setupPrompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+.setupText {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  color: var(--riso-ink);
+  margin: 0;
+}
+.setupSub {
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.4;
+  max-width: 260px;
+  margin: 0;
+}
+
+/* ---- streak chip (empty/draft title rows) -------------------------- */
+
+.streakChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  border: 1.5px solid var(--riso-ink-static);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ---- window-card slide ------------------------------------------- */
+
+.slideFromRight {
+  animation: coreWindowSlideRight 320ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.slideFromLeft {
+  animation: coreWindowSlideLeft 320ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes coreWindowSlideRight {
+  from { transform: translateX(48px); opacity: 0.55; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes coreWindowSlideLeft {
+  from { transform: translateX(-48px); opacity: 0.55; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slideFromRight,
+  .slideFromLeft {
+    animation: coreWindowFade 200ms ease;
+  }
+  @keyframes coreWindowFade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
