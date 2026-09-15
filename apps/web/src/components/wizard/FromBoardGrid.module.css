@@ -98,6 +98,10 @@
   background: var(--riso-gold);
   color: var(--riso-ink-static);
 }
+.cellMore:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
 
 /* Base cell — paper-2 fill, 2px ink border, hard shadow when linked */
 .cell {
