@@ -291,6 +291,18 @@ export function FromBoardGrid({
                     y: e.clientY,
                   });
                 }}
+                onMore={(e) => {
+                  if (!entry?.task) return;
+                  if (isTaskExpired(entry.task)) return;
+                  // Anchor the menu to the chip, not the pointer, so
+                  // keyboard activation (Enter) positions sanely too.
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setRowContextMenu({
+                    taskId: entry.task.id,
+                    x: rect.left,
+                    y: rect.bottom + 4,
+                  });
+                }}
               />
             );
           })}
@@ -307,6 +319,7 @@ export function FromBoardGrid({
           isSelected: selectedTaskIds.has(target.id),
           isCopied: copiedTaskIds.has(target.id),
           leaves: compoundLeavesByParent.get(target.id) ?? [],
+          selectedTaskIds,
           onToggleSelection,
           onCopyTask,
           onAddAllSubtasks,
@@ -390,12 +403,17 @@ function SourceCell({
   isCopied,
   onTap,
   onContextMenu,
+  onMore,
 }: {
   entry: SourceBoardPlacement | undefined;
   isSelected: boolean;
   isCopied: boolean;
   onTap: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  /** Open the same menu as right-click, from the visible ⋯ chip
+   *  (owner request 2026-09-14 — right-click-only was undiscoverable
+   *  and touch devices had no path at all). */
+  onMore: (e: React.MouseEvent) => void;
 }): React.ReactElement {
   // Empty cell — either the source had a hole or the placement points
   // at a soft-deleted task. Renders inert.
@@ -417,19 +435,36 @@ function SourceCell({
     .filter(Boolean)
     .join(' ');
 
+  // The ⋯ chip is a SIBLING of the main button (button-in-button is
+  // invalid HTML), absolutely positioned over the cell's corner.
   return (
-    <button
-      type="button"
-      className={classes}
-      onClick={onTap}
-      onContextMenu={onContextMenu}
-      disabled={expired}
-      aria-pressed={isSelected}
-      aria-label={task.title}
-    >
-      <span className={styles.cellTitle}>{task.title}</span>
-      {expired && <span className={styles.cellExpiredPill}>expired</span>}
-    </button>
+    <div className={styles.cellWrap}>
+      <button
+        type="button"
+        className={classes}
+        onClick={onTap}
+        onContextMenu={onContextMenu}
+        disabled={expired}
+        aria-pressed={isSelected}
+        aria-label={task.title}
+      >
+        <span className={styles.cellTitle}>{task.title}</span>
+        {expired && <span className={styles.cellExpiredPill}>expired</span>}
+      </button>
+      {!expired && (
+        <button
+          type="button"
+          className={styles.cellMore}
+          onClick={(e) => {
+            e.stopPropagation();
+            onMore(e);
+          }}
+          aria-label={`More actions for ${task.title}`}
+        >
+          ⋯
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -440,6 +475,7 @@ function buildMenuItems({
   isSelected,
   isCopied: _isCopied,
   leaves,
+  selectedTaskIds,
   onToggleSelection,
   onCopyTask,
   onAddAllSubtasks,
@@ -451,6 +487,9 @@ function buildMenuItems({
   isSelected: boolean;
   isCopied: boolean;
   leaves: Task[];
+  /** Wizard selection — per-leaf items render disabled when the leaf
+   *  is already on the board. */
+  selectedTaskIds: Set<string>;
   onToggleSelection: (taskId: string) => void;
   onCopyTask: (task: Task) => void;
   onAddAllSubtasks: (task: Task, leafTaskIds: string[]) => void;
@@ -507,6 +546,20 @@ function buildMenuItems({
               close();
             },
           },
+          // Individual subtask picking (owner request 2026-09-14) —
+          // one item per leaf, disabled once it's on the board (the
+          // `disabled` contract RowContextMenuItem documents for
+          // exactly this case). iOS twin: the "Add a subtask…"
+          // submenu in FromBoardGridView.
+          ...leaves.map((leaf) => ({
+            label: `Add subtask: ${leaf.title}`,
+            glyph: '＋',
+            disabled: selectedTaskIds.has(leaf.id),
+            action: () => {
+              onToggleSelection(leaf.id);
+              close();
+            },
+          })),
         ]
       : []),
     {

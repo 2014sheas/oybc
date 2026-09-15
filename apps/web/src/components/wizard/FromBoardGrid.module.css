@@ -61,6 +61,48 @@
   padding: 4px;
 }
 
+/* Wrapper so the ⋯ chip can be a SIBLING of the cell button
+   (button-in-button is invalid HTML). The button keeps its own
+   aspect-ratio sizing; the wrapper just hosts the overlay. */
+.cellWrap {
+  position: relative;
+}
+.cellWrap .cell {
+  width: 100%;
+  height: 100%;
+}
+
+/* Visible per-square menu chip (owner request 2026-09-14) — the
+   tap/click path to copy / derive / subtasks; right-click stays for
+   power users. Bottom-right (top-right belongs to the linked check). */
+.cellMore {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--riso-paper);
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 5px;
+  color: var(--riso-ink);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+.cellMore:hover {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.cellMore:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
 /* Base cell — paper-2 fill, 2px ink border, hard shadow when linked */
 .cell {
   position: relative;

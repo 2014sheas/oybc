@@ -3,8 +3,12 @@ import SwiftUI
 /// Source-board grid for the wizard's `From a board…` filter.
 /// Renders the chosen source board at its real geometry; each square
 /// is a tap target. Tap = Link the underlying Task into the new
-/// board's selection. Long-press = `.contextMenu` reusing existing
-/// `BoardWizardTasksStepView` vocabulary.
+/// board's selection. Every other action (copy, derive, subtasks,
+/// open-in-library) lives in the per-square menu, reachable BOTH ways:
+/// the visible ⋯ chip (primary — tap-driven `Menu`, reliable inside
+/// the library's detent sheet) and long-press `.contextMenu` (kept for
+/// power users; unreliable in fraction-detent sheets on some iOS
+/// builds, which is why it is not the only path).
 ///
 /// Presentation-only reskin of the pre-Riso implementation. All
 /// logic, callbacks, and data flow are preserved unchanged.
@@ -316,8 +320,42 @@ struct FromBoardGridView: View {
         .buttonStyle(.plain)
         .disabled(expired)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        // Long-press power path — kept, but NOT the only access:
+        // context menus are unreliable inside the library's
+        // `.fraction(0.76)` detent sheet (owner-reported: long-press
+        // does nothing on device), so the visible ⋯ chip below is the
+        // primary affordance.
         .contextMenu {
             menuItems(for: task)
+        }
+        // Visible per-square menu (owner request 2026-09-14): a small
+        // ⋯ chip, bottom-trailing (top-trailing belongs to the linked
+        // check). `Menu` opens on plain tap, dodging the detent-sheet
+        // gesture problem entirely. Hidden on expired squares (their
+        // actions are all no-ops).
+        .overlay(alignment: .bottomTrailing) {
+            if !expired {
+                Menu {
+                    menuItems(for: task)
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.risoPaper)
+                        RoundedRectangle(cornerRadius: 5)
+                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.risoInk)
+                    }
+                    .frame(width: 18, height: 18)
+                    // Generous hit target without growing the visual chip.
+                    .padding(4)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel("More actions for \(task.title)")
+                .padding(.bottom, -1)
+                .padding(.trailing, -1)
+            }
         }
     }
 
@@ -362,6 +400,26 @@ struct FromBoardGridView: View {
         if isCompound && !compoundLeafIds.isEmpty {
             Button("Add all subtasks to board", systemImage: "square.stack.3d.up") {
                 onAddAllSubtasks(task, compoundLeafIds)
+            }
+            // Individual subtask picking (owner request 2026-09-14) —
+            // titles come from the VM's same-snapshot leaf-title map.
+            // Already-added leaves render disabled (web parity: the
+            // RowContextMenuItem `disabled` contract).
+            Menu {
+                ForEach(compoundLeafIds, id: \.self) { leafId in
+                    let added = selectedTaskIds.contains(leafId)
+                    Button {
+                        onToggleSelection(leafId)
+                    } label: {
+                        Label(
+                            vm.compoundLeafTitleById[leafId] ?? "Subtask",
+                            systemImage: added ? "checkmark" : "plus"
+                        )
+                    }
+                    .disabled(added)
+                }
+            } label: {
+                Label("Add a subtask…", systemImage: "square.on.square.dashed")
             }
         }
         Button("Open in library", systemImage: "info.circle") {
