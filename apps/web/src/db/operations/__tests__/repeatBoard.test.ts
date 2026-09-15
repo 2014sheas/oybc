@@ -134,6 +134,25 @@ describe('repeatBoardAsRecurring', () => {
     expect(entityTypes).toContain('boards');
   });
 
+  it("back-stamps the version from the LIVE board row, not the caller's stale snapshot (Board Edit two-phase Save)", async () => {
+    // Board Edit's Save commits a board write (version bump) and THEN calls
+    // repeatBoardAsRecurring with a snapshot that may predate it. The
+    // back-stamp must advance the LIVE version or the write loses the LWW
+    // tie-break on sync.
+    const board = buildOneOffBoard({ version: 1 });
+    await db.boards.add(board);
+    await seedTask('t0');
+    await seedBoardTask(board.id, 't0', 0, 0);
+
+    // Simulate the phase-1 board save bumping the stored row past the snapshot.
+    await db.boards.update(board.id, { version: 5 });
+
+    await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
+
+    const updatedBoard = await db.boards.get(board.id);
+    expect(updatedBoard?.version).toBe(6); // live 5 + 1, not snapshot 1 + 1
+  });
+
   it('lastSpawnedWindowKey is keyed off the CHOSEN cadence, not board.timeframe (critical window-alignment vector)', async () => {
     // DAILY board dated a Wednesday (2026-05-06), repeated WEEKLY (Monday
     // week start) — the window key must be the week's Monday (May 4), NOT

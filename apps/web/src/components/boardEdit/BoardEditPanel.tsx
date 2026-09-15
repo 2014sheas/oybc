@@ -6,15 +6,25 @@ import {
   getTimeframeBoundaries,
   type WeekStartDay,
   type Board,
+  type RecurringBoardTemplate,
+  type Task,
 } from '@oybc/shared';
 import { BoardSetupForm } from '../wizard/BoardSetupForm';
 import { RisoButton, RisoSegmented, RisoSectionLabel } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
 import {
   archiveBoard,
+  fetchBoard,
   type UpdateActiveBoardPatch,
 } from '../../db/operations/boards';
 import { countBoardTasksForBoard } from '../../db/operations';
+import { repeatBoardAsRecurring } from '../../db/operations/repeatBoard';
+import { updateRecurringBoardTemplate } from '../../db/operations/recurringBoardTemplates';
+import {
+  BoardEditRepeatSection,
+  buildRepeatSavePlan,
+  type RepeatCadenceChoice,
+} from './BoardEditRepeatSection';
 import styles from './BoardEditPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -82,6 +92,21 @@ export interface BoardEditPanelProps {
    * (`BoardPlaySurface`) holds the state and flows it back as `centerType`.
    */
   onCenterTypeChange: (type: CenterSquareType) => void;
+  /**
+   * Repeat-in-edit rework — the staged REPEATS section's data inputs.
+   * `sourceTemplate` is the board's resolved source repeating record
+   * (`undefined` while loading, `null` for a one-off board), same value the
+   * surface already resolves for the RecurringBadge.
+   */
+  sourceTemplate: RecurringBoardTemplate | null | undefined;
+  /** Active user id — owns a repeat record minted on Save. */
+  userId: string | undefined;
+  /** Library tasks — feeds the spawn-provenance note's supply resolution. */
+  taskMap: Record<string, Task>;
+  /** Task ids currently dealt onto the board (grid order). */
+  dealtTaskIds: string[];
+  /** `buildCounterFamilyMap` over the library (the surface computes it). */
+  counterFamilyByTaskId: Record<string, string>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -202,6 +227,11 @@ export function BoardEditPanel({
   onArchived,
   centerType,
   onCenterTypeChange,
+  sourceTemplate,
+  userId,
+  taskMap,
+  dealtTaskIds,
+  counterFamilyByTaskId,
 }: BoardEditPanelProps): React.ReactElement {
   // ── Controlled form state ────────────────────────────────────────────────
 
@@ -220,6 +250,14 @@ export function BoardEditPanel({
   // AND at least one placed BoardTask exists (same rule as EditBoardSheet).
   const [hasCandidateTasks, setHasCandidateTasks] = useState(false);
 
+  // ── Staged REPEATS draft (repeat-in-edit rework) ─────────────────────────
+  // Both values are STAGED like every other edit field — nothing writes
+  // until Save (docs/BOARD_EDIT.md staged-draft contract); Cancel discards.
+  /** One-off variant: staged cadence ('off' = leave the board one-off). */
+  const [repeatCadence, setRepeatCadence] = useState<RepeatCadenceChoice>('off');
+  /** Repeating variant: staged Active value; null = toggle never touched. */
+  const [repeatActiveDraft, setRepeatActiveDraft] = useState<boolean | null>(null);
+
   // Board size is immutable on active boards — read directly from the prop.
   const size = board.boardSize as 3 | 4 | 5;
 
@@ -235,6 +273,9 @@ export function BoardEditPanel({
     setValidationError(null);
     setSaving(false);
     setConfirm(null);
+    // Repeat-in-edit — reset the staged REPEATS draft on (re-)entry.
+    setRepeatCadence('off');
+    setRepeatActiveDraft(null);
 
     void countBoardTasksForBoard(board.id).then((count) =>
       setHasCandidateTasks(count > 0),
@@ -267,6 +308,19 @@ export function BoardEditPanel({
   if (customStartDate !== origStart || customEndDate !== origEnd) metaEditCount++;
   // Center: one group.
   if (centerType !== (board.centerSquareType as CenterSquareType)) metaEditCount++;
+
+  // Repeat-in-edit — the staged REPEATS draft counts as one group iff it
+  // would actually mutate on Save (buildRepeatSavePlan is the single source
+  // of truth for that, shared with handleSave's two-phase commit below).
+  const repeatSavePlan = buildRepeatSavePlan({
+    spawnedFromTemplateId: board.spawnedFromTemplateId,
+    sourceTemplateIsActive: sourceTemplate?.isActive,
+    stagedCadence: repeatCadence,
+    stagedActive: repeatActiveDraft,
+    centerType,
+    hasUserId: userId != null,
+  });
+  if (repeatSavePlan) metaEditCount++;
 
   // Combined edit count: metadata changes + square edits from BoardPlaySurface.
   const editCount = metaEditCount + squareEditCount;
@@ -346,12 +400,42 @@ export function BoardEditPanel({
       // any failure; the catch block surfaces it, and the whole transaction
       // rolls back — no more partial-Save state.
       await onExtraCommit(patch);
-      onSaved();
     } catch (err) {
       console.error('BoardEditPanel: save failed', err);
       setValidationError('Save failed — please try again.');
       setSaving(false);
+      return;
     }
+
+    // Repeat-in-edit — TWO-PHASE SAVE, phase 2: the staged repeat mutation
+    // runs AFTER the board save commits (it isn't part of the atomic board
+    // transaction — `repeatBoardAsRecurring` / the active-toggle write are
+    // their own transactions). If this phase fails, the board changes from
+    // phase 1 STAY SAVED; the panel stays open with the error so the user
+    // can retry (retrying re-runs a now-clean phase 1 plus this phase).
+    if (repeatSavePlan) {
+      try {
+        if (repeatSavePlan.kind === 'startRepeating' && userId) {
+          // Re-read the board so the minted repeat record reflects the
+          // just-saved metadata (name) and back-stamps the fresh version.
+          const freshBoard = (await fetchBoard(board.id)) ?? board;
+          await repeatBoardAsRecurring(freshBoard, repeatSavePlan.cadence, userId, weekStartDay);
+        } else if (repeatSavePlan.kind === 'setActive' && sourceTemplate) {
+          await updateRecurringBoardTemplate(sourceTemplate.id, {
+            isActive: repeatSavePlan.isActive,
+          });
+        }
+      } catch (err) {
+        console.error('BoardEditPanel: repeat save failed', err);
+        setValidationError(
+          "Your board was saved, but the repeat setting couldn't be applied — please try again.",
+        );
+        setSaving(false);
+        return;
+      }
+    }
+
+    onSaved();
     // Note: setSaving(false) not called on success — onSaved() exits edit mode,
     // unmounting the panel. Calling setState on an unmounted component is a no-op
     // in React 18+ but would generate a console warning; omitting it is cleaner.
@@ -429,6 +513,23 @@ export function BoardEditPanel({
         isCore={false}
         weekStartDay={weekStartDay}
         chosenCenterDisabled={board.centerTaskId == null || !hasCandidateTasks}
+      />
+
+      {/* Repeats — staged repeat controls (repeat-in-edit rework; moved off
+          the play surface). One-off: cadence segmented; repeating board:
+          Repeating/Paused toggle + spawn-provenance note. */}
+      <BoardEditRepeatSection
+        board={board}
+        sourceTemplate={sourceTemplate}
+        userId={userId}
+        centerType={centerType}
+        stagedCadence={repeatCadence}
+        onStagedCadenceChange={setRepeatCadence}
+        stagedActive={repeatActiveDraft ?? sourceTemplate?.isActive ?? true}
+        onStagedActiveChange={setRepeatActiveDraft}
+        taskMap={taskMap}
+        dealtTaskIds={dealtTaskIds}
+        counterFamilyByTaskId={counterFamilyByTaskId}
       />
 
       {/* Squares sub-mode: Edit tasks ⇄ Rearrange.

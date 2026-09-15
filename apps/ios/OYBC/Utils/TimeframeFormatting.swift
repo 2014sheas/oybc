@@ -160,15 +160,15 @@ func timeframeNounLabel(_ timeframe: Timeframe) -> String {
     }
 }
 
-/// Cadence adverb used in "Repeats <adverb>" copy — the Board-screen manage
-/// row ("Repeats daily · from \"Morning Kickstart\"") and the Boards-tab
-/// card subtitle ("repeats daily", lowercase). Mirror of the shared TS
-/// `formatCadenceAdverb`/`cadenceAdverb` (Task Pools + Recurring Boards
-/// Rework, P6 — docs/POOLS_RECURRING.md §Surfaces items 7–8).
+/// Cadence adverb used in "Repeats <adverb>" copy — Board Edit's REPEATS
+/// section ("Repeats daily · from \"Morning Kickstart\"") and the
+/// Boards-tab card subtitle ("repeats daily", lowercase). Mirror of the
+/// shared TS `formatCadenceAdverb`/`cadenceAdverb` (Task Pools + Recurring
+/// Boards Rework, P6 — docs/POOLS_RECURRING.md §Surfaces items 7–8).
 ///
 /// `.custom`/`.indefinite` fall back to `"regularly"` — a defensive-only
-/// branch, since the repeat-cadence picker (Daily/Weekly/Monthly/Yearly,
-/// `RisoRepeatBoardCTA`) never produces either value.
+/// branch, since the repeat-cadence picker (Daily/Weekly/Monthly/Yearly in
+/// `BoardEditPanel`'s REPEATS section) never produces either value.
 func formatCadenceAdverb(_ timeframe: Timeframe) -> String {
     switch timeframe {
     case .daily:      return "daily"

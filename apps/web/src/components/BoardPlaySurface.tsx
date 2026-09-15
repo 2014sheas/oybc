@@ -5,12 +5,8 @@ import {
   CenterSquareType,
   TaskType,
   generateCounterTaskTitle,
-  isFreshlyDealtBoard,
   buildCounterFamilyMap,
-  summarizeSpawnProvenanceFromSupplies,
-  formatSpawnProvenanceNote,
   type Board,
-  type Pool,
   type Task,
 } from '@oybc/shared';
 import {
@@ -32,7 +28,6 @@ import {
 } from './boardPlaySharedCounterUtils';
 import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
 import { CellSwapModal } from './CellSwapModal';
-import { useSpawnNoteSupplies } from '../hooks/useSpawnNoteSupplies';
 import { BoardStatusBadge } from './BoardStatusBadge';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
@@ -42,12 +37,10 @@ import { ArrangeGrid } from './boardEdit/ArrangeGrid';
 import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
 import { usePreferences } from '../hooks/usePreferences';
-import { usePools } from '../hooks/usePools';
 import { useNavigate } from 'react-router-dom';
 import { compactStreakLabel, computeStreak, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
 import { RisoButton, RisoIcon } from './riso';
-import { BoardPlayRepeatSection } from './play/BoardPlayRepeatSection';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
@@ -233,23 +226,10 @@ export function BoardPlaySurface({
   // User preferences (weekStartDay is forwarded to BoardEditPanel + BoardSetupForm).
   const [prefs] = usePreferences();
 
-  // P6 (Task Pools + Recurring Boards Rework) — the manage row / "Repeat
-  // this board…" CTA / spawn-provenance note. Pools are fetched here (not
-  // in useBoardPlayData) since only this provenance-note computation needs
-  // them.
-  const pools = usePools(userId);
-  const poolsById = useMemo<Record<string, Pool>>(() => {
-    const map: Record<string, Pool> = {};
-    for (const p of pools) map[p.id] = p;
-    return map;
-  }, [pools]);
-  // Loose-ends sweep (2026-09-09) — sources-native spawn-note supplies,
-  // resolved off-render (see the hook's doc).
-  const spawnNoteSupplies = useSpawnNoteSupplies(
-    sourceTemplate !== undefined && isFreshlyDealtBoard(board) ? sourceTemplate : undefined,
-    poolsById,
-    taskMap,
-  );
+  // Repeat-in-edit rework — the repeat controls + spawn-provenance note
+  // moved into `BoardEditPanel` (its `BoardEditRepeatSection`), which owns
+  // the pools fetch + supply resolution while the panel is open. This
+  // surface no longer resolves spawn-note supplies at all.
 
   // Loose-ends sweep (2026-09-09) — shared-counter family map over the
   // library, for the add/swap picker's one-counter-per-board guard and
@@ -537,6 +517,11 @@ export function BoardPlaySurface({
             onArchived={() => navigate('/boards')}
             centerType={draftCenterType}
             onCenterTypeChange={setDraftCenterType}
+            sourceTemplate={sourceTemplate}
+            userId={userId}
+            taskMap={taskMap}
+            dealtTaskIds={sortedBoardTasks.map((bt) => bt.taskId)}
+            counterFamilyByTaskId={counterFamilyByTaskId}
           />
         </aside>
       ) : (
@@ -596,32 +581,9 @@ export function BoardPlaySurface({
             </div>
           </div>
 
-          {/* P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
-              §Surfaces item 7) — manage row for a repeating board, OR the
-              "Repeat this board…" CTA for a one-off board. */}
-          <BoardPlayRepeatSection
-            board={board}
-            userId={userId}
-            sourceTemplate={sourceTemplate}
-            isSealed={isSealed}
-            weekStartDay={prefs.weekStartDay}
-          />
-
-          {/* Spawn-success provenance note — visible only while the board is
-              still "freshly dealt" (docs §Behavior invariants) and its
-              source template resolves. */}
-          {sourceTemplate && isFreshlyDealtBoard(board) && spawnNoteSupplies !== null && (
-            <div className={styles.repeatProvenanceNote}>
-              {formatSpawnProvenanceNote(
-                summarizeSpawnProvenanceFromSupplies(
-                  spawnNoteSupplies,
-                  sourceTemplate.manualTaskIds ?? [],
-                  counterFamilyByTaskId,
-                  sortedBoardTasks.map((bt) => bt.taskId),
-                ),
-              )}
-            </div>
-          )}
+          {/* Repeat-in-edit rework: the repeat controls (manage row / cadence
+              picker) + spawn-provenance note moved into Board Edit's
+              REPEATS section (`BoardEditRepeatSection`). */}
 
           {isExpired && !isSealed && (
             <div className={styles.expiredBanner}>

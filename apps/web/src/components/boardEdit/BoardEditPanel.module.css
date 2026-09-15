@@ -252,3 +252,38 @@
 .confirmBtns > * {
   flex: 1;
 }
+
+/* ─── Repeats section (repeat-in-edit rework) ─────────────────────────────── */
+
+.repeatsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* "↻ Repeats {cadence} · from …" line for a repeating board. */
+.repeatRow {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-ink);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* Spawn-success provenance note — quiet, informational, not a call to
+   action (moved from the play rail). */
+.repeatNote {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--riso-muted);
+  margin: 0;
+}
+
+/* One-off variant: what picking a cadence does on Save. */
+.repeatHint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  margin: 0;
+}

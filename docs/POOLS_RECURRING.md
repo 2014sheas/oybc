@@ -1,5 +1,12 @@
 # Task Pools + Recurring Boards Rework
 
+> **2026-09-15 relocation:** the board-screen repeat controls described in
+> this doc (manage row + "Repeat this board…" CTA + spawn-provenance note)
+> moved OFF the play surface into **Board Edit**'s staged REPEATS section
+> (owner directive — play chrome carries play actions only). Cadence /
+> Pause-Resume now commit on the panel's Save like every other edit field.
+> The surface descriptions below are kept as accurate history of P6.
+
 Design locked 2026-07-19. Handoff: `design_handoff_pool_library/` (gitignored —
 README + `source-specs.md` + interactive prototypes; `Pool Library
 Prototype.dc.html` is the primary visual reference, deliberately baselined on

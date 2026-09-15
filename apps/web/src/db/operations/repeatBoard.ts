@@ -104,8 +104,14 @@ export async function repeatBoardAsRecurring(
       // Back-stamp the source board. Only `spawnedFromTemplateId` +
       // version/updatedAt change — isCore/status/every other field is
       // left exactly as-is (this board already existed; it isn't being
-      // re-spawned).
-      const newVersion = (board.version ?? 0) + 1;
+      // re-spawned). The version bump reads the LIVE row, never the
+      // caller's possibly-stale snapshot (mirrors the iOS
+      // `repeatBoardAsTemplate` in-transaction re-read): Board Edit's
+      // two-phase Save commits a board write immediately before calling
+      // this, and a stale-snapshot bump would fail to advance the version
+      // — losing the LWW tie-break on sync.
+      const liveBoard = await db.boards.get(board.id);
+      const newVersion = ((liveBoard ?? board).version ?? 0) + 1;
       await db.boards.update(board.id, {
         spawnedFromTemplateId: template.id,
         version: newVersion,
