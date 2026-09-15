@@ -9,6 +9,7 @@ import {
   stepWindow,
   formatTimeframeLabel,
   isTimeframeExpired,
+  type Board,
   type WeekStartDay,
 } from '@oybc/shared';
 import { useAuth } from '../../firebase/useAuth';
@@ -17,7 +18,6 @@ import { usePreferences } from '../../hooks';
 import { BoardPlaySurface } from '../../components/BoardPlaySurface';
 import { DraftResumePrompt } from '../../components/boards/DraftResumePrompt';
 import { RisoBadge, RisoIcon } from '../../components/riso';
-import { useCoreBoardForWindow } from './useCoreBoardForWindow';
 import { useCoreBoardsByStart } from './useCoreBoardsByStart';
 import { CoreBoardSetupPrompt } from './CoreBoardSetupPrompt';
 import { CoreWindowChip } from './CoreWindowChip';
@@ -61,6 +61,9 @@ export function CoreBoardBrowserRedirect(): React.ReactElement {
   return <Navigate to={`/boards/core/${rawTf}/${startDate.slice(0, 10)}`} replace />;
 }
 
+/** Referentially-stable empty map for the pre-first-resolve frame. */
+const EMPTY_BOARDS_BY_START = new Map<string, Board>();
+
 /**
  * CoreBoardWindowPage — per-window core-board pager (masthead rework).
  * Route: `/boards/core/:timeframe/:date`. Seeds the current window from
@@ -99,27 +102,23 @@ export function CoreBoardWindowPage(): React.ReactElement {
     return getTimeframeBoundaries(timeframe, seed, weekStartDay);
   }, [routeDateOnly, timeframe, weekStartDay, now]);
 
-  const queriedBoard = useCoreBoardForWindow(user?.id, timeframe, windowStart);
-  const boardsByStart = useCoreBoardsByStart(user?.id, timeframe);
-
-  // Owner-reported jank fix (2026-09-15): after a step/jump, the
-  // per-window live query briefly returns `undefined`, which used to
-  // swap in the "Loading…" page and then LATE-mount the landed state
-  // (the empty window's "Swipe back to…" hint included), shifting every
-  // element below it. `boardsByStart` already holds every core board of
-  // this timeframe (it feeds the chip dots + picker tiles), so once the
-  // FIRST real load has happened we seed the landed window's final
-  // state synchronously from the map — board, draft, or empty — and let
-  // the query reconcile invisibly. iOS twin:
+  // Owner-reported jank fix (2026-09-15): the page used to read a
+  // per-window live query (`useCoreBoardForWindow`) that went stale or
+  // `undefined` after every step/jump — flashing "Loading…" (or the
+  // previous window's board) and then LATE-mounting the landed state,
+  // "Swipe back to…" hint included, which shifted every element below.
+  // The all-windows map is the single source now: it already feeds the
+  // chip dots and picker tiles, stays loaded across window changes, and
+  // is reactive to the same table — so a step/jump renders the landed
+  // window's final state (board / draft / empty) in the same frame.
+  // `undefined` only before the very first resolve. iOS twin:
   // `CoreBoardWindowViewModel.commitWindow`.
-  const seenLoadRef = useRef(false);
-  if (queriedBoard !== undefined) seenLoadRef.current = true;
+  const boardsByStartQuery = useCoreBoardsByStart(user?.id, timeframe);
+  const boardsByStart = boardsByStartQuery ?? EMPTY_BOARDS_BY_START;
   const board =
-    queriedBoard !== undefined
-      ? queriedBoard
-      : seenLoadRef.current
-        ? (boardsByStart.get(windowStart) ?? null)
-        : undefined;
+    boardsByStartQuery === undefined
+      ? undefined
+      : (boardsByStartQuery.get(windowStart) ?? null);
 
   // UI state: picker popover, edit-mode lock, slide direction.
   const [pickerOpen, setPickerOpen] = useState(false);
