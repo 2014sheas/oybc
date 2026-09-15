@@ -628,6 +628,33 @@ Rule for all three: **shrink the baseline as you clean up (the scripts emit a no
 - Dependabot PRs: review CI results, resolve lockfile conflicts via `git checkout --theirs pnpm-lock.yaml && pnpm install`, merge in dependency order (Actions bumps first, then lockfile-touching bumps sequentially).
 - When pushing to a dependabot branch, dependabot refuses auto-rebase ("edited by someone other than Dependabot") — manual rebase required for subsequent merges.
 
+### TestFlight lane (feature-branch device testing)
+
+Xcode Cloud builds whatever lands on **`release/testflight`** and delivers it to
+the internal TestFlight Dev group (config facts + traps: memory
+`reference_xcode_cloud_setup`; workflows are edited in App Store Connect, not
+Xcode). Cadence:
+
+- **Mainline cut**: `git push origin origin/dev:release/testflight`.
+- **Feature-branch cut (on request)**: `git push origin origin/<branch>:release/testflight`
+  — proven 2026-09-15 (core-board rework). One lane = one branch at a time;
+  **restore the lane to dev after the feature merges** (a squash-merge makes
+  this a force push — use `--force-with-lease=release/testflight:<old-sha>`).
+- Preconditions per cut: the lane is an ancestor of the pushed ref (or lease-guarded
+  force), and `apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+  is committed + current (Xcode Cloud hard-fails without it).
+- Budget: ~30 macOS-minutes per build against the 25 free compute h/mo — cut
+  deliberately, not per-push. Parallel lanes would need a second ASC workflow on a
+  `testflight/*` branch pattern (owner-clickable in ASC; not set up).
+
+**CI trap discovered the same day**: a PR whose merge state is conflicted
+(`gh pr view N --json mergeStateStatus` → `DIRTY`) gets ALL of its
+`pull_request`-triggered Actions runs **silently skipped** — no queued runs, no
+error anywhere (while `workflow_dispatch` still works, which misleads). Feature
+branches get CI **only** from the PR event (push triggers are dev-only), so a
+conflicted PR shows zero CI. If a PR has no checks, check mergeability FIRST,
+rebase, then expect runs to fire.
+
 ### Push & merge safety (don't silently lose a commit)
 
 A real incident: self-review fix commits were committed locally but never reached the remote, and a PR merged to `dev` **without its Critical fix**. Root cause: a feature branch's upstream was `origin/dev` (name mismatch), so with git's default `push.default=simple` a bare `git push` **fatally refuses** (exit 128) — and the failure was masked by piping the output (`git push | tail`, which reports the pipe's exit code, not git's) plus an unconditional "pushed" echo.
