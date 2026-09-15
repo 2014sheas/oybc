@@ -99,8 +99,27 @@ export function CoreBoardWindowPage(): React.ReactElement {
     return getTimeframeBoundaries(timeframe, seed, weekStartDay);
   }, [routeDateOnly, timeframe, weekStartDay, now]);
 
-  const board = useCoreBoardForWindow(user?.id, timeframe, windowStart);
+  const queriedBoard = useCoreBoardForWindow(user?.id, timeframe, windowStart);
   const boardsByStart = useCoreBoardsByStart(user?.id, timeframe);
+
+  // Owner-reported jank fix (2026-09-15): after a step/jump, the
+  // per-window live query briefly returns `undefined`, which used to
+  // swap in the "Loading…" page and then LATE-mount the landed state
+  // (the empty window's "Swipe back to…" hint included), shifting every
+  // element below it. `boardsByStart` already holds every core board of
+  // this timeframe (it feeds the chip dots + picker tiles), so once the
+  // FIRST real load has happened we seed the landed window's final
+  // state synchronously from the map — board, draft, or empty — and let
+  // the query reconcile invisibly. iOS twin:
+  // `CoreBoardWindowViewModel.commitWindow`.
+  const seenLoadRef = useRef(false);
+  if (queriedBoard !== undefined) seenLoadRef.current = true;
+  const board =
+    queriedBoard !== undefined
+      ? queriedBoard
+      : seenLoadRef.current
+        ? (boardsByStart.get(windowStart) ?? null)
+        : undefined;
 
   // UI state: picker popover, edit-mode lock, slide direction.
   const [pickerOpen, setPickerOpen] = useState(false);

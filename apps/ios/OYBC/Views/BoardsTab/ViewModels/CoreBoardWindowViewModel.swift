@@ -238,14 +238,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
             step: offset,
             weekStartDay: weekStartDay
         ) else { return }
-
-        isLoaded = false
-        board = nil
-        draftBoard = nil
-        windowStart = wizardLocalISOString(window.start)
-        windowEnd = wizardLocalISOString(window.end)
-        windowLabel = Self.makeLabel(timeframe: timeframe, windowStartISO: windowStart)
-        reload()
+        commitWindow(window)
     }
 
     /// Jump the pager straight to the window starting at `targetStartIso`
@@ -258,13 +251,40 @@ final class CoreBoardWindowViewModel: ObservableObject {
                   referenceDate: seedDate,
                   weekStartDay: weekStartDay
               ) else { return }
+        commitWindow(window)
+    }
 
-        isLoaded = false
-        board = nil
-        draftBoard = nil
+    /// Land on `window`, rendering its FINAL state in the same frame.
+    ///
+    /// Owner-reported jank (2026-09-15): dropping to `isLoaded = false`
+    /// here put a spinner up after every swipe/jump, and an empty window's
+    /// prompt (+ its "Swipe back to…" hint) then mounted LATE when the
+    /// async reload resolved — shifting every element below it. But
+    /// `coreBoardsByStart` already holds EVERY core board of this
+    /// timeframe (it feeds the chip dots, picker tiles, and the mid-swipe
+    /// preview card), so the landed window's board/draft/empty state is
+    /// known synchronously: seed it, keep `isLoaded` true, and let
+    /// `reload()` reconcile in the background (token-guarded — a stale
+    /// seed self-corrects without a spinner). The spinner now appears
+    /// only on the true first load, before the map exists.
+    private func commitWindow(_ window: (start: Date, end: Date)) {
         windowStart = wizardLocalISOString(window.start)
         windowEnd = wizardLocalISOString(window.end)
         windowLabel = Self.makeLabel(timeframe: timeframe, windowStartISO: windowStart)
+
+        if isLoaded {
+            let seeded = coreBoardsByStart[windowStart]
+            if let b = seeded, b.status == .draft {
+                board = nil
+                draftBoard = b
+            } else {
+                board = seeded
+                draftBoard = nil
+            }
+        } else {
+            board = nil
+            draftBoard = nil
+        }
         reload()
     }
 }
