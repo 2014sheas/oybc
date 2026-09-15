@@ -56,6 +56,13 @@ final class SourceBoardsViewModel {
     /// wizard's library, which may not contain the source's compound).
     var compoundLeafIdsByParent: [String: [String]] = [:]
 
+    /// Leaf-task titles keyed by leaf id, for the SAME snapshot as
+    /// `compoundLeafIdsByParent` — the grid's per-square "Add a subtask"
+    /// menu renders leaf titles from this without a second read (leaf
+    /// tasks are usually not placed on the source board, so `placements`
+    /// can't resolve them).
+    var compoundLeafTitleById: [String: String] = [:]
+
     /// Last load error — silently swallowed at the view layer (this
     /// filter is a convenience; blocking the wizard on failure would
     /// be too disruptive).
@@ -203,6 +210,7 @@ final class SourceBoardsViewModel {
                 guard mySeq == latestPlacementsSeq else { return }
                 self.placements = []
                 self.compoundLeafIdsByParent = [:]
+                self.compoundLeafTitleById = [:]
             }
             return
         }
@@ -210,12 +218,13 @@ final class SourceBoardsViewModel {
         do {
             let result = try await database.read { db -> (
                 placements: [SourceBoardPlacement],
-                compoundLeaves: [String: [String]]
+                compoundLeaves: [String: [String]],
+                leafTitles: [String: String]
             ) in
                 let placements = try BoardTask
                     .filter(Column("boardId") == boardId && Column("isDeleted") == false)
                     .fetchAll(db)
-                if placements.isEmpty { return ([], [:]) }
+                if placements.isEmpty { return ([], [:], [:]) }
 
                 let taskIds = Set(placements.map { $0.taskId })
                 let tasks = try Task
@@ -244,6 +253,7 @@ final class SourceBoardsViewModel {
                     return entry.task?.id
                 }
                 var leavesByParent: [String: [String]] = [:]
+                var leafTitles: [String: String] = [:]
                 if !compoundIds.isEmpty {
                     let links = try CompoundChild
                         .filter(compoundIds.contains(Column("compoundTaskId")) && Column("isDeleted") == false)
@@ -262,17 +272,19 @@ final class SourceBoardsViewModel {
                             // flattens to primitive leaves only.
                             if child.type == .compound { continue }
                             leavesByParent[link.compoundTaskId, default: []].append(child.id)
+                            leafTitles[child.id] = child.title
                         }
                     }
                 }
 
-                return (resolved, leavesByParent)
+                return (resolved, leavesByParent, leafTitles)
             }
 
             await MainActor.run {
                 guard mySeq == latestPlacementsSeq else { return }
                 self.placements = result.placements
                 self.compoundLeafIdsByParent = result.compoundLeaves
+                self.compoundLeafTitleById = result.leafTitles
                 self.loadError = nil
             }
         } catch {
@@ -281,6 +293,7 @@ final class SourceBoardsViewModel {
                 self.loadError = "Failed to load source-board placements: \(error.localizedDescription)"
                 self.placements = []
                 self.compoundLeafIdsByParent = [:]
+                self.compoundLeafTitleById = [:]
             }
         }
     }
