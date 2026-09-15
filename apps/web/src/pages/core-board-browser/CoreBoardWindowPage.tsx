@@ -151,7 +151,9 @@ export function CoreBoardWindowPage(): React.ReactElement {
       setPickerOpen(false);
       navigate(`/boards/core/${timeframe}/${startDate.slice(0, 10)}`, { replace: true });
     },
-    [navigate, timeframe],
+    // Setters are stable, but react-compiler's preserve-manual-memoization
+    // wants the inferred dependency set spelled out exactly.
+    [navigate, timeframe, setPickerOpen, setSlideDir],
   );
 
   const go = useCallback(
