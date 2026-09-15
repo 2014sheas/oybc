@@ -4,9 +4,7 @@ import {
   BoardStatus,
   CenterSquareType,
   TaskType,
-  Timeframe,
   generateCounterTaskTitle,
-  formatCadenceAdverb,
   isFreshlyDealtBoard,
   buildCounterFamilyMap,
   summarizeSpawnProvenanceFromSupplies,
@@ -48,15 +46,14 @@ import { usePools } from '../hooks/usePools';
 import { useNavigate } from 'react-router-dom';
 import { compactStreakLabel, computeStreak, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
-import { RisoIcon, RisoSegmented, type RisoSegmentedOption } from './riso';
+import { RisoButton, RisoIcon } from './riso';
+import { BoardPlayRepeatSection } from './play/BoardPlayRepeatSection';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
 import { CounterLogToast } from './counters/CounterLogToast';
 import { RisoArrivalBanner } from './play/RisoArrivalBanner';
 import { ShareBoardSheet } from './share/ShareBoardSheet';
-import { updateRecurringBoardTemplate } from '../db/operations/recurringBoardTemplates';
-import { repeatBoardAsRecurring } from '../db/operations/repeatBoard';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
 
@@ -72,21 +69,13 @@ const FLASH_MS = 3000;
  */
 const CORE_STREAK_TIMEFRAMES = new Set<string>(['daily', 'weekly', 'monthly', 'yearly']);
 
-/**
- * P6 (Task Pools + Recurring Boards Rework) — "Repeat this board…" cadence
- * picker options. Same 4 options + labels as the wizard's Repeats segmented
- * (`BoardSetupForm.tsx`'s `REPEATS_OPTIONS`, minus "Once" — this picker only
- * ever turns recurrence ON). No option is pre-selected (the picker isn't a
- * persistent toggle — picking a cadence immediately writes and the picker
- * is replaced by the manage row), so callers pass a value that matches none
- * of these.
- */
-const REPEAT_CADENCE_OPTIONS: RisoSegmentedOption<Timeframe>[] = [
-  { value: Timeframe.DAILY, label: 'Daily' },
-  { value: Timeframe.WEEKLY, label: 'Weekly' },
-  { value: Timeframe.MONTHLY, label: 'Monthly' },
-  { value: Timeframe.YEARLY, label: 'Yearly' },
-];
+/** Human timeframe word for the streak chip's VoiceOver annotation. */
+const STREAK_A11Y_WORDS: Record<string, string> = {
+  daily: 'daily',
+  weekly: 'weekly',
+  monthly: 'monthly',
+  yearly: 'yearly',
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,15 +94,18 @@ export interface BoardPlaySurfaceProps {
   board: Board;
   /** Active user id, used for workspace-wide compound/achievement lookups. */
   userId: string | undefined;
-  /** Chrome rendered at the very top of the container (back link on the
-   *  plain page; the window bar in the pager). */
+  /** Chrome rendered at the start of the rail's top row (the back
+   *  affordance on both the plain page and the pager). */
   header?: React.ReactNode;
-  /**
-   * When false, the Edit button is hidden even on ACTIVE boards.
-   * Use in embedded contexts (e.g., the core-board pager) where in-place
-   * edit would conflict with the pager's own chrome. Defaults to true.
-   */
-  allowEdit?: boolean;
+  /** Inline accessory rendered beside the kicker line (the pager's
+   *  window chip). */
+  kickerAccessory?: React.ReactNode;
+  /** Rendered under the board grid inside the board column (the pager's
+   *  position caption). */
+  boardFooter?: React.ReactNode;
+  /** Notifies the container when in-place edit mode toggles, so a host
+   *  pager can disable window stepping / dim its chip while editing. */
+  onEditModeChange?: (editing: boolean) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -126,7 +118,14 @@ export interface BoardPlaySurfaceProps {
  * (the per-window core-board pager). The `header` slot lets each consumer
  * supply its own top chrome.
  */
-export function BoardPlaySurface({ board, userId, header, allowEdit = true }: BoardPlaySurfaceProps): React.ReactElement {
+export function BoardPlaySurface({
+  board,
+  userId,
+  header,
+  kickerAccessory,
+  boardFooter,
+  onEditModeChange,
+}: BoardPlaySurfaceProps): React.ReactElement {
   // ── Reactive data ──────────────────────────────────────────────────────
   // The read-model (live-query results + derived lookups) is built by
   // `useBoardPlayData` — extracted from this component (B2-W1, issue #270).
@@ -260,30 +259,10 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
     [taskMap],
   );
 
-  const [repeatPickerOpen, setRepeatPickerOpen] = useState(false);
-  const [repeatBusy, setRepeatBusy] = useState(false);
-  const [manageBusy, setManageBusy] = useState(false);
-
-  const handleToggleTemplateActive = useCallback(async (): Promise<void> => {
-    if (!sourceTemplate || manageBusy) return;
-    setManageBusy(true);
-    try {
-      await updateRecurringBoardTemplate(sourceTemplate.id, { isActive: !sourceTemplate.isActive });
-    } finally {
-      setManageBusy(false);
-    }
-  }, [sourceTemplate, manageBusy]);
-
-  const handleRepeatThisBoard = useCallback(async (cadence: Timeframe): Promise<void> => {
-    if (!userId || repeatBusy) return;
-    setRepeatBusy(true);
-    try {
-      await repeatBoardAsRecurring(board, cadence, userId, prefs.weekStartDay);
-      setRepeatPickerOpen(false);
-    } finally {
-      setRepeatBusy(false);
-    }
-  }, [board, userId, prefs.weekStartDay, repeatBusy]);
+  // Notify the host pager when edit mode toggles (chip dim + step lock).
+  useEffect(() => {
+    onEditModeChange?.(editMode);
+  }, [editMode, onEditModeChange]);
 
   // Clean up timers on unmount.
   useEffect(() => {
@@ -561,29 +540,40 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           />
         </aside>
       ) : (
-        /* Normal play rail: header slot + title + stats + hint */
+        /* Normal play rail: header slot + Edit entry + title + stats + hint */
         <aside className={play.rail}>
           <div className={play.railTop}>
             {header}
-            {/* Edit entry: ACTIVE boards only, and only when the container allows
-                editing (allowEdit=false in the core-board pager). Sealed boards
-                are frozen — never editable (docs §Effects of sealed: not editable). */}
-            {board.status === BoardStatus.ACTIVE && allowEdit && !isSealed && (
-              <button
-                type="button"
-                className={`${play.back} ${play.iconBtn}`}
-                onClick={() => setEditMode(true)}
-                aria-label="Edit board"
-                title="Edit board"
-              >
-                <RisoIcon name="dots" size={16} />
-              </button>
+            {/* Edit gate — ONE rule on both platforms (core-board surface
+                rework): status == ACTIVE && sealedAt == nil && !editMode.
+                Sealed boards show the Read-only lock in the same slot. */}
+            {board.status === BoardStatus.ACTIVE && !isSealed && (
+              <span className={play.railRight}>
+                <RisoButton
+                  kind="neutral"
+                  icon={<RisoIcon name="edit" size={16} />}
+                  onClick={() => setEditMode(true)}
+                  aria-label="Edit board"
+                  title="Edit board"
+                >
+                  Edit board
+                </RisoButton>
+              </span>
+            )}
+            {isSealed && (
+              <span className={play.readOnly}>
+                <RisoIcon name="lock" size={12} />
+                Read-only
+              </span>
             )}
           </div>
           <div>
-            <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
+            <div className={play.kickerRow}>
+              <div className={play.kicker}>{board.timeframe.toUpperCase()} BOARD</div>
+              {kickerAccessory}
+            </div>
             <h2 className={play.title}>{board.name}</h2>
-            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               {isSealed ? (
                 // User-facing label is "Closed" — "sealed" is internal
                 // Windowed-Completion vocabulary, never UI copy.
@@ -594,62 +584,28 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
               {board.spawnedFromTemplateId != null && (
                 <RecurringBadge paused={sourceTemplate != null && !sourceTemplate.isActive} />
               )}
+              {greenlogStreak > 0 && CORE_STREAK_TIMEFRAMES.has(board.timeframe) && (
+                <span
+                  className={play.streakChip}
+                  aria-label={`${greenlogStreak} ${STREAK_A11Y_WORDS[board.timeframe] ?? ''} greenlog streak`}
+                >
+                  <RisoIcon name="flame" size={10} aria-hidden="true" />
+                  {compactStreakLabel(greenlogStreak, board.timeframe)} streak
+                </span>
+              )}
             </div>
           </div>
 
           {/* P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
               §Surfaces item 7) — manage row for a repeating board, OR the
               "Repeat this board…" CTA for a one-off board. */}
-          {board.spawnedFromTemplateId != null ? (
-            sourceTemplate && (
-              <div className={styles.repeatManageRow}>
-                <span className={styles.repeatManageText}>
-                  ↻ Repeats {formatCadenceAdverb(sourceTemplate.timeframe)} · from "{sourceTemplate.name}"
-                </span>
-                <button
-                  type="button"
-                  className={styles.repeatManageBtn}
-                  disabled={manageBusy}
-                  onClick={() => void handleToggleTemplateActive()}
-                >
-                  {sourceTemplate.isActive ? 'Pause' : 'Resume'}
-                </button>
-              </div>
-            )
-          ) : (
-            !isSealed &&
-            board.centerSquareType !== CenterSquareType.CHOSEN && (
-              <div className={styles.repeatCta}>
-                {!repeatPickerOpen ? (
-                  <button
-                    type="button"
-                    className={styles.repeatCtaBtn}
-                    onClick={() => setRepeatPickerOpen(true)}
-                  >
-                    ↻ Repeat this board…
-                  </button>
-                ) : (
-                  <div className={styles.repeatPicker}>
-                    <span className={styles.repeatPickerLabel}>Repeat this board</span>
-                    <RisoSegmented
-                      aria-label="Repeat cadence"
-                      options={REPEAT_CADENCE_OPTIONS}
-                      value={'' as Timeframe}
-                      onChange={(cadence) => void handleRepeatThisBoard(cadence)}
-                    />
-                    <button
-                      type="button"
-                      className={styles.repeatPickerCancel}
-                      onClick={() => setRepeatPickerOpen(false)}
-                      disabled={repeatBusy}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          )}
+          <BoardPlayRepeatSection
+            board={board}
+            userId={userId}
+            sourceTemplate={sourceTemplate}
+            isSealed={isSealed}
+            weekStartDay={prefs.weekStartDay}
+          />
 
           {/* Spawn-success provenance note — visible only while the board is
               still "freshly dealt" (docs §Behavior invariants) and its
@@ -681,12 +637,25 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
                 <small>/{board.totalTasks}</small>
               </div>
             </div>
-            <div className={play.stat}>
-              <div className={play.statK}>Left</div>
-              <div className={play.statV} style={{ fontSize: '18px' }}>
-                {getExpiryLabel(board) || '—'}
+            {isSealed ? (
+              /* Sealed: the LEFT card becomes the permanent-record ENDED card. */
+              <div className={play.stat}>
+                <div className={play.statK}>Ended</div>
+                <div className={play.statV} style={{ fontSize: '18px' }}>
+                  {board.endDate
+                    ? new Date(board.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    : '—'}
+                </div>
+                <div className={play.statSub}>permanent record</div>
               </div>
-            </div>
+            ) : (
+              <div className={play.stat}>
+                <div className={play.statK}>Left</div>
+                <div className={play.statV} style={{ fontSize: '18px' }}>
+                  {getExpiryLabel(board) || '—'}
+                </div>
+              </div>
+            )}
             <div className={`${play.stat} ${play.gold}`}>
               <div className={play.statK}>Bingos</div>
               <div className={play.statV}>
@@ -730,7 +699,7 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
         />
       ) : (
         <div
-          className={styles.playGrid}
+          className={`${styles.playGrid}${isSealed ? ` ${play.sealedGrid}` : ''}`}
           style={{ gridTemplateColumns: `repeat(${gridSize}, 90px)` }}
         >
           {(() => {
@@ -1039,6 +1008,9 @@ export function BoardPlaySurface({ board, userId, header, allowEdit = true }: Bo
           })()}
         </div>
       )}
+
+      {/* Host-supplied footer (the pager's position caption). */}
+      {boardFooter}
 
       </div>
 

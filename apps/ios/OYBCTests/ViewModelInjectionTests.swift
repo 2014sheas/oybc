@@ -117,10 +117,8 @@ final class ViewModelInjectionTests: XCTestCase {
         XCTAssertNil(vm.loadError)
     }
 
-    func test_coreBoardBrowserViewModel_constructsAgainstInjectedDb() throws {
-        let db = try makeDb()
-        let vm = CoreBoardBrowserViewModel(database: db)
-        XCTAssertTrue(vm.cells.isEmpty)
-        XCTAssertNil(vm.loadError)
-    }
+    // NOTE: `CoreBoardBrowserViewModel` was deleted with the core-board
+    // browser retirement (core-board surface rework) — the pager's
+    // `CoreBoardWindowViewModel` (covered above) now feeds the window
+    // picker via `coreBoardsByStart`.
 }

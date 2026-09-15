@@ -72,7 +72,7 @@ enum BoardPreviewCells {
         // the live play grid (`BoardPlayView.btByPosition`) and derivation
         // agree on. Second occurrence of the exact `btByPosition` pattern
         // the spec calls out, feeding board mini-previews across
-        // `BoardListView` / `CoreBoardBrowserViewModel` / `SourceBoardsViewModel`.
+        // `BoardListView` / `SourceBoardsViewModel`.
         let ownBoardTasks = PlacementIntegrity.resolvePlacements(
             boardTasks.filter { $0.boardId == board.id },
             boardSize: size
@@ -162,7 +162,7 @@ enum BoardPreviewCells {
     //
     // `build(...)` itself is pure/DB-free. These helpers own the DB side —
     // extracted so a screen rendering MANY boards (`BoardListView`,
-    // `CoreBoardBrowserViewModel`, `SourceBoardsViewModel`/
+    // `SourceBoardsViewModel`/
     // `FromBoardPickerView`) fetches the four workspace-scoped datasets ONCE
     // and reuses them for every board's `build(...)` call, instead of each
     // board's card independently fetching all tasks / all compound children

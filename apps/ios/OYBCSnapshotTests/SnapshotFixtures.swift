@@ -165,7 +165,12 @@ enum SnapshotFixtures {
         spawnedFromTemplateId: String? = nil,
         isCore: Bool = false,
         isRecurringDraft: Bool = false,
-        isDeleted: Bool = false
+        isDeleted: Bool = false,
+        // Core-board surface rework — picker-tile fixtures need sealed +
+        // progress variants. Defaults keep every existing call site's
+        // decode shape unchanged.
+        sealedAt: String? = nil,
+        completedTasks: Int = 0
     ) -> Board {
         var dict: [String: Any] = [
             "id": id,
@@ -190,6 +195,8 @@ enum SnapshotFixtures {
         ]
         if let tid = spawnedFromTemplateId { dict["spawnedFromTemplateId"] = tid }
         if isRecurringDraft { dict["isRecurringDraft"] = true }
+        if let sealed = sealedAt { dict["sealedAt"] = sealed }
+        if completedTasks != 0 { dict["completedTasks"] = completedTasks }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }

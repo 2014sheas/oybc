@@ -32,16 +32,10 @@ struct BoardListView: View {
     /// uses it as the reference for `computeTimeframeBoundaries`.
     var onCreateForWindow: ((Timeframe, Date) -> Void)?
 
-    /// Push the per-timeframe Core Board Browser onto the Boards-tab
-    /// navigation stack. Also the fallback for core-card taps when no
-    /// current-window board exists yet (lets the user reach the browser
-    /// to create one). Optional so the playground / #Preview path can
-    /// leave it nil.
-    var onBrowseTimeframe: ((Timeframe) -> Void)?
-
-    /// Open the per-window pager for the tapped Core Board slot.
-    /// Fired when the user taps a core timeframe card that has a current
-    /// board. Optional so the playground / #Preview path can leave it nil.
+    /// Open the per-window pager for the tapped Core Board slot — with a
+    /// current board (play) or without one (the pager's lazy setup
+    /// prompt; the browser route is retired — core-board surface
+    /// rework). Optional so the playground / #Preview path can leave it nil.
     var onOpenCoreWindow: ((Timeframe, String) -> Void)? = nil
 
     /// Switch to the Create tab for a fresh board (no timeframe pre-fill).
@@ -394,17 +388,15 @@ struct BoardListView: View {
             streaks: pendingRecurringVM.streaks,
             onSelect: { timeframe, windowStart in
                 // A DRAFT core board for this window resumes the wizard (never
-                // opens as a playable board). A non-draft current board opens
-                // the pager. No board → browser to create or browse.
+                // opens as a playable board). Everything else opens the pager
+                // — with a board it plays; without one it shows the lazy
+                // setup prompt (the browser route is retired; long-range
+                // jumping lives in the pager's picker sheet).
                 let slot = pendingRecurringVM.slots.first(where: { $0.timeframe == timeframe })
-                if let current = slot?.currentBoard {
-                    if current.status == .draft {
-                        onResumeDraft?(current.id)
-                    } else {
-                        onOpenCoreWindow?(timeframe, windowStart)
-                    }
+                if let current = slot?.currentBoard, current.status == .draft {
+                    onResumeDraft?(current.id)
                 } else {
-                    onBrowseTimeframe?(timeframe)
+                    onOpenCoreWindow?(timeframe, windowStart)
                 }
             }
         )

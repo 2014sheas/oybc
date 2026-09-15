@@ -1,5 +1,6 @@
 import { Timeframe, formatTimeframeLabel } from '@oybc/shared';
-import styles from './CoreBoardBrowserPage.module.css';
+import { RisoButton, RisoIcon } from '../../components/riso';
+import styles from './CoreWindow.module.css';
 
 export interface CoreBoardSetupPromptProps {
   timeframe: Timeframe;
@@ -15,7 +16,7 @@ export interface CoreBoardSetupPromptProps {
  * CoreBoardSetupPrompt — shown by the pager when no core board exists for
  * the current window. No DB row is written until the user acts (lazy, per
  * the no-auto-spawn rule). Tapping the button launches the wizard prefilled
- * for this window via the same deep-link the browser's empty cell uses.
+ * for this window. Rendered inside the pager's dashed empty-window frame.
  */
 export function CoreBoardSetupPrompt({
   timeframe,
@@ -26,13 +27,19 @@ export function CoreBoardSetupPrompt({
   const label = formatTimeframeLabel(timeframe, windowStart);
   return (
     <div className={styles.setupPrompt}>
-      <div className={styles.setupIcon} aria-hidden="true">
-        📅
-      </div>
       <p className={styles.setupText}>No board for {label} yet.</p>
-      <button type="button" className={styles.setupButton} onClick={onSetUp}>
+      <p className={styles.setupSub}>
+        {isPast
+          ? 'Add a past board to fill in this window.'
+          : 'Set up a board for this window to start tracking your goals.'}
+      </p>
+      <RisoButton
+        kind="primary"
+        icon={<RisoIcon name="plus" size={15} />}
+        onClick={onSetUp}
+      >
         {isPast ? 'Backfill' : 'Set up'} {label}
-      </button>
+      </RisoButton>
     </div>
   );
 }

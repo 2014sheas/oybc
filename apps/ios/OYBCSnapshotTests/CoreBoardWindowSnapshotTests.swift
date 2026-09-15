@@ -3,14 +3,14 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for the two pure-leaf views of the core-board window pager:
-///   - `CoreBoardSetupPromptView` — current-window (Set up CTA) and past-window
-///     (Backfill CTA) variants.
-///   - `CoreBoardWindowBarView` — steady-state bar with prev / label / next /
-///     list-button.
+/// Snapshot coverage for `CoreBoardSetupPromptView` — current-window
+/// (Set up CTA) and past-window (Backfill CTA) variants. (The old
+/// `CoreBoardWindowBarView` was retired by the core-board surface
+/// rework — its replacement chrome is covered in
+/// `RisoCoreChromeSnapshotTests`.)
 ///
-/// Both views are pure prop-driven leaves with no database dependency, so no
-/// GRDB seeding is needed — pass literals directly.
+/// A pure prop-driven leaf with no database dependency, so no GRDB
+/// seeding is needed — pass literals directly.
 final class CoreBoardWindowSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
@@ -39,23 +39,4 @@ final class CoreBoardWindowSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - CoreBoardWindowBarView
-
-    /// Steady-state bar with a weekly window label — exercises label truncation
-    /// logic and verifies the four controls (prev, label, next, list) are laid
-    /// out correctly at standard iPhone width.
-    func testWindowBar() {
-        let view = CoreBoardWindowBarView(
-            label: "Week of May 18 – 24, 2026",
-            onPrev: {},
-            onNext: {},
-            onOpenList: {}
-        )
-        .frame(width: 393, height: 56)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 56)),
-            record: recordMode
-        )
-    }
 }

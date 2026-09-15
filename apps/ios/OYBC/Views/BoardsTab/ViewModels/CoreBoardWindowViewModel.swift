@@ -6,8 +6,7 @@ import GRDB
 /// Computes the initial window from a seed ISO start string via
 /// `computeTimeframeBoundaries`, steps prev/next via
 /// `stepCoreBoardWindow`, and loads the matching `isCore` board from
-/// the local GRDB database using the same predicate
-/// `CoreBoardBrowserViewModel` uses.
+/// the local GRDB database.
 ///
 /// Mirrors the web `useCoreBoardWindow` concept.
 @MainActor
@@ -31,8 +30,17 @@ final class CoreBoardWindowViewModel: ObservableObject {
     /// `DateFormatter` (via `formatTimeframeLabel`) on every render.
     @Published private(set) var windowLabel: String = ""
     /// Current greenlog streak for this timeframe (0 = none). Per-timeframe
-    /// (constant across windows); the bar derives both its display + a11y label.
+    /// (constant across windows); the empty/draft title rows derive both
+    /// the chip display + a11y label from it.
     @Published private(set) var streakCount: Int = 0
+    /// The user's core boards for this timeframe keyed by `startDate` —
+    /// feeds the window chip's position dots, the caption dots, the
+    /// picker sheet's tiles, and the incoming swipe card's neighbor
+    /// lookup. Refreshed on every `reload()`.
+    @Published private(set) var coreBoardsByStart: [String: Board] = [:]
+    /// Today's window start (local ISO) for this timeframe — the "gold
+    /// ring" dot + the current-window checks. Recomputed on reload.
+    @Published private(set) var todayWindowStart: String = ""
 
     // MARK: - Config (immutable after init)
 
@@ -49,8 +57,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
     /// Each in-flight background fetch captures the token at dispatch and
     /// only applies its result if `reloadToken` still matches when it
     /// completes on the main queue. Prevents a slower earlier fetch from
-    /// overwriting state produced by a newer reload — mirrors the
-    /// identical pattern in `CoreBoardBrowserViewModel`.
+    /// overwriting state produced by a newer reload.
     private var reloadToken: Int = 0
 
     /// Injected for tests; defaults to the production singleton.
@@ -74,9 +81,8 @@ final class CoreBoardWindowViewModel: ObservableObject {
         self.weekStartDay = weekStartDay
         self.database = database
 
-        // Normalise the seed to its window's canonical boundaries.
-        // Mirror of how `CoreBoardBrowserViewModel.reload` anchors to
-        // `computeTimeframeBoundaries(referenceDate: now)`.
+        // Normalise the seed to its window's canonical boundaries
+        // (anchored via `computeTimeframeBoundaries(referenceDate:)`).
         if let seedDate = parseISO8601Date(seedWindowStart),
            let window = computeTimeframeBoundaries(
                timeframe: timeframe,
@@ -99,10 +105,8 @@ final class CoreBoardWindowViewModel: ObservableObject {
     // MARK: - Derived
 
     /// Builds the window label from an ISO start string, via
-    /// `formatTimeframeLabel` — the same helper
-    /// `CoreBoardBrowserViewModel.rebuildCells` uses for
-    /// `CoreBoardWindowCell.windowLabel`. Static so `init` can call it
-    /// before all stored properties are initialised.
+    /// `formatTimeframeLabel`. Static so `init` can call it before all
+    /// stored properties are initialised.
     private static func makeLabel(timeframe: Timeframe, windowStartISO: String) -> String {
         guard let date = parseISO8601Date(windowStartISO) else { return "" }
         return formatTimeframeLabel(timeframe: timeframe, startDate: date)
@@ -114,12 +118,32 @@ final class CoreBoardWindowViewModel: ObservableObject {
         return endDate < Date()
     }
 
+    /// `true` when the displayed window is today's window.
+    var isCurrentWindow: Bool {
+        !todayWindowStart.isEmpty && windowStart == todayWindowStart
+    }
+
+    /// The pager's timeframe (read-only accessor for chrome that only
+    /// has the view model).
+    var pagerTimeframe: Timeframe { timeframe }
+
+    /// Neighbor window start at `offset` from the displayed window (for
+    /// caption labels + the incoming swipe card). Nil for unreachable
+    /// timeframes.
+    func neighborWindowStart(offset: Int) -> String? {
+        guard let window = stepCoreBoardWindow(
+            timeframe: timeframe,
+            fromStartIso: windowStart,
+            step: offset,
+            weekStartDay: weekStartDay
+        ) else { return nil }
+        return wizardLocalISOString(window.start)
+    }
+
     // MARK: - Actions
 
     /// Load the matching core board for `(userId, timeframe, windowStart)`
-    /// from the local DB. Uses the same column filter that
-    /// `CoreBoardBrowserViewModel.fetchCoreBoards` uses so results are
-    /// consistent between the browser and the pager.
+    /// from the local DB.
     func reload() {
         let userId = self.userId
         let timeframe = self.timeframe
@@ -133,13 +157,20 @@ final class CoreBoardWindowViewModel: ObservableObject {
         reloadToken += 1
         let token = reloadToken
 
+        // Today's window start — anchors the chip/caption "gold ring" dot
+        // and the current-window checks.
+        let todayStart = computeTimeframeBoundaries(
+            timeframe: timeframe, referenceDate: now, weekStartDay: weekStartDay
+        ).map { wizardLocalISOString($0.start) } ?? ""
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                // One read for both the window's board and all boards (for the
-                // per-timeframe greenlog streak). `computeStreak` re-filters to
-                // isCore/!isDeleted/timeframe internally.
-                let (result, streak) = try self.database.read { db -> (Board?, Int) in
+                // One read for the window's board, all boards (for the
+                // per-timeframe greenlog streak — `computeStreak` re-filters
+                // to isCore/!isDeleted/timeframe internally), and the
+                // timeframe's core boards (chip dots / picker tiles).
+                let (result, streak, byStart) = try self.database.read { db -> (Board?, Int, [String: Board]) in
                     let match = try Board
                         .filter(
                             Column("userId") == userId
@@ -156,7 +187,14 @@ final class CoreBoardWindowViewModel: ObservableObject {
                         timeframe: timeframe, criterion: .greenlog,
                         boards: allBoards, weekStartDay: weekStartDay, now: now
                     )
-                    return (match, streak)
+                    // Core-board lookup by startDate — derived from the same
+                    // fetch (no extra read). Duplicate startDates can't
+                    // happen for a healthy core roster; keep the first.
+                    var byStart: [String: Board] = [:]
+                    for b in allBoards where b.isCore && b.timeframe == timeframe {
+                        if byStart[b.startDate] == nil { byStart[b.startDate] = b }
+                    }
+                    return (match, streak, byStart)
                 }
                 DispatchQueue.main.async {
                     guard token == self.reloadToken else { return }
@@ -171,6 +209,8 @@ final class CoreBoardWindowViewModel: ObservableObject {
                         self.draftBoard = nil
                     }
                     self.streakCount = streak
+                    self.coreBoardsByStart = byStart
+                    self.todayWindowStart = todayStart
                     self.isLoaded = true
                 }
             } catch {
@@ -179,6 +219,8 @@ final class CoreBoardWindowViewModel: ObservableObject {
                     self.board = nil
                     self.draftBoard = nil
                     self.streakCount = 0
+                    self.coreBoardsByStart = [:]
+                    self.todayWindowStart = todayStart
                     self.isLoaded = true
                 }
             }
@@ -186,8 +228,7 @@ final class CoreBoardWindowViewModel: ObservableObject {
     }
 
     /// Step the current window by `offset` calendar units (+1 = next,
-    /// -1 = previous). Calls `stepCoreBoardWindow` — the same helper
-    /// `CoreBoardBrowserViewModel.rebuildCells` uses — then reloads.
+    /// -1 = previous). Calls `stepCoreBoardWindow`, then reloads.
     /// A nil return from the step helper (e.g. `.custom` timeframe) is
     /// a no-op so the view stays on the last valid window.
     func step(_ offset: Int) {
@@ -197,6 +238,26 @@ final class CoreBoardWindowViewModel: ObservableObject {
             step: offset,
             weekStartDay: weekStartDay
         ) else { return }
+
+        isLoaded = false
+        board = nil
+        draftBoard = nil
+        windowStart = wizardLocalISOString(window.start)
+        windowEnd = wizardLocalISOString(window.end)
+        windowLabel = Self.makeLabel(timeframe: timeframe, windowStartISO: windowStart)
+        reload()
+    }
+
+    /// Jump the pager straight to the window starting at `targetStartIso`
+    /// (a picker-tile tap). The target is re-snapped to canonical window
+    /// boundaries defensively; no board row is ever created here.
+    func jump(toWindowStart targetStartIso: String) {
+        guard let seedDate = parseISO8601Date(targetStartIso),
+              let window = computeTimeframeBoundaries(
+                  timeframe: timeframe,
+                  referenceDate: seedDate,
+                  weekStartDay: weekStartDay
+              ) else { return }
 
         isLoaded = false
         board = nil

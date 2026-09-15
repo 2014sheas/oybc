@@ -3,39 +3,159 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for the Riso-reskinned core-board pager chrome.
+/// Snapshot coverage for the Riso core-board pager chrome (masthead
+/// rework).
 ///
-/// Snapshots the three pure prop-driven leaf views:
-///   - `CoreBoardWindowBarView` — prev / label / next / list-button bar.
-///   - `CoreBoardWindowCellView` — browser cell in filled, empty, current,
-///     and past-empty variants.
-///   - `CoreBoardSetupPromptView` — empty-window prompt (Set up / Backfill).
+/// Snapshots the pure prop-driven leaf views:
+///   - `CoreWindowChipView` — the header window chip (resting / open /
+///     empty / edit-dimmed, light + dark).
+///   - `CoreWindowPositionCaption` — the `‹ August · dots · October ›`
+///     row under the grid.
+///   - `CoreWindowPickerSheet` — the window-jump half-sheet content
+///     (monthly year grid + daily month calendar), with a pinned `now`
+///     and a literal `boardsByStart` so tiles are deterministic.
+///   - `CoreBoardSetupPromptView` — empty-window prompt (Set up /
+///     Backfill; standalone container).
 ///
-/// Views that self-load from `AppDatabase.shared` are NOT snapshotted here:
-///   - `CoreBoardWindowView` embeds `BoardPlayView` (which runs GRDB queries
-///     via `CoreBoardWindowViewModel`). Snapshot coverage deferred until the
-///     test harness supports in-memory DB injection.
-///   - `CoreBoardBrowserView` uses `CoreBoardBrowserViewModel` (GRDB + AuthService).
-///     The leaf `CoreBoardWindowCellView` it renders IS covered here instead.
-///   - `CellSwapSheet` is covered indirectly — its rows use `RisoTypeBadge` and
-///     `RisoButton`, both covered in `RisoKitSnapshotTests`. A full sheet
-///     snapshot requires NavigationStack + sheet presentation depth; deferred.
+/// `CoreBoardWindowView` itself embeds `BoardPlayView` (GRDB queries via
+/// `CoreBoardWindowViewModel`) and is NOT snapshotted here.
 ///
 /// All dates are pinned (no `Date()`) so snapshots are calendar-stable.
 final class RisoCoreChromeSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // MARK: - CoreBoardWindowBarView
+    /// Pinned "now" — Sep 15 2026, mid-month, mid-week.
+    private var pinnedNow: Date {
+        var comps = DateComponents()
+        comps.year = 2026; comps.month = 9; comps.day = 15; comps.hour = 12
+        return Calendar.current.date(from: comps)!
+    }
 
-    /// Standard bar with a weekly window label (light mode).
-    func testWindowBarLight() {
-        let view = CoreBoardWindowBarView(
-            label: "Week of May 18 – 24, 2026",
-            onPrev: {},
-            onNext: {},
-            onOpenList: {}
+    // MARK: - Fixture dots
+
+    /// The resting neighborhood: two past boards, displayed = today
+    /// (has board), next empty, further-future empty.
+    private var restingDots: [CoreWindowPicker.NeighborhoodDot] {
+        [
+            .init(offset: -2, windowStart: "a", hasBoard: true, isDisplayed: false, isToday: false),
+            .init(offset: -1, windowStart: "b", hasBoard: true, isDisplayed: false, isToday: false),
+            .init(offset: 0, windowStart: "c", hasBoard: true, isDisplayed: true, isToday: true),
+            .init(offset: 1, windowStart: "d", hasBoard: false, isDisplayed: false, isToday: false),
+            .init(offset: 2, windowStart: "e", hasBoard: false, isDisplayed: false, isToday: false),
+        ]
+    }
+
+    /// Paged-away neighborhood: displayed = empty next window; today's
+    /// gold ring sits on the −1 dot.
+    private var pagedAwayDots: [CoreWindowPicker.NeighborhoodDot] {
+        [
+            .init(offset: -2, windowStart: "a", hasBoard: true, isDisplayed: false, isToday: false),
+            .init(offset: -1, windowStart: "b", hasBoard: true, isDisplayed: false, isToday: true),
+            .init(offset: 0, windowStart: "c", hasBoard: false, isDisplayed: true, isToday: false),
+            .init(offset: 1, windowStart: "d", hasBoard: false, isDisplayed: false, isToday: false),
+            .init(offset: 2, windowStart: "e", hasBoard: false, isDisplayed: false, isToday: false),
+        ]
+    }
+
+    private func chipHost<V: View>(_ view: V) -> some View {
+        ZStack {
+            RisoPaperBackground()
+            view.padding(16)
+        }
+    }
+
+    // MARK: - CoreWindowChipView
+
+    func testWindowChipRestingLight() {
+        let view = chipHost(CoreWindowChipView(
+            label: "September 2026",
+            dots: restingDots,
+            accessibilityText: "September 2026, current window. Opens window picker.",
+            action: {}
+        ))
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 300, height: 70)),
+            record: recordMode
         )
+    }
+
+    func testWindowChipRestingDark() {
+        let view = chipHost(CoreWindowChipView(
+            label: "September 2026",
+            dots: restingDots,
+            accessibilityText: "September 2026, current window. Opens window picker.",
+            action: {}
+        ))
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 300, height: 70),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
+    /// Open chip — inverted ink fill, paper text, chevron up.
+    func testWindowChipOpen() {
+        let view = chipHost(CoreWindowChipView(
+            label: "September 2026",
+            dots: restingDots,
+            isOpen: true,
+            accessibilityText: "September 2026, current window. Opens window picker.",
+            action: {}
+        ))
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 300, height: 70)),
+            record: recordMode
+        )
+    }
+
+    /// Empty window — dashed keyline, no shadow, "· next" label suffix.
+    func testWindowChipEmptyWindow() {
+        let view = chipHost(CoreWindowChipView(
+            label: "October · next",
+            dots: pagedAwayDots,
+            isEmpty: true,
+            accessibilityText: "October. Opens window picker.",
+            action: {}
+        ))
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 300, height: 70)),
+            record: recordMode
+        )
+    }
+
+    /// Edit mode — 45% opacity, inert.
+    func testWindowChipEditDimmed() {
+        let view = chipHost(CoreWindowChipView(
+            label: "September 2026",
+            dots: restingDots,
+            isDisabled: true,
+            accessibilityText: "September 2026, current window. Opens window picker.",
+            action: {}
+        ))
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 300, height: 70)),
+            record: recordMode
+        )
+    }
+
+    // MARK: - CoreWindowPositionCaption
+
+    func testPositionCaptionLight() {
+        let view = chipHost(CoreWindowPositionCaption(
+            prevLabel: "August",
+            nextLabel: "October",
+            dots: restingDots,
+            onPrev: {},
+            onNext: {}
+        ))
         assertSnapshot(
             of: view,
             as: .image(layout: .fixed(width: 393, height: 60)),
@@ -43,69 +163,15 @@ final class RisoCoreChromeSnapshotTests: XCTestCase {
         )
     }
 
-    /// Bar in dark ("night press") mode — verifies paper/ink token flip.
-    func testWindowBarDark() {
-        let view = CoreBoardWindowBarView(
-            label: "Week of May 18 – 24, 2026",
+    func testPositionCaptionDisabled() {
+        let view = chipHost(CoreWindowPositionCaption(
+            prevLabel: "August",
+            nextLabel: "October",
+            dots: restingDots,
+            isDisabled: true,
             onPrev: {},
-            onNext: {},
-            onOpenList: {}
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(
-                layout: .fixed(width: 393, height: 60),
-                traits: .init(userInterfaceStyle: .dark)
-            ),
-            record: recordMode
-        )
-    }
-
-    /// Bar with a greenlog-streak flame chip under the window label.
-    func testWindowBarWithStreakLight() {
-        let view = CoreBoardWindowBarView(
-            label: "Week of May 18 – 24, 2026",
-            streakCount: 3,
-            streakTimeframe: .weekly,
-            onPrev: {},
-            onNext: {},
-            onOpenList: {}
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 70)),
-            record: recordMode
-        )
-    }
-
-    func testWindowBarWithStreakDark() {
-        let view = CoreBoardWindowBarView(
-            label: "Week of May 18 – 24, 2026",
-            streakCount: 3,
-            streakTimeframe: .weekly,
-            onPrev: {},
-            onNext: {},
-            onOpenList: {}
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(
-                layout: .fixed(width: 393, height: 70),
-                traits: .init(userInterfaceStyle: .dark)
-            ),
-            record: recordMode
-        )
-    }
-
-    /// Long label that forces truncation — verifies `.middle` truncation mode
-    /// keeps leading and trailing context readable.
-    func testWindowBarLongLabelTruncation() {
-        let view = CoreBoardWindowBarView(
-            label: "September 2026 (Monthly Window)",
-            onPrev: {},
-            onNext: {},
-            onOpenList: {}
-        )
+            onNext: {}
+        ))
         assertSnapshot(
             of: view,
             as: .image(layout: .fixed(width: 393, height: 60)),
@@ -113,153 +179,93 @@ final class RisoCoreChromeSnapshotTests: XCTestCase {
         )
     }
 
-    // MARK: - CoreBoardWindowCellView
+    // MARK: - CoreWindowPickerSheet
 
-    /// Filled cell — current window, with a board present. The gold keyline
-    /// and gold "CURRENT" badge should appear.
-    func testWindowCellFilledCurrent() {
-        let board = SnapshotFixtures.makeBoard(
-            id: "core-cell-current",
-            name: "June Wellness",
-            timeframe: .monthly,
+    /// Boards for the monthly picker page: July sealed (closed), August
+    /// completed (done), September active mid-progress (current, gold).
+    private var monthlyBoardsByStart: [String: Board] {
+        let july = SnapshotFixtures.makeBoard(
+            id: "picker-jul", name: "July", boardSize: 3, timeframe: .monthly,
             status: .active,
-            startDate: "2026-06-01T00:00:00.000Z",
-            endDate: "2026-06-30T23:59:59.000Z",
-            isCore: true
+            startDate: "2026-07-01T00:00:00.000", endDate: "2026-07-31T23:59:59.999",
+            isCore: true, sealedAt: "2026-08-01T00:00:00.000", completedTasks: 5
         )
-        let cell = CoreBoardWindowCell(
-            windowStart: "2026-06-01T00:00:00.000",
-            windowEnd: "2026-06-30T23:59:59.999",
-            windowLabel: "June 2026",
-            board: board,
-            isCurrentWindow: true,
-            isPastWindow: false
-        )
-        let view = CoreBoardWindowCellView(
-            cell: cell,
-            timeframe: .monthly,
-            onOpenBoard: { _ in },
-            onCreate: { _, _ in }
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 200)),
-            record: recordMode
-        )
-    }
-
-    /// Empty cell — current window, no board yet. Dashed "Create June 2026"
-    /// CTA with gold outline should appear.
-    func testWindowCellEmptyCurrent() {
-        let cell = CoreBoardWindowCell(
-            windowStart: "2026-06-01T00:00:00.000",
-            windowEnd: "2026-06-30T23:59:59.999",
-            windowLabel: "June 2026",
-            board: nil,
-            isCurrentWindow: true,
-            isPastWindow: false
-        )
-        let view = CoreBoardWindowCellView(
-            cell: cell,
-            timeframe: .monthly,
-            onOpenBoard: { _ in },
-            onCreate: { _, _ in }
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 130)),
-            record: recordMode
-        )
-    }
-
-    /// Empty cell — past window with no board. Muted "PAST WINDOW" badge +
-    /// dashed "Backfill May 2026" CTA at reduced opacity.
-    func testWindowCellEmptyPast() {
-        let cell = CoreBoardWindowCell(
-            windowStart: "2026-05-01T00:00:00.000",
-            windowEnd: "2026-05-31T23:59:59.999",
-            windowLabel: "May 2026",
-            board: nil,
-            isCurrentWindow: false,
-            isPastWindow: true
-        )
-        let view = CoreBoardWindowCellView(
-            cell: cell,
-            timeframe: .monthly,
-            onOpenBoard: { _ in },
-            onCreate: { _, _ in }
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 130)),
-            record: recordMode
-        )
-    }
-
-    /// Filled cell — past window with a completed board. Standard ink keyline
-    /// (no gold), no badge.
-    func testWindowCellFilledPast() {
-        let board = SnapshotFixtures.makeBoard(
-            id: "core-cell-past",
-            name: "May Wellness",
-            timeframe: .monthly,
+        let august = SnapshotFixtures.makeBoard(
+            id: "picker-aug", name: "August", boardSize: 3, timeframe: .monthly,
             status: .completed,
-            startDate: "2026-05-01T00:00:00.000Z",
-            endDate: "2026-05-31T23:59:59.000Z",
-            isCore: true
+            startDate: "2026-08-01T00:00:00.000", endDate: "2026-08-31T23:59:59.999",
+            isCore: true, completedTasks: 9
         )
-        let cell = CoreBoardWindowCell(
-            windowStart: "2026-05-01T00:00:00.000",
-            windowEnd: "2026-05-31T23:59:59.999",
-            windowLabel: "May 2026",
-            board: board,
-            isCurrentWindow: false,
-            isPastWindow: true
+        let september = SnapshotFixtures.makeBoard(
+            id: "picker-sep", name: "September", boardSize: 3, timeframe: .monthly,
+            status: .active,
+            startDate: "2026-09-01T00:00:00.000", endDate: "2026-09-30T23:59:59.999",
+            isCore: true, completedTasks: 4
         )
-        let view = CoreBoardWindowCellView(
-            cell: cell,
+        return [
+            july.startDate: july,
+            august.startDate: august,
+            september.startDate: september,
+        ]
+    }
+
+    /// Monthly year grid — exercises closed / done / current(gold,
+    /// progress) / next("set up") / further-future / past-empty tiles.
+    func testPickerSheetMonthlyLight() {
+        let view = CoreWindowPickerSheet(
             timeframe: .monthly,
-            onOpenBoard: { _ in },
-            onCreate: { _, _ in }
+            weekStartDay: "monday",
+            boardsByStart: monthlyBoardsByStart,
+            displayedWindowStart: "2026-09-01T00:00:00.000",
+            now: pinnedNow,
+            onSelect: { _ in }
         )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 200)),
+            as: .image(layout: .fixed(width: 393, height: 560)),
             record: recordMode
         )
     }
 
-    /// Dark mode variant — filled current cell.
-    func testWindowCellFilledCurrentDark() {
-        let board = SnapshotFixtures.makeBoard(
-            id: "core-cell-current-dark",
-            name: "June Wellness",
+    func testPickerSheetMonthlyDark() {
+        let view = CoreWindowPickerSheet(
             timeframe: .monthly,
-            status: .active,
-            startDate: "2026-06-01T00:00:00.000Z",
-            endDate: "2026-06-30T23:59:59.000Z",
-            isCore: true
-        )
-        let cell = CoreBoardWindowCell(
-            windowStart: "2026-06-01T00:00:00.000",
-            windowEnd: "2026-06-30T23:59:59.999",
-            windowLabel: "June 2026",
-            board: board,
-            isCurrentWindow: true,
-            isPastWindow: false
-        )
-        let view = CoreBoardWindowCellView(
-            cell: cell,
-            timeframe: .monthly,
-            onOpenBoard: { _ in },
-            onCreate: { _, _ in }
+            weekStartDay: "monday",
+            boardsByStart: monthlyBoardsByStart,
+            displayedWindowStart: "2026-09-01T00:00:00.000",
+            now: pinnedNow,
+            onSelect: { _ in }
         )
         assertSnapshot(
             of: view,
             as: .image(
-                layout: .fixed(width: 393, height: 200),
+                layout: .fixed(width: 393, height: 560),
                 traits: .init(userInterfaceStyle: .dark)
             ),
+            record: recordMode
+        )
+    }
+
+    /// Daily month calendar — 7-column layout with weekday heads +
+    /// leading blanks (Sep 2026 starts on a Tuesday → 1 blank).
+    func testPickerSheetDailyCalendar() {
+        let today = SnapshotFixtures.makeBoard(
+            id: "picker-day", name: "Today", boardSize: 3, timeframe: .daily,
+            status: .active,
+            startDate: "2026-09-15T00:00:00.000", endDate: "2026-09-15T23:59:59.999",
+            isCore: true, completedTasks: 2
+        )
+        let view = CoreWindowPickerSheet(
+            timeframe: .daily,
+            weekStartDay: "monday",
+            boardsByStart: [today.startDate: today],
+            displayedWindowStart: "2026-09-15T00:00:00.000",
+            now: pinnedNow,
+            onSelect: { _ in }
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 620)),
             record: recordMode
         )
     }

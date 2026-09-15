@@ -22,8 +22,8 @@ private struct BoardPlayTitleChrome: ViewModifier {
         if enabled {
             // Riso play board owns its header in-content (back square + name +
             // status badge), so suppress the system nav title AND back button
-            // to avoid duplicate back/name affordances. The Edit toolbar item
-            // (defined separately) is unaffected.
+            // to avoid duplicate back/name affordances. (Edit lives in the
+            // in-content title row too — the toolbar item is gone.)
             content
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationBarBackButtonHidden(true)
@@ -114,6 +114,10 @@ struct BoardPlayView: View {
     /// directly before reaching here, so this is the safety net. Nil ⇒ the
     /// guard still suppresses the grid but offers no resume action.
     var onResumeDraft: ((String) -> Void)? = nil
+    /// Notifies a host (the core-board window pager) when in-place edit
+    /// mode toggles, so it can disable window stepping / dim its chip
+    /// while editing. Nil for the standalone destination.
+    var onEditModeChange: ((Bool) -> Void)? = nil
     @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
 
@@ -263,12 +267,14 @@ struct BoardPlayView: View {
         boardId: String,
         onOpenBoard: @escaping (String) -> Void = { _ in },
         embedded: Bool = false,
-        onResumeDraft: ((String) -> Void)? = nil
+        onResumeDraft: ((String) -> Void)? = nil,
+        onEditModeChange: ((Bool) -> Void)? = nil
     ) {
         self.boardId = boardId
         self.onOpenBoard = onOpenBoard
         self.embedded = embedded
         self.onResumeDraft = onResumeDraft
+        self.onEditModeChange = onEditModeChange
         _viewModel = StateObject(
             wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil)
         )
@@ -485,7 +491,11 @@ struct BoardPlayView: View {
                                 completedTasks: b.completedTasks,
                                 totalTasks: b.totalTasks,
                                 linesCompleted: b.linesCompleted,
-                                expiryText: risoExpiryText(board: b)
+                                expiryText: risoExpiryText(board: b),
+                                // Windowed Completion chrome — a sealed
+                                // board's LEFT card becomes the
+                                // permanent-record ENDED card.
+                                endedText: isSealed ? risoEndedText(board: b) : nil
                             )
                             .padding(.horizontal, Riso.gutter)
                             .padding(.top, 14)
@@ -496,6 +506,8 @@ struct BoardPlayView: View {
                         if board != nil {
                             risoGridSection
                                 .padding(.horizontal, Riso.gutter)
+                                // Sealed: flat, slightly faded frozen record.
+                                .opacity(isSealed ? 0.92 : 1)
                         }
 
                         // ── Sealed banner (below grid) ── locked == sealed;
@@ -740,26 +752,13 @@ struct BoardPlayView: View {
             // Presented as a sheet (see .sheet modifier below)
         }
         .modifier(BoardPlayTitleChrome(title: board?.name ?? "Board", enabled: !embedded))
-        // M2 — toolbar "Edit" button (ACTIVE boards only; DRAFT uses the wizard;
-        // COMPLETED / ARCHIVED boards are immutable).
-        .toolbar {
-            // M2 — "Edit" button: visible on ACTIVE non-embedded boards when the
-            // edit-mode panel is not already open (hide it once we're editing so
-            // the top bar inside `BoardEditPanel` owns all navigation).
-            // Windowed Completion — a sealed board is never editable (docs
-            // §Effects of sealed: rearranging squares under a frozen snapshot
-            // would desync the frozen record; no unseal gesture in v1).
-            if let b = board, b.status == .active, !embedded, !editMode, !isSealed {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Edit") {
-                        viewModel.seedEditDraft(from: b)
-                        // The pre-move `seedEditDraft` reset `editSaving = false`
-                        // inline; `editSaving` stays view-side, so reset it here.
-                        editSaving = false
-                        withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
-                    }
-                }
-            }
+        // Core-board surface rework — the Edit affordance moved from the
+        // toolbar into the in-content title row (`risoPlayHeader`), with
+        // ONE gate on both platforms:
+        // `status == .active && sealedAt == nil && !editMode`.
+        // Notify the host pager when edit mode toggles (chip dim + step lock).
+        .onChange(of: editMode) { _, editing in
+            onEditModeChange?(editing)
         }
         // Phase 2 — Tap-menu: Replace task / Edit task (+ Phase-2b center toggle).
         // Presented when the user taps an occupied square OR the free center cell
@@ -898,6 +897,15 @@ struct BoardPlayView: View {
             // that follows (the reused pager instance uses boardChanged instead).
             viewModel.markArrivalDetectionPending()
             viewModel.reload()
+            // Core-board surface rework — the streak chip now sits inline
+            // in the title row, so the streak is computed on open (not only
+            // when a GREENLOG fires). No-op for non-core boards.
+            refreshGreenlogStreak()
+        }
+        // Recompute the title-row streak chip when the loaded board changes
+        // (the embedded pager reuses this view instance across windows).
+        .onChange(of: viewModel.board?.id) { _, _ in
+            refreshGreenlogStreak()
         }
         .onDisappear {
             // P3 — re-snapshot the last-seen baseline on leaving so local taps
@@ -1143,7 +1151,12 @@ struct BoardPlayView: View {
 
     // MARK: - Riso Play Header
 
-    /// In-content header: back button (non-embedded only) + kicker + board name + status badge.
+    /// In-content header (masthead layout): back button (non-embedded
+    /// only) + the extracted `BoardPlayHeaderView` leaf (kicker · name
+    /// + inline streak chip · badge row · Edit / Read-only slot). The
+    /// Edit gate is ONE rule on both platforms:
+    /// `status == .active && sealedAt == nil && !editMode` (the edit
+    /// panel replaces this chrome while open).
     @ViewBuilder
     private var risoPlayHeader: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1155,34 +1168,24 @@ struct BoardPlayView: View {
                 risoBackButton
             }
 
-            // Kicker + board name
-            VStack(alignment: .leading, spacing: 3) {
-                Text(boardKicker)
-                    .risoKicker()
-                Text(board?.name ?? "")
-                    .font(.risoHead(22, .extraBold))
-                    .tracking(-0.44)
-                    .foregroundStyle(Color.risoInk)
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Status badge (+ recurring-provenance tag, issue #321). Windowed
-            // Completion — a sealed board shows the "Sealed" pill in place of
-            // the live status badge (docs §Effects of sealed; OQ1 resolution).
-            if let b = board {
-                VStack(alignment: .trailing, spacing: 4) {
-                    if b.sealedAt != nil {
-                        RisoSealedBadge()
-                    } else {
-                        risoStatusBadge(status: b.status)
-                    }
-                    if RisoRecurringBadge.shouldShow(for: b) {
-                        RisoRecurringBadge()
-                    }
+            BoardPlayHeaderView(
+                kicker: boardKicker,
+                name: board?.name ?? "",
+                nameSize: embedded ? 24 : 22,
+                streakValue: greenlogStreakValue,
+                status: board?.status,
+                isSealed: isSealed,
+                showRecurringBadge: board.map { RisoRecurringBadge.shouldShow(for: $0) } ?? false,
+                canEdit: board?.status == .active && !isSealed && !editMode,
+                onEdit: {
+                    guard let b = board else { return }
+                    viewModel.seedEditDraft(from: b)
+                    // `seedEditDraft` used to reset `editSaving` inline;
+                    // it stays view-side, so reset it here.
+                    editSaving = false
+                    withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
                 }
-                .padding(.top, 4)
-            }
+            )
         }
     }
 
@@ -1351,23 +1354,17 @@ struct BoardPlayView: View {
         BackButton()
     }
 
-    @ViewBuilder
-    private func risoStatusBadge(status: BoardStatus) -> some View {
-        let (label, fill, fore): (String, Color, Color) = {
-            switch status {
-            case .active:    return ("ACTIVE",    Color.risoBlue,  Color.risoPaper)
-            case .completed: return ("COMPLETE",  Color.risoGreen, Color.risoPaper)
-            case .draft:     return ("DRAFT",     Color.risoPaper2, Color.risoMuted)
-            case .archived:  return ("ARCHIVED",  Color.risoPaper2, Color.risoMuted)
-            }
-        }()
-        Text(label)
-            .font(.risoHead(10, .bold))
-            .foregroundStyle(fore)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(fill))
-            .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+    // NOTE: the status pill moved into `BoardPlayHeaderView` (core-board
+    // surface rework header extraction).
+
+    /// Short end-date string for the sealed ENDED stat card ("Aug 31").
+    private func risoEndedText(board: Board) -> String {
+        guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "—" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone.current
+        f.dateFormat = "MMM d"
+        return f.string(from: end)
     }
 
     /// Compact expiry string for the stat bar — "4d", "Expired", "Today", etc.

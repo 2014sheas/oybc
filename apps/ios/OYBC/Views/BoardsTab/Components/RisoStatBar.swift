@@ -15,6 +15,9 @@ struct RisoStatBar: View {
     let linesCompleted: Int
     /// "4d" or "Expired" etc — produced by `getExpiryLabel` in the caller.
     let expiryText: String
+    /// When non-nil (a sealed board), the LEFT card becomes the
+    /// permanent-record card: "ENDED / <date> / permanent record".
+    var endedText: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -66,15 +69,15 @@ struct RisoStatBar: View {
 
     private var leftCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("LEFT")
+            Text(endedText != nil ? "ENDED" : "LEFT")
                 .risoSectionLabel()
 
-            Text(expiryText)
+            Text(endedText ?? expiryText)
                 .font(.risoHead(19, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .monospacedDigit()
 
-            Text("to fill it")
+            Text(endedText != nil ? "permanent record" : "to fill it")
                 .font(.risoBody(10, .bold))
                 .foregroundStyle(Color.risoMuted)
         }

@@ -961,7 +961,7 @@ if (bt.isAchievementSquare) {
 
 #### Core Board window pager — shipped
 
-The Boards-tab **Core boards** rows previously opened the per-timeframe browser (a vertical list of windows). They now open the **current window's board directly**, with prev/next paging between windows; the browser is demoted to a secondary view reached from a `≡ list` button in the pager header.
+The Boards-tab **Core boards** rows previously opened the per-timeframe browser (a vertical list of windows). They now open the **current window's board directly**, with swipe/±1 paging between windows; long-range jumping lives in the pager's **window-picker sheet** (opened from the header's window chip — the core-board surface rework retired the vertical browser view entirely; its route now redirects to today's window).
 
 - **Routing**: web adds `/boards/core/:timeframe/:date` (`CoreBoardWindowPage`) alongside the existing browser route `/boards/core/:timeframe`; iOS adds a `CoreWindowRoute(timeframe, windowStart)` navigation value → `CoreBoardWindowView`. The Core board row seeds the route with the current window's start date.
 - **Empty windows are lazy**: when no core board exists for a window, the pager shows a setup prompt ("No board for <label> yet" → "Set up"/"Backfill"), which launches the wizard prefilled for that window. **No board row is written until the user acts** — the same no-auto-spawn invariant that governs the rest of Phase 6 (navigating to a window never creates a board).
