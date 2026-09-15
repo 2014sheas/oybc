@@ -283,3 +283,30 @@
   font-weight: 700;
   box-sizing: border-box;
 }
+
+/* Per-member ⋯ menu chip (owner report 2026-09-15) — derive / subtask
+   actions, same vocabulary as FromBoardGrid's cellMore (#470). */
+.memberMore {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--riso-paper);
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 5px;
+  color: var(--riso-ink);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.memberMore:hover {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.memberMore:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}

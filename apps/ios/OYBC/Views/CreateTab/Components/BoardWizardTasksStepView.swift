@@ -155,6 +155,15 @@ struct BoardWizardTasksStepView: View {
     @State private var copiedTaskIds: Set<String> = []
     @State private var copyingTask: OYBC.Task? = nil
 
+    /// Source-member derive state (owner report 2026-09-15) — "Derive
+    /// smaller version…" fired from a pulled source's member row. The
+    /// created task is a hand-add; the counter-family guard then prefers
+    /// it over the source-supplied original at the deal, so no manual
+    /// exclude is needed.
+    @State private var sourceDeriveTask: OYBC.Task? = nil
+    @State private var sourceDeriveInput: String = ""
+    @State private var sourceDeriveError: String? = nil
+
     // Inline task editor (PR 1) — at most one row open at a time.
     @State private var editingTaskId: String? = nil
     @State private var editDraft = TaskEditPatch(title: "")
@@ -513,6 +522,32 @@ struct BoardWizardTasksStepView: View {
                 onCancel: { copyingTask = nil }
             )
         }
+        // Derive sheet for a pulled source's counting member (2026-09-15).
+        // The new linked counter lands in the wizard selection as a
+        // hand-add via the same onTaskCreated path quick-add uses.
+        .sheet(item: $sourceDeriveTask) { source in
+            RisoDeriveCounterSheetView(
+                source: source,
+                input: $sourceDeriveInput,
+                error: $sourceDeriveError,
+                userId: userId,
+                onCancel: { sourceDeriveTask = nil },
+                onSave: {
+                    DeriveCounterAction.createDerived(
+                        source: source,
+                        goalInput: sourceDeriveInput,
+                        userId: userId,
+                        onError: { sourceDeriveError = $0 },
+                        onCreated: { newTask in
+                            sourceDeriveTask = nil
+                            sourceDeriveError = nil
+                            onTaskCreated(newTask.id, newTask.title, "counting")
+                            onLibraryReloadRequested()
+                        }
+                    )
+                }
+            )
+        }
     }
 
     // MARK: - Sources UI (Board Sources P2)
@@ -570,7 +605,17 @@ struct BoardWizardTasksStepView: View {
                     onSetFilter: { onSetSourceFilter(source.sourceId, $0) },
                     onSetRange: { onSetSourceRange(source.sourceId, $0, $1) },
                     onToggleExclude: { onToggleSourceExclude(source.sourceId, $0) },
-                    counterClashByTaskId: counterClashByTaskId
+                    counterClashByTaskId: counterClashByTaskId,
+                    compoundChildrenByCompound: effectiveChildrenByCompound,
+                    selectedTaskIds: selectedTaskIds,
+                    onDeriveMember: { task in
+                        sourceDeriveTask = task
+                        sourceDeriveInput = ""
+                        sourceDeriveError = nil
+                    },
+                    onAddTask: { taskId in
+                        if !selectedTaskIds.contains(taskId) { toggleSelection(taskId) }
+                    }
                 )
             }
         )
