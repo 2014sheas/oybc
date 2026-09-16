@@ -100,10 +100,17 @@ struct BoardListView: View {
     /// User's week-start pref ("monday"/"sunday") for the core grid's local
     /// window-boundary fallback. Loaded in `onAppearLoad`.
     @State private var weekStartDayPref: String = "monday"
-    /// Pinned at view creation — every expiry/status derivation on this
-    /// screen resolves against ONE instant, so the "Expiring" word can't
-    /// flip on an unrelated re-render and two cards can't disagree
+    /// One instant per render pass — every expiry/status derivation on
+    /// this screen resolves against it, so the "Expiring" word can't flip
+    /// on an unrelated re-render and two cards can't disagree
     /// (late-mutation audit, shape C).
+    ///
+    /// REFRESHED on appear and on sync-apply (review-caught): the Boards
+    /// tab is a TabView root, so @State survives for the process lifetime
+    /// — pinning once at creation would freeze `now` near app launch and
+    /// make "Expiring" wrong in the other direction for the rest of the
+    /// session. Refreshing at entry points bounds staleness to "since you
+    /// last opened/synced this screen" while keeping the invariant.
     @State private var now = Date()
 
     // MARK: - Constants
@@ -144,6 +151,7 @@ struct BoardListView: View {
         // `useLiveQuery`). Scoped to the boards list itself; preview cells
         // refresh as a side effect of `loadBoards()`'s existing tail call.
         .onReceive(NotificationCenter.default.publisher(for: .oybcSyncDidApplyChanges)) { _ in
+            now = Date()
             loadBoards()
         }
     }
@@ -637,6 +645,8 @@ struct BoardListView: View {
     // MARK: - Data loading
 
     private func onAppearLoad() {
+        // Re-pin the screen's instant on every entry (see `now`).
+        now = Date()
         loadBoards()
         if let userId = authService.currentUser?.id {
             pendingRecurringVM.reloadAsync(userId: userId)

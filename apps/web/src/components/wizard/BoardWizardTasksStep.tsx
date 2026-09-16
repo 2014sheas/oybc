@@ -137,6 +137,10 @@ export interface BoardWizardTasksStepProps {
   /** Board Sources P4 — the header/gate capacity (sum of source maxes +
    *  hand-added, deduped). */
   capacity: number;
+  /** While true, any pulled source's supply is unresolved — `capacity`
+   *  is artificially low, so the shortfall copy and the Next gate must
+   *  stay quiet (late-mutation audit, shape B). */
+  suppliesPending?: boolean;
   /** Board Sources P4 — the source sheet's BOARDS rows (ACTIVE boards +
    *  squares/done counts), loaded by the page alongside `pools`. */
   sheetBoardEntries: SourceSheetBoardEntry[];
@@ -226,6 +230,7 @@ export function BoardWizardTasksStep({
   expandedSourceIds,
   availableCountForSource,
   capacity,
+  suppliesPending = false,
   sheetBoardEntries,
   onToggleSourceExpanded,
   onRemoveSource,
@@ -391,7 +396,9 @@ export function BoardWizardTasksStep({
   // Board Sources P4 — the gate compares CAPACITY (the honest achievable
   // pool size since the counter-family rework) against the fillable cell
   // count, mirroring iOS.
-  const isCountSatisfied = capacity >= tasksRequired;
+  // Don't block Next (or claim a shortfall) over supplies we haven't
+  // read yet — capacity is artificially 0 until they resolve.
+  const isCountSatisfied = suppliesPending || capacity >= tasksRequired;
 
   // Counter-family exclusivity (2026-09-08) — collisions visible in the
   // wizard pool, for the "shares a counter with 'X' · one per board" row

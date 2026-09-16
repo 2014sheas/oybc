@@ -1138,6 +1138,7 @@ export function useBoardWizard({
     step2ValidationMessage,
     isPristine,
     capacity,
+    suppliesPending: hasPendingSupply,
     counterFamilyByTaskId,
   };
 }

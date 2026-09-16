@@ -149,7 +149,12 @@ struct CoreBoardWindowView: View {
         }
         .background(RisoPaperBackground().ignoresSafeArea())
         .navigationBarHidden(true)
-        .onAppear { viewModel.reload() }
+        .onAppear {
+            // Re-pin on entry so a long-lived process can't serve a
+            // stale `isPast` (review-caught staleness bound).
+            now = Date()
+            viewModel.reload()
+        }
         .sheet(isPresented: $isPickerOpen) {
             CoreWindowPickerSheet(
                 timeframe: timeframe,

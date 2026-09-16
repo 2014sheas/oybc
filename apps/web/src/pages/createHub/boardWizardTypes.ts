@@ -263,6 +263,11 @@ export interface BoardWizardDerived {
    * the step counts or gates; gate-passed ⇒ the deal fills.
    */
   capacity: number;
+  /** True while any pulled source's supply is still resolving — its
+   *  `capacity` contribution is 0 for a reason we can't yet measure, so
+   *  consumers must NOT show a shortfall or block Next on it
+   *  (late-mutation audit, shape B). */
+  suppliesPending: boolean;
   /**
    * Counter-family exclusivity — task id → shared-counter family key
    * (`sharedCounterId ?? id`, counting tasks only) over the live library

@@ -348,6 +348,7 @@ export function BoardWizardPage({
               availableCountForSource(wizard.sources, wizard.supplyInfoBySourceId, sourceId)
             }
             capacity={wizard.capacity}
+            suppliesPending={wizard.suppliesPending}
             sheetBoardEntries={sheetBoardEntries}
             onToggleSourceExpanded={wizard.toggleExpandedSource}
             onRemoveSource={wizard.removeSource}

@@ -328,3 +328,35 @@ describe('buildSupplyInfoMap — pending vs deleted (late-mutation audit, shape 
     expect(resolved.b1.displayName).toBe('Deleted board');
   });
 });
+
+describe('pending supply keeps capacity honest for the GATE (review-caught Critical)', () => {
+  // The first attempt at this fix wired the pending flag into an
+  // effectively-unused validation message while the REAL Next gate
+  // (`capacity >= tasksRequired` in BoardWizardTasksStep) kept blocking.
+  // These assert the inputs that gate consumes.
+  const poolSource: BoardSource = {
+    sourceId: 'p1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all',
+  };
+
+  it('a pending source contributes 0 capacity — so the gate MUST consult isPending, not capacity alone', () => {
+    const pending = buildSupplyInfoMap([poolSource], {}, false, {}, {});
+    expect(sourceCapacity([poolSource], pending, new Set())).toBe(0);
+    // ...which is exactly why `suppliesPending` has to reach the gate:
+    // capacity 0 here means "unknown", not "you're short".
+    expect(pending.p1.isPending).toBe(true);
+  });
+
+  it('once resolved, the same source reports real capacity', () => {
+    const pool = {
+      id: 'p1', userId: 'u1', name: 'Morning', taskIds: ['t1', 't2'],
+      createdAt: 'x', updatedAt: 'x', version: 1, isDeleted: false,
+    } as Pool;
+    const tasks: Record<string, Task> = {
+      t1: { id: 't1', userId: 'u1', title: 'A', type: TaskType.NORMAL, isDeleted: false } as Task,
+      t2: { id: 't2', userId: 'u1', title: 'B', type: TaskType.NORMAL, isDeleted: false } as Task,
+    };
+    const loaded = buildSupplyInfoMap([poolSource], { p1: pool }, true, tasks, {});
+    expect(loaded.p1.isPending).toBeUndefined();
+    expect(sourceCapacity([poolSource], loaded, new Set())).toBe(2);
+  });
+});
