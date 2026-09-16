@@ -106,6 +106,12 @@ struct BoardPlayView: View {
     /// (the core-board window pager) can own the title/bar. Default false
     /// preserves the standalone /boards/:id-equivalent behavior.
     var embedded: Bool = false
+    /// Owner-reported (2026-09-16): a horizontal pager swipe that starts on
+    /// (or releases over) a tappable square must NOT fire the tap — a
+    /// mid-swipe release was toggling completion. The pager passes true
+    /// for the whole drag/snap; the cell dispatch guards on it. Default
+    /// false keeps standalone behavior untouched.
+    var pagerSwipeActive: Bool = false
     /// Catch-all draft guard: a DRAFT board is never rendered as a playable
     /// grid. When a draft is loaded (non-embedded) this fires with the board
     /// id so the host can resume it in the wizard. Covers every navigation
@@ -267,12 +273,14 @@ struct BoardPlayView: View {
         boardId: String,
         onOpenBoard: @escaping (String) -> Void = { _ in },
         embedded: Bool = false,
+        pagerSwipeActive: Bool = false,
         onResumeDraft: ((String) -> Void)? = nil,
         onEditModeChange: ((Bool) -> Void)? = nil
     ) {
         self.boardId = boardId
         self.onOpenBoard = onOpenBoard
         self.embedded = embedded
+        self.pagerSwipeActive = pagerSwipeActive
         self.onResumeDraft = onResumeDraft
         self.onEditModeChange = onEditModeChange
         _viewModel = StateObject(
@@ -1670,7 +1678,7 @@ struct BoardPlayView: View {
             compoundChildCount: compoundLinks.count,
             compoundRequiredCount: compoundRequiredCount,
             onTap: {
-                guard !isBoardLocked, !isProcessing else { return }
+                guard !isBoardLocked, !isProcessing, !pagerSwipeActive else { return }
                 // Haptic feedback — fire immediately on tap (before async write
                 // lands).
                 let generator = UIImpactFeedbackGenerator(style: .medium)

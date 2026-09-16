@@ -195,29 +195,53 @@ struct CoreBoardWindowView: View {
 
     // MARK: - Window card area (swipes as one unit)
 
+    /// Stable-identity paging (owner-reported jank, 2026-09-16): the
+    /// displayed card and the incoming preview render through ONE builder
+    /// inside a `ForEach` keyed by windowStart, so when a swipe commits,
+    /// the incoming card KEEPS its view identity (and its already-loaded
+    /// embedded `BoardPlayView`) as it becomes the displayed card — no
+    /// remount, no reload, even for filled/completed boards. The old
+    /// structure gave the preview a different id ("incoming-…") from the
+    /// landed card, so every commit destroyed the loaded view and paid a
+    /// fresh self-load.
     private var windowCardArea: some View {
         GeometryReader { geo in
             let width = geo.size.width
+            let displayed = viewModel.windowStart
+            let cardStarts: [String] = {
+                var starts = [displayed]
+                if incomingDir != 0,
+                   let neighbor = viewModel.neighborWindowStart(offset: incomingDir) {
+                    starts.append(neighbor)
+                }
+                return starts
+            }()
 
             ZStack(alignment: .top) {
-                // Displayed card.
-                displayedCard
-                    .frame(width: width)
-                    .offset(x: dragOffset)
-                    .opacity(outgoingOpacity(width: width))
-
-                // Incoming neighbor card — only mounted mid-swipe/snap.
-                if incomingDir != 0,
-                   let start = viewModel.neighborWindowStart(offset: incomingDir) {
-                    incomingCard(windowStart: start)
+                ForEach(cardStarts, id: \.self) { start in
+                    let isDisplayed = start == displayed
+                    card(windowStart: start, isDisplayed: isDisplayed)
                         .frame(width: width)
-                        .offset(x: dragOffset + CGFloat(incomingDir) * (width + Riso.gutter))
+                        .offset(
+                            x: dragOffset + (isDisplayed
+                                ? 0
+                                : CGFloat(incomingDir) * (width + Riso.gutter))
+                        )
+                        .opacity(isDisplayed ? outgoingOpacity(width: width) : 1)
+                        .allowsHitTesting(isDisplayed && !swipeEngaged)
                 }
             }
             .frame(width: width, alignment: .top)
             .contentShape(Rectangle())
             .simultaneousGesture(swipeGesture(width: width))
         }
+    }
+
+    /// True from the first horizontal movement until the snap settles —
+    /// gates every tap target on the cards (prompt CTAs, board squares)
+    /// so a swipe can never fire a press (owner-reported, 2026-09-16).
+    private var swipeEngaged: Bool {
+        dragAxis == true || dragOffset != 0 || incomingDir != 0 || isAnimatingStep
     }
 
     /// Outgoing card fades to 55% linearly with drag progress.
@@ -227,16 +251,31 @@ struct CoreBoardWindowView: View {
         return 1 - 0.45 * progress
     }
 
+    /// One card for any window — board / draft / empty — rendered from
+    /// the VM's reconciled fields when displayed, else the always-loaded
+    /// `coreBoardsByStart` map (the same source `commitWindow` seeds
+    /// from, so the promoted card's data can't disagree).
     @ViewBuilder
-    private var displayedCard: some View {
+    private func card(windowStart start: String, isDisplayed: Bool) -> some View {
+        let mapBoard = viewModel.coreBoardsByStart[start]
+        let row: Board? = isDisplayed
+            ? (viewModel.board ?? viewModel.draftBoard)
+            : mapBoard
+        let label: String = isDisplayed
+            ? viewModel.windowLabel
+            : (parseISO8601Date(start).map {
+                formatTimeframeLabel(timeframe: timeframe, startDate: $0)
+            } ?? "")
+
         if !viewModel.isLoaded {
             loadingView
-        } else if let board = viewModel.board {
+        } else if let b = row, b.status != .draft {
             VStack(spacing: 0) {
                 BoardPlayView(
-                    boardId: board.id,
+                    boardId: b.id,
                     onOpenBoard: onOpenBoard,
                     embedded: true,
+                    pagerSwipeActive: swipeEngaged,
                     onResumeDraft: onResumeDraft,
                     onEditModeChange: { editing in
                         withAnimation(.easeInOut(duration: 0.22)) {
@@ -247,8 +286,7 @@ struct CoreBoardWindowView: View {
                 caption
                     .padding(.bottom, 10)
             }
-            .id(viewModel.windowStart)
-        } else if let draft = viewModel.draftBoard {
+        } else if let draft = row {
             promptCard(
                 kicker: boardKicker,
                 kickerColor: .risoRed,
@@ -257,81 +295,39 @@ struct CoreBoardWindowView: View {
                 isDraft: true
             ) {
                 CoreBoardSetupPromptView(
-                    label: viewModel.windowLabel,
-                    isPast: viewModel.isPast,
+                    label: label,
+                    isPast: isDisplayed ? viewModel.isPast : false,
                     resumeDraft: true,
                     framed: true,
-                    onSetUp: { onResumeDraft(draft.id) }
+                    onSetUp: {
+                        guard !swipeEngaged else { return }
+                        onResumeDraft(draft.id)
+                    }
                 )
             }
-            .id(viewModel.windowStart)
         } else {
             promptCard(
                 kicker: boardKicker,
                 kickerColor: .risoMuted,
-                title: viewModel.windowLabel,
+                title: label,
                 titleColor: .risoMuted,
                 isDraft: false
             ) {
                 CoreBoardSetupPromptView(
-                    label: viewModel.windowLabel,
-                    isPast: viewModel.isPast,
+                    label: label,
+                    isPast: isDisplayed ? viewModel.isPast : false,
                     framed: true,
                     onSetUp: {
-                        // The wizard re-snaps this date to full window
-                        // boundaries via `computeTimeframeBoundaries`, so the
+                        // Swipe-release must never fire the CTA; the wizard
+                        // re-snaps the date to window boundaries, so the
                         // exact time of day passed here doesn't matter.
-                        if let date = parseISO8601Date(viewModel.windowStart) {
+                        guard !swipeEngaged else { return }
+                        if let date = parseISO8601Date(start) {
                             onCreateForWindow(timeframe, date)
                         }
                     }
                 )
-                if !viewModel.isCurrentWindow, !viewModel.todayWindowStart.isEmpty {
-                    Text("Swipe back to \(CoreWindowPicker.captionSideLabel(timeframe: timeframe, windowStart: viewModel.todayWindowStart)) to keep playing")
-                        .font(.risoBody(12, .bold))
-                        .foregroundStyle(Color.risoMuted)
-                }
             }
-            .id(viewModel.windowStart)
-        }
-    }
-
-    /// The incoming neighbor's card, rendered from the same core-board
-    /// lookup the chip dots use. A playable board mounts a real embedded
-    /// `BoardPlayView` (it self-loads by id); drafts/empty windows show
-    /// their prompt frames.
-    @ViewBuilder
-    private func incomingCard(windowStart: String) -> some View {
-        let board = viewModel.coreBoardsByStart[windowStart]
-        let label = parseISO8601Date(windowStart).map {
-            formatTimeframeLabel(timeframe: timeframe, startDate: $0)
-        } ?? ""
-
-        if let b = board, b.status != .draft {
-            BoardPlayView(boardId: b.id, embedded: true)
-                .id("incoming-\(b.id)")
-                .allowsHitTesting(false)
-        } else if let b = board {
-            promptCard(
-                kicker: boardKicker, kickerColor: .risoRed,
-                title: b.name, titleColor: .risoInk, isDraft: true
-            ) {
-                CoreBoardSetupPromptView(
-                    label: label, isPast: false, resumeDraft: true,
-                    framed: true, onSetUp: {}
-                )
-            }
-            .allowsHitTesting(false)
-        } else {
-            promptCard(
-                kicker: boardKicker, kickerColor: .risoMuted,
-                title: label, titleColor: .risoMuted, isDraft: false
-            ) {
-                CoreBoardSetupPromptView(
-                    label: label, isPast: false, framed: true, onSetUp: {}
-                )
-            }
-            .allowsHitTesting(false)
         }
     }
 

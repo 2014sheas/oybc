@@ -302,11 +302,9 @@ export function CoreBoardWindowPage(): React.ReactElement {
                 navigate(`/create?recurringTimeframe=${timeframe}&windowDate=${windowStart.slice(0, 10)}`);
               }}
             />
-            {!isCurrentWindow && (
-              <span className={styles.frameHint}>
-                Swipe back to {captionSideLabel(timeframe, todayWindowStart)} to keep playing
-              </span>
-            )}
+            {/* The "Swipe back to … to keep playing" hint was REMOVED
+                (owner, 2026-09-16) — unnecessary verbosity; the caption
+                and chip dots already say where today is. */}
           </div>
           {caption}
         </div>
