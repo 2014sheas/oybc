@@ -9,7 +9,7 @@ import {
   useBackstopAutoSeal,
   useClosingOutBoards,
   useBoardsPreviewCells,
-  useRecurringBoardTemplates,
+  useRecurringBoardTemplatesQuery,
 } from '../hooks';
 import { boardMatchesListFilter } from '../utils/boardDisplayUtils';
 import { deleteBoard, deleteDraftWithCascade } from '../db/operations/boards';
@@ -40,6 +40,7 @@ const FILTER_TABS = [
  * existing logic (filtering, recurring-spawn, core slots).
  */
 const EMPTY_BOARDS: Board[] = [];
+const EMPTY_TEMPLATES: RecurringBoardTemplate[] = [];
 
 export function BoardsPage(): React.ReactElement {
   const { user } = useAuth();
@@ -63,7 +64,11 @@ export function BoardsPage(): React.ReactElement {
   // P6 (Task Pools + Recurring Boards Rework) — resolve each board's source
   // template (for the paused badge + "· repeats {cadence}" subtitle) without
   // a per-card fetch.
-  const templates = useRecurringBoardTemplates(user?.id);
+  // Tri-state: `undefined` until first resolve, so badges can tell
+  // "no template" from "not read yet" (late-mutation audit, shape B).
+  const templatesQuery = useRecurringBoardTemplatesQuery(user?.id);
+  const templates = templatesQuery ?? EMPTY_TEMPLATES;
+  const templatesLoaded = templatesQuery !== undefined;
   const templatesById = useMemo(() => {
     const map = new Map<string, (typeof templates)[number]>();
     for (const t of templates) map.set(t.id, t);
@@ -222,6 +227,7 @@ export function BoardsPage(): React.ReactElement {
                     ? templatesById.get(board.spawnedFromTemplateId)
                     : undefined
                 }
+                templatesLoaded={templatesLoaded}
                 onOpen={(id) => {
                   // Drafts never open as a playable board — tap routes to
                   // the wizard resume flow (cross-tab via ?resumeDraft).

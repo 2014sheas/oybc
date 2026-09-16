@@ -84,6 +84,9 @@ struct BoardListView: View {
     /// `board.spawnedFromTemplateId` into a template for the paused-badge
     /// variant + cadence subtitle without a per-card DB read.
     @State private var templatesById: [String: RecurringBoardTemplate] = [:]
+    /// False until the template batch-load lands — an unresolved template
+    /// is "unknown", not "not paused" (late-mutation audit, shape B).
+    @State private var templatesLoaded = false
     @State private var activeFilter: String = "active"
     @State private var loadError: String?
     @State private var boardPendingDelete: Board?
@@ -253,7 +256,8 @@ struct BoardListView: View {
                                     timeframeLabel: boardTimeframeLabel(board),
                                     isExpiring: isBoardExpiringSoon(board),
                                     previewCells: previewCells(for: board),
-                                    template: template(for: board)
+                                    template: template(for: board),
+                                    templatesLoaded: templatesLoaded
                                 )
                             }
                         } else {
@@ -272,7 +276,8 @@ struct BoardListView: View {
                                     timeframeLabel: boardTimeframeLabel(board),
                                     isExpiring: isBoardExpiringSoon(board),
                                     previewCells: previewCells(for: board),
-                                    template: template(for: board)
+                                    template: template(for: board),
+                                    templatesLoaded: templatesLoaded
                                 )
                             }
                         }
@@ -716,6 +721,7 @@ struct BoardListView: View {
             let byId = Dictionary(uniqueKeysWithValues: templates.map { ($0.id, $0) })
             await MainActor.run {
                 self.templatesById = byId
+                self.templatesLoaded = true
             }
         }
     }

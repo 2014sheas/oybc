@@ -29,6 +29,7 @@ import {
 import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
 import { CellSwapModal } from './CellSwapModal';
 import { BoardStatusBadge } from './BoardStatusBadge';
+import { recurringBadgeState } from './boards/recurringBadgeState';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { formatDisplayDate } from '../utils/dateFormat';
@@ -139,6 +140,7 @@ export function BoardPlaySurface({
     isExpired,
     squareWindowContext,
     sourceTemplate,
+    templatesLoaded,
   } = useBoardPlayData(board, userId);
 
   // Windowed Completion — sealed boards are a frozen, read-only historical
@@ -566,8 +568,9 @@ export function BoardPlaySurface({
               ) : (
                 <BoardStatusBadge status={board.status} />
               )}
-              {board.spawnedFromTemplateId != null && (
-                <RecurringBadge paused={sourceTemplate != null && !sourceTemplate.isActive} />
+              {/* Hidden until resolved — never a state it reverses. */}
+              {recurringBadgeState(board, sourceTemplate, templatesLoaded) !== 'hidden' && (
+                <RecurringBadge paused={sourceTemplate?.isActive === false} />
               )}
               {greenlogStreak > 0 && CORE_STREAK_TIMEFRAMES.has(board.timeframe) && (
                 <span

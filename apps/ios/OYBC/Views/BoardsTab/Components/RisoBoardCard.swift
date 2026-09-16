@@ -38,6 +38,30 @@ struct RisoBoardCard: View {
     /// pre-existing call site (most snapshot
     /// tests) compiles unchanged.
     var template: RecurringBoardTemplate? = nil
+    /// False while the caller's template lookup is still loading. A nil
+    /// `template` then means "not resolved YET", not "no template" — the
+    /// badge used to render un-paused and un-dimmed, then flip to
+    /// "↻ PAUSED" (and dim the card) when the map arrived (late-mutation
+    /// audit, shape B; see `reference_late_mutation_bug_class`). While
+    /// false the card shows the plain badge and skips the paused
+    /// treatment entirely rather than asserting "not paused".
+    /// Defaults true so existing call sites/snapshot fixtures are
+    /// unchanged.
+    var templatesLoaded: Bool = true
+
+    /// What the recurring badge should render — `hidden` covers both
+    /// "one-off" and "not resolved yet", because showing the un-paused
+    /// variant while the pause state is unknown is a claim that visibly
+    /// reverses when the lookup lands (late-mutation audit, shape B).
+    /// Web twin: `recurringBadgeState` in `boards/recurringBadgeState.ts`.
+    private enum RecurringBadgeState { case hidden, recurring, paused }
+
+    private var badgeState: RecurringBadgeState {
+        guard RisoRecurringBadge.shouldShow(for: board) else { return .hidden }
+        guard templatesLoaded else { return .hidden }
+        guard let template else { return .recurring } // resolved: gone
+        return template.isActive ? .recurring : .paused
+    }
 
     private var progressValue: Double {
         guard board.totalTasks > 0 else { return 0 }
@@ -86,8 +110,8 @@ struct RisoBoardCard: View {
                         // Issue #321 — provenance tag for recurring-spawned boards.
                         // P6 — a resolved paused template swaps in the muted
                         // "↻ PAUSED" variant of the same badge.
-                        if RisoRecurringBadge.shouldShow(for: board) {
-                            RisoRecurringBadge(paused: template.map { !$0.isActive } ?? false)
+                        if badgeState != .hidden {
+                            RisoRecurringBadge(paused: badgeState == .paused)
                         }
                     }
                     RisoMiniGrid(gridSize: previewCells.size, cells: previewCells.cells)
@@ -111,7 +135,7 @@ struct RisoBoardCard: View {
         // row, not here). Mirrors `RecurringTemplateCard`'s existing
         // `opacity(active ? 1.0 : 0.7)` precedent
         // (Views/Components/RecurringTemplateCardView.swift).
-        .opacity(template?.isActive == false ? 0.7 : 1.0)
+        .opacity(badgeState == .paused ? 0.7 : 1.0)
     }
 
     /// Timeframe label, with a cadence suffix appended for a repeating

@@ -17,7 +17,7 @@ import { db } from '../db/internal';
 import type { SquareWindowContext } from '../db/adapters';
 import { useBoardTasks } from './useBoardTasks';
 import { useBoards } from './useBoards';
-import { useRecurringBoardTemplates } from './useRecurringBoardTemplates';
+import { useRecurringBoardTemplatesQuery } from './useRecurringBoardTemplates';
 import { useSquareWindowContext } from './useSquareWindowContext';
 import { useTaskLibrary } from '../pages/createPage/useTaskLibrary';
 import { isBoardExpired } from '../utils/boardDisplayUtils';
@@ -93,6 +93,9 @@ export interface BoardPlayData {
    * without a second template fetch.
    */
   sourceTemplate: RecurringBoardTemplate | undefined;
+  /** False while the templates query is unresolved — `sourceTemplate`
+   *  being undefined then means "unknown", not "one-off board". */
+  templatesLoaded: boolean;
 }
 
 /**
@@ -131,8 +134,12 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   // returns non-deleted boards for the user, and
   // `useRecurringBoardTemplates` returns non-deleted templates.
   const allBoards: Board[] = useBoards(userId) ?? EMPTY_BOARDS;
-  const allTemplates: RecurringBoardTemplate[] =
-    useRecurringBoardTemplates(userId) ?? EMPTY_TEMPLATES;
+  // Tri-state on templates: the play header's RECURRING/PAUSED badge
+  // must not claim "not paused" before the query resolves
+  // (late-mutation audit, shape B).
+  const templatesQuery = useRecurringBoardTemplatesQuery(userId);
+  const allTemplates: RecurringBoardTemplate[] = templatesQuery ?? EMPTY_TEMPLATES;
+  const templatesLoaded = templatesQuery !== undefined;
 
   // P6 — resolve this board's source template (undefined for a one-off
   // board). Reuses the same `allTemplates` fetch above rather than a
@@ -347,5 +354,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     isExpired,
     squareWindowContext,
     sourceTemplate,
+    templatesLoaded,
   };
 }

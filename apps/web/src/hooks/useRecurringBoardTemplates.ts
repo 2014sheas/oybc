@@ -30,3 +30,28 @@ export function useRecurringBoardTemplates(
     ) ?? []
   );
 }
+
+/**
+ * Tri-state variant of {@link useRecurringBoardTemplates}: `undefined`
+ * until the first resolve, so callers can tell "no templates" from "not
+ * read yet".
+ *
+ * Late-mutation audit (2026-09-16, shape B): collapsing the loading
+ * state to `[]` made a spawned board's badge render un-paused (and the
+ * card un-dimmed, with no cadence subtitle) and then flip to "↻ PAUSED"
+ * once the query landed. Callers rendering COPY/BADGES about a
+ * template should use this. See `reference_late_mutation_bug_class`.
+ */
+export function useRecurringBoardTemplatesQuery(
+  userId: string | undefined,
+): RecurringBoardTemplate[] | undefined {
+  return useLiveQuery(
+    async (): Promise<RecurringBoardTemplate[]> => {
+      if (!userId) return [];
+      return db.recurringBoardTemplates
+        .filter((t) => t.userId === userId && !t.isDeleted)
+        .toArray();
+    },
+    [userId],
+  );
+}
