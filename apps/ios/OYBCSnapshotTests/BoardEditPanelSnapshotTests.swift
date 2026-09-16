@@ -33,7 +33,7 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     func testPanelMonthlyCleanLight() {
         assertSnapshot(
             of: makePanel(),
-            as: .image(layout: .fixed(width: 393, height: 1250)),
+            as: .image(layout: .fixed(width: 393, height: 1400)),
             record: recordMode
         )
     }
@@ -42,7 +42,7 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
         assertSnapshot(
             of: makePanel(),
             as: .image(
-                layout: .fixed(width: 393, height: 1250),
+                layout: .fixed(width: 393, height: 1400),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
@@ -54,7 +54,7 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     func testPanelDirtyLight() {
         assertSnapshot(
             of: makePanel(name: "Spring Goals — Updated"),
-            as: .image(layout: .fixed(width: 393, height: 1250)),
+            as: .image(layout: .fixed(width: 393, height: 1400)),
             record: recordMode
         )
     }
@@ -63,7 +63,37 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     func testPanelSavingLight() {
         assertSnapshot(
             of: makePanel(name: "Spring Goals — Updated", isSaving: true),
-            as: .image(layout: .fixed(width: 393, height: 1250)),
+            as: .image(layout: .fixed(width: 393, height: 1400)),
+            record: recordMode
+        )
+    }
+
+    /// Repeat-in-edit — one-off variant with a staged cadence: the REPEATS
+    /// segmented shows Weekly selected, the "becomes a repeating board"
+    /// hint is visible, and the edit counter shows 1 edit.
+    func testPanelRepeatCadenceStagedLight() {
+        assertSnapshot(
+            of: makePanel(repeatCadence: .weekly),
+            as: .image(layout: .fixed(width: 393, height: 1400)),
+            record: recordMode
+        )
+    }
+
+    /// Repeat-in-edit — repeating-board variant: the "↻ Repeats … · from …"
+    /// line, the staged Repeating/Paused toggle (staged to Paused → 1 edit),
+    /// and the read-only spawn-provenance note.
+    func testPanelRepeatingBoardPausedStagedLight() {
+        assertSnapshot(
+            of: makePanel(
+                repeatInfo: BoardEditRepeatInfo(
+                    cadenceAdverb: "weekly",
+                    templateName: "Morning Kickstart",
+                    originalIsActive: true
+                ),
+                repeatActive: false,
+                spawnNoteText: "Picked 8 of 12 — 6 pulled in, 2 added today"
+            ),
+            as: .image(layout: .fixed(width: 393, height: 1400)),
             record: recordMode
         )
     }
@@ -76,15 +106,26 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     /// - Parameters:
     ///   - name: Value for the draft `name` binding (defaults to board.name → clean state).
     ///   - isSaving: Whether to render the saving indicator state.
+    ///   - repeatInfo: Repeat-in-edit — non-nil renders the repeating-board
+    ///     REPEATS variant (and stamps `spawnedFromTemplateId` on the board
+    ///     fixture for honesty).
+    ///   - repeatActive: Staged Repeating/Paused value for that variant.
+    ///   - repeatCadence: Staged cadence for the one-off variant (nil = Off).
+    ///   - spawnNoteText: Read-only provenance note under the toggle.
     private func makePanel(
         name: String = "Spring Goals",
-        isSaving: Bool = false
+        isSaving: Bool = false,
+        repeatInfo: BoardEditRepeatInfo? = nil,
+        repeatActive: Bool = true,
+        repeatCadence: Timeframe? = nil,
+        spawnNoteText: String? = nil
     ) -> some View {
         // Board fixture — 3×3 monthly active board.
         let board = SnapshotFixtures.makeBoard(
             id: "ep-board-1",
             name: "Spring Goals",
-            boardSize: 3
+            boardSize: 3,
+            spawnedFromTemplateId: repeatInfo != nil ? "ep-template-1" : nil
         )
 
         // Task fixtures — 9 tasks for a fully-populated 3×3 grid.
@@ -131,6 +172,10 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
             centerType: .constant(.free),
             hasCandidateTasks: false,
             subMode: .constant(.editTasks),
+            repeatInfo: repeatInfo,
+            repeatActive: .constant(repeatActive),
+            repeatCadence: .constant(repeatCadence),
+            spawnNoteText: spawnNoteText,
             isSaving: isSaving,
             onSave: {},
             onCancelConfirmed: {},

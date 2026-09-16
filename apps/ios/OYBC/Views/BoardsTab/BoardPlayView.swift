@@ -141,9 +141,9 @@ struct BoardPlayView: View {
     private var allBoardsInWorkspace: [Board] { viewModel.allBoardsInWorkspace }
     private var allTemplatesInWorkspace: [RecurringBoardTemplate] { viewModel.allTemplatesInWorkspace }
     private var allBoardTasksInWorkspace: [BoardTask] { viewModel.allBoardTasksInWorkspace }
-    // P6 (Task Pools + Recurring Boards Rework) — pools feed the spawn-
-    // provenance note's `poolsById` lookup.
-    private var allPoolsInWorkspace: [Pool] { viewModel.allPoolsInWorkspace }
+    // (The former `allPoolsInWorkspace` shim fed the spawn-provenance
+    // note's `poolsById` lookup — that recompute moved into the VM's
+    // `recomputeEditSpawnNote` with the repeat-in-edit rework.)
 
     // Interaction write-state now lives on the view model (B2-I2). Read-only
     // shim so the many render sites that gate on `isProcessing` are untouched;
@@ -152,9 +152,9 @@ struct BoardPlayView: View {
     // MARK: Riso visual layer state
     /// Whether to show the GREENLOG full-bleed celebration overlay.
     @State private var showGreenlogOverlay: Bool = false
-    /// Loose-ends sweep (2026-09-09) — the sources-native spawn-provenance
-    /// note, computed off-main by `recomputeSpawnNote`.
-    @State private var spawnNoteText: String? = nil
+    // Repeat-in-edit rework — the spawn-provenance note state/recompute
+    // moved to `BoardPlayViewModel.editSpawnNoteText` (computed only while
+    // the Board Edit panel is open); this view no longer owns it.
     /// Compact greenlog-streak value (e.g. "3d"/"2w") for the celebration overlay
     /// + share poster. Non-nil only for core boards with a streak ≥ 1; nil hides
     /// the STREAK card. Computed when the GREENLOG overlay is triggered.
@@ -464,15 +464,9 @@ struct BoardPlayView: View {
                         .padding(.horizontal, Riso.gutter)
                         .padding(.top, 12)
 
-                    // ── Recurring management (P6) ──
-                    // Manage row (repeating board) / "Repeat this board…" CTA
-                    // (one-off board) + spawn-provenance note. Never shown for
-                    // a draft (never playable, never repeatable).
-                    if let b = board, b.status != .draft {
-                        recurringManagementSection(board: b)
-                            .padding(.horizontal, Riso.gutter)
-                            .padding(.top, 10)
-                    }
+                    // Repeat-in-edit rework: the recurring management section
+                    // (manage row / "Repeat this board…" CTA / provenance
+                    // note) moved into Board Edit's REPEATS section.
 
                     if let b = board, b.status == .draft, !embedded {
                         // ── Draft guard ──
@@ -690,6 +684,19 @@ struct BoardPlayView: View {
                     // finding): the edit/rearrange preview must show the
                     // WINDOWED state, not the lifetime cache.
                     windowedIsCompleted: viewModel.windowedIsCompleted,
+                    // Repeat-in-edit — staged REPEATS section (moved off the
+                    // play surface). The VM owns the staged state + the
+                    // Save-time mutations (handleEditSave phase 2).
+                    repeatInfo: viewModel.editSourceTemplate.map {
+                        BoardEditRepeatInfo(
+                            cadenceAdverb: formatCadenceAdverb($0.timeframe),
+                            templateName: $0.name,
+                            originalIsActive: $0.isActive
+                        )
+                    },
+                    repeatActive: $viewModel.editRepeatActive,
+                    repeatCadence: $viewModel.editRepeatCadence,
+                    spawnNoteText: viewModel.editSpawnNoteText,
                     isSaving: editSaving,
                     onSave: {
                         let weekStart = authService.currentUser?.decodedPreferences
@@ -1189,131 +1196,13 @@ struct BoardPlayView: View {
         }
     }
 
-    // MARK: - Recurring management (Task Pools + Recurring Boards Rework, P6)
-
-    /// The board's source recurring template, resolved from the workspace-
-    /// wide templates the view model already loads for the achievement
-    /// badge lookup (same precedent, `allTemplatesInWorkspace`). `nil` for
-    /// a non-recurring board OR an unresolved (soft-deleted) template.
-    private func sourceTemplate(for board: Board) -> RecurringBoardTemplate? {
-        guard let templateId = board.spawnedFromTemplateId else { return nil }
-        return allTemplatesInWorkspace.first { $0.id == templateId }
-    }
-
-    /// The task ids currently dealt onto `board` — its live, non-deleted
-    /// `BoardTask` placements (which never include a row for an
-    /// auto-completed FREE center — see `makeWizardBoardTaskRows`). Feeds
-    /// the spawn-provenance note's `dealtTaskIds` input.
-    private var dealtTaskIds: [String] {
-        boardTasks.map { $0.taskId }
-    }
-
-    /// Renders the manage row (repeating board) or the "Repeat this
-    /// board…" CTA (one-off board), plus the spawn-provenance note when
-    /// applicable. docs/POOLS_RECURRING.md §Surfaces item 7.
-    @ViewBuilder
-    private func recurringManagementSection(board: Board) -> some View {
-        if let template = sourceTemplate(for: board) {
-            VStack(alignment: .leading, spacing: 6) {
-                RisoRecurringManageRow(
-                    cadenceAdverb: formatCadenceAdverb(template.timeframe),
-                    templateName: template.name,
-                    isActive: template.isActive,
-                    onToggleActive: { toggleTemplateActive(template) }
-                )
-                if isFreshlyDealtBoard(
-                    completedTasks: board.completedTasks,
-                    boardSize: board.boardSize,
-                    centerSquareType: board.centerSquareType
-                ) {
-                    // Loose-ends sweep (2026-09-09) — the note is computed
-                    // off-main into `spawnNoteText` (sources-native supply
-                    // resolution reads the DB; never per-body-eval on main).
-                    Group {
-                        if let spawnNoteText {
-                            Text(spawnNoteText)
-                                .font(.risoBody(11.5, .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                                .padding(.horizontal, 4)
-                        }
-                    }
-                    .onAppear { recomputeSpawnNote(board: board, template: template) }
-                }
-            }
-        } else if board.sealedAt == nil, board.centerSquareType != .chosen {
-            // One-off, still-live, non-CHOSEN-center board — offer to make
-            // it repeating. A CHOSEN center can never validate a spawn pool
-            // (`validateSpawnPool` rejects it as `.unsupportedCenter`), so
-            // it's excluded here defensively (owner-flagged judgment call —
-            // see delivery notes).
-            RisoRepeatBoardCTA(onConfirm: { cadence in
-                handleRepeatBoardConfirm(board: board, cadence: cadence)
-            })
-        }
-    }
-
-    /// Recomputes the spawn-provenance note off-main (the sources-native
-    /// resolution reads the DB — `AppDatabase.spawnProvenanceNote`) and
-    /// caches it in `spawnNoteText`.
-    private func recomputeSpawnNote(board: Board, template: RecurringBoardTemplate) {
-        let poolsById = Dictionary(uniqueKeysWithValues: allPoolsInWorkspace.map { ($0.id, $0) })
-        let tasksById = taskMap
-        let dealt = dealtTaskIds
-        _Concurrency.Task.detached(priority: .utility) {
-            let text = AppDatabase.shared.spawnProvenanceNote(
-                template: template,
-                poolsById: poolsById,
-                tasksById: tasksById,
-                dealtTaskIds: dealt
-            )
-            await MainActor.run { spawnNoteText = text }
-        }
-    }
-
-    /// Pause / resume the board's source template. Mirrors
-    /// `BoardSettingsView.setActive(_:_:)` (P7 — was `RecurringTemplatesView.setActive`
-    /// before that page retired) verbatim: flip `isActive`, bump version,
-    /// save + enqueue, reload.
-    private func toggleTemplateActive(_ template: RecurringBoardTemplate) {
-        let now = AppDatabase.currentTimestamp()
-        var updated = template
-        updated.isActive.toggle()
-        updated.updatedAt = now
-        updated.version += 1
-        _Concurrency.Task.detached {
-            do {
-                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                    updated, operation: .update, now: now
-                )
-                await MainActor.run { viewModel.reload() }
-            } catch {
-                dlog("[BoardPlayView] toggleTemplateActive failed: \(error)")
-            }
-        }
-    }
-
-    /// "↻ Repeat this board…" confirm handler — writes the new spawn
-    /// record + back-stamps the board, then reloads so the manage row
-    /// replaces the CTA immediately.
-    private func handleRepeatBoardConfirm(board: Board, cadence: Timeframe) {
-        guard let userId = authService.currentUser?.id else { return }
-        let weekStartDay = authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday"
-        let now = AppDatabase.currentTimestamp()
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
-                _ = try AppDatabase.shared.repeatBoardAsTemplate(
-                    board: board,
-                    cadence: cadence,
-                    userId: userId,
-                    weekStartDay: weekStartDay,
-                    now: now
-                )
-                await MainActor.run { viewModel.reload() }
-            } catch {
-                dlog("[BoardPlayView] repeatBoardAsTemplate failed: \(error)")
-            }
-        }
-    }
+    // Repeat-in-edit rework: the recurring management section
+    // (`recurringManagementSection` + `RisoRecurringManageRow` /
+    // `RisoRepeatBoardCTA`, the spawn-note recompute, and the immediate
+    // pause/repeat writes) moved into Board Edit — the panel's REPEATS
+    // section renders it, `BoardPlayViewModel` owns the staged state +
+    // Save-time mutations (`handleEditSave` phase 2), and the note is
+    // computed only while the panel is open.
 
     /// Draft-guard body: shown in place of the stat bar + grid when a draft
     /// board is loaded outside the wizard. Drafts are never playable; this

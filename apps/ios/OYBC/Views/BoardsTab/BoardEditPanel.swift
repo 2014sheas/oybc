@@ -35,6 +35,20 @@ enum BoardEditSubMode: Hashable {
     }
 }
 
+// MARK: - BoardEditRepeatInfo
+
+/// Repeat-in-edit — display data for the REPEATS section's repeating-board
+/// variant: the board's RESOLVED source repeating record. Plain value type
+/// (built by `BoardPlayView` from `viewModel.editSourceTemplate`) so the
+/// panel stays a DB-free, snapshot-testable leaf.
+struct BoardEditRepeatInfo: Equatable {
+    /// e.g. "weekly" — `formatCadenceAdverb(template.timeframe)`.
+    let cadenceAdverb: String
+    let templateName: String
+    /// The record's live `isActive` — the staged toggle's dirty baseline.
+    let originalIsActive: Bool
+}
+
 // MARK: - BoardEditPanel
 
 /// Leaf in-place edit chrome for an ACTIVE board (Phase 1 of the board-edit flow).
@@ -131,6 +145,27 @@ struct BoardEditPanel: View {
     /// behavior — so existing previews/snapshot call sites are unaffected.
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
 
+    // MARK: - Repeats (repeat-in-edit rework)
+
+    /// Non-nil for a board with a RESOLVED source repeating record → the
+    /// "↻ Repeats … · from …" variant with the staged Repeating/Paused
+    /// toggle. nil for a one-off board (cadence segmented instead) or an
+    /// unresolved (soft-deleted) record (section hidden entirely — same
+    /// rule as web's `BoardEditRepeatSection`).
+    var repeatInfo: BoardEditRepeatInfo? = nil
+
+    /// Staged Active value for the repeating-board variant. Plain
+    /// `Binding` var (not `@Binding`) so it can default to `.constant` for
+    /// existing preview/snapshot call sites.
+    var repeatActive: Binding<Bool> = .constant(true)
+
+    /// Staged cadence for the one-off variant (`nil` = Off, the default).
+    var repeatCadence: Binding<Timeframe?> = .constant(nil)
+
+    /// Read-only spawn-provenance note (computed off-main by the VM only
+    /// while the panel is open); nil hides the line.
+    var spawnNoteText: String? = nil
+
     // MARK: - Saving indicator
 
     /// True while the parent is writing to GRDB. Disables the Save pill.
@@ -156,10 +191,29 @@ struct BoardEditPanel: View {
 
     // MARK: - Derived
 
+    /// Repeat-in-edit — whether the one-off REPEATS variant is shown: no
+    /// source record on the board AND a non-CHOSEN staged center (a CHOSEN
+    /// center can never validate a spawn pool — `validateSpawnPool` rejects
+    /// it as `.unsupportedCenter` — so the section is hidden for it).
+    private var showsOneOffRepeat: Bool {
+        board.spawnedFromTemplateId == nil && centerType != .chosen
+    }
+
+    /// Repeat-in-edit — the staged REPEATS draft's contribution to the edit
+    /// counter: 1 iff Save would actually run a repeat mutation.
+    private var repeatEditCount: Int {
+        if let info = repeatInfo {
+            return repeatActive.wrappedValue != info.originalIsActive ? 1 : 0
+        }
+        if showsOneOffRepeat, repeatCadence.wrappedValue != nil { return 1 }
+        return 0
+    }
+
     /// True if any draft field has been changed from the original board values,
     /// or if any square has a staged replacement or task-field edit.
     private var isDirty: Bool {
         if squareEditCount > 0 { return true }
+        if repeatEditCount > 0 { return true }
         if name.trimmingCharacters(in: .whitespaces) != board.name { return true }
         if timeframe != board.timeframe { return true }
         if centerType != board.centerSquareType { return true }
@@ -189,6 +243,7 @@ struct BoardEditPanel: View {
         if tfChanged || dateChanged { n += 1 }
         let centerChanged = centerType != board.centerSquareType
         if centerChanged { n += 1 }
+        n += repeatEditCount
         return n
     }
 
@@ -236,6 +291,7 @@ struct BoardEditPanel: View {
                     weekStartDay: weekStartDay,
                     chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks
                 )
+                repeatsSection
                 squaresSection
                 archiveButton
                 // Bottom clearance for the sticky save bar so the last row
@@ -318,6 +374,63 @@ struct BoardEditPanel: View {
             Text("Board size cannot be changed on an active board.")
                 .font(.risoBody(11, .semibold))
                 .foregroundStyle(Color.risoMuted)
+        }
+    }
+
+    // MARK: - Repeats section (repeat-in-edit rework)
+
+    /// Staged cadence options for the one-off variant — Off (default) plus
+    /// the four cadences from the retired play-surface "Repeat this
+    /// board…" picker (labels unchanged).
+    private static let repeatCadenceOptions: [(value: Timeframe?, label: String)] = [
+        (nil, "Off"),
+        (.daily, "Daily"),
+        (.weekly, "Weekly"),
+        (.monthly, "Monthly"),
+        (.yearly, "Yearly"),
+    ]
+
+    /// The staged REPEATS section (replaces the retired play-surface
+    /// `RisoRecurringManageRow` / `RisoRepeatBoardCTA`). Both variants are
+    /// STAGED like every other edit field — nothing writes until Save;
+    /// Cancel discards. A CHOSEN-center one-off board (and a repeating
+    /// board whose source record didn't resolve) hides the section.
+    @ViewBuilder
+    private var repeatsSection: some View {
+        if let info = repeatInfo {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("REPEATS")
+                    .risoSectionLabel()
+                Text("↻ Repeats \(info.cadenceAdverb) · from \"\(info.templateName)\"")
+                    .font(.risoBody(12.5, .semibold))
+                    .foregroundStyle(Color.risoInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                RisoSegmented(
+                    options: [(true, "Repeating"), (false, "Paused")],
+                    selection: repeatActive
+                )
+                if let spawnNoteText {
+                    Text(spawnNoteText)
+                        .font(.risoBody(11.5, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } else if showsOneOffRepeat {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("REPEATS")
+                    .risoSectionLabel()
+                RisoSegmented(
+                    options: Self.repeatCadenceOptions,
+                    selection: repeatCadence
+                )
+                if repeatCadence.wrappedValue != nil {
+                    Text("This becomes a repeating board when you save.")
+                        .font(.risoBody(12, .regular))
+                        .foregroundStyle(Color.risoMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
     }
 
