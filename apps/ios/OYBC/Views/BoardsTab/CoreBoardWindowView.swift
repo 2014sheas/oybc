@@ -68,6 +68,10 @@ struct CoreBoardWindowView: View {
     @State private var dragAxis: Bool? = nil
     /// A snap animation is in flight — ignore new drags until it lands.
     @State private var isAnimatingStep = false
+    /// Pinned at view creation: every window's `isPast` in a render pass
+    /// resolves against ONE instant, so copy can't flip mid-session (and
+    /// the displayed + incoming cards can never disagree).
+    @State private var now = Date()
 
     // MARK: - Init
 
@@ -98,6 +102,24 @@ struct CoreBoardWindowView: View {
 
     // MARK: - Derived
 
+    /// The single description of any window — displayed or incoming.
+    /// See `CoreWindowPicker.WindowDescriptor`: role is NOT an input.
+    private func descriptor(_ windowStart: String) -> CoreWindowPicker.WindowDescriptor {
+        CoreWindowPicker.describe(
+            timeframe: timeframe,
+            windowStart: windowStart,
+            todayWindowStart: viewModel.todayWindowStart,
+            boardsByStart: viewModel.coreBoardsByStart,
+            weekStartDay: weekStartDay,
+            now: now
+        )
+    }
+
+    /// The displayed window's descriptor — drives the chip.
+    private var displayedDescriptor: CoreWindowPicker.WindowDescriptor {
+        descriptor(viewModel.windowStart)
+    }
+
     private var neighborhood: [CoreWindowPicker.NeighborhoodDot] {
         CoreWindowPicker.buildNeighborhood(
             timeframe: timeframe,
@@ -108,23 +130,10 @@ struct CoreBoardWindowView: View {
         )
     }
 
-    /// The displayed window's board row (playable OR draft) — drives the
-    /// chip's empty/closed styling.
-    private var displayedBoardRow: Board? {
-        viewModel.board ?? viewModel.draftBoard
-    }
-
-    private var chipLabel: String {
-        viewModel.windowLabel + CoreWindowPicker.chipLabelSuffix(
-            board: displayedBoardRow,
-            isCurrentWindow: viewModel.isCurrentWindow,
-            isPastWindow: viewModel.isPast
-        )
-    }
-
     private var chipA11yLabel: String {
-        let current = viewModel.isCurrentWindow ? ", current window" : ""
-        return "\(viewModel.windowLabel)\(current). Opens window picker."
+        let d = displayedDescriptor
+        let current = d.isCurrent ? ", current window" : ""
+        return "\(d.label)\(current). Opens window picker."
     }
 
     // MARK: - Body
@@ -166,10 +175,10 @@ struct CoreBoardWindowView: View {
             }
             Spacer(minLength: 8)
             CoreWindowChipView(
-                label: chipLabel,
+                label: displayedDescriptor.chipLabel,
                 dots: neighborhood,
                 isOpen: isPickerOpen,
-                isEmpty: viewModel.isLoaded && displayedBoardRow == nil,
+                isEmpty: viewModel.isLoaded && displayedDescriptor.board == nil,
                 isDisabled: childEditing,
                 accessibilityText: chipA11yLabel,
                 action: { isPickerOpen = true }
@@ -251,33 +260,32 @@ struct CoreBoardWindowView: View {
         return 1 - 0.45 * progress
     }
 
-    /// One card for any window — board / draft / empty — rendered from
-    /// the VM's reconciled fields when displayed, else the always-loaded
-    /// `coreBoardsByStart` map (the same source `commitWindow` seeds
-    /// from, so the promoted card's data can't disagree).
+    /// One card for any window — board / draft / empty.
+    ///
+    /// **Every value comes from the window's own descriptor.** `isDisplayed`
+    /// controls interactivity and which callbacks are live, NEVER what the
+    /// card says (owner-reported 2026-09-16: the CTA flipped "Set up" →
+    /// "Backfill" and the chip suffix changed after a swipe landed,
+    /// because the incoming card was rendered with hardcoded `isPast:
+    /// false` and the landed card read the VM). A card's copy is now
+    /// identical before and after promotion, so nothing can change under
+    /// the user mid-swipe.
     @ViewBuilder
     private func card(windowStart start: String, isDisplayed: Bool) -> some View {
-        let mapBoard = viewModel.coreBoardsByStart[start]
-        let row: Board? = isDisplayed
-            ? (viewModel.board ?? viewModel.draftBoard)
-            : mapBoard
-        let label: String = isDisplayed
-            ? viewModel.windowLabel
-            : (parseISO8601Date(start).map {
-                formatTimeframeLabel(timeframe: timeframe, startDate: $0)
-            } ?? "")
+        let d = descriptor(start)
 
         if !viewModel.isLoaded {
             loadingView
-        } else if let b = row, b.status != .draft {
+        } else if let board = d.playableBoard {
             VStack(spacing: 0) {
                 BoardPlayView(
-                    boardId: b.id,
+                    boardId: board.id,
                     onOpenBoard: onOpenBoard,
                     embedded: true,
                     pagerSwipeActive: swipeEngaged,
                     onResumeDraft: onResumeDraft,
                     onEditModeChange: { editing in
+                        guard isDisplayed else { return }
                         withAnimation(.easeInOut(duration: 0.22)) {
                             childEditing = editing
                         }
@@ -286,7 +294,7 @@ struct CoreBoardWindowView: View {
                 caption(for: start)
                     .padding(.bottom, 10)
             }
-        } else if let draft = row {
+        } else if let draft = d.board {
             promptCard(
                 kicker: boardKicker,
                 kickerColor: .risoRed,
@@ -296,12 +304,12 @@ struct CoreBoardWindowView: View {
                 captionStart: start
             ) {
                 CoreBoardSetupPromptView(
-                    label: label,
-                    isPast: isDisplayed ? viewModel.isPast : false,
+                    label: d.label,
+                    isPast: d.isPast,
                     resumeDraft: true,
                     framed: true,
                     onSetUp: {
-                        guard !swipeEngaged else { return }
+                        guard isDisplayed, !swipeEngaged else { return }
                         onResumeDraft(draft.id)
                     }
                 )
@@ -310,20 +318,20 @@ struct CoreBoardWindowView: View {
             promptCard(
                 kicker: boardKicker,
                 kickerColor: .risoMuted,
-                title: label,
+                title: d.label,
                 titleColor: .risoMuted,
                 isDraft: false,
                 captionStart: start
             ) {
                 CoreBoardSetupPromptView(
-                    label: label,
-                    isPast: isDisplayed ? viewModel.isPast : false,
+                    label: d.label,
+                    isPast: d.isPast,
                     framed: true,
                     onSetUp: {
                         // Swipe-release must never fire the CTA; the wizard
                         // re-snaps the date to window boundaries, so the
                         // exact time of day passed here doesn't matter.
-                        guard !swipeEngaged else { return }
+                        guard isDisplayed, !swipeEngaged else { return }
                         if let date = parseISO8601Date(start) {
                             onCreateForWindow(timeframe, date)
                         }

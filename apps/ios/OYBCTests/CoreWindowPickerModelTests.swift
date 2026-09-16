@@ -200,4 +200,71 @@ final class CoreWindowPickerModelTests: XCTestCase {
             "Q4 2026"
         )
     }
+
+    // MARK: - Window descriptor (role/timing independence)
+
+    private var augustStart: String {
+        var c = DateComponents(); c.year = 2026; c.month = 8; c.day = 15; c.hour = 12
+        let aug = Calendar.current.date(from: c)!
+        return wizardLocalISOString(
+            computeTimeframeBoundaries(timeframe: .monthly, referenceDate: aug, weekStartDay: "monday")!.start
+        )
+    }
+
+    /// THE regression (owner-reported 2026-09-16): the incoming card
+    /// rendered hardcoded `isPast: false` ("Set up"), then flipped to
+    /// `isPast: true` ("Backfill") the instant the swipe committed.
+    /// `describe` takes no "am I displayed?" input, so one window start
+    /// always yields one description.
+    func test_describe_pastWindow_isRoleIndependent() {
+        let a = CoreWindowPicker.describe(
+            timeframe: .monthly, windowStart: augustStart,
+            todayWindowStart: monthlyToday, boardsByStart: [:],
+            weekStartDay: "monday", now: now
+        )
+        let b = CoreWindowPicker.describe(
+            timeframe: .monthly, windowStart: augustStart,
+            todayWindowStart: monthlyToday, boardsByStart: [:],
+            weekStartDay: "monday", now: now
+        )
+        XCTAssertTrue(a.isPast)
+        XCTAssertFalse(a.isCurrent)
+        XCTAssertEqual(a.chipSuffix, " · past")
+        XCTAssertEqual(a.chipSuffix, b.chipSuffix)
+        XCTAssertEqual(a.label, b.label)
+        XCTAssertEqual(a.isPast, b.isPast)
+    }
+
+    func test_describe_currentWindow_hasNoSuffix() {
+        let d = CoreWindowPicker.describe(
+            timeframe: .monthly, windowStart: monthlyToday,
+            todayWindowStart: monthlyToday, boardsByStart: [:],
+            weekStartDay: "monday", now: now
+        )
+        XCTAssertTrue(d.isCurrent)
+        XCTAssertFalse(d.isPast)
+        XCTAssertEqual(d.chipSuffix, "")
+    }
+
+    func test_describe_splitsDraftFromPlayable_andKeepsSealedSuffix() {
+        let draft = CoreWindowPicker.describe(
+            timeframe: .monthly, windowStart: augustStart,
+            todayWindowStart: monthlyToday,
+            boardsByStart: [augustStart: makeBoard(id: "d", startDate: augustStart, status: "draft")],
+            weekStartDay: "monday", now: now
+        )
+        XCTAssertTrue(draft.isDraft)
+        XCTAssertNil(draft.playableBoard)
+
+        let sealed = CoreWindowPicker.describe(
+            timeframe: .monthly, windowStart: augustStart,
+            todayWindowStart: monthlyToday,
+            boardsByStart: [augustStart: makeBoard(
+                id: "s", startDate: augustStart, status: "completed", sealedAt: augustStart
+            )],
+            weekStartDay: "monday", now: now
+        )
+        XCTAssertEqual(sealed.chipSuffix, " · closed")
+        XCTAssertNotNil(sealed.playableBoard)
+    }
 }

@@ -13,6 +13,88 @@ import Foundation
 
 enum CoreWindowPicker {
 
+    // MARK: - Window descriptor (single source per window)
+
+    /// Everything the pager needs to render ONE window, derived purely
+    /// from that window's own start date.
+    ///
+    /// Owner-reported (2026-09-16): the CTA flipped "Set up" → "Backfill"
+    /// and the chip suffix changed AFTER a swipe landed. Root cause was
+    /// never load timing — the pager described a window through two
+    /// different code paths depending on whether it was currently
+    /// displayed (`isDisplayed ? viewModel.isPast : false`, etc.), and
+    /// the paths disagreed. The instant a card's role flipped, its copy
+    /// changed under the user.
+    ///
+    /// The rule this type enforces: **a window's description is a
+    /// function of WHICH window it is, never of whether it happens to be
+    /// on screen.** Build one of these per card — displayed or incoming,
+    /// identical inputs, identical output — and there is no second path
+    /// left to disagree.
+    struct WindowDescriptor {
+        let windowStart: String
+        let label: String
+        /// The window's end is strictly before `now`.
+        let isPast: Bool
+        /// This IS today's window.
+        let isCurrent: Bool
+        /// The window's core board (playable or draft), if any.
+        let board: Board?
+        /// Chip label suffix (" · closed" / " · past" / " · next" / "").
+        let chipSuffix: String
+
+        /// Full chip label — window label + suffix.
+        var chipLabel: String { label + chipSuffix }
+        /// A draft board occupies this window (never playable).
+        var isDraft: Bool { board?.status == .draft }
+        /// A playable (non-draft) board occupies this window.
+        var playableBoard: Board? {
+            guard let b = board, b.status != .draft else { return nil }
+            return b
+        }
+    }
+
+    /// Build the descriptor for `windowStart`. `now` is passed in (never
+    /// read from the clock here) so every card in one render pass agrees
+    /// and a long-lived screen can't flip `isPast` mid-session.
+    static func describe(
+        timeframe: Timeframe,
+        windowStart: String,
+        todayWindowStart: String,
+        boardsByStart: [String: Board],
+        weekStartDay: String,
+        now: Date
+    ) -> WindowDescriptor {
+        let label = parseISO8601Date(windowStart).map {
+            formatTimeframeLabel(timeframe: timeframe, startDate: $0)
+        } ?? ""
+
+        // isPast = this window's END is before now. Derived from the
+        // window itself, so it's identical for a card whether it is the
+        // preview or the landed card.
+        let isPast: Bool = {
+            guard let seed = parseISO8601Date(windowStart),
+                  let window = computeTimeframeBoundaries(
+                      timeframe: timeframe, referenceDate: seed, weekStartDay: weekStartDay
+                  ) else { return false }
+            return window.end < now
+        }()
+
+        let isCurrent = !todayWindowStart.isEmpty && windowStart == todayWindowStart
+        let board = boardsByStart[windowStart]
+
+        return WindowDescriptor(
+            windowStart: windowStart,
+            label: label,
+            isPast: isPast,
+            isCurrent: isCurrent,
+            board: board,
+            chipSuffix: chipLabelSuffix(
+                board: board, isCurrentWindow: isCurrent, isPastWindow: isPast
+            )
+        )
+    }
+
     // MARK: - Neighborhood (chip + caption dots)
 
     /// One position dot in the window chip / caption (offsets −2…+2).
