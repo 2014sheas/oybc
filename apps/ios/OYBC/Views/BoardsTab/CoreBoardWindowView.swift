@@ -283,7 +283,7 @@ struct CoreBoardWindowView: View {
                         }
                     }
                 )
-                caption
+                caption(for: start)
                     .padding(.bottom, 10)
             }
         } else if let draft = row {
@@ -292,7 +292,8 @@ struct CoreBoardWindowView: View {
                 kickerColor: .risoRed,
                 title: draft.name,
                 titleColor: .risoInk,
-                isDraft: true
+                isDraft: true,
+                captionStart: start
             ) {
                 CoreBoardSetupPromptView(
                     label: label,
@@ -311,7 +312,8 @@ struct CoreBoardWindowView: View {
                 kickerColor: .risoMuted,
                 title: label,
                 titleColor: .risoMuted,
-                isDraft: false
+                isDraft: false,
+                captionStart: start
             ) {
                 CoreBoardSetupPromptView(
                     label: label,
@@ -340,6 +342,7 @@ struct CoreBoardWindowView: View {
         title: String,
         titleColor: Color,
         isDraft: Bool,
+        captionStart: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -374,7 +377,7 @@ struct CoreBoardWindowView: View {
                     )
             )
 
-            caption
+            caption(for: captionStart)
         }
         .padding(.horizontal, Riso.gutter)
         .padding(.bottom, 10)
@@ -411,15 +414,29 @@ struct CoreBoardWindowView: View {
 
     // MARK: - Position caption
 
-    private var caption: some View {
-        CoreWindowPositionCaption(
-            prevLabel: viewModel.neighborWindowStart(offset: -1).map {
-                CoreWindowPicker.captionSideLabel(timeframe: timeframe, windowStart: $0)
-            } ?? "",
-            nextLabel: viewModel.neighborWindowStart(offset: 1).map {
-                CoreWindowPicker.captionSideLabel(timeframe: timeframe, windowStart: $0)
-            } ?? "",
-            dots: neighborhood,
+    /// Parameterized by window (review note): the mid-drag incoming card
+    /// renders ITS OWN prev/next labels + dots, not the outgoing window's.
+    private func caption(for start: String) -> some View {
+        let side = { (offset: Int) -> String in
+            guard let w = stepCoreBoardWindow(
+                timeframe: timeframe, fromStartIso: start,
+                step: offset, weekStartDay: weekStartDay
+            ) else { return "" }
+            return CoreWindowPicker.captionSideLabel(
+                timeframe: timeframe,
+                windowStart: wizardLocalISOString(w.start)
+            )
+        }
+        return CoreWindowPositionCaption(
+            prevLabel: side(-1),
+            nextLabel: side(1),
+            dots: CoreWindowPicker.buildNeighborhood(
+                timeframe: timeframe,
+                windowStart: start,
+                todayWindowStart: viewModel.todayWindowStart,
+                boardsByStart: viewModel.coreBoardsByStart,
+                weekStartDay: weekStartDay
+            ),
             isDisabled: childEditing,
             onPrev: { animatedStep(-1) },
             onNext: { animatedStep(1) }
