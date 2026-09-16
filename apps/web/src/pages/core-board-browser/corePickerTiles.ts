@@ -139,6 +139,13 @@ export function describeWindow(
   boardsByStart: Map<string, Board>,
   weekStartDay: WeekStartDay,
   now: Date,
+  /** False while the core-board map is still loading. An empty map then
+   *  means "not known yet", NOT "no board exists" — so the chip suffix
+   *  stays empty rather than claiming " · next"/" · past" for a window
+   *  whose board is about to arrive (review-caught: that would
+   *  reintroduce the very mutation class this type exists to prevent,
+   *  just from the load edge instead of the role flag). */
+  boardsLoaded = true,
 ): WindowDescriptor {
   const label = formatTimeframeLabel(timeframe, windowStart);
   const { endDate } = getTimeframeBoundaries(
@@ -149,7 +156,7 @@ export function describeWindow(
   const isPast = isTimeframeExpired(endDate, now);
   const isCurrent = todayWindowStart !== '' && windowStart === todayWindowStart;
   const board = boardsByStart.get(windowStart) ?? null;
-  const chipSuffix = chipLabelSuffix(board, isCurrent, isPast);
+  const chipSuffix = boardsLoaded ? chipLabelSuffix(board, isCurrent, isPast) : '';
 
   return {
     windowStart,

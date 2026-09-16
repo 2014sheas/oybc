@@ -208,6 +208,7 @@ export function CoreBoardWindowPage(): React.ReactElement {
     boardsByStart,
     weekStartDay,
     now,
+    boardsByStartQuery !== undefined,
   );
   const label = descriptor.label;
   const chipLabel = descriptor.chipLabel;

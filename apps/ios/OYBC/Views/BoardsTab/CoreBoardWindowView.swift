@@ -111,7 +111,8 @@ struct CoreBoardWindowView: View {
             todayWindowStart: viewModel.todayWindowStart,
             boardsByStart: viewModel.coreBoardsByStart,
             weekStartDay: weekStartDay,
-            now: now
+            now: now,
+            boardsLoaded: viewModel.isLoaded
         )
     }
 

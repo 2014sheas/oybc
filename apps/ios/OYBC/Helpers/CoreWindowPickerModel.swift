@@ -57,13 +57,21 @@ enum CoreWindowPicker {
     /// Build the descriptor for `windowStart`. `now` is passed in (never
     /// read from the clock here) so every card in one render pass agrees
     /// and a long-lived screen can't flip `isPast` mid-session.
+    /// - Parameter boardsLoaded: false while the core-board map is still
+    ///   loading. An empty map then means "not known yet", NOT "no board
+    ///   exists" — so the chip suffix stays empty rather than claiming
+    ///   " · next"/" · past" for a window whose board is about to arrive
+    ///   (review-caught: that would reintroduce the very mutation class
+    ///   this type exists to prevent, just from the load edge instead of
+    ///   the role flag).
     static func describe(
         timeframe: Timeframe,
         windowStart: String,
         todayWindowStart: String,
         boardsByStart: [String: Board],
         weekStartDay: String,
-        now: Date
+        now: Date,
+        boardsLoaded: Bool = true
     ) -> WindowDescriptor {
         let label = parseISO8601Date(windowStart).map {
             formatTimeframeLabel(timeframe: timeframe, startDate: $0)
@@ -89,9 +97,11 @@ enum CoreWindowPicker {
             isPast: isPast,
             isCurrent: isCurrent,
             board: board,
-            chipSuffix: chipLabelSuffix(
-                board: board, isCurrentWindow: isCurrent, isPastWindow: isPast
-            )
+            chipSuffix: boardsLoaded
+                ? chipLabelSuffix(
+                    board: board, isCurrentWindow: isCurrent, isPastWindow: isPast
+                  )
+                : ""
         )
     }
 

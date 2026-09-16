@@ -112,16 +112,10 @@ final class CoreBoardWindowViewModel: ObservableObject {
         return formatTimeframeLabel(timeframe: timeframe, startDate: date)
     }
 
-    /// `true` when the window's end is strictly before now (past window).
-    var isPast: Bool {
-        guard let endDate = parseISO8601Date(windowEnd) else { return false }
-        return endDate < Date()
-    }
-
-    /// `true` when the displayed window is today's window.
-    var isCurrentWindow: Bool {
-        !todayWindowStart.isEmpty && windowStart == todayWindowStart
-    }
+    // `isPast` / `isCurrentWindow` were DELETED (2026-09-16): they
+    // duplicated `CoreWindowPicker.describe`'s computation, and a future
+    // edit to one and not the other would reopen the post-load mutation
+    // bug this refactor closed. The descriptor is the single source.
 
     /// The pager's timeframe (read-only accessor for chrome that only
     /// has the view model).

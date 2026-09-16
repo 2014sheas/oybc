@@ -266,3 +266,29 @@ describe('describeWindow — role/timing independence (owner report 2026-09-16)'
     expect(sealed.playableBoard).not.toBeNull();
   });
 });
+
+describe('describeWindow — pre-load guard (review-caught Critical)', () => {
+  const weekStart: WeekStartDay = 'monday';
+  const now = new Date('2026-09-16T12:00:00');
+  const todayStart = getTimeframeBoundaries(Timeframe.MONTHLY, now, weekStart).startDate;
+  const augStart = getTimeframeBoundaries(
+    Timeframe.MONTHLY, new Date('2026-08-15T12:00:00'), weekStart,
+  ).startDate;
+
+  it('an EMPTY map while loading means "unknown", not "no board" — no suffix claimed', () => {
+    // Before the first resolve the map is empty. Claiming "· past" here
+    // and correcting to "" once the board arrives would be the same
+    // post-load mutation, just from the load edge.
+    const loading = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart, new Map(), weekStart, now, false,
+    );
+    expect(loading.chipSuffix).toBe('');
+    expect(loading.chipLabel).toBe(loading.label);
+
+    // Once loaded, a genuinely empty past window does claim it.
+    const loaded = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart, new Map(), weekStart, now, true,
+    );
+    expect(loaded.chipSuffix).toBe(' · past');
+  });
+});

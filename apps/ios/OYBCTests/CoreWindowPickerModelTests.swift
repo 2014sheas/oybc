@@ -267,4 +267,24 @@ final class CoreWindowPickerModelTests: XCTestCase {
         XCTAssertEqual(sealed.chipSuffix, " · closed")
         XCTAssertNotNil(sealed.playableBoard)
     }
+
+    /// Review-caught Critical: an EMPTY map while loading means "unknown",
+    /// not "no board" — claiming " · past" then correcting once the board
+    /// arrives is the same post-load mutation, from the load edge.
+    func test_describe_preLoad_claimsNoSuffix() {
+        let loading = CoreWindowPicker.describe(
+            timeframe: .monthly, windowStart: augustStart,
+            todayWindowStart: monthlyToday, boardsByStart: [:],
+            weekStartDay: "monday", now: now, boardsLoaded: false
+        )
+        XCTAssertEqual(loading.chipSuffix, "")
+        XCTAssertEqual(loading.chipLabel, loading.label)
+
+        let loaded = CoreWindowPicker.describe(
+            timeframe: .monthly, windowStart: augustStart,
+            todayWindowStart: monthlyToday, boardsByStart: [:],
+            weekStartDay: "monday", now: now, boardsLoaded: true
+        )
+        XCTAssertEqual(loaded.chipSuffix, " · past")
+    }
 }
