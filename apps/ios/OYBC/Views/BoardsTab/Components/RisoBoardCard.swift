@@ -49,12 +49,18 @@ struct RisoBoardCard: View {
     /// unchanged.
     var templatesLoaded: Bool = true
 
-    /// Resolved pause state: nil = unknown (still loading), true/false =
-    /// known. Never collapses unknown to "not paused".
-    private var isPaused: Bool? {
-        guard templatesLoaded else { return nil }
-        guard let template else { return nil }
-        return !template.isActive
+    /// What the recurring badge should render — `hidden` covers both
+    /// "one-off" and "not resolved yet", because showing the un-paused
+    /// variant while the pause state is unknown is a claim that visibly
+    /// reverses when the lookup lands (late-mutation audit, shape B).
+    /// Web twin: `recurringBadgeState` in `boards/recurringBadgeState.ts`.
+    private enum RecurringBadgeState { case hidden, recurring, paused }
+
+    private var badgeState: RecurringBadgeState {
+        guard RisoRecurringBadge.shouldShow(for: board) else { return .hidden }
+        guard templatesLoaded else { return .hidden }
+        guard let template else { return .recurring } // resolved: gone
+        return template.isActive ? .recurring : .paused
     }
 
     private var progressValue: Double {
@@ -104,8 +110,8 @@ struct RisoBoardCard: View {
                         // Issue #321 — provenance tag for recurring-spawned boards.
                         // P6 — a resolved paused template swaps in the muted
                         // "↻ PAUSED" variant of the same badge.
-                        if RisoRecurringBadge.shouldShow(for: board) {
-                            RisoRecurringBadge(paused: isPaused ?? false)
+                        if badgeState != .hidden {
+                            RisoRecurringBadge(paused: badgeState == .paused)
                         }
                     }
                     RisoMiniGrid(gridSize: previewCells.size, cells: previewCells.cells)
@@ -129,7 +135,7 @@ struct RisoBoardCard: View {
         // row, not here). Mirrors `RecurringTemplateCard`'s existing
         // `opacity(active ? 1.0 : 0.7)` precedent
         // (Views/Components/RecurringTemplateCardView.swift).
-        .opacity(isPaused == true ? 0.7 : 1.0)
+        .opacity(badgeState == .paused ? 0.7 : 1.0)
     }
 
     /// Timeframe label, with a cadence suffix appended for a repeating

@@ -29,6 +29,7 @@ import {
 import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
 import { CellSwapModal } from './CellSwapModal';
 import { BoardStatusBadge } from './BoardStatusBadge';
+import { recurringBadgeState } from './boards/recurringBadgeState';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { formatDisplayDate } from '../utils/dateFormat';
@@ -567,9 +568,9 @@ export function BoardPlaySurface({
               ) : (
                 <BoardStatusBadge status={board.status} />
               )}
-              {/* Unknown ≠ not-paused (late-mutation audit, shape B). */}
-              {board.spawnedFromTemplateId != null && (
-                <RecurringBadge paused={templatesLoaded && sourceTemplate?.isActive === false} />
+              {/* Hidden until resolved — never a state it reverses. */}
+              {recurringBadgeState(board, sourceTemplate, templatesLoaded) !== 'hidden' && (
+                <RecurringBadge paused={sourceTemplate?.isActive === false} />
               )}
               {greenlogStreak > 0 && CORE_STREAK_TIMEFRAMES.has(board.timeframe) && (
                 <span

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BoardStatus, formatCadenceAdverb, formatTimeframeLabel, type Board, type RecurringBoardTemplate } from '@oybc/shared';
 import { isBoardExpired, isBoardExpiringSoon, statusLabel } from '../../utils/boardDisplayUtils';
 import { RisoBadge, RisoIcon, type RisoBadgeKind } from '../riso';
+import { recurringBadgeState } from './recurringBadgeState';
 import { RecurringBadge } from '../RecurringBadge';
 import { BoardMiniGrid } from '../home/BoardMiniGrid';
 import type { BoardPreviewCellsResult } from '../home/boardPreviewCells';
@@ -89,10 +90,11 @@ export function BoardCard({
   const pct = board.totalTasks > 0 ? Math.round((board.completedTasks / board.totalTasks) * 100) : 0;
   const isComplete = board.status === BoardStatus.COMPLETED || board.status === BoardStatus.ARCHIVED;
   const badge = badgeFor(board);
-  // nil = unknown (still loading) — never collapse unknown to "not paused".
-  const pauseState: boolean | undefined =
-    !templatesLoaded || template == null ? undefined : !template.isActive;
-  const isPaused = pauseState === true;
+  // Single source for what the badge renders — `hidden` covers both
+  // "one-off" and "not resolved yet" so the badge never appears in a
+  // state it will reverse (late-mutation audit, shape B).
+  const badgeState = recurringBadgeState(board, template, templatesLoaded);
+  const isPaused = badgeState === 'paused';
 
   const handleConfirm = async (): Promise<void> => {
     if (!onDelete) return;
@@ -117,12 +119,12 @@ export function BoardCard({
             <div className={styles.bcardName}>{board.name}</div>
             <div className={styles.bcardTf}>
               {formatTimeframeLabel(board.timeframe, board.startDate)}
-              {templatesLoaded && template != null &&
+              {badgeState !== 'hidden' && template != null &&
                 ` · repeats ${formatCadenceAdverb(template.timeframe)}`}
             </div>
           </div>
           <div className={styles.bcardBadges}>
-            {board.spawnedFromTemplateId != null && <RecurringBadge paused={isPaused} />}
+            {badgeState !== 'hidden' && <RecurringBadge paused={isPaused} />}
             {board.sealedAt != null ? (
               // Windowed Completion — a sealed board is a frozen historical
               // record; one functional badge (OQ1 resolution), shown in
