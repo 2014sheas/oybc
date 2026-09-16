@@ -149,13 +149,21 @@ struct CoreBoardWindowView: View {
         }
         .background(RisoPaperBackground().ignoresSafeArea())
         .navigationBarHidden(true)
-        .onAppear { viewModel.reload() }
+        .onAppear {
+            // Re-pin on entry so a long-lived process can't serve a
+            // stale `isPast` (review-caught staleness bound).
+            now = Date()
+            viewModel.reload()
+        }
         .sheet(isPresented: $isPickerOpen) {
             CoreWindowPickerSheet(
                 timeframe: timeframe,
                 weekStartDay: weekStartDay,
                 boardsByStart: viewModel.coreBoardsByStart,
                 displayedWindowStart: viewModel.windowStart,
+                // Pager's pinned instant — the sheet must not build its
+                // own clock (late-mutation audit, finding 7 / shape C).
+                now: now,
                 onSelect: { start in
                     isPickerOpen = false
                     viewModel.jump(toWindowStart: start)

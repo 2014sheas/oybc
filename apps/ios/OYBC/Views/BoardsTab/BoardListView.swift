@@ -66,6 +66,10 @@ struct BoardListView: View {
     // MARK: - State
 
     @State private var boards: [Board] = []
+    /// False until the first `loadBoards()` lands — an empty `boards` is
+    /// "not read yet" until then, so the screen doesn't assert "Nothing
+    /// here yet." before it knows (late-mutation audit, shape B).
+    @State private var boardsLoaded = false
     /// TRUE mini-preview cells per board (bugfix/board-preview-real-cells perf
     /// follow-up), keyed by board id. Batch-built ONCE per `loadBoards()` call
     /// via `BoardPreviewCells.fetchWorkspaceData`/`buildMany` — NOT per-card —
@@ -96,6 +100,18 @@ struct BoardListView: View {
     /// User's week-start pref ("monday"/"sunday") for the core grid's local
     /// window-boundary fallback. Loaded in `onAppearLoad`.
     @State private var weekStartDayPref: String = "monday"
+    /// One instant per render pass — every expiry/status derivation on
+    /// this screen resolves against it, so the "Expiring" word can't flip
+    /// on an unrelated re-render and two cards can't disagree
+    /// (late-mutation audit, shape C).
+    ///
+    /// REFRESHED on appear and on sync-apply (review-caught): the Boards
+    /// tab is a TabView root, so @State survives for the process lifetime
+    /// — pinning once at creation would freeze `now` near app launch and
+    /// make "Expiring" wrong in the other direction for the rest of the
+    /// session. Refreshing at entry points bounds staleness to "since you
+    /// last opened/synced this screen" while keeping the invariant.
+    @State private var now = Date()
 
     // MARK: - Constants
 
@@ -135,6 +151,7 @@ struct BoardListView: View {
         // `useLiveQuery`). Scoped to the boards list itself; preview cells
         // refresh as a side effect of `loadBoards()`'s existing tail call.
         .onReceive(NotificationCenter.default.publisher(for: .oybcSyncDidApplyChanges)) { _ in
+            now = Date()
             loadBoards()
         }
     }
@@ -145,10 +162,22 @@ struct BoardListView: View {
     private var boardContent: some View {
         if let loadError {
             errorView(message: loadError)
+        } else if !boardsLoaded && boards.isEmpty {
+            // Don't claim "Nothing here yet." before the read lands.
+            loadingPlaceholder
         } else if filteredBoards.isEmpty && pendingRecurringVM.slots.isEmpty && boards.isEmpty {
             emptyStateList
         } else {
             boardList
+        }
+    }
+
+    /// Neutral first-paint state: the boards read hasn't returned, so we
+    /// assert nothing about whether the user has boards.
+    private var loadingPlaceholder: some View {
+        ZStack {
+            RisoPaperBackground()
+            ProgressView().tint(Color.risoInk)
         }
     }
 
@@ -383,7 +412,8 @@ struct BoardListView: View {
     private var coreGridRow: some View {
         RisoCoreTimeframeGrid(
             slots: pendingRecurringVM.slots,
-            now: Date(),
+            slotsLoaded: pendingRecurringVM.isLoaded,
+            now: now,
             weekStartDay: weekStartDayPref,
             streaks: pendingRecurringVM.streaks,
             onSelect: { timeframe, windowStart in
@@ -600,19 +630,23 @@ struct BoardListView: View {
         return "\(base) · \(expiry)"
     }
 
-    /// Returns true when the board's end date is within 24 hours of now.
+    /// Returns true when the board's end date is within 24 hours of the
+    /// screen's PINNED `now` — never `timeIntervalSinceNow`, which made
+    /// the badge flip on an unrelated re-render (shape C).
     private func isBoardExpiringSoon(_ board: Board) -> Bool {
         guard board.status == .active,
               !board.isIndefinite,
               let endStr = board.endDate,
               let end = parseISO8601Date(endStr) else { return false }
-        let hoursLeft = end.timeIntervalSinceNow / 3600
+        let hoursLeft = end.timeIntervalSince(now) / 3600
         return hoursLeft >= 0 && hoursLeft < 24
     }
 
     // MARK: - Data loading
 
     private func onAppearLoad() {
+        // Re-pin the screen's instant on every entry (see `now`).
+        now = Date()
         loadBoards()
         if let userId = authService.currentUser?.id {
             pendingRecurringVM.reloadAsync(userId: userId)
@@ -659,12 +693,16 @@ struct BoardListView: View {
                 let result = try AppDatabase.shared.fetchBoards(userId: userId)
                 await MainActor.run {
                     boards = result
+                    boardsLoaded = true
                     loadError = nil
                 }
                 loadPreviewCells(boards: result, userId: userId)
                 loadTemplates(userId: userId)
             } catch {
-                await MainActor.run { loadError = error.localizedDescription }
+                await MainActor.run {
+                    boardsLoaded = true
+                    loadError = error.localizedDescription
+                }
             }
         }
     }
