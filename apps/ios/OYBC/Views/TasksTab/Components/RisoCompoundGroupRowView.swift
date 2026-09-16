@@ -14,6 +14,8 @@ struct RisoCompoundGroupRowView: View {
     let task: Task
     let placementCount: Int
     let activePlacementCount: Int
+    /// Threaded to the rows — see `RisoTaskRowView.usageCountsLoaded`.
+    var usageCountsLoaded: Bool = true
     let childCount: Int
     let isExpandable: Bool
     let isExpanded: Bool
@@ -38,6 +40,7 @@ struct RisoCompoundGroupRowView: View {
                     task: task,
                     placementCount: placementCount,
                     activePlacementCount: activePlacementCount,
+                    usageCountsLoaded: usageCountsLoaded,
                     childCount: childCount
                 )
 
@@ -75,6 +78,7 @@ struct RisoCompoundGroupRowView: View {
                                         task: child,
                                         placementCount: childPlacementCounts[child.id] ?? 0,
                                         activePlacementCount: childActivePlacementCounts[child.id] ?? 0,
+                                        usageCountsLoaded: usageCountsLoaded,
                                         childCount: 0
                                     )
                                 }

@@ -16,6 +16,12 @@ import SwiftUI
 struct RisoYourStreaksCard: View {
 
     let streaks: [Timeframe: StreakPair]
+    /// False until `loadCounts()` lands. An empty `streaks` then means
+    /// "not computed yet", NOT "zero streaks" — the card used to render
+    /// four rows of 0/0 and then flip to real numbers (late-mutation
+    /// audit, shape B; see `reference_late_mutation_bug_class`).
+    /// Defaults true so previews/snapshot fixtures render their seeds.
+    var streaksLoaded: Bool = true
 
     private let order: [Timeframe] = [.daily, .weekly, .monthly, .yearly]
     /// Shared width for the two stat columns so headers + cells stay aligned.
@@ -45,14 +51,20 @@ struct RisoYourStreaksCard: View {
 
             ForEach(Array(order.enumerated()), id: \.element) { index, tf in
                 if index > 0 { rowDivider }
-                let pair = streaks[tf] ?? StreakPair(bingo: 0, greenlog: 0)
+                let pair = streaks[tf]
                 HStack(spacing: 8) {
                     Text(label(tf))
                         .font(.risoBody(14, .bold))
                         .foregroundStyle(Color.risoInk)
                     Spacer(minLength: 0)
-                    streakCell(count: pair.bingo, timeframe: tf, kind: "bingo", fill: .risoGold, onFill: .risoInkStatic)
-                    streakCell(count: pair.greenlog, timeframe: tf, kind: "greenlog", fill: .risoGreen, onFill: .risoPaper)
+                    if streaksLoaded {
+                        streakCell(count: pair?.bingo ?? 0, timeframe: tf, kind: "bingo", fill: .risoGold, onFill: .risoInkStatic)
+                        streakCell(count: pair?.greenlog ?? 0, timeframe: tf, kind: "greenlog", fill: .risoGreen, onFill: .risoPaper)
+                    } else {
+                        // Unknown — a dash per column, never a claimed 0.
+                        pendingCell
+                        pendingCell
+                    }
                 }
                 .padding(.vertical, 9)
             }
@@ -63,6 +75,14 @@ struct RisoYourStreaksCard: View {
     }
 
     // MARK: - Pieces
+
+    /// Placeholder shown per streak column until the counts are computed.
+    private var pendingCell: some View {
+        Text("—")
+            .font(.risoHead(13, .bold))
+            .foregroundStyle(Color.risoMuted)
+            .frame(minWidth: 44)
+    }
 
     private func columnHeader(_ text: String) -> some View {
         Text(text)

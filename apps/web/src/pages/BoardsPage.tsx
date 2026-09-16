@@ -69,6 +69,11 @@ export function BoardsPage(): React.ReactElement {
   const templatesQuery = useRecurringBoardTemplatesQuery(user?.id);
   const templates = templatesQuery ?? EMPTY_TEMPLATES;
   const templatesLoaded = templatesQuery !== undefined;
+
+  // One instant for every expiry badge on this screen — a render-time
+  // clock lets a badge flip with no user action and lets two cards in
+  // one pass disagree (late-mutation audit, shape C).
+  const now = useMemo(() => new Date(), []);
   const templatesById = useMemo(() => {
     const map = new Map<string, (typeof templates)[number]>();
     for (const t of templates) map.set(t.id, t);
@@ -228,6 +233,7 @@ export function BoardsPage(): React.ReactElement {
                     : undefined
                 }
                 templatesLoaded={templatesLoaded}
+                now={now}
                 onOpen={(id) => {
                   // Drafts never open as a playable board — tap routes to
                   // the wizard resume flow (cross-tab via ?resumeDraft).

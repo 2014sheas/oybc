@@ -190,6 +190,7 @@ struct TasksTabView: View {
                                 task: task,
                                 placementCount: placementCounts[task.id] ?? 0,
                                 activePlacementCount: activeCounts[task.id] ?? 0,
+                                usageCountsLoaded: vm.usageCountsLoaded,
                                 childCount: children.count,
                                 isExpandable: true,
                                 isExpanded: isExpanded,
@@ -245,6 +246,7 @@ struct TasksTabView: View {
                                     task: task,
                                     placementCount: placementCounts[task.id] ?? 0,
                                     activePlacementCount: activeCounts[task.id] ?? 0,
+                                    usageCountsLoaded: vm.usageCountsLoaded,
                                     childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0
                                 )
                             }
