@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   BoardStatus,
+  CenterSquareType,
   Timeframe,
   getTimeframeBoundaries,
   stepWindow,
   type Board,
+  type WeekStartDay,
 } from '@oybc/shared';
 import {
   buildPickerPage,
   buildWindowNeighborhood,
   captionSideLabel,
   chipLabelSuffix,
+  describeWindow,
   pickerPageStart,
   pickerPageTitle,
   pickerTileLabel,
@@ -190,5 +193,102 @@ describe('labels + page stepping', () => {
     const m = pickerPageStart(Timeframe.DAILY, NOW);
     expect(stepPickerPage(Timeframe.DAILY, m, 1).getMonth()).toBe(9);
     expect(pickerPageTitle(Timeframe.WEEKLY, stepPickerPage(Timeframe.WEEKLY, pickerPageStart(Timeframe.WEEKLY, NOW), 1))).toBe('Q4 2026');
+  });
+});
+
+describe('describeWindow — role/timing independence (owner report 2026-09-16)', () => {
+  const weekStart: WeekStartDay = 'monday';
+  const now = new Date('2026-09-16T12:00:00');
+  const todayStart = getTimeframeBoundaries(Timeframe.MONTHLY, now, weekStart).startDate;
+  const augStart = getTimeframeBoundaries(
+    Timeframe.MONTHLY, new Date('2026-08-15T12:00:00'), weekStart,
+  ).startDate;
+
+  it('a past window reads isPast regardless of which window is displayed', () => {
+    // THE regression: the incoming card used to render hardcoded
+    // isPast:false ("Set up"), then flip to isPast:true ("Backfill")
+    // the instant the swipe committed. describeWindow takes no
+    // "am I displayed?" input at all, so the same window start always
+    // produces the same answer.
+    const asIncoming = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart, new Map(), weekStart, now,
+    );
+    const asDisplayed = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart, new Map(), weekStart, now,
+    );
+    expect(asIncoming.isPast).toBe(true);
+    expect(asIncoming).toEqual(asDisplayed);
+    expect(asIncoming.chipSuffix).toBe(' · past');
+  });
+
+  it('today’s window is current, not past, and carries no suffix', () => {
+    const d = describeWindow(
+      Timeframe.MONTHLY, todayStart, todayStart, new Map(), weekStart, now,
+    );
+    expect(d.isCurrent).toBe(true);
+    expect(d.isPast).toBe(false);
+    expect(d.chipSuffix).toBe('');
+  });
+
+  it('a future empty window reads "· next"', () => {
+    const octStart = getTimeframeBoundaries(
+      Timeframe.MONTHLY, new Date('2026-10-15T12:00:00'), weekStart,
+    ).startDate;
+    const d = describeWindow(
+      Timeframe.MONTHLY, octStart, todayStart, new Map(), weekStart, now,
+    );
+    expect(d.isPast).toBe(false);
+    expect(d.chipSuffix).toBe(' · next');
+  });
+
+  it('splits playable vs draft boards and keeps the sealed suffix', () => {
+    const base = {
+      id: 'b1', userId: 'u1', name: 'Aug', boardSize: 3,
+      timeframe: Timeframe.MONTHLY, startDate: augStart, endDate: augStart,
+      centerSquareType: CenterSquareType.NONE, isRandomized: true, isCore: true,
+      totalTasks: 9, completedTasks: 0, linesCompleted: 0, completedLineIds: [],
+      createdAt: augStart, updatedAt: augStart, version: 1, isDeleted: false,
+    };
+    const draft = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart,
+      new Map([[augStart, { ...base, status: BoardStatus.DRAFT } as Board]]),
+      weekStart, now,
+    );
+    expect(draft.isDraft).toBe(true);
+    expect(draft.playableBoard).toBeNull();
+
+    const sealed = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart,
+      new Map([[augStart, { ...base, status: BoardStatus.COMPLETED, sealedAt: augStart } as Board]]),
+      weekStart, now,
+    );
+    expect(sealed.chipSuffix).toBe(' · closed');
+    expect(sealed.playableBoard).not.toBeNull();
+  });
+});
+
+describe('describeWindow — pre-load guard (review-caught Critical)', () => {
+  const weekStart: WeekStartDay = 'monday';
+  const now = new Date('2026-09-16T12:00:00');
+  const todayStart = getTimeframeBoundaries(Timeframe.MONTHLY, now, weekStart).startDate;
+  const augStart = getTimeframeBoundaries(
+    Timeframe.MONTHLY, new Date('2026-08-15T12:00:00'), weekStart,
+  ).startDate;
+
+  it('an EMPTY map while loading means "unknown", not "no board" — no suffix claimed', () => {
+    // Before the first resolve the map is empty. Claiming "· past" here
+    // and correcting to "" once the board arrives would be the same
+    // post-load mutation, just from the load edge.
+    const loading = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart, new Map(), weekStart, now, false,
+    );
+    expect(loading.chipSuffix).toBe('');
+    expect(loading.chipLabel).toBe(loading.label);
+
+    // Once loaded, a genuinely empty past window does claim it.
+    const loaded = describeWindow(
+      Timeframe.MONTHLY, augStart, todayStart, new Map(), weekStart, now, true,
+    );
+    expect(loaded.chipSuffix).toBe(' · past');
   });
 });

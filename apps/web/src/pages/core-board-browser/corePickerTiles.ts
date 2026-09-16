@@ -1,7 +1,9 @@
 import {
   BoardStatus,
   Timeframe,
+  formatTimeframeLabel,
   getTimeframeBoundaries,
+  isTimeframeExpired,
   stepWindow,
   toLocalISO,
   type Board,
@@ -88,6 +90,85 @@ export function chipLabelSuffix(
   if (board?.sealedAt != null) return ' · closed';
   if (!board && !isCurrentWindow) return isPastWindow ? ' · past' : ' · next';
   return '';
+}
+
+// ─── Window descriptor (single source per window) ────────────────────────────
+
+/**
+ * Everything the pager needs to render ONE window, derived purely from
+ * that window's own start date.
+ *
+ * Owner-reported (2026-09-16): the CTA flipped "Set up" → "Backfill" and
+ * the chip suffix appeared late. Root cause was never load timing — the
+ * pager described a window through different code paths depending on
+ * whether it was the displayed one, and the paths disagreed.
+ *
+ * The rule this type enforces: **a window's description is a function of
+ * WHICH window it is, never of whether it happens to be on screen (or of
+ * whether a query has resolved).** iOS twin:
+ * `CoreWindowPicker.WindowDescriptor`.
+ */
+export interface WindowDescriptor {
+  windowStart: string;
+  label: string;
+  /** The window's end is strictly before `now`. */
+  isPast: boolean;
+  /** This IS today's window. */
+  isCurrent: boolean;
+  /** The window's core board (playable or draft), if any. */
+  board: Board | null;
+  /** Chip label suffix (" · closed" / " · past" / " · next" / ""). */
+  chipSuffix: string;
+  /** Full chip label — window label + suffix. */
+  chipLabel: string;
+  /** A draft board occupies this window (never playable). */
+  isDraft: boolean;
+  /** A playable (non-draft) board occupies this window. */
+  playableBoard: Board | null;
+}
+
+/**
+ * Build the descriptor for `windowStart`. `now` is passed in (never read
+ * from the clock here) so every render agrees and a long-lived page
+ * can't flip `isPast` mid-session.
+ */
+export function describeWindow(
+  timeframe: Timeframe,
+  windowStart: string,
+  todayWindowStart: string,
+  boardsByStart: Map<string, Board>,
+  weekStartDay: WeekStartDay,
+  now: Date,
+  /** False while the core-board map is still loading. An empty map then
+   *  means "not known yet", NOT "no board exists" — so the chip suffix
+   *  stays empty rather than claiming " · next"/" · past" for a window
+   *  whose board is about to arrive (review-caught: that would
+   *  reintroduce the very mutation class this type exists to prevent,
+   *  just from the load edge instead of the role flag). */
+  boardsLoaded = true,
+): WindowDescriptor {
+  const label = formatTimeframeLabel(timeframe, windowStart);
+  const { endDate } = getTimeframeBoundaries(
+    timeframe,
+    new Date(`${windowStart.slice(0, 10)}T12:00:00`),
+    weekStartDay,
+  );
+  const isPast = isTimeframeExpired(endDate, now);
+  const isCurrent = todayWindowStart !== '' && windowStart === todayWindowStart;
+  const board = boardsByStart.get(windowStart) ?? null;
+  const chipSuffix = boardsLoaded ? chipLabelSuffix(board, isCurrent, isPast) : '';
+
+  return {
+    windowStart,
+    label,
+    isPast,
+    isCurrent,
+    board,
+    chipSuffix,
+    chipLabel: `${label}${chipSuffix}`,
+    isDraft: board?.status === BoardStatus.DRAFT,
+    playableBoard: board && board.status !== BoardStatus.DRAFT ? board : null,
+  };
 }
 
 // ─── Picker tiles ────────────────────────────────────────────────────────────

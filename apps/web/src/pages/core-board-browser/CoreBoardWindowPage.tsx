@@ -7,8 +7,6 @@ import {
   computeStreak,
   getTimeframeBoundaries,
   stepWindow,
-  formatTimeframeLabel,
-  isTimeframeExpired,
   type Board,
   type WeekStartDay,
 } from '@oybc/shared';
@@ -26,7 +24,7 @@ import { CoreWindowPickerPopover } from './CoreWindowPickerPopover';
 import {
   buildWindowNeighborhood,
   captionSideLabel,
-  chipLabelSuffix,
+  describeWindow,
 } from './corePickerTiles';
 import { compactStreakLabel } from '@oybc/shared';
 import play from '../../components/play/Play.module.css';
@@ -95,7 +93,7 @@ export function CoreBoardWindowPage(): React.ReactElement {
 
   const now = useMemo(() => new Date(), []);
 
-  const { startDate: windowStart, endDate: windowEnd } = useMemo(() => {
+  const { startDate: windowStart } = useMemo(() => {
     // Parse as local noon, not UTC midnight — a date-only ISO string
     // parses as UTC midnight, which shifts the day west of UTC.
     const seed = routeDateOnly ? new Date(`${routeDateOnly}T12:00:00`) : now;
@@ -135,8 +133,6 @@ export function CoreBoardWindowPage(): React.ReactElement {
     [timeframe, windowStart, todayWindowStart, boardsByStart, weekStartDay],
   );
 
-  const isCurrentWindow = windowStart === todayWindowStart;
-  const isPast = isTimeframeExpired(windowEnd, now);
 
   // Greenlog streak for this timeframe (empty/draft title rows — the
   // filled state's chip is rendered by BoardPlaySurface itself).
@@ -200,14 +196,23 @@ export function CoreBoardWindowPage(): React.ReactElement {
 
   if (!isValid) return <Navigate to="/boards" replace />;
 
-  const label = formatTimeframeLabel(timeframe, windowStart);
-  // No suffix while the board query is still resolving (avoids a
-  // "· next" flicker before the row loads).
-  const chipLabel =
-    board === undefined
-      ? label
-      : `${label}${chipLabelSuffix(board, isCurrentWindow, isPast)}`;
-  const chipA11y = `${label}${isCurrentWindow ? ', current window' : ''}. Opens window picker.`;
+  // Single source for this window's description (owner-reported
+  // 2026-09-16 — see `describeWindow`): label, isPast, isCurrent, board
+  // and chip suffix all derive from WHICH window this is, so nothing
+  // changes when the query resolves or when a step lands. iOS twin:
+  // `CoreBoardWindowView.descriptor(_:)`.
+  const descriptor = describeWindow(
+    timeframe,
+    windowStart,
+    todayWindowStart,
+    boardsByStart,
+    weekStartDay,
+    now,
+    boardsByStartQuery !== undefined,
+  );
+  const label = descriptor.label;
+  const chipLabel = descriptor.chipLabel;
+  const chipA11y = `${label}${descriptor.isCurrent ? ', current window' : ''}. Opens window picker.`;
 
   const prevStart = stepWindow(timeframe, windowStart, -1, weekStartDay).startDate;
   const nextStart = stepWindow(timeframe, windowStart, 1, weekStartDay).startDate;
@@ -297,7 +302,7 @@ export function CoreBoardWindowPage(): React.ReactElement {
             <CoreBoardSetupPrompt
               timeframe={timeframe}
               windowStart={windowStart}
-              isPast={isPast}
+              isPast={descriptor.isPast}
               onSetUp={() => {
                 navigate(`/create?recurringTimeframe=${timeframe}&windowDate=${windowStart.slice(0, 10)}`);
               }}
