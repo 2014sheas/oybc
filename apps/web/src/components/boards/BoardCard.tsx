@@ -25,6 +25,16 @@ export interface BoardCardProps {
    * and the dimmed-when-paused card styling. Omitted for one-off boards.
    */
   template?: RecurringBoardTemplate;
+  /**
+   * False while the caller's template lookup is still loading. An absent
+   * `template` then means "not resolved YET", not "no template" — the
+   * badge used to render un-paused and un-dimmed, then flip to
+   * "↻ PAUSED" (dimming the card) and grow a "· repeats weekly"
+   * subtitle when the query arrived (late-mutation audit, shape B; see
+   * `reference_late_mutation_bug_class`). Defaults true so existing call
+   * sites are unaffected.
+   */
+  templatesLoaded?: boolean;
 }
 
 /** Exhaustive status→badge mapping — adding a BoardStatus without a badge kind
@@ -65,14 +75,24 @@ function badgeFor(board: Board): { kind: RisoBadgeKind; text: string } {
  * When `onDelete` is provided a hover-revealed trash button appears; confirming
  * it opens a Riso-styled alert dialog before committing the soft-delete.
  */
-export function BoardCard({ board, previewCells, onOpen, onDelete, template }: BoardCardProps): React.ReactElement {
+export function BoardCard({
+  board,
+  previewCells,
+  onOpen,
+  onDelete,
+  template,
+  templatesLoaded = true,
+}: BoardCardProps): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const pct = board.totalTasks > 0 ? Math.round((board.completedTasks / board.totalTasks) * 100) : 0;
   const isComplete = board.status === BoardStatus.COMPLETED || board.status === BoardStatus.ARCHIVED;
   const badge = badgeFor(board);
-  const isPaused = template != null && !template.isActive;
+  // nil = unknown (still loading) — never collapse unknown to "not paused".
+  const pauseState: boolean | undefined =
+    !templatesLoaded || template == null ? undefined : !template.isActive;
+  const isPaused = pauseState === true;
 
   const handleConfirm = async (): Promise<void> => {
     if (!onDelete) return;
@@ -97,7 +117,8 @@ export function BoardCard({ board, previewCells, onOpen, onDelete, template }: B
             <div className={styles.bcardName}>{board.name}</div>
             <div className={styles.bcardTf}>
               {formatTimeframeLabel(board.timeframe, board.startDate)}
-              {template != null && ` · repeats ${formatCadenceAdverb(template.timeframe)}`}
+              {templatesLoaded && template != null &&
+                ` · repeats ${formatCadenceAdverb(template.timeframe)}`}
             </div>
           </div>
           <div className={styles.bcardBadges}>

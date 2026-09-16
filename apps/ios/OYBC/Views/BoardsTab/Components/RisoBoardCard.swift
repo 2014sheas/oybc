@@ -38,6 +38,24 @@ struct RisoBoardCard: View {
     /// pre-existing call site (most snapshot
     /// tests) compiles unchanged.
     var template: RecurringBoardTemplate? = nil
+    /// False while the caller's template lookup is still loading. A nil
+    /// `template` then means "not resolved YET", not "no template" — the
+    /// badge used to render un-paused and un-dimmed, then flip to
+    /// "↻ PAUSED" (and dim the card) when the map arrived (late-mutation
+    /// audit, shape B; see `reference_late_mutation_bug_class`). While
+    /// false the card shows the plain badge and skips the paused
+    /// treatment entirely rather than asserting "not paused".
+    /// Defaults true so existing call sites/snapshot fixtures are
+    /// unchanged.
+    var templatesLoaded: Bool = true
+
+    /// Resolved pause state: nil = unknown (still loading), true/false =
+    /// known. Never collapses unknown to "not paused".
+    private var isPaused: Bool? {
+        guard templatesLoaded else { return nil }
+        guard let template else { return nil }
+        return !template.isActive
+    }
 
     private var progressValue: Double {
         guard board.totalTasks > 0 else { return 0 }
@@ -87,7 +105,7 @@ struct RisoBoardCard: View {
                         // P6 — a resolved paused template swaps in the muted
                         // "↻ PAUSED" variant of the same badge.
                         if RisoRecurringBadge.shouldShow(for: board) {
-                            RisoRecurringBadge(paused: template.map { !$0.isActive } ?? false)
+                            RisoRecurringBadge(paused: isPaused ?? false)
                         }
                     }
                     RisoMiniGrid(gridSize: previewCells.size, cells: previewCells.cells)
@@ -111,7 +129,7 @@ struct RisoBoardCard: View {
         // row, not here). Mirrors `RecurringTemplateCard`'s existing
         // `opacity(active ? 1.0 : 0.7)` precedent
         // (Views/Components/RecurringTemplateCardView.swift).
-        .opacity(template?.isActive == false ? 0.7 : 1.0)
+        .opacity(isPaused == true ? 0.7 : 1.0)
     }
 
     /// Timeframe label, with a cadence suffix appended for a repeating

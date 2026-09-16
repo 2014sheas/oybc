@@ -139,6 +139,7 @@ export function BoardPlaySurface({
     isExpired,
     squareWindowContext,
     sourceTemplate,
+    templatesLoaded,
   } = useBoardPlayData(board, userId);
 
   // Windowed Completion — sealed boards are a frozen, read-only historical
@@ -566,8 +567,9 @@ export function BoardPlaySurface({
               ) : (
                 <BoardStatusBadge status={board.status} />
               )}
+              {/* Unknown ≠ not-paused (late-mutation audit, shape B). */}
               {board.spawnedFromTemplateId != null && (
-                <RecurringBadge paused={sourceTemplate != null && !sourceTemplate.isActive} />
+                <RecurringBadge paused={templatesLoaded && sourceTemplate?.isActive === false} />
               )}
               {greenlogStreak > 0 && CORE_STREAK_TIMEFRAMES.has(board.timeframe) && (
                 <span
