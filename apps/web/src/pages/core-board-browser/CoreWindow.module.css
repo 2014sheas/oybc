@@ -411,12 +411,6 @@
   padding: 40px 20px;
   min-height: 320px;
 }
-.frameHint {
-  font-family: var(--riso-font-body);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--riso-muted);
-}
 
 /* ---- setup prompt (inside the dashed frame) ----------------------- */
 
