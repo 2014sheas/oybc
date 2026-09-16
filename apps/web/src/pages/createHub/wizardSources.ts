@@ -28,6 +28,17 @@ export interface WizardSourceSupply {
   displayName: string;
   rawSupplyTaskIds: string[];
   doneTaskIds: Set<string>;
+  /**
+   * The source's data hasn't resolved yet — its name/counts are NOT
+   * known, as opposed to a genuinely missing (deleted) source.
+   *
+   * Late-mutation audit (2026-09-16, shape B): an unresolved pool used
+   * to render as "Deleted pool · 0 squares", which also drove capacity
+   * to 0, lit the red "! Add N more" gate and DISABLED Next — then all
+   * of it corrected on load. An empty map means "not known yet", never
+   * "deleted". See `reference_late_mutation_bug_class`.
+   */
+  isPending?: boolean;
 }
 
 export type SupplyInfoMap = Record<string, WizardSourceSupply>;
@@ -229,4 +240,59 @@ export function sourceRangeLine(
 /** Whether a source's range is the default `[0, all]`. */
 export function isDefaultRange(source: BoardSource): boolean {
   return source.min === 0 && source.max === null;
+}
+
+
+/**
+ * Build the wizard's per-source supply cache.
+ *
+ * Pool entries resolve synchronously from the live `poolsById`; board
+ * entries come from the hook's async fetch. The load-state distinction
+ * is load-bearing (late-mutation audit, shape B): a source we simply
+ * haven't read yet is marked `isPending` — NOT rendered as
+ * "Deleted pool"/"Deleted board" with 0 squares, which also drove
+ * capacity to 0, lit the shortfall gate and disabled Next until the read
+ * landed. An empty map means "not known yet", never "deleted".
+ */
+export function buildSupplyInfoMap(
+  sources: BoardSource[],
+  poolsById: Record<string, Pool>,
+  poolsLoaded: boolean,
+  tasksById: Record<string, Task>,
+  boardSupplyById: SupplyInfoMap,
+): SupplyInfoMap {
+  const info: SupplyInfoMap = {};
+  for (const source of sources) {
+    if (source.kind === 'pool') {
+      const pool = poolsById[source.sourceId];
+      if (pool && !pool.isDeleted) {
+        info[source.sourceId] = poolSupplyEntry(pool, tasksById);
+      } else if (!poolsLoaded) {
+        info[source.sourceId] = {
+          displayName: 'Loading…',
+          rawSupplyTaskIds: [],
+          doneTaskIds: new Set(),
+          isPending: true,
+        };
+      } else {
+        // Genuinely gone: keep the last-known name when we have it; a
+        // blank row is never honest UI.
+        info[source.sourceId] = {
+          displayName: pool?.name || 'Deleted pool',
+          rawSupplyTaskIds: [],
+          doneTaskIds: new Set(),
+        };
+      }
+    } else {
+      info[source.sourceId] = boardSupplyById[source.sourceId] ?? {
+        displayName: 'Loading…',
+        rawSupplyTaskIds: [],
+        doneTaskIds: new Set(),
+        // The async fetch writes a real entry (or an explicit "Deleted
+        // board") when it settles; until then this is unknown.
+        isPending: true,
+      };
+    }
+  }
+  return info;
 }

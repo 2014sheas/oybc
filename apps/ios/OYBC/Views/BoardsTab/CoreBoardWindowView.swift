@@ -156,6 +156,9 @@ struct CoreBoardWindowView: View {
                 weekStartDay: weekStartDay,
                 boardsByStart: viewModel.coreBoardsByStart,
                 displayedWindowStart: viewModel.windowStart,
+                // Pager's pinned instant — the sheet must not build its
+                // own clock (late-mutation audit, finding 7 / shape C).
+                now: now,
                 onSelect: { start in
                     isPickerOpen = false
                     viewModel.jump(toWindowStart: start)

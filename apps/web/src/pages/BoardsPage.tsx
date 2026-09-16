@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { RecurringBoardTemplate } from '@oybc/shared';
+import type { Board, RecurringBoardTemplate } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import {
   useBoards,
@@ -39,10 +39,17 @@ const FILTER_TABS = [
  * core-strip cards open the per-timeframe window pager. Visual re-skin of the
  * existing logic (filtering, recurring-spawn, core slots).
  */
+const EMPTY_BOARDS: Board[] = [];
+
 export function BoardsPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const allBoards = useBoards(user?.id) ?? [];
+  // Tri-state: `undefined` until the first resolve, so the page doesn't
+  // assert "Nothing here yet." before it knows (late-mutation audit,
+  // shape B).
+  const boardsQuery = useBoards(user?.id);
+  const allBoards = boardsQuery ?? EMPTY_BOARDS;
+  const boardsLoaded = boardsQuery !== undefined;
   // Perf follow-up (bugfix/board-preview-real-cells): ONE hoisted hook for
   // the whole list's mini-grid data, not one `useBoardPreviewCells` mount
   // per `BoardCard`.
@@ -174,7 +181,10 @@ export function BoardsPage(): React.ReactElement {
         }}
       />
 
-      {filteredBoards.length === 0 ? (
+      {!boardsLoaded ? (
+        // First paint before the read lands: assert nothing.
+        <div className={styles.empty} aria-busy="true" />
+      ) : filteredBoards.length === 0 ? (
         <div className={styles.empty}>
           {/* Mini-board art (Blip-retirement handoff §Web parity) — the
               true "no boards at all" state only, mirroring iOS's

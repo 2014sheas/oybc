@@ -359,6 +359,11 @@ export interface UseBoardWizardArgs {
    * pools source.
    */
   pools?: Pool[];
+  /** False while the pools query is still resolving — an empty `pools`
+   *  then means "not read yet", not "no pools" (late-mutation audit,
+   *  shape B: an unresolved pool rendered as "Deleted pool" and briefly
+   *  disabled Next). Defaults true so existing callers are unaffected. */
+  poolsLoaded?: boolean;
   /**
    * P3 — id→Task lookup used to resolve pool-pull/untoggle additions/
    * removals and provenance labels. Callers should pass

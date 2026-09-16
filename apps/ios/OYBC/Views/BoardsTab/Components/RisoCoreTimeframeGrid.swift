@@ -22,7 +22,18 @@ struct RisoCoreTimeframeGrid: View {
     /// this view falls back to computing boundaries itself using `now`.
     let slots: [CoreBoardSlot]
 
+    /// False while the slots are still loading. A missing slot then means
+    /// "not known yet", NOT "no board for this window" — the cards used to
+    /// claim "Ready" on all four timeframes and then flip to Active /
+    /// Expiring / Done (late-mutation audit, shape B; see
+    /// `reference_late_mutation_bug_class`). Defaults true so previews and
+    /// snapshot fixtures render their seeded state.
+    var slotsLoaded: Bool = true
+
     /// Current date used to fill in missing slots and compute expiry.
+    /// PIN THIS at the call site (a `@State`), never `Date()` inside a
+    /// view body — a render-time clock lets the status word flip
+    /// mid-session and lets two cards in one pass disagree (shape C).
     var now: Date = Date()
 
     /// User's week-start preference ("monday"/"sunday"), used only for the
@@ -56,6 +67,7 @@ struct RisoCoreTimeframeGrid: View {
                 CoreTimeframeCard(
                     timeframe: timeframe,
                     slot: slot,
+                    slotsLoaded: slotsLoaded,
                     now: now,
                     weekStartDay: weekStartDay,
                     greenlogStreak: streaks[timeframe]?.greenlog ?? 0,
@@ -75,6 +87,8 @@ private struct CoreTimeframeCard: View {
 
     let timeframe: Timeframe
     let slot: CoreBoardSlot?
+    /// See `RisoCoreTimeframeGrid.slotsLoaded`.
+    var slotsLoaded: Bool = true
     let now: Date
     let weekStartDay: String
     /// Current greenlog streak for this timeframe; a flame badge shows when ≥ 1.
@@ -95,9 +109,12 @@ private struct CoreTimeframeCard: View {
     }
 
     private enum Status {
-        case ready, active, expiring, done, draft
+        /// `pending` = slots not loaded yet. Renders an em dash rather
+        /// than claiming a state that may be wrong for a beat.
+        case pending, ready, active, expiring, done, draft
         var label: String {
             switch self {
+            case .pending:  return "—"
             case .ready:    return "Ready"
             case .active:   return "Active"
             case .expiring: return "Expiring"
@@ -110,6 +127,7 @@ private struct CoreTimeframeCard: View {
         }
         var dotColor: Color {
             switch self {
+            case .pending:  return .risoPaper
             case .ready:    return .risoPaper
             case .active:   return .risoGreen
             case .expiring: return .risoGold
@@ -120,6 +138,8 @@ private struct CoreTimeframeCard: View {
     }
 
     private var status: Status {
+        // Unknown ≠ empty: before the first load, claim nothing.
+        guard slotsLoaded else { return .pending }
         guard let board = slot?.currentBoard else { return .ready }
         switch board.status {
         case .completed: return .done

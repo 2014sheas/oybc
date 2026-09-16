@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type {
+  Pool,
   RecurringBoardTemplate,
   Timeframe,
   UserPreferences,
 } from '@oybc/shared';
-import { usePools } from '../hooks';
+import { usePoolsQuery } from '../hooks';
 import { availableCountForSource } from './createHub/wizardSources';
 import {
   fetchSourceSheetBoardEntries,
@@ -93,6 +94,8 @@ export interface BoardWizardPageProps {
  * `BoardWizardCancelDialog`: pristine states dismiss silently,
  * otherwise the user picks Save Draft / Discard / Keep Editing.
  */
+const EMPTY_POOLS_FALLBACK: Pool[] = [];
+
 export function BoardWizardPage({
   userId,
   preferences,
@@ -113,7 +116,10 @@ export function BoardWizardPage({
   // provenance) and `BoardWizardTasksStep`'s "PULL IN A POOL" card, so the
   // wizard doesn't run two concurrent `usePools` live queries (mirrors the
   // `PoolsBrowse`/`TasksPage` "load once, pass down" precedent).
-  const pools = usePools(userId);
+  // Tri-state: `undefined` until first resolve, so the wizard can tell
+  // "no pools" from "not read yet" (late-mutation audit, shape B).
+  const poolsQuery = usePoolsQuery(userId);
+  const pools = poolsQuery ?? EMPTY_POOLS_FALLBACK;
   // Board Sources P4 — the source sheet's BOARDS rows (ACTIVE boards +
   // squares/done counts). Loaded async once per mount + refreshed when
   // the user id changes; the resolution walks every active board's
@@ -139,6 +145,7 @@ export function BoardWizardPage({
     startRecurring,
     initialStep,
     pools,
+    poolsLoaded: poolsQuery !== undefined,
     tasksById: library.taskMap,
   });
 

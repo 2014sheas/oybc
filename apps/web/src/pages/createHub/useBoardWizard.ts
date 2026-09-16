@@ -17,10 +17,10 @@ import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
 import { fetchBoardSourceSupply } from '../../db/operations/boardSources';
 import {
   availableCountForSource,
+  buildSupplyInfoMap,
   clampAllSourceRanges,
   clampSourceRange,
   excludeFromEverySupplier,
-  poolSupplyEntry,
   selectionUnion,
   sourceCapacity,
   toggleExcludeInSource,
@@ -112,6 +112,7 @@ export function useBoardWizard({
   editingTemplate,
   startRecurring = false,
   pools = EMPTY_POOLS,
+  poolsLoaded = true,
   tasksById = EMPTY_TASKS_BY_ID,
 }: UseBoardWizardArgs): BoardWizardController {
   const draftBoard = draft?.board;
@@ -361,31 +362,17 @@ export function useBoardWizard({
   // live `poolsById`/`tasksById` props; board entries come from the async
   // fetch effect below. An unresolvable source keeps an empty supply — it
   // contributes nothing, never blocks.
-  const supplyInfoBySourceId = useMemo<SupplyInfoMap>(() => {
-    const info: SupplyInfoMap = {};
-    for (const source of sources) {
-      if (source.kind === 'pool') {
-        const pool = poolsById[source.sourceId];
-        info[source.sourceId] =
-          pool && !pool.isDeleted
-            ? poolSupplyEntry(pool, tasksById)
-            : {
-                // A dead pool row keeps its last-known name when we still
-                // have it; a blank row is never honest UI.
-                displayName: pool?.name || 'Deleted pool',
-                rawSupplyTaskIds: [],
-                doneTaskIds: new Set(),
-              };
-      } else {
-        info[source.sourceId] = boardSupplyById[source.sourceId] ?? {
-          displayName: 'Deleted board',
-          rawSupplyTaskIds: [],
-          doneTaskIds: new Set(),
-        };
-      }
-    }
-    return info;
-  }, [sources, poolsById, tasksById, boardSupplyById]);
+  const supplyInfoBySourceId = useMemo<SupplyInfoMap>(
+    () => buildSupplyInfoMap(sources, poolsById, poolsLoaded, tasksById, boardSupplyById),
+    [sources, poolsById, poolsLoaded, tasksById, boardSupplyById],
+  );
+
+  /** Any pulled source whose supply hasn't resolved yet. While true the
+   *  capacity gate stays quiet — see `step2ValidationMessage`. */
+  const hasPendingSupply = useMemo(
+    () => Object.values(supplyInfoBySourceId).some((s) => s.isPending === true),
+    [supplyInfoBySourceId],
+  );
 
   // Async board-supply resolution (the one structural divergence from the
   // iOS port, whose GRDB reads are synchronous): fetch each board-kind
@@ -408,7 +395,12 @@ export function useBoardWizard({
               rawSupplyTaskIds: info.supplyTaskIds,
               doneTaskIds: info.doneTaskIds,
             }
-          : { displayName: 'Deleted board', rawSupplyTaskIds: [], doneTaskIds: new Set() };
+          : {
+              // Resolved and genuinely missing — explicitly NOT pending.
+              displayName: 'Deleted board',
+              rawSupplyTaskIds: [],
+              doneTaskIds: new Set(),
+            };
       }
       if (!cancelled) setBoardSupplyById((prev) => ({ ...prev, ...next }));
     })();
@@ -1056,9 +1048,14 @@ export function useBoardWizard({
       if (!selectedTaskIds.has(centerTaskId)) return false;
     }
     return true;
-  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
+  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId, hasPendingSupply]);
 
   const step2ValidationMessage = useMemo<string | null>(() => {
+    // Don't accuse the user of a shortfall we can't actually measure yet
+    // (late-mutation audit, shape B): while any pulled source's supply is
+    // unresolved, capacity is artificially 0, which lit the red gate and
+    // disabled Next until the read landed.
+    if (hasPendingSupply) return null;
     const short = tasksRequired - capacity;
     if (short > 0) {
       // Design copy (docs/BOARD_SOURCES.md §Surfaces item 1).
@@ -1068,7 +1065,7 @@ export function useBoardWizard({
       return 'Mark one selected task as the center.';
     }
     return null;
-  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId]);
+  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId, hasPendingSupply]);
 
   const isPristine = useMemo<boolean>(() => {
     if (draftBoardId !== null) return false;

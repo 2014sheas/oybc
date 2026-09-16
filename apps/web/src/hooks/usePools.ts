@@ -25,3 +25,23 @@ export function usePools(userId: string | undefined): Pool[] {
     ) ?? []
   );
 }
+
+/**
+ * Tri-state variant of {@link usePools}: `undefined` until the first
+ * resolve, so callers can tell "no pools" from "not read yet".
+ *
+ * Late-mutation audit (2026-09-16, shape B): collapsing the loading
+ * state to `[]` made the wizard render a pulled pool as "Deleted pool ·
+ * 0 squares" and briefly disable Next. Callers that render COPY about a
+ * pool (rather than just listing pools) should use this.
+ * See `reference_late_mutation_bug_class`.
+ */
+export function usePoolsQuery(userId: string | undefined): Pool[] | undefined {
+  return useLiveQuery(
+    async (): Promise<Pool[]> => {
+      if (!userId) return [];
+      return db.pools.filter((p) => p.userId === userId && !p.isDeleted).toArray();
+    },
+    [userId],
+  );
+}

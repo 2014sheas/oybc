@@ -3,6 +3,7 @@ import { TaskType, type BoardSource, type Pool, type Task } from '@oybc/shared';
 import {
   algorithmSupplies,
   availableCountForSource,
+  buildSupplyInfoMap,
   clampAllSourceRanges,
   clampSourceRange,
   computeCounterClashes,
@@ -278,5 +279,52 @@ describe('counter-family exclusivity in the wizard math (2026-09-08)', () => {
 
   it('a lone family member is never flagged as a clash', () => {
     expect(computeCounterClashes(['r20', 'a'], fam, {}).size).toBe(0);
+  });
+});
+
+describe('buildSupplyInfoMap — pending vs deleted (late-mutation audit, shape B)', () => {
+  const poolSource: BoardSource = {
+    sourceId: 'p1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all',
+  };
+  const boardSource: BoardSource = {
+    sourceId: 'b1', kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'all',
+  };
+
+  it('an unresolved pool is PENDING, never "Deleted pool"', () => {
+    // THE regression: before the pools query resolved, the row read
+    // "Deleted pool · 0 squares", capacity went 0, the red gate lit and
+    // Next was disabled — then it all corrected.
+    const pending = buildSupplyInfoMap([poolSource], {}, false, {}, {});
+    expect(pending.p1.isPending).toBe(true);
+    expect(pending.p1.displayName).not.toBe('Deleted pool');
+  });
+
+  it('a pool that is genuinely gone AFTER load reads as deleted', () => {
+    const loaded = buildSupplyInfoMap([poolSource], {}, true, {}, {});
+    expect(loaded.p1.isPending).toBeUndefined();
+    expect(loaded.p1.displayName).toBe('Deleted pool');
+  });
+
+  it('a resolved pool reads its real name and supply', () => {
+    const pool = {
+      id: 'p1', userId: 'u1', name: 'Morning', taskIds: ['t1'],
+      createdAt: 'x', updatedAt: 'x', version: 1, isDeleted: false,
+    } as Pool;
+    const task = { id: 't1', userId: 'u1', title: 'T', type: TaskType.NORMAL, isDeleted: false } as Task;
+    const map = buildSupplyInfoMap([poolSource], { p1: pool }, true, { t1: task }, {});
+    expect(map.p1.isPending).toBeUndefined();
+    expect(map.p1.displayName).toBe('Morning');
+    expect(map.p1.rawSupplyTaskIds).toEqual(['t1']);
+  });
+
+  it('a board source is PENDING until its async fetch writes an entry', () => {
+    const pending = buildSupplyInfoMap([boardSource], {}, true, {}, {});
+    expect(pending.b1.isPending).toBe(true);
+
+    const resolved = buildSupplyInfoMap([boardSource], {}, true, {}, {
+      b1: { displayName: 'Deleted board', rawSupplyTaskIds: [], doneTaskIds: new Set() },
+    });
+    expect(resolved.b1.isPending).toBeUndefined();
+    expect(resolved.b1.displayName).toBe('Deleted board');
   });
 });

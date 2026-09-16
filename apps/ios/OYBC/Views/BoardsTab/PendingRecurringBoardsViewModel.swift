@@ -31,6 +31,13 @@ final class CoreBoardSlotsViewModel {
     /// timeframes enabled at all ⇒ section hides itself.
     var slots: [CoreBoardSlot] = []
 
+    /// False until the first `reload` lands. Consumers must not read an
+    /// empty `slots` as "no boards exist" before this is true — the core
+    /// grid claimed "Ready" (= tap to set up) on all four cards and then
+    /// flipped to Active/Expiring/Done (late-mutation audit, shape B;
+    /// see `reference_late_mutation_bug_class`).
+    var isLoaded: Bool = false
+
     /// Per-timeframe bingo + greenlog streaks, computed alongside the slots
     /// from the same boards/prefs snapshot. The grid reads `streaks[tf]?.greenlog`
     /// for each card's badge. Parallel to `slots` (keeps `CoreBoardSlot` a pure
@@ -76,12 +83,15 @@ final class CoreBoardSlotsViewModel {
             await MainActor.run {
                 self.slots = result.slots
                 self.streaks = result.streaks
+                self.isLoaded = true
                 self.loadError = nil
             }
         } catch {
             await MainActor.run {
                 // Keep `slots` as-is on failure — a transient DB error
-                // shouldn't blank an already-populated section.
+                // shouldn't blank an already-populated section. `isLoaded`
+                // flips too: a failed read is still "we looked".
+                self.isLoaded = true
                 self.loadError = "Failed to load core board slots: \(error.localizedDescription)"
             }
         }
