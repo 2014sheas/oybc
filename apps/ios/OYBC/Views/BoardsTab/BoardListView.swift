@@ -627,7 +627,7 @@ struct BoardListView: View {
             return board.timeframe.rawValue.capitalized
         }
         let base = formatTimeframeLabel(timeframe: board.timeframe, startDate: startDate)
-        let expiry = getExpiryLabel(board)
+        let expiry = getExpiryLabel(board, now: now)
         guard !board.isIndefinite,
               !expiry.isEmpty, expiry != "No deadline" else {
             return base

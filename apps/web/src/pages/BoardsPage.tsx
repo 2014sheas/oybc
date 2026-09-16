@@ -172,6 +172,7 @@ export function BoardsPage(): React.ReactElement {
 
       <CoreStrip
         slots={coreBoardSlots}
+        now={now}
         onSelect={(slot) => {
           // A DRAFT core board for this window resumes the wizard (never
           // opens as the pager). No board → the pager handles the empty state.

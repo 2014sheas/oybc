@@ -116,10 +116,14 @@ export function RisoGreenlog({
             <b>{bingos}</b>
             <span>Bingos</span>
           </div>
-          <div className={styles.glStat}>
-            <b>{streak}</b>
-            <span>Streak</span>
-          </div>
+          {/* Never render "0 Streak": 0 means unready here (gatedStreak's
+              contract), and a clear always implies a streak ≥ 1. */}
+          {streak > 0 && (
+            <div className={styles.glStat}>
+              <b>{streak}</b>
+              <span>Streak</span>
+            </div>
+          )}
         </div>
         <div className={styles.glBtns}>
           <RisoButton kind="primary" size="large" icon={<RisoIcon name="share" size={16} />} onClick={onShare}>

@@ -234,6 +234,7 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                                 activePlacementCount={
                                   filters.activePlacementCountByTaskId[child.id] ?? 0
                                 }
+                                usageCountsLoaded={filters.usageCountsLoaded}
                                 childCount={grandchildren}
                                 onClick={(id) => navigate(`/tasks/${id}`)}
                               />
