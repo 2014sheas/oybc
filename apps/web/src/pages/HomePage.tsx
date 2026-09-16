@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
+import { gatedStreak } from '../utils/gatedStreak';
 import { useNavigate } from 'react-router-dom';
-import { AchievementTrigger, Timeframe, computeStreak, isBoardActiveForList } from '@oybc/shared';
+import { AchievementTrigger, Timeframe, isBoardActiveForList } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useBoards } from '../hooks/useBoards';
 import { usePreferences } from '../hooks/usePreferences';
@@ -34,7 +35,7 @@ function greetingDate(): string {
 export function HomePage(): React.ReactElement {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [prefs] = usePreferences();
+  const [prefs, , prefsReady] = usePreferences();
   const boards = useBoards(user?.id);
 
   // `useBoards` already returns the shared `compareBoardsForList` order
@@ -56,12 +57,13 @@ export function HomePage(): React.ReactElement {
   // card. `ResumePanel`'s featured poster uses `RisoBoard` directly.
   const railPreviewCellsByBoardId = useBoardsPreviewCells(rail, user?.id);
 
-  const streak = computeStreak(
-    Timeframe.DAILY,
-    AchievementTrigger.GREENLOG,
-    boards,
-    prefs.weekStartDay,
-    new Date()
+  // Pinned instant + wait for prefs: a sunday-start user would
+  // otherwise briefly see a streak computed with the default week start
+  // (late-mutation audit, shapes B + C).
+  const nowPinned = useMemo(() => new Date(), []);
+  const streak = gatedStreak(
+    prefsReady, Timeframe.DAILY, AchievementTrigger.GREENLOG,
+    boards, prefs.weekStartDay, nowPinned,
   );
 
   const openBoard = (boardId: string): void => {

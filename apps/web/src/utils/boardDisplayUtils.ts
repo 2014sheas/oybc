@@ -25,9 +25,16 @@ export function statusLabel(status: BoardStatus | string): string {
  * @param board - Object with timeframe and endDate fields
  * @returns true if the board's deadline has passed
  */
-export function isBoardExpired(board: { timeframe: string; endDate?: string }): boolean {
+export function isBoardExpired(
+  board: { timeframe: string; endDate?: string },
+  /** Pin this at the screen (a `useMemo`) — a render-time clock lets the
+   *  badge flip with no user action and lets two cards in one pass
+   *  disagree (late-mutation audit, shape C; see
+   *  `reference_late_mutation_bug_class`). */
+  now: Date = new Date(),
+): boolean {
   if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return false;
-  return isTimeframeExpired(board.endDate);
+  return isTimeframeExpired(board.endDate, now);
 }
 
 /**
@@ -73,17 +80,21 @@ export function boardMatchesListFilter(
  * @param board - Object with status, timeframe, and endDate fields
  * @returns true when endDate is in [now, now + 24h)
  */
-export function isBoardExpiringSoon(board: {
-  status: string;
-  timeframe: string;
-  endDate?: string;
-}): boolean {
+export function isBoardExpiringSoon(
+  board: {
+    status: string;
+    timeframe: string;
+    endDate?: string;
+  },
+  /** See `isBoardExpired` — pin this at the screen. */
+  now: Date = new Date(),
+): boolean {
   if (board.status !== BoardStatus.ACTIVE) return false;
   // INDEFINITE timeframe or absent endDate = never expires.
   if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return false;
   const end = new Date(board.endDate).getTime();
   if (!Number.isFinite(end)) return false;
-  const msLeft = end - Date.now();
+  const msLeft = end - now.getTime();
   return msLeft >= 0 && msLeft < 24 * 60 * 60 * 1000;
 }
 
@@ -93,12 +104,16 @@ export function isBoardExpiringSoon(board: {
  * @param board - Object with timeframe and endDate fields
  * @returns "No deadline", "Expired", "Expires today", "1 day left", or "N days left"
  */
-export function getExpiryLabel(board: { timeframe: string; endDate?: string }): string {
+export function getExpiryLabel(
+  board: { timeframe: string; endDate?: string },
+  /** See `isBoardExpired` — pin this at the screen. */
+  now: Date = new Date(),
+): string {
   if (board.timeframe === Timeframe.INDEFINITE || !board.endDate) return 'No deadline';
-  if (isTimeframeExpired(board.endDate)) return 'Expired';
+  if (isTimeframeExpired(board.endDate, now)) return 'Expired';
   const endTime = new Date(board.endDate).getTime();
   if (!Number.isFinite(endTime)) return 'No deadline';
-  const msLeft = endTime - Date.now();
+  const msLeft = endTime - now.getTime();
   const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
   if (daysLeft <= 0) return 'Expires today';
   if (daysLeft === 1) return '1 day left';

@@ -39,8 +39,9 @@ import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
-import { compactStreakLabel, computeStreak, getHighlightedSquares } from '@oybc/shared';
+import { compactStreakLabel, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
+import { gatedStreak } from '../utils/gatedStreak';
 import { RisoButton, RisoIcon } from './riso';
 import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
 import { RisoBingoToast } from './play/RisoBingoToast';
@@ -156,6 +157,8 @@ export function BoardPlaySurface({
   // ── UI state ───────────────────────────────────────────────────────────
 
   const navigate = useNavigate();
+  // Pinned instant for the stat bar's expiry label (shape C).
+  const nowPinned = useMemo(() => new Date(), []);
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
   // Riso bingo toast (keyed to replay the drop) + greenlog overlay.
   const [bingoToast, setBingoToast] = useState<{ key: number } | null>(null);
@@ -226,7 +229,7 @@ export function BoardPlaySurface({
   // the seed/reset effect.
 
   // User preferences (weekStartDay is forwarded to BoardEditPanel + BoardSetupForm).
-  const [prefs] = usePreferences();
+  const [prefs, , prefsReady] = usePreferences();
 
   // Repeat-in-edit rework — the repeat controls + spawn-provenance note
   // moved into `BoardEditPanel` (its `BoardEditRepeatSection`), which owns
@@ -392,12 +395,9 @@ export function BoardPlaySurface({
   // ── Render ─────────────────────────────────────────────────────────────
 
   // Compute streak once so both RisoGreenlog and ShareBoardSheet use the same value.
-  const greenlogStreak = computeStreak(
-    board.timeframe,
-    AchievementTrigger.GREENLOG,
-    allBoards,
-    prefs.weekStartDay,
-    new Date(),
+  const greenlogStreak = gatedStreak(
+    prefsReady, board.timeframe, AchievementTrigger.GREENLOG,
+    allBoards, prefs.weekStartDay, nowPinned,
   );
 
   // Format as compact label for the share poster (e.g. "3d", "2w", "5mo").
@@ -617,7 +617,7 @@ export function BoardPlaySurface({
               <div className={play.stat}>
                 <div className={play.statK}>Left</div>
                 <div className={play.statV} style={{ fontSize: '18px' }}>
-                  {getExpiryLabel(board) || '—'}
+                  {getExpiryLabel(board, nowPinned) || '—'}
                 </div>
               </div>
             )}

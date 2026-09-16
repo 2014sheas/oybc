@@ -36,6 +36,10 @@ export interface BoardCardProps {
    * sites are unaffected.
    */
   templatesLoaded?: boolean;
+  /** The list's pinned instant — expiry badges must not read the clock
+   *  at render time (late-mutation audit, shape C). Defaults to a fresh
+   *  Date for standalone/preview call sites. */
+  now?: Date;
 }
 
 /** Exhaustive status→badge mapping — adding a BoardStatus without a badge kind
@@ -55,11 +59,11 @@ const STATUS_TO_BADGE: Record<BoardStatus, RisoBadgeKind> = {
  *   2. Active + within 24 h       → "Expiring soon" (gold)
  *   3. Everything else            → normal status badge
  */
-function badgeFor(board: Board): { kind: RisoBadgeKind; text: string } {
-  if (board.status === BoardStatus.ACTIVE && isBoardExpired(board)) {
+function badgeFor(board: Board, now: Date): { kind: RisoBadgeKind; text: string } {
+  if (board.status === BoardStatus.ACTIVE && isBoardExpired(board, now)) {
     return { kind: 'expiring', text: 'Expired' };
   }
-  if (isBoardExpiringSoon(board)) {
+  if (isBoardExpiringSoon(board, now)) {
     return { kind: 'expiring', text: 'Expiring soon' };
   }
   return { kind: STATUS_TO_BADGE[board.status], text: statusLabel(board.status) };
@@ -83,13 +87,14 @@ export function BoardCard({
   onDelete,
   template,
   templatesLoaded = true,
+  now = new Date(),
 }: BoardCardProps): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const pct = board.totalTasks > 0 ? Math.round((board.completedTasks / board.totalTasks) * 100) : 0;
   const isComplete = board.status === BoardStatus.COMPLETED || board.status === BoardStatus.ARCHIVED;
-  const badge = badgeFor(board);
+  const badge = badgeFor(board, now);
   // Single source for what the badge renders — `hidden` covers both
   // "one-off" and "not resolved yet" so the badge never appears in a
   // state it will reverse (late-mutation audit, shape B).

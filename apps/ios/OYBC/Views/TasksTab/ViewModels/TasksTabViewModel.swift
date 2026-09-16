@@ -78,6 +78,11 @@ final class TasksTabViewModel {
     /// Status map for non-deleted boards. Loaded once per `reload`; the
     /// usage filter and the row's "On N active boards" hint both read it.
     var boardStatusById: [String: BoardStatus] = [:]
+    /// False until `reload()` lands — an empty `boardStatusById` then
+    /// means "placements not joined yet", NOT "this task is on no
+    /// boards". Rows used to read "0 bds · 0 active" and then flip
+    /// (late-mutation audit, shape B).
+    var usageCountsLoaded: Bool = false
 
     /// Most recent reload error, surfaced to the user as a caption.
     var loadError: String?
@@ -103,10 +108,13 @@ final class TasksTabViewModel {
                     m[b.id] = b.status
                 }
                 self.boardStatusById = m
+                self.usageCountsLoaded = true
                 self.loadError = nil
             }
         } catch {
             await MainActor.run {
+                // A failed read is still "we looked".
+                self.usageCountsLoaded = true
                 self.loadError = "Failed to load board statuses: \(error.localizedDescription)"
             }
         }

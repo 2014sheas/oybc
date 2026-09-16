@@ -11,6 +11,10 @@ struct RisoTaskRowView: View {
     let task: Task
     let placementCount: Int
     let activePlacementCount: Int
+    /// False while the placement join is unresolved — the usage column
+    /// shows "—" rather than claiming "0 bds" (late-mutation audit).
+    /// Defaults true so previews/snapshot fixtures render their seeds.
+    var usageCountsLoaded: Bool = true
     let childCount: Int
 
     var body: some View {
@@ -35,17 +39,25 @@ struct RisoTaskRowView: View {
 
             // ── Right usage column ──────────────────────────────────────
             VStack(alignment: .trailing, spacing: 2) {
-                HStack(spacing: 2) {
-                    Text("\(placementCount)")
+                if usageCountsLoaded {
+                    HStack(spacing: 2) {
+                        Text("\(placementCount)")
+                            .font(.risoBody(13, .bold))
+                            .foregroundStyle(Color.risoInk)
+                        Text(placementCount == 1 ? " bd" : " bds")
+                            .font(.risoBody(13, .regular))
+                            .foregroundStyle(Color.risoMuted)
+                    }
+                    Text("\(activePlacementCount) active")
+                        .font(.risoBody(11, .semibold))
+                        .foregroundStyle(Color.risoGreen)
+                } else {
+                    // Unknown ≠ zero: never claim "0 bds" before the
+                    // placement join resolves (late-mutation audit).
+                    Text("—")
                         .font(.risoBody(13, .bold))
-                        .foregroundStyle(Color.risoInk)
-                    Text(placementCount == 1 ? " bd" : " bds")
-                        .font(.risoBody(13, .regular))
                         .foregroundStyle(Color.risoMuted)
                 }
-                Text("\(activePlacementCount) active")
-                    .font(.risoBody(11, .semibold))
-                    .foregroundStyle(Color.risoGreen)
             }
         }
         .padding(.horizontal, 13)

@@ -10,6 +10,9 @@ export interface TaskRowProps {
   /** Pre-computed count of placements on ACTIVE boards specifically.
    *  Drives the "On N active boards" hint. */
   activePlacementCount: number;
+  /** False while the placement join is unresolved — the usage line is
+   *  omitted rather than claiming "Unused" (late-mutation audit). */
+  usageCountsLoaded?: boolean;
   /** Pre-computed count of compound children (for compound-type tasks).
    *  Skipped for any other type. */
   childCount: number;
@@ -54,6 +57,7 @@ export function TaskRow({
   task,
   placementCount,
   activePlacementCount,
+  usageCountsLoaded = true,
   childCount,
   onClick,
   onEdit,
@@ -64,7 +68,12 @@ export function TaskRow({
 }: TaskRowProps): React.ReactElement {
   const status = computeStatusLabel(task);
   const subtitle = computeSubtitle(task, childCount);
-  const usage = computeUsageHint(placementCount, activePlacementCount);
+  // Unknown ≠ unused: render nothing until the placement join resolves
+  // (late-mutation audit, shape B) — "Unused" flipping to "On 3 active
+  // boards" is a false claim corrected in front of the user.
+  const usage = usageCountsLoaded
+    ? computeUsageHint(placementCount, activePlacementCount)
+    : null;
   const lastCompleted = task.completedAt ? formatRelativeTime(task.completedAt) : null;
   const titleForA11y = task.title || '(untitled task)';
 
@@ -94,7 +103,7 @@ export function TaskRow({
             <span className={styles.rowTitle}>{titleForA11y}</span>
             {(subtitle || status || lastCompleted || usage) && (
               <span className={styles.rowMeta}>
-                {[subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage]
+                {[subtitle, status, lastCompleted ? `Last completed ${lastCompleted}` : '', usage ?? '']
                   .filter(Boolean)
                   .join(' · ')}
               </span>

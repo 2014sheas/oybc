@@ -69,6 +69,8 @@ export interface TasksFiltersApi extends TasksFiltersState {
   /** Per-task placement count on non-deleted boards (active OR completed
    *  OR draft). Exposed so the row can show "Placed on N boards". */
   placementCountByTaskId: Record<string, number>;
+  /** See the hook body — false while the placement join is unresolved. */
+  usageCountsLoaded: boolean;
   /** Same as above but restricted to ACTIVE boards. Used by the usage
    *  filter's "on active boards" value and by the row's "active" hint. */
   activePlacementCountByTaskId: Record<string, number>;
@@ -110,10 +112,16 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
   // the live placement set. Small-N — even very active users have well
   // under a few thousand placements. We need the `boardId` join to filter
   // by `Board.status` below.
-  const allBoardTasks =
-    useLiveQuery(() => fetchAllBoardTasks(), []) ?? EMPTY_BOARD_TASKS;
-  const allBoards =
-    useLiveQuery(() => fetchAllBoards(), []) ?? EMPTY_BOARDS;
+  // Tri-state on both: a row must not read "Unused" before the
+  // placement join has resolved (late-mutation audit, shape B — see
+  // `reference_late_mutation_bug_class`).
+  const boardTasksQuery = useLiveQuery(() => fetchAllBoardTasks(), []);
+  const boardsQuery = useLiveQuery(() => fetchAllBoards(), []);
+  const allBoardTasks = boardTasksQuery ?? EMPTY_BOARD_TASKS;
+  const allBoards = boardsQuery ?? EMPTY_BOARDS;
+  /** False until BOTH placement queries resolve — consumers must not
+   *  render usage copy ("Unused", "0 boards") before this is true. */
+  const usageCountsLoaded = boardTasksQuery !== undefined && boardsQuery !== undefined;
 
   // Index boards by id so the join below stays O(N) total.
   const boardStatusById = useMemo(() => {
@@ -261,6 +269,7 @@ export function useTasksFilters(library: TaskLibrary): TasksFiltersApi {
     filteredTasks,
     placementCountByTaskId,
     activePlacementCountByTaskId,
+    usageCountsLoaded,
     autoExpandCompoundIds,
     browsableTasks,
   };

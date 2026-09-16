@@ -45,6 +45,9 @@ struct ProfileView: View {
     /// Async-loaded per-timeframe bingo + greenlog streaks for the "Your
     /// streaks" card. Empty until `loadCounts()` computes it.
     @State private var streaks: [Timeframe: StreakPair] = [:]
+    /// False until `loadCounts()` lands — empty streaks mean "not
+    /// computed yet", not "all zero" (late-mutation audit, shape B).
+    @State private var streaksLoaded = false
 
     // MARK: - Derived
 
@@ -90,7 +93,7 @@ struct ProfileView: View {
                     // Your streaks section — tapping the card pushes StreaksView
                     sectionLabel("Your streaks")
                     NavigationLink { StreaksView() } label: {
-                        RisoYourStreaksCard(streaks: streaks)
+                        RisoYourStreaksCard(streaks: streaks, streaksLoaded: streaksLoaded)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, Riso.gutter)
@@ -598,7 +601,10 @@ struct ProfileView: View {
         _Concurrency.Task.detached(priority: .userInitiated) {
             let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
             let result = computeAllStreaks(boards: boards, weekStartDay: weekStartDay, now: now)
-            await MainActor.run { streaks = result }
+            await MainActor.run {
+                streaks = result
+                streaksLoaded = true
+            }
         }
     }
 }

@@ -189,10 +189,15 @@ func formatCadenceAdverb(_ timeframe: Timeframe) -> String {
 ///
 /// - Parameter board: The board to check.
 /// - Returns: `true` if the board has a deadline that is now in the past.
-func isBoardExpired(_ board: Board) -> Bool {
+/// - Parameter now: PIN this at the screen (a `@State`) — a render-time
+///   clock lets the label flip with no user action and lets a card's
+///   subtitle disagree with its own badge (late-mutation audit, shape C;
+///   see `reference_late_mutation_bug_class`). Web twin:
+///   `isBoardExpired(board, now)` in `boardDisplayUtils.ts`.
+func isBoardExpired(_ board: Board, now: Date = Date()) -> Bool {
     guard !board.isIndefinite else { return false }
     guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return false }
-    return Date() > end
+    return now > end
 }
 
 /// Boards-list filter-chip predicate (All / Active / Completed / Draft),
@@ -232,12 +237,12 @@ func boardMatchesListFilter(_ board: Board, filter: String) -> Bool {
 ///
 /// - Parameter board: The board to evaluate.
 /// - Returns: A short expiry label string.
-func getExpiryLabel(_ board: Board) -> String {
+/// - Parameter now: see `isBoardExpired(_:now:)` — pin it at the screen.
+func getExpiryLabel(_ board: Board, now: Date = Date()) -> String {
     // A custom board with an end date expires at that date like a timed board
     // (it seals there too); only INDEFINITE / no-endDate boards read "No deadline".
     guard !board.isIndefinite else { return "No deadline" }
     guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "No deadline" }
-    let now = Date()
     guard now <= end else { return "Expired" }
     let secondsLeft = end.timeIntervalSince(now)
     if secondsLeft < 86_400 { return "Expires today" }
