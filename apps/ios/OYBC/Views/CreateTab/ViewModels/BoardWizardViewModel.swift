@@ -361,7 +361,10 @@ final class BoardWizardViewModel {
                     referenceDate: targetWindowDate ?? Date(),
                     weekStartDay: preferences.weekStartDay.rawValue
                 ) {
-                    self.name = formatTimeframeLabel(
+                    // Absolute: core boards lock the name field, so whatever
+                    // this returns is frozen into the row forever. Never a
+                    // relative label like "Today".
+                    self.name = formatWindowLabel(
                         timeframe: timeframe,
                         startDate: window.start
                     )

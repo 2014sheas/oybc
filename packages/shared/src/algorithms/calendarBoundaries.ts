@@ -252,30 +252,33 @@ const MONTH_ABBREVS = [
 ];
 
 /**
- * Human-readable label for a timeframe period.
+ * Absolute, clock-independent label for a timeframe window.
  *
- * - DAILY (today): "Today"
- * - DAILY (other): "Mar 15, 2026"
- * - WEEKLY: "Week of Mar 23 – 29, 2026" or "Week of Dec 29 – Jan 4" (cross-month)
+ * Depends ONLY on the window itself — never on the current date — so the
+ * same window always produces the same string. This is the label to use
+ * anywhere the result is **persisted** (a board's `name`, an export, a
+ * share filename): a relative label like "Today" is correct for one day
+ * and wrong forever after, which is how historical daily core boards all
+ * ended up stored as "Today". See `formatTimeframeLabel` for the
+ * render-time variant that may say "Today".
+ *
+ * - DAILY: "Mar 15, 2026"
+ * - WEEKLY: "Week of Mar 23 – 29, 2026" or "Week of Dec 29 – Jan 4" (cross-year)
  * - MONTHLY: "March 2026"
  * - YEARLY: "2026"
  * - CUSTOM: "Custom"
+ * - INDEFINITE: "Ongoing"
+ *
+ * @param timeframe - the window's timeframe
+ * @param startDate - the window's start, as a local-ISO string
+ * @returns a stable human-readable label for that window
  */
-export function formatTimeframeLabel(timeframe: Timeframe, startDate: string): string {
+export function formatWindowLabel(timeframe: Timeframe, startDate: string): string {
   const d = new Date(startDate);
 
   switch (timeframe) {
-    case Timeframe.DAILY: {
-      const today = new Date();
-      if (
-        d.getFullYear() === today.getFullYear() &&
-        d.getMonth() === today.getMonth() &&
-        d.getDate() === today.getDate()
-      ) {
-        return 'Today';
-      }
+    case Timeframe.DAILY:
       return `${MONTH_ABBREVS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
-    }
 
     case Timeframe.WEEKLY: {
       const endD = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 6);
@@ -304,6 +307,40 @@ export function formatTimeframeLabel(timeframe: Timeframe, startDate: string): s
     case Timeframe.INDEFINITE:
       return 'Ongoing';
   }
+}
+
+/**
+ * Human-readable label for a timeframe period, relative to the current date.
+ *
+ * Identical to {@link formatWindowLabel} except that a DAILY window falling
+ * on today's calendar date reads "Today".
+ *
+ * **Render-time only.** Because the answer changes as the clock moves, never
+ * persist this result — use {@link formatWindowLabel} for anything stored.
+ *
+ * @param timeframe - the window's timeframe
+ * @param startDate - the window's start, as a local-ISO string
+ * @param now - the instant to judge "today" against; defaults to the current
+ *   date. Pass a pinned value from surfaces that render repeatedly, so the
+ *   label cannot change under an already-painted view.
+ * @returns a human-readable label, possibly relative to `now`
+ */
+export function formatTimeframeLabel(
+  timeframe: Timeframe,
+  startDate: string,
+  now: Date = new Date(),
+): string {
+  if (timeframe === Timeframe.DAILY) {
+    const d = new Date(startDate);
+    if (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    ) {
+      return 'Today';
+    }
+  }
+  return formatWindowLabel(timeframe, startDate);
 }
 
 /**

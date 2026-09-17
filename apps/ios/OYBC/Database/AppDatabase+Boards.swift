@@ -10,7 +10,7 @@ extension AppDatabase {
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .order(Column("updatedAt").desc)
                 .fetchAll(db)
-        }
+        }.healingDisplayNames()
     }
 
     /// Fetch boards by id. Used by the task detail view to render
@@ -21,7 +21,7 @@ extension AppDatabase {
             try Board
                 .filter(ids.contains(Column("id")) && Column("isDeleted") == false)
                 .fetchAll(db)
-        }
+        }.healingDisplayNames()
     }
 
     /// Boards eligible to act as a "source" in the wizard's
@@ -69,13 +69,13 @@ extension AppDatabase {
                 ?? isoFormatterNoFrac.date(from: completedAt)
             guard let ts = parsed else { return false }
             return ts >= cutoff
-        }
+        }.healingDisplayNames()
     }
 
     func fetchBoard(id: String) throws -> Board? {
         return try read { db in
             try Board.fetchOne(db, key: id)
-        }
+        }?.healingDisplayName()
     }
 
     func saveBoard(_ board: Board) throws {

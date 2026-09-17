@@ -57,10 +57,16 @@ func parseISO8601Date(_ string: String) -> Date? {
 
 /// Returns a human-readable label for a timeframe period.
 ///
-/// Mirrors the shared TypeScript `formatTimeframeLabel` in `packages/shared`.
+/// Absolute, clock-independent label for a timeframe window. Mirrors the
+/// shared TypeScript `formatWindowLabel` in `packages/shared`.
 ///
-/// - Daily (today): `"Today"`
-/// - Daily (other): `"Mar 15, 2026"`
+/// Depends ONLY on the window itself, so the same window always produces the
+/// same string. This is the label to use anywhere the result is **persisted**
+/// (a board's `name`, an export, a share filename): a relative label like
+/// "Today" is correct for one day and wrong forever after, which is how
+/// historical daily core boards all ended up stored as "Today".
+///
+/// - Daily: `"Mar 15, 2026"`
 /// - Weekly (same month): `"Week of Mar 23 – 29, 2026"`
 /// - Weekly (cross-month, same year): `"Week of Mar 30 – Apr 5, 2026"`
 /// - Weekly (cross-year): `"Week of Dec 29 – Jan 4"`
@@ -72,14 +78,13 @@ func parseISO8601Date(_ string: String) -> Date? {
 ///   - timeframe: The board's timeframe.
 ///   - startDate: The computed start date for the period.
 /// - Returns: A human-readable period label string.
-func formatTimeframeLabel(timeframe: Timeframe, startDate: Date) -> String {
+func formatWindowLabel(timeframe: Timeframe, startDate: Date) -> String {
     let cal = Calendar.current
     let f = DateFormatter()
     f.locale = Locale.current
 
     switch timeframe {
     case .daily:
-        if cal.isDateInToday(startDate) { return "Today" }
         f.dateFormat = "MMM d, yyyy"
         return f.string(from: startDate)
     case .weekly:
@@ -112,6 +117,29 @@ func formatTimeframeLabel(timeframe: Timeframe, startDate: Date) -> String {
     case .indefinite:
         return "Ongoing"
     }
+}
+
+/// Human-readable label for a timeframe period, relative to the current date.
+///
+/// Identical to `formatWindowLabel(timeframe:startDate:)` except that a daily
+/// window falling on today's calendar date reads `"Today"`.
+///
+/// **Render-time only.** Because the answer changes as the clock moves, never
+/// persist this result — use `formatWindowLabel` for anything stored. Mirrors
+/// the shared TypeScript `formatTimeframeLabel`.
+///
+/// - Parameters:
+///   - timeframe: The board's timeframe.
+///   - startDate: The computed start date for the period.
+///   - now: The instant to judge "today" against; defaults to the current date.
+///     Pass a pinned value from surfaces that render repeatedly, so the label
+///     cannot change under an already-painted view.
+/// - Returns: A human-readable period label, possibly relative to `now`.
+func formatTimeframeLabel(timeframe: Timeframe, startDate: Date, now: Date = Date()) -> String {
+    if timeframe == .daily, Calendar.current.isDate(startDate, inSameDayAs: now) {
+        return "Today"
+    }
+    return formatWindowLabel(timeframe: timeframe, startDate: startDate)
 }
 
 /// Cadence label for a recurring board template — communicates that

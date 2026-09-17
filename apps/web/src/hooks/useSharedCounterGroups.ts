@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { buildSharedCounterGroups } from '@oybc/shared';
 import type { SharedCounterGroup } from '@oybc/shared';
 import { db } from '../db/internal';
+import { healBoardNames } from '../db/operations/boardNames';
 
 /**
  * Live query hook: builds the SharedCounterGroup read-model for the
@@ -26,7 +27,10 @@ export function useSharedCounterGroups(userId: string | undefined): SharedCounte
       // through the grouping logic unnecessarily.
       const [tasks, boards] = await Promise.all([
         db.tasks.filter((t) => t.userId === userId && !t.isDeleted).toArray(),
-        db.boards.filter((b) => b.userId === userId && !b.isDeleted).toArray(),
+        db.boards
+          .filter((b) => b.userId === userId && !b.isDeleted)
+          .toArray()
+          .then(healBoardNames),
       ]);
 
       // Pull all boardTasks that link to any of the user's tasks, using the `taskId`

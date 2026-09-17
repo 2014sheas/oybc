@@ -84,6 +84,7 @@ export {
   isWithinTimeframe,
   isTimeframeExpired,
   formatTimeframeLabel,
+  formatWindowLabel,
   formatRecurringCadence,
   formatCadenceAdverb,
 } from './calendarBoundaries';
@@ -256,3 +257,6 @@ export type {
   SelectBoardTasksResult,
   LegacyMixFields,
 } from './boardSources';
+
+export { boardDisplayName } from './boardDisplayName';
+export type { BoardNameFields } from './boardDisplayName';

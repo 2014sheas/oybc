@@ -101,7 +101,7 @@ final class CreateHubViewModel {
                         )
                         .order(Column("updatedAt").desc)
                         .fetchAll(db)
-                }
+                }.healingDisplayNames()
                 var rows: [DraftRowData] = []
                 for board in draftBoards {
                     let count: Int

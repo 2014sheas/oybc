@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { isBoardClosingOut, type Board } from '@oybc/shared';
 import { db } from '../db/internal';
+import { healBoardNames } from '../db/operations/boardNames';
 
 /**
  * Windowed Completion — the closing-out set (docs §Sealing → Lifecycle →
@@ -23,9 +24,9 @@ export function useClosingOutBoards(userId: string | undefined): Board[] {
       async (): Promise<Board[]> => {
         if (!userId) return [];
         const nowMs = Date.now();
-        const boards = await db.boards
-          .filter((b) => b.userId === userId && !b.isDeleted)
-          .toArray();
+        const boards = healBoardNames(
+          await db.boards.filter((b) => b.userId === userId && !b.isDeleted).toArray(),
+        );
         return boards
           .filter((b) => isBoardClosingOut(b, nowMs))
           .sort(

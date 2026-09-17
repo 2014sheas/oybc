@@ -179,7 +179,8 @@ func deriveSpawnedBoardName(template: RecurringBoardTemplate, windowStart: Strin
     guard let startDate = parseISO8601Date(windowStart) else {
         return trimmed.isEmpty ? "" : trimmed
     }
-    let label = formatTimeframeLabel(timeframe: template.timeframe, startDate: startDate)
+    // Absolute, not relative: this string is PERSISTED as the board's name.
+    let label = formatWindowLabel(timeframe: template.timeframe, startDate: startDate)
     if trimmed.isEmpty { return label }
     return "\(trimmed) — \(label)"
 }

@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { BoardStatus, type Board } from '@oybc/shared';
 import { db } from '../db/internal';
+import { healBoardNames } from '../db/operations/boardNames';
 
 /** Boards completed more recently than this stay eligible as a source. */
 const COMPLETED_LOOKBACK_DAYS = 30;
@@ -33,9 +34,9 @@ export function useSourceBoards(userId: string | undefined): Board[] {
         // [userId+isDeleted] compound index. The index is declared but
         // unused everywhere because IndexedDB's boolean-key handling
         // is unreliable across browsers.
-        const userBoards = await db.boards
-          .filter((b) => b.userId === userId && !b.isDeleted)
-          .toArray();
+        const userBoards = healBoardNames(
+          await db.boards.filter((b) => b.userId === userId && !b.isDeleted).toArray(),
+        );
 
         const cutoff = Date.now() - COMPLETED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
         const eligible = userBoards.filter((b) => {
