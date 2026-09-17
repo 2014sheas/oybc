@@ -54,7 +54,8 @@
  */
 
 import { fisherYatesShuffle } from '@oybc/bingo-core';
-import { TaskType } from '../constants/enums';
+import { BoardStatus, TaskType } from '../constants/enums';
+import type { Board } from '../types/board';
 import type { BoardSource } from '../types/boardSource';
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
@@ -424,6 +425,69 @@ export function buildCounterFamilyMap(
  */
 export function isSourceSupplyTask(task: Pick<Task, 'type'>): boolean {
   return task.type !== TaskType.ACHIEVEMENT;
+}
+
+/** Days a finished board stays offerable as a wizard source. */
+export const SOURCE_BOARD_LOOKBACK_DAYS = 30;
+
+/** The board fields {@link isEligibleSourceBoard} reads. */
+export type SourceBoardCandidate = Pick<
+  Board,
+  'status' | 'endDate' | 'completedAt' | 'isDeleted'
+>;
+
+/**
+ * True when a board may be offered as a source in the board wizard.
+ *
+ * Sources exist so a new board can be built from what you were just
+ * doing — "build October's from September's". That makes recency, not
+ * status, the thing that matters: a board finished last week is a useful
+ * source; one from eight months ago is clutter.
+ *
+ * Previously only COMPLETED boards were recency-bounded and ACTIVE boards
+ * were admitted unconditionally. But a board whose window closes without
+ * every square filled STAYS `ACTIVE` (it only gains `sealedAt`), so every
+ * unfinished core board a user ever had remained on offer forever. Both
+ * statuses are now bounded by the same window.
+ *
+ * Drafts and archived boards are never sources.
+ *
+ * Mirrors the iOS `BoardSources.isEligibleSourceBoard` in
+ * `Helpers/BoardSources.swift` — keep in lockstep.
+ *
+ * @param board - the candidate board
+ * @param now - the instant to judge recency against
+ * @param lookbackDays - how long a finished board stays offerable
+ * @returns whether the board may be offered as a source
+ */
+export function isEligibleSourceBoard(
+  board: SourceBoardCandidate,
+  now: Date,
+  lookbackDays: number = SOURCE_BOARD_LOOKBACK_DAYS,
+): boolean {
+  if (board.isDeleted) return false;
+
+  const cutoff = now.getTime() - lookbackDays * 24 * 60 * 60 * 1000;
+
+  if (board.status === BoardStatus.COMPLETED) {
+    if (!board.completedAt) return false;
+    const ts = Date.parse(board.completedAt);
+    return !Number.isNaN(ts) && ts >= cutoff;
+  }
+
+  if (board.status !== BoardStatus.ACTIVE) return false;
+
+  // An ACTIVE board with no end date is INDEFINITE — its window never
+  // closes, so it is always a live source.
+  if (!board.endDate) return true;
+
+  const endsAt = Date.parse(board.endDate);
+  if (Number.isNaN(endsAt)) return true; // unparseable: fail open, stay offerable
+  if (endsAt >= now.getTime()) return true; // window still open
+
+  // Window closed without the board being marked complete — offer it for
+  // the same lookback a completed board gets, then let it go.
+  return endsAt >= cutoff;
 }
 
 /**

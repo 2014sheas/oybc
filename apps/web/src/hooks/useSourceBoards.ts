@@ -1,25 +1,19 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { BoardStatus, type Board } from '@oybc/shared';
+import { isEligibleSourceBoard, type Board } from '@oybc/shared';
 import { db } from '../db/internal';
 import { healBoardNames } from '../db/operations/boardNames';
-
-/** Boards completed more recently than this stay eligible as a source. */
-const COMPLETED_LOOKBACK_DAYS = 30;
 
 /**
  * React hook returning the boards eligible to be used as a "source"
  * by the wizard's `From a board…` filter chip — i.e., boards the user
  * can browse and pull tasks from when composing a new board.
  *
- * Eligibility:
- *   - `userId === userId` and `!isDeleted` (standard owner filter)
- *   - `status === ACTIVE`, OR
- *   - `status === COMPLETED` and `completedAt` within the last
- *     {@link COMPLETED_LOOKBACK_DAYS} days
- *
- * Drafts (no real task set yet) and archived boards (intentionally
- * out-of-view) are excluded. Sorted recently-active first
- * (`updatedAt desc`).
+ * Eligibility is the shared {@link isEligibleSourceBoard} rule: a board
+ * whose window is still open, or one that finished within the last
+ * {@link SOURCE_BOARD_LOOKBACK_DAYS} days — whether it finished by being
+ * COMPLETED or just by its window closing. Drafts (no real task set yet)
+ * and archived boards (intentionally out-of-view) are excluded. Sorted
+ * recently-active first (`updatedAt desc`).
  *
  * Reactive: recomputes when boards change.
  */
@@ -38,15 +32,12 @@ export function useSourceBoards(userId: string | undefined): Board[] {
           await db.boards.filter((b) => b.userId === userId && !b.isDeleted).toArray(),
         );
 
-        const cutoff = Date.now() - COMPLETED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
-        const eligible = userBoards.filter((b) => {
-          if (b.status === BoardStatus.ACTIVE) return true;
-          if (b.status !== BoardStatus.COMPLETED) return false;
-          if (!b.completedAt) return false;
-          const ts = Date.parse(b.completedAt);
-          if (Number.isNaN(ts)) return false;
-          return ts >= cutoff;
-        });
+        // Shared with iOS (`BoardSources.isEligibleSourceBoard`): both
+        // ACTIVE and COMPLETED boards are bounded by the same recency
+        // window, so a core board whose window closed unfinished — which
+        // stays ACTIVE forever — stops being offered once it ages out.
+        const now = new Date();
+        const eligible = userBoards.filter((b) => isEligibleSourceBoard(b, now));
 
         // ISO8601 strings compare correctly with localeCompare. Negated
         // for descending order; ties intentionally return 0 so Array.sort

@@ -426,4 +426,57 @@ enum BoardSources {
     ) -> [BoardSource] {
         sources ?? sourcesFromMixFields(poolIds: poolIds, removedTaskIds: removedTaskIds)
     }
+
+    /// Days a finished board stays offerable as a wizard source.
+    static let sourceBoardLookbackDays = 30
+
+    /// True when a board may be offered as a source in the board wizard.
+    ///
+    /// Sources exist so a new board can be built from what you were just
+    /// doing — "build October's from September's". That makes recency, not
+    /// status, the thing that matters: a board finished last week is a
+    /// useful source; one from eight months ago is clutter.
+    ///
+    /// Previously only completed boards were recency-bounded and active
+    /// boards were admitted unconditionally. But a board whose window
+    /// closes without every square filled STAYS `.active` (it only gains
+    /// `sealedAt`), so every unfinished core board a user ever had remained
+    /// on offer forever. Both statuses are now bounded by the same window.
+    ///
+    /// Drafts and archived boards are never sources.
+    ///
+    /// TS twin: `isEligibleSourceBoard` — keep in lockstep.
+    ///
+    /// - Parameters:
+    ///   - board: The candidate board.
+    ///   - now: The instant to judge recency against.
+    ///   - lookbackDays: How long a finished board stays offerable.
+    /// - Returns: Whether the board may be offered as a source.
+    static func isEligibleSourceBoard(
+        _ board: Board,
+        now: Date,
+        lookbackDays: Int = sourceBoardLookbackDays
+    ) -> Bool {
+        if board.isDeleted { return false }
+
+        let cutoff = now.addingTimeInterval(-Double(lookbackDays) * 24 * 60 * 60)
+
+        if board.status == .completed {
+            guard let completedAt = board.completedAt,
+                  let ts = parseISO8601Date(completedAt) else { return false }
+            return ts >= cutoff
+        }
+
+        guard board.status == .active else { return false }
+
+        // An active board with no end date is INDEFINITE — its window never
+        // closes, so it is always a live source.
+        guard let endDate = board.endDate else { return true }
+        guard let endsAt = parseISO8601Date(endDate) else { return true } // fail open
+        if endsAt >= now { return true } // window still open
+
+        // Window closed without the board being marked complete — offer it
+        // for the same lookback a completed board gets, then let it go.
+        return endsAt >= cutoff
+    }
 }

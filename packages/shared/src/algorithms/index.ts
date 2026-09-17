@@ -259,4 +259,9 @@ export type {
 } from './boardSources';
 
 export { boardDisplayName } from './boardDisplayName';
+export {
+  isEligibleSourceBoard,
+  SOURCE_BOARD_LOOKBACK_DAYS,
+} from './boardSources';
+export type { SourceBoardCandidate } from './boardSources';
 export type { BoardNameFields } from './boardDisplayName';
