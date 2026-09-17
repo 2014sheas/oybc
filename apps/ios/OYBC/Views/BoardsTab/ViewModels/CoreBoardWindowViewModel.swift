@@ -173,10 +173,10 @@ final class CoreBoardWindowViewModel: ObservableObject {
                             && Column("timeframe") == timeframeRaw
                             && Column("startDate") == start
                         )
-                        .fetchOne(db)
+                        .fetchOne(db)?.healingDisplayName()
                     let allBoards = try Board
                         .filter(Column("userId") == userId && Column("isDeleted") == false)
-                        .fetchAll(db)
+                        .fetchAll(db).healingDisplayNames()
                     let streak = computeStreak(
                         timeframe: timeframe, criterion: .greenlog,
                         boards: allBoards, weekStartDay: weekStartDay, now: now

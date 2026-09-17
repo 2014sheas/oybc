@@ -1311,7 +1311,7 @@ final class BoardPlayViewModel: ObservableObject {
         database: AppDatabase
     ) -> (board: Board?, payload: TaskDataPayload) {
         (try? database.read { db -> (Board?, TaskDataPayload) in
-            let board = try Board.fetchOne(db, key: boardId)
+            let board = try Board.fetchOne(db, key: boardId)?.healingDisplayName()
             let payload = try fetchTaskDataPayload(db: db, boardId: boardId, userId: userId)
             return (board, payload)
         }) ?? (nil, Self.emptyTaskDataPayload)
@@ -1373,7 +1373,7 @@ final class BoardPlayViewModel: ObservableObject {
             workspaceBoards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .order(Column("updatedAt").desc)
-                .fetchAll(db)
+                .fetchAll(db).healingDisplayNames()
         } else {
             workspaceBoards = []
         }

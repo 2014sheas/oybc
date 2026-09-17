@@ -19,6 +19,7 @@
 
 import {
   formatTimeframeLabel,
+  formatWindowLabel,
   getTimeframeBoundaries,
   isWithinTimeframe,
 } from './calendarBoundaries';
@@ -82,7 +83,7 @@ export interface PendingRecurringBoard {
   startDate: string;
   /** Local ISO8601 from `getTimeframeBoundaries()`. */
   endDate: string;
-  /** Human-readable label from `formatTimeframeLabel()` (e.g. "Today", "May 2026"). */
+  /** Live display label from `formatTimeframeLabel()` (e.g. "Today", "May 2026"). */
   suggestedName: string;
 }
 
@@ -168,7 +169,8 @@ export function findPendingRecurringBoards(
       timeframe,
       startDate,
       endDate,
-      suggestedName: formatTimeframeLabel(timeframe, startDate),
+      // Absolute: a suggested NAME is persisted, unlike `windowLabel` below.
+      suggestedName: formatWindowLabel(timeframe, startDate),
     });
   }
 

@@ -89,7 +89,7 @@ final class NotificationService: ObservableObject {
             let prefs = try User.fetchOne(db, key: userId)?.decodedPreferences ?? .defaults
             let boards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .fetchAll(db)
+                .fetchAll(db).healingDisplayNames()
             return (prefs, boards)
         }
         guard let snapshot else { return }

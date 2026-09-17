@@ -350,7 +350,7 @@ final class TasksTabViewModel {
         try await database.read { db in
             try Board
                 .filter(Column("isDeleted") == false)
-                .fetchAll(db)
+                .fetchAll(db).healingDisplayNames()
         }
     }
 }

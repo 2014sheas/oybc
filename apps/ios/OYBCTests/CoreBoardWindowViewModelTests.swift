@@ -37,11 +37,12 @@ final class CoreBoardWindowViewModelTests: XCTestCase {
     }
 
     private func seedCoreBoard(
-        _ db: AppDatabase, id: String, start: String, end: String, status: String
+        _ db: AppDatabase, id: String, start: String, end: String, status: String,
+        name: String? = nil, timeframe: String = "monthly"
     ) throws {
         let dict: [String: Any] = [
-            "id": id, "userId": userId, "name": "Board \(id)",
-            "status": status, "boardSize": 3, "timeframe": "monthly",
+            "id": id, "userId": userId, "name": name ?? "Board \(id)",
+            "status": status, "boardSize": 3, "timeframe": timeframe,
             "startDate": start, "endDate": end,
             "centerSquareType": "none", "isRandomized": true, "isCore": true,
             "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
@@ -63,6 +64,37 @@ final class CoreBoardWindowViewModelTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         }
         XCTAssertTrue(vm.isLoaded, "VM reload did not land within \(timeout)s")
+    }
+
+    /// Regression: the pager read its board with a raw `Board.filter(...)`,
+    /// bypassing the healed fetchers, so every legacy daily core board
+    /// rendered as "Today" on the surface users open most. Asserts the
+    /// PUBLISHED board and the window map the cards are built from.
+    func test_reload_healsAFrozenTodayNameInThePager() throws {
+        let db = try makeDb()
+        let cal = Calendar.current
+        let ref = cal.date(from: DateComponents(year: 2026, month: 3, day: 15))!
+        let w = computeTimeframeBoundaries(
+            timeframe: .daily, referenceDate: ref, weekStartDay: "monday"
+        )!
+        let start = wizardLocalISOString(w.start)
+        try seedCoreBoard(
+            db, id: "core-1", start: start, end: wizardLocalISOString(w.end),
+            status: "active", name: "Today", timeframe: "daily"
+        )
+
+        let vm = CoreBoardWindowViewModel(
+            timeframe: .daily, seedWindowStart: start, userId: userId,
+            weekStartDay: "monday", database: db
+        )
+        vm.reload()
+        waitLoaded(vm)
+
+        XCTAssertEqual(vm.board?.name, "Mar 15, 2026", "pager board still frozen")
+        XCTAssertEqual(
+            vm.coreBoardsByStart[start]?.name, "Mar 15, 2026",
+            "window map still frozen — the cards read from this"
+        )
     }
 
     func test_stepAndJump_seedFinalStateSynchronously() throws {

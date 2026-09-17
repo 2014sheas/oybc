@@ -1,5 +1,6 @@
 import { db } from '../internal';
 import {
+  boardDisplayName,
   BoardStatus,
   isEventOwningTask,
   isSourceSupplyTask,
@@ -91,7 +92,7 @@ export function resolveBoardSourceSupply(
       : task.isCompleted;
     if (isDone) done.add(task.id);
   }
-  return { displayName: board.name, supplyTaskIds: supply, doneTaskIds: done };
+  return { displayName: boardDisplayName(board), supplyTaskIds: supply, doneTaskIds: done };
 }
 
 /** Batched per-board reads (three queries), shared by the fetch helpers. */

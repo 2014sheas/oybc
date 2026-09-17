@@ -143,7 +143,7 @@ extension AppDatabase {
                   !seenBoardIds.contains(board.id)
             else { continue }
             seenBoardIds.insert(board.id)
-            creditBoards.append(AffectedBoard(boardId: board.id, boardName: board.name))
+            creditBoards.append(AffectedBoard(boardId: board.id, boardName: board.displayName))
         }
         // Stable order by board id.
         creditBoards.sort { $0.boardId < $1.boardId }

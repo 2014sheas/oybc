@@ -129,7 +129,8 @@ func findPendingRecurringBoards(
             timeframe: timeframe,
             startDate: startISO,
             endDate: endISO,
-            suggestedName: formatTimeframeLabel(
+            // Absolute: a suggested NAME is persisted, unlike `windowLabel`.
+            suggestedName: formatWindowLabel(
                 timeframe: timeframe,
                 startDate: window.start
             )

@@ -73,7 +73,7 @@ final class CoreBoardSlotsViewModel {
                     .fetchOne(db)
                 let boards = try Board
                     .filter(Column("userId") == userId && Column("isDeleted") == false)
-                    .fetchAll(db)
+                    .fetchAll(db).healingDisplayNames()
                 let prefs = user?.decodedPreferences ?? .defaults
                 let slots = getCoreBoardSlots(boards: boards, prefs: prefs, now: now)
                 let streaks = computeAllStreaks(boards: boards, weekStartDay: prefs.weekStartDay.rawValue, now: now)

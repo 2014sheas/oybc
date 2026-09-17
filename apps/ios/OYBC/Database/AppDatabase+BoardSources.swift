@@ -129,7 +129,7 @@ extension AppDatabase {
         let placedIds = rows.map { $0.taskId }
         guard !placedIds.isEmpty else {
             return BoardSourceSupplyInfo(
-                displayName: board.name, supplyTaskIds: [], doneTaskIds: []
+                displayName: board.displayName, supplyTaskIds: [], doneTaskIds: []
             )
         }
 
@@ -171,7 +171,7 @@ extension AppDatabase {
             if isDone { done.insert(id) }
         }
         return BoardSourceSupplyInfo(
-            displayName: board.name,
+            displayName: board.displayName,
             supplyTaskIds: supply,
             doneTaskIds: done
         )

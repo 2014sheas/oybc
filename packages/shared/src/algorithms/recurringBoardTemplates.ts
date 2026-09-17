@@ -26,7 +26,7 @@
  */
 
 import { placeBoard, fillableCellCount, CenterSquareType, type BoardSize } from '@oybc/bingo-core';
-import { getTimeframeBoundaries, formatTimeframeLabel } from './calendarBoundaries';
+import { getTimeframeBoundaries, formatWindowLabel } from './calendarBoundaries';
 import { Timeframe } from '../constants/enums';
 import type { Board } from '../types/board';
 import type { Task } from '../types/task';
@@ -162,7 +162,8 @@ export function deriveSpawnedBoardName(
   windowStart: string,
 ): string {
   const trimmedName = template.name.trim();
-  const windowLabel = formatTimeframeLabel(template.timeframe, windowStart);
+  // Absolute, not relative: this string is PERSISTED as the board's name.
+  const windowLabel = formatWindowLabel(template.timeframe, windowStart);
   if (!trimmedName) return windowLabel;
   return `${trimmedName} — ${windowLabel}`;
 }

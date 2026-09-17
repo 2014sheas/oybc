@@ -10,7 +10,7 @@ extension AppDatabase {
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .order(Column("updatedAt").desc)
                 .fetchAll(db)
-        }
+        }.healingDisplayNames()
     }
 
     /// Fetch boards by id. Used by the task detail view to render
@@ -21,12 +21,14 @@ extension AppDatabase {
             try Board
                 .filter(ids.contains(Column("id")) && Column("isDeleted") == false)
                 .fetchAll(db)
-        }
+        }.healingDisplayNames()
     }
 
     /// Boards eligible to act as a "source" in the wizard's
-    /// `From a board…` filter — active boards plus boards completed
-    /// within the last 30 days. Drafts and archived are excluded.
+    /// `From a board…` filter — boards whose window is still open, plus
+    /// boards that finished within the last
+    /// `BoardSources.sourceBoardLookbackDays` days. Drafts and archived
+    /// are excluded. See `BoardSources.isEligibleSourceBoard`.
     /// Sorted recently-active first (`updatedAt desc`). Mirror of
     /// web's `useSourceBoards` hook.
     ///
@@ -46,36 +48,20 @@ extension AppDatabase {
     /// `read` block so the resulting boards + any subsequent reads
     /// (placements, tasks) share a single snapshot.
     static func fetchEligibleSourceBoards(_ db: Database, userId: String) throws -> [Board] {
-        let completedLookbackDays = 30
-        let cutoff = Date().addingTimeInterval(
-            -Double(completedLookbackDays) * 24 * 60 * 60
-        )
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoFormatterNoFrac = ISO8601DateFormatter()
-
+        let now = Date()
         let boards = try Board
             .filter(Column("userId") == userId && Column("isDeleted") == false)
             .order(Column("updatedAt").desc)
             .fetchAll(db)
-        return boards.filter { board in
-            if board.status == .active { return true }
-            guard board.status == .completed else { return false }
-            guard let completedAt = board.completedAt else { return false }
-            // ISO8601 strings round-trip from JS (fractional) and Swift
-            // (no fractional). Try both parsers so we don't reject valid
-            // timestamps from either platform.
-            let parsed = isoFormatter.date(from: completedAt)
-                ?? isoFormatterNoFrac.date(from: completedAt)
-            guard let ts = parsed else { return false }
-            return ts >= cutoff
-        }
+        return boards
+            .filter { BoardSources.isEligibleSourceBoard($0, now: now) }
+            .healingDisplayNames()
     }
 
     func fetchBoard(id: String) throws -> Board? {
         return try read { db in
             try Board.fetchOne(db, key: id)
-        }
+        }?.healingDisplayName()
     }
 
     func saveBoard(_ board: Board) throws {

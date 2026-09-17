@@ -15,6 +15,7 @@ import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks, buildBoardTaskTombstone } from './boardTasks';
 import { buildWindowContext } from './windowContext';
+import { healBoardName, healBoardNames } from './boardNames';
 
 /**
  * Board CRUD Operations
@@ -249,17 +250,19 @@ export async function updateBoardAndCascade(
  * Fetch all boards for a user (excluding deleted)
  */
 export async function fetchBoards(userId: string): Promise<Board[]> {
-  return db.boards
+  const boards = await db.boards
     .filter((b) => b.userId === userId && !b.isDeleted)
     .reverse()
     .sortBy('updatedAt');
+  return healBoardNames(boards);
 }
 
 /**
  * Fetch a single board by ID
  */
 export async function fetchBoard(id: string): Promise<Board | undefined> {
-  return db.boards.get(id);
+  const board = await db.boards.get(id);
+  return board ? healBoardName(board) : undefined;
 }
 
 /**
@@ -272,7 +275,7 @@ export async function fetchBoard(id: string): Promise<Board | undefined> {
  * @returns All non-deleted Board rows (unsorted).
  */
 export async function fetchAllBoards(): Promise<Board[]> {
-  return db.boards.filter((b) => !b.isDeleted).toArray();
+  return healBoardNames(await db.boards.filter((b) => !b.isDeleted).toArray());
 }
 
 /**
@@ -284,7 +287,11 @@ export async function fetchAllBoards(): Promise<Board[]> {
  * @returns All non-deleted Board rows, sorted ascending by `name`.
  */
 export async function fetchAllBoardsSortedByName(): Promise<Board[]> {
-  return db.boards.filter((b) => !b.isDeleted).sortBy('name');
+  // Heal BEFORE sorting: every historical daily core board is stored as
+  // "Today", so sorting the raw names would order a block of identical
+  // strings arbitrarily and then relabel them into a jumbled sequence.
+  const boards = healBoardNames(await db.boards.filter((b) => !b.isDeleted).toArray());
+  return boards.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -294,7 +301,9 @@ export async function fetchAllBoardsSortedByName(): Promise<Board[]> {
  * @returns The matching non-deleted Board rows.
  */
 export async function fetchBoardsByIds(ids: string[]): Promise<Board[]> {
-  return db.boards.where('id').anyOf(ids).filter((b) => !b.isDeleted).toArray();
+  return healBoardNames(
+    await db.boards.where('id').anyOf(ids).filter((b) => !b.isDeleted).toArray(),
+  );
 }
 
 /**
@@ -313,7 +322,7 @@ export async function fetchCoreBoardsForTimeframe(
   userId: string,
   timeframe: Timeframe,
 ): Promise<Board[]> {
-  return db.boards
+  const boards = await db.boards
     .where('[userId+timeframe+status]')
     .between(
       [userId, timeframe, ''] as readonly unknown[],
@@ -321,6 +330,7 @@ export async function fetchCoreBoardsForTimeframe(
     )
     .and((b) => !b.isDeleted && b.isCore === true)
     .toArray();
+  return healBoardNames(boards);
 }
 
 /**
@@ -513,7 +523,7 @@ export async function fetchBoardsByTimeframe(
   userId: string,
   timeframe: string
 ): Promise<Board[]> {
-  return db.boards
+  const boards = await db.boards
     .where('[userId+timeframe+status]')
     // Dexie's `.equals()` signature takes `IndexableType` and doesn't
     // model compound-index tuples; `any` is the project convention for
@@ -521,6 +531,7 @@ export async function fetchBoardsByTimeframe(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .equals([userId, timeframe, BoardStatus.COMPLETED] as any)
     .toArray();
+  return healBoardNames(boards);
 }
 
 /**

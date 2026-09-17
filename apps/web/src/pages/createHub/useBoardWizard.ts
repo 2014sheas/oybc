@@ -4,7 +4,7 @@ import {
   CenterSquareType,
   Timeframe,
   buildCounterFamilyMap,
-  formatTimeframeLabel,
+  formatWindowLabel,
   getTimeframeBoundaries,
   sourcesForRecord,
   type BoardSource,
@@ -181,7 +181,7 @@ export function useBoardWizard({
         targetWindowDate ?? new Date(),
         preferences.weekStartDay,
       );
-      return formatTimeframeLabel(effectivePrefill, startDate);
+      return formatWindowLabel(effectivePrefill, startDate); // absolute: frozen forever
     }
     return '';
   });

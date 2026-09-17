@@ -210,7 +210,7 @@ func buildSharedCounterGroups(
                 taskTitle: m.title,
                 isSource: isSource,
                 boardId: board?.id,
-                boardName: board?.name,
+                boardName: board?.displayName,
                 timeframe: tf,
                 window: window,
                 goal: goal,
