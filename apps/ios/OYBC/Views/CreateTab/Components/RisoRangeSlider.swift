@@ -115,7 +115,9 @@ struct RisoRangeSlider: View {
             .fill(Color.risoPaper2)
             .overlay(Circle().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
             .frame(width: 22, height: 22)
-            .risoHardShadow(Riso.Shadow.small)
+            // Shape-matched: the default rounded-rect shadow showed square
+            // corners behind this round knob (owner report 2026-09-17).
+            .risoHardShadow(Riso.Shadow.small, in: Circle())
     }
 
     /// Label stops per the spec: everything at small N; multiples of 5 +

@@ -46,6 +46,12 @@ dark) is `RisoKitGallery` / `RisoKitSnapshotTests`.
 - [ ] Do **not** apply `.fixedSize()` to a `RisoSegmented` — it defeats
       equal-width and clips the longest label. Use `equalWidth: false` or
       constrain the container width instead.
+- [ ] **The hard shadow matches the element's silhouette.** `risoHardShadow(_:)`
+      draws a `RoundedRectangle` at `Riso.cardRadius`, so passing only an
+      offset behind a `Circle()` / `Capsule()` leaves square corners poking
+      out from under a round element. Use `risoHardShadow(_:in:)` with the
+      SAME shape the element is drawn with. (Shipped square knob shadows on
+      `RisoRangeSlider` — owner report 2026-09-17.)
 - [ ] Tap targets are ≥ 44pt (icon buttons, ± steppers, pager chevrons).
 - [ ] Control labels can't wrap/clip — rely on `RisoSegmented`'s built-in
       `lineLimit(1)` + `minimumScaleFactor(0.8)`, or shorten the labels.
