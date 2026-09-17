@@ -27,6 +27,8 @@ final class SourceBoardEligibilityTests: XCTestCase {
     private func candidate(
         status: BoardStatus = .active,
         endDate: String? = nil,
+        /// Set false to omit `endDate` entirely (an INDEFINITE board).
+        hasEndDate: Bool = true,
         completedAt: String? = nil,
         isDeleted: Bool = false
     ) -> Board {
@@ -48,7 +50,7 @@ final class SourceBoardEligibilityTests: XCTestCase {
             "version": 1,
             "isDeleted": isDeleted,
         ]
-        dict["endDate"] = endDate ?? daysAhead(5)
+        if hasEndDate { dict["endDate"] = endDate ?? daysAhead(5) }
         if let completedAt { dict["completedAt"] = completedAt }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
@@ -82,6 +84,15 @@ final class SourceBoardEligibilityTests: XCTestCase {
 
     func testOffersAnActiveBoardWhoseWindowIsStillOpen() {
         XCTAssertTrue(BoardSources.isEligibleSourceBoard(candidate(), now: now))
+    }
+
+    func testOffersAnIndefiniteBoardWithNoEndDateForever() {
+        // Its window never closes, so recency cannot apply. Twin of the TS
+        // `endDate: undefined` case — previously unreachable here because
+        // the fixture always set an endDate.
+        let indefinite = candidate(hasEndDate: false)
+        XCTAssertNil(indefinite.endDate)
+        XCTAssertTrue(BoardSources.isEligibleSourceBoard(indefinite, now: now))
     }
 
     func testFailsOpenOnAnUnparseableEndDate() {

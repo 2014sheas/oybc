@@ -81,7 +81,7 @@ final class ParentBoardTasksViewModel {
             let result = try await database.read { db -> [Task] in
                 let userBoards = try Board
                     .filter(Column("userId") == userId && Column("isDeleted") == false)
-                    .fetchAll(db)
+                    .fetchAll(db).healingDisplayNames()
                 let parents = getParentBoards(
                     childTimeframe: childTimeframe,
                     allActiveBoards: userBoards,

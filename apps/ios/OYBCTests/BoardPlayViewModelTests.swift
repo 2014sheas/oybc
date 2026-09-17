@@ -196,6 +196,47 @@ final class BoardPlayViewModelTests: XCTestCase {
         return predicate()
     }
 
+    // MARK: - 0. board names are healed on the way to the UI
+
+    /// Regression: `fetchSnapshot` used a raw `Board.fetchOne`, bypassing
+    /// the healed `AppDatabase` fetchers, so the play-surface title and the
+    /// cross-board "also appears on" list rendered the frozen literal
+    /// "Today" for every legacy daily core board. Asserting the PUBLISHED
+    /// state (not the helper) is the point — the helper was always correct;
+    /// the view model never called it.
+    func test_reload_healsAFrozenTodayNameOnThePlaySurface() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let dict: [String: Any] = [
+            "id": "core-1", "userId": "u1", "name": "Today",
+            "status": BoardStatus.active.rawValue, "boardSize": 3,
+            "timeframe": Timeframe.daily.rawValue,
+            "startDate": "2026-03-15T00:00:00.000",
+            "endDate": "2026-03-15T23:59:59.999",
+            "centerSquareType": CenterSquareType.free.rawValue,
+            "isRandomized": false, "isCore": true,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": "2026-03-15T00:00:00.000",
+            "updatedAt": "2026-03-15T00:00:00.000",
+            "version": 1, "isDeleted": false,
+        ]
+        let board = try JSONDecoder().decode(
+            Board.self, from: JSONSerialization.data(withJSONObject: dict)
+        )
+        try db.write { grdb in try board.insert(grdb) }
+
+        let vm = BoardPlayViewModel(boardId: "core-1", userId: "u1", database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board != nil }, "reload never applied")
+
+        XCTAssertEqual(vm.board?.name, "Mar 15, 2026", "play-surface title still frozen")
+        XCTAssertEqual(
+            vm.allBoardsInWorkspace.first(where: { $0.id == "core-1" })?.name,
+            "Mar 15, 2026",
+            "cross-board name list still frozen"
+        )
+    }
+
     // MARK: - 1. reload populates everything
 
     func test_reload_populatesAllPublishedArrays() throws {

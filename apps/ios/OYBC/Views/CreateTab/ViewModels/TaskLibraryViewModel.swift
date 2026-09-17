@@ -238,7 +238,7 @@ final class TaskLibraryViewModel {
         try await database.read { db in
             let boards = try Board
                 .filter(Column("userId") == userId && Column("isDeleted") == false)
-                .fetchAll(db)
+                .fetchAll(db).healingDisplayNames()
             return Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
         }
     }

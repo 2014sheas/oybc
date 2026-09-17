@@ -64,6 +64,11 @@ export function boardDisplayName(board: BoardNameFields): string {
   // can hold a frozen label, so a non-core board is always its own name.
   if (!board.isCore) return board.name;
 
+  // Fail safe on a malformed startDate: `formatWindowLabel` would render
+  // "undefined NaN, NaN" rather than throw, which is worse than showing
+  // the stale name. Mirrors the Swift twin's `parseISO8601Date` guard.
+  if (Number.isNaN(new Date(board.startDate).getTime())) return board.name;
+
   if (board.name === STALE_WINDOW_LABEL) {
     return formatWindowLabel(board.timeframe, board.startDate);
   }

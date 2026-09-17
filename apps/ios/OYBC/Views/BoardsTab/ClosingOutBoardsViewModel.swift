@@ -52,7 +52,7 @@ final class ClosingOutBoardsViewModel {
             let result = try await database.read { db -> [Board] in
                 let boards = try Board
                     .filter(Column("userId") == userId && Column("isDeleted") == false)
-                    .fetchAll(db)
+                    .fetchAll(db).healingDisplayNames()
                 let nowMs = now.timeIntervalSince1970 * 1000
                 return boards
                     .filter { isBoardClosingOut($0, nowMs: nowMs) }

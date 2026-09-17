@@ -120,3 +120,18 @@ describe('formatWindowLabel vs formatTimeframeLabel', () => {
       .toBe(formatWindowLabel(Timeframe.DAILY, past));
   });
 });
+
+describe('malformed data', () => {
+  it('falls back to the stored name on an unparseable startDate', () => {
+    // Without the guard `formatWindowLabel` renders "undefined NaN, NaN",
+    // which is worse than showing the stale label. The Swift twin guards
+    // via `parseISO8601Date`; this pins the TS side to match.
+    const broken: BoardNameFields = {
+      name: 'Today',
+      startDate: 'not-a-date',
+      timeframe: Timeframe.DAILY,
+      isCore: true,
+    };
+    expect(boardDisplayName(broken)).toBe('Today');
+  });
+});
