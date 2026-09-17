@@ -37,6 +37,17 @@ private struct PoolEditToast: Identifiable {
 ///   - `RisoPoolListView`           — source + hand-added rows + empty state
 struct BoardWizardTasksStepView: View {
 
+    /// Renders the "Add from your library" dashed entry row + bottom sheet.
+    ///
+    /// Set to false for UX testing (owner, 2026-09-17) — the row was mostly
+    /// taking up space next to quick-add's search and the "Add a pool or
+    /// board" sheet. Every code path behind it is intact; flip this to
+    /// bring it back.
+    ///
+    /// Web twin: `LIBRARY_ENTRY_ENABLED` in `BoardWizardTasksStep.tsx`.
+    static let libraryEntryEnabled = false
+
+
     // MARK: - Parameters
 
     /// User's task library (Observable). The view only reads —
@@ -398,7 +409,16 @@ struct BoardWizardTasksStepView: View {
                 // dashed row styled like the library row; opens the sheet.
                 sourceSheetEntry
 
-                // 4. Library entry button (dashed) → bottom sheet
+                // 4. Library entry button (dashed) → bottom sheet.
+                // HIDDEN for UX testing (owner, 2026-09-17): quick-add's
+                // search and the "Add a pool or board" sheet cover most of
+                // what this did, and the dashed row was mostly taking up
+                // space. All logic is kept — flip `libraryEntryEnabled` to
+                // restore. NOTE: this also hides the only path to the
+                // "From a board…" picker + grid (per-square link /
+                // long-press copy), which lives inside this sheet — see
+                // CLAUDE.md §Board-creation surfaces.
+                if Self.libraryEntryEnabled {
                 RisoLibrarySheetView(
                     library: library,
                     selectedTaskIds: selectedTaskIds,
@@ -423,6 +443,7 @@ struct BoardWizardTasksStepView: View {
                     onCopyTask: { task in copyingTask = task },
                     onOpenInLibrary: { taskId in openedTaskInLibrary = TaskIdItem(id: taskId) }
                 )
+                }
 
                 // 5. Pool list
                 RisoPoolListView(

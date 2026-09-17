@@ -34,6 +34,20 @@ import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
 import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import { LibrarySheet } from './LibrarySheet';
+
+/**
+ * Renders the "Add from your library" dashed entry row + bottom sheet.
+ *
+ * Set to false for UX testing (owner, 2026-09-17) — the row was mostly
+ * taking up space next to quick-add's search and the "Add a pool or board"
+ * sheet. Every code path behind it is intact; flip this to bring it back.
+ *
+ * Typed `boolean` (not inferred `false`) so the guarded JSX below stays a
+ * normal conditional rather than provably-dead code.
+ *
+ * iOS twin: `libraryEntryEnabled` in `BoardWizardTasksStepView.swift`.
+ */
+const LIBRARY_ENTRY_ENABLED: boolean = false;
 import { PoolList } from './PoolList';
 import { PoolRowEditor } from './PoolRowEditor';
 import { RowContextMenu } from './RowContextMenu';
@@ -589,7 +603,15 @@ export function BoardWizardTasksStep({
         }
       />
 
-      {/* 4. Library entry button → bottom sheet */}
+      {/* 4. Library entry button → bottom sheet.
+          HIDDEN for UX testing (owner, 2026-09-17): quick-add's search and
+          the "Add a pool or board" sheet cover most of what this did, and
+          the dashed row was mostly taking up space. All logic is kept —
+          flip `LIBRARY_ENTRY_ENABLED` to restore. NOTE: this also hides the
+          only path to the "From a board…" picker + grid (per-square link /
+          long-press copy), which lives inside this sheet — see CLAUDE.md
+          §Board-creation surfaces. */}
+      {LIBRARY_ENTRY_ENABLED && (
       <LibrarySheet
         effectiveAllTasks={effectiveAllTasks}
         childTaskIds={library.childTaskIds}
@@ -614,6 +636,7 @@ export function BoardWizardTasksStep({
         currentTimeframe={currentTimeframe}
         parentBoardTasks={parentBoardTasks}
       />
+      )}
 
       {/* 5. Pool list — the tasks actually on this board */}
       <PoolList
