@@ -102,7 +102,7 @@ struct RisoPoolListView: View {
     // MARK: - Empty state
 
     private var emptyPoolNote: some View {
-        Text("Nothing in your pool yet — reuse a task, type your own, or add a special type.")
+        Text("Nothing in your pool yet — type your own, add a special type, or pull from a pool or board.")
             .font(.risoBody(12.5, .semibold))
             .foregroundStyle(Color.risoMuted)
             .multilineTextAlignment(.center)
