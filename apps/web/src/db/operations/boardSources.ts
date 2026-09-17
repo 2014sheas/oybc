@@ -1,7 +1,9 @@
 import { db } from '../internal';
+import { healBoardNames } from './boardNames';
 import {
   boardDisplayName,
   BoardStatus,
+  isEligibleSourceBoard,
   isEventOwningTask,
   isSourceSupplyTask,
   poolSourceSupplyById,
@@ -200,9 +202,18 @@ export async function fetchSourceSheetBoardEntries(
 ): Promise<SourceSheetBoardEntry[]> {
   // No bare `userId` index on boards — the `.filter` scan matches the
   // `fetchRecurringBoardTemplates` pattern (local data sizes).
-  const boards = await db.boards
-    .filter((b) => b.userId === userId && b.status === BoardStatus.ACTIVE && !b.isDeleted)
-    .toArray();
+  //
+  // Eligibility is the SHARED `isEligibleSourceBoard` rule, the same one
+  // the "From a board" grid uses. This sheet previously filtered on
+  // `status === ACTIVE` alone: a board whose window closes unfinished
+  // stays ACTIVE forever, so every stale core board stayed on offer.
+  // Names are healed because a legacy daily core board is stored as the
+  // literal "Today" — the rows here and the SEARCH that filters them both
+  // read `board.name`.
+  const now = new Date();
+  const boards = healBoardNames(
+    await db.boards.filter((b) => b.userId === userId && !b.isDeleted).toArray(),
+  ).filter((b) => isEligibleSourceBoard(b, now));
   const entries: SourceSheetBoardEntry[] = [];
   for (const board of boards) {
     const info = await resolveFromDb(board);

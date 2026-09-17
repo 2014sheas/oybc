@@ -99,15 +99,21 @@ extension AppDatabase {
     func fetchSourceSheetBoardEntries(
         userId: String
     ) throws -> [(board: Board, info: BoardSourceSupplyInfo)] {
-        try read { db in
+        let now = Date()
+        return try read { db in
+            // Eligibility is the SHARED `isEligibleSourceBoard` rule, the
+            // same one the "From a board" grid uses. This sheet previously
+            // filtered on `status == .active` alone: a board whose window
+            // closes unfinished stays `.active` forever, so every stale
+            // core board stayed on offer. Names are healed because a legacy
+            // daily core board is stored as the literal "Today" — the rows
+            // here and the SEARCH that filters them both read `board.name`.
             let boards = try Board
-                .filter(
-                    Column("userId") == userId
-                        && Column("status") == BoardStatus.active.rawValue
-                        && Column("isDeleted") == false
-                )
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
                 .order(Column("updatedAt").desc)
                 .fetchAll(db)
+                .filter { BoardSources.isEligibleSourceBoard($0, now: now) }
+                .healingDisplayNames()
             return try boards.map { board in
                 (board, try Self.resolveSupply(db: db, board: board))
             }

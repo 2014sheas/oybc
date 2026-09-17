@@ -330,6 +330,40 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 └── Playground.tsx             (web dev-only)    (no iOS counterpart — Views/PlaygroundView.swift removed in #119)
 ```
 
+### Board-creation surfaces — canonical names (use these exact terms)
+
+Four different surfaces in the board wizard's **Tasks step** can put tasks on a
+board. They have been repeatedly confused for one another in review and in
+fixes — a fix landing on the wrong one is the single most common defect in this
+area. **Name a surface by its literal on-screen label**, and confirm the data
+source below before changing code.
+
+| Canonical name | On-screen label | How the user reaches it | Data source (iOS ↔ web) |
+| --- | --- | --- | --- |
+| **Sources sheet** | "Add a pool or board" | Tasks step → dashed row (3rd) | `fetchSourceSheetBoardEntries` (both platforms) |
+| **Library sheet** | "Add from your library" | Tasks step → dashed row (4th) | `TaskLibraryViewModel` ↔ `useTaskLibrary` |
+| **From-a-board picker** | "From a board…" chip | Library sheet → chip row → `From a board…` | `SourceBoardsViewModel` → `fetchEligibleSourceBoards` ↔ `useSourceBoards` |
+| **From-a-board grid** | (the board's mini bingo grid) | From-a-board picker → tap a board card | same as the picker |
+
+Notes that keep these straight:
+
+- The **Sources sheet** and the **From-a-board picker** are NOT duplicates and
+  must not be collapsed: the sheet pulls a *range* of tasks from a whole board
+  or pool (min/max, exclusions, done-filter — see `docs/BOARD_SOURCES.md`),
+  while the picker/grid is for hand-picking *individual squares* (tap = link,
+  long-press = copy). Same raw material, different jobs.
+- They DO share one eligibility rule — `isEligibleSourceBoard` (shared TS +
+  Swift twin) — because both answer "which boards can supply tasks?". If you
+  change eligibility, change it there, not in one fetcher.
+- Both read `board.name`, in the rows AND in their search filters, so both need
+  `boardDisplayName` healing. There are **two** board-fetching paths here
+  (`fetchSourceSheetBoardEntries` and `fetchEligibleSourceBoards`); fixing one
+  is not fixing the feature. This exact mistake shipped in #482 and was fixed
+  in #483.
+- When enumerating board-returning helpers, match on "return type mentions
+  `Board` in ANY shape" — `fetchSourceSheetBoardEntries` returns
+  `[(board: Board, info: …)]` and is invisible to a `-> [Board]` grep.
+
 ### Intentional platform divergences (don't treat as parity bugs)
 
 - **Account & security — shipped on BOTH platforms** (handoff §5c; the earlier "iOS-only" note is retired): iOS `Views/ProfileTab/AccountSecurityView.swift` (container + `AccountSecurityContent` leaf) + AuthService methods (reauth ×3, `updatePassword`/`updateEmail` via `verifyBeforeUpdateEmail`, link/unlink, `deleteAccount`) + `Services/ProviderState.swift` + `Services/AppleNonce.swift`; **web** `firebase/accountSecurity.ts` (`linkGoogle`/`linkApple`/`linkPassword`, `reauthWith*`, `updateAccountEmail`/`updateAccountPassword`, `unlinkProvider`, `deleteAccount`, `getProviderState`, `friendlyError`, `isCredentialCollision`) + `pages/AccountSecurityPage.tsx` (routed at `/profile/account-security`). Both do change-email/password (provider-gated), real Apple/Google linking, and account deletion. The handoff's 2FA + Active-sessions rows are intentionally **omitted** — Firebase has no client API to back them and fake toggles are dishonest UI (App Store 4.5.4-adjacent). The **Cloud Function backend (`functions/`) is shared** (`onUserDeleted` / `deleteUserData`). Apple's Guideline 5.1.1(v) (in-app account deletion) makes this a launch prerequisite. (Guest mode reuses this link/delete layer on both platforms — see [§Guest Mode](#guest-mode-shipped--both-platforms).)
