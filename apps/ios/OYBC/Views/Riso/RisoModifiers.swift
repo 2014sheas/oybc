@@ -35,15 +35,51 @@ private struct RisoHardShadow: ViewModifier {
     }
 }
 
+/// Hard shadow that follows an arbitrary shape rather than a rounded rect.
+private struct RisoHardShadowShape<S: Shape>: ViewModifier {
+    let offset: CGFloat
+    let shape: S
+    func body(content: Content) -> some View {
+        content.background(
+            shape
+                .fill(Color.risoInk)
+                .offset(x: offset, y: offset)
+        )
+    }
+}
+
 extension View {
     /// Hard offset ink shadow (no blur) behind an elevated, non-interactive
     /// element. For tappable elements use `RisoButtonStyle`, which collapses
     /// the shadow on press.
+    ///
+    /// The shadow is drawn as a `RoundedRectangle` at `radius`, so it only
+    /// reads correctly behind an element of that same shape. **Behind a
+    /// circle or capsule, use `risoHardShadow(_:in:)`** — passing just an
+    /// offset leaves `radius` at `Riso.cardRadius`, and a card-radius
+    /// rectangle behind a round knob shows square corners.
     func risoHardShadow(
         _ offset: CGFloat = Riso.Shadow.card,
         radius: CGFloat = Riso.cardRadius
     ) -> some View {
         modifier(RisoHardShadow(offset: offset, radius: radius))
+    }
+
+    /// Hard offset ink shadow that follows `shape` exactly.
+    ///
+    /// Use for any non-rectangular element — `Circle()`, `Capsule()` — so
+    /// the shadow can't disagree with the silhouette it sits behind. Pass
+    /// the SAME shape value the element itself is drawn with.
+    ///
+    /// - Parameters:
+    ///   - offset: Hard offset in points; defaults to `Riso.Shadow.card`.
+    ///   - shape: The element's own shape.
+    /// - Returns: The view with a shape-matched ink shadow behind it.
+    func risoHardShadow<S: Shape>(
+        _ offset: CGFloat = Riso.Shadow.card,
+        in shape: S
+    ) -> some View {
+        modifier(RisoHardShadowShape(offset: offset, shape: shape))
     }
 }
 
