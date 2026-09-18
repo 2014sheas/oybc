@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
 import { RisoChip, RisoTypeBadge } from '../riso';
-import { FromBoardGrid } from './FromBoardGrid';
-import { FromBoardPicker } from './FromBoardPicker';
 import { renderTaskRow } from './TaskRow';
 import stepStyles from './BoardWizardTasksStep.module.css';
 import styles from './LibrarySheet.module.css';
@@ -11,8 +9,7 @@ export type LibraryFilter =
   | 'all'
   | TaskType
   | 'compound'
-  | 'from-parents'
-  | 'from-board';
+  | 'from-parents';
 
 const BASE_FILTER_TABS: { value: LibraryFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -27,11 +24,6 @@ const BASE_FILTER_TABS: { value: LibraryFilter; label: string }[] = [
 const FROM_PARENTS_TAB: { value: LibraryFilter; label: string } = {
   value: 'from-parents',
   label: 'From parent boards',
-};
-
-const FROM_BOARD_TAB: { value: LibraryFilter; label: string } = {
-  value: 'from-board',
-  label: 'From a board…',
 };
 
 export interface LibrarySheetProps {
@@ -58,19 +50,7 @@ export interface LibrarySheetProps {
   /** Opens the "Derive smaller version…" modal (owned by the parent, since
    *  the same modal is reachable from the context menu on a pool row). */
   onDeriveRequested: (task: Task) => void;
-  /** Opens `TaskDetailSheet` (owned by the parent). */
-  onOpenInLibrary: (taskId: string) => void;
-  /** Opens the Copy modal for a `From a board…` source square (owned by
-   *  the parent, alongside `copiedTaskIds` below). */
-  onCopyTaskRequested: (task: Task) => void;
-  /** Task ids copied via `⎘ Add a copy of this task…` this session —
-   *  drives the amber "already copied" tint on From-a-board source
-   *  squares. Owned by the parent so it survives this sheet's own
-   *  open/close (and so `CopyTaskModal`'s `onCopied` — rendered at the
-   *  parent level — can update it). */
-  copiedTaskIds: Set<string>;
 
-  userId: string;
   currentTimeframe: Timeframe;
   /** Reactive list of tasks placed on currently-active PARENT boards
    *  (Phase 6.1). Empty when the current timeframe has no parents. */
@@ -81,13 +61,13 @@ export interface LibrarySheetProps {
  * LibrarySheet — dashed "Add from your library" entry button + bottom
  * sheet (Web inline-editing port PR-1, porting iOS `RisoLibrarySheetView`).
  *
- * The library — search, type/parent/from-board filter chips, "Group
- * subtasks" toggle, and the rich row list (including compound expand and
- * the `From a board…` picker/grid) — moves ENTIRELY into this sheet. It is
- * no longer primary Step-2 content; the pool list (`PoolList`) is.
+ * The library — search, type/parent filter chips, "Group
+ * subtasks" toggle, and the rich row list (including compound expand) —
+ * moves ENTIRELY into this sheet. It is no longer primary Step-2 content;
+ * the pool list (`PoolList`) is.
  *
- * Cross-cutting overlays (right-click menu, derive-smaller modal, copy
- * modal, task-detail sheet) stay owned by the parent `BoardWizardTasksStep`
+ * Cross-cutting overlays (right-click menu, derive-smaller modal,
+ * task-detail sheet) stay owned by the parent `BoardWizardTasksStep`
  * — this component only requests them via callbacks — because the SAME
  * `RowContextMenu` instance also serves the pool list, and z-index
  * layering is simpler with a single modal instance per overlay type.
@@ -105,10 +85,6 @@ export function LibrarySheet({
   onCenterClick,
   onContextMenu,
   onDeriveRequested,
-  onOpenInLibrary,
-  onCopyTaskRequested,
-  copiedTaskIds,
-  userId,
   currentTimeframe,
   parentBoardTasks,
 }: LibrarySheetProps): React.ReactElement {
@@ -120,8 +96,6 @@ export function LibrarySheet({
    *  expanding the parent compound row instead (issue #73's rule, carried
    *  over verbatim). */
   const [groupByCompound, setGroupByCompound] = useState(true);
-  /** `null` = picker mode (no source board chosen yet). */
-  const [pickedSourceBoardId, setPickedSourceBoardId] = useState<string | null>(null);
 
   // Escape closes the sheet, matching every other modal in the app.
   useEffect(() => {
@@ -136,10 +110,7 @@ export function LibrarySheet({
   const hasParentTimeframes = PARENT_TIMEFRAMES[currentTimeframe].length > 0;
 
   const filterTabs = useMemo(
-    () =>
-      hasParentTimeframes
-        ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB, FROM_BOARD_TAB]
-        : [...BASE_FILTER_TABS, FROM_BOARD_TAB],
+    () => (hasParentTimeframes ? [...BASE_FILTER_TABS, FROM_PARENTS_TAB] : BASE_FILTER_TABS),
     [hasParentTimeframes],
   );
 
@@ -277,7 +248,6 @@ export function LibrarySheet({
                     onClick={() => {
                       setActiveFilter(t.value);
                       setExpandedCompositeId(null);
-                      if (t.value === 'from-board') setPickedSourceBoardId(null);
                     }}
                   >
                     {t.label}
@@ -285,53 +255,28 @@ export function LibrarySheet({
                 ))}
               </div>
 
-              {activeFilter !== 'from-board' && (
-                <div className={stepStyles.groupRow}>
-                  <button
-                    type="button"
-                    className={`${stepStyles.groupChip} ${groupByCompound ? stepStyles.groupChipActive : ''}`}
-                    aria-pressed={groupByCompound}
-                    onClick={() => {
-                      setGroupByCompound((v) => !v);
-                      setExpandedCompositeId(null);
-                    }}
-                    title={
-                      groupByCompound
-                        ? 'Grouping ON — subtasks hidden from flat list'
-                        : 'Grouping OFF — show all tasks at top level'
-                    }
-                  >
-                    {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
-                  </button>
-                </div>
-              )}
+              <div className={stepStyles.groupRow}>
+                <button
+                  type="button"
+                  className={`${stepStyles.groupChip} ${groupByCompound ? stepStyles.groupChipActive : ''}`}
+                  aria-pressed={groupByCompound}
+                  onClick={() => {
+                    setGroupByCompound((v) => !v);
+                    setExpandedCompositeId(null);
+                  }}
+                  title={
+                    groupByCompound
+                      ? 'Grouping ON — subtasks hidden from flat list'
+                      : 'Grouping OFF — show all tasks at top level'
+                  }
+                >
+                  {groupByCompound ? 'Group subtasks ✓' : 'Group subtasks'}
+                </button>
+              </div>
             </div>
 
             <div className={styles.sheetBody}>
-              {activeFilter === 'from-board' ? (
-                pickedSourceBoardId === null ? (
-                  <FromBoardPicker userId={userId} onPickBoard={(id) => setPickedSourceBoardId(id)} />
-                ) : (
-                  <FromBoardGrid
-                    boardId={pickedSourceBoardId}
-                    userId={userId}
-                    selectedTaskIds={selectedTaskIds}
-                    copiedTaskIds={copiedTaskIds}
-                    onToggleSelection={handleToggle}
-                    onCopyTask={(task) => onCopyTaskRequested(task)}
-                    onAddAllSubtasks={(_compoundTask, leafTaskIds) => {
-                      for (const leafId of leafTaskIds) {
-                        if (!selectedTaskIds.has(leafId)) onToggleSelection(leafId);
-                      }
-                    }}
-                    onOpenInLibrary={(id) => onOpenInLibrary(id)}
-                    onChangeSource={() => setPickedSourceBoardId(null)}
-                    onTaskCreated={(task) => {
-                      if (!selectedTaskIds.has(task.id)) onToggleSelection(task.id);
-                    }}
-                  />
-                )
-              ) : visible.tasks.length === 0 && visible.composites.length === 0 ? (
+              {visible.tasks.length === 0 && visible.composites.length === 0 ? (
                 <div className={stepStyles.emptyState}>
                   {searchQuery.trim().length > 0
                     ? `No tasks match "${searchQuery}".`

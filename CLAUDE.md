@@ -332,7 +332,7 @@ apps/web/src/pages/                               apps/ios/OYBC/Views/
 
 ### Board-creation surfaces — canonical names (use these exact terms)
 
-Four different surfaces in the board wizard's **Tasks step** can put tasks on a
+Two different surfaces in the board wizard's **Tasks step** can put tasks on a
 board. They have been repeatedly confused for one another in review and in
 fixes — a fix landing on the wrong one is the single most common defect in this
 area. **Name a surface by its literal on-screen label**, and confirm the data
@@ -342,24 +342,25 @@ source below before changing code.
 | --- | --- | --- | --- |
 | **Sources sheet** | "Add a pool or board" | Tasks step → dashed row (3rd) | `fetchSourceSheetBoardEntries` (both platforms) |
 | **Library sheet** | "Add from your library" | Tasks step → dashed row (4th) | `TaskLibraryViewModel` ↔ `useTaskLibrary` |
-| **From-a-board picker** | "From a board…" chip | Library sheet → chip row → `From a board…` | `SourceBoardsViewModel` → `fetchEligibleSourceBoards` ↔ `useSourceBoards` |
-| **From-a-board grid** | (the board's mini bingo grid) | From-a-board picker → tap a board card | same as the picker |
 
 Notes that keep these straight:
 
-- The **Sources sheet** and the **From-a-board picker** are NOT duplicates and
-  must not be collapsed: the sheet pulls a *range* of tasks from a whole board
-  or pool (min/max, exclusions, done-filter — see `docs/BOARD_SOURCES.md`),
-  while the picker/grid is for hand-picking *individual squares* (tap = link,
-  long-press = copy). Same raw material, different jobs.
-- They DO share one eligibility rule — `isEligibleSourceBoard` (shared TS +
-  Swift twin) — because both answer "which boards can supply tasks?". If you
-  change eligibility, change it there, not in one fetcher.
-- Both read `board.name`, in the rows AND in their search filters, so both need
-  `boardDisplayName` healing. There are **two** board-fetching paths here
-  (`fetchSourceSheetBoardEntries` and `fetchEligibleSourceBoards`); fixing one
-  is not fixing the feature. This exact mistake shipped in #482 and was fixed
-  in #483.
+- The **Sources sheet** pulls a *range* of tasks from a whole board or pool
+  (min/max, exclusions, done-filter — see `docs/BOARD_SOURCES.md`). The
+  per-square "From a board…" grid picker that used to sit inside the Library
+  sheet (tap = link, long-press = copy) was **retired in Plan A** of the
+  Board Sources member-rules train (`docs/BOARD_SOURCES.md` §Member rules) —
+  per-member control now lives on the Sources sheet's member rows. Do not
+  reintroduce a per-square picker; if a request sounds like one, it's a
+  member-rule request.
+- Board eligibility is the shared `isEligibleSourceBoard` (shared TS + Swift
+  twin), consumed by `fetchSourceSheetBoardEntries` on both platforms. If you
+  change eligibility, change it there.
+- Rows AND search filters read `board.name`, so the fetcher applies
+  `boardDisplayName` healing. Historical trap: when a second board-fetching
+  path existed (`fetchEligibleSourceBoards`, retired with the grid picker),
+  #482 fixed one path and not the other; #483 fixed the sheet. Any future
+  second fetcher must heal too.
 - When enumerating board-returning helpers, match on "return type mentions
   `Board` in ANY shape" — `fetchSourceSheetBoardEntries` returns
   `[(board: Board, info: …)]` and is invisible to a `-> [Board]` grep.
@@ -378,7 +379,7 @@ Notes that keep these straight:
 - **Compound-task creation — platform divergence (Riso redesign)**: **web** keeps the 3-step Setup → Build → Review mini-wizard (`components/compoundWizard/*`, `CompoundTaskWizard`) that replaced the legacy `CompositeTaskForm` monoliths. **iOS** retired that flow entirely — `Views/Components/CompositeWizard/*` (`CompositeTaskWizardView` + step/card files) was DELETED; compound authoring is now INLINE via `RisoCompoundFieldsView` inside `RisoSpecialTaskPanel` (the same panel used by both the board-wizard Tasks step and the Tasks-tab `NewTaskSheetView`), writing through `CreateFormViewModel.handleCreateCompoundAndAddToPool` (deferred Bug#85 + immediate paths). Re-converge web onto the inline pattern when web gets its Riso pass. (Wave 1c of the progress-task removal renamed the web files/symbols from "composite" to "compound" vocabulary — behavior-preserving; the retired iOS directory name above is left as accurate history.)
 - **Tasks tab**: `pages/TasksPage.tsx` ←→ `Views/TasksTab/TasksTabView.swift` (library list, search + type chips + status/usage/sort). The filter pipeline is shared in spirit but implemented per platform; the `BoardWizardTasksStep` row renderer is intentionally *not* shared (entangled with selection / center-pinning). Achievement shows on the Tasks-tab filter chips even though it's hidden from the wizard row. `TaskDetailPage` ←→ `TaskDetailView` covers per-task stats / inline edit / cascade delete. **Cascade delete**: `deleteTaskWithCascade(id)` (web `db/operations/tasks.deletion.ts`, re-exported via the `tasks.ts` barrel; iOS `AppDatabase+Tasks.swift`, one of the 9 domain extensions the B1 split produced) tombstones (soft-deletes) BoardTask rows — see [§Board Integrity](docs/BOARD_INTEGRITY.md), `BoardTask` gained `isDeleted`/`deletedAt` in PR-1 (#358) so a placement delete carries a version bump that wins the sync tie-break instead of self-reverting — soft-deletes CompoundChild links both directions, then soft-deletes the Task — atomically; `computeTaskDeletionImpact(id)` is the read-only preview for the confirm dialog (Achievement tasks reference boards/templates, not tasks, so they skip the task-side cascade). **Quick-add** (`CreateHubQuickAdd*`) now lives atop the Tasks tab, not the Create hub (which is board-creation only).
 - **Core board window pager**: tapping a Core board on the Boards screen opens the current window's board (web route `/boards/core/:timeframe/:date` → `CoreBoardWindowPage`; iOS `CoreWindowRoute` → `CoreBoardWindowView`), with swipe/±1 paging in place and a **window chip** that opens a picker sheet (iOS half-sheet / web popover) for long-range jumps — the old `≡ list` vertical browser (`/boards/core/:timeframe`, `CoreBoardBrowserView`/`Page`) is retired; the route redirects to today's window. Edit obeys ONE gate on both platforms (`status == active && sealedAt == nil && !editMode`) from the title row. Empty windows show a lazy setup prompt (no board row until the user acts, including from picker-tile taps). **Web extracts `BoardPlaySurface`** from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; **iOS embeds `BoardPlayView` whole behind an `embedded` flag** (the view self-loads by `boardId`, so embedding beats extraction). Date-only route params are parsed as local noon, not `new Date(dateStr)` (UTC parse shifts the day west of UTC). See [ARCHITECTURE.md §Phase 6](docs/ARCHITECTURE.md). (Post-B2, both play surfaces had their write logic extracted out from under this embedding: web's is `BoardPlaySurface.tsx` (~1,088 lines) over `useBoardPlayData`/`useBoardPlay` hooks + a `toggleTaskCompletionAndCascade` operation; iOS's is `BoardPlayView.swift` (~2,000 lines of rendering) over the DB-injected, unit-tested `BoardPlayViewModel`. All *writes* on both surfaces go through `db/operations` cascade helpers (web) / the injected `AppDatabase` (iOS) — never a raw mutation. The web `useBoardPlay` hook still does a few raw `db.boards.get()` *reads* (before/after snapshots for bingo/greenlog diffing); that read seam is deliberate, not drift. See `docs/ROADMAP.md` Track B2.)
-- **Wizard "From a board" picker** (shipped — [#82](https://github.com/2014sheas/oybc/pull/82), Riso-reskinned in [#128](https://github.com/2014sheas/oybc/pull/128)): Step 2 of the board wizard has a `From a board…` filter chip alongside `From parent boards`. Tapping it swaps the list region for a mini-grid source-board picker; tapping a card swaps to that board's actual grid. Per-square: tap = Link (shared completion, no new Task), long-press = context menu reusing the existing `RowContextMenu` / SwiftUI `.contextMenu` vocabulary verbatim, with one new item `⎘ Add a copy of this task…` that opens a type-aware Copy modal (Achievement copies route through `hasCycle` from `@oybc/shared`). Visual state is color/border only — no overlay text on squares. Canonical doc: [ARCHITECTURE.md §Wizard "From a board" picker](docs/ARCHITECTURE.md#wizard-from-a-board-picker).
+- **Wizard "From a board…" grid picker — RETIRED** (shipped in [#82](https://github.com/2014sheas/oybc/pull/82), Riso-reskinned in [#128](https://github.com/2014sheas/oybc/pull/128), removed in Plan A of the Board Sources member-rules train — see `docs/BOARD_SOURCES.md` §Member rules). Both platforms deleted the picker, the per-square grid, the `⎘ Add a copy of this task…` Copy modal/sheet, `useSourceBoards`/`SourceBoardsViewModel`, and `copyTask`/`copyCompound`. The "Add a pool or board" Sources sheet is the only cross-board supply path.
 
 **Rules**:
 

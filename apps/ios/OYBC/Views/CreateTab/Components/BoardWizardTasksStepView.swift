@@ -12,7 +12,7 @@ private struct PoolEditToast: Identifiable {
 ///
 /// This is a PRESENTATION RESTRUCTURE of the pre-Phase 3b implementation.
 /// All business logic (selection validation, pending-task merges, derive,
-/// from-a-board, copy, compound expand, library feed) is preserved intact;
+/// compound expand, library feed) is preserved intact;
 /// only the visual layer is rebuilt in the Riso design language.
 ///
 /// Layout (top to bottom — Board Sources P2, docs/BOARD_SOURCES.md
@@ -33,7 +33,7 @@ private struct PoolEditToast: Identifiable {
 ///   - `RisoQuickAddRowView`        — text input + red Add button
 ///   - `RisoSpecialTaskPanel`       — collapsed/expanded type-specific panel
 ///   - `RisoLibrarySheetView`       — dashed entry button + bottom sheet (owns search,
-///                                     filters, derive, from-a-board, compound expand)
+///                                     filters, derive, compound expand)
 ///   - `RisoPoolListView`           — source + hand-added rows + empty state
 struct BoardWizardTasksStepView: View {
 
@@ -155,16 +155,6 @@ struct BoardWizardTasksStepView: View {
     var onPullBoardSource: (_ boardId: String) -> Void = { _ in }
 
     // MARK: - Internal state
-
-    /// Drives the task-detail sheet opened from a library row's "Open in library".
-    @State private var openedTaskInLibrary: TaskIdItem? = nil
-
-    /// From-a-board picker/copy state (the picker + grid live in the library sheet;
-    /// the source VM and copy sheet are owned here so they survive sheet dismissal).
-    @State private var sourceBoardsVM = SourceBoardsViewModel()
-    @State private var pickedSourceBoardId: String? = nil
-    @State private var copiedTaskIds: Set<String> = []
-    @State private var copyingTask: OYBC.Task? = nil
 
     /// Source-member derive state (owner report 2026-09-15) — "Derive
     /// smaller version…" fired from a pulled source's member row. The
@@ -414,10 +404,7 @@ struct BoardWizardTasksStepView: View {
                 // search and the "Add a pool or board" sheet cover most of
                 // what this did, and the dashed row was mostly taking up
                 // space. All logic is kept — flip `libraryEntryEnabled` to
-                // restore. NOTE: this also hides the only path to the
-                // "From a board…" picker + grid (per-square link /
-                // long-press copy), which lives inside this sheet — see
-                // CLAUDE.md §Board-creation surfaces.
+                // restore.
                 if Self.libraryEntryEnabled {
                 RisoLibrarySheetView(
                     library: library,
@@ -436,12 +423,7 @@ struct BoardWizardTasksStepView: View {
                     onToggle: { taskId in toggleSelection(taskId) },
                     onTaskCreated: { taskId, title, type in
                         onTaskCreated(taskId, title, type)
-                    },
-                    sourceBoardsVM: sourceBoardsVM,
-                    pickedSourceBoardId: $pickedSourceBoardId,
-                    copiedTaskIds: copiedTaskIds,
-                    onCopyTask: { task in copyingTask = task },
-                    onOpenInLibrary: { taskId in openedTaskInLibrary = TaskIdItem(id: taskId) }
+                    }
                 )
                 }
 
@@ -518,29 +500,6 @@ struct BoardWizardTasksStepView: View {
                         onPullBoardSource(boardId)
                     }
                 }
-            )
-        }
-        // Task detail sheet (opened from a library row's "Open in library").
-        .sheet(item: $openedTaskInLibrary) { item in
-            TaskDetailSheetView(
-                taskId: item.id,
-                onClose: { openedTaskInLibrary = nil },
-                onOpenBoard: { _ in openedTaskInLibrary = nil }
-            )
-        }
-        // Copy sheet for From-a-board.
-        .sheet(item: $copyingTask) { source in
-            CopyTaskSheet(
-                source: source,
-                userId: userId,
-                onCopied: { newTask in
-                    copiedTaskIds.insert(source.id)
-                    if !selectedTaskIds.contains(newTask.id) {
-                        toggleSelection(newTask.id)
-                    }
-                    copyingTask = nil
-                },
-                onCancel: { copyingTask = nil }
             )
         }
         // Derive sheet for a pulled source's counting member (2026-09-15).

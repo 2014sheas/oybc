@@ -555,7 +555,7 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 | **P3** | Preview rework (5b summary; 2b chrome kept as shipped) + deleted-source spawn ask + spawn-side board-supply resolution (BOTH platforms — spawn semantics lockstep). **SHIPPED** (#460). | iOS (+web spawn) |
 | **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). **SHIPPED** (#463). | web |
 | **P5** | Cleanup: retire dead components, e2e/snapshot locks, allowlist shrinks, copy-rule sweep, docs close-out. **SHIPPED** (see §P5 close-out). | both |
-| **A** | Retire the "From a board…" grid picker + Copy modal + `SourceBoardsViewModel`/`useSourceBoards` + `copyTask`; strip the Library-sheet chip; docs/memory/snapshots. Keeps `fetchCompoundChildrenByCompoundIds` (B needs it). | lockstep |
+| **A** | Retire the "From a board…" grid picker + Copy modal + `SourceBoardsViewModel`/`useSourceBoards` + `copyTask`; strip the Library-sheet chip; docs/memory/snapshots. Keeps `fetchCompoundChildrenByCompoundIds` (B needs it). **SHIPPED** (#487). | lockstep |
 | **B0** | §Member rules into this doc (this section); `WINDOWED_COMPLETION.md` carve-out paragraph; CLAUDE.md pointer. | docs |
 | **B1** | Shared types (`memberRules`, `manualTaskVary`) + Zod + Swift mirrors; draft-blob additive (still v2); GRDB **v31** column; pure helpers (`nominalWindowDays`, `autoTarget`, `varyRange`, `rollTarget`, `applyMemberRules`, `planDerivedTasks`) + mirrored vectors. Inert — nothing writes rules yet. | lockstep |
 | **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). | lockstep |
@@ -565,6 +565,10 @@ Each UI phase: implement → independent review → device checklist relayed to
 the user → CI-gated merge (the P2–P7 pools cadence). Rule-6 note: P2/P3
 iOS-first commits carry the documented parity-gap justification; P4 closes it
 within the effort.
+
+#### Plan A — implementation notes (2026-09-17)
+
+Both platforms, one PR. Web deleted `FromBoardPicker`/`FromBoardGrid`/`BoardThumbnail`/`CopyTaskModal` (+CSS), `useSourceBoards`/`useSourceBoardPlacements`, `tasks.copy.ts` (+ its Vitest file) and the Library sheet's `'from-board'` chip; iOS deleted `FromBoardPickerView`/`FromBoardGridView`/`CopyTaskSheet`/`SourceBoardsViewModel`, `AppDatabase.fetchEligibleSourceBoards`, `copyTask`/`copyCompound`, `LibraryFilter.fromBoard`, and the `RisoWizardLibrarySnapshotTests` suite (14 baselines). Kept deliberately: `fetchCompoundChildrenByCompoundIds` (knip-baselined until B0–B3 consume it), the iOS Library sheet's inline "⇲ Derive smaller" (B3 strips it), `RisoDeriveCounterSheetView` (source-row derive), `RisoMiniGrid`/`BoardPreviewCells` (Boards tab). No user-visible change — the Library sheet is dark behind `LIBRARY_ENTRY_ENABLED`/`libraryEntryEnabled` on both platforms.
 
 ## Test strategy
 

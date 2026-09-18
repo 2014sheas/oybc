@@ -85,10 +85,9 @@ const PLACEHOLDERS = [
  * remains for Counting/Compound/Achievement types — this row is additive and
  * handles the common one-field NORMAL case only.
  *
- * Placement: just above the task list, below the filter chips (always visible
- * unless the "From a board…" grid is active). Creates the task and auto-
- * selects it into the pool, then resets and keeps focus so the user can
- * type the next task immediately.
+ * Placement: just above the task list, below the filter chips (always
+ * visible). Creates the task and auto-selects it into the pool, then
+ * resets and keeps focus so the user can type the next task immediately.
  *
  * Deferred-persist is controlled by the presence of `onPendingCreated`:
  * - With `onPendingCreated` → task is built in-memory (`createdInWizard: true`),

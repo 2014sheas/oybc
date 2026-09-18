@@ -33,8 +33,8 @@ struct RisoSourceRowView: View {
 
     // Per-member actions (owner report 2026-09-15: the member list offered
     // ONLY the ✕ exclude — no way to derive a smaller counter or pull a
-    // compound's subtasks from a pulled board/pool; same ⋯-menu vocabulary
-    // as the From-a-board grid, #470). All defaulted so non-wizard mounts
+    // compound's subtasks from a pulled board/pool; same ⋯-menu
+    // vocabulary (#470). All defaulted so non-wizard mounts
     // (recurring Preview's read-only rows) compile unchanged and show no ⋯.
 
     /// Children per compound (the step's effective map) — gates the
@@ -329,7 +329,7 @@ struct RisoSourceRowView: View {
     }
 
     /// ⋯ menu on counting-template / compound members — tap-driven
-    /// (`Menu`), matching the From-a-board grid's #470 affordance. Renders
+    /// (`Menu`), reusing the row-menu vocabulary (#470). Renders
     /// nothing for members with no extra actions, and nothing when the
     /// wizard callbacks aren't wired (read-only mounts).
     @ViewBuilder

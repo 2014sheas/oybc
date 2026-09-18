@@ -101,9 +101,9 @@ extension AppDatabase {
     ) throws -> [(board: Board, info: BoardSourceSupplyInfo)] {
         let now = Date()
         return try read { db in
-            // Eligibility is the SHARED `isEligibleSourceBoard` rule, the
-            // same one the "From a board" grid uses. This sheet previously
-            // filtered on `status == .active` alone: a board whose window
+            // Eligibility is the `isEligibleSourceBoard` rule, shared with
+            // the TS twin. This sheet previously filtered on
+            // `status == .active` alone: a board whose window
             // closes unfinished stays `.active` forever, so every stale
             // core board stayed on offer. Names are healed because a legacy
             // daily core board is stored as the literal "Today" — the rows

@@ -65,13 +65,6 @@ final class ViewModelInjectionTests: XCTestCase {
         XCTAssertNil(vm.loadError)
     }
 
-    func test_sourceBoardsViewModel_constructsAgainstInjectedDb() throws {
-        let db = try makeDb()
-        let vm = SourceBoardsViewModel(database: db)
-        XCTAssertTrue(vm.eligibleBoards.isEmpty)
-        XCTAssertTrue(vm.placements.isEmpty)
-    }
-
     // MARK: - TasksTab ViewModels
 
     func test_tasksTabViewModel_constructsAgainstInjectedDb() throws {

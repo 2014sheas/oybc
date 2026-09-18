@@ -6,8 +6,8 @@ import XCTest
 ///
 /// Owner-reported (2026-09-16, with a screenshot): the sheet showed four
 /// boards all named "Today" plus a "June 2026" board months out of window.
-/// Both fixes had landed on `fetchEligibleSourceBoards` — which feeds the
-/// *other* picker ("From a board") — while this sheet has its own fetcher
+/// Both fixes had landed on the since-retired `fetchEligibleSourceBoards` (the
+/// old "From a board…" grid picker, removed in Plan A) — while this sheet has its own fetcher
 /// (`fetchSourceSheetBoardEntries`) that filtered on `status == .active`
 /// alone and returned the raw board.
 ///

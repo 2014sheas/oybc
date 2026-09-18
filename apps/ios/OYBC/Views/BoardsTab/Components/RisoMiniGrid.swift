@@ -1,12 +1,11 @@
 import SwiftUI
 
-/// Pure presentational thumbnail grid shown in each `RisoBoardCard` (and the
-/// wizard's "From a board" picker rows). Renders the TRUE board: `gridSize`
-/// columns/rows and one `BoardPreviewCell` per position, row-major — no DB
-/// access, no randomness, snapshot-safe. Callers own their own data: batch-
-/// build cells via `BoardPreviewCells.fetchWorkspaceData`/`buildMany` at the
-/// list-owning view/view-model (`BoardListView`,
-/// `SourceBoardsViewModel`) and pass the result straight in — there is no
+/// Pure presentational thumbnail grid shown in each `RisoBoardCard`. Renders
+/// the TRUE board: `gridSize` columns/rows and one `BoardPreviewCell` per
+/// position, row-major — no DB access, no randomness, snapshot-safe.
+/// Callers own their own data: batch-build cells via
+/// `BoardPreviewCells.fetchWorkspaceData`/`buildMany` at the list-owning
+/// view/view-model (`BoardListView`) and pass the result straight in — there is no
 /// self-loading wrapper (a per-card `RisoBoardPreviewGrid` existed briefly and
 /// was deleted once every remaining caller turned out to be a list, re-running
 /// full-table reads N times per screen; see git history). Bugfix/board-

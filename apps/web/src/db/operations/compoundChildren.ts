@@ -56,8 +56,9 @@ export async function fetchAllCompoundChildren(): Promise<CompoundChild[]> {
  * Fetch non-deleted compound_children links for a set of parent compound ids.
  *
  * Uses the `compoundTaskId` index (so Dexie hits only matching rows) then
- * filters `!isDeleted` in memory. Used by the wizard's "From a board" grid
- * to preview compound leaves for the boards it renders.
+ * filters `!isDeleted` in memory. Used by the Board Sources member-rules
+ * resolution (docs/BOARD_SOURCES.md §Member rules — Plan B); no caller
+ * until B lands.
  *
  * @param compoundIds - Parent compound task ids to look up.
  * @returns Non-deleted CompoundChild rows for those compounds (unsorted).

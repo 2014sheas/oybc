@@ -31,8 +31,7 @@ interface RowContextMenuProps {
 
 /**
  * Cursor-anchored floating context menu used by the wizard's Tasks
- * step (and now the `From a board` grid view) for long-press /
- * right-click quick actions on a task row or grid square.
+ * step for long-press / right-click quick actions on a task row.
  *
  * Dismisses on click-outside or Escape. The first listener is
  * attached on a one-frame timeout so the click that opened the menu

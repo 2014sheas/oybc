@@ -24,40 +24,6 @@ extension AppDatabase {
         }.healingDisplayNames()
     }
 
-    /// Boards eligible to act as a "source" in the wizard's
-    /// `From a board…` filter — boards whose window is still open, plus
-    /// boards that finished within the last
-    /// `BoardSources.sourceBoardLookbackDays` days. Drafts and archived
-    /// are excluded. See `BoardSources.isEligibleSourceBoard`.
-    /// Sorted recently-active first (`updatedAt desc`). Mirror of
-    /// web's `useSourceBoards` hook.
-    ///
-    /// Opens its own `read` block. For callers that already hold a
-    /// transaction (e.g., `SourceBoardsViewModel.reload` which also
-    /// needs to read board_tasks atomically with the eligibility
-    /// list), use `fetchEligibleSourceBoards(_:userId:)` instead so
-    /// both queries see one consistent snapshot.
-    func fetchEligibleSourceBoards(userId: String) throws -> [Board] {
-        try read { db in
-            try AppDatabase.fetchEligibleSourceBoards(db, userId: userId)
-        }
-    }
-
-    /// Transaction-aware variant. Runs the same eligibility filter as
-    /// `fetchEligibleSourceBoards(userId:)` but inside the caller's
-    /// `read` block so the resulting boards + any subsequent reads
-    /// (placements, tasks) share a single snapshot.
-    static func fetchEligibleSourceBoards(_ db: Database, userId: String) throws -> [Board] {
-        let now = Date()
-        let boards = try Board
-            .filter(Column("userId") == userId && Column("isDeleted") == false)
-            .order(Column("updatedAt").desc)
-            .fetchAll(db)
-        return boards
-            .filter { BoardSources.isEligibleSourceBoard($0, now: now) }
-            .healingDisplayNames()
-    }
-
     func fetchBoard(id: String) throws -> Board? {
         return try read { db in
             try Board.fetchOne(db, key: id)
