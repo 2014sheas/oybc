@@ -4,6 +4,7 @@ import {
   CenterSquareType,
   OperatorType,
   SyncOperationType,
+  derivedTaskId,
   TaskType,
   Timeframe,
   type Board,
@@ -265,11 +266,20 @@ describe('windowStampedDerivedIdsForRoot', () => {
     expect(await windowStampedDerivedIdsForRoot(ROOT)).toEqual([uuid(6)]);
   });
 });
-
 describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
+  /**
+   * A derived counter's id IS `derivedTaskId(boardId, root)` — that is what
+   * makes it THIS board's artifact — so the fixtures mint real ids rather
+   * than arbitrary ones. Anything else is another board's row that merely
+   * left a placement behind here, and must survive this board's deletion.
+   */
+  function mintedCounter(boardId: string, rootId: string, over: Partial<Task> = {}): Task {
+    return derivedCounter(derivedTaskId(boardId, rootId), { sharedCounterId: rootId, ...over });
+  }
+
   it('soft-deletes a derived task placed only on the deleted board, with sync rows', async () => {
     const board = await seedBoard(uuid(101));
-    const derived = derivedCounter(uuid(10));
+    const derived = mintedCounter(board.id, ROOT);
     await db.tasks.add(derived);
     await seedPlacement(uuid(201), board.id, derived.id);
 
@@ -286,7 +296,7 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
   it('KEEPS a derived task that still has a live placement on another live board', async () => {
     const board = await seedBoard(uuid(102));
     const otherBoard = await seedBoard(uuid(103));
-    const derived = derivedCounter(uuid(11));
+    const derived = mintedCounter(board.id, ROOT);
     await db.tasks.add(derived);
     await seedPlacement(uuid(202), board.id, derived.id);
     await seedPlacement(uuid(203), otherBoard.id, derived.id);
@@ -303,7 +313,7 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
   it('cascades when the only other placement sits on an already-DELETED board (a tombstoned board holds nothing alive)', async () => {
     const board = await seedBoard(uuid(104));
     await seedBoard(uuid(105), { isDeleted: true, deletedAt: EARLIER });
-    const derived = derivedCounter(uuid(12));
+    const derived = mintedCounter(board.id, ROOT);
     await db.tasks.add(derived);
     await seedPlacement(uuid(204), board.id, derived.id);
     await seedPlacement(uuid(205), uuid(105), derived.id);
@@ -335,11 +345,12 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     // paths would disagree.
     const board = await seedBoard(uuid(107));
     const compound = derivedCompound(uuid(15));
+    const part = mintedCounter(board.id, ROOT);
     await db.tasks.add(compound);
-    await db.tasks.add(derivedCounter(uuid(16)));
+    await db.tasks.add(part);
     // An ORIGINAL child (the user's own task, no window stamp) — untouched.
     await db.tasks.add(plainTask(uuid(17)));
-    await seedLink(uuid(302), compound.id, uuid(16));
+    await seedLink(uuid(302), compound.id, part.id);
     await seedLink(uuid(303), compound.id, uuid(17));
     await seedPlacement(uuid(208), board.id, compound.id);
 
@@ -349,10 +360,10 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     expect((await db.compoundChildren.get(uuid(302)))?.isDeleted).toBe(true);
     expect((await db.compoundChildren.get(uuid(303)))?.isDeleted).toBe(true);
 
-    const part = await db.tasks.get(uuid(16));
-    expect(part?.isDeleted).toBe(true);
-    expect(part?.version).toBe(2);
-    expect(await queueFor('tasks', uuid(16))).toHaveLength(1);
+    const retiredPart = await db.tasks.get(part.id);
+    expect(retiredPart?.isDeleted).toBe(true);
+    expect(retiredPart?.version).toBe(2);
+    expect(await queueFor('tasks', part.id)).toHaveLength(1);
 
     const original = await db.tasks.get(uuid(17));
     expect(original?.isDeleted).toBe(false);
@@ -366,23 +377,25 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     const compound = derivedCompound(uuid(18));
     await db.tasks.add(compound);
     // Part A is also a child of a plain compound that is not being retired.
-    await db.tasks.add(derivedCounter(uuid(19)));
+    const partA = mintedCounter(board.id, ROOT);
+    await db.tasks.add(partA);
     await db.tasks.add(derivedCompound(uuid(20), { startDate: undefined, createdInWizard: undefined }));
-    await seedLink(uuid(304), compound.id, uuid(19));
-    await seedLink(uuid(305), uuid(20), uuid(19));
+    await seedLink(uuid(304), compound.id, partA.id);
+    await seedLink(uuid(305), uuid(20), partA.id);
     // Part B has its own live placement on another live board.
-    await db.tasks.add(derivedCounter(uuid(21)));
-    await seedLink(uuid(306), compound.id, uuid(21));
-    await seedPlacement(uuid(209), otherBoard.id, uuid(21));
+    const partB = mintedCounter(board.id, 'root-counter-2');
+    await db.tasks.add(partB);
+    await seedLink(uuid(306), compound.id, partB.id);
+    await seedPlacement(uuid(209), otherBoard.id, partB.id);
     await seedPlacement(uuid(210), board.id, compound.id);
 
     await deleteBoard(board.id);
 
     expect((await db.tasks.get(compound.id))?.isDeleted).toBe(true);
     // Both parts survive; only the retired compound's own link to each goes.
-    expect((await db.tasks.get(uuid(19)))?.isDeleted).toBe(false);
+    expect((await db.tasks.get(partA.id))?.isDeleted).toBe(false);
     expect((await db.compoundChildren.get(uuid(305)))?.isDeleted).toBe(false);
-    expect((await db.tasks.get(uuid(21)))?.isDeleted).toBe(false);
+    expect((await db.tasks.get(partB.id))?.isDeleted).toBe(false);
     expect((await db.boardTasks.get(uuid(209)))?.isDeleted).toBe(false);
   });
 
@@ -390,16 +403,17 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     const board = await seedBoard(uuid(110));
     const otherBoard = await seedBoard(uuid(111));
     const compound = derivedCompound(uuid(22));
+    const part = mintedCounter(board.id, ROOT);
     await db.tasks.add(compound);
-    await db.tasks.add(derivedCounter(uuid(23)));
-    await seedLink(uuid(307), compound.id, uuid(23));
+    await db.tasks.add(part);
+    await seedLink(uuid(307), compound.id, part.id);
     await seedPlacement(uuid(211), board.id, compound.id);
     await seedPlacement(uuid(212), otherBoard.id, compound.id);
 
     await deleteBoard(board.id);
 
     expect((await db.tasks.get(compound.id))?.isDeleted).toBe(false);
-    expect((await db.tasks.get(uuid(23)))?.isDeleted).toBe(false);
+    expect((await db.tasks.get(part.id))?.isDeleted).toBe(false);
     expect((await db.compoundChildren.get(uuid(307)))?.isDeleted).toBe(false);
   });
 
@@ -409,12 +423,13 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     // live-only candidate query would quietly find nothing and retire
     // nothing, which no other test here would catch.
     const board = await seedBoard(uuid(112));
-    const derived = derivedCounter(uuid(24));
+    const derived = mintedCounter(board.id, ROOT);
     const compound = derivedCompound(uuid(25));
+    const part = mintedCounter(board.id, 'root-counter-3');
     await db.tasks.add(derived);
     await db.tasks.add(compound);
-    await db.tasks.add(derivedCounter(uuid(26)));
-    await seedLink(uuid(308), compound.id, uuid(26));
+    await db.tasks.add(part);
+    await seedLink(uuid(308), compound.id, part.id);
     await seedPlacement(uuid(213), board.id, derived.id);
     await seedPlacement(uuid(214), board.id, compound.id);
 
@@ -426,7 +441,63 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     await db.boardTasks.update(uuid(214), { isDeleted: true, deletedAt: NOW });
     const after = [...(await windowStampedDerivedOrphanedByBoard(board.id))].sort();
 
-    expect(before).toEqual([uuid(24), uuid(25), uuid(26)].sort());
+    expect(before).toEqual([derived.id, compound.id, part.id].sort());
     expect(after).toEqual(before);
+  });
+
+  it('does NOT cascade a row minted for ANOTHER board that only left a stale tombstoned placement here', async () => {
+    // Board Edit's `removeBoardTaskFromBoard` tombstones a single cell. A
+    // derived counter minted for board TWO that once passed through board ONE
+    // is board TWO's artifact: its id encodes TWO, and ONE's deletion has no
+    // claim on it — even though it is currently placed nowhere live.
+    const one = await seedBoard(uuid(113));
+    const two = await seedBoard(uuid(114));
+    const foreign = mintedCounter(two.id, ROOT);
+    await db.tasks.add(foreign);
+    await seedPlacement(uuid(215), one.id, foreign.id, { isDeleted: true, deletedAt: EARLIER });
+
+    expect(await windowStampedDerivedOrphanedByBoard(one.id)).toEqual([]);
+
+    await deleteBoard(one.id);
+
+    const task = await db.tasks.get(foreign.id);
+    expect(task?.isDeleted).toBe(false);
+    expect(task?.version).toBe(1);
+    expect(await queueFor('tasks', foreign.id)).toHaveLength(0);
+  });
+
+  it('DOES cascade a row minted for THIS board that was swapped out of it (stale tombstoned placement, live nowhere)', async () => {
+    // Same stale-placement shape, opposite provenance: this row was minted
+    // for the board being deleted, so it can never legitimately belong to
+    // another board — a swap-out left it dangling, and the deletion collects
+    // it.
+    const board = await seedBoard(uuid(115));
+    const swappedOut = mintedCounter(board.id, ROOT);
+    await db.tasks.add(swappedOut);
+    await seedPlacement(uuid(216), board.id, swappedOut.id, { isDeleted: true, deletedAt: EARLIER });
+
+    expect(await windowStampedDerivedOrphanedByBoard(board.id)).toEqual([swappedOut.id]);
+
+    await deleteBoard(board.id);
+
+    const task = await db.tasks.get(swappedOut.id);
+    expect(task?.isDeleted).toBe(true);
+    expect(task?.version).toBe(2);
+    expect(await queueFor('tasks', swappedOut.id)).toHaveLength(1);
+  });
+
+  it('does NOT cascade a derived compound stamped for a different window', async () => {
+    const board = await seedBoard(uuid(116));
+    // Same board, different window — last window's compound, whatever left
+    // the stale placement behind.
+    const stale = derivedCompound(uuid(27), { startDate: '2026-09-07T00:00:00.000' });
+    await db.tasks.add(stale);
+    await db.tasks.add(mintedCounter(board.id, ROOT));
+    await seedLink(uuid(309), stale.id, derivedTaskId(board.id, ROOT));
+    await seedPlacement(uuid(217), board.id, stale.id, { isDeleted: true, deletedAt: EARLIER });
+
+    await deleteBoard(board.id);
+
+    expect((await db.tasks.get(stale.id))?.isDeleted).toBe(false);
   });
 });

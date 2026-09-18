@@ -4,8 +4,10 @@ import {
   TaskType,
   buildDerivedRows,
   computeWindowBaseline,
+  derivedTaskId,
   isWindowStampedDerived,
   planDerivedTasks,
+  type Board,
   type BoardWindow,
   type CompoundChild,
   type DerivedRows,
@@ -408,6 +410,54 @@ async function hasLivePlacementElsewhere(
 }
 
 /**
+ * Was this row MINTED FOR `board` — i.e. is it this board's own per-window
+ * artifact rather than some other board's row that merely passed through?
+ *
+ * The gate that makes the tombstoned-placement widening below safe. A stale
+ * `board_tasks` row proves only that a task once sat here; it says nothing
+ * about whose artifact the task is, and a derived row's whole identity is the
+ * board it was minted for.
+ *
+ *   - **Derived counter** — exact: its id IS `derivedTaskId(boardId, root)`,
+ *     so the check is a pure recomputation with no stored provenance needed.
+ *   - **Derived compound** — approximate, because `derivedCompoundId` keys off
+ *     the SOURCE compound's id, which the row does not record. We qualify it
+ *     instead by window identity (same `startDate` + `timeframe` as the board)
+ *     plus a link-shaped corroboration: either it has a child that IS this
+ *     board's derived counter (the One-square signature — conclusive), or it
+ *     has children at all and no other live board still places it. Exact
+ *     provenance arrives in B3; until then this errs toward NOT retiring a
+ *     compound that any other live board is still using.
+ *
+ * @param task - The candidate row.
+ * @param board - The board being deleted (its window is the comparison).
+ * @returns True when the row belongs to this board's window.
+ */
+async function isMintedForBoard(task: Task, board: Board): Promise<boolean> {
+  if (isWindowStampedDerived(task)) {
+    return task.sharedCounterId != null && task.id === derivedTaskId(board.id, task.sharedCounterId);
+  }
+  if (!isWindowStampedDerivedCompound(task)) return false;
+  if (task.startDate !== board.startDate || task.timeframe !== board.timeframe) return false;
+  // Live-or-tombstoned links: the compound's own retirement tombstones them,
+  // and a re-entrant sweep must still recognise its own handiwork.
+  const links = await db.compoundChildren.where('compoundTaskId').equals(task.id).toArray();
+  if (links.length === 0) return false;
+  for (const link of links) {
+    const child = await db.tasks.get(link.childTaskId);
+    if (
+      child &&
+      isWindowStampedDerived(child) &&
+      child.sharedCounterId != null &&
+      child.id === derivedTaskId(board.id, child.sharedCounterId)
+    ) {
+      return true;
+    }
+  }
+  return !(await hasLivePlacementElsewhere(task.id, board.id));
+}
+
+/**
  * The window-stamped derived rows a board's deletion orphans (RB5).
  *
  * A "live placement" is a `board_tasks` row with `isDeleted === false` whose
@@ -422,10 +472,15 @@ async function hasLivePlacementElsewhere(
  * the caller runs relative to any placement tombstoning. `deleteBoard` does
  * not tombstone its own placements today (the pre-existing gap the B2 brief
  * ring-fenced); were it to start, a live-only candidate query would find
- * nothing and silently retire nothing — a no-op no test would catch. A task
- * whose placement here was tombstoned earlier (a Board-Edit swap, say) and
- * which is placed nowhere else live is an orphan under the very same rule, so
- * widening the candidate set costs nothing and removes the trap.
+ * nothing and silently retire nothing — a no-op no test would catch.
+ *
+ * That widening is only safe because a stale placement alone no longer makes
+ * a candidate: {@link isMintedForBoard} additionally requires the row to be
+ * THIS board's own artifact. So a derived counter minted for board B that was
+ * swapped out of B (Board Edit) and placed nowhere else live still dies with
+ * B — its id encodes B and it can never legitimately belong to another board
+ * — while a row minted for a DIFFERENT board that merely left a tombstoned
+ * placement behind here is untouched.
  *
  * Two kinds of orphan come back:
  *   1. **Placed** derived rows — counters and per-window derived compounds.
@@ -448,12 +503,18 @@ async function hasLivePlacementElsewhere(
  *   placement anywhere.
  */
 export async function windowStampedDerivedOrphanedByBoard(boardId: string): Promise<string[]> {
+  const board = await db.boards.get(boardId);
+  if (!board) return [];
   const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
   const candidateIds = [...new Set(placed.map((bt) => bt.taskId))];
   if (candidateIds.length === 0) return [];
-  const candidates = (await db.tasks.where('id').anyOf(candidateIds).toArray()).filter(
-    (t) => !t.isDeleted && (isWindowStampedDerived(t) || isWindowStampedDerivedCompound(t)),
+  const rows = (await db.tasks.where('id').anyOf(candidateIds).toArray()).filter(
+    (t) => !t.isDeleted,
   );
+  const candidates: Task[] = [];
+  for (const row of rows) {
+    if (await isMintedForBoard(row, board)) candidates.push(row);
+  }
 
   const orphaned: string[] = [];
   for (const task of candidates) {
@@ -481,10 +542,17 @@ export async function windowStampedDerivedOrphanedByBoard(boardId: string): Prom
   if (partIds.size === 0) return orphaned;
 
   // A part that is the user's own task (an original child a One-square
-  // compound re-targeted) has no window stamp and is never returned.
-  const parts = (await db.tasks.where('id').anyOf([...partIds]).toArray()).filter(
+  // compound re-targeted) has no window stamp and is never returned — nor is
+  // one minted for a different board, by the same `isMintedForBoard` rule the
+  // placed candidates pass (a genuine part's id is `derivedTaskId(boardId,
+  // its root)`, since the planner mints parent and parts in one pass).
+  const partRows = (await db.tasks.where('id').anyOf([...partIds]).toArray()).filter(
     (t) => !t.isDeleted && isWindowStampedDerived(t),
   );
+  const parts: Task[] = [];
+  for (const row of partRows) {
+    if (await isMintedForBoard(row, board)) parts.push(row);
+  }
   for (const part of parts) {
     if (await hasLivePlacementElsewhere(part.id, boardId)) continue;
     const otherParents = await db.compoundChildren
