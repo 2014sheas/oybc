@@ -143,8 +143,39 @@ final class RecurringBoardTemplatesViewModel {
                 resolutionByTemplateId[t.id] = TemplateSupplyResolution(
                     supplies: supplies,
                     deadBoardSourceIds: deadBoardSourceIds,
-                    manualTaskIds: isUnmigrated ? t.seedTaskIds : (t.manualTaskIds ?? [])
+                    manualTaskIds: isUnmigrated ? t.seedTaskIds : (t.manualTaskIds ?? []),
+                    childrenByCompoundId: [:]
                 )
+            }
+
+            // B2 (§Member rules step 1) — the Split-up expansion needs each
+            // COMPOUND member's children. One batched links read for the whole
+            // roster, after `tasksById` exists: which member ids are compounds
+            // is not knowable before it. (Unlike web, the parts themselves need
+            // no extra tasks fetch — `tasksById` already holds every live task
+            // of this user, children included.)
+            var compoundIds = Set<String>()
+            for resolution in resolutionByTemplateId.values {
+                for supply in resolution.supplies {
+                    for id in supply.supplyTaskIds where tasksById[id]?.type == .compound {
+                        compoundIds.insert(id)
+                    }
+                }
+            }
+            if !compoundIds.isEmpty {
+                let childrenByCompoundId = try database.read { db in
+                    try AppDatabase.fetchCompoundChildren(
+                        db: db, compoundTaskIds: Array(compoundIds)
+                    )
+                }
+                for (templateId, resolution) in resolutionByTemplateId {
+                    for supply in resolution.supplies {
+                        for id in supply.supplyTaskIds {
+                            guard let links = childrenByCompoundId[id] else { continue }
+                            resolutionByTemplateId[templateId]?.childrenByCompoundId[id] = links
+                        }
+                    }
+                }
             }
 
             let (mixByTemplateId, attention) = Self.computeRosterHealth(
@@ -184,6 +215,11 @@ final class RecurringBoardTemplatesViewModel {
         let supplies: [BoardSources.Supply]
         let deadBoardSourceIds: [String]
         let manualTaskIds: [String]
+        /// B2 (§Member rules — *Resolution pipeline* step 1): live
+        /// `compound_children` rows for every COMPOUND member of `supplies`,
+        /// so a reader can run `applyMemberRules` (the Split-up expansion)
+        /// before counting. Empty when the supplies carry no compound.
+        var childrenByCompoundId: [String: [CompoundChild]] = [:]
     }
 
     /// Sources-native roster health — the spawn pass's static twin
@@ -195,6 +231,9 @@ final class RecurringBoardTemplatesViewModel {
     /// `validateSpawnPool` over the achievable pick. Pure + static for
     /// direct unit testing. Web twin: `computeRosterHealth`
     /// (`templateHealth.ts`).
+    ///
+    /// B2: the supplies are Split-up expanded (`applyMemberRules`) first, so
+    /// the count is of the squares a new window would actually get.
     static func computeRosterHealth(
         templates: [RecurringBoardTemplate],
         resolutionByTemplateId: [String: TemplateSupplyResolution],
@@ -210,6 +249,16 @@ final class RecurringBoardTemplatesViewModel {
                 mixByTemplateId[template.id] = template.seedTaskIds
                 continue
             }
+            // B2 (§Member rules step 1) — expand Split-up compound members
+            // into their parts BEFORE the capacity dry-run: a split member
+            // supplies N squares, not one, so counting the raw supply would
+            // badge a healthy record `poolTooSmall` (and show the wrong
+            // "N tasks").
+            let supplies = BoardSources.applyMemberRules(
+                resolution.supplies,
+                childrenByCompoundId: resolution.childrenByCompoundId,
+                tasksById: tasksById
+            ).map { $0.asSupply }
             // Resolvable manual layer (deleted manual ids stay OUT of the
             // pick but flag attention below — the spawn validator's rule).
             let manualResolvable = resolution.manualTaskIds.filter { id in
@@ -217,7 +266,7 @@ final class RecurringBoardTemplatesViewModel {
                 return !task.isDeleted
             }
             let achievable = BoardSources.computeAchievablePoolSize(
-                supplies: resolution.supplies,
+                supplies: supplies,
                 manualTaskIds: manualResolvable,
                 counterFamilyByTaskId: counterFamilyByTaskId
             )

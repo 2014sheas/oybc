@@ -692,6 +692,12 @@ extension AppDatabase {
         /// `counterMemberCount`), so the confirm sheet can list them without
         /// a second fetch.
         let counterMembers: [Task]
+        /// Board Sources §Member rules B2 (RB11) — count of this task's live
+        /// window-stamped derived counters, which the cascade SOFT-DELETES
+        /// (with their placements) rather than unlinking: each is a per-window
+        /// artifact of a board, not library content the user authored. 0 for
+        /// any non-source task, and disjoint from `counterMemberCount` above.
+        let derivedWindowCounterCount: Int
     }
 
     /// Read-only impact calculation; safe to call before showing the
@@ -722,9 +728,14 @@ extension AppDatabase {
             let parentLinks = try CompoundChild
                 .filter(Column("compoundTaskId") == taskId && Column("isDeleted") == false)
                 .fetchCount(db)
-            let counterMembers = try Task
+            // B2 (RB11) — the members split two ways at delete time, so the
+            // preview reports them separately: a window-stamped derived
+            // counter is retired with its placements, an ordinary member is
+            // unlinked and kept (`deleteCounterWithUnlink`).
+            let allMembers = try Task
                 .filter(Column("sharedCounterId") == taskId && Column("isDeleted") == false)
                 .fetchAll(db)
+            let counterMembers = allMembers.filter { !BoardSources.isWindowStampedDerived($0) }
             return TaskDeletionImpact(
                 boardTaskCount: visiblePlacements.count,
                 affectedBoardIds: Array(liveBoardIds),
@@ -733,6 +744,7 @@ extension AppDatabase {
                 parentLinkCount: parentLinks,
                 counterMemberCount: counterMembers.count,
                 counterMembers: counterMembers,
+                derivedWindowCounterCount: allMembers.count - counterMembers.count,
             )
         }
     }
@@ -794,7 +806,7 @@ extension AppDatabase {
             changedTaskId: taskId,
             children: allCompoundChildrenPreDelete
         )
-        let affectedBoardIdsForDeletion = DerivationPass.findAffectedBoardIds(
+        var affectedBoardIdsForDeletion = DerivationPass.findAffectedBoardIds(
             changedTaskId: taskId,
             parentCompounds: parentCompoundsForDeletion,
             boardTasks: allBoardTasksPreDelete
@@ -854,6 +866,22 @@ extension AppDatabase {
             payload: task,
             now: now,
         ).enqueue(db)
+
+        // 4b. Board Sources §Member rules (B2) — the root's per-window derived
+        //     counters go with it: each is an artifact of one board's window
+        //     and means nothing once its root is gone (an ORDINARY linked
+        //     member is untouched here — `deleteCounterWithUnlink` preserves
+        //     those). Their boards join the affected set so a bingo line
+        //     through a retired derived cell re-derives in step 5 instead of
+        //     glowing until the app-open self-heal.
+        let derivedIds = try Self.windowStampedDerivedIdsForRoot(db: db, rootTaskId: taskId)
+        if !derivedIds.isEmpty {
+            let derivedIdSet = Set(derivedIds)
+            for bt in allBoardTasksPreDelete where derivedIdSet.contains(bt.taskId) {
+                affectedBoardIdsForDeletion.insert(bt.boardId)
+            }
+            try Self.softDeleteWindowStampedDerived(db: db, taskIds: derivedIds, now: now)
+        }
 
         // 5. Cascade — re-derive every affected board's stats + status from
         // the post-delete state. Mirrors `removeBoardTaskFromBoard`'s loop

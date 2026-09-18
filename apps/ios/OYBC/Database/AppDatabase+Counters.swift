@@ -167,6 +167,14 @@ extension AppDatabase {
     /// snapshot event is appended. Load-bearing; mirrors the web
     /// implementation's ordering.
     ///
+    /// B2 exception (docs/BOARD_SOURCES.md §Member rules — *Deletion*): a
+    /// member this pipeline minted for one board window
+    /// (`BoardSources.isWindowStampedDerived`) is NOT unlinked — it is
+    /// soft-deleted with its placements and links, because it is an artifact
+    /// of that window rather than a library task the user authored. Unlinking
+    /// it would strand a standalone row on a board the user never hand-added
+    /// it to.
+    ///
     /// - Parameters:
     ///   - sourceId: The counter source task to delete.
     ///   - now: ISO8601 write timestamp.
@@ -178,7 +186,14 @@ extension AppDatabase {
                 .filter(Column("sharedCounterId") == sourceId && Column("isDeleted") == false)
                 .fetchAll(db)
 
-            for var member in members {
+            // Board Sources §Member rules (B2) — the members split two ways.
+            try Self.softDeleteWindowStampedDerived(
+                db: db,
+                taskIds: members.filter { BoardSources.isWindowStampedDerived($0) }.map { $0.id },
+                now: now
+            )
+
+            for var member in members where !BoardSources.isWindowStampedDerived(member) {
                 let derived = deriveDisplayedCount(
                     derivedBaseline: member.baseline ?? 0,
                     derivedMaxCount: member.maxCount ?? 0,

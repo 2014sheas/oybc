@@ -6,7 +6,7 @@ import GRDB
 /// `apps/web/src/db/operations/derivedCounters.ts` — same function names, same
 /// write rulings (RB2/RB3), same non-authored refresh semantics.
 ///
-/// Two jobs, both of them writes that the pure `BoardSourceMemberRules.swift`
+/// Three jobs, all of them writes that the pure `BoardSourceMemberRules.swift`
 /// algorithms only describe:
 ///
 ///  1. **Mint** — at board persist and at recurring spawn, turn the planned
@@ -24,8 +24,11 @@ import GRDB
 ///     enqueue. The baseline is a cache derived from events, exactly like the
 ///     lifetime caches `recomputeTaskCachesFromPull` restamps; authoring it
 ///     would make two devices fight over a value both can recompute.
-///
-/// (Retirement — the deletion cascades — is B2 Task 6, not this file.)
+///  3. **Retire** — when a derived row's root is deleted, or the last live
+///     board carrying it goes away, tombstone the row with its placements and
+///     links (see the *Deletion sweep* section at the bottom of this file). A
+///     per-window derived row is an artifact of one board's window, not
+///     library content, so it is retired rather than unlinked-and-kept.
 ///
 /// Every function here takes an open `Database` and MUST run inside the
 /// caller's transaction: the mint has to commit or roll back together with the
@@ -542,5 +545,367 @@ extension AppDatabase {
             touched.insert(taskId)
         }
         return touched
+    }
+
+    // ─── Deletion sweep (docs/BOARD_SOURCES.md §Member rules — *Deletion*) ───
+    //
+    // A window-stamped derived row is an artifact of ONE board's window, not
+    // library content the user authored. So when its root is deleted, or the
+    // last live board carrying it goes away, it is RETIRED outright (tombstone
+    // + placements + links) rather than unlinked-and-kept the way an ordinary
+    // hub-derived member is. Every tombstone written below is *authored*:
+    // `version + 1` AND its own `sync_queue` DELETE row — a soft-delete that
+    // skips the enqueue stays local-only and the row RESURRECTS on the next
+    // pull (the defect `deleteBoard`'s missing enqueue caused; see also
+    // docs/BOARD_INTEGRITY.md PR-1 for why the version bump is what wins the
+    // LWW tie-break against a concurrently-edited remote copy).
+
+    // MARK: - Predicates
+
+    /// Is this STORED row one of our per-window derived COMPOUNDS?
+    ///
+    /// The compound twin of `BoardSources.isWindowStampedDerived` (which keys
+    /// off the shared-counter link a compound doesn't have): a window start
+    /// plus the wizard-born provenance flag on a compound row. A hand-made
+    /// compound carries neither, and a timeboxed one carries only the first —
+    /// so the pair is what identifies a row the planner re-targeted for
+    /// exactly one window.
+    ///
+    /// - Parameter task: The task row to test.
+    /// - Returns: True when the row is a per-window derived compound.
+    static func isWindowStampedDerivedCompound(_ task: Task) -> Bool {
+        task.type == .compound && !(task.startDate ?? "").isEmpty && task.createdInWizard
+    }
+
+    /// The live window-stamped derived counters that derive from `rootTaskId`.
+    ///
+    /// The deletion sweep's read half: a root's retirement takes its per-window
+    /// derived counters with it, because such a row is an artifact of one
+    /// board's window and means nothing once its root is gone. Ordinary linked
+    /// members (no window stamp) are NOT returned — those are the user's own
+    /// rows and are unlinked-and-preserved by `deleteCounterWithUnlink`.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's open transaction.
+    ///   - rootTaskId: The shared-counter root being deleted.
+    /// - Returns: The ids of its live window-stamped derived counters.
+    static func windowStampedDerivedIdsForRoot(db: Database, rootTaskId: String) throws -> [String] {
+        try fetchWindowStampedDerived(db: db, rootTaskId: rootTaskId).map { $0.id }
+    }
+
+    /// Does this task still have a live placement somewhere other than
+    /// `excludingBoardId`?
+    ///
+    /// RB5's test, factored out so the placed sweep and the compound-part sweep
+    /// below cannot drift apart: a live placement is a `board_tasks` row with
+    /// `isDeleted == false` whose board is ALSO live. A tombstoned board holds
+    /// nothing alive — which is why the board being deleted is excluded twice
+    /// over, by id here and by its own fresh tombstone.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's open transaction.
+    ///   - taskId: The task being tested.
+    ///   - excludingBoardId: The board being deleted.
+    /// - Returns: True when some other live board still places it.
+    static func hasLivePlacementElsewhere(
+        db: Database,
+        taskId: String,
+        excludingBoardId: String
+    ) throws -> Bool {
+        let elsewhere = try BoardTask
+            .filter(Column("taskId") == taskId
+                    && Column("isDeleted") == false
+                    && Column("boardId") != excludingBoardId)
+            .fetchAll(db)
+        for placement in elsewhere {
+            if let board = try Board.fetchOne(db, key: placement.boardId), !board.isDeleted {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Was this row MINTED FOR `board` — i.e. is it this board's own
+    /// per-window artifact rather than some other board's row that merely
+    /// passed through?
+    ///
+    /// The gate that makes the tombstoned-placement widening in
+    /// ``windowStampedDerivedOrphanedByBoard(db:boardId:)`` safe. A stale
+    /// `board_tasks` row proves only that a task once sat here; it says
+    /// nothing about whose artifact the task is, and a derived row's whole
+    /// identity is the board it was minted for.
+    ///
+    ///   - **Derived counter** — exact: its id IS `derivedTaskId(board.id,
+    ///     root)`, so the check is a pure recomputation with no stored
+    ///     provenance needed.
+    ///   - **Derived compound** — approximate, because `derivedCompoundId`
+    ///     keys off the SOURCE compound's id, which the row does not record.
+    ///     We qualify it instead by window identity (same `startDate` +
+    ///     `timeframe` as the board) plus a link-shaped corroboration: either
+    ///     it has a child that IS this board's derived counter (the One-square
+    ///     signature — conclusive), or it has children at all and no other
+    ///     live board still places it. Exact provenance arrives in B3; until
+    ///     then this errs toward NOT retiring a compound that any other live
+    ///     board is still using.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's open transaction.
+    ///   - task: The candidate row.
+    ///   - board: The board being deleted (its window is the comparison).
+    /// - Returns: True when the row belongs to this board's window.
+    static func isMintedForBoard(db: Database, task: Task, board: Board) throws -> Bool {
+        if BoardSources.isWindowStampedDerived(task) {
+            guard let root = task.sharedCounterId else { return false }
+            return task.id == BoardSources.derivedTaskId(boardId: board.id, rootTaskId: root)
+        }
+        guard isWindowStampedDerivedCompound(task) else { return false }
+        guard task.startDate == board.startDate, task.timeframe == board.timeframe else {
+            return false
+        }
+        // Live-or-tombstoned links: the compound's own retirement tombstones
+        // them, and a re-entrant sweep must still recognise its own handiwork.
+        let links = try CompoundChild
+            .filter(Column("compoundTaskId") == task.id)
+            .fetchAll(db)
+        guard !links.isEmpty else { return false }
+        for link in links {
+            guard let child = try Task.fetchOne(db, key: link.childTaskId),
+                  BoardSources.isWindowStampedDerived(child),
+                  let childRoot = child.sharedCounterId else { continue }
+            if child.id == BoardSources.derivedTaskId(boardId: board.id, rootTaskId: childRoot) {
+                return true
+            }
+        }
+        return try !hasLivePlacementElsewhere(db: db, taskId: task.id, excludingBoardId: board.id)
+    }
+
+    // MARK: - Board-deletion sweep (RB5)
+
+    /// The window-stamped derived rows a board's deletion orphans (RB5).
+    ///
+    /// A "live placement" is a `board_tasks` row with `isDeleted == false`
+    /// whose board is itself live — so a derived row placed on another live
+    /// board SURVIVES `boardId`'s deletion, while one whose only other
+    /// placement sits on an already-tombstoned board does not. Call this AFTER
+    /// the board row is tombstoned: `boardId` is then excluded by the
+    /// live-board rule anyway, and the explicit id check keeps the helper
+    /// correct if a caller reverses that.
+    ///
+    /// **Ordering** — candidates come from EVERY `board_tasks` row of this
+    /// board, the tombstoned ones included, exactly so the answer cannot
+    /// depend on when the caller runs relative to any placement tombstoning.
+    /// `deleteBoard` does not tombstone its own placements today (the
+    /// pre-existing gap B2 ring-fenced); were it to start, a live-only
+    /// candidate query would find nothing and silently retire nothing — a
+    /// no-op no test would catch.
+    ///
+    /// That widening is only safe because a stale placement alone no longer
+    /// makes a candidate: ``isMintedForBoard(db:task:board:)`` additionally
+    /// requires the row to be THIS board's own artifact. So a derived counter
+    /// minted for board B that was swapped out of B (Board Edit) and placed
+    /// nowhere else live still dies with B — its id encodes B and it can never
+    /// legitimately belong to another board — while a row minted for a
+    /// DIFFERENT board that merely left a tombstoned placement behind here is
+    /// untouched.
+    ///
+    /// Two kinds of orphan come back:
+    ///   1. **Placed** derived rows — counters and per-window derived compounds.
+    ///   2. **Parts of a derived compound being retired** — a derived counter
+    ///      minted as a child of a One-square derived compound has no
+    ///      placement of its own, so it is unreachable from `board_tasks`.
+    ///      Left behind it would be a per-window row with no board, still
+    ///      collecting `refreshDerivedBaselines` writes forever — and the
+    ///      root-delete path DOES retire it, so skipping it here would leave
+    ///      the two deletion paths disagreeing. A part qualifies only when its
+    ///      parent is itself being retired, it has no live placement of its
+    ///      own (RB5 again), and no OTHER live parent link outside the retired
+    ///      set still holds it.
+    ///
+    /// Reads only — the caller feeds the result to
+    /// ``softDeleteWindowStampedDerived(db:taskIds:now:)`` inside its own
+    /// transaction.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's open transaction.
+    ///   - boardId: The board being deleted.
+    /// - Returns: The ids of the window-stamped derived tasks left with no
+    ///   live placement anywhere.
+    static func windowStampedDerivedOrphanedByBoard(db: Database, boardId: String) throws -> [String] {
+        guard let board = try Board.fetchOne(db, key: boardId) else { return [] }
+        let placed = try BoardTask.filter(Column("boardId") == boardId).fetchAll(db)
+        let candidateIds = orderedUnique(placed.map { $0.taskId })
+        guard !candidateIds.isEmpty else { return [] }
+
+        let rows = try Task
+            .filter(candidateIds.contains(Column("id")) && Column("isDeleted") == false)
+            .fetchAll(db)
+        var rowById: [String: Task] = [:]
+        for row in rows { rowById[row.id] = row }
+
+        var candidates: [Task] = []
+        for id in candidateIds {
+            guard let row = rowById[id] else { continue }
+            if try isMintedForBoard(db: db, task: row, board: board) { candidates.append(row) }
+        }
+
+        var orphaned: [String] = []
+        for task in candidates {
+            if try !hasLivePlacementElsewhere(db: db, taskId: task.id, excludingBoardId: boardId) {
+                orphaned.append(task.id)
+            }
+        }
+
+        // Only the compounds actually being retired take their parts with them
+        // — one kept alive by another live board keeps its parts too.
+        let orphanedSet = Set(orphaned)
+        let retiredCompoundIds = candidates
+            .filter { orphanedSet.contains($0.id) && Self.isWindowStampedDerivedCompound($0) }
+            .map { $0.id }
+        guard !retiredCompoundIds.isEmpty else { return orphaned }
+
+        let retiredCompoundSet = Set(retiredCompoundIds)
+        let links = try CompoundChild
+            .filter(retiredCompoundIds.contains(Column("compoundTaskId"))
+                    && Column("isDeleted") == false)
+            .order(Column("childIndex"), Column("id"))
+            .fetchAll(db)
+        let partIds = orderedUnique(links.map { $0.childTaskId })
+            .filter { !orphanedSet.contains($0) }
+        guard !partIds.isEmpty else { return orphaned }
+
+        // A part that is the user's own task (an original child a One-square
+        // compound re-targeted) has no window stamp and is never returned —
+        // nor is one minted for a different board, by the same
+        // `isMintedForBoard` rule the placed candidates pass (a genuine part's
+        // id is `derivedTaskId(boardId, its root)`, since the planner mints
+        // parent and parts in one pass).
+        let partRows = try Task
+            .filter(partIds.contains(Column("id")) && Column("isDeleted") == false)
+            .fetchAll(db)
+            .filter { BoardSources.isWindowStampedDerived($0) }
+        var partById: [String: Task] = [:]
+        for row in partRows { partById[row.id] = row }
+
+        for id in partIds {
+            guard let part = partById[id] else { continue }
+            guard try isMintedForBoard(db: db, task: part, board: board) else { continue }
+            if try hasLivePlacementElsewhere(db: db, taskId: id, excludingBoardId: boardId) {
+                continue
+            }
+            let otherParents = try CompoundChild
+                .filter(Column("childTaskId") == id && Column("isDeleted") == false)
+                .fetchAll(db)
+                .filter { !retiredCompoundSet.contains($0.compoundTaskId) }
+            if !otherParents.isEmpty { continue }
+            orphaned.append(id)
+        }
+        return orphaned
+    }
+
+    // MARK: - Retire
+
+    /// Retire per-window derived rows: tombstone each task, its live
+    /// placements and its live compound links, every one of them an authored
+    /// delete (`version + 1` + its own `sync_queue` DELETE row — see this
+    /// file's header for why both halves are load-bearing).
+    ///
+    /// Link handling is symmetric on purpose: rows where the task is the CHILD
+    /// (a derived counter that is a part of a derived compound) and rows where
+    /// it is the PARENT (a derived compound's own child links) both go. The
+    /// child TASKS are left alone — a part that is itself a derived counter is
+    /// retired by its own entry in `taskIds` (both callers supply it:
+    /// ``windowStampedDerivedIdsForRoot(db:rootTaskId:)`` reaches it through
+    /// its root's `sharedCounterId`,
+    /// ``windowStampedDerivedOrphanedByBoard(db:boardId:)`` through its
+    /// retired parent), and anything else is the user's library content.
+    ///
+    /// Idempotent: a missing or already-tombstoned id writes nothing and is
+    /// not counted, so a second sweep over the same ids (a root delete that
+    /// follows a board delete, say) is a true no-op.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's open transaction.
+    ///   - taskIds: The window-stamped derived rows to retire.
+    ///   - now: The caller's shared write instant.
+    /// - Returns: How many tasks were actually tombstoned.
+    @discardableResult
+    static func softDeleteWindowStampedDerived(
+        db: Database,
+        taskIds: [String],
+        now: String
+    ) throws -> Int {
+        var deleted = 0
+        for id in taskIds {
+            guard var task = try Task.fetchOne(db, key: id), !task.isDeleted else { continue }
+
+            let placements = try BoardTask
+                .filter(Column("taskId") == id && Column("isDeleted") == false)
+                .fetchAll(db)
+            for var placement in placements {
+                placement.isDeleted = true
+                placement.deletedAt = now
+                placement.updatedAt = now
+                placement.version += 1
+                try placement.update(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "boardTasks",
+                    entityId: placement.id,
+                    operationType: .delete,
+                    payload: placement,
+                    now: now
+                ).enqueue(db)
+            }
+
+            // Two INDEXED reads merged by link id (both columns are indexed),
+            // not one full-table scan; deduped because a self-referencing link
+            // would otherwise be tombstoned twice in one pass.
+            let childLinks = try CompoundChild
+                .filter(Column("childTaskId") == id && Column("isDeleted") == false)
+                .fetchAll(db)
+            let parentLinks = try CompoundChild
+                .filter(Column("compoundTaskId") == id && Column("isDeleted") == false)
+                .fetchAll(db)
+            var seenLinkIds = Set<String>()
+            for var link in childLinks + parentLinks {
+                guard seenLinkIds.insert(link.id).inserted else { continue }
+                link.isDeleted = true
+                link.deletedAt = now
+                link.updatedAt = now
+                link.version += 1
+                try link.update(db)
+                try SyncQueueBuilder.makeItem(
+                    entityType: "compoundChildren",
+                    entityId: link.id,
+                    operationType: .delete,
+                    payload: link,
+                    now: now
+                ).enqueue(db)
+            }
+
+            task.isDeleted = true
+            task.deletedAt = now
+            task.updatedAt = now
+            task.version += 1
+            try task.update(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "tasks",
+                entityId: task.id,
+                operationType: .delete,
+                payload: task,
+                now: now
+            ).enqueue(db)
+            deleted += 1
+        }
+        return deleted
+    }
+
+    /// First-seen-order dedup — the `Set` the TS twin builds from an array,
+    /// with the insertion order Swift's `Set` does not guarantee.
+    ///
+    /// - Parameter ids: The ids to dedup.
+    /// - Returns: The distinct ids, in first-seen order.
+    private static func orderedUnique(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
     }
 }

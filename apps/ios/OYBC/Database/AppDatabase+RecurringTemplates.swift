@@ -629,6 +629,14 @@ extension AppDatabase {
                 .order(Column("row"), Column("col"), Column("id"))
                 .fetchAll(db)
 
+            // ONE batched read for the RB4 check below (the batched style this
+            // file's neighbours use), not a `get` per cell.
+            let placedTaskIds = Array(Set(placements.map { $0.taskId }))
+            var placedTaskById: [String: Task] = [:]
+            for task in try Task.filter(placedTaskIds.contains(Column("id"))).fetchAll(db) {
+                placedTaskById[task.id] = task
+            }
+
             // Distinct, in placement order — a shared task placed twice
             // (shouldn't happen post board-integrity hardening, but this
             // mirrors makeWizardBoardTaskRows' dedup posture defensively)
@@ -637,6 +645,14 @@ extension AppDatabase {
             var boardTaskIds: [String] = []
             for bt in placements where !seen.contains(bt.taskId) {
                 seen.insert(bt.taskId)
+                // Board Sources §Member rules (B2, RB4) — a per-window derived
+                // COMPOUND is this window's re-targeted copy of a source
+                // compound; carrying it forward as a hand-added member would
+                // pin every future window to it. A derived COUNTER passes
+                // through: it is re-minted from its root for each new window
+                // like any other counting member.
+                if let task = placedTaskById[bt.taskId],
+                   Self.isWindowStampedDerivedCompound(task) { continue }
                 boardTaskIds.append(bt.taskId)
             }
 
@@ -663,6 +679,14 @@ extension AppDatabase {
                 poolIds: input.poolIds,
                 manualTaskIds: input.manualTaskIds,
                 removedTaskIds: input.removedTaskIds,
+                // Board Sources §Member rules (B2, RB4) — authored, not
+                // inferred: a repeat-this-board record pulls from no source at
+                // all, and no member carries a vary level until a UI can
+                // author one. Writing both explicitly keeps
+                // `sourcesForRecord`'s legacy-shape inference off this record
+                // and gives the member-rules readers a real empty map.
+                sources: [],
+                manualTaskVary: [:],
                 lastSpawnedWindowKey: input.lastSpawnedWindowKey,
                 isActive: input.isActive,
                 createdAt: now,

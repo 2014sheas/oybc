@@ -335,7 +335,11 @@ struct RisoTaskDetailContentView: View {
         switch task.type {
         case .counting:
             guard let action = task.action, let unit = task.unit, let max = task.maxCount else { return nil }
-            let current = task.currentCount ?? 0
+            // RB7 — a LINKED member's `currentCount` mirrors its root's
+            // lifetime total; its own number is that minus the baseline its
+            // window opened at (`TaskCountDisplay`). A root/standalone counter
+            // reads raw, exactly as before.
+            let current = TaskCountDisplay.displayedCount(for: task)
             return "\(action) · \(current) / \(max) \(unit)"
         case .compound:
             let n = compoundChildren.count
