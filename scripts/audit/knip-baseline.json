@@ -17,7 +17,6 @@
     "src/db/operations/boards.ts::fetchBoards",
     "src/db/operations/boards.ts::fetchBoardsByTimeframe",
     "src/db/operations/compoundChildren.ts::fetchCompoundChild",
-    "src/db/operations/compoundChildren.ts::fetchCompoundChildrenByCompoundIds",
     "src/db/operations/compoundChildren.ts::findCompoundChildrenByChildTaskId",
     "src/db/operations/compoundChildren.ts::reorderCompoundChildren",
     "src/db/operations/compoundChildren.ts::softDeleteCompoundChild",

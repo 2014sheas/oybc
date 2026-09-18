@@ -575,6 +575,12 @@ func persistWizardBoard(
                 pendingTasks: pendingForSave,
                 stagedEdits: isActiveCreate ? capturedStagedEdits : [:],
                 isUpdate: isUpdate,
+                // Board Sources §Member rules (B2) — the mint re-resolves each
+                // placed member's rules against this board's final window, so
+                // it needs the wizard's sources + hand-added layer. Ignored on
+                // a draft save (see `saveWizardBoard`'s active-only gate).
+                sources: capturedSources,
+                manualTaskIds: Array(capturedManualTaskIds),
                 now: now
             )
 

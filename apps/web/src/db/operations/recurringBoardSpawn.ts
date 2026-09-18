@@ -9,10 +9,12 @@ import {
   computeBoardStatsUpdate,
   fillableCellCount,
   poolSourceSupplyById,
+  applyMemberRules,
   resolveSourceAvailable,
   selectBoardTasks,
   sourcesForRecord,
   type Board,
+  type BoardWindow,
   type BoardTask,
   type CompoundChild,
   type Pool,
@@ -25,6 +27,7 @@ import {
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { resolveBoardSourceSupply, resolveSourceBoard } from './boardSources';
+import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 
 /**
  * Recurring-board spawn (Phase 6.2).
@@ -156,6 +159,14 @@ export async function spawnTemplateBoard(
         (eventsByTaskId[e.taskId] ??= []).push(e);
       }
 
+      // Compound children — read ONCE, above the supply resolution, and
+      // reused by three consumers: Split-up expansion + the member-rules plan
+      // below, and the spawn-time derivation pass at the bottom. (It used to
+      // be read only for the derivation pass.)
+      const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
+      const childrenByCompound: Record<string, CompoundChild[]> = {};
+      for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+
       // Board Sources P3/P4 — board-kind sources resolve LIVE per window
       // through the SHARED resolver (`resolveBoardSourceSupply`, also the
       // wizard's code path — the P3 lock): the source board's placed
@@ -186,6 +197,18 @@ export async function spawnTemplateBoard(
             : [],
         });
       }
+      // Board Sources §Member rules (B2) — spec step 1: Split-up expansion
+      // happens ONCE, here, and the expanded supplies are what the capacity
+      // validation, the selection and the member-rule plan all consume. A
+      // `split: true` compound therefore contributes its PARTS as selectable
+      // squares (and never itself), so what Settings' capacity says and what
+      // this spawn places can't disagree.
+      const ruleSupplies = applyMemberRules(
+        supplies.map((s) => ({ source: s.source, supplyTaskIds: resolveSourceAvailable(s) })),
+        childrenByCompound,
+        tasksById,
+      );
+
       // The manual layer isn't deleted-filtered (caller-curated, matching
       // resolveMix's old contract), but hard-gone ids ARE dropped — the
       // old path dropped them via its tasksById lookup the same way. A
@@ -209,7 +232,7 @@ export async function spawnTemplateBoard(
         if (t !== undefined) candidateTasks.push(t);
       };
       for (const id of manualTaskIds) addCandidate(id);
-      for (const supply of supplies) {
+      for (const supply of ruleSupplies) {
         for (const id of resolveSourceAvailable(supply)) addCandidate(id);
       }
 
@@ -236,7 +259,10 @@ export async function spawnTemplateBoard(
       // A range-infeasible pick (only possible with P2+ data) maps to the
       // same skip-and-warn family as a small pool.
       const selection = selectBoardTasks({
-        supplies,
+        // The expanded supplies (see above) — `selectBoardTasks` re-applies
+        // `resolveSourceAvailable` internally, which is a no-op on an already
+        // exclude-filtered list.
+        supplies: ruleSupplies,
         manualTaskIds,
         cellCount: fillableCellCount(template.boardSize, template.centerSquareType),
         // Honor the template's determinism contract: an
@@ -256,8 +282,73 @@ export async function spawnTemplateBoard(
           reason: 'pool_too_small',
         };
       }
+      // Board Sources §Member rules (B2, docs/BOARD_SOURCES.md §Member rules —
+      // *Resolution pipeline* steps 3/5): the picked ids are resolved against
+      // this window's rules and any window-stamped derived counter / derived
+      // compound they call for is MINTED HERE — before the `board_tasks` rows
+      // below point at it, in this same transaction.
+      // Auto targets pro-rate a member's goal by the ratio of the SOURCE
+      // board's window to this one, so every supplied id — and every child of
+      // a compound member, which is looked up by the CHILD's id — needs its
+      // source window recorded.
+      const sourceWindowByTaskId: Record<string, BoardWindow | undefined> = {};
+      for (const supply of ruleSupplies) {
+        if (supply.source.kind !== 'board') continue;
+        const sourceBoard = sourceBoardById.get(supply.source.sourceId);
+        if (sourceBoard === undefined) continue;
+        const sourceWindow: BoardWindow = {
+          timeframe: sourceBoard.timeframe,
+          startDate: sourceBoard.startDate ?? null,
+          endDate: sourceBoard.endDate ?? null,
+        };
+        for (const id of supply.supplyTaskIds) {
+          sourceWindowByTaskId[id] = sourceWindow;
+          for (const k of childrenByCompound[id] ?? []) {
+            sourceWindowByTaskId[k.childTaskId] = sourceWindow;
+          }
+        }
+      }
+      const rootEvents: TaskEvent[] = [];
+      for (const root of candidateRootIds(selection.taskIds, tasksById, childrenByCompound)) {
+        for (const e of eventsByTaskId[root] ?? []) rootEvents.push(e);
+      }
+      const { placementIds, minted } = await planAndMintDerivedRows({
+        boardId,
+        userId: template.userId,
+        now,
+        selectedIds: selection.taskIds,
+        supplies: ruleSupplies,
+        manualTaskIds,
+        // RB7 — a repeating board carries its hand-added members' dice levels
+        // on the record; absent means "nobody varies".
+        manualTaskVary: template.manualTaskVary ?? {},
+        window: {
+          timeframe: template.timeframe,
+          startDate: windowStart,
+          endDate: windowEnd,
+        },
+        mode: 'recurring',
+        tasksById,
+        childrenByCompoundId: childrenByCompound,
+        sourceWindowByTaskId,
+        events: rootEvents,
+      });
+      // Fold the minted rows into the snapshots the placement and the
+      // derivation pass below read from. Read BACK rather than trusting the
+      // built row: RB3 skips an already-live row, so what is stored is the
+      // authority for what the board then derives from.
+      for (const row of minted.tasks) {
+        const stored = await db.tasks.get(row.id);
+        if (stored !== undefined) tasksById[row.id] = stored;
+      }
+      for (const link of minted.links) {
+        const stored = await db.compoundChildren.get(link.id);
+        if (stored === undefined || stored.isDeleted) continue;
+        (childrenByCompound[stored.compoundTaskId] ??= []).push(stored);
+      }
+
       const orderedPool: Task[] = selection.taskIds
-        .map((id) => tasksById[id])
+        .map((id, i) => tasksById[placementIds[i] ?? id])
         .filter((t): t is Task => t !== undefined);
 
       const placement = buildSpawnPlacement({
@@ -302,9 +393,23 @@ export async function spawnTemplateBoard(
           : -1;
 
       const boardTasks: BoardTask[] = [];
+      // Two members that share a shared-counter root collapse onto ONE derived
+      // counter, so the same id can reach the placement twice. Counter-family
+      // exclusivity already forbids that at selection time, making this a
+      // belt-and-braces guard — but a duplicate `taskId` on one board trips
+      // the placement-integrity invariants (docs/BOARD_INTEGRITY.md), so the
+      // repeat cell is left empty rather than written.
+      const placedTaskIds = new Set<string>();
       for (let cell = 0; cell < placement.length; cell++) {
         const t = placement[cell];
         if (t === null) continue; // auto-completed FREE center
+        if (placedTaskIds.has(t.id)) {
+          console.warn(
+            `spawnTemplateBoard: task ${t.id} resolved twice on board ${boardId}; leaving cell ${cell} empty`,
+          );
+          continue;
+        }
+        placedTaskIds.add(t.id);
         const row = Math.floor(cell / template.boardSize);
         const col = cell % template.boardSize;
         boardTasks.push({
@@ -334,12 +439,13 @@ export async function spawnTemplateBoard(
       // so event-owning squares resolve incomplete (no respawn bleed); a
       // FREE center still auto-fills. The invariant "stored stats are
       // always derivation output" now holds from the first row written.
-      const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
-      const childrenByCompound: Record<string, CompoundChild[]> = {};
-      for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
+      // (`childrenByCompound` hoisted above the supply resolution — the
+      // member-rules plan needs it too; the minted derived links were pushed
+      // into it, so a derived compound evaluates against its own parts here.)
       // Reuse the `tasksById` map read at the top of this closure for
-      // mix resolution — no writes to `tasks` happen in between, so it's
-      // still an accurate snapshot for the derivation pass.
+      // mix resolution — the only `tasks` writes in between are the member-
+      // rule mint's, and those rows were read back into the map above, so it
+      // is still an accurate snapshot for the derivation pass.
       const taskById: Record<string, Task> = tasksById;
       // (eventsByTaskId hoisted above the supply resolution — board-kind
       // sources need it for the 'todo' filter; reused here for stats.)

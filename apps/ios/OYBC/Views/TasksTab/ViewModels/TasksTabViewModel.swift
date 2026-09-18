@@ -245,14 +245,17 @@ final class TasksTabViewModel {
         }
     }
 
-    /// "In progress" predicate. Counting tasks: `currentCount > 0` and
-    /// not done. Compound tasks: at least one child Task is completed
-    /// but the parent isn't (child completion state read out of
-    /// `library.libraryTasks` via id match).
+    /// "In progress" predicate. Counting tasks: the DISPLAYED count > 0 and
+    /// not done — `TaskCountDisplay.displayedCount`, so a linked member is
+    /// measured against its own baseline and not against its root's lifetime
+    /// total (RB7); reading `currentCount` raw here would call every member of
+    /// a used root "in progress" the moment its window opened. Compound tasks:
+    /// at least one child Task is completed but the parent isn't (child
+    /// completion state read out of `library.libraryTasks` via id match).
     static func isInProgress(_ task: Task, library: TaskLibraryViewModel) -> Bool {
         if task.isCompleted { return false }
         if task.type == .counting {
-            return (task.currentCount ?? 0) > 0
+            return TaskCountDisplay.displayedCount(for: task) > 0
         }
         if task.type == .compound {
             let children = library.compoundChildrenByCompound[task.id] ?? []

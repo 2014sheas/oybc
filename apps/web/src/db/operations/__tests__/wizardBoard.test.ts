@@ -5,6 +5,7 @@ import {
   OperatorType,
   TaskType,
   Timeframe,
+  derivedTaskId,
   type Board,
   type CompoundChild,
   type Task,
@@ -557,5 +558,262 @@ describe('applyStagedTaskEditsForWizardPersist — standalone (recurring-templat
       (l) => !l.isDeleted,
     );
     expect(links).toHaveLength(2);
+  });
+});
+
+/**
+ * Board Sources §Member rules (B2) — the persist path mints window-stamped
+ * derived counters before the `board_tasks` rows that point at them, and a
+ * replaced member keeps its cell (the centre pin is the load-bearing case).
+ */
+describe('persistWizardBoardRows — member-rule mint', () => {
+  const ROOT = uuid(90);
+  const FILLER = uuid(91);
+  const SOURCE_BOARD = uuid(92);
+
+  async function seedSourceBoardWithCounter(): Promise<Task> {
+    const root: Task = {
+      id: ROOT,
+      userId: USER,
+      title: 'Run 35 km',
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'km',
+      maxCount: 35,
+      currentCount: 20,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.add(root);
+    await db.taskEvents.add({
+      id: `${ROOT}-pre`,
+      userId: USER,
+      taskId: ROOT,
+      kind: 'increment',
+      delta: 14,
+      occurredAt: '2026-06-01T00:00:00.000Z', // strictly before START
+      createdAt: '2026-06-01T00:00:00.000Z',
+      updatedAt: '2026-06-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    });
+    const source: Board = {
+      id: SOURCE_BOARD,
+      userId: USER,
+      name: 'Source',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.WEEKLY,
+      startDate: '2026-06-22T00:00:00.000',
+      endDate: '2026-06-28T23:59:59.999',
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      totalTasks: 9,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.boards.add(source);
+    await db.boardTasks.add({
+      id: `bt-src-${ROOT}`,
+      boardId: SOURCE_BOARD,
+      taskId: ROOT,
+      row: 0,
+      col: 0,
+      isCenter: false,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    });
+    return root;
+  }
+
+  it('places the derived counter instead of the pulled member, and writes its row first', async () => {
+    const root = await seedSourceBoardWithCounter();
+    const placement = new Array(9).fill(null);
+    placement[3] = root;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        sources: [
+          {
+            sourceId: SOURCE_BOARD,
+            kind: 'board',
+            min: 0,
+            max: null,
+            excludedTaskIds: [],
+            filter: 'all',
+            memberRules: { [ROOT]: { target: 12 } },
+          },
+        ],
+        manualTaskIds: [],
+      }),
+    );
+
+    const derivedId = derivedTaskId(boardId, ROOT);
+    const derived = await db.tasks.get(derivedId);
+    expect(derived?.maxCount).toBe(12); // the member rule's explicit target
+    expect(derived?.baseline).toBe(14); // the root's pre-window log
+    expect(derived?.sharedCounterId).toBe(ROOT);
+
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows).toHaveLength(1);
+    // The placement points at the derived row — which therefore must already
+    // have existed when `createBoardTask` ran (it validates against `tasks`).
+    expect(rows[0].taskId).toBe(derivedId);
+    expect(rows[0].row).toBe(1);
+    expect(rows[0].col).toBe(0); // cell 3 — the member kept its square
+  });
+
+  it('a CHOSEN centre that resolves to a derived counter keeps its cell and the board follows it', async () => {
+    const root = await seedSourceBoardWithCounter();
+    const filler: Task = {
+      id: FILLER,
+      userId: USER,
+      title: 'Filler',
+      type: TaskType.NORMAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.add(filler);
+
+    const placement = new Array(9).fill(null);
+    placement[0] = filler;
+    placement[4] = root; // the centre cell of a 3×3
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        centerType: CenterSquareType.CHOSEN,
+        boardFields: {
+          name: 'Centre board',
+          boardSize: 3,
+          timeframe: Timeframe.DAILY,
+          startDate: START,
+          centerSquareType: CenterSquareType.CHOSEN,
+          centerTaskId: ROOT,
+          isRandomized: false,
+        },
+        sources: [
+          {
+            sourceId: SOURCE_BOARD,
+            kind: 'board',
+            min: 0,
+            max: null,
+            excludedTaskIds: [],
+            filter: 'all',
+          },
+        ],
+        manualTaskIds: [],
+      }),
+    );
+
+    const derivedId = derivedTaskId(boardId, ROOT);
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    const centre = rows.find((bt) => bt.isCenter);
+    expect(centre?.taskId).toBe(derivedId);
+    expect(centre?.row).toBe(1);
+    expect(centre?.col).toBe(1);
+    // The other cell is untouched by the plan.
+    expect(rows.find((bt) => !bt.isCenter)?.taskId).toBe(FILLER);
+    const board = await db.boards.get(boardId);
+    expect(board?.centerTaskId).toBe(derivedId);
+  });
+
+  it('a DRAFT save mints nothing; activating the same draft mints it', async () => {
+    const root = await seedSourceBoardWithCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = root;
+    const source = {
+      sourceId: SOURCE_BOARD,
+      kind: 'board' as const,
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'all' as const,
+      memberRules: { [ROOT]: { target: 12 } },
+    };
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({ placement, status: 'draft', sources: [source], manualTaskIds: [] }),
+    );
+
+    // A draft's window is still editable, so nothing is stamped for it yet.
+    const derivedId = derivedTaskId(boardId, ROOT);
+    expect(await db.tasks.get(derivedId)).toBeUndefined();
+    expect(
+      await db.compoundChildren.where('compoundTaskId').equals(derivedId).count(),
+    ).toBe(0);
+    expect((await db.syncQueue.toArray()).filter((q) => q.entityId === derivedId)).toHaveLength(
+      0,
+    );
+    expect(
+      (await db.boardTasks.where('boardId').equals(boardId).toArray())[0].taskId,
+    ).toBe(ROOT);
+
+    // Resuming the same draft and saving it ACTIVE derives the window once,
+    // from final values.
+    await persistWizardBoardRows(
+      baseInput({
+        placement,
+        draftBoardId: boardId,
+        status: 'active',
+        sources: [source],
+        manualTaskIds: [],
+      }),
+    );
+
+    const derived = await db.tasks.get(derivedId);
+    expect(derived?.maxCount).toBe(12);
+    expect(derived?.baseline).toBe(14);
+    const rows = (await db.boardTasks.where('boardId').equals(boardId).toArray()).filter(
+      (bt) => !bt.isDeleted,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].taskId).toBe(derivedId);
+  });
+
+  it('leaves a hand-added member alone — no source, no rule, no derived row', async () => {
+    const root = await seedSourceBoardWithCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = root;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        sources: [
+          {
+            sourceId: SOURCE_BOARD,
+            kind: 'board',
+            min: 0,
+            max: null,
+            excludedTaskIds: [],
+            filter: 'all',
+            memberRules: { [ROOT]: { target: 12 } },
+          },
+        ],
+        manualTaskIds: [ROOT], // hand-added beats the source copy
+      }),
+    );
+
+    expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows[0].taskId).toBe(ROOT);
   });
 });

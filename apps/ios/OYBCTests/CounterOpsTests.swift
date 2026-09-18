@@ -411,4 +411,87 @@ final class CounterOpsTests: XCTestCase {
         let member = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "member5") })
         XCTAssertNil(member.sharedCounterId)
     }
+
+    // MARK: - Board Sources §Member rules (B2): baseline refresh on local writes
+
+    /// A window-stamped derived counter whose window opens in the FUTURE, so
+    /// every event logged by the ops below lands strictly BEFORE its boundary
+    /// and the baseline provably has to move. That is what makes these
+    /// assertions non-degenerate: with the refresh removed, the baseline stays
+    /// 0 and the displayed count (and therefore `isCompleted`) is wrong.
+    private static let futureWindowStart = "2099-01-01T00:00:00.000Z"
+
+    private func makeWindowStampedDerived(
+        id: String = "derived-1",
+        sourceId: String,
+        maxCount: Int = 3,
+        baseline: Int = 0
+    ) -> Task {
+        Task(
+            id: id, userId: "u1", title: "Push-ups goal", type: .counting,
+            action: "Push-ups", unit: "reps", maxCount: maxCount,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, currentCount: 0,
+            createdAt: now, updatedAt: now, version: 1, isDeleted: false,
+            timeframe: .yearly, startDate: Self.futureWindowStart,
+            endDate: "2099-12-31T23:59:59.999Z",
+            sharedCounterId: sourceId, baseline: baseline, createdInWizard: true
+        )
+    }
+
+    /// Seeds a counter source at 0 plus one window-stamped derived member.
+    private func seedRefreshFixture(_ db: AppDatabase) throws {
+        try seedUser(db)
+        try db.write { grdb in
+            try self.makeSourceTask(id: "src", currentCount: 0).save(grdb)
+            try self.makeWindowStampedDerived(sourceId: "src").save(grdb)
+        }
+    }
+
+    func test_incrementSharedCounter_refreshesTheDerivedBaselineBeforePropagating() throws {
+        let db = try makeDb()
+        try seedRefreshFixture(db)
+
+        _ = try db.incrementSharedCounter(sourceTaskId: "src", by: 5)
+
+        let derived = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(derived.baseline, 5,
+                       "the +5 event precedes the derived row's window, so it is baseline")
+        XCTAssertEqual(derived.currentCount, 5, "the mirror still tracks the source's lifetime count")
+        XCTAssertFalse(
+            derived.isCompleted,
+            "displayed = 5 − 5 = 0, below the goal of 3 — proves the refresh ran BEFORE propagation"
+        )
+    }
+
+    func test_decrementSharedCounter_refreshesTheDerivedBaselineBeforePropagating() throws {
+        let db = try makeDb()
+        try seedRefreshFixture(db)
+        _ = try db.incrementSharedCounter(sourceTaskId: "src", by: 5)
+
+        _ = try db.decrementSharedCounter(sourceTaskId: "src", by: 2)
+
+        let derived = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(derived.baseline, 3, "5 − 2, both events preceding the window")
+        XCTAssertEqual(derived.currentCount, 3)
+    }
+
+    func test_undoLastCounterLog_refreshesTheBaselineAfterTombstoningAPreWindowEvent() throws {
+        let db = try makeDb()
+        try seedRefreshFixture(db)
+        _ = try db.incrementSharedCounter(sourceTaskId: "src", by: 7)
+        let beforeUndo = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(beforeUndo.baseline, 7, "precondition: the log is in the baseline")
+
+        let result = try db.undoLastCounterLog(sourceTaskId: "src")
+        XCTAssertEqual(result.undoneAmount, 7)
+
+        let derived = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(
+            derived.baseline, 0,
+            "the undone event is TOMBSTONED, so it leaves the baseline — the in-memory " +
+            "event list the op passes through must carry that tombstone"
+        )
+        XCTAssertEqual(derived.currentCount, 0)
+    }
 }

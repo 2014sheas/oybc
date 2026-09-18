@@ -10,7 +10,7 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { applyTaskEventsBatch } from '../taskEventPull';
+import { applyTaskEventsBatch, healMissingCompletionEvents } from '../taskEventPull';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Sync + §Testing matrix web
@@ -204,5 +204,149 @@ describe('applyTaskEventsBatch — batched pull recompute', () => {
     ]);
     expect(res.pulled).toBe(0);
     expect(res.details[0]).toContain('userId mismatch');
+  });
+});
+
+/**
+ * Board Sources §Member rules (B2) — a pulled (or healed) event that predates
+ * a board's window changes that window's `baseline`, so both pull paths
+ * refresh every window-stamped derived counter on the affected root. The
+ * refresh is NON-AUTHORED: `baseline` only, no version bump, no enqueue.
+ */
+describe('pull paths — window-stamped derived baseline refresh', () => {
+  const ROOT = '40000000-0000-4000-8000-000000000001';
+  const WINDOW_START = '2026-06-01T00:00:00.000';
+  const BACKDATED = '2026-05-15T00:00:00.000Z';
+
+  async function seedRootAndDerived(over: Partial<Task> = {}): Promise<string> {
+    const root: Task = {
+      id: ROOT,
+      userId: USER,
+      title: 'Run 20 km',
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'km',
+      maxCount: 20,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 3,
+      isDeleted: false,
+      ...over,
+    } as Task;
+    await db.tasks.add(root);
+    const derivedId = '40000000-0000-4000-8000-000000000002';
+    await db.tasks.add({
+      id: derivedId,
+      userId: USER,
+      title: 'Run 5 km',
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'km',
+      maxCount: 5,
+      sharedCounterId: ROOT,
+      baseline: 0,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      timeframe: Timeframe.DAILY,
+      startDate: WINDOW_START,
+      createdAt: START,
+      updatedAt: START,
+      version: 4,
+      isDeleted: false,
+    } as Task);
+    return derivedId;
+  }
+
+  it('a batch carrying a backdated increment moves the derived baseline without authoring a write', async () => {
+    const derivedId = await seedRootAndDerived();
+    const before = await db.tasks.get(derivedId);
+
+    const res = await applyTaskEventsBatch(USER, [
+      {
+        id: '40000000-0000-4000-8000-000000000003',
+        userId: USER,
+        taskId: ROOT,
+        kind: 'increment',
+        delta: 6,
+        occurredAt: BACKDATED, // before the derived row's window opened
+        createdAt: BACKDATED,
+        updatedAt: BACKDATED,
+        version: 1,
+        isDeleted: false,
+      },
+    ]);
+    expect(res.pulled).toBe(1);
+
+    const after = await db.tasks.get(derivedId);
+    expect(after?.baseline).toBe(6);
+    expect(after?.version).toBe(before?.version);
+    expect(after?.updatedAt).toBe(before?.updatedAt);
+    expect((await db.syncQueue.toArray()).filter((q) => q.entityId === derivedId)).toHaveLength(
+      0,
+    );
+  });
+
+  it('an in-window increment leaves the baseline alone (it is this window’s progress)', async () => {
+    const derivedId = await seedRootAndDerived();
+    // A real pre-window history, so the assertion below is "3, not 9" rather
+    // than "0 stayed 0".
+    await db.taskEvents.add({
+      id: '40000000-0000-4000-8000-000000000005',
+      userId: USER,
+      taskId: ROOT,
+      kind: 'increment',
+      delta: 3,
+      occurredAt: BACKDATED,
+      createdAt: BACKDATED,
+      updatedAt: BACKDATED,
+      version: 1,
+      isDeleted: false,
+    });
+    await db.tasks.update(derivedId, { baseline: 3 });
+
+    await applyTaskEventsBatch(USER, [
+      {
+        id: '40000000-0000-4000-8000-000000000004',
+        userId: USER,
+        taskId: ROOT,
+        kind: 'increment',
+        delta: 6,
+        occurredAt: '2026-06-02T00:00:00.000Z',
+        createdAt: '2026-06-02T00:00:00.000Z',
+        updatedAt: '2026-06-02T00:00:00.000Z',
+        version: 1,
+        isDeleted: false,
+      },
+    ]);
+
+    expect((await db.tasks.get(derivedId))?.baseline).toBe(3);
+  });
+
+  it('healMissingCompletionEvents refreshes the baseline from the event it mints', async () => {
+    // A lifetime-complete root with NO events — the exact fresh-install gap
+    // the heal sweep closes. Its backfill event is anchored at `updatedAt`,
+    // which predates the derived row's window.
+    const derivedId = await seedRootAndDerived({
+      currentCount: 4,
+      updatedAt: BACKDATED,
+    });
+    const before = await db.tasks.get(derivedId);
+
+    const minted = await healMissingCompletionEvents(USER);
+    expect(minted).toBe(1);
+
+    const after = await db.tasks.get(derivedId);
+    expect(after?.baseline).toBe(4);
+    expect(after?.version).toBe(before?.version);
+    expect((await db.syncQueue.toArray()).filter((q) => q.entityId === derivedId)).toHaveLength(
+      0,
+    );
   });
 });

@@ -3,11 +3,19 @@ import {
   CenterSquareType,
   SyncOperationType,
   TaskType,
+  applyMemberRules,
   computeBoardStatsUpdate,
   isGoalLessCounter,
+  poolSourceSupplyById,
+  resolveSourceAvailable,
+  type BoardSource,
+  type BoardSourceSupply,
+  type BoardWindow,
   type CompoundChild,
   type CreateBoardInput,
+  type Pool,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../internal';
 import { currentTimestamp, generateUUID } from '../utils';
@@ -20,6 +28,9 @@ import {
   validatePatch,
 } from '../taskEditPatch';
 import { activateBoard, createBoard, updateBoard } from './boards';
+import { resolveBoardSourceSupply, resolveSourceBoard } from './boardSources';
+import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
+import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { runBoardCascadeForTask, runBoardCascadeForTasks } from './orchestration';
@@ -79,6 +90,19 @@ export interface PersistWizardBoardRowsInput {
    * must never carry a task edit"). Defaults to an empty map.
    */
   stagedEdits?: Map<string, TaskEditPatch>;
+  /**
+   * Board Sources §Member rules (B2) — the wizard's pulled sources, forwarded
+   * so the per-member rules on them can be resolved against THIS board's
+   * window at persist time (`controller.sources`). Omitted/empty = a board
+   * assembled entirely by hand, which has no rules to resolve.
+   */
+  sources?: BoardSource[];
+  /**
+   * The hand-added layer (`controller.manualTaskIds`). A hand-added id beats
+   * any source copy of the same task in the member-rule plan, so the plan
+   * needs to know which ids they are.
+   */
+  manualTaskIds?: string[];
 }
 
 /**
@@ -381,6 +405,167 @@ export async function applyStagedTaskEditsForWizardPersist(
 }
 
 /**
+ * Board Sources §Member rules (B2) — resolve this board's per-member rules
+ * and mint what they call for, inside the board-write transaction and BEFORE
+ * the `board_tasks` rows that will point at the results.
+ *
+ * Rebuilds the supplies the same way the spawn path does — pool members via
+ * `poolSourceSupplyById`, board members via `resolveSourceBoard` (series
+ * binding) + `resolveBoardSourceSupply` (the done-filter) — then
+ * exclude-filters and Split-up-expands them through `applyMemberRules`. An
+ * unresolvable board source contributes an empty supply rather than failing
+ * the save: the placement it fed was already decided upstairs, and a board
+ * save must never be blocked by a source that has since been archived.
+ *
+ * Must run inside the caller's transaction (scoping `boards`, `boardTasks`,
+ * `tasks`, `pools`, `compoundChildren`, `taskEvents`, `syncQueue`).
+ *
+ * @param boardId - The board being written (half of every derived id).
+ * @param userId - Owner of the rows minted.
+ * @param now - ISO8601 mint instant.
+ * @param selectedIds - The placed task ids, in placement order.
+ * @param sources - The wizard's pulled sources.
+ * @param manualTaskIds - The hand-added layer.
+ * @param window - The board's own window.
+ * @param taskSnapshot - The caller's single `tasks` snapshot. Read here and
+ *   MUTATED with the minted rows (read back from Dexie, since RB3 may skip a
+ *   live one) so the caller's derivation pass needs no second full-table read.
+ * @returns The ids to place, positionally 1:1 with `selectedIds`.
+ */
+async function mintWizardDerivedRows(
+  boardId: string,
+  userId: string,
+  now: string,
+  selectedIds: string[],
+  sources: BoardSource[],
+  manualTaskIds: string[],
+  window: BoardWindow,
+  taskSnapshot: Record<string, Task>,
+): Promise<string[]> {
+  // The planner gets LIVE rows only — a soft-deleted root reachable through a
+  // member's `sharedCounterId` must not be mirrored into a new derived row.
+  // (The caller's derivation pass keeps the unfiltered snapshot, which is what
+  // it has always been given.)
+  const tasksById: Record<string, Task> = {};
+  for (const t of Object.values(taskSnapshot)) if (!t.isDeleted) tasksById[t.id] = t;
+
+  const poolSourceIds = sources.filter((s) => s.kind === 'pool').map((s) => s.sourceId);
+  const poolsById: Record<string, Pool> = {};
+  if (poolSourceIds.length > 0) {
+    for (const p of await db.pools.where('id').anyOf(poolSourceIds).toArray()) {
+      poolsById[p.id] = p;
+    }
+  }
+
+  const rawSupplies: BoardSourceSupply[] = [];
+  const sourceBoardWindow: Record<string, BoardWindow> = {};
+  for (const source of sources) {
+    if (source.kind === 'pool') {
+      rawSupplies.push({
+        source,
+        supplyTaskIds: poolSourceSupplyById(source.sourceId, poolsById, tasksById),
+      });
+      continue;
+    }
+    const board = await resolveSourceBoard(source.sourceId, window.startDate ?? undefined);
+    if (board === null) {
+      rawSupplies.push({ source, supplyTaskIds: [] });
+      continue;
+    }
+    sourceBoardWindow[source.sourceId] = {
+      timeframe: board.timeframe,
+      startDate: board.startDate ?? null,
+      endDate: board.endDate ?? null,
+    };
+    const rows = await db.boardTasks.where('boardId').equals(board.id).toArray();
+    const liveIds = [...new Set(rows.filter((bt) => !bt.isDeleted).map((bt) => bt.taskId))];
+    const eventsByTaskId: Record<string, TaskEvent[]> = {};
+    if (liveIds.length > 0) {
+      for (const e of await db.taskEvents.where('taskId').anyOf(liveIds).toArray()) {
+        if (e.isDeleted) continue;
+        (eventsByTaskId[e.taskId] ??= []).push(e);
+      }
+    }
+    const info = resolveBoardSourceSupply(board, rows, tasksById, eventsByTaskId);
+    rawSupplies.push({
+      source,
+      supplyTaskIds:
+        source.filter === 'todo'
+          ? info.supplyTaskIds.filter((id) => !info.doneTaskIds.has(id))
+          : info.supplyTaskIds,
+    });
+  }
+
+  // Compound children for every compound the plan can name — the placed ones
+  // (a One-square compound re-targets its parts) and the supplied ones (a
+  // Split-up member expands into its children).
+  const compoundIds = new Set<string>();
+  const noteCompound = (id: string): void => {
+    if (tasksById[id]?.type === TaskType.COMPOUND) compoundIds.add(id);
+  };
+  for (const id of selectedIds) noteCompound(id);
+  for (const supply of rawSupplies) for (const id of supply.supplyTaskIds) noteCompound(id);
+  const childrenByCompoundId: Record<string, CompoundChild[]> = {};
+  if (compoundIds.size > 0) {
+    for (const c of await fetchCompoundChildrenByCompoundIds([...compoundIds])) {
+      (childrenByCompoundId[c.compoundTaskId] ??= []).push(c);
+    }
+  }
+
+  const supplies = applyMemberRules(
+    rawSupplies.map((s) => ({ source: s.source, supplyTaskIds: resolveSourceAvailable(s) })),
+    childrenByCompoundId,
+    tasksById,
+  );
+
+  // Auto targets pro-rate by the SOURCE window, looked up per supplied id and
+  // per child of a compound member (never by the compound's own id).
+  const sourceWindowByTaskId: Record<string, BoardWindow | undefined> = {};
+  for (const supply of supplies) {
+    const w = sourceBoardWindow[supply.source.sourceId];
+    if (w === undefined) continue;
+    for (const id of supply.supplyTaskIds) {
+      sourceWindowByTaskId[id] = w;
+      for (const k of childrenByCompoundId[id] ?? []) sourceWindowByTaskId[k.childTaskId] = w;
+    }
+  }
+
+  const roots = candidateRootIds(selectedIds, tasksById, childrenByCompoundId);
+  const events =
+    roots.length > 0 ? await db.taskEvents.where('taskId').anyOf(roots).toArray() : [];
+
+  const { placementIds, minted } = await planAndMintDerivedRows({
+    boardId,
+    userId,
+    now,
+    selectedIds,
+    supplies,
+    manualTaskIds,
+    // RB9 — the one-off wizard has no UI for hand-added members' dice levels
+    // yet, so nothing varies on that layer.
+    manualTaskVary: {},
+    window,
+    // A repeating board never reaches here (its "Create Board" persists a
+    // record and spawns through `spawnTemplateBoard`), so this path is always
+    // the one-off mode — which is what suppresses auto targets.
+    mode: 'oneOff',
+    tasksById,
+    childrenByCompoundId,
+    sourceWindowByTaskId,
+    events,
+  });
+
+  // Read the minted rows BACK into the caller's snapshot rather than trusting
+  // the built ones: RB3 skips an already-live row, so what is stored is the
+  // authority for what the board then derives from.
+  for (const row of minted.tasks) {
+    const stored = await db.tasks.get(row.id);
+    if (stored !== undefined) taskSnapshot[row.id] = stored;
+  }
+  return placementIds;
+}
+
+/**
  * Atomically persist the wizard's board, its placements, and any pending
  * tasks in a single Dexie transaction (moved out of `wizardPersist.ts` for
  * B3, issue #284 — the transaction previously lived in a component-tree
@@ -413,6 +598,8 @@ export async function persistWizardBoardRows({
   centerType,
   pendingTasks,
   stagedEdits,
+  sources,
+  manualTaskIds,
 }: PersistWizardBoardRowsInput): Promise<string> {
   const isOddBoard = size % 2 !== 0;
   const centerRow = Math.floor(size / 2);
@@ -425,7 +612,17 @@ export async function persistWizardBoardRows({
     // pass below resolves the just-written placements against the board's
     // window, and a staged-edit cascade (below) may re-derive OTHER boards
     // that share an edited task.
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
+    // `pools` is read-only in scope: the member-rule mint below rebuilds each
+    // pulled pool's supply the same way the spawn path does.
+    [
+      db.boards,
+      db.boardTasks,
+      db.tasks,
+      db.pools,
+      db.compoundChildren,
+      db.taskEvents,
+      db.syncQueue,
+    ],
     async () => {
       // ── Bug #85: write pending tasks first ──────────────────────────────
       // Only persist pending tasks that are actually placed on the board — a
@@ -473,15 +670,87 @@ export async function persistWizardBoardRows({
         boardId = board.id;
       }
 
+      // ONE `tasks` snapshot for both the member-rule mint and the derivation
+      // pass at the bottom (it used to read the table again). Taken after the
+      // pending-task drain + staged edits, which are the only other writers of
+      // `tasks` in this transaction; the mint's own writes are read back into
+      // it. Unfiltered, exactly as the derivation pass has always had it.
+      const taskSnapshot: Record<string, Task> = {};
+      for (const t of await db.tasks.toArray()) taskSnapshot[t.id] = t;
+
+      // ── Board Sources §Member rules (B2): mint before placing ───────────
+      // The placed ids are resolved against this board's window; a member
+      // governed by a rule is replaced IN PLACE by its window-stamped derived
+      // counter (or derived compound), so a pinned/centre square keeps its
+      // cell. The rows are written here, before the `board_tasks` rows that
+      // reference them, inside this transaction.
+      //
+      // ACTIVE SAVES ONLY. A derived id is `uuidv5(boardId, root)` — it does
+      // NOT encode the window — while a DRAFT's window is still editable: save
+      // a draft weekly, resume it, switch it to daily, save it active, and the
+      // RB3 "live row → skip" rule would keep the first row's timeframe /
+      // dates / target / baseline for a window the board no longer has. A
+      // draft therefore places its original member ids and the activating save
+      // derives the window once, from final values. (It also means an
+      // abandoned draft leaves no derived rows behind at all.)
+      const selectedIds = placement
+        .map((t) => t?.id)
+        .filter((id): id is string => id != null);
+      const placementIds =
+        status === 'active' && selectedIds.length > 0
+          ? await mintWizardDerivedRows(
+              boardId,
+              userId,
+              currentTimestamp(),
+              selectedIds,
+              sources ?? [],
+              manualTaskIds ?? [],
+              {
+                timeframe: boardFields.timeframe,
+                startDate: boardFields.startDate ?? null,
+                endDate: boardFields.endDate ?? null,
+              },
+              taskSnapshot,
+            )
+          : [];
+
+      // A CHOSEN centre that resolved to a derived counter must have the
+      // board's stored `centerTaskId` follow it, or a resumed draft would
+      // stop recognising its own centre square.
+      const centerIndex = boardFields.centerTaskId
+        ? selectedIds.indexOf(boardFields.centerTaskId)
+        : -1;
+      const centerReplacement = centerIndex >= 0 ? placementIds[centerIndex] : undefined;
+      const centerTaskIdOverride =
+        centerReplacement !== undefined && centerReplacement !== boardFields.centerTaskId
+          ? centerReplacement
+          : undefined;
+
+      let placedSoFar = 0;
+      // Two members sharing a shared-counter root collapse onto ONE derived
+      // counter. Counter-family exclusivity forbids that at selection time, so
+      // this is belt-and-braces — but `createBoardTask` THROWS on a duplicate
+      // `taskId`, which would abort the whole save, so the repeat cell is left
+      // empty instead.
+      const placedPlacementIds = new Set<string>();
       for (let i = 0; i < placement.length; i++) {
         const task = placement[i];
         if (task === null) continue;
+        const taskId = placementIds[placedSoFar] ?? task.id;
+        placedSoFar += 1;
+        if (placedPlacementIds.has(taskId)) {
+          console.warn(
+            `persistWizardBoardRows: task ${taskId} resolved twice on board ${boardId}; leaving cell ${i} empty`,
+          );
+          continue;
+        }
+        placedPlacementIds.add(taskId);
         const row = Math.floor(i / size);
         const col = i % size;
         const isCenterPos = isOddBoard && row === centerRow && col === centerCol;
         await createBoardTask({
           boardId,
-          taskId: task.id,
+          taskId,
           row,
           col,
           // Mark centre only for CHOSEN (a real task pinned at centre).
@@ -513,9 +782,8 @@ export async function persistWizardBoardRows({
         const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
         const childrenByCompound: Record<string, CompoundChild[]> = {};
         for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
-        const allTasks = await db.tasks.toArray();
-        const taskById: Record<string, Task> = {};
-        for (const t of allTasks) taskById[t.id] = t;
+        // Reuses the snapshot taken above the mint (minted rows folded in).
+        const taskById: Record<string, Task> = taskSnapshot;
         // `db.taskEvents` is in this transaction's scope, so the shared helper
         // reads inside the txn (reuse-before-creating; same map shape).
         const windowContext = await buildWindowContext();
@@ -536,6 +804,11 @@ export async function persistWizardBoardRows({
           completedTasks: stats.completedTasks,
           linesCompleted: stats.linesCompleted,
           completedLineIds: stats.completedLineIds,
+          // Folded into the same write rather than issued as its own update —
+          // one version bump, one coalesced push.
+          ...(centerTaskIdOverride !== undefined
+            ? { centerTaskId: centerTaskIdOverride }
+            : {}),
         });
       }
     },

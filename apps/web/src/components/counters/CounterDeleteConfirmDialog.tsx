@@ -13,7 +13,11 @@ export interface CounterDeleteConfirmMember {
 export interface CounterDeleteConfirmDialogProps {
   /** The counter's display name (hero-card name / group.name). */
   counterName: string;
-  /** `impact.counterMemberCount` — number of live tasks linked to this counter. */
+  /** `impact.counterMemberCount` — number of live linked tasks that will be
+   *  UNLINKED and keep their counts. Since B2 this excludes the counter's
+   *  window-stamped derived members, which the delete retires outright
+   *  (`impact.derivedWindowCounterCount`) — so the "will be unlinked" copy
+   *  below stays true of every task this number covers. */
   memberCount: number;
   /** Member rows to list (title + board name where placed). */
   members: CounterDeleteConfirmMember[];

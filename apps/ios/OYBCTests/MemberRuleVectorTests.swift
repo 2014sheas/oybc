@@ -155,10 +155,16 @@ final class MemberRuleVectorTests: XCTestCase {
         let title: String?
         let operatorType: String?
         let threshold: Int?
+        /// B2 — the window every derived compound is stamped with (copied
+        /// from the board being assembled, the same one its parts carry).
+        let timeframe: String
+        let startDate: String?
+        let endDate: String?
         let children: [ExpectedChild]
 
         private enum CodingKeys: String, CodingKey {
             case source, replaces, title, threshold, children
+            case timeframe, startDate, endDate
             case operatorType = "operator"
         }
     }
@@ -192,11 +198,143 @@ final class MemberRuleVectorTests: XCTestCase {
         let idPins: [String: String]
     }
 
+    // MARK: - B2 fixture decoding (windowBaseline + derivedRows)
+
+    /// A loosely-typed JSON value, so an `expected` row can be subset-matched
+    /// against the produced row field-by-field (the Swift analogue of Jest's
+    /// `toMatchObject`) without a hand-written comparison per field.
+    private enum FixtureValue: Decodable, Equatable {
+        case string(String)
+        case bool(Bool)
+        case int(Int)
+        case double(Double)
+        case null
+        case array([FixtureValue])
+        case object([String: FixtureValue])
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if container.decodeNil() { self = .null; return }
+            // Bool BEFORE Int — `JSONDecoder` would otherwise reject, and the
+            // ordering documents the intent either way.
+            if let value = try? container.decode(Bool.self) { self = .bool(value); return }
+            if let value = try? container.decode(Int.self) { self = .int(value); return }
+            if let value = try? container.decode(Double.self) { self = .double(value); return }
+            if let value = try? container.decode(String.self) { self = .string(value); return }
+            if let value = try? container.decode([FixtureValue].self) { self = .array(value); return }
+            self = .object(try container.decode([String: FixtureValue].self))
+        }
+    }
+
+    private struct RawBaselineEvent: Decodable {
+        let taskId: String
+        let kind: String
+        let delta: Int?
+        let occurredAt: String
+        let isDeleted: Bool
+    }
+
+    private struct BaselineVector: Decodable {
+        let name: String
+        let root: String
+        let boundary: String
+        let events: [RawBaselineEvent]
+        let expected: Int
+    }
+
+    private struct RawRoot: Decodable {
+        let currentCount: Int
+        let action: String?
+        let unit: String?
+    }
+
+    private struct RawSourceCompound: Decodable {
+        let operatorType: String?
+        let threshold: Int?
+        let title: String?
+        let description: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case threshold, title, description
+            case operatorType = "operator"
+        }
+    }
+
+    private struct RawDerivedTaskDraft: Decodable {
+        let id: String
+        let rootTaskId: String
+        let sourceMemberId: String
+        let replacesId: String
+        let maxCount: Int
+        let baseline: Int
+        let title: String
+        let action: String
+        let unit: String
+        let timeframe: String
+        let startDate: String?
+        let endDate: String?
+    }
+
+    private struct RawDerivedChildDraft: Decodable {
+        let linkId: String
+        let childTaskId: String
+        let childIndex: Int
+        let isDerived: Bool
+    }
+
+    private struct RawDerivedCompoundDraft: Decodable {
+        let id: String
+        let sourceCompoundId: String
+        let replacesId: String
+        let title: String
+        let operatorType: String?
+        let threshold: Int?
+        let timeframe: String
+        let startDate: String?
+        let endDate: String?
+        let children: [RawDerivedChildDraft]
+
+        private enum CodingKeys: String, CodingKey {
+            case id, sourceCompoundId, replacesId, title, threshold
+            case timeframe, startDate, endDate, children
+            case operatorType = "operator"
+        }
+    }
+
+    private struct RawDrafts: Decodable {
+        let placementIds: [String]
+        let derivedTasks: [RawDerivedTaskDraft]
+        let derivedCompounds: [RawDerivedCompoundDraft]
+    }
+
+    private struct ExpectedRows: Decodable {
+        let tasks: [[String: FixtureValue]]
+        let links: [[String: FixtureValue]]
+    }
+
+    private struct DerivedRowsVector: Decodable {
+        let name: String
+        let drafts: RawDrafts
+        let expected: ExpectedRows
+    }
+
+    private struct DerivedRowsSection: Decodable {
+        let boardId: String
+        let userId: String
+        let now: String
+        let ids: [String: String]
+        let roots: [String: RawRoot]
+        let compounds: [String: RawSourceCompound]
+        let vectors: [DerivedRowsVector]
+    }
+
     private struct Fixture: Decodable {
         let windowDays: [WindowDaysVector]
         let autoTarget: [AutoTargetVector]
         let varyRange: [VaryRangeVector]
         let rollTarget: [RollTargetVector]
+        let windowBaseline: [BaselineVector]
+        let derivedRows: DerivedRowsSection
         let applyMemberRules: ApplySection
         let planDerivedTasks: PlanSection
     }
@@ -551,6 +689,17 @@ final class MemberRuleVectorTests: XCTestCase {
                 v.expected.compounds.map { [$0.source, $0.replaces] },
                 "\(v.name): derived compound identity"
             )
+            // B2 — every derived compound carries the board's window, so it
+            // expires with its parts rather than outliving them.
+            XCTAssertEqual(
+                out.derivedCompounds.map {
+                    "\($0.timeframe.rawValue)|\($0.startDate ?? "-")|\($0.endDate ?? "-")"
+                },
+                v.expected.compounds.map {
+                    "\($0.timeframe)|\($0.startDate ?? "-")|\($0.endDate ?? "-")"
+                },
+                "\(v.name): derived compound window stamp"
+            )
             XCTAssertEqual(
                 out.derivedCompounds.map { compound in
                     compound.children.map { "\($0.childTaskId)|\($0.childIndex)|\($0.isDerived)" }
@@ -584,6 +733,365 @@ final class MemberRuleVectorTests: XCTestCase {
                 XCTAssertEqual(compound.operatorType?.rawValue, titled.operatorType, v.name)
                 XCTAssertEqual(compound.threshold, titled.threshold, v.name)
             }
+        }
+    }
+
+    // MARK: - B2: computeWindowBaseline
+
+    func testComputeWindowBaseline() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.windowBaseline.isEmpty)
+        for v in fixture.windowBaseline {
+            let events = v.events.enumerated().map { index, raw in
+                TaskEvent(
+                    id: "e\(index)",
+                    userId: "u1",
+                    taskId: raw.taskId,
+                    kind: TaskEventKind(rawValue: raw.kind) ?? .completion,
+                    delta: raw.delta,
+                    occurredAt: raw.occurredAt,
+                    boardId: nil,
+                    createdAt: Self.isoStamp,
+                    updatedAt: Self.isoStamp,
+                    lastSyncedAt: nil,
+                    version: 1,
+                    isDeleted: raw.isDeleted,
+                    deletedAt: raw.isDeleted ? Self.isoStamp : nil
+                )
+            }
+            XCTAssertEqual(
+                BoardSources.computeWindowBaseline(
+                    rootTaskId: v.root,
+                    events: events,
+                    boundary: v.boundary
+                ),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    // MARK: - B2: isWindowStampedDerived (the STORED-row predicate)
+
+    /// Mirrors the TS twin's five cases 1:1. All three marks are required —
+    /// each on its own is ordinary user data.
+    func testIsWindowStampedDerived() {
+        func row(
+            sharedCounterId: String? = "11111111-0000-4000-8000-000000000001",
+            startDate: String? = "2026-09-18",
+            createdInWizard: Bool = true
+        ) -> Task {
+            Task(
+                id: "t1",
+                userId: "u1",
+                title: "T",
+                type: .counting,
+                totalCompletions: 0,
+                totalInstances: 0,
+                createdAt: Self.isoStamp,
+                updatedAt: Self.isoStamp,
+                version: 1,
+                isDeleted: false,
+                startDate: startDate,
+                sharedCounterId: sharedCounterId,
+                createdInWizard: createdInWizard
+            )
+        }
+        XCTAssertTrue(BoardSources.isWindowStampedDerived(row()))
+        XCTAssertFalse(
+            BoardSources.isWindowStampedDerived(row(sharedCounterId: nil)),
+            "no sharedCounterId → a plain window-scoped counting task"
+        )
+        XCTAssertFalse(
+            BoardSources.isWindowStampedDerived(row(startDate: nil)),
+            "no startDate → an ordinary linked counter, not window-stamped"
+        )
+        XCTAssertFalse(
+            BoardSources.isWindowStampedDerived(row(createdInWizard: false)),
+            "not wizard-born → a hand-made linked + timeboxed counter"
+        )
+        // Swift's `createdInWizard` is a non-optional Bool, so the TS twin's
+        // "absent" and "explicitly false" cases collapse into the one above —
+        // the empty-string shapes are what stand in for the other degenerate
+        // inputs a decoded row can actually carry.
+        XCTAssertFalse(BoardSources.isWindowStampedDerived(row(sharedCounterId: "")))
+        XCTAssertFalse(BoardSources.isWindowStampedDerived(row(startDate: "")))
+    }
+
+    // MARK: - B2: buildDerivedRows
+
+    /// Fixture id token → its uuid; anything that isn't a token passes through.
+    private func resolver(_ section: DerivedRowsSection) -> (String) -> String {
+        { token in section.ids[token] ?? token }
+    }
+
+    /// Encode a row and read it back as loose JSON, so `expected`'s listed
+    /// fields can be compared one by one and `expectedAbsent`'s can be
+    /// asserted missing. `Task`/`CompoundChild` encode optionals with
+    /// `encodeIfPresent`, so a nil field is genuinely absent from the dict.
+    private func encodedFields<T: Encodable>(_ value: T) throws -> [String: FixtureValue] {
+        let data = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode([String: FixtureValue].self, from: data)
+    }
+
+    /// Subset match: every listed field must be present and equal; the
+    /// `expectedAbsent` list must be absent entirely.
+    private func assertSubset(
+        _ actual: [String: FixtureValue],
+        matches expected: [String: FixtureValue],
+        label: String
+    ) {
+        for (key, value) in expected {
+            if key == "expectedAbsent" {
+                guard case .array(let absent) = value else {
+                    XCTFail("\(label): expectedAbsent is not an array")
+                    continue
+                }
+                for entry in absent {
+                    guard case .string(let field) = entry else { continue }
+                    XCTAssertNil(actual[field], "\(label): expected \(field) to be absent")
+                }
+                continue
+            }
+            XCTAssertEqual(actual[key], value, "\(label): field \(key)")
+        }
+    }
+
+    /// The cross-platform proof that this section's own literals reproduce
+    /// here — the same shape as `testIdNamespacesMatchPins` for the plan
+    /// section, over the uuid-shaped ids `buildDerivedRows` needs.
+    func testDerivedRowsIdPins() throws {
+        let section = try loadFixture().derivedRows
+        let id = resolver(section)
+        XCTAssertEqual(
+            BoardSources.derivedTaskId(boardId: section.boardId, rootTaskId: id("R1")),
+            section.ids["derived:R1"]
+        )
+        XCTAssertEqual(
+            BoardSources.derivedTaskId(boardId: section.boardId, rootTaskId: id("R2")),
+            section.ids["derived:R2"]
+        )
+        XCTAssertEqual(
+            BoardSources.derivedCompoundId(boardId: section.boardId, compoundId: id("C")),
+            section.ids["derivedCompound:C"]
+        )
+        XCTAssertEqual(
+            BoardSources.derivedLinkId(
+                derivedCompoundId: try XCTUnwrap(section.ids["derivedCompound:C"]),
+                childId: try XCTUnwrap(section.ids["derived:R1"])
+            ),
+            section.ids["link:derivedCompound:C:derived:R1"]
+        )
+        XCTAssertEqual(
+            BoardSources.derivedLinkId(
+                derivedCompoundId: try XCTUnwrap(section.ids["derivedCompound:C"]),
+                childId: id("K2")
+            ),
+            section.ids["link:derivedCompound:C:K2"]
+        )
+    }
+
+    func testBuildDerivedRows() throws {
+        let section = try loadFixture().derivedRows
+        XCTAssertFalse(section.vectors.isEmpty)
+        let id = resolver(section)
+
+        var rootsById: [String: Task] = [:]
+        for (token, raw) in section.roots {
+            rootsById[id(token)] = Task(
+                id: id(token),
+                userId: section.userId,
+                title: "root \(token)",
+                type: .counting,
+                action: raw.action,
+                unit: raw.unit,
+                totalCompletions: 0,
+                totalInstances: 0,
+                currentCount: raw.currentCount,
+                createdAt: Self.isoStamp,
+                updatedAt: Self.isoStamp,
+                version: 1,
+                isDeleted: false
+            )
+        }
+        var compoundsById: [String: Task] = [:]
+        for (token, raw) in section.compounds {
+            compoundsById[id(token)] = Task(
+                id: id(token),
+                userId: section.userId,
+                title: raw.title ?? "",
+                description: raw.description,
+                type: .compound,
+                operatorType: raw.operatorType.flatMap { OperatorType(rawValue: $0) },
+                threshold: raw.threshold,
+                totalCompletions: 0,
+                totalInstances: 0,
+                createdAt: Self.isoStamp,
+                updatedAt: Self.isoStamp,
+                version: 1,
+                isDeleted: false
+            )
+        }
+
+        for v in section.vectors {
+            let drafts = BoardSources.PlanDerivedTasksResult(
+                placementIds: v.drafts.placementIds.map(id),
+                derivedTasks: try v.drafts.derivedTasks.map { raw in
+                    BoardSources.DerivedTaskDraft(
+                        id: id(raw.id),
+                        rootTaskId: id(raw.rootTaskId),
+                        sourceMemberId: id(raw.sourceMemberId),
+                        replacesId: id(raw.replacesId),
+                        maxCount: raw.maxCount,
+                        baseline: raw.baseline,
+                        title: raw.title,
+                        action: raw.action,
+                        unit: raw.unit,
+                        timeframe: try timeframe(raw.timeframe),
+                        startDate: raw.startDate,
+                        endDate: raw.endDate
+                    )
+                },
+                derivedCompounds: try v.drafts.derivedCompounds.map { raw in
+                    BoardSources.DerivedCompoundDraft(
+                        id: id(raw.id),
+                        sourceCompoundId: id(raw.sourceCompoundId),
+                        replacesId: id(raw.replacesId),
+                        title: raw.title,
+                        operatorType: raw.operatorType.flatMap { OperatorType(rawValue: $0) },
+                        threshold: raw.threshold,
+                        timeframe: try timeframe(raw.timeframe),
+                        startDate: raw.startDate,
+                        endDate: raw.endDate,
+                        children: raw.children.map { child in
+                            BoardSources.DerivedCompoundChildDraft(
+                                linkId: id(child.linkId),
+                                childTaskId: id(child.childTaskId),
+                                childIndex: child.childIndex,
+                                isDerived: child.isDerived
+                            )
+                        }
+                    )
+                }
+            )
+
+            let out = BoardSources.buildDerivedRows(
+                drafts: drafts,
+                userId: section.userId,
+                now: section.now,
+                rootsById: rootsById,
+                compoundsById: compoundsById
+            )
+
+            // Order + length in full: derived counters in draft order, then
+            // the derived compounds.
+            XCTAssertEqual(
+                out.tasks.map { $0.id },
+                v.expected.tasks.map { fields -> String in
+                    guard case .string(let value)? = fields["id"] else { return "<missing>" }
+                    return id(value)
+                },
+                "\(v.name): task ids + order"
+            )
+            XCTAssertEqual(
+                out.links.map { $0.id },
+                v.expected.links.map { fields -> String in
+                    guard case .string(let value)? = fields["id"] else { return "<missing>" }
+                    return id(value)
+                },
+                "\(v.name): link ids + order"
+            )
+
+            for (index, row) in out.tasks.enumerated() where index < v.expected.tasks.count {
+                var expected: [String: FixtureValue] = [:]
+                for (key, value) in v.expected.tasks[index] {
+                    // Ids inside the expectation are tokens too.
+                    if case .string(let raw) = value { expected[key] = .string(id(raw)) }
+                    else { expected[key] = value }
+                }
+                assertSubset(
+                    try encodedFields(row),
+                    matches: expected,
+                    label: "\(v.name): task[\(index)]"
+                )
+            }
+            for (index, link) in out.links.enumerated() where index < v.expected.links.count {
+                var expected: [String: FixtureValue] = [:]
+                for (key, value) in v.expected.links[index] {
+                    if case .string(let raw) = value { expected[key] = .string(id(raw)) }
+                    else { expected[key] = value }
+                }
+                assertSubset(
+                    try encodedFields(link),
+                    matches: expected,
+                    label: "\(v.name): link[\(index)]"
+                )
+            }
+
+            // The derived counters keep the draft ids verbatim (the
+            // deterministic uuidv5 minted by planDerivedTasks IS the row id —
+            // never re-minted here).
+            XCTAssertEqual(
+                Array(out.tasks.prefix(drafts.derivedTasks.count)).map { $0.id },
+                drafts.derivedTasks.map { $0.id },
+                "\(v.name): derived counter ids are the draft ids"
+            )
+            for link in out.links {
+                let parent = out.tasks.first { $0.id == link.compoundTaskId }
+                XCTAssertEqual(parent?.type, .compound, "\(v.name): link parent is a compound")
+                XCTAssertEqual([link.createdAt, link.updatedAt], [section.now, section.now], v.name)
+            }
+
+            // Completeness — the iOS analogue of the TS suite's Zod pass: a
+            // forgotten required field / an FK-violating shape fails on the
+            // real schema rather than passing silently.
+            try assertRowsPersist(out, section: section)
+        }
+    }
+
+    /// Every built row must `save(db)` cleanly into a fresh migrated database
+    /// (`foreign_keys = ON`), tasks before links.
+    private func assertRowsPersist(
+        _ rows: BoardSources.DerivedRows,
+        section: DerivedRowsSection
+    ) throws {
+        let database = try AppDatabase.makeTestInstance()
+        try database.write { db in
+            try User(
+                id: section.userId,
+                email: "t@e.com",
+                displayName: "T",
+                photoURL: nil,
+                preferences: User.encodePreferences(.defaults),
+                createdAt: section.now,
+                updatedAt: section.now,
+                lastSyncedAt: nil,
+                version: 1
+            ).save(db)
+            for row in rows.tasks { try row.save(db) }
+            // A link may point at an ORIGINAL child (the un-derived half of a
+            // One-square compound), which the builder never produces — stub it
+            // so the FK is satisfiable and the link itself is what's under test.
+            let produced = Set(rows.tasks.map { $0.id })
+            for link in rows.links where !produced.contains(link.childTaskId) {
+                try Task(
+                    id: link.childTaskId,
+                    userId: section.userId,
+                    title: "original child",
+                    type: .normal,
+                    totalCompletions: 0,
+                    totalInstances: 0,
+                    createdAt: section.now,
+                    updatedAt: section.now,
+                    version: 1,
+                    isDeleted: false
+                ).save(db)
+            }
+            for link in rows.links { try link.save(db) }
+            XCTAssertEqual(try Task.fetchCount(db), rows.tasks.count + (
+                Set(rows.links.map { $0.childTaskId }).subtracting(produced).count
+            ))
+            XCTAssertEqual(try CompoundChild.fetchCount(db), rows.links.count)
         }
     }
 }

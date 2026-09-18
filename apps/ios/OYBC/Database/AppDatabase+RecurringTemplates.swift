@@ -183,7 +183,7 @@ extension AppDatabase {
                 // derivation pass, so this isn't an added read (mirrors
                 // web's `spawnTemplateBoard`).
                 let allTasks = try Task.fetchAll(db)
-                let tasksById = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+                var tasksById = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
 
                 let sources = BoardSources.sourcesForRecord(
                     sources: template.sources,
@@ -221,6 +221,24 @@ extension AppDatabase {
                     : try Pool.filter(poolSourceIds.contains(Column("id"))).fetchAll(db)
                 let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
 
+                // Compound children — read ONCE, above the supply resolution,
+                // and reused by three consumers: Split-up expansion + the
+                // member-rules plan below, and the derivation pass at the
+                // bottom (which is all it used to be read for). Ordered by
+                // `childIndex` so it matches the batched
+                // `fetchCompoundChildren(db:compoundTaskIds:)` the other mint
+                // path uses. NOT an rng-determinism fix: both
+                // `applyMemberRules` and `planDerivedTasks` apply their own
+                // total childIndex-then-id comparator, so the plan is already
+                // order-independent. This is for the stats consumer below,
+                // which reads the rows in the order it is handed them.
+                let allChildren = try CompoundChild
+                    .filter(Column("isDeleted") == false)
+                    .order(Column("childIndex"))
+                    .fetchAll(db)
+                var childrenByCompound: [String: [CompoundChild]] = [:]
+                for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
+
                 // Board Sources P3 — board-kind sources resolve LIVE per
                 // window: the source board's placed squares, with the
                 // 'todo' filter dropping squares complete in THAT board's
@@ -250,6 +268,25 @@ extension AppDatabase {
                         supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
                     }
                 }
+
+                // Board Sources §Member rules (B2) — spec step 1: Split-up
+                // expansion happens ONCE, here, and the expanded supplies are
+                // what the capacity validation, the selection AND the
+                // member-rule plan all consume. A `split: true` compound
+                // therefore contributes its PARTS as selectable squares (and
+                // never itself), so what Settings' capacity says and what this
+                // spawn places can't disagree.
+                let ruleSupplies = BoardSources.applyMemberRules(
+                    supplies.map {
+                        BoardSources.Supply(
+                            source: $0.source,
+                            supplyTaskIds: BoardSources.resolveSourceAvailable($0)
+                        )
+                    },
+                    childrenByCompoundId: childrenByCompound,
+                    tasksById: tasksById
+                )
+
                 // The manual layer isn't deleted-filtered (caller-curated,
                 // matching resolveMix's old contract), but hard-gone ids
                 // ARE dropped — the old path dropped them via its tasksById
@@ -271,8 +308,8 @@ extension AppDatabase {
                     if let t = tasksById[id] { candidateTasks.append(t) }
                 }
                 for id in manualTaskIds { addCandidate(id) }
-                for supply in supplies {
-                    for id in BoardSources.resolveSourceAvailable(supply) { addCandidate(id) }
+                for supply in ruleSupplies {
+                    for id in BoardSources.resolveSourceAvailable(supply.asSupply) { addCandidate(id) }
                 }
 
                 if candidateTasks.isEmpty {
@@ -296,7 +333,11 @@ extension AppDatabase {
                 // first-N subset + order (review-caught; `placeBoard`'s
                 // verbatim path is defeated if selection already shuffled).
                 let selection = BoardSources.selectBoardTasks(
-                    supplies: supplies,
+                    // The EXPANDED supplies (see above) —
+                    // `selectBoardTasks` re-applies
+                    // `resolveSourceAvailable` internally, a no-op on an
+                    // already exclude-filtered list.
+                    supplies: ruleSupplies.map { $0.asSupply },
                     manualTaskIds: manualTaskIds,
                     cellCount: recurringTemplateFillableCellCount(
                         boardSize: size,
@@ -308,13 +349,86 @@ extension AppDatabase {
                     // Recurring boards have no CHOSEN center — no pin.
                     counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasksById.values)
                 )
-                let orderedPool: [Task]
+                let selectedIds: [String]
                 switch selection {
                 case .short:
                     outcome = .skipped(templateId: template.id, reason: .poolTooSmall)
                     throw RecurringSpawnAbort.skip
                 case .ok(let taskIds):
-                    orderedPool = taskIds.compactMap { tasksById[$0] }
+                    selectedIds = taskIds
+                }
+
+                // Board Sources §Member rules (B2, docs/BOARD_SOURCES.md
+                // §Member rules — *Resolution pipeline* steps 3/5): the picked
+                // ids are resolved against this window's rules and any
+                // window-stamped derived counter / derived compound they call
+                // for is MINTED HERE — before the `board_tasks` rows below
+                // point at it, in this same transaction.
+                // Auto targets pro-rate a member's goal by the ratio of the
+                // SOURCE board's window to this one, so every supplied id —
+                // and every child of a compound member, which is looked up by
+                // the CHILD's id — needs its source window recorded.
+                var sourceWindowByTaskId: [String: BoardSources.BoardWindow] = [:]
+                for supply in ruleSupplies {
+                    guard supply.source.kind == .board,
+                          let sourceBoard = sourceBoardById[supply.source.sourceId] else { continue }
+                    let sourceWindow = BoardSources.BoardWindow(
+                        timeframe: sourceBoard.timeframe,
+                        startDate: sourceBoard.startDate,
+                        endDate: sourceBoard.endDate
+                    )
+                    for id in supply.supplyTaskIds {
+                        sourceWindowByTaskId[id] = sourceWindow
+                        for link in childrenByCompound[id] ?? [] {
+                            sourceWindowByTaskId[link.childTaskId] = sourceWindow
+                        }
+                    }
+                }
+                let roots = AppDatabase.candidateRootIds(
+                    selectedIds: selectedIds,
+                    tasksById: tasksById,
+                    childrenByCompoundId: childrenByCompound
+                )
+                let rootEvents = roots.isEmpty
+                    ? []
+                    : try TaskEvent.filter(roots.contains(Column("taskId"))).fetchAll(db)
+                let mintResult = try AppDatabase.planAndMintDerivedRows(
+                    db: db,
+                    boardId: boardId,
+                    userId: template.userId,
+                    now: now,
+                    selectedIds: selectedIds,
+                    supplies: ruleSupplies,
+                    manualTaskIds: manualTaskIds,
+                    // RB7 — a repeating board carries its hand-added members'
+                    // dice levels on the record; absent means "nobody varies".
+                    manualTaskVary: template.manualTaskVary ?? [:],
+                    window: BoardSources.BoardWindow(
+                        timeframe: template.timeframe,
+                        startDate: spawn.windowStart,
+                        endDate: spawn.windowEnd
+                    ),
+                    mode: .recurring,
+                    tasksById: tasksById,
+                    childrenByCompoundId: childrenByCompound,
+                    sourceWindowByTaskId: sourceWindowByTaskId,
+                    events: rootEvents
+                )
+                // Fold the minted rows into the snapshots the placement and the
+                // derivation pass below read from. Read BACK rather than
+                // trusting the built row: RB3 skips an already-live row, so
+                // what is STORED is the authority for what the board derives.
+                for row in mintResult.minted.tasks {
+                    if let stored = try Task.fetchOne(db, key: row.id) { tasksById[row.id] = stored }
+                }
+                for link in mintResult.minted.links {
+                    guard let stored = try CompoundChild.fetchOne(db, key: link.id),
+                          !stored.isDeleted else { continue }
+                    childrenByCompound[stored.compoundTaskId, default: []].append(stored)
+                }
+
+                let orderedPool: [Task] = selectedIds.enumerated().compactMap { index, id in
+                    tasksById[index < mintResult.placementIds.count ? mintResult.placementIds[index] : id]
                 }
 
                 let placement = buildSpawnPlacement(template: template, poolTasks: orderedPool)
@@ -353,13 +467,36 @@ extension AppDatabase {
                 // Shared with the wizard-save path so the `isCenter` rule
                 // stays identical: only a `.chosen` centre task is flagged
                 // (a `.none` centre holds an ordinary task, not a FREE cell).
+                // Two members that share a shared-counter root collapse onto
+                // ONE derived counter, so the same id can reach the placement
+                // twice. Counter-family exclusivity already forbids that at
+                // selection time, making this belt-and-braces — but a
+                // duplicate `taskId` on one board trips the
+                // placement-integrity invariants (docs/BOARD_INTEGRITY.md), so
+                // the repeat cell is left empty rather than written.
+                //
+                // The invariant this trades away, stated plainly: the board
+                // comes out one square short, against "boards are always
+                // exactly filled". Throwing would be worse, so the guard drops
+                // the cell and LOGS — the log is the only signal that the
+                // unreachable path fired, and it exists on both platforms (web
+                // `console.warn`s here).
+                var placedTaskIds = Set<String>()
                 let boardTasks = makeWizardBoardTaskRows(
                     placement: placement,
                     boardId: boardId,
                     size: size,
                     centerType: template.centerSquareType,
                     now: now
-                )
+                ).filter { row in
+                    guard placedTaskIds.insert(row.taskId).inserted else {
+                        #if DEBUG
+                        print("spawnRecurringBoard: task \(row.taskId) resolved twice on board \(boardId); leaving its cell empty")
+                        #endif
+                        return false
+                    }
+                    return true
+                }
 
                 // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this
                 // closes — respawn-bleed row): run the derivation pass at spawn so
@@ -369,15 +506,15 @@ extension AppDatabase {
                 // auto-fills. The invariant "stored stats are always derivation
                 // output" now holds from the first row written. Mirrors the web
                 // `spawnTemplateBoard` change.
+                // (`childrenByCompound` is hoisted above the supply resolution
+                // — the member-rules plan needs it too; the minted derived
+                // links were folded into it, so a derived compound evaluates
+                // against its own parts here.)
                 let windowContext = try AppDatabase.buildWindowContext(db: db)
-                let allChildren = try CompoundChild
-                    .filter(Column("isDeleted") == false)
-                    .fetchAll(db)
-                var childrenByCompound: [String: [CompoundChild]] = [:]
-                for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
-                // Reuse the `tasksById` map read at the top of this closure
-                // for mix resolution — no writes to `tasks` happen in
-                // between, so it's still an accurate snapshot for the
+                // Reuse the `tasksById` map read at the top of this closure for
+                // source resolution — the only `tasks` writes in between are
+                // the member-rule mint's, and those rows were read back into
+                // the map above, so it is still an accurate snapshot for the
                 // derivation pass (mirrors web's reuse of `tasksById`).
                 let taskById: [String: Task] = tasksById
                 let allBoardsForDerivation = try Board
@@ -515,15 +652,56 @@ extension AppDatabase {
                 .order(Column("row"), Column("col"), Column("id"))
                 .fetchAll(db)
 
+            // ONE batched read for the RB4 check below (the batched style this
+            // file's neighbours use), not a `get` per cell.
+            let placedTaskIds = Array(Set(placements.map { $0.taskId }))
+            var placedTaskById: [String: Task] = [:]
+            for task in try Task.filter(placedTaskIds.contains(Column("id"))).fetchAll(db) {
+                placedTaskById[task.id] = task
+            }
+
             // Distinct, in placement order — a shared task placed twice
             // (shouldn't happen post board-integrity hardening, but this
             // mirrors makeWizardBoardTaskRows' dedup posture defensively)
             // must not appear twice in manualTaskIds.
+            // RB4 amended (final-review FI2) — the roots behind any placed
+            // window-stamped derived counters, in ONE batched read.
+            let rootIds = Array(Set(placedTaskById.values
+                .filter { BoardSources.isWindowStampedDerived($0) }
+                .compactMap { $0.sharedCounterId }))
+            var rootById: [String: Task] = [:]
+            if !rootIds.isEmpty {
+                for root in try Task.filter(rootIds.contains(Column("id"))).fetchAll(db) {
+                    rootById[root.id] = root
+                }
+            }
+
             var seen = Set<String>()
             var boardTaskIds: [String] = []
-            for bt in placements where !seen.contains(bt.taskId) {
-                seen.insert(bt.taskId)
-                boardTaskIds.append(bt.taskId)
+            for bt in placements {
+                let task = placedTaskById[bt.taskId]
+                // Board Sources §Member rules (B2, RB4) — a per-window derived
+                // COMPOUND is this window's re-targeted copy of a source
+                // compound; carrying it forward as a hand-added member would
+                // pin every future window to it.
+                if let task, Self.isWindowStampedDerivedCompound(task) { continue }
+                // RB4 amended (final-review FI2) — a derived COUNTER is
+                // recorded by its ROOT id, never its own. The derived row
+                // belongs to THIS board's window and is retired with this
+                // board (RB5), so a record naming it would be skipped as
+                // `.hasDeletedTasks` for every future window the day the user
+                // deletes the board they repeated. The root is durable library
+                // content and is what each new window re-mints from anyway. A
+                // root that is itself missing or deleted contributes no member.
+                var memberId = bt.taskId
+                if let task,
+                   BoardSources.isWindowStampedDerived(task),
+                   let rootId = task.sharedCounterId {
+                    guard let root = rootById[rootId], !root.isDeleted else { continue }
+                    memberId = root.id
+                }
+                guard seen.insert(memberId).inserted else { continue }
+                boardTaskIds.append(memberId)
             }
 
             guard let input = buildRepeatBoardTemplateInput(
@@ -549,6 +727,14 @@ extension AppDatabase {
                 poolIds: input.poolIds,
                 manualTaskIds: input.manualTaskIds,
                 removedTaskIds: input.removedTaskIds,
+                // Board Sources §Member rules (B2, RB4) — authored, not
+                // inferred: a repeat-this-board record pulls from no source at
+                // all, and no member carries a vary level until a UI can
+                // author one. Writing both explicitly keeps
+                // `sourcesForRecord`'s legacy-shape inference off this record
+                // and gives the member-rules readers a real empty map.
+                sources: [],
+                manualTaskVary: [:],
                 lastSpawnedWindowKey: input.lastSpawnedWindowKey,
                 isActive: input.isActive,
                 createdAt: now,

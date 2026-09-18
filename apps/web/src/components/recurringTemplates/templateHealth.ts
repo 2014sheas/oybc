@@ -1,4 +1,5 @@
 import {
+  applyMemberRules,
   buildCounterFamilyMap,
   computeAchievablePoolSize,
   validateSpawnPool,
@@ -35,6 +36,9 @@ export interface RosterHealth {
  * then `validateSpawnPool` over the achievable pick (which carries the
  * honest size, so `pool_too_small` respects ranges/overlap/families).
  *
+ * B2: the supplies are Split-up expanded (`applyMemberRules`) first, so the
+ * count is of the squares a new window would actually get.
+ *
  * @param templates - The roster.
  * @param resolutionByTemplateId - From `fetchTemplateSupplyResolution`.
  * @param tasksById - The combined task universe from the same fetch.
@@ -44,9 +48,10 @@ export function computeRosterHealth(
   resolutionByTemplateId: Record<string, TemplateSupplyResolution>,
   tasksById: Record<string, Task | undefined>,
 ): RosterHealth {
-  const counterFamilyByTaskId = buildCounterFamilyMap(
-    Object.values(tasksById).filter((t): t is Task => t !== undefined),
-  );
+  const definedTasks = Object.values(tasksById).filter((t): t is Task => t !== undefined);
+  const counterFamilyByTaskId = buildCounterFamilyMap(definedTasks);
+  const definedTasksById: Record<string, Task> = {};
+  for (const t of definedTasks) definedTasksById[t.id] = t;
   const mixByTemplateId: Record<string, string[]> = {};
   const attentionByTemplateId: Record<string, TemplateAttentionReason> = {};
   for (const t of templates) {
@@ -57,7 +62,16 @@ export function computeRosterHealth(
       mixByTemplateId[t.id] = t.seedTaskIds;
       continue;
     }
-    const { supplies, deadBoardSourceIds, manualTaskIds } = resolution;
+    const { deadBoardSourceIds, manualTaskIds } = resolution;
+    // B2 (§Member rules step 1) — expand Split-up compound members into
+    // their parts BEFORE the capacity dry-run: a split member supplies N
+    // squares, not one, so counting the raw supply would badge a healthy
+    // record `pool_too_small` (and show the wrong "N tasks").
+    const supplies = applyMemberRules(
+      resolution.supplies,
+      resolution.childrenByCompoundId,
+      definedTasksById,
+    );
     // Resolvable manual layer (deleted manual ids stay OUT of the pick
     // but flag attention below — the spawn validator's exact rule).
     const manualResolvable = manualTaskIds.filter((id) => {

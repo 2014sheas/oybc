@@ -485,8 +485,8 @@ final class AppDatabase {
 
         // v15: Phase 2 — Shared Counters. Adds `sharedCounterId` (TEXT)
         // and `baseline` (INTEGER) to `tasks`. Both are NULL for non-linked
-        // tasks. No index needed — source lookups are small-N in practice.
-        // Additive nullable columns; no data backfill required.
+        // tasks. "No index needed" held until B2's window-stamped derived
+        // reads; v32 (AppDatabase+Migrations.swift) indexes it. No backfill.
         migrator.registerMigration("v15") { db in
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN sharedCounterId TEXT")
             try db.execute(sql: "ALTER TABLE tasks ADD COLUMN baseline INTEGER")

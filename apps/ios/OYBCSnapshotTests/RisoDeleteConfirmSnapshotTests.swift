@@ -40,7 +40,8 @@ final class RisoDeleteConfirmSnapshotTests: XCTestCase {
             childLinkCount: 2,
             parentLinkCount: 0,
             counterMemberCount: 0,
-            counterMembers: []
+            counterMembers: [],
+            derivedWindowCounterCount: 0
         )
         return TaskDeleteConfirmView(task: task, impact: impact, onConfirm: {}, onCancel: {})
     }
@@ -54,7 +55,8 @@ final class RisoDeleteConfirmSnapshotTests: XCTestCase {
             childLinkCount: 0,
             parentLinkCount: 3,
             counterMemberCount: 0,
-            counterMembers: []
+            counterMembers: [],
+            derivedWindowCounterCount: 0
         )
         return TaskDeleteConfirmView(task: task, impact: impact, onConfirm: {}, onCancel: {})
     }
@@ -68,7 +70,8 @@ final class RisoDeleteConfirmSnapshotTests: XCTestCase {
             childLinkCount: 0,
             parentLinkCount: 0,
             counterMemberCount: 0,
-            counterMembers: []
+            counterMembers: [],
+            derivedWindowCounterCount: 0
         )
         return TaskDeleteConfirmView(task: task, impact: impact, onConfirm: {}, onCancel: {})
     }

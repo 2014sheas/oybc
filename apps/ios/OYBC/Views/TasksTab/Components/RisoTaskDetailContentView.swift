@@ -334,9 +334,12 @@ struct RisoTaskDetailContentView: View {
     private var typeSubtitle: String? {
         switch task.type {
         case .counting:
-            guard let action = task.action, let unit = task.unit, let max = task.maxCount else { return nil }
-            let current = task.currentCount ?? 0
-            return "\(action) · \(current) / \(max) \(unit)"
+            // RB7 — a LINKED member's `currentCount` mirrors its root's
+            // lifetime total; its own number is that minus the baseline its
+            // window opened at. The whole string lives in `TaskCountDisplay`
+            // (pure + unit-tested) rather than here, so reverting the fix
+            // cannot hide inside a private View property.
+            return TaskCountDisplay.countingSubtitle(for: task)
         case .compound:
             let n = compoundChildren.count
             guard n > 0 else { return nil }

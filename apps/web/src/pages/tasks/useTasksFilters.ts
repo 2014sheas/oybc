@@ -11,6 +11,7 @@ import {
 } from '@oybc/shared';
 import { fetchAllBoards, fetchAllBoardTasks } from '../../db/operations';
 import type { TaskLibrary } from '../createPage/useTaskLibrary';
+import { displayedCountFor } from './taskCountDisplay';
 
 /** Type-filter chips on the Tasks tab. Mirrors the wizard's set but
  *  adds ACHIEVEMENT (which the wizard hides because achievements can't
@@ -319,8 +320,11 @@ function matchesStatusFilter(
 }
 
 /**
- * "In progress" predicate. Counting tasks: any `currentCount > 0` and
- * not done. Compound tasks: at least one child Task is completed but
+ * "In progress" predicate. Counting tasks: any DISPLAYED count > 0 and not
+ * done — `displayedCountFor`, so a linked member is measured against its own
+ * baseline and not against its root's lifetime total (RB7); reading
+ * `currentCount` raw here would call every member of a used root "in
+ * progress" the moment its window opened. Compound tasks: at least one child Task is completed but
  * the compound parent isn't (we read child completion state out of
  * `library.taskMap`, which already has all the user's Tasks indexed).
  * Normal + Achievement tasks have no fractional state, so they're
@@ -329,7 +333,10 @@ function matchesStatusFilter(
 export function isInProgress(task: Task, library: TaskLibrary): boolean {
   if (task.isCompleted) return false;
   if (task.type === TaskType.COUNTING) {
-    return (task.currentCount ?? 0) > 0;
+    // RB7 — a linked member's progress is its window's (currentCount minus
+    // baseline), never its root's lifetime total; a member sitting exactly at
+    // its baseline has not started.
+    return displayedCountFor(task) > 0;
   }
   if (task.type === TaskType.COMPOUND) {
     const children = library.compoundChildrenByCompound[task.id] ?? [];

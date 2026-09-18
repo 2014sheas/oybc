@@ -87,6 +87,7 @@ describe('computeRosterHealth', () => {
         supplies: [{ source: boardSource('b1'), supplyTaskIds: nine }],
         deadBoardSourceIds: [],
         manualTaskIds: [],
+        childrenByCompoundId: {},
       },
     };
     const health = computeRosterHealth([t], resolution, tasksById(nine));
@@ -104,6 +105,7 @@ describe('computeRosterHealth', () => {
         ],
         deadBoardSourceIds: ['b-gone'],
         manualTaskIds: [],
+        childrenByCompoundId: {},
       },
     };
     const health = computeRosterHealth([t], resolution, tasksById(nine));
@@ -113,7 +115,7 @@ describe('computeRosterHealth', () => {
   it('a deleted hand-added task badges has_deleted_tasks and stays out of the count', () => {
     const t = makeTemplate({ manualTaskIds: [...nine, 'dead'] });
     const resolution: Record<string, TemplateSupplyResolution> = {
-      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: [...nine, 'dead'] },
+      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: [...nine, 'dead'], childrenByCompoundId: {} },
     };
     const health = computeRosterHealth(
       [t],
@@ -132,6 +134,7 @@ describe('computeRosterHealth', () => {
         supplies: [{ source: poolSource('p1', { max: 4 }), supplyTaskIds: nine }],
         deadBoardSourceIds: [],
         manualTaskIds: [],
+        childrenByCompoundId: {},
       },
     };
     const health = computeRosterHealth([t], resolution, tasksById(nine));
@@ -143,7 +146,7 @@ describe('computeRosterHealth', () => {
     const ids = ['r20', 'r50', ...nine.slice(0, 8)];
     const t = makeTemplate({ manualTaskIds: ids });
     const resolution: Record<string, TemplateSupplyResolution> = {
-      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: ids },
+      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: ids, childrenByCompoundId: {} },
     };
     const health = computeRosterHealth([t], resolution, tasksById(ids, {
       r20: { type: TaskType.COUNTING, maxCount: 20, sharedCounterId: 'r50', baseline: 0 },
@@ -158,7 +161,7 @@ describe('computeRosterHealth', () => {
   it('an empty template badges no_pool_tasks_resolved', () => {
     const t = makeTemplate();
     const resolution: Record<string, TemplateSupplyResolution> = {
-      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: [] },
+      [t.id]: { supplies: [], deadBoardSourceIds: [], manualTaskIds: [], childrenByCompoundId: {} },
     };
     const health = computeRosterHealth([t], resolution, {});
     expect(health.attentionByTemplateId[t.id]).toBe('no_pool_tasks_resolved');
@@ -168,6 +171,39 @@ describe('computeRosterHealth', () => {
     const t = makeTemplate({ seedTaskIds: nine });
     const health = computeRosterHealth([t], {}, {});
     expect(health.mixByTemplateId[t.id]).toEqual(nine);
+    expect(health.attentionByTemplateId[t.id]).toBeUndefined();
+  });
+  it('a Split-up member rule expands the compound into its parts before the count (B2 §Member rules step 1)', () => {
+    // The roster count must be the honest one: a compound member the user
+    // set to "Split up" contributes its parts, so a 1-member pool with a
+    // 3-part compound is 3 squares, not 1 — the same expansion a new
+    // window's assembly performs.
+    const source = poolSource('p1', { memberRules: { c1: { split: true } } });
+    const t = makeTemplate({ sources: [source] });
+    const resolution: Record<string, TemplateSupplyResolution> = {
+      [t.id]: {
+        supplies: [{ source, supplyTaskIds: ['c1', ...nine.slice(0, 6)] }],
+        deadBoardSourceIds: [],
+        manualTaskIds: [],
+        childrenByCompoundId: {
+          c1: [
+            { id: 'l1', compoundTaskId: 'c1', childTaskId: 'k1', childIndex: 0 },
+            { id: 'l2', compoundTaskId: 'c1', childTaskId: 'k2', childIndex: 1 },
+            { id: 'l3', compoundTaskId: 'c1', childTaskId: 'k3', childIndex: 2 },
+          ] as TemplateSupplyResolution['childrenByCompoundId'][string],
+        },
+      },
+    };
+    const tasks = tasksById(['c1', 'k1', 'k2', 'k3', ...nine.slice(0, 6)], {
+      c1: { type: TaskType.COMPOUND },
+    });
+
+    const health = computeRosterHealth([t], resolution, tasks);
+
+    const mix = health.mixByTemplateId[t.id];
+    expect(mix).not.toContain('c1');
+    expect(mix).toEqual(expect.arrayContaining(['k1', 'k2', 'k3']));
+    expect(mix).toHaveLength(9); // 3 parts + 6 plain members = a full 3x3.
     expect(health.attentionByTemplateId[t.id]).toBeUndefined();
   });
 });

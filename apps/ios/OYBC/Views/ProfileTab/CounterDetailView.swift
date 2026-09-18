@@ -1166,7 +1166,7 @@ struct CounterDeleteConfirmView: View {
         childLinkCount: 0,
         parentLinkCount: 0,
         counterMemberCount: 1,
-        counterMembers: [member]
+        counterMembers: [member], derivedWindowCounterCount: 0
     )
     CounterDeleteConfirmView(
         group: group,

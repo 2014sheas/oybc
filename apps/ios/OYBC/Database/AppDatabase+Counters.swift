@@ -167,6 +167,17 @@ extension AppDatabase {
     /// snapshot event is appended. Load-bearing; mirrors the web
     /// implementation's ordering.
     ///
+    /// B2 exception (docs/BOARD_SOURCES.md §Member rules — *Deletion*): a
+    /// member this pipeline minted for one board window
+    /// (`BoardSources.isWindowStampedDerived`) is NOT unlinked — it is
+    /// soft-deleted with its placements and links, because it is an artifact
+    /// of that window rather than a library task the user authored. Unlinking
+    /// it would strand a standalone row on a board the user never hand-added
+    /// it to. The boards those retired members sat on are handed to the
+    /// cascade as extra affected boards so they re-derive in THIS transaction
+    /// (final-review item 10) — the retire happens first, so the cascade could
+    /// not find them itself.
+    ///
     /// - Parameters:
     ///   - sourceId: The counter source task to delete.
     ///   - now: ISO8601 write timestamp.
@@ -178,7 +189,26 @@ extension AppDatabase {
                 .filter(Column("sharedCounterId") == sourceId && Column("isDeleted") == false)
                 .fetchAll(db)
 
-            for var member in members {
+            // Board Sources §Member rules (B2) — the members split two ways.
+            let retiredIds = members.filter { BoardSources.isWindowStampedDerived($0) }.map { $0.id }
+            // Final-review item 10 — capture the boards those members sit on
+            // BEFORE retiring them: the retire runs first, so
+            // `deleteTaskWithCascadeInDb`'s own step-4b lookup finds nothing
+            // left to fold and those boards would never re-derive in this
+            // transaction (a bingo line through a retired cell would keep
+            // glowing until the app-open self-heal). Mirrors what the cascade
+            // does for its own retirees.
+            var retiredBoardIds = Set<String>()
+            if !retiredIds.isEmpty {
+                let retiredIdSet = Set(retiredIds)
+                let placements = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
+                for bt in placements where retiredIdSet.contains(bt.taskId) {
+                    retiredBoardIds.insert(bt.boardId)
+                }
+            }
+            try Self.softDeleteWindowStampedDerived(db: db, taskIds: retiredIds, now: now)
+
+            for var member in members where !BoardSources.isWindowStampedDerived(member) {
                 let derived = deriveDisplayedCount(
                     derivedBaseline: member.baseline ?? 0,
                     derivedMaxCount: member.maxCount ?? 0,
@@ -212,7 +242,9 @@ extension AppDatabase {
                 }
             }
 
-            try Self.deleteTaskWithCascadeInDb(db: db, taskId: sourceId, now: now)
+            try Self.deleteTaskWithCascadeInDb(
+                db: db, taskId: sourceId, now: now, extraAffectedBoardIds: retiredBoardIds
+            )
         }
     }
 }

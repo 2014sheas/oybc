@@ -20,8 +20,13 @@ import {
   derivedTaskId,
   derivedCompoundId,
   derivedLinkId,
+  computeWindowBaseline,
+  isWindowStampedDerived,
+  buildDerivedRows,
 } from '../../src/algorithms/memberRules';
-import type { VaryLevel, BoardSource } from '../../src/types';
+import type { BaselineEvent } from '../../src/algorithms/memberRules';
+import { TaskSchema, CompoundChildSchema } from '../../src/validation/schemas';
+import type { VaryLevel, BoardSource, Task } from '../../src/types';
 
 const V: any = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'memberRuleVectors.json'), 'utf8')
@@ -213,6 +218,9 @@ describe('planDerivedTasks', () => {
       out.derivedCompounds.map((c) => ({
         source: c.sourceCompoundId,
         replaces: c.replacesId,
+        timeframe: c.timeframe,
+        startDate: c.startDate,
+        endDate: c.endDate,
         children: c.children.map((k) => ({
           child: k.childTaskId,
           childIndex: k.childIndex,
@@ -223,6 +231,9 @@ describe('planDerivedTasks', () => {
       v.expected.compounds.map((c: any) => ({
         source: c.source,
         replaces: c.replaces,
+        timeframe: c.timeframe,
+        startDate: c.startDate,
+        endDate: c.endDate,
         children: c.children.map((k: any) => ({ ...k, child: resolveId(k.child) })),
       }))
     );
@@ -241,6 +252,139 @@ describe('planDerivedTasks', () => {
         titledC.operator,
         titledC.threshold,
       ]);
+    }
+  });
+});
+
+// ─── B2: baseline + row building ─────────────────────────────────────────────
+
+describe('computeWindowBaseline', () => {
+  it.each(V.windowBaseline as any[])('$name', (v: any) => {
+    expect(computeWindowBaseline(v.root, v.events as BaselineEvent[], v.boundary)).toBe(v.expected);
+  });
+});
+
+describe('isWindowStampedDerived', () => {
+  const full = {
+    sharedCounterId: '11111111-0000-4000-8000-000000000001',
+    startDate: '2026-09-18',
+    createdInWizard: true,
+  };
+
+  it('all three marks then true', () => {
+    expect(isWindowStampedDerived(full)).toBe(true);
+  });
+
+  it('no sharedCounterId then false (a plain window-scoped counting task)', () => {
+    expect(isWindowStampedDerived({ ...full, sharedCounterId: null })).toBe(false);
+  });
+
+  it('no startDate then false (an ordinary linked counter, not window-stamped)', () => {
+    expect(isWindowStampedDerived({ ...full, startDate: undefined })).toBe(false);
+  });
+
+  it('createdInWizard absent then false (a hand-made linked + timeboxed counter)', () => {
+    expect(isWindowStampedDerived({ ...full, createdInWizard: undefined })).toBe(false);
+  });
+
+  it('createdInWizard explicitly false then false', () => {
+    // The shape a Swift `Bool` (non-optional, defaulting to false) actually
+    // hits — distinct from the absent case above, same answer.
+    expect(isWindowStampedDerived({ ...full, createdInWizard: false })).toBe(false);
+  });
+});
+
+describe('buildDerivedRows', () => {
+  const D = V.derivedRows;
+  /** Fixture id token to its uuid; anything not a token passes through. */
+  const id = (token: string): string => D.ids[token] ?? token;
+  /**
+   * Recursively swap every id token inside a fixture value for its uuid.
+   *
+   * CAUTION: this rewrites EVERY string, not just id-bearing keys — a future
+   * vector whose `title` / `unit` / `name` happened to equal a token ("C",
+   * "R1", "K2") would be silently rewritten into a uuid. Keep the tokens
+   * distinct from any literal text a vector asserts.
+   */
+  const resolve = (value: any): any => {
+    if (Array.isArray(value)) return value.map(resolve);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, resolve(v)]));
+    }
+    return typeof value === 'string' ? id(value) : value;
+  };
+
+  const rootsById = Object.fromEntries(
+    Object.entries(D.roots).map(([token, r]: [string, any]) => [id(token), { id: id(token), ...r }])
+  );
+  const compoundsById = Object.fromEntries(
+    Object.entries(D.compounds).map(([token, c]: [string, any]) => [
+      id(token),
+      { ...c, id: id(token), threshold: c.threshold ?? undefined },
+    ])
+  );
+
+  it('pins this section own derived + link ids as literals', () => {
+    expect(derivedTaskId(D.boardId, id('R1'))).toBe(D.ids['derived:R1']);
+    expect(derivedTaskId(D.boardId, id('R2'))).toBe(D.ids['derived:R2']);
+    expect(derivedCompoundId(D.boardId, id('C'))).toBe(D.ids['derivedCompound:C']);
+    expect(derivedLinkId(D.ids['derivedCompound:C'], D.ids['derived:R1'])).toBe(
+      D.ids['link:derivedCompound:C:derived:R1']
+    );
+    expect(derivedLinkId(D.ids['derivedCompound:C'], id('K2'))).toBe(
+      D.ids['link:derivedCompound:C:K2']
+    );
+  });
+
+  it.each(D.vectors as any[])('$name', (v: any) => {
+    const drafts = resolve(v.drafts);
+    const expected = resolve(v.expected);
+    const out = buildDerivedRows({
+      drafts,
+      userId: D.userId,
+      now: D.now,
+      rootsById,
+      compoundsById,
+    });
+
+    // Order + length in full: derived counters in draft order, then compounds.
+    expect(out.tasks.map((t) => t.id)).toEqual(expected.tasks.map((t: any) => t.id));
+    expect(out.links.map((l) => l.id)).toEqual(expected.links.map((l: any) => l.id));
+
+    out.tasks.forEach((row, i) => {
+      const { expectedAbsent = [], ...fields } = expected.tasks[i];
+      expect(row).toMatchObject(fields);
+      for (const absent of expectedAbsent as string[]) {
+        expect(row[absent as keyof Task]).toBeUndefined();
+      }
+      // Completeness: a forgotten required field fails here, not silently.
+      const parsed = TaskSchema.safeParse(row);
+      if (!parsed.success) {
+        throw new Error(`TaskSchema rejected ${row.id}: ${JSON.stringify(parsed.error.issues)}`);
+      }
+      expect(parsed.success).toBe(true);
+    });
+
+    out.links.forEach((link, i) => {
+      expect(link).toMatchObject(expected.links[i]);
+      const parsed = CompoundChildSchema.safeParse(link);
+      if (!parsed.success) {
+        throw new Error(
+          `CompoundChildSchema rejected ${link.id}: ${JSON.stringify(parsed.error.issues)}`
+        );
+      }
+      expect(parsed.success).toBe(true);
+    });
+
+    // The derived counters keep the draft ids verbatim (the deterministic
+    // uuidv5 minted by planDerivedTasks is the row id — never re-minted here).
+    expect(out.tasks.slice(0, drafts.derivedTasks.length).map((t) => t.id)).toEqual(
+      drafts.derivedTasks.map((d: any) => d.id)
+    );
+    for (const link of out.links) {
+      const parent = out.tasks.find((t) => t.id === link.compoundTaskId);
+      expect(parent?.type).toBe(TaskType.COMPOUND);
+      expect([link.createdAt, link.updatedAt]).toEqual([D.now, D.now]);
     }
   });
 });

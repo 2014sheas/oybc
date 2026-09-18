@@ -628,4 +628,191 @@ final class SyncPullApplyTests: XCTestCase {
         let rows = try syncRows(db).filter { $0.entityType == "tasks" && $0.entityId == tid }
         XCTAssertTrue(rows.isEmpty, "an identical echo must not enqueue a re-assert")
     }
+
+    // MARK: - 5. Board Sources §Member rules (B2): the pull-path baseline refresh
+
+    private let derivedWindowStart = "2026-09-18T00:00:00.000Z"
+
+    /// A window-stamped derived counter (all three marks) hanging off `root`.
+    private func makeDerivedRow(
+        id: String = "derived-1",
+        root: String,
+        baseline: Int,
+        version: Int = 3,
+        updatedAt: String = "2026-09-18T00:00:00.000Z"
+    ) -> Task {
+        Task(
+            id: id, userId: userId, title: "Read 4 pages", type: .counting,
+            action: "Read", unit: "pages", maxCount: 4,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, currentCount: 0,
+            createdAt: updatedAt, updatedAt: updatedAt, version: version, isDeleted: false,
+            timeframe: .daily, startDate: derivedWindowStart,
+            endDate: "2026-09-18T23:59:59.999Z",
+            sharedCounterId: root, baseline: baseline, createdInWizard: true
+        )
+    }
+
+    func test_applyTaskEventsBatch_refreshesDerivedBaselinesNonAuthored() throws {
+        let db = try makeDb(); try seedUser(db)
+        let root = makeTask("root-1", type: .counting, currentCount: 0)
+        let derived = makeDerivedRow(root: "root-1", baseline: 0)
+        try db.write { grdb in
+            try root.save(grdb)
+            try derived.save(grdb)
+        }
+        let sut = makeSut(db)
+
+        // A peer's increment, logged BEFORE this derived row's window opened —
+        // so it belongs to the baseline, not to the window.
+        let raw: [String: Any] = [
+            "id": AppDatabase.generateUUID(), "userId": userId, "taskId": "root-1",
+            "kind": "increment", "delta": 6, "occurredAt": "2026-09-17T08:00:00.000Z",
+            "createdAt": "2026-09-17T08:00:00.000Z", "updatedAt": "2026-09-17T08:00:00.000Z",
+            "version": 1, "isDeleted": false,
+        ]
+        let result = sut.applyTaskEventsBatch(userId: userId, rawDocs: [raw])
+        XCTAssertEqual(result.pulled, 1)
+
+        let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(after.baseline, 6, "the pulled pre-window event moved the baseline")
+        XCTAssertEqual(after.version, derived.version, "non-authored: no version bump")
+        XCTAssertEqual(after.updatedAt, derived.updatedAt, "non-authored: updatedAt untouched")
+        let queued = try db.read { grdb in
+            try SyncQueueItem.filter(Column("entityId") == "derived-1").fetchCount(grdb)
+        }
+        XCTAssertEqual(queued, 0, "non-authored: nothing enqueued for the derived row")
+    }
+
+    func test_healMissingCompletionEvents_refreshesDerivedBaselines() throws {
+        let db = try makeDb(); try seedUser(db)
+        // The fresh-install shape: a counting root whose lifetime cache says 9
+        // but which has NO backing event, so heal mints one dated at its
+        // `updatedAt` — before this derived row's window.
+        var root = makeTask("root-1", type: .counting, currentCount: 9)
+        root.updatedAt = "2026-09-17T08:00:00.000Z"
+        let derived = makeDerivedRow(root: "root-1", baseline: 0)
+        try db.write { grdb in
+            try root.save(grdb)
+            try derived.save(grdb)
+        }
+        let sut = makeSut(db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1)
+
+        let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(after.baseline, 9, "the healed event moved the baseline too")
+        XCTAssertEqual(after.version, derived.version, "non-authored: no version bump")
+        XCTAssertEqual(after.updatedAt, derived.updatedAt, "non-authored: updatedAt untouched")
+        let queued = try db.read { grdb in
+            try SyncQueueItem.filter(Column("entityId") == "derived-1").fetchCount(grdb)
+        }
+        XCTAssertEqual(queued, 0, "non-authored: nothing enqueued for the derived row")
+    }
+
+    // MARK: - 6. Final-review FI1: a `tasks` pull re-derives the landed baseline
+
+    /// Pulled ids must be uuid-shaped — the pull validator rejects anything else.
+    private let fi1RootId = "33333333-0000-4000-8000-000000000001"
+    private let fi1DerivedId = "33333333-0000-4000-8000-000000000002"
+
+
+    /// `baseline` rides the wire, so a device that minted the derived row
+    /// while missing a pre-window increment pushes a SHORT value that wins by
+    /// ordinary LWW. On a device whose event union is complete the ROOT's
+    /// count is NOT short, so the member would read inflated by exactly the
+    /// missing delta until someone incremented that root locally.
+    private func seedRootWithPreWindowEvents(_ db: AppDatabase, total: Int) throws {
+        var root = makeTask(fi1RootId, type: .counting, currentCount: total)
+        root.updatedAt = "2026-09-17T08:00:00.000Z"
+        try db.write { grdb in
+            try root.save(grdb)
+            for (index, delta) in [total - 4, 4].enumerated() {
+                let event = TaskEvent(
+                    id: "ev-\(index)", userId: self.userId, taskId: fi1RootId,
+                    kind: .increment, delta: delta,
+                    occurredAt: "2026-09-17T08:00:00.000Z", boardId: nil,
+                    createdAt: "2026-09-17T08:00:00.000Z",
+                    updatedAt: "2026-09-17T08:00:00.000Z",
+                    lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+                )
+                try event.save(grdb)
+            }
+        }
+    }
+
+    private func derivedRemoteDoc(baseline: Int, startDate: String) -> [String: Any] {
+        [
+            "id": fi1DerivedId, "userId": userId, "title": "Read 4 pages",
+            "type": "counting", "action": "Read", "unit": "pages", "maxCount": 4,
+            "isCompleted": false, "currentCount": 14,
+            "totalCompletions": 0, "totalInstances": 0,
+            "sharedCounterId": fi1RootId, "baseline": baseline,
+            "createdInWizard": true, "timeframe": "daily",
+            "startDate": startDate, "endDate": "2026-09-18T23:59:59.999",
+            "createdAt": "2026-09-18T00:00:00.000Z",
+            "updatedAt": "2026-09-18T00:00:00.000Z",
+            "version": 3, "isDeleted": false,
+        ]
+    }
+
+    func test_tasksPull_reDerivesAShortDerivedBaselineNonAuthored() throws {
+        let db = try makeDb(); try seedUser(db)
+        try seedRootWithPreWindowEvents(db, total: 14)
+        let sut = makeSut(db)
+
+        // Remote baseline is short by the 4 the minting device never saw.
+        sut.applyRemoteSubdoc(
+            collection: taskCol,
+            remoteData: derivedRemoteDoc(baseline: 10, startDate: derivedWindowStart),
+            authenticatedUserId: userId
+        )
+
+        let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: fi1DerivedId) })
+        XCTAssertEqual(after.baseline, 14, "re-derived from the LOCAL event union")
+        XCTAssertEqual(after.version, 3, "non-authored: the pulled version stands")
+        XCTAssertEqual(after.updatedAt, "2026-09-18T00:00:00.000Z", "non-authored: updatedAt untouched")
+        let queued = try db.read { grdb in
+            try SyncQueueItem.filter(Column("entityId") == fi1DerivedId).fetchCount(grdb)
+        }
+        XCTAssertEqual(queued, 0, "non-authored: nothing enqueued for the derived row")
+    }
+
+    /// Item 4 — the PRODUCTION string shape. Every other seam fixture here
+    /// uses a UTC `…Z` window bound, while the wizard actually writes
+    /// `wizardLocalISOString` (no offset). The mixed-form instant comparison
+    /// is vector-pinned, but the write paths were never run against the shape
+    /// production feeds them.
+    func test_tasksPull_reDerivesBaselineForAnOffsetLessLocalISOWindow() throws {
+        let db = try makeDb(); try seedUser(db)
+        try seedRootWithPreWindowEvents(db, total: 14)
+        let sut = makeSut(db)
+
+        sut.applyRemoteSubdoc(
+            collection: taskCol,
+            // No offset, no Z — exactly what `wizardLocalISOString` writes.
+            remoteData: derivedRemoteDoc(baseline: 0, startDate: "2026-09-18T00:00:00"),
+            authenticatedUserId: userId
+        )
+
+        let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: fi1DerivedId) })
+        XCTAssertEqual(
+            after.baseline, 14,
+            "a local-ISO boundary parses, so both pre-window events count"
+        )
+    }
+
+    func test_tasksPull_leavesAHandMadeLinkedCounterBaselineAlone() throws {
+        let db = try makeDb(); try seedUser(db)
+        try seedRootWithPreWindowEvents(db, total: 14)
+        let sut = makeSut(db)
+
+        var doc = derivedRemoteDoc(baseline: 0, startDate: derivedWindowStart)
+        doc["createdInWizard"] = false
+        doc.removeValue(forKey: "startDate")
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: doc, authenticatedUserId: userId)
+
+        let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: fi1DerivedId) })
+        XCTAssertEqual(after.baseline, 0, "not window-stamped — this pipeline must not touch it")
+    }
 }

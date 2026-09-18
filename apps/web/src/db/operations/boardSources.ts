@@ -1,5 +1,6 @@
 import { db } from '../internal';
 import { healBoardNames } from './boardNames';
+import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
 import {
   boardDisplayName,
   BoardStatus,
@@ -9,9 +10,11 @@ import {
   poolSourceSupplyById,
   resolveTaskWindowState,
   sourcesForRecord,
+  TaskType,
   toLocalISO,
   type Board,
   type BoardSourceSupply,
+  type CompoundChild,
   type RecurringBoardTemplate,
   type Task,
   type TaskEvent,
@@ -234,6 +237,11 @@ export interface TemplateSupplyResolution {
   /** The record's effective hand-added layer (the un-migrated M2 rule:
    *  a record with no generalized fields treats `seedTaskIds` as manual). */
   manualTaskIds: string[];
+  /** B2 (§Member rules — *Resolution pipeline* step 1): live
+   *  `compound_children` rows for every COMPOUND member of `supplies`, so a
+   *  reader can run `applyMemberRules` (the Split-up expansion) before
+   *  counting. Empty when the supplies carry no compound. */
+  childrenByCompoundId: Record<string, CompoundChild[]>;
 }
 
 /**
@@ -339,7 +347,44 @@ export async function fetchTemplateSupplyResolution(
       supplies,
       deadBoardSourceIds,
       manualTaskIds: entry.manualTaskIds,
+      childrenByCompoundId: {},
     };
+  }
+
+  // B2 (§Member rules step 1) — the Split-up expansion needs each COMPOUND
+  // member's children, and the readers that then count the expansion need
+  // those children in `tasksById` (a part the map doesn't know is a part the
+  // roster silently drops). One links fetch + one tasks fetch for the whole
+  // roster, after `tasksById` exists — which member ids are compounds is not
+  // knowable before it.
+  const compoundIds = new Set<string>();
+  for (const resolution of Object.values(byTemplateId)) {
+    for (const supply of resolution.supplies) {
+      for (const id of supply.supplyTaskIds) {
+        if (tasksById[id]?.type === TaskType.COMPOUND) compoundIds.add(id);
+      }
+    }
+  }
+  if (compoundIds.size > 0) {
+    const childrenByCompoundId: Record<string, CompoundChild[]> = {};
+    const childTaskIds = new Set<string>();
+    for (const link of await fetchCompoundChildrenByCompoundIds([...compoundIds])) {
+      (childrenByCompoundId[link.compoundTaskId] ??= []).push(link);
+      if (tasksById[link.childTaskId] === undefined) childTaskIds.add(link.childTaskId);
+    }
+    if (childTaskIds.size > 0) {
+      for (const t of await db.tasks.where('id').anyOf([...childTaskIds]).toArray()) {
+        tasksById[t.id] = t;
+      }
+    }
+    for (const resolution of Object.values(byTemplateId)) {
+      for (const supply of resolution.supplies) {
+        for (const id of supply.supplyTaskIds) {
+          const links = childrenByCompoundId[id];
+          if (links !== undefined) resolution.childrenByCompoundId[id] = links;
+        }
+      }
+    }
   }
   return { byTemplateId, tasksById };
 }
