@@ -37,20 +37,23 @@ describe('RecurringBoardTemplate.manualTaskVary (Zod)', () => {
   });
 });
 
-describe('worst-case template size vs the 10 000 Firestore cap', () => {
-  it('20 board sources × 8 members × 3 parts each stays under 10 000 bytes', () => {
+describe('worst-case template size — payload-regression guard', () => {
+  it('worst-case template stays under the 64 KiB payload regression guard', () => {
     const sources = Array.from({ length: 20 }, (_, s) => ({ ...base, sourceId: T(100 + s), min: 1, max: 5,
       memberRules: Object.fromEntries(Array.from({ length: 8 }, (_, m) => [T(1000 + s * 10 + m), {
         target: 12, vary: 1, split: true, parts: { [T(1)]: { target: 3, vary: 2 }, [T(2)]: { excluded: true }, [T(3)]: { vary: 1 } } }])) }));
     const bytes = Buffer.byteLength(JSON.stringify({ sources }), 'utf8');
     expect(bytes).toBeGreaterThan(9000);   // guard that the fixture is actually worst-case-ish
     // Measured worst case (20 sources × 8 members × 3 parts): 43 193 bytes —
-    // well over the originally guessed 10 000-byte cap. Per the Task 2 brief
-    // this is NOT a reason to shrink the fixture; it's the spec's "bump the
-    // cap if needed" trigger (docs/BOARD_SOURCES.md §Member rules), reported
-    // to the controller in the Task 2 report for a B2 follow-up decision.
-    // Assert against the actual measured ceiling with headroom so this test
-    // still documents/guards the real shape rather than a false 10 000 bound.
-    expect(bytes).toBeLessThan(50000);
+    // well over the 10 000 the spec originally guessed at.
+    //
+    // This bound is a PAYLOAD-REGRESSION GUARD ONLY: it says "the worst-case
+    // record has not grown past 64 KiB since it was measured", and nothing
+    // about any Firestore limit. It is NOT the `firestore.rules` cap —
+    // security rules expose no byte-size API to assert against (`.size()` on
+    // a map is a KEY count), so what that clause actually measures, and the
+    // real per-document ceiling, are settled by a B2 emulator test that
+    // writes a worst-case record, not by this file.
+    expect(bytes).toBeLessThan(65536);
   });
 });

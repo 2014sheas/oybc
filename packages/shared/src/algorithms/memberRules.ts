@@ -218,7 +218,16 @@ export function applyMemberRules(
         out.push(id);
         continue;
       }
-      const ordered = [...kids].sort((a, b) => a.childIndex - b.childIndex).map((k) => k.childTaskId);
+      // Total comparator — `childIndex`, then `childTaskId`. Duplicate indexes
+      // exist in stored rows and Swift's `sorted` is NOT stable, so a tie left
+      // to insertion order would expand in a different order on each platform.
+      const ordered = [...kids]
+        .sort(
+          (a, b) =>
+            a.childIndex - b.childIndex ||
+            (a.childTaskId < b.childTaskId ? -1 : a.childTaskId > b.childTaskId ? 1 : 0)
+        )
+        .map((k) => k.childTaskId);
       const kept = ordered.filter((c) => !rule.parts?.[c]?.excluded);
       for (const c of kept.length > 0 ? kept : ordered) {
         out.push(c);
@@ -347,15 +356,21 @@ function goalOf(t: PlanTask): number | null {
  * `target` — member-level OR part-level — is honoured on board sources only
  * (a pool member offers vary / split / part-exclusion and nothing else).
  *
- * One deliberate simplification: if two selected members share a shared-counter
- * root, they collapse onto ONE derived counter (the first one's roll) — the
- * second member's roll has already consumed an rng sample before the dedupe is
- * seen, AND both members still push that one derived id into `placementIds`,
- * so the same id can appear twice. B2 must dedupe before writing `board_tasks`
- * (two rows for one task would trip the placement-integrity / isCenter-
- * uniqueness guards in docs/BOARD_INTEGRITY.md). Counter-family exclusivity
- * means the board shouldn't contain two members of one family in the first
- * place, so this is a belt-and-braces path — but Task 5 must mirror it exactly.
+ * Collapse rule: two things that share a shared-counter root resolve to ONE
+ * derived counter (the first one's roll). The dedupe is checked BEFORE the
+ * roll, so a collapsed occurrence consumes no rng sample on either platform.
+ * Two collapsed SELECTED members still both push that one derived id into
+ * `placementIds`, so the same id can appear twice there — B2 must dedupe
+ * before writing `board_tasks` (two rows for one task would trip the
+ * placement-integrity / isCenter-uniqueness guards in docs/BOARD_INTEGRITY.md).
+ * Two collapsed PARTS of one One-square compound are deduped here instead
+ * (first in `childIndex` order wins, keeping its own `childIndex`/`linkId`),
+ * because `derivedLinkId` is a pure function of `(compound, child)`: a repeated
+ * `childTaskId` is the same `compound_children` primary key written twice, and
+ * a compound whose `threshold` counts children would count one child twice.
+ * Counter-family exclusivity constrains board *selection*, not compound
+ * *authorship*, so the part case is ordinary user data while the member case
+ * is belt-and-braces — the Swift twin mirrors both exactly.
  *
  * @param args - See {@link PlanDerivedTasksArgs}.
  * @returns Placement ids plus the derived drafts they refer to.
@@ -411,9 +426,12 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
   const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel): DerivedTaskDraft => {
     const goal = goalOf(t)!;
     const root = t.sharedCounterId ?? t.id;
-    const maxCount = rollTarget(target, vary, goal, rng);
+    // The dedupe is checked BEFORE the roll: a collapsed occurrence consumes
+    // no rng sample, so a seeded sequence reproduces identically on both
+    // platforms regardless of how many members/parts share the root.
     const existing = derivedByRoot.get(root);
     if (existing) return existing; // same root twice on one board → one derived counter
+    const maxCount = rollTarget(target, vary, goal, rng);
     const action = t.action ?? '';
     const unit = t.unit ?? '';
     const d: DerivedTaskDraft = {
@@ -498,7 +516,14 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
 
     if (t.type === TaskType.COMPOUND && sup && !rules[id]?.split) {
       const rule = rules[id];
-      const kids = [...(childrenByCompoundId[id] ?? [])].sort((a, b) => a.childIndex - b.childIndex);
+      // Total comparator, as in `applyMemberRules` — `childIndex` then
+      // `childTaskId`, so a duplicate index can't roll in a different order
+      // (and consume the seeded rng differently) on the two platforms.
+      const kids = [...(childrenByCompoundId[id] ?? [])].sort(
+        (a, b) =>
+          a.childIndex - b.childIndex ||
+          (a.childTaskId < b.childTaskId ? -1 : a.childTaskId > b.childTaskId ? 1 : 0)
+      );
       if (!rule || kids.length === 0) {
         placementIds.push(id);
         continue;
@@ -525,15 +550,23 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         continue;
       }
       const cid = derivedCompoundId(boardId, id);
-      const children: DerivedCompoundChildDraft[] = plans.map((p) => {
+      const children: DerivedCompoundChildDraft[] = [];
+      const seenChildIds = new Set<string>();
+      for (const p of plans) {
         const childTaskId = p.derive ? mint(p.c, p.k.childTaskId, p.target, p.vary).id : p.k.childTaskId;
-        return {
+        // Two parts that collapse onto one derived counter (same shared-counter
+        // root) would otherwise emit the same `childTaskId` — and the same
+        // `linkId` — twice. First in `childIndex` order wins, keeping its own
+        // `childIndex` and `linkId`.
+        if (seenChildIds.has(childTaskId)) continue;
+        seenChildIds.add(childTaskId);
+        children.push({
           linkId: derivedLinkId(cid, childTaskId),
           childTaskId,
           childIndex: p.k.childIndex,
           isDerived: p.derive,
-        };
-      });
+        });
+      }
       derivedCompounds.push({
         id: cid,
         sourceCompoundId: id,

@@ -256,7 +256,13 @@ extension BoardSources {
                     out.append(id)
                     continue
                 }
-                let ordered = kids.sorted { $0.childIndex < $1.childIndex }.map(\.childTaskId)
+                // Total comparator — `childIndex`, then `childTaskId`.
+                // Duplicate indexes exist in stored rows and `sorted` is NOT
+                // stable, so a tie left to insertion order would expand in a
+                // different order than the (stable-sorting) TS twin.
+                let ordered = kids
+                    .sorted { ($0.childIndex, $0.childTaskId) < ($1.childIndex, $1.childTaskId) }
+                    .map(\.childTaskId)
                 let kept = ordered.filter { rule?.parts?[$0]?.excluded != true }
                 for child in (kept.isEmpty ? ordered : kept) {
                     out.append(child)
@@ -376,15 +382,21 @@ extension BoardSources {
     /// honoured on board sources only (a pool member offers vary / split /
     /// part-exclusion and nothing else).
     ///
-    /// One deliberate simplification, mirrored verbatim from the TS twin: if
-    /// two selected members share a shared-counter root they collapse onto
-    /// ONE derived counter (the first one's roll) — the second member's roll
-    /// has already consumed an rng sample before the dedupe is seen, AND
-    /// both members still push that one derived id into `placementIds`, so
-    /// the same id can appear twice. B2 must dedupe before writing
-    /// `board_tasks`. Counter-family exclusivity means a board shouldn't
-    /// carry two members of one family in the first place, so this is a
-    /// belt-and-braces path.
+    /// Collapse rule, mirrored verbatim from the TS twin: two things that
+    /// share a shared-counter root resolve to ONE derived counter (the first
+    /// one's roll). The dedupe is checked BEFORE the roll, so a collapsed
+    /// occurrence consumes no rng sample. Two collapsed SELECTED members
+    /// still both push that one derived id into `placementIds`, so the same
+    /// id can appear twice there — B2 must dedupe before writing
+    /// `board_tasks`. Two collapsed PARTS of one One-square compound are
+    /// deduped here instead (first in `childIndex` order wins, keeping its
+    /// own `childIndex`/`linkId`), because `derivedLinkId` is a pure function
+    /// of `(compound, child)`: a repeated `childTaskId` is one
+    /// `compound_children` primary key written twice, and a compound whose
+    /// `threshold` counts children would count one child twice.
+    /// Counter-family exclusivity constrains board *selection*, not compound
+    /// *authorship*, so the part case is ordinary user data while the member
+    /// case is belt-and-braces.
     ///
     /// - Parameters:
     ///   - selectedIds: The task ids picked for the board, in placement order.
@@ -469,10 +481,11 @@ extension BoardSources {
             // `goalOf` is non-nil at every call site (each branch checks first).
             let goal = goalOf(task) ?? 1
             let root = task.sharedCounterId ?? task.id
-            // The roll happens BEFORE the dedupe check: the rng sample is
-            // consumed either way (TS twin, verbatim).
-            let maxCount = rollTarget(t: target, level: vary, goal: goal, rng: rng)
+            // The dedupe is checked BEFORE the roll: a collapsed occurrence
+            // consumes no rng sample, so a seeded sequence reproduces
+            // identically on both platforms (TS twin, verbatim).
             if let existing = derivedByRoot[root] { return existing }
+            let maxCount = rollTarget(t: target, level: vary, goal: goal, rng: rng)
             let action = task.action ?? ""
             let unit = task.unit ?? ""
             let draft = DerivedTaskDraft(
@@ -574,7 +587,11 @@ extension BoardSources {
             }
 
             if task.type == .compound, supply != nil, rules[id]?.split != true {
-                let kids = (childrenByCompoundId[id] ?? []).sorted { $0.childIndex < $1.childIndex }
+                // Total comparator, as in `applyMemberRules` — a duplicate
+                // `childIndex` must not roll in a different order (and so
+                // consume the seeded rng differently) than the TS twin.
+                let kids = (childrenByCompoundId[id] ?? [])
+                    .sorted { ($0.childIndex, $0.childTaskId) < ($1.childIndex, $1.childTaskId) }
                 guard let rule = rules[id], !kids.isEmpty else {
                     placementIds.append(id)
                     continue
@@ -605,7 +622,9 @@ extension BoardSources {
                     continue
                 }
                 let compoundId = derivedCompoundId(boardId: boardId, compoundId: id)
-                let children: [DerivedCompoundChildDraft] = plans.map { plan in
+                var children: [DerivedCompoundChildDraft] = []
+                var seenChildIds = Set<String>()
+                for plan in plans {
                     let childTaskId: String
                     if plan.derive, let child = plan.child {
                         childTaskId = mint(
@@ -617,12 +636,18 @@ extension BoardSources {
                     } else {
                         childTaskId = plan.link.childTaskId
                     }
-                    return DerivedCompoundChildDraft(
+                    // Two parts that collapse onto one derived counter (same
+                    // shared-counter root) would otherwise emit the same
+                    // `childTaskId` — and the same `linkId` — twice. First in
+                    // `childIndex` order wins, keeping its own `childIndex`
+                    // and `linkId`.
+                    guard seenChildIds.insert(childTaskId).inserted else { continue }
+                    children.append(DerivedCompoundChildDraft(
                         linkId: derivedLinkId(derivedCompoundId: compoundId, childId: childTaskId),
                         childTaskId: childTaskId,
                         childIndex: plan.link.childIndex,
                         isDerived: plan.derive
-                    )
+                    ))
                 }
                 derivedCompounds.append(DerivedCompoundDraft(
                     id: compoundId,

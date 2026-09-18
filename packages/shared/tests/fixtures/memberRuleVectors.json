@@ -40,8 +40,8 @@
     { "name": "t above goal, level 0 then clamped goal", "t": 50, "level": 0, "goal": 20, "seed": null, "expected": 20 }
   ],
   "applyMemberRules": {
-    "tasks": { "A": "counting", "C": "compound", "c1": "counting", "c2": "normal", "c3": "counting", "D": "compound", "E": "compound" },
-    "children": { "C": ["c1", "c2", "c3"], "D": [], "E": [{ "childTaskId": "c3", "childIndex": 1 }, { "childTaskId": "c1", "childIndex": 0 }] },
+    "tasks": { "A": "counting", "C": "compound", "c1": "counting", "c2": "normal", "c3": "counting", "D": "compound", "E": "compound", "F": "compound" },
+    "children": { "C": ["c1", "c2", "c3"], "D": [], "E": [{ "childTaskId": "c3", "childIndex": 1 }, { "childTaskId": "c1", "childIndex": 0 }], "F": [{ "childTaskId": "c3", "childIndex": 0 }, { "childTaskId": "c1", "childIndex": 0 }] },
     "vectors": [
       { "name": "no rules then identity, empty partOf", "supply": ["A", "C"], "memberRules": {}, "expected": ["A", "C"], "expectedPartOf": {} },
       { "name": "split with one excluded part", "supply": ["A", "C"], "memberRules": { "C": { "split": true, "parts": { "c2": { "excluded": true } } } }, "expected": ["A", "c1", "c3"], "expectedPartOf": { "c1": "C", "c3": "C" } },
@@ -51,7 +51,8 @@
       { "name": "split on a non-compound member then member stays", "supply": ["A"], "memberRules": { "A": { "split": true } }, "expected": ["A"], "expectedPartOf": {} },
       { "name": "split on a childless compound then member stays", "supply": ["D"], "memberRules": { "D": { "split": true } }, "expected": ["D"], "expectedPartOf": {} },
       { "name": "One-square (split false) is not expanded", "supply": ["C"], "memberRules": { "C": { "vary": 1 } }, "expected": ["C"], "expectedPartOf": {} },
-      { "name": "split expands in childIndex order, not array order", "supply": ["E"], "memberRules": { "E": { "split": true } }, "expected": ["c1", "c3"], "expectedPartOf": { "c1": "E", "c3": "E" }, "note": "E's children are stored [c3 (childIndex 1), c1 (childIndex 0)], so array order would give [c3, c1]. The sort by childIndex is what makes the expansion deterministic across platforms." }
+      { "name": "split expands in childIndex order, not array order", "supply": ["E"], "memberRules": { "E": { "split": true } }, "expected": ["c1", "c3"], "expectedPartOf": { "c1": "E", "c3": "E" }, "note": "E's children are stored [c3 (childIndex 1), c1 (childIndex 0)], so array order would give [c3, c1]. The sort by childIndex is what makes the expansion deterministic across platforms." },
+      { "name": "duplicate childIndex breaks the tie on childTaskId, not insertion order", "supply": ["F"], "memberRules": { "F": { "split": true } }, "expected": ["c1", "c3"], "expectedPartOf": { "c1": "F", "c3": "F" }, "note": "F's children are stored [c3, c1] and BOTH carry childIndex 0. A comparator on childIndex alone is not total: TS's stable sort would keep insertion order ([c3, c1]) while Swift's unstable `sorted` may not, so the two platforms could expand the same compound in different orders. The comparator is (childIndex, childTaskId), so the tie resolves to [c1, c3] on both." }
     ]
   },
   "planDerivedTasks": {
@@ -67,10 +68,12 @@
       "c3": { "type": "counting", "title": "Walk 20 blocks", "action": "Walk", "unit": "blocks", "maxCount": 20 },
       "C2": { "type": "compound", "title": "Evening", "operator": "OR", "threshold": null },
       "a1": { "type": "counting", "title": "Meditate", "maxCount": 12 },
-      "w1": { "type": "counting", "title": "Read 5 pages", "action": "Read", "unit": "pages", "maxCount": 5, "sharedCounterId": "r1", "startDate": "2026-09-17" }
+      "w1": { "type": "counting", "title": "Read 5 pages", "action": "Read", "unit": "pages", "maxCount": 5, "sharedCounterId": "r1", "startDate": "2026-09-17" },
+      "c4": { "type": "counting", "title": "Run 4 miles", "action": "Run", "unit": "miles", "maxCount": 4, "sharedCounterId": "r2" },
+      "C3": { "type": "compound", "title": "Legs", "operator": "AND", "threshold": null }
     },
-    "children": { "C": ["c1", "c2"], "C2": [{ "childTaskId": "c1", "childIndex": 1 }, { "childTaskId": "c3", "childIndex": 0 }] },
-    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly" },
+    "children": { "C": ["c1", "c2"], "C2": [{ "childTaskId": "c1", "childIndex": 1 }, { "childTaskId": "c3", "childIndex": 0 }], "C3": ["r2", "c4"] },
+    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly", "c4": "monthly" },
     "baselines": { "r1": 12, "r2": 3, "c1": 0, "c3": 0, "a1": 0 },
     "vectors": [
       { "name": "board counting auto (recurring): r1 35 weekly to daily gives 5; baseline 12", "mode": "recurring", "selected": ["r1"], "supplies": [{ "kind": "board", "supply": ["r1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42,
@@ -129,7 +132,15 @@
         "expected": { "placement": ["C"], "derived": [], "compounds": [] } },
       { "name": "action-less counting member keeps its own title", "mode": "recurring", "selected": ["a1"], "supplies": [{ "kind": "board", "supply": ["a1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42,
         "note": "a1 has no action and no unit, so the derived draft carries action = \"\" and unit = \"\" and the title falls back to the source task's own title rather than a generated \"<action> <n> <unit>\" string. Target is autoTarget(12,7,1) = min(12, ceil(12/7) = 2) = 2, vary 0 so the rng is untouched.",
-        "expected": { "placement": ["derived:a1"], "derived": [{ "root": "a1", "sourceMember": "a1", "replaces": "a1", "maxCount": 2, "baseline": 0, "title": "Meditate", "action": "", "unit": "" }], "compounds": [] } }
+        "expected": { "placement": ["derived:a1"], "derived": [{ "root": "a1", "sourceMember": "a1", "replaces": "a1", "maxCount": 2, "baseline": 0, "title": "Meditate", "action": "", "unit": "" }], "compounds": [] } },
+      { "name": "two parts of one compound sharing a counter root collapse to ONE child and take NO extra sample", "mode": "recurring", "selected": ["C3"], "supplies": [{ "kind": "board", "supply": ["C3"], "memberRules": { "C3": { "vary": 1 } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
+        "note": "C3's children are r2 (childIndex 0, its own root) and c4 (childIndex 1, sharedCounterId r2) - the same counter family authored twice inside one compound, which counter-family exclusivity does NOT prevent (it constrains board selection, not compound authorship). r2: goal 10, monthly source to a daily board, autoTarget = min(10, ceil(10 x 1 / 30) = 1) = 1; varyRange(1, 1, 10) = [max(1, round(0.8)) = 1, min(10, round(1.2)) = 1] = [1,1], so lo == hi and the roll takes no sample. c4: goal 4, root r2, so the per-root dedupe hits BEFORE the roll and c4 takes no sample either - hence expectedRngCalls 0. Both parts resolve to the SAME derived id, so the children list collapses to one entry (first in childIndex order, keeping childIndex 0); without the collapse the compound would carry one childTaskId - and one linkId, a pure function of (compound, child) - twice.",
+        "expected": { "placement": ["derivedCompound:C3"], "derived": [{ "root": "r2", "sourceMember": "r2", "replaces": "r2", "maxCount": 1, "baseline": 3 }],
+          "compounds": [{ "source": "C3", "replaces": "C3", "title": "Legs", "operator": "AND", "threshold": null, "children": [{ "child": "derived:r2", "childIndex": 0, "isDerived": true }] }] } },
+      { "name": "the per-root dedupe is checked BEFORE the roll: a collapsed part consumes no sample", "mode": "recurring", "selected": ["C3"], "supplies": [{ "kind": "board", "supply": ["C3"], "memberRules": { "C3": { "vary": 1, "parts": { "c4": { "target": 5 } } } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
+        "note": "The discriminating twin of the vector above. There c4's own range was degenerate ([1,1]) so the sample count could not tell roll-then-dedupe from dedupe-then-roll. Here c4 carries an explicit part target 5, clamped to its goal 4, and varyRange(4, 1, 4) = [max(1, round(3.2)) = 3, min(4, round(4.8) = 5) = 4] = [3,4] - a NON-degenerate range that would consume a sample if the roll ran. It must not: c4's root is r2, which r2 (childIndex 0) already minted, so the dedupe returns that draft before rolling and expectedRngCalls stays 0. Roll-before-dedupe would make it 1 and leave the seeded sequence dependent on how many members happen to collapse. r2 itself is unchanged (auto target 1, [1,1], no sample), and the collapsed children list is the same single entry.",
+        "expected": { "placement": ["derivedCompound:C3"], "derived": [{ "root": "r2", "sourceMember": "r2", "replaces": "r2", "maxCount": 1, "baseline": 3 }],
+          "compounds": [{ "source": "C3", "replaces": "C3", "title": "Legs", "operator": "AND", "threshold": null, "children": [{ "child": "derived:r2", "childIndex": 0, "isDerived": true }] }] } }
     ],
     "idPinsNote": "Literal uuidv5 outputs, computed ONCE with the TS uuidv5 (default OYBC namespace). Swift must reproduce them independently. Names: 'sources:derived:<boardId>:<root>', 'sources:derived-compound:<boardId>:<compound>', 'sources:derived-link:<derivedCompoundId>:<childId>'. The link name's <childId> is the LITERAL child task id - a derived uuid for a derived child, the raw source id for an original one. idPins itself is a clean token -> uuid map with no stray keys.",
     "idPins": {
@@ -143,7 +154,9 @@
       "derived:a1": "b6a8ec2d-c0cd-5c4b-bda4-c01e6c9e2c73",
       "derivedCompound:C2": "9b9b9efe-c539-5d86-a5f5-aa1fd0b0ca70",
       "link:derivedCompound:C2:derived:c3": "b794e815-7195-596e-bb9a-16a334561fed",
-      "link:derivedCompound:C2:derived:c1": "165ac015-fda4-5add-ab66-686cd76df9fa"
+      "link:derivedCompound:C2:derived:c1": "165ac015-fda4-5add-ab66-686cd76df9fa",
+      "derivedCompound:C3": "d22cf840-69ca-512a-8851-01425f821a12",
+      "link:derivedCompound:C3:derived:r2": "0709d2f6-ca2a-56bf-be5b-7adaff36a1c6"
     }
   }
 }

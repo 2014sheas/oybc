@@ -94,9 +94,13 @@ function isBoardSource(value: unknown): value is BoardSource {
   );
 }
 
-/** Drops keys whose value isn't a valid {@link VaryLevel}; keeps the rest. */
+/**
+ * Drops keys whose value isn't a valid {@link VaryLevel}; keeps the rest.
+ * An array is rejected outright (`typeof [] === 'object'`, so it would
+ * otherwise decode to index keys) — same "converge to no dice" intent.
+ */
 function sanitizeVary(v: unknown): Record<string, VaryLevel> {
-  if (v === null || typeof v !== 'object') return {};
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return {};
   const out: Record<string, VaryLevel> = {};
   for (const [k, lvl] of Object.entries(v as Record<string, unknown>))
     if (lvl === 0 || lvl === 1 || lvl === 2) out[k] = lvl;

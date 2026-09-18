@@ -167,6 +167,22 @@ describe('manualTaskVary (additive, v stays 2)', () => {
     expect(p.manualTaskVary).toEqual({ t2: 1 });
   });
 
+  it('rejects an array manualTaskVary outright (no index keys)', () => {
+    const p = decodeRecurringDraftMix(
+      JSON.stringify({
+        v: 2,
+        poolIds: [],
+        manualTaskIds: [],
+        removedTaskIds: [],
+        sources: [],
+        manualTaskVary: [1, 2],
+      }),
+    );
+    // `typeof [] === 'object'`, so without the Array.isArray reject this
+    // would decode to { '0': 1, '1': 2 } instead of converging to no dice.
+    expect(p.manualTaskVary).toEqual({});
+  });
+
   it('a source carrying memberRules passes the shape check and round-trips verbatim', () => {
     const s = {
       sourceId: 's1',
