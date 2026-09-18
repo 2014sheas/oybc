@@ -235,7 +235,7 @@ worktrees off dev, zero file overlap):
   `FilterTabs`→`RisoChip` / `TypeBadge`→`RisoTypeBadge` in BuildStep + SubtaskCard.
 - **b3 — From-a-board + modals** (PR #178): `FromBoardGrid`/`FromBoardPicker` CSS;
   the 3 inline-styled modals (`CopyTaskModal`/`DeriveCounterModal`/`RowContextMenu`)
-  converted to `.module.css`. FREE center uses `--riso-ink-static`.
+  converted to `.module.css`. FREE center uses `--riso-ink-static`. *(FromBoardGrid/FromBoardPicker/CopyTaskModal retired 2026-09 in Plan A; DeriveCounterModal + RowContextMenu remain.)*
 
 **⚠️ Recurring re-skin gotcha (caught 4× now — b3 once, b2 thrice):** never use
 adaptive `var(--riso-ink)` as a **fill** behind static `var(--riso-on-color)`
@@ -430,7 +430,7 @@ SelectableTaskItem, SubtaskChip. Dev-only `/playground` is gated, not re-skinned
 | 4b-ii-a | Wizard Tasks step — main surface (count/search/list/rows) + shared RisoTypeBadge | **shipped** |
 | 4b-ii-b1 | New-task sheet + create form (normal/counting/achievement) + counting template picker | **shipped** |
 | 4b-ii-b2 | Compound builder (compositeWizard/*) | **shipped** |
-| 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | **shipped** |
+| 4b-ii-b3 | From-a-board picker + the 3 inline-styled modals (Copy/DeriveCounter/RowContextMenu) | **shipped**; picker + Copy modal retired 2026-09 (Plan A) |
 | 5a-i | Profile (You tab) main + shared sub-page styles + Sync row (3-state, leak fixed) | **shipped** |
 | 5a-ii | Profile sub-pages — Board preferences, Recurring templates, Default pools | **shipped** |
 | 5b-i | Account & security (net-new) — auth layer + Sign-in section (change email/password, add password, reauth) | **shipped** |

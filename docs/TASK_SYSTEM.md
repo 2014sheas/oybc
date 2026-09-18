@@ -374,7 +374,7 @@ The unification collapsed these at the model level; the physical SQLite tables (
 
 ### Library / wizard tabs
 
-Filter chips on the wizard's Tasks step: **All / Normal / Counting / Compound**, plus the contextual **From parent boards** and **From a board…** source pickers. Progress and Composite were collapsed into a single **Compound** chip. The Tasks tab additionally surfaces an **Achievement** chip; Achievement is hidden from the wizard's boardable picker.
+Filter chips on the wizard's Tasks step: **All / Normal / Counting / Compound**, plus the contextual **From parent boards** chip (timeframes with parents only). The "From a board…" grid picker was retired in Plan A of the Board Sources member-rules train. Progress and Composite were collapsed into a single **Compound** chip. The Tasks tab additionally surfaces an **Achievement** chip; Achievement is hidden from the wizard's boardable picker.
 
 ### Creating a task
 
