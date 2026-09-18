@@ -379,6 +379,35 @@ export async function windowStampedDerivedIdsForRoot(rootTaskId: string): Promis
 }
 
 /**
+ * Does this task still have a live placement somewhere other than `boardId`?
+ *
+ * RB5's test, factored out so the placed sweep and the compound-part sweep
+ * below cannot drift apart: a live placement is a `board_tasks` row with
+ * `isDeleted === false` whose board is ALSO live. A tombstoned board holds
+ * nothing alive — which is why the board being deleted is excluded twice
+ * over, by id here and by its own fresh tombstone.
+ *
+ * @param taskId - The task being tested.
+ * @param excludeBoardId - The board being deleted.
+ * @returns True when some other live board still places it.
+ */
+async function hasLivePlacementElsewhere(
+  taskId: string,
+  excludeBoardId: string,
+): Promise<boolean> {
+  const elsewhere = await db.boardTasks
+    .where('taskId')
+    .equals(taskId)
+    .filter((bt) => !bt.isDeleted && bt.boardId !== excludeBoardId)
+    .toArray();
+  for (const bt of elsewhere) {
+    const board = await db.boards.get(bt.boardId);
+    if (board && !board.isDeleted) return true;
+  }
+  return false;
+}
+
+/**
  * The window-stamped derived rows a board's deletion orphans (RB5).
  *
  * A "live placement" is a `board_tasks` row with `isDeleted === false` whose
@@ -388,6 +417,29 @@ export async function windowStampedDerivedIdsForRoot(rootTaskId: string): Promis
  * tombstoned: `boardId` is then excluded by the live-board rule anyway, and
  * the explicit id check keeps the helper correct if a caller reverses that.
  *
+ * **Ordering** — candidates come from EVERY `board_tasks` row of this board,
+ * the tombstoned ones included, exactly so the answer cannot depend on when
+ * the caller runs relative to any placement tombstoning. `deleteBoard` does
+ * not tombstone its own placements today (the pre-existing gap the B2 brief
+ * ring-fenced); were it to start, a live-only candidate query would find
+ * nothing and silently retire nothing — a no-op no test would catch. A task
+ * whose placement here was tombstoned earlier (a Board-Edit swap, say) and
+ * which is placed nowhere else live is an orphan under the very same rule, so
+ * widening the candidate set costs nothing and removes the trap.
+ *
+ * Two kinds of orphan come back:
+ *   1. **Placed** derived rows — counters and per-window derived compounds.
+ *   2. **Parts of a derived compound being retired** — a derived counter
+ *      minted as a child of a One-square derived compound has no placement of
+ *      its own, so it is unreachable from `board_tasks`. Left behind it would
+ *      be a per-window row with no board, still collecting
+ *      {@link refreshDerivedBaselines} writes forever — and the root-delete
+ *      path DOES retire it, so skipping it here would leave the two deletion
+ *      paths disagreeing (and the Swift twin copying the asymmetry). A part
+ *      qualifies only when its parent is itself being retired, it has no live
+ *      placement of its own (RB5 again), and no OTHER live parent link
+ *      outside the retired set still holds it.
+ *
  * Reads only — the caller feeds the result to
  * {@link softDeleteWindowStampedDerived} inside its own transaction.
  *
@@ -396,11 +448,7 @@ export async function windowStampedDerivedIdsForRoot(rootTaskId: string): Promis
  *   placement anywhere.
  */
 export async function windowStampedDerivedOrphanedByBoard(boardId: string): Promise<string[]> {
-  const placed = await db.boardTasks
-    .where('boardId')
-    .equals(boardId)
-    .filter((bt) => !bt.isDeleted)
-    .toArray();
+  const placed = await db.boardTasks.where('boardId').equals(boardId).toArray();
   const candidateIds = [...new Set(placed.map((bt) => bt.taskId))];
   if (candidateIds.length === 0) return [];
   const candidates = (await db.tasks.where('id').anyOf(candidateIds).toArray()).filter(
@@ -409,20 +457,43 @@ export async function windowStampedDerivedOrphanedByBoard(boardId: string): Prom
 
   const orphaned: string[] = [];
   for (const task of candidates) {
-    const elsewhere = await db.boardTasks
-      .where('taskId')
-      .equals(task.id)
-      .filter((bt) => !bt.isDeleted && bt.boardId !== boardId)
+    if (!(await hasLivePlacementElsewhere(task.id, boardId))) orphaned.push(task.id);
+  }
+
+  // Only the compounds actually being retired take their parts with them —
+  // one kept alive by another live board keeps its parts too.
+  const orphanedSet = new Set(orphaned);
+  const retiredCompoundIds = candidates
+    .filter((t) => orphanedSet.has(t.id) && isWindowStampedDerivedCompound(t))
+    .map((t) => t.id);
+  if (retiredCompoundIds.length === 0) return orphaned;
+
+  const retiredCompoundSet = new Set(retiredCompoundIds);
+  const partIds = new Set<string>();
+  const links = await db.compoundChildren
+    .where('compoundTaskId')
+    .anyOf(retiredCompoundIds)
+    .filter((c) => !c.isDeleted)
+    .toArray();
+  for (const link of links) {
+    if (!orphanedSet.has(link.childTaskId)) partIds.add(link.childTaskId);
+  }
+  if (partIds.size === 0) return orphaned;
+
+  // A part that is the user's own task (an original child a One-square
+  // compound re-targeted) has no window stamp and is never returned.
+  const parts = (await db.tasks.where('id').anyOf([...partIds]).toArray()).filter(
+    (t) => !t.isDeleted && isWindowStampedDerived(t),
+  );
+  for (const part of parts) {
+    if (await hasLivePlacementElsewhere(part.id, boardId)) continue;
+    const otherParents = await db.compoundChildren
+      .where('childTaskId')
+      .equals(part.id)
+      .filter((c) => !c.isDeleted && !retiredCompoundSet.has(c.compoundTaskId))
       .toArray();
-    let stillPlaced = false;
-    for (const bt of elsewhere) {
-      const board = await db.boards.get(bt.boardId);
-      if (board && !board.isDeleted) {
-        stillPlaced = true;
-        break;
-      }
-    }
-    if (!stillPlaced) orphaned.push(task.id);
+    if (otherParents.length > 0) continue;
+    orphaned.push(part.id);
   }
   return orphaned;
 }
@@ -442,7 +513,10 @@ export async function windowStampedDerivedOrphanedByBoard(boardId: string): Prom
  * derived counter that is a part of a derived compound) and rows where it is
  * the PARENT (a derived compound's own child links) both go. The child TASKS
  * are left alone — a part that is itself a derived counter is retired by its
- * own entry in `taskIds`, and anything else is the user's library content.
+ * own entry in `taskIds` (both callers supply it:
+ * {@link windowStampedDerivedIdsForRoot} reaches it through its root's
+ * `sharedCounterId`, {@link windowStampedDerivedOrphanedByBoard} through its
+ * retired parent), and anything else is the user's library content.
  *
  * Idempotent: a missing or already-tombstoned id writes nothing and is not
  * counted, so a second sweep over the same ids (a root delete that follows a
@@ -475,10 +549,19 @@ export async function softDeleteWindowStampedDerived(
       await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
     }
 
-    const links = await db.compoundChildren
-      .filter((c) => !c.isDeleted && (c.childTaskId === id || c.compoundTaskId === id))
-      .toArray();
-    for (const link of links) {
+    // Two INDEXED reads merged by link id (both columns are indexed — see
+    // `database.ts`), not one full-table `.filter` scan: this runs once per
+    // retired row, and the Swift twin will copy whatever shape it finds here.
+    const byId = new Map<string, CompoundChild>();
+    for (const column of ['childTaskId', 'compoundTaskId'] as const) {
+      const rows = await db.compoundChildren
+        .where(column)
+        .equals(id)
+        .filter((c) => !c.isDeleted)
+        .toArray();
+      for (const link of rows) byId.set(link.id, link);
+    }
+    for (const link of byId.values()) {
       const tombstoned: CompoundChild = {
         ...link,
         isDeleted: true,

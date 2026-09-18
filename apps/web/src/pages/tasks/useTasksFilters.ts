@@ -320,8 +320,11 @@ function matchesStatusFilter(
 }
 
 /**
- * "In progress" predicate. Counting tasks: any `currentCount > 0` and
- * not done. Compound tasks: at least one child Task is completed but
+ * "In progress" predicate. Counting tasks: any DISPLAYED count > 0 and not
+ * done — `displayedCountFor`, so a linked member is measured against its own
+ * baseline and not against its root's lifetime total (RB7); reading
+ * `currentCount` raw here would call every member of a used root "in
+ * progress" the moment its window opened. Compound tasks: at least one child Task is completed but
  * the compound parent isn't (we read child completion state out of
  * `library.taskMap`, which already has all the user's Tasks indexed).
  * Normal + Achievement tasks have no fractional state, so they're

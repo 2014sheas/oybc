@@ -67,6 +67,14 @@ export async function repeatBoardAsRecurring(
       const sortedBoardTasks = [...rawBoardTasks].sort(
         (a, b) => a.row * board.boardSize + a.col - (b.row * board.boardSize + b.col),
       );
+      // One batched read for the RB4 check below (the batched style this
+      // file's neighbours use), not a `get` per cell.
+      const placedTasks = await db.tasks
+        .where('id')
+        .anyOf([...new Set(sortedBoardTasks.map((bt) => bt.taskId))])
+        .toArray();
+      const placedTaskById = new Map(placedTasks.map((t) => [t.id, t]));
+
       const boardTaskIds: string[] = [];
       const seenTaskIds = new Set<string>();
       for (const bt of sortedBoardTasks) {
@@ -77,7 +85,7 @@ export async function repeatBoardAsRecurring(
         // carrying it forward as a hand-added member would pin every future
         // window to it. A derived COUNTER passes through: it is re-minted
         // from its root for each new window like any other counting member.
-        const task = await db.tasks.get(bt.taskId);
+        const task = placedTaskById.get(bt.taskId);
         if (task && isWindowStampedDerivedCompound(task)) continue;
         boardTaskIds.push(bt.taskId);
       }

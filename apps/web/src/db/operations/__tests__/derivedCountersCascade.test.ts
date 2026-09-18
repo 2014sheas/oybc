@@ -327,17 +327,106 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     expect(await windowStampedDerivedOrphanedByBoard(board.id)).toEqual([]);
   });
 
-  it('retires a per-window derived COMPOUND placed on the deleted board', async () => {
+  it('retires a per-window derived COMPOUND placed on the deleted board, its links, and its unplaced derived PARTS — but not an original child', async () => {
+    // The One-square seam: a derived compound's parts have no placement of
+    // their own, so nothing in `board_tasks` reaches them. Left behind, each
+    // would be a per-window row with no board that keeps collecting baseline
+    // refreshes — and the root-delete path retires them, so the two deletion
+    // paths would disagree.
     const board = await seedBoard(uuid(107));
     const compound = derivedCompound(uuid(15));
     await db.tasks.add(compound);
     await db.tasks.add(derivedCounter(uuid(16)));
+    // An ORIGINAL child (the user's own task, no window stamp) — untouched.
+    await db.tasks.add(plainTask(uuid(17)));
     await seedLink(uuid(302), compound.id, uuid(16));
+    await seedLink(uuid(303), compound.id, uuid(17));
     await seedPlacement(uuid(208), board.id, compound.id);
 
     await deleteBoard(board.id);
 
     expect((await db.tasks.get(compound.id))?.isDeleted).toBe(true);
     expect((await db.compoundChildren.get(uuid(302)))?.isDeleted).toBe(true);
+    expect((await db.compoundChildren.get(uuid(303)))?.isDeleted).toBe(true);
+
+    const part = await db.tasks.get(uuid(16));
+    expect(part?.isDeleted).toBe(true);
+    expect(part?.version).toBe(2);
+    expect(await queueFor('tasks', uuid(16))).toHaveLength(1);
+
+    const original = await db.tasks.get(uuid(17));
+    expect(original?.isDeleted).toBe(false);
+    expect(original?.version).toBe(1);
+    expect(await queueFor('tasks', uuid(17))).toHaveLength(0);
+  });
+
+  it('KEEPS a derived part that another live compound still holds, or that is placed on a live board', async () => {
+    const board = await seedBoard(uuid(108));
+    const otherBoard = await seedBoard(uuid(109));
+    const compound = derivedCompound(uuid(18));
+    await db.tasks.add(compound);
+    // Part A is also a child of a plain compound that is not being retired.
+    await db.tasks.add(derivedCounter(uuid(19)));
+    await db.tasks.add(derivedCompound(uuid(20), { startDate: undefined, createdInWizard: undefined }));
+    await seedLink(uuid(304), compound.id, uuid(19));
+    await seedLink(uuid(305), uuid(20), uuid(19));
+    // Part B has its own live placement on another live board.
+    await db.tasks.add(derivedCounter(uuid(21)));
+    await seedLink(uuid(306), compound.id, uuid(21));
+    await seedPlacement(uuid(209), otherBoard.id, uuid(21));
+    await seedPlacement(uuid(210), board.id, compound.id);
+
+    await deleteBoard(board.id);
+
+    expect((await db.tasks.get(compound.id))?.isDeleted).toBe(true);
+    // Both parts survive; only the retired compound's own link to each goes.
+    expect((await db.tasks.get(uuid(19)))?.isDeleted).toBe(false);
+    expect((await db.compoundChildren.get(uuid(305)))?.isDeleted).toBe(false);
+    expect((await db.tasks.get(uuid(21)))?.isDeleted).toBe(false);
+    expect((await db.boardTasks.get(uuid(209)))?.isDeleted).toBe(false);
+  });
+
+  it('keeps a derived compound (and its parts) that is still placed on another live board', async () => {
+    const board = await seedBoard(uuid(110));
+    const otherBoard = await seedBoard(uuid(111));
+    const compound = derivedCompound(uuid(22));
+    await db.tasks.add(compound);
+    await db.tasks.add(derivedCounter(uuid(23)));
+    await seedLink(uuid(307), compound.id, uuid(23));
+    await seedPlacement(uuid(211), board.id, compound.id);
+    await seedPlacement(uuid(212), otherBoard.id, compound.id);
+
+    await deleteBoard(board.id);
+
+    expect((await db.tasks.get(compound.id))?.isDeleted).toBe(false);
+    expect((await db.tasks.get(uuid(23)))?.isDeleted).toBe(false);
+    expect((await db.compoundChildren.get(uuid(307)))?.isDeleted).toBe(false);
+  });
+
+  it('gives the same answer whether or not the board’s own placements are pre-tombstoned (RB5 ordering)', async () => {
+    // `deleteBoard` does not tombstone its own placements today. If it ever
+    // does, this sweep must not care where in the sequence it runs — a
+    // live-only candidate query would quietly find nothing and retire
+    // nothing, which no other test here would catch.
+    const board = await seedBoard(uuid(112));
+    const derived = derivedCounter(uuid(24));
+    const compound = derivedCompound(uuid(25));
+    await db.tasks.add(derived);
+    await db.tasks.add(compound);
+    await db.tasks.add(derivedCounter(uuid(26)));
+    await seedLink(uuid(308), compound.id, uuid(26));
+    await seedPlacement(uuid(213), board.id, derived.id);
+    await seedPlacement(uuid(214), board.id, compound.id);
+
+    const before = [...(await windowStampedDerivedOrphanedByBoard(board.id))].sort();
+
+    // Now tombstone this board's own placements first, as a future
+    // `deleteBoard` might, and ask again.
+    await db.boardTasks.update(uuid(213), { isDeleted: true, deletedAt: NOW });
+    await db.boardTasks.update(uuid(214), { isDeleted: true, deletedAt: NOW });
+    const after = [...(await windowStampedDerivedOrphanedByBoard(board.id))].sort();
+
+    expect(before).toEqual([uuid(24), uuid(25), uuid(26)].sort());
+    expect(after).toEqual(before);
   });
 });
