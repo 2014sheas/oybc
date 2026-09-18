@@ -11,7 +11,6 @@ import SwiftUI
 /// - Green left bar on added rows.
 /// - Counting rows: "⇲ Derive smaller" → existing derive sheet.
 /// - Compound rows: expand to add children.
-/// - "From a board…" chip → existing `FromBoardPickerView` / `FromBoardGridView`.
 /// - "From parent boards" chip (gated to timeframes that have parents).
 struct RisoLibrarySheetView: View {
 
@@ -34,13 +33,6 @@ struct RisoLibrarySheetView: View {
 
     let onToggle: (_ taskId: String) -> Void
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
-
-    // From-a-board pass-through
-    let sourceBoardsVM: SourceBoardsViewModel
-    var pickedSourceBoardId: Binding<String?>
-    var copiedTaskIds: Set<String>
-    let onCopyTask: (OYBC.Task) -> Void
-    let onOpenInLibrary: (String) -> Void
 
     // MARK: - Internal state
 
@@ -154,9 +146,6 @@ struct RisoLibrarySheetView: View {
                         ForEach(visibleFilters, id: \.self) { filter in
                             RisoChip(title: filter.rawValue, isOn: activeFilter == filter) {
                                 activeFilter = filter
-                                if filter != .fromBoard {
-                                    pickedSourceBoardId.wrappedValue = nil
-                                }
                                 expandedCompoundId = nil
                             }
                         }
@@ -175,16 +164,12 @@ struct RisoLibrarySheetView: View {
                 // Library list
                 ScrollView {
                     LazyVStack(spacing: 7) {
-                        if activeFilter == .fromBoard {
-                            fromBoardSection
+                        let rows = filteredRows
+                        if rows.isEmpty {
+                            emptyState
                         } else {
-                            let rows = filteredRows
-                            if rows.isEmpty {
-                                emptyState
-                            } else {
-                                ForEach(rows, id: \.id) { task in
-                                    libraryRow(task)
-                                }
+                            ForEach(rows, id: \.id) { task in
+                                libraryRow(task)
                             }
                         }
                     }
@@ -218,7 +203,6 @@ struct RisoLibrarySheetView: View {
     private var visibleFilters: [LibraryFilter] {
         var filters: [LibraryFilter] = [.all, .normal, .counting, .compound]
         if hasParentBoards { filters.append(.fromParents) }
-        filters.append(.fromBoard)
         return filters
     }
 
@@ -235,8 +219,6 @@ struct RisoLibrarySheetView: View {
             source = effectiveAllTasks.filter { $0.type == .compound }
         case .fromParents:
             source = parentTasksVM.tasks
-        case .fromBoard:
-            return []
         }
         // Exclude expired tasks — one whose timebox window has already passed
         // can't meaningfully be added to a new board's pool (mirrors the
@@ -401,39 +383,6 @@ struct RisoLibrarySheetView: View {
         )
     }
 
-    // MARK: - From a board section
-
-    @ViewBuilder
-    private var fromBoardSection: some View {
-        if let boardId = pickedSourceBoardId.wrappedValue,
-           let sourceBoard = sourceBoardsVM.eligibleBoards.first(where: { $0.id == boardId }) {
-            // Grid view (from existing component)
-            FromBoardGridView(
-                vm: sourceBoardsVM,
-                sourceBoard: sourceBoard,
-                userId: userId,
-                selectedTaskIds: selectedTaskIds,
-                copiedTaskIds: copiedTaskIds,
-                onToggleSelection: { taskId in onToggle(taskId) },
-                onCopyTask: { task in onCopyTask(task) },
-                onAddAllSubtasks: { _, leafIds in
-                    for id in leafIds where !selectedTaskIds.contains(id) { onToggle(id) }
-                },
-                onOpenInLibrary: { id in onOpenInLibrary(id) },
-                onChangeSource: { pickedSourceBoardId.wrappedValue = nil },
-                onTaskCreated: { task in
-                    if !selectedTaskIds.contains(task.id) { onToggle(task.id) }
-                }
-            )
-        } else {
-            FromBoardPickerView(
-                vm: sourceBoardsVM,
-                userId: userId,
-                onPickBoard: { boardId in pickedSourceBoardId.wrappedValue = boardId }
-            )
-        }
-    }
-
     // MARK: - Empty state
 
     private var emptyState: some View {
@@ -568,8 +517,7 @@ struct RisoLibrarySheetView: View {
     /// promises "same counter, lower goal" / "still counts {noun}"). See
     /// `resolveDeriveLinkTarget` for the source-resolution rule. This
     /// wizard-inline surface has `effectiveTaskById` in memory (the merged
-    /// live+pending library), so the root task lookup is synchronous —
-    /// unlike `FromBoardGridView`, which fetches by id.
+    /// live+pending library), so the root task lookup is synchronous.
     private func saveDerivedCounter(source: OYBC.Task) {
         guard let action = source.action,
               let unit = source.unit,

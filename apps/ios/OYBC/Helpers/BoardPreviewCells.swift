@@ -71,8 +71,7 @@ enum BoardPreviewCells {
         // iterate last (arbitrary), instead of the deterministic winner
         // the live play grid (`BoardPlayView.btByPosition`) and derivation
         // agree on. Second occurrence of the exact `btByPosition` pattern
-        // the spec calls out, feeding board mini-previews across
-        // `BoardListView` / `SourceBoardsViewModel`.
+        // the spec calls out, feeding board mini-previews for `BoardListView`.
         let ownBoardTasks = PlacementIntegrity.resolvePlacements(
             boardTasks.filter { $0.boardId == board.id },
             boardSize: size
@@ -161,9 +160,8 @@ enum BoardPreviewCells {
     // MARK: - Batch loading (perf follow-up, bugfix/board-preview-real-cells)
     //
     // `build(...)` itself is pure/DB-free. These helpers own the DB side —
-    // extracted so a screen rendering MANY boards (`BoardListView`,
-    // `SourceBoardsViewModel`/
-    // `FromBoardPickerView`) fetches the four workspace-scoped datasets ONCE
+    // extracted so a screen rendering MANY boards (`BoardListView`) fetches
+    // the four workspace-scoped datasets ONCE
     // and reuses them for every board's `build(...)` call, instead of each
     // board's card independently fetching all tasks / all compound children
     // / all boards / all events (an N-cards-N-times-the-reads bug — a

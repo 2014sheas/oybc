@@ -206,7 +206,7 @@ final class TasksTabViewModel {
     /// out of this ViewModel to a named helper mirroring
     /// `packages/shared/src/algorithms/taskExpiry.ts`). Kept as a thin
     /// static wrapper so existing call sites (`RisoLibrarySheetView`,
-    /// `FromBoardGridView`, this file) don't need to change.
+    /// this file) don't need to change.
     static func isTaskExpired(_ task: Task, now: Date = Date()) -> Bool {
         TaskExpiry.isTaskExpired(task, now: now)
     }
