@@ -151,7 +151,9 @@ extension BoardSources {
         guard let sourceDays else { return goal }
         guard let targetDays else { return goal }
         if targetDays >= sourceDays { return goal }
-        let prorated = Int((Double(goal * targetDays) / Double(sourceDays)).rounded(.up))
+        // Double math throughout — an `Int` multiply would trap on overflow
+        // where JS silently promotes to a float. Bit-identical in range.
+        let prorated = Int((Double(goal) * Double(targetDays) / Double(sourceDays)).rounded(.up))
         return Swift.min(goal, prorated)
     }
 

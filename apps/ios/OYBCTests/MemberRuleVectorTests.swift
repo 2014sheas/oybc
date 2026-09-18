@@ -287,10 +287,10 @@ final class MemberRuleVectorTests: XCTestCase {
         index: Int,
         kind: String,
         memberRules: [String: BoardSourceMemberRule]
-    ) -> BoardSource {
+    ) throws -> BoardSource {
         BoardSource(
             sourceId: "s\(index)",
-            kind: BoardSource.Kind(rawValue: kind) ?? .pool,
+            kind: try XCTUnwrap(BoardSource.Kind(rawValue: kind), "unknown source kind \(kind)"),
             min: 0,
             max: nil,
             excludedTaskIds: [],
@@ -375,7 +375,7 @@ final class MemberRuleVectorTests: XCTestCase {
 
         for v in section.vectors {
             let supply = BoardSources.Supply(
-                source: makeSource(index: 1, kind: "board", memberRules: v.memberRules),
+                source: try makeSource(index: 1, kind: "board", memberRules: v.memberRules),
                 supplyTaskIds: v.supply
             )
             let out = BoardSources.applyMemberRules(
@@ -483,9 +483,13 @@ final class MemberRuleVectorTests: XCTestCase {
         for (token, id) in plan.idPins { tokenOfId[id] = token }
 
         for v in plan.vectors {
-            let supplies = v.supplies.enumerated().map { index, raw in
+            let supplies = try v.supplies.enumerated().map { index, raw in
                 BoardSources.ExpandedSupply(
-                    source: makeSource(index: index + 1, kind: raw.kind, memberRules: raw.memberRules),
+                    source: try makeSource(
+                        index: index + 1,
+                        kind: raw.kind,
+                        memberRules: raw.memberRules
+                    ),
                     supplyTaskIds: raw.supply,
                     partOf: raw.partOf ?? [:]
                 )
