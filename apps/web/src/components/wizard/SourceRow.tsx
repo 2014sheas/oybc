@@ -26,8 +26,7 @@ export interface SourceRowProps {
   counterClashByTaskId?: Map<string, string>;
   // Per-member actions (owner report 2026-09-15: member rows offered
   // ONLY the ✕ exclude — no counter derive, no compound subtasks; same
-  // ⋯-menu vocabulary as the From-a-board grid, #470). All optional so
-  // read-only mounts render no ⋯.
+  // ⋯-menu vocabulary (#470). All optional so read-only mounts render no ⋯.
   /** Children per compound — gates the subtask items. */
   compoundChildrenByCompound?: Record<string, CompoundChild[]>;
   /** Wizard selection — subtask items disable once the child is added. */
@@ -296,7 +295,7 @@ function memberHasActions(
 }
 
 /** ⋯ menu for a source member — derive (counting) / subtask picking
- *  (compound), mirroring the From-a-board grid's #470 items. iOS twin:
+ *  (compound), reusing the row-menu vocabulary (#470) items. iOS twin:
  *  `RisoSourceRowView.memberActionsMenu`. */
 function buildMemberMenuItems({
   target,

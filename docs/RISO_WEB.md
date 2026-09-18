@@ -305,7 +305,7 @@ a CSS-only diff can restyle but not conflict). The Tasks step is the separate
   step container + footer buttons (press-into-paper; Next red, Create green) +
   Preview summary panel + shuffle.
 - `BoardThumbnail.module.css` — Riso mini-grid (done = red, center = inked FREE);
-  wizard-only (preview + FromBoardPicker).
+  wizard-only (preview + FromBoardPicker). *(retired 2026-09 in Plan A)*
 - `BoardWizardCancelDialog.module.css` — Riso smart-cancel dialog (Save Draft
   blue / Discard red-text / Delete-draft solid-red / Keep Editing).
 

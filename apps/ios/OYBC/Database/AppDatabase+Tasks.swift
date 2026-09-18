@@ -470,7 +470,7 @@ extension AppDatabase {
 
     /// Create a single Task + enqueue its `.create` sync op atomically.
     /// Used by the standalone quick-add / derive-counter paths (Tasks tab
-    /// create form, Riso library sheet, From-a-board grid) that previously
+    /// create form, Riso library sheet) that previously
     /// authored the write + enqueue inline in view code.
     ///
     /// - Parameters:

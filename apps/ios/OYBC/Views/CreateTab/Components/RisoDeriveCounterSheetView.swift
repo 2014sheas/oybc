@@ -2,11 +2,11 @@ import SwiftUI
 
 // MARK: - RisoDeriveCounterSheetView
 
-/// Shared Riso-styled "Derive smaller version…" sheet — extracted from
-/// `FromBoardGridView`'s private copy once the pool-edit sheet became the
-/// third consumer (extract-at-three; the library sheet's inline builder
-/// was the second). Creates a LINKED smaller counter, never a standalone
-/// duplicate — see `resolveDeriveLinkTarget`.
+/// Shared Riso-styled "Derive smaller version…" sheet — extracted from the
+/// retired wizard grid picker's private copy once the pool-edit sheet
+/// became the third consumer (extract-at-three; the library sheet's inline
+/// builder was the second). Creates a LINKED smaller counter, never a
+/// standalone duplicate — see `resolveDeriveLinkTarget`.
 struct RisoDeriveCounterSheetView: View {
     let source: OYBC.Task
     @Binding var input: String

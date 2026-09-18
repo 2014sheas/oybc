@@ -432,7 +432,7 @@ struct RisoTypeBadge: View {
 extension RisoTaskKind {
     /// Shared TaskType → kit-kind mapping (extract-at-three: previously
     /// duplicated privately in RisoLibrarySheetView / RisoPoolListView;
-    /// the Board Sources source-row panel is the fourth caller).
+    /// the Board Sources source-row panel is the third caller).
     init(taskType: TaskType) {
         switch taskType {
         case .normal: self = .normal
