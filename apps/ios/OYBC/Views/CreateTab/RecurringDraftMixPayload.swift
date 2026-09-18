@@ -44,21 +44,30 @@ struct RecurringDraftMixPayload: Codable {
     /// `encoded()` time when constructed without one (the wizard UI can
     /// only express [0, all] pool pulls until P2).
     var sources: [BoardSource]?
+    /// §Member rules B1 (inert) — dice for hand-added counting members,
+    /// keyed by task id. Always present on decode (`[:]` default) and
+    /// OMITTED from the encoded blob when empty, so an existing draft
+    /// re-encodes byte-identically. The blob version stays `2`: this is a
+    /// purely additive key an older client ignores.
+    var manualTaskVary: [String: VaryLevel]
 
     private enum CodingKeys: String, CodingKey {
         case v, poolIds, manualTaskIds, removedTaskIds, sources
+        case manualTaskVary
     }
 
     init(
         poolIds: [String],
         manualTaskIds: [String],
         removedTaskIds: [String],
-        sources: [BoardSource]? = nil
+        sources: [BoardSource]? = nil,
+        manualTaskVary: [String: VaryLevel] = [:]
     ) {
         self.poolIds = poolIds
         self.manualTaskIds = manualTaskIds
         self.removedTaskIds = removedTaskIds
         self.sources = sources
+        self.manualTaskVary = manualTaskVary
     }
 
     init(from decoder: Decoder) throws {
@@ -69,6 +78,16 @@ struct RecurringDraftMixPayload: Codable {
         // v1 blobs (or a corrupt sources value) → nil here; `decoded(from:)`
         // derives from the trio so consumers always see a populated array.
         sources = try? container.decodeIfPresent([BoardSource].self, forKey: .sources)
+        // Absent (every pre-B1 blob) or malformed → no dice. Ruling R11:
+        // Swift's `VaryLevel: Int` decode rejects the WHOLE map on one
+        // out-of-range level where web's codec drops only the bad key —
+        // both converge to "no dice" for that key, and B3 only ever writes
+        // valid levels, so the difference is unobservable in practice.
+        let decodedVary = try? container.decodeIfPresent(
+            [String: VaryLevel].self,
+            forKey: .manualTaskVary
+        )
+        manualTaskVary = decodedVary ?? [:]
     }
 
     func encode(to encoder: Encoder) throws {
@@ -82,6 +101,10 @@ struct RecurringDraftMixPayload: Codable {
             removedTaskIds: removedTaskIds
         )
         try container.encode(resolvedSources, forKey: .sources)
+        // Omitted when empty — an existing draft's blob is unchanged.
+        if !manualTaskVary.isEmpty {
+            try container.encode(manualTaskVary, forKey: .manualTaskVary)
+        }
     }
 
     /// Encodes to the JSON string stored on `Board.recurringDraftMix`.
@@ -103,7 +126,8 @@ struct RecurringDraftMixPayload: Codable {
               var payload = try? JSONDecoder().decode(RecurringDraftMixPayload.self, from: data)
         else {
             return RecurringDraftMixPayload(
-                poolIds: [], manualTaskIds: [], removedTaskIds: [], sources: []
+                poolIds: [], manualTaskIds: [], removedTaskIds: [], sources: [],
+                manualTaskVary: [:]
             )
         }
         if payload.sources == nil {

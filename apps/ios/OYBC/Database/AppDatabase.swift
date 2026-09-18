@@ -74,8 +74,8 @@ final class AppDatabase {
     ///
     /// Uses the same `Configuration` as production (notably
     /// `foreign_keys = ON`), so FK violations fail in tests the same
-    /// way they would in the shipping app. The migrator runs identically,
-    /// so tests exercise the v5 schema end-to-end.
+    /// way they would in the shipping app. It runs the full migrator, so
+    /// tests exercise the current schema end-to-end.
     static func makeTestInstance() throws -> AppDatabase {
         let queue = try DatabaseQueue(configuration: databaseConfiguration())
         return try AppDatabase(dbQueue: queue)
@@ -987,13 +987,8 @@ final class AppDatabase {
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN recurringDraftMix TEXT")
         }
 
-        // v30: Board Sources P1 (docs/BOARD_SOURCES.md) — JSON-string
-        // `sources` column on templates. Column-only, no backfill: reads
-        // go through `BoardSources.sourcesForRecord` (derives [0, all]
-        // from the legacy trio for pre-stamp rows); NULL = pre-stamp.
-        migrator.registerMigration("v30") { db in
-            try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN sources TEXT")
-        }
+        // v30+: Board Sources — see AppDatabase+Migrations.swift.
+        AppDatabase.registerBoardSourcesMigrations(&migrator)
 
         return migrator
     }

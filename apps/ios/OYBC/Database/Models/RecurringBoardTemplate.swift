@@ -72,6 +72,14 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     // the trio; `manualTaskIds` stays live in both models.
     var sources: [BoardSource]?
 
+    // Board Sources §Member rules (docs/BOARD_SOURCES.md, B1) — dice for
+    // HAND-ADDED counting members on a repeating board (source members
+    // carry their dice inside `BoardSource.memberRules`). Same tri-state
+    // JSON-string TEXT contract as `sources` (migration v31): `nil` ⇒
+    // absent/pre-stamp, a valid JSON object (even `{}`) ⇒ that map.
+    // INERT in B1 — nothing reads it until B2 wires the write path.
+    var manualTaskVary: [String: VaryLevel]?
+
     // Spawn state
     var lastSpawnedWindowKey: String?
     var isActive: Bool
@@ -98,6 +106,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         case seedTaskIds
         case poolIds, manualTaskIds, removedTaskIds
         case sources
+        case manualTaskVary
         case lastSpawnedWindowKey, isActive
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
@@ -116,6 +125,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         manualTaskIds: [String]? = nil,
         removedTaskIds: [String]? = nil,
         sources: [BoardSource]? = nil,
+        manualTaskVary: [String: VaryLevel]? = nil,
         lastSpawnedWindowKey: String? = nil,
         isActive: Bool,
         createdAt: String,
@@ -137,6 +147,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
         self.manualTaskIds = manualTaskIds
         self.removedTaskIds = removedTaskIds
         self.sources = sources
+        self.manualTaskVary = manualTaskVary
         self.lastSpawnedWindowKey = lastSpawnedWindowKey
         self.isActive = isActive
         self.createdAt = createdAt
@@ -186,6 +197,14 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
             sources = try? JSONDecoder().decode([BoardSource].self, from: data)
         } else {
             sources = nil
+        }
+
+        // §Member rules B1 — same tri-state contract as `sources`.
+        if let jsonString = (try? container.decodeIfPresent(String.self, forKey: .manualTaskVary)) ?? nil,
+           let data = jsonString.data(using: .utf8) {
+            manualTaskVary = try? JSONDecoder().decode([String: VaryLevel].self, from: data)
+        } else {
+            manualTaskVary = nil
         }
 
         lastSpawnedWindowKey = try container.decodeIfPresent(String.self, forKey: .lastSpawnedWindowKey)
@@ -284,6 +303,17 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
                 try container.encode(jsonString, forKey: .sources)
             } else {
                 try container.encode("[]", forKey: .sources)
+            }
+        }
+
+        // §Member rules B1 — JSON-string TEXT column, key OMITTED when nil
+        // (same `.optional()` wire contract as `sources` above).
+        if let manualTaskVary = manualTaskVary {
+            if let data = try? JSONEncoder().encode(manualTaskVary),
+               let jsonString = String(data: data, encoding: .utf8) {
+                try container.encode(jsonString, forKey: .manualTaskVary)
+            } else {
+                try container.encode("{}", forKey: .manualTaskVary)
             }
         }
 
