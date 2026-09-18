@@ -248,6 +248,17 @@ extension AppDatabase {
             // Mirrors `insertIncrementEventRaw(sourceTaskId, by, undefined, now)`.
             try Self.insertIncrementEventRaw(db: db, taskId: sourceTaskId, delta: by, boardId: nil, now: now)
 
+            // Board Sources §Member rules (B2) — the root's event log just
+            // moved, so every window-stamped derived counter hanging off it may
+            // need a new `baseline`. Refreshed BEFORE the propagation read
+            // below so the derived rows' displayed counts (and the board
+            // cascade at the end of this transaction) are computed against the
+            // corrected boundary rather than a stale one. Non-authored:
+            // `baseline` only, no version bump, no enqueue. (No `events`
+            // argument: this op doesn't have the root's log in hand, so passing
+            // one would mean adding the very read it saves.)
+            try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
+
             // 3. Fetch all linked (derived) tasks for this source.
             let linkedTasks = try Task
                 .filter(Column("sharedCounterId") == sourceTaskId)
@@ -382,6 +393,12 @@ extension AppDatabase {
             // `source.currentCount` authoritatively. Mirrors
             // `insertIncrementEventRaw(sourceTaskId, -eff, undefined, now)`.
             try Self.insertIncrementEventRaw(db: db, taskId: sourceTaskId, delta: -eff, boardId: nil, now: now)
+
+            // Board Sources §Member rules (B2) — same non-authored baseline
+            // refresh as `incrementSharedCounter`, and for the same reason:
+            // the root's event log moved, and propagation below must see the
+            // corrected baseline. See that function for the full rationale.
+            try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
 
             // 3. Fetch all linked (derived) tasks for this source.
             let linkedTasks = try Task
@@ -560,6 +577,26 @@ extension AppDatabase {
                 payload: source,
                 now: now
             ).enqueue(db)
+
+            // Board Sources §Member rules (B2) — the root's event log just
+            // moved (an undo can tombstone a PRE-window event, which lowers
+            // the baseline), so refresh every window-stamped derived counter
+            // BEFORE the propagation read below computes displayed counts
+            // against it. Non-authored: `baseline` only, no version bump, no
+            // enqueue. This op ALREADY read the root's log (step 2), so it
+            // passes it through instead of re-reading — with the
+            // just-tombstoned entry marked, since the in-memory copies predate
+            // step 3's write.
+            try Self.refreshDerivedBaselines(
+                db: db,
+                rootTaskId: sourceTaskId,
+                events: events.map { event -> TaskEvent in
+                    guard event.id == entry.id else { return event }
+                    var tombstoned = event
+                    tombstoned.isDeleted = true
+                    return tombstoned
+                }
+            )
 
             // 6. Find all linked (derived) tasks and propagate, exactly like
             //    increment/decrement.

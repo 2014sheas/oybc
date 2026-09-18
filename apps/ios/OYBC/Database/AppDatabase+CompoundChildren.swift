@@ -93,4 +93,38 @@ extension AppDatabase {
         }
     }
 
+    /// Batched twin of ``fetchCompoundChildren(compoundTaskId:)`` — the live
+    /// `compound_children` rows of MANY parents in one query, grouped by
+    /// parent and ordered by `childIndex` within each group.
+    ///
+    /// Board Sources §Member rules (B2): the wizard mint needs the children of
+    /// every compound the plan can name (placed ones, whose parts a One-square
+    /// rule re-targets, and supplied ones, which a Split-up rule expands), and
+    /// issuing one query per compound inside the board-save transaction is the
+    /// n+1 this replaces. An empty `compoundTaskIds` reads nothing.
+    ///
+    /// `static` + `db`-taking (unlike its single-parent sibling, which opens
+    /// its own `read`) because every caller is already inside an open write
+    /// transaction — a nested `read` on the same `DatabaseQueue` is reentrant
+    /// and would deadlock.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's open transaction.
+    ///   - compoundTaskIds: The parent compound ids to fetch children for.
+    /// - Returns: Parent compound id → its live children, ordered by
+    ///   `childIndex`. Parents with no live children are absent from the map.
+    static func fetchCompoundChildren(
+        db: Database,
+        compoundTaskIds: [String]
+    ) throws -> [String: [CompoundChild]] {
+        guard !compoundTaskIds.isEmpty else { return [:] }
+        let rows = try CompoundChild
+            .filter(compoundTaskIds.contains(Column("compoundTaskId")) && Column("isDeleted") == false)
+            .order(Column("childIndex"))
+            .fetchAll(db)
+        var byCompound: [String: [CompoundChild]] = [:]
+        for row in rows { byCompound[row.compoundTaskId, default: []].append(row) }
+        return byCompound
+    }
+
 }

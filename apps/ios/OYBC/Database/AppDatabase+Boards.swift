@@ -690,6 +690,11 @@ extension AppDatabase {
     ///   - isUpdate: `true` when updating an existing draft (old placements
     ///     are soft-deleted (tombstoned) + DELETE-enqueued first); `false` for
     ///     fresh create.
+    ///   - sources: Board Sources §Member rules (B2) — the wizard's pulled
+    ///     sources, used to re-resolve each placed member's rules and mint the
+    ///     window-stamped derived rows they call for. Empty = nothing to mint.
+    ///   - manualTaskIds: The hand-added layer (B2); hand-added members beat
+    ///     any source copy in the plan.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
     func saveWizardBoard(
         board: Board,
@@ -697,6 +702,8 @@ extension AppDatabase {
         pendingTasks: [PendingTaskPayload],
         stagedEdits: [String: TaskEditPatch] = [:],
         isUpdate: Bool,
+        sources: [BoardSource] = [],
+        manualTaskIds: [String] = [],
         now: String
     ) throws {
         try write { db in
@@ -750,12 +757,67 @@ extension AppDatabase {
                 }
             }
 
+            // ── Board Sources §Member rules (B2): mint before placing ──────
+            // Each placed member is resolved against THIS board's window; a
+            // member governed by a rule is replaced IN PLACE by its
+            // window-stamped derived counter (or derived compound), so a
+            // pinned/centre square keeps its cell. The rows are written here,
+            // before the `board_tasks` rows that reference them, in this txn.
+            //
+            // ACTIVE SAVES ONLY. A derived id is `uuidv5(boardId, root)` — it
+            // does NOT encode the window — while a DRAFT's window is still
+            // editable: save a draft weekly, resume it, switch it to daily,
+            // save it active, and RB3's "live row → skip" would keep the first
+            // row's timeframe / dates / target / baseline for a window the
+            // board no longer has. A draft therefore places its original member
+            // ids and the activating save derives the window once, from final
+            // values. (An abandoned draft then leaves no derived rows at all.)
+            var boardToSave = board
+            var placedRows = boardTasks
+            if board.status == .active, !placedRows.isEmpty {
+                let placementIds = try Self.mintWizardDerivedRows(
+                    db: db,
+                    boardId: board.id,
+                    userId: board.userId,
+                    now: now,
+                    selectedIds: placedRows.map { $0.taskId },
+                    sources: sources,
+                    manualTaskIds: manualTaskIds,
+                    window: BoardSources.BoardWindow(
+                        timeframe: board.timeframe,
+                        startDate: board.startDate,
+                        endDate: board.endDate
+                    )
+                )
+                // Two members sharing a shared-counter root collapse onto ONE
+                // derived counter. Counter-family exclusivity forbids that at
+                // selection time, so this is belt-and-braces — but a duplicate
+                // `taskId` on one board trips the placement-integrity
+                // invariants (docs/BOARD_INTEGRITY.md), so the repeat cell is
+                // dropped rather than written.
+                var seenTaskIds = Set<String>()
+                var deduped: [BoardTask] = []
+                for (index, var row) in placedRows.enumerated() {
+                    if index < placementIds.count { row.taskId = placementIds[index] }
+                    guard seenTaskIds.insert(row.taskId).inserted else { continue }
+                    deduped.append(row)
+                }
+                placedRows = deduped
+                // A CHOSEN centre that resolved to a derived counter must have
+                // the board's stored `centerTaskId` follow it, or a resumed
+                // draft would stop recognising its own centre square.
+                if let centre = board.centerTaskId,
+                   let index = boardTasks.firstIndex(where: { $0.taskId == centre }),
+                   index < placementIds.count {
+                    boardToSave.centerTaskId = placementIds[index]
+                }
+            }
+
             // ── Board + BoardTask rows ─────────────────────────────
             // Windowed Completion — stamp the activation instant on an active
             // wizard board (fresh-active OR a resumed draft saved active) if not
             // already set, so the auto-seal backstop keys off max(endDate,
             // activatedAt) (docs §Sealing → backstop).
-            var boardToSave = board
             if boardToSave.status == .active, boardToSave.activatedAt == nil {
                 boardToSave.activatedAt = now
             }
@@ -795,7 +857,7 @@ extension AppDatabase {
                 .fetchAll(db)
             let stats = DerivationPass.computeBoardStatsUpdate(
                 board: boardToSave,
-                boardTasksOnBoard: boardTasks,
+                boardTasksOnBoard: placedRows,
                 childrenByCompound: childrenByCompound,
                 taskById: taskById,
                 allBoards: allBoardsForDerivation,
@@ -863,7 +925,7 @@ extension AppDatabase {
                         && Column("isDeleted") == false
                         && Column("isCenter") == true)
                 .fetchCount(db)
-            for bt in boardTasks {
+            for bt in placedRows {
                 if bt.isCenter {
                     guard liveCenterCount == 0 else {
                         throw AppDatabaseError.invalidPlacement(

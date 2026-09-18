@@ -2232,15 +2232,13 @@ extension SyncService {
                 }
 
                 // 3. Recompute caches ONCE per affected event-owning task that
-                //    exists locally (non-authored write — no version bump, no
-                //    enqueue). Events whose task isn't local yet are skipped-and-
-                //    deferred (safety-net retry).
-                var cascadeTaskIds = Set<String>()
-                for taskId in affectedTaskIds {
-                    guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { continue }
-                    try AppDatabase.recomputeTaskCachesFromPull(db: db, taskId: taskId)
-                    cascadeTaskIds.insert(taskId)
-                }
+                //    exists locally, then refresh the window-stamped derived
+                //    counters that key off it (B2) — both non-authored writes
+                //    (no version bump, no enqueue). Events whose task isn't
+                //    local yet are skipped-and-deferred (safety-net retry).
+                let cascadeTaskIds = try AppDatabase.recomputeTaskCachesAndRefreshDerived(
+                    db: db, taskIds: affectedTaskIds
+                )
 
                 // 4. ONE batched derivation pass per affected LIVE board.
                 //    Sealed boards are excluded here (fan-out exclusion).
@@ -2349,12 +2347,13 @@ extension SyncService {
                     healedTaskIds.insert(ev.taskId)
                     minted += 1
                 }
-                // Recompute caches from the now-present events, then one board
-                // cascade + sealed re-derive over the healed set — same shape as
+                // Recompute caches from the now-present events (plus the B2
+                // derived-baseline refresh), then one board cascade + sealed
+                // re-derive over the healed set — same shape as
                 // applyTaskEventsBatch.
-                for taskId in healedTaskIds {
-                    try AppDatabase.recomputeTaskCachesFromPull(db: db, taskId: taskId)
-                }
+                _ = try AppDatabase.recomputeTaskCachesAndRefreshDerived(
+                    db: db, taskIds: healedTaskIds
+                )
                 if !healedTaskIds.isEmpty {
                     try runPullCascadeForTasks(db: db, changedTaskIds: healedTaskIds)
                     try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)

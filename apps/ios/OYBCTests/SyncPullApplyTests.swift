@@ -628,4 +628,85 @@ final class SyncPullApplyTests: XCTestCase {
         let rows = try syncRows(db).filter { $0.entityType == "tasks" && $0.entityId == tid }
         XCTAssertTrue(rows.isEmpty, "an identical echo must not enqueue a re-assert")
     }
+
+    // MARK: - 5. Board Sources §Member rules (B2): the pull-path baseline refresh
+
+    private let derivedWindowStart = "2026-09-18T00:00:00.000Z"
+
+    /// A window-stamped derived counter (all three marks) hanging off `root`.
+    private func makeDerivedRow(
+        id: String = "derived-1",
+        root: String,
+        baseline: Int,
+        version: Int = 3,
+        updatedAt: String = "2026-09-18T00:00:00.000Z"
+    ) -> Task {
+        Task(
+            id: id, userId: userId, title: "Read 4 pages", type: .counting,
+            action: "Read", unit: "pages", maxCount: 4,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, currentCount: 0,
+            createdAt: updatedAt, updatedAt: updatedAt, version: version, isDeleted: false,
+            timeframe: .daily, startDate: derivedWindowStart,
+            endDate: "2026-09-18T23:59:59.999Z",
+            sharedCounterId: root, baseline: baseline, createdInWizard: true
+        )
+    }
+
+    func test_applyTaskEventsBatch_refreshesDerivedBaselinesNonAuthored() throws {
+        let db = try makeDb(); try seedUser(db)
+        let root = makeTask("root-1", type: .counting, currentCount: 0)
+        let derived = makeDerivedRow(root: "root-1", baseline: 0)
+        try db.write { grdb in
+            try root.save(grdb)
+            try derived.save(grdb)
+        }
+        let sut = makeSut(db)
+
+        // A peer's increment, logged BEFORE this derived row's window opened —
+        // so it belongs to the baseline, not to the window.
+        let raw: [String: Any] = [
+            "id": AppDatabase.generateUUID(), "userId": userId, "taskId": "root-1",
+            "kind": "increment", "delta": 6, "occurredAt": "2026-09-17T08:00:00.000Z",
+            "createdAt": "2026-09-17T08:00:00.000Z", "updatedAt": "2026-09-17T08:00:00.000Z",
+            "version": 1, "isDeleted": false,
+        ]
+        let result = sut.applyTaskEventsBatch(userId: userId, rawDocs: [raw])
+        XCTAssertEqual(result.pulled, 1)
+
+        let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(after.baseline, 6, "the pulled pre-window event moved the baseline")
+        XCTAssertEqual(after.version, derived.version, "non-authored: no version bump")
+        XCTAssertEqual(after.updatedAt, derived.updatedAt, "non-authored: updatedAt untouched")
+        let queued = try db.read { grdb in
+            try SyncQueueItem.filter(Column("entityId") == "derived-1").fetchCount(grdb)
+        }
+        XCTAssertEqual(queued, 0, "non-authored: nothing enqueued for the derived row")
+    }
+
+    func test_healMissingCompletionEvents_refreshesDerivedBaselines() throws {
+        let db = try makeDb(); try seedUser(db)
+        // The fresh-install shape: a counting root whose lifetime cache says 9
+        // but which has NO backing event, so heal mints one dated at its
+        // `updatedAt` — before this derived row's window.
+        var root = makeTask("root-1", type: .counting, currentCount: 9)
+        root.updatedAt = "2026-09-17T08:00:00.000Z"
+        let derived = makeDerivedRow(root: "root-1", baseline: 0)
+        try db.write { grdb in
+            try root.save(grdb)
+            try derived.save(grdb)
+        }
+        let sut = makeSut(db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1)
+
+        let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-1") })
+        XCTAssertEqual(after.baseline, 9, "the healed event moved the baseline too")
+        XCTAssertEqual(after.version, derived.version, "non-authored: no version bump")
+        XCTAssertEqual(after.updatedAt, derived.updatedAt, "non-authored: updatedAt untouched")
+        let queued = try db.read { grdb in
+            try SyncQueueItem.filter(Column("entityId") == "derived-1").fetchCount(grdb)
+        }
+        XCTAssertEqual(queued, 0, "non-authored: nothing enqueued for the derived row")
+    }
 }
