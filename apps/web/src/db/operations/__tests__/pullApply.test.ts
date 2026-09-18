@@ -621,3 +621,118 @@ describe('applyRemoteSubdoc — recurringBoardTemplates wire-shape contract (iss
     expect(stored).toBeUndefined();
   });
 });
+
+/**
+ * Final-review FI1 — a `tasks` pull that lands a window-stamped derived
+ * counter must re-derive that row's `baseline` from the LOCAL event union,
+ * non-authored.
+ *
+ * `baseline` rides the wire, so a device that minted the row while missing a
+ * pre-window increment pushes a SHORT value that wins by ordinary LWW. On a
+ * device whose event union is complete the root's `currentCount` is NOT
+ * short, so the member would read inflated by exactly the missing delta,
+ * silently, until someone incremented that root locally.
+ */
+describe('pull-apply — derived baseline re-derivation (FI1)', () => {
+  const ROOT_ID = uuid(120);
+  const DERIVED_ID = uuid(121);
+  const WINDOW_START = '2026-07-19T00:00:00.000';
+
+  afterEach(async () => {
+    await Promise.all([db.tasks.clear(), db.taskEvents.clear(), db.syncQueue.clear()]);
+  });
+
+  async function seedRootWithPreWindowEvents(): Promise<void> {
+    await db.tasks.add({
+      id: ROOT_ID,
+      userId: USER,
+      title: 'Read',
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 100,
+      currentCount: 14,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    // Two live pre-window increments summing to 14 — the honest baseline.
+    for (const [n, delta] of [[122, 10] as const, [123, 4] as const]) {
+      await db.taskEvents.add({
+        id: uuid(n),
+        userId: USER,
+        taskId: ROOT_ID,
+        kind: 'increment',
+        delta,
+        occurredAt: '2026-07-18T08:00:00.000Z',
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      } as unknown as TaskEvent);
+    }
+  }
+
+  function derivedDoc(baseline: number, version: number): Record<string, unknown> {
+    return {
+      id: DERIVED_ID,
+      userId: USER,
+      title: 'Read 5 pages',
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 5,
+      sharedCounterId: ROOT_ID,
+      baseline,
+      currentCount: 14,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      timeframe: Timeframe.DAILY,
+      startDate: WINDOW_START,
+      endDate: '2026-07-19T23:59:59.999',
+      createdAt: NOW,
+      updatedAt: NOW,
+      version,
+      isDeleted: false,
+    };
+  }
+
+  it('re-derives a pulled derived row’s short baseline from local events, without authoring it', async () => {
+    await seedRootWithPreWindowEvents();
+
+    // Remote baseline is short by the 4 the minting device never saw.
+    const status = await applyRemoteSubdoc('tasks', derivedDoc(10, 3), USER);
+
+    expect(status).toMatch(/^Pulled /);
+    const stored = await db.tasks.get(DERIVED_ID);
+    expect(stored?.baseline).toBe(14);
+    // Non-authored: the pulled version stands, nothing is enqueued for the row.
+    expect(stored?.version).toBe(3);
+    expect(stored?.updatedAt).toBe(NOW);
+    const queued = await db.syncQueue.filter((q) => q.entityId === DERIVED_ID).toArray();
+    expect(queued).toHaveLength(0);
+  });
+
+  it('leaves an already-correct baseline (and a non-derived pulled task) untouched', async () => {
+    await seedRootWithPreWindowEvents();
+
+    await applyRemoteSubdoc('tasks', derivedDoc(14, 3), USER);
+    expect((await db.tasks.get(DERIVED_ID))?.baseline).toBe(14);
+
+    // A hand-made LINKED counter (no window stamp, not wizard-born) must
+    // never have its frozen baseline rewritten by this pipeline.
+    const handMadeId = uuid(124);
+    await applyRemoteSubdoc(
+      'tasks',
+      { ...derivedDoc(0, 1), id: handMadeId, createdInWizard: false, startDate: undefined },
+      USER,
+    );
+    expect((await db.tasks.get(handMadeId))?.baseline).toBe(0);
+  });
+});

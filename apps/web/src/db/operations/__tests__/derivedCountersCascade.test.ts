@@ -486,6 +486,59 @@ describe('windowStampedDerivedOrphanedByBoard + deleteBoard (RB5)', () => {
     expect(await queueFor('tasks', swappedOut.id)).toHaveLength(1);
   });
 
+  // ── The compound fallback branch, driven in BOTH directions ────────────
+  //
+  // `isMintedForBoard`'s compound half takes an early `true` only when a
+  // CONFIRMING child is present — a child that IS this board's derived
+  // counter. With no such child the answer falls through to "does the
+  // compound itself have a live placement elsewhere?", and every other
+  // compound test above takes the early path. These two pin the fallback.
+
+  it('KEEPS a window-matching derived compound with only ORIGINAL children when the compound itself is placed on another live board', async () => {
+    const board = await seedBoard(uuid(117));
+    const otherBoard = await seedBoard(uuid(118));
+    const compound = derivedCompound(uuid(28));
+    // Original children only — no derived counter to confirm provenance, so
+    // the decision is the fallback's alone.
+    const original = plainTask('original-child-1');
+    await db.tasks.add(compound);
+    await db.tasks.add(original);
+    await seedLink(uuid(310), compound.id, original.id);
+    await seedPlacement(uuid(218), board.id, compound.id);
+    await seedPlacement(uuid(219), otherBoard.id, compound.id);
+
+    expect(await windowStampedDerivedOrphanedByBoard(board.id)).toEqual([]);
+
+    await deleteBoard(board.id);
+
+    expect((await db.tasks.get(compound.id))?.isDeleted).toBe(false);
+    expect((await db.compoundChildren.get(uuid(310)))?.isDeleted).toBe(false);
+  });
+
+  it('retires that same compound when only a CHILD is placed elsewhere — a child placement is not the compound’s', async () => {
+    // The opposite direction, and the distinction that matters: the fallback
+    // reads the COMPOUND's own placements. A child of it living on another
+    // live board says nothing about whose artifact the compound is, so the
+    // window-matching compound is still this board's and still retires.
+    const board = await seedBoard(uuid(119));
+    const otherBoard = await seedBoard(uuid(120));
+    const compound = derivedCompound(uuid(29));
+    const original = plainTask('original-child-2');
+    await db.tasks.add(compound);
+    await db.tasks.add(original);
+    await seedLink(uuid(311), compound.id, original.id);
+    await seedPlacement(uuid(220), board.id, compound.id);
+    await seedPlacement(uuid(221), otherBoard.id, original.id);
+
+    expect(await windowStampedDerivedOrphanedByBoard(board.id)).toEqual([compound.id]);
+
+    await deleteBoard(board.id);
+
+    expect((await db.tasks.get(compound.id))?.isDeleted).toBe(true);
+    // The ORIGINAL child is library content and survives untouched.
+    expect((await db.tasks.get(original.id))?.isDeleted).toBe(false);
+  });
+
   it('does NOT cascade a derived compound stamped for a different window', async () => {
     const board = await seedBoard(uuid(116));
     // Same board, different window — last window's compound, whatever left

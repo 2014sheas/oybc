@@ -654,7 +654,7 @@ final class DerivedCountersCascadeTests: XCTestCase {
 
     // MARK: - (d) repeatBoardAsTemplate — RB4
 
-    func test_repeatBoard_dropsDerivedCompoundsKeepsDerivedCountersAndAuthorsEmptySourcesAndVary() throws {
+    func test_repeatBoard_dropsDerivedCompoundsRecordsDerivedCountersByTheirRootAndAuthorsEmptySourcesAndVary() throws {
         let database = try makeDb()
         let board = try makeBoard(id: "board-r1")
         let derivedCompoundRow = derivedCompound(id: "compound-r1")
@@ -662,6 +662,8 @@ final class DerivedCountersCascadeTests: XCTestCase {
         try database.write { db in
             try board.insert(db)
             try self.plainTask(id: "plain-r1").insert(db)
+            // The derived counter’s durable root — what the record must name.
+            try self.plainTask(id: self.root, type: .counting).insert(db)
             try derivedCompoundRow.insert(db)
             try derivedCounterRow.insert(db)
             // A hand-made COMPOUND with no window stamp stays a member.
@@ -680,7 +682,8 @@ final class DerivedCountersCascadeTests: XCTestCase {
         XCTAssertEqual(template.manualTaskVary, [:])
         let members = template.manualTaskIds ?? []
         XCTAssertFalse(members.contains("compound-r1"), "a per-window derived compound does not carry forward")
-        XCTAssertTrue(members.contains("derived-r1"), "a derived counter is re-minted each window — it passes through")
+        XCTAssertFalse(members.contains("derived-r1"), "the per-window derived row is never named")
+        XCTAssertTrue(members.contains(root), "a derived counter is recorded by its durable ROOT")
         XCTAssertTrue(members.contains("plain-r1"))
         XCTAssertTrue(members.contains("plain-compound-r1"))
 
@@ -688,6 +691,71 @@ final class DerivedCountersCascadeTests: XCTestCase {
         XCTAssertEqual(stored.sources, [])
         XCTAssertEqual(stored.manualTaskVary, [:])
         XCTAssertFalse((stored.manualTaskIds ?? []).contains("compound-r1"))
+    }
+
+    func test_repeatBoard_recordSurvivesDeletingTheBoardItWasRepeatedFrom() throws {
+        // Final-review FI2 — before the amendment the record named the DERIVED
+        // id, the board delete retired that row, and validateSpawnPool then
+        // skipped every future window as .hasDeletedTasks.
+        let database = try makeDb()
+        let board = try makeBoard(id: "board-r2")
+        let derivedRow = derivedCounter(
+            id: BoardSources.derivedTaskId(boardId: "board-r2", rootTaskId: root)
+        )
+        try database.write { db in
+            try board.insert(db)
+            try self.plainTask(id: self.root, type: .counting).insert(db)
+            try derivedRow.insert(db)
+            try self.placement(id: "bt-r2a", boardId: board.id, taskId: derivedRow.id).insert(db)
+            // Fill the other 8 cells so pool size is never the complaint
+            // (a 3x3 with centerSquareType .none wants 9 members).
+            for index in 0..<8 {
+                try self.plainTask(id: "filler-r2-\(index)").insert(db)
+                try self.placement(
+                    id: "bt-r2-\(index)", boardId: board.id, taskId: "filler-r2-\(index)"
+                ).insert(db)
+            }
+        }
+
+        let template = try XCTUnwrap(try database.repeatBoardAsTemplate(
+            board: board, cadence: .weekly, userId: userId, weekStartDay: "monday", now: now
+        ))
+        XCTAssertTrue((template.manualTaskIds ?? []).contains(root))
+        XCTAssertFalse((template.manualTaskIds ?? []).contains(derivedRow.id))
+
+        try database.deleteBoard(id: board.id)
+
+        XCTAssertTrue(try XCTUnwrap(try task(database, derivedRow.id)).isDeleted,
+                      "the derived row still dies with its board (RB5)")
+        let stored = try XCTUnwrap(try database.fetchRecurringBoardTemplate(id: template.id))
+        let poolTasks = try database.read { db in
+            try Task.filter((stored.manualTaskIds ?? []).contains(Column("id"))).fetchAll(db)
+        }
+        XCTAssertEqual(poolTasks.count, 9)
+        XCTAssertFalse(poolTasks.contains { $0.isDeleted })
+        XCTAssertEqual(validateSpawnPool(template: stored, poolTasks: poolTasks), .ok)
+    }
+
+    func test_repeatBoard_skipsADerivedCounterWhoseRootIsGone() throws {
+        let database = try makeDb()
+        let board = try makeBoard(id: "board-r3")
+        var deadRoot = plainTask(id: root, type: .counting)
+        deadRoot.isDeleted = true
+        deadRoot.deletedAt = earlier
+        try database.write { db in
+            try board.insert(db)
+            try deadRoot.insert(db)
+            try self.plainTask(id: "plain-r3").insert(db)
+            try self.derivedCounter(id: "derived-r3").insert(db)
+            try self.placement(id: "bt-r3a", boardId: board.id, taskId: "plain-r3").insert(db)
+            try self.placement(id: "bt-r3b", boardId: board.id, taskId: "derived-r3").insert(db)
+        }
+
+        let template = try XCTUnwrap(try database.repeatBoardAsTemplate(
+            board: board, cadence: .weekly, userId: userId, weekStartDay: "monday", now: now
+        ))
+
+        XCTAssertEqual(template.manualTaskIds ?? [], ["plain-r3"])
     }
 
     // MARK: - (e) roster health — Split-up expansion
@@ -835,5 +903,158 @@ final class DerivedCountersCascadeTests: XCTestCase {
 
         let rootTask = countingTask(id: "root", maxCount: 20, currentCount: 12)
         XCTAssertTrue(TasksTabViewModel.isInProgress(rootTask, library: library))
+    }
+
+    // MARK: - (g) affected-board folds (final-review items 7 + 10)
+
+    /// A 3×3 board whose row 0 is persisted as a completed bingo line.
+    private func boardWithCompletedRow0(
+        _ database: AppDatabase,
+        id: String,
+        taskIds: [String]
+    ) throws -> Board {
+        let dict: [String: Any] = [
+            "id": id, "userId": userId, "name": "Week board",
+            "status": BoardStatus.active.rawValue, "boardSize": 3,
+            "timeframe": Timeframe.weekly.rawValue,
+            "startDate": windowStart, "endDate": windowEnd,
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 3, "linesCompleted": 1,
+            "completedLineIds": "[\"row_0\"]",
+            "createdAt": earlier, "updatedAt": earlier, "version": 1,
+            "isDeleted": false,
+        ]
+        let board = try JSONDecoder().decode(
+            Board.self, from: JSONSerialization.data(withJSONObject: dict)
+        )
+        try database.write { db in
+            try board.insert(db)
+            for (col, taskId) in taskIds.enumerated() {
+                try BoardTask(
+                    id: "bt-\(id)-\(col)", boardId: id, taskId: taskId,
+                    row: 0, col: col, isCenter: false,
+                    createdAt: self.earlier, updatedAt: self.earlier, version: 1,
+                    isDeleted: false, deletedAt: nil
+                ).insert(db)
+            }
+        }
+        return board
+    }
+
+    /// A normal task completed INSIDE the board's window (event-owning, so it
+    /// needs a real completion event to read complete).
+    private func windowedCompleteTask(_ database: AppDatabase, id: String) throws {
+        try database.write { db in
+            var t = self.plainTask(id: id)
+            t.isCompleted = true
+            t.completedAt = self.earlier
+            try t.insert(db)
+            try TaskEvent(
+                id: "ev-\(id)", userId: self.userId, taskId: id,
+                kind: .completion, delta: nil, occurredAt: self.earlier, boardId: nil,
+                createdAt: self.earlier, updatedAt: self.earlier,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).insert(db)
+        }
+    }
+
+    func test_rootDelete_reDerivesTheBoardThatCarriedTheRetiredDerivedCounter() throws {
+        // Item 7 — the step-4b affected-board fold. Deleting the fold leaves
+        // the board's persisted bingo line glowing through a retired cell.
+        let database = try makeDb()
+        var source = plainTask(id: root, type: .counting)
+        source.isCounter = true
+        var derived = derivedCounter(id: "derived-g1")
+        derived.isCompleted = true
+        derived.completedAt = earlier
+        try database.write { db in
+            try source.insert(db)
+            try derived.insert(db)
+        }
+        try windowedCompleteTask(database, id: "plain-g1")
+        try windowedCompleteTask(database, id: "plain-g2")
+        let board = try boardWithCompletedRow0(
+            database, id: "board-g1", taskIds: ["derived-g1", "plain-g1", "plain-g2"]
+        )
+
+        try database.deleteTaskWithCascade(taskId: root)
+
+        let after = try XCTUnwrap(try database.fetchBoard(id: board.id))
+        XCTAssertFalse((after.completedLineIds ?? []).contains("row_0"),
+                       "a bingo line cannot keep glowing through a retired cell")
+        XCTAssertEqual(after.completedTasks, 2)
+        XCTAssertGreaterThan(after.version, 1, "the board was in the affected set")
+    }
+
+    func test_rootDelete_leavesABoardOfOnlyOrdinaryTasksOutOfTheAffectedSet() throws {
+        // The control: a board the deleted root never reached must NOT be
+        // touched, or the fold above would be proving nothing.
+        let database = try makeDb()
+        var source = plainTask(id: root, type: .counting)
+        source.isCounter = true
+        try database.write { db in
+            try source.insert(db)
+            try self.derivedCounter(id: "derived-g2").insert(db)
+        }
+        try windowedCompleteTask(database, id: "plain-g3")
+        try windowedCompleteTask(database, id: "plain-g4")
+        try windowedCompleteTask(database, id: "plain-g5")
+        let untouched = try boardWithCompletedRow0(
+            database, id: "board-g2", taskIds: ["plain-g3", "plain-g4", "plain-g5"]
+        )
+
+        try database.deleteTaskWithCascade(taskId: root)
+
+        let after = try XCTUnwrap(try database.fetchBoard(id: untouched.id))
+        XCTAssertEqual(after.version, 1, "an unrelated board never joins the affected set")
+    }
+
+    func test_deleteCounterWithUnlink_reDerivesTheBoardsOfTheMembersItRetires() throws {
+        // Item 10 — the hub path retires the window-stamped members ITSELF,
+        // before the cascade, so the cascade's own step-4b lookup finds
+        // nothing left to fold. Without the caller handing those boards over
+        // the line below would keep glowing.
+        let database = try makeDb()
+        var source = plainTask(id: root, type: .counting)
+        source.currentCount = 40
+        source.maxCount = 100
+        source.isCounter = true
+        var derived = derivedCounter(id: "derived-g3")
+        derived.isCompleted = true
+        derived.completedAt = earlier
+        try database.write { db in
+            try source.insert(db)
+            try derived.insert(db)
+        }
+        try windowedCompleteTask(database, id: "plain-g6")
+        try windowedCompleteTask(database, id: "plain-g7")
+        let board = try boardWithCompletedRow0(
+            database, id: "board-g3", taskIds: ["derived-g3", "plain-g6", "plain-g7"]
+        )
+
+        try database.deleteCounterWithUnlink(sourceId: root, now: now)
+
+        XCTAssertTrue(try XCTUnwrap(try task(database, "derived-g3")).isDeleted)
+        let after = try XCTUnwrap(try database.fetchBoard(id: board.id))
+        XCTAssertFalse((after.completedLineIds ?? []).contains("row_0"))
+        XCTAssertEqual(after.completedTasks, 2)
+        XCTAssertGreaterThan(after.version, 1, "the retired member's board re-derived in-txn")
+    }
+
+    // MARK: - (h) read audit — the count STRING (final-review item 9)
+
+    func test_countingSubtitle_readsTheLinkedMembersOwnNumberNotTheRootMirror() {
+        // A member of a root at 12 whose window opened at 10, goal 5.
+        let linked = countingTask(id: "linked-h", sharedCounterId: "root-1",
+                                  baseline: 10, maxCount: 5, currentCount: 12)
+        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: linked), "Run · 2 / 5 km")
+
+        let rootTask = countingTask(id: "root-h", maxCount: 20, currentCount: 12)
+        XCTAssertEqual(TaskCountDisplay.countingSubtitle(for: rootTask), "Run · 12 / 20 km")
+    }
+
+    func test_countingSubtitle_isNilWhenTheTaskCannotFormOne() {
+        let goalless = countingTask(id: "goalless-h", maxCount: nil, currentCount: 3)
+        XCTAssertNil(TaskCountDisplay.countingSubtitle(for: goalless))
     }
 }

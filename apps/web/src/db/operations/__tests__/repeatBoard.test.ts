@@ -6,12 +6,14 @@ import {
   TaskType,
   findTemplatesPendingSpawn,
   getTimeframeBoundaries,
+  validateSpawnPool,
   type Board,
   type BoardTask,
   type Task,
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { repeatBoardAsRecurring } from '../repeatBoard';
+import { deleteBoard } from '../boards';
 
 /**
  * P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
@@ -237,14 +239,16 @@ describe('repeatBoardAsRecurring', () => {
     expect(stored?.manualTaskVary).toEqual({});
   });
 
-  it('excludes a per-window derived COMPOUND from manualTaskIds but keeps a derived counter (B2 RB4)', async () => {
+  it('drops a per-window derived COMPOUND and records a derived COUNTER by its root (B2 RB4, amended)', async () => {
     // A derived compound is an artifact of ONE window — carrying it forward
     // as a hand-added member would pin every future window to last window's
-    // re-targeted copy. A derived counter, by contrast, is re-minted from its
-    // root for each new window, so it passes through as an ordinary member.
+    // re-targeted copy. A derived COUNTER is dropped in favour of its ROOT:
+    // the derived row dies with this board (RB5), so recording it would kill
+    // the repeating record the day the user deletes the board they repeated.
     const board = buildOneOffBoard();
     await db.boards.add(board);
     await seedTask('plain-1');
+    await seedTask('root-1');
     await db.tasks.add({
       id: 'derived-compound-1',
       userId: USER_ID,
@@ -302,11 +306,94 @@ describe('repeatBoardAsRecurring', () => {
 
     const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
 
-    expect(template.manualTaskIds).toEqual([
-      'plain-1',
-      'derived-counter-1',
-      'plain-compound-1',
-    ]);
+    expect(template.manualTaskIds).toEqual(['plain-1', 'root-1', 'plain-compound-1']);
+    expect(template.manualTaskIds).not.toContain('derived-counter-1');
     expect(template.seedTaskIds).not.toContain('derived-compound-1');
+  });
+
+  it('survives deleting the board it was repeated from — no has_deleted_tasks (FI2)', async () => {
+    // The regression FI2 names: before the amendment the record's manual
+    // layer held the DERIVED id, the board delete retired that row, and
+    // `validateSpawnPool` then skipped every future window.
+    const board = buildOneOffBoard();
+    await db.boards.add(board);
+    await seedTask('root-2');
+    await db.tasks.add({
+      id: 'derived-counter-2',
+      userId: USER_ID,
+      title: 'Run 5 km (this week)',
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'km',
+      maxCount: 5,
+      sharedCounterId: 'root-2',
+      baseline: 0,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      startDate: '2026-05-06T00:00:00.000',
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    await seedBoardTask(board.id, 'derived-counter-2', 0, 0);
+    // A FREE-centre 3×3 wants 8 members; fill the rest so the only thing
+    // `validateSpawnPool` can complain about is a dead member id.
+    for (let i = 0; i < 7; i++) {
+      await seedTask(`filler-${i}`);
+      await seedBoardTask(board.id, `filler-${i}`, Math.floor((i + 1) / 3), (i + 1) % 3);
+    }
+
+    const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
+    expect(template.manualTaskIds).toContain('root-2');
+    expect(template.manualTaskIds).not.toContain('derived-counter-2');
+
+    await deleteBoard(board.id);
+
+    const stored = await db.recurringBoardTemplates.get(template.id);
+    const poolTasks = (
+      await Promise.all((stored?.manualTaskIds ?? []).map((id) => db.tasks.get(id)))
+    ).filter((t): t is Task => t != null);
+    expect(poolTasks).toHaveLength(8);
+    expect(poolTasks.some((t) => t.isDeleted)).toBe(false);
+    expect(validateSpawnPool(stored!, poolTasks)).toEqual({ ok: true });
+  });
+
+  it('skips a derived counter whose root is gone rather than recording a dead id (FI2)', async () => {
+    const board = buildOneOffBoard();
+    await db.boards.add(board);
+    await seedTask('plain-2');
+    const deadRoot = await seedTask('root-3');
+    await db.tasks.put({ ...deadRoot, isDeleted: true, deletedAt: NOW });
+    await db.tasks.add({
+      id: 'derived-counter-3',
+      userId: USER_ID,
+      title: 'Walk 1 km (this week)',
+      type: TaskType.COUNTING,
+      action: 'Walk',
+      unit: 'km',
+      maxCount: 1,
+      sharedCounterId: 'root-3',
+      baseline: 0,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      startDate: '2026-05-06T00:00:00.000',
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    await seedBoardTask(board.id, 'plain-2', 0, 0);
+    await seedBoardTask(board.id, 'derived-counter-3', 0, 1);
+
+    const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
+
+    expect(template.manualTaskIds).toEqual(['plain-2']);
   });
 });

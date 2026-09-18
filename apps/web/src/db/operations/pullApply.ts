@@ -11,8 +11,10 @@ import {
   USER_SCOPED_SYNC_COLLECTIONS,
   SyncOperationType,
   type SyncCollection,
+  type Task,
 } from '@oybc/shared';
 import { db } from '../internal';
+import { refreshPulledDerivedBaseline } from './derivedCounters';
 import { resolveConflict, type SyncableEntity } from '../../firebase/conflictResolver';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { runBoardCascadeForTask, runBoardCascadeForBoardId } from './orchestration';
@@ -198,6 +200,14 @@ export async function applyRemoteSubdoc(
       // compound's derived state had flipped. The cascade is idempotent
       // and small-N, so always running it is the safer + iOS-parity choice.
       if (collectionName === 'tasks') {
+        // Board Sources §Member rules (B2, final-review FI1): a pulled
+        // window-stamped derived counter carries the MINTING device's
+        // `baseline`, which is short whenever that device was missing a
+        // pre-window increment this one holds. Re-derive it from the local
+        // event union — non-authored (baseline only, no version bump, no
+        // enqueue), and BEFORE the cascade so the board stats below read the
+        // corrected number.
+        await refreshPulledDerivedBaseline(validated as unknown as Task);
         // Let cascade errors propagate so the outer Dexie transaction rolls
         // back the `table.put(validated)` that just landed. Pulling will retry
         // on the next cycle. Previously this branch swallowed errors, which

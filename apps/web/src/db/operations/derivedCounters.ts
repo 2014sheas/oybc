@@ -343,6 +343,45 @@ export async function refreshDerivedBaselines(
   return touched;
 }
 
+/**
+ * Re-derive ONE just-pulled derived counter's `baseline` from the LOCAL event
+ * log of its root (final-review FI1).
+ *
+ * `baseline` rides the wire — every authored write to a derived row ships the
+ * whole `Task` — so a device that minted the row while missing a pre-window
+ * increment pushes a SHORT baseline, and a receiving device whose event union
+ * is complete has its correct value clobbered by ordinary LWW. On that device
+ * the ROOT's count is not short, so every read of the member is inflated by the
+ * missing delta, silently, until someone increments that root locally.
+ *
+ * The cure takes the same posture {@link refreshDerivedBaselines} already takes
+ * on the `taskEvents` pull: recompute from rows this device already holds and
+ * write `baseline` and nothing else — no `updatedAt`, no `version` bump, no
+ * sync enqueue — so the value converges without either side authoring it.
+ * Called from the `tasks` branch of the pull-apply path, right after the
+ * remote-wins upsert and BEFORE the board cascade, so the cascade sees the
+ * corrected number.
+ *
+ * A row that isn't a live window-stamped derived counter, or whose baseline is
+ * already right, is not touched at all.
+ *
+ * Must run inside the caller's open transaction (scoping `tasks` +
+ * `taskEvents`).
+ *
+ * @param task - The row the pull just applied.
+ * @returns True when the row's `baseline` was actually rewritten.
+ */
+export async function refreshPulledDerivedBaseline(task: Task): Promise<boolean> {
+  if (task.isDeleted || !isWindowStampedDerived(task)) return false;
+  const rootTaskId = task.sharedCounterId!;
+  const rootEvents = await db.taskEvents.where('taskId').equals(rootTaskId).toArray();
+  // `task.startDate` is non-null by construction — `isWindowStampedDerived`.
+  const baseline = computeWindowBaseline(rootTaskId, rootEvents, task.startDate!);
+  if ((task.baseline ?? 0) === baseline) return false;
+  await db.tasks.update(task.id, { baseline });
+  return true;
+}
+
 // ─── Deletion sweep (docs/BOARD_SOURCES.md §Member rules — *Deletion*) ────────
 
 /**
@@ -410,6 +449,30 @@ async function hasLivePlacementElsewhere(
 }
 
 /**
+ * Do two stored `startDate`s name the same window opening (final-review M2)?
+ *
+ * `Board.startDate` has TWO live encodings — the local ISO the wizard writes
+ * (`2026-09-18T00:00:00`, no offset) and the full UTC form a sync round-trip
+ * can hand back — and a derived row copies whichever one its board carried at
+ * mint time. Those two never compare equal as strings, so a plain `!==` would
+ * make {@link isMintedForBoard} answer "not mine" for a re-encoded pull and
+ * silently skip the retire. Comparing INSTANTS is what makes the two
+ * encodings agree; a stamp that doesn't parse on either side falls back to
+ * string equality rather than claiming a match.
+ *
+ * @param a - One stored start date (a derived row's).
+ * @param b - The other (its candidate board's).
+ * @returns True when both name the same instant (or the same literal string).
+ */
+function sameWindowStart(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || b == null) return a === b;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
+  return ta === tb;
+}
+
+/**
  * Was this row MINTED FOR `board` — i.e. is it this board's own per-window
  * artifact rather than some other board's row that merely passed through?
  *
@@ -438,7 +501,9 @@ async function isMintedForBoard(task: Task, board: Board): Promise<boolean> {
     return task.sharedCounterId != null && task.id === derivedTaskId(board.id, task.sharedCounterId);
   }
   if (!isWindowStampedDerivedCompound(task)) return false;
-  if (task.startDate !== board.startDate || task.timeframe !== board.timeframe) return false;
+  if (!sameWindowStart(task.startDate, board.startDate) || task.timeframe !== board.timeframe) {
+    return false;
+  }
   // Live-or-tombstoned links: the compound's own retirement tombstones them,
   // and a re-entrant sweep must still recognise its own handiwork.
   const links = await db.compoundChildren.where('compoundTaskId').equals(task.id).toArray();

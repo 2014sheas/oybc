@@ -31,5 +31,30 @@ extension AppDatabase {
         migrator.registerMigration("v31") { db in
             try db.execute(sql: "ALTER TABLE recurring_board_templates ADD COLUMN manualTaskVary TEXT")
         }
+
+        // v32: Board Sources §Member rules (B2) — index `tasks.sharedCounterId`.
+        //
+        // v15 added the column with "no index needed — source lookups are
+        // small-N in practice"; B2 made that false. Every window-stamped
+        // derived read (`fetchWindowStampedDerived`, the baseline refresh, the
+        // deletion sweeps) filters on this column, and the pull path runs one
+        // per affected task inside the write transaction — an unindexed full
+        // `tasks` scan per row, against "sync: background only, never block
+        // UI". The web twin has always been index-backed
+        // (`db.tasks.where('sharedCounterId')`), so this also closes a port
+        // asymmetry; it speeds up the pre-existing `linkedTasks` scans too.
+        //
+        // NOT in `Schema.sql`: that file is the v1 base schema, and
+        // `sharedCounterId` does not exist in it (v15 adds the column), so an
+        // index there would fail at first launch. The column and its index
+        // both arrive by migration.
+        //
+        // `IF NOT EXISTS` so a DB that somehow already carries the index
+        // (hand-repaired, or a re-run) migrates cleanly.
+        migrator.registerMigration("v32") { db in
+            try db.execute(
+                sql: "CREATE INDEX IF NOT EXISTS idx_tasks_shared_counter ON tasks(sharedCounterId)"
+            )
+        }
     }
 }

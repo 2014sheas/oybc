@@ -346,8 +346,16 @@ extension AppDatabase {
                     )
                 ))
             case .board:
+                // `reference` MUST be LOCAL wall-clock ISO — `resolveSourceBoard`
+                // compares series windows lexicographically against board dates
+                // in that shape, and a UTC `currentTimestamp()` mis-sorts near
+                // local midnight in any non-UTC zone. `window.startDate` is
+                // already local; the INDEFINITE fallback must be too (web passes
+                // `undefined` and defaults to `toLocalISO(new Date())`).
                 guard let board = try Self.resolveSourceBoard(
-                    db: db, storedBoardId: source.sourceId, reference: window.startDate ?? now
+                    db: db,
+                    storedBoardId: source.sourceId,
+                    reference: window.startDate ?? wizardLocalISOString(Date())
                 ) else {
                     rawSupplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
                     continue
@@ -514,6 +522,53 @@ extension AppDatabase {
         return touched
     }
 
+    /// Re-derive ONE just-pulled derived counter's `baseline` from the LOCAL
+    /// event log of its root (final-review FI1). Swift twin of web's
+    /// `refreshPulledDerivedBaseline`.
+    ///
+    /// `baseline` rides the wire — every authored write to a derived row ships
+    /// the whole `Task` — so a device that minted the row while missing a
+    /// pre-window increment pushes a SHORT value that overwrites a complete
+    /// one by ordinary LWW. On the receiving device the ROOT's count is not
+    /// short, so every read of the member is inflated by exactly the missing
+    /// delta, silently, until someone increments that root locally.
+    ///
+    /// The cure takes the same posture `refreshDerivedBaselines` already takes
+    /// on the `taskEvents` pull: recompute from rows this device already holds
+    /// and write `baseline` and nothing else — no `updatedAt`, no `version`
+    /// bump, no sync enqueue — so the value converges without either side
+    /// authoring it. Called from `runPullCascade`, which is exactly the
+    /// tasks-upsert branch of BOTH pull entry points (the batch collection
+    /// pull and the snapshot listener), and runs before that function's board
+    /// derivation so the stats read the corrected number.
+    ///
+    /// A row that isn't a live window-stamped derived counter, or whose
+    /// baseline is already right, is not touched at all.
+    ///
+    /// - Parameters:
+    ///   - db: The pull's open transaction.
+    ///   - taskId: The row the pull just applied.
+    /// - Returns: True when the row's `baseline` was actually rewritten.
+    @discardableResult
+    static func refreshPulledDerivedBaseline(db: Database, taskId: String) throws -> Bool {
+        guard let task = try Task.fetchOne(db, key: taskId),
+              !task.isDeleted,
+              BoardSources.isWindowStampedDerived(task),
+              let rootTaskId = task.sharedCounterId,
+              let boundary = task.startDate
+        else { return false }
+        let rootEvents = try TaskEvent.filter(Column("taskId") == rootTaskId).fetchAll(db)
+        let baseline = BoardSources.computeWindowBaseline(
+            rootTaskId: rootTaskId,
+            events: rootEvents,
+            boundary: boundary
+        )
+        guard (task.baseline ?? 0) != baseline else { return false }
+        try db.execute(sql: "UPDATE tasks SET baseline = ? WHERE id = ?",
+                       arguments: [baseline, task.id])
+        return true
+    }
+
     /// The sync pull path's per-task sub-step: restamp an event-owning task's
     /// lifetime caches from the just-pulled events, then refresh every
     /// window-stamped derived counter hanging off it (B2 — the root's event
@@ -625,6 +680,30 @@ extension AppDatabase {
         return false
     }
 
+    /// Do two stored `startDate`s name the same window opening (final-review
+    /// M2)? Swift twin of web's `sameWindowStart`.
+    ///
+    /// `Board.startDate` has TWO live encodings — the offset-less local ISO
+    /// the wizard writes (`2026-09-18T00:00:00`) and the full UTC form a sync
+    /// round-trip can hand back — and a derived row copies whichever one its
+    /// board carried at mint time. Those never compare equal as strings, so a
+    /// plain `==` would make `isMintedForBoard` answer "not mine" for a
+    /// re-encoded pull and silently skip the retire. Comparing INSTANTS is
+    /// what makes the two encodings agree; a stamp that doesn't parse on
+    /// either side falls back to string equality rather than claiming a match.
+    ///
+    /// - Parameters:
+    ///   - a: One stored start date (a derived row's).
+    ///   - b: The other (its candidate board's).
+    /// - Returns: True when both name the same instant (or the same literal).
+    static func sameWindowStart(_ a: String?, _ b: String?) -> Bool {
+        guard let a, let b else { return a == b }
+        guard let da = DateFormatting.parseISO(a), let db = DateFormatting.parseISO(b) else {
+            return a == b
+        }
+        return da == db
+    }
+
     /// Was this row MINTED FOR `board` — i.e. is it this board's own
     /// per-window artifact rather than some other board's row that merely
     /// passed through?
@@ -659,9 +738,9 @@ extension AppDatabase {
             return task.id == BoardSources.derivedTaskId(boardId: board.id, rootTaskId: root)
         }
         guard isWindowStampedDerivedCompound(task) else { return false }
-        guard task.startDate == board.startDate, task.timeframe == board.timeframe else {
-            return false
-        }
+        guard sameWindowStart(task.startDate, board.startDate),
+              task.timeframe == board.timeframe
+        else { return false }
         // Live-or-tombstoned links: the compound's own retirement tombstones
         // them, and a re-entrant sweep must still recognise its own handiwork.
         let links = try CompoundChild

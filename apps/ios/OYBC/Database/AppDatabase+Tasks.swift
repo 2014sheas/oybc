@@ -681,9 +681,12 @@ extension AppDatabase {
         /// `CompoundChild` rows where the task IS the parent compound.
         /// Each parent link is severed; the child Tasks remain.
         let parentLinkCount: Int
-        /// P5 decision 8 — live (non-deleted) tasks whose `sharedCounterId`
-        /// points at this task, i.e. this task is a counter SOURCE with
-        /// derived members. Deleting a source unlinks these (see
+        /// P5 decision 8 — count of live tasks whose `sharedCounterId` points
+        /// at this task (i.e. this task is a counter SOURCE) and that will be
+        /// UNLINKED-and-kept. 0 for any non-source task. Excludes the
+        /// window-stamped derived members counted by
+        /// `derivedWindowCounterCount` below — those are deleted, not
+        /// unlinked. Deleting a source unlinks these (see
         /// `deleteCounterWithUnlink` in `AppDatabase+Counters.swift`) rather
         /// than orphaning them, so the confirm dialog surfaces this count
         /// separately from the ordinary board/compound impact above.
@@ -785,7 +788,18 @@ extension AppDatabase {
     ///   - db: GRDB database handle (must be inside a write transaction).
     ///   - taskId: The task to cascade-delete.
     ///   - now: ISO8601 timestamp stamped on every row written here.
-    static func deleteTaskWithCascadeInDb(db: Database, taskId: String, now: String) throws {
+    ///   - extraAffectedBoardIds: Boards the CALLER already knows must
+    ///     re-derive in this transaction because of writes it made before
+    ///     calling (final-review item 10: `deleteCounterWithUnlink` retires
+    ///     the root's window-stamped members itself, so step 4b below can no
+    ///     longer find them or their boards). Merged into the affected set;
+    ///     unknown/sealed/deleted ids are skipped by step 5's own guards.
+    static func deleteTaskWithCascadeInDb(
+        db: Database,
+        taskId: String,
+        now: String,
+        extraAffectedBoardIds: Set<String> = []
+    ) throws {
         guard var task = try Task.fetchOne(db, key: taskId) else { return }
 
         // Windowed Completion (hardening item 3): capture the affected-board
@@ -811,6 +825,7 @@ extension AppDatabase {
             parentCompounds: parentCompoundsForDeletion,
             boardTasks: allBoardTasksPreDelete
         )
+        affectedBoardIdsForDeletion.formUnion(extraAffectedBoardIds)
 
         // 1. Soft-delete BoardTask placements (tombstone — see BoardTask's doc comment).
         let placements = try BoardTask

@@ -809,11 +809,23 @@ extension AppDatabase {
                 // `taskId` on one board trips the placement-integrity
                 // invariants (docs/BOARD_INTEGRITY.md), so the repeat cell is
                 // dropped rather than written.
+                //
+                // The invariant this trades away, stated plainly: the board
+                // comes out one square short, against "boards are always
+                // exactly filled". Throwing would be worse (a save the user
+                // cannot complete), so the guard drops the cell and LOGS — the
+                // log is the only signal that the unreachable path fired, and
+                // it exists on both platforms (web `console.warn`s here).
                 var seenTaskIds = Set<String>()
                 var deduped: [BoardTask] = []
                 for (index, var row) in placedRows.enumerated() {
                     if index < placementIds.count { row.taskId = placementIds[index] }
-                    guard seenTaskIds.insert(row.taskId).inserted else { continue }
+                    guard seenTaskIds.insert(row.taskId).inserted else {
+                        #if DEBUG
+                        print("saveWizardBoard: task \(row.taskId) resolved twice on board \(board.id); leaving cell \(index) empty")
+                        #endif
+                        continue
+                    }
                     deduped.append(row)
                 }
                 placedRows = deduped

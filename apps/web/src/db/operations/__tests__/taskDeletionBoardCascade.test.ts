@@ -377,6 +377,39 @@ describe('deleteTaskWithCascade — window-stamped derived members (B2 §Member 
     expect(ordinary?.version).toBe(1);
   });
 
+  it('re-derives that board through deleteCounterWithUnlink too (final-review item 10)', async () => {
+    // The hub's "delete this counter" path retires the window-stamped
+    // members ITSELF, before the cascade runs — so the cascade's own
+    // step-4b lookup finds nothing left to fold, and without the caller
+    // handing those boards over they would never re-derive in-transaction.
+    const ROOT = uuid(60);
+    const DERIVED = uuid(61);
+    const [B, C] = [uuid(62), uuid(63)];
+    const BOARD = uuid(64);
+
+    await db.tasks.add(
+      derivedMember(ROOT, '', {
+        sharedCounterId: undefined,
+        startDate: undefined,
+        createdInWizard: undefined,
+        isCounter: true,
+        title: 'Root',
+      }),
+    );
+    await db.tasks.add(derivedMember(DERIVED, ROOT, { isCompleted: true }));
+    await seedWindowedCompleteTask(B);
+    await seedWindowedCompleteTask(C);
+    await seedBoardWithCompletedRow0(BOARD, [DERIVED, B, C]);
+
+    await deleteCounterWithUnlink(ROOT);
+
+    expect((await db.tasks.get(DERIVED))?.isDeleted).toBe(true);
+    const board = await db.boards.get(BOARD);
+    expect(board?.completedLineIds).not.toContain('row_0');
+    expect(board?.completedTasks).toBe(2);
+    expect(await boardSyncEntries(BOARD)).toHaveLength(1);
+  });
+
   it('re-derives the board that carried the retired derived counter (its bingo line cannot keep glowing)', async () => {
     const ROOT = uuid(50);
     const DERIVED = uuid(51);

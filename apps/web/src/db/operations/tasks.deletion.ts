@@ -199,8 +199,18 @@ export async function deleteTaskWithCascade(id: string): Promise<void> {
  * @param id - The task to cascade-delete.
  * @param now - The write timestamp shared with the caller's other writes
  *   in the same transaction (so all rows agree on one instant).
+ * @param extraAffectedBoardIds - Boards the CALLER already knows must
+ *   re-derive in this transaction because of writes it made before calling
+ *   (final-review item 10: `deleteCounterWithUnlink` retires the root's
+ *   window-stamped members itself, so step 4b below can no longer find them
+ *   or their boards). Merged into the affected set; unknown/sealed/deleted
+ *   ids are skipped by step 5's own guards.
  */
-export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promise<void> {
+export async function deleteTaskWithCascadeInTxn(
+  id: string,
+  now: string,
+  extraAffectedBoardIds: Iterable<string> = [],
+): Promise<void> {
   const existing = await db.tasks.get(id);
   if (!existing) return;
 
@@ -213,6 +223,7 @@ export async function deleteTaskWithCascadeInTxn(id: string, now: string): Promi
   const allChildrenPre = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
   const parents = findTransitiveParentCompounds(id, allChildrenPre);
   const affectedBoardIds = new Set(findAffectedBoardIds(id, parents, allBoardTasksPre));
+  for (const boardId of extraAffectedBoardIds) affectedBoardIds.add(boardId);
 
   // 1. Soft-delete (tombstone) BoardTask placements.
   const placements = await db.boardTasks

@@ -597,14 +597,28 @@ Both platforms, one PR (#<n>).
   (task-cascade, counter-hub unlink, board-delete) via
   `softDeleteWindowStampedDerived`. Read audit: web
   `pages/tasks/taskCountDisplay.ts` ↔ iOS `Helpers/TaskCountDisplay.swift`.
-  `repeatBoard*` now writes `sources: []` + `manualTaskVary: {}` and drops
-  derived compounds from the copied roster. Roster health expands
-  split members. iOS added a batched
-  `fetchCompoundChildren(db:compoundTaskIds:)`.
+  A `tasks` pull that lands a window-stamped derived row re-derives that
+  row's baseline from the local event union, same non-authored posture
+  (`refreshPulledDerivedBaseline` ↔ the Swift twin, called from the pull
+  cascade) — without it a stale minting device's short baseline wins by
+  LWW and inflates every read on a device whose events are complete.
+  `repeatBoard*` now writes `sources: []` + `manualTaskVary: {}`, drops
+  derived compounds from the copied roster and records derived counters by
+  their root. `deleteCounterWithUnlink` hands the boards of the members it
+  retires to the cascade so they re-derive in the same transaction. Roster
+  health expands split members. iOS added a batched
+  `fetchCompoundChildren(db:compoundTaskIds:)` and a GRDB v32 index on
+  `tasks(sharedCounterId)`.
 - **Rulings (plan)**: RB1 wizard-side supply expansion deferred to B3.
   RB2 baseline = strictly-before boundary, instants; INDEFINITE → mint now.
-  RB3 idempotent mint (live → skip; tombstoned → revive). RB4 `repeatBoard*`
-  drops derived compounds, passes through derived counters. RB5 a live
+  RB3 idempotent mint (live → skip; tombstoned → revive). RB4 (amended by
+  the B2 final review) `repeatBoard*` drops derived compounds and records a
+  placed window-stamped derived COUNTER by its ROOT id, deduped, skipping a
+  root that is missing or deleted — the derived row is retired with its own
+  board under RB5, so a record naming it would be skipped for every future
+  window (`has_deleted_tasks`) the day that board is deleted; the root is
+  durable library content and is what each window re-mints from anyway. The
+  per-window target is re-derived at each assembly, not carried. RB5 a live
   placement = a live row on a live board; `deleteBoard`'s own placements
   are untouched. RB6 platform rng. RB7 read audit from the task's own
   mirror. RB8 hub expired filter is B3. RB9 `manualTaskVary = {}` at
@@ -634,9 +648,12 @@ Both platforms, one PR (#<n>).
   rows on either platform (id doesn't encode the window); surfacing
   `derivedWindowCounterCount` in the delete-confirm copy; the rules-cap
   emulator test carried from B1 if still open.
-- **Known, out of scope**: web `deleteBoard` still leaves its own
-  placements live — the orphan sweep is order-independent, so this is
-  safe if a future change starts tombstoning them.
+- **Known, out of scope**: `deleteBoard` leaves its ORDINARY placements
+  live on BOTH platforms (not a web-only gap) — its window-stamped derived
+  placements *are* tombstoned, by `softDeleteWindowStampedDerived`. The
+  orphan sweep reads candidates from every placement row, live or
+  tombstoned, so it stays correct either way if a future change starts
+  tombstoning the ordinary ones too.
 
 ## Test strategy
 
@@ -905,7 +922,15 @@ behaviour); a pulled board that itself pulls is flattened because its live
   `baseline`. The existing loop does NOT cover this — it iterates
   event-owning tasks (`isEventOwningTask` gate) and derived tasks own no
   events by construction. Closes late-synced backdated increments and keeps
-  sealed-board re-derivation deterministic.
+  sealed-board re-derivation deterministic;
+- **a `tasks` pull that lands a derived row itself** — `baseline` travels on
+  the wire (an authored write to a derived row ships the whole `Task`), so a
+  device that minted while missing a pre-window increment pushes a SHORT
+  value that overwrites a complete one by ordinary LWW. The pull-apply path
+  therefore re-derives the landed row's baseline from the LOCAL event union
+  before the board cascade, same non-authored posture. The honest
+  convergence claim is *converges once a pull carrying the missing events
+  reaches each device* — not "immediately, everywhere".
 
 **Sync rule: after mint, `baseline` is a pure, non-authored cache.** Both
 recompute paths follow the `recomputeTaskCachesFromPull` pattern — **no
@@ -921,6 +946,16 @@ counterpart, via `resolveDeriveLinkTarget`) keep today's frozen baseline and
 that entry point stays. The two *wizard* entry points to that flow go away
 (the #471 member menu in B3, the From-a-board grid in A), and the iOS
 Library sheet's derive entry is stripped in B3 for web parity.
+
+**Latch asymmetry, intended.** A refresh RAISES a baseline (a backdated
+increment arrives) and therefore lowers the displayed count, but it never
+re-evaluates the derived row's `isCompleted`. On the *local* counter paths
+the `propagateIncrement` that follows does re-evaluate, so the two paths can
+end on different completion states for the same converged data. That is
+deliberate: completion is a ONE-WAY latch — it only ever holds *up* — so the
+pull path declining to un-complete a square the user already earned is the
+conservative direction. Do not "fix" this by making the pull path clear the
+latch.
 
 Board reads/writes are unchanged: a derived cell displays
 `deriveDisplayedCount(derived, root)`; a tap increments the **root** (the

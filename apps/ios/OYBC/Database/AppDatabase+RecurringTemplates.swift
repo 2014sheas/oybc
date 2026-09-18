@@ -223,10 +223,18 @@ extension AppDatabase {
 
                 // Compound children — read ONCE, above the supply resolution,
                 // and reused by three consumers: Split-up expansion + the
-                // member-rules plan below, and the spawn-time derivation pass
-                // at the bottom (which is all it used to be read for).
+                // member-rules plan below, and the derivation pass at the
+                // bottom (which is all it used to be read for). Ordered by
+                // `childIndex` so it matches the batched
+                // `fetchCompoundChildren(db:compoundTaskIds:)` the other mint
+                // path uses. NOT an rng-determinism fix: both
+                // `applyMemberRules` and `planDerivedTasks` apply their own
+                // total childIndex-then-id comparator, so the plan is already
+                // order-independent. This is for the stats consumer below,
+                // which reads the rows in the order it is handed them.
                 let allChildren = try CompoundChild
                     .filter(Column("isDeleted") == false)
+                    .order(Column("childIndex"))
                     .fetchAll(db)
                 var childrenByCompound: [String: [CompoundChild]] = [:]
                 for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
@@ -466,6 +474,13 @@ extension AppDatabase {
                 // duplicate `taskId` on one board trips the
                 // placement-integrity invariants (docs/BOARD_INTEGRITY.md), so
                 // the repeat cell is left empty rather than written.
+                //
+                // The invariant this trades away, stated plainly: the board
+                // comes out one square short, against "boards are always
+                // exactly filled". Throwing would be worse, so the guard drops
+                // the cell and LOGS — the log is the only signal that the
+                // unreachable path fired, and it exists on both platforms (web
+                // `console.warn`s here).
                 var placedTaskIds = Set<String>()
                 let boardTasks = makeWizardBoardTaskRows(
                     placement: placement,
@@ -473,7 +488,15 @@ extension AppDatabase {
                     size: size,
                     centerType: template.centerSquareType,
                     now: now
-                ).filter { placedTaskIds.insert($0.taskId).inserted }
+                ).filter { row in
+                    guard placedTaskIds.insert(row.taskId).inserted else {
+                        #if DEBUG
+                        print("spawnRecurringBoard: task \(row.taskId) resolved twice on board \(boardId); leaving its cell empty")
+                        #endif
+                        return false
+                    }
+                    return true
+                }
 
                 // Windowed Completion (docs/WINDOWED_COMPLETION.md §What this
                 // closes — respawn-bleed row): run the derivation pass at spawn so
@@ -641,19 +664,44 @@ extension AppDatabase {
             // (shouldn't happen post board-integrity hardening, but this
             // mirrors makeWizardBoardTaskRows' dedup posture defensively)
             // must not appear twice in manualTaskIds.
+            // RB4 amended (final-review FI2) — the roots behind any placed
+            // window-stamped derived counters, in ONE batched read.
+            let rootIds = Array(Set(placedTaskById.values
+                .filter { BoardSources.isWindowStampedDerived($0) }
+                .compactMap { $0.sharedCounterId }))
+            var rootById: [String: Task] = [:]
+            if !rootIds.isEmpty {
+                for root in try Task.filter(rootIds.contains(Column("id"))).fetchAll(db) {
+                    rootById[root.id] = root
+                }
+            }
+
             var seen = Set<String>()
             var boardTaskIds: [String] = []
-            for bt in placements where !seen.contains(bt.taskId) {
-                seen.insert(bt.taskId)
+            for bt in placements {
+                let task = placedTaskById[bt.taskId]
                 // Board Sources §Member rules (B2, RB4) — a per-window derived
                 // COMPOUND is this window's re-targeted copy of a source
                 // compound; carrying it forward as a hand-added member would
-                // pin every future window to it. A derived COUNTER passes
-                // through: it is re-minted from its root for each new window
-                // like any other counting member.
-                if let task = placedTaskById[bt.taskId],
-                   Self.isWindowStampedDerivedCompound(task) { continue }
-                boardTaskIds.append(bt.taskId)
+                // pin every future window to it.
+                if let task, Self.isWindowStampedDerivedCompound(task) { continue }
+                // RB4 amended (final-review FI2) — a derived COUNTER is
+                // recorded by its ROOT id, never its own. The derived row
+                // belongs to THIS board's window and is retired with this
+                // board (RB5), so a record naming it would be skipped as
+                // `.hasDeletedTasks` for every future window the day the user
+                // deletes the board they repeated. The root is durable library
+                // content and is what each new window re-mints from anyway. A
+                // root that is itself missing or deleted contributes no member.
+                var memberId = bt.taskId
+                if let task,
+                   BoardSources.isWindowStampedDerived(task),
+                   let rootId = task.sharedCounterId {
+                    guard let root = rootById[rootId], !root.isDeleted else { continue }
+                    memberId = root.id
+                }
+                guard seen.insert(memberId).inserted else { continue }
+                boardTaskIds.append(memberId)
             }
 
             guard let input = buildRepeatBoardTemplateInput(

@@ -723,4 +723,29 @@ final class DerivedCountersTests: XCTestCase {
                        "Split up contributes the PARTS as selectable squares, never the compound")
         XCTAssertFalse(placed.contains(compoundId))
     }
+
+    // MARK: - 7. GRDB v32 — the tasks(sharedCounterId) index
+
+    func test_migrationV32_indexesTasksSharedCounterId() throws {
+        // Every window-stamped derived read filters on `sharedCounterId`, and
+        // the pull runs one per affected task inside its write transaction —
+        // unindexed that is a full `tasks` scan per row. The web twin has
+        // always been index-backed.
+        let database = try makeDb()
+        let indexes: [String] = try database.read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='tasks'"
+            ).map { row in row["name"] }
+        }
+        XCTAssertTrue(indexes.contains("idx_tasks_shared_counter"),
+                      "v32 must create idx_tasks_shared_counter; found \(indexes)")
+
+        // And it really covers the column the reads use.
+        let columns: [String] = try database.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA index_info('idx_tasks_shared_counter')")
+                .map { row in row["name"] }
+        }
+        XCTAssertEqual(columns, ["sharedCounterId"])
+    }
 }

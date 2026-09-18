@@ -34,4 +34,26 @@ enum TaskCountDisplay {
             sourceCurrentCount: task.currentCount ?? 0
         ).displayed
     }
+
+    /// Task detail's counting subtitle — `"Run · 2 / 5 km"` — built from the
+    /// DISPLAYED count, not the raw mirror.
+    ///
+    /// Extracted out of `RisoTaskDetailContentView`'s private `typeSubtitle`
+    /// so the read-audit fix it carries is actually pinned: inside a `View`'s
+    /// computed property the whole suite stayed green when the string was
+    /// reverted to `task.currentCount ?? 0` (every snapshot fixture has
+    /// `sharedCounterId == nil`, so nothing observed it).
+    ///
+    /// Returns `nil` — "this row has no counting subtitle to show" — for
+    /// anything missing an action, a unit or a goal, which is exactly the
+    /// caller's previous `guard`.
+    ///
+    /// - Parameter task: The task being rendered.
+    /// - Returns: The subtitle, or `nil` when the task can't form one.
+    static func countingSubtitle(for task: Task) -> String? {
+        guard let action = task.action, let unit = task.unit, let max = task.maxCount else {
+            return nil
+        }
+        return "\(action) · \(displayedCount(for: task)) / \(max) \(unit)"
+    }
 }

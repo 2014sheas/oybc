@@ -1941,7 +1941,8 @@ extension SyncService {
     ///         responsible for the enclosing `write { db in ... }` block.
     ///   - changedTaskId: The id of the Task that was just upserted.
     private func runPullCascade(db: Database, changedTaskId: String) throws {
-        // Fetch lookups needed by DerivationPass.
+        // B2 final-review FI1 (non-authored: baseline only), then the DerivationPass lookups.
+        try AppDatabase.refreshPulledDerivedBaseline(db: db, taskId: changedTaskId)
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
@@ -1962,9 +1963,7 @@ extension SyncService {
         var taskById: [String: Task] = [:]
         for t in allTasks { taskById[t.id] = t }
         var childrenByCompound: [String: [CompoundChild]] = [:]
-        for c in allChildren {
-            childrenByCompound[c.compoundTaskId, default: []].append(c)
-        }
+        for c in allChildren { childrenByCompound[c.compoundTaskId, default: []].append(c) }
 
         let parentCompounds = DerivationPass.findTransitiveParentCompounds(
             changedTaskId: changedTaskId,

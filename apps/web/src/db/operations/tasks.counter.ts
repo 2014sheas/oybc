@@ -139,6 +139,9 @@ export async function promoteTaskToCounter(taskId: string): Promise<Task> {
  * this pipeline minted for one board window (`isWindowStampedDerived`) is NOT
  * unlinked — it is soft-deleted with its placements and links, because it is
  * an artifact of that window rather than a library task the user authored.
+ * The boards those retired members sat on are handed to the cascade as extra
+ * affected boards so they re-derive in THIS transaction (final-review item
+ * 10) — the retire happens first, so the cascade could not find them itself.
  *
  * @param sourceId - The counter source task to delete.
  */
@@ -160,10 +163,22 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
       // it was minted for: unlinking it would strand a standalone row on a
       // board the user never hand-added it to, so it is retired with its
       // placements instead. Everything else keeps decision 8's behaviour.
-      await softDeleteWindowStampedDerived(
-        members.filter(isWindowStampedDerived).map((m) => m.id),
-        now,
-      );
+      const retiredIds = members.filter(isWindowStampedDerived).map((m) => m.id);
+      // Final-review item 10 — capture the boards those members sit on BEFORE
+      // retiring them: the retire runs first, so `deleteTaskWithCascadeInTxn`'s
+      // own step-4b lookup finds nothing left to fold and those boards would
+      // never re-derive in this transaction (a bingo line through a retired
+      // cell would keep glowing until the app-open self-heal). Mirrors what
+      // the cascade does for its own retirees.
+      const retiredBoardIds = new Set<string>();
+      if (retiredIds.length > 0) {
+        const retiredIdSet = new Set(retiredIds);
+        const placements = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
+        for (const bt of placements) {
+          if (retiredIdSet.has(bt.taskId)) retiredBoardIds.add(bt.boardId);
+        }
+      }
+      await softDeleteWindowStampedDerived(retiredIds, now);
       for (const m of members.filter((t) => !isWindowStampedDerived(t))) {
         const { displayed } = deriveDisplayedCount(
           { baseline: m.baseline ?? 0, maxCount: m.maxCount ?? 0 },
@@ -186,7 +201,7 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
           await insertIncrementEventRaw(m.id, displayed, undefined, now, SEED_EVENT_OCCURRED_AT);
         }
       }
-      await deleteTaskWithCascadeInTxn(sourceId, now);
+      await deleteTaskWithCascadeInTxn(sourceId, now, retiredBoardIds);
     },
   );
 }

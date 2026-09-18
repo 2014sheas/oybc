@@ -1,6 +1,7 @@
 import { db } from '../internal';
 import {
   buildRepeatBoardTemplateInput,
+  isWindowStampedDerived,
   SyncOperationType,
   type Board,
   type RecurringBoardTemplate,
@@ -19,8 +20,10 @@ import { isWindowStampedDerivedCompound } from './derivedCounters';
  *
  *   1. Mints a new `RecurringBoardTemplate` whose `manualTaskIds` are the
  *      board's currently-placed tasks, minus this window's derived compounds
- *      (B2 RB4), with `sources: []` / `manualTaskVary: {}` written
- *      explicitly (zero sources — an own-members record),
+ *      and with each derived counter recorded by its durable ROOT id
+ *      (B2 RB4 as amended by final-review FI2), with `sources: []` /
+ *      `manualTaskVary: {}` written explicitly (zero sources — an
+ *      own-members record),
  *      with `lastSpawnedWindowKey` pre-seeded to the CHOSEN cadence's
  *      window containing the board's start date
  *      (`buildRepeatBoardTemplateInput` — critically keyed off `cadence`,
@@ -75,19 +78,48 @@ export async function repeatBoardAsRecurring(
         .toArray();
       const placedTaskById = new Map(placedTasks.map((t) => [t.id, t]));
 
+      // RB4 amended (final-review FI2) — the roots behind any placed
+      // window-stamped derived counters, in one batched read.
+      const rootIds = [
+        ...new Set(
+          placedTasks
+            .filter((t) => isWindowStampedDerived(t))
+            .map((t) => t.sharedCounterId)
+            .filter((id): id is string => id != null),
+        ),
+      ];
+      const rootById = new Map(
+        (rootIds.length > 0 ? await db.tasks.where('id').anyOf(rootIds).toArray() : []).map((t) => [
+          t.id,
+          t,
+        ]),
+      );
+
       const boardTaskIds: string[] = [];
       const seenTaskIds = new Set<string>();
       for (const bt of sortedBoardTasks) {
-        if (seenTaskIds.has(bt.taskId)) continue;
-        seenTaskIds.add(bt.taskId);
         // Board Sources §Member rules (B2, RB4) — a per-window derived
         // COMPOUND is this window's re-targeted copy of a source compound;
         // carrying it forward as a hand-added member would pin every future
-        // window to it. A derived COUNTER passes through: it is re-minted
-        // from its root for each new window like any other counting member.
+        // window to it.
         const task = placedTaskById.get(bt.taskId);
         if (task && isWindowStampedDerivedCompound(task)) continue;
-        boardTaskIds.push(bt.taskId);
+        // RB4 amended (final-review FI2) — a derived COUNTER is recorded by
+        // its ROOT id, never its own. The derived row belongs to THIS board's
+        // window and is retired with this board (RB5), so a record naming it
+        // would be skipped as `has_deleted_tasks` for every future window the
+        // day the user deletes the board they repeated. The root is durable
+        // library content and is what each new window re-mints from anyway. A
+        // root that is itself missing or deleted contributes no member.
+        let memberId = bt.taskId;
+        if (task && isWindowStampedDerived(task) && task.sharedCounterId != null) {
+          const root = rootById.get(task.sharedCounterId);
+          if (!root || root.isDeleted) continue;
+          memberId = root.id;
+        }
+        if (seenTaskIds.has(memberId)) continue;
+        seenTaskIds.add(memberId);
+        boardTaskIds.push(memberId);
       }
 
       const input = buildRepeatBoardTemplateInput(board, boardTaskIds, cadence, weekStartDay);
