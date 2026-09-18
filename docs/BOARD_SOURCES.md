@@ -558,7 +558,7 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 | **A** | Retire the "From a board…" grid picker + Copy modal + `SourceBoardsViewModel`/`useSourceBoards` + `copyTask`; strip the Library-sheet chip; docs/memory/snapshots. Keeps `fetchCompoundChildrenByCompoundIds` (B needs it). **SHIPPED** (#487). | lockstep |
 | **B0** | §Member rules into this doc (this section); `WINDOWED_COMPLETION.md` carve-out paragraph; CLAUDE.md pointer. **SHIPPED** (#486 — landed with the spec). | docs |
 | **B1** | Shared types (`memberRules`, `manualTaskVary`) + Zod + Swift mirrors; draft-blob additive (still v2); GRDB **v31** column; pure helpers (`nominalWindowDays`, `autoTarget`, `varyRange`, `rollTarget`, `applyMemberRules`, `planDerivedTasks`) + mirrored vectors. Inert — nothing writes rules yet. **SHIPPED** (#489). | lockstep |
-| **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). **SHIPPED** (#<n>). | lockstep |
+| **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). **SHIPPED** (#491). | lockstep |
 | **B3** | UI: member rows (stepper / dice / One square–Split up / part lines), hand-added dice, primitives, wizard actions, Preview derived cells, edit-mode note, #471 menu removal, hub expired filter, iOS Library-sheet derive entry stripped; snapshots + Playwright. | lockstep |
 
 Each UI phase: implement → independent review → device checklist relayed to
@@ -582,7 +582,7 @@ Remaining B2 items surfaced during B1 review: (a) **R9** — iOS has no `fetchCo
 
 #### Plan B2 — implementation notes (2026-09-18)
 
-Both platforms, one PR (#<n>).
+Both platforms, one PR (#491).
 
 - **Landed**: mint at active-only wizard persist and at every recurring
   board creation (`spawnTemplateBoard` ↔ `spawnRecurringBoard`; web
