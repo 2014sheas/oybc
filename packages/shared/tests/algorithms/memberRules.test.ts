@@ -286,13 +286,26 @@ describe('isWindowStampedDerived', () => {
   it('createdInWizard absent then false (a hand-made linked + timeboxed counter)', () => {
     expect(isWindowStampedDerived({ ...full, createdInWizard: undefined })).toBe(false);
   });
+
+  it('createdInWizard explicitly false then false', () => {
+    // The shape a Swift `Bool` (non-optional, defaulting to false) actually
+    // hits — distinct from the absent case above, same answer.
+    expect(isWindowStampedDerived({ ...full, createdInWizard: false })).toBe(false);
+  });
 });
 
 describe('buildDerivedRows', () => {
   const D = V.derivedRows;
   /** Fixture id token to its uuid; anything not a token passes through. */
   const id = (token: string): string => D.ids[token] ?? token;
-  /** Recursively swap every id token inside a fixture value for its uuid. */
+  /**
+   * Recursively swap every id token inside a fixture value for its uuid.
+   *
+   * CAUTION: this rewrites EVERY string, not just id-bearing keys — a future
+   * vector whose `title` / `unit` / `name` happened to equal a token ("C",
+   * "R1", "K2") would be silently rewritten into a uuid. Keep the tokens
+   * distinct from any literal text a vector asserts.
+   */
   const resolve = (value: any): any => {
     if (Array.isArray(value)) return value.map(resolve);
     if (value && typeof value === 'object') {

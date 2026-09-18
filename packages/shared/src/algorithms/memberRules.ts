@@ -636,6 +636,11 @@ export type BaselineEvent = Pick<TaskEvent, 'taskId' | 'kind' | 'delta' | 'occur
  *
  * `boundary` is decided by the CALLER (the board's `startDate`, or the mint
  * `now` for an INDEFINITE / date-less board) — this helper never guesses it.
+ * It must be a FULL timestamp (local ISO or offset-bearing); a date-only
+ * string is not supported and parses inconsistently across platforms —
+ * `Date.parse('2026-09-18')` is UTC midnight per the ES spec (date-only forms
+ * are UTC, date-TIME forms without an offset are local), while the iOS twin's
+ * ISO parser has no date-only format at all and would return 0 instead.
  *
  * @param rootTaskId - The shared-counter root whose events are summed.
  * @param events - Candidate events; any task's, any kind, live or tombstoned.
@@ -679,7 +684,17 @@ export function isWindowStampedDerived(
   return !!t.sharedCounterId && !!t.startDate && t.createdInWizard === true;
 }
 
-/** Inputs to {@link buildDerivedRows}. */
+/**
+ * Inputs to {@link buildDerivedRows}.
+ *
+ * Two invariants the CALLER owes, because the builder degrades quietly rather
+ * than throwing: every `rootTaskId` in `drafts.derivedTasks` must be present in
+ * `rootsById` (a missing root mirrors a count of 0, writing a row that
+ * contradicts its own root until the next increment heals it), and every
+ * `sourceCompoundId` in `drafts.derivedCompounds` must be present in
+ * `compoundsById` — and the draft it belongs to must carry an `operator`, since
+ * a compound row without one is a row `TaskSchema` rejects.
+ */
 export interface DerivedRowsInput {
   /** The drafts to materialise, straight out of {@link planDerivedTasks}. */
   drafts: PlanDerivedTasksResult;
@@ -747,6 +762,10 @@ export function buildDerivedRows({
       baseline: d.baseline,
       currentCount: mirror,
       isCompleted: shown.isCompleted,
+      // Stamped here or never: every other write path stamps `completedAt` on
+      // the false → true transition, and for a row born complete that
+      // transition has already happened.
+      completedAt: shown.isCompleted ? now : undefined,
       totalCompletions: 0,
       totalInstances: 0,
       createdInWizard: true,
