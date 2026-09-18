@@ -540,3 +540,84 @@ describe('applyRemoteSubdoc — local-wins re-enqueue (item 1)', () => {
     });
   });
 });
+
+describe('applyRemoteSubdoc — recurringBoardTemplates wire-shape contract (issue #488)', () => {
+  /**
+   * Pins the receiving side of the sync-wire fix documented in
+   * docs/BOARD_SOURCES.md Plan B1 (e): #488 claimed iOS pushes
+   * `RecurringBoardTemplate`'s JSON-TEXT fields (`sources`, `poolIds`,
+   * `manualTaskIds`, `removedTaskIds`, `manualTaskVary`, `seedTaskIds`) to
+   * Firestore as JSON *strings*, which would make `RecurringBoardTemplateSchema`
+   * skip the whole row on pull. That's false — iOS's `SyncWirePayload.
+   * expandJSONStrings` (apps/ios/OYBC/Helpers/SyncWirePayload.swift) turns
+   * them into native arrays/objects before the doc is written. This test
+   * feeds the validator the shape iOS actually sends (native arrays/objects)
+   * and asserts it's ACCEPTED, then feeds the shape #488 feared (a
+   * JSON-string `sources`) and asserts it's the one that gets skipped —
+   * documenting exactly why the iOS-side expansion matters.
+   */
+  const TEMPLATE_ID = uuid(90);
+  const POOL_TASK_ID = uuid(91);
+  const MANUAL_TASK_ID = uuid(92);
+  const SOURCE_ID = uuid(93);
+  const EXCLUDED_TASK_ID = uuid(94);
+  const MEMBER_TASK_ID = uuid(95);
+
+  function baseDoc(): Record<string, unknown> {
+    return {
+      id: TEMPLATE_ID,
+      userId: USER,
+      name: 'Template',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3 as BoardSize,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      seedTaskIds: [],
+      poolIds: [POOL_TASK_ID],
+      manualTaskIds: [MANUAL_TASK_ID],
+      removedTaskIds: [],
+      sources: [
+        {
+          sourceId: SOURCE_ID,
+          kind: 'board',
+          min: 1,
+          max: null,
+          excludedTaskIds: [EXCLUDED_TASK_ID],
+          filter: 'todo',
+          memberRules: { [MEMBER_TASK_ID]: { target: 5, vary: 1 } },
+        },
+      ],
+      manualTaskVary: { [MANUAL_TASK_ID]: 2 },
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+  }
+
+  afterEach(async () => {
+    await db.recurringBoardTemplates.clear();
+  });
+
+  it('accepts the native-array/object shape the iOS wire expansion produces', async () => {
+    const status = await applyRemoteSubdoc('recurringBoardTemplates', baseDoc(), USER);
+
+    expect(status).toMatch(/^Pulled /);
+    const stored = await db.recurringBoardTemplates.get(TEMPLATE_ID);
+    expect(stored).toBeDefined();
+    expect(stored?.sources).toEqual(baseDoc().sources);
+    expect(stored?.manualTaskVary).toEqual({ [MANUAL_TASK_ID]: 2 });
+  });
+
+  it('skips the same doc when sources is a JSON STRING instead of a native array (the #488 hazard)', async () => {
+    const malformed = { ...baseDoc(), sources: JSON.stringify(baseDoc().sources) };
+
+    const status = await applyRemoteSubdoc('recurringBoardTemplates', malformed, USER);
+
+    expect(status).toMatch(/^Skipped malformed /);
+    const stored = await db.recurringBoardTemplates.get(TEMPLATE_ID);
+    expect(stored).toBeUndefined();
+  });
+});

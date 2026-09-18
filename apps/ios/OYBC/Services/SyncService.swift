@@ -1178,21 +1178,7 @@ final class SyncService: ObservableObject {
         docRef: DocumentReference,
         data: [String: Any]
     ) async throws {
-        var cleaned: [String: Any] = [:]
-        for (key, value) in data {
-            if value is NSNull { continue }
-            // Expand JSON-encoded strings back to native arrays/dicts for Firestore.
-            // GRDB stores arrays as JSON strings (e.g. completedLineIds: "[\"row_0\"]"),
-            // but Firestore should receive native arrays so web can read them correctly.
-            if let str = value as? String, str.hasPrefix("[") || str.hasPrefix("{") {
-                if let jsonData = str.data(using: .utf8),
-                   let parsed = try? JSONSerialization.jsonObject(with: jsonData) {
-                    cleaned[key] = parsed
-                    continue
-                }
-            }
-            cleaned[key] = value
-        }
+        var cleaned = SyncWirePayload.expandJSONStrings(data)
         cleaned["_syncedAt"] = FieldValue.serverTimestamp()
 
         // Indefinite boards carry no `endDate`. Because we write with
