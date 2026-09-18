@@ -76,6 +76,7 @@ final class SyncWirePayloadTests: XCTestCase {
         XCTAssertTrue(dict["manualTaskIds"] is String, "manualTaskIds should be a JSON string before expansion")
         XCTAssertTrue(dict["manualTaskVary"] is String, "manualTaskVary should be a JSON string before expansion")
         XCTAssertTrue(dict["seedTaskIds"] is String, "seedTaskIds should be a JSON string before expansion")
+        XCTAssertTrue(dict["removedTaskIds"] is String, "removedTaskIds is a JSON-string column before expansion")
     }
 
     // MARK: - The fix closes it: expandJSONStrings restores native shapes
@@ -110,6 +111,7 @@ final class SyncWirePayloadTests: XCTestCase {
         XCTAssertEqual(wire["poolIds"] as? [String], ["p1"])
         XCTAssertEqual(wire["manualTaskIds"] as? [String], ["t1"])
         XCTAssertNotNil(wire["seedTaskIds"] as? [String])
+        XCTAssertEqual(wire["removedTaskIds"] as? [String], [])
     }
 
     // MARK: - Edge cases
