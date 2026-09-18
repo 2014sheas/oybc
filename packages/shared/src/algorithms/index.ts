@@ -272,6 +272,9 @@ export {
   rollTarget,
   applyMemberRules,
   planDerivedTasks,
+  computeWindowBaseline,
+  isWindowStampedDerived,
+  buildDerivedRows,
 } from './memberRules';
 
 export type {
@@ -284,6 +287,9 @@ export type {
   DerivedCompoundDraft,
   PlanDerivedTasksArgs,
   PlanDerivedTasksResult,
+  BaselineEvent,
+  DerivedRowsInput,
+  DerivedRows,
 } from './memberRules';
 
 export { boardDisplayName } from './boardDisplayName';

@@ -1,18 +1,20 @@
 /**
  * memberRules.ts — Board Sources "member rules" (docs/BOARD_SOURCES.md
- * §Member rules, B1).
+ * §Member rules, B1 + B2).
  *
  * Pure arithmetic + planning for per-member rules on a pulled source: the
  * nominal window length of a timeframe, the pro-rated auto target when a
  * counting member crosses windows, the vary (dice) range and its seeded
  * roll, Split-up supply expansion, and the plan that decides — per selected
  * id — whether it is placed as-is or replaced by a window-stamped derived
- * counter / derived compound.
+ * counter / derived compound (B1), plus the window baseline those derived
+ * counters start from and the complete `Task` / `CompoundChild` rows they
+ * materialise into (B2).
  *
- * Nothing here is wired into a write path yet: B1 ships the vocabulary and
- * the arithmetic, B2 persists the drafts these produce. No persistence, no
- * platform code, no side effects — the only non-determinism is the injected
- * `rng`, and the module is written so a seeded sequence reproduces exactly.
+ * Nothing here is wired into a write path yet: this module produces rows,
+ * the platform layers write them. No persistence, no platform code, no side
+ * effects — the only non-determinism is the injected `rng`, and the module
+ * is written so a seeded sequence reproduces exactly.
  *
  * Split out of `boardSources.ts` (rather than appended to it) to keep that
  * file under the 1000-line god-file guardrail; the public surface is the
@@ -31,7 +33,9 @@ import type {
 } from '../types/boardSource';
 import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
+import type { TaskEvent } from '../types/taskEvent';
 import type { BoardSourceSupply } from './boardSources';
+import { deriveDisplayedCount } from './sharedCounter';
 import { generateCounterTaskTitle } from './taskTitle';
 import { uuidv5 } from './uuidv5';
 
@@ -291,6 +295,15 @@ export interface DerivedCompoundDraft {
   title: string;
   operator: Task['operator'];
   threshold: number | null;
+  /**
+   * The window this compound is stamped for — the same triple its derived
+   * parts carry, copied from the board being assembled. B2's row builder
+   * writes it onto the compound Task row, so the derived compound expires
+   * with its window exactly like its parts do.
+   */
+  timeframe: Timeframe;
+  startDate: string | null;
+  endDate: string | null;
   children: DerivedCompoundChildDraft[];
 }
 
@@ -328,8 +341,19 @@ export interface PlanDerivedTasksResult {
   derivedCompounds: DerivedCompoundDraft[];
 }
 
-/** A member is already a window-stamped derived counter when it has both marks. */
-function isWindowStampedDerived(t: PlanTask): boolean {
+/**
+ * A member is already a window-stamped derived counter when it has both marks.
+ *
+ * Deliberately looser than the exported {@link isWindowStampedDerived}, which
+ * also requires `createdInWizard`: a PLANNED member is re-minted for the new
+ * window on the strength of the two marks alone (`PlanTask` doesn't carry the
+ * provenance flag), while the exported predicate identifies a STORED row as
+ * one of our per-window derived counters and wants all three.
+ *
+ * @param t - The member being planned.
+ * @returns True when the member is itself a window-stamped derived counter.
+ */
+function isWindowStampedMember(t: PlanTask): boolean {
   return !!t.sharedCounterId && !!t.startDate;
 }
 
@@ -474,7 +498,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
       if (isManual) {
         const vary = manualTaskVary[id] ?? 0;
         // A member that is ALREADY window-stamped is re-minted for this window.
-        if (isWindowStampedDerived(t)) {
+        if (isWindowStampedMember(t)) {
           placementIds.push(mint(t, id, goal, vary).id);
           continue;
         }
@@ -574,6 +598,9 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         title: t.title,
         operator: t.operator,
         threshold: t.threshold ?? null,
+        timeframe: window.timeframe,
+        startDate: window.startDate,
+        endDate: window.endDate,
         children,
       });
       placementIds.push(cid);
@@ -583,4 +610,197 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     placementIds.push(id);
   }
   return { placementIds, derivedTasks, derivedCompounds };
+}
+
+// ── B2: baseline + row building ──────────────────────────────────────────────
+
+/** The slice of a `TaskEvent` {@link computeWindowBaseline} reads. */
+export type BaselineEvent = Pick<TaskEvent, 'taskId' | 'kind' | 'delta' | 'occurredAt' | 'isDeleted'>;
+
+/**
+ * The window baseline of a shared-counter root: the lifetime count the root
+ * had reached when the window opened, so the derived counter's displayed
+ * value (`root.currentCount − baseline`) starts this window at zero.
+ *
+ * Ruling RB2 — the sum of the `delta`s of the root's LIVE increment events
+ * whose `occurredAt` is strictly BEFORE `boundary`, clamped at 0. Completion
+ * events, tombstoned events and other tasks' events are ignored, and an event
+ * exactly ON the boundary belongs to the new window, not to the baseline.
+ *
+ * Both sides are compared as INSTANTS (`Date.parse`), never as strings: board
+ * dates are local ISO (`2026-09-18T00:00:00`, no offset) while events carry a
+ * UTC stamp, so a lexical compare — or re-stamping a local date as UTC — would
+ * move the boundary by the local offset and admit or drop every event either
+ * side of local midnight. A stamp that doesn't parse (on either side) skips
+ * the event rather than counting it.
+ *
+ * `boundary` is decided by the CALLER (the board's `startDate`, or the mint
+ * `now` for an INDEFINITE / date-less board) — this helper never guesses it.
+ *
+ * @param rootTaskId - The shared-counter root whose events are summed.
+ * @param events - Candidate events; any task's, any kind, live or tombstoned.
+ * @param boundary - ISO8601 instant the window opens at.
+ * @returns The baseline count (integer ≥ 0).
+ */
+export function computeWindowBaseline(
+  rootTaskId: string,
+  events: BaselineEvent[],
+  boundary: string
+): number {
+  const b = Date.parse(boundary);
+  if (Number.isNaN(b)) return 0;
+  let sum = 0;
+  for (const e of events) {
+    if (e.isDeleted || e.taskId !== rootTaskId || e.kind !== 'increment') continue;
+    if (typeof e.delta !== 'number' || !Number.isFinite(e.delta)) continue;
+    const t = Date.parse(e.occurredAt);
+    if (Number.isNaN(t) || !(t < b)) continue;
+    sum += e.delta;
+  }
+  return Math.max(0, sum);
+}
+
+/**
+ * Is this STORED task row one of our per-window derived counters?
+ *
+ * All three marks together — a shared-counter link, a window start, and the
+ * wizard-born provenance flag. Each alone is ordinary user data: a hand-made
+ * linked counter has the first, a timeboxed task the second, a wizard-born
+ * task the third. Only the three together identify a row this pipeline minted
+ * for one window (and may therefore refresh or retire when that window is
+ * re-derived).
+ *
+ * @param t - The task row to test.
+ * @returns True when the row is a window-stamped derived counter.
+ */
+export function isWindowStampedDerived(
+  t: Pick<Task, 'sharedCounterId' | 'startDate' | 'createdInWizard'>
+): boolean {
+  return !!t.sharedCounterId && !!t.startDate && t.createdInWizard === true;
+}
+
+/** Inputs to {@link buildDerivedRows}. */
+export interface DerivedRowsInput {
+  /** The drafts to materialise, straight out of {@link planDerivedTasks}. */
+  drafts: PlanDerivedTasksResult;
+  userId: string;
+  /** ISO8601 mint time — every row's `createdAt` / `updatedAt`. */
+  now: string;
+  /** Shared-counter root id → the root row (its `currentCount` is mirrored). */
+  rootsById: Record<string, Pick<Task, 'id' | 'currentCount' | 'action' | 'unit'>>;
+  /** Source compound id → the compound row the derived compound copies from. */
+  compoundsById: Record<
+    string,
+    Pick<Task, 'id' | 'operator' | 'threshold' | 'title' | 'description' | 'action' | 'unit'>
+  >;
+}
+
+/** Output of {@link buildDerivedRows} — complete, writable rows. */
+export interface DerivedRows {
+  tasks: Task[];
+  links: CompoundChild[];
+}
+
+/**
+ * Materialise the {@link planDerivedTasks} drafts as complete `Task` /
+ * `CompoundChild` rows. Pure — the caller writes them (in one transaction,
+ * before the `board_tasks` rows that point at them).
+ *
+ * Derived counters come first, in draft order, then the derived compounds;
+ * every row keeps the deterministic id its draft carries, so re-deriving the
+ * same window overwrites rather than duplicates. A derived counter mirrors its
+ * root's lifetime `currentCount` and reads its window value from that minus
+ * `baseline`, so `isCompleted` at mint is whatever `deriveDisplayedCount`
+ * already says — a root that has raced past the target is born complete rather
+ * than hand-initialised to false.
+ *
+ * @param input - See {@link DerivedRowsInput}.
+ * @returns The derived Task rows and the derived compounds' child links.
+ */
+export function buildDerivedRows({
+  drafts,
+  userId,
+  now,
+  rootsById,
+  compoundsById,
+}: DerivedRowsInput): DerivedRows {
+  const tasks: Task[] = [];
+  const links: CompoundChild[] = [];
+
+  for (const d of drafts.derivedTasks) {
+    const mirror = rootsById[d.rootTaskId]?.currentCount ?? 0;
+    const shown = deriveDisplayedCount(
+      { baseline: d.baseline, maxCount: d.maxCount },
+      { currentCount: mirror }
+    );
+    const row: Task = {
+      id: d.id,
+      userId,
+      title: d.title,
+      type: TaskType.COUNTING,
+      // `planDerivedTasks` fills these with '' for an action-less counter;
+      // an empty string is not a value — leave the column absent instead.
+      action: d.action || undefined,
+      unit: d.unit || undefined,
+      maxCount: d.maxCount,
+      sharedCounterId: d.rootTaskId,
+      baseline: d.baseline,
+      currentCount: mirror,
+      isCompleted: shown.isCompleted,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      timeframe: d.timeframe,
+      startDate: d.startDate ?? undefined,
+      endDate: d.endDate ?? undefined,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+      isDeleted: false,
+    };
+    tasks.push(row);
+  }
+
+  for (const c of drafts.derivedCompounds) {
+    const source = compoundsById[c.sourceCompoundId];
+    const row: Task = {
+      id: c.id,
+      userId,
+      title: c.title,
+      description: source?.description,
+      type: TaskType.COMPOUND,
+      operator: c.operator,
+      // `null` is not a storable threshold (the schema takes a positive
+      // integer or nothing at all) — an absent threshold stays absent.
+      threshold: c.threshold ?? undefined,
+      // Written false for column uniformity and never read: a compound's
+      // completion is derived from its children (see `evaluateCompound`).
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      timeframe: c.timeframe,
+      startDate: c.startDate ?? undefined,
+      endDate: c.endDate ?? undefined,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+      isDeleted: false,
+    };
+    tasks.push(row);
+    for (const k of c.children) {
+      links.push({
+        id: k.linkId,
+        compoundTaskId: c.id,
+        childTaskId: k.childTaskId,
+        childIndex: k.childIndex,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        isDeleted: false,
+      });
+    }
+  }
+
+  return { tasks, links };
 }
