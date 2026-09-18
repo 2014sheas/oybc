@@ -177,12 +177,21 @@ finding C1). Explicitly:
    counting squares via baseline math (today's behavior), not
    `resolveTaskWindowState`.
 
-**Honest consequence:** a *derived* counter square on a recurring board still
-bleeds across windows in v1; a *plain* counting square does not. Phase 2 fixes
-this by anchoring derived board-context display to
-`Σ source deltas with occurredAt >= max(board.startDate, linkedAt)` — which needs
-a `linkedAt` timestamp on the link and is also the natural foundation for
-SHARED_COUNTERS Decision 6's deferred timeframe-scoped goals.
+**Honest consequence:** a *hub-authored* derived counter square on a recurring
+board still bleeds across windows in v1; a *plain* counting square does not.
+
+**Window-stamped derived counters (Board Sources member rules, design locked
+2026-09-17 — [`BOARD_SOURCES.md` §Member rules](BOARD_SOURCES.md#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17))
+close that bleed for the counters the wizard/spawn mints:** a derived task with
+`sharedCounterId != null && startDate != null` is windowed *through its
+baseline* — `baseline = Σ root increment events with occurredAt <
+board.startDate`, recomputed as a **non-authored cache** (no version bump, no
+enqueue) on local root writes and in a dedicated pull sub-step after
+`recomputeTaskCachesFromPull(rootId)`. Carve-out items 1–4 above still hold
+for them (they own no events; `currentCount` stays the propagation-stamped
+root mirror; the board reads `deriveDisplayedCount`). This supersedes the
+earlier `linkedAt` idea: the board window is the anchor, and it already lives
+on the derived task.
 
 ### `Task.isCompleted` / `currentCount` / `completedAt` become caches
 
