@@ -8,5 +8,4 @@
 export * from './tasks.crud';
 export * from './tasks.sharedCounter';
 export * from './tasks.deletion';
-export * from './tasks.copy';
 export * from './tasks.counter';

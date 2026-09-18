@@ -30,7 +30,6 @@ import {
   type SupplyInfoMap,
 } from '../../pages/createHub/wizardSources';
 import { RisoSectionLabel } from '../riso';
-import { CopyTaskModal } from './CopyTaskModal';
 import { DeriveCounterModal } from './DeriveCounterModal';
 import { resolveDeriveLinkTarget } from './deriveCounterLink';
 import { LibrarySheet } from './LibrarySheet';
@@ -200,7 +199,7 @@ export interface BoardWizardTasksStepProps {
  *   2. "PULL IN A POOL" card (+ P5 core-setup section) — unchanged.
  *   3. "Add tasks" — quick-add row + `SpecialTaskPanel`.
  *   4. `LibrarySheet` — dashed entry button → bottom sheet. The library
- *      (search, filters, from-a-board, compound expand) lives ENTIRELY
+ *      (search, filters, compound expand) lives ENTIRELY
  *      inside the sheet now; it's no longer primary content.
  *   5. `PoolList` — the tasks actually on this board, in `poolOrder`.
  *      Each row's ✎ slot is a disabled PR-1 stub (PR-2 wires the inline
@@ -209,8 +208,8 @@ export interface BoardWizardTasksStepProps {
  *   6. "Save these N as a new pool…" (P3) — unchanged.
  *   7. Footer — Back / Next.
  *
- * Cross-cutting overlays (right-click menu, derive-smaller modal, copy
- * modal, task-detail sheet, save-as-pool sheet) stay owned here since the
+ * Cross-cutting overlays (right-click menu, derive-smaller modal,
+ * task-detail sheet, save-as-pool sheet) stay owned here since the
  * SAME `RowContextMenu` instance now serves both `LibrarySheet` and
  * `PoolList` rows.
  *
@@ -337,13 +336,6 @@ export function BoardWizardTasksStep({
   const [derivingFromTask, setDerivingFromTask] = useState<Task | null>(null);
   const [deriveMaxCountInput, setDeriveMaxCountInput] = useState('');
   const [deriveError, setDeriveError] = useState<string | null>(null);
-  /** Task ids copied via the From-a-board grid's `⎘ Add a copy…`
-   *  this session (surfaced inside `LibrarySheet`). Used to render the
-   *  amber-tint indicator on source squares whose original we've already
-   *  copied. Cleared on remount (session-scoped). */
-  const [copiedTaskIds, setCopiedTaskIds] = useState<Set<string>>(new Set());
-  /** Source task whose Copy modal is currently mounted. Null = no modal. */
-  const [copyingTask, setCopyingTask] = useState<Task | null>(null);
   /** When set, mounts TaskDetailSheet over the wizard so the user can
    *  inspect a task's full library detail without losing wizard state.
    *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
@@ -607,10 +599,7 @@ export function BoardWizardTasksStep({
           HIDDEN for UX testing (owner, 2026-09-17): quick-add's search and
           the "Add a pool or board" sheet cover most of what this did, and
           the dashed row was mostly taking up space. All logic is kept —
-          flip `LIBRARY_ENTRY_ENABLED` to restore. NOTE: this also hides the
-          only path to the "From a board…" picker + grid (per-square link /
-          long-press copy), which lives inside this sheet — see CLAUDE.md
-          §Board-creation surfaces. */}
+          flip `LIBRARY_ENTRY_ENABLED` to restore. */}
       {LIBRARY_ENTRY_ENABLED && (
       <LibrarySheet
         effectiveAllTasks={effectiveAllTasks}
@@ -629,10 +618,6 @@ export function BoardWizardTasksStep({
           setDeriveMaxCountInput('');
           setDeriveError(null);
         }}
-        onOpenInLibrary={(id) => setOpenedTaskInLibrary(id)}
-        onCopyTaskRequested={(task) => setCopyingTask(task)}
-        copiedTaskIds={copiedTaskIds}
-        userId={userId}
         currentTimeframe={currentTimeframe}
         parentBoardTasks={parentBoardTasks}
       />
@@ -916,28 +901,6 @@ export function BoardWizardTasksStep({
             } catch (err) {
               setDeriveError(err instanceof Error ? err.message : 'Failed to save');
             }
-          }}
-        />
-      )}
-
-      {copyingTask && (
-        <CopyTaskModal
-          source={copyingTask}
-          userId={userId}
-          onCancel={() => setCopyingTask(null)}
-          onCopied={(newTask) => {
-            // Mark the source as "copied this session" for the
-            // amber-tint indicator on the grid, and link the new
-            // task into the wizard's selection.
-            setCopiedTaskIds((prev) => {
-              const next = new Set(prev);
-              next.add(copyingTask.id);
-              return next;
-            });
-            if (!selectedTaskIds.has(newTask.id)) {
-              onToggleSelection(newTask.id);
-            }
-            setCopyingTask(null);
           }}
         />
       )}

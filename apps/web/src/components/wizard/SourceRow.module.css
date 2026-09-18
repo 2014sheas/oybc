@@ -285,7 +285,7 @@
 }
 
 /* Per-member ⋯ menu chip (owner report 2026-09-15) — derive / subtask
-   actions, same vocabulary as FromBoardGrid's cellMore (#470). */
+   actions (#470). */
 .memberMore {
   flex: 0 0 auto;
   width: 18px;

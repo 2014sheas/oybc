@@ -193,9 +193,7 @@ export async function fetchBoardSourceSupply(
 /**
  * BOARDS rows for the "Add a pool or board" sheet: ACTIVE, non-deleted
  * boards with squares/done counts from the same predicate the member
- * rows use. Matches iOS eligibility exactly (ACTIVE only — deliberately
- * narrower than `useSourceBoards`' active+recently-completed set, which
- * serves the library sheet's "From a board…" copy flow instead).
+ * rows use. Matches iOS eligibility exactly (ACTIVE only).
  */
 export async function fetchSourceSheetBoardEntries(
   userId: string,
@@ -203,8 +201,8 @@ export async function fetchSourceSheetBoardEntries(
   // No bare `userId` index on boards — the `.filter` scan matches the
   // `fetchRecurringBoardTemplates` pattern (local data sizes).
   //
-  // Eligibility is the SHARED `isEligibleSourceBoard` rule, the same one
-  // the "From a board" grid uses. This sheet previously filtered on
+  // Eligibility is the `isEligibleSourceBoard` rule, shared with
+  // the Swift twin. This sheet previously filtered on
   // `status === ACTIVE` alone: a board whose window closes unfinished
   // stays ACTIVE forever, so every stale core board stayed on offer.
   // Names are healed because a legacy daily core board is stored as the

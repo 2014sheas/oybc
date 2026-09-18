@@ -8,9 +8,10 @@ import { fetchSourceSheetBoardEntries } from '../boardSources';
  *
  * Owner-reported (2026-09-16, with a screenshot): the sheet showed four
  * boards all named "Today" plus a "June 2026" board months out of window.
- * Both fixes had landed on `fetchEligibleSourceBoards` — which feeds the
- * *other* picker ("From a board") — while this sheet has its own fetcher
- * that filtered on `status === ACTIVE` alone and returned the raw board.
+ * Both fixes had landed on the since-retired `fetchEligibleSourceBoards` (the
+ * old "From a board…" grid picker, removed in Plan A) — while this sheet
+ * has its own fetcher that filtered on `status === ACTIVE` alone and
+ * returned the raw board.
  *
  * These tests assert what the FETCHER ACTUALLY RETURNS, because the
  * helpers were correct all along; nothing called them here.
@@ -120,7 +121,7 @@ describe('fetchSourceSheetBoardEntries', () => {
   });
 
   it('now admits a recently COMPLETED board (it did not before)', async () => {
-    // Deliberate behaviour change: the sheet shares the "From a board"
+    // Deliberate behaviour change: the sheet uses the shared
     // eligibility rule, so "build October's from September's" works here
     // too. Pinned so the change is intentional, not accidental drift.
     await seedBoard({
