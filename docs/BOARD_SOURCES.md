@@ -22,6 +22,14 @@ boards) a done/not-done filter — plus hand-added tasks; recurring boards store
 the source *references and rules*, never a task list, and every spawn resolves
 the live sources fresh.
 
+**Second pass (design locked 2026-09-17):** [§Member rules](#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17)
+adds per-member rules for counting and compound tasks pulled from sources
+(cadence-scaled targets, opt-in variation, One square / Split up), realised
+as per-window **derived counters** minted at persist/spawn. It replaces the
+undesigned ⋯ member menu from #471 and retires the "From a board…" grid
+picker (companion plan A). Read it before touching member rows,
+`planDerivedTasks`, or any linked-counter read.
+
 ## Data model
 
 ### New shared type: `BoardSource`
@@ -547,6 +555,11 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 | **P3** | Preview rework (5b summary; 2b chrome kept as shipped) + deleted-source spawn ask + spawn-side board-supply resolution (BOTH platforms — spawn semantics lockstep). **SHIPPED** (#460). | iOS (+web spawn) |
 | **P4** | Web parity for P2–P3 (frames 1a/1b + sheet + edit-mode note). **SHIPPED** (#463). | web |
 | **P5** | Cleanup: retire dead components, e2e/snapshot locks, allowlist shrinks, copy-rule sweep, docs close-out. **SHIPPED** (see §P5 close-out). | both |
+| **A** | Retire the "From a board…" grid picker + Copy modal + `SourceBoardsViewModel`/`useSourceBoards` + `copyTask`; strip the Library-sheet chip; docs/memory/snapshots. Keeps `fetchCompoundChildrenByCompoundIds` (B needs it). | lockstep |
+| **B0** | §Member rules into this doc (this section); `WINDOWED_COMPLETION.md` carve-out paragraph; CLAUDE.md pointer. | docs |
+| **B1** | Shared types (`memberRules`, `manualTaskVary`) + Zod + Swift mirrors; draft-blob additive (still v2); GRDB **v31** column; pure helpers (`nominalWindowDays`, `autoTarget`, `varyRange`, `rollTarget`, `applyMemberRules`, `planDerivedTasks`) + mirrored vectors. Inert — nothing writes rules yet. | lockstep |
+| **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). | lockstep |
+| **B3** | UI: member rows (stepper / dice / One square–Split up / part lines), hand-added dice, primitives, wizard actions, Preview derived cells, edit-mode note, #471 menu removal, hub expired filter, iOS Library-sheet derive entry stripped; snapshots + Playwright. | lockstep |
 
 Each UI phase: implement → independent review → device checklist relayed to
 the user → CI-gated merge (the P2–P7 pools cadence). Rule-6 note: P2/P3
@@ -600,3 +613,409 @@ one-off boards locked = no post-creation sources editing (Board Edit
 untouched); variety stays memoryless; `max: null` "all" latch
 (coordinator-proposed representation of the design's max-follows-all
 behavior).
+
+Member-rules pass (2026-09-17), owner decisions: **recurring target divisor
+= window-length ratio** (`ceil(goal × targetDays ÷ sourceDays)`; one-off =
+the source's remaining amount); **target stepper only on board-pulled
+members** (pool / hand-added counters place at their own goal, dice
+optional); **derived per-window counters are shown in the library like any
+task**; **dead/empty source stays silent stale-inert**; compound rule = the
+handoff's One square / Split up; **retire the "From a board…" grid picker
+and its vocabulary** (plan A); Library sheet kept flag-hidden, chip
+stripped; **deleting a board also deletes its per-window derived counters**
+(confirmed after review). Handoff:
+`design_handoff_from_board_pool.zip` (gitignored; frames 2a/2b/2c/4a/5a/5b/
+5c/0b + `Pools rework - decisions.md` §"Counting & compound tasks pulled
+from another board").
+
+## Member rules — counting & compound tasks pulled from sources (design locked 2026-09-17)
+
+### The one-paragraph model
+
+A pulled source's **counting** and **compound** members carry optional
+per-member rules on the source entry: a **target** (board sources only —
+how much of the counter belongs on *this* board), a **vary** level (dice:
+off / a little ±20 % / a lot ±50 %), and for compounds **One square /
+Split up** with per-part rules. Hand-added counting tasks get dice too.
+Rules are resolved at persist (one-off) or at every spawn (recurring) into
+**derived counters** — ordinary `Task` rows linked to the family root by
+`sharedCounterId`, stamped with the board's window, with a
+**baseline computed from the root's events** so the board shows only what
+was logged inside its window. Nothing rolled or resolved is ever stored on
+the rule; the recurring board still stores a rule, never a task list.
+
+### Data model (additive; no `Task` schema change)
+
+**`BoardSource.memberRules?`** (`packages/shared/src/types/boardSource.ts`
+↔ `apps/ios/OYBC/Database/Models/BoardSource.swift`):
+
+```
+type VaryLevel = 0 | 1 | 2                      // off · a little (±20 %) · a lot (±50 %)
+
+BoardSourcePartRule {                           // one compound part
+  target?: number                               // counting part only; absent = auto
+  vary?: VaryLevel                              // absent = 0
+  excluded?: boolean                            // honoured only while the parent is split
+}
+
+BoardSourceMemberRule {
+  target?: number                               // counting member; absent = auto
+  vary?: VaryLevel                              // counting member, or a One-square compound
+                                                //   (covers all of its counting parts)
+  split?: boolean                               // compound only; absent/false = One square
+  parts?: Record<childTaskId, BoardSourcePartRule>   // compound only; keyed by childTaskId, never index
+}
+
+memberRules?: Record<taskId, BoardSourceMemberRule>   // new optional field on BoardSource
+```
+
+- Keyed by task id / `compound_children.childTaskId` — stable keys, never
+  positions.
+- `target` is honoured only on `kind: 'board'` sources; a `target` on a
+  pool member is ignored (pool members: vary / split / part-exclusion only).
+- **Stale-inert**, like `excludedTaskIds`: a rule for a task not in the
+  source's live supply this spawn is skipped; a part rule for a part no
+  longer in the compound is skipped.
+- Zod: `.optional()`; `target` integer ≥ 1; `vary` ∈ {0, 1, 2}. No schema
+  version bump.
+- Swift: `decodeIfPresent` with nil default (the current decoder
+  hard-decodes every key except `max`); the encoder **omits** the key when
+  nil/empty, so a rule-less source serializes byte-identically to today.
+
+**`RecurringBoardTemplate.manualTaskVary?: Record<taskId, VaryLevel>`** —
+dice for hand-added counters on a recurring board. Also on the Create /
+Update inputs. iOS: new JSON-TEXT column on `recurring_board_templates`,
+**GRDB migration v31** (v30 is the `sources` column — re-check the tip at
+implementation time), encode/decode as `sources`. On the recurring-draft
+payload (`apps/web/src/db/recurringDraftMix.ts` ↔
+`RecurringDraftMixPayload.swift`) the field is additive and the blob
+**stays `v: 2`**; both decoders default to `{}`. One-off boards store none
+of this — vary is rolled and materialized at persist.
+
+**Derived counters reuse existing `Task` fields** — no new columns:
+
+| Field | Value |
+| --- | --- |
+| `id` | `uuidv5('sources:derived:<boardId>:<rootTaskId>')` (`uuidv5.ts` ↔ `Helpers/UUIDv5.swift`, vector-pinned) |
+| `type` | `COUNTING` |
+| `sharedCounterId` | the family root (`source.sharedCounterId ?? source.id` — always flat) |
+| `maxCount` | the auto / overridden / rolled target |
+| `baseline` | event-derived (see §Baseline) |
+| `title` / `action` / `unit` | `generateCounterTaskTitle(action, target, unit)` |
+| `timeframe` / `startDate` / `endDate` | the board's window |
+| `createdInWizard` | `true` |
+| `currentCount` | **root mirror** (`root.currentCount`) — the convention `propagateIncrement` already writes for every linked task; readers subtract `baseline` via `deriveDisplayedCount` |
+| `isCompleted` | `deriveDisplayedCount(derived, root).isCompleted` at mint; one-way latch afterwards, as today |
+
+A **derived compound** exists only for a One-square compound with at least
+one counting part carrying a target or vary:
+`id = uuidv5('sources:derived-compound:<boardId>:<compoundId>')`,
+`operator` / `threshold` / title copied from the source compound;
+`compound_children` rows link **derived counting children** for parts with
+a target/vary and the **original** child tasks for every other part; link
+ids `uuidv5('sources:derived-link:<derivedCompoundId>:<childId>')`.
+
+`createdInWizard: true` + "shown like any task" reconcile because
+`computeBrowsableTasks` hides a `createdInWizard` task only while it has no
+non-draft placement: a derived counter is browsable the moment its board
+exists and drops out of browse if the board goes.
+
+**Never stored:** rolled targets, remaining amounts, resolved source
+instances, any task list for a recurring board.
+
+### Resolution pipeline (shared pure steps; TS ↔ Swift twins)
+
+1. **Supply expansion — `applyMemberRules(supply, childrenByCompoundId)`**
+   (`boardSources.ts` ↔ `Helpers/BoardSources.swift`). A member with
+   `split: true` contributes its non-excluded `childTaskId`s instead of its
+   own id. Called at **every** supply-build point: wizard
+   (`wizardSources.ts algorithmSupplies` ↔ `BoardWizardViewModel+Sources`),
+   spawn (`recurringBoardSpawn.ts` ↔ `AppDatabase+RecurringTemplates.swift`
+   — the `compoundChildren` fetch, today made *after* placement, is hoisted
+   above the supply loop on both platforms), and roster health
+   (`templateHealth.ts` ↔ `RecurringBoardTemplatesViewModel`) so Settings
+   attention reasons agree with spawn. `computeSourceCapacity` and
+   `selectBoardTasks` consume the expanded supply unchanged, so "of N", the
+   subtitle, the slider bound and the header count all move with Split up.
+   `fetchCompoundChildrenByCompoundIds` is kept for this (plan A must not
+   delete it).
+2. **Selection — unchanged.** `selectBoardTasks` runs on member ids (root
+   counters, compounds, split parts). Family exclusivity keys on
+   `sharedCounterId ?? id` via `buildCounterFamilyMap`; the min-aware
+   CHOSEN-center swap in `buildWizardPlacement` is untouched.
+3. **`planDerivedTasks`** (new; pure; vector-pinned) — after selection:
+   ```
+   in:  selectedIds, sources (+memberRules), manualTaskVary,
+        board window {timeframe, startDate, endDate}, tasksById,
+        childrenByCompoundId, sourceWindowByMemberId, baselineByRootId, rng
+   out: { placementIds, derivedTasks: DerivedTaskDraft[], derivedCompounds: DerivedCompoundDraft[] }
+   ```
+   **Supplying source** = the first source in `sources` order whose
+   expanded supply contains the id (the same first-wins rule as
+   `memberRules`); its `kind` decides board-vs-pool treatment and only its
+   rule applies. A hand-added id that is also in a source is treated as
+   hand-added (dedupe already drops the source copy). Per selected id:
+   - counting member whose supplying source is a **board** → derived,
+     `maxCount` = resolved target;
+   - counting member with `vary > 0` (any source, or hand-added via
+     `manualTaskVary`) → derived, rolled;
+   - split part that is counting with a target/vary → derived;
+   - One-square compound with any counting part carrying a target/vary →
+     derived compound + derived children. **Effective part rule** for a
+     One-square compound: `parts[childId]` merged over the member-level
+     rule — a member-level `vary` (the toggle-line dice) is treated as if
+     every counting part carried that same `vary` (and, on a board source,
+     every counting part gets an `autoTarget`) for both this trigger and
+     the per-part `rollTarget`. It is never copied into `parts`; in Split
+     mode the member-level `vary` is ignored and only `parts[*].vary`
+     applies;
+   - hand-added member that is itself a window-stamped derived counter
+     (`sharedCounterId != null && startDate != null`) → **re-minted per
+     spawn** with target = its `maxCount`, root = its `sharedCounterId`
+     (keeps Board Edit → REPEATS working on a board born with targets);
+   - everything else → placed as-is.
+   Drafts are in-memory only; `buildWizardPlacement` returns them
+   alongside `pendingTasks` for the Preview and for persist.
+4. **Target math** (`boardSources.ts` + twins):
+   - `nominalWindowDays(timeframe)`: daily 1 · weekly 7 · monthly 30 ·
+     yearly 365 · CUSTOM = actual span (`endDate − startDate + 1`) ·
+     INDEFINITE = `null`. New helper (none exists on either platform).
+   - `autoTarget(goal, sourceDays, targetDays)` — four explicit branches,
+     in order: `sourceDays == null` → `goal`; `targetDays == null` →
+     `goal`; `targetDays ≥ sourceDays` → `goal`; else
+     `min(goal, ceil(goal × targetDays / sourceDays))`. Recurring only.
+     Inputs: `goal` = the pulled member's own `maxCount` (for a member that
+     is itself a window-stamped derived counter that is its per-window
+     target, and the root is `member.sharedCounterId`); `sourceDays` =
+     `nominalWindowDays` of the **source board's** timeframe
+     (`sourceWindowByMemberId`); `targetDays` = `nominalWindowDays` of the
+     board being made.
+   - One-off: the wizard writes an explicit `target` at pull time, prefilled
+     with the source's **remaining** (`goal − count in the source board's
+     window`, floor 1). There is no "auto" on a one-off board.
+   - `varyRange(t, level, goal) = [max(1, round(t·(1−p))), min(goal, round(t·(1+p)))]`,
+     `p ∈ {0, 0.2, 0.5}`; `rollTarget(t, level, goal, rng)` picks a whole
+     number uniformly in that range. `t` is clamped 1…goal first.
+   - `rng` is the seeded rng `selectBoardTasks` already takes: Preview
+     Shuffle re-rolls by re-running the plan (`shuffleNonce` ↔
+     `reseedPlacement`); spawn uses the platform default rng.
+5. **Persist.** `persistWizardBoard` (`wizardPersist.ts` ↔
+   `BoardWizardPersist.swift`) and spawn write derived tasks +
+   `compound_children` + their sync-queue items **in the same transaction,
+   before `board_tasks`**. `baselineByRootId` is computed by the caller from
+   `task_events` (root-owned `increment` rows, `occurredAt < startDate ??
+   now`). Deterministic ids ⇒ a retry upserts.
+6. **Gap fix.** `repeatBoardAsTemplate` (`AppDatabase+RecurringTemplates.swift`)
+   ↔ `repeatBoardAsRecurring` (`db/operations/repeatBoard.ts`) write
+   `sources` (and `manualTaskVary: {}`) instead of the legacy trio only.
+
+Edge rules: an empty/dead source contributes nothing (stale-inert, shipped
+behaviour); a pulled board that itself pulls is flattened because its live
+`board_tasks` are the supply.
+
+### Baseline — a pure function of the root's events
+
+`baseline = Σ root increment events with occurredAt < board.startDate`
+(INDEFINITE board → `< mint time`). Kept true at three points:
+
+- **mint** — the only time `baseline` rides an authored write (the derived
+  task's initial insert, version 1, enqueued);
+- **local root writes** — `incrementSharedCounter` /
+  `decrementSharedCounter` / `undoLastCounterLog`
+  (`tasks.sharedCounter.ts` ↔ `AppDatabase+SharedCounters.swift`) gain
+  `refreshDerivedBaselines(rootId)` for the root's window-stamped derived
+  tasks;
+- **pull** — a **new, explicit sub-step** after
+  `recomputeTaskCachesFromPull(rootId)` in `applyTaskEventsBatch` and
+  `healMissingCompletionEvents` (`taskEventPull.ts` + iOS twin): for each
+  recomputed root, query its window-stamped derived tasks
+  (`sharedCounterId == rootId && startDate != null`) and recompute
+  `baseline`. The existing loop does NOT cover this — it iterates
+  event-owning tasks (`isEventOwningTask` gate) and derived tasks own no
+  events by construction. Closes late-synced backdated increments and keeps
+  sealed-board re-derivation deterministic.
+
+**Sync rule: after mint, `baseline` is a pure, non-authored cache.** Both
+recompute paths follow the `recomputeTaskCachesFromPull` pattern — **no
+`version` bump, no sync enqueue**, on both platforms. Every device converges
+on the same value from the converged event union, so there is nothing to
+win an LWW race over; a versioned write here would rewrite every historical
+derived row of a root on every tap, on every device.
+
+This applies only to **window-stamped** derived tasks
+(`sharedCounterId != null && startDate != null`). Hub-authored derived
+counters (the Counters hub's create sheet, `CreateCounterSheet.tsx` ↔ iOS
+counterpart, via `resolveDeriveLinkTarget`) keep today's frozen baseline and
+that entry point stays. The two *wizard* entry points to that flow go away
+(the #471 member menu in B3, the From-a-board grid in A), and the iOS
+Library sheet's derive entry is stripped in B3 for web parity.
+
+Board reads/writes are unchanged: a derived cell displays
+`deriveDisplayedCount(derived, root)`; a tap increments the **root** (the
+reject-derived guard stays). `docs/WINDOWED_COMPLETION.md`'s carve-out
+paragraph gains: window-stamped derived counters are windowed *through
+their baseline*; the v1 cross-window bleed note is closed for them.
+
+**Read audit (B2):** because `currentCount` on a linked task is the root
+mirror, every surface that shows a linked task's count must read through
+`deriveDisplayedCount` — Tasks tab row, Task detail, Library sheet row,
+Counters hub/detail, wizard member rows — on both platforms. Any straggler
+is a pre-existing bug that B makes visible; fix it, don't special-case.
+
+### Where derived counters show up
+
+- Tasks tab / wizard Library sheet: like any task, then default-hidden
+  after `endDate` by `isTaskExpired` (+ "show expired").
+- Counters hub/detail: the same `isTaskExpired` default + "show expired"
+  affordance, applied in the **caller hooks** that assemble the `tasks`
+  input (`useSharedCounterGroups.ts` ↔ the hub/detail view-model), NOT
+  inside the vector-pinned pure `buildSharedCounterGroups`, whose contract
+  is unchanged. Roots are never filtered.
+
+### Deletion
+
+- **Board deleted → its window-stamped derived tasks are soft-deleted too.**
+  `deleteBoard` (`db/operations/boards.ts` ↔ `AppDatabase+Boards.swift`):
+  after tombstoning placements, soft-delete every task placed on that board
+  that is window-stamped derived (`createdInWizard && sharedCounterId !=
+  null && startDate != null`) and has no other live placement (a per-spawn
+  mint is placed on exactly one board, so this is precise).
+- Root counter deleted, generic path → `deleteTaskWithCascade` /
+  `deleteTaskWithCascadeInTxn` (`tasks.deletion.ts` ↔
+  `AppDatabase+Tasks.swift`) also soft-deletes the root's window-stamped
+  derived tasks + tombstones their placements; `computeTaskDeletionImpact`
+  counts them.
+- Root counter deleted, **Counters-hub path** → `deleteCounterWithUnlink`
+  (`tasks.counter.ts` ↔ `AppDatabase+Counters.swift`) today unlinks every
+  member (clears `sharedCounterId`/`baseline`, freezes the count) *before*
+  the cascade, which would turn every historical per-window derived counter
+  into a standalone orphan. It special-cases window-stamped members:
+  soft-delete them (+ tombstone placements); ordinary hub-derived members
+  keep unlink-and-preserve. `counterMembers` / the impact preview reflect
+  the split.
+- **Every newly-tombstoned derived task and placement bumps `version` and
+  enqueues its own sync item**, mirroring the existing loops in the same
+  functions — the "soft-delete helper forgot to enqueue → row resurrects on
+  pull" class has shipped before (PR #424).
+- Recurring board stopped/deleted → spawned boards and their derived tasks
+  stay.
+
+### Sync / codec / migration compat
+
+- Derived tasks and derived-compound links are ordinary `tasks` /
+  `compoundChildren` rows — **no `SYNC_COLLECTIONS` change**; the C4
+  sync-contract fixture and `check-sync-contract-rules.mjs` are unaffected.
+- `firestore.rules` validates only `id` / `version` / `userId` and a 10 KB
+  document cap — no nested-shape validation of `sources`. Plan step: size a
+  worst-case template (~20 board sources each carrying `memberRules` +
+  `parts`) against the cap and bump it if needed.
+- Derived-compound `compoundChildren` rows arriving before their parent
+  Task row hit the existing skip-and-defer posture (`pullApply.ts`), the
+  same one WC documents for `taskEvents`; rules' `version >= existing`
+  permits the equal-version idempotent re-mint.
+- Web: no new Dexie index → no Dexie version bump. iOS: `BoardSource` +
+  `RecurringDraftMixPayload` `decodeIfPresent`; `recurring_board_templates`
+  gains one TEXT column (v31).
+- Old clients ignore unknown keys on decode (Codable / `isBoardSource`
+  shape check). An old client that edits and saves a template drops
+  `memberRules` / `manualTaskVary` (whole-record LWW) — accepted, the same
+  class as any field addition. Concurrent rule edits on two devices race
+  whole-record, exactly as `sources` does today.
+- **Double-spawn, stated honestly:** spawn mints a random `boardId` per
+  device, so two devices racing one window already produce two duplicate
+  boards (documented in `spawnTemplateBoard`; "the user deletes one").
+  Derived ids embed `boardId`, so each duplicate board mints its own
+  derived cluster; the board-delete cascade above is what keeps that from
+  leaving a permanent duplicate cluster in the library. Deterministic spawn
+  board ids (`uuidv5(templateId + windowStart)`) would remove the race but
+  change spawn identity + placement-row convergence — out of scope, noted
+  as a follow-up.
+
+### UI contract (frames 2a/2b/4a/5a/5b/5c; both platforms)
+
+**Member rows replace #471's ⋯ menu outright** — delete `memberHasActions`
+/ `buildMemberMenuItems` / `onDeriveMember` / `onAddTask` (`SourceRow.tsx`),
+`memberActionsMenu` (`RisoSourceRowView.swift`), and the
+`setDerivingFromTask` wiring in `BoardWizardTasksStep.tsx`.
+
+| Member | Inline after the title |
+| --- | --- |
+| Counting, board source | 22pt stepper pill (− / numeric field, `.numberPad`, select-all on focus / ＋) · caption "of 35 mi" · dice |
+| Counting, pool source | dice only |
+| Compound | 69pt-indent line: **One square / Split up** pill + "1 square" / "2 squares" note + dice (One square only). One line per part: name · [stepper · "of 210" when board source] · dice (Split only) · ✕ (Split only; the last part can't be removed) |
+| dice on | blue 10.5/600 range line beneath the row/part with the bare range from `varyRange`: "4–6 mi" / "24–36" — never on the compound itself |
+
+Stepper shows `target ?? auto`, step 1, clamp 1…goal, **no reset**
+affordance; the unit appears once, in the caption. Excluded rows keep
+strikethrough + UNDO; excluding a split compound removes all its parts.
+Dice cycles off → a little (blue fill, 2 pips) → a lot (5 pips) → off.
+
+**Hand-added rows:** dice on counting rows only, before the 32pt edit
+button; the range line sits under the row.
+
+**Primitives (reuse before create):** check `CounterStepper.tsx` ↔
+`CounterStepperView.swift` for a compact size before adding one. New
+`DiceButton` (26×22, 0/2/5 pips, blue fill; pips use
+`--riso-ink-static` / `risoInkStatic` — adaptive ink on a coloured fill is
+the known dark-mode trap). A pill toggle only if `RisoSegmented` /
+`riso/Segmented` can't be sized down. Kit location `components/riso/` ↔
+`Views/Riso/RisoControls.swift`, each with a `RisoKitSnapshotTests`
+baseline.
+
+**Wizard state** (`useBoardWizard.ts` ↔ `BoardWizardViewModel+Sources.swift`,
+symmetric names): `setMemberTarget`, `setMemberVary`, `setMemberSplit`,
+`setPartExcluded`, `setPartTarget`, `setPartVary`, `setManualVary` —
+writing `sources[i].memberRules` / `manualTaskVary`. Split and
+part-exclusion re-run `refreshSourceSupplies` → `clampAllSourceRanges`. A
+one-off pull writes `target = remaining`. Drafts ride `commitSources` →
+`recurringDraftMix`.
+
+**Preview.** 2b one-off: cells render `DerivedTaskDraft` titles (joined
+with `pendingTasks`); Shuffle re-rolls via `shuffleNonce`. 5b recurring:
+the shipped inline summary is unchanged — targets and variation are not
+summarised.
+
+**5a Settings › Sources → no new screen** (re-affirms the P-series
+decision): "Edit tasks" already opens the full wizard in edit mode
+(`RepeatingBoardWizardOverlay.tsx` ↔ `BoardSettingsView.swift`). Delta: the
+Tasks step header shows "Changes apply from the next board." when editing
+a recurring board; Save = wizard save. One-off boards stay locked.
+
+**Sheet 2c/5c** shipped — copy audit only.
+
+**Copy** verbatim from the handoff; the §Copy rules apply (never
+"deal"/"draw"/"template"/"spawn"). A11y: dice "Vary: off / a little / a
+lot"; stepper "Decrease target" / "Increase target".
+
+### Test strategy (B)
+
+Shared TS ↔ Swift vectors, pinned like `TaskEventVectorTests`, each
+asserting a hand-computed non-degenerate value (never the degenerate
+output, never a pure function compared to itself):
+
+- `nominalWindowDays`; `autoTarget` with all four branches pinned
+  separately (daily←weekly 35→5; weekly←monthly 100→24; target ≥ source;
+  null source; null target); `varyRange` / `rollTarget` with a seeded rng
+  (boundary clamps at 1 and goal).
+- `applyMemberRules`: split expansion incl. excluded parts, last-part
+  guard, stale rule skipped.
+- `planDerivedTasks`: board counting auto; override; vary roll; pool
+  counting as-is unless vary; split parts; One-square compound → derived
+  compound with mixed derived/original children; window-stamped hand-added
+  member re-mint; supplying-source precedence; deterministic ids (all three
+  namespaces).
+- Codecs: `BoardSource` with/without rules round-trips; an old 6-field blob
+  decodes on both platforms; `recurringDraftMix` v2 without
+  `manualTaskVary`.
+- Web vitest: persist mint atomicity; spawn idempotency (double spawn →
+  identical rows); baseline from events; `refreshDerivedBaselines` and the
+  pull sub-step leave `version` unchanged and enqueue nothing; root
+  deletion via BOTH `deleteTaskWithCascade` and `deleteCounterWithUnlink`
+  (window-stamped members soft-deleted, ordinary members unlinked); board
+  deletion cascades derived tasks; a sync-queue row per tombstoned derived
+  task; the `deriveDisplayedCount` read audit locked on each surface's row
+  model.
+- iOS XCTest via `makeTestInstance()`: the same seams; migration v31.
+- Snapshots: `BoardWizardTasksStepSnapshotTests` gains member-rule states;
+  `RisoKitSnapshotTests` for the new primitives. Web Playwright on the
+  Tasks step + Preview shuffle.
