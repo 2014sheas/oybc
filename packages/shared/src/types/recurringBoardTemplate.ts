@@ -1,5 +1,5 @@
 import { Timeframe, CenterSquareType } from "../constants/enums";
-import type { BoardSource } from "./boardSource";
+import type { BoardSource, VaryLevel } from "./boardSource";
 import { BoardSize } from "../constants";
 
 /**
@@ -123,6 +123,8 @@ export interface RecurringBoardTemplate {
    * layer in both models.
    */
   sources?: BoardSource[];
+  /** Dice for hand-added counters on a recurring board (§Member rules). Additive; absent = {}. */
+  manualTaskVary?: Record<string, VaryLevel>;
 
   // Spawn state
   lastSpawnedWindowKey: string | null; // local ISO startDate of last spawn, or null
@@ -162,6 +164,8 @@ export interface CreateRecurringBoardTemplateInput {
   removedTaskIds?: string[];
   /** Board Sources P1 — canonical sources shape (see the entity field). */
   sources?: BoardSource[];
+  /** Dice for hand-added counters on a recurring board (§Member rules). Additive; absent = {}. */
+  manualTaskVary?: Record<string, VaryLevel>;
 }
 
 /**
@@ -183,4 +187,6 @@ export interface UpdateRecurringBoardTemplateInput {
   removedTaskIds?: string[];
   /** Board Sources P1 — canonical sources shape (see the entity field). */
   sources?: BoardSource[];
+  /** Dice for hand-added counters on a recurring board (§Member rules). Additive; absent = {}. */
+  manualTaskVary?: Record<string, VaryLevel>;
 }
