@@ -4,6 +4,7 @@ import {
   CenterSquareType,
   Timeframe,
   TaskType,
+  derivedTaskId,
   resolveMix,
   type Pool,
   type RecurringBoardTemplate,
@@ -1067,5 +1068,189 @@ describe('resolveSourceBoard — local-wall-clock reference (review-caught Criti
 
     const resolved = await resolveSourceBoard('inst-yesterday');
     expect(resolved?.id).toBe('inst-today');
+  });
+});
+
+/**
+ * Board Sources §Member rules (B2) — the spawn path resolves each pulled
+ * board's per-member rules against the window it is spawning and mints the
+ * window-stamped derived counters before the `board_tasks` rows.
+ */
+describe('spawnTemplateBoard — member-rule mint', () => {
+  const ROOT = 'root-counter';
+  const SRC = 'src-weekly-board';
+  const PRE_WINDOW = '2026-07-10T00:00:00.000Z';
+
+  async function seedWeeklySourceBoard(): Promise<void> {
+    // A weekly board carrying a 35-unit counting goal plus 7 fillers, so a
+    // 3×3 FREE-centre daily board (8 fillable cells) is exactly filled.
+    const root: Task = {
+      id: ROOT,
+      userId: 'user-1',
+      title: 'Run 35 km',
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'km',
+      maxCount: 35,
+      currentCount: 9,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as Task;
+    await db.tasks.add(root);
+    await db.taskEvents.add({
+      id: 'ev-pre',
+      userId: 'user-1',
+      taskId: ROOT,
+      kind: 'increment',
+      delta: 9,
+      occurredAt: PRE_WINDOW,
+      createdAt: PRE_WINDOW,
+      updatedAt: PRE_WINDOW,
+      version: 1,
+      isDeleted: false,
+    });
+    const fillers = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'];
+    for (const id of fillers) await seedTask(id);
+
+    await db.boards.add({
+      id: SRC,
+      userId: 'user-1',
+      name: 'Weekly source',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.WEEKLY,
+      startDate: '2026-07-13T00:00:00.000',
+      endDate: '2026-07-19T23:59:59.999',
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      totalTasks: 9,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    await db.boardTasks.bulkAdd(
+      [ROOT, ...fillers].map((taskId, i) => ({
+        id: `bt-${SRC}-${taskId}`,
+        boardId: SRC,
+        taskId,
+        row: Math.floor(i / 3),
+        col: i % 3,
+        isCenter: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      })),
+    );
+  }
+
+  const dailyTemplate = (): RecurringBoardTemplate => ({
+    id: 'tmpl-member-rules',
+    userId: 'user-1',
+    name: 'Daily from weekly',
+    timeframe: Timeframe.DAILY,
+    boardSize: 3,
+    centerSquareType: CenterSquareType.FREE, // 8 fillable cells
+    isRandomized: false,
+    seedTaskIds: [],
+    manualTaskIds: [],
+    sources: [
+      {
+        sourceId: SRC,
+        kind: 'board',
+        min: 0,
+        max: null,
+        excludedTaskIds: [],
+        filter: 'all',
+      },
+    ],
+    lastSpawnedWindowKey: null,
+    isActive: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+  });
+
+  it('pro-rates the weekly 35 goal onto a daily board (5) and seeds the window baseline', async () => {
+    await seedWeeklySourceBoard();
+    const template = dailyTemplate();
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Daily — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const derivedId = derivedTaskId(result.boardId, ROOT);
+    const derived = await db.tasks.get(derivedId);
+    expect(derived?.maxCount).toBe(5); // ceil(35 × 1 day / 7 days)
+    expect(derived?.baseline).toBe(9); // the whole pre-window log
+    expect(derived?.currentCount).toBe(9); // mirrors the root, so 0 this window
+    expect(derived?.isCompleted).toBe(false);
+
+    const placed = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
+      (bt) => bt.taskId,
+    );
+    expect(placed).toHaveLength(8);
+    expect(placed).toContain(derivedId);
+    expect(placed).not.toContain(ROOT); // the root itself never lands
+  });
+
+  it('a second window mints its own derived row and never rewrites the first one', async () => {
+    await seedWeeklySourceBoard();
+    const template = dailyTemplate();
+    await db.recurringBoardTemplates.add(template);
+
+    const first = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Daily — July 19',
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const firstDerivedId = derivedTaskId(first.boardId, ROOT);
+    const firstRow = await db.tasks.get(firstDerivedId);
+
+    const second = await spawnTemplateBoard({
+      template: { ...template, lastSpawnedWindowKey: WINDOW_START },
+      windowStart: '2026-07-20T00:00:00.000Z',
+      windowEnd: '2026-07-20T23:59:59.999Z',
+      suggestedName: 'Daily — July 20',
+    });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    const secondDerivedId = derivedTaskId(second.boardId, ROOT);
+    expect(secondDerivedId).not.toBe(firstDerivedId);
+    expect((await db.tasks.get(secondDerivedId))?.startDate).toBe(
+      '2026-07-20T00:00:00.000Z',
+    );
+
+    // The first window's row is frozen — an earlier board's derived counter
+    // is that window's record and must not be re-stamped by a later spawn.
+    const firstAfter = await db.tasks.get(firstDerivedId);
+    expect(firstAfter?.version).toBe(firstRow?.version);
+    expect(firstAfter?.updatedAt).toBe(firstRow?.updatedAt);
+    expect(firstAfter?.startDate).toBe(WINDOW_START);
+
+    // One CREATE per derived row — never a duplicate for the same id.
+    const queued = await db.syncQueue.toArray();
+    expect(queued.filter((q) => q.entityId === firstDerivedId)).toHaveLength(1);
+    expect(queued.filter((q) => q.entityId === secondDerivedId)).toHaveLength(1);
   });
 });

@@ -13,6 +13,7 @@ import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
 import { insertIncrementEventRaw } from './taskEvents';
+import { refreshDerivedBaselines } from './derivedCounters';
 
 /**
  * Phase 3 — Shared Counters increment hot-path.
@@ -104,6 +105,14 @@ export async function incrementSharedCounter(
       // source's lifetime `currentCount` is already written authoritatively
       // above and equals the lifetime event sum.
       await insertIncrementEventRaw(sourceTaskId, by, undefined, now);
+
+      // Board Sources §Member rules (B2) — the root's event log just moved, so
+      // every window-stamped derived counter hanging off it may need a new
+      // `baseline`. Refreshed BEFORE the propagation read below so the derived
+      // rows' displayed counts (and the board cascade at the end of this
+      // transaction) are computed against the corrected boundary rather than a
+      // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
+      await refreshDerivedBaselines(sourceTaskId);
 
       // 3. Find all linked (derived) tasks for this source.
       const linkedTasks = await db.tasks
@@ -250,6 +259,14 @@ export async function decrementSharedCounter(
       // (derived tasks are carved out); the source cache is written
       // authoritatively above.
       await insertIncrementEventRaw(sourceTaskId, -eff, undefined, now);
+
+      // Board Sources §Member rules (B2) — the root's event log just moved, so
+      // every window-stamped derived counter hanging off it may need a new
+      // `baseline`. Refreshed BEFORE the propagation read below so the derived
+      // rows' displayed counts (and the board cascade at the end of this
+      // transaction) are computed against the corrected boundary rather than a
+      // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
+      await refreshDerivedBaselines(sourceTaskId);
 
       // 4. Find all linked (derived) tasks for this source.
       const linkedTasks = await db.tasks
@@ -434,6 +451,14 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
       if (savedSource) {
         await addToSyncQueue('tasks', sourceTaskId, SyncOperationType.UPDATE, savedSource, 0);
       }
+
+      // Board Sources §Member rules (B2) — the root's event log just moved, so
+      // every window-stamped derived counter hanging off it may need a new
+      // `baseline`. Refreshed BEFORE the propagation read below so the derived
+      // rows' displayed counts (and the board cascade at the end of this
+      // transaction) are computed against the corrected boundary rather than a
+      // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
+      await refreshDerivedBaselines(sourceTaskId);
 
       // 6. Find all linked (derived) tasks and propagate, exactly like
       //    increment/decrement.

@@ -437,6 +437,10 @@ export async function persistWizardBoard({
     centerType: controller.centerType,
     pendingTasks,
     stagedEdits: isActiveCreate ? stagedEditsMap : new Map(),
+    // Board Sources §Member rules (B2) — the operation resolves each pulled
+    // source's per-member rules against this board's window at write time.
+    sources: controller.sources,
+    manualTaskIds: Array.from(controller.manualTaskIds),
   });
 }
 
