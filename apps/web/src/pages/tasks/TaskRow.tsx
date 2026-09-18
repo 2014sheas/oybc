@@ -1,5 +1,6 @@
 import { generateCounterTaskTitle, TaskType, type Task } from '@oybc/shared';
 import { RisoTypeBadge } from '../../components/riso';
+import { computeStatusLabel } from './taskCountDisplay';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import styles from './TaskRow.module.css';
 
@@ -138,16 +139,6 @@ export function TaskRow({
       )}
     </div>
   );
-}
-
-function computeStatusLabel(task: Task): string {
-  if (task.isCompleted) return 'Completed';
-  if (task.type === TaskType.COUNTING) {
-    const current = task.currentCount ?? 0;
-    const max = task.maxCount ?? 0;
-    if (current > 0 && max > 0) return `${current} / ${max}`;
-  }
-  return '';
 }
 
 function computeSubtitle(task: Task, childCount: number): string {

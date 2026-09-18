@@ -6,12 +6,14 @@ import {
   TaskType,
   deriveDisplayedCount,
   generateCounterTaskTitle,
+  isWindowStampedDerived,
   type Task,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { insertIncrementEventRaw } from './taskEvents';
 import { deleteTaskWithCascadeInTxn } from './tasks.deletion';
+import { softDeleteWindowStampedDerived } from './derivedCounters';
 
 /**
  * P5 — Counters Hub write ops (docs/SHARED_COUNTERS.md §P5).
@@ -133,6 +135,11 @@ export async function promoteTaskToCounter(taskId: string): Promise<Task> {
  * sparkline. The authoritative `currentCount` (lifetime sum) is unchanged.
  * No-op (returns without writing) if the source is missing or already deleted.
  *
+ * B2 exception (docs/BOARD_SOURCES.md §Member rules — *Deletion*): a member
+ * this pipeline minted for one board window (`isWindowStampedDerived`) is NOT
+ * unlinked — it is soft-deleted with its placements and links, because it is
+ * an artifact of that window rather than a library task the user authored.
+ *
  * @param sourceId - The counter source task to delete.
  */
 export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
@@ -148,7 +155,16 @@ export async function deleteCounterWithUnlink(sourceId: string): Promise<void> {
       const members = await db.tasks
         .where('sharedCounterId').equals(sourceId)
         .filter((t) => !t.isDeleted).toArray();
-      for (const m of members) {
+      // Board Sources §Member rules (B2) — the members split two ways. A
+      // window-stamped derived counter is a per-window artifact of the board
+      // it was minted for: unlinking it would strand a standalone row on a
+      // board the user never hand-added it to, so it is retired with its
+      // placements instead. Everything else keeps decision 8's behaviour.
+      await softDeleteWindowStampedDerived(
+        members.filter(isWindowStampedDerived).map((m) => m.id),
+        now,
+      );
+      for (const m of members.filter((t) => !isWindowStampedDerived(t))) {
         const { displayed } = deriveDisplayedCount(
           { baseline: m.baseline ?? 0, maxCount: m.maxCount ?? 0 },
           { currentCount: source.currentCount ?? 0 },

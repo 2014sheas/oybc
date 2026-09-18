@@ -16,6 +16,10 @@ import { fetchAllCompoundChildren } from './compoundChildren';
 import { fetchAllBoardTasks, buildBoardTaskTombstone } from './boardTasks';
 import { buildWindowContext } from './windowContext';
 import { healBoardName, healBoardNames } from './boardNames';
+import {
+  softDeleteWindowStampedDerived,
+  windowStampedDerivedOrphanedByBoard,
+} from './derivedCounters';
 
 /**
  * Board CRUD Operations
@@ -421,18 +425,41 @@ export async function archiveBoard(id: string): Promise<void> {
  * Increments `version` so LWW conflict resolution treats the deletion
  * as a later-wins operation against any concurrent update on another
  * device. See `deleteTask` for the same rationale.
+ *
+ * Board Sources §Member rules (B2, RB5) — the board's window-stamped derived
+ * rows go with it, once nothing else holds them: a derived counter/compound
+ * left behind by its last board is a row the user never authored, pointing at
+ * a window that no longer has a board. A derived row still placed on another
+ * LIVE board survives (a live placement is a live `board_tasks` row on a live
+ * board). The board's OWN `board_tasks` rows are deliberately left as they
+ * are — `deleteBoard` has never tombstoned them, and changing that is a
+ * separate concern from this cascade.
+ *
+ * The board tombstone and the derived cascade share one transaction so a
+ * mid-flight failure can't leave retired tasks under a live board.
  */
 export async function deleteBoard(id: string): Promise<void> {
-  const existing = await db.boards.get(id);
-  if (!existing) return;
-  await db.boards.update(id, {
-    isDeleted: true,
-    deletedAt: currentTimestamp(),
-    updatedAt: currentTimestamp(),
-    version: (existing.version ?? 0) + 1,
-  });
-  const board = await db.boards.get(id);
-  if (board) await addToSyncQueue('boards', id, SyncOperationType.DELETE, board);
+  await db.transaction(
+    'rw',
+    [db.boards, db.tasks, db.boardTasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      const existing = await db.boards.get(id);
+      if (!existing) return;
+      const now = currentTimestamp();
+      await db.boards.update(id, {
+        isDeleted: true,
+        deletedAt: now,
+        updatedAt: now,
+        version: (existing.version ?? 0) + 1,
+      });
+      const board = await db.boards.get(id);
+      if (board) await addToSyncQueue('boards', id, SyncOperationType.DELETE, board);
+
+      // After the tombstone, so the "live placement" test excludes this board.
+      const orphaned = await windowStampedDerivedOrphanedByBoard(id);
+      await softDeleteWindowStampedDerived(orphaned, now);
+    },
+  );
 }
 
 /**

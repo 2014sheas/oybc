@@ -277,3 +277,124 @@ describe('deleteCounterWithUnlink — board cascade on the source’s own placem
     expect(unlinkedMember?.sharedCounterId).toBeNull();
   });
 });
+
+describe('deleteTaskWithCascade — window-stamped derived members (B2 §Member rules deletion)', () => {
+  /**
+   * A per-window derived counter is an artifact of the board it was minted
+   * for, not library content: when its root goes, it must go too (with its
+   * placement), instead of lingering as a linked row pointing at a deleted
+   * root. An ORDINARY hub-derived member is untouched here — the unlink
+   * policy for those lives in `deleteCounterWithUnlink`.
+   */
+  function derivedMember(id: string, rootId: string, over: Partial<Task> = {}): Task {
+    return {
+      id,
+      userId: USER,
+      title: 'Run 5 km',
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'km',
+      maxCount: 5,
+      sharedCounterId: rootId,
+      baseline: 0,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      startDate: START,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+      ...over,
+    } as Task;
+  }
+
+  it('soft-deletes the root’s window-stamped derived counters (+ their placements, each with a sync row) and leaves an ordinary member alone', async () => {
+    const ROOT = uuid(40);
+    const DERIVED = uuid(41);
+    const ORDINARY = uuid(42);
+    const BOARD = uuid(43);
+
+    await db.tasks.add(derivedMember(ROOT, '', { sharedCounterId: undefined, startDate: undefined, createdInWizard: undefined, isCounter: true, title: 'Root' }));
+    await db.tasks.add(derivedMember(DERIVED, ROOT));
+    // Same index, no window stamp — a hand-made linked counter.
+    await db.tasks.add(derivedMember(ORDINARY, ROOT, { startDate: undefined, createdInWizard: undefined }));
+
+    await db.boards.add({
+      id: BOARD,
+      userId: USER,
+      name: 'W',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.WEEKLY,
+      startDate: START,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      totalTasks: 9,
+      completedTasks: 0,
+      linesCompleted: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    } as Board);
+    await db.boardTasks.add({
+      id: `bt-${DERIVED}`,
+      boardId: BOARD,
+      taskId: DERIVED,
+      row: 1,
+      col: 1,
+      isCenter: false,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    } as BoardTask);
+
+    await deleteTaskWithCascade(ROOT);
+
+    const derived = await db.tasks.get(DERIVED);
+    expect(derived?.isDeleted).toBe(true);
+    expect(derived?.version).toBe(2);
+    const derivedQueue = (await db.syncQueue.toArray()).filter(
+      (i) => i.entityType === 'tasks' && i.entityId === DERIVED,
+    );
+    expect(derivedQueue).toHaveLength(1);
+
+    const placement = await db.boardTasks.get(`bt-${DERIVED}`);
+    expect(placement?.isDeleted).toBe(true);
+    expect(
+      (await db.syncQueue.toArray()).filter(
+        (i) => i.entityType === 'boardTasks' && i.entityId === `bt-${DERIVED}`,
+      ),
+    ).toHaveLength(1);
+
+    // The ordinary linked member survives the root's deletion untouched.
+    const ordinary = await db.tasks.get(ORDINARY);
+    expect(ordinary?.isDeleted).toBe(false);
+    expect(ordinary?.version).toBe(1);
+  });
+
+  it('re-derives the board that carried the retired derived counter (its bingo line cannot keep glowing)', async () => {
+    const ROOT = uuid(50);
+    const DERIVED = uuid(51);
+    const [B, C] = [uuid(52), uuid(53)];
+    const BOARD = uuid(54);
+
+    await db.tasks.add(derivedMember(ROOT, '', { sharedCounterId: undefined, startDate: undefined, createdInWizard: undefined, title: 'Root' }));
+    // The derived member reads its lifetime cache (the WC carve-out), so a
+    // completed derived square needs no event.
+    await db.tasks.add(derivedMember(DERIVED, ROOT, { isCompleted: true }));
+    await seedWindowedCompleteTask(B);
+    await seedWindowedCompleteTask(C);
+    await seedBoardWithCompletedRow0(BOARD, [DERIVED, B, C]);
+
+    await deleteTaskWithCascade(ROOT);
+
+    const board = await db.boards.get(BOARD);
+    expect(board?.completedLineIds).not.toContain('row_0');
+    expect(board?.completedTasks).toBe(2);
+  });
+});

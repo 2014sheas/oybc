@@ -17,13 +17,14 @@ import {
 } from '@oybc/shared';
 import { db } from '../internal';
 import { addToSyncQueue } from './syncQueue';
+import { buildBoardTaskTombstone } from './boardTasks';
 
 /**
  * derivedCounters.ts — Board Sources "member rules" B2, web half
  * (docs/BOARD_SOURCES.md §Member rules → *Resolution pipeline* steps 1/3/5,
  * *Baseline*).
  *
- * Two jobs, both of them writes that the shared `memberRules.ts` algorithms
+ * Three jobs, all of them writes that the shared `memberRules.ts` algorithms
  * only describe:
  *
  *  1. **Mint** — at board persist and at recurring spawn, turn the planned
@@ -42,6 +43,11 @@ import { addToSyncQueue } from './syncQueue';
  *     enqueue. The baseline is a cache derived from events, exactly like the
  *     lifetime caches `recomputeTaskCachesFromPull` restamps; authoring it
  *     would make two devices fight over a value both can recompute.
+ *  3. **Retire** — when a derived row's root is deleted, or the last live
+ *     board carrying it goes away, tombstone the row with its placements and
+ *     links (see the *Deletion* section at the bottom of this file). A
+ *     per-window derived row is an artifact of one board's window, not
+ *     library content, so it is retired rather than unlinked-and-kept.
  *
  * Every exported function here MUST be called from inside an already-open
  * Dexie transaction that scopes the tables it touches (`tasks`,
@@ -274,9 +280,9 @@ export async function planAndMintDerivedRows(
  * linked counter shares the `sharedCounterId` index with them and must never
  * have its `baseline` rewritten by this pipeline.
  *
- * Module-private for now: {@link refreshDerivedBaselines} is its only caller.
- * Task 4's deletion/retire sweep is the expected second consumer — export it
- * then, rather than leaving unused surface behind now.
+ * Module-private: {@link refreshDerivedBaselines} and
+ * {@link windowStampedDerivedIdsForRoot} (the deletion sweep's entry point)
+ * are its two callers.
  *
  * @param rootTaskId - The shared-counter root.
  * @returns A Dexie collection of the matching live rows.
@@ -333,4 +339,167 @@ export async function refreshDerivedBaselines(
     touched += 1;
   }
   return touched;
+}
+
+// ─── Deletion sweep (docs/BOARD_SOURCES.md §Member rules — *Deletion*) ────────
+
+/**
+ * Is this STORED row one of our per-window derived COMPOUNDS?
+ *
+ * The compound twin of `isWindowStampedDerived` (which keys off the
+ * shared-counter link a compound doesn't have): a window start plus the
+ * wizard-born provenance flag on a compound row. A hand-made compound carries
+ * neither, and a timeboxed one carries only the first — so the pair is what
+ * identifies a row the planner re-targeted for exactly one window.
+ *
+ * @param t - The task row to test.
+ * @returns True when the row is a per-window derived compound.
+ */
+export function isWindowStampedDerivedCompound(
+  t: Pick<Task, 'type' | 'startDate' | 'createdInWizard'>,
+): boolean {
+  return t.type === TaskType.COMPOUND && !!t.startDate && t.createdInWizard === true;
+}
+
+/**
+ * The live window-stamped derived counters that derive from `rootTaskId`.
+ *
+ * The deletion sweep's read half: a root's retirement takes its per-window
+ * derived counters with it, because such a row is an artifact of one board's
+ * window and means nothing once its root is gone. Ordinary linked members
+ * (no window stamp) are NOT returned — those are the user's own rows and are
+ * unlinked-and-preserved by `deleteCounterWithUnlink` instead.
+ *
+ * @param rootTaskId - The shared-counter root being deleted.
+ * @returns The ids of its live window-stamped derived counters.
+ */
+export async function windowStampedDerivedIdsForRoot(rootTaskId: string): Promise<string[]> {
+  const rows = await windowStampedDerivedQuery(rootTaskId).toArray();
+  return rows.map((t) => t.id);
+}
+
+/**
+ * The window-stamped derived rows a board's deletion orphans (RB5).
+ *
+ * A "live placement" is a `board_tasks` row with `isDeleted === false` whose
+ * board is itself live — so a derived row placed on another live board
+ * SURVIVES `boardId`'s deletion, while one whose only other placement sits on
+ * an already-tombstoned board does not. Call this AFTER the board row is
+ * tombstoned: `boardId` is then excluded by the live-board rule anyway, and
+ * the explicit id check keeps the helper correct if a caller reverses that.
+ *
+ * Reads only — the caller feeds the result to
+ * {@link softDeleteWindowStampedDerived} inside its own transaction.
+ *
+ * @param boardId - The board being deleted.
+ * @returns The ids of the window-stamped derived tasks left with no live
+ *   placement anywhere.
+ */
+export async function windowStampedDerivedOrphanedByBoard(boardId: string): Promise<string[]> {
+  const placed = await db.boardTasks
+    .where('boardId')
+    .equals(boardId)
+    .filter((bt) => !bt.isDeleted)
+    .toArray();
+  const candidateIds = [...new Set(placed.map((bt) => bt.taskId))];
+  if (candidateIds.length === 0) return [];
+  const candidates = (await db.tasks.where('id').anyOf(candidateIds).toArray()).filter(
+    (t) => !t.isDeleted && (isWindowStampedDerived(t) || isWindowStampedDerivedCompound(t)),
+  );
+
+  const orphaned: string[] = [];
+  for (const task of candidates) {
+    const elsewhere = await db.boardTasks
+      .where('taskId')
+      .equals(task.id)
+      .filter((bt) => !bt.isDeleted && bt.boardId !== boardId)
+      .toArray();
+    let stillPlaced = false;
+    for (const bt of elsewhere) {
+      const board = await db.boards.get(bt.boardId);
+      if (board && !board.isDeleted) {
+        stillPlaced = true;
+        break;
+      }
+    }
+    if (!stillPlaced) orphaned.push(task.id);
+  }
+  return orphaned;
+}
+
+/**
+ * Retire per-window derived rows: tombstone each task, its live placements
+ * and its live compound links, every one of them an authored delete.
+ *
+ * Authored means `version + 1` AND its own sync-queue DELETE on every row
+ * touched — a soft-delete helper that skips the enqueue leaves the tombstone
+ * local-only and the row RESURRECTS on the next pull (the defect
+ * `deleteBoard`'s missing enqueue caused on iOS; see also
+ * docs/BOARD_INTEGRITY.md PR-1 for why the version bump is what wins the LWW
+ * tie-break against a concurrently-edited remote copy).
+ *
+ * Link handling is symmetric on purpose: rows where the task is the CHILD (a
+ * derived counter that is a part of a derived compound) and rows where it is
+ * the PARENT (a derived compound's own child links) both go. The child TASKS
+ * are left alone — a part that is itself a derived counter is retired by its
+ * own entry in `taskIds`, and anything else is the user's library content.
+ *
+ * Idempotent: a missing or already-tombstoned id writes nothing and is not
+ * counted, so a second sweep over the same ids (a root delete that follows a
+ * board delete, say) is a true no-op.
+ *
+ * Runs INSIDE the caller's open transaction, which must scope `tasks`,
+ * `boardTasks`, `compoundChildren` and `syncQueue`.
+ *
+ * @param taskIds - The window-stamped derived rows to retire.
+ * @param now - The caller's shared write instant.
+ * @returns How many tasks were actually tombstoned.
+ */
+export async function softDeleteWindowStampedDerived(
+  taskIds: string[],
+  now: string,
+): Promise<number> {
+  let deleted = 0;
+  for (const id of taskIds) {
+    const task = await db.tasks.get(id);
+    if (!task || task.isDeleted) continue;
+
+    const placements = await db.boardTasks
+      .where('taskId')
+      .equals(id)
+      .filter((bt) => !bt.isDeleted)
+      .toArray();
+    for (const bt of placements) {
+      const tombstoned = buildBoardTaskTombstone(bt, now);
+      await db.boardTasks.update(bt.id, tombstoned);
+      await addToSyncQueue('boardTasks', bt.id, SyncOperationType.DELETE, tombstoned);
+    }
+
+    const links = await db.compoundChildren
+      .filter((c) => !c.isDeleted && (c.childTaskId === id || c.compoundTaskId === id))
+      .toArray();
+    for (const link of links) {
+      const tombstoned: CompoundChild = {
+        ...link,
+        isDeleted: true,
+        deletedAt: now,
+        updatedAt: now,
+        version: (link.version ?? 0) + 1,
+      };
+      await db.compoundChildren.put(tombstoned);
+      await addToSyncQueue('compoundChildren', link.id, SyncOperationType.DELETE, tombstoned);
+    }
+
+    const tombstonedTask: Task = {
+      ...task,
+      isDeleted: true,
+      deletedAt: now,
+      updatedAt: now,
+      version: (task.version ?? 0) + 1,
+    };
+    await db.tasks.put(tombstonedTask);
+    await addToSyncQueue('tasks', id, SyncOperationType.DELETE, tombstonedTask);
+    deleted += 1;
+  }
+  return deleted;
 }

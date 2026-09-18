@@ -33,6 +33,7 @@ import { TypeBadge } from '../../components/TypeBadge';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import { TaskEditSheet } from './TaskEditSheet';
 import { TaskConfirmDeleteDialog } from './TaskConfirmDeleteDialog';
+import { displayedCountFor } from './taskCountDisplay';
 import styles from './TaskDetailContent.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -87,7 +88,8 @@ function StatusPill({ task }: { task: Task }): React.ReactElement {
   if (task.isCompleted) {
     return <span className={`${styles.statusPill} ${styles.statusCompleted}`}>Completed</span>;
   }
-  if (task.type === TaskType.COUNTING && (task.currentCount ?? 0) > 0) {
+  // RB7 — a linked member's progress is its window's, not its root's total.
+  if (task.type === TaskType.COUNTING && displayedCountFor(task) > 0) {
     return <span className={`${styles.statusPill} ${styles.statusInProgress}`}>In progress</span>;
   }
   return <span className={`${styles.statusPill} ${styles.statusNeverStarted}`}>Never started</span>;
@@ -207,7 +209,8 @@ function AchievementTemplateFact({
 
 function TypeSpecificFacts({ task }: { task: Task }): React.ReactElement | null {
   if (task.type === TaskType.COUNTING) {
-    const current = task.currentCount ?? 0;
+    // RB7 — baseline-adjusted for a linked member (see `taskCountDisplay`).
+    const current = displayedCountFor(task);
     const max = task.maxCount ?? 0;
     const pct = max > 0 ? Math.min(100, Math.round((current / max) * 100)) : 0;
     return (

@@ -9,6 +9,7 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
+import { isWindowStampedDerivedCompound } from './derivedCounters';
 
 /**
  * "Repeat this board…" (P6, docs/POOLS_RECURRING.md §Surfaces item 7) — a
@@ -17,7 +18,9 @@ import { addToSyncQueue } from './syncQueue';
  * source board IS this window's board already. It only:
  *
  *   1. Mints a new `RecurringBoardTemplate` whose `manualTaskIds` are the
- *      board's currently-placed tasks (zero pools — an own-mix record),
+ *      board's currently-placed tasks, minus this window's derived compounds
+ *      (B2 RB4), with `sources: []` / `manualTaskVary: {}` written
+ *      explicitly (zero sources — an own-members record),
  *      with `lastSpawnedWindowKey` pre-seeded to the CHOSEN cadence's
  *      window containing the board's start date
  *      (`buildRepeatBoardTemplateInput` — critically keyed off `cadence`,
@@ -49,7 +52,8 @@ export async function repeatBoardAsRecurring(
 
   return await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.recurringBoardTemplates, db.syncQueue],
+    // `tasks` is read-only here (the RB4 derived-compound check).
+    [db.boards, db.boardTasks, db.tasks, db.recurringBoardTemplates, db.syncQueue],
     async (): Promise<RecurringBoardTemplate> => {
       // Read the board's live, non-deleted placements, sorted by grid
       // position, mapped to distinct taskIds (dedup preserving order —
@@ -68,6 +72,13 @@ export async function repeatBoardAsRecurring(
       for (const bt of sortedBoardTasks) {
         if (seenTaskIds.has(bt.taskId)) continue;
         seenTaskIds.add(bt.taskId);
+        // Board Sources §Member rules (B2, RB4) — a per-window derived
+        // COMPOUND is this window's re-targeted copy of a source compound;
+        // carrying it forward as a hand-added member would pin every future
+        // window to it. A derived COUNTER passes through: it is re-minted
+        // from its root for each new window like any other counting member.
+        const task = await db.tasks.get(bt.taskId);
+        if (task && isWindowStampedDerivedCompound(task)) continue;
         boardTaskIds.push(bt.taskId);
       }
 
@@ -85,6 +96,13 @@ export async function repeatBoardAsRecurring(
         poolIds: [...input.poolIds],
         manualTaskIds: [...input.manualTaskIds],
         removedTaskIds: [...input.removedTaskIds],
+        // Board Sources §Member rules (B2, RB4) — authored, not inferred: a
+        // repeat-this-board record pulls from no source at all, and no member
+        // carries a vary level until a UI can author one. Writing both
+        // explicitly keeps `sourcesForRecord`'s legacy-shape inference off
+        // this record and gives the member-rules readers a real empty map.
+        sources: [],
+        manualTaskVary: {},
         lastSpawnedWindowKey: input.lastSpawnedWindowKey,
         isActive: input.isActive,
         createdAt: now,

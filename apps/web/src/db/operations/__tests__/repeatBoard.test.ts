@@ -220,4 +220,93 @@ describe('repeatBoardAsRecurring', () => {
 
     expect(template.manualTaskIds).toEqual(['dup-task', 'other-task']);
   });
+  it('writes an explicit sources-native record: sources [], manualTaskVary {} (B2 RB4)', async () => {
+    const board = buildOneOffBoard();
+    await db.boards.add(board);
+    await seedTask('t-a');
+    await seedBoardTask(board.id, 't-a', 0, 0);
+
+    const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
+
+    // The record is authored in today's shape, not left to `sourcesForRecord`
+    // inference: a repeat-this-board record pulls from no source at all.
+    expect(template.sources).toEqual([]);
+    expect(template.manualTaskVary).toEqual({});
+    const stored = await db.recurringBoardTemplates.get(template.id);
+    expect(stored?.sources).toEqual([]);
+    expect(stored?.manualTaskVary).toEqual({});
+  });
+
+  it('excludes a per-window derived COMPOUND from manualTaskIds but keeps a derived counter (B2 RB4)', async () => {
+    // A derived compound is an artifact of ONE window — carrying it forward
+    // as a hand-added member would pin every future window to last window's
+    // re-targeted copy. A derived counter, by contrast, is re-minted from its
+    // root for each new window, so it passes through as an ordinary member.
+    const board = buildOneOffBoard();
+    await db.boards.add(board);
+    await seedTask('plain-1');
+    await db.tasks.add({
+      id: 'derived-compound-1',
+      userId: USER_ID,
+      title: 'Circuit (this week)',
+      type: TaskType.COMPOUND,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      startDate: '2026-05-06T00:00:00.000',
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    await db.tasks.add({
+      id: 'derived-counter-1',
+      userId: USER_ID,
+      title: 'Run 5 km (this week)',
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'km',
+      maxCount: 5,
+      sharedCounterId: 'root-1',
+      baseline: 0,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdInWizard: true,
+      startDate: '2026-05-06T00:00:00.000',
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    // A hand-made COMPOUND with no window stamp stays a member.
+    await db.tasks.add({
+      id: 'plain-compound-1',
+      userId: USER_ID,
+      title: 'Morning circuit',
+      type: TaskType.COMPOUND,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    await seedBoardTask(board.id, 'plain-1', 0, 0);
+    await seedBoardTask(board.id, 'derived-compound-1', 0, 1);
+    await seedBoardTask(board.id, 'derived-counter-1', 0, 2);
+    await seedBoardTask(board.id, 'plain-compound-1', 1, 0);
+
+    const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
+
+    expect(template.manualTaskIds).toEqual([
+      'plain-1',
+      'derived-counter-1',
+      'plain-compound-1',
+    ]);
+    expect(template.seedTaskIds).not.toContain('derived-compound-1');
+  });
 });
