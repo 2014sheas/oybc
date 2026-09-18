@@ -4,7 +4,7 @@ import {
   RecurringTimeframeSchema,
   RecurringCenterSquareTypeSchema,
 } from './schemas';
-import { BoardSourcesArraySchema } from './boardSource';
+import { BoardSourcesArraySchema, ManualTaskVarySchema } from './boardSource';
 
 /**
  * RecurringBoardTemplate object schemas — moved out of the frozen
@@ -42,6 +42,7 @@ export const CreateRecurringBoardTemplateInputSchema = z.object({
   manualTaskIds: z.array(z.string().uuid()).optional(),
   removedTaskIds: z.array(z.string().uuid()).optional(),
   sources: BoardSourcesArraySchema.optional(),
+  manualTaskVary: ManualTaskVarySchema.optional(),
 }).refine(
   (data) => {
     // No duplicate seedTaskIds — each pool entry must reference a distinct
@@ -73,6 +74,7 @@ export const UpdateRecurringBoardTemplateInputSchema = z.object({
   manualTaskIds: z.array(z.string().uuid()).optional(),
   removedTaskIds: z.array(z.string().uuid()).optional(),
   sources: BoardSourcesArraySchema.optional(),
+  manualTaskVary: ManualTaskVarySchema.optional(),
 }).refine(
   (data) => {
     if (data.seedTaskIds === undefined) return true;
@@ -107,6 +109,7 @@ export const RecurringBoardTemplateSchema = z.object({
   // Board Sources P1 — the canonical persisted shape going forward
   // (docs/BOARD_SOURCES.md). Written alongside the trio during P1.
   sources: BoardSourcesArraySchema.optional(),
+  manualTaskVary: ManualTaskVarySchema.optional(),
   lastSpawnedWindowKey: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.string().datetime(),

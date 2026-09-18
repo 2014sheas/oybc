@@ -640,6 +640,7 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
           filter: 'all',
         },
       ],
+      manualTaskVary: {},
     });
 
     // Board Sources P1: a ONE-OFF draft save now snapshots the blob too
@@ -667,6 +668,7 @@ describe('Board Creation Split (web PR D) — recurring draft save writes isRecu
       manualTaskIds: poolTaskIds,
       removedTaskIds: [],
       sources: [],
+      manualTaskVary: {},
     });
   });
 

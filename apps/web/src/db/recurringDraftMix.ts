@@ -30,7 +30,7 @@
  * (`apps/ios/OYBC/Views/CreateTab/ViewModels/BoardWizardViewModel.swift`).
  */
 
-import { sourcesFromMixFields, type BoardSource } from '@oybc/shared';
+import { sourcesFromMixFields, type BoardSource, type VaryLevel } from '@oybc/shared';
 
 export interface RecurringDraftMixPayload {
   poolIds: string[];
@@ -39,6 +39,10 @@ export interface RecurringDraftMixPayload {
   /** Board Sources P1 — canonical sources shape. Always present on decode:
    *  derived from the trio for a v1 blob. */
   sources: BoardSource[];
+  /** Member rules B1 (inert) — per-manual-task vary dice, keyed by task id.
+   *  Always present on decode (`{}` default); omitted from the encoded
+   *  blob when empty so an existing draft encodes byte-identically. */
+  manualTaskVary: Record<string, VaryLevel>;
 }
 
 const EMPTY_MIX: RecurringDraftMixPayload = {
@@ -46,6 +50,7 @@ const EMPTY_MIX: RecurringDraftMixPayload = {
   manualTaskIds: [],
   removedTaskIds: [],
   sources: [],
+  manualTaskVary: {},
 };
 
 /**
@@ -55,7 +60,10 @@ const EMPTY_MIX: RecurringDraftMixPayload = {
  * the wizard can express until P2 ships ranges/board sources.
  */
 export function encodeRecurringDraftMix(
-  mix: Omit<RecurringDraftMixPayload, 'sources'> & { sources?: BoardSource[] },
+  mix: Omit<RecurringDraftMixPayload, 'sources' | 'manualTaskVary'> & {
+    sources?: BoardSource[];
+    manualTaskVary?: Record<string, VaryLevel>;
+  },
 ): string {
   return JSON.stringify({
     v: 2,
@@ -63,6 +71,9 @@ export function encodeRecurringDraftMix(
     manualTaskIds: mix.manualTaskIds,
     removedTaskIds: mix.removedTaskIds,
     sources: mix.sources ?? sourcesFromMixFields(mix),
+    ...(mix.manualTaskVary && Object.keys(mix.manualTaskVary).length
+      ? { manualTaskVary: mix.manualTaskVary }
+      : {}),
   });
 }
 
@@ -81,6 +92,19 @@ function isBoardSource(value: unknown): value is BoardSource {
     isStringArray(s.excludedTaskIds) &&
     (s.filter === 'all' || s.filter === 'todo')
   );
+}
+
+/**
+ * Drops keys whose value isn't a valid {@link VaryLevel}; keeps the rest.
+ * An array is rejected outright (`typeof [] === 'object'`, so it would
+ * otherwise decode to index keys) — same "converge to no dice" intent.
+ */
+function sanitizeVary(v: unknown): Record<string, VaryLevel> {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, VaryLevel> = {};
+  for (const [k, lvl] of Object.entries(v as Record<string, unknown>))
+    if (lvl === 0 || lvl === 1 || lvl === 2) out[k] = lvl;
+  return out;
 }
 
 /**
@@ -118,7 +142,7 @@ export function decodeRecurringDraftMix(json: string | undefined): RecurringDraf
         Array.isArray(rawSources) && rawSources.every(isBoardSource)
           ? (rawSources as BoardSource[])
           : sourcesFromMixFields(trio);
-      return { ...trio, sources };
+      return { ...trio, sources, manualTaskVary: sanitizeVary(record.manualTaskVary) };
     }
     return EMPTY_MIX;
   } catch {

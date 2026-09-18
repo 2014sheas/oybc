@@ -7,6 +7,7 @@ const EMPTY = {
   manualTaskIds: [],
   removedTaskIds: [],
   sources: [],
+  manualTaskVary: {},
 };
 
 /** The [0, all] pool source the codec derives for a trio-only input. */
@@ -34,6 +35,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
         derivedSource('pool-1', ['removed-1']),
         derivedSource('pool-2', ['removed-1']),
       ],
+      manualTaskVary: {},
     });
   });
 
@@ -53,6 +55,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       manualTaskIds: ['manual-1'],
       removedTaskIds: [],
       sources,
+      manualTaskVary: {},
     };
     expect(decodeRecurringDraftMix(encodeRecurringDraftMix(mix))).toEqual(mix);
   });
@@ -68,6 +71,7 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       manualTaskIds: [],
       removedTaskIds: ['gone'],
       sources: [derivedSource('pool-1', ['gone'])],
+      manualTaskVary: {},
     });
   });
 
@@ -114,6 +118,84 @@ describe('encodeRecurringDraftMix / decodeRecurringDraftMix', () => {
       manualTaskIds: [],
       removedTaskIds: [],
       sources: [derivedSource('pool-1', [])],
+      manualTaskVary: {},
     });
+  });
+});
+
+describe('manualTaskVary (additive, v stays 2)', () => {
+  it('decodes a v2 blob without manualTaskVary to {}', () => {
+    const p = decodeRecurringDraftMix(
+      JSON.stringify({ v: 2, poolIds: [], manualTaskIds: ['t1'], removedTaskIds: [], sources: [] }),
+    );
+    expect(p.manualTaskVary).toEqual({});
+  });
+
+  it('round-trips manualTaskVary and keeps v: 2', () => {
+    const json = encodeRecurringDraftMix({
+      poolIds: [],
+      manualTaskIds: ['t1'],
+      removedTaskIds: [],
+      sources: [],
+      manualTaskVary: { t1: 2 },
+    });
+    expect(JSON.parse(json).v).toBe(2);
+    expect(decodeRecurringDraftMix(json).manualTaskVary).toEqual({ t1: 2 });
+  });
+
+  it('omits the key when empty so an existing blob encodes byte-identically', () => {
+    const json = encodeRecurringDraftMix({
+      poolIds: [],
+      manualTaskIds: [],
+      removedTaskIds: [],
+      sources: [],
+    });
+    expect('manualTaskVary' in JSON.parse(json)).toBe(false);
+  });
+
+  it('drops invalid levels on decode (corrupt blob → {} for that key, others kept)', () => {
+    const p = decodeRecurringDraftMix(
+      JSON.stringify({
+        v: 2,
+        poolIds: [],
+        manualTaskIds: ['t1', 't2'],
+        removedTaskIds: [],
+        sources: [],
+        manualTaskVary: { t1: 7, t2: 1 },
+      }),
+    );
+    expect(p.manualTaskVary).toEqual({ t2: 1 });
+  });
+
+  it('rejects an array manualTaskVary outright (no index keys)', () => {
+    const p = decodeRecurringDraftMix(
+      JSON.stringify({
+        v: 2,
+        poolIds: [],
+        manualTaskIds: [],
+        removedTaskIds: [],
+        sources: [],
+        manualTaskVary: [1, 2],
+      }),
+    );
+    // `typeof [] === 'object'`, so without the Array.isArray reject this
+    // would decode to { '0': 1, '1': 2 } instead of converging to no dice.
+    expect(p.manualTaskVary).toEqual({});
+  });
+
+  it('a source carrying memberRules passes the shape check and round-trips verbatim', () => {
+    const s = {
+      sourceId: 's1',
+      kind: 'board',
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'all',
+      memberRules: { t1: { target: 3, vary: 1 } },
+    };
+    const p = decodeRecurringDraftMix(
+      JSON.stringify({ v: 2, poolIds: [], manualTaskIds: [], removedTaskIds: [], sources: [s] }),
+    );
+    expect(p.sources[0]).toEqual(s);
   });
 });

@@ -20,6 +20,22 @@ import { z } from 'zod';
  * - `excludedTaskIds`: no duplicates (same convention as every id array
  *   on the template schemas).
  */
+export const VaryLevelSchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+const TargetSchema = z.number().int().min(1);
+export const BoardSourcePartRuleSchema = z.object({
+  target: TargetSchema.optional(),
+  vary: VaryLevelSchema.optional(),
+  excluded: z.boolean().optional(),
+});
+export const BoardSourceMemberRuleSchema = z.object({
+  target: TargetSchema.optional(),
+  vary: VaryLevelSchema.optional(),
+  split: z.boolean().optional(),
+  parts: z.record(z.string().uuid(), BoardSourcePartRuleSchema).optional(),
+});
+export const MemberRulesSchema = z.record(z.string().uuid(), BoardSourceMemberRuleSchema);
+export const ManualTaskVarySchema = z.record(z.string().uuid(), VaryLevelSchema);
+
 export const BoardSourceSchema = z
   .object({
     sourceId: z.string().uuid(),
@@ -28,6 +44,7 @@ export const BoardSourceSchema = z
     max: z.number().int().min(0).nullable(),
     excludedTaskIds: z.array(z.string().uuid()),
     filter: z.union([z.literal('all'), z.literal('todo')]),
+    memberRules: MemberRulesSchema.optional(),
   })
   .refine(
     (s) => new Set(s.excludedTaskIds).size === s.excludedTaskIds.length,

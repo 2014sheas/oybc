@@ -60,4 +60,38 @@ export interface BoardSource {
   excludedTaskIds: string[];
   /** See {@link BoardSourceFilter}. Meaningful for kind `'board'` only. */
   filter: BoardSourceFilter;
+  /**
+   * Member rules (docs/BOARD_SOURCES.md §Member rules). Optional + stale-inert:
+   * a rule for a task not in this source's live supply is skipped. Omitted
+   * entirely when empty so a rule-less source serialises exactly as before.
+   */
+  memberRules?: Record<string, BoardSourceMemberRule>;
+}
+
+/** Dice level for a counting member/part: off · a little (±20 %) · a lot (±50 %). */
+export type VaryLevel = 0 | 1 | 2;
+
+/** Per-part rule for one child of a compound member (keyed by `compound_children.childTaskId`). */
+export interface BoardSourcePartRule {
+  /**
+   * Counting part only; honoured only on `kind: 'board'` sources (ignored on
+   * pools); absent = auto. Integer ≥ 1.
+   */
+  target?: number;
+  /** Absent = 0. */
+  vary?: VaryLevel;
+  /** Honoured only while the parent member is split. */
+  excluded?: boolean;
+}
+
+/** Per-member rule on a pulled source (keyed by task id — never by position). */
+export interface BoardSourceMemberRule {
+  /** Counting member; honoured only on `kind: 'board'` sources; absent = auto. Integer ≥ 1. */
+  target?: number;
+  /** Counting member, or a One-square compound (covers all of its counting parts). Absent = 0. */
+  vary?: VaryLevel;
+  /** Compound only; absent/false = One square. */
+  split?: boolean;
+  /** Compound only; keyed by childTaskId. */
+  parts?: Record<string, BoardSourcePartRule>;
 }
