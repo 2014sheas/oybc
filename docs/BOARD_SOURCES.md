@@ -761,7 +761,14 @@ instances, any task list for a recurring board.
      `manualTaskVary`) → derived, rolled;
    - split part that is counting with a target/vary → derived;
    - One-square compound with any counting part carrying a target/vary →
-     derived compound + derived children;
+     derived compound + derived children. **Effective part rule** for a
+     One-square compound: `parts[childId]` merged over the member-level
+     rule — a member-level `vary` (the toggle-line dice) is treated as if
+     every counting part carried that same `vary` (and, on a board source,
+     every counting part gets an `autoTarget`) for both this trigger and
+     the per-part `rollTarget`. It is never copied into `parts`; in Split
+     mode the member-level `vary` is ignored and only `parts[*].vary`
+     applies;
    - hand-added member that is itself a window-stamped derived counter
      (`sharedCounterId != null && startDate != null`) → **re-minted per
      spawn** with target = its `maxCount`, root = its `sharedCounterId`
