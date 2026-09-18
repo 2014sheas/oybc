@@ -258,6 +258,34 @@ export type {
   LegacyMixFields,
 } from './boardSources';
 
+// ===== Member rules (B1, docs/BOARD_SOURCES.md §Member rules) =====
+export {
+  DERIVED_TASK_NS,
+  DERIVED_COMPOUND_NS,
+  DERIVED_LINK_NS,
+  derivedTaskId,
+  derivedCompoundId,
+  derivedLinkId,
+  nominalWindowDays,
+  autoTarget,
+  varyRange,
+  rollTarget,
+  applyMemberRules,
+  planDerivedTasks,
+} from './memberRules';
+
+export type {
+  ExpandedSupply,
+  PlanMode,
+  BoardWindow,
+  PlanTask,
+  DerivedTaskDraft,
+  DerivedCompoundChildDraft,
+  DerivedCompoundDraft,
+  PlanDerivedTasksArgs,
+  PlanDerivedTasksResult,
+} from './memberRules';
+
 export { boardDisplayName } from './boardDisplayName';
 export {
   isEligibleSourceBoard,
