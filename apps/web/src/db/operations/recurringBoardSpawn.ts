@@ -197,6 +197,18 @@ export async function spawnTemplateBoard(
             : [],
         });
       }
+      // Board Sources §Member rules (B2) — spec step 1: Split-up expansion
+      // happens ONCE, here, and the expanded supplies are what the capacity
+      // validation, the selection and the member-rule plan all consume. A
+      // `split: true` compound therefore contributes its PARTS as selectable
+      // squares (and never itself), so what Settings' capacity says and what
+      // this spawn places can't disagree.
+      const ruleSupplies = applyMemberRules(
+        supplies.map((s) => ({ source: s.source, supplyTaskIds: resolveSourceAvailable(s) })),
+        childrenByCompound,
+        tasksById,
+      );
+
       // The manual layer isn't deleted-filtered (caller-curated, matching
       // resolveMix's old contract), but hard-gone ids ARE dropped — the
       // old path dropped them via its tasksById lookup the same way. A
@@ -220,7 +232,7 @@ export async function spawnTemplateBoard(
         if (t !== undefined) candidateTasks.push(t);
       };
       for (const id of manualTaskIds) addCandidate(id);
-      for (const supply of supplies) {
+      for (const supply of ruleSupplies) {
         for (const id of resolveSourceAvailable(supply)) addCandidate(id);
       }
 
@@ -247,7 +259,10 @@ export async function spawnTemplateBoard(
       // A range-infeasible pick (only possible with P2+ data) maps to the
       // same skip-and-warn family as a small pool.
       const selection = selectBoardTasks({
-        supplies,
+        // The expanded supplies (see above) — `selectBoardTasks` re-applies
+        // `resolveSourceAvailable` internally, which is a no-op on an already
+        // exclude-filtered list.
+        supplies: ruleSupplies,
         manualTaskIds,
         cellCount: fillableCellCount(template.boardSize, template.centerSquareType),
         // Honor the template's determinism contract: an
@@ -268,21 +283,10 @@ export async function spawnTemplateBoard(
         };
       }
       // Board Sources §Member rules (B2, docs/BOARD_SOURCES.md §Member rules —
-      // *Resolution pipeline* steps 1/3/5): the picked ids are resolved against
+      // *Resolution pipeline* steps 3/5): the picked ids are resolved against
       // this window's rules and any window-stamped derived counter / derived
       // compound they call for is MINTED HERE — before the `board_tasks` rows
       // below point at it, in this same transaction.
-      //
-      // The supplies handed to the plan are exclude-filtered and Split-up
-      // expanded, which is NOT the shape `selectBoardTasks` above wants (it
-      // applies excludes itself, over raw supply), so they are built as a
-      // second, separate view of the same reads rather than by mutating the
-      // selection input.
-      const ruleSupplies = applyMemberRules(
-        supplies.map((s) => ({ source: s.source, supplyTaskIds: resolveSourceAvailable(s) })),
-        childrenByCompound,
-        tasksById,
-      );
       // Auto targets pro-rate a member's goal by the ratio of the SOURCE
       // board's window to this one, so every supplied id — and every child of
       // a compound member, which is looked up by the CHILD's id — needs its
@@ -399,7 +403,12 @@ export async function spawnTemplateBoard(
       for (let cell = 0; cell < placement.length; cell++) {
         const t = placement[cell];
         if (t === null) continue; // auto-completed FREE center
-        if (placedTaskIds.has(t.id)) continue;
+        if (placedTaskIds.has(t.id)) {
+          console.warn(
+            `spawnTemplateBoard: task ${t.id} resolved twice on board ${boardId}; leaving cell ${cell} empty`,
+          );
+          continue;
+        }
         placedTaskIds.add(t.id);
         const row = Math.floor(cell / template.boardSize);
         const col = cell % template.boardSize;

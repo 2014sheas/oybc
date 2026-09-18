@@ -736,6 +736,59 @@ describe('persistWizardBoardRows — member-rule mint', () => {
     expect(board?.centerTaskId).toBe(derivedId);
   });
 
+  it('a DRAFT save mints nothing; activating the same draft mints it', async () => {
+    const root = await seedSourceBoardWithCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = root;
+    const source = {
+      sourceId: SOURCE_BOARD,
+      kind: 'board' as const,
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'all' as const,
+      memberRules: { [ROOT]: { target: 12 } },
+    };
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({ placement, status: 'draft', sources: [source], manualTaskIds: [] }),
+    );
+
+    // A draft's window is still editable, so nothing is stamped for it yet.
+    const derivedId = derivedTaskId(boardId, ROOT);
+    expect(await db.tasks.get(derivedId)).toBeUndefined();
+    expect(
+      await db.compoundChildren.where('compoundTaskId').equals(derivedId).count(),
+    ).toBe(0);
+    expect((await db.syncQueue.toArray()).filter((q) => q.entityId === derivedId)).toHaveLength(
+      0,
+    );
+    expect(
+      (await db.boardTasks.where('boardId').equals(boardId).toArray())[0].taskId,
+    ).toBe(ROOT);
+
+    // Resuming the same draft and saving it ACTIVE derives the window once,
+    // from final values.
+    await persistWizardBoardRows(
+      baseInput({
+        placement,
+        draftBoardId: boardId,
+        status: 'active',
+        sources: [source],
+        manualTaskIds: [],
+      }),
+    );
+
+    const derived = await db.tasks.get(derivedId);
+    expect(derived?.maxCount).toBe(12);
+    expect(derived?.baseline).toBe(14);
+    const rows = (await db.boardTasks.where('boardId').equals(boardId).toArray()).filter(
+      (bt) => !bt.isDeleted,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].taskId).toBe(derivedId);
+  });
+
   it('leaves a hand-added member alone — no source, no rule, no derived row', async () => {
     const root = await seedSourceBoardWithCounter();
     const placement = new Array(9).fill(null);

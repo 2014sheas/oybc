@@ -128,6 +128,47 @@ describe('shared-counter ops — window-stamped derived baseline refresh', () =>
     expect(derived!.baseline).toBe(8); // 12 − 8 = 4 this window
   });
 
+  // A board created for a window that has NOT opened yet is a legitimate
+  // one-off case, and it is the only local-write shape where the op's own
+  // event lands BEFORE the boundary — which makes these two the tests that
+  // fail if the `refreshDerivedBaselines` call is removed from the op.
+  const FUTURE_WINDOW = '2099-01-01T00:00:00.000';
+
+  async function seedFutureWindowDerived(): Promise<void> {
+    await seedRootWithPreWindowLog();
+    await db.tasks.update(DERIVED, { startDate: FUTURE_WINDOW });
+  }
+
+  it('an increment whose event predates the window rolls into the baseline', async () => {
+    await seedFutureWindowDerived();
+    const before = await db.tasks.get(DERIVED);
+
+    await incrementSharedCounter(ROOT, 4);
+
+    const derived = await db.tasks.get(DERIVED);
+    // 8 pre-existing + the +4 this op wrote, both before 2099 → 12, and the
+    // window's displayed count is still 0 (12 mirrored − 12 baseline).
+    expect(derived!.baseline).toBe(12);
+    expect(derived!.currentCount).toBe(12);
+    // Exactly ONE version bump — the propagation write. The refresh itself
+    // authors nothing, and the queue carries one coalesced row for this task.
+    expect(derived!.version).toBe((before!.version ?? 0) + 1);
+    expect((await db.syncQueue.toArray()).filter((q) => q.entityId === DERIVED)).toHaveLength(1);
+  });
+
+  it('a decrement whose event predates the window rolls out of the baseline', async () => {
+    await seedFutureWindowDerived();
+    const before = await db.tasks.get(DERIVED);
+
+    await decrementSharedCounter(ROOT, 3);
+
+    const derived = await db.tasks.get(DERIVED);
+    expect(derived!.baseline).toBe(5); // 8 − 3, both before 2099
+    expect(derived!.currentCount).toBe(5);
+    expect(derived!.version).toBe((before!.version ?? 0) + 1);
+    expect((await db.syncQueue.toArray()).filter((q) => q.entityId === DERIVED)).toHaveLength(1);
+  });
+
   it('undoing a pre-window entry drops it out of the baseline', async () => {
     await seedRootWithPreWindowLog();
     // A second, in-window entry so the pre-window one is not the last — it is

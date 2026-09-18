@@ -112,6 +112,8 @@ export async function incrementSharedCounter(
       // rows' displayed counts (and the board cascade at the end of this
       // transaction) are computed against the corrected boundary rather than a
       // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
+      // (No `events` argument: neither op has the root's log in hand, so
+      // passing one would mean adding the very read it saves.)
       await refreshDerivedBaselines(sourceTaskId);
 
       // 3. Find all linked (derived) tasks for this source.
@@ -266,6 +268,8 @@ export async function decrementSharedCounter(
       // rows' displayed counts (and the board cascade at the end of this
       // transaction) are computed against the corrected boundary rather than a
       // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
+      // (No `events` argument: neither op has the root's log in hand, so
+      // passing one would mean adding the very read it saves.)
       await refreshDerivedBaselines(sourceTaskId);
 
       // 4. Find all linked (derived) tasks for this source.
@@ -458,7 +462,13 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
       // rows' displayed counts (and the board cascade at the end of this
       // transaction) are computed against the corrected boundary rather than a
       // stale one. Non-authored: `baseline` only, no version bump, no enqueue.
-      await refreshDerivedBaselines(sourceTaskId);
+      // This op ALREADY read the root's log (step 2), so it passes it through
+      // instead of re-reading — with the just-tombstoned entry marked, since
+      // the in-memory copy predates step 3's write.
+      await refreshDerivedBaselines(
+        sourceTaskId,
+        events.map((e) => (e.id === entry.id ? { ...e, isDeleted: true } : e)),
+      );
 
       // 6. Find all linked (derived) tasks and propagate, exactly like
       //    increment/decrement.

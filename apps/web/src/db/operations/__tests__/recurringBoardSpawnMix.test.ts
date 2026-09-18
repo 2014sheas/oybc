@@ -1254,3 +1254,140 @@ describe('spawnTemplateBoard — member-rule mint', () => {
     expect(queued.filter((q) => q.entityId === secondDerivedId)).toHaveLength(1);
   });
 });
+
+/**
+ * Board Sources §Member rules — spec step 1 at the spawn path: Split-up
+ * expansion happens BEFORE validation and selection, so a `split: true`
+ * compound contributes its parts as selectable squares and never itself.
+ */
+describe('spawnTemplateBoard — Split up expands the selectable supply', () => {
+  const SRC = 'src-split-board';
+  const COMPOUND = 'compound-split';
+  const PART_A = 'part-a';
+  const PART_B = 'part-b';
+
+  it('places the compound’s parts as separate squares, never the compound', async () => {
+    // 6 fillers + the compound's 2 parts = exactly the 8 fillable cells of a
+    // 3×3 FREE-centre board, so the fill is forced and the assertion is not
+    // a lucky draw.
+    const fillers = ['sf1', 'sf2', 'sf3', 'sf4', 'sf5', 'sf6'];
+    for (const id of [...fillers, PART_A, PART_B]) await seedTask(id);
+    await db.tasks.add({
+      id: COMPOUND,
+      userId: 'user-1',
+      title: 'Morning set',
+      type: TaskType.COMPOUND,
+      operator: 'AND',
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    } as unknown as Task);
+    await db.compoundChildren.bulkAdd([
+      {
+        id: 'cc-a',
+        compoundTaskId: COMPOUND,
+        childTaskId: PART_A,
+        childIndex: 0,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      },
+      {
+        id: 'cc-b',
+        compoundTaskId: COMPOUND,
+        childTaskId: PART_B,
+        childIndex: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      },
+    ]);
+
+    await db.boards.add({
+      id: SRC,
+      userId: 'user-1',
+      name: 'Split source',
+      status: BoardStatus.ACTIVE,
+      boardSize: 3,
+      timeframe: Timeframe.DAILY,
+      startDate: NOW,
+      endDate: WINDOW_END,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: false,
+      totalTasks: 9,
+      completedTasks: 0,
+      linesCompleted: 0,
+      completedLineIds: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    await db.boardTasks.bulkAdd(
+      [COMPOUND, ...fillers].map((taskId, i) => ({
+        id: `bt-${SRC}-${taskId}`,
+        boardId: SRC,
+        taskId,
+        row: Math.floor(i / 3),
+        col: i % 3,
+        isCenter: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      })),
+    );
+
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-split',
+      userId: 'user-1',
+      name: 'Split board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.FREE, // 8 fillable cells
+      isRandomized: false,
+      seedTaskIds: [],
+      manualTaskIds: [],
+      sources: [
+        {
+          sourceId: SRC,
+          kind: 'board',
+          min: 0,
+          max: null,
+          excludedTaskIds: [],
+          filter: 'all',
+          memberRules: { [COMPOUND]: { split: true } },
+        },
+      ],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Split — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const placed = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
+      (bt) => bt.taskId,
+    );
+    expect(placed).toHaveLength(8);
+    expect(new Set(placed)).toEqual(new Set([...fillers, PART_A, PART_B]));
+    expect(placed).not.toContain(COMPOUND);
+  });
+});

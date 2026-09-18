@@ -427,6 +427,9 @@ export async function applyStagedTaskEditsForWizardPersist(
  * @param sources - The wizard's pulled sources.
  * @param manualTaskIds - The hand-added layer.
  * @param window - The board's own window.
+ * @param taskSnapshot - The caller's single `tasks` snapshot. Read here and
+ *   MUTATED with the minted rows (read back from Dexie, since RB3 may skip a
+ *   live one) so the caller's derivation pass needs no second full-table read.
  * @returns The ids to place, positionally 1:1 with `selectedIds`.
  */
 async function mintWizardDerivedRows(
@@ -437,10 +440,14 @@ async function mintWizardDerivedRows(
   sources: BoardSource[],
   manualTaskIds: string[],
   window: BoardWindow,
+  taskSnapshot: Record<string, Task>,
 ): Promise<string[]> {
-  const allTasks = await db.tasks.toArray();
+  // The planner gets LIVE rows only — a soft-deleted root reachable through a
+  // member's `sharedCounterId` must not be mirrored into a new derived row.
+  // (The caller's derivation pass keeps the unfiltered snapshot, which is what
+  // it has always been given.)
   const tasksById: Record<string, Task> = {};
-  for (const t of allTasks) tasksById[t.id] = t;
+  for (const t of Object.values(taskSnapshot)) if (!t.isDeleted) tasksById[t.id] = t;
 
   const poolSourceIds = sources.filter((s) => s.kind === 'pool').map((s) => s.sourceId);
   const poolsById: Record<string, Pool> = {};
@@ -527,7 +534,7 @@ async function mintWizardDerivedRows(
   const events =
     roots.length > 0 ? await db.taskEvents.where('taskId').anyOf(roots).toArray() : [];
 
-  const { placementIds } = await planAndMintDerivedRows({
+  const { placementIds, minted } = await planAndMintDerivedRows({
     boardId,
     userId,
     now,
@@ -547,6 +554,14 @@ async function mintWizardDerivedRows(
     sourceWindowByTaskId,
     events,
   });
+
+  // Read the minted rows BACK into the caller's snapshot rather than trusting
+  // the built ones: RB3 skips an already-live row, so what is stored is the
+  // authority for what the board then derives from.
+  for (const row of minted.tasks) {
+    const stored = await db.tasks.get(row.id);
+    if (stored !== undefined) taskSnapshot[row.id] = stored;
+  }
   return placementIds;
 }
 
@@ -655,17 +670,34 @@ export async function persistWizardBoardRows({
         boardId = board.id;
       }
 
+      // ONE `tasks` snapshot for both the member-rule mint and the derivation
+      // pass at the bottom (it used to read the table again). Taken after the
+      // pending-task drain + staged edits, which are the only other writers of
+      // `tasks` in this transaction; the mint's own writes are read back into
+      // it. Unfiltered, exactly as the derivation pass has always had it.
+      const taskSnapshot: Record<string, Task> = {};
+      for (const t of await db.tasks.toArray()) taskSnapshot[t.id] = t;
+
       // ── Board Sources §Member rules (B2): mint before placing ───────────
       // The placed ids are resolved against this board's window; a member
       // governed by a rule is replaced IN PLACE by its window-stamped derived
       // counter (or derived compound), so a pinned/centre square keeps its
       // cell. The rows are written here, before the `board_tasks` rows that
       // reference them, inside this transaction.
+      //
+      // ACTIVE SAVES ONLY. A derived id is `uuidv5(boardId, root)` — it does
+      // NOT encode the window — while a DRAFT's window is still editable: save
+      // a draft weekly, resume it, switch it to daily, save it active, and the
+      // RB3 "live row → skip" rule would keep the first row's timeframe /
+      // dates / target / baseline for a window the board no longer has. A
+      // draft therefore places its original member ids and the activating save
+      // derives the window once, from final values. (It also means an
+      // abandoned draft leaves no derived rows behind at all.)
       const selectedIds = placement
         .map((t) => t?.id)
         .filter((id): id is string => id != null);
       const placementIds =
-        selectedIds.length > 0
+        status === 'active' && selectedIds.length > 0
           ? await mintWizardDerivedRows(
               boardId,
               userId,
@@ -678,6 +710,7 @@ export async function persistWizardBoardRows({
                 startDate: boardFields.startDate ?? null,
                 endDate: boardFields.endDate ?? null,
               },
+              taskSnapshot,
             )
           : [];
 
@@ -687,9 +720,10 @@ export async function persistWizardBoardRows({
       const centerIndex = boardFields.centerTaskId
         ? selectedIds.indexOf(boardFields.centerTaskId)
         : -1;
+      const centerReplacement = centerIndex >= 0 ? placementIds[centerIndex] : undefined;
       const centerTaskIdOverride =
-        centerIndex >= 0 && placementIds[centerIndex] !== boardFields.centerTaskId
-          ? placementIds[centerIndex]
+        centerReplacement !== undefined && centerReplacement !== boardFields.centerTaskId
+          ? centerReplacement
           : undefined;
 
       let placedSoFar = 0;
@@ -704,7 +738,12 @@ export async function persistWizardBoardRows({
         if (task === null) continue;
         const taskId = placementIds[placedSoFar] ?? task.id;
         placedSoFar += 1;
-        if (placedPlacementIds.has(taskId)) continue;
+        if (placedPlacementIds.has(taskId)) {
+          console.warn(
+            `persistWizardBoardRows: task ${taskId} resolved twice on board ${boardId}; leaving cell ${i} empty`,
+          );
+          continue;
+        }
         placedPlacementIds.add(taskId);
         const row = Math.floor(i / size);
         const col = i % size;
@@ -743,9 +782,8 @@ export async function persistWizardBoardRows({
         const allChildren = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
         const childrenByCompound: Record<string, CompoundChild[]> = {};
         for (const c of allChildren) (childrenByCompound[c.compoundTaskId] ??= []).push(c);
-        const allTasks = await db.tasks.toArray();
-        const taskById: Record<string, Task> = {};
-        for (const t of allTasks) taskById[t.id] = t;
+        // Reuses the snapshot taken above the mint (minted rows folded in).
+        const taskById: Record<string, Task> = taskSnapshot;
         // `db.taskEvents` is in this transaction's scope, so the shared helper
         // reads inside the txn (reuse-before-creating; same map shape).
         const windowContext = await buildWindowContext();

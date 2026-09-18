@@ -1,3 +1,4 @@
+import type { Collection } from 'dexie';
 import {
   SyncOperationType,
   TaskType,
@@ -29,6 +30,12 @@ import { addToSyncQueue } from './syncQueue';
  *     window-stamped derived counters / derived compounds into real
  *     `tasks` + `compound_children` rows, BEFORE the `board_tasks` rows that
  *     point at them, and hand the caller back the placement ids to use.
+ *     Only a board that is being persisted ACTIVE mints: a derived id is
+ *     `uuidv5(boardId, root)` and does not encode the window, while a DRAFT's
+ *     window is still editable — so minting for a draft and then skipping the
+ *     live row (RB3) on the activating save would freeze the board into a
+ *     window it no longer has. A draft places its original member ids;
+ *     activation derives the window once, from final values.
  *  2. **Refresh** — keep a live derived counter's `baseline` honest as the
  *     root's event log changes underneath it (local counter writes and the
  *     sync pull path), as a NON-AUTHORED write: no `version` bump, no sync
@@ -267,10 +274,14 @@ export async function planAndMintDerivedRows(
  * linked counter shares the `sharedCounterId` index with them and must never
  * have its `baseline` rewritten by this pipeline.
  *
+ * Module-private for now: {@link refreshDerivedBaselines} is its only caller.
+ * Task 4's deletion/retire sweep is the expected second consumer — export it
+ * then, rather than leaving unused surface behind now.
+ *
  * @param rootTaskId - The shared-counter root.
  * @returns A Dexie collection of the matching live rows.
  */
-export function windowStampedDerivedQuery(rootTaskId: string) {
+function windowStampedDerivedQuery(rootTaskId: string): Collection<Task, string, Task> {
   return db.tasks
     .where('sharedCounterId')
     .equals(rootTaskId)
@@ -287,8 +298,14 @@ export function windowStampedDerivedQuery(rootTaskId: string) {
  * so every device recomputes the same value from rows it already has;
  * authoring it would put two devices into an LWW fight over a derived number.
  *
- * Each row's boundary is its own `startDate` (its window), falling back to
- * `createdAt` for the INDEFINITE case where RB2 used the mint instant.
+ * Each row's boundary is its own `startDate` — always present, because
+ * `isWindowStampedDerived` is what selects the rows and it requires one. The
+ * consequence worth stating: a derived counter minted for a board with NO
+ * `startDate` (an INDEFINITE board, where RB2 used the mint instant) carries
+ * no window stamp, fails that predicate, and is therefore never refreshed on
+ * any path. That is the spec's own window-stamped scoping, not a gap — such a
+ * board has no window for a baseline to be relative to.
+ *
  * A row whose baseline is already correct is not touched at all, so calling
  * this after every counter write is cheap and idempotent.
  *
@@ -309,8 +326,8 @@ export async function refreshDerivedBaselines(
   const rootEvents = events ?? (await db.taskEvents.where('taskId').equals(rootTaskId).toArray());
   let touched = 0;
   for (const row of rows) {
-    const boundary = row.startDate ?? row.createdAt;
-    const baseline = computeWindowBaseline(rootTaskId, rootEvents, boundary);
+    // `row.startDate` is non-null by construction — see the note above.
+    const baseline = computeWindowBaseline(rootTaskId, rootEvents, row.startDate!);
     if ((row.baseline ?? 0) === baseline) continue;
     await db.tasks.update(row.id, { baseline });
     touched += 1;
