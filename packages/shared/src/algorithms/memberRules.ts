@@ -298,8 +298,14 @@ export interface PlanDerivedTasksArgs {
   mode: PlanMode;
   tasksById: Record<string, PlanTask>;
   childrenByCompoundId: Record<string, Pick<CompoundChild, 'childTaskId' | 'childIndex'>[]>;
-  /** Member id → the window of the source board that supplied it. */
-  sourceWindowByMemberId: Record<string, BoardWindow | undefined>;
+  /**
+   * Task id → the window of the source board it came from. Keyed by every id
+   * whose source window matters — supplied members AND the children of a
+   * One-square compound (a compound's parts are pro-rated by looking up the
+   * CHILD's id, never the compound's), so a caller that populates only the
+   * supplied member ids silently gets `null` source days and no pro-rating.
+   */
+  sourceWindowByTaskId: Record<string, BoardWindow | undefined>;
   /** Shared-counter root id → its event-derived lifetime count. */
   baselineByRootId: Record<string, number>;
   rng: () => number;
@@ -338,13 +344,18 @@ function goalOf(t: PlanTask): number | null {
  * Precedence, in order: hand-added beats any source copy; among sources, the
  * FIRST supply that lists the id wins; a split part reads its part rule (the
  * parent's member-level `vary` is deliberately ignored in split mode); a
- * member-level `target` is honoured on board sources only.
+ * `target` — member-level OR part-level — is honoured on board sources only
+ * (a pool member offers vary / split / part-exclusion and nothing else).
  *
  * One deliberate simplification: if two selected members share a shared-counter
  * root, they collapse onto ONE derived counter (the first one's roll) — the
  * second member's roll has already consumed an rng sample before the dedupe is
- * seen. Counter-family exclusivity means the board shouldn't contain two
- * members of one family in the first place, so this is a belt-and-braces path.
+ * seen, AND both members still push that one derived id into `placementIds`,
+ * so the same id can appear twice. B2 must dedupe before writing `board_tasks`
+ * (two rows for one task would trip the placement-integrity / isCenter-
+ * uniqueness guards in docs/BOARD_INTEGRITY.md). Counter-family exclusivity
+ * means the board shouldn't contain two members of one family in the first
+ * place, so this is a belt-and-braces path — but Task 5 must mirror it exactly.
  *
  * @param args - See {@link PlanDerivedTasksArgs}.
  * @returns Placement ids plus the derived drafts they refer to.
@@ -360,7 +371,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     mode,
     tasksById,
     childrenByCompoundId,
-    sourceWindowByMemberId,
+    sourceWindowByTaskId,
     baselineByRootId,
     rng,
   } = args;
@@ -373,20 +384,27 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
 
   const supplying = (id: string): ExpandedSupply | undefined =>
     supplies.find((s) => s.supplyTaskIds.includes(id));
-  const sourceDaysFor = (memberId: string): number | null => {
-    const w = sourceWindowByMemberId[memberId];
+  const sourceDaysFor = (taskId: string): number | null => {
+    const w = sourceWindowByTaskId[taskId];
     return w ? nominalWindowDays(w.timeframe, w.startDate, w.endDate) : null;
   };
+  /**
+   * The pre-vary target. The final `min(max(1, floor(base)), goal)` clamp is
+   * redundant for integer targets (`varyRange` re-clamps `t` to `1…goal`
+   * identically) and is only observable on a fractional explicit target, which
+   * Zod already forbids — keep it anyway, and port it verbatim, so the two
+   * platforms can never disagree about a malformed stored rule.
+   */
   const resolveTarget = (
     goal: number,
     explicit: number | undefined,
     fromBoard: boolean,
-    memberIdForWindow: string
+    taskIdForWindow: string
   ): number => {
     const base =
       explicit ??
       (fromBoard && mode === 'recurring'
-        ? autoTarget(goal, sourceDaysFor(memberIdForWindow), targetDays)
+        ? autoTarget(goal, sourceDaysFor(taskIdForWindow), targetDays)
         : goal);
     return Math.min(Math.max(1, Math.floor(base)), goal);
   };
@@ -453,8 +471,12 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         // Split part — the part rule governs; the parent's `vary` is ignored.
         const part: BoardSourcePartRule = rules[parentId]?.parts?.[id] ?? {};
         const vary = part.vary ?? 0;
-        if (fromBoard || part.target !== undefined || vary > 0) {
-          placementIds.push(mint(t, id, resolveTarget(goal, part.target, fromBoard, id), vary).id);
+        // `target` — member- OR part-level — is honoured on board sources only;
+        // a pool member offers vary / split / part-exclusion and nothing else.
+        if (fromBoard || vary > 0) {
+          placementIds.push(
+            mint(t, id, resolveTarget(goal, fromBoard ? part.target : undefined, fromBoard, id), vary).id
+          );
           continue;
         }
         placementIds.push(id);
@@ -487,13 +509,14 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
         if (!c || c.type !== TaskType.COUNTING || goal === null) return { k, c, derive: false as const };
         const part: BoardSourcePartRule = rule.parts?.[k.childTaskId] ?? {};
         const vary: VaryLevel = part.vary ?? rule.vary ?? 0;
-        const hasTarget = part.target !== undefined || (fromBoard && (rule.vary ?? 0) > 0);
+        // Board sources only, as in the split-part branch above.
+        const hasTarget = fromBoard && (part.target !== undefined || (rule.vary ?? 0) > 0);
         if (!hasTarget && vary === 0) return { k, c, derive: false as const };
         return {
           k,
           c,
           derive: true as const,
-          target: resolveTarget(goal, part.target, fromBoard, k.childTaskId),
+          target: resolveTarget(goal, fromBoard ? part.target : undefined, fromBoard, k.childTaskId),
           vary,
         };
       });

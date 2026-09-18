@@ -27,6 +27,23 @@ const V: any = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'memberRuleVectors.json'), 'utf8')
 );
 
+type ChildRow = { childTaskId: string; childIndex: number };
+
+/**
+ * Fixture `children` entries are either a bare childTaskId (childIndex = its
+ * array position) or an explicit `{ childTaskId, childIndex }` pair — the
+ * object form lets a vector put childIndex deliberately out of array order.
+ */
+const buildChildren = (raw: Record<string, unknown>): Record<string, ChildRow[]> =>
+  Object.fromEntries(
+    Object.entries(raw).map(([compoundId, kids]) => [
+      compoundId,
+      (kids as unknown[]).map((k, i) =>
+        typeof k === 'string' ? { childTaskId: k, childIndex: i } : (k as ChildRow)
+      ),
+    ])
+  );
+
 const src = (i: number, kind: 'pool' | 'board', memberRules: BoardSource['memberRules']): BoardSource => ({
   sourceId: `s${i}`,
   kind,
@@ -74,13 +91,7 @@ describe('applyMemberRules', () => {
   const tasksById: Record<string, { id: string; type: TaskType }> = Object.fromEntries(
     Object.entries(F.tasks).map(([id, t]) => [id, { id, type: t as TaskType }])
   );
-  const childrenByCompoundId: Record<string, { childTaskId: string; childIndex: number }[]> =
-    Object.fromEntries(
-      Object.entries(F.children).map(([c, kids]) => [
-        c,
-        (kids as string[]).map((k, i) => ({ childTaskId: k, childIndex: i })),
-      ])
-    );
+  const childrenByCompoundId = buildChildren(F.children);
 
   it.each(F.vectors as any[])('$name', (v: any) => {
     const out = applyMemberRules(
@@ -103,15 +114,9 @@ describe('planDerivedTasks', () => {
       { id, ...t, sharedCounterId: t.sharedCounterId ?? null, startDate: t.startDate ?? undefined },
     ])
   );
-  const childrenByCompoundId: Record<string, { childTaskId: string; childIndex: number }[]> =
-    Object.fromEntries(
-      Object.entries(P.children).map(([c, kids]) => [
-        c,
-        (kids as string[]).map((k, i) => ({ childTaskId: k, childIndex: i })),
-      ])
-    );
+  const childrenByCompoundId = buildChildren(P.children);
   const win = (tf: string) => ({ timeframe: tf as Timeframe, startDate: null, endDate: null });
-  const sourceWindowByMemberId = Object.fromEntries(
+  const sourceWindowByTaskId = Object.fromEntries(
     Object.entries(P.sourceWindows).map(([id, tf]) => [id, win(tf as string)])
   );
   const resolveId = (token: string): string =>
@@ -121,6 +126,15 @@ describe('planDerivedTasks', () => {
     expect(derivedTaskId(P.boardId, 'r1')).toBe(P.idPins['derived:r1']);
     expect(derivedTaskId(P.boardId, 'r2')).toBe(P.idPins['derived:r2']);
     expect(derivedTaskId(P.boardId, 'c1')).toBe(P.idPins['derived:c1']);
+    expect(derivedTaskId(P.boardId, 'c3')).toBe(P.idPins['derived:c3']);
+    expect(derivedTaskId(P.boardId, 'a1')).toBe(P.idPins['derived:a1']);
+    expect(derivedCompoundId(P.boardId, 'C2')).toBe(P.idPins['derivedCompound:C2']);
+    expect(derivedLinkId(P.idPins['derivedCompound:C2'], P.idPins['derived:c3'])).toBe(
+      P.idPins['link:derivedCompound:C2:derived:c3']
+    );
+    expect(derivedLinkId(P.idPins['derivedCompound:C2'], P.idPins['derived:c1'])).toBe(
+      P.idPins['link:derivedCompound:C2:derived:c1']
+    );
     expect(derivedCompoundId(P.boardId, 'C')).toBe(P.idPins['derivedCompound:C']);
     expect(derivedLinkId(P.idPins['derivedCompound:C'], P.idPins['derived:c1'])).toBe(
       P.idPins['link:derivedCompound:C:derived:c1']
@@ -135,9 +149,7 @@ describe('planDerivedTasks', () => {
 
   /** pinned id → its fixture token, so a link id can be looked up by token. */
   const tokenOfId: Record<string, string> = Object.fromEntries(
-    Object.entries(P.idPins)
-      .filter(([k]) => k !== 'note')
-      .map(([k, id]) => [id as string, k])
+    Object.entries(P.idPins).map(([k, id]) => [id as string, k])
   );
 
   it.each(P.vectors as any[])('$name', (v: any) => {
@@ -162,7 +174,7 @@ describe('planDerivedTasks', () => {
       mode: v.mode,
       tasksById,
       childrenByCompoundId,
-      sourceWindowByMemberId,
+      sourceWindowByTaskId,
       baselineByRootId: P.baselines,
       rng,
     });
@@ -192,10 +204,10 @@ describe('planDerivedTasks', () => {
       expect(d.startDate).toBe(P.window.startDate);
       expect(d.endDate).toBe(P.window.endDate);
     }
-    const titled = v.expected.derived.find((d: any) => d.title);
-    if (titled) {
-      const d = out.derivedTasks[0];
-      expect([d.title, d.action, d.unit]).toEqual([titled.title, titled.action, titled.unit]);
+    for (const titled of v.expected.derived.filter((d: any) => d.title !== undefined)) {
+      const d = out.derivedTasks.find((x) => x.rootTaskId === titled.root);
+      expect(d).toBeDefined();
+      expect([d!.title, d!.action, d!.unit]).toEqual([titled.title, titled.action, titled.unit]);
     }
     expect(
       out.derivedCompounds.map((c) => ({
@@ -221,13 +233,14 @@ describe('planDerivedTasks', () => {
         expect(k.linkId).toBe(P.idPins[`link:derivedCompound:${c.sourceCompoundId}:${childToken}`]);
       }
     }
-    const titledC = v.expected.compounds.find((c: any) => c.title);
-    if (titledC) {
-      expect([
-        out.derivedCompounds[0].title,
-        out.derivedCompounds[0].operator,
-        out.derivedCompounds[0].threshold,
-      ]).toEqual([titledC.title, titledC.operator, titledC.threshold]);
+    for (const titledC of v.expected.compounds.filter((c: any) => c.title !== undefined)) {
+      const c = out.derivedCompounds.find((x) => x.sourceCompoundId === titledC.source);
+      expect(c).toBeDefined();
+      expect([c!.title, c!.operator, c!.threshold]).toEqual([
+        titledC.title,
+        titledC.operator,
+        titledC.threshold,
+      ]);
     }
   });
 });

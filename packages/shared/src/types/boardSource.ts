@@ -73,7 +73,10 @@ export type VaryLevel = 0 | 1 | 2;
 
 /** Per-part rule for one child of a compound member (keyed by `compound_children.childTaskId`). */
 export interface BoardSourcePartRule {
-  /** Counting part only; absent = auto (board sources) / the part's own goal (pool sources). Integer ≥ 1. */
+  /**
+   * Counting part only; honoured only on `kind: 'board'` sources (ignored on
+   * pools); absent = auto. Integer ≥ 1.
+   */
   target?: number;
   /** Absent = 0. */
   vary?: VaryLevel;
