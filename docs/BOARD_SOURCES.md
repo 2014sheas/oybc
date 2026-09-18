@@ -558,7 +558,7 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 | **A** | Retire the "From a board…" grid picker + Copy modal + `SourceBoardsViewModel`/`useSourceBoards` + `copyTask`; strip the Library-sheet chip; docs/memory/snapshots. Keeps `fetchCompoundChildrenByCompoundIds` (B needs it). **SHIPPED** (#487). | lockstep |
 | **B0** | §Member rules into this doc (this section); `WINDOWED_COMPLETION.md` carve-out paragraph; CLAUDE.md pointer. **SHIPPED** (#486 — landed with the spec). | docs |
 | **B1** | Shared types (`memberRules`, `manualTaskVary`) + Zod + Swift mirrors; draft-blob additive (still v2); GRDB **v31** column; pure helpers (`nominalWindowDays`, `autoTarget`, `varyRange`, `rollTarget`, `applyMemberRules`, `planDerivedTasks`) + mirrored vectors. Inert — nothing writes rules yet. **SHIPPED** (#489). | lockstep |
-| **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). | lockstep |
+| **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). **SHIPPED** (#<n>). | lockstep |
 | **B3** | UI: member rows (stepper / dice / One square–Split up / part lines), hand-added dice, primitives, wizard actions, Preview derived cells, edit-mode note, #471 menu removal, hub expired filter, iOS Library-sheet derive entry stripped; snapshots + Playwright. | lockstep |
 
 Each UI phase: implement → independent review → device checklist relayed to
@@ -579,6 +579,64 @@ Rulings: **R1** `planDerivedTasks(mode: 'oneOff' | 'recurring')`; `autoTarget` r
 Task 2's test measured a worst-case `RecurringBoardTemplate` (20 board sources × 8 members × 3 parts) at 43,193 bytes; `firestore.rules`' `request.resource.size() < 10000` can't be the byte-size check the spec assumed (Firestore rules expose no byte-size API — the real cap is the 1 MiB/doc platform limit), so the test instead guards a regression ceiling (< 65,536 bytes). B2 item: an emulator rules test that writes a worst-case record to settle what that clause measures and whether it needs to change.
 
 Remaining B2 items surfaced during B1 review: (a) **R9** — iOS has no `fetchCompoundChildrenByCompoundIds` (Plan A's KEEP note is web-only; iOS has `fetchCompoundChildren(compoundTaskId:)`) — B2 adds a batched iOS fetch. (b) two selected *members* sharing a root could yield a duplicate placement id (unreachable via `selectBoardTasks` family exclusivity) — B2's persist dedupes `placementIds` as a guard; the intra-compound twin of this is fixed in B1 (R13). (c) Swift `sort` is unstable — B1 made both comparators total (R14); B2 still adds a write guard for unique `childIndex` per compound. (d) `dayNumber` edge semantics diverge from JS `Date.UTC` for year 0–99 / out-of-range parts — unreachable from real ISO dates. (e) **False alarm, closed:** the B1 review claimed iOS sends the five JSON-TEXT fields of a `RecurringBoardTemplate` as JSON *strings* on the sync wire. It does not — GRDB stores them as strings, but every push goes through `SyncService.writeFirestoreDoc` → `SyncWirePayload.expandJSONStrings`, which turns them into native arrays/objects before Firestore (since #11), and the pull side re-stringifies for GRDB. Web's `RecurringBoardTemplateSchema` therefore sees arrays/records. Pinned by `SyncWirePayloadTests` (iOS) and the pull-validator Vitest (web); issue #488 closed by this fix. B2 is NOT blocked on it. (f) the rules-cap emulator test above.
+
+#### Plan B2 — implementation notes (2026-09-18)
+
+Both platforms, one PR (#<n>).
+
+- **Landed**: mint at active-only wizard persist and at every recurring
+  board creation (`spawnTemplateBoard` ↔ `spawnRecurringBoard`; web
+  `db/operations/derivedCounters.ts` ↔ iOS
+  `Database/AppDatabase+DerivedCounters.swift`), driven by shared
+  `computeWindowBaseline` / `isWindowStampedDerived` / `buildDerivedRows`
+  (`memberRules.ts` ↔ `BoardSourceMemberRules.swift`), vector-pinned incl.
+  timezone-invariant baseline vectors. `refreshDerivedBaselines` is a
+  non-authored cache refresh (no version bump, no enqueue) run before
+  propagation in increment/decrement/undo and as a pull sub-step (the
+  batch loop and `healMissingCompletionEvents`). Three deletion cascades
+  (task-cascade, counter-hub unlink, board-delete) via
+  `softDeleteWindowStampedDerived`. Read audit: web
+  `pages/tasks/taskCountDisplay.ts` ↔ iOS `Helpers/TaskCountDisplay.swift`.
+  `repeatBoard*` now writes `sources: []` + `manualTaskVary: {}` and drops
+  derived compounds from the copied roster. Roster health expands
+  split members. iOS added a batched
+  `fetchCompoundChildren(db:compoundTaskIds:)`.
+- **Rulings (plan)**: RB1 wizard-side supply expansion deferred to B3.
+  RB2 baseline = strictly-before boundary, instants; INDEFINITE → mint now.
+  RB3 idempotent mint (live → skip; tombstoned → revive). RB4 `repeatBoard*`
+  drops derived compounds, passes through derived counters. RB5 a live
+  placement = a live row on a live board; `deleteBoard`'s own placements
+  are untouched. RB6 platform rng. RB7 read audit from the task's own
+  mirror. RB8 hub expired filter is B3. RB9 `manualTaskVary = {}` at
+  persist until B3. RB10 derived-compound path complete + tested. RB11
+  `derivedWindowCounterCount` computed, not rendered. RB12 pull sub-step
+  runs per root, in-transaction.
+- **Rulings (execution)**: mint only on ACTIVE persist — a draft's window
+  can still change and a derived id doesn't encode the window. Refresh
+  runs BEFORE propagation — `undoLastCounterLog` can tombstone a
+  pre-window event. `spawnTemplateBoard`'s `applyMemberRules`-expanded
+  supplies feed validation + `selectBoardTasks` + the planner, not just
+  the planner.
+  Board-delete candidates are read from ALL placement rows (order-
+  independent) but gated on `isMintedForBoard` — counter: exact
+  `derivedTaskId` identity; compound: window identity + a confirming
+  derived child, else "no live placement elsewhere" (a heuristic that
+  errs toward not retiring until B3 stores provenance) — plus RB5. A
+  second sweep retires derived counters reachable only as children of a
+  retired derived compound. A derived counter is born `completedAt = now`
+  when it mints already complete.
+- **B3 hand-offs**: wizard-side `applyMemberRules` on `algorithmSupplies`
+  ↔ `BoardWizardViewModel+Sources`; `manualTaskVary` wizard state + writer;
+  Preview re-roll (`shuffleNonce` ↔ `reseedPlacement`) wiring the planner
+  rng; the Counters-hub expired filter; derived-compound provenance (so
+  `repeatBoard*` and `isMintedForBoard` stop being heuristic); a
+  post-activation Board-Edit window change does not re-derive existing
+  rows on either platform (id doesn't encode the window); surfacing
+  `derivedWindowCounterCount` in the delete-confirm copy; the rules-cap
+  emulator test carried from B1 if still open.
+- **Known, out of scope**: web `deleteBoard` still leaves its own
+  placements live — the orphan sweep is order-independent, so this is
+  safe if a future change starts tombstoning them.
 
 ## Test strategy
 
