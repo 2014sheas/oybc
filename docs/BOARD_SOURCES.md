@@ -1327,6 +1327,20 @@ Three shapes, chosen by what the row actually has:
   `varyRangeLabel` string in `--riso-blue` when the dice is lit ("24–30
   Miles"), target + unit in `--riso-muted` when it is not ("12 Classes"),
   `splitSquaresNote` for a compound ("3 squares").
+- **A counting chip that only restates the title is suppressed** (owner
+  ruling, 2026-09-19, after seeing the first re-recorded baselines): when
+  `vary == 0` **and** `target == goal`, `countingSummary` returns `null` /
+  `nil` and the row renders no chip. Rationale: counting titles are
+  auto-generated from action + goal + unit
+  (`generateCounterTaskTitle`), so a row titled "Run 35 mi" carrying a
+  chip reading "35 mi" reproduces — in milder form — the duplicate-caption
+  failure this whole section exists to fix. The chip then appears exactly
+  when it adds something the title does not: a pro-rated or hand-set target
+  (`target != goal`, e.g. "5 Miles" on a daily pulled from a monthly), or a
+  vary range. This is a rule on the *values*, not a string comparison
+  against the title — a title the user renamed by hand never changes
+  whether the chip appears. Compound chips are unaffected: "1 square" vs
+  "3 squares" is never implied by the title.
 - **The range moves inline** onto line 2 instead of taking a third line, so
   an expanded counting row is exactly two lines — the same height the B3
   handoff already budgeted for its separate vary-range line.
@@ -1351,7 +1365,7 @@ Three shapes, chosen by what the row actually has:
 
 **Surfaces**
 
-- shared `countingSummary(target, level, goal, unit)` and
+- shared `countingSummary(target, level, goal, unit)` (nullable — see the chip-suppression rule below) and
   `compoundSummary(split, partIds, excludedPartIds, level)`, each returning
   `MemberSummary { text, varying }`: they dispatch to the existing
   `varyRangeLabel` / `splitSquaresNote` rather than formatting anything new,
