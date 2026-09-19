@@ -1,24 +1,18 @@
 /**
  * Deterministic uniform [0,1) LCG (Numerical Recipes constants).
  *
- * Same seed ⇒ same sequence, in Jest and (ported identically) in XCTest.
- * This is the RNG every golden / cross-platform parity test in the Play
- * transition plan (PLAY_TRANSITION.md T2) feeds into `placeBoard` so the
- * TS and Swift suites can assert byte-identical expected arrays.
+ * Re-export only — the single implementation now lives in
+ * `packages/shared/src/algorithms/seededRng.ts`, promoted out of this file
+ * when the wizard's Preview needed a seeded roll in PRODUCTION code (B3
+ * RC6). Kept here so the bingo-core suites that already import
+ * `./seededRng` keep working, and so the repo holds exactly ONE LCG for the
+ * Swift twin to stay byte-identical to.
  *
- * Swift twin (see apps/ios/OYBC/OYBCTests/BoardPlacementTests.swift):
- *   state = state &* 1664525 &+ 1013904223   // wrapping UInt32
- *   return Double(state) / 4294967296.0
- *
- * Test helper only — intentionally NOT a `src` export.
- *
- * @param seed - Unsigned 32-bit seed.
- * @returns A function yielding successive uniform `[0, 1)` samples.
+ * A source-relative import rather than a package dependency: `@oybc/shared`
+ * depends on `@oybc/bingo-core`, so a real dependency the other way would be
+ * a package-graph cycle. `seededRng.ts` imports nothing at all, so pulling
+ * it in from a test file creates no module cycle — and the mirror import
+ * already exists in the other direction
+ * (`packages/shared/tests/algorithms/memberRules.test.ts` imports this file).
  */
-export function makeSeededRng(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
+export { makeSeededRng } from '../../shared/src/algorithms/seededRng';

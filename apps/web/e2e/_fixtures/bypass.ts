@@ -401,6 +401,18 @@ export interface SeedTask {
   /** Shared Counters — the derived task's baseline at link time. The
    *  displayed count is `max(0, currentCount − baseline)`. Defaults to 0. */
   baseline?: number;
+  /** P5 — hub-born counter: renders as its own group with zero links. */
+  isCounter?: boolean;
+  /** Timeboxed / window-stamped tasks — the window the task belongs to. */
+  timeframe?: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  /** Window start (ISO8601). A window-stamped DERIVED counter carries one. */
+  startDate?: string;
+  /** Window end (ISO8601). `isTaskExpired` reads THIS — a past value is what
+   *  the Counters hub's "Show expired tasks" toggle reveals. */
+  endDate?: string;
+  /** Wizard-born provenance — the third mark of a window-stamped derived
+   *  counter (`isWindowStampedDerived`). */
+  createdInWizard?: boolean;
 }
 
 export async function seedTask(page: Page, task: SeedTask): Promise<void> {

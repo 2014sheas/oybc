@@ -1,14 +1,12 @@
 import {
   CenterSquareType,
   TaskType,
-  Timeframe,
   deriveSpawnedBoardName,
   effectiveSourceMax,
   getTimeframeBoundaries,
   placeBoard,
   resolveSourceAvailable,
   selectBoardTasks,
-  toLocalISO,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
@@ -28,6 +26,7 @@ import {
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
 import { applyPatchToTask, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
+import { applyPreviewDerivedCells, type PreviewRulesOptions } from './previewDerived';
 import { encodeRecurringDraftMix } from '../../db/recurringDraftMix';
 // `generateUUID` / `currentTimestamp` no longer needed here — pending-task
 // sync writes now route through `addToSyncQueue` which owns both.
@@ -52,11 +51,20 @@ export type WizardPlacement = (Task | null)[];
  * and placement just like library tasks. The optional parameter means
  * callers that don't pass it (e.g. `BoardWizardPreviewStep` via the
  * library prop) still compile; `BoardWizardPage` passes both.
+ *
+ * §Member rules (B3, RC6) — `previewRules` runs the DISPLAY-ONLY dry run
+ * (`applyPreviewDerivedCells`) over the finished placement, so the Preview
+ * grid shows the rolled targets the board will actually carry. It is a
+ * PREVIEW affordance: the persist path never passes it — `persistWizardBoard`
+ * mints the real derived rows inside its own transaction, with the platform
+ * rng, and would double-roll if the placement it was handed already carried
+ * stand-ins.
  */
 export function buildWizardPlacement(
   controller: BoardWizardController,
   library: TaskLibrary,
   pendingTasksArg?: Map<string, PendingTaskPayload>,
+  previewRules?: PreviewRulesOptions,
 ): WizardPlacement {
   const { size, centerType, centerTaskId, isRandomized, selectedTaskIds } = controller;
   const isOdd = size % 2 !== 0;
@@ -229,72 +237,25 @@ export function buildWizardPlacement(
   // (placeBoard also derives that internally via getCenterSquareIndex, so this
   // is belt-and-suspenders). No `rng` → defaults to Math.random, matching the
   // old `fisherYatesShuffle([...others])`.
-  return placeBoard({
+  const placement = placeBoard({
     items: selected,
     gridSize: size,
     centerType: isOdd ? centerType : CenterSquareType.NONE,
     chosenCenterId: chosenCenter?.id,
     randomize: isRandomized,
   });
+
+  return previewRules === undefined
+    ? placement
+    : applyPreviewDerivedCells(placement, controller, library, previewRules.rng);
 }
 
-/** Resolved `startDate` / `endDate` ISO strings, or an error to surface.
- *  `endDate` is undefined for INDEFINITE (ongoing) boards. */
-export type ResolvedDates =
-  | { startDate: string; endDate?: string }
-  | { error: string };
-
-/**
- * Resolves start/end ISO timestamps for the new/updated board record.
- * Matches the semantics the legacy Create tab's `BoardCreatorPanel` used so the wizard
- * produces dates indistinguishable from the legacy panel's output.
- *
- * @param controller  Wizard state.
- * @param now         Reference date for non-CUSTOM windows. Defaults to
- *   `new Date()`. The core-board browser passes a future date here so a
- *   banner-launched "Plan ahead" flow spawns the window the user picked
- *   instead of always landing on today's window.
- */
-export function resolveWizardDates(
-  controller: BoardWizardController,
-  now: Date = new Date(),
-): ResolvedDates {
-  // Indefinite (ongoing) boards have no deadline. Honor the chosen Start date
-  // (the Custom section's Start picker is shown for ongoing boards too) — it's
-  // the creation anchor + achievement-window lower bound; fall back to today
-  // when unset. endDate stays undefined so the board carries no deadline.
-  if (controller.timeframe === Timeframe.INDEFINITE) {
-    let start: Date;
-    if (controller.customStartDate) {
-      const [sy, sm, sd] = controller.customStartDate.split('-').map(Number);
-      start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
-    } else {
-      start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-    }
-    return { startDate: toLocalISO(start), endDate: undefined };
-  }
-  if (controller.timeframe !== Timeframe.CUSTOM) {
-    const b = getTimeframeBoundaries(
-      controller.timeframe,
-      now,
-      controller.weekStartDay,
-    );
-    return { startDate: b.startDate, endDate: b.endDate };
-  }
-  if (!controller.customStartDate || !controller.customEndDate) {
-    return { error: 'Pick a start and end date.' };
-  }
-  // Parse YYYY-MM-DD manually to avoid UTC shift from `new Date('YYYY-MM-DD')`.
-  const [sy, sm, sd] = controller.customStartDate.split('-').map(Number);
-  const [ey, em, ed] = controller.customEndDate.split('-').map(Number);
-  const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
-  const end = new Date(ey, em - 1, ed, 23, 59, 59, 999);
-  if (end.getTime() < start.getTime()) {
-    return { error: 'End date must be on or after the start date.' };
-  }
-  return { startDate: toLocalISO(start), endDate: toLocalISO(end) };
-}
+// `resolveWizardDates` + `ResolvedDates` moved to `./wizardDates` (B3 RC6 —
+// `previewDerived.ts` needs the window resolution and this module imports
+// `previewDerived`, so the date helper had to stop living downstream of the
+// cycle). Re-exported here so every existing import site is untouched.
+export { resolveWizardDates } from './wizardDates';
+export type { ResolvedDates } from './wizardDates';
 
 export type WizardStatus = 'active' | 'draft';
 

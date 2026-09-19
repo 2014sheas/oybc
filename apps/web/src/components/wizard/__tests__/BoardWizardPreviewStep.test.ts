@@ -325,3 +325,69 @@ describe('BoardWizardPreviewStep — the summary range line is Split-up aware', 
     expect(renderPreview(controller, [])).toContain('up to 2');
   });
 });
+
+/**
+ * §Member rules (B3, RC6) — a ONE-OFF Preview shows the cells the board will
+ * actually carry: a counting member with a vary rule previews as its derived
+ * counter's ROLLED target, not its library goal. The roll itself is pinned in
+ * `previewDerived.test.ts`; what this pins is the WIRING — that the step
+ * passes `previewRules` at all, and only for a one-off board.
+ */
+describe('BoardWizardPreviewStep — derived cells in the one-off grid', () => {
+  const counter: Task = {
+    id: 'c1',
+    userId: 'user-1',
+    title: 'Run 30 miles',
+    type: TaskType.COUNTING,
+    action: 'Run',
+    unit: 'miles',
+    maxCount: 30,
+    currentCount: 0,
+    isCompleted: false,
+    totalCompletions: 0,
+    totalInstances: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 1,
+    isDeleted: false,
+  };
+  const variedSource: BoardSource = {
+    sourceId: 'board-1',
+    kind: 'board',
+    min: 0,
+    max: 1,
+    excludedTaskIds: [],
+    filter: 'all',
+    memberRules: { c1: { vary: 1 } },
+  };
+  const info: SupplyInfoMap = {
+    'board-1': {
+      displayName: 'Last week',
+      rawSupplyTaskIds: ['c1'],
+      doneTaskIds: new Set<string>(),
+      sourceWindow: {
+        timeframe: Timeframe.WEEKLY,
+        startDate: '2026-09-14T00:00:00.000',
+        endDate: '2026-09-20T23:59:59.999',
+      },
+    },
+  };
+
+  it('labels the cell with the rolled target, not the member goal', () => {
+    const controller = makeController({
+      isRecurring: false,
+      isRandomized: false,
+      timeframe: Timeframe.DAILY,
+      ...withSupplies([variedSource], info, {}, { c1: counter }),
+      manualTaskIds: new Set<string>(),
+      selectedTaskIds: new Set(['c1']),
+    });
+
+    const html = renderPreview(controller, [counter]);
+
+    // The mount nonce is 0, whose roll is pinned at 29 in
+    // `previewDerived.test.ts` — the cell must say so, and must NOT say 30.
+    expect(html).toContain('Run 29 miles');
+    expect(html).not.toContain('Run 30 miles');
+  });
+});

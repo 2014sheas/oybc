@@ -24,6 +24,7 @@ import {
   availableCountFromSupplies,
   sourceRangeLine,
 } from '../../pages/createHub/wizardSources';
+import { makePreviewRng } from './previewDerived';
 import {
   buildWizardPlacement,
   persistRecurringTemplate,
@@ -218,15 +219,30 @@ export function BoardWizardPreviewStep({
   // Placement as state so user reorders are preserved between renders.
   // The lazy initializer seeds it once at mount; the effect below re-seeds on
   // layout-affecting dep changes.
+  // §Member rules (B3, RC6) — a ONE-OFF board's Preview shows the cells the
+  // board will actually carry, so it runs the member-rule dry run: counting
+  // members with a target/vary rule stand in as their derived counters, with
+  // the rolled target. Seeded from `shuffleNonce`, so one nonce always
+  // previews the same numbers and Shuffle visibly re-rolls them — the roll is
+  // a SAMPLE of the range; persist mints with the platform rng. A repeating
+  // board shows the 5b summary card instead (no cell grid, and its targets
+  // pro-rate per spawned window), so it passes nothing.
+  const previewRules = useMemo(
+    () => (controller.isRecurring ? undefined : { rng: makePreviewRng(shuffleNonce) }),
+    [controller.isRecurring, shuffleNonce],
+  );
+
   const [placement, setPlacement] = useState<WizardPlacement>(() =>
-    buildWizardPlacement(controller, library, controller.pendingTasks),
+    buildWizardPlacement(controller, library, controller.pendingTasks, previewRules),
   );
 
   // Re-seed placement when any layout-affecting input changes (same dep set as
   // the old useMemo). User reorders are discarded on dep changes — this is correct:
   // a task-selection change or size change invalidates the prior arrangement.
   useEffect(() => {
-    setPlacement(buildWizardPlacement(controller, library, controller.pendingTasks));
+    setPlacement(
+      buildWizardPlacement(controller, library, controller.pendingTasks, previewRules),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     controller.size,

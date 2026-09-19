@@ -304,6 +304,9 @@ export {
   remainingTarget,
 } from './memberRulesDisplay';
 
+// ===== Seeded RNG — the repo's one deterministic LCG (see seededRng.ts) =====
+export { makeSeededRng } from './seededRng';
+
 export { boardDisplayName } from './boardDisplayName';
 export {
   isEligibleSourceBoard,

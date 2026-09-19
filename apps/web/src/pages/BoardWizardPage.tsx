@@ -14,6 +14,7 @@ import {
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useBoardWizard, type BoardWizardDraft, type WizardStep } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
+import { WizardEditModeNote } from '../components/wizard/WizardEditModeNote';
 import { BoardWizardSetupStep } from '../components/wizard/BoardWizardSetupStep';
 import { BoardWizardTasksStep } from '../components/wizard/BoardWizardTasksStep';
 import { BoardWizardPreviewStep } from '../components/wizard/BoardWizardPreviewStep';
@@ -307,9 +308,7 @@ export function BoardWizardPage({
       {/* Board Sources P4 (locked decision, frame 5a) — editing an
           existing repeating board IS the "Sources" surface; the note
           renders under the stepper, mirroring iOS `BoardWizardView`. */}
-      {wizard.editingTemplateId !== null && (
-        <p className={styles.editModeNote}>Changes apply from the next board.</p>
-      )}
+      <WizardEditModeNote editingTemplateId={wizard.editingTemplateId} />
 
       <div className={styles.stepContainer}>
         {wizard.currentStep === 1 && (

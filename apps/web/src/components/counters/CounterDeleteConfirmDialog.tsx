@@ -19,6 +19,13 @@ export interface CounterDeleteConfirmDialogProps {
    *  (`impact.derivedWindowCounterCount`) — so the "will be unlinked" copy
    *  below stays true of every task this number covers. */
   memberCount: number;
+  /**
+   * §Member rules (B3, RC12) — `impact.derivedWindowCounterCount`: the
+   * counter's per-window DERIVED members, which the delete RETIRES rather
+   * than unlinks. Called out on its own line so "unlinked and keep their
+   * counts" is never read as covering them. `0` renders nothing.
+   */
+  derivedWindowCounterCount: number;
   /** Member rows to list (title + board name where placed). */
   members: CounterDeleteConfirmMember[];
   /** True while `deleteCounterWithUnlink` is in flight — disables both actions
@@ -44,12 +51,18 @@ export interface CounterDeleteConfirmDialogProps {
 export function CounterDeleteConfirmDialog({
   counterName,
   memberCount,
+  derivedWindowCounterCount,
   members,
   busy,
   onConfirm,
   onCancel,
 }: CounterDeleteConfirmDialogProps): React.ReactElement {
   const hasMembers = memberCount > 0;
+  // Rendered OUTSIDE the members section: a counter can have only derived
+  // members (every placement came from a wizard-built board), in which case
+  // `memberCount` is 0 and the section above never renders — but the derived
+  // ones are still being removed and must still be announced.
+  const derivedCount = derivedWindowCounterCount;
 
   return (
     <div className={styles.backdrop} onClick={() => !busy && onCancel()}>
@@ -81,6 +94,12 @@ export function CounterDeleteConfirmDialog({
               ))}
             </ul>
           </div>
+        )}
+
+        {derivedCount > 0 && (
+          <p className={styles.derivedNote}>
+            {`${derivedCount} board counter${derivedCount === 1 ? '' : 's'} made from this one will be removed.`}
+          </p>
         )}
 
         <div className={styles.sheetActions}>

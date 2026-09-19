@@ -1,0 +1,21 @@
+/* The Tasks tab's filter-row label metrics, moved here with the control so
+   the Counters hub renders exactly the same checkbox + caps label (B3 RC9).
+   Mirrors `.dropdownLabel` / `.dropdownLabelText` in
+   `pages/tasks/TasksFilterControls.module.css`, which still style the
+   sibling dropdowns in that row. */
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.85rem;
+  color: var(--riso-ink);
+}
+
+.labelText {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+  color: var(--riso-muted);
+}
