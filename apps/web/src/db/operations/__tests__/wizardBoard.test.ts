@@ -851,7 +851,37 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
     return task;
   }
 
-  it('a hand-added counting member with vary 1 mints a derived row rolled inside varyRange', async () => {
+  it('a hand-added counting member with vary 1 mints a derived row ROLLED inside varyRange', async () => {
+    const task = await seedHandAddedCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+
+    // Seeded rng — `varyRange(10, 1, 10)` is [8, 10] and its top IS the goal,
+    // so a range-only assertion would also pass against a no-roll
+    // implementation. Pinning the low end proves the roll happened.
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        sources: [],
+        manualTaskIds: [HAND],
+        manualTaskVary: { [HAND]: 1 },
+        rng: () => 0,
+      }),
+    );
+
+    const [lo, hi] = varyRange(GOAL, 1, GOAL);
+    expect(lo).toBeLessThan(GOAL); // the assertion below is not degenerate
+    const derived = await db.tasks.get(derivedTaskId(boardId, HAND));
+    expect(derived).toBeDefined();
+    expect(derived?.sharedCounterId).toBe(HAND);
+    expect(derived?.maxCount).toBe(lo);
+    expect(derived?.maxCount).toBeLessThanOrEqual(hi);
+
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows[0].taskId).toBe(derived?.id);
+  });
+
+  it('the roll really is the rng\u2019s: the top of the range lands with the opposite seed', async () => {
     const task = await seedHandAddedCounter();
     const placement = new Array(9).fill(null);
     placement[0] = task;
@@ -861,19 +891,13 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
         placement,
         sources: [],
         manualTaskIds: [HAND],
-        manualTaskVary: { [HAND]: 1 },
+        manualTaskVary: { [HAND]: 2 },
+        rng: () => 0.999,
       }),
     );
 
-    const derived = await db.tasks.get(derivedTaskId(boardId, HAND));
-    expect(derived).toBeDefined();
-    expect(derived?.sharedCounterId).toBe(HAND);
-    const [lo, hi] = varyRange(GOAL, 1, GOAL);
-    expect(derived?.maxCount).toBeGreaterThanOrEqual(lo);
-    expect(derived?.maxCount).toBeLessThanOrEqual(hi);
-
-    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
-    expect(rows[0].taskId).toBe(derived?.id);
+    const [, hi] = varyRange(GOAL, 2, GOAL);
+    expect(await db.tasks.get(derivedTaskId(boardId, HAND))).toMatchObject({ maxCount: hi });
   });
 
   it('vary 0 (or an absent map) places the hand-added task itself — nothing is minted', async () => {

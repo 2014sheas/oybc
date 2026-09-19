@@ -3,6 +3,7 @@ import { TaskType, type BoardSource, type Pool, type Task } from '@oybc/shared';
 import {
   algorithmSupplies,
   availableCountForSource,
+  availableCountFromSupplies,
   buildSupplyInfoMap,
   clampAllSourceRanges,
   clampSourceRange,
@@ -245,6 +246,83 @@ describe('Split-up expansion (§Member rules B3, RC7)', () => {
       makeSource({ sourceId: 'b1', kind: 'board', memberRules: { x: { split: true } } }),
     ];
     expect(availableCountForSource(sources, info, 'b1', children, { c1: compound })).toBe(2);
+  });
+});
+
+describe('availableCountFromSupplies (the expanded-supplies reader)', () => {
+  it('agrees with availableCountForSource, split included', () => {
+    const compound = { id: 'c1', type: TaskType.COMPOUND };
+    const children = { c1: [{ childTaskId: 'k1', childIndex: 0 }, { childTaskId: 'k2', childIndex: 1 }] };
+    const info: SupplyInfoMap = { b1: supplyEntry('Board', ['c1', 'x']) };
+    const sources = [
+      makeSource({ sourceId: 'b1', kind: 'board', memberRules: { c1: { split: true } } }),
+    ];
+    const supplies = algorithmSupplies(sources, info, children, { c1: compound });
+    expect(availableCountFromSupplies(supplies, 'b1')).toBe(3);
+    expect(availableCountFromSupplies(supplies, 'b1')).toBe(
+      availableCountForSource(sources, info, 'b1', children, { c1: compound }),
+    );
+  });
+
+  it('is 0 for a source the supplies don\u2019t carry', () => {
+    expect(availableCountFromSupplies([], 'ghost')).toBe(0);
+  });
+});
+
+describe('excludeFromEverySupplier — Split-up parts (review Important #2)', () => {
+  const compound = { id: 'c1', type: TaskType.COMPOUND };
+  const children = {
+    c1: [
+      { childTaskId: 'k1', childIndex: 0 },
+      { childTaskId: 'k2', childIndex: 1 },
+      { childTaskId: 'k3', childIndex: 2 },
+    ],
+  };
+  const info: SupplyInfoMap = { b1: supplyEntry('Board', ['c1', 'x']) };
+
+  function splitSource(parts?: Record<string, { excluded?: boolean }>): BoardSource {
+    return makeSource({
+      sourceId: 'b1',
+      kind: 'board',
+      memberRules: { c1: { split: true, ...(parts ? { parts } : {}) } },
+    });
+  }
+
+  it('deselecting a PART writes a part rule, so it STAYS deselected after the selection recompute', () => {
+    const sources = [splitSource()];
+    const next = excludeFromEverySupplier(sources, info, 'k2', 8, children, { c1: compound });
+
+    // The rule landed on the parent, not on `excludedTaskIds`.
+    expect(next[0].memberRules?.c1.parts?.k2).toEqual({ excluded: true });
+    expect(next[0].excludedTaskIds).toEqual([]);
+    // The recompute (which reads the EXPANDED supplies) no longer offers it —
+    // pre-fix this wrote nothing and the square came straight back.
+    const union = selectionUnion(next, info, new Set(), children, { c1: compound });
+    expect(union.has('k2')).toBe(false);
+    expect([...union].sort()).toEqual(['k1', 'k3', 'x']);
+  });
+
+  it('a plain member still goes to excludedTaskIds', () => {
+    const sources = [splitSource()];
+    const next = excludeFromEverySupplier(sources, info, 'x', 8, children, { c1: compound });
+    expect(next[0].excludedTaskIds).toEqual(['x']);
+    expect(next[0].memberRules?.c1.parts).toBeUndefined();
+  });
+
+  it('REFUSES the last included part — the source is left untouched', () => {
+    const sources = [splitSource({ k1: { excluded: true }, k2: { excluded: true } })];
+    const next = excludeFromEverySupplier(sources, info, 'k3', 8, children, { c1: compound });
+    expect(next[0].memberRules?.c1.parts?.k3).toBeUndefined();
+    // Still supplied — which is why the caller must ask `canDeselectFromSources`
+    // and no-op, rather than dropping the id and letting it bounce back.
+    expect(selectionUnion(next, info, new Set(), children, { c1: compound }).has('k3')).toBe(true);
+  });
+
+  it('re-clamps ranges against the shrunken available count', () => {
+    // 4 available (3 parts + x); excluding one part leaves 3.
+    const sources = [{ ...splitSource(), min: 4 }];
+    const next = excludeFromEverySupplier(sources, info, 'k2', 8, children, { c1: compound });
+    expect(next[0].min).toBe(3);
   });
 });
 

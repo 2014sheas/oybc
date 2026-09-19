@@ -15,6 +15,7 @@ import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
 import { excludeFromEverySupplier, selectionUnion } from './wizardSources';
+import { canDeselectFromSources } from './wizardMemberRulesLogic';
 import { useWizardSources } from './useWizardSources';
 import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
 import { useWizardDerived } from './useWizardDerived';
@@ -424,7 +425,8 @@ export function useBoardWizard({
     tasksById,
     childrenByCompoundId,
     // §Member rules (B3, RC4) — only a ONE-OFF board seeds remaining
-    // targets; a repeating board auto-targets per spawned window instead.
+    // targets; a repeating board auto-targets against each board's own
+    // window instead.
     prefillRemainingTargetsOnResolve: !isRecurring,
     selectedTaskIds,
     purgeDroppedIds,
@@ -444,6 +446,7 @@ export function useBoardWizard({
     setPartTarget,
     setPartVary,
     setManualVary,
+    pruneManualVaryFor,
     resetMemberRules,
   } = useWizardMemberRules({
     initialManualTaskVary: () =>
@@ -456,6 +459,7 @@ export function useBoardWizard({
     supplyInfoBySourceId,
     tasksRequired,
     tasksById,
+    pendingTasks,
     childrenByCompoundId,
   });
 
@@ -608,13 +612,24 @@ export function useBoardWizard({
 
   const toggleTaskSelection = useCallback(
     (taskId: string) => {
+      const wasSelected = selectedTaskIds.has(taskId);
+      // §Member rules (B3, review Important #2) — a deselect that the
+      // expansion would refuse (the last included part of a Split-up
+      // compound) must change NOTHING: dropping the id optimistically and
+      // letting the selection recompute restore it is a self-reverting
+      // control. Checked before any state write, including the prefill flag.
+      if (
+        wasSelected &&
+        !canDeselectFromSources(expandedSupplies, childrenByCompoundId, taskId)
+      ) {
+        return;
+      }
       // Phase 6.X — user has touched the selection, so any DefaultPool
       // that arrives later via `useLiveQuery` MUST NOT overwrite their
       // edits. Marking the ref here closes the race where the user picks
       // tasks while `defaultPool === undefined` (still loading) and the
       // pool resolution would otherwise re-fire the prefill effect.
       poolPrefillAppliedRef.current = true;
-      const wasSelected = selectedTaskIds.has(taskId);
       setSelectedTaskIds((prev) => {
         const next = new Set(prev);
         if (next.has(taskId)) {
@@ -673,6 +688,10 @@ export function useBoardWizard({
           next.delete(taskId);
           return next;
         });
+        // §Member rules (B3) — a task leaving the hand-added layer takes its
+        // dice with it, or the stale entry rides into the draft blob / the
+        // repeating record and lives there forever.
+        pruneManualVaryFor(taskId);
       } else {
         setManualTaskIds((prev) => {
           if (prev.has(taskId)) return prev;
@@ -690,7 +709,9 @@ export function useBoardWizard({
       size,
       centerType,
       childrenByCompoundId,
+      expandedSupplies,
       tasksById,
+      pruneManualVaryFor,
       setSources,
       setManualTaskIds,
     ],

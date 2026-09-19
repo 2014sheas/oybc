@@ -27,10 +27,11 @@ import {
   type BoardSource,
   type BoardSourceMemberRule,
   type BoardSourcePartRule,
+  type ExpandedSupply,
   type Task,
   type VaryLevel,
 } from '@oybc/shared';
-import type { WizardSourceSupply } from './wizardSources';
+import type { SupplyChildrenMap, WizardSourceSupply } from './wizardSources';
 
 /**
  * Apply a member-rule patch to ONE source row (other rows pass through
@@ -153,20 +154,112 @@ export function pruneRulesForExcludedMember(
  * it is stored as an ABSENCE — keeping the map byte-identical to one that
  * was never touched.
  *
+ * Dice belong to counting rows only (spec §Member rules), and the STATE
+ * layer is the guard — not just the UI: a level written for a normal,
+ * compound or achievement task would serialise onto the record and read as
+ * authored intent forever. A non-counting (or unknown) task is a no-op,
+ * returning the SAME map. iOS mirrors this rule.
+ *
  * @param manualTaskVary - The current map.
  * @param taskId - The hand-added task.
  * @param level - The new dice level.
- * @returns A new map.
+ * @param task - That task, for the counting guard (`undefined` = unknown → no-op).
+ * @returns A new map, or the input map when the write was refused.
  */
 export function withManualVary(
   manualTaskVary: Record<string, VaryLevel>,
   taskId: string,
   level: VaryLevel,
+  task: Pick<Task, 'type'> | undefined,
 ): Record<string, VaryLevel> {
+  if (task?.type !== TaskType.COUNTING) return manualTaskVary;
   const next = { ...manualTaskVary };
   if (level === 0) delete next[taskId];
   else next[taskId] = level;
   return next;
+}
+
+/**
+ * Drop a task's dice when it LEAVES the hand-added layer (deselect / remove).
+ * Unguarded on purpose — this is the purge half, and a stale entry for a task
+ * that is no longer counting (or no longer exists) is exactly what must go.
+ * Without it the entry survives into the draft blob and onto
+ * `RecurringBoardTemplate.manualTaskVary`, growing with every dice the person
+ * ever set and then removed.
+ *
+ * @param manualTaskVary - The current map.
+ * @param taskId - The task leaving the manual layer.
+ * @returns A new map, or the input map when there was nothing to drop.
+ */
+export function pruneManualVary(
+  manualTaskVary: Record<string, VaryLevel>,
+  taskId: string,
+): Record<string, VaryLevel> {
+  if (!(taskId in manualTaskVary)) return manualTaskVary;
+  const next = { ...manualTaskVary };
+  delete next[taskId];
+  return next;
+}
+
+/**
+ * Whether a supplied task may be DESELECTED from the wizard's square list.
+ *
+ * Only one thing can refuse: a task that entered the supply as a Split-up
+ * PART and is the last included part of its compound. A split member always
+ * contributes at least one square, so excluding it would be ignored by
+ * `applyMemberRules`' last-part guard and the square would come straight back
+ * on the next selection recompute — a self-reverting control (the
+ * late-mutation shape this codebase bans). The caller no-ops instead.
+ *
+ * @param supplies - The Split-up-expanded supplies (`controller.expandedSupplies`).
+ * @param childrenByCompoundId - The live compound-children map.
+ * @param taskId - The id being deselected.
+ * @returns False when the deselect must be refused.
+ */
+export function canDeselectFromSources(
+  supplies: readonly ExpandedSupply[],
+  childrenByCompoundId: SupplyChildrenMap,
+  taskId: string,
+): boolean {
+  for (const supply of supplies) {
+    const parentId = supply.partOf[taskId];
+    if (parentId === undefined) continue;
+    const partIds = (childrenByCompoundId[parentId] ?? []).map((c) => c.childTaskId);
+    if (!canSetPartExcluded(memberRuleFor(supply.source, parentId), partIds, taskId, true)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The board sources whose RC4 prefill decision is already settled at mount:
+ * every board source the wizard HYDRATED (a resumed draft / an edited
+ * repeating record). Those were pulled in an earlier session and their saved
+ * rules are the person's own state — silently rewriting them when the supply
+ * resolves would be the "UI changes after first paint" shape this codebase
+ * bans. Only a board pulled in THIS session is seeded.
+ *
+ * @param sources - The wizard's hydrated source rows.
+ * @returns The board-kind source ids to treat as already decided.
+ */
+export function initialPrefilledSourceIds(sources: readonly BoardSource[]): Set<string> {
+  return new Set(sources.filter((s) => s.kind === 'board').map((s) => s.sourceId));
+}
+
+/** Outcome of one {@link prefillRemainingTargets} pass. */
+export interface PrefillRemainingTargetsResult {
+  /** The next source rows (input array when nothing was written). */
+  sources: BoardSource[];
+  /**
+   * Whether this source's prefill decision is SETTLED — i.e. every supplied
+   * id resolved in `tasksById`, so each skip was deliberate (not counting /
+   * goal-less / already targeted) rather than "the library hadn't loaded
+   * yet". A caller marks the source as seeded only on `true`; `false` means
+   * try again on the next resolve, so a slow live query can't permanently
+   * lose the prefill for that board.
+   */
+  settled: boolean;
 }
 
 /**
@@ -177,7 +270,7 @@ export function withManualVary(
  * and the rule is seeded at 7.
  *
  * Only applies on one-off boards — a recurring board leaves `target` absent
- * so every spawned window auto-targets against its own window instead.
+ * so each recurring board auto-targets against its own window instead.
  *
  * Never overwrites an existing `target` (a rule the person authored, or one
  * a previous resolve already seeded), skips non-counting and goal-less
@@ -187,29 +280,38 @@ export function withManualVary(
  * @param sourceId - The board source whose supply just resolved.
  * @param supply - That source's resolved supply entry.
  * @param tasksById - Live id→Task lookup (`type` + `maxCount` are read).
- * @returns The next rows (input array when nothing was seeded).
+ * @returns The next rows plus whether the decision is settled — see
+ *   {@link PrefillRemainingTargetsResult}.
  */
 export function prefillRemainingTargets(
   sources: BoardSource[],
   sourceId: string,
   supply: WizardSourceSupply,
   tasksById: Record<string, Task>,
-): BoardSource[] {
+): PrefillRemainingTargetsResult {
   const index = sources.findIndex((s) => s.sourceId === sourceId);
-  if (index === -1) return sources;
+  // A source that isn't pulled has nothing to decide — settled, not retried.
+  if (index === -1) return { sources, settled: true };
   let source = sources[index];
   const before = source;
+  let settled = true;
   for (const id of supply.rawSupplyTaskIds) {
     const task = tasksById[id];
-    if (task === undefined || task.type !== TaskType.COUNTING) continue;
+    if (task === undefined) {
+      // The live task query hasn't caught up — this member's kind is unknown,
+      // so the decision isn't final yet.
+      settled = false;
+      continue;
+    }
+    if (task.type !== TaskType.COUNTING) continue;
     const goal = task.maxCount;
     if (typeof goal !== 'number' || goal < 1) continue;
     if (memberRuleFor(source, id).target !== undefined) continue;
     const done = supply.windowCountByTaskId?.[id] ?? 0;
     source = withMemberRule(source, id, { target: remainingTarget(Math.floor(goal), done) });
   }
-  if (source === before) return sources;
+  if (source === before) return { sources, settled };
   const next = [...sources];
   next[index] = source;
-  return next;
+  return { sources: next, settled };
 }

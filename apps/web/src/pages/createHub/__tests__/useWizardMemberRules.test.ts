@@ -9,15 +9,18 @@ import {
   type Task,
 } from '@oybc/shared';
 import {
+  canDeselectFromSources,
   canSetPartExcluded,
   includedPartIds,
+  initialPrefilledSourceIds,
   prefillRemainingTargets,
+  pruneManualVary,
   pruneRulesForExcludedMember,
   withManualVary,
   withMemberRuleInSource,
   withPartRuleInSource,
 } from '../wizardMemberRulesLogic';
-import type { WizardSourceSupply } from '../wizardSources';
+import { algorithmSupplies, type SupplyInfoMap, type WizardSourceSupply } from '../wizardSources';
 
 /**
  * §Member rules (docs/BOARD_SOURCES.md, B3 Task 3 commit 2) — the seven rule
@@ -174,19 +177,92 @@ describe('pruneRulesForExcludedMember (RC14 exclusivity)', () => {
 });
 
 describe('withManualVary (setManualVary)', () => {
+  const c1 = counter('t1', 10);
+
   it('stores a non-zero level and removes the key at level 0', () => {
-    const one = withManualVary({}, 't1', 2);
+    const one = withManualVary({}, 't1', 2, c1);
     expect(one).toEqual({ t1: 2 });
-    expect(withManualVary(one, 't1', 0)).toEqual({});
+    expect(withManualVary(one, 't1', 0, c1)).toEqual({});
   });
 
   it('never mutates the input map', () => {
     const base = { t1: 1 as const };
-    withManualVary(base, 't2', 2);
+    withManualVary(base, 't2', 2, counter('t2', 4));
     expect(base).toEqual({ t1: 1 });
+  });
+
+  it('REFUSES a non-counting task \u2014 the state layer is the guard, not just the UI', () => {
+    const normal = makeTask('n1');
+    const base = {};
+    expect(withManualVary(base, 'n1', 2, normal)).toBe(base);
+    expect(withManualVary(base, 'c1', 2, makeTask('c1', { type: TaskType.COMPOUND }))).toBe(base);
+  });
+
+  it('REFUSES an unknown task id (the library hasn\u2019t resolved it)', () => {
+    const base = {};
+    expect(withManualVary(base, 'ghost', 1, undefined)).toBe(base);
   });
 });
 
+describe('pruneManualVary (a task leaving the hand-added layer)', () => {
+  it('drops the entry \u2014 unguarded, so a stale non-counting entry goes too', () => {
+    expect(pruneManualVary({ t1: 2, t2: 1 }, 't1')).toEqual({ t2: 1 });
+  });
+
+  it('returns the SAME map when there is nothing to drop', () => {
+    const base = { t1: 2 as const };
+    expect(pruneManualVary(base, 'other')).toBe(base);
+  });
+});
+
+describe('canDeselectFromSources (review Important #2 \u2014 the deselect guard)', () => {
+  const compoundTask = makeTask('c1', { type: TaskType.COMPOUND });
+  const children = {
+    c1: [
+      { childTaskId: 'k1', childIndex: 0 },
+      { childTaskId: 'k2', childIndex: 1 },
+    ],
+  };
+  const info: SupplyInfoMap = {
+    b1: { displayName: 'Board', rawSupplyTaskIds: ['c1', 'x'], doneTaskIds: new Set() },
+  };
+
+  function suppliesFor(parts?: Record<string, { excluded?: boolean }>) {
+    const source = makeSource({
+      sourceId: 'b1',
+      memberRules: { c1: { split: true, ...(parts ? { parts } : {}) } },
+    });
+    return algorithmSupplies([source], info, children, { c1: compoundTask });
+  }
+
+  it('allows deselecting a plain member', () => {
+    expect(canDeselectFromSources(suppliesFor(), children, 'x')).toBe(true);
+  });
+
+  it('allows deselecting a part while another part is still included', () => {
+    expect(canDeselectFromSources(suppliesFor(), children, 'k1')).toBe(true);
+  });
+
+  it('REFUSES the last included part \u2014 consistent with setPartExcluded', () => {
+    const supplies = suppliesFor({ k1: { excluded: true } });
+    expect(canDeselectFromSources(supplies, children, 'k2')).toBe(false);
+  });
+});
+
+describe('initialPrefilledSourceIds (RC4 hydration exemption)', () => {
+  it('pre-marks every HYDRATED board source, and no pool source', () => {
+    const ids = initialPrefilledSourceIds([
+      makeSource({ sourceId: 'b1' }),
+      makeSource({ sourceId: 'p1', kind: 'pool' }),
+      makeSource({ sourceId: 'b2' }),
+    ]);
+    expect([...ids].sort()).toEqual(['b1', 'b2']);
+  });
+
+  it('a fresh wizard pre-marks nothing \u2014 every board pulled this session seeds', () => {
+    expect(initialPrefilledSourceIds([]).size).toBe(0);
+  });
+});
 describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
   const tasksById: Record<string, Task> = {
     c10: counter('c10', 10),
@@ -206,24 +282,26 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
     };
   }
 
-  it('seeds each counting member with goal − its progress in the source window', () => {
+  it('seeds each counting member with goal minus its progress in the source window', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const next = prefillRemainingTargets(sources, 'b1', supply(), tasksById);
+    const { sources: next, settled } = prefillRemainingTargets(sources, 'b1', supply(), tasksById);
     expect(memberRuleFor(next[0], 'c10').target).toBe(remainingTarget(10, 3));
     expect(memberRuleFor(next[0], 'c10').target).toBe(7);
-    // No recorded progress → the whole goal remains.
+    // No recorded progress -> the whole goal remains.
     expect(memberRuleFor(next[0], 'c5').target).toBe(5);
+    expect(settled).toBe(true);
   });
 
   it('skips goal-less counters and non-counting members', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const rules = prefillRemainingTargets(sources, 'b1', supply(), tasksById)[0].memberRules ?? {};
+    const rules =
+      prefillRemainingTargets(sources, 'b1', supply(), tasksById).sources[0].memberRules ?? {};
     expect(Object.keys(rules).sort()).toEqual(['c10', 'c5']);
   });
 
   it('floors at 1 when the member is already at (or past) its goal', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const next = prefillRemainingTargets(
+    const { sources: next } = prefillRemainingTargets(
       sources,
       'b1',
       supply({ windowCountByTaskId: { c10: 12 } }),
@@ -234,15 +312,54 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
 
   it('never overwrites an edited target — a re-resolve is idempotent', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const seeded = prefillRemainingTargets(sources, 'b1', supply(), tasksById);
+    const { sources: seeded } = prefillRemainingTargets(sources, 'b1', supply(), tasksById);
     const edited = withMemberRuleInSource(seeded, 'b1', 'c10', { target: 2 });
     const again = prefillRemainingTargets(edited, 'b1', supply(), tasksById);
-    expect(memberRuleFor(again[0], 'c10').target).toBe(2);
-    expect(again).toBe(edited); // nothing left to seed → same identity
+    expect(memberRuleFor(again.sources[0], 'c10').target).toBe(2);
+    expect(again.sources).toBe(edited); // nothing left to seed -> same identity
+    expect(again.settled).toBe(true);
   });
 
-  it('is a no-op for a source that is not pulled', () => {
+  it('is a no-op for a source that is not pulled (and counts as settled)', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    expect(prefillRemainingTargets(sources, 'ghost', supply(), tasksById)).toBe(sources);
+    const result = prefillRemainingTargets(sources, 'ghost', supply(), tasksById);
+    expect(result.sources).toBe(sources);
+    expect(result.settled).toBe(true);
+  });
+
+  it('a supply with NO counting members is settled too — nothing written, never retried', () => {
+    const sources = [makeSource({ sourceId: 'b1' })];
+    const result = prefillRemainingTargets(
+      sources,
+      'b1',
+      supply({ rawSupplyTaskIds: ['plain'], windowCountByTaskId: {} }),
+      tasksById,
+    );
+    expect(result.sources).toBe(sources);
+    expect(result.settled).toBe(true);
+  });
+
+  it('is NOT settled while a supplied member is unknown to the task map — a slow live query is retried, not lost', () => {
+    const sources = [makeSource({ sourceId: 'b1' })];
+    const result = prefillRemainingTargets(sources, 'b1', supply(), {});
+    expect(result.sources).toBe(sources);
+    expect(result.settled).toBe(false);
+
+    // The retry (library now loaded) seeds as usual.
+    const retry = prefillRemainingTargets(result.sources, 'b1', supply(), tasksById);
+    expect(retry.settled).toBe(true);
+    expect(memberRuleFor(retry.sources[0], 'c10').target).toBe(7);
+  });
+
+  it('a HYDRATED board source is pre-marked, so its saved target is never re-seeded', () => {
+    // The hook skips any source in `initialPrefilledSourceIds(...)`; this pins
+    // that a resumed draft's board source IS in that set, and that even a
+    // resolve that slipped through leaves the saved target alone.
+    const saved = withMemberRuleInSource([makeSource({ sourceId: 'b1' })], 'b1', 'c10', {
+      target: 2,
+    });
+    expect(initialPrefilledSourceIds(saved).has('b1')).toBe(true);
+    const anyway = prefillRemainingTargets(saved, 'b1', supply(), tasksById);
+    expect(memberRuleFor(anyway.sources[0], 'c10').target).toBe(2);
   });
 });

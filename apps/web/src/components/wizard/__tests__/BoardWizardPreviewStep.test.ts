@@ -6,9 +6,14 @@ import {
   Timeframe,
   TaskType,
   type BoardSource,
+  type CompoundChild,
   type Task,
 } from '@oybc/shared';
 import { BoardWizardPreviewStep } from '../BoardWizardPreviewStep';
+import {
+  algorithmSupplies,
+  type SupplyInfoMap,
+} from '../../../pages/createHub/wizardSources';
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
 
@@ -82,9 +87,34 @@ function makeController(overrides: Partial<BoardWizardController> = {}): BoardWi
     step1ValidationMessage: null,
     step2ValidationMessage: null,
     isPristine: false,
+    expandedSupplies: [],
     goToStep: () => {},
     ...overrides,
   } as unknown as BoardWizardController;
+}
+
+/**
+ * §Member rules (B3) — the controller resolves `expandedSupplies` from its
+ * sources + supply cache + compound children; a fixture that sets `sources`
+ * must set them too, or it is testing a state the hook can't produce.
+ */
+function withSupplies(
+  sources: BoardSource[],
+  supplyInfoBySourceId: SupplyInfoMap,
+  childrenByCompoundId: Record<string, CompoundChild[]> = {},
+  tasksById: Record<string, Pick<Task, 'id' | 'type'>> = {},
+): Partial<BoardWizardController> {
+  return {
+    sources,
+    supplyInfoBySourceId,
+    childrenByCompoundId,
+    expandedSupplies: algorithmSupplies(
+      sources,
+      supplyInfoBySourceId,
+      childrenByCompoundId,
+      tasksById,
+    ),
+  };
 }
 
 function makeLibrary(tasks: Task[]): TaskLibrary {
@@ -125,14 +155,13 @@ describe('BoardWizardPreviewStep — repeating-board summary-card view (frame 5b
     };
     const controller = makeController({
       isRecurring: true,
-      sources: [pool1Source],
-      supplyInfoBySourceId: {
+      ...withSupplies([pool1Source], {
         'pool-1': {
           displayName: 'Morning Kickstart',
           rawSupplyTaskIds: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'],
           doneTaskIds: new Set<string>(),
         },
-      },
+      }),
       poolOrder: ['t1', 't2'],
       manualTaskIds: new Set(['t1', 't2']),
       selectedTaskIds: new Set(['t1', 't2', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6']),
@@ -206,5 +235,93 @@ describe('BoardWizardPreviewStep — repeating-board summary-card view (frame 5b
     expect(html).toContain('Rearrange');
     expect(html).toContain('Activate Board');
     expect(html).toContain('Save as Draft');
+  });
+});
+
+/**
+ * §Member rules (B3, review Important #1) — the 5b summary's per-source range
+ * line used to recompute the available count WITHOUT the Split-up expansion
+ * (the expansion arguments are trailing + defaulted, so the omission was
+ * silent). A user who split a 3-part compound saw the un-split count on the
+ * summary while the Tasks step, the capacity gate and the actual pick all used
+ * the expanded one.
+ */
+describe('BoardWizardPreviewStep — the summary range line is Split-up aware', () => {
+  const compound: Pick<Task, 'id' | 'type'> = { id: 'c1', type: TaskType.COMPOUND };
+  const children: Record<string, CompoundChild[]> = {
+    c1: [
+      { childTaskId: 'k1', childIndex: 0 },
+      { childTaskId: 'k2', childIndex: 1 },
+      { childTaskId: 'k3', childIndex: 2 },
+    ] as CompoundChild[],
+  };
+  const info: SupplyInfoMap = {
+    'board-1': {
+      displayName: 'Last week',
+      rawSupplyTaskIds: ['c1', 'x'],
+      doneTaskIds: new Set<string>(),
+    },
+  };
+
+  function boardSource(memberRules?: BoardSource['memberRules']): BoardSource {
+    return {
+      sourceId: 'board-1',
+      kind: 'board',
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'all',
+      ...(memberRules ? { memberRules } : {}),
+    };
+  }
+
+  it('reports the SPLIT count ("up to 4"), not the un-split member count', () => {
+    const controller = makeController({
+      isRecurring: true,
+      ...withSupplies(
+        [boardSource({ c1: { split: true } })],
+        info,
+        children,
+        { c1: compound },
+      ),
+      poolOrder: [],
+      manualTaskIds: new Set<string>(),
+      selectedTaskIds: new Set(['k1', 'k2', 'k3', 'x']),
+    });
+
+    const html = renderPreview(controller, []);
+
+    expect(html).toContain('Last week');
+    expect(html).toContain('up to 4'); // 3 parts + x
+    expect(html).not.toContain('up to 2'); // the pre-fix, un-split count
+  });
+
+  it('an excluded part shrinks the line by one', () => {
+    const controller = makeController({
+      isRecurring: true,
+      ...withSupplies(
+        [boardSource({ c1: { split: true, parts: { k2: { excluded: true } } } })],
+        info,
+        children,
+        { c1: compound },
+      ),
+      poolOrder: [],
+      manualTaskIds: new Set<string>(),
+      selectedTaskIds: new Set(['k1', 'k3', 'x']),
+    });
+
+    expect(renderPreview(controller, [])).toContain('up to 3');
+  });
+
+  it('an un-split source still reports its member count', () => {
+    const controller = makeController({
+      isRecurring: true,
+      ...withSupplies([boardSource()], info, children, { c1: compound }),
+      poolOrder: [],
+      manualTaskIds: new Set<string>(),
+      selectedTaskIds: new Set(['c1', 'x']),
+    });
+
+    expect(renderPreview(controller, [])).toContain('up to 2');
   });
 });

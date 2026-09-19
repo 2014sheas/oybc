@@ -604,7 +604,7 @@ export async function persistRecurringTemplate({
   // trio above is the derived P1 dual-write for old-client compat.
   const sources = controller.sources;
   // §Member rules (B3, RC3) — dice for hand-added counters, persisted on the
-  // record so every spawned window rolls them.
+  // record so each recurring board rolls them for its own window.
   const manualTaskVary = controller.manualTaskVary;
   // Decode-compat snapshot only — never read back after this write (see
   // this function's docstring / docs/POOLS_RECURRING.md §Migration).

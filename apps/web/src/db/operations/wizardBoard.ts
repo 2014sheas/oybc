@@ -111,6 +111,12 @@ export interface PersistWizardBoardRowsInput {
    * has. Absent/empty = nothing varies on that layer.
    */
   manualTaskVary?: Record<string, VaryLevel>;
+  /**
+   * §Member rules — uniform `[0, 1)` source for the vary (dice) rolls. RB6:
+   * unseeded `Math.random` in production; injected by tests so a roll can be
+   * asserted exactly instead of only bounded by its range.
+   */
+  rng?: () => number;
 }
 
 /**
@@ -439,6 +445,7 @@ export async function applyStagedTaskEditsForWizardPersist(
  *   MUTATED with the minted rows (read back from Dexie, since RB3 may skip a
  *   live one) so the caller's derivation pass needs no second full-table read.
  * @param manualTaskVary - Dice levels for the hand-added layer (B3, RC3).
+ * @param rng - Vary-roll source; `undefined` = the platform rng (RB6).
  * @returns The ids to place, positionally 1:1 with `selectedIds`.
  */
 async function mintWizardDerivedRows(
@@ -451,6 +458,7 @@ async function mintWizardDerivedRows(
   window: BoardWindow,
   taskSnapshot: Record<string, Task>,
   manualTaskVary: Record<string, VaryLevel>,
+  rng: (() => number) | undefined,
 ): Promise<string[]> {
   // The planner gets LIVE rows only — a soft-deleted root reachable through a
   // member's `sharedCounterId` must not be mirrored into a new derived row.
@@ -563,6 +571,7 @@ async function mintWizardDerivedRows(
     childrenByCompoundId,
     sourceWindowByTaskId,
     events,
+    rng,
   });
 
   // Read the minted rows BACK into the caller's snapshot rather than trusting
@@ -611,6 +620,7 @@ export async function persistWizardBoardRows({
   sources,
   manualTaskIds,
   manualTaskVary,
+  rng,
 }: PersistWizardBoardRowsInput): Promise<string> {
   const isOddBoard = size % 2 !== 0;
   const centerRow = Math.floor(size / 2);
@@ -723,6 +733,7 @@ export async function persistWizardBoardRows({
               },
               taskSnapshot,
               manualTaskVary ?? {},
+              rng,
             )
           : [];
 

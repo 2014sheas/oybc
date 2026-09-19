@@ -14,6 +14,7 @@ import {
   poolSourceSupplyById,
   resolveSourceAvailable,
   effectiveSourceMax,
+  withPartRule,
   type BoardSource,
   type BoardWindow,
   type CompoundChild,
@@ -119,9 +120,27 @@ export function availableCountForSource(
   childrenByCompoundId: SupplyChildrenMap = {},
   tasksById: SupplyTasksMap = {},
 ): number {
-  const supply = algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById).find(
-    (s) => s.source.sourceId === sourceId,
+  return availableCountFromSupplies(
+    algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById),
+    sourceId,
   );
+}
+
+/**
+ * One source's AVAILABLE count read off supplies that are ALREADY expanded —
+ * the form every surface holding `controller.expandedSupplies` should use, so
+ * a display can't silently fall back to the un-split count by omitting the
+ * expansion arguments (the B3 review's Important #1).
+ *
+ * @param supplies - The Split-up-expanded supplies, row-ordered.
+ * @param sourceId - The row to count.
+ * @returns The available count, or 0 when the row isn't among `supplies`.
+ */
+export function availableCountFromSupplies(
+  supplies: readonly ExpandedSupply[],
+  sourceId: string,
+): number {
+  const supply = supplies.find((s) => s.source.sourceId === sourceId);
   return supply ? resolveSourceAvailable(supply).length : 0;
 }
 
@@ -234,10 +253,27 @@ export function clampAllSourceRanges(
 }
 
 /**
- * Library-sheet deselect of a source-supplied task: exclude it from
- * EVERY supplying source (the sheet has no per-source scope — the old
- * flat-removal global-suppress semantics; iOS `toggleTaskSelection`).
- * Returns a NEW sources array with mins re-clamped.
+ * Library-sheet deselect of a source-supplied task: suppress it in EVERY
+ * supplying source (the sheet has no per-source scope — the old flat-removal
+ * global-suppress semantics; iOS `toggleTaskSelection`). Returns a NEW
+ * sources array with mins re-clamped.
+ *
+ * Membership is tested against the EXPANDED supplies, and HOW the id is
+ * suppressed depends on how it got there (§Member rules B3, review
+ * Important #2):
+ *
+ * - a plain member → the source's `excludedTaskIds`, as before;
+ * - a Split-up PART → an `excluded: true` PART RULE on its parent compound.
+ *   The pre-expansion supply never contains a `childTaskId`, so the old
+ *   raw-supply test wrote nothing at all for a part — and the selection
+ *   recompute (which reads the expanded supplies) put the square straight
+ *   back. That is a self-reverting control, the late-mutation shape this
+ *   codebase bans.
+ *
+ * Refuses (leaves that source untouched) when the part is the LAST included
+ * part of its compound — a split member always contributes a square. Callers
+ * driving a user gesture should ask `canDeselectFromSources` FIRST and no-op
+ * on `false`, so the selection is never optimistically dropped and restored.
  */
 export function excludeFromEverySupplier(
   sources: BoardSource[],
@@ -247,13 +283,32 @@ export function excludeFromEverySupplier(
   childrenByCompoundId: SupplyChildrenMap = {},
   tasksById: SupplyTasksMap = {},
 ): BoardSource[] {
-  const next = sources.map((source) => {
-    const raw = supplyInfo[source.sourceId]?.rawSupplyTaskIds ?? [];
-    if (!raw.includes(taskId) || source.excludedTaskIds.includes(taskId)) {
-      return source;
+  const supplies = algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById);
+  let next = sources;
+  for (const supply of supplies) {
+    if (!supply.supplyTaskIds.includes(taskId)) continue;
+    const sourceId = supply.source.sourceId;
+    const parentId = supply.partOf[taskId];
+    if (parentId !== undefined) {
+      const partIds = (childrenByCompoundId[parentId] ?? []).map((c) => c.childTaskId);
+      const rule = next.find((s) => s.sourceId === sourceId);
+      if (rule === undefined) continue;
+      const included = partIds.filter(
+        (id) => !(rule.memberRules?.[parentId]?.parts?.[id]?.excluded ?? false),
+      );
+      // Last included part — refuse (the expansion would ignore it anyway).
+      if (included.length <= 1 && included.includes(taskId)) continue;
+      next = next.map((s) =>
+        s.sourceId === sourceId ? withPartRule(s, parentId, taskId, { excluded: true }) : s,
+      );
+      continue;
     }
-    return { ...source, excludedTaskIds: [...source.excludedTaskIds, taskId] };
-  });
+    next = next.map((s) =>
+      s.sourceId === sourceId && !s.excludedTaskIds.includes(taskId)
+        ? { ...s, excludedTaskIds: [...s.excludedTaskIds, taskId] }
+        : s,
+    );
+  }
   return clampAllSourceRanges(next, supplyInfo, tasksRequired, childrenByCompoundId, tasksById);
 }
 

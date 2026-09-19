@@ -41,6 +41,7 @@ import {
   withSourceRange,
 } from './wizardSourcesLogic';
 import {
+  initialPrefilledSourceIds,
   prefillRemainingTargets,
   pruneRulesForExcludedMember,
 } from './wizardMemberRulesLogic';
@@ -70,7 +71,7 @@ export interface UseWizardSourcesArgs {
    * §Member rules (B3, RC4) — true on a ONE-OFF wizard: when a board
    * source's supply first resolves, its counting members are seeded with
    * their REMAINING target for this board. A recurring wizard passes false
-   * and leaves `target` absent, so every spawned window auto-targets
+   * and leaves `target` absent, so each recurring board auto-targets
    * against its own window instead.
    */
   prefillRemainingTargetsOnResolve: boolean;
@@ -194,22 +195,25 @@ export function useWizardSources({
     tasksByIdRef.current = tasksById;
   }, [tasksById]);
   /**
-   * §Member rules (B3, RC4) — board sources already seeded.
-   *
-   * Seeded at mount with every board source the wizard HYDRATED (a resumed
-   * draft / an edited repeating record): those were pulled in an earlier
-   * session and their saved rules are the person's own state — silently
-   * rewriting them on resume would be exactly the late-mutation shape this
-   * codebase bans. Only a board pulled in THIS session gets seeded.
-   *
-   * Then once-per-source for the wizard's lifetime, so re-resolving a supply
-   * (pulling another board, a live-query refresh) can never stomp a target
-   * the person has since edited — or re-seed one they cleared.
+   * §Member rules (B3, RC4) — the board sources whose prefill decision is
+   * already settled at mount: everything the wizard HYDRATED (a resumed
+   * draft / an edited repeating record). Their saved rules are the person's
+   * own state; rewriting them when the supply resolves would be exactly the
+   * late-mutation shape this codebase bans. Immutable — the session's own
+   * seeded set is the separate ref below (never mutate a `useState` value).
    */
-  const [hydratedBoardSourceIds] = useState<Set<string>>(
-    () => new Set(sources.filter((s) => s.kind === 'board').map((s) => s.sourceId)),
+  const [hydratedBoardSourceIds] = useState<Set<string>>(() =>
+    initialPrefilledSourceIds(sources),
   );
-  const prefilledSourceIdsRef = useRef<Set<string>>(hydratedBoardSourceIds);
+  /**
+   * Board sources seeded in THIS session. A source lands here only once its
+   * prefill decision is SETTLED — every supplied member resolved in the live
+   * task map — so a supply that arrives before the task query does is retried
+   * on the next resolve instead of being permanently (and silently) skipped.
+   * After that it is once-per-source for the wizard's lifetime, so a
+   * re-resolve can never stomp a target the person edited or cleared.
+   */
+  const seededSourceIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const ids = boardSourceIdsKey === '' ? [] : boardSourceIdsKey.split('|');
     if (ids.length === 0) return;
@@ -226,18 +230,22 @@ export function useWizardSources({
       // (and the windowed counts it carries) resolves asynchronously, so at
       // pull time there is nothing to compute a remaining target from.
       for (const boardId of ids) {
-        if (prefilledSourceIdsRef.current.has(boardId)) continue;
-        prefilledSourceIdsRef.current.add(boardId);
+        if (hydratedBoardSourceIds.has(boardId)) continue;
+        if (seededSourceIdsRef.current.has(boardId)) continue;
         const supply = next[boardId];
-        setSources((prev) =>
-          prefillRemainingTargets(prev, boardId, supply, tasksByIdRef.current),
-        );
+        setSources((prev) => {
+          const result = prefillRemainingTargets(prev, boardId, supply, tasksByIdRef.current);
+          // Mark seeded only once the decision is final (see the ref's doc):
+          // a member the task map doesn't know yet leaves it open for a retry.
+          if (result.settled) seededSourceIdsRef.current.add(boardId);
+          return result.sources;
+        });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [boardSourceIdsKey, prefillRemainingTargetsOnResolve]);
+  }, [boardSourceIdsKey, prefillRemainingTargetsOnResolve, hydratedBoardSourceIds]);
 
   /**
    * Board Sources P4 — apply a sources transition: compute which selected

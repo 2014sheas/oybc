@@ -21,7 +21,7 @@ import { RisoSegmented } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
 import { TypeBadge } from '../TypeBadge';
 import {
-  availableCountForSource,
+  availableCountFromSupplies,
   sourceRangeLine,
 } from '../../pages/createHub/wizardSources';
 import {
@@ -529,9 +529,12 @@ export function BoardWizardPreviewStep({
                 <span className={styles.sourcesSummaryRangeLine}>
                   {sourceRangeLine(
                     source,
-                    availableCountForSource(
-                      controller.sources,
-                      controller.supplyInfoBySourceId,
+                    // §Member rules (B3) — read the count off the EXPANDED
+                    // supplies the gate + the pick already use, so a Split-up
+                    // source's line reports its parts, not the un-split
+                    // member count.
+                    availableCountFromSupplies(
+                      controller.expandedSupplies ?? [],
                       source.sourceId,
                     ),
                   )}

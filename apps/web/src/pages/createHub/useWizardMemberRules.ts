@@ -37,6 +37,7 @@ import {
 } from './wizardSources';
 import {
   canSetPartExcluded,
+  pruneManualVary,
   withManualVary,
   withMemberRuleInSource,
   withPartRuleInSource,
@@ -93,6 +94,13 @@ export interface UseWizardMemberRulesArgs {
   tasksRequired: number;
   /** Live id→Task lookup (the expansion reads `type`). */
   tasksById: Record<string, Task>;
+  /**
+   * This session's not-yet-persisted tasks. A counter created inside the
+   * wizard's New Task sheet is hand-added and dice-able, but it is NOT in
+   * the live library map yet — without it the counting guard in
+   * `setManualVary` would refuse the very rows the UI offers dice on.
+   */
+  pendingTasks: Map<string, PendingTaskPayload>;
   /** The live compound-children map (see {@link useWizardCompoundChildren}). */
   childrenByCompoundId: Record<string, CompoundChild[]>;
 }
@@ -130,8 +138,18 @@ export interface WizardMemberRulesController {
   ) => void;
   /** Set a counting part's dice level. */
   setPartVary: (sourceId: string, taskId: string, childId: string, level: VaryLevel) => void;
-  /** Set a HAND-ADDED counter's dice level (not a source member). */
+  /**
+   * Set a HAND-ADDED counter's dice level (not a source member). A
+   * non-counting task is a no-op — the guard lives in the STATE layer, not
+   * only in the UI (see `withManualVary`).
+   */
   setManualVary: (taskId: string, level: VaryLevel) => void;
+  /**
+   * Drop a task's dice when it LEAVES the hand-added layer (deselect /
+   * remove), so a stale entry can't ride into the draft blob or onto the
+   * repeating record. Wizard-internal — not part of the controller surface.
+   */
+  pruneManualVaryFor: (taskId: string) => void;
   /** Reset the rules layer (the wizard's `reset()`). */
   resetMemberRules: () => void;
 }
@@ -150,6 +168,7 @@ export function useWizardMemberRules({
   supplyInfoBySourceId,
   tasksRequired,
   tasksById,
+  pendingTasks,
   childrenByCompoundId,
 }: UseWizardMemberRulesArgs): WizardMemberRulesController {
   const [manualTaskVary, setManualTaskVary] =
@@ -230,8 +249,18 @@ export function useWizardMemberRules({
     [setSources],
   );
 
-  const setManualVary = useCallback((taskId: string, level: VaryLevel) => {
-    setManualTaskVary((prev) => withManualVary(prev, taskId, level));
+  const setManualVary = useCallback(
+    (taskId: string, level: VaryLevel) => {
+      // Library first, then this session's pending tasks (a wizard-created
+      // counter is dice-able before it is ever written).
+      const task = tasksById[taskId] ?? pendingTasks.get(taskId)?.task;
+      setManualTaskVary((prev) => withManualVary(prev, taskId, level, task));
+    },
+    [tasksById, pendingTasks],
+  );
+
+  const pruneManualVaryFor = useCallback((taskId: string) => {
+    setManualTaskVary((prev) => pruneManualVary(prev, taskId));
   }, []);
 
   const resetMemberRules = useCallback(() => {
@@ -249,6 +278,7 @@ export function useWizardMemberRules({
     setPartTarget,
     setPartVary,
     setManualVary,
+    pruneManualVaryFor,
     resetMemberRules,
   };
 }

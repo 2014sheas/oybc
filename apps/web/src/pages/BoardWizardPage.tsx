@@ -6,7 +6,7 @@ import type {
   UserPreferences,
 } from '@oybc/shared';
 import { usePoolsQuery } from '../hooks';
-import { availableCountForSource } from './createHub/wizardSources';
+import { availableCountFromSupplies } from './createHub/wizardSources';
 import {
   fetchSourceSheetBoardEntries,
   type SourceSheetBoardEntry,
@@ -347,13 +347,10 @@ export function BoardWizardPage({
             supplyInfoBySourceId={wizard.supplyInfoBySourceId}
             expandedSourceIds={wizard.expandedSourceIds}
             availableCountForSource={(sourceId) =>
-              availableCountForSource(
-                wizard.sources,
-                wizard.supplyInfoBySourceId,
-                sourceId,
-                wizard.childrenByCompoundId,
-                library.taskMap,
-              )
+              // §Member rules (B3) — the controller already resolved the
+              // Split-up-expanded supplies; recomputing here is how a caller
+              // silently ends up on the un-split count.
+              availableCountFromSupplies(wizard.expandedSupplies, sourceId)
             }
             capacity={wizard.capacity}
             suppliesPending={wizard.suppliesPending}
