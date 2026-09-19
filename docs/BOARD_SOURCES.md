@@ -1351,10 +1351,14 @@ Three shapes, chosen by what the row actually has:
 
 **Surfaces**
 
-- shared `memberSummaryLabel(…)`: dispatches to the existing
+- shared `countingSummary(target, level, goal, unit)` and
+  `compoundSummary(split, partIds, excludedPartIds, level)`, each returning
+  `MemberSummary { text, varying }`: they dispatch to the existing
   `varyRangeLabel` / `splitSquaresNote` rather than formatting anything new,
   so the Swift twin and the `display` section of `memberRuleVectors.json`
-  stay a thin delta.
+  stay a thin delta. Two narrow functions rather than one polymorphic
+  `memberSummaryLabel`, so each is independently vector-pinnable and neither
+  takes arguments the other ignores.
 - compact stepper gains an optional `suffix` ("/ 30 Miles"), rendered as
   static text inside the pill border. Back-compatible — `RisoSpecialTaskPanel`
   passes none. Only the number stays editable, so the Task 7 ruling (commit
