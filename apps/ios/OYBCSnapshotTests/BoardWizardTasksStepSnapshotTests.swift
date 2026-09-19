@@ -34,6 +34,8 @@ import SnapshotTesting
 /// which is where the stepper, dice, inline range and part lines live:
 ///   - counting, dice on: pill "35 / 35 mi" · dice · "28–35 mi" inline
 ///   - the SAME counting member from a POOL: dice alone, no stepper (RC5)
+///   - a counting member carrying the counter-family clash hint: a
+///     TWO-LINE title block, so the row is taller than `minHeight: 28`
 ///   - compound Split up with an excluded part: toggle + note + parts
 ///
 /// Each test renders at iPhone 16 width (393pt). iOS-version pinning is
@@ -432,6 +434,47 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    /// The counter-family clash hint, which had NO baseline watching it
+    /// until now: the title block grows to two lines, so `minHeight: 28`
+    /// (a floor, not a clamp) stops governing the row's height. This is
+    /// the case that proves the ✕ is centred by the LAYOUT — it stays
+    /// level with the badge here as well as on a one-line row, which an
+    /// absolute top offset could not manage at both heights.
+    func testMemberRowCountingClashExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                clashTitle: "Run 100 mi",
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(layout: .fixed(width: 393, height: 100)),
+            record: recordMode
+        )
+    }
+
+    /// The same clash row at an accessibility text size. This is the case
+    /// that actually exceeds `minHeight: 28` — measured at default type
+    /// the two-line title still fits inside the 28pt floor, so the plain
+    /// clash case above pictures the state without stretching it. Riso
+    /// fonts are `relativeTo: .body`, so a large content-size category
+    /// grows both lines and the main line genuinely outgrows the floor;
+    /// the ✕ must still come out level with the badge, which only
+    /// layout-driven centring can manage.
+    func testMemberRowCountingClashExpandedLargeText() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                clashTitle: "Run 100 mi",
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(
+                layout: .fixed(width: 393, height: 150),
+                traits: .init(preferredContentSizeCategory: .accessibilityMedium)
+            ),
+            record: recordMode
+        )
+    }
+
     /// The Split-up compound expanded: the One square / Split up pill and
     /// the "1 square" note on line 2, then one line per part — the
     /// excluded one struck with its UNDO pill, the last included one
@@ -550,6 +593,7 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     private func makeExpandedMemberRow(
         taskId: String,
         kind: BoardSource.Kind = .board,
+        clashTitle: String? = nil,
         rule: BoardSourceMemberRule
     ) -> some View {
         let library = SnapshotFixtures.makeTaskLibrary(state: .memberRules)
@@ -561,6 +605,7 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             task: taskById[taskId],
             taskById: taskById,
             state: .included,
+            clashTitle: clashTitle,
             rule: rule,
             parts: library.compoundChildrenByCompound[taskId] ?? [],
             fromBoard: kind == .board,

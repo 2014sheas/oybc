@@ -365,6 +365,25 @@ struct RisoMemberRuleRowView: View {
                     .accessibilityValue(model.summary?.text ?? "")
                     .accessibilityHint(isExpanded ? "Collapse rule controls" : "Expand rule controls")
                     .accessibilityAddTraits(.isButton)
+                    // The ✕ is overlaid on the MAIN LINE, not on the whole
+                    // row, and centred BY THE LAYOUT rather than by an
+                    // offset. `minHeight: 28` is a floor, not a clamp: a
+                    // counter-clash member's two-line title grows this
+                    // block past 28pt, and any absolute top padding would
+                    // stop centring there. `.trailing` holds at one line,
+                    // two lines, or whatever a future row grows to. The 11
+                    // is the row's own trailing padding, so BOTH axes are
+                    // now the row's own measurements, never tuned
+                    // constants.
+                    //
+                    // Placed after `.onTapGesture` so the ✕ is composited
+                    // above the tap area and wins its own taps (ruling
+                    // I3), and after the accessibility modifiers so it
+                    // stays its OWN element rather than becoming a child
+                    // of the row's a11y container.
+                    .overlay(alignment: .trailing) {
+                        trailingControl.padding(.trailing, 11)
+                    }
             } else {
                 mainLine(model)
                     .padding(.vertical, 7)
@@ -391,24 +410,13 @@ struct RisoMemberRuleRowView: View {
                 .padding(.bottom, 8)
             }
         }
-        .opacity(state == .included ? 1 : 0.45)
         // Pre-flight ruling C2: ONLY an expandable row overlays its
-        // trailing control into the 39pt gutter. The ✕ (28pt) and ✓ (22pt)
-        // fit; the excluded state's UNDO pill (~60pt) does not — and a
-        // non-expandable row needs no full-rect hit area anyway, so it
-        // keeps its pre-B3.1 inline control and 11pt trailing padding.
-        // Both paddings are the row's OWN padding, so the overlaid ✕ lands
-        // exactly where the inline one does on a non-expandable row above
-        // or below it. Trailing 11: the main line reserves 39 = 28 + 11.
-        // Top 7: the row's vertical padding, so the ✕ occupies 7…35 in a
-        // 42pt row either way. (Top 4 was calibrated against the badge-
-        // driven ~34pt row that existed before `minHeight: 28`, and left
-        // the ✕ ~3pt high once the row grew — and would drift further on a
-        // counter-clash row, whose two-line title makes the row taller
-        // still while an absolute top padding stays put.)
-        .overlay(alignment: .topTrailing) {
-            if model.isExpandable { trailingControl.padding(.trailing, 11).padding(.top, 7) }
-        }
+        // trailing control into the 39pt gutter (done on its main line,
+        // above). The ✕ (28pt) and ✓ (22pt) fit; the excluded state's UNDO
+        // pill (~60pt) does not — and a non-expandable row needs no
+        // full-rect hit area anyway, so it keeps its pre-B3.1 inline
+        // control and 11pt trailing padding.
+        .opacity(state == .included ? 1 : 0.45)
         .overlay(alignment: .top) { hairline }
         // M4: a row that was expanded, then excluded, must not come back
         // expanded on UNDO — "always collapsed on open" is a rule about
