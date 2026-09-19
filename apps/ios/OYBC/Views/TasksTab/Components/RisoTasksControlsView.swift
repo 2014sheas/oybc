@@ -178,9 +178,7 @@ struct RisoTasksControlsView: View {
             sortMenu
             statusMenu
             usageMenu
-            Toggle("Show expired tasks", isOn: $showExpired)
-                .font(.risoBody(13, .medium))
-                .tint(Color.risoBlue)
+            RisoShowExpiredToggle(isOn: $showExpired)
 
             // Group by compound toggle
             Button {

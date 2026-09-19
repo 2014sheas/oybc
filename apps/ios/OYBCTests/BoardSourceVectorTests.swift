@@ -16,13 +16,15 @@ final class BoardSourceVectorTests: XCTestCase {
 
     /// Deterministic uniform [0,1) LCG — twin of bingo-core's
     /// `tests/seededRng.ts` `makeSeededRng`. Same seed ⇒ same sequence.
+    ///
+    /// A reference wrapper around the production value-type
+    /// ``OYBC/SeededRng`` (B3 RC6 promoted the recurrence into the app
+    /// target): the vectors below hand one generator to several calls, which
+    /// wants shared mutable state.
     private final class SeededRng {
-        private var state: UInt32
-        init(seed: UInt32) { state = seed }
-        func next() -> Double {
-            state = state &* 1664525 &+ 1013904223
-            return Double(state) / 4294967296.0
-        }
+        private var rng: OYBC.SeededRng
+        init(seed: UInt32) { rng = OYBC.SeededRng(seed: seed) }
+        func next() -> Double { rng.next() }
     }
 
     // MARK: - Fixture decoding

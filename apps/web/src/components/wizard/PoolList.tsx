@@ -1,7 +1,26 @@
 import { useState } from 'react';
-import { AchievementTrigger, OperatorType, TaskType, type CompoundChild, type Task } from '@oybc/shared';
+import {
+  AchievementTrigger,
+  OperatorType,
+  TaskType,
+  varyRangeLabel,
+  type CompoundChild,
+  type Task,
+  type VaryLevel,
+} from '@oybc/shared';
+import { DiceButton } from '../riso';
 import { TypeBadge } from '../TypeBadge';
 import styles from './PoolList.module.css';
+
+/** off → a little → a lot → off (handoff §Interactions "Variation (dice)"). */
+function nextVary(level: VaryLevel): VaryLevel {
+  return level === 0 ? 1 : level === 1 ? 2 : 0;
+}
+
+/** A hand-added counting row earns a dice: it needs a goal to vary around. */
+function countingGoal(task: Task): number {
+  return task.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
+}
 
 export interface PoolListProps {
   /** Insertion order (`useBoardWizard.poolOrder`) — renders in THIS order,
@@ -55,6 +74,14 @@ export interface PoolListProps {
    * pool. Renders the "shares a counter with 'X' · one per board" hint.
    */
   counterClashByTaskId?: Map<string, string>;
+
+  /**
+   * §Member rules (B3) — dice level per HAND-ADDED counting task
+   * (`useBoardWizard.manualTaskVary`). Absent ids are level 0.
+   */
+  manualTaskVary?: Record<string, VaryLevel>;
+  /** Sets a hand-added counting task's dice level. Omit to hide the dice. */
+  onSetManualVary?: (taskId: string, level: VaryLevel) => void;
 }
 
 /**
@@ -88,11 +115,16 @@ export function PoolList({
   countOverride,
   leadingRows,
   counterClashByTaskId,
+  manualTaskVary,
+  onSetManualVary,
 }: PoolListProps): React.ReactElement {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const poolTasks = poolOrder
     .map((id) => effectiveTaskMap[id])
     .filter((t): t is Task => t !== undefined);
+  // The dice column only exists when SOME row can use it, so a board with
+  // no counting tasks keeps the original 2-or-3-slot gutter width.
+  const showVaryColumn = onSetManualVary !== undefined && poolTasks.some((t) => countingGoal(t) > 0);
 
   return (
     <div className={styles.section}>
@@ -118,6 +150,14 @@ export function PoolList({
               effectiveChildrenByCompound[task.id] ?? [],
               clashTitle,
             );
+            const goal = countingGoal(task);
+            const varyLevel: VaryLevel = manualTaskVary?.[task.id] ?? 0;
+            // Hand-added counters vary around their own goal — there is no
+            // source window to pro-rate against.
+            // Gated on the dice COLUMN too: an unactionable blue range with
+            // no control to change it would be a dead end.
+            const varyRange =
+              showVaryColumn && goal > 0 ? varyRangeLabel(goal, varyLevel, goal, task.unit ?? '') : null;
             const boardCount = taskBoardCounts[task.id] ?? 0;
             const usageHint = isCompound
               ? `${effectiveChildrenByCompound[task.id]?.length ?? 0} subtask${
@@ -161,6 +201,9 @@ export function PoolList({
                   <div className={styles.rowText}>
                     <span className={styles.rowTitle}>{task.title || '(untitled task)'}</span>
                     {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
+                    {varyRange !== null && (
+                      <span className={styles.rowRangeLine}>{varyRange}</span>
+                    )}
                   </div>
                   <span className={styles.rowUsage}>{usageHint}</span>
                   {isCompound && (
@@ -183,6 +226,17 @@ export function PoolList({
                       <span className={isCenter ? styles.starOn : styles.starOff}>{isCenter ? '★' : '☆'}</span>
                     </button>
                   )}
+                  {showVaryColumn &&
+                    (goal > 0 && onSetManualVary ? (
+                      <div className={styles.gutterSlot}>
+                        <DiceButton
+                          level={varyLevel}
+                          onCycle={() => onSetManualVary(task.id, nextVary(varyLevel))}
+                        />
+                      </div>
+                    ) : (
+                      <div className={styles.gutterSlot} aria-hidden="true" />
+                    ))}
                   {task.type === TaskType.ACHIEVEMENT ? (
                     <div className={styles.gutterSlot} aria-hidden="true" />
                   ) : (

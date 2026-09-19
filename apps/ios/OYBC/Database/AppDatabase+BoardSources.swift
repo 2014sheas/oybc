@@ -23,6 +23,22 @@ struct BoardSourceSupplyInfo: Equatable {
     let supplyTaskIds: [String]
     /// The subset of `supplyTaskIds` complete in the board's window.
     let doneTaskIds: Set<String>
+    /// §Member rules (B3, RC4) — each event-owning COUNTING member's
+    /// windowed count (Σ live increment deltas inside THIS board's window),
+    /// the same number the source board's own squares display. Keyed by task
+    /// id; a member with no entry has made no measurable progress here (or
+    /// isn't an event-owning counter at all — compounds, achievements and
+    /// window-stamped derived counters are the documented per-cell carve-out
+    /// and read their own caches instead).
+    ///
+    /// Feeds the one-off wizard's "remaining" target prefill: pull a
+    /// 3-of-10-done counter onto a fresh one-off board and its member rule is
+    /// seeded with `remainingTarget(goal: 10, windowCount: 3) == 7`.
+    let windowCountByTaskId: [String: Int]
+    /// §Member rules (B3, RC5) — the source board's OWN window, so a caller
+    /// can pro-rate an auto target (`effectiveMemberTarget`) without a second
+    /// board read.
+    let sourceWindow: BoardSources.BoardWindow
 }
 
 extension AppDatabase {
@@ -135,7 +151,8 @@ extension AppDatabase {
         let placedIds = rows.map { $0.taskId }
         guard !placedIds.isEmpty else {
             return BoardSourceSupplyInfo(
-                displayName: board.displayName, supplyTaskIds: [], doneTaskIds: []
+                displayName: board.displayName, supplyTaskIds: [], doneTaskIds: [],
+                windowCountByTaskId: [:], sourceWindow: Self.boardWindow(board)
             )
         }
 
@@ -156,6 +173,7 @@ extension AppDatabase {
         var seen = Set<String>()
         var supply: [String] = []
         var done = Set<String>()
+        var windowCountByTaskId: [String: Int] = [:]
         for id in placedIds {
             // `isSourceSupplyTask`: achievements never enter source supply —
             // hand-placed watchers on the pulled board stay on that board only.
@@ -166,11 +184,17 @@ extension AppDatabase {
             supply.append(id)
             let isDone: Bool
             if isEventOwningTask(task) {
-                isDone = resolveTaskWindowState(
+                let state = resolveTaskWindowState(
                     task: task,
                     events: eventsByTaskId[id] ?? [],
                     windowStart: board.startDate
-                ).isCompleted
+                )
+                isDone = state.isCompleted
+                // §Member rules (B3, RC4) — the same windowed resolution that
+                // decides "done" also yields the count the remaining-target
+                // prefill needs; a counter's progress in THIS window is read
+                // once, never re-derived.
+                if task.type == .counting { windowCountByTaskId[id] = state.count }
             } else {
                 isDone = task.isCompleted
             }
@@ -179,7 +203,22 @@ extension AppDatabase {
         return BoardSourceSupplyInfo(
             displayName: board.displayName,
             supplyTaskIds: supply,
-            doneTaskIds: done
+            doneTaskIds: done,
+            windowCountByTaskId: windowCountByTaskId,
+            sourceWindow: Self.boardWindow(board)
+        )
+    }
+
+    /// The window a source board covers — `Board`'s own timeframe + dates in
+    /// the shape `effectiveMemberTarget` pro-rates against.
+    ///
+    /// - Parameter board: The resolved source board.
+    /// - Returns: Its window.
+    static func boardWindow(_ board: Board) -> BoardSources.BoardWindow {
+        BoardSources.BoardWindow(
+            timeframe: board.timeframe,
+            startDate: board.startDate,
+            endDate: board.endDate
         )
     }
 }

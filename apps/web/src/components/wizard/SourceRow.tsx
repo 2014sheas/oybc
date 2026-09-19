@@ -1,10 +1,16 @@
-import { useState } from 'react';
-import { TaskType, type BoardSource, type CompoundChild, type Task } from '@oybc/shared';
+import {
+  memberRuleFor,
+  type BoardSource,
+  type BoardWindow,
+  type CompoundChild,
+  type PlanMode,
+  type Task,
+  type VaryLevel,
+} from '@oybc/shared';
 import type { WizardSourceSupply } from '../../pages/createHub/wizardSources';
 import { RisoSegmented } from '../riso';
-import { TypeBadge } from '../TypeBadge';
+import { MemberRuleRow, type MemberState } from './MemberRuleRow';
 import { RangeSlider } from './RangeSlider';
-import { RowContextMenu, type RowContextMenuItem } from './RowContextMenu';
 import styles from './SourceRow.module.css';
 
 export interface SourceRowProps {
@@ -24,20 +30,20 @@ export interface SourceRowProps {
   /** Counter-family exclusivity — member id → the OTHER family member's
    *  title, when both are visible in the pool ("one per board" hint). */
   counterClashByTaskId?: Map<string, string>;
-  // Per-member actions (owner report 2026-09-15: member rows offered
-  // ONLY the ✕ exclude — no counter derive, no compound subtasks; same
-  // ⋯-menu vocabulary (#470). All optional so read-only mounts render no ⋯.
-  /** Children per compound — gates the subtask items. */
+  /** Children per compound — feeds the Split-up part lines. */
   compoundChildrenByCompound?: Record<string, CompoundChild[]>;
-  /** Wizard selection — subtask items disable once the child is added. */
-  selectedTaskIds?: Set<string>;
-  /** Counting member with template fields → open the derive modal. */
-  onDeriveMember?: (task: Task) => void;
-  /** Hand-add a task id (a compound's subtask) to the wizard selection. */
-  onAddTask?: (taskId: string) => void;
+  // ── §Member rules (B3) — per-member rule editing. ──────────────────────
+  /** Whether the board being assembled is one-off or repeating. */
+  mode: PlanMode;
+  /** The window of the board being assembled (pro-rating target window). */
+  wizardWindow: BoardWindow;
+  onSetMemberTarget: (taskId: string, target: number | undefined) => void;
+  onSetMemberVary: (taskId: string, level: VaryLevel) => void;
+  onSetMemberSplit: (taskId: string, split: boolean) => void;
+  onSetPartExcluded: (taskId: string, childId: string, excluded: boolean) => void;
+  onSetPartTarget: (taskId: string, childId: string, target: number | undefined) => void;
+  onSetPartVary: (taskId: string, childId: string, level: VaryLevel) => void;
 }
-
-type MemberState = 'included' | 'excluded' | 'filteredDone';
 
 /**
  * SourceRow — one pulled source's row in the wizard's "On your board"
@@ -49,7 +55,9 @@ type MemberState = 'included' | 'excluded' | 'filteredDone';
  * header toggles the expanded panel: (boards only) the All squares / Not
  * done yet segmented, the range block (kicker, range label, "Use all",
  * the two-handle `RangeSlider`, the non-default note line), then the
- * member rows (✕ exclude / UNDO pill / filtered-done green ✓).
+ * member rows — each a `MemberRuleRow`, which owns the ✕/UNDO/✓ control
+ * AND the §Member rules controls (target stepper, dice, One square /
+ * Split up + part lines).
  *
  * Header is a plain container + SIBLING remove button — never a button
  * nested in a button (invalid HTML; the iOS row has the same rule for
@@ -68,14 +76,15 @@ export function SourceRow({
   onToggleExclude,
   counterClashByTaskId,
   compoundChildrenByCompound,
-  selectedTaskIds,
-  onDeriveMember,
-  onAddTask,
+  mode,
+  wizardWindow,
+  onSetMemberTarget,
+  onSetMemberVary,
+  onSetMemberSplit,
+  onSetPartExcluded,
+  onSetPartTarget,
+  onSetPartVary,
 }: SourceRowProps): React.ReactElement {
-  /** Open ⋯ member menu — anchored at the chip. */
-  const [memberMenu, setMemberMenu] = useState<{ taskId: string; x: number; y: number } | null>(
-    null,
-  );
   const isDefaultRange = source.min === 0 && source.max === null;
   const effectiveMax = source.max ?? availableCount;
   const rangeText =
@@ -183,179 +192,35 @@ export function SourceRow({
           </div>
 
           <ul className={styles.memberList}>
-            {supply.rawSupplyTaskIds.map((taskId) => {
-              const state = memberState(taskId);
-              const task = taskById[taskId];
-              const title = task?.title || '(untitled task)';
-              const clashTitle = counterClashByTaskId?.get(taskId);
-              return (
-                <li
-                  key={taskId}
-                  className={`${styles.memberRow} ${state !== 'included' ? styles.memberDimmed : ''}`}
-                >
-                  <TypeBadge type={task?.type ?? TaskType.NORMAL} letterOnly size="small" />
-                  <span className={styles.memberText}>
-                    <span
-                      className={`${styles.memberTitle} ${state === 'excluded' ? styles.memberStruck : ''}`}
-                    >
-                      {title}
-                    </span>
-                    {clashTitle !== undefined && (
-                      <span className={styles.memberClashHint}>
-                        shares a counter with &ldquo;{clashTitle}&rdquo; &middot; one per board
-                      </span>
-                    )}
-                  </span>
-                  {task && memberHasActions(task, compoundChildrenByCompound, onDeriveMember, onAddTask) && (
-                    <button
-                      type="button"
-                      className={styles.memberMore}
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        setMemberMenu({ taskId, x: rect.left, y: rect.bottom + 4 });
-                      }}
-                      aria-label={`More actions for ${title}`}
-                    >
-                      ⋯
-                    </button>
-                  )}
-                  {state === 'included' && (
-                    <button
-                      type="button"
-                      className={styles.memberExclude}
-                      onClick={() => onToggleExclude(taskId)}
-                      aria-label={`Exclude ${title} for this board`}
-                    >
-                      ✕
-                    </button>
-                  )}
-                  {state === 'excluded' && (
-                    <button
-                      type="button"
-                      className={styles.memberUndo}
-                      onClick={() => onToggleExclude(taskId)}
-                      aria-label={`Undo excluding ${title}`}
-                    >
-                      UNDO
-                    </button>
-                  )}
-                  {state === 'filteredDone' && (
-                    <span className={styles.memberDoneCheck} aria-label={`${title} is done`}>
-                      ✓
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-
-          {memberMenu && (() => {
-            const target = taskById[memberMenu.taskId];
-            if (!target) return null;
-            return (
-              <RowContextMenu
-                x={memberMenu.x}
-                y={memberMenu.y}
-                items={buildMemberMenuItems({
-                  target,
-                  children: compoundChildrenByCompound?.[target.id] ?? [],
-                  taskById,
-                  selectedTaskIds: selectedTaskIds ?? new Set(),
-                  onDeriveMember,
-                  onAddTask,
-                  close: () => setMemberMenu(null),
-                })}
-                onClose={() => setMemberMenu(null)}
+            {supply.rawSupplyTaskIds.map((taskId) => (
+              <MemberRuleRow
+                key={taskId}
+                task={taskById[taskId]}
+                taskById={taskById}
+                state={memberState(taskId)}
+                clashTitle={counterClashByTaskId?.get(taskId)}
+                rule={memberRuleFor(source, taskId)}
+                parts={compoundChildrenByCompound?.[taskId] ?? []}
+                fromBoard={source.kind === 'board'}
+                sourceWindow={supply.sourceWindow}
+                wizardWindow={wizardWindow}
+                mode={mode}
+                onToggleExclude={() => onToggleExclude(taskId)}
+                onSetTarget={(target) => onSetMemberTarget(taskId, target)}
+                onSetVary={(level) => onSetMemberVary(taskId, level)}
+                onSetSplit={(split) => onSetMemberSplit(taskId, split)}
+                onSetPartExcluded={(childId, excluded) =>
+                  onSetPartExcluded(taskId, childId, excluded)
+                }
+                onSetPartTarget={(childId, target) => onSetPartTarget(taskId, childId, target)}
+                onSetPartVary={(childId, level) => onSetPartVary(taskId, childId, level)}
               />
-            );
-          })()}
+            ))}
+          </ul>
         </div>
       )}
     </li>
   );
-}
-
-/** True when a member row earns the ⋯ chip: a counting template (derive)
- *  or a compound with children (subtask picking), with the matching
- *  callback wired. */
-function memberHasActions(
-  task: Task,
-  childrenByCompound: Record<string, CompoundChild[]> | undefined,
-  onDeriveMember: ((task: Task) => void) | undefined,
-  onAddTask: ((taskId: string) => void) | undefined,
-): boolean {
-  const isCountingTemplate =
-    task.type === TaskType.COUNTING &&
-    task.action != null &&
-    task.unit != null &&
-    task.maxCount != null;
-  if (isCountingTemplate && onDeriveMember) return true;
-  const children = childrenByCompound?.[task.id] ?? [];
-  return task.type === TaskType.COMPOUND && children.length > 0 && onAddTask != null;
-}
-
-/** ⋯ menu for a source member — derive (counting) / subtask picking
- *  (compound), reusing the row-menu vocabulary (#470) items. iOS twin:
- *  `RisoSourceRowView.memberActionsMenu`. */
-function buildMemberMenuItems({
-  target,
-  children,
-  taskById,
-  selectedTaskIds,
-  onDeriveMember,
-  onAddTask,
-  close,
-}: {
-  target: Task;
-  children: CompoundChild[];
-  taskById: Record<string, Task>;
-  selectedTaskIds: Set<string>;
-  onDeriveMember: ((task: Task) => void) | undefined;
-  onAddTask: ((taskId: string) => void) | undefined;
-  close: () => void;
-}): RowContextMenuItem[] {
-  const items: RowContextMenuItem[] = [];
-  const isCountingTemplate =
-    target.type === TaskType.COUNTING &&
-    target.action != null &&
-    target.unit != null &&
-    target.maxCount != null;
-
-  if (isCountingTemplate && onDeriveMember) {
-    items.push({
-      label: 'Derive smaller version…',
-      glyph: '⇣',
-      action: () => {
-        onDeriveMember(target);
-        close();
-      },
-    });
-  }
-  if (target.type === TaskType.COMPOUND && children.length > 0 && onAddTask) {
-    items.push({
-      label: 'Add all subtasks to board',
-      glyph: '⧉',
-      action: () => {
-        for (const child of children) {
-          if (!selectedTaskIds.has(child.childTaskId)) onAddTask(child.childTaskId);
-        }
-        close();
-      },
-    });
-    for (const child of children) {
-      const childTitle = taskById[child.childTaskId]?.title ?? 'Subtask';
-      items.push({
-        label: `Add subtask: ${childTitle}`,
-        glyph: '＋',
-        disabled: selectedTaskIds.has(child.childTaskId),
-        action: () => {
-          onAddTask(child.childTaskId);
-          close();
-        },
-      });
-    }
-  }
-  return items;
 }
 
 /** docs/BOARD_SOURCES.md §Surfaces "Subtitles": pool — "8 tasks" (+ " · 1

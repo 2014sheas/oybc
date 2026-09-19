@@ -1,0 +1,41 @@
+/* DiceButton — 26×22 variation toggle (handoff §Interactions "Variation
+   (dice)"). Off: muted 1.5px outline, no pips. On: blue fill, ink-static
+   pips (adaptive ink on a coloured fill is the dark-mode trap). */
+
+.dice {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.off {
+  border: 1.5px solid var(--riso-muted);
+  background: transparent;
+}
+.off:hover {
+  border-color: var(--riso-ink);
+}
+
+.on {
+  border: 1.5px solid var(--riso-ink);
+  background: var(--riso-blue);
+}
+
+.dice:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+/* `fill` is inherited in SVG, so the pips take this without a child rule. */
+.pips {
+  display: block;
+  fill: var(--riso-ink-static);
+}

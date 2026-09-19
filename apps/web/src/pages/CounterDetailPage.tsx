@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { counterMilestoneProgress } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
@@ -54,7 +54,14 @@ export function CounterDetailPage(): React.ReactElement {
   const { counterId } = useParams<{ counterId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const groups = useSharedCounterGroups(user?.id);
+  // §Member rules (B3, RC9) — Detail FOLLOWS the hub's expired-member
+  // setting, carried in the URL (`?showExpired=1`) by the ledger card that
+  // opened it. Detail owns no toggle of its own; the back links preserve the
+  // param so the hub keeps the setting on the way back.
+  const [searchParams] = useSearchParams();
+  const showExpired = searchParams.get('showExpired') === '1';
+  const countersHubPath = showExpired ? '/profile/counters?showExpired=1' : '/profile/counters';
+  const groups = useSharedCounterGroups(user?.id, { showExpired });
   const dailyTotals = useCounterDailyTotals(counterId);
 
   const [isLogging, setIsLogging] = useState(false);
@@ -168,13 +175,13 @@ export function CounterDetailPage(): React.ReactElement {
     setDeleteError(null);
     try {
       await deleteCounterWithUnlink(counterId);
-      navigate('/profile/counters');
+      navigate(countersHubPath);
     } catch {
       setDeleteError('Failed to delete counter.');
       setIsDeleting(false);
       setDeleteImpact(null);
     }
-  }, [counterId, isDeleting, navigate]);
+  }, [counterId, countersHubPath, isDeleting, navigate]);
 
   const handleCancelDelete = useCallback(() => {
     if (isDeleting) return;
@@ -192,7 +199,7 @@ export function CounterDetailPage(): React.ReactElement {
     return (
       <div className={styles.container}>
         <div className={profileStyles.subPageHeader}>
-          <Link to="/profile/counters" className={profileStyles.backLink} aria-label="Back to Counters">
+          <Link to={countersHubPath} className={profileStyles.backLink} aria-label="Back to Counters">
             &larr;
           </Link>
           <h1 className={profileStyles.header}>Counter</h1>
@@ -224,7 +231,7 @@ export function CounterDetailPage(): React.ReactElement {
       <div className={styles.headerRow}>
         <div className={profileStyles.subPageHeader}>
           <Link
-            to="/profile/counters"
+            to={countersHubPath}
             className={profileStyles.backLink}
             aria-label="Back to Counters"
           >
@@ -459,6 +466,7 @@ export function CounterDetailPage(): React.ReactElement {
         <CounterDeleteConfirmDialog
           counterName={group.name}
           memberCount={deleteImpact.counterMemberCount}
+          derivedWindowCounterCount={deleteImpact.derivedWindowCounterCount}
           members={deleteImpact.counterMembers.map((m) => ({
             id: m.id,
             title: m.title,

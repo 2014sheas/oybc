@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { RisoChip } from '../../components/riso';
+import { ShowExpiredToggle } from '../../components/ShowExpiredToggle';
 import type {
   SortOption,
   StatusFilter,
@@ -219,14 +220,7 @@ export function TasksFilterControls({
               ))}
             </select>
           </label>
-          <label className={styles.dropdownLabel}>
-            <input
-              type="checkbox"
-              checked={showExpired}
-              onChange={(e) => onShowExpiredChange(e.target.checked)}
-            />
-            <span className={styles.dropdownLabelText}>Show expired tasks</span>
-          </label>
+          <ShowExpiredToggle checked={showExpired} onChange={onShowExpiredChange} />
           {isAnyFilterActive && (
             <button
               type="button"

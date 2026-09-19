@@ -74,3 +74,10 @@
   max-width: 280px;
   margin: 0 0 8px;
 }
+
+/* §Member rules (B3, RC9) — the "Show expired tasks" row under the intro. */
+.filterRow {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 10px;
+}

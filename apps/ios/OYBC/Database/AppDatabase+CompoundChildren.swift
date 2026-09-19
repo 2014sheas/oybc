@@ -127,4 +127,28 @@ extension AppDatabase {
         return byCompound
     }
 
+    /// Board Sources §Member rules (B3) — the live children of whichever of
+    /// `candidateTaskIds` are COMPOUND tasks, in ONE read transaction (two
+    /// queries: the type filter, then the batched children fetch). The
+    /// wizard's Split-up expansion asks this of a source's whole raw supply,
+    /// where most ids are not compounds at all.
+    ///
+    /// - Parameter candidateTaskIds: Ids that MIGHT be compounds (a source's
+    ///   raw supply). Empty reads nothing.
+    /// - Returns: Compound task id → its live children, ordered by
+    ///   `childIndex`. Non-compound / soft-deleted ids are absent.
+    func fetchCompoundChildren(
+        forCandidateTaskIds candidateTaskIds: [String]
+    ) throws -> [String: [CompoundChild]] {
+        guard !candidateTaskIds.isEmpty else { return [:] }
+        return try read { db in
+            let compoundIds = try Task
+                .filter(candidateTaskIds.contains(Column("id")) && Column("isDeleted") == false)
+                .fetchAll(db)
+                .filter { $0.type == .compound }
+                .map { $0.id }
+            return try Self.fetchCompoundChildren(db: db, compoundTaskIds: compoundIds)
+        }
+    }
+
 }

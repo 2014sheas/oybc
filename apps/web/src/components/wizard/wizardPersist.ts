@@ -1,14 +1,12 @@
 import {
   CenterSquareType,
   TaskType,
-  Timeframe,
   deriveSpawnedBoardName,
   effectiveSourceMax,
   getTimeframeBoundaries,
   placeBoard,
   resolveSourceAvailable,
   selectBoardTasks,
-  toLocalISO,
   type PendingTemplateSpawn,
   type Task,
 } from '@oybc/shared';
@@ -28,6 +26,11 @@ import {
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
 import { applyPatchToTask, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
+import {
+  applyPreviewDerivedCells,
+  makePreviewRng,
+  type PreviewRulesOptions,
+} from './previewDerived';
 import { encodeRecurringDraftMix } from '../../db/recurringDraftMix';
 // `generateUUID` / `currentTimestamp` no longer needed here — pending-task
 // sync writes now route through `addToSyncQueue` which owns both.
@@ -52,11 +55,25 @@ export type WizardPlacement = (Task | null)[];
  * and placement just like library tasks. The optional parameter means
  * callers that don't pass it (e.g. `BoardWizardPreviewStep` via the
  * library prop) still compile; `BoardWizardPage` passes both.
+ *
+ * §Member rules (B3, RC6) — `previewRules` runs the DISPLAY-ONLY dry run
+ * (`applyPreviewDerivedCells`) over the finished placement, so the Preview
+ * grid shows the rolled targets the board will actually carry. It carries a
+ * SEED, not a generator: one `makePreviewRng(seed)` is built PER CALL and
+ * drives both the cell shuffle and the target rolls, which makes the whole
+ * preview a pure function of `(seed, inputs)` — rebuild it as often as React
+ * likes and nothing moves after first paint. Shuffle bumps the seed.
+ *
+ * It is a PREVIEW affordance: the persist path never passes it —
+ * `persistWizardBoard` mints the real derived rows inside its own
+ * transaction, with the platform rng, and would double-roll if the placement
+ * it was handed already carried stand-ins.
  */
 export function buildWizardPlacement(
   controller: BoardWizardController,
   library: TaskLibrary,
   pendingTasksArg?: Map<string, PendingTaskPayload>,
+  previewRules?: PreviewRulesOptions,
 ): WizardPlacement {
   const { size, centerType, centerTaskId, isRandomized, selectedTaskIds } = controller;
   const isOdd = size % 2 !== 0;
@@ -79,7 +96,16 @@ export function buildWizardPlacement(
   let selectedIds: string[];
   const sources = controller.sources ?? [];
   if (sources.length > 0) {
-    const supplies = algorithmSupplies(sources, controller.supplyInfoBySourceId);
+    // §Member rules (B3, RC7) — the pick runs over the SPLIT-UP-EXPANDED
+    // supplies, so a split compound offers its parts as separate squares.
+    // `libraryById` already merges the live library with this session's
+    // pending tasks, which is exactly the universe the expansion reads.
+    const supplies = algorithmSupplies(
+      sources,
+      controller.supplyInfoBySourceId,
+      controller.childrenByCompoundId ?? {},
+      Object.fromEntries(libraryById),
+    );
     // Counter-family exclusivity (2026-09-08): the pick never places two
     // members of one shared-counter family, and a CHOSEN center is pinned
     // so its family-mates are pruned before the draw.
@@ -189,6 +215,16 @@ export function buildWizardPlacement(
     const t = libraryById.get(id);
     if (t !== undefined) pendingExtras.push(t);
   }
+  // §Member rules (B3, final review I4) — PREVIEW PATH ONLY. `fromLibrary`
+  // is title-sorted (`useTaskLibrary`), so it is stable across rebuilds; the
+  // pending extras are not — they arrive in `selectBoardTasks`' RANDOMISED
+  // pick order, which the seeded shuffle would then permute differently on
+  // every rebuild and the grid would drift with no Shuffle. Pin them by id,
+  // exactly as iOS's preview branch does (`BoardWizardPersist.swift`). The
+  // persist path (no `previewRules`) keeps its previous order byte-for-byte.
+  if (previewRules !== undefined && isRandomized) {
+    pendingExtras.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
   const preOverlay: Task[] = [...fromLibrary, ...pendingExtras];
 
   // Inline Task Editing (web PR-2) — overlay staged edits (Inline
@@ -219,73 +255,29 @@ export function buildWizardPlacement(
   // even grids preserves today's "even grid = no special center" behavior
   // (placeBoard also derives that internally via getCenterSquareIndex, so this
   // is belt-and-suspenders). No `rng` → defaults to Math.random, matching the
-  // old `fisherYatesShuffle([...others])`.
-  return placeBoard({
+  // old `fisherYatesShuffle([...others])`; the PREVIEW passes its seeded one
+  // so the arrangement, like the target rolls, is fixed for a given seed.
+  const previewRng = previewRules === undefined ? undefined : makePreviewRng(previewRules.seed);
+  const placement = placeBoard({
     items: selected,
     gridSize: size,
     centerType: isOdd ? centerType : CenterSquareType.NONE,
     chosenCenterId: chosenCenter?.id,
     randomize: isRandomized,
+    rng: previewRng,
   });
+
+  return previewRng === undefined
+    ? placement
+    : applyPreviewDerivedCells(placement, controller, library, previewRng);
 }
 
-/** Resolved `startDate` / `endDate` ISO strings, or an error to surface.
- *  `endDate` is undefined for INDEFINITE (ongoing) boards. */
-export type ResolvedDates =
-  | { startDate: string; endDate?: string }
-  | { error: string };
-
-/**
- * Resolves start/end ISO timestamps for the new/updated board record.
- * Matches the semantics the legacy Create tab's `BoardCreatorPanel` used so the wizard
- * produces dates indistinguishable from the legacy panel's output.
- *
- * @param controller  Wizard state.
- * @param now         Reference date for non-CUSTOM windows. Defaults to
- *   `new Date()`. The core-board browser passes a future date here so a
- *   banner-launched "Plan ahead" flow spawns the window the user picked
- *   instead of always landing on today's window.
- */
-export function resolveWizardDates(
-  controller: BoardWizardController,
-  now: Date = new Date(),
-): ResolvedDates {
-  // Indefinite (ongoing) boards have no deadline. Honor the chosen Start date
-  // (the Custom section's Start picker is shown for ongoing boards too) — it's
-  // the creation anchor + achievement-window lower bound; fall back to today
-  // when unset. endDate stays undefined so the board carries no deadline.
-  if (controller.timeframe === Timeframe.INDEFINITE) {
-    let start: Date;
-    if (controller.customStartDate) {
-      const [sy, sm, sd] = controller.customStartDate.split('-').map(Number);
-      start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
-    } else {
-      start = new Date(now);
-      start.setHours(0, 0, 0, 0);
-    }
-    return { startDate: toLocalISO(start), endDate: undefined };
-  }
-  if (controller.timeframe !== Timeframe.CUSTOM) {
-    const b = getTimeframeBoundaries(
-      controller.timeframe,
-      now,
-      controller.weekStartDay,
-    );
-    return { startDate: b.startDate, endDate: b.endDate };
-  }
-  if (!controller.customStartDate || !controller.customEndDate) {
-    return { error: 'Pick a start and end date.' };
-  }
-  // Parse YYYY-MM-DD manually to avoid UTC shift from `new Date('YYYY-MM-DD')`.
-  const [sy, sm, sd] = controller.customStartDate.split('-').map(Number);
-  const [ey, em, ed] = controller.customEndDate.split('-').map(Number);
-  const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
-  const end = new Date(ey, em - 1, ed, 23, 59, 59, 999);
-  if (end.getTime() < start.getTime()) {
-    return { error: 'End date must be on or after the start date.' };
-  }
-  return { startDate: toLocalISO(start), endDate: toLocalISO(end) };
-}
+// `resolveWizardDates` + `ResolvedDates` moved to `./wizardDates` (B3 RC6 —
+// `previewDerived.ts` needs the window resolution and this module imports
+// `previewDerived`, so the date helper had to stop living downstream of the
+// cycle). Re-exported here so every existing import site is untouched.
+export { resolveWizardDates } from './wizardDates';
+export type { ResolvedDates } from './wizardDates';
 
 export type WizardStatus = 'active' | 'draft';
 
@@ -413,6 +405,9 @@ export async function persistWizardBoard({
           manualTaskIds: Array.from(controller.manualTaskIds),
           removedTaskIds: Array.from(controller.removedTaskIds),
           sources: controller.sources,
+          // §Member rules (B3, RC3) — hand-added counters' dice ride in the
+          // blob so a resumed draft reopens with them intact.
+          manualTaskVary: controller.manualTaskVary,
         })
       : undefined;
 
@@ -441,6 +436,9 @@ export async function persistWizardBoard({
     // source's per-member rules against this board's window at write time.
     sources: controller.sources,
     manualTaskIds: Array.from(controller.manualTaskIds),
+    // §Member rules (B3, RC3) — the mint rolls a hand-added counter's target
+    // inside its dice range; without this it would always take the goal.
+    manualTaskVary: controller.manualTaskVary,
   });
 }
 
@@ -588,6 +586,9 @@ export async function persistRecurringTemplate({
   // excludes, filters, board-kind sources) persists verbatim; the legacy
   // trio above is the derived P1 dual-write for old-client compat.
   const sources = controller.sources;
+  // §Member rules (B3, RC3) — dice for hand-added counters, persisted on the
+  // record so each recurring board rolls them for its own window.
+  const manualTaskVary = controller.manualTaskVary;
   // Decode-compat snapshot only — never read back after this write (see
   // this function's docstring / docs/POOLS_RECURRING.md §Migration).
   const seedTaskIds = Array.from(controller.selectedTaskIds);
@@ -604,6 +605,7 @@ export async function persistRecurringTemplate({
       manualTaskIds,
       removedTaskIds,
       sources,
+      manualTaskVary,
       // `isActive` isn't surfaced in the wizard form (the templates list
       // owns the pause toggle), so leave it untouched on edit.
       // `seedTaskIds` intentionally omitted — left verbatim/stale, never
@@ -625,6 +627,7 @@ export async function persistRecurringTemplate({
     manualTaskIds,
     removedTaskIds,
     sources,
+    manualTaskVary,
   });
 
   // Compute the spawn window and create the board. `spawnTemplateBoard`

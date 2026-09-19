@@ -254,3 +254,36 @@ func buildSharedCounterGroups(
     groups.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     return groups
 }
+
+// MARK: - Expired-member visibility (B3, RC9)
+
+/// The task set a Counters surface shows.
+///
+/// Swift twin of web's `visibleCounterTasks`
+/// (`apps/web/src/hooks/useSharedCounterGroups.ts`).
+///
+/// Per-window DERIVED counters carry their board window's `endDate`, so a
+/// counter that has been on a few daily boards accumulates members that are
+/// over. Hiding them by default is the Tasks tab's own rule, applied to the
+/// same predicate (`TaskExpiry.isTaskExpired`).
+///
+/// A ROOT — a task with no `sharedCounterId` — is NEVER hidden, whatever its
+/// own `endDate`: the root IS the counter, so dropping it would remove the
+/// whole group from the hub rather than tidy one row out of it.
+///
+/// Filtering happens BEFORE grouping, so a hidden member can't contribute a
+/// board row either. `buildSharedCounterGroups` (vector-pinned) is untouched.
+///
+/// - Parameters:
+///   - tasks: Live, non-deleted tasks for the user.
+///   - showExpired: `true` returns `tasks` unchanged.
+///   - now: Reference time, injected for deterministic tests.
+/// - Returns: The tasks to group.
+func filterCounterTasks(
+    _ tasks: [Task],
+    showExpired: Bool,
+    now: Date = Date()
+) -> [Task] {
+    if showExpired { return tasks }
+    return tasks.filter { $0.sharedCounterId == nil || !TaskExpiry.isTaskExpired($0, now: now) }
+}

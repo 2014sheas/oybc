@@ -6,7 +6,7 @@ import type {
   UserPreferences,
 } from '@oybc/shared';
 import { usePoolsQuery } from '../hooks';
-import { availableCountForSource } from './createHub/wizardSources';
+import { availableCountFromSupplies } from './createHub/wizardSources';
 import {
   fetchSourceSheetBoardEntries,
   type SourceSheetBoardEntry,
@@ -14,6 +14,7 @@ import {
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { useBoardWizard, type BoardWizardDraft, type WizardStep } from './createHub/useBoardWizard';
 import { BoardWizardStepper } from '../components/wizard/BoardWizardStepper';
+import { WizardEditModeNote } from '../components/wizard/WizardEditModeNote';
 import { BoardWizardSetupStep } from '../components/wizard/BoardWizardSetupStep';
 import { BoardWizardTasksStep } from '../components/wizard/BoardWizardTasksStep';
 import { BoardWizardPreviewStep } from '../components/wizard/BoardWizardPreviewStep';
@@ -147,6 +148,8 @@ export function BoardWizardPage({
     pools,
     poolsLoaded: poolsQuery !== undefined,
     tasksById: library.taskMap,
+    // §Member rules (B3, RC7) — the Split-up expansion's children lookup.
+    compoundChildrenByCompound: library.compoundChildrenByCompound,
   });
 
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -305,9 +308,7 @@ export function BoardWizardPage({
       {/* Board Sources P4 (locked decision, frame 5a) — editing an
           existing repeating board IS the "Sources" surface; the note
           renders under the stepper, mirroring iOS `BoardWizardView`. */}
-      {wizard.editingTemplateId !== null && (
-        <p className={styles.editModeNote}>Changes apply from the next board.</p>
-      )}
+      <WizardEditModeNote editingTemplateId={wizard.editingTemplateId} />
 
       <div className={styles.stepContainer}>
         {wizard.currentStep === 1 && (
@@ -345,7 +346,10 @@ export function BoardWizardPage({
             supplyInfoBySourceId={wizard.supplyInfoBySourceId}
             expandedSourceIds={wizard.expandedSourceIds}
             availableCountForSource={(sourceId) =>
-              availableCountForSource(wizard.sources, wizard.supplyInfoBySourceId, sourceId)
+              // §Member rules (B3) — the controller already resolved the
+              // Split-up-expanded supplies; recomputing here is how a caller
+              // silently ends up on the un-split count.
+              availableCountFromSupplies(wizard.expandedSupplies, sourceId)
             }
             capacity={wizard.capacity}
             suppliesPending={wizard.suppliesPending}
@@ -357,6 +361,14 @@ export function BoardWizardPage({
             onToggleSourceExclude={wizard.toggleSourceExclude}
             onPullPoolSource={wizard.pullPool}
             onPullBoardSource={wizard.pullBoard}
+            manualTaskVary={wizard.manualTaskVary}
+            onSetManualVary={wizard.setManualVary}
+            onSetMemberTarget={wizard.setMemberTarget}
+            onSetMemberVary={wizard.setMemberVary}
+            onSetMemberSplit={wizard.setMemberSplit}
+            onSetPartExcluded={wizard.setPartExcluded}
+            onSetPartTarget={wizard.setPartTarget}
+            onSetPartVary={wizard.setPartVary}
             stagedEdits={wizard.stagedEdits}
             onStageEdit={wizard.stageEdit}
             onRevertEdit={wizard.revertEdit}

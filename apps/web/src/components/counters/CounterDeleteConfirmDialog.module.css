@@ -181,3 +181,11 @@
     transition: none;
   }
 }
+
+/* §Member rules (B3, RC12) — the per-window derived-counter retirement line. */
+.derivedNote {
+  margin: 10px 0 0;
+  font-family: var(--riso-font-body);
+  font-size: 0.85rem;
+  color: var(--riso-muted);
+}

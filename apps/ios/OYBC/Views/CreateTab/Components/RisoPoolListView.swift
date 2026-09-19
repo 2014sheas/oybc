@@ -58,6 +58,14 @@ struct RisoPoolListView: View {
     /// ≥2 members in the pool ("one per board" hint).
     var counterClashByTaskId: [String: String] = [:]
 
+    /// §Member rules (B3) — dice level per HAND-ADDED counting task
+    /// (`BoardWizardViewModel.manualTaskVary`). Absent ids are `.off`.
+    var manualTaskVary: [String: VaryLevel] = [:]
+    /// Sets a hand-added counting task's dice level. nil ⇒ no dice is
+    /// shown (and no range line, which without a control to change it
+    /// would be a dead end).
+    var onSetManualVary: ((_ taskId: String, _ level: VaryLevel) -> Void)? = nil
+
     // MARK: - Ordered pool
 
     /// Pool in insertion order (from the parent's `poolOrder`). No sort — a
@@ -127,11 +135,23 @@ struct RisoPoolListView: View {
         // "TASKS TAB" marker instead).
         let showsPencil = onEdit != nil
             && (task.type == .normal || task.type == .counting || task.type == .compound)
+        // §Member rules (B3) — a hand-added COUNTING row earns a dice: it
+        // needs a goal to vary around. Hand-added counters vary around
+        // their own goal, so there is no window to pro-rate against.
+        let goal = task.type == .counting ? (task.maxCount ?? 0) : 0
+        let showsDice = onSetManualVary != nil && goal > 0
+        let varyLevel = manualTaskVary[task.id] ?? .off
+        let varyRange = showsDice
+            ? BoardSources.varyRangeLabel(
+                t: goal, level: varyLevel, goal: goal, unit: task.unit ?? ""
+            )
+            : nil
 
         return HStack(alignment: .center, spacing: 9) {
             badge(task, isCenter: isCenter)
 
-            // Name + detail
+            // Name + detail (+ the blue range line, left-aligned with the
+            // title, when the dice is on).
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
                     .font(.risoHead(14, .bold))
@@ -143,8 +163,20 @@ struct RisoPoolListView: View {
                         .foregroundStyle(Color.risoMuted)
                         .lineLimit(1)
                 }
+                if let varyRange {
+                    Text(varyRange)
+                        .font(.risoBody(10.5, .semibold))
+                        .foregroundStyle(Color.risoBlue)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 4)
+
+            if showsDice, let onSetManualVary {
+                RisoDiceButton(level: varyLevel) {
+                    onSetManualVary(task.id, varyLevel.next)
+                }
+            }
 
             // Edit affordance: pencil (editable) or the read-only "TASKS TAB"
             // marker (achievement). Compound in PR 1 shows neither.

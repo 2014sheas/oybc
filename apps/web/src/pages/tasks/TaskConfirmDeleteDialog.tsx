@@ -1,5 +1,6 @@
 import type { Task } from '@oybc/shared';
 import { BoardStatusBadge } from '../../components/BoardStatusBadge';
+import { derivedCounterRemovalNote } from '../../components/counters/derivedCounterRemovalNote';
 import { isBoardExpired } from '../../utils/boardDisplayUtils';
 import type { TaskDeletionImpact } from '../../db/operations/tasks';
 import styles from './TaskDetailContent.module.css';
@@ -37,6 +38,14 @@ export function TaskConfirmDeleteDialog({
   const hasBoards = impact.affectedBoards.length > 0;
   const otherCounts =
     impact.childLinkCount + impact.parentLinkCount;
+  // §Member rules (B3, RC12) — a task delete also retires the
+  // window-stamped derived counters minted from it, and their placements.
+  // Those rows live on OTHER boards, so they move neither `affectedBoards`
+  // nor the link counts: without this line the dialog could print "No other
+  // rows affected." while N board counters were about to disappear. Same
+  // sentence as the counter sheet, from the one helper (iOS twin:
+  // `BoardSources.derivedCounterRemovalNote(count:)`).
+  const derivedNote = derivedCounterRemovalNote(impact.derivedWindowCounterCount);
 
   return (
     <div className={styles.sheetBackdrop} onClick={onCancel}>
@@ -104,7 +113,11 @@ export function TaskConfirmDeleteDialog({
           </ul>
         )}
 
-        {!hasBoards && otherCounts === 0 && (
+        {derivedNote !== null && (
+          <p className={styles.derivedNote}>{derivedNote}</p>
+        )}
+
+        {!hasBoards && otherCounts === 0 && impact.derivedWindowCounterCount === 0 && (
           <ul className={styles.impactList}>
             <li>No other rows affected.</li>
           </ul>

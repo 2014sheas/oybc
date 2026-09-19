@@ -6,6 +6,7 @@ import {
   TaskType,
   Timeframe,
   derivedTaskId,
+  varyRange,
   type Board,
   type CompoundChild,
   type Task,
@@ -815,5 +816,101 @@ describe('persistWizardBoardRows — member-rule mint', () => {
     expect(await db.tasks.get(derivedTaskId(boardId, ROOT))).toBeUndefined();
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
     expect(rows[0].taskId).toBe(ROOT);
+  });
+});
+
+/**
+ * §Member rules (B3, RC3) — the hand-added layer's dice. `manualTaskVary`
+ * now reaches the mint from the wizard controller (it was a hard-coded `{}`
+ * placeholder in B2), so a hand-added counter with a dice level is placed as
+ * a window-stamped derived counter whose target is ROLLED inside its range
+ * instead of always taking the goal.
+ */
+describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
+  const HAND = uuid(95);
+  const GOAL = 10;
+
+  async function seedHandAddedCounter(): Promise<Task> {
+    const task: Task = {
+      id: HAND,
+      userId: USER,
+      title: 'Push-ups',
+      type: TaskType.COUNTING,
+      action: 'Do',
+      unit: 'reps',
+      maxCount: GOAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.add(task);
+    return task;
+  }
+
+  it('a hand-added counting member with vary 1 mints a derived row ROLLED inside varyRange', async () => {
+    const task = await seedHandAddedCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+
+    // Seeded rng — `varyRange(10, 1, 10)` is [8, 10] and its top IS the goal,
+    // so a range-only assertion would also pass against a no-roll
+    // implementation. Pinning the low end proves the roll happened.
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        sources: [],
+        manualTaskIds: [HAND],
+        manualTaskVary: { [HAND]: 1 },
+        rng: () => 0,
+      }),
+    );
+
+    const [lo, hi] = varyRange(GOAL, 1, GOAL);
+    expect(lo).toBeLessThan(GOAL); // the assertion below is not degenerate
+    const derived = await db.tasks.get(derivedTaskId(boardId, HAND));
+    expect(derived).toBeDefined();
+    expect(derived?.sharedCounterId).toBe(HAND);
+    expect(derived?.maxCount).toBe(lo);
+    expect(derived?.maxCount).toBeLessThanOrEqual(hi);
+
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows[0].taskId).toBe(derived?.id);
+  });
+
+  it('the roll really is the rng\u2019s: the top of the range lands with the opposite seed', async () => {
+    const task = await seedHandAddedCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({
+        placement,
+        sources: [],
+        manualTaskIds: [HAND],
+        manualTaskVary: { [HAND]: 2 },
+        rng: () => 0.999,
+      }),
+    );
+
+    const [, hi] = varyRange(GOAL, 2, GOAL);
+    expect(await db.tasks.get(derivedTaskId(boardId, HAND))).toMatchObject({ maxCount: hi });
+  });
+
+  it('vary 0 (or an absent map) places the hand-added task itself — nothing is minted', async () => {
+    const task = await seedHandAddedCounter();
+    const placement = new Array(9).fill(null);
+    placement[0] = task;
+
+    const boardId = await persistWizardBoardRows(
+      baseInput({ placement, sources: [], manualTaskIds: [HAND] }),
+    );
+
+    expect(await db.tasks.get(derivedTaskId(boardId, HAND))).toBeUndefined();
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    expect(rows[0].taskId).toBe(HAND);
   });
 });

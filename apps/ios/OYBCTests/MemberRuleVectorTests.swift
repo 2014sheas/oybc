@@ -16,15 +16,18 @@ final class MemberRuleVectorTests: XCTestCase {
 
     /// Deterministic uniform [0,1) LCG — twin of bingo-core's
     /// `tests/seededRng.ts` `makeSeededRng`. Same seed ⇒ same sequence.
+    ///
+    /// A counting reference wrapper around the production value-type
+    /// ``OYBC/SeededRng`` (B3 RC6 promoted the recurrence into the app
+    /// target); the call tally stays here because only these vectors pin it.
     private final class SeededRng {
-        private var state: UInt32
+        private var rng: OYBC.SeededRng
         /// Number of samples actually taken — some vectors pin this.
         private(set) var calls = 0
-        init(seed: UInt32) { state = seed }
+        init(seed: UInt32) { rng = OYBC.SeededRng(seed: seed) }
         func next() -> Double {
             calls += 1
-            state = state &* 1664525 &+ 1013904223
-            return Double(state) / 4294967296.0
+            return rng.next()
         }
     }
 
@@ -328,6 +331,109 @@ final class MemberRuleVectorTests: XCTestCase {
         let vectors: [DerivedRowsVector]
     }
 
+
+    // MARK: - B3 fixture decoding (display + rule editing)
+
+    private struct EffectiveTargetVector: Decodable {
+        let name: String
+        let goal: Int
+        let explicit: Int?
+        let mode: String
+        let fromBoard: Bool
+        /// Bare timeframe string; the harness wraps it into a `BoardWindow`
+        /// with nil dates (fixture note `windows`). Absent = no source window.
+        let sourceWindow: String?
+        let targetWindow: String
+        let expected: Int
+    }
+
+    private struct VaryRangeLabelVector: Decodable {
+        let name: String
+        let t: Int
+        let level: Int
+        let goal: Int
+        let unit: String
+        /// JSON `null` at vary level 0 — decodes straight to nil.
+        let expected: String?
+    }
+
+    private struct SplitSquaresNoteVector: Decodable {
+        let name: String
+        let excludedPartIds: [String]
+        let partIds: [String]
+        let expected: String
+    }
+
+    private struct RemainingTargetVector: Decodable {
+        let name: String
+        let goal: Int
+        let windowCount: Int
+        let expected: Int
+    }
+
+    private struct MemberRuleForVector: Decodable {
+        let name: String
+        let memberRules: [String: BoardSourceMemberRule]?
+        let taskId: String
+        let expected: BoardSourceMemberRule
+    }
+
+    private struct PartRuleForVector: Decodable {
+        let name: String
+        let rule: BoardSourceMemberRule
+        let childId: String
+        let expected: BoardSourcePartRule
+    }
+
+    /// The fixture's `{ set: {...}, clear: [names] }` patch shape. The split
+    /// exists precisely so a Swift decoder can tell "field absent from the
+    /// patch, leave alone" from "field explicitly cleared" without relying on
+    /// JSON `null` (fixture note `swiftPatchDecoding`) — `.keep` is NEVER
+    /// inferred from an absent `clear` entry.
+    private struct RawPatch: Decodable {
+        struct RawSet: Decodable {
+            let target: Int?
+            let vary: Int?
+            let split: Bool?
+            let excluded: Bool?
+        }
+        let set: RawSet?
+        let clear: [String]?
+    }
+
+    private struct RawPatchStep: Decodable {
+        let taskId: String
+        let childId: String?
+        let patch: RawPatch
+    }
+
+    private struct WithRuleVector: Decodable {
+        let name: String
+        let startMemberRules: [String: BoardSourceMemberRule]?
+        let steps: [RawPatchStep]
+        let expectedMemberRules: [String: BoardSourceMemberRule]?
+    }
+
+    private struct ImmutabilityVector: Decodable {
+        let name: String
+        /// `"member"` or `"part"` — which setter the chain drives.
+        let kind: String
+        let startMemberRules: [String: BoardSourceMemberRule]?
+        let steps: [RawPatchStep]
+    }
+
+    private struct DisplaySection: Decodable {
+        let effectiveMemberTarget: [EffectiveTargetVector]
+        let varyRangeLabel: [VaryRangeLabelVector]
+        let splitSquaresNote: [SplitSquaresNoteVector]
+        let remainingTarget: [RemainingTargetVector]
+        let memberRuleFor: [MemberRuleForVector]
+        let partRuleFor: [PartRuleForVector]
+        let withMemberRule: [WithRuleVector]
+        let withPartRule: [WithRuleVector]
+        let immutability: [ImmutabilityVector]
+    }
+
     private struct Fixture: Decodable {
         let windowDays: [WindowDaysVector]
         let autoTarget: [AutoTargetVector]
@@ -337,6 +443,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let derivedRows: DerivedRowsSection
         let applyMemberRules: ApplySection
         let planDerivedTasks: PlanSection
+        let display: DisplaySection
     }
 
     private func loadFixture() throws -> Fixture {
@@ -1093,5 +1200,259 @@ final class MemberRuleVectorTests: XCTestCase {
             ))
             XCTAssertEqual(try CompoundChild.fetchCount(db), rows.links.count)
         }
+    }
+    // MARK: - B3 display + rule editing
+
+    /// A minimal `BoardSource` for the display vectors — `memberRules`
+    /// omitted unless the vector supplies one.
+    private func displaySource(_ memberRules: [String: BoardSourceMemberRule]?) -> BoardSource {
+        BoardSource(
+            sourceId: "s1", kind: .board, min: 0, max: nil,
+            excludedTaskIds: [], filter: .all, memberRules: memberRules
+        )
+    }
+
+    private func planMode(_ raw: String) throws -> BoardSources.PlanMode {
+        switch raw {
+        case "oneOff": return .oneOff
+        case "recurring": return .recurring
+        default:
+            XCTFail("unknown plan mode \(raw)")
+            throw XCTSkip("bad mode")
+        }
+    }
+
+    /// Wraps a bare timeframe string into a `BoardWindow` (nil dates).
+    private func window(_ raw: String) throws -> BoardSources.BoardWindow {
+        BoardSources.BoardWindow(timeframe: try timeframe(raw))
+    }
+
+    private func memberPatch(_ raw: RawPatch) throws -> BoardSources.MemberRulePatch {
+        var patch = BoardSources.MemberRulePatch()
+        if let value = raw.set?.target { patch.target = .set(value) }
+        if let value = raw.set?.vary { patch.vary = .set(try varyLevel(value)) }
+        if let value = raw.set?.split { patch.split = .set(value) }
+        for key in raw.clear ?? [] {
+            switch key {
+            case "target": patch.target = .clear
+            case "vary": patch.vary = .clear
+            case "split": patch.split = .clear
+            case "parts": patch.parts = .clear
+            default: XCTFail("unknown member-rule field \(key)")
+            }
+        }
+        return patch
+    }
+
+    private func partPatch(_ raw: RawPatch) throws -> BoardSources.PartRulePatch {
+        var patch = BoardSources.PartRulePatch()
+        if let value = raw.set?.target { patch.target = .set(value) }
+        if let value = raw.set?.vary { patch.vary = .set(try varyLevel(value)) }
+        if let value = raw.set?.excluded { patch.excluded = .set(value) }
+        for key in raw.clear ?? [] {
+            switch key {
+            case "target": patch.target = .clear
+            case "vary": patch.vary = .clear
+            case "excluded": patch.excluded = .clear
+            default: XCTFail("unknown part-rule field \(key)")
+            }
+        }
+        return patch
+    }
+
+    /// `expectedMemberRules: null` asserts the result carries NO rules at all
+    /// — nil in memory AND no `memberRules` key once encoded.
+    private func assertMemberRules(
+        _ source: BoardSource,
+        _ expected: [String: BoardSourceMemberRule]?,
+        _ name: String
+    ) throws {
+        if let expected {
+            XCTAssertEqual(source.memberRules, expected, name)
+        } else {
+            XCTAssertNil(source.memberRules, name)
+            let encoded = try XCTUnwrap(
+                String(data: try JSONEncoder().encode(source), encoding: .utf8), name
+            )
+            XCTAssertFalse(encoded.contains("memberRules"),
+                           "\(name): a rule-less source must encode without the key")
+        }
+    }
+
+    func testEffectiveMemberTarget() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.effectiveMemberTarget.isEmpty)
+        for v in section.effectiveMemberTarget {
+            XCTAssertEqual(
+                BoardSources.effectiveMemberTarget(
+                    goal: v.goal,
+                    explicit: v.explicit,
+                    mode: try planMode(v.mode),
+                    fromBoard: v.fromBoard,
+                    sourceWindow: try v.sourceWindow.map { try window($0) },
+                    targetWindow: try window(v.targetWindow)
+                ),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    func testVaryRangeLabel() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.varyRangeLabel.isEmpty)
+        for v in section.varyRangeLabel {
+            XCTAssertEqual(
+                BoardSources.varyRangeLabel(
+                    t: v.t, level: try varyLevel(v.level), goal: v.goal, unit: v.unit
+                ),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    func testSplitSquaresNote() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.splitSquaresNote.isEmpty)
+        for v in section.splitSquaresNote {
+            XCTAssertEqual(
+                BoardSources.splitSquaresNote(
+                    partIds: v.partIds, excludedPartIds: Set(v.excludedPartIds)
+                ),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    func testRemainingTarget() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.remainingTarget.isEmpty)
+        for v in section.remainingTarget {
+            XCTAssertEqual(
+                BoardSources.remainingTarget(goal: v.goal, windowCount: v.windowCount),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    func testMemberRuleFor() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.memberRuleFor.isEmpty)
+        for v in section.memberRuleFor {
+            XCTAssertEqual(
+                BoardSources.memberRule(for: v.taskId, in: displaySource(v.memberRules)),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    func testPartRuleFor() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.partRuleFor.isEmpty)
+        for v in section.partRuleFor {
+            XCTAssertEqual(
+                BoardSources.partRule(for: v.childId, in: v.rule),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    func testWithMemberRule() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.withMemberRule.isEmpty)
+        for v in section.withMemberRule {
+            var source = displaySource(v.startMemberRules)
+            for step in v.steps {
+                source = BoardSources.withMemberRule(
+                    source, taskId: step.taskId, patch: try memberPatch(step.patch)
+                )
+            }
+            try assertMemberRules(source, v.expectedMemberRules, v.name)
+        }
+    }
+
+    func testWithPartRule() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.withPartRule.isEmpty)
+        for v in section.withPartRule {
+            var source = displaySource(v.startMemberRules)
+            for step in v.steps {
+                source = BoardSources.withPartRule(
+                    source,
+                    taskId: step.taskId,
+                    childId: try XCTUnwrap(step.childId, v.name),
+                    patch: try partPatch(step.patch)
+                )
+            }
+            try assertMemberRules(source, v.expectedMemberRules, v.name)
+        }
+    }
+
+    /// The TS twin freezes its input and asserts the setters don't throw;
+    /// Swift has no analogue, because `BoardSource` is a value type taken by
+    /// value — an "did the input mutate?" assertion is true by construction.
+    /// So this test asserts two things that CAN fail: (a) the input's encoded
+    /// bytes are unchanged even after the RESULT is mutated (the value-copy
+    /// claim, stated in a form a future reader can trust rather than assume),
+    /// and (b) the step SEMANTICS of each chain — the first step writes the
+    /// field, the second (a clear) takes it away again — so the vectors pin
+    /// behaviour, not the language.
+    func testWithRuleSettersNeverMutateTheirInput() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.immutability.isEmpty)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        for v in section.immutability {
+            XCTAssertEqual(v.steps.count, 2, "\(v.name): expects a set-then-clear chain")
+            let original = displaySource(v.startMemberRules)
+            let before = try encoder.encode(original)
+
+            var chain: [BoardSource] = []
+            var current = original
+            for step in v.steps {
+                current = v.kind == "member"
+                    ? BoardSources.withMemberRule(
+                        current, taskId: step.taskId, patch: try memberPatch(step.patch)
+                    )
+                    : BoardSources.withPartRule(
+                        current,
+                        taskId: step.taskId,
+                        childId: try XCTUnwrap(step.childId, v.name),
+                        patch: try partPatch(step.patch)
+                    )
+                chain.append(current)
+            }
+
+            // Mutate the RESULT as hard as the type allows; the input must be
+            // untouched afterwards.
+            var mutated = try XCTUnwrap(chain.last, v.name)
+            mutated.memberRules = ["mutated": BoardSourceMemberRule(target: 99)]
+            mutated.excludedTaskIds.append("mutated")
+            mutated.min = 99
+            XCTAssertEqual(try encoder.encode(original), before,
+                           "\(v.name): the source the chain started from is untouched")
+
+            // Step semantics: written by step 1, gone after step 2.
+            let step = v.steps[0]
+            XCTAssertFalse(hasWrittenField(original, step), "\(v.name): not present to begin with")
+            XCTAssertTrue(hasWrittenField(chain[0], step), "\(v.name): step 1 writes the field")
+            XCTAssertFalse(hasWrittenField(chain[1], step), "\(v.name): step 2 clears it again")
+        }
+    }
+
+    /// Whether the rule (or part rule) the step addresses carries ANY field.
+    private func hasWrittenField(_ source: BoardSource, _ step: RawPatchStep) -> Bool {
+        let rule = BoardSources.memberRule(for: step.taskId, in: source)
+        guard let childId = step.childId else {
+            return rule.target != nil || rule.vary != nil || rule.split != nil
+        }
+        let part = BoardSources.partRule(for: childId, in: rule)
+        return part.target != nil || part.vary != nil || part.excluded != nil
     }
 }

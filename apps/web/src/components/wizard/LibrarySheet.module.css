@@ -158,28 +158,6 @@
   padding: 12px 16px 20px;
 }
 
-.deriveRow {
-  padding: 0 15px 8px;
-  margin-top: -6px;
-}
-.deriveLink {
-  font-family: var(--riso-font-head);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--riso-blue);
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-}
-.deriveLink:hover {
-  text-decoration: underline;
-}
-.deriveLink:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;

@@ -33,6 +33,13 @@ enum SnapshotFixtures {
         /// Mix of normal + counting + compound. Add narrower states
         /// (e.g. `onlyCounting`) when a test needs to isolate one type.
         case dense
+        /// Board Sources §Member rules (B3) — a counting task with a unit
+        /// plus a compound whose children are BOTH counting, so a pulled
+        /// source's member rows can show a target stepper, a dice range
+        /// and real Split-up part lines. Deliberately separate from
+        /// `.dense` (whose compound children are all `.normal`) so the
+        /// shipped dense baselines stay untouched.
+        case memberRules
     }
 
     /// Returns a `TaskLibraryViewModel` populated for a given render
@@ -53,8 +60,60 @@ enum SnapshotFixtures {
             library.allCompoundChildren = children
             library.compoundChildrenByCompound = groupChildren(children)
             library.allLibraryBoardTasks = sampleBoardTasks(taskIds: tasks.prefix(5).map { $0.id })
+        case .memberRules:
+            let (tasks, children) = memberRulesTaskSet()
+            library.libraryTasks = tasks
+            library.browsableTasks = tasks
+            library.allCompoundChildren = children
+            library.compoundChildrenByCompound = groupChildren(children)
         }
         return library
+    }
+
+    // MARK: - Member-rules task set (B3)
+
+    /// Member-rules ids, so tests name them without string literals.
+    enum MemberRuleTask {
+        static let run = "t-mr-run"
+        static let normal = "t-mr-normal"
+        static let compound = "t-mr-compound"
+        static let pushups = "t-mr-pushups"
+        static let plank = "t-mr-plank"
+    }
+
+    /// A counting task with a unit ("of 35 mi" in the handoff), a plain
+    /// task, and a compound with two COUNTING children ("of 210").
+    private static func memberRulesTaskSet() -> ([Task], [CompoundChild]) {
+        let tasks: [Task] = [
+            makeTask(
+                id: MemberRuleTask.run, title: "Run 35 mi", type: .counting,
+                action: "Run", unit: "mi", maxCount: 35
+            ),
+            makeTask(id: MemberRuleTask.normal, title: "Cook a meal at home", type: .normal),
+            makeTask(
+                id: MemberRuleTask.compound, title: "Strength day", type: .compound,
+                operatorType: .and
+            ),
+            makeTask(
+                id: MemberRuleTask.pushups, title: "Push-ups", type: .counting,
+                action: "Do", unit: "reps", maxCount: 210
+            ),
+            makeTask(
+                id: MemberRuleTask.plank, title: "Plank", type: .counting,
+                action: "Hold", unit: "min", maxCount: 10
+            ),
+        ]
+        let children = [
+            makeCompoundChild(
+                id: "cc-mr-1", compoundTaskId: MemberRuleTask.compound,
+                childTaskId: MemberRuleTask.pushups, childIndex: 0
+            ),
+            makeCompoundChild(
+                id: "cc-mr-2", compoundTaskId: MemberRuleTask.compound,
+                childTaskId: MemberRuleTask.plank, childIndex: 1
+            ),
+        ]
+        return (tasks, children)
     }
 
     // MARK: - Task builders

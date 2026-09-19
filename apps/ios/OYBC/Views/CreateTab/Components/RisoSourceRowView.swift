@@ -7,8 +7,10 @@ import SwiftUI
 /// ✕. Tapping the header toggles the expanded panel: (boards only) the
 /// All squares / Not done yet segmented, the range block (kicker, range
 /// label, "Use all", the two-handle `RisoRangeSlider`, the non-default
-/// note line), then the member rows (✕ exclude / UNDO pill /
-/// filtered-done green ✓).
+/// note line), then the member rows — each a `RisoMemberRuleRowView`,
+/// which owns the ✕ exclude / UNDO pill / filtered-done green ✓ AND
+/// the §Member rules controls (target stepper, dice, One square /
+/// Split up + part lines).
 ///
 /// Fully props/callback-driven — no VM import; `BoardWizardTasksStepView`
 /// wires it to `BoardWizardViewModel`'s sources actions.
@@ -31,22 +33,30 @@ struct RisoSourceRowView: View {
     /// per board" hint).
     var counterClashByTaskId: [String: String] = [:]
 
-    // Per-member actions (owner report 2026-09-15: the member list offered
-    // ONLY the ✕ exclude — no way to derive a smaller counter or pull a
-    // compound's subtasks from a pulled board/pool; same ⋯-menu
-    // vocabulary (#470). All defaulted so non-wizard mounts
-    // (recurring Preview's read-only rows) compile unchanged and show no ⋯.
+    // §Member rules (B3, docs/BOARD_SOURCES.md) — the per-member rule
+    // controls each included member row carries.
+    //
+    // Defaulted so the snapshot-test mounts (`RisoSourceSnapshotTests`,
+    // which exercise the row CHROME, not the rules) don't have to name
+    // eight arguments. The wizard step is the only production caller and
+    // it passes all of them. A future read-only mount MUST pass the real
+    // `wizardWindow` / `mode`: the defaults below are a daily one-off
+    // board, so a mount that leaves them alone renders targets pro-rated
+    // against the wrong window rather than rendering nothing.
 
-    /// Children per compound (the step's effective map) — gates the
-    /// subtask items and supplies the ids.
+    /// Children per compound (the step's effective map) — feeds the
+    /// Split-up part lines.
     var compoundChildrenByCompound: [String: [CompoundChild]] = [:]
-    /// The wizard's current selection — subtask items render ✓/disabled
-    /// once the child is already on the board.
-    var selectedTaskIds: Set<String> = []
-    /// Counting member with template fields → open the derive sheet.
-    var onDeriveMember: ((Task) -> Void)? = nil
-    /// Hand-add a task id (a compound's subtask) to the wizard selection.
-    var onAddTask: ((String) -> Void)? = nil
+    /// Whether the board being assembled is one-off or repeating.
+    var mode: BoardSources.PlanMode = .oneOff
+    /// The window of the board being assembled (the pro-rating target).
+    var wizardWindow: BoardSources.BoardWindow = .init(timeframe: .daily)
+    var onSetMemberTarget: (_ taskId: String, _ target: Int?) -> Void = { _, _ in }
+    var onSetMemberVary: (_ taskId: String, _ level: VaryLevel) -> Void = { _, _ in }
+    var onSetMemberSplit: (_ taskId: String, _ split: Bool) -> Void = { _, _ in }
+    var onSetPartExcluded: (_ taskId: String, _ childId: String, _ excluded: Bool) -> Void = { _, _, _ in }
+    var onSetPartTarget: (_ taskId: String, _ childId: String, _ target: Int?) -> Void = { _, _, _ in }
+    var onSetPartVary: (_ taskId: String, _ childId: String, _ level: VaryLevel) -> Void = { _, _, _ in }
 
     private var isDefaultRange: Bool { source.min == 0 && source.max == nil }
     private var effectiveMax: Int { source.max ?? availableCount }
@@ -238,13 +248,7 @@ struct RisoSourceRowView: View {
 
     // MARK: - Member rows
 
-    private enum MemberState {
-        case included
-        case excluded
-        case filteredDone
-    }
-
-    private func memberState(for taskId: String) -> MemberState {
+    private func memberState(for taskId: String) -> MemberRuleRowState {
         if source.kind == .board, source.filter == .todo, supply.doneTaskIds.contains(taskId) {
             return .filteredDone
         }
@@ -252,138 +256,32 @@ struct RisoSourceRowView: View {
         return .included
     }
 
+    /// One `RisoMemberRuleRowView` per supplied member — it owns the whole
+    /// row (title, ✕/UNDO/✓ AND the §Member rules controls), so this file
+    /// stays a header + range-block renderer.
     private var memberRows: some View {
         VStack(spacing: 0) {
             ForEach(supply.rawSupplyTaskIds, id: \.self) { taskId in
-                memberRow(taskId: taskId)
+                RisoMemberRuleRowView(
+                    task: taskById[taskId],
+                    taskById: taskById,
+                    state: memberState(for: taskId),
+                    clashTitle: counterClashByTaskId[taskId],
+                    rule: BoardSources.memberRule(for: taskId, in: source),
+                    parts: compoundChildrenByCompound[taskId] ?? [],
+                    fromBoard: source.kind == .board,
+                    sourceWindow: supply.sourceWindow,
+                    wizardWindow: wizardWindow,
+                    mode: mode,
+                    onToggleExclude: { onToggleExclude(taskId) },
+                    onSetTarget: { onSetMemberTarget(taskId, $0) },
+                    onSetVary: { onSetMemberVary(taskId, $0) },
+                    onSetSplit: { onSetMemberSplit(taskId, $0) },
+                    onSetPartExcluded: { onSetPartExcluded(taskId, $0, $1) },
+                    onSetPartTarget: { onSetPartTarget(taskId, $0, $1) },
+                    onSetPartVary: { onSetPartVary(taskId, $0, $1) }
+                )
             }
-        }
-    }
-
-    @ViewBuilder
-    private func memberRow(taskId: String) -> some View {
-        let state = memberState(for: taskId)
-        let task = taskById[taskId]
-        HStack(spacing: 8) {
-            RisoTypeBadge(
-                kind: RisoTaskKind(taskType: task?.type ?? .normal),
-                style: .letterSquare
-            )
-            VStack(alignment: .leading, spacing: 1) {
-                Text(task?.title ?? "")
-                    .font(.risoBody(13, .semibold))
-                    .foregroundStyle(Color.risoInk)
-                    .strikethrough(state == .excluded)
-                    .lineLimit(1)
-                if let clashTitle = counterClashByTaskId[taskId] {
-                    Text("shares a counter with \u{201C}\(clashTitle)\u{201D} · one per board")
-                        .font(.risoBody(10.5, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 6)
-            memberActionsMenu(taskId: taskId, task: task)
-            switch state {
-            case .included:
-                Button {
-                    onToggleExclude(taskId)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.risoMuted)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Exclude \(task?.title ?? "task") for this board")
-            case .excluded:
-                Button {
-                    onToggleExclude(taskId)
-                } label: {
-                    Text("UNDO")
-                        .font(.risoBody(11.5, .extraBold))
-                        .foregroundStyle(Color.risoInk)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Undo excluding \(task?.title ?? "task")")
-            case .filteredDone:
-                Circle()
-                    .strokeBorder(Color.risoGreen, lineWidth: Riso.Keyline.container)
-                    .frame(width: 22, height: 22)
-                    .overlay(
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.risoGreen)
-                    )
-            }
-        }
-        .opacity(state == .included ? 1 : 0.45)
-        .padding(.vertical, 7)
-        .padding(.leading, 40)
-        .padding(.trailing, 11)
-        .overlay(alignment: .top) { hairline.opacity(0.6) }
-    }
-
-    /// ⋯ menu on counting-template / compound members — tap-driven
-    /// (`Menu`), reusing the row-menu vocabulary (#470). Renders
-    /// nothing for members with no extra actions, and nothing when the
-    /// wizard callbacks aren't wired (read-only mounts).
-    @ViewBuilder
-    private func memberActionsMenu(taskId: String, task: Task?) -> some View {
-        let isCountingTemplate = task?.type == .counting
-            && task?.action != nil && task?.unit != nil && task?.maxCount != nil
-        let children = task?.type == .compound
-            ? (compoundChildrenByCompound[taskId] ?? []) : []
-        if let task, (isCountingTemplate && onDeriveMember != nil)
-            || (!children.isEmpty && onAddTask != nil) {
-            Menu {
-                if isCountingTemplate, let onDeriveMember {
-                    Button("Derive smaller version…", systemImage: "scalemass") {
-                        onDeriveMember(task)
-                    }
-                }
-                if !children.isEmpty, let onAddTask {
-                    Button("Add all subtasks to board", systemImage: "square.stack.3d.up") {
-                        for child in children where !selectedTaskIds.contains(child.childTaskId) {
-                            onAddTask(child.childTaskId)
-                        }
-                    }
-                    Menu {
-                        ForEach(children, id: \.id) { child in
-                            let added = selectedTaskIds.contains(child.childTaskId)
-                            Button {
-                                onAddTask(child.childTaskId)
-                            } label: {
-                                Label(
-                                    taskById[child.childTaskId]?.title ?? "Subtask",
-                                    systemImage: added ? "checkmark" : "plus"
-                                )
-                            }
-                            .disabled(added)
-                        }
-                    } label: {
-                        Label("Add a subtask…", systemImage: "square.on.square.dashed")
-                    }
-                }
-            } label: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.risoPaper)
-                    RoundedRectangle(cornerRadius: 5)
-                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color.risoInk)
-                }
-                .frame(width: 18, height: 18)
-                .padding(3)
-                .contentShape(Rectangle())
-            }
-            .accessibilityLabel("More actions for \(task.title)")
         }
     }
 }

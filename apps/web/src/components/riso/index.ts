@@ -13,6 +13,8 @@ export type { RisoButtonKind, RisoButtonSize, RisoButtonProps } from './RisoButt
 export { RisoCard } from './RisoCard';
 export type { RisoCardShadow, RisoCardProps } from './RisoCard';
 
+export { DiceButton } from './DiceButton';
+
 export { RisoChip } from './RisoChip';
 export type { RisoChipProps } from './RisoChip';
 

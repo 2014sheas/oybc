@@ -42,6 +42,9 @@ final class SharedCounterGroupsTests: XCTestCase {
         baseline: Int? = nil,
         timeframe: Timeframe? = nil,
         startDate: String? = nil,
+        /// B3 RC9 — a window-stamped derived member carries its board
+        /// window's end; the expiry filter reads exactly this.
+        endDate: String? = nil,
         isDeleted: Bool = false,
         isCounter: Bool = false,
         // R1 (pair-derived counter names): left nil by default so the
@@ -70,6 +73,7 @@ final class SharedCounterGroupsTests: XCTestCase {
             isDeleted: isDeleted,
             timeframe: timeframe,
             startDate: startDate,
+            endDate: endDate,
             sharedCounterId: sharedCounterId,
             baseline: baseline,
             isCounter: isCounter
@@ -381,5 +385,79 @@ final class SharedCounterGroupsTests: XCTestCase {
         let groups = buildSharedCounterGroups(tasks: [source], boardTasks: [], boards: [])
         XCTAssertEqual(groups.count, 1)
         XCTAssertEqual(groups[0].name, "Stored Title")
+    }
+
+    // MARK: - 16. RC9 — expired-member visibility (`filterCounterTasks`)
+
+    /// Fixed "now" for the expiry cases: every date below sits an
+    /// unambiguous distance either side of it.
+    private var rc9Now: Date {
+        ISO8601DateFormatter().date(from: "2026-03-01T12:00:00Z")!
+    }
+
+    func test_filterCounterTasks_hidesAnExpiredDerivedMemberByDefault() {
+        let root = counter("root", currentCount: 40)
+        let live = counter(
+            "live", sharedCounterId: "root", endDate: "2026-03-31T23:59:59.999Z"
+        )
+        let expired = counter(
+            "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
+        )
+
+        let visible = filterCounterTasks([root, live, expired], showExpired: false, now: rc9Now)
+
+        XCTAssertEqual(visible.map(\.id), ["root", "live"],
+                       "only the member whose window has ended is dropped")
+    }
+
+    func test_filterCounterTasks_neverHidesARootHoweverOldItsOwnEndDate() {
+        // A root with a long-past endDate: dropping it would delete the whole
+        // group from the hub rather than tidy one row out of it.
+        let root = counter("root", currentCount: 40, endDate: "2020-01-01T00:00:00.000Z")
+
+        let visible = filterCounterTasks([root], showExpired: false, now: rc9Now)
+
+        XCTAssertEqual(visible.map(\.id), ["root"])
+    }
+
+    func test_filterCounterTasks_showExpiredReturnsTheInputUnchanged() {
+        let root = counter("root", currentCount: 40)
+        let expired = counter(
+            "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
+        )
+        let input = [root, expired]
+
+        let visible = filterCounterTasks(input, showExpired: true, now: rc9Now)
+
+        XCTAssertEqual(visible.map(\.id), input.map(\.id))
+    }
+
+    func test_filterCounterTasks_keepsADatelessDerivedMember() {
+        let root = counter("root", currentCount: 40)
+        // No endDate at all — "indefinite", never expired (TaskExpiry).
+        let member = counter("member", sharedCounterId: "root")
+
+        let visible = filterCounterTasks([root, member], showExpired: false, now: rc9Now)
+
+        XCTAssertEqual(visible.map(\.id), ["root", "member"])
+    }
+
+    func test_filterCounterTasks_hidingAMemberAlsoRemovesItsGroupContribution() {
+        // The filter runs BEFORE grouping, so an expired member can't
+        // contribute a board row to the group the hub renders.
+        let root = counter("root", currentCount: 40, isCounter: true)
+        let expired = counter(
+            "expired", sharedCounterId: "root", endDate: "2026-02-07T23:59:59.999Z"
+        )
+        let withExpired = buildSharedCounterGroups(
+            tasks: [root, expired], boardTasks: [], boards: []
+        )
+        XCTAssertEqual(withExpired.first?.taskCount, 2, "both members before filtering")
+
+        let filtered = buildSharedCounterGroups(
+            tasks: filterCounterTasks([root, expired], showExpired: false, now: rc9Now),
+            boardTasks: [], boards: []
+        )
+        XCTAssertEqual(filtered.first?.taskCount, 1, "the expired member never reaches the group")
     }
 }

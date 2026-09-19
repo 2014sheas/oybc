@@ -20,6 +20,12 @@ interface CounterLedgerCardProps {
    * level — this card never renders its own.
    */
   onLogged: (event: CounterLoggedEvent) => void;
+  /**
+   * §Member rules (B3, RC9) — the hub's "Show expired tasks" value, carried
+   * into the Detail route so the two pages agree. The hub owns the state in
+   * its URL (`?showExpired=1`); this just forwards it on the tap.
+   */
+  showExpired?: boolean;
 }
 
 /**
@@ -35,7 +41,11 @@ interface CounterLedgerCardProps {
  * default amount (`group.defaultLogAmount ?? 1`) in place via
  * `incrementSharedCounter` — one tap, no chip picker (that lives on Detail).
  */
-export function CounterLedgerCard({ group, onLogged }: CounterLedgerCardProps): React.ReactElement {
+export function CounterLedgerCard({
+  group,
+  onLogged,
+  showExpired = false,
+}: CounterLedgerCardProps): React.ReactElement {
   const navigate = useNavigate();
   const [isLogging, setIsLogging] = useState(false);
   const activeTasks = group.tasks.filter((t) => t.isActive);
@@ -45,7 +55,7 @@ export function CounterLedgerCard({ group, onLogged }: CounterLedgerCardProps): 
   const logAmount = group.defaultLogAmount ?? 1;
 
   function openDetail(): void {
-    navigate(`/profile/counters/${group.counterId}`);
+    navigate(`/profile/counters/${group.counterId}${showExpired ? '?showExpired=1' : ''}`);
   }
 
   async function handleLog(e: React.MouseEvent): Promise<void> {

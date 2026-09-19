@@ -16,6 +16,7 @@ import {
   type Pool,
   type Task,
   type TaskEvent,
+  type VaryLevel,
 } from '@oybc/shared';
 import { db } from '../internal';
 import { currentTimestamp, generateUUID } from '../utils';
@@ -103,6 +104,19 @@ export interface PersistWizardBoardRowsInput {
    * needs to know which ids they are.
    */
   manualTaskIds?: string[];
+  /**
+   * §Member rules (B3, RC3) — dice levels for HAND-ADDED counters, keyed by
+   * task id (`controller.manualTaskVary`). Source members carry theirs on
+   * `BoardSource.memberRules`; this is the only channel the hand-added layer
+   * has. Absent/empty = nothing varies on that layer.
+   */
+  manualTaskVary?: Record<string, VaryLevel>;
+  /**
+   * §Member rules — uniform `[0, 1)` source for the vary (dice) rolls. RB6:
+   * unseeded `Math.random` in production; injected by tests so a roll can be
+   * asserted exactly instead of only bounded by its range.
+   */
+  rng?: () => number;
 }
 
 /**
@@ -430,6 +444,8 @@ export async function applyStagedTaskEditsForWizardPersist(
  * @param taskSnapshot - The caller's single `tasks` snapshot. Read here and
  *   MUTATED with the minted rows (read back from Dexie, since RB3 may skip a
  *   live one) so the caller's derivation pass needs no second full-table read.
+ * @param manualTaskVary - Dice levels for the hand-added layer (B3, RC3).
+ * @param rng - Vary-roll source; `undefined` = the platform rng (RB6).
  * @returns The ids to place, positionally 1:1 with `selectedIds`.
  */
 async function mintWizardDerivedRows(
@@ -441,6 +457,8 @@ async function mintWizardDerivedRows(
   manualTaskIds: string[],
   window: BoardWindow,
   taskSnapshot: Record<string, Task>,
+  manualTaskVary: Record<string, VaryLevel>,
+  rng: (() => number) | undefined,
 ): Promise<string[]> {
   // The planner gets LIVE rows only — a soft-deleted root reachable through a
   // member's `sharedCounterId` must not be mirrored into a new derived row.
@@ -541,9 +559,9 @@ async function mintWizardDerivedRows(
     selectedIds,
     supplies,
     manualTaskIds,
-    // RB9 — the one-off wizard has no UI for hand-added members' dice levels
-    // yet, so nothing varies on that layer.
-    manualTaskVary: {},
+    // §Member rules (B3, RC3) — the wizard's hand-added dice, authored in the
+    // Sources sheet's hand-added rows (RB9's `{}` placeholder is retired).
+    manualTaskVary,
     window,
     // A repeating board never reaches here (its "Create Board" persists a
     // record and spawns through `spawnTemplateBoard`), so this path is always
@@ -553,6 +571,7 @@ async function mintWizardDerivedRows(
     childrenByCompoundId,
     sourceWindowByTaskId,
     events,
+    rng,
   });
 
   // Read the minted rows BACK into the caller's snapshot rather than trusting
@@ -600,6 +619,8 @@ export async function persistWizardBoardRows({
   stagedEdits,
   sources,
   manualTaskIds,
+  manualTaskVary,
+  rng,
 }: PersistWizardBoardRowsInput): Promise<string> {
   const isOddBoard = size % 2 !== 0;
   const centerRow = Math.floor(size / 2);
@@ -711,6 +732,8 @@ export async function persistWizardBoardRows({
                 endDate: boardFields.endDate ?? null,
               },
               taskSnapshot,
+              manualTaskVary ?? {},
+              rng,
             )
           : [];
 

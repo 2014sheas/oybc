@@ -5,7 +5,9 @@ import {
   OperatorType,
   Timeframe,
   TaskType,
+  derivedTaskId,
   resolveMix,
+  varyRange,
   type Pool,
   type RecurringBoardTemplate,
   type Task,
@@ -1061,5 +1063,147 @@ describe('buildWizardPlacement — counter-family exclusivity (2026-09-08)', () 
     const placed = placedIds(buildWizardPlacement(controller, emptyTaskLibrary(tasks)));
     const famPicks = placed.filter((id) => id === 'r-root' || id === 'r-20');
     expect(famPicks).toHaveLength(1);
+  });
+});
+
+/**
+ * §Member rules (docs/BOARD_SOURCES.md, B3 — RC3): `manualTaskVary` (dice
+ * for HAND-ADDED counters) is wizard state like `sources`, so every persist
+ * path has to carry it — the draft blob, both repeating-record branches, and
+ * the one-off mint. Without the threading the wizard would show a dice the
+ * save silently dropped.
+ */
+describe('persist paths — manualTaskVary threading (§Member rules B3)', () => {
+  function countingTask(id: string, goal: number): Task {
+    return makeTask(id, {
+      type: TaskType.COUNTING,
+      action: 'Do',
+      unit: 'reps',
+      maxCount: goal,
+    });
+  }
+
+  it('a draft save snapshots manualTaskVary into the blob, and a resume decodes it back', async () => {
+    const [manualId] = await seedTasks(1, 'vary-manual');
+    const controller = makeController({
+      isRecurring: true,
+      selectedTaskIds: new Set([manualId]),
+      manualTaskIds: new Set([manualId]),
+      manualTaskVary: { [manualId]: 2 },
+    });
+
+    const boardId = await persistWizardBoard({
+      controller,
+      library: emptyTaskLibrary(),
+      userId: 'user-1',
+      placement: buildWizardPlacement(controller, emptyTaskLibrary()),
+      dates: { startDate: NOW },
+      status: 'draft',
+    });
+
+    const board = await db.boards.get(boardId);
+    // The blob is what `useBoardWizard` hydrates from on resume.
+    expect(decodeRecurringDraftMix(board?.recurringDraftMix).manualTaskVary).toEqual({
+      [manualId]: 2,
+    });
+  });
+
+  it('a repeating CREATE writes manualTaskVary onto the record', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const controller = makeController({
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+      manualTaskVary: { [taskIds[0]]: 1 },
+      tasksRequired: 8,
+    });
+
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
+
+    const template = await db.recurringBoardTemplates.get(result.templateId);
+    expect(template?.manualTaskVary).toEqual({ [taskIds[0]]: 1 });
+  });
+
+  it('a repeating EDIT updates manualTaskVary on the existing record', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    await db.recurringBoardTemplates.add(
+      makeTemplate({ id: 'tmpl-vary', manualTaskVary: { [taskIds[0]]: 2 } }),
+    );
+    const controller = makeController({
+      editingTemplateId: 'tmpl-vary',
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+      manualTaskVary: { [taskIds[1]]: 1 },
+      tasksRequired: 8,
+    });
+
+    await persistRecurringTemplate({ controller, userId: 'user-1' });
+
+    const template = await db.recurringBoardTemplates.get('tmpl-vary');
+    expect(template?.manualTaskVary).toEqual({ [taskIds[1]]: 1 });
+  });
+
+  it('an empty map is OMITTED on create — a rule-less record serialises as before', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    const controller = makeController({
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+      manualTaskVary: {},
+      tasksRequired: 8,
+    });
+
+    const result = await persistRecurringTemplate({ controller, userId: 'user-1' });
+
+    const template = await db.recurringBoardTemplates.get(result.templateId);
+    expect(template).toBeDefined();
+    expect(template?.manualTaskVary).toBeUndefined();
+  });
+
+  it('an EDIT that clears every dice writes an empty map \u2014 an omission could not erase them', async () => {
+    const taskIds = await seedTasks(POOL_SIZE);
+    await db.recurringBoardTemplates.add(
+      makeTemplate({ id: 'tmpl-clear', manualTaskVary: { [taskIds[0]]: 2 } }),
+    );
+    const controller = makeController({
+      editingTemplateId: 'tmpl-clear',
+      selectedTaskIds: new Set(taskIds),
+      manualTaskIds: new Set(taskIds),
+      manualTaskVary: {},
+      tasksRequired: 8,
+    });
+
+    await persistRecurringTemplate({ controller, userId: 'user-1' });
+
+    expect((await db.recurringBoardTemplates.get('tmpl-clear'))?.manualTaskVary).toEqual({});
+  });
+
+  it('a one-off ACTIVE save reaches the mint: the hand-added counter is rolled inside its dice range', async () => {
+    // The end-to-end proof that `persistWizardBoard` → `persistWizardBoardRows`
+    // → the member-rule mint carries the map (B2 passed a hard-coded `{}`).
+    const GOAL = 10;
+    const counter = countingTask('vary-counter', GOAL);
+    await db.tasks.add(counter);
+    const library = emptyTaskLibrary([counter]);
+    const controller = makeController({
+      isRecurring: false,
+      selectedTaskIds: new Set([counter.id]),
+      manualTaskIds: new Set([counter.id]),
+      manualTaskVary: { [counter.id]: 1 },
+      tasksRequired: 8,
+    });
+
+    const boardId = await persistWizardBoard({
+      controller,
+      library,
+      userId: 'user-1',
+      placement: buildWizardPlacement(controller, library),
+      dates: { startDate: NOW },
+      status: 'active',
+    });
+
+    const derived = await db.tasks.get(derivedTaskId(boardId, counter.id));
+    expect(derived).toBeDefined();
+    const [lo, hi] = varyRange(GOAL, 1, GOAL);
+    expect(derived?.maxCount).toBeGreaterThanOrEqual(lo);
+    expect(derived?.maxCount).toBeLessThanOrEqual(hi);
   });
 });

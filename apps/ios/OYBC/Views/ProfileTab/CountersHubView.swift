@@ -25,6 +25,14 @@ struct CountersHubView: View {
     @State private var isLoaded = false
     @State private var tasksForDedupe: [OYBC.Task] = []
 
+    /// §Member rules (B3, RC9) — expired-member visibility. Per-window
+    /// derived counters expire with their board's window, so by default a
+    /// group only lists its LIVE members (`filterCounterTasks`). Off by
+    /// default, matching the Tasks tab's own default for the same predicate;
+    /// the value is threaded into Counter detail on push so the two screens
+    /// agree (web carries it in the URL as `?showExpired=1`).
+    @State private var showExpired = false
+
     /// Counter ids with an in-flight "+ Log" write — disables that card's pill.
     @State private var loggingCounterIds: Set<String> = []
     @State private var toast: HubToastState?
@@ -46,6 +54,7 @@ struct CountersHubView: View {
                 groups: groups,
                 isLoaded: isLoaded,
                 loggingCounterIds: loggingCounterIds,
+                showExpired: $showExpired,
                 onNewCounter: { isNewCounterSheetPresented = true },
                 onOpenDetail: { counterId in navigateToCounterId = counterId },
                 onLog: { group in handleLog(group: group) }
@@ -67,6 +76,7 @@ struct CountersHubView: View {
         }
         .navigationBarHidden(true)
         .onAppear { loadData() }
+        .onChange(of: showExpired) { _, _ in loadData() }
         .sheet(isPresented: $isNewCounterSheetPresented, onDismiss: { loadData() }) {
             if let userId = authService.currentUser?.id {
                 NewCounterSheetView(
@@ -80,7 +90,7 @@ struct CountersHubView: View {
             }
         }
         .navigationDestination(item: $navigateToCounterId) { counterId in
-            CounterDetailView(counterId: counterId)
+            CounterDetailView(counterId: counterId, showExpired: showExpired)
         }
     }
 
@@ -88,11 +98,20 @@ struct CountersHubView: View {
 
     private func loadData() {
         guard let userId = authService.currentUser?.id else { return }
+        let visibility = showExpired
         _Concurrency.Task.detached(priority: .userInitiated) {
             let tasks = (try? AppDatabase.shared.fetchTasks(userId: userId)) ?? []
             let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
             let boardTasks = (try? AppDatabase.shared.fetchAllBoardTasks()) ?? []
-            let result = buildSharedCounterGroups(tasks: tasks, boardTasks: boardTasks, boards: boards)
+            // RC9 — filter BEFORE grouping so an expired member can't
+            // contribute a board row either. `tasksForDedupe` keeps the
+            // UNfiltered set: the "+ New counter" sheet matches against the
+            // whole library, not the hub's current view.
+            let result = buildSharedCounterGroups(
+                tasks: filterCounterTasks(tasks, showExpired: visibility),
+                boardTasks: boardTasks,
+                boards: boards
+            )
             await MainActor.run {
                 groups = result
                 tasksForDedupe = tasks
@@ -151,6 +170,10 @@ struct CountersHubContent: View {
     let groups: [SharedCounterGroup]
     var isLoaded: Bool = true
     var loggingCounterIds: Set<String> = []
+    /// §Member rules (B3, RC9) — bound to the container's expired-member
+    /// visibility. A constant binding by default so previews and snapshot
+    /// tests can render the leaf without owning the state.
+    var showExpired: Binding<Bool> = .constant(false)
     /// Fired by the header's trailing button (and the empty-state CTA) to
     /// open the "+ New counter" sheet. Defaults to a no-op so previews and
     /// other non-interactive callers don't need to supply one.
@@ -188,6 +211,18 @@ struct CountersHubContent: View {
                         .foregroundStyle(Color.risoInk)
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 20)
+
+                    // §Member rules (B3, RC9) — hidden when there is nothing
+                    // to filter: a "Show expired tasks" control sitting over
+                    // "No counters yet" is noise. Stays up while the toggle is
+                    // ON even if that leaves the list empty, so it can be
+                    // turned back off. Mirrors web's `groups.length > 0 ||
+                    // showExpired`.
+                    if isLoaded && (!groups.isEmpty || showExpired.wrappedValue) {
+                        RisoShowExpiredToggle(isOn: showExpired)
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.bottom, 16)
+                    }
 
                     if isLoaded {
                         if groups.isEmpty {

@@ -11,7 +11,7 @@ import GRDB
 /// The child can be ANY Task — primitive (normal/counting) or another compound.
 /// Nesting is natural: a compound's children may themselves resolve to compound
 /// rows whose own children are evaluated recursively.
-struct CompoundChild: Codable, FetchableRecord, PersistableRecord, Identifiable {
+struct CompoundChild: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable {
     // Identity
     var id: String
     var compoundTaskId: String   // FK to tasks (parent compound)

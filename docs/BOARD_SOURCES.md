@@ -559,7 +559,7 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 | **B0** | §Member rules into this doc (this section); `WINDOWED_COMPLETION.md` carve-out paragraph; CLAUDE.md pointer. **SHIPPED** (#486 — landed with the spec). | docs |
 | **B1** | Shared types (`memberRules`, `manualTaskVary`) + Zod + Swift mirrors; draft-blob additive (still v2); GRDB **v31** column; pure helpers (`nominalWindowDays`, `autoTarget`, `varyRange`, `rollTarget`, `applyMemberRules`, `planDerivedTasks`) + mirrored vectors. Inert — nothing writes rules yet. **SHIPPED** (#489). | lockstep |
 | **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). **SHIPPED** (#491). | lockstep |
-| **B3** | UI: member rows (stepper / dice / One square–Split up / part lines), hand-added dice, primitives, wizard actions, Preview derived cells, edit-mode note, #471 menu removal, hub expired filter, iOS Library-sheet derive entry stripped; snapshots + Playwright. | lockstep |
+| **B3** | UI: member rows (stepper / dice / One square–Split up / part lines), hand-added dice, primitives, wizard actions, Preview derived cells, edit-mode note, #471 menu removal, hub expired filter, iOS Library-sheet derive entry stripped; snapshots + Playwright. **SHIPPED** (#492) — the member-rules train (A → B0–B3) is complete. | lockstep |
 
 Each UI phase: implement → independent review → device checklist relayed to
 the user → CI-gated merge (the P2–P7 pools cadence). Rule-6 note: P2/P3
@@ -654,6 +654,193 @@ Both platforms, one PR (#491).
   orphan sweep reads candidates from every placement row, live or
   tombstoned, so it stays correct either way if a future change starts
   tombstoning the ordinary ones too.
+
+#### Plan B3 — implementation notes (2026-09-19)
+
+Both platforms, one PR (#492). This closes the member-rules train (A → B0–B3):
+the wizard's member rows now write real rules, the Preview renders a real
+dry run of them, and the Counters hub / delete-confirm surfaces read the
+window-stamped derived counters B2 started minting.
+
+- **Landed**: the #471 member row ⋯ menu is gone on both platforms (deleted
+  `memberHasActions`/`buildMemberMenuItems`/`onDeriveMember`/`onAddTask` and
+  `SourceRow.tsx`'s wiring; `memberActionsMenu` and the `RisoSourceRowView.swift`
+  call site) and replaced by inline member-row controls: `MemberRuleRow.tsx`
+  ↔ `RisoMemberRuleRowView.swift` render the 22pt target stepper + "of N
+  unit" caption for a counting member pulled from a **board** source, dice
+  only for a counting member pulled from a **pool** source, and for a
+  compound member the One square / Split up pill with a "1 square" /
+  "N squares" note and one line per part (name, a stepper when the part is
+  counting and board-sourced, dice in Split mode, and a ✕ that the last
+  remaining part never gets). Dice-on renders the blue range line from
+  `varyRange` under the row or part, never on the compound header itself.
+  New primitives: `DiceButton`/`riso/DiceButton.tsx` ↔ `RisoDiceButton.swift`
+  (26×22, 0/2/5 pips, `--riso-ink-static`/`risoInkStatic` fill so the pips
+  stay visible in dark mode), a compact `CounterStepper`/`CounterStepperView`
+  size, and a compact `RisoSegmented` size for the One square / Split up
+  pill — all added to the existing kit rather than one-off UI, each with a
+  `RisoKitSnapshotTests` baseline (`testMemberRulePrimitivesLight`/`Dark`).
+  Hand-added rows get the same dice, before the 32pt edit button, with the
+  same range line underneath. The wizard actions
+  (`setMemberTarget`/`setMemberVary`/`setMemberSplit`/`setPartExcluded`/
+  `setPartTarget`/`setPartVary`/`setManualVary`) are symmetric by name on
+  both platforms and write `sources[i].memberRules` /
+  `manualTaskVary`; split and part-exclusion re-run
+  `refreshSourceSupplies` → `clampAllSourceRanges` so ranges stay honest.
+  Web split `useBoardWizard.ts` (1144 → 949 lines, its file-size allowlist
+  entry removed outright) into `useWizardSources.ts` (source CRUD, extracted
+  first as a behaviour-identical refactor), `useWizardMemberRules.ts` (the
+  new rule actions), and `useWizardDerived.ts` (Preview/derived-cell state);
+  iOS added `BoardWizardViewModel+MemberRules.swift` alongside the existing
+  `BoardWizardViewModel+Sources.swift`. `algorithmSupplies` on both
+  platforms now expands compound members into their parts before the
+  selection algorithm sees them (web via `childrenByCompoundId`+`tasksById`
+  parameters; iOS reads VM state directly — platform-idiomatic, same
+  result). `BoardSourceSupplyInfo` gained `windowCountByTaskId` +
+  `sourceWindow` (filled in `resolveSupply`/`resolveSupply(db:board:)` from
+  the events already read for the done filter) so a one-off pull can prefill
+  `target = remaining` idempotently — it skips any source whose rules were
+  already hydrated on resume, never overwriting a saved rule.
+  The Preview renders a real dry run: `previewDerived.ts` ↔
+  `BoardWizardPreviewDerived.swift` derive titles/targets for `DerivedTaskDraft`
+  cells without touching the database, and Shuffle re-rolls them via a
+  `previewRules = { seed }` nonce that both the placement shuffle and the
+  member rolls consume — see the RC6 amendment below. The Counters hub and
+  its detail page gained a "Show expired tasks" toggle
+  (`ShowExpiredToggle.tsx` ↔ `RisoShowExpiredToggle` in
+  `Views/Riso/RisoControls.swift`, the latter shared with the Tasks tab's
+  existing toggle rather than a second definition) backed by
+  `filterCounterTasks`/`SharedCounterGroups.swift`'s filter and threaded
+  through `useSharedCounterGroups({ showExpired })` ↔
+  `AppDatabase+SharedCounterGroups` callers — window-stamped derived
+  **counter roots** are library content and are never filtered, only the
+  per-window rows; web carries the state as `?showExpired=1`, iOS as
+  passed-through view state. The delete-confirm line ("`{n} board
+  counter{s} made from this one will be removed.`") is centralised as
+  `BoardSources.derivedCounterRemovalNote(count:)` on iOS (consumed by both
+  `CounterDeleteConfirmView.swift`, newly extracted from `CounterDetailView.swift`
+  — 1178 → 1008 lines, its allowlist entry lowered not deleted — and
+  `TaskDeleteConfirmView.swift`) and as the one-line web twin
+  `components/counters/derivedCounterRemovalNote.ts`, consumed by BOTH web
+  confirm dialogs (`CounterDeleteConfirmDialog.tsx` and
+  `pages/tasks/TaskConfirmDeleteDialog.tsx`); the task sheet folds the count
+  into its "No other rows affected." predicate on both platforms, since the
+  derived rows live on OTHER boards and move neither `affectedBoards` nor the
+  compound link counts. Driven by `impact.derivedWindowCounterCount`
+  throughout. BOTH platforms deleted the Library sheet's inline
+  "⇲ Derive smaller…" entry — iOS its sheet too
+  (`RisoDeriveCounterSheetView.swift`, one consumer), web the dead
+  `LibrarySheet` prop/branch/CSS its caller had stopped passing — now that
+  member rows own that job.
+- **Rulings (design, locked at planning as RC1–RC14)**: a11y strings exactly
+  as spec'd ("Vary: off / a little / a lot" on the dice, "Decrease target" /
+  "Increase target" on the stepper); RC12 is the delete-confirm line +
+  `CounterDeleteConfirmView` extraction above; RC13 is the out-of-scope list
+  carried into Follow-ups below; RC14 is the split/part-exclusion supply
+  refresh + last-part refusal (`setPartExcluded` returns `false` and leaves
+  every part included rather than removing the last one).
+- **Rulings (execution)**: **RC6 amended** — a Preview build must be
+  idempotent (two calls with the same seed return equal placements) and must
+  not re-roll on an unrelated live-query tick, so `buildWizardPlacement`
+  takes `previewRules = { seed }` and builds the rng per call
+  (`makePreviewRng`, 2 warm-up samples discarded so adjacent seeds don't
+  correlate) rather than accepting a shared generator; the effect that calls
+  it is keyed on a plan-inputs key, not on the raw task array. Preview
+  stand-ins keep the *original* task id (only title/maxCount/action/unit are
+  overridden) because persist re-derives from placement ids, so a synthetic
+  preview id would leak into `board_tasks`; derived **compounds** are
+  display-only in the Preview (never stood in) so the compound cell shows
+  the original title and the children lookup isn't orphaned. **RC10
+  amended** — counting *parts* get a stepper in One-square mode too (the
+  part's target applies regardless of split state), dice stays split-only.
+  `resolveWizardDates` moved verbatim to `wizardDates.ts` (re-exported, to
+  break an import cycle). `seededRng`/`makeSeededRng` was promoted to
+  `packages/shared/src/algorithms/seededRng.ts`; `bingo-core` cannot import
+  it back (shared depends on bingo-core, not the reverse) so it keeps its
+  own vector-pinned duplicate LCG — both sides are pinned to the same five
+  literals for seeds 0/1/42/2^32−1. iOS's compact stepper commits the typed
+  draft before stepping (parity with web's blur→commit→step), fixed in the
+  Task 7 review round after the first pass read the stale `value` instead of
+  the uncommitted `draft`; web's compact stepper likewise gates its −/+
+  `disabled` state on that draft (`compactStepperBase`, the twin of
+  `RisoCompactStepperMath.base`). **An empty `manualTaskVary` is never
+  written** — on either record (the draft blob and `RecurringBoardTemplate`
+  CREATE) and on either platform; decoders read a missing key as "no dice".
+  The `RecurringBoardTemplate` UPDATE path is the one deliberate exception:
+  there an empty map means "clear the dice", which an omission cannot
+  express.
+- **Accepted divergences**: web keeps its hand-added row's
+  "Derive smaller version…" context-menu entry (iOS has no hand-added-row
+  menu to match; noted, not treated as drift). iOS's
+  `resolveDeriveLinkTarget` is now test-only dead code from the caller's
+  perspective (web's twin is still live) — intentionally kept, not deleted,
+  as a parity note for a future knip-equivalent iOS pass. The part-level
+  UNDO control renders at part scale on both platforms (web's
+  `MemberRuleRow.module.css` `.partUndo` rule, previously defined but
+  unused, is now the one `MemberRuleRow.tsx` applies) — this was a
+  discovered mismatch, not a design choice, and is recorded here as
+  converged rather than as an open divergence.
+- **The Preview is a sample, not a promise**: because a dry run and the
+  eventual persist both roll from a seed, the numbers a user sees in the
+  Preview are one valid outcome from the same range the board will actually
+  use — Create re-derives and re-rolls fresh inside that range rather than
+  copying the sampled values, so a persisted board's targets can differ from
+  the last Preview frame the user looked at while still being a fair result.
+- **Follow-ups (RC13 + discovered during B3, out of scope here)**:
+  derived-compound provenance (so `repeatBoard*` and `isMintedForBoard` stop
+  being heuristic, per the B2 hand-off); a post-activation Board-Edit window
+  change does not re-derive existing window-stamped rows on either platform
+  (a derived id doesn't encode the window); a Firestore rules-cap emulator
+  test for `RecurringBoardTemplate`, carried from B1; splitting
+  `CounterDetailContent` out of `CounterDetailView.swift` to bring it back
+  under the 1000-line cap without an allowlist entry; an `.nvmrc`/Node-20
+  engines pin (local Playwright 1.62's tsconfig loader fails under Node 24;
+  CI pins Node 20 and is unaffected); the Preview's plan-inputs key omits
+  the wizard's start/end dates on both platforms (safe today — nothing
+  date-dependent varies the plan without also varying task selection — but
+  worth tightening if that stops holding); device-checklist items for a
+  future pass (compact-stepper select-all-on-focus and `.numberPad`'s
+  missing Done key are both intentional-for-now, not bugs); promoting web's
+  duplicated `nextVary` (`MemberRuleRow.tsx` / `PoolList.tsx`) to a single
+  definition (iOS already has one, `VaryLevel.next`); memoising the web
+  Split-up expansion the way iOS's `expandedSuppliesCache` does (today it is
+  recomputed O(n²) per clamp); dark twins for the new member-row snapshot
+  cases (`testSourceCountingMemberRule` and friends are light-only, while
+  the sibling `testPoolList*` cases have both).
+- **Test inventory**: shared Jest gained `memberRulesDisplay.test.ts` +
+  `seededRng.test.ts` (the `display` section of
+  `memberRuleVectors.json` kept in sync with the iOS fixture copy under
+  `OYBCTests/Fixtures/`); web Vitest added row/hook/helper coverage
+  (`MemberRuleRow.test.ts`, `useWizardMemberRules.test.ts`,
+  `useWizardSources.test.ts`, `previewDerived.test.ts`,
+  `useSharedCounterGroups.test.ts`, `CounterDeleteConfirmDialog.test.ts`,
+  `DiceButton.test.ts`, `CounterStepper.test.ts`, `RisoSegmented.test.ts`,
+  among others) plus `e2e/member-rules.spec.ts` (5 Playwright specs,
+  CI-gated — see the ruling above on why this branch's e2e was validated
+  locally by an ad-hoc `tsc` pass rather than a live `playwright test` run);
+  iOS XCTest added `BoardWizardMemberRulesTests.swift`,
+  `BoardWizardPreviewDerivedTests.swift`, `SeededRngTests.swift`,
+  `MemberRuleRowModelTests.swift`, `RisoCompactStepperMathTests.swift`, and
+  `DerivedCountersTests.swift`/`SharedCounterGroupsTests.swift` additions,
+  plus new snapshot baselines: `RisoKitSnapshotTests`
+  (`testMemberRulePrimitivesLight`/`Dark`), `BoardWizardTasksStepSnapshotTests`
+  (`testSourceCountingMemberRule`, `testSourceCountingMemberVaryOn`,
+  `testPoolSourceCountingMemberHasDiceButNoStepper`,
+  `testSourceCompoundOneSquare`, `testSourceCompoundSplitUpWithExcludedPart`,
+  `testPoolListHandAddedVaryLight`/`Dark`, and a deliberate re-record of
+  `testDenseLibraryWithSourcesPulled` now that the Library sheet's derive
+  entry is gone), and `RisoDeleteConfirmSnapshotTests`
+  (`testDerivedCountersLight`/`Dark`). The hub and delete-confirm snapshot
+  baselines are environment-red on the dev machine (pre-existing font drift,
+  ROADMAP A8) — verified instead by "no new reds" plus reading the recorded
+  PNGs.
+
+The member-rules train — A (#487), B0 (#486), B1 (#489), B2 (#491), B3
+(#492) — is now **COMPLETE**: counting and compound members pulled from
+sources carry real per-member rules (target, vary, split), the wizard
+surfaces let a user author them, the Preview shows a faithful sample of
+what will be rolled, and the Counters hub / delete-confirm surfaces read
+and explain the window-stamped derived counters they produce.
 
 ## Test strategy
 

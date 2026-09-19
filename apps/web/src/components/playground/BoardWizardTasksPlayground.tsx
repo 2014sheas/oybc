@@ -130,8 +130,11 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
   const [seedStatus, setSeedStatus] = useState<string | null>(null);
   const [isSeeding, setIsSeeding] = useState(false);
 
+  // The harness has no Split-up expansion to refuse a deselect, so it
+  // always reports success — the controller's real refusal (final review
+  // I1, `canApplyTaskToggle`) lives in `useBoardWizard`.
   const handleToggle = useCallback(
-    (taskId: string): void => {
+    (taskId: string): boolean => {
       const wasSelected = selectedTaskIds.has(taskId);
       setSelectedTaskIds((prev) => {
         const next = new Set(prev);
@@ -164,6 +167,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
       } else {
         setManualTaskIds((prev) => new Set(prev).add(taskId));
       }
+      return true;
     },
     [selectedTaskIds, supplyInfoBySourceId, tasksRequired],
   );

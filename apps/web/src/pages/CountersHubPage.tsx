@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../firebase/useAuth';
 import { useSharedCounterGroups } from '../hooks/useSharedCounterGroups';
 import { useTasks } from '../hooks/useTasks';
@@ -12,6 +12,7 @@ import {
 import { undoLastCounterLog } from '../db/operations/tasks';
 import { generateUUID } from '../db/utils';
 import { RisoButton } from '../components/riso';
+import { ShowExpiredToggle } from '../components/ShowExpiredToggle';
 import profileStyles from './ProfilePage.module.css';
 import styles from './CountersHubPage.module.css';
 
@@ -32,11 +33,19 @@ import styles from './CountersHubPage.module.css';
  *     and surfaces the shared `CounterLogToast` ("Logged +N · Undo") — only
  *     one toast lives at this page level at a time.
  *   - Live via `useSharedCounterGroups` (reactive Dexie query).
+ *
+ * §Member rules (B3, RC9) — per-window DERIVED counters expire with their
+ * board's window, so expired members are hidden by default and the same
+ * `ShowExpiredToggle` the Tasks tab uses brings them back. The value lives in
+ * the URL (`?showExpired=1`) — the one cross-page mechanism available here —
+ * so Detail opens with the hub's setting instead of silently resetting it.
  */
 export function CountersHubPage(): React.ReactElement {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const groups = useSharedCounterGroups(user?.id);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showExpired = searchParams.get('showExpired') === '1';
+  const groups = useSharedCounterGroups(user?.id, { showExpired });
   const tasks = useTasks(user?.id) ?? [];
   const [sheetOpen, setSheetOpen] = useState(false);
   // `toastKey` is generated ONCE per log (not per render) so CounterLogToast's
@@ -44,9 +53,17 @@ export function CountersHubPage(): React.ReactElement {
   // `groups` query updating after the log writes).
   const [toast, setToast] = useState<(CounterLoggedEvent & { toastKey: string }) | null>(null);
 
+  function handleShowExpiredChange(next: boolean): void {
+    const params = new URLSearchParams(searchParams);
+    if (next) params.set('showExpired', '1');
+    else params.delete('showExpired');
+    setSearchParams(params, { replace: true });
+  }
+
   function handleCreated(counterId: string): void {
     setSheetOpen(false);
-    navigate(`/profile/counters/${counterId}`);
+    // Carry the expired setting into Detail, exactly as a card tap does.
+    navigate(`/profile/counters/${counterId}${showExpired ? '?showExpired=1' : ''}`);
   }
 
   function handleLogged(event: CounterLoggedEvent): void {
@@ -84,6 +101,16 @@ export function CountersHubPage(): React.ReactElement {
         One tally per activity — every task counting it moves together.
       </p>
 
+      {/* §Member rules (B3, RC9) — expired-member visibility. Hidden when
+          there is nothing to filter: a "Show expired tasks" control sitting
+          over "No counters yet" is noise. Stays up while the toggle is ON
+          even if that leaves the list empty, so it can be turned back off. */}
+      {(groups.length > 0 || showExpired) && (
+        <div className={styles.filterRow}>
+          <ShowExpiredToggle checked={showExpired} onChange={handleShowExpiredChange} />
+        </div>
+      )}
+
       {/* Counter cards — Ledger layout */}
       {groups.length === 0 ? (
         <EmptyState onNewCounter={() => setSheetOpen(true)} />
@@ -91,7 +118,11 @@ export function CountersHubPage(): React.ReactElement {
         <div className={styles.cards} role="list" aria-label="Shared counters">
           {groups.map((group) => (
             <div key={group.counterId} role="listitem">
-              <CounterLedgerCard group={group} onLogged={handleLogged} />
+              <CounterLedgerCard
+                group={group}
+                onLogged={handleLogged}
+                showExpired={showExpired}
+              />
             </div>
           ))}
         </div>

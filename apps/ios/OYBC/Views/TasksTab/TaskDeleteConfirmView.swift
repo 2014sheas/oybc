@@ -33,6 +33,14 @@ struct TaskDeleteConfirmView: View {
         !impact.affectedBoards.isEmpty
     }
 
+    /// True when nothing at all is affected — no boards, no compound links,
+    /// and no derived counters (B3 RC12 added the third clause; the
+    /// "No other rows affected." line would otherwise contradict the note
+    /// right above it).
+    private var hasNoImpact: Bool {
+        !hasBoards && otherCountsTotal == 0 && impact.derivedWindowCounterCount == 0
+    }
+
     private var otherCountsTotal: Int {
         impact.childLinkCount + impact.parentLinkCount
     }
@@ -67,7 +75,16 @@ struct TaskDeleteConfirmView: View {
                         otherImpactSection
                     }
 
-                    if !hasBoards && otherCountsTotal == 0 {
+                    // §Member rules (B3, RC12) — a task delete cascades to the
+                    // window-stamped derived counters minted from it. Same
+                    // sentence as the counter sheet, from the one helper.
+                    if let note = BoardSources.derivedCounterRemovalNote(
+                        count: impact.derivedWindowCounterCount
+                    ) {
+                        RisoImpactNote(text: note)
+                    }
+
+                    if hasNoImpact {
                         Text("No other rows affected.")
                             .font(.risoBody(13, .semibold))
                             .foregroundStyle(Color.risoMuted)

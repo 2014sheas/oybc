@@ -163,6 +163,20 @@ enum RisoSegmentedStyle {
     case pill
 }
 
+/// `RisoSegmented`'s two sizes. Mirrors the web `size` prop
+/// (`'default' | 'compact'`) verbatim, and like it shapes the `.pill`
+/// form only — `.card` ignores it.
+///
+/// - `.regular` (default): the shipped metrics, unchanged.
+/// - `.compact`: a 22pt pill with a 1.5pt ink border and 10.5/700
+///   segments split by an ink divider — the inline row control the
+///   wizard member row's One square / Split up toggle uses (handoff
+///   "Compound member").
+enum RisoSegmentedSize {
+    case regular
+    case compact
+}
+
 /// Generic segmented control — selected segment = filled / paper text.
 ///
 /// - `equalWidth` (default true, `.card` style only): segments each take an
@@ -186,11 +200,16 @@ struct RisoSegmented<T: Hashable>: View {
     var equalWidth: Bool = true
     var selectedFill: (T) -> Color = { _ in .risoBlue }
     var style: RisoSegmentedStyle = .card
+    var size: RisoSegmentedSize = .regular
 
     var body: some View {
         switch style {
         case .card: cardBody
-        case .pill: pillBody
+        case .pill:
+            switch size {
+            case .regular: pillBody
+            case .compact: compactPillBody
+            }
         }
     }
 
@@ -245,6 +264,39 @@ struct RisoSegmented<T: Hashable>: View {
         .padding(4)
         .background(Capsule().fill(Color.risoPaper))
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+    }
+
+    /// `.pill` at `.compact`: a 22pt capsule with NO internal padding —
+    /// the segments butt up against each other, split by a 1.5pt ink
+    /// divider, and the selected one fills the full cell height with ink.
+    /// Mirrors the web `.pill.compact` rule set (height 22, border 1.5,
+    /// segment radius 0, 10.5/700, 9pt side padding).
+    private var compactPillBody: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.element.value) { index, opt in
+                let isOn = selection == opt.value
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.risoInk)
+                        .frame(width: Riso.Keyline.dense)
+                }
+                Button { selection = opt.value } label: {
+                    Text(opt.label)
+                        .font(.risoHead(10.5, .bold))
+                        .lineLimit(1)
+                        .foregroundStyle(isOn ? Color.risoPaper : Color.risoMuted)
+                        .padding(.horizontal, 9)
+                        .frame(maxHeight: .infinity)
+                        .background(isOn ? Color.risoInk : Color.clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(height: 22)
+        .background(Color.risoPaper)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 }
 
@@ -440,5 +492,51 @@ extension RisoTaskKind {
         case .compound: self = .compound
         case .achievement: self = .achievement
         }
+    }
+}
+
+// MARK: - Show-expired toggle
+
+/// The one "Show expired tasks" switch, shared by every surface that hides
+/// finished windows by default.
+///
+/// Extracted from the Tasks tab's secondary filter panel when the Counters
+/// hub gained the same control (B3 RC9) — the label is a cross-platform copy
+/// contract (web's `ShowExpiredToggle`), so it lives in exactly one place on
+/// each platform rather than being retyped per screen.
+struct RisoShowExpiredToggle: View {
+
+    /// Whether expired tasks are currently shown.
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle("Show expired tasks", isOn: $isOn)
+            .font(.risoBody(13, .medium))
+            .tint(Color.risoBlue)
+    }
+}
+
+// MARK: - Impact note
+
+/// A quiet one-line consequence note on a destructive-confirm sheet — the kind
+/// of sentence that states what ELSE a delete takes with it.
+///
+/// Muted body copy rather than a card, deliberately: it is a consequence of
+/// the action, not a list the person picks through. Extracted when the B3 RC12
+/// derived-counter line landed on BOTH confirm sheets
+/// (`CounterDeleteConfirmView`, `TaskDeleteConfirmView`) so a future restyle
+/// has one place to land; the modifier stack is byte-identical to the one both
+/// sheets inlined before.
+struct RisoImpactNote: View {
+
+    /// The sentence to render.
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.risoBody(12, .semibold))
+            .foregroundStyle(Color.risoMuted)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

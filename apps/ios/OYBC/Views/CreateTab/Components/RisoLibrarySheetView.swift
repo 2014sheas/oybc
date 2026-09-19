@@ -9,7 +9,6 @@ import SwiftUI
 /// Wraps all existing wizard logic:
 /// - Tap row = toggle add/remove (`toggleSelection`).
 /// - Green left bar on added rows.
-/// - Counting rows: "⇲ Derive smaller" → existing derive sheet.
 /// - Compound rows: expand to add children.
 /// - "From parent boards" chip (gated to timeframes that have parents).
 struct RisoLibrarySheetView: View {
@@ -25,14 +24,11 @@ struct RisoLibrarySheetView: View {
     let hasParentBoards: Bool
     let currentTimeframe: Timeframe
 
+    /// Only use left after the B3 derive strip: loading the "From parent
+    /// boards" feed. Creation/persist props went with the derive block.
     let userId: String
-    let defaultStartDate: String?
-    let defaultEndDate: String?
-    let onPendingCreated: ((_ payload: PendingTaskPayload) -> Void)?
-    let onLibraryReloadRequested: () -> Void
 
     let onToggle: (_ taskId: String) -> Void
-    let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
 
     // MARK: - Internal state
 
@@ -40,10 +36,6 @@ struct RisoLibrarySheetView: View {
     @State private var searchQuery: String = ""
     @State private var activeFilter: LibraryFilter = .all
     @State private var expandedCompoundId: String? = nil
-
-    // Derive-smaller sheet state
-    @State private var derivingFromTask: OYBC.Task? = nil
-    @State private var deriveMaxCountInput: String = ""
 
     // Parent-board tasks
     @State private var parentTasksVM = ParentBoardTasksViewModel()
@@ -65,10 +57,6 @@ struct RisoLibrarySheetView: View {
         }
         .sheet(isPresented: $isSheetOpen) {
             librarySheet
-        }
-        // Derive sheet — presented from here so it layers above the library sheet
-        .sheet(item: derivePickerItemBinding) { _ in
-            deriveCounterSheet
         }
     }
 
@@ -299,21 +287,6 @@ struct RisoLibrarySheetView: View {
             if isCompound && isExpanded {
                 compoundChildrenSection(task)
             }
-
-            // Counting row actions (derive smaller)
-            if task.type == .counting, task.action != nil, task.unit != nil, task.maxCount != nil {
-                HStack {
-                    Button("⇲ Derive smaller") {
-                        derivingFromTask = task
-                        deriveMaxCountInput = ""
-                    }
-                    .font(.risoHead(11, .bold))
-                    .foregroundStyle(Color.risoBlue)
-                    .padding(.leading, 13)
-                    .padding(.bottom, 8)
-                    Spacer()
-                }
-            }
         }
         .background(isAdded ? Color.risoPaper : Color.risoPaper2)
         .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
@@ -407,166 +380,6 @@ struct RisoLibrarySheetView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
-    }
-
-    // MARK: - Derive smaller sheet
-
-    private var derivePickerItemBinding: Binding<DeriveCounterPayload?> {
-        Binding(
-            get: { derivingFromTask.map { DeriveCounterPayload(task: $0) } },
-            set: { if $0 == nil { derivingFromTask = nil } }
-        )
-    }
-
-    private struct DeriveCounterPayload: Identifiable {
-        let task: OYBC.Task
-        var id: String { task.id }
-    }
-
-    @ViewBuilder
-    private var deriveCounterSheet: some View {
-        if let source = derivingFromTask {
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        // "From {title} — same counter, lower goal."
-                        deriveSection(label: "Derived from") {
-                            (Text("From ")
-                                .font(.risoBody(13, .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                            + Text(source.title)
-                                .font(.risoHead(15, .bold))
-                                .foregroundStyle(Color.risoInk)
-                            + Text(" — same counter, lower goal.")
-                                .font(.risoBody(13, .semibold))
-                                .foregroundStyle(Color.risoMuted))
-                        }
-
-                        deriveSection(label: "New target") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                RisoNumberField(placeholder: "Goal", text: $deriveMaxCountInput)
-                                // "New task: {derived title} — still counts {noun}."
-                                if let action = source.action, let unit = source.unit,
-                                   let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-                                   parsed > 0 {
-                                    let derivedTitle = TaskTitle.generateCounterTaskTitle(action: action, maxCount: parsed, unit: unit)
-                                    (Text("New task: ")
-                                        .font(.risoBody(12, .regular))
-                                        .foregroundStyle(Color.risoMuted)
-                                    + Text(derivedTitle)
-                                        .font(.risoHead(13, .bold))
-                                        .foregroundStyle(Color.risoInk)
-                                    + Text(" — still counts \(unit).")
-                                        .font(.risoBody(12, .regular))
-                                        .foregroundStyle(Color.risoMuted))
-                                }
-                            }
-                        }
-                    }
-                    .padding(16)
-                }
-                // numberPad has no return key — let a swipe dismiss it so the
-                // user can reach the title preview / Save without leaving.
-                .scrollDismissesKeyboard(.interactively)
-                .background(Color.risoPaper.ignoresSafeArea())
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text("Smaller version")
-                            .font(.risoHead(17, .extraBold))
-                            .foregroundStyle(Color.risoInk)
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        RisoToolbarPill(title: "Create") { saveDerivedCounter(source: source) }
-                        .disabled(!isDeriveInputValid(source: source))
-                    }
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { derivingFromTask = nil }
-                            .font(.risoBody(15, .semibold))
-                            .foregroundStyle(Color.risoMuted)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Riso card section for the derive sheet — label + paper2 card.
-    @ViewBuilder
-    private func deriveSection<Content: View>(
-        label: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(label).risoSectionLabel()
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-                .risoCard(fill: .risoPaper2)
-                .risoHardShadow(Riso.Shadow.small)
-        }
-    }
-
-    private func isDeriveInputValid(source: OYBC.Task) -> Bool {
-        guard source.action != nil, source.unit != nil, source.maxCount != nil else { return false }
-        guard let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
-        return parsed > 0
-    }
-
-    /// R1 counters refresh — "Derive smaller version…" must produce a
-    /// LINKED task, not a standalone duplicate (the sheet's own copy
-    /// promises "same counter, lower goal" / "still counts {noun}"). See
-    /// `resolveDeriveLinkTarget` for the source-resolution rule. This
-    /// wizard-inline surface has `effectiveTaskById` in memory (the merged
-    /// live+pending library), so the root task lookup is synchronous.
-    private func saveDerivedCounter(source: OYBC.Task) {
-        guard let action = source.action,
-              let unit = source.unit,
-              let parsed = Int(deriveMaxCountInput.trimmingCharacters(in: .whitespacesAndNewlines)),
-              parsed > 0
-        else { return }
-
-        let now = AppDatabase.currentTimestamp()
-        let newId = AppDatabase.generateUUID()
-        let trimmedAction = action.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = TaskTitle.generateCounterTaskTitle(action: trimmedAction, maxCount: parsed, unit: trimmedUnit)
-
-        let rootId = source.sharedCounterId ?? source.id
-        let rootTask = rootId == source.id ? source : effectiveTaskById[rootId]
-        let linkTarget = resolveDeriveLinkTarget(source: source, rootTask: rootTask)
-
-        let newTask = OYBC.Task(
-            id: newId,
-            userId: userId,
-            title: title,
-            description: nil,
-            type: .counting,
-            action: trimmedAction,
-            unit: trimmedUnit,
-            maxCount: parsed,
-            totalCompletions: 0,
-            totalInstances: 0,
-            createdAt: now,
-            updatedAt: now,
-            version: 1,
-            isDeleted: false,
-            sharedCounterId: linkTarget.sharedCounterId,
-            baseline: linkTarget.baseline
-        )
-
-        derivingFromTask = nil
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                try AppDatabase.shared.createTaskAndEnqueue(newTask, now: now)
-                DispatchQueue.main.async {
-                    onTaskCreated(newId, title, "counting")
-                    onLibraryReloadRequested()
-                }
-            } catch {
-                // Swallow on background; user can retry.
-            }
-        }
     }
 
     // MARK: - Helpers
