@@ -36,7 +36,9 @@ import SnapshotTesting
 ///   - the SAME counting member from a POOL: dice alone, no stepper (RC5)
 ///   - a counting member carrying the counter-family clash hint: a
 ///     TWO-LINE title block, so the row is taller than `minHeight: 28`
-///   - compound Split up with an excluded part: toggle + note + parts
+///   - compound Split up with an excluded part: toggle + note + parts,
+///     the included part's own dice lit so its blue range line is under
+///     THAT part and not on the compound
 ///
 /// Each test renders at iPhone 16 width (393pt). iOS-version pinning is
 /// enforced at the scheme level (see CLAUDE.md → Snapshot Testing).
@@ -460,6 +462,16 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     /// grows both lines and the main line genuinely outgrows the floor;
     /// the ✕ must still come out level with the badge, which only
     /// layout-driven centring can manage.
+    ///
+    /// KNOWN DEFECT, pictured deliberately: the stepper pill reads
+    /// "− … / 35 mi ＋" because `RisoInlineStepperView` sizes its field in
+    /// fixed points (`String(max).count + 1) * 7`) while the font scales
+    /// with the content-size category, so the value truncates at
+    /// `.accessibilityMedium`. Pre-existing — it entered with the compact
+    /// stepper in `8bdce2fc`, before this branch — and iOS-only: web sizes
+    /// the same input in `ch`, which scales with the font. This baseline
+    /// locks the CURRENT rendering, not the intended one; tracked under
+    /// docs/ROADMAP.md F11 B3.1.
     func testMemberRowCountingClashExpandedLargeText() {
         assertSnapshot(
             of: makeExpandedMemberRow(
@@ -479,6 +491,15 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     /// the "1 square" note on line 2, then one line per part — the
     /// excluded one struck with its UNDO pill, the last included one
     /// without a ✕.
+    ///
+    /// The included part (Push-ups, goal 210) also carries `vary: .little`,
+    /// so this baseline is the only guard left for the §Member rules
+    /// clause "the blue range line sits beneath the row/**part** — never
+    /// on the compound itself": it pictures "168–210" under the Push-ups
+    /// line, with nothing beside the One square / Split up pill. The unit
+    /// test that used to assert that placement was dropped in the B3.1
+    /// rework; the web backstop is the `getByText('8–10')` structural
+    /// assertion in `e2e/member-rules.spec.ts`.
     func testMemberRowCompoundSplitUpWithExcludedPartExpanded() {
         assertSnapshot(
             of: makeExpandedMemberRow(
@@ -486,12 +507,14 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
                 rule: BoardSourceMemberRule(
                     split: true,
                     parts: [
+                        SnapshotFixtures.MemberRuleTask.pushups:
+                            BoardSourcePartRule(vary: .little),
                         SnapshotFixtures.MemberRuleTask.plank:
                             BoardSourcePartRule(excluded: true),
                     ]
                 )
             ),
-            as: .image(layout: .fixed(width: 393, height: 170)),
+            as: .image(layout: .fixed(width: 393, height: 190)),
             record: recordMode
         )
     }
