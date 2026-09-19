@@ -761,6 +761,20 @@ struct RisoInlineStepperView: View {
                     .lineLimit(1)
                     .fixedSize()
                     .padding(.trailing, 2)
+                    // Hidden from VoiceOver because on its own it names
+                    // nothing: between the "Target" field and "Increase
+                    // target" it would be read as a stray "slash 30 miles"
+                    // — half a label. NOT because the goal is announced
+                    // elsewhere: the member row's summary chip is
+                    // suppressed exactly when `vary == 0 && target ==
+                    // goal` (`BoardSources.countingSummary`), the common
+                    // case, so the goal then reaches VoiceOver only
+                    // through the auto-generated counting title ("Run 30
+                    // miles"). A hand-renamed member at its goal genuinely
+                    // loses it — accepted, and identical on web
+                    // (`CounterStepper.tsx`). The fix, if ever wanted, is
+                    // a composed field label ("Target, of 30 miles"), not
+                    // unhiding this text (B3.1).
                     .accessibilityHidden(true)
             }
             compactStepButton("＋", label: "Increase target", disabled: effectiveValue >= max) {
