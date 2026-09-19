@@ -160,7 +160,7 @@ describe('MemberRuleRow — collapsed by default', () => {
     const disclosureStart = html.indexOf('data-testid="member-disclosure"');
     // Guard the slice below: a -1 here would make `inside` empty and every
     // `not.toContain` under it pass for the wrong reason.
-    expect(disclosureStart).toBeGreaterThan(-1);
+    expect(disclosureStart).not.toBe(-1);
     const disclosureEnd = html.indexOf('</button>', disclosureStart);
     const inside = html.slice(disclosureStart, disclosureEnd);
     expect(inside).not.toContain('aria-label="Exclude Read for this board"');
@@ -281,6 +281,9 @@ describe('MemberRuleRow — compound member', () => {
       rule: { split: true },
     });
     expect(html).toContain('2 squares');
+    // …and stops saying the One-square answer, which is what it said a
+    // moment ago — the chip is the row's CURRENT answer, not a label.
+    expect(html).not.toContain('1 square');
   });
 
   it('recounts the chip when a part is excluded', () => {
@@ -326,6 +329,11 @@ describe('MemberRuleRow — compound member', () => {
       parts: PARTS,
       state: 'filteredDone',
     });
+    // Anchor first: the row DID render, as its pre-B3.1 single line with
+    // the dimmed ✓ inline. Without this the three negatives below would
+    // all hold against a component that rendered nothing at all.
+    expect(html).toContain('Circuit');
+    expect(html).toMatch(/class="[^"]*_doneCheck_/);
     expect(hasDisclosure(html)).toBe(false);
     expect(html).not.toMatch(/class="[^"]*_chip_/);
     expect(html).not.toContain('1 square');
@@ -333,6 +341,11 @@ describe('MemberRuleRow — compound member', () => {
 
   it('treats a childless compound as a plain member — no disclosure, no chip', () => {
     const html = render({ task: CIRCUIT, taskById: TASK_BY_ID, parts: [] });
+    // Anchor first (see above): an INCLUDED plain member renders its title
+    // and its inline ✕, so the negatives below mean "no disclosure" rather
+    // than "no output".
+    expect(html).toContain('Circuit');
+    expect(html).toMatch(/class="[^"]*_exclude_/);
     expect(hasDisclosure(html)).toBe(false);
     expect(html).not.toMatch(/class="[^"]*_chip_/);
     expect(html).not.toContain('One square');
