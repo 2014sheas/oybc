@@ -748,4 +748,69 @@ final class DerivedCountersTests: XCTestCase {
         }
         XCTAssertEqual(columns, ["sharedCounterId"])
     }
+    // MARK: - 8. §Member rules (B3): the wizard's hand-added dice
+
+    /// Seeds the counting task a hand-added member points at and returns the
+    /// active board + its single (centre) placement.
+    private func seedHandAddedCounter(_ database: AppDatabase) throws -> Board {
+        try database.write { db in
+            try self.makeCountingTask(id: self.rootId, maxCount: 10, currentCount: 0).save(db)
+        }
+        return try makeBoard(id: boardId, status: .active, centerTaskId: rootId)
+    }
+
+    /// B3 threading, the decisive half: with dice on the hand-added layer the
+    /// active save mints a window-stamped derived counter whose `maxCount` is
+    /// a ROLL inside `varyRange`, not the goal copied through. The assertion
+    /// pins the range (the production rng is unseeded), and the control test
+    /// below proves the mint only happens because the dice arrived.
+    func test_saveWizardBoard_handAddedDice_mintARolledTargetInsideVaryRange() throws {
+        let database = try makeDb()
+        let board = try seedHandAddedCounter(database)
+
+        try database.saveWizardBoard(
+            board: board, boardTasks: [makeCentrePlacement()], pendingTasks: [],
+            isUpdate: false, sources: [], manualTaskIds: [rootId],
+            manualTaskVary: [rootId: .lot], now: now
+        )
+
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
+        let derived = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: derivedId) })
+        let range = BoardSources.varyRange(t: 10, level: .lot, goal: 10)
+        let maxCount = try XCTUnwrap(derived.maxCount)
+        XCTAssertTrue(
+            range.contains(maxCount),
+            "rolled target \(maxCount) must land inside \(range.lowerBound)…\(range.upperBound)"
+        )
+        XCTAssertEqual(derived.sharedCounterId, rootId)
+        XCTAssertEqual(derived.startDate, windowStart)
+
+        let placements = try database.read { db in
+            try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+        XCTAssertEqual(placements.first?.taskId, derivedId)
+    }
+
+    /// Control: the SAME save without dice mints nothing and places the
+    /// original member — so the test above is pinning the threading, not a
+    /// mint that would have happened anyway.
+    func test_saveWizardBoard_handAddedWithoutDice_mintsNothing() throws {
+        let database = try makeDb()
+        let board = try seedHandAddedCounter(database)
+
+        try database.saveWizardBoard(
+            board: board, boardTasks: [makeCentrePlacement()], pendingTasks: [],
+            isUpdate: false, sources: [], manualTaskIds: [rootId],
+            manualTaskVary: [:], now: now
+        )
+
+        let derivedId = BoardSources.derivedTaskId(boardId: boardId, rootTaskId: rootId)
+        XCTAssertNil(try database.read { try Task.fetchOne($0, key: derivedId) })
+        let placements = try database.read { db in
+            try BoardTask.filter(Column("boardId") == self.boardId && Column("isDeleted") == false)
+                .fetchAll(db)
+        }
+        XCTAssertEqual(placements.map { $0.taskId }, [rootId])
+    }
 }

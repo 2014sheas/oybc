@@ -141,6 +141,16 @@ final class BoardWizardViewModel {
     /// `toggleTaskSelection` maintains this alongside `selectedTaskIds`.
     var manualTaskIds: Set<String> = []
 
+    /// §Member rules (B3) — dice for HAND-ADDED counting members, keyed by
+    /// task id (`.off` is stored as an absence). Persisted on the draft blob
+    /// and on the repeating record; see `BoardWizardViewModel+MemberRules`.
+    var manualTaskVary: [String: VaryLevel] = [:]
+
+    /// §Member rules (B3, RC7) — the live `compound_children` links a
+    /// Split-up expansion reads, keyed by compound task id. Reloaded by
+    /// `refreshCompoundChildren()` whenever the pulled sources change.
+    var childrenByCompoundId: [String: [CompoundChild]] = [:]
+
     // MARK: - Wizard navigation
 
     var currentStep: WizardStep = 1
@@ -286,6 +296,9 @@ final class BoardWizardViewModel {
                 self.selectedTaskIds = hydrated.selectedTaskIds
                 self.poolOrder = hydrated.poolOrder
                 self.manualTaskIds = Set(mix.manualTaskIds)
+                // §Member rules (B3) — the hand-added layer's dice ride on
+                // the blob alongside the ids they belong to.
+                self.manualTaskVary = mix.manualTaskVary
             } else {
                 self.selectedTaskIds = Set(d.boardTasks.map { $0.taskId })
                 // Preserve placement order on resume so the pool doesn't reshuffle.
@@ -338,6 +351,9 @@ final class BoardWizardViewModel {
             self.selectedTaskIds = hydrated.selectedTaskIds
             self.poolOrder = hydrated.poolOrder
             self.manualTaskIds = Set(recordManualIds)
+            // §Member rules (B3) — the record's stored dice for hand-added
+            // members (nil on every pre-B1 row → no dice).
+            self.manualTaskVary = t.manualTaskVary ?? [:]
         } else {
             let initialSize = preferences.defaultBoardSize.rawValue
             self.size = initialSize
@@ -444,6 +460,19 @@ final class BoardWizardViewModel {
                 // future non-prefill entry point might seed.
                 self.manualTaskIds = self.selectedTaskIds
             }
+        }
+        // §Member rules (B3, RC7) — load the Split-up links for whatever the
+        // hydration just pulled, HERE rather than on the view's first
+        // refresh: a resumed draft's split members must expand on the first
+        // paint, not correct themselves a beat later (the late-mutation shape
+        // this codebase bans). A no-op for a fresh wizard with no sources.
+        refreshCompoundChildren()
+        // A hydrated SPLIT rule is the one case where the static hydration's
+        // union (which has no links to expand with) differs from the live
+        // one: it selected the compound, not its parts. Recompute for that
+        // case ONLY, so the rest of hydration keeps its exact behaviour.
+        if sources.contains(where: { ($0.memberRules ?? [:]).values.contains { $0.split == true } }) {
+            recomputeSelectionFromSources()
         }
     }
 
@@ -823,6 +852,8 @@ final class BoardWizardViewModel {
         supplyInfoBySourceId = [:]
         expandedSourceIds = []
         manualTaskIds = []
+        manualTaskVary = [:]
+        childrenByCompoundId = [:]
         currentStep = 1
     }
 

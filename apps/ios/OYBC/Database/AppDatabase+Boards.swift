@@ -709,6 +709,8 @@ extension AppDatabase {
     ///     window-stamped derived rows they call for. Empty = nothing to mint.
     ///   - manualTaskIds: The hand-added layer (B2); hand-added members beat
     ///     any source copy in the plan.
+    ///   - manualTaskVary: §Member rules (B3) — dice for hand-added counting
+    ///     members, keyed by task id. Empty = nothing varies on that layer.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
     func saveWizardBoard(
         board: Board,
@@ -718,6 +720,7 @@ extension AppDatabase {
         isUpdate: Bool,
         sources: [BoardSource] = [],
         manualTaskIds: [String] = [],
+        manualTaskVary: [String: VaryLevel] = [:],
         now: String
     ) throws {
         try write { db in
@@ -797,6 +800,7 @@ extension AppDatabase {
                     selectedIds: placedRows.map { $0.taskId },
                     sources: sources,
                     manualTaskIds: manualTaskIds,
+                    manualTaskVary: manualTaskVary,
                     window: BoardSources.BoardWindow(
                         timeframe: board.timeframe,
                         startDate: board.startDate,

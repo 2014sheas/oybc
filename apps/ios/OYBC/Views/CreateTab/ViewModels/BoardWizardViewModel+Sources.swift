@@ -9,6 +9,13 @@ struct WizardSourceSupply: Equatable {
     var displayName: String
     var rawSupplyTaskIds: [String]
     var doneTaskIds: Set<String>
+    /// §Member rules (B3, RC4) — board sources only: each event-owning
+    /// COUNTING member's windowed count in the SOURCE board's window. Always
+    /// empty for pools (a pool has no window of its own).
+    var windowCountByTaskId: [String: Int] = [:]
+    /// §Member rules (B3, RC5) — board sources only: the source board's own
+    /// window, for pro-rating an auto target against the board being built.
+    var sourceWindow: BoardSources.BoardWindow? = nil
 }
 
 /// Board Sources P2 — the sources-native wizard actions + derived reads.
@@ -19,22 +26,48 @@ extension BoardWizardViewModel {
 
     // MARK: - Derived supply/capacity reads
 
-    /// The algorithm-ready supplies: raw supply − nothing (excludes are
-    /// the algorithm's job) with the board `'todo'` filter applied by the
-    /// platform (the P1 `BoardSources.Supply` contract). Order = row order.
-    func algorithmSupplies() -> [BoardSources.Supply] {
-        sources.map { source in
+    /// The algorithm-ready supplies: the platform-applied board `'todo'`
+    /// filter, each source's `excludedTaskIds` subtracted, and — §Member
+    /// rules (B3, RC7) — Split-up members expanded into their non-excluded
+    /// parts via `applyMemberRules`. Order = row order.
+    ///
+    /// Excludes are applied BEFORE the expansion (the same order the persist
+    /// path's mint uses): excluding a split compound must remove its parts,
+    /// and a part is not named by the compound's own exclude entry.
+    /// Downstream `resolveSourceAvailable` calls stay correct — it is
+    /// idempotent.
+    var expandedSupplies: [BoardSources.ExpandedSupply] {
+        let raw = sources.map { source -> BoardSources.Supply in
             let info = supplyInfoBySourceId[source.sourceId]
-            var raw = info?.rawSupplyTaskIds ?? []
+            var ids = info?.rawSupplyTaskIds ?? []
             if source.kind == .board, source.filter == .todo, let done = info?.doneTaskIds {
-                raw.removeAll { done.contains($0) }
+                ids.removeAll { done.contains($0) }
             }
-            return BoardSources.Supply(source: source, supplyTaskIds: raw)
+            return BoardSources.Supply(
+                source: source,
+                supplyTaskIds: BoardSources.resolveSourceAvailable(
+                    BoardSources.Supply(source: source, supplyTaskIds: ids)
+                )
+            )
         }
+        return BoardSources.applyMemberRules(
+            raw,
+            childrenByCompoundId: childrenByCompoundId,
+            tasksById: supplyTasksById
+        )
     }
 
-    /// One source's AVAILABLE count (post-exclude, post-filter) — the
-    /// range slider's N, the "of N" label, and the min clamp bound.
+    /// The expanded supplies as plain ``BoardSources/Supply`` values, for
+    /// the selection/capacity helpers that take the base type (`partOf` is
+    /// still reachable through ``expandedSupplies``).
+    func algorithmSupplies() -> [BoardSources.Supply] {
+        expandedSupplies.map { $0.asSupply }
+    }
+
+    /// One source's AVAILABLE count (post-exclude, post-filter, post-Split-up
+    /// expansion) — the range slider's N, the "of N" label, and the min clamp
+    /// bound. A split compound contributes its parts, so the count grows by
+    /// `parts − 1 − excluded parts`.
     func availableCount(forSourceId sourceId: String) -> Int {
         guard let supply = algorithmSupplies().first(where: { $0.source.sourceId == sourceId })
         else { return 0 }
@@ -92,6 +125,7 @@ extension BoardWizardViewModel {
             doneTaskIds: []
         )
         sources.append(BoardSource(sourceId: pool.id, kind: .pool))
+        refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
 
@@ -106,9 +140,19 @@ extension BoardWizardViewModel {
         supplyInfoBySourceId[boardId] = WizardSourceSupply(
             displayName: info.displayName,
             rawSupplyTaskIds: info.supplyTaskIds,
-            doneTaskIds: info.doneTaskIds
+            doneTaskIds: info.doneTaskIds,
+            windowCountByTaskId: info.windowCountByTaskId,
+            sourceWindow: info.sourceWindow
         )
         sources.append(BoardSource(sourceId: boardId, kind: .board))
+        // §Member rules (B3, RC4) — a board pulled in THIS session seeds its
+        // counting members' REMAINING target on a one-off board. iOS resolves
+        // the supply synchronously right here, so the seeding happens at pull
+        // time; a source HYDRATED from a resumed draft / edited record never
+        // passes through `pullBoard`, which is what keeps its saved rules
+        // (the person's own state) from being silently rewritten.
+        prefillRemainingTargets(sourceId: boardId, info: info)
+        refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
 
@@ -118,6 +162,7 @@ extension BoardWizardViewModel {
         sources.removeAll { $0.sourceId == sourceId }
         supplyInfoBySourceId.removeValue(forKey: sourceId)
         expandedSourceIds.remove(sourceId)
+        refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
 
@@ -160,11 +205,58 @@ extension BoardWizardViewModel {
         } else {
             sources[i].excludedTaskIds.append(taskId)
         }
+        // §Member rules (B3, RC14) exclusivity — a member that has just been
+        // excluded keeps NO per-part state: re-including it later starts from
+        // a clean split, not from whichever parts a past session suppressed.
+        sources = BoardSources.pruneRulesForExcludedMember(
+            sources, sourceId: sourceId, taskId: taskId
+        )
         clampSourceMin(at: i)
         recomputeSelectionFromSources()
     }
 
-    private func clampSourceMin(at index: Int) {
+    /// Library-sheet deselect of a source-supplied task: suppress it in
+    /// EVERY supplying source (the sheet has no per-source scope — the old
+    /// flat-removal global-suppress semantics).
+    ///
+    /// Membership is tested against the EXPANDED supplies, and HOW the id is
+    /// suppressed depends on how it got there (§Member rules B3): a plain
+    /// member goes into the source's `excludedTaskIds`, while a Split-up PART
+    /// gets an `excluded: true` PART RULE on its parent compound — the
+    /// pre-expansion supply never contains a `childTaskId`, so the old
+    /// raw-supply test wrote nothing at all for a part and the selection
+    /// recompute put the square straight back (a self-reverting control).
+    /// The last included part is refused here too; callers driving a user
+    /// gesture ask `BoardSources.canDeselectFromSources` first.
+    private func excludeFromEverySupplier(_ taskId: String) {
+        for supply in expandedSupplies {
+            guard supply.supplyTaskIds.contains(taskId),
+                  let i = sources.firstIndex(where: { $0.sourceId == supply.source.sourceId })
+            else { continue }
+            if let parentId = supply.partOf[taskId] {
+                let partIds = (childrenByCompoundId[parentId] ?? []).map { $0.childTaskId }
+                guard BoardSources.canSetPartExcluded(
+                    rule: BoardSources.memberRule(for: parentId, in: sources[i]),
+                    partIds: partIds,
+                    childId: taskId,
+                    excluded: true
+                ) else { continue }
+                sources[i] = BoardSources.withPartRule(
+                    sources[i],
+                    taskId: parentId,
+                    childId: taskId,
+                    patch: BoardSources.PartRulePatch(excluded: .set(true))
+                )
+            } else if !sources[i].excludedTaskIds.contains(taskId) {
+                sources[i].excludedTaskIds.append(taskId)
+            }
+            clampSourceMin(at: i)
+        }
+    }
+
+    /// Internal (not private): the §Member rules actions in
+    /// `BoardWizardViewModel+MemberRules.swift` re-clamp through it too.
+    func clampSourceMin(at index: Int) {
         let cap = Swift.min(
             availableCount(forSourceId: sources[index].sourceId),
             tasksRequired
@@ -188,17 +280,23 @@ extension BoardWizardViewModel {
     /// `resolveMix`'s manual-wins rule).
     func toggleTaskSelection(_ taskId: String) {
         if selectedTaskIds.contains(taskId) {
+            // §Member rules (B3) — a deselect the expansion would REFUSE (the
+            // last included part of a Split-up compound) must change nothing:
+            // dropping the id and letting the selection recompute restore it
+            // is a self-reverting control. Checked before any state write.
+            guard BoardSources.canDeselectFromSources(
+                supplies: expandedSupplies,
+                childrenByCompoundId: childrenByCompoundId,
+                taskId: taskId
+            ) else { return }
             manualTaskIds.remove(taskId)
             pendingTasks.removeValue(forKey: taskId)
             stagedEdits.removeValue(forKey: taskId)
             poolOrder.removeAll { $0 == taskId }
-            for i in sources.indices {
-                let raw = supplyInfoBySourceId[sources[i].sourceId]?.rawSupplyTaskIds ?? []
-                if raw.contains(taskId), !sources[i].excludedTaskIds.contains(taskId) {
-                    sources[i].excludedTaskIds.append(taskId)
-                    clampSourceMin(at: i)
-                }
-            }
+            // §Member rules (B3) — the dice leave with the task, or the stale
+            // entry rides into the draft blob / the repeating record forever.
+            manualTaskVary = BoardSources.pruneManualVary(manualTaskVary, taskId: taskId)
+            excludeFromEverySupplier(taskId)
             recomputeSelectionFromSources()
         } else {
             manualTaskIds.insert(taskId)
@@ -251,7 +349,9 @@ extension BoardWizardViewModel {
                     supplyInfoBySourceId[source.sourceId] = WizardSourceSupply(
                         displayName: info.displayName,
                         rawSupplyTaskIds: info.supplyTaskIds,
-                        doneTaskIds: info.doneTaskIds
+                        doneTaskIds: info.doneTaskIds,
+                        windowCountByTaskId: info.windowCountByTaskId,
+                        sourceWindow: info.sourceWindow
                     )
                 } else {
                     let kept = supplyInfoBySourceId[source.sourceId]?.displayName
@@ -263,6 +363,10 @@ extension BoardWizardViewModel {
                 }
             }
         }
+        // §Member rules (B3, RC7) — the Split-up expansion reads the live
+        // links; reload them alongside the supplies they belong to. NOTE: a
+        // refresh never prefills (RC4) — only a pull does.
+        refreshCompoundChildren()
         for i in sources.indices { clampSourceMin(at: i) }
         recomputeSelectionFromSources()
     }

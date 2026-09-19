@@ -283,7 +283,7 @@ extension BoardSources {
     }
 
     /// The window a board (or a pulled source board) covers.
-    struct BoardWindow {
+    struct BoardWindow: Equatable {
         let timeframe: Timeframe
         let startDate: String?
         let endDate: String?

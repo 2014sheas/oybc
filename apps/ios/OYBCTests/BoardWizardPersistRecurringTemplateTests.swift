@@ -805,4 +805,116 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         XCTAssertEqual(persisted.title, "Brush teeth", "staged edit must apply on the edit branch too")
         XCTAssertGreaterThan(persisted.version, libraryTask.version)
     }
+    // MARK: - §Member rules (B3): manualTaskVary threading
+
+    /// The edit branch's `RecurringBoardTemplate(...)` init must carry the
+    /// wizard's dice for hand-added counting members — without it every
+    /// future window silently rolls `.off` again.
+    func test_editPath_carriesManualTaskVaryOntoTheRecord() throws {
+        let userId = "test-user-\(UUID().uuidString)"
+        let now = AppDatabase.currentTimestamp()
+
+        try seedUser(userId)
+        try seedCountingTask("dice", userId: userId, action: "Read", maxCount: 10, unit: "pages")
+        defer { cleanup(taskIds: ["dice"], userIds: [userId]) }
+
+        let existingTemplate = RecurringBoardTemplate(
+            id: AppDatabase.generateUUID(),
+            userId: userId,
+            name: "Daily",
+            timeframe: .daily,
+            boardSize: 3,
+            centerSquareType: .none,
+            isRandomized: true,
+            seedTaskIds: [],
+            poolIds: [],
+            manualTaskIds: [],
+            removedTaskIds: [],
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+        )
+        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+            existingTemplate, operation: .create, now: now
+        )
+        defer { cleanup(templateIds: [existingTemplate.id]) }
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults,
+            editingTemplate: existingTemplate,
+            userId: userId,
+            database: AppDatabase.shared
+        )
+        XCTAssertTrue(vm.manualTaskVary.isEmpty, "the record carries no dice yet")
+        vm.toggleTaskSelection("dice")
+        vm.setManualVary(taskId: "dice", level: .lot)
+        XCTAssertEqual(vm.manualTaskVary, ["dice": .lot])
+
+        guard case .updated = try runPersist(controller: vm, userId: userId) else {
+            XCTFail("Expected .updated outcome")
+            return
+        }
+
+        let refetched = try AppDatabase.shared.fetchRecurringBoardTemplate(id: existingTemplate.id)
+        XCTAssertEqual(refetched?.manualTaskVary, ["dice": .lot])
+
+        // …and it hydrates back onto a fresh edit session.
+        let reopened = BoardWizardViewModel(
+            preferences: .defaults,
+            editingTemplate: try XCTUnwrap(refetched),
+            userId: userId,
+            database: AppDatabase.shared
+        )
+        XCTAssertEqual(reopened.manualTaskVary, ["dice": .lot])
+    }
+
+    /// The fresh-create branch's `RecurringBoardTemplate(...)` init must
+    /// carry the dice too (a separate initializer call site — the edit-path
+    /// test above cannot cover it).
+    func test_freshCreatePath_carriesManualTaskVaryOntoTheRecord() throws {
+        let userId = "test-user-\(UUID().uuidString)"
+        let allTaskIds = ["dice", "f1", "f2", "f3"]
+
+        try seedUser(userId)
+        try seedCountingTask("dice", userId: userId, action: "Read", maxCount: 10, unit: "pages")
+        for id in ["f1", "f2", "f3"] { try seedTask(id, userId: userId) }
+        defer { cleanup(taskIds: allTaskIds, userIds: [userId]) }
+
+        var templateId: String?
+        var spawnedBoardId: String?
+        defer {
+            cleanup(
+                templateIds: templateId.map { [$0] } ?? [],
+                boardIds: spawnedBoardId.map { [$0] } ?? []
+            )
+        }
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, startRecurring: true, userId: userId,
+            database: AppDatabase.shared
+        )
+        vm.name = "Dice Weekly"
+        vm.size = 2
+        vm.centerType = .none
+        vm.updateTimeframe(.weekly)
+        vm.isRandomized = false
+        for id in allTaskIds { vm.toggleTaskSelection(id) }
+        vm.setManualVary(taskId: "dice", level: .little)
+
+        switch try runPersist(controller: vm, userId: userId) {
+        case .createdAndSpawned(let id, let boardId):
+            templateId = id
+            spawnedBoardId = boardId
+        case .createdSpawnSkipped(let id, _):
+            templateId = id
+        case .updated:
+            XCTFail("Expected a fresh-create outcome")
+        }
+
+        let template = try AppDatabase.shared.fetchRecurringBoardTemplate(
+            id: try XCTUnwrap(templateId)
+        )
+        XCTAssertEqual(template?.manualTaskVary, ["dice": .little])
+    }
 }

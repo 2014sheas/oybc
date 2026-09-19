@@ -420,4 +420,101 @@ final class BoardWizardRecurringDraftTests: XCTestCase {
             "recurring resume-step must derive from the full mix (4), not the 1 truncated placed row"
         )
     }
+    // MARK: - 4. §Member rules (B3): manualTaskVary on the draft blob
+
+    /// The hand-added layer's dice must survive the same save → resume →
+    /// Create Board round-trip its ids do: onto `Board.recurringDraftMix`,
+    /// back onto the resumed wizard, and finally onto the created record.
+    func test_recurringDraft_manualTaskVary_roundTripsThroughBlobResumeAndRecord() throws {
+        let userId = "test-user-\(UUID().uuidString)"
+        let allTaskIds = ["dice", "d1", "d2", "d3"]
+        try seedUser(userId)
+        try seedTask("d1", userId: userId)
+        try seedTask("d2", userId: userId)
+        try seedTask("d3", userId: userId)
+        let now = AppDatabase.currentTimestamp()
+        try AppDatabase.shared.saveTask(Task(
+            id: "dice", userId: userId,
+            title: "Read 10 pages", description: nil, type: .counting,
+            action: "Read", unit: "pages", maxCount: 10,
+            operatorType: nil, threshold: nil,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, completedAt: nil, currentCount: nil,
+            createdAt: now, updatedAt: now,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        ))
+
+        var draftBoardId: String?
+        var templateId: String?
+        var spawnedBoardId: String?
+        defer {
+            cleanup(
+                templateIds: templateId.map { [$0] } ?? [],
+                boardIds: [draftBoardId, spawnedBoardId].compactMap { $0 },
+                taskIds: allTaskIds,
+                userIds: [userId]
+            )
+        }
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, startRecurring: true, userId: userId,
+            database: AppDatabase.shared
+        )
+        vm.name = "Dice Weekly"
+        vm.size = 2
+        vm.centerType = .none
+        vm.updateTimeframe(.weekly)
+        vm.isRandomized = false
+        for id in allTaskIds { vm.toggleTaskSelection(id) }
+        vm.setManualVary(taskId: "dice", level: .lot)
+        XCTAssertEqual(vm.manualTaskVary, ["dice": .lot])
+
+        let tasksById = Dictionary(
+            uniqueKeysWithValues: try allTaskIds.map { id -> (String, Task) in
+                (id, try XCTUnwrap(AppDatabase.shared.fetchTask(id: id)))
+            }
+        )
+        let library = TaskLibraryViewModel()
+        library.libraryTasks = allTaskIds.map { tasksById[$0]! }
+        let placement = buildWizardPlacement(controller: vm, library: library)
+        guard case .ok(let start, let end) = resolveWizardDates(controller: vm) else {
+            XCTFail("expected resolvable dates")
+            return
+        }
+
+        draftBoardId = try runPersistWizardBoard(
+            controller: vm, userId: userId, placement: placement,
+            dates: (start, end), status: .draft
+        )
+        let savedDraftBoardId = try XCTUnwrap(draftBoardId)
+        let savedBoard = try XCTUnwrap(AppDatabase.shared.fetchBoard(id: savedDraftBoardId))
+        XCTAssertEqual(
+            RecurringDraftMixPayload.decoded(from: savedBoard.recurringDraftMix).manualTaskVary,
+            ["dice": .lot],
+            "the dice ride the blob alongside the ids they belong to"
+        )
+
+        let placedRows = try AppDatabase.shared.fetchBoardTasks(boardId: savedDraftBoardId)
+        let resumedVM = BoardWizardViewModel(
+            preferences: .defaults,
+            draft: (savedBoard, placedRows),
+            userId: userId,
+            database: AppDatabase.shared
+        )
+        XCTAssertEqual(resumedVM.manualTaskVary, ["dice": .lot], "…and hydrate back on resume")
+
+        switch try runPersistRecurringTemplate(controller: resumedVM, userId: userId) {
+        case .createdAndSpawned(let id, let boardId):
+            templateId = id
+            spawnedBoardId = boardId
+        case .createdSpawnSkipped(let id, _):
+            templateId = id
+        case .updated:
+            XCTFail("expected a fresh-create outcome")
+        }
+        let template = try AppDatabase.shared.fetchRecurringBoardTemplate(
+            id: try XCTUnwrap(templateId)
+        )
+        XCTAssertEqual(template?.manualTaskVary, ["dice": .lot])
+    }
 }

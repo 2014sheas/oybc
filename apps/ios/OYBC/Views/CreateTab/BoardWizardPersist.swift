@@ -423,6 +423,9 @@ func persistWizardBoard(
     // Board Sources P2 — the native sources snapshot (ranges/excludes/
     // filters + board-kind sources) rides in the v2 blob.
     let capturedSources = controller.sources
+    // §Member rules (B3) — the hand-added layer's dice travel with the ids
+    // they belong to: onto the draft blob, and into the mint on an active save.
+    let capturedManualTaskVary = controller.manualTaskVary
     // Bug #85 — snapshot the pending tasks dictionary from the controller
     // before going async so we don't race against concurrent mutations on
     // the main actor. Dictionary is a value type (copy-on-write) so this
@@ -511,7 +514,8 @@ func persistWizardBoard(
                     poolIds: capturedPulledPoolIds,
                     manualTaskIds: Array(capturedManualTaskIds),
                     removedTaskIds: Array(capturedRemovedTaskIds),
-                    sources: capturedSources
+                    sources: capturedSources,
+                    manualTaskVary: capturedManualTaskVary
                 )
                 if let encodedMix = mixPayload.encoded() {
                     boardDict["recurringDraftMix"] = encodedMix
@@ -581,6 +585,7 @@ func persistWizardBoard(
                 // a draft save (see `saveWizardBoard`'s active-only gate).
                 sources: capturedSources,
                 manualTaskIds: Array(capturedManualTaskIds),
+                manualTaskVary: capturedManualTaskVary,
                 now: now
             )
 
@@ -691,6 +696,9 @@ func persistRecurringTemplate(
     // excludes, filters, board-kind sources) persists verbatim; the legacy
     // trio above is the derived decode-compat mirror (P1 dual-write).
     let sources = controller.sources
+    // §Member rules (B3) — dice for hand-added counting members persist on
+    // the record, so every future window rolls the same way this one does.
+    let manualTaskVary = controller.manualTaskVary
     let editingTemplateId = controller.editingTemplateId
     let weekStartDay = controller.weekStartDay
     let now = AppDatabase.currentTimestamp()
@@ -786,6 +794,7 @@ func persistRecurringTemplate(
                     manualTaskIds: manualTaskIds,
                     removedTaskIds: removedTaskIds,
                     sources: sources,
+                    manualTaskVary: manualTaskVary,
                     // `isActive` isn't surfaced in the wizard form (the
                     // templates list owns the pause toggle), so preserve.
                     lastSpawnedWindowKey: existing.lastSpawnedWindowKey,
@@ -824,6 +833,7 @@ func persistRecurringTemplate(
                 manualTaskIds: manualTaskIds,
                 removedTaskIds: removedTaskIds,
                 sources: sources,
+                manualTaskVary: manualTaskVary,
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,

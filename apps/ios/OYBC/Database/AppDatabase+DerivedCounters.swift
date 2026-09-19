@@ -308,6 +308,7 @@ extension AppDatabase {
     ///   - selectedIds: The placed task ids, in placement order.
     ///   - sources: The wizard's pulled sources.
     ///   - manualTaskIds: The hand-added layer.
+    ///   - manualTaskVary: Dice for hand-added counting members (B3).
     ///   - window: The board's own window.
     /// - Returns: The ids to place, positionally 1:1 with `selectedIds`.
     static func mintWizardDerivedRows(
@@ -318,6 +319,7 @@ extension AppDatabase {
         selectedIds: [String],
         sources: [BoardSource],
         manualTaskIds: [String],
+        manualTaskVary: [String: VaryLevel],
         window: BoardSources.BoardWindow
     ) throws -> [String] {
         // The planner gets LIVE rows only — a soft-deleted root reachable
@@ -430,9 +432,7 @@ extension AppDatabase {
             selectedIds: selectedIds,
             supplies: supplies,
             manualTaskIds: manualTaskIds,
-            // RB9 — the one-off wizard has no UI for hand-added members' dice
-            // levels yet, so nothing varies on that layer.
-            manualTaskVary: [:],
+            manualTaskVary: manualTaskVary,
             window: window,
             // A repeating board never reaches here (its "Create Board"
             // persists a record and spawns), so this path is always one-off —
