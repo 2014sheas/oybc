@@ -212,14 +212,20 @@ extension BoardSources {
         }
     }
 
-    /// `vary == .off` / `split == false` / an empty `parts` map are the field
-    /// defaults — pruned so a rule carrying only defaults reads as empty and
-    /// is dropped by the setters below.
+    /// `vary == .off` / `split == false` are the field defaults — pruned so a
+    /// rule carrying only defaults reads as empty and is dropped by the
+    /// setters below.
+    ///
+    /// An empty `parts` map is deliberately NOT pruned here: the TS twin's
+    /// `pruneMemberRule` doesn't either, and matching it byte-for-byte
+    /// matters more than the marginally tidier alternative. `withPartRule`
+    /// normalises an emptied `parts` to nil on its own before calling this,
+    /// so the only way to reach a stored `parts: {}` is an explicit
+    /// `.set([:])` — which no caller makes on either platform.
     private static func pruned(_ rule: BoardSourceMemberRule) -> BoardSourceMemberRule {
         var out = rule
         if out.vary == .off { out.vary = nil }
         if out.split == false { out.split = nil }
-        if out.parts?.isEmpty == true { out.parts = nil }
         return out
     }
 

@@ -151,6 +151,17 @@ final class BoardWizardViewModel {
     /// `refreshCompoundChildren()` whenever the pulled sources change.
     var childrenByCompoundId: [String: [CompoundChild]] = [:]
 
+    /// Memo for `expandedSupplies` (+MemberRules/+Sources), keyed by its three
+    /// inputs compared by value — never invalidated by hand, so it cannot go
+    /// stale. `@ObservationIgnored`: it is derived state, not wizard state.
+    @ObservationIgnored
+    var expandedSuppliesCache: (
+        sources: [BoardSource],
+        supplyInfo: [String: WizardSourceSupply],
+        children: [String: [CompoundChild]],
+        value: [BoardSources.ExpandedSupply]
+    )?
+
     // MARK: - Wizard navigation
 
     var currentStep: WizardStep = 1

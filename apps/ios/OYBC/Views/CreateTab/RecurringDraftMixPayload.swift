@@ -101,7 +101,10 @@ struct RecurringDraftMixPayload: Codable {
             removedTaskIds: removedTaskIds
         )
         try container.encode(resolvedSources, forKey: .sources)
-        // Omitted when empty — an existing draft's blob is unchanged.
+        // Omitted when empty — an existing draft's blob is unchanged. Web
+        // writes `manualTaskVary: {}` instead; both decode to an empty map and
+        // the blob is an LWW'd string (never merged), so the byte difference
+        // is cosmetic — the B1 codec contract's omit-when-empty wins here.
         if !manualTaskVary.isEmpty {
             try container.encode(manualTaskVary, forKey: .manualTaskVary)
         }

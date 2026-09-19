@@ -37,6 +37,26 @@ extension BoardWizardViewModel {
     /// Downstream `resolveSourceAvailable` calls stay correct — it is
     /// idempotent.
     var expandedSupplies: [BoardSources.ExpandedSupply] {
+        // Memoised on its three inputs (M5): `availableCount` goes through
+        // this, `clampSourceMin` calls `availableCount` per source, and
+        // `commitSupplyChange` loops every source and then recomputes the
+        // selection — so one rule edit used to rebuild the whole expansion
+        // O(n²) times. The cache key is the inputs themselves, compared by
+        // value, so a stale hit is impossible by construction (no mutator has
+        // to remember to invalidate).
+        if let cache = expandedSuppliesCache,
+           cache.sources == sources,
+           cache.supplyInfo == supplyInfoBySourceId,
+           cache.children == childrenByCompoundId {
+            return cache.value
+        }
+        let expanded = computeExpandedSupplies()
+        expandedSuppliesCache = (sources, supplyInfoBySourceId, childrenByCompoundId, expanded)
+        return expanded
+    }
+
+    /// The uncached expansion — see ``expandedSupplies``.
+    private func computeExpandedSupplies() -> [BoardSources.ExpandedSupply] {
         let raw = sources.map { source -> BoardSources.Supply in
             let info = supplyInfoBySourceId[source.sourceId]
             var ids = info?.rawSupplyTaskIds ?? []
@@ -413,10 +433,21 @@ extension BoardWizardViewModel {
                 )
             case .board:
                 if let info = (try? database.fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil {
+                    // §Member rules (B3) — the RC4/RC5 fields ride along HERE
+                    // too, not just on `pullBoard`/`refreshSourceSupplies`: a
+                    // resumed draft or an edited record takes ONLY this path
+                    // on open, and a rule row rendered against a nil
+                    // `sourceWindow` would show the bare goal and then
+                    // silently change to the pro-rated number once the view's
+                    // first refresh landed. (The RC4 PREFILL is still not run
+                    // here — a hydrated source's saved rules are the person's
+                    // own state; only `pullBoard` seeds.)
                     supplyInfo[source.sourceId] = WizardSourceSupply(
                         displayName: info.displayName,
                         rawSupplyTaskIds: info.supplyTaskIds,
-                        doneTaskIds: info.doneTaskIds
+                        doneTaskIds: info.doneTaskIds,
+                        windowCountByTaskId: info.windowCountByTaskId,
+                        sourceWindow: info.sourceWindow
                     )
                 } else {
                     supplyInfo[source.sourceId] = WizardSourceSupply(

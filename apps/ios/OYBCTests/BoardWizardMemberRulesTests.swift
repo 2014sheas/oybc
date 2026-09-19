@@ -433,5 +433,16 @@ final class BoardWizardMemberRulesTests: XCTestCase {
         XCTAssertEqual(vm.manualTaskVary, ["cnt": .little], "the blob's dice hydrate too")
         XCTAssertNil(try rule(vm, "cnt").target,
                      "a hydrated source is never re-seeded by the RC4 prefill")
+
+        // The RC4/RC5 supply fields must arrive WITH the hydration, not on
+        // the view's first refresh — a rule row rendered against a nil
+        // `sourceWindow` would show the bare goal and then change under the
+        // person a beat later.
+        let hydratedSupply = try XCTUnwrap(vm.supplyInfoBySourceId[sourceBoardId])
+        XCTAssertEqual(
+            hydratedSupply.sourceWindow,
+            BoardSources.BoardWindow(timeframe: .daily, startDate: windowStart, endDate: windowEnd)
+        )
+        XCTAssertEqual(hydratedSupply.windowCountByTaskId["cnt"], 3)
     }
 }

@@ -1390,17 +1390,27 @@ final class MemberRuleVectorTests: XCTestCase {
         }
     }
 
-    /// The Swift twin of the TS immutability suite: `BoardSource` is a value
-    /// type, so the assertion is a deep-copy comparison — the source the
-    /// chain STARTED from (and every intermediate result, kept alive here)
-    /// must be byte-identical afterwards.
+    /// The TS twin freezes its input and asserts the setters don't throw;
+    /// Swift has no analogue, because `BoardSource` is a value type taken by
+    /// value — an "did the input mutate?" assertion is true by construction.
+    /// So this test asserts two things that CAN fail: (a) the input's encoded
+    /// bytes are unchanged even after the RESULT is mutated (the value-copy
+    /// claim, stated in a form a future reader can trust rather than assume),
+    /// and (b) the step SEMANTICS of each chain — the first step writes the
+    /// field, the second (a clear) takes it away again — so the vectors pin
+    /// behaviour, not the language.
     func testWithRuleSettersNeverMutateTheirInput() throws {
         let section = try loadFixture().display
         XCTAssertFalse(section.immutability.isEmpty)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
         for v in section.immutability {
+            XCTAssertEqual(v.steps.count, 2, "\(v.name): expects a set-then-clear chain")
             let original = displaySource(v.startMemberRules)
-            let snapshot = original
-            var chain: [BoardSource] = [original]
+            let before = try encoder.encode(original)
+
+            var chain: [BoardSource] = []
             var current = original
             for step in v.steps {
                 current = v.kind == "member"
@@ -1415,9 +1425,31 @@ final class MemberRuleVectorTests: XCTestCase {
                     )
                 chain.append(current)
             }
-            XCTAssertEqual(original, snapshot, v.name)
-            XCTAssertEqual(chain.first, snapshot,
+
+            // Mutate the RESULT as hard as the type allows; the input must be
+            // untouched afterwards.
+            var mutated = try XCTUnwrap(chain.last, v.name)
+            mutated.memberRules = ["mutated": BoardSourceMemberRule(target: 99)]
+            mutated.excludedTaskIds.append("mutated")
+            mutated.min = 99
+            XCTAssertEqual(try encoder.encode(original), before,
                            "\(v.name): the source the chain started from is untouched")
+
+            // Step semantics: written by step 1, gone after step 2.
+            let step = v.steps[0]
+            XCTAssertFalse(hasWrittenField(original, step), "\(v.name): not present to begin with")
+            XCTAssertTrue(hasWrittenField(chain[0], step), "\(v.name): step 1 writes the field")
+            XCTAssertFalse(hasWrittenField(chain[1], step), "\(v.name): step 2 clears it again")
         }
+    }
+
+    /// Whether the rule (or part rule) the step addresses carries ANY field.
+    private func hasWrittenField(_ source: BoardSource, _ step: RawPatchStep) -> Bool {
+        let rule = BoardSources.memberRule(for: step.taskId, in: source)
+        guard let childId = step.childId else {
+            return rule.target != nil || rule.vary != nil || rule.split != nil
+        }
+        let part = BoardSources.partRule(for: childId, in: rule)
+        return part.target != nil || part.vary != nil || part.excluded != nil
     }
 }

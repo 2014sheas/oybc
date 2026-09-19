@@ -57,10 +57,20 @@ extension BoardWizardViewModel {
     /// session's pending (not-yet-persisted) compounds' own links — a
     /// wizard-created compound must be splittable too.
     ///
-    /// ONE batched read (`AppDatabase.fetchCompoundChildren(db:compoundTaskIds:)`,
-    /// the B2 helper) rather than a query per compound. A read failure leaves
-    /// the map empty, which makes every split rule stale-inert — the source
-    /// still supplies its members un-split; nothing blocks.
+    /// ONE read transaction (`AppDatabase.fetchCompoundChildren(forCandidateTaskIds:)`
+    /// — the type filter and the B2 batched children fetch share it) rather
+    /// than a query per compound, and an early return when there is nothing
+    /// to read at all (every plain "Create board" open). A read failure
+    /// leaves the map empty, which makes every split rule stale-inert — the
+    /// source still supplies its members un-split; nothing blocks.
+    ///
+    /// Web's `useWizardCompoundChildren` ends with a third layer,
+    /// `overlayCompoundChildrenWithStagedEdits`. iOS omits it deliberately:
+    /// `recomputeSelectionFromSources` purges a compound's staged edit the
+    /// instant it leaves the selection, and splitting a compound is exactly
+    /// what makes it leave — so a SPLIT compound can never carry a staged
+    /// edit here. If a future surface keeps staged edits alive across a
+    /// split, this is the line that has to change.
     func refreshCompoundChildren() {
         var supplied: [String] = []
         var seen = Set<String>()
@@ -69,12 +79,11 @@ extension BoardWizardViewModel {
                 if seen.insert(id).inserted { supplied.append(id) }
             }
         }
-        let compoundIds = ((try? database.fetchTasks(ids: supplied)) ?? [])
-            .filter { $0.type == .compound && !$0.isDeleted }
-            .map { $0.id }
-        var links = (try? database.read { db in
-            try AppDatabase.fetchCompoundChildren(db: db, compoundTaskIds: compoundIds)
-        }) ?? [:]
+        guard !supplied.isEmpty || !pendingTasks.isEmpty else {
+            childrenByCompoundId = [:]
+            return
+        }
+        var links = (try? database.fetchCompoundChildren(forCandidateTaskIds: supplied)) ?? [:]
         for payload in pendingTasks.values where !payload.childLinks.isEmpty {
             // `childLinks` are assembled in `childIndex` order by the create
             // form — used as-is, matching web's `useWizardCompoundChildren`.
