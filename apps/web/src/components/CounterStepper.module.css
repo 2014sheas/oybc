@@ -112,3 +112,14 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: -3px;
 }
+
+/* The goal, folded into the pill (B3.1). Static text — only the numeric
+   field beside it is editable. */
+.compactSuffix {
+  padding-right: 2px;
+  font-family: var(--riso-font-body);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}

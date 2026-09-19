@@ -652,6 +652,11 @@ struct RisoInlineStepperView: View {
     let min: Int
     let max: Int
     var style: RisoInlineStepperStyle = .regular
+    /// Static text rendered inside the COMPACT pill after the field — the
+    /// member row's goal ("/ 30 Miles"), folded in so the row needs no
+    /// separate caption (B3.1). Ignored by `.regular`. Web twin: the
+    /// `suffix` prop on `CounterStepper`.
+    var suffix: String? = nil
 
     /// Uncommitted typing in the compact field; nil while not editing, so
     /// an external value change (a Split-up recompute, an undo) shows
@@ -749,6 +754,15 @@ struct RisoInlineStepperView: View {
                         commitDraft()
                     }
                 }
+            if let suffix {
+                Text(suffix)
+                    .font(.risoBody(10, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.trailing, 2)
+                    .accessibilityHidden(true)
+            }
             compactStepButton("＋", label: "Increase target", disabled: effectiveValue >= max) {
                 step(by: 1)
             }

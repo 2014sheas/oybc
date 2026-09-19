@@ -12,10 +12,10 @@ interface CounterStepperProps {
   /** Callback when the value changes */
   onChange: (value: number) => void;
   /**
-   * Optional label shown after the stepper (e.g. "of 5 subtasks"). The
-   * `compact` variant has no room for it — the member row captions itself
-   * — so it becomes the numeric field's accessible name there instead of
-   * the default "Target".
+   * Optional label shown after the stepper (e.g. "of 5 subtasks"). On the
+   * `compact` variant it becomes the numeric field's accessible name
+   * instead of the default "Target" (there's no room to render it visibly
+   * — see `suffix` below for the visible goal text).
    */
   label?: string;
   /**
@@ -24,6 +24,13 @@ interface CounterStepperProps {
    * rules): 1.5px ink border, radius 999, a typeable numeric middle.
    */
   size?: 'default' | 'compact';
+  /**
+   * Static text rendered inside the compact pill after the value — the
+   * member row's goal ("/ 30 Miles"), folded in so the row does not need
+   * a separate caption beside the stepper (B3.1). Not editable; only the
+   * numeric field is. Ignored by the `default` size.
+   */
+  suffix?: string;
 }
 
 /**
@@ -53,6 +60,7 @@ export function CounterStepper({
   onChange,
   label,
   size = 'default',
+  suffix,
 }: CounterStepperProps): React.ReactElement {
   /** Uncommitted typing in the compact field; `null` while not editing. */
   const [draft, setDraft] = useState<string | null>(null);
@@ -102,6 +110,15 @@ export function CounterStepper({
             }
           }}
         />
+        {suffix !== undefined && (
+          // Redundant with the member row's own accessible label (the goal
+          // is carried there) — hidden from AT so it isn't announced twice
+          // as an isolated, unlabelled fragment. Web twin of iOS's
+          // `.accessibilityHidden(true)` on the same text (B3.1).
+          <span className={styles.compactSuffix} data-testid="stepper-suffix" aria-hidden="true">
+            {suffix}
+          </span>
+        )}
         <button
           type="button"
           className={styles.compactButton}
