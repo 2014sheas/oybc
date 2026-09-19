@@ -310,12 +310,16 @@ struct RisoMemberRuleRowView: View {
     /// - Returns: True while the controls line should render.
     private var isExpanded: Bool { expandedOverride ?? initiallyExpanded }
 
-    /// The disclosure's spoken label. The counter-clash warning is folded
-    /// in because an explicit `accessibilityLabel` on the container
-    /// REPLACES what its children would have said — and the clash hint
-    /// only ever appears on a counting member, which is always
-    /// expandable, so leaving it out would silence it in exactly the case
-    /// it exists for.
+    /// The disclosure's spoken label: the title, plus the counter-clash
+    /// warning when there is one.
+    ///
+    /// Under `.accessibilityElement(children: .contain)` the children stay
+    /// reachable as their own elements, so folding the warning in is a
+    /// choice, not a rescue — the row states its own warning as part of
+    /// itself instead of only on a separate swipe. Because the child is
+    /// still there, `mainLine` hides the clash `Text` from VoiceOver on
+    /// exactly the rows that fold it in, so it is announced once rather
+    /// than twice.
     ///
     /// - Returns: The title, plus the clash sentence when there is one.
     private var accessibilityTitle: String {
@@ -393,12 +397,17 @@ struct RisoMemberRuleRowView: View {
         // fit; the excluded state's UNDO pill (~60pt) does not — and a
         // non-expandable row needs no full-rect hit area anyway, so it
         // keeps its pre-B3.1 inline control and 11pt trailing padding.
-        // 11, not 7: the gutter the main line reserves is 39 = 28 + 11,
-        // so 11 is the only value that puts this ✕ at the SAME x as the
-        // inline one on a non-expandable row directly above or below it
-        // (and matches the web twin's 11px).
+        // Both paddings are the row's OWN padding, so the overlaid ✕ lands
+        // exactly where the inline one does on a non-expandable row above
+        // or below it. Trailing 11: the main line reserves 39 = 28 + 11.
+        // Top 7: the row's vertical padding, so the ✕ occupies 7…35 in a
+        // 42pt row either way. (Top 4 was calibrated against the badge-
+        // driven ~34pt row that existed before `minHeight: 28`, and left
+        // the ✕ ~3pt high once the row grew — and would drift further on a
+        // counter-clash row, whose two-line title makes the row taller
+        // still while an absolute top padding stays put.)
         .overlay(alignment: .topTrailing) {
-            if model.isExpandable { trailingControl.padding(.trailing, 11).padding(.top, 4) }
+            if model.isExpandable { trailingControl.padding(.trailing, 11).padding(.top, 7) }
         }
         .overlay(alignment: .top) { hairline }
         // M4: a row that was expanded, then excluded, must not come back
@@ -438,6 +447,13 @@ struct RisoMemberRuleRowView: View {
                         .font(.risoBody(10.5, .semibold))
                         .foregroundStyle(Color.risoMuted)
                         .lineLimit(1)
+                        // Announced once. An expandable row folds this
+                        // sentence into `accessibilityTitle`, and `.contain`
+                        // would otherwise leave the child readable too. A
+                        // NON-expandable row has no container label — an
+                        // excluded counting member can still clash — so
+                        // there the child stays the only announcement.
+                        .accessibilityHidden(model.isExpandable)
                 }
             }
             Spacer(minLength: 6)
@@ -465,8 +481,11 @@ struct RisoMemberRuleRowView: View {
         // Every row in a panel shares a height. Before B3.1 that fell out
         // of the inline 28pt ✕; moving it to an overlay on EXPANDABLE rows
         // only would leave their 20pt badge setting the height, mixing
-        // ~34pt and ~42pt rows in one list. Pinning 28 here keeps the
-        // panel's rhythm identical to B3 rather than merely self-consistent.
+        // ~34pt and ~42pt rows in one list. Pinning the pre-B3.1 control
+        // height restores B3 exactly for an INCLUDED row (28 + 7 + 7 = 42)
+        // and deliberately LIFTS the two states that were already shorter
+        // than that — filtered-done's 22pt ✓ and excluded's ~24pt UNDO
+        // pill — so the list is uniform rather than merely unchanged.
         .frame(minHeight: 28)
     }
 
