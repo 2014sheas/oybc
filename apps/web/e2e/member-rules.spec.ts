@@ -300,7 +300,9 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     const disclosure = memberRow.getByTestId('member-disclosure');
     const box = (await disclosure.boundingBox())!;
     // Click near the trailing edge of the disclosure, well past the title's
-    // text, but inside the 42px gutter reserved for the ✕.
+    // text, but inside the 39px gutter reserved for the ✕
+    // (`.disclosure { padding-right: 39px }`; 42px is the unrelated
+    // `min-height` row floor — don't conflate the two).
     await page.mouse.click(box.x + box.width - 8, box.y + box.height / 2);
     await expect(memberRow.getByLabel('Target')).toBeVisible();
   });
@@ -316,14 +318,26 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await row.getByTestId('member-disclosure').click();
     await row.getByRole('button', { name: 'Split up' }).click();
 
+    // Scoped to the two PART names, not `/^Exclude /` — the member's own ✕
+    // ("Exclude Morning set for this board") renders unconditionally
+    // whenever the row is expandable (it has no `split` gating), so an
+    // unscoped exclude-button count on the row would include it and throw
+    // off both counts below. Follows the exact-name pattern the sibling
+    // "Split up turns a compound..." spec already uses.
+    const partExcludes = row.getByRole('button', {
+      name: /^Exclude (Warm up 10 reps|Cool down 10 reps) for this board/,
+    });
+
     // Both parts offer a ✕ while more than one is included.
-    await expect(row.getByRole('button', { name: /^Exclude / })).toHaveCount(2);
+    await expect(partExcludes).toHaveCount(2);
 
     // Exclude one: the survivor's ✕ is GONE (hidden, not inert — an inert ✕
     // reads as a broken toggle), and the excluded part shows a part-scale
-    // UNDO.
+    // UNDO. Excluding a part never changes the compound MEMBER's own
+    // board-inclusion state, so its ✕ stays put throughout — outside this
+    // scoped count either way.
     await row.getByRole('button', { name: 'Exclude Warm up 10 reps for this board' }).click();
-    await expect(row.getByRole('button', { name: /^Exclude / })).toHaveCount(0);
+    await expect(partExcludes).toHaveCount(0);
     const partUndo = row.getByRole('button', { name: /^Undo excluding / });
     await expect(partUndo).toHaveCount(1);
 
