@@ -16,6 +16,14 @@ import SnapshotTesting
 ///   - pool header: short / satisfied (light + dark)
 ///   - pool list: with tasks (light + dark)
 ///   - empty pool state (light + dark)
+///   - pool list: a hand-added counting row with the dice on (light + dark)
+///
+/// Board Sources §Member rules (B3) full-step variants — an expanded
+/// board source over the `.memberRules` library:
+///   - counting member: target stepper + "of 35 mi" caption + dice off
+///   - counting member with the dice on: the blue range line
+///   - compound member One square: pill toggle + "1 square" + line dice
+///   - compound member Split up with an excluded part
 ///
 /// Each test renders at iPhone 16 width (393pt). iOS-version pinning is
 /// enforced at the scheme level (see CLAUDE.md → Snapshot Testing).
@@ -293,6 +301,105 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Full-step: member rules (B3)
+
+    /// A board source pulled onto a one-off board: its counting member
+    /// carries the 22pt target stepper + "of 35 mi" caption + dice (off),
+    /// while the plain member carries only the ✕.
+    func testSourceCountingMemberRule() {
+        assertSnapshot(
+            of: makeMemberRulesView(rules: [:]),
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
+    /// Same source with the dice turned up: the blue range line appears
+    /// under the row at the 69pt indent.
+    func testSourceCountingMemberVaryOn() {
+        assertSnapshot(
+            of: makeMemberRulesView(
+                rules: [SnapshotFixtures.MemberRuleTask.run: BoardSourceMemberRule(vary: .little)]
+            ),
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
+    /// Compound member in One square mode: the pill toggle + "1 square"
+    /// note + the dice on THAT line (rolling for the whole square), with
+    /// each part line reading the parent's level for its range.
+    func testSourceCompoundOneSquare() {
+        assertSnapshot(
+            of: makeMemberRulesView(
+                memberIds: [
+                    SnapshotFixtures.MemberRuleTask.compound,
+                    SnapshotFixtures.MemberRuleTask.normal,
+                ],
+                rules: [
+                    SnapshotFixtures.MemberRuleTask.compound: BoardSourceMemberRule(vary: .lot),
+                ]
+            ),
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
+    /// Compound member Split up with one of its two parts excluded: the
+    /// note drops to "1 square", the excluded part is struck with an
+    /// UNDO pill, and the LAST included part shows no ✕.
+    func testSourceCompoundSplitUpWithExcludedPart() {
+        assertSnapshot(
+            of: makeMemberRulesView(
+                memberIds: [
+                    SnapshotFixtures.MemberRuleTask.compound,
+                    SnapshotFixtures.MemberRuleTask.normal,
+                ],
+                rules: [
+                    SnapshotFixtures.MemberRuleTask.compound: BoardSourceMemberRule(
+                        split: true,
+                        parts: [
+                            SnapshotFixtures.MemberRuleTask.plank:
+                                BoardSourcePartRule(excluded: true),
+                        ]
+                    ),
+                ]
+            ),
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
+    // MARK: - Leaf: hand-added rows with the dice (B3)
+
+    /// A hand-added COUNTING row earns a dice before the 32pt pencil, and
+    /// a blue range line under the row left-aligned with the title. The
+    /// normal + compound rows in the same list get neither.
+    func testPoolListHandAddedVaryLight() {
+        let view = makePoolListView(manualTaskVary: ["t-counting-1": .lot])
+            .padding(20)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 300)),
+            record: recordMode
+        )
+    }
+
+    func testPoolListHandAddedVaryDark() {
+        let view = makePoolListView(manualTaskVary: ["t-counting-1": .lot])
+            .padding(20)
+            .background(Color.risoPaper)
+        assertSnapshot(
+            of: view,
+            as: .image(
+                layout: .fixed(width: 393, height: 300),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
     // MARK: - Builders
 
     private func makeView(
@@ -320,9 +427,40 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    /// One expanded BOARD source over the `.memberRules` library, with
+    /// `memberRules` stamped straight onto the `BoardSource` (that IS
+    /// where rules live — no extra plumbing).
+    private func makeMemberRulesView(
+        memberIds: [String] = [
+            SnapshotFixtures.MemberRuleTask.run,
+            SnapshotFixtures.MemberRuleTask.normal,
+        ],
+        rules: [String: BoardSourceMemberRule]
+    ) -> some View {
+        var boardSource = BoardSource(sourceId: "b1", kind: .board)
+        boardSource.memberRules = rules.isEmpty ? nil : rules
+        return TasksStepHost(
+            library: SnapshotFixtures.makeTaskLibrary(state: .memberRules),
+            initialSelection: [],
+            initialCenterTaskId: nil,
+            centerTaskMode: false,
+            isRecurring: false,
+            sources: [boardSource],
+            supplyInfoBySourceId: [
+                "b1": WizardSourceSupply(
+                    displayName: "Weekday Core",
+                    rawSupplyTaskIds: memberIds,
+                    doneTaskIds: []
+                ),
+            ],
+            expandedSourceIds: ["b1"]
+        )
+    }
+
     private func makePoolListView(
         centerTaskMode: Bool = false,
-        centerTaskId: String? = nil
+        centerTaskId: String? = nil,
+        manualTaskVary: [String: VaryLevel] = [:]
     ) -> some View {
         // Build a stable set of tasks for the pool list
         let normalTask = SnapshotFixtures.makeTask(id: "t-normal-1", title: "Meditate 10 min", type: .normal)
@@ -370,7 +508,11 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             centerTaskMode: centerTaskMode,
             centerTaskId: centerTaskId,
             onSetCenter: { _ in },
-            onEdit: { _ in }
+            onEdit: { _ in },
+            manualTaskVary: manualTaskVary,
+            // Non-nil only here: wiring it on every existing fixture would
+            // put a dice on baselines that never asked for one.
+            onSetManualVary: manualTaskVary.isEmpty ? nil : { _, _ in }
         )
     }
 
@@ -416,17 +558,34 @@ private struct TasksStepHost: View {
         self.capacityOverride = capacityOverride
     }
 
-    /// VM-less capacity mirror: dedupe(supplies capped at effective max ∪
-    /// selection-as-manual) — enough for stable snapshot fixtures.
+    /// VM-less capacity mirror: dedupe(supplies ∪ selection-as-manual)
+    /// — enough for stable snapshot fixtures. §Member rules (B3): the
+    /// supplies run through the real `applyMemberRules`, so a Split-up
+    /// member contributes its parts here exactly as it does on the board
+    /// (a rule-less source is an identity pass, leaving pre-B3 baselines
+    /// at the same number).
     private var capacity: Int {
         if let capacityOverride { return capacityOverride }
-        var unique = selectedTaskIds
-        for source in sources {
+        let tasksById = Dictionary(
+            library.libraryTasks.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let raw = sources.map { source -> BoardSources.Supply in
             let info = supplyInfoBySourceId[source.sourceId]
-            for id in info?.rawSupplyTaskIds ?? [] where !source.excludedTaskIds.contains(id) {
-                unique.insert(id)
+            var ids = info?.rawSupplyTaskIds ?? []
+            if source.kind == .board, source.filter == .todo, let done = info?.doneTaskIds {
+                ids.removeAll { done.contains($0) }
             }
+            ids.removeAll { source.excludedTaskIds.contains($0) }
+            return BoardSources.Supply(source: source, supplyTaskIds: ids)
         }
+        let expanded = BoardSources.applyMemberRules(
+            raw,
+            childrenByCompoundId: library.compoundChildrenByCompound,
+            tasksById: tasksById
+        )
+        var unique = selectedTaskIds
+        for supply in expanded { unique.formUnion(supply.supplyTaskIds) }
         return unique.count
     }
 

@@ -477,7 +477,23 @@ struct BoardWizardView: View {
                 onPullPoolSource: { pool in
                     wizard.pullPool(pool, tasksById: tasksById)
                 },
-                onPullBoardSource: { wizard.pullBoard(boardId: $0) }
+                onPullBoardSource: { wizard.pullBoard(boardId: $0) },
+                // §Member rules (B3) — the seven rule actions + the
+                // hand-added dice map (`BoardWizardViewModel+MemberRules`).
+                manualTaskVary: wizard.manualTaskVary,
+                onSetManualVary: { wizard.setManualVary(taskId: $0, level: $1) },
+                onSetMemberTarget: { wizard.setMemberTarget(sourceId: $0, taskId: $1, target: $2) },
+                onSetMemberVary: { wizard.setMemberVary(sourceId: $0, taskId: $1, level: $2) },
+                onSetMemberSplit: { wizard.setMemberSplit(sourceId: $0, taskId: $1, split: $2) },
+                onSetPartExcluded: {
+                    wizard.setPartExcluded(sourceId: $0, taskId: $1, childId: $2, excluded: $3)
+                },
+                onSetPartTarget: {
+                    wizard.setPartTarget(sourceId: $0, taskId: $1, childId: $2, target: $3)
+                },
+                onSetPartVary: {
+                    wizard.setPartVary(sourceId: $0, taskId: $1, childId: $2, level: $3)
+                }
             )
         default:
             BoardWizardPreviewStepView(

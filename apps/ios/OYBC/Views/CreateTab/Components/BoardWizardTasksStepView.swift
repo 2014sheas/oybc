@@ -11,7 +11,7 @@ private struct PoolEditToast: Identifiable {
 /// BoardWizardTasksStepView — Step 2 of the board-creation wizard (Riso redesign).
 ///
 /// This is a PRESENTATION RESTRUCTURE of the pre-Phase 3b implementation.
-/// All business logic (selection validation, pending-task merges, derive,
+/// All business logic (selection validation, pending-task merges,
 /// compound expand, library feed) is preserved intact;
 /// only the visual layer is rebuilt in the Riso design language.
 ///
@@ -33,7 +33,9 @@ private struct PoolEditToast: Identifiable {
 ///   - `RisoQuickAddRowView`        — text input + red Add button
 ///   - `RisoSpecialTaskPanel`       — collapsed/expanded type-specific panel
 ///   - `RisoLibrarySheetView`       — dashed entry button + bottom sheet (owns search,
-///                                     filters, derive, compound expand)
+///                                     filters, compound expand)
+///   - `RisoMemberRuleRowView`      — one member row inside an expanded source
+///                                     panel (§Member rules controls)
 ///   - `RisoPoolListView`           — source + hand-added rows + empty state
 struct BoardWizardTasksStepView: View {
 
@@ -154,16 +156,22 @@ struct BoardWizardTasksStepView: View {
     var onPullPoolSource: (_ pool: Pool) -> Void = { _ in }
     var onPullBoardSource: (_ boardId: String) -> Void = { _ in }
 
-    // MARK: - Internal state
+    // MARK: - Member rules (B3, docs/BOARD_SOURCES.md §Member rules)
 
-    /// Source-member derive state (owner report 2026-09-15) — "Derive
-    /// smaller version…" fired from a pulled source's member row. The
-    /// created task is a hand-add; the counter-family guard then prefers
-    /// it over the source-supplied original at the deal, so no manual
-    /// exclude is needed.
-    @State private var sourceDeriveTask: OYBC.Task? = nil
-    @State private var sourceDeriveInput: String = ""
-    @State private var sourceDeriveError: String? = nil
+    /// Dice level per HAND-ADDED counting task
+    /// (`BoardWizardViewModel.manualTaskVary`). Absent ids are `.off`.
+    var manualTaskVary: [String: VaryLevel] = [:]
+    /// Sets a hand-added counting task's dice level. nil ⇒ no dice on the
+    /// hand-added rows (a read-only mount).
+    var onSetManualVary: ((_ taskId: String, _ level: VaryLevel) -> Void)? = nil
+    var onSetMemberTarget: (_ sourceId: String, _ taskId: String, _ target: Int?) -> Void = { _, _, _ in }
+    var onSetMemberVary: (_ sourceId: String, _ taskId: String, _ level: VaryLevel) -> Void = { _, _, _ in }
+    var onSetMemberSplit: (_ sourceId: String, _ taskId: String, _ split: Bool) -> Void = { _, _, _ in }
+    var onSetPartExcluded: (_ sourceId: String, _ taskId: String, _ childId: String, _ excluded: Bool) -> Void = { _, _, _, _ in }
+    var onSetPartTarget: (_ sourceId: String, _ taskId: String, _ childId: String, _ target: Int?) -> Void = { _, _, _, _ in }
+    var onSetPartVary: (_ sourceId: String, _ taskId: String, _ childId: String, _ level: VaryLevel) -> Void = { _, _, _, _ in }
+
+    // MARK: - Internal state
 
     // Inline task editor (PR 1) — at most one row open at a time.
     @State private var editingTaskId: String? = nil
@@ -234,6 +242,21 @@ struct BoardWizardTasksStepView: View {
     /// the wizard pool, for the "shares a counter with 'X' · one per
     /// board" row hints. Computed over the staged-overlaid task map so
     /// renames show. Web twin: `computeCounterClashes`.
+    /// §Member rules (B3) — the window a pulled counting target
+    /// pro-rates AGAINST, and which planning mode applies. Both are built
+    /// from props the step already takes; nothing new is threaded from
+    /// the container for them. Web twin: `wizardWindow` / `planMode` in
+    /// `BoardWizardTasksStep.tsx`.
+    private var wizardWindow: BoardSources.BoardWindow {
+        BoardSources.BoardWindow(
+            timeframe: currentTimeframe,
+            startDate: currentStartDate,
+            endDate: currentEndDate
+        )
+    }
+
+    private var planMode: BoardSources.PlanMode { isRecurring ? .recurring : .oneOff }
+
     private var counterClashByTaskId: [String: String] {
         let byId = effectiveTaskById
         let familyMap = BoardSources.buildCounterFamilyMap(byId.values)
@@ -416,14 +439,7 @@ struct BoardWizardTasksStepView: View {
                     hasParentBoards: hasParentBoards,
                     currentTimeframe: currentTimeframe,
                     userId: userId,
-                    defaultStartDate: currentStartDate,
-                    defaultEndDate: currentEndDate,
-                    onPendingCreated: onPendingCreated,
-                    onLibraryReloadRequested: onLibraryReloadRequested,
-                    onToggle: { taskId in toggleSelection(taskId) },
-                    onTaskCreated: { taskId, title, type in
-                        onTaskCreated(taskId, title, type)
-                    }
+                    onToggle: { taskId in toggleSelection(taskId) }
                 )
                 }
 
@@ -456,7 +472,9 @@ struct BoardWizardTasksStepView: View {
                     },
                     countOverride: capacity,
                     leadingRows: sourceRowsList,
-                    counterClashByTaskId: counterClashByTaskId
+                    counterClashByTaskId: counterClashByTaskId,
+                    manualTaskVary: manualTaskVary,
+                    onSetManualVary: onSetManualVary
                 )
 
                 // 6. Red gate line (frame 2a item 6) — only when short.
@@ -499,32 +517,6 @@ struct BoardWizardTasksStepView: View {
                     } else {
                         onPullBoardSource(boardId)
                     }
-                }
-            )
-        }
-        // Derive sheet for a pulled source's counting member (2026-09-15).
-        // The new linked counter lands in the wizard selection as a
-        // hand-add via the same onTaskCreated path quick-add uses.
-        .sheet(item: $sourceDeriveTask) { source in
-            RisoDeriveCounterSheetView(
-                source: source,
-                input: $sourceDeriveInput,
-                error: $sourceDeriveError,
-                userId: userId,
-                onCancel: { sourceDeriveTask = nil },
-                onSave: {
-                    DeriveCounterAction.createDerived(
-                        source: source,
-                        goalInput: sourceDeriveInput,
-                        userId: userId,
-                        onError: { sourceDeriveError = $0 },
-                        onCreated: { newTask in
-                            sourceDeriveTask = nil
-                            sourceDeriveError = nil
-                            onTaskCreated(newTask.id, newTask.title, "counting")
-                            onLibraryReloadRequested()
-                        }
-                    )
                 }
             )
         }
@@ -587,15 +579,14 @@ struct BoardWizardTasksStepView: View {
                     onToggleExclude: { onToggleSourceExclude(source.sourceId, $0) },
                     counterClashByTaskId: counterClashByTaskId,
                     compoundChildrenByCompound: effectiveChildrenByCompound,
-                    selectedTaskIds: selectedTaskIds,
-                    onDeriveMember: { task in
-                        sourceDeriveTask = task
-                        sourceDeriveInput = ""
-                        sourceDeriveError = nil
-                    },
-                    onAddTask: { taskId in
-                        if !selectedTaskIds.contains(taskId) { toggleSelection(taskId) }
-                    }
+                    mode: planMode,
+                    wizardWindow: wizardWindow,
+                    onSetMemberTarget: { onSetMemberTarget(source.sourceId, $0, $1) },
+                    onSetMemberVary: { onSetMemberVary(source.sourceId, $0, $1) },
+                    onSetMemberSplit: { onSetMemberSplit(source.sourceId, $0, $1) },
+                    onSetPartExcluded: { onSetPartExcluded(source.sourceId, $0, $1, $2) },
+                    onSetPartTarget: { onSetPartTarget(source.sourceId, $0, $1, $2) },
+                    onSetPartVary: { onSetPartVary(source.sourceId, $0, $1, $2) }
                 )
             }
         )

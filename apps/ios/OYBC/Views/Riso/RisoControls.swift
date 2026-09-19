@@ -163,6 +163,20 @@ enum RisoSegmentedStyle {
     case pill
 }
 
+/// `RisoSegmented`'s two sizes. Mirrors the web `size` prop
+/// (`'default' | 'compact'`) verbatim, and like it shapes the `.pill`
+/// form only — `.card` ignores it.
+///
+/// - `.regular` (default): the shipped metrics, unchanged.
+/// - `.compact`: a 22pt pill with a 1.5pt ink border and 10.5/700
+///   segments split by an ink divider — the inline row control the
+///   wizard member row's One square / Split up toggle uses (handoff
+///   "Compound member").
+enum RisoSegmentedSize {
+    case regular
+    case compact
+}
+
 /// Generic segmented control — selected segment = filled / paper text.
 ///
 /// - `equalWidth` (default true, `.card` style only): segments each take an
@@ -186,11 +200,16 @@ struct RisoSegmented<T: Hashable>: View {
     var equalWidth: Bool = true
     var selectedFill: (T) -> Color = { _ in .risoBlue }
     var style: RisoSegmentedStyle = .card
+    var size: RisoSegmentedSize = .regular
 
     var body: some View {
         switch style {
         case .card: cardBody
-        case .pill: pillBody
+        case .pill:
+            switch size {
+            case .regular: pillBody
+            case .compact: compactPillBody
+            }
         }
     }
 
@@ -245,6 +264,39 @@ struct RisoSegmented<T: Hashable>: View {
         .padding(4)
         .background(Capsule().fill(Color.risoPaper))
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+    }
+
+    /// `.pill` at `.compact`: a 22pt capsule with NO internal padding —
+    /// the segments butt up against each other, split by a 1.5pt ink
+    /// divider, and the selected one fills the full cell height with ink.
+    /// Mirrors the web `.pill.compact` rule set (height 22, border 1.5,
+    /// segment radius 0, 10.5/700, 9pt side padding).
+    private var compactPillBody: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.element.value) { index, opt in
+                let isOn = selection == opt.value
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.risoInk)
+                        .frame(width: Riso.Keyline.dense)
+                }
+                Button { selection = opt.value } label: {
+                    Text(opt.label)
+                        .font(.risoHead(10.5, .bold))
+                        .lineLimit(1)
+                        .foregroundStyle(isOn ? Color.risoPaper : Color.risoMuted)
+                        .padding(.horizontal, 9)
+                        .frame(maxHeight: .infinity)
+                        .background(isOn ? Color.risoInk : Color.clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(height: 22)
+        .background(Color.risoPaper)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
     }
 }
 

@@ -630,14 +630,45 @@ struct RisoSpecialTaskPanel: View {
 
 // MARK: - Inline stepper
 
+/// `RisoInlineStepperView`'s two sizes.
+///
+/// - `.regular` (default): the shipped 44pt −/＋ pair around a read-only
+///   value — the achievement required-count field and the compound
+///   At-least-N threshold. Rendering is untouched.
+/// - `.compact`: the 22pt pill the wizard's member rows use
+///   (docs/BOARD_SOURCES.md §Member rules; handoff "Counting member") —
+///   1.5pt ink border, radius 999, 22pt − / typeable value / 22pt ＋.
+///   Web twin: `CounterStepper`'s `size="compact"`.
+enum RisoInlineStepperStyle {
+    case regular
+    case compact
+}
+
 /// Minimal inline stepper for the achievement required-count field and
-/// the compound At-least-N threshold.
+/// the compound At-least-N threshold — and, at `style: .compact`, the
+/// wizard member row's target editor.
 struct RisoInlineStepperView: View {
     @Binding var value: Int
     let min: Int
     let max: Int
+    var style: RisoInlineStepperStyle = .regular
+
+    /// Uncommitted typing in the compact field; nil while not editing, so
+    /// an external value change (a Split-up recompute, an undo) shows
+    /// through immediately rather than being masked by a stale draft.
+    @State private var draft: String? = nil
+    @FocusState private var isFieldFocused: Bool
 
     var body: some View {
+        switch style {
+        case .regular: regularBody
+        case .compact: compactBody
+        }
+    }
+
+    // MARK: - Regular (unchanged)
+
+    private var regularBody: some View {
         HStack(spacing: 0) {
             Button { value = Swift.max(min, value - 1) } label: {
                 Text("−")
@@ -676,5 +707,93 @@ struct RisoInlineStepperView: View {
         .background(Color.risoPaper)
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container))
+    }
+
+    // MARK: - Compact (B3 member rows)
+
+    /// 22pt pill: 22×22 −/＋ buttons (disabled at the bounds, mirroring
+    /// web) around a numeric text field. Typing is committed on blur or
+    /// return and clamped to `min…max`; the step is always 1 and there is
+    /// no reset affordance (handoff §Interactions "Counting targets").
+    private var compactBody: some View {
+        HStack(spacing: 0) {
+            compactStepButton("−", label: "Decrease target", disabled: value <= min) {
+                value = Swift.max(min, value - 1)
+            }
+            TextField("", text: compactText)
+                .font(.risoBody(11, .extraBold))
+                .foregroundStyle(Color.risoInk)
+                .multilineTextAlignment(.center)
+                .keyboardType(.numberPad)
+                .focused($isFieldFocused)
+                .submitLabel(.done)
+                .onSubmit { commitDraft() }
+                // Width follows the goal's digit count so a 4-digit goal
+                // isn't clipped (web sizes the input the same way).
+                .frame(width: CGFloat(Swift.max(2, String(max).count) + 1) * 7)
+                .accessibilityLabel("Target")
+                .onChange(of: isFieldFocused) { _, focused in
+                    if focused {
+                        draft = String(value)
+                        // Select-all on focus: the field IS the first
+                        // responder at this point, so a nil-target action
+                        // reaches exactly it (never a sibling field).
+                        DispatchQueue.main.async {
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.selectAll(_:)),
+                                to: nil, from: nil, for: nil
+                            )
+                        }
+                    } else {
+                        commitDraft()
+                    }
+                }
+            compactStepButton("＋", label: "Increase target", disabled: value >= max) {
+                value = Swift.min(max, value + 1)
+            }
+        }
+        .frame(height: 22)
+        .background(Color.risoPaper2)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+    }
+
+    /// The field's text: the uncommitted draft while editing, the live
+    /// value otherwise.
+    private var compactText: Binding<String> {
+        Binding(
+            get: { draft ?? String(value) },
+            set: { draft = $0 }
+        )
+    }
+
+    /// Parse, clamp to `min…max` and write back; a non-numeric or empty
+    /// entry simply reverts (no error state — the stepper is never in a
+    /// bad state, only un-edited).
+    private func commitDraft() {
+        guard let draft else { return }
+        self.draft = nil
+        guard let parsed = Int(draft.trimmingCharacters(in: .whitespaces)) else { return }
+        let clamped = Swift.min(max, Swift.max(min, parsed))
+        if clamped != value { value = clamped }
+    }
+
+    private func compactStepButton(
+        _ glyph: String,
+        label: String,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(glyph)
+                .font(.risoHead(12, .extraBold))
+                .foregroundStyle(Color.risoInk)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(disabled ? 0.4 : 1)
+        .disabled(disabled)
+        .accessibilityLabel(label)
     }
 }

@@ -60,6 +60,81 @@ final class RisoKitSnapshotTests: XCTestCase {
             record: recordMode
         )
     }
+
+    // MARK: - §Member rules primitives (B3)
+    //
+    // The three new row controls, side by side at their real 22/26pt
+    // sizes: the dice at all three vary levels (off = muted outline, no
+    // pips; a little = blue fill + 2 pips; a lot = 5 pips), the compact
+    // stepper pill, and the compact One square / Split up segmented.
+    // Guards the pip geometry and the on-blue `risoInkStatic` contrast in
+    // BOTH schemes — adaptive ink on a coloured fill is the dark-mode trap.
+
+    private func memberRulePrimitives() -> some View {
+        MemberRulePrimitivesPreview()
+            .padding(16)
+            .background(Color.risoPaper)
+            .frame(width: 353, height: 120)
+    }
+
+    func testMemberRulePrimitivesLight() {
+        assertSnapshot(
+            of: memberRulePrimitives(),
+            as: .image(layout: .fixed(width: 353, height: 120)),
+            record: recordMode
+        )
+    }
+
+    func testMemberRulePrimitivesDark() {
+        assertSnapshot(
+            of: memberRulePrimitives(),
+            as: .image(
+                layout: .fixed(width: 353, height: 120),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+}
+
+/// `@State` wrappers so the compact stepper + compact segmented render
+/// with valid `Binding`s in a snapshot context (same pattern as
+/// `PillSegmentedPreview` above). The dice is stateless — all three
+/// levels render at once.
+private struct MemberRulePrimitivesPreview: View {
+    @State private var target: Int = 6
+    @State private var isSplit: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                RisoDiceButton(level: .off) { }
+                RisoDiceButton(level: .little) { }
+                RisoDiceButton(level: .lot) { }
+                RisoInlineStepperView(value: $target, min: 1, max: 35, style: .compact)
+                Text("of 35 mi")
+                    .font(.risoBody(10, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+            }
+            HStack(spacing: 8) {
+                RisoSegmented(
+                    options: [
+                        (value: false, label: "One square"),
+                        (value: true, label: "Split up"),
+                    ],
+                    selection: $isSplit,
+                    style: .pill,
+                    size: .compact
+                )
+                Text("1 square")
+                    .font(.risoBody(10, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                Text("4\u{2013}6 mi")
+                    .font(.risoBody(10.5, .semibold))
+                    .foregroundStyle(Color.risoBlue)
+            }
+        }
+    }
 }
 
 /// Thin `@State` wrapper so `RisoSegmented`'s pill style renders with a
