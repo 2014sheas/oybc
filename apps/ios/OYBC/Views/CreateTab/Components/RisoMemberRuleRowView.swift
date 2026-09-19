@@ -66,8 +66,10 @@ struct MemberRuleRowModel: Equatable {
     /// Board sources only: a pool member has no window to pro-rate
     /// against, so it gets the dice alone (RC5).
     let showsStepper: Bool
-    /// "of 35 mi" — present exactly when the stepper is.
-    let caption: String?
+    /// "/ 35 mi" — folded into the stepper pill (B3.1); present exactly
+    /// when the stepper is. Was `caption`, a separate label beside the
+    /// stepper, before B3.1.
+    let targetSuffix: String?
     let showsDice: Bool
     /// Blue range line under the main row; nil at vary `.off`.
     let rangeLabel: String?
@@ -79,6 +81,14 @@ struct MemberRuleRowModel: Equatable {
     /// One square rolls one dice for the whole compound, on the toggle
     /// line; Split up moves the dice onto the individual parts.
     let showsSplitLineDice: Bool
+    /// True when this row has rule controls to disclose — a counting
+    /// member, or a compound WITH parts, that is actually going on the
+    /// board. A plain, excluded or filtered-done member has nothing to
+    /// reveal and stays a single tappable-free line (B3.1).
+    let isExpandable: Bool
+    /// What the collapsed row shows in place of its controls; nil exactly
+    /// when `isExpandable` is false.
+    let summary: BoardSources.MemberSummary?
     let parts: [Part]
 
     /// Resolve the row's model.
@@ -124,9 +134,10 @@ struct MemberRuleRowModel: Equatable {
             )
             : 0
         self.target = target
-        self.showsStepper = isOn && isCounting && fromBoard
-        self.caption = (isOn && isCounting && fromBoard)
-            ? "of \(goal)\(unit.isEmpty ? "" : " \(unit)")"
+        let showsStepper = isOn && isCounting && fromBoard
+        self.showsStepper = showsStepper
+        self.targetSuffix = showsStepper
+            ? "/ \(goal)\(unit.isEmpty ? "" : " \(unit)")"
             : nil
         self.showsDice = isOn && isCounting
         self.rangeLabel = (isOn && isCounting)
@@ -151,6 +162,24 @@ struct MemberRuleRowModel: Equatable {
                 : "1 square")
             : nil
         self.showsSplitLineDice = isOn && isCompound && !isSplit
+
+        // B3.1: the row collapses its controls behind a disclosure, so it
+        // needs to know whether it HAS any, and what to say in their place
+        // while closed. Both summaries come from the shared, vector-pinned
+        // `BoardSources` helpers — never formatted here.
+        let isExpandable = isOn && (isCounting || isCompound)
+        self.isExpandable = isExpandable
+        self.summary = !isExpandable ? nil
+            : isCompound
+                ? BoardSources.compoundSummary(
+                    split: isSplit,
+                    partIds: partIds,
+                    excludedPartIds: excludedPartIds,
+                    level: memberVary
+                )
+                : BoardSources.countingSummary(
+                    target: target, level: memberVary, goal: goal, unit: unit
+                )
 
         guard isOn, isCompound else {
             self.parts = []
@@ -201,17 +230,24 @@ struct MemberRuleRowModel: Equatable {
 /// with the per-member rule controls (docs/BOARD_SOURCES.md §Member rules;
 /// handoff "Expanded source panel" item 3).
 ///
-/// Three shapes, all driven by the member's own type:
+/// Three shapes, all driven by the member's own type. B3.1 collapses the
+/// first two behind a disclosure: at 393pt the B3 inline layout left the
+/// title ~102pt ("Run 30 M…"), so the controls now live on a second line
+/// the whole row rect reveals.
 ///
-/// - **Counting** — a compact target stepper (board sources only), the
-///   "of {goal} {unit}" caption, then the dice. A dice that's on adds a
-///   blue range line under the row at the 69pt indent.
-/// - **Compound with parts** — a One square / Split up pill plus the
-///   "N squares" note (dice on that line only while One square), then one
-///   line per part: name · stepper · "of {goal}" · dice and ✕ while split.
-///   A part's range line sits under that part's line.
-/// - **Anything else** (normal, achievement, childless compound) — just
-///   the title and the shared exclude control.
+/// - **Counting** — collapsed: badge · title · summary chip · chevron,
+///   with the ✕ overlaid on the trailing edge. Expanded adds line 2 at
+///   the 69pt indent: compact stepper (board sources only, its goal
+///   folded into the pill as "/ {goal} {unit}") · dice · the blue vary
+///   range INLINE, never on a third line.
+/// - **Compound with parts** — the same collapsed line; expanded reveals
+///   the One square / Split up pill plus the "N squares" note (dice on
+///   that line only while One square), then one line per part: name ·
+///   stepper · "of {goal}" · dice and ✕ while split. Parts stay single
+///   line — a part name has ~155pt at the indent.
+/// - **Anything else** (normal, achievement, childless compound, and
+///   EVERY excluded or filtered-done member) — no disclosure at all: just
+///   the title and the shared exclude control, inline exactly as in B3.
 ///
 /// Owns the whole row (not just the rule strip) so `RisoSourceRowView`
 /// stays a header + range-block renderer. Web twin: `MemberRuleRow.tsx`.
@@ -245,9 +281,25 @@ struct RisoMemberRuleRowView: View {
     let onSetPartTarget: (_ childId: String, _ target: Int?) -> Void
     let onSetPartVary: (_ childId: String, _ level: VaryLevel) -> Void
 
+    /// Seeds the disclosure OPEN on first render. Snapshot use only —
+    /// production always opens collapsed (B3.1), so every call site leaves
+    /// this at its default.
+    var initiallyExpanded: Bool = false
+
     /// The 69pt indent range lines / the split line / part lines sit at:
     /// the row's own 40pt leading padding plus 20pt badge + 8pt gap + 1pt.
     private static let indent: CGFloat = 29
+
+    /// Disclosure state, owned by the row: every row opens collapsed, so
+    /// row height never depends on stored rules and a long source stays
+    /// scannable (B3.1). The chip keeps a saved rule legible closed.
+    ///
+    /// Held as an optional OVERRIDE rather than a seeded `@State` so
+    /// `initiallyExpanded` needs no 18-parameter explicit init; nil until
+    /// the person taps, after which the seed no longer applies.
+    @State private var expandedOverride: Bool? = nil
+
+    private var isExpanded: Bool { expandedOverride ?? initiallyExpanded }
 
     private var model: MemberRuleRowModel {
         MemberRuleRowModel(
@@ -268,23 +320,56 @@ struct RisoMemberRuleRowView: View {
     var body: some View {
         let model = self.model
         VStack(alignment: .leading, spacing: 0) {
-            mainLine(model)
-            if let range = model.rangeLabel {
-                rangeLine(range)
-                    .padding(.top, 2)
-                    .padding(.leading, Self.indent)
+            // The disclosure carries the row's own padding so the WHOLE
+            // row rect is the hit area — a short title must not leave a
+            // dead row. `.contentShape` is load-bearing: without it a
+            // SwiftUI HStack label takes taps only on its opaque children.
+            if model.isExpandable {
+                Button {
+                    expandedOverride = !isExpanded
+                } label: {
+                    mainLine(model)
+                        .padding(.vertical, 7)
+                        .padding(.leading, 40)
+                        .padding(.trailing, 39)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(title)
+                .accessibilityValue(model.summary?.text ?? "")
+                .accessibilityHint(isExpanded ? "Collapse rule controls" : "Expand rule controls")
+            } else {
+                mainLine(model)
+                    .padding(.vertical, 7)
+                    .padding(.leading, 40)
+                    .padding(.trailing, 11)
             }
-            if model.isCompound, model.isOn {
-                splitLine(model).padding(.top, 5)
-                ForEach(model.parts, id: \.childId) { part in
-                    partLine(part).padding(.top, 4)
+
+            if model.isExpandable, isExpanded {
+                controlsLine(model)
+                    .padding(.leading, 40 + Self.indent)
+                    .padding(.trailing, 11)
+                    .padding(.bottom, 8)
+
+                if model.isCompound {
+                    ForEach(model.parts, id: \.childId) { part in
+                        partLine(part)
+                            .padding(.leading, 40 + Self.indent)
+                            .padding(.trailing, 11)
+                            .padding(.bottom, 4)
+                    }
                 }
             }
         }
         .opacity(state == .included ? 1 : 0.45)
-        .padding(.vertical, 7)
-        .padding(.leading, 40)
-        .padding(.trailing, 11)
+        // Pre-flight ruling C2: ONLY an expandable row overlays its
+        // trailing control into the 39pt gutter. The ✕ (28pt) and ✓ (22pt)
+        // fit; the excluded state's UNDO pill (~60pt) does not — and a
+        // non-expandable row needs no full-rect hit area anyway, so it
+        // keeps its pre-B3.1 inline control and 11pt trailing padding.
+        .overlay(alignment: .topTrailing) {
+            if model.isExpandable { trailingControl.padding(.trailing, 7).padding(.top, 4) }
+        }
         .overlay(alignment: .top) { hairline }
     }
 
@@ -320,27 +405,26 @@ struct RisoMemberRuleRowView: View {
                 }
             }
             Spacer(minLength: 6)
-            if model.showsStepper {
-                RisoInlineStepperView(
-                    value: Binding(get: { model.target }, set: { onSetTarget($0) }),
-                    min: 1,
-                    max: model.goal,
-                    style: .compact
-                )
-            }
-            if let caption = model.caption {
-                Text(caption)
-                    .font(.risoBody(10, .semibold))
-                    .foregroundStyle(Color.risoMuted)
+            // The row's current answer, never a second control: the vary
+            // range while the dice is lit, else the target / square count.
+            if let summary = model.summary, !isExpanded {
+                Text(summary.text)
+                    .font(.risoBody(10.5, .bold))
+                    .foregroundStyle(summary.varying ? Color.risoBlue : Color.risoMuted)
                     .lineLimit(1)
                     .fixedSize()
             }
-            if model.showsDice {
-                RisoDiceButton(level: model.memberVary) {
-                    onSetVary(model.memberVary.next)
-                }
+            if model.isExpandable {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .frame(width: 14)
+            } else {
+                // Ruling C2: a non-expandable row keeps its inline control
+                // (an UNDO pill would not fit the expandable overlay's
+                // 39pt gutter).
+                trailingControl
             }
-            trailingControl
         }
     }
 
@@ -392,32 +476,61 @@ struct RisoMemberRuleRowView: View {
             .foregroundStyle(Color.risoBlue)
     }
 
-    // MARK: - Compound: One square / Split up
+    // MARK: - Expanded: the controls line
 
-    private func splitLine(_ model: MemberRuleRowModel) -> some View {
+    /// The expanded row's second line: the target pill (board sources
+    /// only), the dice, and the vary range inline — the range does NOT
+    /// take a third line (B3.1). A compound shows its One square / Split
+    /// up pill and squares note here instead of a stepper.
+    private func controlsLine(_ model: MemberRuleRowModel) -> some View {
         HStack(spacing: 8) {
-            RisoSegmented(
-                options: [(value: false, label: "One square"), (value: true, label: "Split up")],
-                selection: Binding(get: { model.isSplit }, set: { onSetSplit($0) }),
-                style: .pill,
-                size: .compact
-            )
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Squares for \(title)")
-            if let note = model.squaresNote {
-                Text(note)
-                    .font(.risoBody(10, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .lineLimit(1)
-            }
-            if model.showsSplitLineDice {
-                RisoDiceButton(level: model.memberVary) {
-                    onSetVary(model.memberVary.next)
+            if model.isCompound {
+                splitToggle(model)
+                if let note = model.squaresNote {
+                    Text(note)
+                        .font(.risoBody(10, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                        .lineLimit(1)
+                }
+                if model.showsSplitLineDice {
+                    RisoDiceButton(level: model.memberVary) {
+                        onSetVary(model.memberVary.next)
+                    }
+                }
+            } else {
+                if model.showsStepper {
+                    RisoInlineStepperView(
+                        value: Binding(get: { model.target }, set: { onSetTarget($0) }),
+                        min: 1,
+                        max: model.goal,
+                        style: .compact,
+                        suffix: model.targetSuffix
+                    )
+                }
+                if model.showsDice {
+                    RisoDiceButton(level: model.memberVary) {
+                        onSetVary(model.memberVary.next)
+                    }
+                }
+                if let range = model.rangeLabel {
+                    rangeLine(range).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, Self.indent)
+    }
+
+    // MARK: - Compound: One square / Split up
+
+    private func splitToggle(_ model: MemberRuleRowModel) -> some View {
+        RisoSegmented(
+            options: [(value: false, label: "One square"), (value: true, label: "Split up")],
+            selection: Binding(get: { model.isSplit }, set: { onSetSplit($0) }),
+            style: .pill,
+            size: .compact
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Squares for \(title)")
     }
 
     // MARK: - Compound: one line per part
@@ -448,7 +561,6 @@ struct RisoMemberRuleRowView: View {
                 .accessibilityLabel("Undo excluding \(part.name)")
             }
             .opacity(0.45)
-            .padding(.leading, Self.indent)
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
@@ -498,7 +610,6 @@ struct RisoMemberRuleRowView: View {
                     rangeLine(range).padding(.top, 2)
                 }
             }
-            .padding(.leading, Self.indent)
         }
     }
 }

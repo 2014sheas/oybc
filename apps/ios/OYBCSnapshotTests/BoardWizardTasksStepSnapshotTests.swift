@@ -18,13 +18,22 @@ import SnapshotTesting
 ///   - empty pool state (light + dark)
 ///   - pool list: a hand-added counting row with the dice on (light + dark)
 ///
-/// Board Sources §Member rules (B3) full-step variants — an expanded
-/// board source over the `.memberRules` library:
-///   - counting member: target stepper + "of 35 mi" caption + dice off
-///   - counting member with the dice on: the blue range line
-///   - the same counting member pulled from a POOL: dice, no stepper
-///   - compound member One square: pill toggle + "1 square" + line dice
-///   - compound member Split up with an excluded part
+/// Board Sources §Member rules (B3, re-recorded for B3.1) full-step
+/// variants — an expanded board source over the `.memberRules` library.
+/// B3.1 collapses every member row's controls behind a disclosure, so
+/// these five now picture the CLOSED row (title at full width + summary
+/// chip + chevron), not the controls:
+///   - counting member: chip "35 mi" in muted ink
+///   - counting member with the dice on: chip "28–35 mi" in blue
+///   - the same counting member pulled from a POOL: identical collapsed
+///     row (RC5's stepper/no-stepper split now shows only when expanded)
+///   - compound member One square: chip "1 square", blue (member dice)
+///   - compound member Split up with an excluded part: chip "1 square"
+///
+/// B3.1 leaf variants — the same rows with the disclosure seeded OPEN,
+/// which is where the stepper, dice, inline range and part lines live:
+///   - counting, dice on: pill "35 / 35 mi" · dice · "28–35 mi" inline
+///   - compound Split up with an excluded part: toggle + note + parts
 ///
 /// Each test renders at iPhone 16 width (393pt). iOS-version pinning is
 /// enforced at the scheme level (see CLAUDE.md → Snapshot Testing).
@@ -386,6 +395,45 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Leaf: the EXPANDED member row (B3.1)
+
+    /// B3.1 collapses a member row's controls behind a disclosure, so the
+    /// full-step cases above now picture them CLOSED. These two render the
+    /// row leaf with the disclosure seeded open, keeping the layout this
+    /// design exists to fix under test: the stepper's folded-in goal, the
+    /// dice, and the vary range INLINE on line 2 (never a third line).
+    func testMemberRowCountingVaryOnExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(layout: .fixed(width: 393, height: 90)),
+            record: recordMode
+        )
+    }
+
+    /// The Split-up compound expanded: the One square / Split up pill and
+    /// the "1 square" note on line 2, then one line per part — the
+    /// excluded one struck with its UNDO pill, the last included one
+    /// without a ✕.
+    func testMemberRowCompoundSplitUpWithExcludedPartExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.compound,
+                rule: BoardSourceMemberRule(
+                    split: true,
+                    parts: [
+                        SnapshotFixtures.MemberRuleTask.plank:
+                            BoardSourcePartRule(excluded: true),
+                    ]
+                )
+            ),
+            as: .image(layout: .fixed(width: 393, height: 170)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Leaf: hand-added rows with the dice (B3)
 
     /// A hand-added COUNTING row earns a dice before the 32pt pencil, and
@@ -473,6 +521,42 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             ],
             expandedSourceIds: [sourceId]
         )
+    }
+
+    /// One member row on its own, disclosure seeded OPEN. The row owns its
+    /// own `@State`, so `initiallyExpanded` (documented "snapshot use
+    /// only") is the seam — the alternative, plumbing an expansion set
+    /// through `RisoSourceRowView` and `BoardWizardTasksStepView`, would
+    /// add production API to three files for a test.
+    private func makeExpandedMemberRow(
+        taskId: String,
+        kind: BoardSource.Kind = .board,
+        rule: BoardSourceMemberRule
+    ) -> some View {
+        let library = SnapshotFixtures.makeTaskLibrary(state: .memberRules)
+        let taskById: [String: OYBC.Task] = Dictionary(
+            library.libraryTasks.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return RisoMemberRuleRowView(
+            task: taskById[taskId],
+            taskById: taskById,
+            state: .included,
+            rule: rule,
+            parts: library.compoundChildrenByCompound[taskId] ?? [],
+            fromBoard: kind == .board,
+            wizardWindow: BoardSources.BoardWindow(timeframe: .monthly),
+            mode: .oneOff,
+            onToggleExclude: { },
+            onSetTarget: { _ in },
+            onSetVary: { _ in },
+            onSetSplit: { _ in },
+            onSetPartExcluded: { _, _ in },
+            onSetPartTarget: { _, _ in },
+            onSetPartVary: { _, _ in },
+            initiallyExpanded: true
+        )
+        .background(Color.risoPaper)
     }
 
     private func makePoolListView(
