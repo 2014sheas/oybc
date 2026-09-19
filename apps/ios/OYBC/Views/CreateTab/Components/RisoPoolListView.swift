@@ -174,7 +174,7 @@ struct RisoPoolListView: View {
 
             if showsDice, let onSetManualVary {
                 RisoDiceButton(level: varyLevel) {
-                    onSetManualVary(task.id, nextVaryLevel(varyLevel))
+                    onSetManualVary(task.id, varyLevel.next)
                 }
             }
 

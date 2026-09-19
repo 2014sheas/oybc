@@ -132,18 +132,29 @@ final class MemberRuleRowModelTests: XCTestCase {
         XCTAssertEqual(oneOff.target, 14)
     }
 
-    /// Dice on ⇒ a blue range line, rendered by the shared helper.
-    func testDiceOnProducesRangeLine() {
+    /// Dice on ⇒ a blue range line spread around the TARGET, not the
+    /// goal. The literal is asserted (never the helper re-applied to the
+    /// same arguments) and target ≠ goal, so swapping `t:`/`goal:` — or
+    /// feeding the goal where the target belongs — fails here.
+    func testDiceOnProducesRangeLineAroundTheTarget() {
         let m = model(
             task: task("c", type: .counting, maxCount: 100, unit: "pages"),
-            rule: BoardSourceMemberRule(vary: .little)
+            rule: BoardSourceMemberRule(target: 40, vary: .little)
         )
         XCTAssertEqual(m.memberVary, .little)
-        XCTAssertEqual(
-            m.rangeLabel,
-            BoardSources.varyRangeLabel(t: 100, level: .little, goal: 100, unit: "pages")
+        XCTAssertEqual(m.target, 40)
+        // ±20 % of 40, clamped to 1…100.
+        XCTAssertEqual(m.rangeLabel, "32\u{2013}48 pages")
+    }
+
+    /// A unit-less member's range line carries no trailing unit.
+    func testRangeLineOmitsMissingUnit() {
+        let m = model(
+            task: task("c", type: .counting, maxCount: 100),
+            rule: BoardSourceMemberRule(target: 40, vary: .lot)
         )
-        XCTAssertNotNil(m.rangeLabel)
+        // ±50 % of 40.
+        XCTAssertEqual(m.rangeLabel, "20\u{2013}60")
     }
 
     // MARK: - Non-included members
@@ -327,8 +338,8 @@ final class MemberRuleRowModelTests: XCTestCase {
 
     /// off → a little → a lot → off (handoff §Interactions).
     func testDiceCycleWrapsAtALot() {
-        XCTAssertEqual(nextVaryLevel(.off), .little)
-        XCTAssertEqual(nextVaryLevel(.little), .lot)
-        XCTAssertEqual(nextVaryLevel(.lot), .off)
+        XCTAssertEqual(VaryLevel.off.next, .little)
+        XCTAssertEqual(VaryLevel.little.next, .lot)
+        XCTAssertEqual(VaryLevel.lot.next, .off)
     }
 }

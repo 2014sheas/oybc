@@ -712,13 +712,16 @@ struct RisoInlineStepperView: View {
     // MARK: - Compact (B3 member rows)
 
     /// 22pt pill: 22×22 −/＋ buttons (disabled at the bounds, mirroring
-    /// web) around a numeric text field. Typing is committed on blur or
-    /// return and clamped to `min…max`; the step is always 1 and there is
-    /// no reset affordance (handoff §Interactions "Counting targets").
+    /// web) around a numeric text field. Typing is committed when the
+    /// field loses focus, or folded into a −/＋ tap (see
+    /// ``RisoCompactStepperMath``), and clamped to `min…max`; the step is
+    /// always 1 and there is no reset affordance (handoff §Interactions
+    /// "Counting targets"). There is deliberately no return-key commit:
+    /// `.numberPad` has no return key.
     private var compactBody: some View {
         HStack(spacing: 0) {
-            compactStepButton("−", label: "Decrease target", disabled: value <= min) {
-                value = Swift.max(min, value - 1)
+            compactStepButton("−", label: "Decrease target", disabled: effectiveValue <= min) {
+                step(by: -1)
             }
             TextField("", text: compactText)
                 .font(.risoBody(11, .extraBold))
@@ -726,8 +729,6 @@ struct RisoInlineStepperView: View {
                 .multilineTextAlignment(.center)
                 .keyboardType(.numberPad)
                 .focused($isFieldFocused)
-                .submitLabel(.done)
-                .onSubmit { commitDraft() }
                 // Width follows the goal's digit count so a 4-digit goal
                 // isn't clipped (web sizes the input the same way).
                 .frame(width: CGFloat(Swift.max(2, String(max).count) + 1) * 7)
@@ -748,8 +749,8 @@ struct RisoInlineStepperView: View {
                         commitDraft()
                     }
                 }
-            compactStepButton("＋", label: "Increase target", disabled: value >= max) {
-                value = Swift.min(max, value + 1)
+            compactStepButton("＋", label: "Increase target", disabled: effectiveValue >= max) {
+                step(by: 1)
             }
         }
         .frame(height: 22)
@@ -767,15 +768,36 @@ struct RisoInlineStepperView: View {
         )
     }
 
+    /// The number the −/＋ buttons act on AND gate their disabled state by
+    /// — the uncommitted draft when it parses, else the live value. See
+    /// ``RisoCompactStepperMath/base(value:draft:min:max:)``.
+    private var effectiveValue: Int {
+        RisoCompactStepperMath.base(value: value, draft: draft, min: min, max: max)
+    }
+
     /// Parse, clamp to `min…max` and write back; a non-numeric or empty
     /// entry simply reverts (no error state — the stepper is never in a
     /// bad state, only un-edited).
     private func commitDraft() {
         guard let draft else { return }
         self.draft = nil
-        guard let parsed = Int(draft.trimmingCharacters(in: .whitespaces)) else { return }
-        let clamped = Swift.min(max, Swift.max(min, parsed))
-        if clamped != value { value = clamped }
+        guard let committed = RisoCompactStepperMath.committed(draft: draft, min: min, max: max)
+        else { return }
+        if committed != value { value = committed }
+    }
+
+    /// Step by ±1 from the COMMITTED value. A SwiftUI `Button` tap does
+    /// not resign the field's first responder, so the commit is folded in
+    /// here; web gets the same ordering for free (a mousedown blurs the
+    /// input, `onBlur` commits, and only then does `onClick` step).
+    /// Without this, typing 20 and tapping ＋ stepped the OLD value and
+    /// the later blur then wrote 20 over the step.
+    private func step(by delta: Int) {
+        let next = RisoCompactStepperMath.stepped(
+            value: value, draft: draft, delta: delta, min: min, max: max
+        )
+        draft = nil
+        if next != value { value = next }
     }
 
     private func compactStepButton(
@@ -795,5 +817,63 @@ struct RisoInlineStepperView: View {
         .opacity(disabled ? 0.4 : 1)
         .disabled(disabled)
         .accessibilityLabel(label)
+    }
+}
+
+/// The compact stepper's pure arithmetic, lifted out of the SwiftUI view
+/// so the ordering rule that bit us in review — **a −/＋ tap commits any
+/// uncommitted typing first** — is unit-testable without mounting a view
+/// with `@State`/`@FocusState`.
+///
+/// Web never needs this: a mousedown blurs the `<input>`, so `onBlur`
+/// commits and re-renders before `onClick` steps. A SwiftUI `Button` tap
+/// leaves the `TextField` first responder, so iOS has to fold the commit
+/// into the step itself.
+enum RisoCompactStepperMath {
+
+    /// The value an uncommitted draft resolves to, clamped to `min…max`,
+    /// or nil when it isn't a number (empty, "-", "abc") — in which case
+    /// the field simply reverts, exactly like web's `commit()` bail-out.
+    ///
+    /// - Parameters:
+    ///   - draft: The raw field text.
+    ///   - min: Lower bound (inclusive).
+    ///   - max: Upper bound (inclusive).
+    /// - Returns: The clamped value, or nil when `draft` isn't numeric.
+    static func committed(draft: String, min: Int, max: Int) -> Int? {
+        guard let parsed = Int(draft.trimmingCharacters(in: .whitespaces)) else { return nil }
+        return Swift.min(max, Swift.max(min, parsed))
+    }
+
+    /// The number the −/＋ buttons operate on (and gate their disabled
+    /// state by): the uncommitted draft when it parses, else the live
+    /// value.
+    ///
+    /// - Parameters:
+    ///   - value: The committed value.
+    ///   - draft: The uncommitted field text, or nil when not editing.
+    ///   - min: Lower bound (inclusive).
+    ///   - max: Upper bound (inclusive).
+    /// - Returns: The effective value.
+    static func base(value: Int, draft: String?, min: Int, max: Int) -> Int {
+        guard let draft, let committed = committed(draft: draft, min: min, max: max) else {
+            return value
+        }
+        return committed
+    }
+
+    /// The value a ±1 tap produces: one step off ``base(value:draft:min:max:)``,
+    /// clamped to `min…max`.
+    ///
+    /// - Parameters:
+    ///   - value: The committed value.
+    ///   - draft: The uncommitted field text, or nil when not editing.
+    ///   - delta: `-1` or `+1`.
+    ///   - min: Lower bound (inclusive).
+    ///   - max: Upper bound (inclusive).
+    /// - Returns: The stepped value.
+    static func stepped(value: Int, draft: String?, delta: Int, min: Int, max: Int) -> Int {
+        let from = base(value: value, draft: draft, min: min, max: max)
+        return Swift.min(max, Swift.max(min, from + delta))
     }
 }

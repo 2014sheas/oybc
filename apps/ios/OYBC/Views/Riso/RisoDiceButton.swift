@@ -87,17 +87,18 @@ struct RisoDiceButton: View {
     }
 }
 
-/// The dice cycle: off → a little → a lot → off (handoff §Interactions
-/// "Variation (dice)"). Shared by every dice call site so the three
-/// surfaces (member, part, hand-added row) can't drift apart. Web twin:
-/// the local `nextVary` in `MemberRuleRow.tsx` / `PoolList.tsx`.
-///
-/// - Parameter level: The current level.
-/// - Returns: The next level in the cycle.
-func nextVaryLevel(_ level: VaryLevel) -> VaryLevel {
-    switch level {
-    case .off: return .little
-    case .little: return .lot
-    case .lot: return .off
+extension VaryLevel {
+    /// The dice cycle: off → a little → a lot → off (handoff
+    /// §Interactions "Variation (dice)"). Scoped to the type rather than
+    /// left as a top-level function, but still ONE definition so the
+    /// three dice surfaces (member, part, hand-added row) can't drift
+    /// apart. Web twin: the module-private `nextVary` in
+    /// `MemberRuleRow.tsx` / `PoolList.tsx`.
+    var next: VaryLevel {
+        switch self {
+        case .off: return .little
+        case .little: return .lot
+        case .lot: return .off
+        }
     }
 }

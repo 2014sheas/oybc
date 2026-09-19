@@ -21,6 +21,12 @@ enum MemberRuleRowState {
 /// `BoardSources` helpers, which are vector-pinned across platforms.
 struct MemberRuleRowModel: Equatable {
 
+    /// What a member (or part) with no resolved task renders as — the
+    /// mid-hydration case. Web literal (`MemberRuleRow.tsx`), shared by
+    /// the title, the part names and every accessibility label so none of
+    /// them can read as "Exclude  for this board".
+    static let untitledTask = "(untitled task)"
+
     /// One part of a Split-up-capable compound member.
     struct Part: Equatable {
         let childId: String
@@ -172,7 +178,7 @@ struct MemberRuleRowModel: Equatable {
             let showsStepper = partIsCounting && fromBoard
             return Part(
                 childId: childId,
-                name: childTask?.title ?? "",
+                name: childTask?.title ?? MemberRuleRowModel.untitledTask,
                 excluded: isSplit && partRule.excluded == true,
                 goal: partGoal,
                 target: partTarget,
@@ -257,7 +263,7 @@ struct RisoMemberRuleRowView: View {
         )
     }
 
-    private var title: String { task?.title ?? "" }
+    private var title: String { task?.title ?? MemberRuleRowModel.untitledTask }
 
     var body: some View {
         let model = self.model
@@ -331,7 +337,7 @@ struct RisoMemberRuleRowView: View {
             }
             if model.showsDice {
                 RisoDiceButton(level: model.memberVary) {
-                    onSetVary(nextVaryLevel(model.memberVary))
+                    onSetVary(model.memberVary.next)
                 }
             }
             trailingControl
@@ -350,7 +356,7 @@ struct RisoMemberRuleRowView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Exclude \(title.isEmpty ? "task" : title) for this board")
+            .accessibilityLabel("Exclude \(title) for this board")
         case .excluded:
             Button(action: onToggleExclude) {
                 Text("UNDO")
@@ -363,7 +369,7 @@ struct RisoMemberRuleRowView: View {
                     )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Undo excluding \(title.isEmpty ? "task" : title)")
+            .accessibilityLabel("Undo excluding \(title)")
         case .filteredDone:
             Circle()
                 .strokeBorder(Color.risoGreen, lineWidth: Riso.Keyline.container)
@@ -373,6 +379,8 @@ struct RisoMemberRuleRowView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Color.risoGreen)
                 )
+                .accessibilityElement()
+                .accessibilityLabel("\(title) is done")
         }
     }
 
@@ -394,7 +402,8 @@ struct RisoMemberRuleRowView: View {
                 style: .pill,
                 size: .compact
             )
-            .accessibilityLabel("Squares for \(title.isEmpty ? "task" : title)")
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Squares for \(title)")
             if let note = model.squaresNote {
                 Text(note)
                     .font(.risoBody(10, .semibold))
@@ -403,7 +412,7 @@ struct RisoMemberRuleRowView: View {
             }
             if model.showsSplitLineDice {
                 RisoDiceButton(level: model.memberVary) {
-                    onSetVary(nextVaryLevel(model.memberVary))
+                    onSetVary(model.memberVary.next)
                 }
             }
             Spacer(minLength: 0)
@@ -436,7 +445,7 @@ struct RisoMemberRuleRowView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Undo excluding \(part.name.isEmpty ? "sub-task" : part.name)")
+                .accessibilityLabel("Undo excluding \(part.name)")
             }
             .opacity(0.45)
             .padding(.leading, Self.indent)
@@ -468,7 +477,7 @@ struct RisoMemberRuleRowView: View {
                     }
                     if part.showsDice {
                         RisoDiceButton(level: part.level) {
-                            onSetPartVary(part.childId, nextVaryLevel(part.level))
+                            onSetPartVary(part.childId, part.level.next)
                         }
                     }
                     if part.showsExclude {
@@ -481,7 +490,7 @@ struct RisoMemberRuleRowView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(
-                            "Exclude \(part.name.isEmpty ? "sub-task" : part.name) for this board"
+                            "Exclude \(part.name) for this board"
                         )
                     }
                 }

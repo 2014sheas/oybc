@@ -34,9 +34,15 @@ struct RisoSourceRowView: View {
     var counterClashByTaskId: [String: String] = [:]
 
     // §Member rules (B3, docs/BOARD_SOURCES.md) — the per-member rule
-    // controls each included member row carries. All defaulted so
-    // read-only mounts (the recurring Preview's rows) compile unchanged
-    // and simply render inert controls no one taps.
+    // controls each included member row carries.
+    //
+    // Defaulted so the snapshot-test mounts (`RisoSourceSnapshotTests`,
+    // which exercise the row CHROME, not the rules) don't have to name
+    // eight arguments. The wizard step is the only production caller and
+    // it passes all of them. A future read-only mount MUST pass the real
+    // `wizardWindow` / `mode`: the defaults below are a daily one-off
+    // board, so a mount that leaves them alone renders targets pro-rated
+    // against the wrong window rather than rendering nothing.
 
     /// Children per compound (the step's effective map) — feeds the
     /// Split-up part lines.

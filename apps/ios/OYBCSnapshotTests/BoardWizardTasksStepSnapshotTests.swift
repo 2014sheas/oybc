@@ -22,6 +22,7 @@ import SnapshotTesting
 /// board source over the `.memberRules` library:
 ///   - counting member: target stepper + "of 35 mi" caption + dice off
 ///   - counting member with the dice on: the blue range line
+///   - the same counting member pulled from a POOL: dice, no stepper
 ///   - compound member One square: pill toggle + "1 square" + line dice
 ///   - compound member Split up with an excluded part
 ///
@@ -326,6 +327,21 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    /// RC5's headline distinction: the SAME counting member pulled from a
+    /// POOL has no window to pro-rate against, so it gets the dice ALONE
+    /// — no stepper, no "of 35 mi" caption (and the panel has no
+    /// All squares / Not done yet filter, which is boards-only).
+    func testPoolSourceCountingMemberHasDiceButNoStepper() {
+        assertSnapshot(
+            of: makeMemberRulesView(
+                kind: .pool,
+                rules: [SnapshotFixtures.MemberRuleTask.run: BoardSourceMemberRule(vary: .little)]
+            ),
+            as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
     /// Compound member in One square mode: the pill toggle + "1 square"
     /// note + the dice on THAT line (rolling for the whole square), with
     /// each part line reading the parent's level for its range.
@@ -431,29 +447,31 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     /// `memberRules` stamped straight onto the `BoardSource` (that IS
     /// where rules live — no extra plumbing).
     private func makeMemberRulesView(
+        kind: BoardSource.Kind = .board,
         memberIds: [String] = [
             SnapshotFixtures.MemberRuleTask.run,
             SnapshotFixtures.MemberRuleTask.normal,
         ],
         rules: [String: BoardSourceMemberRule]
     ) -> some View {
-        var boardSource = BoardSource(sourceId: "b1", kind: .board)
-        boardSource.memberRules = rules.isEmpty ? nil : rules
+        let sourceId = kind == .pool ? "p1" : "b1"
+        var source = BoardSource(sourceId: sourceId, kind: kind)
+        source.memberRules = rules.isEmpty ? nil : rules
         return TasksStepHost(
             library: SnapshotFixtures.makeTaskLibrary(state: .memberRules),
             initialSelection: [],
             initialCenterTaskId: nil,
             centerTaskMode: false,
             isRecurring: false,
-            sources: [boardSource],
+            sources: [source],
             supplyInfoBySourceId: [
-                "b1": WizardSourceSupply(
-                    displayName: "Weekday Core",
+                sourceId: WizardSourceSupply(
+                    displayName: kind == .pool ? "Morning Kickstart" : "Weekday Core",
                     rawSupplyTaskIds: memberIds,
                     doneTaskIds: []
                 ),
             ],
-            expandedSourceIds: ["b1"]
+            expandedSourceIds: [sourceId]
         )
     }
 
