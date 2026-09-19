@@ -226,6 +226,9 @@ describe('MemberRuleRow — compound member', () => {
     });
     expect(html).toContain('1 square');
     expect(html).toContain('aria-label="Undo excluding Stretch"');
+    // …at PART scale (`.partUndo`), not the member row's `.undo` — iOS
+    // renders the part-level UNDO smaller (final review I2/I3).
+    expect(html).toMatch(/class="[^"]*_partUndo_/);
     expect(html).not.toContain('aria-label="Exclude Stretch for this board"');
     // …and the ONE surviving part can't be dropped, so it offers no ✕ at
     // all — an inert control would read as a broken toggle.

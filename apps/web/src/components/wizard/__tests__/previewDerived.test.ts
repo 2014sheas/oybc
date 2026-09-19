@@ -15,6 +15,7 @@ import { buildWizardPlacement, type WizardPlacement } from '../wizardPersist';
 import { algorithmSupplies, type SupplyInfoMap } from '../../../pages/createHub/wizardSources';
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
+import type { PendingTaskPayload } from '../../../pages/createPage/useCreateFormState';
 import { db } from '../../../db/internal';
 
 /**
@@ -456,5 +457,47 @@ describe('buildWizardPlacement — previewRules is opt-in (B3 RC6)', () => {
       expect(target).toBeGreaterThanOrEqual(24);
       expect(target).toBeLessThanOrEqual(30);
     }
+  });
+
+  it('is pure with PENDING tasks in the pool too \u2014 they are normalised by id (final review I4)', () => {
+    // `fromLibrary` is title-sorted by `useTaskLibrary`, so it is stable
+    // across rebuilds \u2014 but a wizard-created PENDING task isn't in the
+    // library, so it used to be appended in `selectBoardTasks`' RANDOMISED
+    // pick order. Two builds on one seed then fed the seeded shuffle two
+    // different pre-shuffle orders and the Preview grid drifted with no
+    // Shuffle. iOS's preview branch has always sorted these by id; web now
+    // does too (PREVIEW path only).
+    // Six library tasks + two pending fills the 3\u00d73 FREE-center board
+    // exactly, so `selectBoardTasks` succeeds and the manual (pending) pair
+    // really is placed \u2014 a short pick would fall back to the flat
+    // selection and never exercise `pendingExtras`.
+    const libraryTasks = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'].map((id) => makeTask(id));
+    const pendingA = makeTask('zz-pending-a', { title: 'Just typed this' });
+    const pendingB = makeTask('aa-pending-b', { title: 'And this' });
+    const controller = makeController({
+      tasks: [...libraryTasks, pendingA, pendingB],
+      supplyTaskIds: ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'],
+      manualTaskIds: [pendingA.id, pendingB.id],
+      isRandomized: true,
+    });
+    const library = makeLibrary(libraryTasks); // the pending pair is NOT in it
+    const pending = new Map<string, PendingTaskPayload>([
+      [pendingA.id, { task: pendingA, childTasks: [], childLinks: [] }],
+      [pendingB.id, { task: pendingB, childTasks: [], childLinks: [] }],
+    ]);
+
+    const idsOf = (placement: WizardPlacement): (string | null)[] =>
+      placement.map((t) => (t === null ? null : t.id));
+
+    const first = buildWizardPlacement(controller, library, pending, { seed: 7 });
+    for (let i = 0; i < 12; i += 1) {
+      const again = buildWizardPlacement(controller, library, pending, { seed: 7 });
+      expect(idsOf(again)).toEqual(idsOf(first));
+    }
+
+    // Both pending tasks really are on the board (otherwise the equality
+    // above would be vacuous).
+    expect(idsOf(first)).toContain(pendingA.id);
+    expect(idsOf(first)).toContain(pendingB.id);
   });
 });

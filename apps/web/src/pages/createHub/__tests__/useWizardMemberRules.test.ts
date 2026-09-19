@@ -9,6 +9,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import {
+  canApplyTaskToggle,
   canDeselectFromSources,
   canSetPartExcluded,
   includedPartIds,
@@ -246,6 +247,49 @@ describe('canDeselectFromSources (review Important #2 \u2014 the deselect guard)
   it('REFUSES the last included part \u2014 consistent with setPartExcluded', () => {
     const supplies = suppliesFor({ k1: { excluded: true } });
     expect(canDeselectFromSources(supplies, children, 'k2')).toBe(false);
+  });
+});
+
+/**
+ * Final review I1 — `toggleTaskSelection` now REPORTS the refusal (it
+ * returns `false`, exactly like `setPartExcluded`) so the Tasks step can
+ * skip its "Removed \u2026" toast: the toast's Undo calls `restoreToPool`,
+ * which writes the id into `manualTaskIds` and would re-provenance a
+ * source-supplied part as hand-added. This is the gate the action reports.
+ */
+describe('canApplyTaskToggle (the reported half of toggleTaskSelection)', () => {
+  const compoundTask = makeTask('c1', { type: TaskType.COMPOUND });
+  const children = {
+    c1: [
+      { childTaskId: 'k1', childIndex: 0 },
+      { childTaskId: 'k2', childIndex: 1 },
+    ],
+  };
+  const info: SupplyInfoMap = {
+    b1: { displayName: 'Board', rawSupplyTaskIds: ['c1', 'x'], doneTaskIds: new Set() },
+  };
+  const suppliesWithK1Excluded = algorithmSupplies(
+    [
+      makeSource({
+        sourceId: 'b1',
+        memberRules: { c1: { split: true, parts: { k1: { excluded: true } } } },
+      }),
+    ],
+    info,
+    children,
+    { c1: compoundTask },
+  );
+
+  it('REFUSES deselecting the last included part', () => {
+    expect(canApplyTaskToggle(true, suppliesWithK1Excluded, children, 'k2')).toBe(false);
+  });
+
+  it('allows deselecting a plain member', () => {
+    expect(canApplyTaskToggle(true, suppliesWithK1Excluded, children, 'x')).toBe(true);
+  });
+
+  it('never refuses a SELECT \u2014 only a deselect can self-revert', () => {
+    expect(canApplyTaskToggle(false, suppliesWithK1Excluded, children, 'k2')).toBe(true);
   });
 });
 

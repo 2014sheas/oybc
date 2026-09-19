@@ -309,12 +309,19 @@ final class BoardWizardMemberRulesTests: XCTestCase {
     func test_toggleTaskSelection_refusesToDeselectTheLastIncludedPart() throws {
         let vm = try pulledVM()
         vm.setMemberSplit(sourceId: sourceBoardId, taskId: "C", split: true)
-        vm.toggleTaskSelection("c1")
-        vm.toggleTaskSelection("c2")
+        XCTAssertTrue(vm.toggleTaskSelection("c1"))
+        XCTAssertTrue(vm.toggleTaskSelection("c2"))
+        let manualBefore = vm.manualTaskIds
+        let selectionBefore = vm.selectedTaskIds
 
-        vm.toggleTaskSelection("c3")
+        // Final review I1 — the refusal is REPORTED, so the Tasks step can
+        // skip its "Removed …" toast (whose Undo would hand-add the part).
+        XCTAssertFalse(vm.toggleTaskSelection("c3"))
 
         XCTAssertTrue(vm.selectedTaskIds.contains("c3"), "the gesture is a no-op, not a flicker")
+        XCTAssertEqual(vm.selectedTaskIds, selectionBefore)
+        XCTAssertEqual(vm.manualTaskIds, manualBefore,
+                       "a refused deselect never touches the hand-added layer")
     }
 
     func test_toggleSourceExclude_ofASplitCompound_clearsItsPartRules() throws {

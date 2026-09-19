@@ -61,6 +61,29 @@ describe('recurringBoardTemplates CRUD', () => {
     expect(queue[0].operationType).toBe(SyncOperationType.CREATE);
   });
 
+  /**
+   * \u00a7Member rules \u2014 THE rule for an empty `manualTaskVary`, on either
+   * record and on either platform: OMIT it (final review M2). A record the
+   * rule editor never touched must serialise exactly as it did before B3;
+   * the UPDATE path is the deliberate exception (an empty map there means
+   * "clear the dice", which an omission can't say). iOS twin:
+   * `BoardWizardPersistRecurringTemplateTests
+   * .test_freshCreatePath_omitsAnEmptyManualTaskVary`.
+   */
+  it('createRecurringBoardTemplate OMITS an empty manualTaskVary and keeps a non-empty one', async () => {
+    const empty = await createRecurringBoardTemplate('user-1', {
+      ...baseInput(),
+      manualTaskVary: {},
+    });
+    expect('manualTaskVary' in empty).toBe(false);
+
+    const withDice = await createRecurringBoardTemplate('user-1', {
+      ...baseInput(),
+      manualTaskVary: { t1: 2 as const },
+    });
+    expect(withDice.manualTaskVary).toEqual({ t1: 2 });
+  });
+
   it('Pause/Resume: updateRecurringBoardTemplate flips isActive and bumps version', async () => {
     const template = await createRecurringBoardTemplate('user-1', baseInput());
     expect(template.isActive).toBe(true);

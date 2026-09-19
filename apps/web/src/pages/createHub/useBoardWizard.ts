@@ -15,7 +15,7 @@ import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
 import { excludeFromEverySupplier, selectionUnion } from './wizardSources';
-import { canDeselectFromSources } from './wizardMemberRulesLogic';
+import { canApplyTaskToggle } from './wizardMemberRulesLogic';
 import { useWizardSources } from './useWizardSources';
 import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
 import { useWizardDerived } from './useWizardDerived';
@@ -611,18 +611,21 @@ export function useBoardWizard({
   );
 
   const toggleTaskSelection = useCallback(
-    (taskId: string) => {
+    (taskId: string): boolean => {
       const wasSelected = selectedTaskIds.has(taskId);
       // §Member rules (B3, review Important #2) — a deselect that the
       // expansion would refuse (the last included part of a Split-up
       // compound) must change NOTHING: dropping the id optimistically and
       // letting the selection recompute restore it is a self-reverting
       // control. Checked before any state write, including the prefill flag.
-      if (
-        wasSelected &&
-        !canDeselectFromSources(expandedSupplies, childrenByCompoundId, taskId)
-      ) {
-        return;
+      //
+      // Final review I1 — and it REPORTS the refusal (`false`, exactly like
+      // `setPartExcluded`) so the caller can skip its "Removed …" toast: an
+      // Undo on a toast for a removal that never happened would call
+      // `restoreToPool`, which writes the id into `manualTaskIds` and
+      // silently re-provenances a source-supplied part as hand-added.
+      if (!canApplyTaskToggle(wasSelected, expandedSupplies, childrenByCompoundId, taskId)) {
+        return false;
       }
       // Phase 6.X — user has touched the selection, so any DefaultPool
       // that arrives later via `useLiveQuery` MUST NOT overwrite their
@@ -700,6 +703,7 @@ export function useBoardWizard({
           return next;
         });
       }
+      return true;
     },
     // `setSources` / `setManualTaskIds` are the sources hook's `useState`
     // setters — stable identities, listed only to satisfy exhaustive-deps.

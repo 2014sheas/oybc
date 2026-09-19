@@ -630,7 +630,9 @@ private struct TasksStepHost: View {
             // .custom hides the "From parent boards" filter chip (no parent
             // timeframes for custom), keeping baselines stable.
             currentTimeframe: .custom,
-            onToggleSelection: { _ in },
+            // Always "applied" — the snapshot host has no VM to refuse a
+            // deselect (final review I1).
+            onToggleSelection: { _ in true },
             onTaskCreated: { _, _, _ in },
             onCompoundCreated: { _ in },
             onLibraryReloadRequested: { },

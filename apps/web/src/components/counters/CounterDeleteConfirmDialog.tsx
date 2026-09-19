@@ -1,3 +1,4 @@
+import { derivedCounterRemovalNote } from './derivedCounterRemovalNote';
 import styles from './CounterDeleteConfirmDialog.module.css';
 
 /** One linked member row shown in the confirm dialog's unlink list. */
@@ -61,8 +62,10 @@ export function CounterDeleteConfirmDialog({
   // Rendered OUTSIDE the members section: a counter can have only derived
   // members (every placement came from a wizard-built board), in which case
   // `memberCount` is 0 and the section above never renders — but the derived
-  // ones are still being removed and must still be announced.
-  const derivedCount = derivedWindowCounterCount;
+  // ones are still being removed and must still be announced. The sentence
+  // comes from the one helper both web confirm dialogs share, so it can
+  // never drift from `TaskConfirmDeleteDialog`'s (or from iOS's).
+  const derivedNote = derivedCounterRemovalNote(derivedWindowCounterCount);
 
   return (
     <div className={styles.backdrop} onClick={() => !busy && onCancel()}>
@@ -96,10 +99,8 @@ export function CounterDeleteConfirmDialog({
           </div>
         )}
 
-        {derivedCount > 0 && (
-          <p className={styles.derivedNote}>
-            {`${derivedCount} board counter${derivedCount === 1 ? '' : 's'} made from this one will be removed.`}
-          </p>
+        {derivedNote !== null && (
+          <p className={styles.derivedNote}>{derivedNote}</p>
         )}
 
         <div className={styles.sheetActions}>

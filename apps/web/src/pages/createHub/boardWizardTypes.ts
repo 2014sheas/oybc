@@ -191,7 +191,14 @@ export interface BoardWizardActions {
   setCustomStartDate: (d: string) => void;
   setCustomEndDate: (d: string) => void;
   setCenterType: (t: CenterSquareType) => void;
-  toggleTaskSelection: (taskId: string) => void;
+  /**
+   * Add or remove a task from the hand-added layer. REFUSES a deselect the
+   * expansion would undo (the last included part of a Split-up compound,
+   * `canDeselectFromSources`) — returns `false` and changes nothing, so a
+   * caller can skip its "Removed …" toast instead of contradicting the
+   * screen. `true` on every applied toggle. Mirrors `setPartExcluded`.
+   */
+  toggleTaskSelection: (taskId: string) => boolean;
   setCenterTaskId: (id: string | null) => void;
   /**
    * Board Sources P4 — pull a pool as a source row (default `[0, all]`

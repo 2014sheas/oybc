@@ -75,8 +75,11 @@ export interface BoardWizardTasksStepProps {
    * later PR's inline rename must not reshuffle the list).
    */
   poolOrder: string[];
-  /** Called when the user toggles a task's selection state. */
-  onToggleSelection: (taskId: string) => void;
+  /** Called when the user toggles a task's selection state. Returns `false`
+   *  when the controller REFUSED the toggle (the last included part of a
+   *  Split-up compound — see `canDeselectFromSources`), in which case
+   *  nothing changed and no removal happened. */
+  onToggleSelection: (taskId: string) => boolean;
 
   /** Number of tasks the chosen board geometry requires. */
   tasksRequired: number;
@@ -467,12 +470,16 @@ export function BoardWizardTasksStep({
     !centerTaskMode || (centerTaskId !== null && selectedTaskIds.has(centerTaskId));
   const canAdvance = isCountSatisfied && isCenterSatisfied;
 
-  function handleToggle(taskId: string): void {
+  /** Toggle a row's selection. Returns `false` when the controller refused
+   *  the toggle (nothing changed) so callers that announce the result — see
+   *  `removeWithUndo` — can stay honest. */
+  function handleToggle(taskId: string): boolean {
     const wasSelected = selectedTaskIds.has(taskId);
-    onToggleSelection(taskId);
+    if (!onToggleSelection(taskId)) return false;
     if (wasSelected && centerTaskId === taskId) {
       onCenterTaskChange(null);
     }
+    return true;
   }
 
   function handleCenterRadio(taskId: string): void {
@@ -573,8 +580,14 @@ export function BoardWizardTasksStep({
     // it, so Undo can restore it — otherwise the restored id can't resolve
     // and the board under-fills. `undefined` for library tasks.
     const payload = pendingTasks?.get(taskId);
+    // §Member rules (B3, final review I1) — the controller REFUSES a
+    // deselect that would empty a Split-up compound, and the row correctly
+    // stays on the board. Announcing "Removed …" anyway would contradict the
+    // screen, and its Undo would call `restoreToPool` — which writes the id
+    // into `manualTaskIds` and re-provenances a source-supplied part as
+    // hand-added. So: no removal, no toast, no editor close.
+    if (!handleToggle(taskId)) return;
     if (editingTaskId === taskId) setEditingTaskId(null);
-    handleToggle(taskId);
     showToast(`Removed "${name}"`, () =>
       onRestoreToPool(taskId, index === -1 ? poolOrder.length : index, payload),
     );

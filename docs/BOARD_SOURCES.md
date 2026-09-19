@@ -687,7 +687,7 @@ window-stamped derived counters B2 started minting.
   both platforms and write `sources[i].memberRules` /
   `manualTaskVary`; split and part-exclusion re-run
   `refreshSourceSupplies` → `clampAllSourceRanges` so ranges stay honest.
-  Web split `useBoardWizard.ts` (1144 → 924 lines, its file-size allowlist
+  Web split `useBoardWizard.ts` (1144 → 949 lines, its file-size allowlist
   entry removed outright) into `useWizardSources.ts` (source CRUD, extracted
   first as a behaviour-identical refactor), `useWizardMemberRules.ts` (the
   new rule actions), and `useWizardDerived.ts` (Preview/derived-cell state);
@@ -720,11 +720,18 @@ window-stamped derived counters B2 started minting.
   `BoardSources.derivedCounterRemovalNote(count:)` on iOS (consumed by both
   `CounterDeleteConfirmView.swift`, newly extracted from `CounterDetailView.swift`
   — 1178 → 1008 lines, its allowlist entry lowered not deleted — and
-  `TaskDeleteConfirmView.swift`) and inlined identically on web in
-  `CounterDeleteConfirmDialog.tsx`, driven by `impact.derivedWindowCounterCount`
-  on both platforms. iOS additionally deleted the Library sheet's inline
-  "⇲ Derive smaller…" entry and its sheet (`RisoDeriveCounterSheetView.swift`,
-  one consumer) now that member rows own that job.
+  `TaskDeleteConfirmView.swift`) and as the one-line web twin
+  `components/counters/derivedCounterRemovalNote.ts`, consumed by BOTH web
+  confirm dialogs (`CounterDeleteConfirmDialog.tsx` and
+  `pages/tasks/TaskConfirmDeleteDialog.tsx`); the task sheet folds the count
+  into its "No other rows affected." predicate on both platforms, since the
+  derived rows live on OTHER boards and move neither `affectedBoards` nor the
+  compound link counts. Driven by `impact.derivedWindowCounterCount`
+  throughout. BOTH platforms deleted the Library sheet's inline
+  "⇲ Derive smaller…" entry — iOS its sheet too
+  (`RisoDeriveCounterSheetView.swift`, one consumer), web the dead
+  `LibrarySheet` prop/branch/CSS its caller had stopped passing — now that
+  member rows own that job.
 - **Rulings (design, locked at planning as RC1–RC14)**: a11y strings exactly
   as spec'd ("Vary: off / a little / a lot" on the dice, "Decrease target" /
   "Increase target" on the stepper); RC12 is the delete-confirm line +
@@ -754,7 +761,14 @@ window-stamped derived counters B2 started minting.
   literals for seeds 0/1/42/2^32−1. iOS's compact stepper commits the typed
   draft before stepping (parity with web's blur→commit→step), fixed in the
   Task 7 review round after the first pass read the stale `value` instead of
-  the uncommitted `draft`.
+  the uncommitted `draft`; web's compact stepper likewise gates its −/+
+  `disabled` state on that draft (`compactStepperBase`, the twin of
+  `RisoCompactStepperMath.base`). **An empty `manualTaskVary` is never
+  written** — on either record (the draft blob and `RecurringBoardTemplate`
+  CREATE) and on either platform; decoders read a missing key as "no dice".
+  The `RecurringBoardTemplate` UPDATE path is the one deliberate exception:
+  there an empty map means "clear the dice", which an omission cannot
+  express.
 - **Accepted divergences**: web keeps its hand-added row's
   "Derive smaller version…" context-menu entry (iOS has no hand-added-row
   menu to match; noted, not treated as drift). iOS's
@@ -786,7 +800,13 @@ window-stamped derived counters B2 started minting.
   date-dependent varies the plan without also varying task selection — but
   worth tightening if that stops holding); device-checklist items for a
   future pass (compact-stepper select-all-on-focus and `.numberPad`'s
-  missing Done key are both intentional-for-now, not bugs).
+  missing Done key are both intentional-for-now, not bugs); promoting web's
+  duplicated `nextVary` (`MemberRuleRow.tsx` / `PoolList.tsx`) to a single
+  definition (iOS already has one, `VaryLevel.next`); memoising the web
+  Split-up expansion the way iOS's `expandedSuppliesCache` does (today it is
+  recomputed O(n²) per clamp); dark twins for the new member-row snapshot
+  cases (`testSourceCountingMemberRule` and friends are light-only, while
+  the sibling `testPoolList*` cases have both).
 - **Test inventory**: shared Jest gained `memberRulesDisplay.test.ts` +
   `seededRng.test.ts` (the `display` section of
   `memberRuleVectors.json` kept in sync with the iOS fixture copy under

@@ -878,7 +878,14 @@ func persistRecurringTemplate(
                 manualTaskIds: manualTaskIds,
                 removedTaskIds: removedTaskIds,
                 sources: sources,
-                manualTaskVary: manualTaskVary,
+                // §Member rules — an EMPTY map is never written (final review
+                // M2; web's `createRecurringBoardTemplate` already omits it).
+                // The controller's map is non-optional, so it would otherwise
+                // promote to `.some([:])` and `encode` would write `"{}"` on a
+                // record the rule editor never touched. The UPDATE path above
+                // deliberately keeps the empty map — there it means "clear the
+                // dice", which an omission can't express.
+                manualTaskVary: manualTaskVary.isEmpty ? nil : manualTaskVary,
                 lastSpawnedWindowKey: nil,
                 isActive: true,
                 createdAt: now,

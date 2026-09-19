@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { compactStepperBase } from './counterStepperMath';
 import styles from './CounterStepper.module.css';
 
 interface CounterStepperProps {
@@ -57,6 +58,10 @@ export function CounterStepper({
   const [draft, setDraft] = useState<string | null>(null);
 
   if (size === 'compact') {
+    // The −/+ buttons gate on the UNCOMMITTED draft when there is one, so a
+    // typed-but-unblurred `1` in a `min: 1` field disables `−` immediately
+    // (iOS `RisoCompactStepperMath.base`).
+    const gateValue = compactStepperBase(value, draft, min, max);
     const commit = (): void => {
       if (draft === null) return;
       const parsed = Number.parseInt(draft.trim(), 10);
@@ -71,7 +76,7 @@ export function CounterStepper({
           type="button"
           className={styles.compactButton}
           onClick={() => onChange(Math.max(min, value - 1))}
-          disabled={value <= min}
+          disabled={gateValue <= min}
           aria-label="Decrease target"
         >
           −
@@ -101,7 +106,7 @@ export function CounterStepper({
           type="button"
           className={styles.compactButton}
           onClick={() => onChange(Math.min(max, value + 1))}
-          disabled={value >= max}
+          disabled={gateValue >= max}
           aria-label="Increase target"
         >
           ＋

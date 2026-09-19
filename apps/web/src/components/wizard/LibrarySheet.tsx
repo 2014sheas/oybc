@@ -47,11 +47,6 @@ export interface LibrarySheetProps {
   /** Right-click / context-menu handler — shared with the pool list so
    *  there's one `RowContextMenu` implementation for both surfaces. */
   onContextMenu: (taskId: string, x: number, y: number) => void;
-  /** Opens the "Derive smaller version…" modal (owned by the parent, since
-   *  the same modal is reachable from the context menu on a pool row).
-   *  Omitted → the per-row derive link isn't offered. */
-  onDeriveRequested?: (task: Task) => void;
-
   currentTimeframe: Timeframe;
   /** Reactive list of tasks placed on currently-active PARENT boards
    *  (Phase 6.1). Empty when the current timeframe has no parents. */
@@ -85,7 +80,6 @@ export function LibrarySheet({
   centerTaskId,
   onCenterClick,
   onContextMenu,
-  onDeriveRequested,
   currentTimeframe,
   parentBoardTasks,
 }: LibrarySheetProps): React.ReactElement {
@@ -290,11 +284,6 @@ export function LibrarySheet({
                   {visible.tasks.map((task) => {
                     const isSelected = selectedTaskIds.has(task.id);
                     const isCenter = centerTaskId === task.id;
-                    const isCounting =
-                      task.type === TaskType.COUNTING &&
-                      task.action != null &&
-                      task.unit != null &&
-                      task.maxCount != null;
                     return (
                       <li key={task.id}>
                         {renderTaskRow({
@@ -310,17 +299,6 @@ export function LibrarySheet({
                           isCenter,
                           onCenterClick: () => onCenterClick(task.id),
                         })}
-                        {isCounting && onDeriveRequested && (
-                          <div className={styles.deriveRow}>
-                            <button
-                              type="button"
-                              className={styles.deriveLink}
-                              onClick={() => onDeriveRequested(task)}
-                            >
-                              ⇲ Derive smaller
-                            </button>
-                          </div>
-                        )}
                       </li>
                     );
                   })}

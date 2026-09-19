@@ -298,17 +298,32 @@ extension BoardWizardViewModel {
     /// semantics — the library sheet has no per-source scope); the manual
     /// layer always wins on re-select (excludes stay, matching
     /// `resolveMix`'s manual-wins rule).
-    func toggleTaskSelection(_ taskId: String) {
+    ///
+    /// - Parameter taskId: The task to add to, or remove from, the
+    ///   hand-added layer.
+    /// - Returns: `false` when the toggle was REFUSED and nothing changed
+    ///   (the last included part of a Split-up compound — see
+    ///   ``BoardSources/canDeselectFromSources(supplies:childrenByCompoundId:taskId:)``);
+    ///   `true` on every applied toggle. Mirrors `setPartExcluded`, and lets
+    ///   the Tasks step skip its "Removed …" toast on a refusal.
+    @discardableResult
+    func toggleTaskSelection(_ taskId: String) -> Bool {
         if selectedTaskIds.contains(taskId) {
             // §Member rules (B3) — a deselect the expansion would REFUSE (the
             // last included part of a Split-up compound) must change nothing:
             // dropping the id and letting the selection recompute restore it
             // is a self-reverting control. Checked before any state write.
+            //
+            // Final review I1 — and it REPORTS the refusal, because the row
+            // stays on the board: a "Removed …" toast would contradict the
+            // screen, and its Undo calls `restoreToPool`, which writes the id
+            // into `manualTaskIds` and re-provenances a source-supplied part
+            // as hand-added.
             guard BoardSources.canDeselectFromSources(
                 supplies: expandedSupplies,
                 childrenByCompoundId: childrenByCompoundId,
                 taskId: taskId
-            ) else { return }
+            ) else { return false }
             manualTaskIds.remove(taskId)
             pendingTasks.removeValue(forKey: taskId)
             stagedEdits.removeValue(forKey: taskId)
@@ -323,6 +338,7 @@ extension BoardWizardViewModel {
             if !poolOrder.contains(taskId) { poolOrder.append(taskId) }
             recomputeSelectionFromSources()
         }
+        return true
     }
 
     // MARK: - Selection recompute + supply refresh

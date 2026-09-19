@@ -101,7 +101,10 @@ struct BoardWizardTasksStepView: View {
     /// `toggleTaskSelection` so deselecting a newly-created task also purges
     /// its deferred (Bug #85) `pendingTasks` payload — otherwise the removed
     /// task is still written to the DB on save and leaks into the library.
-    let onToggleSelection: (_ taskId: String) -> Void
+    ///
+    /// Returns `false` when the VM REFUSED the toggle and nothing changed
+    /// (the last included part of a Split-up compound); `true` otherwise.
+    let onToggleSelection: (_ taskId: String) -> Bool
 
     /// Fired after a non-compound task is created from the sheet.
     let onTaskCreated: (_ taskId: String, _ title: String, _ type: String) -> Void
@@ -662,8 +665,14 @@ struct BoardWizardTasksStepView: View {
         // it, so Undo can restore it — otherwise the restored id can't resolve
         // and the board under-fills. nil for library tasks.
         let payload = pendingTasks?[taskId]
+        // §Member rules (B3, final review I1) — the VM REFUSES a deselect
+        // that would empty a Split-up compound, and the row correctly stays
+        // on the board. Announcing "Removed …" anyway would contradict the
+        // screen, and its Undo calls `restoreToPool` — which writes the id
+        // into `manualTaskIds` and re-provenances a source-supplied part as
+        // hand-added. So: no removal, no toast, no editor close.
+        guard toggleSelection(taskId) else { return }
         if editingTaskId == taskId { editingTaskId = nil }
-        toggleSelection(taskId)
         showToast("Removed \"\(name)\"") { onRestoreToPool(taskId, index, payload) }
     }
 
@@ -744,7 +753,11 @@ struct BoardWizardTasksStepView: View {
 
     // MARK: - Selection helper
 
-    private func toggleSelection(_ taskId: String) {
+    /// - Parameter taskId: The row to add to, or remove from, the pool.
+    /// - Returns: `false` when the VM REFUSED the toggle and nothing changed
+    ///   (the last included part of a Split-up compound).
+    @discardableResult
+    private func toggleSelection(_ taskId: String) -> Bool {
         // Delegate to the wizard VM: it updates selection, clears the center
         // mark, AND purges the deferred `pendingTasks` payload on deselect.
         // The old local-only version skipped the pending purge, so removed

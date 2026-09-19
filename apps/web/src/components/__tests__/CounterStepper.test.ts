@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CounterStepper } from '../CounterStepper';
+import { compactStepperBase } from '../counterStepperMath';
 
 /**
  * `size="compact"` (B3, docs/BOARD_SOURCES.md §Member rules) adds the
@@ -62,5 +63,31 @@ describe('CounterStepper', () => {
 
     const atMax = render({ value: 35, min: 1, max: 35, onChange: () => {}, size: 'compact' });
     expect(atMax).toMatch(/aria-label="Increase target"[^>]*disabled|disabled[^>]*aria-label="Increase target"/);
+  });
+});
+
+/**
+ * Final review M3 — the compact −/＋ gate on the UNCOMMITTED draft when
+ * there is one, so typing `1` into a `min: 1` field disables `−` right
+ * away instead of at blur. Twin of iOS
+ * `RisoCompactStepperMath.base(value:draft:min:max:)`; pinned here as a
+ * predicate because the server render never has a draft.
+ */
+describe('compactStepperBase (the −/＋ disabled gate)', () => {
+  it('falls back to the committed value when nothing is being typed', () => {
+    expect(compactStepperBase(5, null, 1, 35)).toBe(5);
+  });
+
+  it('reads the typed draft, clamped to the bounds', () => {
+    expect(compactStepperBase(5, '1', 1, 35)).toBe(1);
+    expect(compactStepperBase(5, ' 12 ', 1, 35)).toBe(12);
+    expect(compactStepperBase(5, '900', 1, 35)).toBe(35);
+    expect(compactStepperBase(5, '0', 1, 35)).toBe(1);
+  });
+
+  it('falls back to the committed value for a draft that is not a number', () => {
+    expect(compactStepperBase(5, '', 1, 35)).toBe(5);
+    expect(compactStepperBase(5, 'abc', 1, 35)).toBe(5);
+    expect(compactStepperBase(5, '-', 1, 35)).toBe(5);
   });
 });

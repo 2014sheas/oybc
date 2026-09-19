@@ -321,7 +321,10 @@ function PartLine({
         <span className={`${styles.partName} ${styles.struck}`}>{name}</span>
         <button
           type="button"
-          className={styles.undo}
+          // PART scale, not member scale — iOS renders this one at
+          // 10.5/extraBold on `risoPaper2` with the dense keyline
+          // (`RisoMemberRuleRowView`). `.undo` is the member-row control.
+          className={styles.partUndo}
           onClick={() => onSetPartExcluded(childId, false)}
           aria-label={`Undo excluding ${name}`}
         >

@@ -233,6 +233,38 @@ export function canDeselectFromSources(
 }
 
 /**
+ * Whether `toggleTaskSelection` may APPLY a toggle — the gate whose answer
+ * the action now reports back to its caller (final review I1).
+ *
+ * A select is always applied; only a DESELECT can be refused, and only by
+ * {@link canDeselectFromSources}. The wizard's row ✕ announces "Removed
+ * …" with an Undo, and that Undo writes the id into `manualTaskIds` — so a
+ * refusal the caller can't see produces a toast that contradicts the screen
+ * AND silently re-provenances a source-supplied part as hand-added.
+ *
+ * Lives here, not inline in the hook, because this repo's Vitest harness is
+ * `environment: 'node'` with no hook renderer (see `vitest.config.ts`): the
+ * hook is a thin shell and the pure transitions in this module are where
+ * behaviour is pinned. iOS keeps the same gate inline in the VM, which its
+ * XCTest suite can construct directly.
+ *
+ * @param wasSelected - Whether the task is currently in the square list.
+ * @param supplies - The Split-up-expanded supplies (`controller.expandedSupplies`).
+ * @param childrenByCompoundId - The live compound-children map.
+ * @param taskId - The id being toggled.
+ * @returns False only for a deselect the expansion would undo.
+ */
+export function canApplyTaskToggle(
+  wasSelected: boolean,
+  supplies: readonly ExpandedSupply[],
+  childrenByCompoundId: SupplyChildrenMap,
+  taskId: string,
+): boolean {
+  if (!wasSelected) return true;
+  return canDeselectFromSources(supplies, childrenByCompoundId, taskId);
+}
+
+/**
  * The board sources whose RC4 prefill decision is already settled at mount:
  * every board source the wizard HYDRATED (a resumed draft / an edited
  * repeating record). Those were pulled in an earlier session and their saved

@@ -566,3 +566,13 @@
   background: var(--riso-red);
   color: var(--riso-on-color);
 }
+
+/* §Member rules (B3, RC12) — the delete confirm's derived-counter warning.
+   Matches `CounterDeleteConfirmDialog.module.css`'s `.derivedNote`: the two
+   dialogs carry the same sentence, so they carry the same treatment. */
+.derivedNote {
+  margin: 10px 0 0;
+  font-family: var(--riso-font-body);
+  font-size: 0.85rem;
+  color: var(--riso-muted);
+}

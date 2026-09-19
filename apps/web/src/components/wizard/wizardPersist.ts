@@ -215,6 +215,16 @@ export function buildWizardPlacement(
     const t = libraryById.get(id);
     if (t !== undefined) pendingExtras.push(t);
   }
+  // §Member rules (B3, final review I4) — PREVIEW PATH ONLY. `fromLibrary`
+  // is title-sorted (`useTaskLibrary`), so it is stable across rebuilds; the
+  // pending extras are not — they arrive in `selectBoardTasks`' RANDOMISED
+  // pick order, which the seeded shuffle would then permute differently on
+  // every rebuild and the grid would drift with no Shuffle. Pin them by id,
+  // exactly as iOS's preview branch does (`BoardWizardPersist.swift`). The
+  // persist path (no `previewRules`) keeps its previous order byte-for-byte.
+  if (previewRules !== undefined && isRandomized) {
+    pendingExtras.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
   const preOverlay: Task[] = [...fromLibrary, ...pendingExtras];
 
   // Inline Task Editing (web PR-2) — overlay staged edits (Inline

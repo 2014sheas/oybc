@@ -101,10 +101,16 @@ struct RecurringDraftMixPayload: Codable {
             removedTaskIds: removedTaskIds
         )
         try container.encode(resolvedSources, forKey: .sources)
-        // Omitted when empty — an existing draft's blob is unchanged. Web
-        // writes `manualTaskVary: {}` instead; both decode to an empty map and
-        // the blob is an LWW'd string (never merged), so the byte difference
-        // is cosmetic — the B1 codec contract's omit-when-empty wins here.
+        // §Member rules — THE rule for an empty `manualTaskVary`, on either
+        // record and on either platform: OMIT it (final review M2). An
+        // existing draft's blob is then unchanged, and the four write sites
+        // (this blob ↔ web's `encodeRecurringDraftMix`; the
+        // `RecurringBoardTemplate` CREATE on both platforms) agree. Decoders
+        // read a missing key as "no dice", so nothing depends on the
+        // difference — but one rule stated once beats four judgement calls.
+        // (The `RecurringBoardTemplate` UPDATE path is the deliberate
+        // exception: there an empty map means "clear the dice", which an
+        // omission can't say.)
         if !manualTaskVary.isEmpty {
             try container.encode(manualTaskVary, forKey: .manualTaskVary)
         }

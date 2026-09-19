@@ -917,4 +917,55 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         )
         XCTAssertEqual(template?.manualTaskVary, ["dice": .little])
     }
+
+    /// §Member rules — THE rule for an empty `manualTaskVary`, on either
+    /// record and on either platform: OMIT it (final review M2). The
+    /// controller's map is non-optional, so a fresh create used to promote
+    /// it to `.some([:])` and write `"{}"` on a record the rule editor never
+    /// touched. Web twin: `recurringBoardTemplates.test.ts`'s
+    /// "createRecurringBoardTemplate OMITS an empty manualTaskVary…".
+    func test_freshCreatePath_omitsAnEmptyManualTaskVary() throws {
+        let userId = "test-user-\(UUID().uuidString)"
+        let taskIds = ["f1", "f2", "f3", "f4"]
+
+        try seedUser(userId)
+        for id in taskIds { try seedTask(id, userId: userId) }
+        defer { cleanup(taskIds: taskIds, userIds: [userId]) }
+
+        var templateId: String?
+        var spawnedBoardId: String?
+        defer {
+            cleanup(
+                templateIds: templateId.map { [$0] } ?? [],
+                boardIds: spawnedBoardId.map { [$0] } ?? []
+            )
+        }
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, startRecurring: true, userId: userId,
+            database: AppDatabase.shared
+        )
+        vm.name = "No Dice Weekly"
+        vm.size = 2
+        vm.centerType = .none
+        vm.updateTimeframe(.weekly)
+        vm.isRandomized = false
+        for id in taskIds { vm.toggleTaskSelection(id) }
+        XCTAssertTrue(vm.manualTaskVary.isEmpty, "no dice were set")
+
+        switch try runPersist(controller: vm, userId: userId) {
+        case .createdAndSpawned(let id, let boardId):
+            templateId = id
+            spawnedBoardId = boardId
+        case .createdSpawnSkipped(let id, _):
+            templateId = id
+        case .updated:
+            XCTFail("Expected a fresh-create outcome")
+        }
+
+        let template = try AppDatabase.shared.fetchRecurringBoardTemplate(
+            id: try XCTUnwrap(templateId)
+        )
+        XCTAssertNil(template?.manualTaskVary, "an empty map is never written")
+    }
 }
