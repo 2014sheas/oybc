@@ -559,7 +559,7 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 | **B0** | §Member rules into this doc (this section); `WINDOWED_COMPLETION.md` carve-out paragraph; CLAUDE.md pointer. **SHIPPED** (#486 — landed with the spec). | docs |
 | **B1** | Shared types (`memberRules`, `manualTaskVary`) + Zod + Swift mirrors; draft-blob additive (still v2); GRDB **v31** column; pure helpers (`nominalWindowDays`, `autoTarget`, `varyRange`, `rollTarget`, `applyMemberRules`, `planDerivedTasks`) + mirrored vectors. Inert — nothing writes rules yet. **SHIPPED** (#489). | lockstep |
 | **B2** | Resolution + mint + non-authored baseline (mint / local root writes / pull sub-step) + the three deletion cascades (task, counter-hub, board) + `deriveDisplayedCount` read audit + `repeatBoard*` gap fix + spawn `compoundChildren` hoist; wired into wizard persist and spawn. Behaviour change only for counting tasks pulled from *board* sources (auto target). **SHIPPED** (#491). | lockstep |
-| **B3** | UI: member rows (stepper / dice / One square–Split up / part lines), hand-added dice, primitives, wizard actions, Preview derived cells, edit-mode note, #471 menu removal, hub expired filter, iOS Library-sheet derive entry stripped; snapshots + Playwright. **SHIPPED** (#TBD) — the member-rules train (A → B0–B3) is complete. | lockstep |
+| **B3** | UI: member rows (stepper / dice / One square–Split up / part lines), hand-added dice, primitives, wizard actions, Preview derived cells, edit-mode note, #471 menu removal, hub expired filter, iOS Library-sheet derive entry stripped; snapshots + Playwright. **SHIPPED** (#492) — the member-rules train (A → B0–B3) is complete. | lockstep |
 
 Each UI phase: implement → independent review → device checklist relayed to
 the user → CI-gated merge (the P2–P7 pools cadence). Rule-6 note: P2/P3
@@ -657,7 +657,7 @@ Both platforms, one PR (#491).
 
 #### Plan B3 — implementation notes (2026-09-19)
 
-Both platforms, one PR (#TBD). This closes the member-rules train (A → B0–B3):
+Both platforms, one PR (#492). This closes the member-rules train (A → B0–B3):
 the wizard's member rows now write real rules, the Preview renders a real
 dry run of them, and the Counters hub / delete-confirm surfaces read the
 window-stamped derived counters B2 started minting.
@@ -836,7 +836,7 @@ window-stamped derived counters B2 started minting.
   PNGs.
 
 The member-rules train — A (#487), B0 (#486), B1 (#489), B2 (#491), B3
-(#TBD) — is now **COMPLETE**: counting and compound members pulled from
+(#492) — is now **COMPLETE**: counting and compound members pulled from
 sources carry real per-member rules (target, vary, split), the wizard
 surfaces let a user author them, the Preview shows a faithful sample of
 what will be rolled, and the Counters hub / delete-confirm surfaces read
