@@ -94,8 +94,12 @@ describe('splitSquaresNote', () => {
 });
 
 describe('countingSummary (vectors)', () => {
+  // `toStrictEqual`, not `toEqual`: a vector whose `expected` is null must
+  // not be satisfied by an `undefined` return.
   it.each(V.countingSummary as any[])('$name', (v: any) => {
-    expect(countingSummary(v.target, v.level as VaryLevel, v.goal, v.unit)).toEqual(v.expected);
+    expect(countingSummary(v.target, v.level as VaryLevel, v.goal, v.unit)).toStrictEqual(
+      v.expected
+    );
   });
 });
 

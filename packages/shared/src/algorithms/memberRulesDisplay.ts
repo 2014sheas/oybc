@@ -289,7 +289,19 @@ export interface MemberSummary {
 
 /**
  * Collapsed-row summary for a counting member: the vary range when the
- * dice is lit, otherwise the plain target (with its unit, when it has one).
+ * dice is lit, otherwise the plain target (with its unit, when it has one)
+ * — or NOTHING when the chip would only restate the row's own title.
+ *
+ * Counting titles are auto-generated from action + goal + unit
+ * (`generateCounterTaskTitle`), so a member at its full goal with no vary
+ * is a row reading "Run 35 mi" beside a chip reading "35 mi". The chip
+ * earns its place exactly when it says something the title cannot: a
+ * pro-rated or hand-set target (`target !== goal`), or a vary range.
+ *
+ * The suppression is a rule on the VALUES, never a comparison against the
+ * title string: a member whose title the person has renamed by hand must
+ * not start or stop showing a chip because of the rename, and this helper
+ * is not given the title in the first place.
  *
  * Dispatches to {@link varyRangeLabel} rather than re-deriving the range,
  * so a collapsed row and the expanded row's blue range line can never
@@ -299,16 +311,17 @@ export interface MemberSummary {
  * @param level - The member's vary level.
  * @param goal - The member's own `maxCount`, the hard ceiling.
  * @param unit - The counting member's unit, or `''` when it has none.
- * @returns The chip's text and whether the dice is lit.
+ * @returns The chip, or null when it would only restate the title.
  */
 export function countingSummary(
   target: number,
   level: VaryLevel,
   goal: number,
   unit: string
-): MemberSummary {
+): MemberSummary | null {
   const range = varyRangeLabel(target, level, goal, unit);
   if (range !== null) return { text: range, varying: true };
+  if (level === 0 && target === goal) return null;
   return { text: `${target}${unit ? ` ${unit}` : ''}`, varying: false };
 }
 
@@ -320,6 +333,9 @@ export function countingSummary(
  * chip never reports varying however the parts are set — the parts' own
  * rows carry that. While One square, the member's dice rolls for the whole
  * square, so `level` governs.
+ *
+ * Unlike {@link countingSummary} this chip is NEVER suppressed: "1 square"
+ * / "3 squares" is not implied by any title, so it always adds something.
  *
  * @param split - Whether the member is in Split up mode.
  * @param partIds - The member's own, live part ids.

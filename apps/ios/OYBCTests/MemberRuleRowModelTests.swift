@@ -337,26 +337,44 @@ final class MemberRuleRowModelTests: XCTestCase {
     // MARK: - Disclosure (B3.1)
 
     /// A board-sourced counting member has controls to reveal, so it is
-    /// expandable, its collapsed chip states the target (with unit), and
-    /// the goal moved from a separate caption into the stepper pill's
-    /// suffix — "/ 30 Miles", never the pre-B3.1 "of 30 Miles".
-    func testCountingBoardMemberIsExpandableAndSummarisesItsTarget() {
+    /// expandable, and the goal moved from a separate caption into the
+    /// stepper pill's suffix — "/ 30 Miles", never the pre-B3.1
+    /// "of 30 Miles". At the full goal with no vary its chip is
+    /// SUPPRESSED: the title is auto-generated from the same goal + unit,
+    /// so a chip would only say it twice. Expandable with no chip is a
+    /// valid state — the row still has controls.
+    func testCountingBoardMemberIsExpandableButShowsNoChipAtItsFullGoal() {
         let m = model(task: task("r1", type: .counting, title: "Run 30 Miles a Month",
                                  maxCount: 30, unit: "Miles"))
         XCTAssertTrue(m.isExpandable)
-        XCTAssertEqual(m.summary?.text, "30 Miles")
-        XCTAssertEqual(m.summary?.varying, false)
         XCTAssertEqual(m.targetSuffix, "/ 30 Miles")
+        XCTAssertNil(m.summary, "target == goal and vary off ⇒ the chip restates the title")
+    }
+
+    /// The chip returns the moment it says something the title cannot: a
+    /// pro-rated (or hand-set) target below the goal. Asserted with a
+    /// target that is NOT the goal, so a blanket "no chip while vary is
+    /// off" implementation fails here.
+    func testCountingMemberBelowItsGoalShowsTheTargetChip() {
+        let m = model(
+            task: task("r1", type: .counting, title: "Run 30 Miles a Month",
+                       maxCount: 30, unit: "Miles"),
+            rule: BoardSourceMemberRule(target: 12)
+        )
+        XCTAssertEqual(m.summary?.text, "12 Miles")
+        XCTAssertEqual(m.summary?.varying, false)
     }
 
     /// A POOL counting member gets no stepper (RC5) — so no suffix — but
-    /// it still has a dice to reveal, so it stays expandable.
+    /// it still has a dice to reveal, so it stays expandable. Its chip
+    /// follows the same suppression rule (the source kind is not part of
+    /// it).
     func testPoolCountingMemberIsExpandableWithNoTargetSuffix() {
         let m = model(task: task("r1", type: .counting, maxCount: 30, unit: "Miles"),
                       fromBoard: false)
         XCTAssertTrue(m.isExpandable)
         XCTAssertNil(m.targetSuffix)
-        XCTAssertEqual(m.summary?.text, "30 Miles")
+        XCTAssertNil(m.summary)
     }
 
     /// The dice lit ⇒ the chip carries the RANGE and tints blue, agreeing

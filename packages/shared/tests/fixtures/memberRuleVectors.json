@@ -283,7 +283,8 @@
       { "name": "a stale excluded id not among partIds is inert", "excludedPartIds": ["p9"], "partIds": ["p1", "p2", "p3"], "expected": "3 squares" }
     ],
     "countingSummary": [
-      { "name": "vary off with a unit then target plus unit, no range", "target": 30, "level": 0, "goal": 30, "unit": "Miles", "expected": { "text": "30 Miles", "varying": false } },
+      { "name": "vary off at the full goal then NO chip, it would only restate the title", "target": 30, "level": 0, "goal": 30, "unit": "Miles", "expected": null },
+      { "name": "vary off but pro-rated below the goal then the target plus unit", "target": 5, "level": 0, "goal": 35, "unit": "Miles", "expected": { "text": "5 Miles", "varying": false } },
       { "name": "vary off with no unit then the bare target", "target": 7, "level": 0, "goal": 12, "unit": "", "expected": { "text": "7", "varying": false } },
       { "name": "vary a little then the varyRangeLabel range and varying true", "target": 10, "level": 1, "goal": 20, "unit": "mi", "expected": { "text": "8–12 mi", "varying": true } },
       { "name": "vary a lot clamps the high end at the goal", "target": 10, "level": 2, "goal": 12, "unit": "mi", "expected": { "text": "5–12 mi", "varying": true } }

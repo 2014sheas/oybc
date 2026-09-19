@@ -433,7 +433,11 @@ final class MemberRuleVectorTests: XCTestCase {
         let level: Int
         let goal: Int
         let unit: String
-        let expected: MemberSummaryExpected
+        /// Nullable: a counting chip is SUPPRESSED when it would only
+        /// restate the row's own auto-generated title. `CompoundSummaryVector`
+        /// keeps a non-optional `expected` on purpose — a compound chip is
+        /// never suppressed, and the type says so.
+        let expected: MemberSummaryExpected?
     }
 
     private struct CompoundSummaryVector: Decodable {
@@ -1358,8 +1362,12 @@ final class MemberRuleVectorTests: XCTestCase {
             let summary = BoardSources.countingSummary(
                 target: v.target, level: try varyLevel(v.level), goal: v.goal, unit: v.unit
             )
-            XCTAssertEqual(summary.text, v.expected.text, v.name)
-            XCTAssertEqual(summary.varying, v.expected.varying, v.name)
+            guard let expected = v.expected else {
+                XCTAssertNil(summary, v.name)
+                continue
+            }
+            XCTAssertEqual(summary?.text, expected.text, v.name)
+            XCTAssertEqual(summary?.varying, expected.varying, v.name)
         }
     }
 

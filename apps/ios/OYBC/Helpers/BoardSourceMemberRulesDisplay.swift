@@ -144,19 +144,33 @@ extension BoardSources {
 
     /// Collapsed-row summary for a counting member: the vary range when the
     /// dice is lit, otherwise the plain target (with its unit, when it has
-    /// one). Dispatches to ``varyRangeLabel(t:level:goal:unit:)`` so the chip
+    /// one) — or NOTHING when the chip would only restate the row's own
+    /// title. Dispatches to ``varyRangeLabel(t:level:goal:unit:)`` so the chip
     /// and the expanded row's blue range line can never disagree.
+    ///
+    /// Counting titles are auto-generated from action + goal + unit
+    /// (`generateCounterTaskTitle`), so a member at its full goal with no
+    /// vary is a row reading "Run 35 mi" beside a chip reading "35 mi". The
+    /// chip earns its place exactly when it says something the title cannot:
+    /// a pro-rated or hand-set target (`target != goal`), or a vary range.
+    ///
+    /// The suppression is a rule on the VALUES, never a comparison against
+    /// the title string — a hand-renamed title must not change whether the
+    /// chip appears, and this helper is not given the title at all.
     ///
     /// - Parameters:
     ///   - target: The pre-vary target (see ``effectiveMemberTarget``).
     ///   - level: The member's vary level.
     ///   - goal: The member's own `maxCount`, the hard ceiling.
     ///   - unit: The counting member's unit, or `""` when it has none.
-    /// - Returns: The chip's text and whether the dice is lit.
-    static func countingSummary(target: Int, level: VaryLevel, goal: Int, unit: String) -> MemberSummary {
+    /// - Returns: The chip, or nil when it would only restate the title.
+    static func countingSummary(
+        target: Int, level: VaryLevel, goal: Int, unit: String
+    ) -> MemberSummary? {
         if let range = varyRangeLabel(t: target, level: level, goal: goal, unit: unit) {
             return MemberSummary(text: range, varying: true)
         }
+        if level == .off, target == goal { return nil }
         return MemberSummary(text: unit.isEmpty ? "\(target)" : "\(target) \(unit)", varying: false)
     }
 
@@ -164,6 +178,10 @@ extension BoardSources {
     /// contributes. While split the dice lives on the parts, so the
     /// member-level chip never reports varying; while One square the
     /// member's dice rolls for the whole square.
+    ///
+    /// Unlike ``countingSummary(target:level:goal:unit:)`` this chip is
+    /// NEVER suppressed: "1 square" / "3 squares" is not implied by any
+    /// title, so it always adds something.
     ///
     /// - Parameters:
     ///   - split: Whether the member is in Split up mode.

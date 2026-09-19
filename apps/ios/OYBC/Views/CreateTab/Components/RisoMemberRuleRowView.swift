@@ -86,8 +86,13 @@ struct MemberRuleRowModel: Equatable {
     /// board. A plain, excluded or filtered-done member has nothing to
     /// reveal and stays a single tappable-free line (B3.1).
     let isExpandable: Bool
-    /// What the collapsed row shows in place of its controls; nil exactly
-    /// when `isExpandable` is false.
+    /// What the collapsed row shows in place of its controls, or nil when
+    /// it shows nothing there: always nil for a non-expandable row, and
+    /// also nil for a counting member whose chip would only restate its
+    /// own auto-generated title (`vary off && target == goal`) — see
+    /// ``BoardSources/countingSummary(target:level:goal:unit:)``. A row
+    /// with no chip is still expandable: it has controls, it just has no
+    /// answer worth repeating.
     let summary: BoardSources.MemberSummary?
     let parts: [Part]
 
@@ -457,6 +462,12 @@ struct RisoMemberRuleRowView: View {
                 trailingControl
             }
         }
+        // Every row in a panel shares a height. Before B3.1 that fell out
+        // of the inline 28pt ✕; moving it to an overlay on EXPANDABLE rows
+        // only would leave their 20pt badge setting the height, mixing
+        // ~34pt and ~42pt rows in one list. Pinning 28 here keeps the
+        // panel's rhythm identical to B3 rather than merely self-consistent.
+        .frame(minHeight: 28)
     }
 
     @ViewBuilder
