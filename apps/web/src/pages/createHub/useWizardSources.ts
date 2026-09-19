@@ -20,9 +20,9 @@
  * iOS twin: `BoardWizardViewModel+Sources.swift`.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import type { BoardSource, Pool, Task } from '@oybc/shared';
+import type { BoardSource, CompoundChild, Pool, Task } from '@oybc/shared';
 import { fetchBoardSourceSupply } from '../../db/operations/boardSources';
 import {
   buildSupplyInfoMap,
@@ -40,6 +40,10 @@ import {
   withSourceFilter,
   withSourceRange,
 } from './wizardSourcesLogic';
+import {
+  prefillRemainingTargets,
+  pruneRulesForExcludedMember,
+} from './wizardMemberRulesLogic';
 
 export interface UseWizardSourcesArgs {
   /** Lazy initial `sources` (draft blob > template > empty). */
@@ -56,6 +60,20 @@ export interface UseWizardSourcesArgs {
   poolsLoaded: boolean;
   /** Live id→Task lookup, for pool supply resolution. */
   tasksById: Record<string, Task>;
+  /**
+   * §Member rules (B3, RC7) — the live compound-children map, so a Split-up
+   * member expands into its parts everywhere an available count, the
+   * selection union, or a range clamp is computed.
+   */
+  childrenByCompoundId: Record<string, CompoundChild[]>;
+  /**
+   * §Member rules (B3, RC4) — true on a ONE-OFF wizard: when a board
+   * source's supply first resolves, its counting members are seeded with
+   * their REMAINING target for this board. A recurring wizard passes false
+   * and leaves `target` absent, so every spawned window auto-targets
+   * against its own window instead.
+   */
+  prefillRemainingTargetsOnResolve: boolean;
   /** The wizard's current selection — the diff base for purges. */
   selectedTaskIds: Set<string>;
   /** Purge center/pending/staged state for ids a transition drops. */
@@ -107,6 +125,8 @@ export function useWizardSources({
   poolsById,
   poolsLoaded,
   tasksById,
+  childrenByCompoundId,
+  prefillRemainingTargetsOnResolve,
   selectedTaskIds,
   purgeDroppedIds,
   markUserTouched,
@@ -166,6 +186,30 @@ export function useWizardSources({
     () => sources.filter((s) => s.kind === 'board').map((s) => s.sourceId).join('|'),
     [sources],
   );
+  // The live task lookup, read by the async effect below AFTER its awaits —
+  // the effect is keyed on the pulled board set alone, so a render-closure
+  // read would be stale by the time the supply lands.
+  const tasksByIdRef = useRef(tasksById);
+  useEffect(() => {
+    tasksByIdRef.current = tasksById;
+  }, [tasksById]);
+  /**
+   * §Member rules (B3, RC4) — board sources already seeded.
+   *
+   * Seeded at mount with every board source the wizard HYDRATED (a resumed
+   * draft / an edited repeating record): those were pulled in an earlier
+   * session and their saved rules are the person's own state — silently
+   * rewriting them on resume would be exactly the late-mutation shape this
+   * codebase bans. Only a board pulled in THIS session gets seeded.
+   *
+   * Then once-per-source for the wizard's lifetime, so re-resolving a supply
+   * (pulling another board, a live-query refresh) can never stomp a target
+   * the person has since edited — or re-seed one they cleared.
+   */
+  const [hydratedBoardSourceIds] = useState<Set<string>>(
+    () => new Set(sources.filter((s) => s.kind === 'board').map((s) => s.sourceId)),
+  );
+  const prefilledSourceIdsRef = useRef<Set<string>>(hydratedBoardSourceIds);
   useEffect(() => {
     const ids = boardSourceIdsKey === '' ? [] : boardSourceIdsKey.split('|');
     if (ids.length === 0) return;
@@ -175,12 +219,25 @@ export function useWizardSources({
       for (const boardId of ids) {
         next[boardId] = boardSupplyEntry(await fetchBoardSourceSupply(boardId));
       }
-      if (!cancelled) setBoardSupplyById((prev) => ({ ...prev, ...next }));
+      if (cancelled) return;
+      setBoardSupplyById((prev) => ({ ...prev, ...next }));
+      if (!prefillRemainingTargetsOnResolve) return;
+      // RC4 — the prefill happens HERE, not in `pullBoard`: a board's supply
+      // (and the windowed counts it carries) resolves asynchronously, so at
+      // pull time there is nothing to compute a remaining target from.
+      for (const boardId of ids) {
+        if (prefilledSourceIdsRef.current.has(boardId)) continue;
+        prefilledSourceIdsRef.current.add(boardId);
+        const supply = next[boardId];
+        setSources((prev) =>
+          prefillRemainingTargets(prev, boardId, supply, tasksByIdRef.current),
+        );
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [boardSourceIdsKey]);
+  }, [boardSourceIdsKey, prefillRemainingTargetsOnResolve]);
 
   /**
    * Board Sources P4 — apply a sources transition: compute which selected
@@ -191,11 +248,24 @@ export function useWizardSources({
    */
   const commitSources = useCallback(
     (next: BoardSource[]) => {
-      const nextUnion = selectionUnion(next, supplyInfoBySourceId, manualTaskIds);
+      const nextUnion = selectionUnion(
+        next,
+        supplyInfoBySourceId,
+        manualTaskIds,
+        childrenByCompoundId,
+        tasksById,
+      );
       purgeDroppedIds(droppedSelectionIds(selectedTaskIds, nextUnion));
       setSources(next);
     },
-    [supplyInfoBySourceId, manualTaskIds, selectedTaskIds, purgeDroppedIds],
+    [
+      supplyInfoBySourceId,
+      manualTaskIds,
+      childrenByCompoundId,
+      tasksById,
+      selectedTaskIds,
+      purgeDroppedIds,
+    ],
   );
 
   /**
@@ -251,10 +321,19 @@ export function useWizardSources({
   const setSourceRange = useCallback(
     (sourceId: string, min: number, max: number | null) => {
       setSources((prev) =>
-        withSourceRange(prev, supplyInfoBySourceId, sourceId, min, max, tasksRequired),
+        withSourceRange(
+          prev,
+          supplyInfoBySourceId,
+          sourceId,
+          min,
+          max,
+          tasksRequired,
+          childrenByCompoundId,
+          tasksById,
+        ),
       );
     },
-    [tasksRequired, supplyInfoBySourceId],
+    [tasksRequired, supplyInfoBySourceId, childrenByCompoundId, tasksById],
   );
 
   /** Board Sources P4 — "Use all": reset one source's range to `[0, all]`. */
@@ -270,10 +349,25 @@ export function useWizardSources({
   const setSourceFilter = useCallback(
     (sourceId: string, filter: 'all' | 'todo') => {
       commitSources(
-        withSourceFilter(sources, supplyInfoBySourceId, sourceId, filter, tasksRequired),
+        withSourceFilter(
+          sources,
+          supplyInfoBySourceId,
+          sourceId,
+          filter,
+          tasksRequired,
+          childrenByCompoundId,
+          tasksById,
+        ),
       );
     },
-    [sources, tasksRequired, supplyInfoBySourceId, commitSources],
+    [
+      sources,
+      tasksRequired,
+      supplyInfoBySourceId,
+      childrenByCompoundId,
+      tasksById,
+      commitSources,
+    ],
   );
 
   /**
@@ -283,17 +377,27 @@ export function useWizardSources({
    */
   const toggleSourceExclude = useCallback(
     (sourceId: string, taskId: string) => {
-      commitSources(
-        toggleExcludeInSource(
-          sources,
-          supplyInfoBySourceId,
-          sourceId,
-          taskId,
-          tasksRequired,
-        ),
+      const toggled = toggleExcludeInSource(
+        sources,
+        supplyInfoBySourceId,
+        sourceId,
+        taskId,
+        tasksRequired,
+        childrenByCompoundId,
+        tasksById,
       );
+      // RC14 exclusivity — a member that has just been excluded keeps no
+      // per-part state: re-including it later starts from a clean split.
+      commitSources(pruneRulesForExcludedMember(toggled, sourceId, taskId));
     },
-    [sources, tasksRequired, supplyInfoBySourceId, commitSources],
+    [
+      sources,
+      tasksRequired,
+      supplyInfoBySourceId,
+      childrenByCompoundId,
+      tasksById,
+      commitSources,
+    ],
   );
 
   /** Board Sources P4 — expand/collapse a source row (UI-only). */

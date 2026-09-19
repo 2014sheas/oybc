@@ -12,11 +12,14 @@ import type {
   Board,
   BoardTask,
   CenterSquareType,
+  CompoundChild,
+  ExpandedSupply,
   Pool,
   RecurringBoardTemplate,
   Task,
   Timeframe,
   UserPreferences,
+  VaryLevel,
   WeekStartDay,
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
@@ -87,6 +90,21 @@ export interface BoardWizardState {
    * provenance to recover).
    */
   manualTaskIds: Set<string>;
+  /**
+   * §Member rules (docs/BOARD_SOURCES.md, B3) — dice levels for HAND-ADDED
+   * counters (source members carry theirs on `BoardSource.memberRules`
+   * instead). Level 0 is stored as an absence, so an untouched wizard
+   * serialises `{}`. Persisted on the draft blob and on the repeating
+   * record (`RecurringBoardTemplate.manualTaskVary`).
+   */
+  manualTaskVary: Record<string, VaryLevel>;
+  /**
+   * §Member rules (B3, RC7) — the live compound-children map (library links
+   * + this session's pending compounds + the staged-edit overlay), the
+   * lookup a Split-up expansion and the rule editor's part rows both read.
+   * Exposed so no surface rebuilds it.
+   */
+  childrenByCompoundId: Record<string, CompoundChild[]>;
   /**
    * Board Sources P4 — per-source display + raw-supply cache: pool
    * entries resolve live from props; board entries via async fetch. Step
@@ -199,6 +217,42 @@ export interface BoardWizardActions {
   toggleSourceExclude: (sourceId: string, taskId: string) => void;
   /** Board Sources P4 — expand/collapse a source row. */
   toggleExpandedSource: (sourceId: string) => void;
+  /**
+   * §Member rules (B3) — set (or clear, with `undefined`) a counting
+   * member's explicit target. Honoured on board sources only; clearing it
+   * returns the member to auto. iOS mirrors this name.
+   */
+  setMemberTarget: (sourceId: string, taskId: string, target: number | undefined) => void;
+  /** §Member rules (B3) — a counting member's (or a One-square compound's) dice level. */
+  setMemberVary: (sourceId: string, taskId: string, level: VaryLevel) => void;
+  /**
+   * §Member rules (B3) — flip a compound member between One square and
+   * Split up. Changes the source's SUPPLY, so ranges re-clamp and dropped
+   * ids purge, exactly like `setSourceFilter`.
+   */
+  setMemberSplit: (sourceId: string, taskId: string, split: boolean) => void;
+  /**
+   * §Member rules (B3) — include/exclude one part of a split compound.
+   * REFUSES to exclude the LAST included part (a split member always
+   * contributes at least one square): returns `false` and changes nothing.
+   */
+  setPartExcluded: (
+    sourceId: string,
+    taskId: string,
+    childId: string,
+    excluded: boolean,
+  ) => boolean;
+  /** §Member rules (B3) — set (or clear) a counting part's explicit target. */
+  setPartTarget: (
+    sourceId: string,
+    taskId: string,
+    childId: string,
+    target: number | undefined,
+  ) => void;
+  /** §Member rules (B3) — a counting part's dice level. */
+  setPartVary: (sourceId: string, taskId: string, childId: string, level: VaryLevel) => void;
+  /** §Member rules (B3) — a HAND-ADDED counter's dice level (`manualTaskVary`). */
+  setManualVary: (taskId: string, level: VaryLevel) => void;
   goToStep: (step: WizardStep) => void;
   goNext: () => void;
   goBack: () => void;
@@ -275,6 +329,13 @@ export interface BoardWizardDerived {
    * the spawn so at most one member of a family lands on a board.
    */
   counterFamilyByTaskId: Record<string, string>;
+  /**
+   * §Member rules (B3, RC7) — the pulled supplies after excludes AND the
+   * Split-up expansion (`applyMemberRules`), in row order, each carrying
+   * `partOf` (child id → the compound member it entered through). Every
+   * count, gate and member row reads THIS, so no surface re-derives it.
+   */
+  expandedSupplies: ExpandedSupply[];
 }
 
 export type BoardWizardController = BoardWizardState &
@@ -379,5 +440,14 @@ export interface UseBoardWizardArgs {
    * library loaded in production).
    */
   tasksById?: Record<string, Task>;
+  /**
+   * §Member rules (B3, RC7) — the library's `compound_children` links,
+   * pre-grouped by compound id (`useTaskLibrary().compoundChildrenByCompound`).
+   * The wizard merges this session's pending compounds + staged edits on top
+   * and exposes the result as `childrenByCompoundId`, which drives the
+   * Split-up expansion. Defaults to `{}` — a caller that omits it gets no
+   * expansion (every `split` rule reads as stale-inert).
+   */
+  compoundChildrenByCompound?: Record<string, CompoundChild[]>;
 }
 

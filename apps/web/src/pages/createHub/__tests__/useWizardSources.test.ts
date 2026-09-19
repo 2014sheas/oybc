@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BoardSource } from '@oybc/shared';
+import { Timeframe, type BoardSource } from '@oybc/shared';
 import {
   appendSource,
   boardSupplyEntry,
@@ -177,9 +177,14 @@ describe('boardSupplyEntry (the async board-supply effect mapping)', () => {
       displayName: 'Monday',
       supplyTaskIds: ['a', 'b'],
       doneTaskIds: new Set(['b']),
+      windowCountByTaskId: { a: 3 },
+      sourceWindow: { timeframe: Timeframe.WEEKLY, startDate: '2026-09-14', endDate: null },
     });
     expect(entry).toMatchObject({ displayName: 'Monday', rawSupplyTaskIds: ['a', 'b'] });
     expect(entry.isPending).toBeUndefined();
+    // §Member rules (B3) — the windowed counts + source window ride along.
+    expect(entry.windowCountByTaskId).toEqual({ a: 3 });
+    expect(entry.sourceWindow?.timeframe).toBe(Timeframe.WEEKLY);
   });
 
   it('maps a null read to an explicit "Deleted board" — resolved, NOT pending', () => {
@@ -187,5 +192,6 @@ describe('boardSupplyEntry (the async board-supply effect mapping)', () => {
     expect(entry.displayName).toBe('Deleted board');
     expect(entry.rawSupplyTaskIds).toEqual([]);
     expect(entry.isPending).toBeUndefined();
+    expect(entry.sourceWindow).toBeUndefined();
   });
 });

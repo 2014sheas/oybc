@@ -20,7 +20,9 @@ import {
   availableCountForSource,
   clampAllSourceRanges,
   clampSourceRange,
+  type SupplyChildrenMap,
   type SupplyInfoMap,
+  type SupplyTasksMap,
   type WizardSourceSupply,
 } from './wizardSources';
 
@@ -70,6 +72,8 @@ export function removeSourceById(sources: BoardSource[], sourceId: string): Boar
  * @param min - Requested range minimum.
  * @param max - Requested range maximum, or `null` for "all".
  * @param tasksRequired - The board's fillable cell count.
+ * @param childrenByCompoundId - Compound children, for the Split-up expansion.
+ * @param tasksById - Id → task, for the Split-up expansion.
  * @returns The next rows.
  */
 export function withSourceRange(
@@ -79,12 +83,14 @@ export function withSourceRange(
   min: number,
   max: number | null,
   tasksRequired: number,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): BoardSource[] {
   return sources.map((source) => {
     if (source.sourceId !== sourceId) return source;
     return clampSourceRange(
       { ...source, min, max },
-      availableCountForSource(sources, supplyInfo, sourceId),
+      availableCountForSource(sources, supplyInfo, sourceId, childrenByCompoundId, tasksById),
       tasksRequired,
     );
   });
@@ -113,6 +119,8 @@ export function withResetSourceRange(sources: BoardSource[], sourceId: string): 
  * @param sourceId - The row being filtered.
  * @param filter - The new filter.
  * @param tasksRequired - The board's fillable cell count.
+ * @param childrenByCompoundId - Compound children, for the Split-up expansion.
+ * @param tasksById - Id → task, for the Split-up expansion.
  * @returns The next rows, re-clamped.
  */
 export function withSourceFilter(
@@ -121,11 +129,13 @@ export function withSourceFilter(
   sourceId: string,
   filter: BoardSourceFilter,
   tasksRequired: number,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): BoardSource[] {
   const next = sources.map((source) =>
     source.sourceId === sourceId && source.kind === 'board' ? { ...source, filter } : source,
   );
-  return clampAllSourceRanges(next, supplyInfo, tasksRequired);
+  return clampAllSourceRanges(next, supplyInfo, tasksRequired, childrenByCompoundId, tasksById);
 }
 
 /**
@@ -177,5 +187,10 @@ export function boardSupplyEntry(info: BoardSourceSupplyInfo | null): WizardSour
     displayName: info.displayName,
     rawSupplyTaskIds: info.supplyTaskIds,
     doneTaskIds: info.doneTaskIds,
+    // §Member rules (B3) — the windowed counts + the source board's own
+    // window ride along: the remaining-target prefill and the auto-target
+    // preview both read them off the supply cache, never a second board read.
+    windowCountByTaskId: info.windowCountByTaskId,
+    sourceWindow: info.sourceWindow,
   };
 }

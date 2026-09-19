@@ -3,23 +3,21 @@ import { useCoreBoardDefault } from '../../hooks';
 import {
   CenterSquareType,
   Timeframe,
-  buildCounterFamilyMap,
   formatWindowLabel,
   getTimeframeBoundaries,
   sourcesForRecord,
   type BoardSource,
+  type CompoundChild,
   type Pool,
   type Task,
 } from '@oybc/shared';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
-import {
-  excludeFromEverySupplier,
-  selectionUnion,
-  sourceCapacity,
-} from './wizardSources';
+import { excludeFromEverySupplier, selectionUnion } from './wizardSources';
 import { useWizardSources } from './useWizardSources';
+import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
+import { useWizardDerived } from './useWizardDerived';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 
 /** Stable empty fallback so a caller that omits `tasksById` doesn't cause
@@ -27,6 +25,8 @@ import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
 const EMPTY_TASKS_BY_ID: Record<string, Task> = {};
 /** Stable empty fallback for a caller that omits `pools`. */
 const EMPTY_POOLS: Pool[] = [];
+/** Stable empty fallback for a caller that omits the compound-children map. */
+const EMPTY_COMPOUND_CHILDREN: Record<string, CompoundChild[]> = {};
 
 export type {
   WizardStep,
@@ -108,6 +108,7 @@ export function useBoardWizard({
   pools = EMPTY_POOLS,
   poolsLoaded = true,
   tasksById = EMPTY_TASKS_BY_ID,
+  compoundChildrenByCompound = EMPTY_COMPOUND_CHILDREN,
 }: UseBoardWizardArgs): BoardWizardController {
   const draftBoard = draft?.board;
 
@@ -377,6 +378,16 @@ export function useBoardWizard({
     poolPrefillAppliedRef.current = true;
   }, []);
 
+  // §Member rules (B3, RC7) — the live compound-children map (library links +
+  // this session's pending compounds + the staged-edit overlay). Both the
+  // sources layer (Split-up expansion) and the rules layer (part rows) read
+  // it, so it is resolved once, ahead of both.
+  const childrenByCompoundId = useWizardCompoundChildren(
+    compoundChildrenByCompound,
+    pendingTasks,
+    stagedEdits,
+  );
+
   // Board Sources P4 — the sources layer (state + async supply resolution +
   // the nine source actions) lives in its own hook; see `useWizardSources`.
   const {
@@ -389,6 +400,7 @@ export function useBoardWizard({
     hasPendingSupply,
     pulledPoolIds,
     removedTaskIds,
+    commitSources,
     pullPool,
     pullBoard,
     removeSource,
@@ -410,9 +422,41 @@ export function useBoardWizard({
     poolsById,
     poolsLoaded,
     tasksById,
+    childrenByCompoundId,
+    // §Member rules (B3, RC4) — only a ONE-OFF board seeds remaining
+    // targets; a repeating board auto-targets per spawned window instead.
+    prefillRemainingTargetsOnResolve: !isRecurring,
     selectedTaskIds,
     purgeDroppedIds,
     markUserTouched,
+  });
+
+  // §Member rules (B3) — the rules layer: `manualTaskVary`, the Split-up
+  // expansion, and the seven rule actions. Rules live ON the sources, so it
+  // writes through the sources layer's setters.
+  const {
+    manualTaskVary,
+    expandedSupplies,
+    setMemberTarget,
+    setMemberVary,
+    setMemberSplit,
+    setPartExcluded,
+    setPartTarget,
+    setPartVary,
+    setManualVary,
+    resetMemberRules,
+  } = useWizardMemberRules({
+    initialManualTaskVary: () =>
+      decodedRecurringDraftMix?.manualTaskVary ??
+      effectiveTemplate?.manualTaskVary ??
+      {},
+    sources,
+    setSources,
+    commitSources,
+    supplyInfoBySourceId,
+    tasksRequired,
+    tasksById,
+    childrenByCompoundId,
   });
 
   // Selection recompute — `selectedTaskIds` tracks the sources-union ∪
@@ -423,12 +467,18 @@ export function useBoardWizard({
   // flow. The step gate re-validates the center against the live
   // selection anyway.
   useEffect(() => {
-    const union = selectionUnion(sources, supplyInfoBySourceId, manualTaskIds);
+    const union = selectionUnion(
+      sources,
+      supplyInfoBySourceId,
+      manualTaskIds,
+      childrenByCompoundId,
+      tasksById,
+    );
     setSelectedTaskIds((prev) => {
       if (prev.size === union.size && [...prev].every((id) => union.has(id))) return prev;
       return union;
     });
-  }, [sources, supplyInfoBySourceId, manualTaskIds]);
+  }, [sources, supplyInfoBySourceId, manualTaskIds, childrenByCompoundId, tasksById]);
 
   // P5 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
   // §Surfaces item 6 "Core-board setup") — CoreBoardDefault prefill.
@@ -613,6 +663,8 @@ export function useBoardWizard({
             supplyInfoBySourceId,
             taskId,
             tasksNeededFor(size, centerType),
+            childrenByCompoundId,
+            tasksById,
           ),
         );
         setManualTaskIds((prev) => {
@@ -632,7 +684,16 @@ export function useBoardWizard({
     },
     // `setSources` / `setManualTaskIds` are the sources hook's `useState`
     // setters — stable identities, listed only to satisfy exhaustive-deps.
-    [selectedTaskIds, supplyInfoBySourceId, size, centerType, setSources, setManualTaskIds],
+    [
+      selectedTaskIds,
+      supplyInfoBySourceId,
+      size,
+      centerType,
+      childrenByCompoundId,
+      tasksById,
+      setSources,
+      setManualTaskIds,
+    ],
   );
 
 
@@ -778,96 +839,20 @@ export function useBoardWizard({
     setCurrentStep(1);
     // Board Sources P4 — reset the sources model alongside the selection.
     resetSources();
-  }, [preferences, isRecurring, resetSources]);
+    // §Member rules (B3) — and the rules layered on top of it.
+    resetMemberRules();
+  }, [preferences, isRecurring, resetSources, resetMemberRules]);
 
   // ── Derived flags ─────────────────────────────────────────────────────
+  // The whole `BoardWizardDerived` slice (step gates + copy, the
+  // counter-family map, the honest capacity) lives in `useWizardDerived`.
+  const derived = useWizardDerived({
+    name, timeframe, customStartDate, customEndDate, centerType, centerTaskId,
+    selectedTaskIds, sources, supplyInfoBySourceId, manualTaskIds,
+    childrenByCompoundId, tasksById, pendingTasks, hasPendingSupply,
+    tasksRequired, draftBoardId, currentStep,
+  });
 
-  const centerMode = centerType === CenterSquareType.CHOSEN;
-
-  const trimmedName = name.trim();
-  const isStep1Valid = useMemo(() => {
-    if (trimmedName.length === 0) return false;
-    if (timeframe === Timeframe.CUSTOM) {
-      if (!customStartDate || !customEndDate) return false;
-      if (customEndDate < customStartDate) return false;
-    }
-    return true;
-  }, [trimmedName, timeframe, customStartDate, customEndDate]);
-
-  const step1ValidationMessage = useMemo<string | null>(() => {
-    if (trimmedName.length === 0) return 'Board name is required.';
-    if (timeframe === Timeframe.CUSTOM) {
-      if (!customStartDate || !customEndDate) return 'Pick a start and end date.';
-      if (customEndDate < customStartDate) {
-        return 'End date must be on or after the start date.';
-      }
-    }
-    return null;
-  }, [trimmedName, timeframe, customStartDate, customEndDate]);
-
-  // Counter-family exclusivity (2026-09-08) — task id → shared-counter
-  // family key, over the live library plus this session's pending tasks.
-  // Feeds the capacity dry-run and the placement pick so two goals on one
-  // counter never (a) inflate the header or (b) land on one board.
-  const counterFamilyByTaskId = useMemo<Record<string, string>>(() => {
-    const tasks = Object.values(tasksById);
-    for (const payload of pendingTasks.values()) {
-      tasks.push(payload.task);
-      for (const child of payload.childTasks) tasks.push(child);
-    }
-    return buildCounterFamilyMap(tasks);
-  }, [tasksById, pendingTasks]);
-
-  // Board Sources P4 — the step-2 gate compares CAPACITY against the
-  // fillable cell count, mirroring iOS `BoardWizardViewModel.isStep2Valid`.
-  // Since the counter-family rework this is the HONEST achievable size: a
-  // deterministic dry-run of the actual fill (family rule + cap overlap
-  // included, the CHOSEN center pinned), so gate-passed ⇒ the deal fills.
-  const capacity = useMemo(
-    () =>
-      sourceCapacity(
-        sources,
-        supplyInfoBySourceId,
-        manualTaskIds,
-        counterFamilyByTaskId,
-        centerType === CenterSquareType.CHOSEN ? (centerTaskId ?? undefined) : undefined,
-      ),
-    [sources, supplyInfoBySourceId, manualTaskIds, counterFamilyByTaskId, centerType, centerTaskId],
-  );
-
-  const isStep2Valid = useMemo(() => {
-    if (capacity < tasksRequired) return false;
-    if (centerMode) {
-      if (centerTaskId === null) return false;
-      if (!selectedTaskIds.has(centerTaskId)) return false;
-    }
-    return true;
-  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId, hasPendingSupply]);
-
-  const step2ValidationMessage = useMemo<string | null>(() => {
-    // Don't accuse the user of a shortfall we can't actually measure yet
-    // (late-mutation audit, shape B): while any pulled source's supply is
-    // unresolved, capacity is artificially 0, which lit the red gate and
-    // disabled Next until the read landed.
-    if (hasPendingSupply) return null;
-    const short = tasksRequired - capacity;
-    if (short > 0) {
-      // Design copy (docs/BOARD_SOURCES.md §Surfaces item 1).
-      return `${short} more to fill the board.`;
-    }
-    if (centerMode && (centerTaskId === null || !selectedTaskIds.has(centerTaskId))) {
-      return 'Mark one selected task as the center.';
-    }
-    return null;
-  }, [capacity, selectedTaskIds, tasksRequired, centerMode, centerTaskId, hasPendingSupply]);
-
-  const isPristine = useMemo<boolean>(() => {
-    if (draftBoardId !== null) return false;
-    if (trimmedName.length > 0) return false;
-    if (selectedTaskIds.size > 0) return false;
-    if (currentStep > 1) return false;
-    return true;
-  }, [draftBoardId, trimmedName, selectedTaskIds, currentStep]);
 
   return {
     // State
@@ -885,6 +870,8 @@ export function useBoardWizard({
     poolOrder,
     sources,
     manualTaskIds,
+    manualTaskVary,
+    childrenByCompoundId,
     supplyInfoBySourceId,
     expandedSourceIds,
     pulledPoolIds,
@@ -914,6 +901,13 @@ export function useBoardWizard({
     setSourceFilter,
     toggleSourceExclude,
     toggleExpandedSource,
+    setMemberTarget,
+    setMemberVary,
+    setMemberSplit,
+    setPartExcluded,
+    setPartTarget,
+    setPartVary,
+    setManualVary,
     addPendingTask,
     stageEdit,
     revertEdit,
@@ -924,15 +918,7 @@ export function useBoardWizard({
     reset,
 
     // Derived
-    tasksRequired,
-    centerMode,
-    isStep1Valid,
-    isStep2Valid,
-    step1ValidationMessage,
-    step2ValidationMessage,
-    isPristine,
-    capacity,
-    suppliesPending: hasPendingSupply,
-    counterFamilyByTaskId,
+    ...derived,
+    expandedSupplies,
   };
 }

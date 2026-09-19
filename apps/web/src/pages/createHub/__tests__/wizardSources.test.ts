@@ -179,6 +179,75 @@ describe('availableCountForSource', () => {
   });
 });
 
+describe('Split-up expansion (§Member rules B3, RC7)', () => {
+  const compound = { id: 'c1', type: TaskType.COMPOUND };
+  const children = {
+    c1: [
+      { childTaskId: 'k1', childIndex: 0 },
+      { childTaskId: 'k2', childIndex: 1 },
+      { childTaskId: 'k3', childIndex: 2 },
+    ],
+  };
+  const info: SupplyInfoMap = { b1: supplyEntry('Board', ['c1', 'x']) };
+
+  function splitSource(parts?: Record<string, { excluded?: boolean }>): BoardSource {
+    return makeSource({
+      sourceId: 'b1',
+      kind: 'board',
+      memberRules: { c1: { split: true, ...(parts ? { parts } : {}) } },
+    });
+  }
+
+  it('a split compound supplies its parts instead of itself, in childIndex order', () => {
+    const supplies = algorithmSupplies([splitSource()], info, children, { c1: compound });
+    expect(supplies[0].supplyTaskIds).toEqual(['k1', 'k2', 'k3', 'x']);
+    expect(supplies[0].partOf).toEqual({ k1: 'c1', k2: 'c1', k3: 'c1' });
+  });
+
+  it('available count grows by parts − 1 − excluded parts', () => {
+    const sources = [splitSource()];
+    // Un-split: 2 members (c1, x).
+    expect(availableCountForSource([makeSource({ sourceId: 'b1', kind: 'board' })], info, 'b1'))
+      .toBe(2);
+    // Split into 3 parts: 2 + (3 − 1) = 4.
+    expect(availableCountForSource(sources, info, 'b1', children, { c1: compound })).toBe(4);
+    // One part excluded: 4 − 1 = 3.
+    const oneOut = [splitSource({ k2: { excluded: true } })];
+    expect(availableCountForSource(oneOut, info, 'b1', children, { c1: compound })).toBe(3);
+  });
+
+  it('capacity and the selection union see the parts, not the compound', () => {
+    const sources = [splitSource()];
+    expect(sourceCapacity(sources, info, new Set(), undefined, undefined, children, { c1: compound }))
+      .toBe(4);
+    const union = selectionUnion(sources, info, new Set(), children, { c1: compound });
+    expect([...union].sort()).toEqual(['k1', 'k2', 'k3', 'x']);
+  });
+
+  it('excluding the compound removes its parts too (excludes apply before expansion)', () => {
+    const sources = [
+      makeSource({
+        sourceId: 'b1',
+        kind: 'board',
+        excludedTaskIds: ['c1'],
+        memberRules: { c1: { split: true } },
+      }),
+    ];
+    expect(availableCountForSource(sources, info, 'b1', children, { c1: compound })).toBe(1);
+  });
+
+  it('omitting the children/tasks maps leaves every split rule stale-inert', () => {
+    expect(availableCountForSource([splitSource()], info, 'b1')).toBe(2);
+  });
+
+  it('a split rule on a childless or non-compound member does nothing', () => {
+    const sources = [
+      makeSource({ sourceId: 'b1', kind: 'board', memberRules: { x: { split: true } } }),
+    ];
+    expect(availableCountForSource(sources, info, 'b1', children, { c1: compound })).toBe(2);
+  });
+});
+
 describe('sourceRangeLine (frame 5b)', () => {
   it('renders "up to N" / "n–m" / "n" / the board "not done ·" prefix', () => {
     expect(sourceRangeLine(makeSource({ sourceId: 'p' }), 7)).toBe('up to 7');

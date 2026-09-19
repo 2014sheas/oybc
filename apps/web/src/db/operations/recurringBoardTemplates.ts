@@ -91,6 +91,14 @@ export async function createRecurringBoardTemplate(
   if (input.poolIds !== undefined) template.poolIds = [...input.poolIds];
   if (input.manualTaskIds !== undefined) template.manualTaskIds = [...input.manualTaskIds];
   if (input.removedTaskIds !== undefined) template.removedTaskIds = [...input.removedTaskIds];
+  // §Member rules (B3) — dice for hand-added counters. Additive + optional:
+  // an EMPTY map is omitted entirely, so a record the rule editor never
+  // touched serialises exactly as it did before B3. (The UPDATE path does
+  // write an empty map — there it means "clear the dice", which an omission
+  // could not express.)
+  if (input.manualTaskVary !== undefined && Object.keys(input.manualTaskVary).length > 0) {
+    template.manualTaskVary = { ...input.manualTaskVary };
+  }
   // Board Sources P1 — canonical sources stamp (docs/BOARD_SOURCES.md).
   if (input.sources !== undefined) {
     template.sources = input.sources.map((s) => ({

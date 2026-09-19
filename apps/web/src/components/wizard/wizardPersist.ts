@@ -79,7 +79,16 @@ export function buildWizardPlacement(
   let selectedIds: string[];
   const sources = controller.sources ?? [];
   if (sources.length > 0) {
-    const supplies = algorithmSupplies(sources, controller.supplyInfoBySourceId);
+    // §Member rules (B3, RC7) — the pick runs over the SPLIT-UP-EXPANDED
+    // supplies, so a split compound offers its parts as separate squares.
+    // `libraryById` already merges the live library with this session's
+    // pending tasks, which is exactly the universe the expansion reads.
+    const supplies = algorithmSupplies(
+      sources,
+      controller.supplyInfoBySourceId,
+      controller.childrenByCompoundId ?? {},
+      Object.fromEntries(libraryById),
+    );
     // Counter-family exclusivity (2026-09-08): the pick never places two
     // members of one shared-counter family, and a CHOSEN center is pinned
     // so its family-mates are pruned before the draw.
@@ -413,6 +422,9 @@ export async function persistWizardBoard({
           manualTaskIds: Array.from(controller.manualTaskIds),
           removedTaskIds: Array.from(controller.removedTaskIds),
           sources: controller.sources,
+          // §Member rules (B3, RC3) — hand-added counters' dice ride in the
+          // blob so a resumed draft reopens with them intact.
+          manualTaskVary: controller.manualTaskVary,
         })
       : undefined;
 
@@ -441,6 +453,9 @@ export async function persistWizardBoard({
     // source's per-member rules against this board's window at write time.
     sources: controller.sources,
     manualTaskIds: Array.from(controller.manualTaskIds),
+    // §Member rules (B3, RC3) — the mint rolls a hand-added counter's target
+    // inside its dice range; without this it would always take the goal.
+    manualTaskVary: controller.manualTaskVary,
   });
 }
 
@@ -588,6 +603,9 @@ export async function persistRecurringTemplate({
   // excludes, filters, board-kind sources) persists verbatim; the legacy
   // trio above is the derived P1 dual-write for old-client compat.
   const sources = controller.sources;
+  // §Member rules (B3, RC3) — dice for hand-added counters, persisted on the
+  // record so every spawned window rolls them.
+  const manualTaskVary = controller.manualTaskVary;
   // Decode-compat snapshot only — never read back after this write (see
   // this function's docstring / docs/POOLS_RECURRING.md §Migration).
   const seedTaskIds = Array.from(controller.selectedTaskIds);
@@ -604,6 +622,7 @@ export async function persistRecurringTemplate({
       manualTaskIds,
       removedTaskIds,
       sources,
+      manualTaskVary,
       // `isActive` isn't surfaced in the wizard form (the templates list
       // owns the pause toggle), so leave it untouched on edit.
       // `seedTaskIds` intentionally omitted — left verbatim/stale, never
@@ -625,6 +644,7 @@ export async function persistRecurringTemplate({
     manualTaskIds,
     removedTaskIds,
     sources,
+    manualTaskVary,
   });
 
   // Compute the spawn window and create the board. `spawnTemplateBoard`

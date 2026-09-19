@@ -14,6 +14,7 @@ import {
   toLocalISO,
   type Board,
   type BoardSourceSupply,
+  type BoardWindow,
   type CompoundChild,
   type RecurringBoardTemplate,
   type Task,
@@ -48,6 +49,26 @@ export interface BoardSourceSupplyInfo {
   supplyTaskIds: string[];
   /** The subset of `supplyTaskIds` complete in the board's window. */
   doneTaskIds: Set<string>;
+  /**
+   * §Member rules (B3, RC4) — each event-owning COUNTING member's windowed
+   * count (Σ non-deleted increment deltas inside THIS board's window), the
+   * same number the source board's own squares display. Keyed by task id;
+   * a member with no entry has made no measurable progress here (or isn't
+   * an event-owning counter at all — compounds, achievements and
+   * window-stamped derived counters are the documented per-cell carve-out
+   * and read their own caches instead).
+   *
+   * Feeds the one-off wizard's "remaining" target prefill: pull a
+   * 3-of-10-done counter onto a fresh one-off board and its member rule is
+   * seeded with `remainingTarget(10, 3) = 7`.
+   */
+  windowCountByTaskId: Record<string, number>;
+  /**
+   * §Member rules (B3, RC5) — the source board's OWN window, so a caller
+   * can pro-rate an auto target (`effectiveMemberTarget`) without a second
+   * board read.
+   */
+  sourceWindow: BoardWindow;
 }
 
 /** One BOARDS-section row for the "Add a pool or board" sheet. */
@@ -80,6 +101,7 @@ export function resolveBoardSourceSupply(
   const seen = new Set<string>();
   const supply: string[] = [];
   const done = new Set<string>();
+  const windowCountByTaskId: Record<string, number> = {};
   for (const bt of rows) {
     const task = tasksById[bt.taskId];
     // `isSourceSupplyTask`: achievements never enter source supply —
@@ -88,16 +110,30 @@ export function resolveBoardSourceSupply(
       continue;
     seen.add(task.id);
     supply.push(task.id);
-    const isDone = isEventOwningTask(task)
-      ? resolveTaskWindowState(
-          task,
-          eventsByTaskId[task.id] ?? [],
-          board.startDate,
-        ).isCompleted
-      : task.isCompleted;
+    let isDone: boolean;
+    if (isEventOwningTask(task)) {
+      const state = resolveTaskWindowState(task, eventsByTaskId[task.id] ?? [], board.startDate);
+      isDone = state.isCompleted;
+      // §Member rules (B3, RC4) — the same windowed resolution that decides
+      // "done" also yields the count the remaining-target prefill needs; a
+      // counter's progress in THIS window is read once, never re-derived.
+      if (task.type === TaskType.COUNTING) windowCountByTaskId[task.id] = state.count;
+    } else {
+      isDone = task.isCompleted;
+    }
     if (isDone) done.add(task.id);
   }
-  return { displayName: boardDisplayName(board), supplyTaskIds: supply, doneTaskIds: done };
+  return {
+    displayName: boardDisplayName(board),
+    supplyTaskIds: supply,
+    doneTaskIds: done,
+    windowCountByTaskId,
+    sourceWindow: {
+      timeframe: board.timeframe,
+      startDate: board.startDate ?? null,
+      endDate: board.endDate ?? null,
+    },
+  };
 }
 
 /** Batched per-board reads (three queries), shared by the fetch helpers. */

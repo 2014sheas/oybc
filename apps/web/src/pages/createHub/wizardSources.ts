@@ -9,15 +9,32 @@
  */
 
 import {
+  applyMemberRules,
   computeSourceCapacity,
   poolSourceSupplyById,
   resolveSourceAvailable,
   effectiveSourceMax,
   type BoardSource,
-  type BoardSourceSupply,
+  type BoardWindow,
+  type CompoundChild,
+  type ExpandedSupply,
   type Pool,
   type Task,
 } from '@oybc/shared';
+
+/**
+ * §Member rules (B3, RC7) — the compound children a Split-up expansion can
+ * name. The wizard passes its live `childrenByCompoundId`; a caller that
+ * omits it gets NO expansion (every split rule reads as stale-inert), which
+ * is exactly the pre-B3 behaviour.
+ */
+export type SupplyChildrenMap = Record<
+  string,
+  Pick<CompoundChild, 'childTaskId' | 'childIndex'>[]
+>;
+
+/** §Member rules (B3) — the id→task slice the expansion reads (`type` only). */
+export type SupplyTasksMap = Record<string, Pick<Task, 'id' | 'type'>>;
 
 /**
  * Per-source display/supply cache entry — iOS `WizardSourceSupply`.
@@ -39,34 +56,70 @@ export interface WizardSourceSupply {
    * "deleted". See `reference_late_mutation_bug_class`.
    */
   isPending?: boolean;
+  /**
+   * §Member rules (B3, RC4) — board sources only: each event-owning
+   * COUNTING member's windowed count in the SOURCE board's window. Absent
+   * for pools (a pool has no window of its own) and while a board supply is
+   * still pending.
+   */
+  windowCountByTaskId?: Record<string, number>;
+  /**
+   * §Member rules (B3, RC5) — board sources only: the source board's own
+   * window, for pro-rating an auto target against the board being built.
+   */
+  sourceWindow?: BoardWindow;
 }
 
 export type SupplyInfoMap = Record<string, WizardSourceSupply>;
 
-/** The algorithm-ready supplies: board `'todo'` filter applied by the
- *  platform (the P1 `BoardSourceSupply` contract); order = row order. */
+/**
+ * The algorithm-ready supplies: the board `'todo'` filter applied by the
+ * platform (the P1 `BoardSourceSupply` contract), each source's
+ * `excludedTaskIds` subtracted, and — §Member rules (B3, RC7) — Split-up
+ * members expanded into their non-excluded parts via `applyMemberRules`.
+ * Order = row order.
+ *
+ * Excludes are applied BEFORE the expansion (the same order the persist
+ * path's mint uses): excluding a split compound must remove its parts, and
+ * a part is not named by the compound's own exclude entry. Downstream
+ * `resolveSourceAvailable` calls stay correct — it is idempotent.
+ *
+ * @param sources - The pulled source rows, in row order.
+ * @param supplyInfo - The live supply cache.
+ * @param childrenByCompoundId - Compound id → its `compound_children` rows.
+ *   Omitted = no expansion (every split rule stale-inert).
+ * @param tasksById - Id → task (only `id`/`type` are read).
+ * @returns One expanded supply per source, order preserved.
+ */
 export function algorithmSupplies(
   sources: BoardSource[],
   supplyInfo: SupplyInfoMap,
-): BoardSourceSupply[] {
-  return sources.map((source) => {
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
+): ExpandedSupply[] {
+  const raw = sources.map((source) => {
     const info = supplyInfo[source.sourceId];
-    let raw = info?.rawSupplyTaskIds ?? [];
+    let ids = info?.rawSupplyTaskIds ?? [];
     if (source.kind === 'board' && source.filter === 'todo' && info) {
-      raw = raw.filter((id) => !info.doneTaskIds.has(id));
+      ids = ids.filter((id) => !info.doneTaskIds.has(id));
     }
-    return { source, supplyTaskIds: raw };
+    return { source, supplyTaskIds: resolveSourceAvailable({ source, supplyTaskIds: ids }) };
   });
+  return applyMemberRules(raw, childrenByCompoundId, tasksById);
 }
 
-/** One source's AVAILABLE count (post-exclude, post-filter) — the range
- *  slider's N, "of N", and the min clamp bound. */
+/** One source's AVAILABLE count (post-exclude, post-filter, post-Split-up
+ *  expansion) — the range slider's N, "of N", and the min clamp bound. A
+ *  split compound contributes its parts, so the count grows by
+ *  `parts − 1 − excluded parts`. */
 export function availableCountForSource(
   sources: BoardSource[],
   supplyInfo: SupplyInfoMap,
   sourceId: string,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): number {
-  const supply = algorithmSupplies(sources, supplyInfo).find(
+  const supply = algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById).find(
     (s) => s.source.sourceId === sourceId,
   );
   return supply ? resolveSourceAvailable(supply).length : 0;
@@ -84,9 +137,11 @@ export function sourceCapacity(
   manualTaskIds: Set<string>,
   counterFamilyByTaskId?: Record<string, string>,
   pinnedTaskId?: string,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): number {
   return computeSourceCapacity(
-    algorithmSupplies(sources, supplyInfo),
+    algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById),
     Array.from(manualTaskIds),
     counterFamilyByTaskId,
     pinnedTaskId ?? undefined,
@@ -130,9 +185,11 @@ export function selectionUnion(
   sources: BoardSource[],
   supplyInfo: SupplyInfoMap,
   manualTaskIds: Set<string>,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): Set<string> {
   const union = new Set<string>();
-  for (const supply of algorithmSupplies(sources, supplyInfo)) {
+  for (const supply of algorithmSupplies(sources, supplyInfo, childrenByCompoundId, tasksById)) {
     for (const id of resolveSourceAvailable(supply)) union.add(id);
   }
   for (const id of manualTaskIds) union.add(id);
@@ -153,16 +210,24 @@ export function clampSourceRange(
   return { ...source, min, max };
 }
 
-/** Re-clamp every source after a supply/exclude/filter change. */
+/** Re-clamp every source after a supply/exclude/filter/split change. */
 export function clampAllSourceRanges(
   sources: BoardSource[],
   supplyInfo: SupplyInfoMap,
   tasksRequired: number,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): BoardSource[] {
   return sources.map((source) =>
     clampSourceRange(
       source,
-      availableCountForSource(sources, supplyInfo, source.sourceId),
+      availableCountForSource(
+        sources,
+        supplyInfo,
+        source.sourceId,
+        childrenByCompoundId,
+        tasksById,
+      ),
       tasksRequired,
     ),
   );
@@ -179,6 +244,8 @@ export function excludeFromEverySupplier(
   supplyInfo: SupplyInfoMap,
   taskId: string,
   tasksRequired: number,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): BoardSource[] {
   const next = sources.map((source) => {
     const raw = supplyInfo[source.sourceId]?.rawSupplyTaskIds ?? [];
@@ -187,7 +254,7 @@ export function excludeFromEverySupplier(
     }
     return { ...source, excludedTaskIds: [...source.excludedTaskIds, taskId] };
   });
-  return clampAllSourceRanges(next, supplyInfo, tasksRequired);
+  return clampAllSourceRanges(next, supplyInfo, tasksRequired, childrenByCompoundId, tasksById);
 }
 
 /** Toggle one member's exclusion inside ONE source (the panel's ✕/UNDO). */
@@ -197,6 +264,8 @@ export function toggleExcludeInSource(
   sourceId: string,
   taskId: string,
   tasksRequired: number,
+  childrenByCompoundId: SupplyChildrenMap = {},
+  tasksById: SupplyTasksMap = {},
 ): BoardSource[] {
   const next = sources.map((source) => {
     if (source.sourceId !== sourceId) return source;
@@ -205,7 +274,7 @@ export function toggleExcludeInSource(
       : [...source.excludedTaskIds, taskId];
     return { ...source, excludedTaskIds: excluded };
   });
-  return clampAllSourceRanges(next, supplyInfo, tasksRequired);
+  return clampAllSourceRanges(next, supplyInfo, tasksRequired, childrenByCompoundId, tasksById);
 }
 
 /** Build a pool source's supply entry from live lookups. */

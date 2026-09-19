@@ -147,6 +147,8 @@ export function BoardWizardPage({
     pools,
     poolsLoaded: poolsQuery !== undefined,
     tasksById: library.taskMap,
+    // §Member rules (B3, RC7) — the Split-up expansion's children lookup.
+    compoundChildrenByCompound: library.compoundChildrenByCompound,
   });
 
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -345,7 +347,13 @@ export function BoardWizardPage({
             supplyInfoBySourceId={wizard.supplyInfoBySourceId}
             expandedSourceIds={wizard.expandedSourceIds}
             availableCountForSource={(sourceId) =>
-              availableCountForSource(wizard.sources, wizard.supplyInfoBySourceId, sourceId)
+              availableCountForSource(
+                wizard.sources,
+                wizard.supplyInfoBySourceId,
+                sourceId,
+                wizard.childrenByCompoundId,
+                library.taskMap,
+              )
             }
             capacity={wizard.capacity}
             suppliesPending={wizard.suppliesPending}
