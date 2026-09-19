@@ -117,10 +117,13 @@ function makeController(args: {
   manualTaskIds?: string[];
   manualTaskVary?: BoardWizardController['manualTaskVary'];
   isRecurring?: boolean;
+  isRandomized?: boolean;
+  /** `'pool'` drops the target stepper AND the auto/explicit target branch. */
+  kind?: 'board' | 'pool';
 }): BoardWizardController {
   const source: BoardSource = {
     sourceId: SOURCE_ID,
-    kind: 'board',
+    kind: args.kind ?? 'board',
     min: 0,
     max: args.supplyTaskIds.length,
     excludedTaskIds: [],
@@ -132,7 +135,8 @@ function makeController(args: {
       displayName: 'Last week',
       rawSupplyTaskIds: args.supplyTaskIds,
       doneTaskIds: new Set<string>(),
-      sourceWindow: WEEKLY_SOURCE,
+      // A pool has no window of its own (B3 RC5).
+      ...(args.kind === 'pool' ? {} : { sourceWindow: WEEKLY_SOURCE }),
     },
   };
   const tasksById: Record<string, Task> = {};
@@ -145,7 +149,7 @@ function makeController(args: {
     customStartDate: '',
     customEndDate: '',
     centerType: CenterSquareType.FREE,
-    isRandomized: false,
+    isRandomized: args.isRandomized ?? false,
     weekStartDay: 'monday',
     isRecurring: args.isRecurring ?? false,
     selectedTaskIds: new Set(args.supplyTaskIds),
@@ -248,24 +252,80 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
     expect(roll(1)).toBe(27);
   });
 
-  it('leaves a member with no rule — and a member the rules do not reach — alone', () => {
-    const plain = makeTask('n1');
+  it('leaves a POOL-source counting member with no rule completely alone', () => {
+    // A pool has no window to pro-rate against, so `planDerivedTasks` returns
+    // a rule-less pool member as-is (B3 RC5) — nothing is minted, and the dry
+    // run hands back the SAME array instance.
     const counter = makeCounter('c1', 30);
     const controller = makeController({
-      tasks: [plain, counter],
-      supplyTaskIds: ['n1'],
+      tasks: [counter],
+      supplyTaskIds: ['c1'],
+      kind: 'pool',
     });
 
-    const placement = placementOf([plain]);
+    const placement = placementOf([counter]);
     const out = applyPreviewDerivedCells(
       placement,
       controller,
-      makeLibrary([plain, counter]),
+      makeLibrary([counter]),
       makePreviewRng(0),
     );
 
-    // No derived rows at all ⇒ the SAME array instance comes back.
     expect(out).toBe(placement);
+    expect(out[0]).toBe(counter);
+  });
+
+  it('relabels a BOARD-source counting member with no rule at its own goal', () => {
+    // A board source always mints (the target/vary branch is open to it), and
+    // a one-off board never auto-targets — so the target IS the goal and the
+    // only visible change is the REGENERATED title. A member whose stored
+    // title drifted from `action + goal + unit` visibly snaps back here, which
+    // is exactly what the board will carry.
+    const counter = makeCounter('c1', 30, { title: 'Long run (old name)' });
+    const controller = makeController({
+      tasks: [counter],
+      supplyTaskIds: ['c1'],
+    });
+
+    const out = applyPreviewDerivedCells(
+      placementOf([counter]),
+      controller,
+      makeLibrary([counter]),
+      makePreviewRng(0),
+    );
+
+    expect(out[0]!.id).toBe('c1');
+    expect(out[0]!.maxCount).toBe(30);
+    expect(out[0]!.title).toBe('Run 30 miles');
+  });
+
+  it('previews a stand-in as unstarted rather than inheriting another window\'s progress', () => {
+    // The minted counter is baseline-zeroed to THIS board's window. An
+    // original that is itself window-stamped carries a baseline for its OWN
+    // window, and `taskToSquareState`'s derived-counter carve-out would render
+    // that stale pair — so both fields are zeroed on the stand-in.
+    const counter = makeCounter('c1', 30, {
+      sharedCounterId: 'root-1',
+      createdInWizard: true,
+      startDate: '2026-08-01T00:00:00.000',
+      currentCount: 12,
+      baseline: 5,
+    });
+    const controller = makeController({
+      tasks: [counter],
+      supplyTaskIds: ['c1'],
+      memberRules: { c1: { vary: 1 } },
+    });
+
+    const out = applyPreviewDerivedCells(
+      placementOf([counter]),
+      controller,
+      makeLibrary([counter]),
+      makePreviewRng(0),
+    );
+
+    expect(out[0]!.currentCount).toBe(0);
+    expect(out[0]!.baseline).toBe(0);
   });
 
   it('keeps a One-square compound member as its original task, so its children still resolve', () => {
@@ -354,12 +414,47 @@ describe('buildWizardPlacement — previewRules is opt-in (B3 RC6)', () => {
     const library = makeLibrary([counter]);
 
     const placed = buildWizardPlacement(controller, library, undefined, {
-      rng: makePreviewRng(0),
+      seed: 0,
     }).filter((t) => t !== null);
 
     expect(placed).toHaveLength(1);
     expect(placed[0].id).toBe('c1');
     expect(placed[0].maxCount).toBe(29);
     expect(placed[0].title).toBe('Run 29 miles');
+  });
+
+  it('is a pure function of the seed — two consecutive builds are deep-equal, and a new seed re-rolls', () => {
+    // The Critical this replaces: `previewRules` used to carry a live
+    // GENERATOR, so the Preview's lazy `useState` build and its mount effect
+    // consumed different samples and the targets changed one frame after
+    // first paint (and again on any `useLiveQuery` tick). A seed makes every
+    // build for one nonce identical. `isRandomized: true` so the CELL
+    // ARRANGEMENT is covered too, not just the rolls.
+    const tasks = [makeCounter('c1', 30), makeTask('n1'), makeTask('n2'), makeTask('n3')];
+    const controller = makeController({
+      tasks,
+      supplyTaskIds: ['c1', 'n1', 'n2', 'n3'],
+      memberRules: { c1: { vary: 1 } },
+      isRandomized: true,
+    });
+    const library = makeLibrary(tasks);
+
+    const first = buildWizardPlacement(controller, library, undefined, { seed: 4 });
+    const second = buildWizardPlacement(controller, library, undefined, { seed: 4 });
+    expect(second).toEqual(first);
+
+    const targetAt = (placement: WizardPlacement): number | undefined =>
+      placement.find((t) => t !== null && t.id === 'c1')?.maxCount;
+    expect(targetAt(second)).toBe(targetAt(first));
+
+    // A different seed is allowed — and required — to move.
+    const seeds = [0, 1, 2, 3, 4, 5].map((seed) =>
+      targetAt(buildWizardPlacement(controller, library, undefined, { seed })),
+    );
+    expect(new Set(seeds).size).toBeGreaterThan(1);
+    for (const target of seeds) {
+      expect(target).toBeGreaterThanOrEqual(24);
+      expect(target).toBeLessThanOrEqual(30);
+    }
   });
 });

@@ -46,7 +46,7 @@ const FILLER_IDS = Array.from(
   (_, i) => `70000000-0000-0000-0000-00000000003${i}`,
 );
 
-const TEMPLATE_ID = '70000000-0000-0000-0000-000000000040';
+const REPEATING_BOARD_ID = '70000000-0000-0000-0000-000000000040';
 
 const COUNTER_ROOT_ID = '70000000-0000-0000-0000-000000000050';
 const LIVE_MEMBER_ID = '70000000-0000-0000-0000-000000000051';
@@ -160,10 +160,10 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await sourceRow.click();
     await expect(sourceRow).toHaveAttribute('aria-expanded', 'true');
 
-    const memberRow = page
-      .getByRole('listitem')
-      .filter({ hasText: 'Run 30 miles' })
-      .first();
+    // `member-row` — NOT `getByRole('listitem')`: the source card is itself
+    // an `<li>` wrapping every member row, so a listitem filter resolves the
+    // card and a strict locator inside it sees three steppers and two dice.
+    const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
 
     // A one-off board doesn't pro-rate, and nothing has been logged in the
     // source board's window, so the remaining target IS the goal.
@@ -193,10 +193,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
 
     await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
 
-    const compoundRow = page
-      .getByRole('listitem')
-      .filter({ hasText: 'Morning set' })
-      .first();
+    const compoundRow = page.getByTestId('member-row').filter({ hasText: 'Morning set' });
     const squares = compoundRow.getByRole('group', { name: 'Squares for Morning set' });
     await expect(squares).toBeVisible();
     await expect(compoundRow.getByText('1 square', { exact: true })).toBeVisible();
@@ -237,10 +234,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await pullSourceBoard(page);
 
     await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
-    const memberRow = page
-      .getByRole('listitem')
-      .filter({ hasText: 'Run 30 miles' })
-      .first();
+    const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
     await memberRow.getByRole('button', { name: /^Vary: / }).click();
     await expect(memberRow.getByText('24–30 miles')).toBeVisible();
 
@@ -278,7 +272,7 @@ test.describe('Wizard edit mode — the frame-5a note', () => {
     page,
   }) => {
     await seedTemplate(page, {
-      id: TEMPLATE_ID,
+      id: REPEATING_BOARD_ID,
       name: 'Morning Kickstart',
       timeframe: 'daily',
       boardSize: 3,

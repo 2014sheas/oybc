@@ -62,7 +62,8 @@ export function CountersHubPage(): React.ReactElement {
 
   function handleCreated(counterId: string): void {
     setSheetOpen(false);
-    navigate(`/profile/counters/${counterId}`);
+    // Carry the expired setting into Detail, exactly as a card tap does.
+    navigate(`/profile/counters/${counterId}${showExpired ? '?showExpired=1' : ''}`);
   }
 
   function handleLogged(event: CounterLoggedEvent): void {
@@ -100,10 +101,15 @@ export function CountersHubPage(): React.ReactElement {
         One tally per activity — every task counting it moves together.
       </p>
 
-      {/* §Member rules (B3, RC9) — expired-member visibility. */}
-      <div className={styles.filterRow}>
-        <ShowExpiredToggle checked={showExpired} onChange={handleShowExpiredChange} />
-      </div>
+      {/* §Member rules (B3, RC9) — expired-member visibility. Hidden when
+          there is nothing to filter: a "Show expired tasks" control sitting
+          over "No counters yet" is noise. Stays up while the toggle is ON
+          even if that leaves the list empty, so it can be turned back off. */}
+      {(groups.length > 0 || showExpired) && (
+        <div className={styles.filterRow}>
+          <ShowExpiredToggle checked={showExpired} onChange={handleShowExpiredChange} />
+        </div>
+      )}
 
       {/* Counter cards — Ledger layout */}
       {groups.length === 0 ? (

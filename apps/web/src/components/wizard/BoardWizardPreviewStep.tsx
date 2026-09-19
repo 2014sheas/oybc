@@ -24,7 +24,6 @@ import {
   availableCountFromSupplies,
   sourceRangeLine,
 } from '../../pages/createHub/wizardSources';
-import { makePreviewRng } from './previewDerived';
 import {
   buildWizardPlacement,
   persistRecurringTemplate,
@@ -216,29 +215,87 @@ export function BoardWizardPreviewStep({
     [controller.selectedTaskIds],
   );
 
-  // Placement as state so user reorders are preserved between renders.
-  // The lazy initializer seeds it once at mount; the effect below re-seeds on
-  // layout-affecting dep changes.
   // §Member rules (B3, RC6) — a ONE-OFF board's Preview shows the cells the
   // board will actually carry, so it runs the member-rule dry run: counting
   // members with a target/vary rule stand in as their derived counters, with
-  // the rolled target. Seeded from `shuffleNonce`, so one nonce always
-  // previews the same numbers and Shuffle visibly re-rolls them — the roll is
-  // a SAMPLE of the range; persist mints with the platform rng. A repeating
+  // the rolled target. It carries the SEED (never a generator):
+  // `buildWizardPlacement` builds a fresh one per call and drives both the
+  // cell shuffle and the rolls with it, so every rebuild for one seed
+  // reproduces the same preview and only Shuffle moves anything. The roll is
+  // a SAMPLE of the range — persist mints with the platform rng. A repeating
   // board shows the 5b summary card instead (no cell grid, and its targets
-  // pro-rate per spawned window), so it passes nothing.
+  // pro-rate per repeated window), so it passes nothing.
   const previewRules = useMemo(
-    () => (controller.isRecurring ? undefined : { rng: makePreviewRng(shuffleNonce) }),
+    () => (controller.isRecurring ? undefined : { seed: shuffleNonce }),
     [controller.isRecurring, shuffleNonce],
   );
 
+  /**
+   * Everything the placement build reads, as a stable string — EXCEPT the
+   * seed, which is its own dep.
+   *
+   * The effect below used to depend on `library.allTasks`, a `useLiveQuery`
+   * result whose ARRAY IDENTITY changes on any Dexie task write (a background
+   * sync pull, say). That re-ran the build, which re-randomised the grid and
+   * — before the seed fix — re-rolled every target, with no Shuffle and no
+   * user action (`reference_late_mutation_bug_class`). Keying on the CONTENT
+   * the build actually reads keeps the legitimate refreshes (the library
+   * resolving, a staged inline edit, a rule change) and drops the churn.
+   */
+  const planKey = useMemo(() => {
+    const ids = Array.from(controller.selectedTaskIds).sort();
+    const members = ids.map((id) => {
+      const task = controller.pendingTasks.get(id)?.task ?? library.taskMap[id];
+      const staged = controller.stagedEdits?.get(id);
+      if (task === undefined) return `${id}:?`;
+      return [
+        id,
+        task.type,
+        task.title,
+        task.maxCount ?? '',
+        task.action ?? '',
+        task.unit ?? '',
+        staged ? JSON.stringify(staged) : '',
+      ].join(':');
+    });
+    const rules = (controller.sources ?? []).map((source) =>
+      JSON.stringify([
+        source.sourceId,
+        source.kind,
+        source.min,
+        source.max,
+        source.filter,
+        source.excludedTaskIds,
+        source.memberRules ?? null,
+      ]),
+    );
+    return [
+      members.join('|'),
+      rules.join('|'),
+      JSON.stringify(controller.manualTaskVary ?? {}),
+      Array.from(controller.manualTaskIds).sort().join(','),
+    ].join('~');
+  }, [
+    controller.selectedTaskIds,
+    controller.pendingTasks,
+    controller.stagedEdits,
+    controller.sources,
+    controller.manualTaskVary,
+    controller.manualTaskIds,
+    library.taskMap,
+  ]);
+
+  // Placement as state so user reorders are preserved between renders.
+  // The lazy initializer seeds it once at mount; the effect below re-seeds on
+  // layout-affecting dep changes. Both produce the SAME placement for the same
+  // seed, so the mount effect's repaint is a no-op rather than a re-roll.
   const [placement, setPlacement] = useState<WizardPlacement>(() =>
     buildWizardPlacement(controller, library, controller.pendingTasks, previewRules),
   );
 
-  // Re-seed placement when any layout-affecting input changes (same dep set as
-  // the old useMemo). User reorders are discarded on dep changes — this is correct:
-  // a task-selection change or size change invalidates the prior arrangement.
+  // Re-seed placement when any layout-affecting input changes. User reorders
+  // are discarded on dep changes — this is correct: a task-selection change or
+  // size change invalidates the prior arrangement.
   useEffect(() => {
     setPlacement(
       buildWizardPlacement(controller, library, controller.pendingTasks, previewRules),
@@ -249,9 +306,8 @@ export function BoardWizardPreviewStep({
     controller.centerType,
     controller.centerTaskId,
     selectionKey,
-    library.allTasks,
-    controller.pendingTasks,
-    shuffleNonce,
+    planKey,
+    previewRules,
   ]);
 
   // Keep a ref synchronized with the latest placement so the async save handler

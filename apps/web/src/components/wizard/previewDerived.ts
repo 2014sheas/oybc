@@ -26,8 +26,8 @@
  *   The board a person gets carries a fresh roll inside the same range.
  *
  * One-off boards only. A repeating board's Preview is the 5b summary card —
- * it has no cell grid to stand tasks in, and its targets are pro-rated
- * per spawned window rather than once at create time.
+ * it has no cell grid to stand tasks in, and its targets are pro-rated per
+ * repeated window rather than once at create time.
  */
 
 import {
@@ -212,6 +212,17 @@ export function applyPreviewDerivedCells(
       maxCount: counter.maxCount,
       action: counter.action || undefined,
       unit: counter.unit || undefined,
+      // The minted counter is baseline-zeroed to THIS board's window, so it
+      // never inherits another window's progress. Copying the original's
+      // `currentCount`/`baseline` would preview exactly that: an original
+      // that is itself window-stamped carries a baseline for its OWN window,
+      // and `taskToSquareState`'s derived-counter carve-out would render that
+      // stale pair. Zeroing both is what the carve-out honours. A member that
+      // is NOT window-stamped resolves through the windowed-events branch
+      // instead (which reads events, not these fields), so it keeps showing
+      // the in-window progress the real board will show.
+      currentCount: 0,
+      baseline: 0,
     };
   });
 }
@@ -243,6 +254,15 @@ export function makePreviewRng(shuffleNonce: number): () => number {
 
 /** Options `buildWizardPlacement` accepts to run the Preview dry run. */
 export interface PreviewRulesOptions {
-  /** Seeded uniform `[0, 1)` source — the Preview passes its Shuffle nonce. */
-  rng: () => number;
+  /**
+   * The Preview's Shuffle nonce. A SEED, deliberately — not a generator.
+   *
+   * `buildWizardPlacement` builds a fresh `makePreviewRng(seed)` per call, so
+   * every build for one seed reproduces the same preview. Handing a live
+   * generator across builds made each build consume the NEXT samples: the
+   * mount effect re-rolled the targets one frame after first paint, and any
+   * `useLiveQuery` tick re-rolled them again with no Shuffle — the
+   * late-mutation class this project has a standing rule about.
+   */
+  seed: number;
 }

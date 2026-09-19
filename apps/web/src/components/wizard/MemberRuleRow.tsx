@@ -130,7 +130,14 @@ export function MemberRuleRow({
   );
 
   return (
-    <li className={`${styles.row} ${state !== 'included' ? styles.dimmed : ''}`}>
+    // `data-testid` so an e2e locator can resolve ONE member row: both this
+    // and its ancestor `SourceRow` card are `<li>`s, so a `listitem` filter
+    // matches the card first and a strict-mode locator inside it sees every
+    // member's stepper and dice at once.
+    <li
+      className={`${styles.row} ${state !== 'included' ? styles.dimmed : ''}`}
+      data-testid="member-row"
+    >
       <div className={styles.mainLine}>
         <TypeBadge type={task?.type ?? TaskType.NORMAL} letterOnly size="small" />
         <span className={styles.text}>

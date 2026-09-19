@@ -26,7 +26,11 @@ import {
   type SpawnResult,
 } from '../../db/operations/recurringBoardSpawn';
 import { applyPatchToTask, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
-import { applyPreviewDerivedCells, type PreviewRulesOptions } from './previewDerived';
+import {
+  applyPreviewDerivedCells,
+  makePreviewRng,
+  type PreviewRulesOptions,
+} from './previewDerived';
 import { encodeRecurringDraftMix } from '../../db/recurringDraftMix';
 // `generateUUID` / `currentTimestamp` no longer needed here — pending-task
 // sync writes now route through `addToSyncQueue` which owns both.
@@ -54,11 +58,16 @@ export type WizardPlacement = (Task | null)[];
  *
  * §Member rules (B3, RC6) — `previewRules` runs the DISPLAY-ONLY dry run
  * (`applyPreviewDerivedCells`) over the finished placement, so the Preview
- * grid shows the rolled targets the board will actually carry. It is a
- * PREVIEW affordance: the persist path never passes it — `persistWizardBoard`
- * mints the real derived rows inside its own transaction, with the platform
- * rng, and would double-roll if the placement it was handed already carried
- * stand-ins.
+ * grid shows the rolled targets the board will actually carry. It carries a
+ * SEED, not a generator: one `makePreviewRng(seed)` is built PER CALL and
+ * drives both the cell shuffle and the target rolls, which makes the whole
+ * preview a pure function of `(seed, inputs)` — rebuild it as often as React
+ * likes and nothing moves after first paint. Shuffle bumps the seed.
+ *
+ * It is a PREVIEW affordance: the persist path never passes it —
+ * `persistWizardBoard` mints the real derived rows inside its own
+ * transaction, with the platform rng, and would double-roll if the placement
+ * it was handed already carried stand-ins.
  */
 export function buildWizardPlacement(
   controller: BoardWizardController,
@@ -236,18 +245,21 @@ export function buildWizardPlacement(
   // even grids preserves today's "even grid = no special center" behavior
   // (placeBoard also derives that internally via getCenterSquareIndex, so this
   // is belt-and-suspenders). No `rng` → defaults to Math.random, matching the
-  // old `fisherYatesShuffle([...others])`.
+  // old `fisherYatesShuffle([...others])`; the PREVIEW passes its seeded one
+  // so the arrangement, like the target rolls, is fixed for a given seed.
+  const previewRng = previewRules === undefined ? undefined : makePreviewRng(previewRules.seed);
   const placement = placeBoard({
     items: selected,
     gridSize: size,
     centerType: isOdd ? centerType : CenterSquareType.NONE,
     chosenCenterId: chosenCenter?.id,
     randomize: isRandomized,
+    rng: previewRng,
   });
 
-  return previewRules === undefined
+  return previewRng === undefined
     ? placement
-    : applyPreviewDerivedCells(placement, controller, library, previewRules.rng);
+    : applyPreviewDerivedCells(placement, controller, library, previewRng);
 }
 
 // `resolveWizardDates` + `ResolvedDates` moved to `./wizardDates` (B3 RC6 —
