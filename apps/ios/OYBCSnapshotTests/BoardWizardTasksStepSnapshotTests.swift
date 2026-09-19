@@ -33,6 +33,7 @@ import SnapshotTesting
 /// B3.1 leaf variants — the same rows with the disclosure seeded OPEN,
 /// which is where the stepper, dice, inline range and part lines live:
 ///   - counting, dice on: pill "35 / 35 mi" · dice · "28–35 mi" inline
+///   - the SAME counting member from a POOL: dice alone, no stepper (RC5)
 ///   - compound Split up with an excluded part: toggle + note + parts
 ///
 /// Each test renders at iPhone 16 width (393pt). iOS-version pinning is
@@ -406,6 +407,24 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         assertSnapshot(
             of: makeExpandedMemberRow(
                 taskId: SnapshotFixtures.MemberRuleTask.run,
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(layout: .fixed(width: 393, height: 90)),
+            record: recordMode
+        )
+    }
+
+    /// RC5's headline distinction, which the COLLAPSED pool case can no
+    /// longer show (collapsed, a pool member and a board member render
+    /// identically): expanded, the pool member has the dice ALONE — no
+    /// stepper pill, because it has no window to pro-rate a target
+    /// against. Compare against `testMemberRowCountingVaryOnExpanded`,
+    /// the same task from a BOARD source.
+    func testMemberRowPoolCountingVaryOnExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                kind: .pool,
                 rule: BoardSourceMemberRule(vary: .little)
             ),
             as: .image(layout: .fixed(width: 393, height: 90)),

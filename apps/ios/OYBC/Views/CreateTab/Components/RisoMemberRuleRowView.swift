@@ -299,7 +299,24 @@ struct RisoMemberRuleRowView: View {
     /// the person taps, after which the seed no longer applies.
     @State private var expandedOverride: Bool? = nil
 
+    /// Whether the controls line is currently revealed — the person's own
+    /// choice once they have made one, else the (snapshot-only) seed.
+    ///
+    /// - Returns: True while the controls line should render.
     private var isExpanded: Bool { expandedOverride ?? initiallyExpanded }
+
+    /// The disclosure's spoken label. The counter-clash warning is folded
+    /// in because an explicit `accessibilityLabel` on the container
+    /// REPLACES what its children would have said — and the clash hint
+    /// only ever appears on a counting member, which is always
+    /// expandable, so leaving it out would silence it in exactly the case
+    /// it exists for.
+    ///
+    /// - Returns: The title, plus the clash sentence when there is one.
+    private var accessibilityTitle: String {
+        guard let clashTitle else { return title }
+        return "\(title), shares a counter with \u{201C}\(clashTitle)\u{201D} · one per board"
+    }
 
     private var model: MemberRuleRowModel {
         MemberRuleRowModel(
@@ -325,19 +342,20 @@ struct RisoMemberRuleRowView: View {
             // dead row. `.contentShape` is load-bearing: without it a
             // SwiftUI HStack label takes taps only on its opaque children.
             if model.isExpandable {
-                Button {
-                    expandedOverride = !isExpanded
-                } label: {
-                    mainLine(model)
-                        .padding(.vertical, 7)
-                        .padding(.leading, 40)
-                        .padding(.trailing, 39)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(title)
-                .accessibilityValue(model.summary?.text ?? "")
-                .accessibilityHint(isExpanded ? "Collapse rule controls" : "Expand rule controls")
+                mainLine(model)
+                    .padding(.vertical, 7)
+                    .padding(.leading, 40)
+                    // 39 = the overlaid ✕'s 28 plus the row's own 11, so
+                    // the chevron never sits under it and the ✕ lands at
+                    // the same x as a non-expandable row's inline one.
+                    .padding(.trailing, 39)
+                    .contentShape(Rectangle())
+                    .onTapGesture { expandedOverride = !isExpanded }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel(accessibilityTitle)
+                    .accessibilityValue(model.summary?.text ?? "")
+                    .accessibilityHint(isExpanded ? "Collapse rule controls" : "Expand rule controls")
+                    .accessibilityAddTraits(.isButton)
             } else {
                 mainLine(model)
                     .padding(.vertical, 7)
@@ -346,19 +364,22 @@ struct RisoMemberRuleRowView: View {
             }
 
             if model.isExpandable, isExpanded {
-                controlsLine(model)
-                    .padding(.leading, 40 + Self.indent)
-                    .padding(.trailing, 11)
-                    .padding(.bottom, 8)
-
-                if model.isCompound {
-                    ForEach(model.parts, id: \.childId) { part in
-                        partLine(part)
-                            .padding(.leading, 40 + Self.indent)
-                            .padding(.trailing, 11)
-                            .padding(.bottom, 4)
+                // One block, one rhythm: 4pt between the controls line and
+                // each part line, 8pt under the whole thing — so a
+                // compound's last part gets the same breathing room a
+                // counting row's controls line does and never crowds the
+                // next row's hairline.
+                VStack(alignment: .leading, spacing: 4) {
+                    controlsLine(model)
+                    if model.isCompound {
+                        ForEach(model.parts, id: \.childId) { part in
+                            partLine(part)
+                        }
                     }
                 }
+                .padding(.leading, 40 + Self.indent)
+                .padding(.trailing, 11)
+                .padding(.bottom, 8)
             }
         }
         .opacity(state == .included ? 1 : 0.45)
@@ -367,10 +388,20 @@ struct RisoMemberRuleRowView: View {
         // fit; the excluded state's UNDO pill (~60pt) does not — and a
         // non-expandable row needs no full-rect hit area anyway, so it
         // keeps its pre-B3.1 inline control and 11pt trailing padding.
+        // 11, not 7: the gutter the main line reserves is 39 = 28 + 11,
+        // so 11 is the only value that puts this ✕ at the SAME x as the
+        // inline one on a non-expandable row directly above or below it
+        // (and matches the web twin's 11px).
         .overlay(alignment: .topTrailing) {
-            if model.isExpandable { trailingControl.padding(.trailing, 7).padding(.top, 4) }
+            if model.isExpandable { trailingControl.padding(.trailing, 11).padding(.top, 4) }
         }
         .overlay(alignment: .top) { hairline }
+        // M4: a row that was expanded, then excluded, must not come back
+        // expanded on UNDO — "always collapsed on open" is a rule about
+        // the row's whole lifecycle, not just first render.
+        .onChange(of: state) { _, newState in
+            if newState != .included { expandedOverride = nil }
+        }
     }
 
     /// The 1.5pt hair top border every member row carries (there is no
@@ -522,6 +553,12 @@ struct RisoMemberRuleRowView: View {
 
     // MARK: - Compound: One square / Split up
 
+    /// The One square / Split up pill on the expanded controls line — the
+    /// segmented control alone, with its indent and its neighbours (the
+    /// squares note, the One-square dice) supplied by ``controlsLine(_:)``.
+    ///
+    /// - Parameter model: The resolved row model, for the current mode.
+    /// - Returns: The toggle, wired to `onSetSplit`.
     private func splitToggle(_ model: MemberRuleRowModel) -> some View {
         RisoSegmented(
             options: [(value: false, label: "One square"), (value: true, label: "Split up")],
