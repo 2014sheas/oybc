@@ -151,11 +151,17 @@ cd apps/ios
 xcodegen generate    # only if you added new test files
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.3.1' \
   -derivedDataPath /tmp/oybc-derived test
 ```
 
-CI pins Xcode to **26.3** (`DEVELOPER_DIR=/Applications/Xcode_26.3.app/...` in `ios.yml`). Use the same Xcode major.minor locally — the runner image keeps multiple Xcodes around, so the precise build of 26.3 may differ slightly from your local 26.3, but the iOS simulator that ships with it is what `OS=latest` resolves to on both ends. If you have multiple Xcodes installed locally, run `sudo xcode-select -s /Applications/Xcode-26.3.app` (or set `DEVELOPER_DIR` per-command as above) so re-recordings happen against the matching toolchain.
+**Pin the runtime explicitly — never `OS=latest`.** `OS=latest` resolves to the newest *installed* iOS runtime, not to the one shipping with your pinned Xcode, so installing a newer runtime silently repoints every snapshot run. Measured on one machine carrying both 26.3.1 and 26.5, same commit, nothing changed but the runtime: **26.3.1 → 345 passed / 27 failed; `OS=latest` (26.5) → 22 passed / 350 failed.** A mass-red snapshot run almost always means the runtime moved, not that the UI broke. Check what you actually have with `xcodebuild -scheme OYBCSnapshotTests -showdestinations`; the device name drifts too, since Xcode upgrades uninstall older iPhone sims, so `name=` is a moving target in a way the `OS=` pin is not.
+
+This matters more than it looks: `ios.yml` runs the snapshot step under `continue-on-error: true` (ROADMAP A8), so baselines recorded against the wrong runtime **merge without a single red check**. CI cannot catch this class of error for you.
+
+CI pins Xcode to **26.3** (`DEVELOPER_DIR=/Applications/Xcode_26.3.app/...` in `ios.yml`). Use the same Xcode major.minor locally. If you have multiple Xcodes installed, run `sudo xcode-select -s /Applications/Xcode-26.3.app` (or set `DEVELOPER_DIR` per-command as above) so re-recordings happen against the matching toolchain.
+
+**Quote a red count with the runtime it was measured on, or it means nothing.** As of 2026-09-19 on `OS=26.3.1`: **23 pre-existing reds** of 372 cases, spanning baselines last written in 2026-06, 2026-08 and 2026-09 (the ROADMAP A8 stale-baseline debt). A clean-tree count far from that figure is a runtime problem until proven otherwise.
 
 Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
 
