@@ -4,8 +4,9 @@ import SwiftUI
 /// counting target (docs/BOARD_SOURCES.md §Member rules; handoff
 /// §Interactions "Variation (dice)").
 ///
-/// Off renders a muted 1.5pt outline with no pips; on renders a blue fill
-/// with `risoInkStatic` pips — adaptive `risoInk` on a coloured fill is the
+/// Off renders a muted 1.5pt outline with one faint centred pip (a die
+/// face, not an empty checkbox); on renders a blue fill with
+/// `risoInkStatic` pips — adaptive `risoInk` on a coloured fill is the
 /// dark-mode trap (see memory `reference_riso_adaptive_ink_fill_darkmode`).
 ///
 /// Stateless: the caller owns the level and decides what one tap means, so
@@ -20,11 +21,12 @@ struct RisoDiceButton: View {
     let onCycle: () -> Void
 
     /// Pip centres per vary level, in the button's 20×16 inner box:
+    /// `.off` = one centred pip, dimmed (B3.1 — an empty bordered square
+    /// beside the row's ✕ reads as an unchecked checkbox, not a die);
     /// `.little` = two pips on the diagonal, `.lot` = the five-pip
-    /// quincunx. `.off` draws nothing (handoff: "Off state: muted 1.5pt
-    /// outline, no pips"). Same coordinates as the web SVG viewBox.
+    /// quincunx. Same coordinates as the web SVG viewBox.
     private static let pips: [VaryLevel: [CGPoint]] = [
-        .off: [],
+        .off: [CGPoint(x: 10, y: 8)],
         .little: [CGPoint(x: 6, y: 5), CGPoint(x: 14, y: 11)],
         .lot: [
             CGPoint(x: 6, y: 5),
@@ -75,7 +77,12 @@ struct RisoDiceButton: View {
             Color.clear
             ForEach(points.indices, id: \.self) { index in
                 Circle()
-                    .fill(Color.risoInkStatic)
+                    // The off face's pip sits on PAPER, so it takes the
+                    // adaptive muted ink; the lit faces' pips sit on the
+                    // blue fill and must stay risoInkStatic (the
+                    // dark-mode trap).
+                    .fill(level == .off ? Color.risoMuted : Color.risoInkStatic)
+                    .opacity(level == .off ? 0.45 : 1)
                     .frame(width: Self.pipDiameter, height: Self.pipDiameter)
                     .offset(
                         x: points[index].x - Self.pipDiameter / 2,

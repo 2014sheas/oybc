@@ -422,6 +422,33 @@ final class MemberRuleVectorTests: XCTestCase {
         let steps: [RawPatchStep]
     }
 
+    private struct MemberSummaryExpected: Decodable {
+        let text: String
+        let varying: Bool
+    }
+
+    private struct CountingSummaryVector: Decodable {
+        let name: String
+        let target: Int
+        let level: Int
+        let goal: Int
+        let unit: String
+        /// Nullable: a counting chip is SUPPRESSED when it would only
+        /// restate the row's own auto-generated title. `CompoundSummaryVector`
+        /// keeps a non-optional `expected` on purpose — a compound chip is
+        /// never suppressed, and the type says so.
+        let expected: MemberSummaryExpected?
+    }
+
+    private struct CompoundSummaryVector: Decodable {
+        let name: String
+        let split: Bool
+        let partIds: [String]
+        let excludedPartIds: [String]
+        let level: Int
+        let expected: MemberSummaryExpected
+    }
+
     private struct DisplaySection: Decodable {
         let effectiveMemberTarget: [EffectiveTargetVector]
         let varyRangeLabel: [VaryRangeLabelVector]
@@ -432,6 +459,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let withMemberRule: [WithRuleVector]
         let withPartRule: [WithRuleVector]
         let immutability: [ImmutabilityVector]
+        let countingSummary: [CountingSummaryVector]
+        let compoundSummary: [CompoundSummaryVector]
     }
 
     private struct Fixture: Decodable {
@@ -1323,6 +1352,37 @@ final class MemberRuleVectorTests: XCTestCase {
                 v.expected,
                 v.name
             )
+        }
+    }
+
+    func testCountingSummaryVectors() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.countingSummary.isEmpty)
+        for v in section.countingSummary {
+            let summary = BoardSources.countingSummary(
+                target: v.target, level: try varyLevel(v.level), goal: v.goal, unit: v.unit
+            )
+            guard let expected = v.expected else {
+                XCTAssertNil(summary, v.name)
+                continue
+            }
+            XCTAssertEqual(summary?.text, expected.text, v.name)
+            XCTAssertEqual(summary?.varying, expected.varying, v.name)
+        }
+    }
+
+    func testCompoundSummaryVectors() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.compoundSummary.isEmpty)
+        for v in section.compoundSummary {
+            let summary = BoardSources.compoundSummary(
+                split: v.split,
+                partIds: v.partIds,
+                excludedPartIds: Set(v.excludedPartIds),
+                level: try varyLevel(v.level)
+            )
+            XCTAssertEqual(summary.text, v.expected.text, v.name)
+            XCTAssertEqual(summary.varying, v.expected.varying, v.name)
         }
     }
 

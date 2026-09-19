@@ -16,9 +16,10 @@ import {
  * coverage for the four surfaces the rules touch:
  *
  *  1. The expanded source panel's member rows — a counting member pulled
- *     from a BOARD gets a compact target stepper + "of {goal} {unit}"
- *     caption; its dice cycles off → a little → a lot and lights a blue
- *     range line.
+ *     from a BOARD gets a compact target stepper carrying its goal as a
+ *     suffix inside the pill (B3.1: the controls live behind a per-row
+ *     disclosure, opened first); its dice cycles off → a little → a lot
+ *     and lights a blue range line.
  *  2. A compound member's One square / Split up pill — splitting turns one
  *     square into one per part, growing the source's own count; a part can
  *     be excluded (struck + UNDO) and the last one can't.
@@ -148,7 +149,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await seedSourceBoard(page);
   });
 
-  test('a counting member gets the compact stepper + "of N unit" caption, and the dice lights a range line', async ({
+  test('a counting member gets the compact stepper carrying its goal suffix, and the dice lights a range line', async ({
     page,
   }) => {
     await openTasksStep(page);
@@ -164,11 +165,23 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     // an `<li>` wrapping every member row, so a listitem filter resolves the
     // card and a strict locator inside it sees three steppers and two dice.
     const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
+    // B3.1: rule controls live behind a per-row disclosure; open it first.
+    await memberRow.getByTestId('member-disclosure').click();
 
     // A one-off board doesn't pro-rate, and nothing has been logged in the
-    // source board's window, so the remaining target IS the goal.
-    await expect(memberRow.getByRole('textbox', { name: 'Target' })).toHaveValue('30');
-    await expect(memberRow.getByText('of 30 miles')).toBeVisible();
+    // source board's window, so the remaining target IS the goal. The goal
+    // rides inside the stepper pill's suffix now (B3.1) — the standalone
+    // "of N unit" caption is retired.
+    // `getByRole('textbox', …)`, never `getByLabel('Target')`: `getByLabel`
+    // matches an accessible name by case-insensitive SUBSTRING, and the
+    // compact stepper labels three elements "Decrease target" / "Target" /
+    // "Increase target" (`CounterStepper.tsx`), so the label form resolves
+    // to three and throws strict-mode. Role narrows to the field and
+    // `exact` pins the whole string.
+    await expect(
+      memberRow.getByRole('textbox', { name: 'Target', exact: true }),
+    ).toHaveValue('30');
+    await expect(memberRow.getByTestId('stepper-suffix')).toHaveText('/ 30 miles');
 
     // Dice: off → a little. The accessible name is the STATE (RC1), and a
     // blue range line appears under the row: ±20 % of 30, clamped to the goal.
@@ -194,11 +207,21 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
 
     const compoundRow = page.getByTestId('member-row').filter({ hasText: 'Morning set' });
-    const squares = compoundRow.getByRole('group', { name: 'Squares for Morning set' });
-    await expect(squares).toBeVisible();
+
+    // Collapsed: a compound's summary chip is NEVER suppressed (unlike a
+    // counting member's — compoundSummary), so "1 square" is visible before
+    // the row is ever expanded. Assert the collapsed chip here rather than
+    // a control that doesn't exist yet — a better assertion than driving
+    // the (now-hidden) Split pill directly.
     await expect(compoundRow.getByText('1 square', { exact: true })).toBeVisible();
     // The pulled board fills a 3×3-FREE board exactly.
     await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
+
+    // B3.1: rule controls live behind a per-row disclosure; open it to
+    // reach the One square / Split up pill.
+    await compoundRow.getByTestId('member-disclosure').click();
+    const squares = compoundRow.getByRole('group', { name: 'Squares for Morning set' });
+    await expect(squares).toBeVisible();
 
     // Split up: the note becomes "2 squares" and the board's capacity grows
     // by one — the compound stops contributing itself and contributes its
@@ -235,6 +258,8 @@ test.describe('Wizard member rules — the expanded source panel', () => {
 
     await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
     const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
+    // B3.1: rule controls live behind a per-row disclosure; open it first.
+    await memberRow.getByTestId('member-disclosure').click();
     await memberRow.getByRole('button', { name: /^Vary: / }).click();
     await expect(memberRow.getByText('24–30 miles')).toBeVisible();
 
@@ -264,6 +289,155 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     }
     expect(new Set(seen).size).toBeGreaterThan(1);
     for (const label of seen) expect(label).toMatch(/^Run (2[4-9]|30) miles$/);
+  });
+
+  test('a member row expands when tapped in the empty space after a short title', async ({
+    page,
+  }) => {
+    // Setup: reach the Tasks step with the source board pulled — verbatim,
+    // same fixture task titles as the specs above. Not a second setup path.
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+
+    // Pre-flight ruling C3: reuse the existing "Run 30 miles" fixture row
+    // rather than inventing a short-titled task. The ruling under test is
+    // "the whole row rect is the hit area", which a trailing-edge click
+    // proves at ANY title length.
+    const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
+    const disclosure = memberRow.getByTestId('member-disclosure');
+    const box = (await disclosure.boundingBox())!;
+    // Click near the trailing edge of the disclosure, well past the title's
+    // text, but inside the 39px gutter reserved for the ✕
+    // (`.disclosure { padding-right: 39px }`; 42px is the unrelated
+    // `min-height` row floor — don't conflate the two).
+    await page.mouse.click(box.x + box.width - 8, box.y + box.height / 2);
+    // Role + exact name, not `getByLabel('Target')` — see the note on the
+    // "compact stepper" spec above.
+    await expect(
+      memberRow.getByRole('textbox', { name: 'Target', exact: true }),
+    ).toBeVisible();
+  });
+
+  test('a split compound hides the ✕ on the last included part rather than disabling it', async ({
+    page,
+  }) => {
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+
+    const row = page.getByTestId('member-row').filter({ hasText: 'Morning set' });
+    await row.getByTestId('member-disclosure').click();
+    await row.getByRole('button', { name: 'Split up' }).click();
+
+    // Scoped to the two PART names, not `/^Exclude /` — the member's own ✕
+    // ("Exclude Morning set for this board") renders unconditionally
+    // whenever the row is expandable (it has no `split` gating), so an
+    // unscoped exclude-button count on the row would include it and throw
+    // off both counts below. Follows the exact-name pattern the sibling
+    // "Split up turns a compound..." spec already uses.
+    const partExcludes = row.getByRole('button', {
+      name: /^Exclude (Warm up 10 reps|Cool down 10 reps) for this board/,
+    });
+
+    // Both parts offer a ✕ while more than one is included.
+    await expect(partExcludes).toHaveCount(2);
+
+    // A PART's range line renders under that part, never on the compound
+    // (docs/BOARD_SOURCES.md §Member rules, the "never on the compound
+    // itself" clause). The unit-test that used to guard this was dropped
+    // in the B3.1 rework; the iOS `testMemberRowCompoundSplitUpWith
+    // ExcludedPartExpanded` baseline is the primary guard, this is the
+    // web-side one. Split mode gives each counting part its own dice (the
+    // member's own is hidden), so the first is "Warm up 10 reps"'s.
+    await row.getByRole('button', { name: /^Vary: / }).first().click();
+    // One-off boards never pro-rate, so the part's target IS its goal:
+    // ±20 % of 10, clamped to the goal → "8–10" (parts render the range
+    // without a unit).
+    const partRange = row.getByText('8–10', { exact: true });
+    await expect(partRange).toHaveCount(1);
+    // Structural, not merely "it is somewhere in the row": the range's own
+    // parent block also carries the part's name (`.part` wraps `.partLine`
+    // + `.rangeLine`). A member-level range would sit in `.controlsLine`
+    // instead, whose siblings are the One square / Split up pill and the
+    // squares note — never a part name.
+    await expect(
+      partRange.locator('xpath=..').getByText('Warm up 10 reps', { exact: true }),
+    ).toHaveCount(1);
+
+    // Exclude one: the survivor's ✕ is GONE (hidden, not inert — an inert ✕
+    // reads as a broken toggle), and the excluded part shows a part-scale
+    // UNDO. Excluding a part never changes the compound MEMBER's own
+    // board-inclusion state, so its ✕ stays put throughout — outside this
+    // scoped count either way.
+    await row.getByRole('button', { name: 'Exclude Warm up 10 reps for this board' }).click();
+    await expect(partExcludes).toHaveCount(0);
+    const partUndo = row.getByRole('button', { name: /^Undo excluding / });
+    await expect(partUndo).toHaveCount(1);
+
+    // PART scale, not member scale (`.partUndo` vs `.undo` in
+    // MemberRuleRow.module.css) — this guard exists because someone once
+    // shipped the control at the wrong size, so assert the class the
+    // styling implies rather than just the control's presence. `.partUndo`
+    // is a filled 1.5px-bordered pill (riso-paper-2 background); the
+    // member-scale `.undo` is a bare 2px outline with no fill.
+    await expect(partUndo).toHaveCSS('border-top-width', '1.5px');
+    await expect(partUndo).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  });
+
+  test('an expanded counting row exposes the stepper suffix, dice, and inline range (the only web coverage since B3.1)', async ({
+    page,
+  }) => {
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+
+    const row = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
+    await row.getByTestId('member-disclosure').click();
+    // Role + exact name, not `getByLabel('Target')` — see the note on the
+    // "compact stepper" spec above.
+    await expect(row.getByRole('textbox', { name: 'Target', exact: true })).toBeVisible();
+    await expect(row.getByTestId('stepper-suffix')).toHaveText('/ 30 miles');
+    await expect(row.getByLabel(/^Vary: /)).toBeVisible();
+  });
+
+  test('every member row measures the same height, whether expandable, plain, or excluded', async ({
+    page,
+  }) => {
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+
+    // Exclude a plain filler row to get the UNDO-pill state into the mix.
+    // Every row here stays COLLAPSED: expanding the counting or compound
+    // row would legitimately grow it past this floor with its second line
+    // — the assertion is about the shared 42px floor, not about what an
+    // expanded row measures.
+    const fillerRow = page.getByTestId('member-row').filter({ hasText: 'Filler 1' });
+    await fillerRow.getByRole('button', { name: 'Exclude Filler 1 for this board' }).click();
+    await expect(fillerRow.getByRole('button', { name: 'Undo excluding Filler 1' })).toBeVisible();
+
+    // Measure the row's INNER line, not the `<li>`: the 42px floor lives on
+    // `.disclosure` / `.staticLine` (MemberRuleRow.module.css), while the
+    // `<li>` adds a 1.5px `border-top` that `.row:first-child` does not
+    // have — so measuring the `<li>` compares 42 against 43.5 and a
+    // CORRECT implementation fails. Every row renders exactly one of the
+    // two shapes, so the union locator is one element per row.
+    const lines = page.locator(
+      '[data-testid="member-disclosure"], [data-testid="member-static-line"]',
+    );
+    // Guard the locator itself: if a future row grew a third shape, the
+    // sample would silently shrink and the uniqueness check would pass on
+    // a subset rather than on the panel.
+    await expect(lines).toHaveCount(await page.getByTestId('member-row').count());
+
+    // Fixture panel spans the states that differ: two expandable rows
+    // (counting + compound), five remaining plain rows, and this one
+    // excluded row — a single-state panel would pass trivially.
+    const heights = await lines.evaluateAll((els) =>
+      els.map((el) => Math.round(el.getBoundingClientRect().height)),
+    );
+    expect(new Set(heights).size).toBe(1);
   });
 });
 

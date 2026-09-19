@@ -302,7 +302,11 @@ export {
   withMemberRule,
   withPartRule,
   remainingTarget,
+  countingSummary,
+  compoundSummary,
 } from './memberRulesDisplay';
+
+export type { MemberSummary } from './memberRulesDisplay';
 
 // ===== Seeded RNG — the repo's one deterministic LCG (see seededRng.ts) =====
 export { makeSeededRng } from './seededRng';

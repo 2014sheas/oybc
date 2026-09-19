@@ -64,6 +64,32 @@ describe('CounterStepper', () => {
     const atMax = render({ value: 35, min: 1, max: 35, onChange: () => {}, size: 'compact' });
     expect(atMax).toMatch(/aria-label="Increase target"[^>]*disabled|disabled[^>]*aria-label="Increase target"/);
   });
+
+  /**
+   * B3.1 — folding the member row's goal into the pill instead of a
+   * separate caption beside it. `renderToStaticMarkup` (see the file-top
+   * docstring: no jsdom/`@testing-library/react` in this harness) can't
+   * exercise `getByLabelText`/DOM queries, so these assert on the
+   * serialized markup instead — same intent (suffix text present, input
+   * value untouched; no suffix element at all when omitted).
+   */
+  it('renders a compact suffix inside the pill without touching the editable value', () => {
+    const html = render({
+      value: 24,
+      min: 1,
+      max: 30,
+      onChange: () => {},
+      size: 'compact',
+      suffix: '/ 30 Miles',
+    });
+    expect(html).toContain('/ 30 Miles');
+    expect(html).toContain('value="24"');
+  });
+
+  it('renders no suffix element when none is given', () => {
+    const html = render({ value: 24, min: 1, max: 30, onChange: () => {}, size: 'compact' });
+    expect(html).not.toContain('data-testid="stepper-suffix"');
+  });
 });
 
 /**

@@ -256,6 +256,19 @@ From the end-user review. Theme: the deep machinery is built — most opportunit
 - **Canonical doc:** `docs/BOARD_SOURCES.md` (data model, selection algorithm, migration, phase-by-phase implementation notes, locked decisions).
 - **Shipped:** P0 docs #457 · P1 schema/algorithm lockstep #458 · P2 iOS Tasks step #459 · P3 Preview 5b + deleted-source ask + spawn board supply #460 · P4 web parity #463 · P5 cleanup (dead-code retirement, copy-rule sweep, e2e/snapshot locks, allowlist shrinks). Acceptance met: both platforms on the sources model, migrated records spawn behavior-identically, removed affordances e2e-locked gone, and FOUR god-file allowlist entries shrank (schemas.ts + BoardWizardViewModel.swift off the list; useBoardWizard.ts 1191→1120; BoardWizardTasksStep.tsx 1041→888).
 - **Member-rules train (`docs/BOARD_SOURCES.md` §Member rules) — COMPLETE:** A retire-the-grid-picker #487 · B0 spec #486 · B1 types/codecs/GRDB v31/pure helpers #489 · B2 mint/baseline/deletion-cascade wiring #491 · B3 rule-authoring UI (member rows, Preview dry run, hub expired filter) #492. Follow-ups recorded in the Plan B3 notes: derived-compound provenance, post-activation Board-Edit window re-derive, a Firestore rules-cap emulator test, splitting `CounterDetailContent` out of `CounterDetailView.swift`, and an `.nvmrc`/Node-20 engines pin for local Playwright.
+- **B3.1 — member row at phone width** (`docs/BOARD_SOURCES.md` §Member row at phone width, design locked 2026-09-19): device-testing #492 found the B3 member row using a desktop layout at 393pt — ellipsized titles, an off-dice reading as an unchecked checkbox, a caption restating an auto-generated title. Fix: disclosure-not-compression (rows collapse to `badge · title · summary chip · chevron · ✕`, controls reveal on tap), the goal folded into the stepper pill, a centred-pip off-dice face. Both platforms; e2e repair + new coverage (full-row hit area, split-compound part-scale UNDO rendering, expanded stepper/dice/range, row-height uniformity) landed on `feature/member-rules-b31` — PR not yet opened as of this entry.
+  - **Known defect carried forward (iOS only, pre-existing):** the compact
+    member-row stepper truncates its value at accessibility text sizes —
+    `RisoInlineStepperView` sizes the field in fixed points
+    (`(String(max).count + 1) * 7`) while its font is `relativeTo: .body`,
+    so at `.accessibilityMedium` the pill reads `− … / 35 mi ＋`. It
+    entered with the compact stepper in `8bdce2fc` (B3, #492), not with
+    B3.1, and web is unaffected (the input is sized in `ch`, which scales
+    with the font). The B3.1 baseline
+    `testMemberRowCountingClashExpandedLargeText` pictures it deliberately
+    so the rendering is locked, not endorsed. Fix when touched: size the
+    field with `@ScaledMetric` (or let it size intrinsically with a
+    `minWidth`).
 
 ### Explicit non-goal: AI board generation
 "Describe a goal, get a board" demos well but fights the app's soul (offline-first, no server dependency, user-owned data), and F2's starter templates capture most of the same "help me begin" value with zero infrastructure. If ever, a launch-later cloud nicety — recorded here so it isn't re-litigated from scratch.

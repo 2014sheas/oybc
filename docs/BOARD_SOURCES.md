@@ -1232,7 +1232,12 @@ is a pre-existing bug that B makes visible; fix it, don't special-case.
 `memberActionsMenu` (`RisoSourceRowView.swift`), and the
 `setDerivingFromTask` wiring in `BoardWizardTasksStep.tsx`.
 
-| Member | Inline after the title |
+**Amended by B3.1** (§Member row at phone width, below): these controls are
+no longer *inline after the title* — they sit on a second line revealed by a
+disclosure, and the "of 35 mi" caption is folded into the stepper pill. Read
+the two together; where they disagree, B3.1 wins.
+
+| Member | Controls (B3.1: on the expanded row's second line) |
 | --- | --- |
 | Counting, board source | 22pt stepper pill (− / numeric field, `.numberPad`, select-all on focus / ＋) · caption "of 35 mi" · dice |
 | Counting, pool source | dice only |
@@ -1280,6 +1285,160 @@ a recurring board; Save = wizard save. One-off boards stay locked.
 **Copy** verbatim from the handoff; the §Copy rules apply (never
 "deal"/"draw"/"template"/"spawn"). A11y: dice "Vary: off / a little / a
 lot"; stepper "Decrease target" / "Increase target".
+
+### Member row at phone width (B3.1 — design locked 2026-09-19)
+
+**Why.** Device-testing #492 showed the B3 member row attempting a desktop
+layout on a 393pt screen. Three distinct failures, not one: titles
+ellipsized to uselessness ("Att…", "Run 30 M…", "Read 1 Bo…"); the dice at
+`.off` — an empty bordered square sitting next to an ✕ — reading as an
+unchecked checkbox rather than a die; and the caption restating the title,
+because counting titles are auto-generated from action + goal + unit
+(`generateCounterTaskTitle`), so "Run 30 Miles a Month · of 30 Miles" says
+the goal twice while the ellipsis eats it once.
+
+Measured at 393pt: badge 20 + stepper 78 + caption 48 + dice 26 + ✕ 28 +
+five 8pt gaps + 51pt row padding = **291pt of fixed furniture, leaving the
+title ~102pt**.
+
+**The model: disclosure, not compression.** Folding the goal into the pill
+(dropping the caption, widening the pill) nets only ~27pt — worth doing, but
+it does not fix the row. What fixes the row is not rendering the controls
+until they are wanted: a collapsed row's furniture is 92pt plus a ~56pt
+summary chip, leaving the title **~194pt**.
+
+Three shapes, chosen by what the row actually has:
+
+| Row | Shape |
+| --- | --- |
+| Normal / achievement / childless compound; any excluded or filtered-done member | Single line, no disclosure — there is nothing to reveal (`isOn` already gates every control). Not *unchanged*, though: the uniform-row-height rule below **lifts** the two shapes that were shorter than 42pt — filtered-done's 22pt ✓ and excluded's ~24pt UNDO pill — to the same height as every other row. |
+| Counting member (board **or** pool source) | Collapsed: `badge · title · summary chip · chevron · ✕`. Expanded adds line 2 at the existing 69pt indent: `stepper pill · dice · range`. |
+| Compound with parts | Same collapsed line. Expanded reveals the One square / Split up line and the part lines exactly as B3 built them. |
+
+**Rules**
+
+- **Always collapsed on open** — including a member whose rule is already
+  stored. Row height then never depends on hidden state, a 20-member source
+  stays scannable, and the chip keeps a saved rule legible without
+  expanding. (The rejected alternative, auto-expanding rows with a non-empty
+  rule, makes list height a function of `memberRules` — which also varies by
+  whether the user has resumed a draft.)
+- **The chip is the row's current answer**, never a second control: the
+  `varyRangeLabel` string in `--riso-blue` when the dice is lit ("24–30
+  Miles"), target + unit in `--riso-muted` when it is not ("12 Classes"),
+  `splitSquaresNote` for a compound ("3 squares").
+- **A counting chip that only restates the title is suppressed** (owner
+  ruling, 2026-09-19, after seeing the first re-recorded baselines): when
+  `vary == 0` **and** `target == goal`, `countingSummary` returns `null` /
+  `nil` and the row renders no chip. Rationale: counting titles are
+  auto-generated from action + goal + unit
+  (`generateCounterTaskTitle`), so a row titled "Run 35 mi" carrying a
+  chip reading "35 mi" reproduces — in milder form — the duplicate-caption
+  failure this whole section exists to fix. The chip then appears exactly
+  when it adds something the title does not: a pro-rated or hand-set target
+  (`target != goal`, e.g. "5 Miles" on a daily pulled from a monthly), or a
+  vary range. This is a rule on the *values*, not a string comparison
+  against the title — a title the user renamed by hand never changes
+  whether the chip appears. Compound chips are unaffected: "1 square" vs
+  "3 squares" is never implied by the title.
+- **Every row in a panel is the same height** — a 42pt floor on the row's
+  main line (7pt + 28pt + 7pt), pinned explicitly rather than inherited.
+  Before B3.1 it fell out of the inline 28pt ✕; moving that ✕ to an
+  overlay on *expandable rows only* would have left their 20pt badge
+  setting the height and mixed ~34pt and ~42pt rows in one list. So the
+  floor is stated: web `min-height: 42px` on `.disclosure` / `.staticLine`
+  (border-box, padding included), iOS `.frame(minHeight: 28)` on the main
+  line inside its 7+7 padding. It restores B3 exactly for an included row
+  and deliberately **lifts** the two shapes that were already shorter —
+  filtered-done's 22pt ✓ and excluded's ~24pt UNDO pill — rather than
+  merely preserving them. It is a floor, not a clamp: a counter-clash
+  row's two-line title still grows past it. (Three `RisoSourceSnapshotTests`
+  baselines were re-recorded for the lift; `e2e/member-rules.spec.ts` pins
+  it across all three render paths. That e2e check measures the *inner*
+  line element, never the `<li>` — the `<li>` also carries the 1.5px
+  hairline that `:first-child` lacks.)
+- **The range moves inline** onto line 2 instead of taking a third line, so
+  an expanded counting row is exactly two lines — the same height the B3
+  handoff already budgeted for its separate vary-range line.
+- **Parts stay single-line.** A part line at the 69pt indent still leaves
+  ~155pt for the name, and part names are short; splitting them too would
+  make a 3-part compound seven lines.
+- **The disclosure is the whole row rect, not the text.** The hit area is
+  the entire row — full width, full height, the row's 7pt vertical and 40pt
+  leading padding included — minus only the ✕'s own 28×28 rect. A row whose
+  title is short must still expand when tapped in the empty space after the
+  title, and a tap in the padding above or below the title must count.
+  Concretely: the row's padding moves *onto* the disclosure control (web:
+  `<button aria-expanded>` carrying `width: 100%` and the row's own
+  `padding: 7px 11px 7px 40px`, which `.disclosure` then overrides to
+  `padding-right: 39px` — the content reserves the whole gutter so the
+  chevron never sits under the ✕, while the ✕ itself is absolutely
+  positioned at `right: 11px`, so the 11 lives on the control rather than
+  on the button's padding; iOS: the same content in a **plain container**
+  carrying the padding, then **`.contentShape(Rectangle())`** — the
+  paddings must precede it — plus `.onTapGesture`,
+  `.accessibilityElement(children: .contain)` and
+  `.accessibilityAddTraits(.isButton)`, with the ✕ as a **sibling**
+  `Button` in an `.overlay(alignment: .trailing)` **on that padded main
+  line**, never nested inside the tappable container and never on the
+  outer stack). The overlay's host is load-bearing, not a detail: on the
+  outer `VStack` the ✕ would centre on the row *including* its expanded
+  second line and drift down past the main line — the exact bug a fix
+  round closed by moving it onto the main line. Likewise the
+  `contentShape` ruling: a SwiftUI container without it registers taps
+  only on its opaque children, which is exactly the "short title, dead
+  row" frustration this project has hit before.
+
+  **Why a tap gesture and not a `Button`** (revised 2026-09-19 during
+  implementation; this section's first draft said `Button` + `ZStack`):
+  `RisoSourceRowView.headerRow` carries a written warning against exactly
+  that shape — *"never a Button nested in a Button (unreliable gesture
+  arbitration)"* — and uses the tap-gesture form for its own header. Neither
+  snapshot tests nor XCTest can prove gesture arbitration, and this repo
+  forbids agents driving the simulator, so where the behaviour is untestable
+  the construction the codebase already trusts wins.
+
+  **The trailing control's padding must equal the row's own** (7pt vertical,
+  11pt trailing) — never a value tuned to the main line's intrinsic height.
+  Both axes were got wrong once each during implementation by padding the
+  overlay to something other than the row's own values, and each time the ✕
+  drifted out of line with the inline ✕ on a non-expandable row directly
+  above or below it. `11 = 39 − 28` also makes the reserved gutter exact.
+
+**Surfaces**
+
+- shared `countingSummary(target, level, goal, unit)` (nullable — see the chip-suppression rule above) and
+  `compoundSummary(split, partIds, excludedPartIds, level)`, each returning
+  `MemberSummary { text, varying }`: they dispatch to the existing
+  `varyRangeLabel` / `splitSquaresNote` rather than formatting anything new,
+  so the Swift twin and the `display` section of `memberRuleVectors.json`
+  stay a thin delta. Two narrow functions rather than one polymorphic
+  `memberSummaryLabel`, so each is independently vector-pinnable and neither
+  takes arguments the other ignores.
+- compact stepper gains an optional `suffix` ("/ 30 Miles"), rendered as
+  static text inside the pill border. Back-compatible — `RisoSpecialTaskPanel`
+  passes none. Only the number stays editable, so the Task 7 ruling (commit
+  the typed draft before stepping) is untouched.
+- dice `.off` gains one centred pip — the 20×16 inner box's (10, 8) — at 45%
+  `--riso-muted` / `.risoMuted`. The lit faces are unchanged, same 26×22 box
+  and same pip coordinates. Because this lands in the Riso primitive, the
+  hand-added pool rows are fixed for free; nothing else about them changes.
+- `MemberRuleRowModel.caption` → `targetSuffix`; the struct gains
+  `isExpandable` and `summary`.
+
+**Out of scope, deliberately**: wrapping a title to two lines (full width
+fits realistic titles; genuinely extreme ones still ellipsize); any
+hand-added-row change beyond the dice face; the B3 follow-up backlog above.
+
+**Test impact**: `e2e/member-rules.spec.ts` reaches into a member row and
+drives the stepper and dice directly at three call sites (`:166`, `:196`,
+`:237`) — each needs a disclosure click first. Also
+`MemberRuleRowModelTests`, `MemberRuleRow.test.ts`, `DiceButton.test.ts`,
+`memberRulesDisplay.test.ts`, and re-recorded baselines for
+`testSourceCountingMemberRule`, `testSourceCountingMemberVaryOn`,
+`testPoolSourceCountingMemberHasDiceButNoStepper`,
+`testSourceCompoundOneSquare`, `testSourceCompoundSplitUpWithExcludedPart`,
+`testMemberRulePrimitivesLight`/`Dark`.
 
 ### Test strategy (B)
 

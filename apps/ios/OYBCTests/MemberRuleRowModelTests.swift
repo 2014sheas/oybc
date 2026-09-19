@@ -78,13 +78,13 @@ final class MemberRuleRowModelTests: XCTestCase {
 
     // MARK: - Counting members
 
-    /// A BOARD-sourced counting member gets the stepper + caption + dice;
-    /// the caption quotes the goal and the unit, never the target.
-    func testBoardCountingMemberGetsStepperCaptionAndDice() {
+    /// A BOARD-sourced counting member gets the stepper + dice; the
+    /// stepper's suffix quotes the goal and the unit, never the target.
+    func testBoardCountingMemberGetsStepperSuffixAndDice() {
         let m = model(task: task("c", type: .counting, maxCount: 100, unit: "pages"))
         XCTAssertTrue(m.showsStepper)
         XCTAssertTrue(m.showsDice)
-        XCTAssertEqual(m.caption, "of 100 pages")
+        XCTAssertEqual(m.targetSuffix, "/ 100 pages")
         XCTAssertEqual(m.goal, 100)
         XCTAssertEqual(m.target, 100)
         XCTAssertNil(m.rangeLabel, "dice off ⇒ no range line")
@@ -93,18 +93,18 @@ final class MemberRuleRowModelTests: XCTestCase {
     }
 
     /// RC5 — a POOL member has no window to pro-rate against, so it gets
-    /// the dice ALONE: no stepper and, with it, no caption.
+    /// the dice ALONE: no stepper and, with it, no target suffix.
     func testPoolCountingMemberGetsDiceButNoStepper() {
         let m = model(task: task("c", type: .counting, maxCount: 100, unit: "pages"), fromBoard: false)
         XCTAssertFalse(m.showsStepper)
-        XCTAssertNil(m.caption)
+        XCTAssertNil(m.targetSuffix)
         XCTAssertTrue(m.showsDice)
     }
 
-    /// A unit-less counting member's caption omits the trailing space.
-    func testCaptionOmitsMissingUnit() {
+    /// A unit-less counting member's suffix omits the trailing space.
+    func testTargetSuffixOmitsMissingUnit() {
         let m = model(task: task("c", type: .counting, maxCount: 12))
-        XCTAssertEqual(m.caption, "of 12")
+        XCTAssertEqual(m.targetSuffix, "/ 12")
     }
 
     /// An explicit stored target wins over the auto/goal fallback.
@@ -170,7 +170,7 @@ final class MemberRuleRowModelTests: XCTestCase {
         XCTAssertFalse(m.isOn)
         XCTAssertFalse(m.showsStepper)
         XCTAssertFalse(m.showsDice)
-        XCTAssertNil(m.caption)
+        XCTAssertNil(m.targetSuffix)
         XCTAssertNil(m.rangeLabel)
     }
 
@@ -320,7 +320,7 @@ final class MemberRuleRowModelTests: XCTestCase {
         let m = model(task: task("n"))
         XCTAssertFalse(m.showsStepper)
         XCTAssertFalse(m.showsDice)
-        XCTAssertNil(m.caption)
+        XCTAssertNil(m.targetSuffix)
         XCTAssertNil(m.rangeLabel)
         XCTAssertFalse(m.isCompound)
     }
@@ -332,6 +332,103 @@ final class MemberRuleRowModelTests: XCTestCase {
         XCTAssertFalse(m.showsStepper)
         XCTAssertFalse(m.showsDice)
         XCTAssertFalse(m.isCompound)
+    }
+
+    // MARK: - Disclosure (B3.1)
+
+    /// A board-sourced counting member has controls to reveal, so it is
+    /// expandable, and the goal moved from a separate caption into the
+    /// stepper pill's suffix — "/ 30 Miles", never the pre-B3.1
+    /// "of 30 Miles". At the full goal with no vary its chip is
+    /// SUPPRESSED: the title is auto-generated from the same goal + unit,
+    /// so a chip would only say it twice. Expandable with no chip is a
+    /// valid state — the row still has controls.
+    func testCountingBoardMemberIsExpandableButShowsNoChipAtItsFullGoal() {
+        let m = model(task: task("r1", type: .counting, title: "Run 30 Miles a Month",
+                                 maxCount: 30, unit: "Miles"))
+        XCTAssertTrue(m.isExpandable)
+        XCTAssertEqual(m.targetSuffix, "/ 30 Miles")
+        XCTAssertNil(m.summary, "target == goal and vary off ⇒ the chip restates the title")
+    }
+
+    /// The chip returns the moment it says something the title cannot: a
+    /// pro-rated (or hand-set) target below the goal. Asserted with a
+    /// target that is NOT the goal, so a blanket "no chip while vary is
+    /// off" implementation fails here.
+    func testCountingMemberBelowItsGoalShowsTheTargetChip() {
+        let m = model(
+            task: task("r1", type: .counting, title: "Run 30 Miles a Month",
+                       maxCount: 30, unit: "Miles"),
+            rule: BoardSourceMemberRule(target: 12)
+        )
+        XCTAssertEqual(m.summary?.text, "12 Miles")
+        XCTAssertEqual(m.summary?.varying, false)
+    }
+
+    /// A POOL counting member gets no stepper (RC5) — so no suffix — but
+    /// it still has a dice to reveal, so it stays expandable. Its chip
+    /// follows the same suppression rule (the source kind is not part of
+    /// it).
+    func testPoolCountingMemberIsExpandableWithNoTargetSuffix() {
+        let m = model(task: task("r1", type: .counting, maxCount: 30, unit: "Miles"),
+                      fromBoard: false)
+        XCTAssertTrue(m.isExpandable)
+        XCTAssertNil(m.targetSuffix)
+        XCTAssertNil(m.summary)
+    }
+
+    /// The dice lit ⇒ the chip carries the RANGE and tints blue, agreeing
+    /// with the expanded row's range line rather than restating the target.
+    func testVaryingCountingMemberChipShowsTheRange() {
+        let m = model(
+            task: task("r1", type: .counting, maxCount: 100, unit: "pages"),
+            rule: BoardSourceMemberRule(target: 40, vary: .little)
+        )
+        XCTAssertEqual(m.summary?.text, "32\u{2013}48 pages")
+        XCTAssertEqual(m.summary?.varying, true)
+    }
+
+    /// A compound WITH parts is expandable; its chip reports squares.
+    func testCompoundMemberIsExpandableAndSummarisesItsSquares() {
+        let m = model(
+            task: task("C", type: .compound),
+            taskById: ["p1": task("p1"), "p2": task("p2")],
+            rule: BoardSourceMemberRule(split: true),
+            parts: [child("C", "p1", 0), child("C", "p2", 1)]
+        )
+        XCTAssertTrue(m.isExpandable)
+        XCTAssertEqual(m.summary?.text, "2 squares")
+        XCTAssertEqual(m.summary?.varying, false)
+    }
+
+    /// Ruling C2 — an EXCLUDED member has nothing to reveal, so it stays a
+    /// plain single line with its pre-B3.1 inline UNDO pill.
+    func testExcludedMemberIsNotExpandableAndHasNoSummary() {
+        let m = model(
+            task: task("r1", type: .counting, title: "Run 30 Miles a Month",
+                       maxCount: 30, unit: "Miles"),
+            state: .excluded
+        )
+        XCTAssertFalse(m.isExpandable)
+        XCTAssertNil(m.summary)
+    }
+
+    /// Same for a member filtered out as already done.
+    func testFilteredDoneMemberIsNotExpandable() {
+        let m = model(
+            task: task("r1", type: .counting, maxCount: 30, unit: "Miles"),
+            state: .filteredDone
+        )
+        XCTAssertFalse(m.isExpandable)
+        XCTAssertNil(m.summary)
+    }
+
+    /// A normal member (and a childless compound) has no controls at all.
+    func testNormalMemberIsNotExpandable() {
+        let m = model(task: task("n1", title: "Cook a meal at home"))
+        XCTAssertFalse(m.isExpandable)
+        XCTAssertNil(m.summary)
+        XCTAssertFalse(model(task: task("C", type: .compound)).isExpandable)
     }
 
     // MARK: - Dice cycle

@@ -12,10 +12,10 @@ interface CounterStepperProps {
   /** Callback when the value changes */
   onChange: (value: number) => void;
   /**
-   * Optional label shown after the stepper (e.g. "of 5 subtasks"). The
-   * `compact` variant has no room for it — the member row captions itself
-   * — so it becomes the numeric field's accessible name there instead of
-   * the default "Target".
+   * Optional label shown after the stepper (e.g. "of 5 subtasks"). On the
+   * `compact` variant it becomes the numeric field's accessible name
+   * instead of the default "Target" (there's no room to render it visibly
+   * — see `suffix` below for the visible goal text).
    */
   label?: string;
   /**
@@ -24,6 +24,13 @@ interface CounterStepperProps {
    * rules): 1.5px ink border, radius 999, a typeable numeric middle.
    */
   size?: 'default' | 'compact';
+  /**
+   * Static text rendered inside the compact pill after the value — the
+   * member row's goal ("/ 30 Miles"), folded in so the row does not need
+   * a separate caption beside the stepper (B3.1). Not editable; only the
+   * numeric field is. Ignored by the `default` size.
+   */
+  suffix?: string;
 }
 
 /**
@@ -44,6 +51,8 @@ interface CounterStepperProps {
  * @param onChange - Called with the new value on button click
  * @param label - Optional trailing label text
  * @param size - Visual variant (see above)
+ * @param suffix - Static text inside the `compact` pill after the value
+ *   (the member row's goal, "/ 30 Miles"); ignored by `default`.
  * @returns The stepper control.
  */
 export function CounterStepper({
@@ -53,6 +62,7 @@ export function CounterStepper({
   onChange,
   label,
   size = 'default',
+  suffix,
 }: CounterStepperProps): React.ReactElement {
   /** Uncommitted typing in the compact field; `null` while not editing. */
   const [draft, setDraft] = useState<string | null>(null);
@@ -102,6 +112,23 @@ export function CounterStepper({
             }
           }}
         />
+        {suffix !== undefined && (
+          // Hidden from AT because on its own it names nothing: between
+          // the "Target" field and "Increase target" it would announce as
+          // a stray "slash 30 miles" fragment of a label it is only half
+          // of. NOT because the goal is announced elsewhere — the row's
+          // summary chip is suppressed precisely when `vary == 0 &&
+          // target == goal` (countingSummary), which is the common case,
+          // so the goal then reaches AT only via the auto-generated
+          // counting title ("Run 30 miles"). A hand-renamed member at its
+          // goal genuinely loses it — accepted, and identical on iOS
+          // (`RisoInlineStepperView`). The fix, if it is ever wanted, is a
+          // composed field label ("Target, of 30 miles"), not unhiding
+          // this text (B3.1).
+          <span className={styles.compactSuffix} data-testid="stepper-suffix" aria-hidden="true">
+            {suffix}
+          </span>
+        )}
         <button
           type="button"
           className={styles.compactButton}

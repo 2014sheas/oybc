@@ -19,6 +19,8 @@ import {
   withMemberRule,
   withPartRule,
   remainingTarget,
+  countingSummary,
+  compoundSummary,
 } from '../../src/algorithms/memberRulesDisplay';
 import type { BoardWindow, PlanMode } from '../../src/algorithms/memberRules';
 import type { VaryLevel, BoardSource, BoardSourceMemberRule, BoardSourcePartRule } from '../../src/types';
@@ -88,6 +90,24 @@ describe('varyRangeLabel', () => {
 describe('splitSquaresNote', () => {
   it.each(V.splitSquaresNote as any[])('$name', (v: any) => {
     expect(splitSquaresNote(v.partIds, new Set<string>(v.excludedPartIds))).toBe(v.expected);
+  });
+});
+
+describe('countingSummary (vectors)', () => {
+  // `toStrictEqual`, not `toEqual`: a vector whose `expected` is null must
+  // not be satisfied by an `undefined` return.
+  it.each(V.countingSummary as any[])('$name', (v: any) => {
+    expect(countingSummary(v.target, v.level as VaryLevel, v.goal, v.unit)).toStrictEqual(
+      v.expected
+    );
+  });
+});
+
+describe('compoundSummary (vectors)', () => {
+  it.each(V.compoundSummary as any[])('$name', (v: any) => {
+    expect(
+      compoundSummary(v.split, v.partIds, new Set<string>(v.excludedPartIds), v.level as VaryLevel)
+    ).toEqual(v.expected);
   });
 });
 

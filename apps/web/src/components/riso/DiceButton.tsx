@@ -3,11 +3,12 @@ import styles from './DiceButton.module.css';
 
 /**
  * Pip centres per vary level, in the button's 20×16 inner viewBox:
+ * level 0 = one centred pip, dimmed (B3.1 — an empty bordered square
+ * beside the row's ✕ reads as an unchecked checkbox, not a die);
  * level 1 = two pips on the diagonal, level 2 = the five-pip quincunx.
- * Level 0 draws nothing (handoff: "Off state: muted 1.5pt outline, no pips").
  */
 const PIPS: Record<VaryLevel, ReadonlyArray<readonly [number, number]>> = {
-  0: [],
+  0: [[10, 8]],
   1: [
     [6, 5],
     [14, 11],
@@ -46,9 +47,10 @@ interface DiceButtonProps {
  * counting target (docs/BOARD_SOURCES.md §Member rules; handoff
  * §Interactions "Variation (dice)").
  *
- * Off renders a muted 1.5px outline with no pips; on renders a blue fill
- * with `--riso-ink-static` pips — adaptive `--riso-ink` on a coloured fill
- * is the dark-mode trap (see `reference_riso_adaptive_ink_fill_darkmode`).
+ * Off renders a muted 1.5px outline with one faint centred pip (a die face,
+ * not an empty checkbox); on renders a blue fill with `--riso-ink-static`
+ * pips — adaptive `--riso-ink` on a coloured fill is the dark-mode trap
+ * (see `reference_riso_adaptive_ink_fill_darkmode`).
  *
  * Stateless: the caller owns the level and decides what one tap means, so
  * the same button serves a member, a compound part and a hand-added row.
@@ -69,7 +71,7 @@ export function DiceButton({ level, onCycle }: DiceButtonProps): React.ReactElem
     >
       <svg className={styles.pips} viewBox="0 0 20 16" width="20" height="16" aria-hidden="true">
         {PIPS[level].map(([cx, cy]) => (
-          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.6" />
+          <circle key={`${cx}-${cy}`} className={level === 0 ? styles.offPip : undefined} cx={cx} cy={cy} r="1.6" />
         ))}
       </svg>
     </button>

@@ -24,9 +24,9 @@ function pipCount(html: string): number {
 }
 
 describe('DiceButton', () => {
-  it('draws no pips and a muted outline when off, and names the state', () => {
+  it('draws one dimmed pip and a muted outline when off, and names the state', () => {
     const html = render(0);
-    expect(pipCount(html)).toBe(0);
+    expect(pipCount(html)).toBe(1);
     expect(html).toContain('aria-label="Vary: off"');
     expect(html).toMatch(/class="[^"]*_off_/);
     expect(html).not.toMatch(/class="[^"]*_on_/);
@@ -52,5 +52,18 @@ describe('DiceButton', () => {
     expect(pipCount(html)).toBe(5);
     expect(html).toContain('aria-label="Vary: a lot"');
     expect(html).toMatch(/class="[^"]*_on_/);
+  });
+
+  it('renders one centred, dimmed pip at vary level 0 so the die is not an empty box', () => {
+    const html = render(0);
+    expect(pipCount(html)).toBe(1);
+    expect(html).toContain('cx="10"');
+    expect(html).toContain('cy="8"');
+    expect(html).toMatch(/class="[^"]*_offPip_/);
+  });
+
+  it('keeps the lit faces at two and five pips', () => {
+    expect(pipCount(render(1))).toBe(2);
+    expect(pipCount(render(2))).toBe(5);
   });
 });
