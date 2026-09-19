@@ -158,8 +158,13 @@ final class BoardWizardPreviewDerivedTests: XCTestCase {
         XCTAssertEqual(shape(first), shape(second),
                        "one seed must reproduce the arrangement AND the rolls")
         XCTAssertEqual(first.count, 9)
-        XCTAssertNotNil(cells(first)["cnt"]?.maxCount,
-                        "the fixture must actually produce a stand-in, or this proves nothing")
+        // Non-degenerate guard: the raw member carries `countingGoal`, and the
+        // un-stood-in preview path is deterministic for a fixed seed all by
+        // itself — so a plain not-nil check would stay green with
+        // `applyPreviewDerivedCells` deleted. A ROLLED target is the proof a
+        // stand-in really was produced.
+        XCTAssertNotEqual(cells(first)["cnt"]?.maxCount, countingGoal,
+                          "the fixture must actually produce a stand-in, or this proves nothing")
     }
 
     // MARK: - 2. Different seeds re-roll (RC6 items 3 + 5)

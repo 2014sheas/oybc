@@ -155,8 +155,12 @@ struct BoardWizardPreviewStepView: View {
                 source.excludedTaskIds.sorted().joined(separator: "+"), ruleKey,
             ].joined(separator: ":")
         }
+        // `-1` for "absent", matching the source-rule key above: `0` is
+        // `VaryLevel.off.rawValue`, so an absent level and an explicit "off"
+        // would hash the same if this ever iterates a wider id set than the
+        // dictionary's own keys.
         let manualVary = controller.manualTaskVary.keys.sorted()
-            .map { "\($0)=\(controller.manualTaskVary[$0]?.rawValue ?? 0)" }
+            .map { "\($0)=\(controller.manualTaskVary[$0]?.rawValue ?? -1)" }
             .joined(separator: ",")
         return [
             members.joined(separator: "|"),

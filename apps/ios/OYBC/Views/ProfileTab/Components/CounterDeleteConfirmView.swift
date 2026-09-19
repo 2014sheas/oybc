@@ -56,7 +56,7 @@ struct CounterDeleteConfirmView: View {
                     if let note = BoardSources.derivedCounterRemovalNote(
                         count: impact.derivedWindowCounterCount
                     ) {
-                        derivedNote(note)
+                        RisoImpactNote(text: note)
                     }
                 }
                 .padding(Riso.gutter)
@@ -90,22 +90,6 @@ struct CounterDeleteConfirmView: View {
             }
         }
         .presentationDetents([.medium])
-    }
-
-    // MARK: - Derived-counter note
-
-    /// The RC12 line. Quiet muted body copy rather than a card — it is a
-    /// consequence of the delete, not a list the person picks through.
-    ///
-    /// - Parameter text: The sentence from
-    ///   ``BoardSources/derivedCounterRemovalNote(count:)``.
-    /// - Returns: The rendered note.
-    private func derivedNote(_ text: String) -> some View {
-        Text(text)
-            .font(.risoBody(12, .semibold))
-            .foregroundStyle(Color.risoMuted)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Members section

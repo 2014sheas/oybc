@@ -125,6 +125,10 @@ extension BoardSources {
     ///   - goal: The member's own `maxCount`.
     ///   - windowCount: Progress toward the goal already made in the window.
     /// - Returns: The remaining target (integer ≥ 1).
+    static func remainingTarget(goal: Int, windowCount: Int) -> Int {
+        Swift.max(1, goal - windowCount)
+    }
+
     /// The delete-confirm line warning that window-stamped derived counters
     /// made from this task will go with it (B3 RC12).
     ///
@@ -138,10 +142,6 @@ extension BoardSources {
     static func derivedCounterRemovalNote(count: Int) -> String? {
         guard count > 0 else { return nil }
         return "\(count) board counter\(count == 1 ? "" : "s") made from this one will be removed."
-    }
-
-    static func remainingTarget(goal: Int, windowCount: Int) -> Int {
-        Swift.max(1, goal - windowCount)
     }
 
     // MARK: - Rule accessors

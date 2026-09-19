@@ -81,11 +81,7 @@ struct TaskDeleteConfirmView: View {
                     if let note = BoardSources.derivedCounterRemovalNote(
                         count: impact.derivedWindowCounterCount
                     ) {
-                        Text(note)
-                            .font(.risoBody(12, .semibold))
-                            .foregroundStyle(Color.risoMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        RisoImpactNote(text: note)
                     }
 
                     if hasNoImpact {

@@ -515,3 +515,28 @@ struct RisoShowExpiredToggle: View {
             .tint(Color.risoBlue)
     }
 }
+
+// MARK: - Impact note
+
+/// A quiet one-line consequence note on a destructive-confirm sheet — the kind
+/// of sentence that states what ELSE a delete takes with it.
+///
+/// Muted body copy rather than a card, deliberately: it is a consequence of
+/// the action, not a list the person picks through. Extracted when the B3 RC12
+/// derived-counter line landed on BOTH confirm sheets
+/// (`CounterDeleteConfirmView`, `TaskDeleteConfirmView`) so a future restyle
+/// has one place to land; the modifier stack is byte-identical to the one both
+/// sheets inlined before.
+struct RisoImpactNote: View {
+
+    /// The sentence to render.
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.risoBody(12, .semibold))
+            .foregroundStyle(Color.risoMuted)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
