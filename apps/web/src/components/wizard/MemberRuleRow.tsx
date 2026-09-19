@@ -275,7 +275,14 @@ export function MemberRuleRow({
           {trailingControl}
         </div>
       ) : (
-        <div className={styles.staticLine}>{mainLineContent}</div>
+        // Paired with `member-disclosure` on the expandable branch: between
+        // them, every member row exposes exactly one inner line element.
+        // That is where the 42px uniform-height floor lives — the `<li>`
+        // itself also carries the 1.5px hairline (absent on `:first-child`),
+        // so measuring the row would compare 42px against 43.5px.
+        <div className={styles.staticLine} data-testid="member-static-line">
+          {mainLineContent}
+        </div>
       )}
 
       {isExpandable && isExpanded && (
