@@ -251,5 +251,72 @@
           "derivedCompounds": [] },
         "expected": { "tasks": [ { "id": "derived:R2", "type": "counting", "title": "Meditate", "sharedCounterId": "R2", "currentCount": 3, "baseline": 3, "maxCount": 2, "isCompleted": false, "expectedAbsent": ["action", "unit"] } ], "links": [] } }
     ]
+  },
+  "display": {
+    "notes": {
+      "windows": "effectiveMemberTarget's sourceWindow / targetWindow vectors use bare timeframe strings, wrapped by the harness into a BoardWindow with startDate = null and endDate = null - same convention as planDerivedTasks.sourceWindows above. A vector with no `sourceWindow` key means the field is omitted (undefined), not null.",
+      "clearSentinel": "withMemberRule / withPartRule vectors write a patch field as JSON `null` to mean 'clear this field' (an explicit `undefined` patch value) - BoardSourceMemberRule / BoardSourcePartRule fields never legitimately take `null` (target is number|absent, vary is 0|1|2, split/excluded are boolean), so `null` is unambiguous as a clear sentinel. The harness maps a patch's `null` values to `undefined` before calling withMemberRule/withPartRule. `steps` applies withMemberRule/withPartRule in order to the SAME source, threading each result into the next call - this is how the 'set then clear' vectors are two real calls, not one. `expectedMemberRules: null` asserts the result has NO `memberRules` key at all (`'memberRules' in result === false`), not that the key is present with value null."
+    },
+    "effectiveMemberTarget": [
+      { "name": "recurring weekly source to daily target: 35 then ceil(35x1/7)=5 (same numbers as the autoTarget fixture)", "goal": 35, "mode": "recurring", "sourceWindow": "weekly", "targetWindow": "daily", "expected": 5 },
+      { "name": "recurring with an explicit override then 20 regardless of auto math", "goal": 35, "explicit": 20, "mode": "recurring", "sourceWindow": "weekly", "targetWindow": "daily", "expected": 20 },
+      { "name": "one-off with no explicit then the goal itself (no auto-targeting off recurring)", "goal": 35, "mode": "oneOff", "sourceWindow": "weekly", "targetWindow": "daily", "expected": 35 },
+      { "name": "one-off with an explicit override then the override", "goal": 35, "explicit": 4, "mode": "oneOff", "targetWindow": "daily", "expected": 4 },
+      { "name": "explicit 0 clamps up to 1", "goal": 35, "explicit": 0, "mode": "recurring", "sourceWindow": "weekly", "targetWindow": "daily", "expected": 1 },
+      { "name": "explicit 99 clamps down to the goal 35", "goal": 35, "explicit": 99, "mode": "recurring", "sourceWindow": "weekly", "targetWindow": "daily", "expected": 35 },
+      { "name": "recurring with a missing sourceWindow behaves like autoTarget's null-source branch then the goal", "goal": 35, "mode": "recurring", "targetWindow": "daily", "expected": 35 }
+    ],
+    "varyRangeLabel": [
+      { "name": "level 1 with a unit then an en-dash range plus the unit", "t": 10, "level": 1, "goal": 20, "unit": "mi", "expected": "8–12 mi" },
+      { "name": "level 2 with no unit then the range alone, no trailing space", "t": 10, "level": 2, "goal": 12, "unit": "", "expected": "5–12" },
+      { "name": "half-up tie with a unit (same numbers as the varyRange fixture's half-up vector)", "t": 3, "level": 2, "goal": 20, "unit": "pages", "expected": "2–5 pages" },
+      { "name": "level 0 then null regardless of unit", "t": 10, "level": 0, "goal": 20, "unit": "mi", "expected": null }
+    ],
+    "splitSquaresNote": [
+      { "name": "3 parts none excluded then 3 squares", "partCount": 3, "excludedPartIds": [], "partIds": ["p1", "p2", "p3"], "expected": "3 squares" },
+      { "name": "2 parts one excluded then 1 square", "partCount": 2, "excludedPartIds": ["p2"], "partIds": ["p1", "p2"], "expected": "1 square" },
+      { "name": "all parts excluded floors at 1 square, never 0", "partCount": 3, "excludedPartIds": ["p1", "p2", "p3"], "partIds": ["p1", "p2", "p3"], "expected": "1 square" },
+      { "name": "a stale excluded id not among partIds is inert", "partCount": 3, "excludedPartIds": ["p9"], "partIds": ["p1", "p2", "p3"], "expected": "3 squares" }
+    ],
+    "remainingTarget": [
+      { "name": "35 goal minus 12 windows already run then 23", "goal": 35, "windowCount": 12, "expected": 23 },
+      { "name": "35 goal minus 40 windows already run floors at 1", "goal": 35, "windowCount": 40, "expected": 1 }
+    ],
+    "memberRuleFor": [
+      { "name": "no memberRules at all then an empty rule", "memberRules": null, "taskId": "r1", "expected": {} },
+      { "name": "a rule stored for this taskId then itself", "memberRules": { "r1": { "target": 5, "vary": 1 } }, "taskId": "r1", "expected": { "target": 5, "vary": 1 } },
+      { "name": "memberRules present but not for this taskId then an empty rule", "memberRules": { "r2": { "vary": 1 } }, "taskId": "r1", "expected": {} }
+    ],
+    "partRuleFor": [
+      { "name": "no parts on the rule then an empty part rule", "rule": {}, "childId": "c1", "expected": {} },
+      { "name": "a part rule stored for this childId then itself", "rule": { "parts": { "c1": { "target": 3, "excluded": true } } }, "childId": "c1", "expected": { "target": 3, "excluded": true } },
+      { "name": "parts present but not for this childId then an empty part rule", "rule": { "parts": { "c2": { "vary": 1 } } }, "childId": "c1", "expected": {} }
+    ],
+    "withMemberRule": [
+      { "name": "set vary 1 on a rule-less source then the rule appears", "startMemberRules": null,
+        "steps": [ { "taskId": "r1", "patch": { "vary": 1 } } ], "expectedMemberRules": { "r1": { "vary": 1 } } },
+      { "name": "set then clear the same field leaves NO memberRules key at all", "startMemberRules": null,
+        "steps": [ { "taskId": "r1", "patch": { "vary": 1 } }, { "taskId": "r1", "patch": { "vary": null } } ], "expectedMemberRules": null },
+      { "name": "setting vary 0 directly prunes to no rule - a default value is never stored", "startMemberRules": null,
+        "steps": [ { "taskId": "r1", "patch": { "vary": 0 } } ], "expectedMemberRules": null },
+      { "name": "setting split false directly prunes to no rule, same as vary 0", "startMemberRules": null,
+        "steps": [ { "taskId": "C", "patch": { "split": false } } ], "expectedMemberRules": null },
+      { "name": "clearing one field of a multi-field rule keeps the rest", "startMemberRules": { "r1": { "target": 20, "vary": 1 } },
+        "steps": [ { "taskId": "r1", "patch": { "vary": null } } ], "expectedMemberRules": { "r1": { "target": 20 } } },
+      { "name": "clearing one member of a multi-member map keeps the sibling member", "startMemberRules": { "r1": { "vary": 1 }, "r2": { "target": 5 } },
+        "steps": [ { "taskId": "r1", "patch": { "vary": null } } ], "expectedMemberRules": { "r2": { "target": 5 } } }
+    ],
+    "withPartRule": [
+      { "name": "set a part target on a rule-less source then the nested rule appears", "startMemberRules": null,
+        "steps": [ { "taskId": "C", "childId": "c1", "patch": { "target": 3 } } ], "expectedMemberRules": { "C": { "parts": { "c1": { "target": 3 } } } } },
+      { "name": "set then clear the only part leaves NO memberRules key at all", "startMemberRules": null,
+        "steps": [ { "taskId": "C", "childId": "c1", "patch": { "target": 3 } }, { "taskId": "C", "childId": "c1", "patch": { "target": null } } ], "expectedMemberRules": null },
+      { "name": "setting excluded false directly prunes to no rule", "startMemberRules": null,
+        "steps": [ { "taskId": "C", "childId": "c1", "patch": { "excluded": false } } ], "expectedMemberRules": null },
+      { "name": "clearing one part keeps a sibling part and the member-level vary", "startMemberRules": { "C": { "vary": 1, "parts": { "c1": { "excluded": true }, "c2": { "target": 4 } } } },
+        "steps": [ { "taskId": "C", "childId": "c1", "patch": { "excluded": null } } ], "expectedMemberRules": { "C": { "vary": 1, "parts": { "c2": { "target": 4 } } } } },
+      { "name": "clearing the only part but the member still has vary keeps the member without parts", "startMemberRules": { "C": { "vary": 1, "parts": { "c1": { "excluded": true } } } },
+        "steps": [ { "taskId": "C", "childId": "c1", "patch": { "excluded": null } } ], "expectedMemberRules": { "C": { "vary": 1 } } }
+    ]
   }
 }

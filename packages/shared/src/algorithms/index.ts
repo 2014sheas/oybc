@@ -292,6 +292,18 @@ export type {
   DerivedRows,
 } from './memberRules';
 
+// ===== Member rules — display + rule-editing helpers (B3, docs/BOARD_SOURCES.md §Member rules) =====
+export {
+  effectiveMemberTarget,
+  varyRangeLabel,
+  splitSquaresNote,
+  memberRuleFor,
+  partRuleFor,
+  withMemberRule,
+  withPartRule,
+  remainingTarget,
+} from './memberRulesDisplay';
+
 export { boardDisplayName } from './boardDisplayName';
 export {
   isEligibleSourceBoard,
