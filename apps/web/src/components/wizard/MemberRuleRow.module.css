@@ -1,13 +1,16 @@
 /* MemberRuleRow — one member row inside an expanded source panel, with its
-   per-member rule controls (docs/BOARD_SOURCES.md §Member rules; handoff
-   "Expanded source panel" item 3). Metrics: 7pt vertical / 11pt right /
-   40pt left padding, 1.5pt hair top border; the 69pt indent for range
-   lines, the split toggle and part lines = 40pt padding + 20pt badge +
-   8pt gap + 1pt. */
+   per-member rule controls (docs/BOARD_SOURCES.md §Member rules + §Member
+   row at phone width; handoff "Expanded source panel" item 3). Metrics:
+   7px vertical / 11px right / 40px left padding, 1.5px hair top border;
+   the 69px indent for the expanded block = 40px padding + 20px badge +
+   8px gap + 1px.
+
+   B3.1 moved the row's padding OFF `.row` and ONTO the line that carries
+   it, so an expandable row's disclosure button IS the whole row rect. */
 
 .row {
   list-style: none;
-  padding: 7px 11px 7px 40px;
+  padding: 0;
   border-top: 1.5px solid color-mix(in srgb, var(--riso-ink) 14%, transparent);
 }
 .row:first-child {
@@ -17,10 +20,84 @@
   opacity: 0.45;
 }
 
+/* The main line's own box — the positioning context for an expandable
+   row's overlaid trailing control, so the control centres on THIS line
+   (which grows past one line on a counter-clash row) rather than on the
+   whole row including its expanded block. */
 .mainLine {
+  position: relative;
+}
+
+/* The disclosure is the WHOLE row rect minus the control's gutter — full
+   width, full height, the row's own 7px vertical and 40px leading padding
+   included. A short title must not leave a dead row (B3.1 ruling).
+
+   `min-height` is the 28px trailing control plus the row's 7+7: every row
+   in a panel measures the same 42px whether it is expandable (control
+   overlaid) or not (control inline), and it lifts the two states that
+   were already shorter than that — the 22px ✓ and the ~24px UNDO pill —
+   rather than merely preserving them. It is a floor, not a clamp: a
+   two-line clash title grows the line past it. */
+.disclosure,
+.staticLine {
   display: flex;
   align-items: center;
   gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  margin: 0;
+  padding: 7px 11px 7px 40px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+}
+/* 39 = the overlaid ✕'s 28px plus the row's own 11px trailing padding, so
+   the chevron never sits under it and the ✕ lands at the same x as the
+   inline one on a non-expandable row above or below it. */
+.disclosure {
+  padding-right: 39px;
+  cursor: pointer;
+}
+.disclosure:hover {
+  background: color-mix(in srgb, var(--riso-ink) 4%, transparent);
+}
+.disclosure:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+
+/* The row's current answer, never a second control: the vary range while
+   the dice is lit (blue), else the target / square count (muted). */
+.chip {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-body);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  white-space: nowrap;
+}
+.chipVarying {
+  color: var(--riso-blue);
+}
+
+/* `›` rotated, the same disclosure glyph `SourceRow` uses for the panel
+   this row lives in — one step down in box (14px vs 28px). 13px rather
+   than the iOS chevron's 10pt: that is an SF Symbol, this is a text glyph
+   with far more side bearing, so a matching number renders much smaller. */
+.chevron {
+  flex: 0 0 auto;
+  width: 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-muted);
+  transition: transform 0.15s ease-out;
+}
+.chevronOpen {
+  transform: rotate(90deg);
 }
 
 .text {
@@ -52,7 +129,8 @@
   text-decoration: line-through;
 }
 
-/* "of 35 mi" — the unit appears once, here, never inside the stepper. */
+/* "of 210" on a PART line. The member row gave its caption up in B3.1 —
+   its goal now rides inside the stepper pill as a suffix. */
 .caption {
   flex: 0 0 auto;
   font-family: var(--riso-font-body);
@@ -83,6 +161,22 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: -2px;
   border-radius: 6px;
+}
+
+/* Ruling C2: ONLY an expandable row lifts its trailing control out of the
+   line, into the 39px gutter the disclosure reserves. Both axes are the
+   row's OWN measurements — `right: 11px` is its trailing padding, and
+   `top/bottom: 0` + `margin: auto 0` centres on whatever the main line
+   measures instead of on a constant tuned to today's single-line height.
+   (A non-expandable row keeps its control inline: the excluded state's
+   ~60px UNDO pill would not fit the gutter, and such a row has no
+   full-rect hit area to protect.) */
+.excludeOverlay {
+  position: absolute;
+  top: 0;
+  right: 11px;
+  bottom: 0;
+  margin: auto 0;
 }
 
 .undo {
@@ -117,22 +211,42 @@
   box-sizing: border-box;
 }
 
-/* Blue range line — sits at the 69pt indent, under the row it belongs to. */
-.rangeLine {
-  margin: 2px 0 0 29px;
+/* The expanded block: the controls line, then one line per compound part.
+   One rhythm for the whole block — 4px between lines, 8px under it — at
+   the 69px indent (40 + 20 badge + 8 gap + 1). */
+.expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 11px 8px 69px;
+}
+
+/* Counting: stepper · dice · range. Compound: One square / Split up ·
+   "N squares" · the dice while One square. */
+.controlsLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Blue range. The member's rides INLINE on the controls line (B3.1 — an
+   expanded counting row is exactly two lines); a part's still takes its
+   own line directly under that part. */
+.rangeLine,
+.rangeInline {
   font-family: var(--riso-font-body);
   font-size: 10.5px;
   font-weight: 600;
   color: var(--riso-blue);
 }
-
-/* One square / Split up + the "N squares" note (+ the dice while One square). */
-.splitLine {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 5px 0 0 29px;
+.rangeLine {
+  margin: 2px 0 0;
 }
+.rangeInline {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .squaresNote {
   font-family: var(--riso-font-body);
   font-size: 10px;
@@ -141,11 +255,16 @@
   white-space: nowrap;
 }
 
+/* A part and its own range line, as ONE child of `.expanded`. */
+.part {
+  display: flex;
+  flex-direction: column;
+}
+
 .partLine {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 4px 0 0 29px;
 }
 .partName {
   flex: 1;

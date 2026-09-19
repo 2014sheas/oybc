@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import {
   TaskType,
+  compoundSummary,
+  countingSummary,
   effectiveMemberTarget,
   partRuleFor,
   splitSquaresNote,
@@ -56,24 +59,40 @@ interface MemberRuleRowProps {
 
 /**
  * MemberRuleRow — one member row inside an expanded source panel, with the
- * per-member rule controls (docs/BOARD_SOURCES.md §Member rules; handoff
- * "Expanded source panel" item 3).
+ * per-member rule controls (docs/BOARD_SOURCES.md §Member rules + §Member
+ * row at phone width; handoff "Expanded source panel" item 3).
  *
- * Three shapes, all driven by the member's own type:
+ * **B3.1: disclosure, not compression.** At 393pt the B3 row's inline
+ * furniture (badge + stepper + caption + dice + ✕) left the title ~102pt
+ * and ellipsised real ones. A row that HAS rule controls now opens
+ * collapsed — `badge · title · summary chip · chevron · ✕`, ~194pt of
+ * title — and reveals them on a second line at the 69pt indent:
  *
- * - **Counting** — a compact target stepper (board sources only; a pool
- *   member has no window to pro-rate against, so it gets the dice alone),
- *   the "of {goal} {unit}" caption, then the dice. A dice that's on adds a
- *   blue range line under the row.
- * - **Compound with parts** — a One square / Split up pill plus the
+ * - **Counting** — a compact target stepper carrying the goal as a suffix
+ *   INSIDE its pill (board sources only; a pool member has no window to
+ *   pro-rate against, so it gets the dice alone), the dice, then the blue
+ *   range INLINE beside them rather than on a third line.
+ * - **Compound with parts** — the One square / Split up pill plus the
  *   "N squares" note (dice on that line only while One square), then one
  *   line per part: name · stepper · "of {goal}" · dice and ✕ while split.
- *   A part's range line sits under that part's line.
- * - **Anything else** (normal, achievement, childless compound) — just the
- *   title and the shared exclude control.
+ *   A part's range line still sits under that part's own line.
+ * - **Anything else** (normal, achievement, childless compound) and every
+ *   excluded or filtered-done member — the pre-B3.1 single line with its
+ *   inline trailing control and NO disclosure: there is nothing to reveal,
+ *   and the excluded state's ~60px UNDO pill does not fit the 28px gutter
+ *   the overlaid ✕ uses (ruling C2).
+ *
+ * The collapsed chip is the row's current answer, never a second control,
+ * and it comes from the shared `countingSummary` / `compoundSummary` — so
+ * it can never disagree with the expanded row's own range line. A counting
+ * chip that would merely restate an auto-generated title (vary off AND
+ * target === goal) is suppressed entirely; `countingSummary` returns null
+ * and the row renders no chip element at all.
  *
  * Owns the whole `<li>` (not just the rule strip) so `SourceRow` stays a
- * header + range-block renderer. iOS twin lands in B3 Task 6.
+ * header + range-block renderer. iOS twin: `RisoMemberRuleRowView` (which
+ * keeps the same decisions in a `MemberRuleRowModel` struct — web has no
+ * twin struct, a pre-existing asymmetry).
  *
  * @param props - See {@link MemberRuleRowProps}.
  * @returns The member row.
@@ -104,7 +123,9 @@ export function MemberRuleRow({
    * An excluded or filtered-out-as-done member renders exactly what it did
    * before B3 (struck + UNDO / dimmed ✓) — editing a target for a square
    * that isn't being placed is the same contradiction the part rows already
-   * avoid. Design: `hasTarget`/`hasParts` are both gated on `!ex && !dOut`.
+   * avoid. Since B3.1 this is the single gate: it decides `isExpandable`,
+   * and everything that was individually gated on it now lives behind the
+   * disclosure.
    */
   const isOn = state === 'included';
 
@@ -125,8 +146,104 @@ export function MemberRuleRow({
 
   const isCompound = task?.type === TaskType.COMPOUND && parts.length > 0;
   const split = rule.split === true;
+  const partIds = parts.map((p) => p.childTaskId);
   const excludedPartIds = new Set(
-    parts.map((p) => p.childTaskId).filter((id) => partRuleFor(rule, id).excluded === true),
+    partIds.filter((id) => partRuleFor(rule, id).excluded === true),
+  );
+
+  /**
+   * Does this row HAVE controls worth hiding? Exactly the rows that render
+   * something on the second line — the same `isOn` gate every control
+   * already carries, so an excluded member can never become expandable.
+   */
+  const isExpandable = isOn && (isCounting || isCompound);
+  /** What the collapsed row says in place of its controls (null = say nothing). */
+  const summary = !isExpandable
+    ? null
+    : isCompound
+      ? compoundSummary(split, partIds, excludedPartIds, memberVary)
+      : countingSummary(target, memberVary, goal, unit);
+
+  const [isExpanded, setIsExpanded] = useState(false);
+  // "Always collapsed on open" is a rule about the row's whole lifecycle,
+  // not just its first render: a row that was open when it was excluded
+  // must not spring back open on UNDO (iOS twin: the `onChange(of: state)`
+  // reset in `RisoMemberRuleRowView`).
+  useEffect(() => {
+    if (state !== 'included') setIsExpanded(false);
+  }, [state]);
+
+  /**
+   * The row's trailing control — ✕ while included, UNDO while excluded, a
+   * dimmed ✓ while filtered out as done. Built once and placed twice: an
+   * expandable row overlays it on its main line (so the disclosure keeps
+   * the whole row rect), a non-expandable one renders it inline.
+   */
+  const trailingControl = (
+    <>
+      {state === 'included' && (
+        <button
+          type="button"
+          className={`${styles.exclude} ${isExpandable ? styles.excludeOverlay : ''}`}
+          onClick={onToggleExclude}
+          aria-label={`Exclude ${title} for this board`}
+        >
+          ✕
+        </button>
+      )}
+      {state === 'excluded' && (
+        <button
+          type="button"
+          className={styles.undo}
+          onClick={onToggleExclude}
+          aria-label={`Undo excluding ${title}`}
+        >
+          UNDO
+        </button>
+      )}
+      {state === 'filteredDone' && (
+        <span className={styles.doneCheck} aria-label={`${title} is done`}>
+          ✓
+        </span>
+      )}
+    </>
+  );
+
+  /**
+   * The row's first line. Shared by both branches below so the collapsed
+   * and expandable shapes can never drift apart; the trailing control is
+   * inline here ONLY when the row is not expandable (ruling C2) — an
+   * expandable row overlays it instead, so the whole line stays tappable.
+   */
+  const mainLineContent = (
+    <>
+      <TypeBadge type={task?.type ?? TaskType.NORMAL} letterOnly size="small" />
+      <span className={styles.text}>
+        <span className={`${styles.title} ${state === 'excluded' ? styles.struck : ''}`}>
+          {title}
+        </span>
+        {clashTitle !== undefined && (
+          <span className={styles.clashHint}>
+            shares a counter with &ldquo;{clashTitle}&rdquo; &middot; one per board
+          </span>
+        )}
+      </span>
+      {summary !== null && !isExpanded && (
+        <span className={`${styles.chip} ${summary.varying ? styles.chipVarying : ''}`}>
+          {summary.text}
+        </span>
+      )}
+      {isExpandable ? (
+        <span
+          className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ''}`}
+          aria-hidden="true"
+        >
+          &rsaquo;
+        </span>
+      ) : (
+        trailingControl
+      )}
+    </>
   );
 
   return (
@@ -138,115 +255,103 @@ export function MemberRuleRow({
       className={`${styles.row} ${state !== 'included' ? styles.dimmed : ''}`}
       data-testid="member-row"
     >
-      <div className={styles.mainLine}>
-        <TypeBadge type={task?.type ?? TaskType.NORMAL} letterOnly size="small" />
-        <span className={styles.text}>
-          <span className={`${styles.title} ${state === 'excluded' ? styles.struck : ''}`}>
-            {title}
-          </span>
-          {clashTitle !== undefined && (
-            <span className={styles.clashHint}>
-              shares a counter with &ldquo;{clashTitle}&rdquo; &middot; one per board
-            </span>
-          )}
-        </span>
-        {isOn && isCounting && fromBoard && (
-          <>
-            <CounterStepper
-              size="compact"
-              value={target}
-              min={1}
-              max={goal}
-              onChange={(next) => onSetTarget(next)}
-            />
-            <span className={styles.caption}>
-              of {goal}
-              {unit ? ` ${unit}` : ''}
-            </span>
-          </>
-        )}
-        {isOn && isCounting && (
-          <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />
-        )}
-        {state === 'included' && (
+      {isExpandable ? (
+        // `.mainLine` is the positioning context for the overlaid control,
+        // so the control centres on THIS line — which grows to two lines on
+        // a counter-clash row — and not on the row including its expanded
+        // block.
+        <div className={styles.mainLine}>
           <button
             type="button"
-            className={styles.exclude}
-            onClick={onToggleExclude}
-            aria-label={`Exclude ${title} for this board`}
+            className={styles.disclosure}
+            data-testid="member-disclosure"
+            aria-expanded={isExpanded}
+            onClick={() => setIsExpanded((open) => !open)}
           >
-            ✕
+            {mainLineContent}
           </button>
-        )}
-        {state === 'excluded' && (
-          <button
-            type="button"
-            className={styles.undo}
-            onClick={onToggleExclude}
-            aria-label={`Undo excluding ${title}`}
-          >
-            UNDO
-          </button>
-        )}
-        {state === 'filteredDone' && (
-          <span className={styles.doneCheck} aria-label={`${title} is done`}>
-            ✓
-          </span>
-        )}
-      </div>
-
-      {isOn && memberRange !== null && <p className={styles.rangeLine}>{memberRange}</p>}
-
-      {isOn && isCompound && (
-        <div className={styles.splitLine}>
-          <RisoSegmented
-            options={[
-              { value: 'one', label: 'One square' },
-              { value: 'split', label: 'Split up' },
-            ]}
-            value={split ? 'split' : 'one'}
-            onChange={(v) => onSetSplit(v === 'split')}
-            variant="pill"
-            size="compact"
-            aria-label={`Squares for ${title}`}
-          />
-          <span className={styles.squaresNote}>
-            {/* One square puts the WHOLE compound on as a single square —
-                `splitSquaresNote` counts included parts, which is the
-                split-mode answer only. */}
-            {split
-              ? splitSquaresNote(
-                  parts.map((p) => p.childTaskId),
-                  excludedPartIds,
-                )
-              : '1 square'}
-          </span>
-          {!split && (
-            <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />
-          )}
+          {/* A SIBLING of the disclosure, never nested inside it — a button
+              inside a button is invalid and swallows the inner click. */}
+          {trailingControl}
         </div>
+      ) : (
+        <div className={styles.staticLine}>{mainLineContent}</div>
       )}
 
-      {isOn &&
-        isCompound &&
-        parts.map((part) => (
-          <PartLine
-            key={part.id}
-            childId={part.childTaskId}
-            canExclude={parts.length - excludedPartIds.size > 1}
-            task={taskById[part.childTaskId]}
-            rule={rule}
-            split={split}
-            memberVary={memberVary}
-            fromBoard={fromBoard}
-            sourceWindow={sourceWindow}
-            wizardWindow={wizardWindow}
-            mode={mode}
-            onSetPartExcluded={onSetPartExcluded}
-            onSetPartTarget={onSetPartTarget}
-            onSetPartVary={onSetPartVary}
-          />
-        ))}
+      {isExpandable && isExpanded && (
+        // One block, one rhythm: 4px between lines, 8px under the whole
+        // thing, all of it at the 69px indent — so a compound's last part
+        // gets the same breathing room a counting row's controls line does
+        // and never crowds the next row's hairline.
+        <div className={styles.expanded}>
+          <div className={styles.controlsLine}>
+            {isCompound ? (
+              <>
+                <RisoSegmented
+                  options={[
+                    { value: 'one', label: 'One square' },
+                    { value: 'split', label: 'Split up' },
+                  ]}
+                  value={split ? 'split' : 'one'}
+                  onChange={(v) => onSetSplit(v === 'split')}
+                  variant="pill"
+                  size="compact"
+                  aria-label={`Squares for ${title}`}
+                />
+                <span className={styles.squaresNote}>
+                  {/* One square puts the WHOLE compound on as a single
+                      square — `splitSquaresNote` counts included parts,
+                      which is the split-mode answer only. */}
+                  {split ? splitSquaresNote(partIds, excludedPartIds) : '1 square'}
+                </span>
+                {!split && (
+                  <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />
+                )}
+              </>
+            ) : (
+              <>
+                {fromBoard && (
+                  <CounterStepper
+                    size="compact"
+                    value={target}
+                    min={1}
+                    max={goal}
+                    onChange={(next) => onSetTarget(next)}
+                    // The goal rides INSIDE the pill now — B3's separate
+                    // "of 35 pages" caption restated what an auto-generated
+                    // counting title already says, twice over.
+                    suffix={`/ ${goal}${unit ? ` ${unit}` : ''}`}
+                  />
+                )}
+                <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />
+                {/* Inline, not a third line: an expanded counting row is
+                    exactly two lines. */}
+                {memberRange !== null && <span className={styles.rangeInline}>{memberRange}</span>}
+              </>
+            )}
+          </div>
+
+          {isCompound &&
+            parts.map((part) => (
+              <PartLine
+                key={part.id}
+                childId={part.childTaskId}
+                canExclude={parts.length - excludedPartIds.size > 1}
+                task={taskById[part.childTaskId]}
+                rule={rule}
+                split={split}
+                memberVary={memberVary}
+                fromBoard={fromBoard}
+                sourceWindow={sourceWindow}
+                wizardWindow={wizardWindow}
+                mode={mode}
+                onSetPartExcluded={onSetPartExcluded}
+                onSetPartTarget={onSetPartTarget}
+                onSetPartVary={onSetPartVary}
+              />
+            ))}
+        </div>
+      )}
     </li>
   );
 }
@@ -276,8 +381,14 @@ interface PartLineProps {
 /**
  * One part of a compound member: name · target stepper · caption · dice ·
  * ✕, with its own range line. Dice and ✕ appear only while the member is
- * split — One square rolls one dice for the whole compound (on the toggle
- * line) and contributes one square, so a part has nothing to exclude.
+ * split — One square rolls one dice for the whole compound (on the
+ * controls line) and contributes one square, so a part has nothing to
+ * exclude.
+ *
+ * Parts stay SINGLE-LINE at the 69px indent (B3.1): ~155px still fits a
+ * part name, and splitting these too would make a 3-part compound seven
+ * lines. So the part keeps the `of {goal}` caption and the separate range
+ * line that the member row itself gave up.
  *
  * @param props - See {@link PartLineProps}.
  * @returns The part line (and its range line, when the dice is on).
@@ -335,7 +446,10 @@ function PartLine({
   }
 
   return (
-    <>
+    // The part line and its own range line are ONE flex child of
+    // `.expanded`, so the range hugs the part it belongs to instead of
+    // taking the block's 4px inter-line gap.
+    <div className={styles.part}>
       <div className={styles.partLine}>
         <span className={styles.partName}>{name}</span>
         {isCounting && fromBoard && (
@@ -365,6 +479,6 @@ function PartLine({
         )}
       </div>
       {range !== null && <p className={styles.rangeLine}>{range}</p>}
-    </>
+    </div>
   );
 }
