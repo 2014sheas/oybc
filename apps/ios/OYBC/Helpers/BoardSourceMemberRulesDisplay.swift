@@ -129,6 +129,63 @@ extension BoardSources {
         Swift.max(1, goal - windowCount)
     }
 
+    // MARK: - Collapsed-row summaries (B3.1)
+
+    /// What a collapsed member row shows in place of its controls — the
+    /// row's current answer, never a second control. TS twin:
+    /// `MemberSummary` in `memberRulesDisplay.ts`.
+    struct MemberSummary: Equatable {
+        /// The chip's text.
+        let text: String
+        /// True when this member's dice is lit — the row tints the chip
+        /// `risoBlue` rather than `risoMuted`.
+        let varying: Bool
+    }
+
+    /// Collapsed-row summary for a counting member: the vary range when the
+    /// dice is lit, otherwise the plain target (with its unit, when it has
+    /// one). Dispatches to ``varyRangeLabel(t:level:goal:unit:)`` so the chip
+    /// and the expanded row's blue range line can never disagree.
+    ///
+    /// - Parameters:
+    ///   - target: The pre-vary target (see ``effectiveMemberTarget``).
+    ///   - level: The member's vary level.
+    ///   - goal: The member's own `maxCount`, the hard ceiling.
+    ///   - unit: The counting member's unit, or `""` when it has none.
+    /// - Returns: The chip's text and whether the dice is lit.
+    static func countingSummary(target: Int, level: VaryLevel, goal: Int, unit: String) -> MemberSummary {
+        if let range = varyRangeLabel(t: target, level: level, goal: goal, unit: unit) {
+            return MemberSummary(text: range, varying: true)
+        }
+        return MemberSummary(text: unit.isEmpty ? "\(target)" : "\(target) \(unit)", varying: false)
+    }
+
+    /// Collapsed-row summary for a compound member: how many squares it
+    /// contributes. While split the dice lives on the parts, so the
+    /// member-level chip never reports varying; while One square the
+    /// member's dice rolls for the whole square.
+    ///
+    /// - Parameters:
+    ///   - split: Whether the member is in Split up mode.
+    ///   - partIds: The member's own, live part ids.
+    ///   - excludedPartIds: Part ids excluded by this member's split rule.
+    ///   - level: The member's own vary level.
+    /// - Returns: The chip's text and whether the dice is lit.
+    static func compoundSummary(
+        split: Bool,
+        partIds: [String],
+        excludedPartIds: Set<String>,
+        level: VaryLevel
+    ) -> MemberSummary {
+        if split {
+            return MemberSummary(
+                text: splitSquaresNote(partIds: partIds, excludedPartIds: excludedPartIds),
+                varying: false
+            )
+        }
+        return MemberSummary(text: "1 square", varying: level != .off)
+    }
+
     /// The delete-confirm line warning that window-stamped derived counters
     /// made from this task will go with it (B3 RC12).
     ///

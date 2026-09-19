@@ -272,3 +272,67 @@ export function withPartRule(
 export function remainingTarget(goal: number, windowCount: number): number {
   return Math.max(1, goal - windowCount);
 }
+
+/**
+ * What a collapsed member row shows in place of its controls — the row's
+ * current answer, never a second control.
+ *
+ * `varying` is what the row colours the chip by: `--riso-blue` when the
+ * dice is lit, `--riso-muted` when it is not.
+ */
+export interface MemberSummary {
+  /** The chip's text. */
+  readonly text: string;
+  /** True when this member's dice is lit. */
+  readonly varying: boolean;
+}
+
+/**
+ * Collapsed-row summary for a counting member: the vary range when the
+ * dice is lit, otherwise the plain target (with its unit, when it has one).
+ *
+ * Dispatches to {@link varyRangeLabel} rather than re-deriving the range,
+ * so a collapsed row and the expanded row's blue range line can never
+ * disagree.
+ *
+ * @param target - The pre-vary target (see {@link effectiveMemberTarget}).
+ * @param level - The member's vary level.
+ * @param goal - The member's own `maxCount`, the hard ceiling.
+ * @param unit - The counting member's unit, or `''` when it has none.
+ * @returns The chip's text and whether the dice is lit.
+ */
+export function countingSummary(
+  target: number,
+  level: VaryLevel,
+  goal: number,
+  unit: string
+): MemberSummary {
+  const range = varyRangeLabel(target, level, goal, unit);
+  if (range !== null) return { text: range, varying: true };
+  return { text: `${target}${unit ? ` ${unit}` : ''}`, varying: false };
+}
+
+/**
+ * Collapsed-row summary for a compound member: how many squares it
+ * contributes.
+ *
+ * While split, the dice lives on the individual parts, so the member-level
+ * chip never reports varying however the parts are set — the parts' own
+ * rows carry that. While One square, the member's dice rolls for the whole
+ * square, so `level` governs.
+ *
+ * @param split - Whether the member is in Split up mode.
+ * @param partIds - The member's own, live part ids.
+ * @param excludedPartIds - Part ids excluded by this member's split rule.
+ * @param level - The member's own vary level.
+ * @returns The chip's text and whether the dice is lit.
+ */
+export function compoundSummary(
+  split: boolean,
+  partIds: readonly string[],
+  excludedPartIds: ReadonlySet<string>,
+  level: VaryLevel
+): MemberSummary {
+  if (split) return { text: splitSquaresNote(partIds, excludedPartIds), varying: false };
+  return { text: '1 square', varying: level !== 0 };
+}
