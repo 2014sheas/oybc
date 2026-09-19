@@ -32,16 +32,21 @@ import type { BoardWindow, PlanMode } from './memberRules';
  * requiring a full plan run.
  *
  * One-off boards never auto-target (`explicit ?? goal`); recurring boards
- * pro-rate via {@link autoTarget} over the nominal day-lengths of the
- * source and target windows (`explicit ?? autoTarget(goal, sourceDays,
- * targetDays)`) — a missing `sourceWindow` behaves exactly like `autoTarget`
- * with a `null` source (falls back to `goal`). Either way the result is
- * floored and clamped to `1…goal`, mirroring `resolveTarget` in
- * `memberRules.ts`.
+ * only auto-target when the member came from a board source — `fromBoard`
+ * mirrors `resolveTarget`'s real gate in `planDerivedTasks`
+ * (`fromBoard && mode === 'recurring'`), so a pool-sourced or hand-added
+ * member falls straight to `explicit ?? goal` even in recurring mode. When
+ * the gate is open, the target pro-rates via {@link autoTarget} over the
+ * nominal day-lengths of the source and target windows (`explicit ??
+ * autoTarget(goal, sourceDays, targetDays)`) — a missing `sourceWindow`
+ * behaves exactly like `autoTarget` with a `null` source (falls back to
+ * `goal`). Either way the result is floored and clamped to `1…goal`,
+ * mirroring `resolveTarget` in `memberRules.ts`.
  *
  * @param args.goal - The member's own `maxCount` (integer ≥ 1).
  * @param args.explicit - A stored member-/part-level `target` override, if any.
  * @param args.mode - Whether the board being assembled is one-off or recurring.
+ * @param args.fromBoard - Whether the member's supplying source is `kind: 'board'` — pool-sourced and hand-added members never auto-target, matching `resolveTarget`.
  * @param args.sourceWindow - The window the member was pulled from, if known.
  * @param args.targetWindow - The window of the board being assembled.
  * @returns The effective target (integer ≥ 1, ≤ `goal`).
@@ -50,14 +55,15 @@ export function effectiveMemberTarget(args: {
   goal: number;
   explicit?: number;
   mode: PlanMode;
+  fromBoard: boolean;
   sourceWindow?: BoardWindow;
   targetWindow: BoardWindow;
 }): number {
-  const { goal, explicit, mode, sourceWindow, targetWindow } = args;
+  const { goal, explicit, mode, fromBoard, sourceWindow, targetWindow } = args;
   const targetDays = nominalWindowDays(targetWindow.timeframe, targetWindow.startDate, targetWindow.endDate);
   const base =
     explicit ??
-    (mode === 'recurring'
+    (fromBoard && mode === 'recurring'
       ? autoTarget(
           goal,
           sourceWindow
@@ -90,27 +96,20 @@ export function varyRangeLabel(t: number, level: VaryLevel, goal: number, unit: 
  * Human-readable "N squares" note for a split compound member — how many of
  * its parts a person actually contributes to the board.
  *
- * `partCount` is the member's real part total (the same count a caller
- * would get from its `compound_children` rows); `excludedPartIds` is
- * intersected against `partIds` rather than subtracted from `partCount`
- * directly, so a stale excluded id that no longer names one of the
+ * `excludedPartIds` is intersected against `partIds` — the member's own,
+ * live part ids (from its `compound_children` rows) — rather than counted
+ * on its own, so a stale excluded id that no longer names one of the
  * member's parts is silently inert — the same "stale rule does nothing"
  * idiom `applyMemberRules` uses. The result floors at 1: this is a display
  * note, not the expansion itself, so it never claims "0 squares" even when
  * every part is excluded.
  *
- * @param partCount - The member's total part count.
+ * @param partIds - The member's own, live part ids.
  * @param excludedPartIds - Part ids excluded by this member's split rule.
- * @param partIds - The member's own part ids, to test exclusion membership against.
  * @returns `"1 square"` or `"N squares"`.
  */
-export function splitSquaresNote(
-  partCount: number,
-  excludedPartIds: ReadonlySet<string>,
-  partIds: readonly string[]
-): string {
-  const excludedCount = partIds.filter((id) => excludedPartIds.has(id)).length;
-  const included = Math.max(1, partCount - excludedCount);
+export function splitSquaresNote(partIds: readonly string[], excludedPartIds: ReadonlySet<string>): string {
+  const included = Math.max(1, partIds.filter((id) => !excludedPartIds.has(id)).length);
   return included === 1 ? '1 square' : `${included} squares`;
 }
 

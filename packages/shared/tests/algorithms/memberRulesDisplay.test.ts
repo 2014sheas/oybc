@@ -21,7 +21,7 @@ import {
   remainingTarget,
 } from '../../src/algorithms/memberRulesDisplay';
 import type { BoardWindow, PlanMode } from '../../src/algorithms/memberRules';
-import type { VaryLevel, BoardSource, BoardSourceMemberRule } from '../../src/types';
+import type { VaryLevel, BoardSource, BoardSourceMemberRule, BoardSourcePartRule } from '../../src/types';
 
 const V: any = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'memberRuleVectors.json'), 'utf8')
@@ -42,12 +42,27 @@ const src = (memberRules: Record<string, BoardSourceMemberRule> | null): BoardSo
 });
 
 /**
- * Maps a fixture patch's `null` values to `undefined` (the fixture's "clear
- * this field" sentinel — see the `clearSentinel` note) and leaves every
- * other value untouched.
+ * Builds the actual TS patch object from the fixture's `{ set, clear }` shape
+ * (see the `patchShape` note): `set` fields overwrite, `clear` fields become
+ * `undefined` (the TS API's own "delete this field" convention) — matching
+ * exactly what the fixture note says the harness does.
  */
-const clearSentinel = <T extends Record<string, unknown>>(patch: T): T =>
-  Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v === null ? undefined : v])) as T;
+const buildPatch = <T extends object>(patch: { set?: Partial<T>; clear?: (keyof T)[] }): Partial<T> =>
+  ({
+    ...patch.set,
+    ...Object.fromEntries((patch.clear ?? []).map((k) => [k, undefined])),
+  }) as Partial<T>;
+
+/** Recursively `Object.freeze`s `obj` and everything it references. */
+function deepFreeze<T>(obj: T): T {
+  if (obj !== null && typeof obj === 'object' && !Object.isFrozen(obj)) {
+    for (const key of Object.getOwnPropertyNames(obj)) {
+      deepFreeze((obj as Record<string, unknown>)[key]);
+    }
+    Object.freeze(obj);
+  }
+  return obj;
+}
 
 describe('effectiveMemberTarget', () => {
   it.each(V.effectiveMemberTarget as any[])('$name', (v: any) => {
@@ -56,6 +71,7 @@ describe('effectiveMemberTarget', () => {
         goal: v.goal,
         explicit: v.explicit,
         mode: v.mode as PlanMode,
+        fromBoard: v.fromBoard,
         sourceWindow: v.sourceWindow ? win(v.sourceWindow) : undefined,
         targetWindow: win(v.targetWindow),
       })
@@ -71,7 +87,7 @@ describe('varyRangeLabel', () => {
 
 describe('splitSquaresNote', () => {
   it.each(V.splitSquaresNote as any[])('$name', (v: any) => {
-    expect(splitSquaresNote(v.partCount, new Set<string>(v.excludedPartIds), v.partIds)).toBe(v.expected);
+    expect(splitSquaresNote(v.partIds, new Set<string>(v.excludedPartIds))).toBe(v.expected);
   });
 });
 
@@ -106,7 +122,7 @@ describe('withMemberRule', () => {
   it.each(V.withMemberRule as any[])('$name', (v: any) => {
     let source = src(v.startMemberRules);
     for (const step of v.steps) {
-      source = withMemberRule(source, step.taskId, clearSentinel(step.patch));
+      source = withMemberRule(source, step.taskId, buildPatch<BoardSourceMemberRule>(step.patch));
     }
     expectMemberRules(source, v.expectedMemberRules);
   });
@@ -116,8 +132,31 @@ describe('withPartRule', () => {
   it.each(V.withPartRule as any[])('$name', (v: any) => {
     let source = src(v.startMemberRules);
     for (const step of v.steps) {
-      source = withPartRule(source, step.taskId, step.childId, clearSentinel(step.patch));
+      source = withPartRule(source, step.taskId, step.childId, buildPatch<BoardSourcePartRule>(step.patch));
     }
     expectMemberRules(source, v.expectedMemberRules);
+  });
+});
+
+describe('withMemberRule / withPartRule immutability', () => {
+  it.each(V.immutability as any[])('$name', (v: any) => {
+    const original = deepFreeze(src(v.startMemberRules));
+    const snapshot = JSON.parse(JSON.stringify(original));
+
+    expect(() => {
+      let current: BoardSource = original;
+      for (const step of v.steps) {
+        const next: BoardSource =
+          v.kind === 'member'
+            ? withMemberRule(current, step.taskId, buildPatch<BoardSourceMemberRule>(step.patch))
+            : withPartRule(current, step.taskId, step.childId, buildPatch<BoardSourcePartRule>(step.patch));
+        // Freeze every intermediate result too, so a later step in the chain
+        // is proven not to mutate the PREVIOUS step's output either — not
+        // just the very first frozen source.
+        current = deepFreeze(next);
+      }
+    }).not.toThrow();
+
+    expect(original).toEqual(snapshot);
   });
 });
