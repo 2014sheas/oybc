@@ -494,3 +494,24 @@ extension RisoTaskKind {
         }
     }
 }
+
+// MARK: - Show-expired toggle
+
+/// The one "Show expired tasks" switch, shared by every surface that hides
+/// finished windows by default.
+///
+/// Extracted from the Tasks tab's secondary filter panel when the Counters
+/// hub gained the same control (B3 RC9) — the label is a cross-platform copy
+/// contract (web's `ShowExpiredToggle`), so it lives in exactly one place on
+/// each platform rather than being retyped per screen.
+struct RisoShowExpiredToggle: View {
+
+    /// Whether expired tasks are currently shown.
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle("Show expired tasks", isOn: $isOn)
+            .font(.risoBody(13, .medium))
+            .tint(Color.risoBlue)
+    }
+}

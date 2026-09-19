@@ -16,12 +16,13 @@ final class BoardPlacementTests: XCTestCase {
 
     /// Deterministic uniform [0,1) LCG (Numerical Recipes constants). Twin of
     /// packages/bingo-core/tests/seededRng.ts `makeSeededRng`.
+    ///
+    /// Delegates to the production ``SeededRng`` (B3 RC6 promoted the
+    /// recurrence out of this file), so the golden vectors below and the
+    /// wizard Preview's seeded roll can never diverge.
     private func makeSeededRng(_ seed: UInt32) -> () -> Double {
-        var state = seed
-        return {
-            state = state &* 1664525 &+ 1013904223
-            return Double(state) / 4294967296.0
-        }
+        var rng = SeededRng(seed: seed)
+        return { rng.next() }
     }
 
     private func makeTask(_ id: String) -> Task {

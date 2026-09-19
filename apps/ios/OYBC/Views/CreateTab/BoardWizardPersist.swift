@@ -120,9 +120,24 @@ enum WizardStatus: String {
 /// Bug #85 — pending tasks (in `controller.pendingTasks`) are merged into
 /// the candidate pool so newly-created (not-yet-persisted) tasks appear
 /// in the preview and placement just like library tasks.
+///
+/// §Member rules (B3, RC6) — `previewRules` runs the DISPLAY-ONLY dry run
+/// (``applyPreviewDerivedCells(placement:controller:library:rng:)``) over the
+/// finished placement, so the Preview grid shows the rolled targets the board
+/// will actually carry. It carries a SEED, not a generator: ONE
+/// ``makePreviewRng(shuffleNonce:)`` is built per call and drives both the
+/// cell shuffle and the target rolls, which makes the whole preview a pure
+/// function of `(seed, inputs)` — rebuild it as often as SwiftUI likes and
+/// nothing moves after first paint. Shuffle bumps the seed.
+///
+/// It is a PREVIEW affordance: the persist path never passes it —
+/// `saveWizardBoard` mints the real derived rows inside its own transaction,
+/// with the platform rng, and would double-roll if the placement it was handed
+/// already carried stand-ins.
 func buildWizardPlacement(
     controller: BoardWizardViewModel,
-    library: TaskLibraryViewModel
+    library: TaskLibraryViewModel,
+    previewRules: PreviewRulesOptions? = nil
 ) -> WizardPlacement {
     let size = controller.size
     let isOdd = size % 2 != 0
@@ -243,16 +258,46 @@ func buildWizardPlacement(
     // the order verbatim; the randomized path lets the core shuffle. Center
     // handling + the cell walk are the shared placement math
     // (BoardPlacement.placeBoard — the Swift mirror of bingo-core `placeBoard`).
-    let ordered: [Task] = controller.isRandomized
-        ? selected
-        : selected.sorted { $0.id < $1.id }
+    let ordered: [Task]
+    if !controller.isRandomized {
+        ordered = selected.sorted { $0.id < $1.id }
+    } else if previewRules != nil {
+        // §Member rules (B3, RC6) — the PREVIEW must be a pure function of
+        // (seed, plan inputs), and `selectBoardTasks` hands back its picks in
+        // a RANDOMISED order that the seeded shuffle would then permute
+        // differently on every rebuild — the grid would drift with no Shuffle.
+        // Normalise the pre-shuffle order first, exactly as web's
+        // `fromLibrary + pendingExtras` does: `library.libraryTasks` is
+        // title-sorted, so the seed alone decides the arrangement. Pending
+        // (not-yet-saved) tasks aren't in the library, so they follow — by id,
+        // which web leaves in `selectedIds` order; iOS pins it so a pending
+        // task can't drift either.
+        let ids = Set(selectedIds)
+        let fromLibrary = library.libraryTasks.compactMap { ids.contains($0.id) ? taskById[$0.id] : nil }
+        let placedIds = Set(fromLibrary.map { $0.id })
+        let pendingExtras = selectedIds.filter { !placedIds.contains($0) }
+            .sorted()
+            .compactMap { taskById[$0] }
+        ordered = fromLibrary + pendingExtras
+    } else {
+        ordered = selected
+    }
 
-    return BoardPlacement.placeBoard(
+    // No `rng` → `placeBoard` defaults to `Double.random`; the PREVIEW passes
+    // its seeded one so the arrangement, like the target rolls, is fixed for a
+    // given seed.
+    let previewRng = previewRules.map { makePreviewRng(shuffleNonce: $0.seed) }
+    let placement = BoardPlacement.placeBoard(
         items: ordered,
         gridSize: size,
         centerType: isOdd ? controller.centerType : .none,
         chosenCenterId: chosenCenter?.id,
-        randomize: controller.isRandomized
+        randomize: controller.isRandomized,
+        rng: previewRng ?? { Double.random(in: 0..<1) }
+    )
+    guard let previewRng else { return placement }
+    return applyPreviewDerivedCells(
+        placement: placement, controller: controller, library: library, rng: previewRng
     )
 }
 

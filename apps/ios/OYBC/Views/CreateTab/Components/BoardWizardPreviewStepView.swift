@@ -38,8 +38,15 @@ enum ArrangeSubMode: String, Hashable {
 ///
 /// Persistence: `placement` (`@State`) is the single source of truth for both the
 /// grid and `persistWizardBoard`. Rearranging via drag/tap updates `placement` via
-/// `handleReorder(_:)`; Shuffle re-seeds via `reseedPlacement()`. Both paths ensure
-/// what the user sees is exactly what gets saved — no re-roll at persist time.
+/// `handleReorder(_:)`; Shuffle bumps `shuffleNonce`, which `placementKey` folds in
+/// so the keyed handler re-seeds via `reseedPlacement()`. Both paths ensure what
+/// the user sees is exactly what gets saved — no re-roll at persist time.
+///
+/// §Member rules (B3, RC6) — a one-off Preview also runs the member-rule DRY RUN
+/// (`applyPreviewDerivedCells`, via `previewRules`): a counting member carrying a
+/// target/vary rule renders as the derived counter the board will actually carry,
+/// with the rolled target. The whole preview is a pure function of
+/// `(shuffleNonce, plan inputs)`, so nothing moves after first paint.
 struct BoardWizardPreviewStepView: View {
     @Bindable var controller: BoardWizardViewModel
     let library: TaskLibraryViewModel
@@ -74,6 +81,13 @@ struct BoardWizardPreviewStepView: View {
     /// the user taps the Rearrange segment; the grid gains jiggle + drag/tap.
     @State private var arrangeSubMode: ArrangeSubMode = .preview
 
+    /// §Member rules (B3, RC6) — the Shuffle counter. Bumped by the Shuffle
+    /// button and by nothing else; it seeds BOTH the cell arrangement and the
+    /// Preview's member-rule target rolls, so one nonce ⇒ one preview and a
+    /// re-render (a late library load, a data tick) can never move the grid
+    /// or re-roll a target on its own.
+    @State private var shuffleNonce: UInt32 = 0
+
     /// Non-deleted TaskEvents grouped by taskId, loaded once on appear —
     /// the read-model the preview grid's windowed completion resolves
     /// against (see `previewIsCompleted`). Empty until the fetch lands
@@ -97,12 +111,97 @@ struct BoardWizardPreviewStepView: View {
     /// Mirrors web's `useMemo` deps (`library.allTasks`,
     /// `controller.pendingTasks`, size, centerType, centerTaskId, selection).
     private var placementKey: String {
-        "\(selectionKey)|\(controller.size)|\(controller.centerType.rawValue)|\(controller.centerTaskId ?? "")|\(library.libraryTasks.count)|\(controller.pendingTasks.count)"
+        "\(selectionKey)|\(controller.size)|\(controller.centerType.rawValue)|\(controller.centerTaskId ?? "")|\(planKey)|\(shuffleNonce)"
+    }
+
+    /// Everything the placement build reads about the CONTENT of the plan, as
+    /// a stable string — the member fields the dry run renders, the per-source
+    /// rules, the hand-added dice, and the hand-added layer.
+    ///
+    /// This replaced a `library.libraryTasks.count` / `pendingTasks.count`
+    /// proxy (B3 RC6 item 5). Counts re-seeded on any library size change —
+    /// a background sync pull writing an unrelated task — which re-randomised
+    /// the grid and re-rolled every target with no Shuffle and no user action
+    /// (`reference_late_mutation_bug_class`). Keying on the CONTENT the build
+    /// actually reads keeps the legitimate refreshes (the library resolving, a
+    /// staged inline edit, a rule change) and drops the churn. Mirrors web's
+    /// `planKey` in `BoardWizardPreviewStep.tsx`.
+    private var planKey: String {
+        var byId: [String: Task] = [:]
+        for task in library.libraryTasks { byId[task.id] = task }
+        for payload in controller.pendingTasks.values { byId[payload.task.id] = payload.task }
+
+        let members = controller.selectedTaskIds.sorted().map { id -> String in
+            guard let task = byId[id] else { return "\(id):?" }
+            let staged = controller.stagedEdits[id].map(Self.patchKey) ?? ""
+            return [
+                id, task.type.rawValue, task.title,
+                task.maxCount.map(String.init) ?? "", task.action ?? "", task.unit ?? "",
+                staged,
+            ].joined(separator: ":")
+        }
+        let rules = controller.sources.map { source -> String in
+            let ruleKey = (source.memberRules ?? [:]).keys.sorted().map { taskId -> String in
+                let rule = BoardSources.memberRule(for: taskId, in: source)
+                let parts = (rule.parts ?? [:]).keys.sorted().map { childId -> String in
+                    let part = BoardSources.partRule(for: childId, in: rule)
+                    return "\(childId)=\(part.target.map(String.init) ?? "")/\(part.vary?.rawValue ?? -1)/\(part.excluded == true)"
+                }.joined(separator: ",")
+                return "\(taskId)=\(rule.target.map(String.init) ?? "")/\(rule.vary?.rawValue ?? -1)/\(rule.split == true)/[\(parts)]"
+            }.joined(separator: ",")
+            return [
+                source.sourceId, source.kind.rawValue, String(source.min),
+                source.max.map(String.init) ?? "", source.filter.rawValue,
+                source.excludedTaskIds.sorted().joined(separator: "+"), ruleKey,
+            ].joined(separator: ":")
+        }
+        let manualVary = controller.manualTaskVary.keys.sorted()
+            .map { "\($0)=\(controller.manualTaskVary[$0]?.rawValue ?? 0)" }
+            .joined(separator: ",")
+        return [
+            members.joined(separator: "|"),
+            rules.joined(separator: "|"),
+            manualVary,
+            controller.manualTaskIds.sorted().joined(separator: ","),
+        ].joined(separator: "~")
+    }
+
+    /// One staged inline edit, flattened for ``planKey``. `TaskEditPatch` is
+    /// `Equatable` but not `Encodable`, so the fields the preview can render
+    /// are folded in by hand.
+    ///
+    /// - Parameter patch: The staged patch.
+    /// - Returns: A stable string that changes whenever the patch does.
+    private static func patchKey(_ patch: TaskEditPatch) -> String {
+        let children = patch.children.map {
+            "\($0.id)/\($0.title)/\($0.goal)/\($0.action)/\($0.unit)/\($0.markedDeleted)"
+        }.joined(separator: ",")
+        return [
+            patch.title, patch.action, patch.goal, patch.unit,
+            patch.operatorType?.rawValue ?? "", patch.threshold.map(String.init) ?? "",
+            children,
+        ].joined(separator: "/")
+    }
+
+    /// §Member rules (B3, RC6) — a ONE-OFF board's Preview shows the cells the
+    /// board will actually carry, so it runs the member-rule dry run: counting
+    /// members with a target/vary rule stand in as their derived counters,
+    /// with the rolled target. It carries the SEED (never a generator):
+    /// `buildWizardPlacement` builds a fresh one per call and drives both the
+    /// cell shuffle and the rolls with it, so every rebuild for one seed
+    /// reproduces the same preview and only Shuffle moves anything. The roll
+    /// is a SAMPLE of the range — persist mints with the platform rng. A
+    /// repeating board shows the 5b summary card instead (no cell grid, and
+    /// its targets pro-rate per repeated window), so it passes nothing.
+    private var previewRules: PreviewRulesOptions? {
+        controller.isRecurring ? nil : PreviewRulesOptions(seed: shuffleNonce)
     }
 
     /// Re-roll the stored placement from the current wizard state.
     private func reseedPlacement() {
-        placement = buildWizardPlacement(controller: controller, library: library)
+        placement = buildWizardPlacement(
+            controller: controller, library: library, previewRules: previewRules
+        )
     }
 
     // MARK: - Arrange grid helpers
@@ -583,9 +682,10 @@ struct BoardWizardPreviewStepView: View {
 
     /// Toggle (Preview ⇄ Rearrange) + optional Shuffle button in one horizontal bar.
     ///
-    /// The Shuffle button re-seeds `placement` from scratch via `reseedPlacement()`,
-    /// which triggers `RearrangeGrid.onChange(of:cells)` to animate the new order.
-    /// Shuffle is only visible when `canShuffle` (isRandomized + ≥2 shuffleable tasks).
+    /// The Shuffle button bumps `shuffleNonce`; `placementKey` folds the nonce in,
+    /// so the keyed handler re-seeds `placement` from scratch, which triggers
+    /// `RearrangeGrid.onChange(of:cells)` to animate the new order. Shuffle is only
+    /// visible when `canShuffle` (isRandomized + ≥2 shuffleable tasks).
     @ViewBuilder
     private var arrangeControlBar: some View {
         HStack(spacing: 8) {
@@ -599,7 +699,12 @@ struct BoardWizardPreviewStepView: View {
 
             if canShuffle {
                 Button {
-                    reseedPlacement()
+                    // Bump the SEED, don't re-roll here: `placementKey` folds
+                    // the nonce in, so the keyed handler re-seeds exactly once
+                    // with the new seed. Re-rolling inline would build the
+                    // placement from the PREVIOUS nonce (the @State write is
+                    // not yet visible) and then immediately rebuild it.
+                    shuffleNonce &+= 1
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "shuffle")

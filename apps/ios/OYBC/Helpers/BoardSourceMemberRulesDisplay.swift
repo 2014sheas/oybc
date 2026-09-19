@@ -125,6 +125,21 @@ extension BoardSources {
     ///   - goal: The member's own `maxCount`.
     ///   - windowCount: Progress toward the goal already made in the window.
     /// - Returns: The remaining target (integer ≥ 1).
+    /// The delete-confirm line warning that window-stamped derived counters
+    /// made from this task will go with it (B3 RC12).
+    ///
+    /// Copy is VERBATIM from web's `CounterDeleteConfirmDialog` — singular
+    /// "counter" at one, plural otherwise. Lives here so the two iOS confirm
+    /// sheets (`CounterDeleteConfirmView`, `TaskDeleteConfirmView`) can never
+    /// word it differently from each other or from web.
+    ///
+    /// - Parameter count: `TaskDeletionImpact.derivedWindowCounterCount`.
+    /// - Returns: The sentence, or `nil` when there is nothing to warn about.
+    static func derivedCounterRemovalNote(count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return "\(count) board counter\(count == 1 ? "" : "s") made from this one will be removed."
+    }
+
     static func remainingTarget(goal: Int, windowCount: Int) -> Int {
         Swift.max(1, goal - windowCount)
     }

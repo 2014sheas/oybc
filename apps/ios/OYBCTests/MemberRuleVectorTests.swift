@@ -16,15 +16,18 @@ final class MemberRuleVectorTests: XCTestCase {
 
     /// Deterministic uniform [0,1) LCG — twin of bingo-core's
     /// `tests/seededRng.ts` `makeSeededRng`. Same seed ⇒ same sequence.
+    ///
+    /// A counting reference wrapper around the production value-type
+    /// ``OYBC/SeededRng`` (B3 RC6 promoted the recurrence into the app
+    /// target); the call tally stays here because only these vectors pin it.
     private final class SeededRng {
-        private var state: UInt32
+        private var rng: OYBC.SeededRng
         /// Number of samples actually taken — some vectors pin this.
         private(set) var calls = 0
-        init(seed: UInt32) { state = seed }
+        init(seed: UInt32) { rng = OYBC.SeededRng(seed: seed) }
         func next() -> Double {
             calls += 1
-            state = state &* 1664525 &+ 1013904223
-            return Double(state) / 4294967296.0
+            return rng.next()
         }
     }
 
