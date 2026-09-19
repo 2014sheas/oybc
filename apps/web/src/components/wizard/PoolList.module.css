@@ -220,3 +220,12 @@
   border-radius: 999px;
   background: var(--riso-paper-2);
 }
+
+/* §Member rules (B3) — the dice's blue range line ("16–24 min"), under the
+   row and left-aligned with the title. */
+.rowRangeLine {
+  font-family: var(--riso-font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--riso-blue);
+}

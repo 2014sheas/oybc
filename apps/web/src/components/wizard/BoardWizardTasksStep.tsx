@@ -6,9 +6,12 @@ import {
   buildCounterFamilyMap,
   generateCounterTaskTitle,
   type BoardSource,
+  type BoardWindow,
   type CompoundChild,
+  type PlanMode,
   type Pool,
   type Task,
+  type VaryLevel,
 } from '@oybc/shared';
 import { fetchAllBoardTasks } from '../../db/operations';
 import { createTask } from '../../db/operations/tasks';
@@ -165,6 +168,29 @@ export interface BoardWizardTasksStepProps {
   onPullPoolSource: (poolId: string) => void;
   onPullBoardSource: (boardId: string) => void;
 
+  // ── §Member rules (B3) — per-member rule editing on pulled sources, plus
+  // the dice for hand-added counters. All optional so a read-only mount
+  // (the dev playground) renders the rows without wiring seven actions.
+  /** Dice level per hand-added counting task (`manualTaskVary`). */
+  manualTaskVary?: Record<string, VaryLevel>;
+  onSetManualVary?: (taskId: string, level: VaryLevel) => void;
+  onSetMemberTarget?: (sourceId: string, taskId: string, target: number | undefined) => void;
+  onSetMemberVary?: (sourceId: string, taskId: string, level: VaryLevel) => void;
+  onSetMemberSplit?: (sourceId: string, taskId: string, split: boolean) => void;
+  onSetPartExcluded?: (
+    sourceId: string,
+    taskId: string,
+    childId: string,
+    excluded: boolean,
+  ) => void;
+  onSetPartTarget?: (
+    sourceId: string,
+    taskId: string,
+    childId: string,
+    target: number | undefined,
+  ) => void;
+  onSetPartVary?: (sourceId: string, taskId: string, childId: string, level: VaryLevel) => void;
+
   /**
    * Web inline-editing port PR-2 — the wizard's staged inline task edits
    * (`useBoardWizard.stagedEdits`). Overlaid onto `effectiveTaskMap` /
@@ -219,6 +245,9 @@ export interface BoardWizardTasksStepProps {
  * modals; `LibrarySheet`/`SpecialTaskPanel`/`PoolList` each own their own
  * UI-local state (search, filters, expand, panel-open).
  */
+/** Default for an unwired rule action — a read-only mount changes nothing. */
+const NO_RULE_ACTION = (): void => {};
+
 export function BoardWizardTasksStep({
   library,
   selectedTaskIds,
@@ -252,6 +281,14 @@ export function BoardWizardTasksStep({
   onToggleSourceExclude,
   onPullPoolSource,
   onPullBoardSource,
+  manualTaskVary,
+  onSetManualVary,
+  onSetMemberTarget = NO_RULE_ACTION,
+  onSetMemberVary = NO_RULE_ACTION,
+  onSetMemberSplit = NO_RULE_ACTION,
+  onSetPartExcluded = NO_RULE_ACTION,
+  onSetPartTarget = NO_RULE_ACTION,
+  onSetPartVary = NO_RULE_ACTION,
   stagedEdits,
   onStageEdit,
   onRevertEdit,
@@ -293,6 +330,19 @@ export function BoardWizardTasksStep({
     }
     return merged;
   }, [library.taskMap, pendingTasks, stagedEdits, userId]);
+  // §Member rules (B3) — the window the rules pro-rate a pulled counting
+  // target AGAINST, and which planning mode applies. Both are already
+  // props; nothing new is threaded from the page for them.
+  const wizardWindow = useMemo<BoardWindow>(
+    () => ({
+      timeframe: currentTimeframe,
+      startDate: currentStartDate ?? null,
+      endDate: currentEndDate ?? null,
+    }),
+    [currentTimeframe, currentStartDate, currentEndDate],
+  );
+  const planMode: PlanMode = isRecurring ? 'recurring' : 'oneOff';
+
   const browsableTasks = useBrowsableTasks(library.allTasks, library.childToParents);
   const effectiveAllTasks = useMemo<Task[]>(() => {
     // Browse the draft-filtered set (hides other drafts' wizard-orphans), but
@@ -613,11 +663,6 @@ export function BoardWizardTasksStep({
         centerTaskId={centerTaskId}
         onCenterClick={handleCenterRadio}
         onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
-        onDeriveRequested={(task) => {
-          setDerivingFromTask(task);
-          setDeriveMaxCountInput('');
-          setDeriveError(null);
-        }}
         currentTimeframe={currentTimeframe}
         parentBoardTasks={parentBoardTasks}
       />
@@ -649,6 +694,8 @@ export function BoardWizardTasksStep({
           )
         }
         counterClashByTaskId={counterClashByTaskId}
+        manualTaskVary={manualTaskVary}
+        onSetManualVary={onSetManualVary}
         countOverride={capacity}
         leadingRows={
           sources.length > 0
@@ -673,19 +720,26 @@ export function BoardWizardTasksStep({
                   onToggleExclude={(taskId) => onToggleSourceExclude(source.sourceId, taskId)}
                   counterClashByTaskId={counterClashByTaskId}
                   compoundChildrenByCompound={effectiveChildrenByCompound}
-                  selectedTaskIds={selectedTaskIds}
-                  onDeriveMember={(task) => {
-                    // Reuses the step's existing derive modal (the library
-                    // sheet's onDeriveRequested path). The created counter
-                    // is a hand-add; the counter-family guard prefers it
-                    // over the source-supplied original at the deal.
-                    setDerivingFromTask(task);
-                    setDeriveMaxCountInput('');
-                    setDeriveError(null);
-                  }}
-                  onAddTask={(taskId) => {
-                    if (!selectedTaskIds.has(taskId)) onToggleSelection(taskId);
-                  }}
+                  mode={planMode}
+                  wizardWindow={wizardWindow}
+                  onSetMemberTarget={(taskId, target) =>
+                    onSetMemberTarget(source.sourceId, taskId, target)
+                  }
+                  onSetMemberVary={(taskId, level) =>
+                    onSetMemberVary(source.sourceId, taskId, level)
+                  }
+                  onSetMemberSplit={(taskId, split) =>
+                    onSetMemberSplit(source.sourceId, taskId, split)
+                  }
+                  onSetPartExcluded={(taskId, childId, excluded) =>
+                    onSetPartExcluded(source.sourceId, taskId, childId, excluded)
+                  }
+                  onSetPartTarget={(taskId, childId, target) =>
+                    onSetPartTarget(source.sourceId, taskId, childId, target)
+                  }
+                  onSetPartVary={(taskId, childId, level) =>
+                    onSetPartVary(source.sourceId, taskId, childId, level)
+                  }
                 />
               ))
             : undefined

@@ -51,3 +51,64 @@
   font-weight: 500;
   color: var(--riso-muted);
 }
+
+/* ── `compact` variant — the wizard's 22px member-row target pill
+   (docs/BOARD_SOURCES.md §Member rules; handoff "Counting member"). ── */
+.compactPill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.compactButton {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.compactButton:hover:not(:disabled) {
+  background: var(--riso-gold);
+  /* gold fill → static ink (adaptive --riso-ink flips light in dark mode) */
+  color: var(--riso-ink-static);
+}
+.compactButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.compactButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -2px;
+}
+
+.compactInput {
+  width: 28px;
+  min-width: 28px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-family: var(--riso-font-body);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--riso-ink);
+  font-variant-numeric: tabular-nums;
+}
+.compactInput:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}

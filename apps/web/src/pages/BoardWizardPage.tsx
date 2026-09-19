@@ -362,6 +362,14 @@ export function BoardWizardPage({
             onToggleSourceExclude={wizard.toggleSourceExclude}
             onPullPoolSource={wizard.pullPool}
             onPullBoardSource={wizard.pullBoard}
+            manualTaskVary={wizard.manualTaskVary}
+            onSetManualVary={wizard.setManualVary}
+            onSetMemberTarget={wizard.setMemberTarget}
+            onSetMemberVary={wizard.setMemberVary}
+            onSetMemberSplit={wizard.setMemberSplit}
+            onSetPartExcluded={wizard.setPartExcluded}
+            onSetPartTarget={wizard.setPartTarget}
+            onSetPartVary={wizard.setPartVary}
             stagedEdits={wizard.stagedEdits}
             onStageEdit={wizard.stageEdit}
             onRevertEdit={wizard.revertEdit}

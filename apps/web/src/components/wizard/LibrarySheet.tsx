@@ -48,8 +48,9 @@ export interface LibrarySheetProps {
    *  there's one `RowContextMenu` implementation for both surfaces. */
   onContextMenu: (taskId: string, x: number, y: number) => void;
   /** Opens the "Derive smaller version…" modal (owned by the parent, since
-   *  the same modal is reachable from the context menu on a pool row). */
-  onDeriveRequested: (task: Task) => void;
+   *  the same modal is reachable from the context menu on a pool row).
+   *  Omitted → the per-row derive link isn't offered. */
+  onDeriveRequested?: (task: Task) => void;
 
   currentTimeframe: Timeframe;
   /** Reactive list of tasks placed on currently-active PARENT boards
@@ -309,7 +310,7 @@ export function LibrarySheet({
                           isCenter,
                           onCenterClick: () => onCenterClick(task.id),
                         })}
-                        {isCounting && (
+                        {isCounting && onDeriveRequested && (
                           <div className={styles.deriveRow}>
                             <button
                               type="button"
