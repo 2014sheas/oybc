@@ -28,7 +28,6 @@ describe('DiceButton', () => {
     const html = render(0);
     expect(pipCount(html)).toBe(0);
     expect(html).toContain('aria-label="Vary: off"');
-    expect(html).toContain('aria-pressed="false"');
     expect(html).toMatch(/class="[^"]*_off_/);
     expect(html).not.toMatch(/class="[^"]*_on_/);
   });
@@ -37,8 +36,15 @@ describe('DiceButton', () => {
     const html = render(1);
     expect(pipCount(html)).toBe(2);
     expect(html).toContain('aria-label="Vary: a little"');
-    expect(html).toContain('aria-pressed="true"');
     expect(html).toMatch(/class="[^"]*_on_/);
+  });
+
+  it('never claims a binary pressed state — it cycles through three', () => {
+    // `aria-pressed` would announce "a little" and "a lot" identically;
+    // the stateful accessible name carries the whole cycle instead.
+    expect(render(0)).not.toContain('aria-pressed');
+    expect(render(1)).not.toContain('aria-pressed');
+    expect(render(2)).not.toContain('aria-pressed');
   });
 
   it('draws the five-pip quincunx for "a lot"', () => {

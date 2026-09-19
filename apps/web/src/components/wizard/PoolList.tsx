@@ -154,7 +154,10 @@ export function PoolList({
             const varyLevel: VaryLevel = manualTaskVary?.[task.id] ?? 0;
             // Hand-added counters vary around their own goal — there is no
             // source window to pro-rate against.
-            const varyRange = goal > 0 ? varyRangeLabel(goal, varyLevel, goal, task.unit ?? '') : null;
+            // Gated on the dice COLUMN too: an unactionable blue range with
+            // no control to change it would be a dead end.
+            const varyRange =
+              showVaryColumn && goal > 0 ? varyRangeLabel(goal, varyLevel, goal, task.unit ?? '') : null;
             const boardCount = taskBoardCounts[task.id] ?? 0;
             const usageHint = isCompound
               ? `${effectiveChildrenByCompound[task.id]?.length ?? 0} subtask${

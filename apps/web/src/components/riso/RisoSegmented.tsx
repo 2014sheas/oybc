@@ -19,6 +19,13 @@ export interface RisoSegmentedProps<T> {
    */
   variant?: 'card' | 'pill';
   /**
+   * `default` (the shipped metrics) or `compact` — a 22px-tall pill with a
+   * 1.5px ink border and 10.5/700 segments, for an inline row control
+   * (the wizard member row's One square / Split up). Shapes the `pill`
+   * form only; `card` ignores it.
+   */
+  size?: 'default' | 'compact';
+  /**
    * Accessible group label — REQUIRED. A `role="group"` with no accessible
    * name fails WCAG 1.3.1, so the kit forces callers to name the control.
    */
@@ -37,10 +44,17 @@ export function RisoSegmented<T extends string | number>({
   value,
   onChange,
   variant = 'card',
+  size = 'default',
   'aria-label': ariaLabel,
 }: RisoSegmentedProps<T>): React.ReactElement {
   return (
-    <div className={variant === 'pill' ? styles.pill : styles.card} role="group" aria-label={ariaLabel}>
+    <div
+      className={[variant === 'pill' ? styles.pill : styles.card, size === 'compact' ? styles.compact : '']
+        .filter(Boolean)
+        .join(' ')}
+      role="group"
+      aria-label={ariaLabel}
+    >
       {options.map((opt) => {
         const selected = opt.value === value;
         return (

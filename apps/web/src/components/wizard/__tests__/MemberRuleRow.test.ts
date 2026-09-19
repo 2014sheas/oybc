@@ -141,10 +141,14 @@ describe('MemberRuleRow — counting member', () => {
     const off = render({ task: READING });
     expect(off).not.toContain('–');
 
+    // Both the literal the README's example implies AND the shared helper,
+    // so a format change in `varyRangeLabel` can't slide both sides together.
     const little = render({ task: READING, rule: { vary: 1 } });
+    expect(little).toContain('4–6 pages');
     expect(little).toContain(varyRangeLabel(5, 1, 35, 'pages') as string);
 
     const lot = render({ task: READING, rule: { vary: 2 } });
+    expect(lot).toContain('3–8 pages');
     expect(lot).toContain(varyRangeLabel(5, 2, 35, 'pages') as string);
   });
 
@@ -152,6 +156,18 @@ describe('MemberRuleRow — counting member', () => {
     const html = render({ task: READING, state: 'excluded' });
     expect(html).toContain('UNDO');
     expect(html).toMatch(/class="[^"]*_struck_/);
+  });
+
+  it('drops every rule control once the member is off the board', () => {
+    const excluded = render({ task: READING, state: 'excluded', rule: { vary: 1 } });
+    expect(excluded).not.toContain('aria-label="Target"');
+    expect(excluded).not.toContain('aria-label="Vary: ');
+    expect(excluded).not.toContain('of 35 pages');
+    expect(excluded).not.toContain('4–6 pages');
+
+    const filtered = render({ task: READING, state: 'filteredDone' });
+    expect(filtered).not.toContain('aria-label="Target"');
+    expect(filtered).not.toContain('aria-label="Vary: ');
   });
 });
 
@@ -172,7 +188,10 @@ describe('MemberRuleRow — compound member', () => {
     const html = render({ task: CIRCUIT, taskById: TASK_BY_ID, parts: PARTS });
     expect(html).toContain('One square');
     expect(html).toContain('Split up');
-    expect(html).toContain('2 squares');
+    // One square puts the WHOLE compound on as one square — the note must
+    // not contradict the selected segment.
+    expect(html).toContain('1 square');
+    expect(html).not.toContain('2 squares');
     // One dice on the toggle line; the parts have none while unsplit.
     expect(diceCount(html)).toBe(1);
     // Part lines are listed either way, with the counting part's stepper.
@@ -188,6 +207,8 @@ describe('MemberRuleRow — compound member', () => {
       parts: PARTS,
       rule: { split: true },
     });
+    // Split up puts each included part on as its own square.
+    expect(html).toContain('2 squares');
     // The toggle-line dice disappears; only the counting part keeps one.
     expect(diceCount(html)).toBe(1);
     expect(html).toContain('aria-label="Exclude Run for this board"');
@@ -206,6 +227,33 @@ describe('MemberRuleRow — compound member', () => {
     expect(html).toContain('1 square');
     expect(html).toContain('aria-label="Undo excluding Stretch"');
     expect(html).not.toContain('aria-label="Exclude Stretch for this board"');
+    // …and the ONE surviving part can't be dropped, so it offers no ✕ at
+    // all — an inert control would read as a broken toggle.
+    expect(html).not.toContain('aria-label="Exclude Run for this board"');
+  });
+
+  it('restores both ✕s when the excluded part comes back', () => {
+    const html = render({
+      task: CIRCUIT,
+      taskById: TASK_BY_ID,
+      parts: PARTS,
+      rule: { split: true },
+    });
+    expect(html).toContain('aria-label="Exclude Run for this board"');
+    expect(html).toContain('aria-label="Exclude Stretch for this board"');
+  });
+
+  it('hides the toggle and the parts for a filtered-done compound', () => {
+    const html = render({
+      task: CIRCUIT,
+      taskById: TASK_BY_ID,
+      parts: PARTS,
+      state: 'filteredDone',
+    });
+    expect(html).not.toContain('One square');
+    expect(html).not.toContain('Split up');
+    expect(html).not.toContain('Stretch');
+    expect(diceCount(html)).toBe(0);
   });
 
   it('puts a part range line under that part, never on the compound itself', () => {
@@ -216,6 +264,7 @@ describe('MemberRuleRow — compound member', () => {
       rule: { split: true, parts: { [RUN.id]: { vary: 2 } } },
     });
     // 210 over a weekly source → 30 on a daily board; ±50 % of that.
+    expect(html).toContain('15–45');
     expect(html).toContain(varyRangeLabel(30, 2, 210, '') as string);
   });
 

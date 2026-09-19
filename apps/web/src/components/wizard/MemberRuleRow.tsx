@@ -99,6 +99,14 @@ export function MemberRuleRow({
 }: MemberRuleRowProps): React.ReactElement {
   const title = task?.title || '(untitled task)';
   const memberVary: VaryLevel = rule.vary ?? 0;
+  /**
+   * Rule controls belong to members that are actually going on the board.
+   * An excluded or filtered-out-as-done member renders exactly what it did
+   * before B3 (struck + UNDO / dimmed ✓) — editing a target for a square
+   * that isn't being placed is the same contradiction the part rows already
+   * avoid. Design: `hasTarget`/`hasParts` are both gated on `!ex && !dOut`.
+   */
+  const isOn = state === 'included';
 
   const goal = task?.type === TaskType.COUNTING ? (task.maxCount ?? 0) : 0;
   const isCounting = goal > 0;
@@ -135,7 +143,7 @@ export function MemberRuleRow({
             </span>
           )}
         </span>
-        {isCounting && fromBoard && (
+        {isOn && isCounting && fromBoard && (
           <>
             <CounterStepper
               size="compact"
@@ -150,7 +158,9 @@ export function MemberRuleRow({
             </span>
           </>
         )}
-        {isCounting && <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />}
+        {isOn && isCounting && (
+          <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />
+        )}
         {state === 'included' && (
           <button
             type="button"
@@ -178,9 +188,9 @@ export function MemberRuleRow({
         )}
       </div>
 
-      {memberRange !== null && <p className={styles.rangeLine}>{memberRange}</p>}
+      {isOn && memberRange !== null && <p className={styles.rangeLine}>{memberRange}</p>}
 
-      {isCompound && (
+      {isOn && isCompound && (
         <div className={styles.splitLine}>
           <RisoSegmented
             options={[
@@ -190,13 +200,19 @@ export function MemberRuleRow({
             value={split ? 'split' : 'one'}
             onChange={(v) => onSetSplit(v === 'split')}
             variant="pill"
+            size="compact"
             aria-label={`Squares for ${title}`}
           />
           <span className={styles.squaresNote}>
-            {splitSquaresNote(
-              parts.map((p) => p.childTaskId),
-              excludedPartIds,
-            )}
+            {/* One square puts the WHOLE compound on as a single square —
+                `splitSquaresNote` counts included parts, which is the
+                split-mode answer only. */}
+            {split
+              ? splitSquaresNote(
+                  parts.map((p) => p.childTaskId),
+                  excludedPartIds,
+                )
+              : '1 square'}
           </span>
           {!split && (
             <DiceButton level={memberVary} onCycle={() => onSetVary(nextVary(memberVary))} />
@@ -204,11 +220,13 @@ export function MemberRuleRow({
         </div>
       )}
 
-      {isCompound &&
+      {isOn &&
+        isCompound &&
         parts.map((part) => (
           <PartLine
             key={part.id}
             childId={part.childTaskId}
+            canExclude={parts.length - excludedPartIds.size > 1}
             task={taskById[part.childTaskId]}
             rule={rule}
             split={split}
@@ -228,6 +246,13 @@ export function MemberRuleRow({
 
 interface PartLineProps {
   childId: string;
+  /**
+   * Whether this part may still be dropped — false for the last included
+   * part, which the state layer would refuse anyway. The control is HIDDEN
+   * rather than disabled: the design omits it (`canEx`), and an inert ✕
+   * reads as a broken toggle.
+   */
+  canExclude: boolean;
   task: Task | undefined;
   rule: BoardSourceMemberRule;
   split: boolean;
@@ -252,6 +277,7 @@ interface PartLineProps {
  */
 function PartLine({
   childId,
+  canExclude,
   task,
   rule,
   split,
@@ -317,10 +343,10 @@ function PartLine({
         {isCounting && split && (
           <DiceButton level={level} onCycle={() => onSetPartVary(childId, nextVary(level))} />
         )}
-        {split && (
+        {split && canExclude && (
           <button
             type="button"
-            className={styles.exclude}
+            className={styles.partExclude}
             onClick={() => onSetPartExcluded(childId, true)}
             aria-label={`Exclude ${name} for this board`}
           >

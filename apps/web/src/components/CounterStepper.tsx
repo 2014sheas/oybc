@@ -10,7 +10,12 @@ interface CounterStepperProps {
   max: number;
   /** Callback when the value changes */
   onChange: (value: number) => void;
-  /** Optional label shown after the stepper (e.g. "of 5 subtasks") */
+  /**
+   * Optional label shown after the stepper (e.g. "of 5 subtasks"). The
+   * `compact` variant has no room for it — the member row captions itself
+   * — so it becomes the numeric field's accessible name there instead of
+   * the default "Target".
+   */
   label?: string;
   /**
    * `default` (the compound builder's −/+ pair) or `compact` — the 22px
@@ -75,7 +80,9 @@ export function CounterStepper({
           type="text"
           inputMode="numeric"
           className={styles.compactInput}
-          aria-label="Target"
+          aria-label={label ?? 'Target'}
+          // Sized to the goal's digit count so a 4-digit goal isn't clipped.
+          style={{ width: `${Math.max(2, String(max).length) + 1}ch` }}
           value={draft ?? String(value)}
           onFocus={(e) => {
             setDraft(String(value));

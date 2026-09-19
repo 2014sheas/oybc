@@ -21,7 +21,13 @@ const PIPS: Record<VaryLevel, ReadonlyArray<readonly [number, number]>> = {
   ],
 };
 
-/** Accessible name = the CURRENT state (B3 RC1), not the action. */
+/**
+ * Accessible name = the CURRENT state (B3 RC1), not the action. The button
+ * cycles through THREE states, so it is deliberately NOT `aria-pressed`:
+ * a toggle's pressed/not-pressed would announce "a little" and "a lot"
+ * identically, and a stateful name already tells a screen-reader user
+ * exactly where the control sits.
+ */
 const LABELS: Record<VaryLevel, string> = {
   0: 'Vary: off',
   1: 'Vary: a little',
@@ -58,7 +64,6 @@ export function DiceButton({ level, onCycle }: DiceButtonProps): React.ReactElem
       type="button"
       className={`${styles.dice} ${level > 0 ? styles.on : styles.off}`}
       aria-label={label}
-      aria-pressed={level > 0}
       title={label}
       onClick={onCycle}
     >

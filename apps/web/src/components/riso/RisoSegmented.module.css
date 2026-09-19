@@ -72,3 +72,24 @@
   position: relative;
   z-index: 1;
 }
+
+/* ---- pill, compact ----
+   The 22pt inline toggle the wizard's member rows use (handoff "Compound
+   member": 22pt pill, 1.5pt ink border, 10.5/700 labels, ink divider
+   between the cells, selected cell ink-filled). `card` ignores it. */
+.pill.compact {
+  height: 22px;
+  padding: 0;
+  gap: 0;
+  border-width: 1.5px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.pill.compact .seg {
+  border-radius: 0;
+  font-size: 10.5px;
+  padding: 0 9px;
+}
+.pill.compact .seg + .seg {
+  border-left: 1.5px solid var(--riso-ink);
+}

@@ -43,6 +43,19 @@ describe('CounterStepper', () => {
     expect(html).toContain('value="5"');
   });
 
+  it('lets an explicit label name the compact field', () => {
+    const html = render({
+      value: 5,
+      min: 1,
+      max: 35,
+      onChange: () => {},
+      size: 'compact',
+      label: 'Pages a day',
+    });
+    expect(html).toContain('aria-label="Pages a day"');
+    expect(html).not.toContain('aria-label="Target"');
+  });
+
   it('disables the compact −/＋ at the bounds', () => {
     const atMin = render({ value: 1, min: 1, max: 35, onChange: () => {}, size: 'compact' });
     expect(atMin).toMatch(/aria-label="Decrease target"[^>]*disabled|disabled[^>]*aria-label="Decrease target"/);
