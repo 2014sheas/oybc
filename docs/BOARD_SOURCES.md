@@ -1356,16 +1356,35 @@ Three shapes, chosen by what the row actually has:
   `<button aria-expanded>` carrying `padding: 7px 11px 7px 40px` and
   `width: 100%`, with the ✕ absolutely positioned over its trailing end and
   the button's content reserving 39pt of trailing space so the chevron never
-  sits under it; iOS: the same content in a `Button { … }` with the padding
-  inside the label and **`.contentShape(Rectangle())` on it**, the ✕ layered
-  over the trailing edge in a `ZStack`). This is a ruling, not an
-  implementation detail: a SwiftUI `HStack` label without `contentShape`
-  registers taps only on its opaque children, which is exactly the
-  "short title, dead row" frustration this project has hit before.
+  sits under it; iOS: the same content in a **plain container** carrying the
+  padding, then **`.contentShape(Rectangle())`** — the paddings must precede
+  it — plus `.onTapGesture`, `.accessibilityElement(children: .contain)` and
+  `.accessibilityAddTraits(.isButton)`, with the ✕ as a **sibling** `Button`
+  in an `.overlay` on the outer stack, never nested inside the tappable
+  container). This is a ruling, not an implementation detail: a SwiftUI
+  container without `contentShape` registers taps only on its opaque
+  children, which is exactly the "short title, dead row" frustration this
+  project has hit before.
+
+  **Why a tap gesture and not a `Button`** (revised 2026-09-19 during
+  implementation; this section's first draft said `Button` + `ZStack`):
+  `RisoSourceRowView.headerRow` carries a written warning against exactly
+  that shape — *"never a Button nested in a Button (unreliable gesture
+  arbitration)"* — and uses the tap-gesture form for its own header. Neither
+  snapshot tests nor XCTest can prove gesture arbitration, and this repo
+  forbids agents driving the simulator, so where the behaviour is untestable
+  the construction the codebase already trusts wins.
+
+  **The trailing control's padding must equal the row's own** (7pt vertical,
+  11pt trailing) — never a value tuned to the main line's intrinsic height.
+  Both axes were got wrong once each during implementation by padding the
+  overlay to something other than the row's own values, and each time the ✕
+  drifted out of line with the inline ✕ on a non-expandable row directly
+  above or below it. `11 = 39 − 28` also makes the reserved gutter exact.
 
 **Surfaces**
 
-- shared `countingSummary(target, level, goal, unit)` (nullable — see the chip-suppression rule below) and
+- shared `countingSummary(target, level, goal, unit)` (nullable — see the chip-suppression rule above) and
   `compoundSummary(split, partIds, excludedPartIds, level)`, each returning
   `MemberSummary { text, varying }`: they dispatch to the existing
   `varyRangeLabel` / `splitSquaresNote` rather than formatting anything new,
