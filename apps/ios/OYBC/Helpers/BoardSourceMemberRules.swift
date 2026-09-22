@@ -398,6 +398,14 @@ extension BoardSources {
     /// honoured on board sources only (a pool member offers vary / split /
     /// part-exclusion and nothing else).
     ///
+    /// No-identical-clone rule (owner ruling 2026-09-22): a board-sourced
+    /// counting member — or split part — whose RESOLVED target equals its own
+    /// goal and whose vary is off is placed as the root task itself rather
+    /// than minted, because the derived row would be an exact clone. Windowed
+    /// Completion already evaluates the root against the placing board's
+    /// window. A later rule edit flips root → derived at the next spawn,
+    /// because every window re-plans from scratch.
+    ///
     /// Collapse rule, mirrored verbatim from the TS twin: two things that
     /// share a shared-counter root resolve to ONE derived counter (the first
     /// one's roll). The dedupe is checked BEFORE the roll, so a collapsed
@@ -590,6 +598,19 @@ extension BoardSources {
                             fromBoard: fromBoard,
                             taskIdForWindow: id
                         )
+                        // No identical clone (owner ruling 2026-09-22): a
+                        // derived row exists to carry a DIFFERENT target or a
+                        // vary range. When the resolved target already equals
+                        // the part's own goal and vary is off, place the root
+                        // part itself, exactly as the pool / hand-added
+                        // branches do. Decided on `resolveTarget`'s RESULT, so
+                        // the pro-rating stays intact. `rollTarget` consumes no
+                        // rng at `.off`, so the skip cannot shift a seeded
+                        // sequence on either platform. (TS twin, verbatim.)
+                        if target == goal, vary == .off {
+                            placementIds.append(id)
+                            continue
+                        }
                         placementIds.append(
                             mint(task, replacesId: id, target: target, vary: vary).id
                         )
@@ -607,6 +628,13 @@ extension BoardSources {
                         fromBoard: true,
                         taskIdForWindow: id
                     )
+                    // No identical clone (owner ruling 2026-09-22) — see the
+                    // split-part branch above for the reasoning; same rule,
+                    // same shape.
+                    if target == goal, vary == .off {
+                        placementIds.append(id)
+                        continue
+                    }
                     placementIds.append(mint(task, replacesId: id, target: target, vary: vary).id)
                     continue
                 }

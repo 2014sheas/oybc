@@ -71,11 +71,12 @@
       "a1": { "type": "counting", "title": "Meditate", "maxCount": 12 },
       "w1": { "type": "counting", "title": "Read 5 pages", "action": "Read", "unit": "pages", "maxCount": 5, "sharedCounterId": "r1", "startDate": "2026-09-17T00:00:00" },
       "c4": { "type": "counting", "title": "Run 4 miles", "action": "Run", "unit": "miles", "maxCount": 4, "sharedCounterId": "r2" },
-      "C3": { "type": "compound", "title": "Legs", "operator": "AND", "threshold": null }
+      "C3": { "type": "compound", "title": "Legs", "operator": "AND", "threshold": null },
+      "d1": { "type": "counting", "title": "Push-ups 12", "action": "Push-ups", "unit": "reps", "maxCount": 12 }
     },
     "children": { "C": ["c1", "c2"], "C2": [{ "childTaskId": "c1", "childIndex": 1 }, { "childTaskId": "c3", "childIndex": 0 }], "C3": ["r2", "c4"] },
-    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly", "c4": "monthly" },
-    "baselines": { "r1": 12, "r2": 3, "c1": 0, "c3": 0, "a1": 0 },
+    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly", "c4": "monthly", "d1": "daily" },
+    "baselines": { "r1": 12, "r2": 3, "c1": 0, "c3": 0, "a1": 0, "d1": 4 },
     "vectors": [
       { "name": "board counting auto (recurring): r1 35 weekly to daily gives 5; baseline 12", "mode": "recurring", "selected": ["r1"], "supplies": [{ "kind": "board", "supply": ["r1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42,
         "expected": { "placement": ["derived:r1"], "derived": [{ "root": "r1", "sourceMember": "r1", "replaces": "r1", "maxCount": 5, "baseline": 12, "title": "Read 5 pages", "action": "Read", "unit": "pages" }], "compounds": [] } },
@@ -145,7 +146,19 @@
       { "name": "the per-root dedupe is checked BEFORE the roll: a collapsed part consumes no sample", "mode": "recurring", "selected": ["C3"], "supplies": [{ "kind": "board", "supply": ["C3"], "memberRules": { "C3": { "vary": 1, "parts": { "c4": { "target": 5 } } } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
         "note": "The discriminating twin of the vector above. There c4's own range was degenerate ([1,1]) so the sample count could not tell roll-then-dedupe from dedupe-then-roll. Here c4 carries an explicit part target 5, clamped to its goal 4, and varyRange(4, 1, 4) = [max(1, round(3.2)) = 3, min(4, round(4.8) = 5) = 4] = [3,4] - a NON-degenerate range that would consume a sample if the roll ran. It must not: c4's root is r2, which r2 (childIndex 0) already minted, so the dedupe returns that draft before rolling and expectedRngCalls stays 0. Roll-before-dedupe would make it 1 and leave the seeded sequence dependent on how many members happen to collapse. r2 itself is unchanged (auto target 1, [1,1], no sample), and the collapsed children list is the same single entry.",
         "expected": { "placement": ["derivedCompound:C3"], "derived": [{ "root": "r2", "sourceMember": "r2", "replaces": "r2", "maxCount": 1, "baseline": 3 }],
-          "compounds": [{ "source": "C3", "replaces": "C3", "timeframe": "daily", "startDate": "2026-09-18T00:00:00", "endDate": "2026-09-18T00:00:00", "title": "Legs", "operator": "AND", "threshold": null, "children": [{ "child": "derived:r2", "childIndex": 0, "isDerived": true }] }] } }
+          "compounds": [{ "source": "C3", "replaces": "C3", "timeframe": "daily", "startDate": "2026-09-18T00:00:00", "endDate": "2026-09-18T00:00:00", "title": "Legs", "operator": "AND", "threshold": null, "children": [{ "child": "derived:r2", "childIndex": 0, "isDerived": true }] }] } },
+      { "name": "no identical clone: d1 pulled daily to daily so the auto target is its own goal 12, vary off then the ROOT d1 is placed and NOTHING is minted", "mode": "recurring", "selected": ["d1"], "supplies": [{ "kind": "board", "supply": ["d1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
+        "note": "Owner ruling 2026-09-22. Every OTHER board vector pulls cross-timeframe, so it pro-rates and still derives; d1 is the same-timeframe case, where autoTarget(12, 1, 1) returns the goal unchanged and the derived row would be a byte-for-byte clone of its root (same target, same regenerated title) - the 'Read 1 book' twin the owner saw on device. The literal root id 'd1' must land in placement and derived must be EMPTY. expectedRngCalls 0 also pins that the skip is decided before any roll, so a seeded sequence cannot shift.",
+        "expected": { "placement": ["d1"], "derived": [], "compounds": [] } },
+      { "name": "vary rescues the same-timeframe pull: d1 target==goal 12 but lvl1 then [10,12]; seed 42 gives 10+floor(0.2523x3)=10", "mode": "recurring", "selected": ["d1"], "supplies": [{ "kind": "board", "supply": ["d1"], "memberRules": { "d1": { "vary": 1 } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 1,
+        "note": "The skip needs BOTH halves - target == goal AND vary off. A vary range is a real difference from the root, so the identical-looking pull still mints, and the rolled 10 (not 12) proves the derived row is not a clone.",
+        "expected": { "placement": ["derived:d1"], "derived": [{ "root": "d1", "sourceMember": "d1", "replaces": "d1", "maxCount": 10, "baseline": 4, "title": "Push-ups 10 reps", "action": "Push-ups", "unit": "reps" }], "compounds": [] } },
+      { "name": "no identical clone via an explicit rule: r1 target 35 equals its own goal 35, vary off then the ROOT r1 is placed", "mode": "recurring", "selected": ["r1"], "supplies": [{ "kind": "board", "supply": ["r1"], "memberRules": { "r1": { "target": 35 } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
+        "note": "The skip reads resolveTarget's RESULT, not how it got there: a hand-set target that happens to equal the goal collapses exactly like the same-timeframe auto target, even though r1 is pulled weekly to daily and would otherwise pro-rate to 5 (see the first vector in this section). This is the discriminating pair for a naive implementation that only checks 'is the source window the same'.",
+        "expected": { "placement": ["r1"], "derived": [], "compounds": [] } },
+      { "name": "no identical clone on a split part: board source, parts.c1.target 8 equals c1's own goal 8, vary off then the ROOT part c1 is placed", "mode": "recurring", "selected": ["c1", "c2"], "supplies": [{ "kind": "board", "supply": ["c1", "c2"], "partOf": { "c1": "C", "c2": "C" }, "memberRules": { "C": { "split": true, "parts": { "c1": { "target": 8 } } } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
+        "note": "The part-branch twin of the member vectors. Contrast 'split part on a board source ... part target 3 overrides to 3', which is the same shape with target 3 != goal 8 and DOES mint. c2 (a normal task) is placed as itself in both.",
+        "expected": { "placement": ["c1", "c2"], "derived": [], "compounds": [] } }
     ],
     "idPinsNote": "Literal uuidv5 outputs, computed ONCE with the TS uuidv5 (default OYBC namespace). Swift must reproduce them independently. Names: 'sources:derived:<boardId>:<root>', 'sources:derived-compound:<boardId>:<compound>', 'sources:derived-link:<derivedCompoundId>:<childId>'. The link name's <childId> is the LITERAL child task id - a derived uuid for a derived child, the raw source id for an original one. idPins itself is a clean token -> uuid map with no stray keys.",
     "idPins": {
@@ -161,7 +174,8 @@
       "link:derivedCompound:C2:derived:c3": "b794e815-7195-596e-bb9a-16a334561fed",
       "link:derivedCompound:C2:derived:c1": "165ac015-fda4-5add-ab66-686cd76df9fa",
       "derivedCompound:C3": "d22cf840-69ca-512a-8851-01425f821a12",
-      "link:derivedCompound:C3:derived:r2": "0709d2f6-ca2a-56bf-be5b-7adaff36a1c6"
+      "link:derivedCompound:C3:derived:r2": "0709d2f6-ca2a-56bf-be5b-7adaff36a1c6",
+      "derived:d1": "3ea2feac-9e3f-521f-8bcf-be5f19ef385f"
     }
   },
   "windowBaseline": [
