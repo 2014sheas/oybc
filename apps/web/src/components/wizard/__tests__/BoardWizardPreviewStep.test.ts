@@ -385,9 +385,11 @@ describe('BoardWizardPreviewStep — derived cells in the one-off grid', () => {
 
     const html = renderPreview(controller, [counter]);
 
-    // The mount nonce is 0, whose roll is pinned at 29 in
-    // `previewDerived.test.ts` — the cell must say so, and must NOT say 30.
-    expect(html).toContain('Run 29 miles');
+    // A weekly source onto this DAILY board pro-rates to ceil(30 × 1 / 7) = 5
+    // (owner ruling 2026-09-21), and the mount nonce 0's roll over the
+    // resulting [4, 6] range is pinned at 6 in `previewDerived.test.ts` — the
+    // cell must say so, and must NOT say the un-pro-rated 30.
+    expect(html).toContain('Run 6 miles');
     expect(html).not.toContain('Run 30 miles');
   });
 });

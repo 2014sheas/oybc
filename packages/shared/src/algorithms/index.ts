@@ -302,6 +302,7 @@ export {
   withMemberRule,
   withPartRule,
   remainingTarget,
+  prefilledOneOffTarget,
   countingSummary,
   compoundSummary,
 } from './memberRulesDisplay';

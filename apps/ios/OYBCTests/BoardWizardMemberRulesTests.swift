@@ -171,11 +171,66 @@ final class BoardWizardMemberRulesTests: XCTestCase {
     // MARK: - 2. RC4 prefill
 
     func test_pullBoard_oneOff_prefillsCountingMembersWithTheirRemainingTarget() throws {
+        // A fresh wizard's window is INDEFINITE (the `.custom` default
+        // timeframe resolves to an ongoing board), so its nominal length is
+        // unknowable and the 2026-09-21 pro-rating leaves the remaining
+        // amount verbatim — see the two window vectors below for the scaled
+        // and the same-length cases.
         let vm = try pulledVM()
 
         XCTAssertEqual(try rule(vm, "cnt").target, 7, "goal 10 − 3 already logged this window")
         XCTAssertNil(try rule(vm, "n1").target, "a normal member is never targeted")
         XCTAssertNil(try rule(vm, "C").target, "a compound member is never targeted")
+    }
+
+    /// Seeds a MONTHLY source board carrying an untouched goal-30 counter —
+    /// the owner's reported case ("Run 30 Miles a Month").
+    private func seedMonthlySourceBoard(_ database: AppDatabase) throws {
+        let board = try makeBoard(
+            id: "monthly-src",
+            timeframe: .monthly,
+            startDate: "2026-09-01T00:00:00.000Z",
+            endDate: "2026-09-30T23:59:59.999Z"
+        )
+        try database.write { db in
+            try board.save(db)
+            try self.makeTask("run30", type: .counting, maxCount: 30).save(db)
+            try BoardTask(
+                id: "bt-run30", boardId: "monthly-src", taskId: "run30",
+                row: 0, col: 0, isCenter: false,
+                createdAt: self.now, updatedAt: self.now, lastSyncedAt: nil,
+                version: 1, isDeleted: false, deletedAt: nil
+            ).save(db)
+        }
+    }
+
+    private func monthlyPullTarget(wizardTimeframe: Timeframe) throws -> Int? {
+        let database = try makeDb()
+        try seedMonthlySourceBoard(database)
+        let vm = makeVM(database)
+        vm.timeframe = wizardTimeframe
+        vm.pullBoard(boardId: "monthly-src")
+        let source = try XCTUnwrap(vm.sources.first { $0.sourceId == "monthly-src" })
+        return BoardSources.memberRule(for: "run30", in: source).target
+    }
+
+    /// Owner ruling 2026-09-21 — the reported bug. A counter pulled from a
+    /// MONTHLY board onto a ONE-OFF DAILY board seeds its remaining amount
+    /// PRO-RATED to that day, not the monthly goal.
+    func test_pullBoard_oneOff_proRatesTheSeededTargetToTheBoardsWindow() throws {
+        XCTAssertEqual(try monthlyPullTarget(wizardTimeframe: .daily), 1,
+                       "remaining 30, then ceil(30 × 1 / 30) = 1")
+        XCTAssertEqual(try monthlyPullTarget(wizardTimeframe: .weekly), 7,
+                       "remaining 30, then ceil(30 × 7 / 30) = 7")
+    }
+
+    /// The safety property the ruling rests on: the SAME pull onto a
+    /// same-length window is a ratio of 1, so the seed is the plain
+    /// remaining amount — every pre-existing one-off pull is unchanged.
+    func test_pullBoard_oneOff_sameTimeframeSeedsTheRemainingAmountUnscaled() throws {
+        XCTAssertEqual(try monthlyPullTarget(wizardTimeframe: .monthly), 30)
+        XCTAssertEqual(try monthlyPullTarget(wizardTimeframe: .yearly), 30,
+                       "a LONGER window never scales the seed up either")
     }
 
     func test_pullBoard_recurring_leavesTheTargetAbsent() throws {

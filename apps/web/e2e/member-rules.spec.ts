@@ -178,10 +178,12 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     // B3.1: rule controls live behind a per-row disclosure; open it first.
     await memberRow.getByTestId('member-disclosure').click();
 
-    // A one-off board doesn't pro-rate, and nothing has been logged in the
-    // source board's window, so the remaining target IS the goal. The goal
-    // rides inside the stepper pill's suffix now (B3.1) — the standalone
-    // "of N unit" caption is retired.
+    // Owner ruling 2026-09-21: a one-off board pro-rates too. Nothing has
+    // been logged in the source board's window, so the remaining amount is
+    // the whole goal — and a WEEKLY source pulled onto this DAILY board
+    // scales it to ceil(30 × 1 / 7) = 5. The GOAL (not the target) rides
+    // inside the stepper pill's suffix (B3.1) — the standalone "of N unit"
+    // caption is retired — so the suffix still reads 30.
     // `getByRole('textbox', …)`, never `getByLabel('Target')`: `getByLabel`
     // matches an accessible name by case-insensitive SUBSTRING, and the
     // compact stepper labels three elements "Decrease target" / "Target" /
@@ -190,22 +192,23 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     // `exact` pins the whole string.
     await expect(
       memberRow.getByRole('textbox', { name: 'Target', exact: true }),
-    ).toHaveValue('30');
+    ).toHaveValue('5');
     await expect(memberRow.getByTestId('stepper-suffix')).toHaveText('/ 30 miles');
 
     // Dice: off → a little. The accessible name is the STATE (RC1), and a
-    // blue range line appears under the row: ±20 % of 30, clamped to the goal.
+    // blue range line appears under the row: ±20 % of the TARGET 5 (not the
+    // goal) → [round(4), round(6)] = 4–6.
     const dice = memberRow.getByRole('button', { name: /^Vary: / });
     await expect(dice).toHaveAttribute('aria-label', 'Vary: off');
-    await expect(memberRow.getByText('24–30 miles')).toHaveCount(0);
+    await expect(memberRow.getByText('4–6 miles')).toHaveCount(0);
     await dice.click();
     await expect(dice).toHaveAttribute('aria-label', 'Vary: a little');
-    await expect(memberRow.getByText('24–30 miles')).toBeVisible();
+    await expect(memberRow.getByText('4–6 miles')).toBeVisible();
 
-    // ...and on to "a lot" (±50 %).
+    // ...and on to "a lot" (±50 % of 5, rounded half-up → 3–8).
     await dice.click();
     await expect(dice).toHaveAttribute('aria-label', 'Vary: a lot');
-    await expect(memberRow.getByText('15–30 miles')).toBeVisible();
+    await expect(memberRow.getByText('3–8 miles')).toBeVisible();
   });
 
   test('Split up turns a compound into one square per part; a part can be excluded and undone', async ({
@@ -271,7 +274,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     // B3.1: rule controls live behind a per-row disclosure; open it first.
     await memberRow.getByTestId('member-disclosure').click();
     await memberRow.getByRole('button', { name: /^Vary: / }).click();
-    await expect(memberRow.getByText('24–30 miles')).toBeVisible();
+    await expect(memberRow.getByText('4–6 miles')).toBeVisible();
 
     // On to Preview.
     await page.getByRole('button', { name: /^Next/ }).click();
@@ -286,19 +289,20 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     };
 
     const first = await rolledTarget();
-    // Inside the range, and never the un-rolled goal's label by accident —
-    // 30 IS in range, so only the range membership is asserted here.
-    expect(first).toMatch(/^Run (2[4-9]|30) miles$/);
+    // Inside the rolled range [4, 6] around the pro-rated target 5 — and
+    // therefore never the un-pro-rated goal's "Run 30 miles" label.
+    expect(first).toMatch(/^Run [4-6] miles$/);
 
-    // Three Shuffles; the seed changes with the nonce, so at least one of
-    // them must land on a different value in a 7-wide range.
+    // Three Shuffles; the seed changes with the nonce, and the nonce
+    // sequence is deterministic (0, 1, 2, 3 → 6, 5, 4, 6 over this range),
+    // so at least one of them lands on a different value.
     const seen = [first];
     for (let i = 0; i < 3; i += 1) {
       await shuffle.click();
       seen.push(await rolledTarget());
     }
     expect(new Set(seen).size).toBeGreaterThan(1);
-    for (const label of seen) expect(label).toMatch(/^Run (2[4-9]|30) miles$/);
+    for (const label of seen) expect(label).toMatch(/^Run [4-6] miles$/);
   });
 
   test('a member row expands when tapped in the empty space after a short title', async ({
@@ -361,10 +365,13 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     // web-side one. Split mode gives each counting part its own dice (the
     // member's own is hidden), so the first is "Warm up 10 reps"'s.
     await row.getByRole('button', { name: /^Vary: / }).first().click();
-    // One-off boards never pro-rate, so the part's target IS its goal:
-    // ±20 % of 10, clamped to the goal → "8–10" (parts render the range
-    // without a unit).
-    const partRange = row.getByText('8–10', { exact: true });
+    // The part pro-rates like any board-pulled counting member (owner ruling
+    // 2026-09-21): a weekly 10-rep part onto this DAILY board targets
+    // ceil(10 × 1 / 7) = 2, whose ±20 % band rounds to [2, 2] — so the range
+    // line reads "2–2" (parts render the range without a unit). The
+    // assertion below is STRUCTURAL — where the range renders, not how wide
+    // it is — so the collapsed band does not weaken it.
+    const partRange = row.getByText('2–2', { exact: true });
     await expect(partRange).toHaveCount(1);
     // Structural, not merely "it is somewhere in the row": the range's own
     // parent block also carries the part's name (`.part` wraps `.partLine`

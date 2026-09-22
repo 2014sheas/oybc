@@ -4,6 +4,7 @@ import {
   OperatorType,
   TaskType,
   Timeframe,
+  autoTarget,
   generateCounterTaskTitle,
   varyRange,
   type BoardSource,
@@ -212,11 +213,15 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
     expect(cell!.id).toBe('c1');
     expect(cell!.type).toBe(TaskType.COUNTING);
 
-    // ±20 % of a goal of 30 — hand-computed, not re-derived from the code
-    // under test.
-    expect(varyRange(30, 1, 30)).toEqual([24, 30]);
-    expect(cell!.maxCount).toBeGreaterThanOrEqual(24);
-    expect(cell!.maxCount).toBeLessThanOrEqual(30);
+    // The pre-vary target is the PRO-RATED auto target, not the goal: a
+    // weekly source onto a DAILY board gives ceil(30 × 1 / 7) = 5 (owner
+    // ruling 2026-09-21 — one-off boards pro-rate too). ±20 % of 5 is
+    // [round(4), round(6)] = [4, 6]. All hand-computed, not re-derived from
+    // the code under test.
+    expect(autoTarget(30, 7, 1)).toBe(5);
+    expect(varyRange(5, 1, 30)).toEqual([4, 6]);
+    expect(cell!.maxCount).toBeGreaterThanOrEqual(4);
+    expect(cell!.maxCount).toBeLessThanOrEqual(6);
 
     // The title is the one the minted row will carry — regenerated from the
     // ROLLED target, so the cell never reads "Run 30 miles" for a 25-mile square.
@@ -241,16 +246,18 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
         makePreviewRng(nonce),
       )[0]?.maxCount;
 
-    // Range [24, 30] — 7 distinct values, so a difference is meaningful.
-    // Nonces 0 and 1 are the first two a Shuffle produces; both land inside
-    // the range and on DIFFERENT values (the generator's warm-up is what
-    // makes adjacent nonces decorrelate — without it every Shuffle repeated
-    // itself).
-    expect(roll(0)).toBe(29);
-    expect(roll(1)).toBe(27);
-    expect(roll(2)).toBe(25);
+    // Range [4, 6] around the pro-rated target 5 (see the vector above) —
+    // 3 distinct values, so a difference is still meaningful. Each expected
+    // roll is `lo + floor(sample × 3)` over the LCG's 3rd sample (2 warm-up
+    // draws): 0.819534 → 6, 0.504242 → 5, 0.188950 → 4. Nonces 0 and 1 are
+    // the first two a Shuffle produces; both land inside the range and on
+    // DIFFERENT values (the generator's warm-up is what makes adjacent
+    // nonces decorrelate — without it every Shuffle repeated itself).
+    expect(roll(0)).toBe(6);
+    expect(roll(1)).toBe(5);
+    expect(roll(2)).toBe(4);
     // Same nonce ⇒ same preview.
-    expect(roll(1)).toBe(27);
+    expect(roll(1)).toBe(5);
   });
 
   it('leaves a POOL-source counting member with no rule completely alone', () => {
@@ -276,12 +283,13 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
     expect(out[0]).toBe(counter);
   });
 
-  it('relabels a BOARD-source counting member with no rule at its own goal', () => {
+  it('relabels a BOARD-source counting member with no rule at its PRO-RATED auto target', () => {
     // A board source always mints (the target/vary branch is open to it), and
-    // a one-off board never auto-targets — so the target IS the goal and the
-    // only visible change is the REGENERATED title. A member whose stored
-    // title drifted from `action + goal + unit` visibly snaps back here, which
-    // is exactly what the board will carry.
+    // since the 2026-09-21 owner ruling a one-off board pro-rates just like a
+    // recurring one — so a weekly 30 onto this DAILY board targets
+    // ceil(30 × 1 / 7) = 5 and the title is REGENERATED from that. A member
+    // whose stored title drifted from `action + target + unit` visibly snaps
+    // back here, which is exactly what the board will carry.
     const counter = makeCounter('c1', 30, { title: 'Long run (old name)' });
     const controller = makeController({
       tasks: [counter],
@@ -296,8 +304,8 @@ describe('applyPreviewDerivedCells — the Preview dry run (B3 RC6)', () => {
     );
 
     expect(out[0]!.id).toBe('c1');
-    expect(out[0]!.maxCount).toBe(30);
-    expect(out[0]!.title).toBe('Run 30 miles');
+    expect(out[0]!.maxCount).toBe(5);
+    expect(out[0]!.title).toBe('Run 5 miles');
   });
 
   it('previews a stand-in as unstarted rather than inheriting another window\'s progress', () => {
@@ -420,8 +428,9 @@ describe('buildWizardPlacement — previewRules is opt-in (B3 RC6)', () => {
 
     expect(placed).toHaveLength(1);
     expect(placed[0].id).toBe('c1');
-    expect(placed[0].maxCount).toBe(29);
-    expect(placed[0].title).toBe('Run 29 miles');
+    // Seed 0's roll over the pro-rated [4, 6] range — see the nonce vector above.
+    expect(placed[0].maxCount).toBe(6);
+    expect(placed[0].title).toBe('Run 6 miles');
   });
 
   it('is a pure function of the seed — two consecutive builds are deep-equal, and a new seed re-rolls', () => {
@@ -454,8 +463,8 @@ describe('buildWizardPlacement — previewRules is opt-in (B3 RC6)', () => {
     );
     expect(new Set(seeds).size).toBeGreaterThan(1);
     for (const target of seeds) {
-      expect(target).toBeGreaterThanOrEqual(24);
-      expect(target).toBeLessThanOrEqual(30);
+      expect(target).toBeGreaterThanOrEqual(4);
+      expect(target).toBeLessThanOrEqual(6);
     }
   });
 

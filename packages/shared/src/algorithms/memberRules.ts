@@ -242,7 +242,11 @@ export function applyMemberRules(
   });
 }
 
-/** Which kind of board is being assembled — auto targets apply to `recurring` only. */
+/**
+ * Which kind of board is being assembled. Auto targets apply to BOTH kinds
+ * (owner ruling 2026-09-21) — the mode only decides *when* a board-pulled
+ * counting target is written, never how it is computed.
+ */
 export type PlanMode = 'oneOff' | 'recurring';
 
 /** The window a board (or a pulled source board) covers. */
@@ -317,6 +321,18 @@ export interface PlanDerivedTasksArgs {
   manualTaskVary: Record<string, VaryLevel>;
   boardId: string;
   window: BoardWindow;
+  /**
+   * Whether the board being assembled is one-off or recurring.
+   *
+   * **No longer gates the target math** (owner ruling 2026-09-21: one-off
+   * boards pro-rate too — docs/BOARD_SOURCES.md §Member rules). Kept on the
+   * contract because every caller already has it and the vector fixture uses
+   * it to pin that a board-sourced member resolves IDENTICALLY in both
+   * modes; the one-off/recurring difference now lives entirely in WHEN the
+   * target is written (a one-off pull prefills an explicit, pro-rated
+   * `target`; a recurring board leaves it absent and auto-targets at each
+   * spawn), not in how it is computed.
+   */
   mode: PlanMode;
   tasksById: Record<string, PlanTask>;
   childrenByCompoundId: Record<string, Pick<CompoundChild, 'childTaskId' | 'childIndex'>[]>;
@@ -407,7 +423,6 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     manualTaskVary,
     boardId,
     window,
-    mode,
     tasksById,
     childrenByCompoundId,
     sourceWindowByTaskId,
@@ -428,11 +443,18 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     return w ? nominalWindowDays(w.timeframe, w.startDate, w.endDate) : null;
   };
   /**
-   * The pre-vary target. The final `min(max(1, floor(base)), goal)` clamp is
-   * redundant for integer targets (`varyRange` re-clamps `t` to `1…goal`
-   * identically) and is only observable on a fractional explicit target, which
-   * Zod already forbids — keep it anyway, and port it verbatim, so the two
-   * platforms can never disagree about a malformed stored rule.
+   * The pre-vary target: an explicit rule if there is one, else the
+   * window-pro-rated {@link autoTarget} for a BOARD-sourced member, else the
+   * member's own goal. The gate is `fromBoard` alone — pool-sourced and
+   * hand-added members never auto-target (they offer vary / split /
+   * part-exclusion only), while a board-pulled member pro-rates on one-off
+   * AND recurring boards alike (owner ruling 2026-09-21).
+   *
+   * The final `min(max(1, floor(base)), goal)` clamp is redundant for integer
+   * targets (`varyRange` re-clamps `t` to `1…goal` identically) and is only
+   * observable on a fractional explicit target, which Zod already forbids —
+   * keep it anyway, and port it verbatim, so the two platforms can never
+   * disagree about a malformed stored rule.
    */
   const resolveTarget = (
     goal: number,
@@ -441,10 +463,7 @@ export function planDerivedTasks(args: PlanDerivedTasksArgs): PlanDerivedTasksRe
     taskIdForWindow: string
   ): number => {
     const base =
-      explicit ??
-      (fromBoard && mode === 'recurring'
-        ? autoTarget(goal, sourceDaysFor(taskIdForWindow), targetDays)
-        : goal);
+      explicit ?? (fromBoard ? autoTarget(goal, sourceDaysFor(taskIdForWindow), targetDays) : goal);
     return Math.min(Math.max(1, Math.floor(base)), goal);
   };
   const mint = (t: PlanTask, replacesId: string, target: number, vary: VaryLevel): DerivedTaskDraft => {

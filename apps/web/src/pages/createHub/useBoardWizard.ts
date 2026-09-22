@@ -7,6 +7,7 @@ import {
   getTimeframeBoundaries,
   sourcesForRecord,
   type BoardSource,
+  type BoardWindow,
   type CompoundChild,
   type Pool,
   type Task,
@@ -390,6 +391,22 @@ export function useBoardWizard({
     stagedEdits,
   );
 
+  // §Member rules (B3, RC4) — the window a one-off prefill pro-rates a
+  // board-pulled counting target AGAINST. Only `nominalWindowDays` reads it,
+  // and that reads start/end for CUSTOM alone (as the `YYYY-MM-DD` prefix),
+  // so the raw custom-date inputs are interchangeable with the resolved ISO
+  // strings `resolveWizardDates` would produce — and using them keeps this
+  // hook off the persist module's date helper. Web twin of iOS
+  // `BoardWizardViewModel.prefillTargetWindow`.
+  const prefillTargetWindow = useMemo<BoardWindow>(
+    () => ({
+      timeframe,
+      startDate: customStartDate || null,
+      endDate: customEndDate || null,
+    }),
+    [timeframe, customStartDate, customEndDate],
+  );
+
   // Board Sources P4 — the sources layer (state + async supply resolution +
   // the nine source actions) lives in its own hook; see `useWizardSources`.
   const {
@@ -429,6 +446,7 @@ export function useBoardWizard({
     // targets; a repeating board auto-targets against each board's own
     // window instead.
     prefillRemainingTargetsOnResolve: !isRecurring,
+    targetWindow: prefillTargetWindow,
     selectedTaskIds,
     purgeDroppedIds,
     markUserTouched,

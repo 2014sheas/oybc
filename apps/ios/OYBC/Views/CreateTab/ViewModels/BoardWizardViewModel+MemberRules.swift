@@ -92,12 +92,37 @@ extension BoardWizardViewModel {
         childrenByCompoundId = links
     }
 
+    /// §Member rules (B3, RC4) — the window a one-off prefill pro-rates a
+    /// board-pulled counting target AGAINST. Only `nominalWindowDays` reads
+    /// it, and that reads start/end for CUSTOM alone (as the `YYYY-MM-DD`
+    /// prefix), so the raw custom-date inputs are interchangeable with the
+    /// resolved ISO strings the persist path would produce. Web twin:
+    /// `prefillTargetWindow` in `useBoardWizard.ts`.
+    var prefillTargetWindow: BoardSources.BoardWindow {
+        BoardSources.BoardWindow(
+            timeframe: timeframe,
+            startDate: customStartDate.isEmpty ? nil : customStartDate,
+            endDate: customEndDate.isEmpty ? nil : customEndDate
+        )
+    }
+
     /// §Member rules (B3, RC4) — seed one BOARD source's counting members
-    /// with their REMAINING target for a ONE-OFF board:
-    /// `remainingTarget(goal:windowCount:)`, where `windowCount` is the
-    /// progress that member already has in the SOURCE board's window. Pull a
-    /// 3-of-10-done counter onto a fresh one-off board and the rule is seeded
-    /// at 7.
+    /// with their remaining target for a ONE-OFF board, PRO-RATED to that
+    /// board's window: `prefilledOneOffTarget(goal:windowCount:sourceWindow:targetWindow:)`,
+    /// where `windowCount` is the progress that member already has in the
+    /// SOURCE board's window. Pull a 3-of-10-done weekly counter onto a fresh
+    /// one-off weekly board and the rule is seeded at 7; pull an untouched
+    /// "Run 30 miles a month" onto a one-off DAILY board and it is seeded at
+    /// `ceil(30 × 1 / 30) = 1`, not 30 (owner ruling 2026-09-21 — the fix for
+    /// "defaults for Counter tasks pulled in from boards do not adjust with
+    /// timeframe"). Same-length windows are unaffected: `autoTarget` returns
+    /// the remaining amount verbatim when the target window is at least as
+    /// long as the source's.
+    ///
+    /// Writing an EXPLICIT target here is why opening the shared `fromBoard`
+    /// gate alone was not enough: `resolveTarget` is `explicit ?? auto`, so a
+    /// one-off board never reaches the auto branch for a member this pass has
+    /// seeded — the seeded number has to be the pro-rated one.
     ///
     /// Only one-off boards seed — a recurring board leaves `target` absent so
     /// each spawned window auto-targets against its own window instead. Never
@@ -126,8 +151,11 @@ extension BoardWizardViewModel {
                 source,
                 taskId: id,
                 patch: BoardSources.MemberRulePatch(
-                    target: .set(BoardSources.remainingTarget(
-                        goal: goal, windowCount: info.windowCountByTaskId[id] ?? 0
+                    target: .set(BoardSources.prefilledOneOffTarget(
+                        goal: goal,
+                        windowCount: info.windowCountByTaskId[id] ?? 0,
+                        sourceWindow: info.sourceWindow,
+                        targetWindow: prefillTargetWindow
                     ))
                 )
             )

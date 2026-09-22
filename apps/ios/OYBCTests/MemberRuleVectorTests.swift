@@ -371,6 +371,21 @@ final class MemberRuleVectorTests: XCTestCase {
         let expected: Int
     }
 
+    private struct PrefilledOneOffTargetVector: Decodable {
+        let name: String
+        let goal: Int
+        let windowCount: Int
+        /// Bare timeframe string; absent = no source window (fixture note
+        /// `windows`). `sourceWindowDates` / `targetWindowDates` carry the
+        /// `[start, end]` bounds a CUSTOM window needs — a one-element array
+        /// means the end bound is MISSING.
+        let sourceWindow: String?
+        let sourceWindowDates: [String]?
+        let targetWindow: String
+        let targetWindowDates: [String]?
+        let expected: Int
+    }
+
     private struct MemberRuleForVector: Decodable {
         let name: String
         let memberRules: [String: BoardSourceMemberRule]?
@@ -454,6 +469,7 @@ final class MemberRuleVectorTests: XCTestCase {
         let varyRangeLabel: [VaryRangeLabelVector]
         let splitSquaresNote: [SplitSquaresNoteVector]
         let remainingTarget: [RemainingTargetVector]
+        let prefilledOneOffTarget: [PrefilledOneOffTargetVector]
         let memberRuleFor: [MemberRuleForVector]
         let partRuleFor: [PartRuleForVector]
         let withMemberRule: [WithRuleVector]
@@ -1256,6 +1272,17 @@ final class MemberRuleVectorTests: XCTestCase {
         BoardSources.BoardWindow(timeframe: try timeframe(raw))
     }
 
+    /// Same, but with the optional `[start, end]` bounds a CUSTOM vector
+    /// carries. A one-element array leaves the end bound nil — the fixture's
+    /// way of pinning the unknowable-span branch.
+    private func window(_ raw: String, _ dates: [String]?) throws -> BoardSources.BoardWindow {
+        BoardSources.BoardWindow(
+            timeframe: try timeframe(raw),
+            startDate: dates?.first,
+            endDate: (dates?.count ?? 0) > 1 ? dates?[1] : nil
+        )
+    }
+
     private func memberPatch(_ raw: RawPatch) throws -> BoardSources.MemberRulePatch {
         var patch = BoardSources.MemberRulePatch()
         if let value = raw.set?.target { patch.target = .set(value) }
@@ -1394,6 +1421,43 @@ final class MemberRuleVectorTests: XCTestCase {
                 BoardSources.remainingTarget(goal: v.goal, windowCount: v.windowCount),
                 v.expected,
                 v.name
+            )
+        }
+    }
+
+    func testPrefilledOneOffTarget() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.prefilledOneOffTarget.isEmpty)
+        for v in section.prefilledOneOffTarget {
+            XCTAssertEqual(
+                BoardSources.prefilledOneOffTarget(
+                    goal: v.goal,
+                    windowCount: v.windowCount,
+                    sourceWindow: try v.sourceWindow.map { try window($0, v.sourceWindowDates) },
+                    targetWindow: try window(v.targetWindow, v.targetWindowDates)
+                ),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    /// The safety property the 2026-09-21 ruling rests on, asserted directly:
+    /// when the source and target windows are the same nominal length the
+    /// ratio is 1, so the prefill is the remaining amount VERBATIM. Each
+    /// expectation is the hand-computed `goal - windowCount` (23 = 35 - 12),
+    /// never a second call to the function under test.
+    func testPrefilledOneOffTargetSameTimeframeIsUnchanged() {
+        for tf in [Timeframe.daily, .weekly, .monthly, .yearly] {
+            XCTAssertEqual(
+                BoardSources.prefilledOneOffTarget(
+                    goal: 35,
+                    windowCount: 12,
+                    sourceWindow: BoardSources.BoardWindow(timeframe: tf),
+                    targetWindow: BoardSources.BoardWindow(timeframe: tf)
+                ),
+                23,
+                "\(tf) source to \(tf) target must not pro-rate"
             )
         }
     }

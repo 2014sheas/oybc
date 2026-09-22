@@ -117,10 +117,11 @@ final class MemberRuleRowModelTests: XCTestCase {
         XCTAssertEqual(m.goal, 100, "the ceiling stays the goal")
     }
 
-    /// Recurring + board source pro-rates a weekly goal onto a daily
-    /// window (the `effectiveMemberTarget` gate), where a ONE-OFF board on
-    /// the same inputs would not.
-    func testRecurringBoardSourceProRatesWhereOneOffDoesNot() {
+    /// A BOARD source pro-rates a weekly goal onto a daily window in BOTH
+    /// modes (owner ruling 2026-09-21 — the `effectiveMemberTarget` gate is
+    /// `fromBoard` alone now). The contrast that still holds: a POOL member
+    /// has no window to pro-rate against and stays at its goal.
+    func testBoardSourceProRatesInBothModesButAPoolMemberDoesNot() {
         let counting = task("c", type: .counting, maxCount: 14)
         let recurring = model(
             task: counting, sourceWindow: weekly, wizardWindow: daily, mode: .recurring
@@ -128,8 +129,24 @@ final class MemberRuleRowModelTests: XCTestCase {
         let oneOff = model(
             task: counting, sourceWindow: weekly, wizardWindow: daily, mode: .oneOff
         )
+        let pool = model(
+            task: counting, fromBoard: false,
+            sourceWindow: weekly, wizardWindow: daily, mode: .oneOff
+        )
         XCTAssertEqual(recurring.target, 2, "14 over 7 days ⇒ 2 a day")
-        XCTAssertEqual(oneOff.target, 14)
+        XCTAssertEqual(oneOff.target, 2, "the mode gate is gone — same number")
+        XCTAssertEqual(pool.target, 14, "the surviving half of the gate")
+    }
+
+    /// The safety property: a SAME-length window is a ratio of 1, so a
+    /// board-sourced member keeps its own goal — what makes the ruling
+    /// non-breaking for same-timeframe pulls.
+    func testSameLengthWindowLeavesABoardSourcedTargetAtItsGoal() {
+        let counting = task("c", type: .counting, maxCount: 14)
+        let m = model(
+            task: counting, sourceWindow: weekly, wizardWindow: weekly, mode: .oneOff
+        )
+        XCTAssertEqual(m.target, 14)
     }
 
     /// Dice on ⇒ a blue range line spread around the TARGET, not the

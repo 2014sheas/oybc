@@ -20,11 +20,12 @@
 import {
   memberRuleFor,
   partRuleFor,
-  remainingTarget,
+  prefilledOneOffTarget,
   withMemberRule,
   withPartRule,
   TaskType,
   type BoardSource,
+  type BoardWindow,
   type BoardSourceMemberRule,
   type BoardSourcePartRule,
   type ExpandedSupply,
@@ -295,14 +296,26 @@ export interface PrefillRemainingTargetsResult {
 }
 
 /**
- * RC4 — seed one BOARD source's counting members with their REMAINING
- * target for a ONE-OFF board: `remainingTarget(goal, windowCount)`, where
- * `windowCount` is the progress that member already has in the source
- * board's window. Pull a 3-of-10-done counter onto a fresh one-off board
- * and the rule is seeded at 7.
+ * RC4 — seed one BOARD source's counting members with their remaining
+ * target for a ONE-OFF board, PRO-RATED to that board's window:
+ * `prefilledOneOffTarget(goal, windowCount, sourceWindow, targetWindow)`,
+ * where `windowCount` is the progress that member already has in the source
+ * board's window. Pull a 3-of-10-done weekly counter onto a fresh one-off
+ * weekly board and the rule is seeded at 7; pull an untouched
+ * "Run 30 miles a month" onto a one-off DAILY board and it is seeded at
+ * `ceil(30 × 1 / 30) = 1`, not 30 (owner ruling 2026-09-21 — the fix for
+ * "defaults for Counter tasks pulled in from boards do not adjust with
+ * timeframe"). Same-length windows are unaffected: `autoTarget` returns the
+ * remaining amount verbatim when the target window is at least as long as
+ * the source's.
+ *
+ * Writing an EXPLICIT target here is why the shared gate alone was not
+ * enough: `resolveTarget` is `explicit ?? auto`, so a one-off board never
+ * reaches the auto branch for a member this pass has seeded — the seeded
+ * number has to be the pro-rated one.
  *
  * Only applies on one-off boards — a recurring board leaves `target` absent
- * so each recurring board auto-targets against its own window instead.
+ * so each spawned window auto-targets against its own window instead.
  *
  * Never overwrites an existing `target` (a rule the person authored, or one
  * a previous resolve already seeded), skips non-counting and goal-less
@@ -310,8 +323,9 @@ export interface PrefillRemainingTargetsResult {
  *
  * @param sources - The current source rows.
  * @param sourceId - The board source whose supply just resolved.
- * @param supply - That source's resolved supply entry.
+ * @param supply - That source's resolved supply entry (RC4 counts + RC5 window).
  * @param tasksById - Live id→Task lookup (`type` + `maxCount` are read).
+ * @param targetWindow - The window of the board being assembled.
  * @returns The next rows plus whether the decision is settled — see
  *   {@link PrefillRemainingTargetsResult}.
  */
@@ -320,6 +334,7 @@ export function prefillRemainingTargets(
   sourceId: string,
   supply: WizardSourceSupply,
   tasksById: Record<string, Task>,
+  targetWindow: BoardWindow,
 ): PrefillRemainingTargetsResult {
   const index = sources.findIndex((s) => s.sourceId === sourceId);
   // A source that isn't pulled has nothing to decide — settled, not retried.
@@ -340,7 +355,14 @@ export function prefillRemainingTargets(
     if (typeof goal !== 'number' || goal < 1) continue;
     if (memberRuleFor(source, id).target !== undefined) continue;
     const done = supply.windowCountByTaskId?.[id] ?? 0;
-    source = withMemberRule(source, id, { target: remainingTarget(Math.floor(goal), done) });
+    source = withMemberRule(source, id, {
+      target: prefilledOneOffTarget({
+        goal,
+        windowCount: done,
+        sourceWindow: supply.sourceWindow,
+        targetWindow,
+      }),
+    });
   }
   if (source === before) return { sources, settled };
   const next = [...sources];

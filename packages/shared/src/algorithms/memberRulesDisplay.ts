@@ -31,21 +31,23 @@ import type { BoardWindow, PlanMode } from './memberRules';
  * same pro-rated math {@link planDerivedTasks} applies at mint time, without
  * requiring a full plan run.
  *
- * One-off boards never auto-target (`explicit ?? goal`); recurring boards
- * only auto-target when the member came from a board source — `fromBoard`
- * mirrors `resolveTarget`'s real gate in `planDerivedTasks`
- * (`fromBoard && mode === 'recurring'`), so a pool-sourced or hand-added
- * member falls straight to `explicit ?? goal` even in recurring mode. When
- * the gate is open, the target pro-rates via {@link autoTarget} over the
- * nominal day-lengths of the source and target windows (`explicit ??
- * autoTarget(goal, sourceDays, targetDays)`) — a missing `sourceWindow`
- * behaves exactly like `autoTarget` with a `null` source (falls back to
- * `goal`). Either way the result is floored and clamped to `1…goal`,
- * mirroring `resolveTarget` in `memberRules.ts`.
+ * The auto-target gate is `fromBoard` ALONE: a board-pulled member pro-rates
+ * on one-off and recurring boards alike (owner ruling 2026-09-21 — pulling
+ * "Run 30 miles a month" onto a daily board must preview ~1, not 30), while
+ * a pool-sourced or hand-added member always falls to `explicit ?? goal`
+ * (those offer vary / split / part-exclusion, never a target). This mirrors
+ * `resolveTarget`'s real gate in `planDerivedTasks` exactly. When the gate
+ * is open the target pro-rates via {@link autoTarget} over the nominal
+ * day-lengths of the source and target windows (`explicit ?? autoTarget(goal,
+ * sourceDays, targetDays)`) — a missing `sourceWindow` behaves exactly like
+ * `autoTarget` with a `null` source (falls back to `goal`), and a target
+ * window at least as long as the source's also falls back to `goal`, so a
+ * same-timeframe pull is unchanged. Either way the result is floored and
+ * clamped to `1…goal`, mirroring `resolveTarget` in `memberRules.ts`.
  *
  * @param args.goal - The member's own `maxCount` (integer ≥ 1).
  * @param args.explicit - A stored member-/part-level `target` override, if any.
- * @param args.mode - Whether the board being assembled is one-off or recurring.
+ * @param args.mode - Whether the board being assembled is one-off or recurring. **Not read** — see `PlanDerivedTasksArgs.mode`; accepted so this helper keeps one shape with the planner and the fixture can pin mode-independence.
  * @param args.fromBoard - Whether the member's supplying source is `kind: 'board'` — pool-sourced and hand-added members never auto-target, matching `resolveTarget`.
  * @param args.sourceWindow - The window the member was pulled from, if known.
  * @param args.targetWindow - The window of the board being assembled.
@@ -59,11 +61,11 @@ export function effectiveMemberTarget(args: {
   sourceWindow?: BoardWindow;
   targetWindow: BoardWindow;
 }): number {
-  const { goal, explicit, mode, fromBoard, sourceWindow, targetWindow } = args;
+  const { goal, explicit, fromBoard, sourceWindow, targetWindow } = args;
   const targetDays = nominalWindowDays(targetWindow.timeframe, targetWindow.startDate, targetWindow.endDate);
   const base =
     explicit ??
-    (fromBoard && mode === 'recurring'
+    (fromBoard
       ? autoTarget(
           goal,
           sourceWindow
@@ -271,6 +273,49 @@ export function withPartRule(
  */
 export function remainingTarget(goal: number, windowCount: number): number {
   return Math.max(1, goal - windowCount);
+}
+
+/**
+ * The explicit `target` a ONE-OFF wizard prefills for a counting member
+ * pulled from a BOARD source: the member's remaining amount in the source
+ * board's window, then pro-rated to the window being assembled.
+ *
+ * `autoTarget(remainingTarget(goal, windowCount), sourceDays, targetDays)` —
+ * the same window arithmetic {@link effectiveMemberTarget} previews and
+ * `planDerivedTasks` mints with, over the same {@link nominalWindowDays}
+ * inputs, so the prefilled number and the auto number can never disagree.
+ *
+ * Owner ruling 2026-09-21: one-off boards pro-rate too. Pulling a
+ * "Run 30 miles a month" counter (nothing logged yet) onto a one-off DAILY
+ * board seeds `autoTarget(30, 30, 1) = ceil(30 × 1 / 30) = 1`, not 30.
+ *
+ * **Same-length windows are unchanged**: `autoTarget`'s
+ * `targetDays >= sourceDays` branch returns its `goal` argument verbatim, so
+ * `autoTarget(remaining, d, d) === remaining` — a same-timeframe pull (and
+ * any pull onto a LONGER window, and any pull whose source window length is
+ * unknown) seeds exactly the remaining amount it seeded before this change.
+ *
+ * @param args.goal - The member's own `maxCount` (floored; integer ≥ 1).
+ * @param args.windowCount - Its progress in the SOURCE board's window.
+ * @param args.sourceWindow - The source board's own window, if known.
+ * @param args.targetWindow - The window of the board being assembled.
+ * @returns The target to seed (integer ≥ 1, ≤ the remaining amount).
+ */
+export function prefilledOneOffTarget(args: {
+  goal: number;
+  windowCount: number;
+  sourceWindow?: BoardWindow | null;
+  targetWindow: BoardWindow;
+}): number {
+  const { goal, windowCount, sourceWindow, targetWindow } = args;
+  const remaining = remainingTarget(Math.floor(goal), windowCount);
+  return autoTarget(
+    remaining,
+    sourceWindow
+      ? nominalWindowDays(sourceWindow.timeframe, sourceWindow.startDate, sourceWindow.endDate)
+      : null,
+    nominalWindowDays(targetWindow.timeframe, targetWindow.startDate, targetWindow.endDate)
+  );
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   withMemberRule,
   withPartRule,
   remainingTarget,
+  prefilledOneOffTarget,
   countingSummary,
   compoundSummary,
 } from '../../src/algorithms/memberRulesDisplay';
@@ -31,6 +32,17 @@ const V: any = JSON.parse(
 
 /** Wraps a bare timeframe string into a `BoardWindow` — startDate/endDate null, per the fixture's `windows` note. */
 const win = (tf: string): BoardWindow => ({ timeframe: tf as Timeframe, startDate: null, endDate: null });
+
+/**
+ * Same, but with the optional `[start, end]` bounds a CUSTOM vector carries.
+ * A one-element array means the end bound is MISSING (see the fixture's
+ * `windows` note), which is how the unknowable-span branch is pinned.
+ */
+const winWithDates = (tf: string, dates?: string[]): BoardWindow => ({
+  timeframe: tf as Timeframe,
+  startDate: dates?.[0] ?? null,
+  endDate: dates?.[1] ?? null,
+});
 
 /** A minimal `BoardSource`, with `memberRules` omitted unless the fixture supplies one. */
 const src = (memberRules: Record<string, BoardSourceMemberRule> | null): BoardSource => ({
@@ -114,6 +126,36 @@ describe('compoundSummary (vectors)', () => {
 describe('remainingTarget', () => {
   it.each(V.remainingTarget as any[])('$name', (v: any) => {
     expect(remainingTarget(v.goal, v.windowCount)).toBe(v.expected);
+  });
+});
+
+describe('prefilledOneOffTarget', () => {
+  it.each(V.prefilledOneOffTarget as any[])('$name', (v: any) => {
+    expect(
+      prefilledOneOffTarget({
+        goal: v.goal,
+        windowCount: v.windowCount,
+        sourceWindow: v.sourceWindow ? winWithDates(v.sourceWindow, v.sourceWindowDates) : undefined,
+        targetWindow: winWithDates(v.targetWindow, v.targetWindowDates),
+      })
+    ).toBe(v.expected);
+  });
+
+  it('pins the safety property directly: same-length windows seed the remaining amount verbatim', () => {
+    // Not a comparison against the function itself — each expectation is the
+    // hand-computed `goal - windowCount` (23 = 35 − 12), asserted across every
+    // timeframe whose nominal length is knowable. A pro-rating regression on
+    // any of these rows would have to produce something other than 23.
+    for (const tf of [Timeframe.DAILY, Timeframe.WEEKLY, Timeframe.MONTHLY, Timeframe.YEARLY]) {
+      expect(
+        prefilledOneOffTarget({
+          goal: 35,
+          windowCount: 12,
+          sourceWindow: win(tf),
+          targetWindow: win(tf),
+        })
+      ).toBe(23);
+    }
   });
 });
 

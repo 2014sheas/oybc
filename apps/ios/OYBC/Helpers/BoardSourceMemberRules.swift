@@ -275,8 +275,9 @@ extension BoardSources {
 
     // MARK: - Plan
 
-    /// Which kind of board is being assembled — auto targets apply to
-    /// `.recurring` only.
+    /// Which kind of board is being assembled. Auto targets apply to BOTH
+    /// kinds (owner ruling 2026-09-21) — the mode only decides *when* a
+    /// board-pulled counting target is written, never how it is computed.
     enum PlanMode {
         case oneOff
         case recurring
@@ -420,7 +421,15 @@ extension BoardSources {
     ///   - manualTaskVary: Hand-added id → its dice.
     ///   - boardId: The board being assembled (seeds every derived id).
     ///   - window: The board's window; every derived draft is stamped with it.
-    ///   - mode: Auto targets apply to `.recurring` only.
+    ///   - mode: Whether the board being assembled is one-off or recurring.
+    ///     **No longer gates the target math** (owner ruling 2026-09-21:
+    ///     one-off boards pro-rate too — docs/BOARD_SOURCES.md §Member
+    ///     rules). Kept on the signature because every caller already has it
+    ///     and the vector fixture uses it to pin that a board-sourced member
+    ///     resolves IDENTICALLY in both modes; the one-off/recurring
+    ///     difference now lives entirely in WHEN the target is written (a
+    ///     one-off pull prefills an explicit, pro-rated `target`; a recurring
+    ///     board leaves it absent and auto-targets at each spawn).
     ///   - tasksById: Id → task, for every selected id and compound child.
     ///   - childrenByCompoundId: Compound id → its `compound_children` rows.
     ///   - sourceWindowByTaskId: Task id → the window of the source board it
@@ -467,11 +476,19 @@ extension BoardSources {
                 endDate: sourceWindow.endDate
             )
         }
-        /// The pre-vary target. The final `min(max(1, floor(base)), goal)`
-        /// clamp is redundant for integer targets (`varyRange` re-clamps `t`
-        /// to `1…goal` identically) and is only observable on a fractional
-        /// explicit target, which Zod already forbids — kept verbatim so the
-        /// two platforms can never disagree about a malformed stored rule.
+        /// The pre-vary target: an explicit rule if there is one, else the
+        /// window-pro-rated ``autoTarget(goal:sourceDays:targetDays:)`` for a
+        /// BOARD-sourced member, else the member's own goal. The gate is
+        /// `fromBoard` alone — pool-sourced and hand-added members never
+        /// auto-target (they offer vary / split / part-exclusion only), while
+        /// a board-pulled member pro-rates on one-off AND recurring boards
+        /// alike (owner ruling 2026-09-21).
+        ///
+        /// The final `min(max(1, floor(base)), goal)` clamp is redundant for
+        /// integer targets (`varyRange` re-clamps `t` to `1…goal`
+        /// identically) and is only observable on a fractional explicit
+        /// target, which Zod already forbids — kept verbatim so the two
+        /// platforms can never disagree about a malformed stored rule.
         func resolveTarget(
             goal: Int,
             explicit: Int?,
@@ -481,7 +498,7 @@ extension BoardSources {
             let base: Double
             if let explicit {
                 base = Double(explicit)
-            } else if fromBoard && mode == .recurring {
+            } else if fromBoard {
                 base = Double(autoTarget(
                     goal: goal,
                     sourceDays: sourceDaysFor(taskIdForWindow),

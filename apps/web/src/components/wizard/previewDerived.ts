@@ -100,8 +100,10 @@ function sourceWindowByTaskId(
  * The prospective board's window — the SAME resolution the Save handler
  * persists (including the plan-ahead `targetWindowDate`). A date validation
  * error (an unfinished CUSTOM range) resolves to a date-less window: the
- * Save button surfaces the error, and a one-off plan never reads the window
- * days anyway (auto targets are recurring-only).
+ * Save button surfaces the error, and a date-less CUSTOM window has no
+ * knowable length, so `autoTarget` falls back to each member's own goal
+ * until the range is finished (owner ruling 2026-09-21 — auto targets are
+ * no longer recurring-only, so the window IS read on a one-off plan).
  */
 function previewWindow(controller: BoardWizardController): BoardWindow {
   const dates = resolveWizardDates(controller, controller.targetWindowDate ?? undefined);

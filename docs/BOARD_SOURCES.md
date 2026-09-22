@@ -585,7 +585,7 @@ Both platforms, one PR. Web deleted `FromBoardPicker`/`FromBoardGrid`/`BoardThum
 
 `BoardSource.memberRules` + `RecurringBoardTemplate.manualTaskVary` are additive on both platforms' types/Zod/Dexie/GRDB — nothing writes them yet (inert). GRDB v30 (moved verbatim) + v31 relocated into a new `AppDatabase+Migrations.swift` (`registerBoardSourcesMigrations`) to keep `AppDatabase.swift` under the file-size allowlist (1010 → 1005). Pure helpers live in new `packages/shared/src/algorithms/memberRules.ts` ↔ `apps/ios/OYBC/Helpers/BoardSourceMemberRules.swift` (`extension BoardSources`) — not `boardSources.ts` (1000-line ceiling) — vector-pinned by `packages/shared/tests/fixtures/memberRuleVectors.json` (24 `planDerivedTasks` vectors, synced to `apps/ios/OYBCTests/Fixtures/`, mutation-tested both platforms).
 
-Rulings: **R1** `planDerivedTasks(mode: 'oneOff' | 'recurring')`; `autoTarget` runs only for recurring; a one-off member with no explicit target resolves to `goal`. **R2** `applyMemberRules` returns `ExpandedSupply` = supply + `partOf: Record<childId, compoundId>`. **R3** last-part guard: exclusions that would exclude every child leave all children contributing; `split` on a non-compound/childless member contributes the member itself. **R4** a One-square compound with no rule places as-is; it derives only once a counting part has a target (part-level, or member-level `vary` auto on a board source) or `vary > 0`. **R5** `resolvedTarget = clamp(rule/auto/goal, 1, goal)` then roll; members with no `maxCount ≥ 1` place as-is. **R6** one rng sample per roll, `selectedIds` order then `childIndex` order inside a compound; no sample when `lo == hi`. **R7** `nominalWindowDays(CUSTOM)` = inclusive calendar-day span via UTC `YYYY-MM-DD` arithmetic; `null` if a bound is missing; INDEFINITE → `null`. **R8** derived title = `generateCounterTaskTitle(action, target, unit, action ? undefined : title)`. **R-pool** pool-sourced members ignore `target` at both member and part level (vary/split/exclusion only). **R-rename** the planner arg is `sourceWindowByTaskId`, keyed by supplied members AND the children of a One-square compound. **R-round** `varyRange` rounds half-up (`Math.round` ↔ Swift `.rounded()`), pinned by tie vectors. **R11** corrupt `manualTaskVary` levels: TS drops only the bad key, iOS drops the whole map — both converge to "no dice" (unobservable once B3 writes valid levels). **R12** `varyRange`/`rollTarget` for `goal < 1` and the title of an action-less, title-less counting member are unreachable via `goalOf` / real task data — left as-is on both platforms. **R13** two things sharing a shared-counter root collapse onto ONE derived counter, and the dedupe is checked BEFORE the roll, so a collapsed occurrence consumes no rng sample; inside a One-square compound the collapsed parts are additionally deduped by resolved child id (first in `childIndex` order wins, keeping its own `childIndex`/`linkId`), because `derivedLinkId` is a pure function of `(compound, child)` and a repeat is one `compound_children` primary key written twice. **R14** both `childIndex` sorts use a total comparator (`childIndex`, then `childTaskId`) — Swift's `sorted` is not stable, so a duplicate index would otherwise expand/roll (and consume the seeded rng) differently on each platform.
+Rulings: **R1** `planDerivedTasks(mode: 'oneOff' | 'recurring')`; `autoTarget` runs only for recurring; a one-off member with no explicit target resolves to `goal`. **SUPERSEDED 2026-09-21 — see §Target math and §Owner ruling: one-off boards pro-rate too.** `autoTarget` now runs for ANY board-sourced member in either mode; `mode` is still on both signatures but is no longer read by `resolveTarget` / `effectiveMemberTarget`. **R2** `applyMemberRules` returns `ExpandedSupply` = supply + `partOf: Record<childId, compoundId>`. **R3** last-part guard: exclusions that would exclude every child leave all children contributing; `split` on a non-compound/childless member contributes the member itself. **R4** a One-square compound with no rule places as-is; it derives only once a counting part has a target (part-level, or member-level `vary` auto on a board source) or `vary > 0`. **R5** `resolvedTarget = clamp(rule/auto/goal, 1, goal)` then roll; members with no `maxCount ≥ 1` place as-is. **R6** one rng sample per roll, `selectedIds` order then `childIndex` order inside a compound; no sample when `lo == hi`. **R7** `nominalWindowDays(CUSTOM)` = inclusive calendar-day span via UTC `YYYY-MM-DD` arithmetic; `null` if a bound is missing; INDEFINITE → `null`. **R8** derived title = `generateCounterTaskTitle(action, target, unit, action ? undefined : title)`. **R-pool** pool-sourced members ignore `target` at both member and part level (vary/split/exclusion only). **R-rename** the planner arg is `sourceWindowByTaskId`, keyed by supplied members AND the children of a One-square compound. **R-round** `varyRange` rounds half-up (`Math.round` ↔ Swift `.rounded()`), pinned by tie vectors. **R11** corrupt `manualTaskVary` levels: TS drops only the bad key, iOS drops the whole map — both converge to "no dice" (unobservable once B3 writes valid levels). **R12** `varyRange`/`rollTarget` for `goal < 1` and the title of an action-less, title-less counting member are unreachable via `goalOf` / real task data — left as-is on both platforms. **R13** two things sharing a shared-counter root collapse onto ONE derived counter, and the dedupe is checked BEFORE the roll, so a collapsed occurrence consumes no rng sample; inside a One-square compound the collapsed parts are additionally deduped by resolved child id (first in `childIndex` order wins, keeping its own `childIndex`/`linkId`), because `derivedLinkId` is a pure function of `(compound, child)` and a repeat is one `compound_children` primary key written twice. **R14** both `childIndex` sorts use a total comparator (`childIndex`, then `childTaskId`) — Swift's `sorted` is not stable, so a duplicate index would otherwise expand/roll (and consume the seeded rng) differently on each platform.
 
 Task 2's test measured a worst-case `RecurringBoardTemplate` (20 board sources × 8 members × 3 parts) at 43,193 bytes; `firestore.rules`' `request.resource.size() < 10000` can't be the byte-size check the spec assumed (Firestore rules expose no byte-size API — the real cap is the 1 MiB/doc platform limit), so the test instead guards a regression ceiling (< 65,536 bytes). B2 item: an emulator rules test that writes a worst-case record to settle what that clause measures and whether it needs to change.
 
@@ -901,9 +901,10 @@ untouched); variety stays memoryless; `max: null` "all" latch
 (coordinator-proposed representation of the design's max-follows-all
 behavior).
 
-Member-rules pass (2026-09-17), owner decisions: **recurring target divisor
+Member-rules pass (2026-09-17), owner decisions: **target divisor
 = window-length ratio** (`ceil(goal × targetDays ÷ sourceDays)`; one-off =
-the source's remaining amount); **target stepper only on board-pulled
+the source's remaining amount — *revised 2026-09-21: the one-off remaining
+amount is pro-rated by that same ratio, see §Target math*); **target stepper only on board-pulled
 members** (pool / hand-added counters place at their own goal, dice
 optional); **derived per-window counters are shown in the library like any
 task**; **dead/empty source stays silent stale-inert**; compound rule = the
@@ -1070,16 +1071,40 @@ instances, any task list for a recurring board.
    - `autoTarget(goal, sourceDays, targetDays)` — four explicit branches,
      in order: `sourceDays == null` → `goal`; `targetDays == null` →
      `goal`; `targetDays ≥ sourceDays` → `goal`; else
-     `min(goal, ceil(goal × targetDays / sourceDays))`. Recurring only.
-     Inputs: `goal` = the pulled member's own `maxCount` (for a member that
-     is itself a window-stamped derived counter that is its per-window
-     target, and the root is `member.sharedCounterId`); `sourceDays` =
-     `nominalWindowDays` of the **source board's** timeframe
+     `min(goal, ceil(goal × targetDays / sourceDays))`. Runs for any
+     **board-sourced** member, one-off and recurring alike (owner ruling
+     2026-09-21, below); pool-sourced and hand-added members never
+     auto-target. Inputs: `goal` = the pulled member's own `maxCount` (for a
+     member that is itself a window-stamped derived counter that is its
+     per-window target, and the root is `member.sharedCounterId`);
+     `sourceDays` = `nominalWindowDays` of the **source board's** timeframe
      (`sourceWindowByMemberId`); `targetDays` = `nominalWindowDays` of the
      board being made.
    - One-off: the wizard writes an explicit `target` at pull time, prefilled
-     with the source's **remaining** (`goal − count in the source board's
-     window`, floor 1). There is no "auto" on a one-off board.
+     with the source's **remaining, pro-rated to this board's window** —
+     `prefilledOneOffTarget = autoTarget(remainingTarget(goal, windowCount),
+     sourceDays, targetDays)`, where `windowCount` is the member's count in
+     the source board's window (`remainingTarget` floors at 1). Because
+     `resolveTarget` is `explicit ?? auto`, that written number IS what the
+     board gets — which is why the pro-rating has to happen here too, not
+     only in the auto branch.
+
+   **Owner ruling 2026-09-21 — one-off boards pro-rate too.** Reported from
+   device testing of PR #493: "the defaults for Counter tasks pulled in from
+   boards do not seem to adjust with timeframe" — pulling "Run 30 miles a
+   month" from a monthly board onto a **one-off daily** board defaulted the
+   target to 30 instead of ~1. Two mechanisms produced that number and both
+   changed: (1) `resolveTarget` / `effectiveMemberTarget` gated auto-targeting
+   on `fromBoard && mode === 'recurring'` — the gate is now `fromBoard`
+   alone; (2) the one-off prefill wrote `remainingTarget(goal, done)`
+   unscaled, and `explicit ?? auto` meant that always won — it now writes
+   `prefilledOneOffTarget(...)`. **Safety property (pinned by vectors on both
+   platforms):** when the source and target windows have the same nominal
+   length the ratio is 1, so `autoTarget(x, d, d) === x` via the
+   `targetDays ≥ sourceDays` branch — every same-timeframe pull (and any pull
+   onto a LONGER window, and any pull whose source window length is unknown:
+   INDEFINITE, an unresolved supply, or a CUSTOM window missing a bound)
+   behaves exactly as it did before the ruling.
    - `varyRange(t, level, goal) = [max(1, round(t·(1−p))), min(goal, round(t·(1+p)))]`,
      `p ∈ {0, 0.2, 0.5}`; `rollTarget(t, level, goal, rng)` picks a whole
      number uniformly in that range. `t` is clamped 1…goal first.
@@ -1277,8 +1302,9 @@ symmetric names): `setMemberTarget`, `setMemberVary`, `setMemberSplit`,
 `setPartExcluded`, `setPartTarget`, `setPartVary`, `setManualVary` —
 writing `sources[i].memberRules` / `manualTaskVary`. Split and
 part-exclusion re-run `refreshSourceSupplies` → `clampAllSourceRanges`. A
-one-off pull writes `target = remaining`. Drafts ride `commitSources` →
-`recurringDraftMix`.
+one-off pull writes `target = prefilledOneOffTarget(...)` — the remaining
+amount, pro-rated to the board's window (owner ruling 2026-09-21). Drafts
+ride `commitSources` → `recurringDraftMix`.
 
 **Preview.** 2b one-off: cells render `DerivedTaskDraft` titles (joined
 with `pendingTasks`); Shuffle re-rolls via `shuffleNonce`. 5b recurring:

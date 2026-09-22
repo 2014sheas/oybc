@@ -31,21 +31,27 @@ extension BoardSources {
     /// the same pro-rated math `planDerivedTasks` applies at mint time,
     /// without requiring a full plan run.
     ///
-    /// One-off boards never auto-target (`explicit ?? goal`); recurring
-    /// boards only auto-target when the member came from a BOARD source —
-    /// `fromBoard` mirrors `resolveTarget`'s real gate inside
-    /// `planDerivedTasks` (`fromBoard && mode == .recurring`), so a
-    /// pool-sourced or hand-added member falls straight to `explicit ?? goal`
-    /// even in recurring mode. When the gate is open the target pro-rates via
-    /// ``autoTarget(goal:sourceDays:targetDays:)`` over the nominal
-    /// day-lengths of the two windows; a missing `sourceWindow` behaves
-    /// exactly like `autoTarget` with a nil source (falls back to `goal`).
-    /// Either way the result is floored and clamped to `1…goal`.
+    /// The auto-target gate is `fromBoard` ALONE: a board-pulled member
+    /// pro-rates on one-off and recurring boards alike (owner ruling
+    /// 2026-09-21 — pulling "Run 30 miles a month" onto a daily board must
+    /// preview ~1, not 30), while a pool-sourced or hand-added member always
+    /// falls to `explicit ?? goal` (those offer vary / split /
+    /// part-exclusion, never a target). This mirrors `resolveTarget`'s real
+    /// gate inside `planDerivedTasks` exactly. When the gate is open the
+    /// target pro-rates via ``autoTarget(goal:sourceDays:targetDays:)`` over
+    /// the nominal day-lengths of the two windows; a missing `sourceWindow`
+    /// behaves exactly like `autoTarget` with a nil source (falls back to
+    /// `goal`), and a target window at least as long as the source's also
+    /// falls back to `goal`, so a same-timeframe pull is unchanged. Either
+    /// way the result is floored and clamped to `1…goal`.
     ///
     /// - Parameters:
     ///   - goal: The member's own `maxCount` (integer ≥ 1).
     ///   - explicit: A stored member-/part-level `target` override, if any.
     ///   - mode: Whether the board being assembled is one-off or recurring.
+    ///     **Not read** — see `planDerivedTasks`' `mode`; accepted so this
+    ///     helper keeps one shape with the planner and the vector fixture can
+    ///     pin mode-independence.
     ///   - fromBoard: Whether the supplying source is `kind == .board`.
     ///   - sourceWindow: The window the member was pulled from, if known.
     ///   - targetWindow: The window of the board being assembled.
@@ -66,7 +72,7 @@ extension BoardSources {
         let base: Int
         if let explicit {
             base = explicit
-        } else if fromBoard, mode == .recurring {
+        } else if fromBoard {
             base = autoTarget(
                 goal: goal,
                 sourceDays: sourceWindow.flatMap {
@@ -127,6 +133,55 @@ extension BoardSources {
     /// - Returns: The remaining target (integer ≥ 1).
     static func remainingTarget(goal: Int, windowCount: Int) -> Int {
         Swift.max(1, goal - windowCount)
+    }
+
+    /// The explicit `target` a ONE-OFF wizard prefills for a counting member
+    /// pulled from a BOARD source: the member's remaining amount in the
+    /// source board's window, then pro-rated to the window being assembled.
+    ///
+    /// `autoTarget(remainingTarget(goal, windowCount), sourceDays, targetDays)`
+    /// — the same window arithmetic ``effectiveMemberTarget(goal:explicit:mode:fromBoard:sourceWindow:targetWindow:)``
+    /// previews and `planDerivedTasks` mints with, over the same
+    /// ``nominalWindowDays(_:startDate:endDate:)`` inputs, so the prefilled
+    /// number and the auto number can never disagree.
+    ///
+    /// Owner ruling 2026-09-21: one-off boards pro-rate too. Pulling a
+    /// "Run 30 miles a month" counter (nothing logged yet) onto a one-off
+    /// DAILY board seeds `autoTarget(30, 30, 1) = ceil(30 × 1 / 30) = 1`,
+    /// not 30.
+    ///
+    /// **Same-length windows are unchanged**: `autoTarget`'s
+    /// `targetDays >= sourceDays` branch returns its `goal` argument
+    /// verbatim, so `autoTarget(remaining, d, d) == remaining` — a
+    /// same-timeframe pull (and any pull onto a LONGER window, and any pull
+    /// whose source window length is unknown) seeds exactly the remaining
+    /// amount it seeded before this change.
+    ///
+    /// TS twin: `prefilledOneOffTarget` in `memberRulesDisplay.ts`.
+    ///
+    /// - Parameters:
+    ///   - goal: The member's own `maxCount` (integer ≥ 1).
+    ///   - windowCount: Its progress in the SOURCE board's window.
+    ///   - sourceWindow: The source board's own window, if known.
+    ///   - targetWindow: The window of the board being assembled.
+    /// - Returns: The target to seed (integer ≥ 1, ≤ the remaining amount).
+    static func prefilledOneOffTarget(
+        goal: Int,
+        windowCount: Int,
+        sourceWindow: BoardWindow? = nil,
+        targetWindow: BoardWindow
+    ) -> Int {
+        autoTarget(
+            goal: remainingTarget(goal: goal, windowCount: windowCount),
+            sourceDays: sourceWindow.flatMap {
+                nominalWindowDays($0.timeframe, startDate: $0.startDate, endDate: $0.endDate)
+            },
+            targetDays: nominalWindowDays(
+                targetWindow.timeframe,
+                startDate: targetWindow.startDate,
+                endDate: targetWindow.endDate
+            )
+        )
     }
 
     // MARK: - Collapsed-row summaries (B3.1)
