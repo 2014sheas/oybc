@@ -82,16 +82,31 @@ export function effectiveMemberTarget(args: {
  * `[lo, hi]` from {@link varyRange}, rendered as `"lo–hi unit"` (en dash;
  * `unit` omitted entirely when empty).
  *
+ * **A COLLAPSED range renders as the single value** (owner ruling
+ * 2026-09-22): pro-rating routinely collapses a range — a weekly 10-rep
+ * counter on a daily board targets `ceil(10/7) = 2`, and
+ * `varyRange(2, 1, 10) = [2, 2]` — and "2–2 reps" is a range that isn't
+ * one. It reads as `"2 reps"` instead, still blue, still signalling a lit
+ * dice.
+ *
+ * Deliberately NOT `null` in that case: `null` is this function's "there
+ * is no range" signal and {@link countingSummary} reads it to decide
+ * `varying`, so a collapsed range returning `null` would fall through to
+ * the non-varying branch and render the chip in muted grey beside a LIT
+ * dice. Returning the single formatted value — same unit handling as the
+ * range form — keeps `varying: true` without a second flag.
+ *
  * @param t - The pre-vary target (see {@link effectiveMemberTarget}).
  * @param level - Vary level. `0` renders nothing — there is no range to show.
  * @param goal - The member's own `maxCount`, the hard ceiling.
  * @param unit - The counting member's unit, or `''` when it has none.
- * @returns The label, or `null` at vary level 0.
+ * @returns `"lo–hi unit"`, `"lo unit"` when the range collapsed, or `null` at vary level 0.
  */
 export function varyRangeLabel(t: number, level: VaryLevel, goal: number, unit: string): string | null {
   if (level === 0) return null;
   const [lo, hi] = varyRange(t, level, goal);
-  return `${lo}–${hi}${unit ? ` ${unit}` : ''}`;
+  const suffix = unit ? ` ${unit}` : '';
+  return lo === hi ? `${lo}${suffix}` : `${lo}–${hi}${suffix}`;
 }
 
 /**
@@ -337,6 +352,11 @@ export interface MemberSummary {
  * dice is lit, otherwise the plain target (with its unit, when it has one)
  * — or NOTHING when the chip would only restate the row's own title.
  *
+ * A lit dice whose range has COLLAPSED (`varyRange` returned `[n, n]` —
+ * routine once pro-rating shrinks a target) still takes the varying
+ * branch: {@link varyRangeLabel} renders it as the single value rather
+ * than returning `null`, so the chip stays blue beside its lit dice.
+ *
  * Counting titles are auto-generated from action + goal + unit
  * (`generateCounterTaskTitle`), so a member at its full goal with no vary
  * is a row reading "Run 35 mi" beside a chip reading "35 mi". The chip
@@ -350,7 +370,8 @@ export interface MemberSummary {
  *
  * Dispatches to {@link varyRangeLabel} rather than re-deriving the range,
  * so a collapsed row and the expanded row's blue range line can never
- * disagree.
+ * disagree — including on the collapsed-range rendering, which both
+ * inherit from that one function.
  *
  * @param target - The pre-vary target (see {@link effectiveMemberTarget}).
  * @param level - The member's vary level.

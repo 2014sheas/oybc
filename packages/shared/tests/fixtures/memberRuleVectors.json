@@ -281,6 +281,8 @@
       { "name": "level 1 with a unit then an en-dash range plus the unit", "t": 10, "level": 1, "goal": 20, "unit": "mi", "expected": "8–12 mi" },
       { "name": "level 2 with no unit then the range alone, no trailing space", "t": 10, "level": 2, "goal": 12, "unit": "", "expected": "5–12" },
       { "name": "half-up tie with a unit (same numbers as the varyRange fixture's half-up vector)", "t": 3, "level": 2, "goal": 20, "unit": "pages", "expected": "2–5 pages" },
+      { "name": "COLLAPSED range then the single value, not a 2-2 range - owner ruling 2026-09-22; a weekly 10-rep counter pro-rated onto a daily board targets 2, and varyRange(2,1,10) is 2...2", "t": 2, "level": 1, "goal": 10, "unit": "reps", "expected": "2 reps" },
+      { "name": "COLLAPSED range with no unit then the bare single value, no trailing space", "t": 1, "level": 1, "goal": 5, "unit": "", "expected": "1" },
       { "name": "level 0 then null regardless of unit", "t": 10, "level": 0, "goal": 20, "unit": "mi", "expected": null }
     ],
     "splitSquaresNote": [
@@ -294,7 +296,8 @@
       { "name": "vary off but pro-rated below the goal then the target plus unit", "target": 5, "level": 0, "goal": 35, "unit": "Miles", "expected": { "text": "5 Miles", "varying": false } },
       { "name": "vary off with no unit then the bare target", "target": 7, "level": 0, "goal": 12, "unit": "", "expected": { "text": "7", "varying": false } },
       { "name": "vary a little then the varyRangeLabel range and varying true", "target": 10, "level": 1, "goal": 20, "unit": "mi", "expected": { "text": "8–12 mi", "varying": true } },
-      { "name": "vary a lot clamps the high end at the goal", "target": 10, "level": 2, "goal": 12, "unit": "mi", "expected": { "text": "5–12 mi", "varying": true } }
+      { "name": "vary a lot clamps the high end at the goal", "target": 10, "level": 2, "goal": 12, "unit": "mi", "expected": { "text": "5–12 mi", "varying": true } },
+      { "name": "a lit dice whose range COLLAPSED stays varying true - the chip must not fall through to the muted non-varying branch beside a lit dice (owner ruling 2026-09-22)", "target": 2, "level": 1, "goal": 10, "unit": "reps", "expected": { "text": "2 reps", "varying": true } }
     ],
     "compoundSummary": [
       { "name": "one square with the dice off then 1 square, not varying", "split": false, "partIds": ["p1", "p2", "p3"], "excludedPartIds": [], "level": 0, "expected": { "text": "1 square", "varying": false } },

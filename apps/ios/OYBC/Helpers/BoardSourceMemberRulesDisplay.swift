@@ -90,16 +90,34 @@ extension BoardSources {
     /// `lo...hi` from ``varyRange(t:level:goal:)``, rendered as
     /// `"lo–hi unit"` (EN DASH, U+2013; the unit omitted entirely when empty).
     ///
+    /// **A COLLAPSED range renders as the single value** (owner ruling
+    /// 2026-09-22): pro-rating routinely collapses a range — a weekly
+    /// 10-rep counter on a daily board targets `ceil(10/7) = 2`, and
+    /// `varyRange(2, .little, 10) = 2...2` — and "2–2 reps" is a range
+    /// that isn't one. It reads as `"2 reps"` instead, still blue, still
+    /// signalling a lit dice.
+    ///
+    /// Deliberately NOT nil in that case: nil is this function's "there is
+    /// no range" signal and ``countingSummary`` reads it to decide
+    /// `varying`, so a collapsed range returning nil would fall through to
+    /// the non-varying branch and render the chip in muted grey beside a
+    /// LIT dice. Returning the single formatted value — same unit handling
+    /// as the range form — keeps `varying == true` without a second flag.
+    ///
     /// - Parameters:
     ///   - t: The pre-vary target (see ``effectiveMemberTarget``).
     ///   - level: Vary level. `.off` renders nothing — there is no range.
     ///   - goal: The member's own `maxCount`, the hard ceiling.
     ///   - unit: The counting member's unit, or `""` when it has none.
-    /// - Returns: The label, or nil at vary level `.off`.
+    /// - Returns: `"lo–hi unit"`, `"lo unit"` when the range collapsed, or
+    ///   nil at vary level `.off`.
     static func varyRangeLabel(t: Int, level: VaryLevel, goal: Int, unit: String) -> String? {
         guard level != .off else { return nil }
         let range = varyRange(t: t, level: level, goal: goal)
         let suffix = unit.isEmpty ? "" : " \(unit)"
+        guard range.lowerBound != range.upperBound else {
+            return "\(range.lowerBound)\(suffix)"
+        }
         return "\(range.lowerBound)\u{2013}\(range.upperBound)\(suffix)"
     }
 
@@ -201,7 +219,11 @@ extension BoardSources {
     /// dice is lit, otherwise the plain target (with its unit, when it has
     /// one) — or NOTHING when the chip would only restate the row's own
     /// title. Dispatches to ``varyRangeLabel(t:level:goal:unit:)`` so the chip
-    /// and the expanded row's blue range line can never disagree.
+    /// and the expanded row's blue range line can never disagree —
+    /// including on a COLLAPSED range (`lo == hi`, routine once pro-rating
+    /// shrinks a target), which both inherit from that one function: it
+    /// renders the single value rather than returning nil, so the chip
+    /// stays on the varying branch and stays blue beside its lit dice.
     ///
     /// Counting titles are auto-generated from action + goal + unit
     /// (`generateCounterTaskTitle`), so a member at its full goal with no

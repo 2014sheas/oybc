@@ -367,11 +367,15 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await row.getByRole('button', { name: /^Vary: / }).first().click();
     // The part pro-rates like any board-pulled counting member (owner ruling
     // 2026-09-21): a weekly 10-rep part onto this DAILY board targets
-    // ceil(10 × 1 / 7) = 2, whose ±20 % band rounds to [2, 2] — so the range
-    // line reads "2–2" (parts render the range without a unit). The
-    // assertion below is STRUCTURAL — where the range renders, not how wide
-    // it is — so the collapsed band does not weaken it.
-    const partRange = row.getByText('2–2', { exact: true });
+    // ceil(10 × 1 / 7) = 2, whose ±20 % band rounds to [2, 2]. A COLLAPSED
+    // band renders as the single value (owner ruling 2026-09-22 —
+    // `varyRangeLabel`), so the line reads "2", not "2–2" (parts render the
+    // range without a unit). The assertion below is STRUCTURAL — where the
+    // range renders, not how wide it is — so the collapsed band does not
+    // weaken it. Exact text "2" is unique inside this row: the two part
+    // steppers hold their value in an <input>, not as text, and their
+    // captions read "of 10".
+    const partRange = row.getByText('2', { exact: true });
     await expect(partRange).toHaveCount(1);
     // Structural, not merely "it is somewhere in the row": the range's own
     // parent block also carries the part's name (`.part` wraps `.partLine`
