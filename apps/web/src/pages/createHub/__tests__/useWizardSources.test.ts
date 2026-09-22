@@ -10,7 +10,12 @@ import {
   withSourceFilter,
   withSourceRange,
 } from '../wizardSourcesLogic';
-import { availableCountForSource, selectionUnion, type SupplyInfoMap } from '../wizardSources';
+import {
+  availableCountForSource,
+  clampAllSourceRanges,
+  selectionUnion,
+  type SupplyInfoMap,
+} from '../wizardSources';
 
 /**
  * `useWizardSources` extraction (B3 Task 3, commit 1) — the nine source
@@ -42,7 +47,7 @@ function supplyEntry(
 }
 
 describe('appendSource (pullPool / pullBoard)', () => {
-  it('appends a pool row with the default [0, all] range and "all" filter', () => {
+  it('appends a pool row with the default [0, all] range and the "todo" filter', () => {
     const next = appendSource([], 'pool-1', 'pool');
     expect(next).toEqual([
       {
@@ -51,13 +56,34 @@ describe('appendSource (pullPool / pullBoard)', () => {
         min: 0,
         max: null,
         excludedTaskIds: [],
-        filter: 'all',
+        filter: 'todo',
       },
     ]);
   });
 
   it('appends a board row with kind "board"', () => {
     expect(appendSource([], 'board-1', 'board')[0].kind).toBe('board');
+  });
+
+  // Owner directive 2026-09-19 — a freshly pulled board supplies what is
+  // still outstanding, so the row starts on "Not done yet" rather than
+  // "All squares".
+  it('starts a new board row on the "Not done yet" filter', () => {
+    expect(appendSource([], 'board-1', 'board')[0].filter).toBe('todo');
+  });
+
+  // The narrowed filter shrinks the eligible supply, so the minted range
+  // must still be valid against it. `[0, all]` is the one range that is
+  // valid against ANY supply — re-clamping it is a no-op, which is what
+  // lets the pull paths skip the clamp the filter/exclude paths run.
+  it('mints a range that survives the clamp against its FILTERED supply', () => {
+    const [source] = appendSource([], 'board-1', 'board');
+    const supplyInfo: SupplyInfoMap = {
+      'board-1': supplyEntry('Board', ['t1', 't2', 't3'], ['t1', 't2', 't3']),
+    };
+    const clamped = clampAllSourceRanges([source], supplyInfo, 9);
+    expect(availableCountForSource([source], supplyInfo, 'board-1')).toBe(0);
+    expect(clamped[0]).toEqual(source);
   });
 
   it('is a no-op (same identity) when the id is already pulled — a re-tap never resets a range', () => {

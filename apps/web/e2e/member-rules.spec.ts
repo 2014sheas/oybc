@@ -134,7 +134,17 @@ async function openTasksStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^Next/ }).click();
 }
 
-/** Pull the seeded source board through the "Add from a pool or board" sheet. */
+/**
+ * Pull the seeded source board through the "Add from a pool or board" sheet.
+ *
+ * Two different subtitles, deliberately: the SHEET row is
+ * filter-independent ("8 squares · 0 done", straight off
+ * `fetchSourceSheetBoardEntries`), while the PULLED row reads "8 not done"
+ * — a newly minted source starts on the "Not done yet" filter (owner
+ * directive 2026-09-19, `NEW_SOURCE_FILTER`), and `buildSubtitle` switches
+ * phrasing on that filter. Nothing in this fixture is complete, so the
+ * count is 8 either way.
+ */
 async function pullSourceBoard(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Add from a pool or board' }).click();
   const sheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
@@ -156,7 +166,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await pullSourceBoard(page);
 
     // The source lands as ONE row carrying all 8 squares; expand it.
-    const sourceRow = page.getByRole('button', { name: /^Last Week Board, 8 squares/ });
+    const sourceRow = page.getByRole('button', { name: /^Last Week Board, 8 not done/ });
     await expect(sourceRow).toBeVisible();
     await sourceRow.click();
     await expect(sourceRow).toHaveAttribute('aria-expanded', 'true');
@@ -204,7 +214,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await openTasksStep(page);
     await pullSourceBoard(page);
 
-    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
 
     const compoundRow = page.getByTestId('member-row').filter({ hasText: 'Morning set' });
 
@@ -256,7 +266,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await openTasksStep(page);
     await pullSourceBoard(page);
 
-    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
     const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
     // B3.1: rule controls live behind a per-row disclosure; open it first.
     await memberRow.getByTestId('member-disclosure').click();
@@ -298,7 +308,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     // same fixture task titles as the specs above. Not a second setup path.
     await openTasksStep(page);
     await pullSourceBoard(page);
-    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
 
     // Pre-flight ruling C3: reuse the existing "Run 30 miles" fixture row
     // rather than inventing a short-titled task. The ruling under test is
@@ -324,7 +334,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
   }) => {
     await openTasksStep(page);
     await pullSourceBoard(page);
-    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
 
     const row = page.getByTestId('member-row').filter({ hasText: 'Morning set' });
     await row.getByTestId('member-disclosure').click();
@@ -390,7 +400,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
   }) => {
     await openTasksStep(page);
     await pullSourceBoard(page);
-    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
 
     const row = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
     await row.getByTestId('member-disclosure').click();
@@ -406,7 +416,7 @@ test.describe('Wizard member rules — the expanded source panel', () => {
   }) => {
     await openTasksStep(page);
     await pullSourceBoard(page);
-    await page.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
 
     // Exclude a plain filler row to get the UNDO-pill state into the mix.
     // Every row here stays COLLAPSED: expanding the counting or compound

@@ -43,7 +43,8 @@ BoardSource {
                                // available count); default null
   excludedTaskIds: string[],   // per-board exclusions; the saved pool/board
                                // is NEVER modified
-  filter: 'all' | 'todo'       // boards only; pools always 'all'
+  filter: 'all' | 'todo'       // boards only; pools always 'all';
+                               // a FRESH pull starts on 'todo'
 }
 ```
 
@@ -55,6 +56,16 @@ BoardSource {
 - `expanded` (row open/closed) is **UI state only — never persisted, never
   synced**.
 - Default range for a fresh pull is `[0, all]`; **Use all** resets to it.
+- **Default filter for a fresh pull is `'todo'`** ("Not done yet") — owner
+  directive 2026-09-19, so pulling a board supplies what is still
+  outstanding rather than re-dealing finished squares. One definition per
+  platform: `NEW_SOURCE_FILTER` (web `wizardSourcesLogic.ts`) ↔
+  `BoardWizardViewModel.newSourceFilter` (iOS). Scoped strictly to
+  CREATION: a source already stored on a board or template keeps its saved
+  filter, `sourcesFromMixFields` (legacy-trio decode) still mints `'all'`,
+  and nothing coerces on decode. No clamp is needed at mint time — `[0,
+  all]` is the one range valid against ANY supply, so a narrowed filter
+  can't leave a row wider than its filtered supply.
 - **Min cap** (enforced in UI and clamped defensively in validation):
   `min ≤ min(availableCount, fillableCellCount(size, center))`.
 

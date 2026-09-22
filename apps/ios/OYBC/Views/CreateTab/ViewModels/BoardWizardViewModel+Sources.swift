@@ -133,8 +133,24 @@ extension BoardWizardViewModel {
 
     // MARK: - Pull / remove
 
+    /// The done-filter a NEWLY minted source row starts on — owner
+    /// directive 2026-09-19: "Not done yet" is the default, so pulling a
+    /// board supplies what is still outstanding rather than re-dealing
+    /// squares the person has already finished. Web twin:
+    /// `NEW_SOURCE_FILTER` in `wizardSourcesLogic.ts`.
+    ///
+    /// Deliberately scoped to CREATION: sources already stored on a board
+    /// or a `RecurringBoardTemplate` keep whatever filter they were saved
+    /// with. `BoardSource.init`'s own default stays `.all` (it is what the
+    /// legacy-trio decode `BoardSources.sourcesFromMixFields` mints and
+    /// what the codec vectors pin), and nothing coerces a decoded row.
+    static let newSourceFilter: BoardSource.Filter = .todo
+
     /// Pull a pool in as a `[0, all]` source row. No-op when soft-deleted
     /// or already pulled. The saved `Pool` is never modified.
+    ///
+    /// Carries the `newSourceFilter` default like every freshly minted row;
+    /// inert here, since pools ignore the filter by contract.
     func pullPool(_ pool: Pool, tasksById: [String: Task]) {
         guard !pool.isDeleted, !sources.contains(where: { $0.sourceId == pool.id }) else { return }
         supplyInfoBySourceId[pool.id] = WizardSourceSupply(
@@ -144,14 +160,22 @@ extension BoardWizardViewModel {
             ),
             doneTaskIds: []
         )
-        sources.append(BoardSource(sourceId: pool.id, kind: .pool))
+        sources.append(BoardSource(sourceId: pool.id, kind: .pool, filter: Self.newSourceFilter))
         refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
 
-    /// Pull a board in as a `[0, all]` source row (filter `.all`). No-op
-    /// when the board is missing/soft-deleted or already pulled. The
-    /// source board is never modified.
+    /// Pull a board in as a `[0, all]` source row on the
+    /// `newSourceFilter` default ("Not done yet"). No-op when the board is
+    /// missing/soft-deleted or already pulled. The source board is never
+    /// modified.
+    ///
+    /// No range clamp is needed even though `.todo` shrinks the available
+    /// count: `[0, all]` is the one range valid against ANY supply
+    /// (`clampSourceMin` leaves `min == 0` alone, and a nil max is the
+    /// live-availability latch), so a row can't be minted wider than its
+    /// filtered supply. Every later filter/exclude/range change still
+    /// re-clamps as before.
     func pullBoard(boardId: String) {
         guard !sources.contains(where: { $0.sourceId == boardId }) else { return }
         guard let info = try? database.fetchBoardSourceSupply(boardId: boardId) else {
@@ -164,7 +188,7 @@ extension BoardWizardViewModel {
             windowCountByTaskId: info.windowCountByTaskId,
             sourceWindow: info.sourceWindow
         )
-        sources.append(BoardSource(sourceId: boardId, kind: .board))
+        sources.append(BoardSource(sourceId: boardId, kind: .board, filter: Self.newSourceFilter))
         // §Member rules (B3, RC4) — a board pulled in THIS session seeds its
         // counting members' REMAINING target on a one-off board. iOS resolves
         // the supply synchronously right here, so the seeding happens at pull

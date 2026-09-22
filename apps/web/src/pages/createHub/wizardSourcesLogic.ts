@@ -27,10 +27,32 @@ import {
 } from './wizardSources';
 
 /**
+ * The done-filter a NEWLY minted source row starts on — owner directive
+ * 2026-09-19: "Not done yet" is the default, so pulling a board supplies
+ * what is still outstanding rather than re-dealing squares the person has
+ * already finished. Meaningful for `kind: 'board'` only (pools ignore the
+ * filter by contract), but carried uniformly so every freshly minted row
+ * serialises the same way.
+ *
+ * Deliberately scoped to CREATION. Sources already stored on a board or a
+ * `RecurringBoardTemplate` keep whatever filter they were saved with —
+ * `sourcesFromMixFields` (the legacy-trio decode) still mints `'all'`, and
+ * nothing coerces a decoded row.
+ */
+export const NEW_SOURCE_FILTER: BoardSourceFilter = 'todo';
+
+/**
  * Append a freshly-pulled source row with the default `[0, all]` range and
- * the "All squares" filter. A no-op (same array identity) when `sourceId` is
- * already pulled — the sheet's tap on an already-pulled row must not
- * duplicate it or reset its range.
+ * the {@link NEW_SOURCE_FILTER} done-filter. A no-op (same array identity)
+ * when `sourceId` is already pulled — the sheet's tap on an already-pulled
+ * row must not duplicate it or reset its range.
+ *
+ * No range clamp is needed here even though `'todo'` shrinks the eligible
+ * supply: `[0, all]` is the one range that is valid against ANY supply
+ * (`clampSourceRange` leaves `min: 0` / `max: null` identity-unchanged for
+ * every available count), so a row can never be minted wider than its
+ * filtered supply. Every LATER supply/filter/exclude change routes through
+ * `clampAllSourceRanges` as before.
  *
  * @param sources - The current source rows, in row order.
  * @param sourceId - `Pool.id` or `Board.id` being pulled.
@@ -45,7 +67,7 @@ export function appendSource(
   if (sources.some((source) => source.sourceId === sourceId)) return sources;
   return [
     ...sources,
-    { sourceId, kind, min: 0, max: null, excludedTaskIds: [], filter: 'all' },
+    { sourceId, kind, min: 0, max: null, excludedTaskIds: [], filter: NEW_SOURCE_FILTER },
   ];
 }
 

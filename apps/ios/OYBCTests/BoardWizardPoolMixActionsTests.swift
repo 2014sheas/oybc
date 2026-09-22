@@ -328,7 +328,11 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
 
         XCTAssertEqual(vm.sources.map { $0.sourceId }, ["b1"])
         XCTAssertEqual(vm.sources.first?.kind, .board)
-        XCTAssertEqual(vm.sources.first?.filter, .all)
+        // Owner directive 2026-09-19 — a freshly pulled source starts on
+        // "Not done yet" (`BoardWizardViewModel.newSourceFilter`), so it
+        // supplies what is still outstanding. Nothing is complete in this
+        // fixture, so the supply below is unaffected either way.
+        XCTAssertEqual(vm.sources.first?.filter, .todo)
         XCTAssertEqual(vm.selectedTaskIds, ["bt1", "bt2", "bt3"])
         XCTAssertEqual(vm.supplyInfoBySourceId["b1"]?.displayName, "Weekday Core")
         // Board sources are NOT in the legacy poolIds mirror.
@@ -347,6 +351,12 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         let vm = BoardWizardViewModel(preferences: .defaults, database: db)
         try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1", "bt2"])
         vm.pullBoard(boardId: "b1")
+
+        // Flip to `.all` first: a pulled source now STARTS on `.todo`, so
+        // setting `.todo` straight away would assert nothing about the
+        // transition this test exists to cover.
+        vm.setSourceFilter(sourceId: "b1", filter: .all)
+        XCTAssertEqual(vm.availableCount(forSourceId: "b1"), 2)
 
         vm.setSourceFilter(sourceId: "b1", filter: .todo)
         // No completions seeded → nothing is done → supply unchanged.

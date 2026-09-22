@@ -16,6 +16,7 @@ import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
 import { excludeFromEverySupplier, selectionUnion } from './wizardSources';
 import { canApplyTaskToggle } from './wizardMemberRulesLogic';
+import { appendSource } from './wizardSourcesLogic';
 import { useWizardSources } from './useWizardSources';
 import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
 import { useWizardDerived } from './useWizardDerived';
@@ -520,19 +521,17 @@ export function useBoardWizard({
     // prefill must not seed unresolvable rows (draft/template hydration
     // deliberately KEEPS refs, since those are the user's own saved
     // state).
+    //
+    // Minted through `appendSource` rather than an inline literal so the
+    // creation defaults (`[0, all]` + `NEW_SOURCE_FILTER`) have exactly ONE
+    // definition — the two mint paths drifting apart is the whole reason
+    // this is a shared helper.
     const prefillSources: BoardSource[] = coreBoardDefault.corePoolIds
       .filter((poolId) => {
         const pool = poolsById[poolId];
         return pool !== undefined && !pool.isDeleted;
       })
-      .map((poolId) => ({
-        sourceId: poolId,
-        kind: 'pool',
-        min: 0,
-        max: null,
-        excludedTaskIds: [],
-        filter: 'all',
-      }));
+      .reduce<BoardSource[]>((acc, poolId) => appendSource(acc, poolId, 'pool'), []);
     const prefillManual = coreBoardDefault.coreDefaultTaskIds.filter((taskId) => {
       const task = tasksById[taskId];
       return task !== undefined && !task.isDeleted;
