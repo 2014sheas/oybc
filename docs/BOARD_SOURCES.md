@@ -56,11 +56,13 @@ BoardSource {
 - `expanded` (row open/closed) is **UI state only — never persisted, never
   synced**.
 - Default range for a fresh pull is `[0, all]`; **Use all** resets to it.
-- **Default filter for a fresh pull is `'todo'`** ("Not done yet") — owner
-  directive 2026-09-19, so pulling a board supplies what is still
-  outstanding rather than re-dealing finished squares. One definition per
-  platform: `NEW_SOURCE_FILTER` (web `wizardSourcesLogic.ts`) ↔
-  `BoardWizardViewModel.newSourceFilter` (iOS). Scoped strictly to
+- **Default filter for a fresh pull is kind-scoped: `'todo'`** ("Not done
+  yet") **for a board source, `'all'` for a pool** — owner directive
+  2026-09-19, so pulling a board supplies what is still outstanding rather
+  than re-dealing finished squares, while a pool (no per-board done state
+  to filter on) still defaults wide. One definition per platform:
+  `newSourceFilter(kind)` (web `wizardSourcesLogic.ts`) ↔
+  `BoardWizardViewModel.newSourceFilter(for:)` (iOS). Scoped strictly to
   CREATION: a source already stored on a board or template keeps its saved
   filter, `sourcesFromMixFields` (legacy-trio decode) still mints `'all'`,
   and nothing coerces on decode. No clamp is needed at mint time — `[0,
@@ -1364,6 +1366,15 @@ Three shapes, chosen by what the row actually has:
   `varyRangeLabel` string in `--riso-blue` when the dice is lit ("24–30
   Miles"), target + unit in `--riso-muted` when it is not ("12 Classes"),
   `splitSquaresNote` for a compound ("3 squares").
+- **A collapsed vary range renders as the single value, not `"N–N"`**
+  (owner ruling, 2026-09-22): pro-rating a board-pulled target onto a short
+  window now makes a collapsed range easy to hit — a weekly 10-rep counter
+  pulled onto a daily board targets `ceil(10/7) = 2`, and ±20% of 2 rounds
+  right back to `2...2` — so `varyRangeLabel` reads the chip as "2 reps"
+  rather than "2–2 reps". It deliberately returns that value instead of
+  `null`: `countingSummary` decides `varying: true` by
+  `varyRangeLabel(...) !== null`, so a `null` here would render the chip
+  muted-grey next to a dice that is still lit.
 - **A counting chip that only restates the title is suppressed** (owner
   ruling, 2026-09-19, after seeing the first re-recorded baselines): when
   `vary == 0` **and** `target == goal`, `countingSummary` returns `null` /

@@ -55,18 +55,37 @@ final class RisoDiceButtonTests: XCTestCase {
     /// The clearance the widened corners were checked against: the 18-box
     /// is centred in the 22-face, so a corner pip centre at 5 lands at 7 in
     /// face coordinates and clears the keyline by
-    /// `7 − 1.6 (radius) − 1.5 (Riso.Keyline.dense) = 3.9pt`. Asserted as
+    /// `7 − 1.6 (radius) − 1.5 (Riso.Keyline.dense) = 3.9pt`. Checked
+    /// against all FOUR face edges (left/top/right/bottom), not just the
+    /// two `point.x`/`point.y` alone imply — a pip could clip the far edge
+    /// even while clearing the near one — and the tightest of all of them
+    /// is asserted against the documented 3.9pt, not just `> 0`, so a
+    /// regression back toward the old cramped 6/12 geometry (1.04pt corner
+    /// gap) would fail here rather than pass on a loose bound. Asserted as
     /// arithmetic over the real `pipDiameter` so a later diameter bump that
     /// would clip the border fails here, not in an advisory snapshot.
     func testNoPipClipsTheKeyline() {
-        let inset: CGFloat = (22 - 18) / 2
+        let faceSize: CGFloat = 22
+        let inset: CGFloat = (faceSize - 18) / 2
         let radius = RisoDiceButton.pipDiameter / 2
+        var tightestClearance: CGFloat = .greatestFiniteMagnitude
         for (level, points) in RisoDiceButton.pips {
             for point in points {
-                let clearance = Swift.min(point.x, point.y) + inset - radius - Riso.Keyline.dense
-                XCTAssertGreaterThan(clearance, 0, "level \(level) pip \(point) clips the keyline")
+                let faceX = point.x + inset
+                let faceY = point.y + inset
+                let edgeClearances: [CGFloat] = [
+                    faceX - radius - Riso.Keyline.dense,               // left
+                    faceY - radius - Riso.Keyline.dense,               // top
+                    (faceSize - faceX) - radius - Riso.Keyline.dense,  // right
+                    (faceSize - faceY) - radius - Riso.Keyline.dense,  // bottom
+                ]
+                for clearance in edgeClearances {
+                    XCTAssertGreaterThan(clearance, 0, "level \(level) pip \(point) clips the keyline")
+                }
+                tightestClearance = Swift.min(tightestClearance, edgeClearances.min()!)
             }
         }
+        XCTAssertEqual(tightestClearance, 3.9, accuracy: 0.001)
     }
 
     /// The tightest pair on the lit faces is corner-to-centre; the widening

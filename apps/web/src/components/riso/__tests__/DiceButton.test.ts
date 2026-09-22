@@ -107,14 +107,39 @@ describe('DiceButton', () => {
   });
 
   // A corner pip centre is 7 from the face edge (the 18-box is inset 2),
-  // so it clears the 1.5px keyline by 7 − 1.6 (r) − 1.5 = 3.9px. Pinned
-  // as arithmetic on the rendered radius so a later `r` bump that would
-  // clip the border fails here rather than in a snapshot diff.
+  // so it clears the 1.5px keyline by 7 − 1.6 (r) − 1.5 = 3.9px. Checked
+  // against all FOUR face edges (left/top/right/bottom) for every pip on
+  // every face, not just the near two an `x`/`y` minimum alone implies —
+  // a pip could clip the far edge while clearing the near one — and the
+  // tightest of all of them is pinned to the documented 3.9px, not just
+  // `> 0`, so a regression back toward the old cramped 6/12 geometry
+  // (1.04px corner gap) would fail here rather than pass on a loose bound.
+  // Pinned as arithmetic on the rendered radius so a later `r` bump that
+  // would clip the border fails here rather than in a snapshot diff.
   it('keeps every pip clear of the 1.5px keyline', () => {
-    const html = render(2);
-    const r = Number(/\br="([^"]+)"/.exec(html)?.[1]);
-    expect(r).toBeGreaterThan(0);
-    const minCentre = Math.min(...pipCentres(html).flat().map(Number));
-    expect(minCentre + 2 - r - 1.5).toBeGreaterThan(0);
+    const faceSize = 22;
+    const inset = 2;
+    const keyline = 1.5;
+    let tightestClearance = Infinity;
+    for (const level of [0, 1, 2] as const) {
+      const html = render(level);
+      const r = Number(/\br="([^"]+)"/.exec(html)?.[1]);
+      expect(r).toBeGreaterThan(0);
+      for (const [cx, cy] of pipCentres(html)) {
+        const faceX = Number(cx) + inset;
+        const faceY = Number(cy) + inset;
+        const edgeClearances = [
+          faceX - r - keyline, // left
+          faceY - r - keyline, // top
+          faceSize - faceX - r - keyline, // right
+          faceSize - faceY - r - keyline, // bottom
+        ];
+        for (const clearance of edgeClearances) {
+          expect(clearance).toBeGreaterThan(0);
+        }
+        tightestClearance = Math.min(tightestClearance, ...edgeClearances);
+      }
+    }
+    expect(tightestClearance).toBeCloseTo(3.9, 3);
   });
 });

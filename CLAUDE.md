@@ -161,7 +161,7 @@ This matters more than it looks: `ios.yml` runs the snapshot step under `continu
 
 CI pins Xcode to **26.3** (`DEVELOPER_DIR=/Applications/Xcode_26.3.app/...` in `ios.yml`). Use the same Xcode major.minor locally. If you have multiple Xcodes installed, run `sudo xcode-select -s /Applications/Xcode-26.3.app` (or set `DEVELOPER_DIR` per-command as above) so re-recordings happen against the matching toolchain.
 
-**Don't trust a bare red count — establish it, and say how.** The number moves whenever anyone re-records a baseline (it went 27 → 23 → 18 → 20 across a single day of B3.1 work), so a figure quoted without its commit, its runtime and its per-class breakdown is stale on arrival. The method is the durable part:
+**Don't trust a bare red count — establish it, and say how.** The number moves whenever anyone re-records a baseline (it went 27 → 23 → 18 → 19 across a single day of B3.1 work), so a figure quoted without its commit, its runtime and its per-class breakdown is stale on arrival. The method is the durable part:
 
 ```bash
 # at the commit you care about, on the PINNED runtime, then diff the SETS
