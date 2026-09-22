@@ -154,6 +154,64 @@ enum SnapshotFixtures {
         )
     }
 
+    // MARK: - Shared-counter family (owner ruling 2026-09-22)
+
+    /// Ids for the counter family, so tests name them without string literals.
+    enum CounterFamilyTask {
+        static let root = "t-cf-root"
+        static let member = "t-cf-member"
+    }
+
+    /// A shared-counter FAMILY: a root counter ("Read 35 pages", 12 logged
+    /// all-time) plus one window-stamped derived member that links to it.
+    ///
+    /// The member is what makes the root a family root — `sharedCounterRootIds`
+    /// names a target only when some live task points at it — so a test that
+    /// wants the generic library row needs BOTH rows in the set, even though
+    /// only the root is ever rendered (the browse rule hides the member).
+    ///
+    /// - Returns: `(root, member)`, both already deterministic-timestamped.
+    static func counterFamily() -> (root: Task, member: Task) {
+        let root = Task(
+            id: CounterFamilyTask.root,
+            userId: userId,
+            title: "Read 35 pages",
+            type: .counting,
+            action: "Read",
+            unit: "pages",
+            maxCount: 35,
+            totalCompletions: 0,
+            totalInstances: 0,
+            currentCount: 12,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp,
+            version: 1,
+            isDeleted: false
+        )
+        let member = Task(
+            id: CounterFamilyTask.member,
+            userId: userId,
+            title: "Read 5 pages",
+            type: .counting,
+            action: "Read",
+            unit: "pages",
+            maxCount: 5,
+            totalCompletions: 0,
+            totalInstances: 0,
+            currentCount: 12,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp,
+            version: 1,
+            isDeleted: false,
+            timeframe: .daily,
+            startDate: fixedTimestamp,
+            sharedCounterId: CounterFamilyTask.root,
+            baseline: 7,
+            createdInWizard: true
+        )
+        return (root, member)
+    }
+
     static func makeCompoundChild(
         id: String,
         compoundTaskId: String,
