@@ -58,6 +58,19 @@ The review's core CI/CD finding: coverage tracks where the *apps* are, not where
 - **Why:** the snapshot step is `continue-on-error: true` (`ios.yml:96`) because the CI runner's iOS simulator minor differs from local; visual regressions currently produce a green check.
 - **Scope:** already documented in CLAUDE.md — either wait for a macos-15 image shipping iOS 26.3, or install the iOS 26.2 runtime locally, re-record baselines on `OS=26.2`, and drop the flag. Track the runner-image state in the dependabot-sweep reminder.
 - **Acceptance:** a genuine snapshot diff fails the PR.
+- **Open snapshot debt — one unexplained baseline offset (filed 2026-09-22, B3.1):**
+  `BoardWizardTasksStepSnapshotTests.testDenseLibraryWithSourcesPulled`. The test
+  was legitimately re-recorded for a renamed label, but the new baseline ALSO
+  absorbed a **~6px downward offset of the struck-out excluded-member row** on
+  the dense-library Tasks-step screen. That offset was never root-caused, and it
+  **predates the `feature/member-rules-b31` branch** — i.e. it is evidence that an
+  earlier PR shipped an unreviewed render change to that row, and re-recording
+  destroyed the last signal of it. Deliberately NOT fixed here (a blind nudge
+  would only bury it further); recorded so the next person to touch the excluded
+  member row, or to take A8 strict, knows the baseline is not a clean reference.
+  This is exactly the failure mode A8 exists to close: with the snapshot step
+  advisory, an unintended render change reaches `dev` behind a green check and is
+  only noticed when an unrelated re-record swallows it.
 
 ---
 
