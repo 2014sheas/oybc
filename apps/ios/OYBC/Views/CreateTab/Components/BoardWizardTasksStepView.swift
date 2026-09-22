@@ -19,7 +19,7 @@ private struct PoolEditToast: Identifiable {
 /// §Surfaces item 1 / handoff frame 2a):
 ///   1. Pool header card — capacity/required, progress bar, model note.
 ///   2. "ADD TASKS" section — quick-add row + special-type panel button.
-///   3. "Add a pool or board" dashed row → the source sheet (2c/5c).
+///   3. "Add from a pool or board" dashed row → the source sheet (2c/5c).
 ///   4. Library entry button (dashed) → bottom sheet at .fraction(0.76).
 ///   5. "On your board" — SOURCE rows (expandable range/filter/member
 ///      panels) + hand-added task rows.
@@ -29,7 +29,7 @@ private struct PoolEditToast: Identifiable {
 /// Sub-views (separate files):
 ///   - `RisoTasksPoolHeaderView`    — pool header card (capacity-based)
 ///   - `RisoSourceRowView`          — one pulled source row + expanded panel
-///   - `RisoSourcePickerSheetView`  — "Add a pool or board" sheet
+///   - `RisoSourcePickerSheetView`  — "Add from a pool or board" sheet
 ///   - `RisoQuickAddRowView`        — text input + red Add button
 ///   - `RisoSpecialTaskPanel`       — collapsed/expanded type-specific panel
 ///   - `RisoLibrarySheetView`       — dashed entry button + bottom sheet (owns search,
@@ -187,7 +187,7 @@ struct BoardWizardTasksStepView: View {
     @State private var toast: PoolEditToast? = nil
     @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
 
-    // Board Sources P2 — "Add a pool or board" sheet.
+    // Board Sources P2 — "Add from a pool or board" sheet.
     @State private var showSourceSheet = false
 
     // MARK: - Derived
@@ -421,13 +421,13 @@ struct BoardWizardTasksStepView: View {
                     )
                 }
 
-                // 3. Add a pool or board (Board Sources P2, frame 2a) —
+                // 3. Add from a pool or board (Board Sources P2, frame 2a) —
                 // dashed row styled like the library row; opens the sheet.
                 sourceSheetEntry
 
                 // 4. Library entry button (dashed) → bottom sheet.
                 // HIDDEN for UX testing (owner, 2026-09-17): quick-add's
-                // search and the "Add a pool or board" sheet cover most of
+                // search and the "Add from a pool or board" sheet cover most of
                 // what this did, and the dashed row was mostly taking up
                 // space. All logic is kept — flip `libraryEntryEnabled` to
                 // restore.
@@ -501,7 +501,7 @@ struct BoardWizardTasksStepView: View {
         .overlay(alignment: .bottom) {
             if let toast { toastOverlay(toast) }
         }
-        // Board Sources P2 — the "Add a pool or board" sheet (frames 2c/5c).
+        // Board Sources P2 — the "Add from a pool or board" sheet (frames 2c/5c).
         .sheet(isPresented: $showSourceSheet) {
             RisoSourcePickerSheetView(
                 pools: pools,
@@ -527,7 +527,7 @@ struct BoardWizardTasksStepView: View {
 
     // MARK: - Sources UI (Board Sources P2)
 
-    /// Dashed "Add a pool or board" entry row — styled like the library
+    /// Dashed "Add from a pool or board" entry row — styled like the library
     /// entry row (2pt dashed keyline, grid icon, trailing count badge =
     /// pools + active boards).
     private var sourceSheetEntry: some View {
@@ -538,7 +538,7 @@ struct BoardWizardTasksStepView: View {
                 Image(systemName: "square.grid.3x3")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Color.risoMuted)
-                Text("Add a pool or board")
+                Text("Add from a pool or board")
                     .font(.risoHead(13, .bold))
                     .foregroundStyle(Color.risoInk)
                 Spacer()
@@ -560,7 +560,7 @@ struct BoardWizardTasksStepView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Add a pool or board")
+        .accessibilityLabel("Add from a pool or board")
     }
 
     /// The source rows rendered at the top of the "On your board" list.

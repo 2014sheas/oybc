@@ -4,7 +4,7 @@ import { db } from '../../internal';
 import { fetchSourceSheetBoardEntries } from '../boardSources';
 
 /**
- * The "Add a pool or board" sheet's board rows.
+ * The "Add from a pool or board" sheet's board rows.
  *
  * Owner-reported (2026-09-16, with a screenshot): the sheet showed four
  * boards all named "Today" plus a "June 2026" board months out of window.

@@ -134,10 +134,10 @@ async function openTasksStep(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^Next/ }).click();
 }
 
-/** Pull the seeded source board through the "Add a pool or board" sheet. */
+/** Pull the seeded source board through the "Add from a pool or board" sheet. */
 async function pullSourceBoard(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Add a pool or board' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Add a pool or board' });
+  await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
   await expect(sheet).toBeVisible();
   await sheet.getByRole('button', { name: /^Last Week Board, 8 squares/ }).click();
   await sheet.getByRole('button', { name: 'Done', exact: true }).click();

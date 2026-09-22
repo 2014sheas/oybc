@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Add a pool or board" bottom sheet (Board Sources P2 —
+/// "Add from a pool or board" bottom sheet (Board Sources P2 —
 /// docs/BOARD_SOURCES.md §Surfaces item 2; handoff frames 2c/5c).
 ///
 /// Search across POOLS and BOARDS sections (name match, case-insensitive;
@@ -91,7 +91,7 @@ struct RisoSourcePickerSheetView: View {
 
     private var header: some View {
         HStack {
-            Text("Add a pool or board")
+            Text("Add from a pool or board")
                 .font(.risoHead(20, .extraBold))
                 .foregroundStyle(Color.risoInk)
             Spacer()

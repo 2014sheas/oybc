@@ -17,7 +17,7 @@ export interface SourcePickerSheetProps {
 }
 
 /**
- * SourcePickerSheet — dashed "Add a pool or board" entry row + bottom
+ * SourcePickerSheet — dashed "Add from a pool or board" entry row + bottom
  * sheet (Board Sources P4 — docs/BOARD_SOURCES.md §Surfaces item 2;
  * handoff frames 2c/5c). Web port of iOS `RisoSourcePickerSheetView`,
  * following `LibrarySheet`'s entry-button + backdrop/sheet pattern.
@@ -78,7 +78,7 @@ export function SourcePickerSheet({
             <line x1="3" y1="15" x2="21" y2="15" />
           </svg>
         </span>
-        <span className={styles.entryLabel}>Add a pool or board</span>
+        <span className={styles.entryLabel}>Add from a pool or board</span>
         <span className={styles.entryCount}>{pools.length + boardEntries.length}</span>
       </button>
 
@@ -88,12 +88,12 @@ export function SourcePickerSheet({
             className={styles.sheet}
             role="dialog"
             aria-modal="true"
-            aria-label="Add a pool or board"
+            aria-label="Add from a pool or board"
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.grabHandle} aria-hidden="true" />
             <div className={styles.sheetHeader}>
-              <span className={styles.sheetTitle}>Add a pool or board</span>
+              <span className={styles.sheetTitle}>Add from a pool or board</span>
               <button type="button" className={styles.donePill} onClick={() => setIsOpen(false)}>
                 Done
               </button>

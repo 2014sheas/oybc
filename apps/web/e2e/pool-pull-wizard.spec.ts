@@ -10,7 +10,7 @@ import {
 /**
  * Board Sources P4 (docs/BOARD_SOURCES.md §Surfaces items 1–2) — e2e
  * coverage for the wizard's Tasks-step sources model: pulling a pool via
- * the "Add a pool or board" sheet creates a source ROW (not a flat task
+ * the "Add from a pool or board" sheet creates a source ROW (not a flat task
  * union), the header counts CAPACITY, the expanded panel's member ✕
  * excludes a task for this board only (UNDO restores), a hand-added task
  * survives removing the source, and the sheet shows its empty state when
@@ -54,10 +54,10 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    // Step 2 mounted — the dashed "Add a pool or board" entry opens the
+    // Step 2 mounted — the dashed "Add from a pool or board" entry opens the
     // source sheet with the seeded pool as a toggleable row.
-    await page.getByRole('button', { name: 'Add a pool or board' }).click();
-    const sourceSheet = page.getByRole('dialog', { name: 'Add a pool or board' });
+    await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
     await expect(sourceSheet).toBeVisible();
     const sheetPoolRow = sourceSheet.getByRole('button', { name: /Morning Kickstart/ });
     await expect(sheetPoolRow).toHaveAttribute('aria-pressed', 'false');
@@ -144,8 +144,8 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    await page.getByRole('button', { name: 'Add a pool or board' }).click();
-    const sourceSheet = page.getByRole('dialog', { name: 'Add a pool or board' });
+    await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
     await expect(sourceSheet.getByText('Nothing to pull from yet')).toBeVisible();
     await expect(
       sourceSheet.getByText('Boards you make and pools you save will show up here.'),

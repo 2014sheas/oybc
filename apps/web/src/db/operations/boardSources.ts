@@ -71,7 +71,7 @@ export interface BoardSourceSupplyInfo {
   sourceWindow: BoardWindow;
 }
 
-/** One BOARDS-section row for the "Add a pool or board" sheet. */
+/** One BOARDS-section row for the "Add from a pool or board" sheet. */
 export interface SourceSheetBoardEntry {
   board: Board;
   squares: number;
@@ -230,7 +230,7 @@ export async function fetchBoardSourceSupply(
 }
 
 /**
- * BOARDS rows for the "Add a pool or board" sheet: ACTIVE, non-deleted
+ * BOARDS rows for the "Add from a pool or board" sheet: ACTIVE, non-deleted
  * boards with squares/done counts from the same predicate the member
  * rows use. Matches iOS eligibility exactly (ACTIVE only).
  */

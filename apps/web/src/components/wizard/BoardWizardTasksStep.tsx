@@ -41,7 +41,7 @@ import { LibrarySheet } from './LibrarySheet';
  * Renders the "Add from your library" dashed entry row + bottom sheet.
  *
  * Set to false for UX testing (owner, 2026-09-17) — the row was mostly
- * taking up space next to quick-add's search and the "Add a pool or board"
+ * taking up space next to quick-add's search and the "Add from a pool or board"
  * sheet. Every code path behind it is intact; flip this to bring it back.
  *
  * Typed `boolean` (not inferred `false`) so the guarded JSX below stays a
@@ -639,7 +639,7 @@ export function BoardWizardTasksStep({
         />
       </div>
 
-      {/* 3. "Add a pool or board" — dashed entry row + sheet (frames
+      {/* 3. "Add from a pool or board" — dashed entry row + sheet (frames
           2a/2c/5c). Sheet taps toggle: pull when absent, remove when
           pulled (mirrors iOS's sheet wiring). */}
       <SourcePickerSheet
@@ -660,7 +660,7 @@ export function BoardWizardTasksStep({
 
       {/* 4. Library entry button → bottom sheet.
           HIDDEN for UX testing (owner, 2026-09-17): quick-add's search and
-          the "Add a pool or board" sheet cover most of what this did, and
+          the "Add from a pool or board" sheet cover most of what this did, and
           the dashed row was mostly taking up space. All logic is kept —
           flip `LIBRARY_ENTRY_ENABLED` to restore. */}
       {LIBRARY_ENTRY_ENABLED && (

@@ -290,7 +290,7 @@ the pool-generation surface, both platforms:
 1. **Tasks step (2a)** — content order: pool header card (count/progress =
    §3 header math; copy "N more to fill the board. Widen a pool's range or
    add tasks." / "✓ Fills your board · N extras rotate in" — no "min"
-   suffix), quick-add card, dashed **"Add a pool or board"** row (opens the
+   suffix), quick-add card, dashed **"Add from a pool or board"** row (opens the
    sheet), dashed library row, **"On your board"** list = source rows +
    hand-added task rows, red gate line when short. Source row: letter square
    (pool = ink "P", board = **gold fill + ink-static "B"** — dark-contract
@@ -298,7 +298,7 @@ the pool-generation surface, both platforms:
    Expanded panel: segmented **All squares / Not done yet** (boards only),
    the range block (two-handle slider, "Use all", note line only when range
    ≠ default), member rows (✕ exclude / UNDO pill / green-✓ filtered-done).
-2. **Add a pool or board sheet (2c, empty state 5c)** — bottom sheet, search,
+2. **Add from a pool or board sheet (2c, empty state 5c)** — bottom sheet, search,
    POOLS then BOARDS sections, tap-to-toggle check circles; empty state
    "Nothing to pull from yet" with the dashed mini-grid.
 3. **One-off Preview (2b)** — the grid + full-width **↻ Shuffle** (exists
