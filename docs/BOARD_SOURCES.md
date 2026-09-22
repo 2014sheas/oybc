@@ -1476,6 +1476,52 @@ Three shapes, chosen by what the row actually has:
 - `MemberRuleRowModel.caption` → `targetSuffix`; the struct gains
   `isExpandable` and `summary`.
 
+**Owner ruling 2026-09-22 — no identical derived clones, and one generic
+family row in the library.** Device-testing #493 surfaced that pulling a
+counting task from a board always mints a window-stamped derived counter,
+even when nothing differs: "Read 1 book" (goal 1, can't be subdivided, vary
+off) spawned a second "Read 1 book" with an identical regenerated title,
+visible in the Tasks-tab library beside its root. Two rules:
+
+1. **Skip the mint when the derived row would be identical to its root.**
+   In `planDerivedTasks` (TS ↔ `BoardSources.planDerivedTasks`), a
+   board-sourced counting member — or a split part — whose resolved target
+   equals its own goal *and* whose vary level is off is **placed as the root
+   task itself**, exactly as pool-sourced and hand-added members already are.
+   A derived counter exists to carry a *different* target (pro-rated or
+   hand-set) or a vary range; when it would carry neither, Windowed
+   Completion already evaluates the root against the target board's window
+   and the shared-task semantics (an increment on the daily counts on the
+   monthly) are the documented intent. Persist, Preview and the deletion
+   cascade all tolerate a member with no derived row (`isMintedForBoard`
+   matches window-stamped rows only, so a directly-placed root is never
+   mistaken for minted content). A later rule edit on a repeating board
+   correctly flips root → derived at the next spawn, because each window
+   re-plans. Every pre-existing vector pulls cross-timeframe, so the skip
+   case is pinned by new vectors: same-timeframe board pull with vary off →
+   the root id in `placement`, no derived row; the same with vary on → still
+   minted; explicit `target == goal` with vary off → the root.
+2. **The Tasks-tab library shows ONE generic row per counter family.**
+   Library browse (`computeBrowsableTasks` ↔ `BrowsableTasks`) hides every
+   task with a live `sharedCounterId` — window-stamped derived rows *and*
+   P5 shared-counter members — and keeps the family root. A root that heads
+   a family (≥1 live member links to it, or it is a hub-born `isCounter`
+   counter — the same root test `buildSharedCounterGroups` uses, extracted
+   into a shared `sharedCounterRootIds(tasks)` helper with a Swift twin)
+   renders with the **generic label `formatCounterName(action, unit)`**
+   ("Read book", "Run miles", "Push-ups") in place of its stored title, with
+   no target count in the title or subtitle, and **tapping it opens the
+   Counters hub detail** for that root (web `/profile/counters/:rootId`, iOS
+   `CounterDetailView(counterId:)` via a `TasksTabRoute` pushed on the
+   existing `NavigationPath`) — the page that already lists the family's
+   windows. A standalone counter (no members, not `isCounter`) is unchanged:
+   "Read 1 book" keeps its count and opens `TaskDetail`. The wizard's
+   Library sheet renders from the same browse set, so members drop out of it
+   too and the family root appears there under its generic label; adding it
+   adds the root, as before. Owner's words: "do we really need a new task in
+   the library for EVERY different target count?" — no; the hub is the home
+   for per-window rows, and the library shows the counter once.
+
 **Out of scope, deliberately**: wrapping a title to two lines (full width
 fits realistic titles; genuinely extreme ones still ellipsize); any
 hand-added-row change beyond the dice face; the B3 follow-up backlog above.
