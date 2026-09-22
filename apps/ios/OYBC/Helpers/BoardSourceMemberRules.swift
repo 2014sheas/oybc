@@ -399,12 +399,15 @@ extension BoardSources {
     /// part-exclusion and nothing else).
     ///
     /// No-identical-clone rule (owner ruling 2026-09-22): a board-sourced
-    /// counting member — or split part — whose RESOLVED target equals its own
-    /// goal and whose vary is off is placed as the root task itself rather
-    /// than minted, because the derived row would be an exact clone. Windowed
-    /// Completion already evaluates the root against the placing board's
-    /// window. A later rule edit flips root → derived at the next spawn,
-    /// because every window re-plans from scratch.
+    /// counting member — or split part — that IS a root (`sharedCounterId ==
+    /// nil`) and whose RESOLVED target equals its own goal with vary off is
+    /// placed as the root task itself rather than minted, because the derived
+    /// row would be an exact clone. Windowed Completion already evaluates the
+    /// root against the placing board's window. A member that is itself a
+    /// window-stamped derived counter never takes this path — it always
+    /// re-mints for the new window, or its old window's baseline would be
+    /// evaluated on this board. A later rule edit flips root → derived at the
+    /// next spawn, because every window re-plans from scratch.
     ///
     /// Collapse rule, mirrored verbatim from the TS twin: two things that
     /// share a shared-counter root resolve to ONE derived counter (the first
@@ -607,7 +610,22 @@ extension BoardSources {
                         // the pro-rating stays intact. `rollTarget` consumes no
                         // rng at `.off`, so the skip cannot shift a seeded
                         // sequence on either platform. (TS twin, verbatim.)
-                        if target == goal, vary == .off {
+                        //
+                        // `sharedCounterId == nil` is load-bearing: you may
+                        // only place "the root task itself" when the member IS
+                        // the root. A member that is already a window-stamped
+                        // derived counter (yesterday's daily, pulled into
+                        // today's) resolves to `autoTarget(goal, 1, 1) == goal`
+                        // with vary off, and placing it would put ANOTHER
+                        // window's row on this board — its `startDate` still
+                        // names the old window, so the derived-counter
+                        // carve-out reads that window's baseline and the square
+                        // can open already complete, with
+                        // `refreshDerivedBaselines` recomputing from the same
+                        // stale `startDate` so it never heals. It must re-mint
+                        // for THIS window, exactly as the hand-added branch's
+                        // `isWindowStampedMember` guard above already ensures.
+                        if target == goal, vary == .off, task.sharedCounterId == nil {
                             placementIds.append(id)
                             continue
                         }
@@ -629,9 +647,9 @@ extension BoardSources {
                         taskIdForWindow: id
                     )
                     // No identical clone (owner ruling 2026-09-22) — see the
-                    // split-part branch above for the reasoning; same rule,
-                    // same shape.
-                    if target == goal, vary == .off {
+                    // split-part branch above for the reasoning, the
+                    // `sharedCounterId` guard included; same rule, same shape.
+                    if target == goal, vary == .off, task.sharedCounterId == nil {
                         placementIds.append(id)
                         continue
                     }

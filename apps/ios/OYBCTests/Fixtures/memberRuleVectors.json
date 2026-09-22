@@ -75,7 +75,7 @@
       "d1": { "type": "counting", "title": "Push-ups 12", "action": "Push-ups", "unit": "reps", "maxCount": 12 }
     },
     "children": { "C": ["c1", "c2"], "C2": [{ "childTaskId": "c1", "childIndex": 1 }, { "childTaskId": "c3", "childIndex": 0 }], "C3": ["r2", "c4"] },
-    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly", "c4": "monthly", "d1": "daily" },
+    "sourceWindows": { "r1": "weekly", "r2": "monthly", "c1": "weekly", "c3": "weekly", "a1": "weekly", "c4": "monthly", "d1": "daily", "w1": "daily" },
     "baselines": { "r1": 12, "r2": 3, "c1": 0, "c3": 0, "a1": 0, "d1": 4 },
     "vectors": [
       { "name": "board counting auto (recurring): r1 35 weekly to daily gives 5; baseline 12", "mode": "recurring", "selected": ["r1"], "supplies": [{ "kind": "board", "supply": ["r1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42,
@@ -158,7 +158,10 @@
         "expected": { "placement": ["r1"], "derived": [], "compounds": [] } },
       { "name": "no identical clone on a split part: board source, parts.c1.target 8 equals c1's own goal 8, vary off then the ROOT part c1 is placed", "mode": "recurring", "selected": ["c1", "c2"], "supplies": [{ "kind": "board", "supply": ["c1", "c2"], "partOf": { "c1": "C", "c2": "C" }, "memberRules": { "C": { "split": true, "parts": { "c1": { "target": 8 } } } } }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
         "note": "The part-branch twin of the member vectors. Contrast 'split part on a board source ... part target 3 overrides to 3', which is the same shape with target 3 != goal 8 and DOES mint. c2 (a normal task) is placed as itself in both.",
-        "expected": { "placement": ["c1", "c2"], "derived": [], "compounds": [] } }
+        "expected": { "placement": ["c1", "c2"], "derived": [], "compounds": [] } },
+      { "name": "the skip requires the member to BE a root: w1 is already a window-stamped derived counter, so a same-timeframe board pull with vary off STILL MINTS rather than placing another window's row", "mode": "recurring", "selected": ["w1"], "supplies": [{ "kind": "board", "supply": ["w1"], "memberRules": {} }], "manual": [], "manualTaskVary": {}, "seed": 42, "expectedRngCalls": 0,
+        "note": "The wrong-window guard. w1 carries sharedCounterId r1 AND startDate 2026-09-17 - it is yesterday's daily row, and resolveBoardSourceSupply happily lets it into today's supply. autoTarget(5, 1, 1) returns the goal 5 unchanged, so target == goal and vary is off: without the `sharedCounterId == null` half of the condition this would place w1 itself, putting YESTERDAY's window-stamped row on today's board (its startDate still names the old window, so the derived-counter carve-out reads the old baseline and the square can open already complete, and refreshDerivedBaselines recomputes from the same stale startDate so it never heals). It must re-mint for THIS window instead - collapsing onto root r1, which is why the placement is derived:r1 and the draft replaces w1 while sourcing from it. Baseline 12 is r1 own, freshly taken for this window. The hand-added branch has always guarded this with isWindowStampedMember.",
+        "expected": { "placement": ["derived:r1"], "derived": [{ "root": "r1", "sourceMember": "w1", "replaces": "w1", "maxCount": 5, "baseline": 12, "title": "Read 5 pages", "action": "Read", "unit": "pages" }], "compounds": [] } }
     ],
     "idPinsNote": "Literal uuidv5 outputs, computed ONCE with the TS uuidv5 (default OYBC namespace). Swift must reproduce them independently. Names: 'sources:derived:<boardId>:<root>', 'sources:derived-compound:<boardId>:<compound>', 'sources:derived-link:<derivedCompoundId>:<childId>'. The link name's <childId> is the LITERAL child task id - a derived uuid for a derived child, the raw source id for an original one. idPins itself is a clean token -> uuid map with no stray keys.",
     "idPins": {
