@@ -16,6 +16,15 @@ struct RisoTaskRowView: View {
     /// Defaults true so previews/snapshot fixtures render their seeds.
     var usageCountsLoaded: Bool = true
     let childCount: Int
+    /// Owner ruling 2026-09-22 — this task HEADS a shared-counter family
+    /// (`sharedCounterRootIds`). The library shows ONE generic row per
+    /// family: the pair-derived `CounterName.formatCounterName` label
+    /// ("Read pages") in place of the stored title, no target count anywhere
+    /// on the row, and a tap that opens the Counters hub rather than Task
+    /// detail (the caller routes; this flag changes the copy and the
+    /// accessibility label so the two agree). Defaults false so every
+    /// existing call site and snapshot fixture is unaffected.
+    var isFamilyRoot: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -24,7 +33,7 @@ struct RisoTaskRowView: View {
 
             // ── Title + subtitle ────────────────────────────────────────
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.title.isEmpty ? "(untitled task)" : task.title)
+                Text(displayTitle.isEmpty ? "(untitled task)" : displayTitle)
                     .font(.risoBody(15, .semibold))
                     .foregroundStyle(Color.risoInk)
                     .lineLimit(1)
@@ -64,10 +73,25 @@ struct RisoTaskRowView: View {
         .padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .risoCard(keyline: Riso.Keyline.dense)
-        .accessibilityLabel("Open \(task.title.isEmpty ? "untitled task" : task.title) details")
+        .accessibilityLabel(accessibilityText)
     }
 
     // MARK: - Derived
+
+    /// A family root reads as the counter itself ("Read pages"), never as one
+    /// window's target ("Read 5 pages"). `formatCounterName` returns `""` when
+    /// the (action, unit) pair can't produce a name — the same stored-title
+    /// fallback `SharedCounterGroups.swift` uses.
+    private var displayTitle: String {
+        guard isFamilyRoot else { return task.title }
+        let generic = CounterName.formatCounterName(action: task.action, unit: task.unit)
+        return generic.isEmpty ? task.title : generic
+    }
+
+    private var accessibilityText: String {
+        let name = displayTitle.isEmpty ? "untitled task" : displayTitle
+        return isFamilyRoot ? "Open the \(name) counter" : "Open \(name) details"
+    }
 
     private var risoKind: RisoTaskKind {
         switch task.type {
@@ -82,6 +106,11 @@ struct RisoTaskRowView: View {
     private var subtitle: String? {
         switch task.type {
         case .counting:
+            // A family root must not restate a goal anywhere on the row — the
+            // whole point of the generic row is that the family's targets live
+            // in the Counters hub, one per window. Keep the word in lockstep
+            // with the web twin (`TaskRow.tsx` `computeSubtitle`).
+            if isFamilyRoot { return "Counter" }
             guard let action = task.action, let unit = task.unit, let max = task.maxCount else { return nil }
             return "\(action) · goal \(max) \(unit)"
         case .compound:

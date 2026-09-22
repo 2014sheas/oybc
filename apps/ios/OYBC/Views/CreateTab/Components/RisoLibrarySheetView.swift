@@ -246,7 +246,7 @@ struct RisoLibrarySheetView: View {
 
                     // Title + subtitle
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(task.title)
+                        Text(displayTitle(task))
                             .font(.risoHead(13.5, .bold))
                             .foregroundStyle(Color.risoInk)
                             .lineLimit(1)
@@ -393,9 +393,24 @@ struct RisoLibrarySheetView: View {
         }
     }
 
+    /// Owner ruling 2026-09-22 — a task that HEADS a shared-counter family
+    /// shows the generic `CounterName.formatCounterName` label ("Read pages")
+    /// instead of its stored title, with no target count; adding it still adds
+    /// THIS task (the root), so nothing about selection changes. Falls back to
+    /// the stored title when the (action, unit) pair yields nothing, the same
+    /// fallback `SharedCounterGroups.swift` uses. Web twin:
+    /// `components/wizard/TaskRow.tsx`.
+    private func displayTitle(_ task: Task) -> String {
+        guard library.familyRootIds.contains(task.id) else { return task.title }
+        let generic = CounterName.formatCounterName(action: task.action, unit: task.unit)
+        return generic.isEmpty ? task.title : generic
+    }
+
     private func buildSubtitle(_ task: Task) -> String? {
         switch task.type {
         case .counting:
+            // A family root's row carries no goal — see `displayTitle`.
+            if library.familyRootIds.contains(task.id) { return nil }
             guard let a = task.action, let u = task.unit, let m = task.maxCount,
                   !a.isEmpty, !u.isEmpty else { return nil }
             return "\(a) · goal \(m) \(u)"

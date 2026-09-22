@@ -81,6 +81,19 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
     });
   };
 
+  /**
+   * Row tap. Owner ruling 2026-09-22 — a task that HEADS a shared-counter
+   * family opens the Counters hub's detail for that root (the page that
+   * already lists the family's per-window rows), not Task detail: the library
+   * shows the counter once, generically, and the hub owns the windows. A
+   * standalone counter is unchanged.
+   */
+  const openTask = (taskId: string): void => {
+    navigate(
+      library.familyRootIds.has(taskId) ? `/profile/counters/${taskId}` : `/tasks/${taskId}`,
+    );
+  };
+
   // Resolve the row-level quick-action callbacks. The Tasks page owns
   // the dialog state so the row stays presentational; the row only
   // signals the user's intent and we open the dialog here.
@@ -204,7 +217,8 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                       }
                       usageCountsLoaded={filters.usageCountsLoaded}
                       childCount={children.length}
-                      onClick={(id) => navigate(`/tasks/${id}`)}
+                      isFamilyRoot={library.familyRootIds.has(task.id)}
+                      onClick={openTask}
                       onEdit={handleRowEdit}
                       onDelete={handleRowDelete}
                       isExpandable={isExpandable}
@@ -236,7 +250,8 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
                                 }
                                 usageCountsLoaded={filters.usageCountsLoaded}
                                 childCount={grandchildren}
-                                onClick={(id) => navigate(`/tasks/${id}`)}
+                                isFamilyRoot={library.familyRootIds.has(child.id)}
+                                onClick={openTask}
                               />
                             </li>
                           );

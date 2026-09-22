@@ -442,6 +442,44 @@ final class SharedCounterGroupsTests: XCTestCase {
         XCTAssertEqual(visible.map(\.id), ["root", "member"])
     }
 
+    // MARK: - sharedCounterRootIds (the extracted family-root test)
+
+    /// Owner ruling 2026-09-22 — the library's "does this task head a family?"
+    /// test, extracted from `buildSharedCounterGroups`. Mirror of
+    /// `sharedCounterGroups.test.ts`.
+    func test_sharedCounterRootIds_linkRootAndHubBornOnly() {
+        let linkRoot = counter("link-root", maxCount: 10)
+        let member = counter("member", maxCount: 5, sharedCounterId: "link-root")
+        let hubBorn = counter("hub-born", maxCount: 10, isCounter: true)
+        let plain = counter("plain", maxCount: 10) // standalone — heads no family
+        let ghostTarget = counter("ghost-target", maxCount: 10)
+        let deletedMember = counter(
+            "deleted-member", maxCount: 5, sharedCounterId: "ghost-target", isDeleted: true
+        )
+
+        let roots = sharedCounterRootIds(
+            [linkRoot, member, hubBorn, plain, ghostTarget, deletedMember]
+        )
+
+        XCTAssertEqual(roots, ["link-root", "hub-born"])
+    }
+
+    /// The helper and the hub must not drift: every group the hub emits is
+    /// headed by an id the helper calls a root.
+    func test_sharedCounterRootIds_agreesWithTheHub() {
+        let linkRoot = counter("link-root", maxCount: 10)
+        let member = counter("member", maxCount: 5, sharedCounterId: "link-root")
+        let hubBorn = counter("hub-born", maxCount: 10, isCounter: true)
+        let plain = counter("plain", maxCount: 10)
+        let tasks = [linkRoot, member, hubBorn, plain]
+
+        let groups = buildSharedCounterGroups(tasks: tasks, boardTasks: [], boards: [])
+        XCTAssertEqual(Set(groups.map { $0.counterId }), ["link-root", "hub-born"])
+
+        let roots = sharedCounterRootIds(tasks)
+        for group in groups { XCTAssertTrue(roots.contains(group.counterId)) }
+    }
+
     func test_filterCounterTasks_hidingAMemberAlsoRemovesItsGroupContribution() {
         // The filter runs BEFORE grouping, so an expired member can't
         // contribute a board row to the group the hub renders.

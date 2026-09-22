@@ -678,6 +678,7 @@ export function BoardWizardTasksStep({
         onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
         currentTimeframe={currentTimeframe}
         parentBoardTasks={parentBoardTasks}
+        familyRootIds={library.familyRootIds}
       />
       )}
 

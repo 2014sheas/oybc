@@ -25,7 +25,7 @@ enum BrowsableTasks {
     /// library-browse surfaces (the Tasks tab list, the wizard "add from
     /// library" picker).
     ///
-    /// Two independent classes of task are hidden:
+    /// Three independent classes of task are hidden:
     ///
     /// 1. Wizard-orphans — a task is HIDDEN iff it is wizard-born
     /// (`createdInWizard == true`) AND it has no placement on a live, non-draft board.
@@ -41,6 +41,14 @@ enum BrowsableTasks {
     /// and no `maxCount` cannot evaluate on a board; it lives in the
     /// Counters Hub, not the library. See `isGoalLessCounter` for the exact
     /// predicate and why it keys on the pair rather than bare absent-`maxCount`.
+    ///
+    /// 3. Shared-counter MEMBERS (owner ruling 2026-09-22) — any task with a
+    /// `sharedCounterId`, which covers both the window-stamped derived
+    /// counters a board pull mints and the P5 linked members. The library
+    /// shows ONE generic row per counter family — the root — and the Counters
+    /// Hub is the home for the per-window rows. Members stay reachable
+    /// through the hub's family detail (`sharedCounterRootIds` heads the same
+    /// families), and the root itself is never hidden by this rule.
     ///
     /// Pure and fully derived at read time — no clearing logic: a hidden
     /// wizard-orphan reappears automatically the moment it lands on a
@@ -76,6 +84,11 @@ enum BrowsableTasks {
         }
         return tasks.filter { task in
             if isGoalLessCounter(task) { return false }
+            // One generic family row (owner ruling 2026-09-22): a member —
+            // a window-stamped derived counter or a P5 linked member — is
+            // represented in the library by its ROOT. Members stay reachable
+            // through the Counters Hub's family detail.
+            if task.sharedCounterId != nil { return false }
             guard task.createdInWizard else { return true }
             // Effective placements: own + inherited from parent compound(s).
             var boardIds = placementsByTask[task.id] ?? []

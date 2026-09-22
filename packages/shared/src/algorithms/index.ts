@@ -177,7 +177,7 @@ export type {
 // counters interaction). The module + its tests/fixtures were deleted in WC PR D.
 
 // ===== Shared Counters — Hub / Detail read-model builder (P1) =====
-export { buildSharedCounterGroups } from './sharedCounterGroups';
+export { buildSharedCounterGroups, sharedCounterRootIds } from './sharedCounterGroups';
 
 export type {
   SharedCounterGroup,

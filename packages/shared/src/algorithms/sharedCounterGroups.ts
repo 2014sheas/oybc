@@ -136,6 +136,47 @@ function pickPrimaryBoard(
 }
 
 /**
+ * The set of task ids that HEAD a shared-counter family.
+ *
+ * A root is either (a) a live task pointed at by some live task's
+ * `sharedCounterId` — window-stamped derived counters and P5 linked members
+ * alike — or (b) a P5 hub-born counter (`COUNTING` + `isCounter === true` +
+ * no `sharedCounterId` of its own), which is a counter in its own right even
+ * with zero members. This is exactly the root test
+ * {@link buildSharedCounterGroups} runs, extracted so the library's row
+ * renderers can ask "does this task head a family?" without rebuilding the
+ * whole Counters-Hub view-model (owner ruling 2026-09-22: one generic family
+ * row in the library, tapping through to the hub).
+ *
+ * Soft-deleted tasks are ignored on BOTH sides: a deleted member does not make
+ * its target a root, and a deleted `isCounter` row is not one either.
+ *
+ * Note the ids are returned unfiltered by existence: like the hub's own walk,
+ * a root id whose task row is missing or is not a counting task is still
+ * listed here, and {@link buildSharedCounterGroups} skips such orphan groups
+ * downstream. Callers that render rows look the set up BY a task they already
+ * hold, so the distinction is invisible to them.
+ *
+ * Mirror of the iOS `SharedCounterGroups.swift` `sharedCounterRootIds(_:)`.
+ *
+ * @param tasks - Candidate tasks (soft-deleted rows are filtered internally).
+ * @returns The root ids, in discovery order (link roots first, then hub-born).
+ */
+export function sharedCounterRootIds(tasks: Task[]): Set<string> {
+  const live = tasks.filter((t) => !t.isDeleted);
+  const roots = new Set<string>();
+  for (const t of live) {
+    if (t.sharedCounterId != null) roots.add(t.sharedCounterId);
+  }
+  for (const t of live) {
+    if (t.type === TaskType.COUNTING && t.isCounter === true && t.sharedCounterId == null) {
+      roots.add(t.id);
+    }
+  }
+  return roots;
+}
+
+/**
  * Build the Counters-Hub / Counter-Detail view-models from the task graph.
  *
  * @returns One `SharedCounterGroup` per source counting task that has at least
@@ -151,31 +192,21 @@ export function buildSharedCounterGroups(
   const boardsById = new Map<string, Board>(input.boards.map((b) => [b.id, b]));
 
   // Source task ids = every task pointed at by a live linked task's
-  // `sharedCounterId`. A source therefore always has >= 1 linked member.
+  // `sharedCounterId`, PLUS the P5 hub-born counters (a COUNTING task flagged
+  // `isCounter` is a counter in its own right, even with zero linked tasks) —
+  // {@link sharedCounterRootIds}, which is the same walk this used to inline.
+  // Seeding an empty linked list for a member-less root lets it flow through
+  // the same member-view pipeline as a single-member group. A flagged row that
+  // is itself derived (`sharedCounterId` set) is malformed — Zod rejects the
+  // combination at create-input time, but synced rows are unguarded — and the
+  // helper ignores it defensively.
   const linkedBySource = new Map<string, Task[]>();
+  for (const rootId of sharedCounterRootIds(tasks)) linkedBySource.set(rootId, []);
   for (const t of tasks) {
     const src = t.sharedCounterId;
     if (src == null) continue;
-    const list = linkedBySource.get(src);
-    if (list) list.push(t);
-    else linkedBySource.set(src, [t]);
-  }
-
-  // P5 — hub-born counters: a COUNTING task flagged `isCounter` is a counter
-  // in its own right, even with zero linked tasks. Seed an empty linked list
-  // for flagged sources the link walk didn't already discover, so they flow
-  // through the same member-view pipeline as single-member groups. A flagged
-  // row that is itself derived (`sharedCounterId` set) is malformed — Zod
-  // rejects the combination at create-input time, but synced rows are unguarded — and is ignored defensively here.
-  for (const t of tasks) {
-    if (
-      t.type === TaskType.COUNTING &&
-      t.isCounter === true &&
-      t.sharedCounterId == null &&
-      !linkedBySource.has(t.id)
-    ) {
-      linkedBySource.set(t.id, []);
-    }
+    // `src` is a key by construction — every live `sharedCounterId` is a root.
+    linkedBySource.get(src)?.push(t);
   }
 
   const groups: SharedCounterGroup[] = [];

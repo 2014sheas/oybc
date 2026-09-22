@@ -1,4 +1,4 @@
-import { TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
+import { TaskType, formatCounterName, generateCounterTaskTitle, type Task } from '@oybc/shared';
 import { RisoTypeBadge } from '../riso';
 import styles from './BoardWizardTasksStep.module.css';
 
@@ -23,6 +23,10 @@ export interface TaskRowProps {
   showCenterStar?: boolean;
   isCenter?: boolean;
   onCenterClick?: () => void;
+  /** Owner ruling 2026-09-22 — this task HEADS a shared-counter family, so it
+   *  renders under its generic `formatCounterName` label with no target count.
+   *  Selecting it still adds THIS task (the root); only the copy changes. */
+  isFamilyRoot?: boolean;
 }
 
 export function renderTaskRow({
@@ -34,8 +38,12 @@ export function renderTaskRow({
   showCenterStar = false,
   isCenter = false,
   onCenterClick,
+  isFamilyRoot = false,
 }: TaskRowProps): React.ReactElement {
-  const subtitle = buildTaskSubtitle(task);
+  const subtitle = isFamilyRoot ? '' : buildTaskSubtitle(task);
+  const displayTitle = isFamilyRoot
+    ? formatCounterName(task.action, task.unit) || task.title
+    : task.title;
   const boards = taskBoardCounts[task.id] ?? 0;
   const usageHint = boards === 0 ? 'unused' : `${boards} board${boards === 1 ? '' : 's'}`;
   return (
@@ -49,7 +57,7 @@ export function renderTaskRow({
       >
         <RisoTypeBadge type={task.type} />
         <div className={styles.rowCenter}>
-          <span className={styles.rowTitle}>{task.title}</span>
+          <span className={styles.rowTitle}>{displayTitle}</span>
           {subtitle && <span className={styles.rowSubtitle}>{subtitle}</span>}
         </div>
         <span className={styles.rowUsage}>{usageHint}</span>

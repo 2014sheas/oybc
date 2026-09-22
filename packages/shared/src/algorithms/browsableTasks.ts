@@ -6,7 +6,7 @@ import { BoardStatus, TaskType } from '../constants/enums';
  * Filters the task library to the set that should appear in library-browse
  * surfaces (the Tasks tab list, the wizard "add from library" picker).
  *
- * Two independent classes of task are hidden:
+ * Three independent classes of task are hidden:
  *
  * 1. Wizard-orphans — a task is HIDDEN iff it is wizard-born
  * (`createdInWizard === true`) AND it has no placement on a live, non-draft
@@ -21,6 +21,15 @@ import { BoardStatus, TaskType } from '../constants/enums';
  * no `maxCount` cannot evaluate on a board; it lives in the Counters Hub,
  * not the library. See `isGoalLessCounter` for the exact predicate and why
  * it keys on the pair rather than bare absent-`maxCount`.
+ *
+ * 3. Shared-counter MEMBERS (owner ruling 2026-09-22) — any task with a
+ * `sharedCounterId`, which covers both the window-stamped derived counters a
+ * board pull mints and the P5 linked members. The library shows ONE generic
+ * row per counter family — the root — and the Counters Hub is the home for
+ * the per-window rows; before this, every differing target count added
+ * another near-identical "Read 5 pages" row beside its root. Members stay
+ * reachable through the hub's family detail (`sharedCounterRootIds` heads the
+ * same families), and the root itself is never hidden by this rule.
  *
  * Mirror of the iOS `TaskLibraryViewModel.computeBrowsableTasks`
  * (`streaks.ts ↔ Streaks.swift`-style parity). Pure and fully derived at read
@@ -57,6 +66,8 @@ export function computeBrowsableTasks(
   }
   return tasks.filter((task) => {
     if (isGoalLessCounter(task)) return false;
+    // One generic family row: a member is represented by its root.
+    if (task.sharedCounterId != null) return false;
     if (!task.createdInWizard) return true;
     // Effective placements: own + inherited from parent compound(s).
     const boardIds = new Set<string>(placementsByTask[task.id]);

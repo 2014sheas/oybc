@@ -51,6 +51,13 @@ export interface LibrarySheetProps {
   /** Reactive list of tasks placed on currently-active PARENT boards
    *  (Phase 6.1). Empty when the current timeframe has no parents. */
   parentBoardTasks: Task[];
+  /** Owner ruling 2026-09-22 — task ids that HEAD a shared-counter family
+   *  (`useTaskLibrary().familyRootIds`). Such a row shows the generic
+   *  `formatCounterName` label instead of its stored title; tapping it still
+   *  adds the root itself, exactly as before. Passed in rather than derived
+   *  here because it must be computed over the FULL library — the browse rule
+   *  has already removed the members from `effectiveAllTasks`. */
+  familyRootIds?: Set<string>;
 }
 
 /**
@@ -82,6 +89,7 @@ export function LibrarySheet({
   onContextMenu,
   currentTimeframe,
   parentBoardTasks,
+  familyRootIds,
 }: LibrarySheetProps): React.ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -298,6 +306,7 @@ export function LibrarySheet({
                           showCenterStar: centerTaskMode && isSelected,
                           isCenter,
                           onCenterClick: () => onCenterClick(task.id),
+                          isFamilyRoot: familyRootIds?.has(task.id) ?? false,
                         })}
                       </li>
                     );

@@ -226,6 +226,31 @@ describe('goal-less counter exclusion (P5)', () => {
     expect(ids(result)).toEqual(new Set(['a']));
   });
 
+  it('hides a linked shared-counter MEMBER but keeps its root (one generic family row)', () => {
+    const root = task('root', false, {
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 35,
+    });
+    const member = task('member', true, {
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 5,
+      sharedCounterId: 'root',
+      startDate: '2026-09-18T00:00:00',
+    });
+    // The member IS placed on a live active board — so the wizard-orphan rule
+    // would keep it visible. Only the new member rule hides it.
+    const result = computeBrowsableTasks(
+      [root, member],
+      [placement('member', 'b1')],
+      { b1: BoardStatus.ACTIVE },
+    );
+    expect(ids(result)).toEqual(new Set(['root']));
+  });
+
   it('isGoalLessCounter truth table', () => {
     expect(
       isGoalLessCounter({

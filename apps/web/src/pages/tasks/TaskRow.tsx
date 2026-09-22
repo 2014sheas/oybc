@@ -1,4 +1,4 @@
-import { generateCounterTaskTitle, TaskType, type Task } from '@oybc/shared';
+import { formatCounterName, generateCounterTaskTitle, TaskType, type Task } from '@oybc/shared';
 import { RisoTypeBadge } from '../../components/riso';
 import { computeStatusLabel } from './taskCountDisplay';
 import { formatRelativeTime } from '../../utils/relativeTime';
@@ -31,6 +31,13 @@ export interface TaskRowProps {
   isExpanded?: boolean;
   /** Fired when the disclosure chevron is tapped. */
   onToggleExpand?: (taskId: string) => void;
+  /** Owner ruling 2026-09-22 — this task HEADS a shared-counter family
+   *  (`sharedCounterRootIds`). The library shows one GENERIC row per family:
+   *  the pair-derived `formatCounterName` label ("Read pages") in place of the
+   *  stored title, no target count anywhere on the row, and a tap that opens
+   *  the Counters hub rather than Task detail (the caller routes; this flag
+   *  only changes the copy and the a11y wording so the two agree). */
+  isFamilyRoot?: boolean;
 }
 
 /**
@@ -66,9 +73,10 @@ export function TaskRow({
   isExpandable = false,
   isExpanded = false,
   onToggleExpand,
+  isFamilyRoot = false,
 }: TaskRowProps): React.ReactElement {
   const status = computeStatusLabel(task);
-  const subtitle = computeSubtitle(task, childCount);
+  const subtitle = computeSubtitle(task, childCount, isFamilyRoot);
   // Unknown ≠ unused: render nothing until the placement join resolves
   // (late-mutation audit, shape B) — "Unused" flipping to "On 3 active
   // boards" is a false claim corrected in front of the user.
@@ -76,7 +84,14 @@ export function TaskRow({
     ? computeUsageHint(placementCount, activePlacementCount)
     : null;
   const lastCompleted = task.completedAt ? formatRelativeTime(task.completedAt) : null;
-  const titleForA11y = task.title || '(untitled task)';
+  // A family root reads as the counter itself ("Read pages"), never as one
+  // window's target ("Read 5 pages"). `formatCounterName` returns '' when the
+  // (action, unit) pair can't produce a name — the same stored-title fallback
+  // `sharedCounterGroups.ts` uses.
+  const displayTitle = isFamilyRoot
+    ? formatCounterName(task.action, task.unit) || task.title
+    : task.title;
+  const titleForA11y = displayTitle || '(untitled task)';
 
   return (
     <div className={styles.row}>
@@ -96,7 +111,9 @@ export function TaskRow({
         type="button"
         className={styles.mainButton}
         onClick={() => onClick(task.id)}
-        aria-label={`Open ${titleForA11y} details`}
+        aria-label={
+          isFamilyRoot ? `Open the ${titleForA11y} counter` : `Open ${titleForA11y} details`
+        }
       >
         <div className={styles.rowMain}>
           <RisoTypeBadge type={task.type} />
@@ -141,8 +158,13 @@ export function TaskRow({
   );
 }
 
-function computeSubtitle(task: Task, childCount: number): string {
+function computeSubtitle(task: Task, childCount: number, isFamilyRoot: boolean): string {
   if (task.type === TaskType.COUNTING) {
+    // A family root must not restate a goal anywhere on the row — the whole
+    // point of the generic row is that the family's targets live in the hub,
+    // one per window. Keep the word in lockstep with the iOS twin
+    // (`RisoTaskRowView.subtitle`).
+    if (isFamilyRoot) return 'Counter';
     // Reuse the canonical title generator so the subtitle matches what
     // the wizard / quick-add show on creation.
     if (task.action && task.unit && task.maxCount !== undefined) {

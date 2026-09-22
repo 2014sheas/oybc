@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildSharedCounterGroups } from '../../src/algorithms/sharedCounterGroups';
+import {
+  buildSharedCounterGroups,
+  sharedCounterRootIds,
+} from '../../src/algorithms/sharedCounterGroups';
 import { BoardStatus, TaskType, Timeframe, CenterSquareType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 import type { Board } from '../../src/types/board';
@@ -158,6 +161,58 @@ function toBoardTask(m: MiniBoardTask): BoardTask {
  * fixture builders as the vector-driven suite above, spreading `isCounter`
  * onto the `MiniTask`-built `Task` since `MiniTask` predates the P5 flag.
  */
+describe('sharedCounterRootIds — the extracted family-root test', () => {
+  const counting = (id: string, over: Partial<Task> = {}): Task => ({
+    ...toTask({
+      id,
+      title: `Task ${id}`,
+      currentCount: 0,
+      maxCount: 10,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+    }),
+    ...over,
+  });
+
+  it('names a root by link, a hub-born root by flag, and neither a plain counter nor a deleted member\u2019s target', () => {
+    const linkRoot = counting('link-root');
+    const member = counting('member', { sharedCounterId: 'link-root' });
+    const hubBorn = counting('hub-born', { isCounter: true });
+    const plain = counting('plain'); // a standalone counter heads no family
+    const ghostTarget = counting('ghost-target');
+    const deletedMember = counting('deleted-member', {
+      sharedCounterId: 'ghost-target',
+      isDeleted: true,
+    });
+
+    const roots = sharedCounterRootIds([
+      linkRoot,
+      member,
+      hubBorn,
+      plain,
+      ghostTarget,
+      deletedMember,
+    ]);
+
+    expect(roots).toEqual(new Set(['link-root', 'hub-born']));
+  });
+
+  it('agrees with the hub: every group buildSharedCounterGroups emits is headed by a root id', () => {
+    const linkRoot = counting('link-root');
+    const member = counting('member', { sharedCounterId: 'link-root' });
+    const hubBorn = counting('hub-born', { isCounter: true });
+    const groups = buildSharedCounterGroups({
+      tasks: [linkRoot, member, hubBorn, counting('plain')],
+      boardTasks: [],
+      boards: [],
+    });
+    expect(groups.map((g) => g.counterId).sort()).toEqual(['hub-born', 'link-root']);
+    const roots = sharedCounterRootIds([linkRoot, member, hubBorn, counting('plain')]);
+    for (const g of groups) expect(roots.has(g.counterId)).toBe(true);
+  });
+});
+
 describe('hub-born counters (P5)', () => {
   it('a flagged zero-link source becomes a single-member group', () => {
     const source = {

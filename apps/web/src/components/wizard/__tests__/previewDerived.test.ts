@@ -7,6 +7,7 @@ import {
   autoTarget,
   generateCounterTaskTitle,
   varyRange,
+  sharedCounterRootIds,
   type BoardSource,
   type CompoundChild,
   type Task,
@@ -103,6 +104,7 @@ function makeLibrary(tasks: Task[], children: CompoundChild[] = []): TaskLibrary
     compoundChildrenByCompound,
     childTaskIds: new Set(children.map((c) => c.childTaskId)),
     childToParents: {},
+    familyRootIds: sharedCounterRootIds(tasks),
   };
 }
 
