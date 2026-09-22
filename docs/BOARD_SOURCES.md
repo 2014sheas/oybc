@@ -686,7 +686,7 @@ window-stamped derived counters B2 started minting.
   remaining part never gets). Dice-on renders the blue range line from
   `varyRange` under the row or part, never on the compound header itself.
   New primitives: `DiceButton`/`riso/DiceButton.tsx` ↔ `RisoDiceButton.swift`
-  (26×22, 0/2/5 pips, `--riso-ink-static`/`risoInkStatic` fill so the pips
+  (22×22 — square, revised 2026-09-21; 0/2/5 pips, `--riso-ink-static`/`risoInkStatic` fill so the pips
   stay visible in dark mode), a compact `CounterStepper`/`CounterStepperView`
   size, and a compact `RisoSegmented` size for the One square / Split up
   pill — all added to the existing kit rather than one-off UI, each with a
@@ -1432,6 +1432,8 @@ Three shapes, chosen by what the row actually has:
   the typed draft before stepping) is untouched.
 - dice `.off` gains one centred pip — the 20×16 inner box's (10, 8) — at 45%
   `--riso-muted` / `.risoMuted`. The lit faces are unchanged, same 26×22 box
+  (the face was squared to 22×22 in a later owner-requested fix — see the
+  Primitives note above; this paragraph records the dice-face change as shipped)
   and same pip coordinates. Because this lands in the Riso primitive, the
   hand-added pool rows are fixed for free; nothing else about them changes.
 - `MemberRuleRowModel.caption` → `targetSuffix`; the struct gains

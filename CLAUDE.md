@@ -161,7 +161,17 @@ This matters more than it looks: `ios.yml` runs the snapshot step under `continu
 
 CI pins Xcode to **26.3** (`DEVELOPER_DIR=/Applications/Xcode_26.3.app/...` in `ios.yml`). Use the same Xcode major.minor locally. If you have multiple Xcodes installed, run `sudo xcode-select -s /Applications/Xcode-26.3.app` (or set `DEVELOPER_DIR` per-command as above) so re-recordings happen against the matching toolchain.
 
-**Quote a red count with the runtime it was measured on, or it means nothing.** As of 2026-09-19 on `OS=26.3.1`: **23 pre-existing reds** of 372 cases, spanning baselines last written in 2026-06, 2026-08 and 2026-09 (the ROADMAP A8 stale-baseline debt). A clean-tree count far from that figure is a runtime problem until proven otherwise.
+**Don't trust a bare red count — establish it, and say how.** The number moves whenever anyone re-records a baseline (it went 27 → 23 → 18 → 20 across a single day of B3.1 work), so a figure quoted without its commit, its runtime and its per-class breakdown is stale on arrival. The method is the durable part:
+
+```bash
+# at the commit you care about, on the PINNED runtime, then diff the SETS
+xcodebuild … -only-testing:OYBCSnapshotTests test > /tmp/a.log 2>&1
+grep "' failed (" /tmp/a.log | sed -E "s/.*\.([A-Za-z]+ test[A-Za-z0-9_]+)\]' failed.*/\1/" | sort -u
+```
+
+Compare sets, never counts — a matching count can still hide one new red cancelling one fixed. As of 2026-09-22 on `OS=26.3.1` the standing reds are `BoardEditCenterToggle` ×5, `CountersHub` ×2, `RisoDeleteConfirm` ×2, `RisoTasksTab` ×4, `SyncSheet` ×4 (ROADMAP A8 debt, baselines last written 2026-06 to 2026-09), plus the calendar pair below.
+
+**Two reds are calendar-dependent false failures.** `RisoEditBoardSnapshotTests.testFormWeeklyNone{Light,Dark}` pass a fixed `customStartDate`, but that only binds `.custom` — for `.weekly` the form derives the **current** week from `now`, so both go red at every week rollover and green again once re-recorded. The `…MonthlyFree` siblings do the same at month rollover. **The Weekly-red / Monthly-green split is the tell**: when a date-shaped pair fails asymmetrically like that, suspect the calendar before your diff. This cost a regression hunt during B3.1 — all four were green three days earlier and nothing on the branch touched `BoardSetupFormView`. See also `reference_snapshot_date_dependent`.
 
 Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
 
