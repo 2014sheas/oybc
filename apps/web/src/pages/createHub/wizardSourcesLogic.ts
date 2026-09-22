@@ -30,25 +30,40 @@ import {
  * The done-filter a NEWLY minted source row starts on — owner directive
  * 2026-09-19: "Not done yet" is the default, so pulling a board supplies
  * what is still outstanding rather than re-dealing squares the person has
- * already finished. Meaningful for `kind: 'board'` only (pools ignore the
- * filter by contract), but carried uniformly so every freshly minted row
- * serialises the same way.
+ * already finished.
+ *
+ * KIND-SCOPED, deliberately. The done-filter is a **boards-only** field by
+ * contract (docs/BOARD_SOURCES.md §The model: `filter: 'all' | 'todo' //
+ * boards only; pools always 'all'`), so only `kind: 'board'` takes the
+ * `'todo'` default; a pool mints `'all'` exactly as `sourcesFromMixFields`
+ * (the legacy-trio decode) does. Minting a pool row on `'todo'` reads as
+ * inert today — every filter read on both platforms is kind-scoped — but it
+ * persists data that contradicts the contract, and the first kind-blind
+ * read anyone adds would silently done-filter pool supply.
  *
  * Deliberately scoped to CREATION. Sources already stored on a board or a
  * `RecurringBoardTemplate` keep whatever filter they were saved with —
- * `sourcesFromMixFields` (the legacy-trio decode) still mints `'all'`, and
  * nothing coerces a decoded row.
+ *
+ * ONE definition per platform: every web mint path routes through
+ * {@link appendSource}, which is this function's only caller. Swift twin:
+ * `BoardWizardViewModel.newSourceFilter(for:)`.
+ *
+ * @param kind - Which kind of source is being minted.
+ * @returns `'todo'` for a board, `'all'` for a pool.
  */
-export const NEW_SOURCE_FILTER: BoardSourceFilter = 'todo';
+export function newSourceFilter(kind: BoardSourceKind): BoardSourceFilter {
+  return kind === 'board' ? 'todo' : 'all';
+}
 
 /**
  * Append a freshly-pulled source row with the default `[0, all]` range and
- * the {@link NEW_SOURCE_FILTER} done-filter. A no-op (same array identity)
+ * the kind-scoped {@link newSourceFilter} done-filter. A no-op (same array identity)
  * when `sourceId` is already pulled — the sheet's tap on an already-pulled
  * row must not duplicate it or reset its range.
  *
- * No range clamp is needed here even though `'todo'` shrinks the eligible
- * supply: `[0, all]` is the one range that is valid against ANY supply
+ * No range clamp is needed here even though a board's `'todo'` shrinks the
+ * eligible supply: `[0, all]` is the one range that is valid against ANY supply
  * (`clampSourceRange` leaves `min: 0` / `max: null` identity-unchanged for
  * every available count), so a row can never be minted wider than its
  * filtered supply. Every LATER supply/filter/exclude change routes through
@@ -67,7 +82,7 @@ export function appendSource(
   if (sources.some((source) => source.sourceId === sourceId)) return sources;
   return [
     ...sources,
-    { sourceId, kind, min: 0, max: null, excludedTaskIds: [], filter: NEW_SOURCE_FILTER },
+    { sourceId, kind, min: 0, max: null, excludedTaskIds: [], filter: newSourceFilter(kind) },
   ];
 }
 

@@ -47,7 +47,7 @@ function supplyEntry(
 }
 
 describe('appendSource (pullPool / pullBoard)', () => {
-  it('appends a pool row with the default [0, all] range and the "todo" filter', () => {
+  it('appends a pool row with the default [0, all] range and the "all" filter', () => {
     const next = appendSource([], 'pool-1', 'pool');
     expect(next).toEqual([
       {
@@ -56,7 +56,7 @@ describe('appendSource (pullPool / pullBoard)', () => {
         min: 0,
         max: null,
         excludedTaskIds: [],
-        filter: 'todo',
+        filter: 'all',
       },
     ]);
   });
@@ -67,9 +67,14 @@ describe('appendSource (pullPool / pullBoard)', () => {
 
   // Owner directive 2026-09-19 — a freshly pulled board supplies what is
   // still outstanding, so the row starts on "Not done yet" rather than
-  // "All squares".
-  it('starts a new board row on the "Not done yet" filter', () => {
+  // "All squares". The default is KIND-SCOPED: the done-filter is a
+  // boards-only field by contract (docs/BOARD_SOURCES.md §The model —
+  // "pools always 'all'"), so a pool must NOT pick it up. Asserted as a
+  // PAIR in one test so neither half can regress on its own: gating the
+  // mint on the wrong kind fails here whichever way it is wrong.
+  it('starts a new BOARD row on "todo" and a new POOL row on "all"', () => {
     expect(appendSource([], 'board-1', 'board')[0].filter).toBe('todo');
+    expect(appendSource([], 'pool-1', 'pool')[0].filter).toBe('all');
   });
 
   // The narrowed filter shrinks the eligible supply, so the minted range

@@ -140,8 +140,8 @@ async function openTasksStep(page: Page): Promise<void> {
  * Two different subtitles, deliberately: the SHEET row is
  * filter-independent ("8 squares · 0 done", straight off
  * `fetchSourceSheetBoardEntries`), while the PULLED row reads "8 not done"
- * — a newly minted source starts on the "Not done yet" filter (owner
- * directive 2026-09-19, `NEW_SOURCE_FILTER`), and `buildSubtitle` switches
+ * — a newly minted BOARD source starts on the "Not done yet" filter (owner
+ * directive 2026-09-19, `newSourceFilter`), and `buildSubtitle` switches
  * phrasing on that filter. Nothing in this fixture is complete, so the
  * count is 8 either way.
  */

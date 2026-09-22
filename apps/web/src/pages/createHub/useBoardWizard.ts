@@ -541,9 +541,9 @@ export function useBoardWizard({
     // state).
     //
     // Minted through `appendSource` rather than an inline literal so the
-    // creation defaults (`[0, all]` + `NEW_SOURCE_FILTER`) have exactly ONE
-    // definition — the two mint paths drifting apart is the whole reason
-    // this is a shared helper.
+    // creation defaults (`[0, all]` + the kind-scoped `newSourceFilter`,
+    // i.e. `'all'` for these pools) have exactly ONE definition — the two
+    // mint paths drifting apart is the whole reason this is a shared helper.
     const prefillSources: BoardSource[] = coreBoardDefault.corePoolIds
       .filter((poolId) => {
         const pool = poolsById[poolId];

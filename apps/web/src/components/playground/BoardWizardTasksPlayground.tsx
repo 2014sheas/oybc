@@ -186,7 +186,7 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
 
   // Through the production `appendSource` rather than a literal of its own:
   // this harness exists to eyeball the real wizard row, so it must mint a
-  // row with the real creation defaults (`[0, all]` + `NEW_SOURCE_FILTER`).
+  // row with the real creation defaults (`[0, all]` + `newSourceFilter`).
   const handlePullPool = useCallback((poolId: string): void => {
     setSources((prev) => appendSource(prev, poolId, 'pool'));
   }, []);

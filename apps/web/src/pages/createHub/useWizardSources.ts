@@ -312,7 +312,8 @@ export function useWizardSources({
   /**
    * Board Sources P4 — pull a board as a source row (sheet BOARDS tap).
    * Defaults: `[0, all]`, filter "Not done yet" (owner directive
-   * 2026-09-19 — see `NEW_SOURCE_FILTER`).
+   * 2026-09-19 — see `newSourceFilter`, which is kind-scoped: a POOL
+   * pulled just above still mints `'all'`).
    */
   const pullBoard = useCallback(
     (boardId: string) => {

@@ -328,15 +328,36 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
 
         XCTAssertEqual(vm.sources.map { $0.sourceId }, ["b1"])
         XCTAssertEqual(vm.sources.first?.kind, .board)
-        // Owner directive 2026-09-19 — a freshly pulled source starts on
-        // "Not done yet" (`BoardWizardViewModel.newSourceFilter`), so it
-        // supplies what is still outstanding. Nothing is complete in this
-        // fixture, so the supply below is unaffected either way.
+        // Owner directive 2026-09-19 — a freshly pulled BOARD starts on
+        // "Not done yet" (`BoardWizardViewModel.newSourceFilter(for:)`), so
+        // it supplies what is still outstanding. Nothing is complete in
+        // this fixture, so the supply below is unaffected either way.
         XCTAssertEqual(vm.sources.first?.filter, .todo)
         XCTAssertEqual(vm.selectedTaskIds, ["bt1", "bt2", "bt3"])
         XCTAssertEqual(vm.supplyInfoBySourceId["b1"]?.displayName, "Weekday Core")
         // Board sources are NOT in the legacy poolIds mirror.
         XCTAssertTrue(vm.pulledPoolIds.isEmpty)
+    }
+
+    /// The `.todo` creation default is KIND-SCOPED: the done-filter is a
+    /// boards-only field by contract (docs/BOARD_SOURCES.md §The model —
+    /// "pools always 'all'"), so a pulled POOL must keep `.all` while a
+    /// pulled BOARD takes `.todo`. Asserted as a PAIR in one test so
+    /// neither half can regress on its own — gating the mint on the wrong
+    /// kind fails here whichever way it is wrong. Web twin: the
+    /// "starts a new BOARD row on todo and a new POOL row on all" case in
+    /// `useWizardSources.test.ts`.
+    func test_newSourceFilter_isKindScoped_poolStaysAll_boardIsTodo() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"])
+        let (poolsById, tasksById) = workedExampleFixtures()
+
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullBoard(boardId: "b1")
+
+        XCTAssertEqual(vm.sources.first(where: { $0.sourceId == "A" })?.filter, .all)
+        XCTAssertEqual(vm.sources.first(where: { $0.sourceId == "b1" })?.filter, .todo)
     }
 
     func test_pullBoard_missingBoard_noOp() {
