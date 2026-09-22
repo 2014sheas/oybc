@@ -1,20 +1,6 @@
 import SwiftUI
 import GRDB
 
-/// Tasks tab — Riso-styled library browser.
-///
-/// Reskinned in the "Riso" direction: cream paper background, Bricolage
-/// Grotesque headings, Archivo body copy, ink keylines, hard-shadow buttons,
-/// and type letter-square badges. All filter/sort/grouping/detail/delete/
-/// edit/create logic is preserved from the pre-Riso implementation.
-///
-/// **Presentation decision**: row taps push `TaskDetailView` via the existing
-/// `NavigationPath` (keeping the cross-tab "open board from detail" path
-/// intact). A bottom-sheet approach would require a separate sheet layer on
-/// top of the existing edit/delete/new-task sheets; the push path is simpler
-/// and already wired correctly for board navigation. Noted as a divergence
-/// from the prototype's sheet tap in the phase summary.
-///
 /// A Tasks-tab push that is NOT a plain Task-detail id.
 ///
 /// `path` is a `NavigationPath`, so mixed value types coexist happily: a bare
@@ -30,6 +16,22 @@ enum TasksTabRoute: Hashable {
     case counter(id: String)
 }
 
+/// Tasks tab — Riso-styled library browser.
+///
+/// Reskinned in the "Riso" direction: cream paper background, Bricolage
+/// Grotesque headings, Archivo body copy, ink keylines, hard-shadow buttons,
+/// and type letter-square badges. All filter/sort/grouping/detail/delete/
+/// edit/create logic is preserved from the pre-Riso implementation.
+///
+/// **Presentation decision**: row taps push `TaskDetailView` via the existing
+/// `NavigationPath` (keeping the cross-tab "open board from detail" path
+/// intact). A bottom-sheet approach would require a separate sheet layer on
+/// top of the existing edit/delete/new-task sheets; the push path is simpler
+/// and already wired correctly for board navigation. Noted as a divergence
+/// from the prototype's sheet tap in the phase summary. Since the 2026-09-22
+/// ruling a row whose task heads a shared-counter family pushes
+/// `TasksTabRoute.counter` instead — see `openTask(_:)`.
+///
 /// iOS twin of web's `TasksPage.tsx`.
 struct TasksTabView: View {
     let userId: String
@@ -221,7 +223,8 @@ struct TasksTabView: View {
                                 },
                                 childPlacementCounts: placementCounts,
                                 childActivePlacementCounts: activeCounts,
-                                onChildTap: { childId in openTask(childId) }
+                                onChildTap: { childId in openTask(childId) },
+                                childFamilyRootIds: library.familyRootIds
                             )
                             }
                             .buttonStyle(.plain)
