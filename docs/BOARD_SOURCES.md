@@ -1254,7 +1254,7 @@ button; the range line sits under the row.
 
 **Primitives (reuse before create):** check `CounterStepper.tsx` ↔
 `CounterStepperView.swift` for a compact size before adding one. New
-`DiceButton` (26×22, 0/2/5 pips, blue fill; pips use
+`DiceButton` (22×22, 0/2/5 pips, blue fill; pips use
 `--riso-ink-static` / `risoInkStatic` — adaptive ink on a coloured fill is
 the known dark-mode trap). A pill toggle only if `RisoSegmented` /
 `riso/Segmented` can't be sized down. Kit location `components/riso/` ↔

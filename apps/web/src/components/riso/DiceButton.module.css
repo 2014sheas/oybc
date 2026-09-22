@@ -1,10 +1,10 @@
-/* DiceButton — 26×22 variation toggle (handoff §Interactions "Variation
+/* DiceButton — 22×22 variation toggle (handoff §Interactions "Variation
    (dice)"). Off: muted 1.5px outline, one faint centred pip. On: blue fill,
    ink-static pips (adaptive ink on a coloured fill is the dark-mode trap). */
 
 .dice {
   flex: 0 0 auto;
-  width: 26px;
+  width: 22px;
   height: 22px;
   padding: 0;
   display: inline-flex;

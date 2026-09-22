@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// RisoDiceButton — the 26×22 opt-in "variation" toggle that sits after a
+/// RisoDiceButton — the 22×22 opt-in "variation" toggle that sits after a
 /// counting target (docs/BOARD_SOURCES.md §Member rules; handoff
 /// §Interactions "Variation (dice)").
 ///
@@ -20,20 +20,21 @@ struct RisoDiceButton: View {
     /// Advance one step around the off → a little → a lot → off cycle.
     let onCycle: () -> Void
 
-    /// Pip centres per vary level, in the button's 20×16 inner box:
+    /// Pip centres per vary level, in the button's 18×18 inner box:
     /// `.off` = one centred pip, dimmed (B3.1 — an empty bordered square
     /// beside the row's ✕ reads as an unchecked checkbox, not a die);
     /// `.little` = two pips on the diagonal, `.lot` = the five-pip
-    /// quincunx. Same coordinates as the web SVG viewBox.
+    /// quincunx — a true quincunx now that the box is square. Same
+    /// coordinates as the web SVG viewBox.
     private static let pips: [VaryLevel: [CGPoint]] = [
-        .off: [CGPoint(x: 10, y: 8)],
-        .little: [CGPoint(x: 6, y: 5), CGPoint(x: 14, y: 11)],
+        .off: [CGPoint(x: 9, y: 9)],
+        .little: [CGPoint(x: 6, y: 6), CGPoint(x: 12, y: 12)],
         .lot: [
-            CGPoint(x: 6, y: 5),
-            CGPoint(x: 14, y: 5),
-            CGPoint(x: 10, y: 8),
-            CGPoint(x: 6, y: 11),
-            CGPoint(x: 14, y: 11),
+            CGPoint(x: 6, y: 6),
+            CGPoint(x: 12, y: 6),
+            CGPoint(x: 9, y: 9),
+            CGPoint(x: 6, y: 12),
+            CGPoint(x: 12, y: 12),
         ],
     ]
 
@@ -64,7 +65,7 @@ struct RisoDiceButton: View {
                         )
                 )
                 .overlay { pipsView }
-                .frame(width: 26, height: 22)
+                .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -90,7 +91,7 @@ struct RisoDiceButton: View {
                     )
             }
         }
-        .frame(width: 20, height: 16)
+        .frame(width: 18, height: 18)
     }
 }
 

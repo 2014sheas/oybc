@@ -57,8 +57,8 @@ describe('DiceButton', () => {
   it('renders one centred, dimmed pip at vary level 0 so the die is not an empty box', () => {
     const html = render(0);
     expect(pipCount(html)).toBe(1);
-    expect(html).toContain('cx="10"');
-    expect(html).toContain('cy="8"');
+    expect(html).toContain('cx="9"');
+    expect(html).toContain('cy="9"');
     expect(html).toMatch(/class="[^"]*_offPip_/);
   });
 

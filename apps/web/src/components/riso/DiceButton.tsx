@@ -2,23 +2,24 @@ import type { VaryLevel } from '@oybc/shared';
 import styles from './DiceButton.module.css';
 
 /**
- * Pip centres per vary level, in the button's 20×16 inner viewBox:
+ * Pip centres per vary level, in the button's 18×18 inner viewBox:
  * level 0 = one centred pip, dimmed (B3.1 — an empty bordered square
  * beside the row's ✕ reads as an unchecked checkbox, not a die);
- * level 1 = two pips on the diagonal, level 2 = the five-pip quincunx.
+ * level 1 = two pips on the diagonal, level 2 = the five-pip quincunx —
+ * a true quincunx now that the box is square.
  */
 const PIPS: Record<VaryLevel, ReadonlyArray<readonly [number, number]>> = {
-  0: [[10, 8]],
+  0: [[9, 9]],
   1: [
-    [6, 5],
-    [14, 11],
+    [6, 6],
+    [12, 12],
   ],
   2: [
-    [6, 5],
-    [14, 5],
-    [10, 8],
-    [6, 11],
-    [14, 11],
+    [6, 6],
+    [12, 6],
+    [9, 9],
+    [6, 12],
+    [12, 12],
   ],
 };
 
@@ -43,7 +44,7 @@ interface DiceButtonProps {
 }
 
 /**
- * DiceButton — the 26×22 opt-in "variation" toggle that sits after a
+ * DiceButton — the 22×22 opt-in "variation" toggle that sits after a
  * counting target (docs/BOARD_SOURCES.md §Member rules; handoff
  * §Interactions "Variation (dice)").
  *
@@ -69,7 +70,7 @@ export function DiceButton({ level, onCycle }: DiceButtonProps): React.ReactElem
       title={label}
       onClick={onCycle}
     >
-      <svg className={styles.pips} viewBox="0 0 20 16" width="20" height="16" aria-hidden="true">
+      <svg className={styles.pips} viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
         {PIPS[level].map(([cx, cy]) => (
           <circle key={`${cx}-${cy}`} className={level === 0 ? styles.offPip : undefined} cx={cx} cy={cy} r="1.6" />
         ))}
