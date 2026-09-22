@@ -7,19 +7,36 @@ import styles from './DiceButton.module.css';
  * beside the row's ✕ reads as an unchecked checkbox, not a die);
  * level 1 = two pips on the diagonal, level 2 = the five-pip quincunx —
  * a true quincunx now that the box is square.
+ *
+ * The corners sit at 5/13 rather than 6/12 (B3.1 review): at 6/12 the
+ * worst gap — corner to centre — was √(3²+3²) = 4.243 between centres
+ * minus the 3.2 pip diameter = **1.04px**, and the whole pattern spanned
+ * 6×6 inside a 22×22 face, reading as a tight cluster in a wide margin.
+ * Pulling the corners out one step on each axis gives **2.46px** on the
+ * diagonal (√(4²+4²) = 5.657 − 3.2) and an 8×8 span, while keeping
+ * **3.9px** of clearance to the keyline: a corner centre lands at 7 in
+ * face coordinates (the 18-box is inset 2 by the 1.5 border + 0.5 of
+ * centring), so 7 − 1.6 (r) − 1.5 (border) = 3.9. The 6px corner radius
+ * does not bite — its arc centre is at (6, 6), inside the pip centre on
+ * both axes, so the straight edges govern. The centre pip and `r` are
+ * unchanged.
+ *
+ * Coordinate-for-coordinate identical to the Swift twin's `pips` table
+ * (`RisoDiceButton.swift`); pinned on both platforms so a one-sided tweak
+ * can't ship.
  */
 const PIPS: Record<VaryLevel, ReadonlyArray<readonly [number, number]>> = {
   0: [[9, 9]],
   1: [
-    [6, 6],
-    [12, 12],
+    [5, 5],
+    [13, 13],
   ],
   2: [
-    [6, 6],
-    [12, 6],
+    [5, 5],
+    [13, 5],
     [9, 9],
-    [6, 12],
-    [12, 12],
+    [5, 13],
+    [13, 13],
   ],
 };
 
