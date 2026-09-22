@@ -128,11 +128,13 @@ private func pickPrimaryBoard(
 /// Soft-deleted tasks are ignored on BOTH sides: a deleted member does not
 /// make its target a root, and a deleted `isCounter` row is not one either.
 ///
-/// The ids are returned unfiltered by existence: like the hub's own walk, a
-/// root id whose task row is missing or is not a counting task is still
-/// listed here, and `buildSharedCounterGroups` skips such orphan groups
-/// downstream. Callers that render rows look the set up BY a task they already
-/// hold, so the distinction is invisible to them.
+/// A link target counts only when it is actually PRESENT, live, and a COUNTING
+/// task — the same predicate `buildSharedCounterGroups` applies when it skips
+/// an orphaned group, so the two can never disagree. That matters twice over:
+/// a dangling `sharedCounterId` (mid-sync, or a row an old client wrote) must
+/// not conjure a family whose hub page would be empty, and it must not let
+/// `BrowsableTasks.computeBrowsableTasks` hide a member the hub would never
+/// show.
 ///
 /// Mirror of the TS `sharedCounterGroups.ts` `sharedCounterRootIds`.
 ///
@@ -140,9 +142,11 @@ private func pickPrimaryBoard(
 /// - Returns: The root ids.
 func sharedCounterRootIds(_ tasks: [Task]) -> Set<String> {
     let live = tasks.filter { !$0.isDeleted }
+    let liveById = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     var roots = Set<String>()
     for task in live {
-        if let srcId = task.sharedCounterId { roots.insert(srcId) }
+        guard let srcId = task.sharedCounterId else { continue }
+        if let root = liveById[srcId], root.type == .counting { roots.insert(srcId) }
     }
     for task in live
     where task.type == .counting && task.isCounter == true && task.sharedCounterId == nil {
@@ -187,7 +191,10 @@ func buildSharedCounterGroups(
     for rootId in sharedCounterRootIds(liveTasks) { linkedBySource[rootId] = [] }
     for t in liveTasks {
         guard let srcId = t.sharedCounterId else { continue }
-        // `srcId` is a key by construction — every live link target is a root.
+        // A link whose target is missing / deleted / not a counter has no key
+        // — the helper already applied this function's own orphan predicate,
+        // so the optional chain drops exactly the members whose group the
+        // loop below would skip.
         linkedBySource[srcId]?.append(t)
     }
 

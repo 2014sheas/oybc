@@ -175,6 +175,25 @@ describe('sharedCounterRootIds — the extracted family-root test', () => {
     ...over,
   });
 
+  it('does NOT name a link target that is absent, deleted, or not a counting task', () => {
+    const memberOfMissing = counting('member-of-missing', { sharedCounterId: 'never-synced' });
+    const deletedRoot = counting('deleted-root', { isDeleted: true });
+    const memberOfDeleted = counting('member-of-deleted', { sharedCounterId: 'deleted-root' });
+    const normalRoot: Task = { ...counting('normal-root'), type: TaskType.NORMAL };
+    const memberOfNormal = counting('member-of-normal', { sharedCounterId: 'normal-root' });
+
+    const roots = sharedCounterRootIds([
+      memberOfMissing,
+      deletedRoot,
+      memberOfDeleted,
+      normalRoot,
+      memberOfNormal,
+    ]);
+
+    // A dangling link must not conjure a family whose hub page would be empty.
+    expect(roots).toEqual(new Set());
+  });
+
   it('names a root by link, a hub-born root by flag, and neither a plain counter nor a deleted member\u2019s target', () => {
     const linkRoot = counting('link-root');
     const member = counting('member', { sharedCounterId: 'link-root' });
@@ -198,18 +217,37 @@ describe('sharedCounterRootIds — the extracted family-root test', () => {
     expect(roots).toEqual(new Set(['link-root', 'hub-born']));
   });
 
-  it('agrees with the hub: every group buildSharedCounterGroups emits is headed by a root id', () => {
+  it('agrees with the hub in BOTH directions — the helper and the groups name the same set', () => {
     const linkRoot = counting('link-root');
     const member = counting('member', { sharedCounterId: 'link-root' });
     const hubBorn = counting('hub-born', { isCounter: true });
-    const groups = buildSharedCounterGroups({
-      tasks: [linkRoot, member, hubBorn, counting('plain')],
-      boardTasks: [],
-      boards: [],
-    });
+    const plain = counting('plain');
+    // Orphan links of every flavour: none may head a group, none may be a root.
+    const memberOfMissing = counting('member-of-missing', { sharedCounterId: 'never-synced' });
+    const deletedRoot = counting('deleted-root', { isDeleted: true });
+    const memberOfDeleted = counting('member-of-deleted', { sharedCounterId: 'deleted-root' });
+    const normalRoot: Task = { ...counting('normal-root'), type: TaskType.NORMAL };
+    const memberOfNormal = counting('member-of-normal', { sharedCounterId: 'normal-root' });
+
+    const tasks = [
+      linkRoot,
+      member,
+      hubBorn,
+      plain,
+      memberOfMissing,
+      deletedRoot,
+      memberOfDeleted,
+      normalRoot,
+      memberOfNormal,
+    ];
+    const groups = buildSharedCounterGroups({ tasks, boardTasks: [], boards: [] });
+    const roots = sharedCounterRootIds(tasks);
+
     expect(groups.map((g) => g.counterId).sort()).toEqual(['hub-born', 'link-root']);
-    const roots = sharedCounterRootIds([linkRoot, member, hubBorn, counting('plain')]);
-    for (const g of groups) expect(roots.has(g.counterId)).toBe(true);
+    // Both directions: no group without a root, and no root without a group.
+    // `computeBrowsableTasks` hides a member on the strength of this set, so a
+    // one-way check would let a root exist that the hub never renders.
+    expect(new Set(groups.map((g) => g.counterId))).toEqual(roots);
   });
 });
 

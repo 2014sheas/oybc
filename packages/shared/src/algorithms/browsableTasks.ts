@@ -22,14 +22,21 @@ import { BoardStatus, TaskType } from '../constants/enums';
  * not the library. See `isGoalLessCounter` for the exact predicate and why
  * it keys on the pair rather than bare absent-`maxCount`.
  *
- * 3. Shared-counter MEMBERS (owner ruling 2026-09-22) — any task with a
- * `sharedCounterId`, which covers both the window-stamped derived counters a
- * board pull mints and the P5 linked members. The library shows ONE generic
+ * 3. Shared-counter MEMBERS (owner ruling 2026-09-22) — a task whose
+ * `sharedCounterId` points at a root that is PRESENT, live and COUNTING in
+ * this same `tasks` set. That covers both the window-stamped derived counters
+ * a board pull mints and the P5 linked members. The library shows ONE generic
  * row per counter family — the root — and the Counters Hub is the home for
  * the per-window rows; before this, every differing target count added
- * another near-identical "Read 5 pages" row beside its root. Members stay
- * reachable through the hub's family detail (`sharedCounterRootIds` heads the
- * same families), and the root itself is never hidden by this rule.
+ * another near-identical "Read 5 pages" row beside its root. The root itself
+ * is never hidden by this rule.
+ *
+ * The root-presence condition is exactly the orphan predicate
+ * `buildSharedCounterGroups` (and so `sharedCounterRootIds`) applies, and it
+ * must stay exactly that: a member is hidden here ONLY when the hub really
+ * shows it under its family. A dangling `sharedCounterId` — mid-sync on a
+ * fresh device, or a row an old client wrote — would otherwise be reachable
+ * from nowhere at all.
  *
  * Mirror of the iOS `TaskLibraryViewModel.computeBrowsableTasks`
  * (`streaks.ts ↔ Streaks.swift`-style parity). Pure and fully derived at read
@@ -64,10 +71,20 @@ export function computeBrowsableTasks(
     if (!boardStatusById[bt.boardId]) continue; // deleted / absent board → ignore
     (placementsByTask[bt.taskId] ??= new Set<string>()).add(bt.boardId);
   }
+  // Live id → task, for the member rule's root lookup below. Callers pass a
+  // non-deleted set already; the `isDeleted` filter is belt-and-braces so this
+  // can't disagree with the hub, which filters deleted rows itself.
+  const liveById = new Map<string, Task>();
+  for (const t of tasks) {
+    if (!t.isDeleted) liveById.set(t.id, t);
+  }
   return tasks.filter((task) => {
     if (isGoalLessCounter(task)) return false;
-    // One generic family row: a member is represented by its root.
-    if (task.sharedCounterId != null) return false;
+    // One generic family row: a member is represented by its root — but only
+    // when that root really exists, so a dangling link stays visible here
+    // rather than being reachable from nowhere.
+    const root = task.sharedCounterId != null ? liveById.get(task.sharedCounterId) : undefined;
+    if (root && root.type === TaskType.COUNTING) return false;
     if (!task.createdInWizard) return true;
     // Effective placements: own + inherited from parent compound(s).
     const boardIds = new Set<string>(placementsByTask[task.id]);

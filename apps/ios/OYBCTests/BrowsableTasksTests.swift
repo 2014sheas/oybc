@@ -233,6 +233,37 @@ final class BrowsableTasksTests: XCTestCase {
         XCTAssertEqual(ids(result), ["root"])
     }
 
+    /// The root-presence gate: a member whose root is absent / deleted / not a
+    /// counting task is NOT collapsed away — the hub would never show it under
+    /// a family, so hiding it here would make it reachable from nowhere.
+    /// Mirror of `browsableTasks.test.ts`.
+    func test_memberWithNoLiveCountingRoot_staysVisible() {
+        let orphan = task(
+            "orphan", createdInWizard: false, type: .counting, maxCount: 5,
+            sharedCounterId: "root-that-never-synced"
+        )
+        let deletedRootMember = task(
+            "member-of-deleted", createdInWizard: false, type: .counting, maxCount: 5,
+            sharedCounterId: "deleted-root"
+        )
+        var deletedRoot = task("deleted-root", createdInWizard: false, type: .counting, maxCount: 35)
+        deletedRoot.isDeleted = true
+        let normalRoot = task("normal-root", createdInWizard: false, type: .normal)
+        let normalRootMember = task(
+            "member-of-normal", createdInWizard: false, type: .counting, maxCount: 5,
+            sharedCounterId: "normal-root"
+        )
+
+        let result = BrowsableTasks.computeBrowsableTasks(
+            tasks: [orphan, deletedRoot, deletedRootMember, normalRoot, normalRootMember],
+            boardTasks: [],
+            boardStatusById: [:]
+        )
+        XCTAssertTrue(ids(result).contains("orphan"))
+        XCTAssertTrue(ids(result).contains("member-of-deleted"))
+        XCTAssertTrue(ids(result).contains("member-of-normal"))
+    }
+
     func test_isGoalLessCounterTruthTable() {
         XCTAssertTrue(
             BrowsableTasks.isGoalLessCounter(

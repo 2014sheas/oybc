@@ -151,11 +151,12 @@ function pickPrimaryBoard(
  * Soft-deleted tasks are ignored on BOTH sides: a deleted member does not make
  * its target a root, and a deleted `isCounter` row is not one either.
  *
- * Note the ids are returned unfiltered by existence: like the hub's own walk,
- * a root id whose task row is missing or is not a counting task is still
- * listed here, and {@link buildSharedCounterGroups} skips such orphan groups
- * downstream. Callers that render rows look the set up BY a task they already
- * hold, so the distinction is invisible to them.
+ * A link target counts only when it is actually PRESENT, live, and a COUNTING
+ * task — the same predicate {@link buildSharedCounterGroups} applies when it
+ * skips an orphaned group, so the two can never disagree. That matters twice
+ * over: a dangling `sharedCounterId` (mid-sync, or a row an old client wrote)
+ * must not conjure a family whose hub page would be empty, and it must not let
+ * `computeBrowsableTasks` hide a member the hub would never show.
  *
  * Mirror of the iOS `SharedCounterGroups.swift` `sharedCounterRootIds(_:)`.
  *
@@ -164,9 +165,12 @@ function pickPrimaryBoard(
  */
 export function sharedCounterRootIds(tasks: Task[]): Set<string> {
   const live = tasks.filter((t) => !t.isDeleted);
+  const liveById = new Map<string, Task>(live.map((t) => [t.id, t]));
   const roots = new Set<string>();
   for (const t of live) {
-    if (t.sharedCounterId != null) roots.add(t.sharedCounterId);
+    if (t.sharedCounterId == null) continue;
+    const root = liveById.get(t.sharedCounterId);
+    if (root && root.type === TaskType.COUNTING) roots.add(t.sharedCounterId);
   }
   for (const t of live) {
     if (t.type === TaskType.COUNTING && t.isCounter === true && t.sharedCounterId == null) {
@@ -205,7 +209,9 @@ export function buildSharedCounterGroups(
   for (const t of tasks) {
     const src = t.sharedCounterId;
     if (src == null) continue;
-    // `src` is a key by construction — every live `sharedCounterId` is a root.
+    // A link whose target is missing / deleted / not a counter has no key —
+    // the helper already applied this function's own orphan predicate, so the
+    // `?.` drops exactly the members whose group the loop below would skip.
     linkedBySource.get(src)?.push(t);
   }
 
