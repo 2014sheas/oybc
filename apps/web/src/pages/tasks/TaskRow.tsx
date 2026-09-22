@@ -34,9 +34,14 @@ export interface TaskRowProps {
   /** Owner ruling 2026-09-22 — this task HEADS a shared-counter family
    *  (`sharedCounterRootIds`). The library shows one GENERIC row per family:
    *  the pair-derived `formatCounterName` label ("Read pages") in place of the
-   *  stored title, no target count anywhere on the row, and a tap that opens
-   *  the Counters hub rather than Task detail (the caller routes; this flag
-   *  only changes the copy and the a11y wording so the two agree). */
+   *  stored title, NO count anywhere on the row (title, subtitle and status
+   *  alike), and a tap that opens the Counters hub rather than Task detail
+   *  (the caller routes; this flag only changes the copy and the a11y wording
+   *  so the two agree).
+   *
+   *  This row and iOS `RisoTaskRowView` are twins — the generic label, the
+   *  count-free treatment and the "Counter" subtitle must stay identical on
+   *  both. Change one, change the other in the same commit. */
   isFamilyRoot?: boolean;
 }
 
@@ -75,7 +80,11 @@ export function TaskRow({
   onToggleExpand,
   isFamilyRoot = false,
 }: TaskRowProps): React.ReactElement {
-  const status = computeStatusLabel(task);
+  // A family root carries NO count anywhere on the row — not in the title, not
+  // in the subtitle, and not in the status slot, whose counting branch is
+  // `{current} / {max}`. iOS's twin row has no count column at all, so leaving
+  // this in would also be a fresh parity gap.
+  const status = isFamilyRoot ? '' : computeStatusLabel(task);
   const subtitle = computeSubtitle(task, childCount, isFamilyRoot);
   // Unknown ≠ unused: render nothing until the placement join resolves
   // (late-mutation audit, shape B) — "Unused" flipping to "On 3 active

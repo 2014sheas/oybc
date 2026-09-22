@@ -24,6 +24,12 @@ struct RisoTaskRowView: View {
     /// detail (the caller routes; this flag changes the copy and the
     /// accessibility label so the two agree). Defaults false so every
     /// existing call site and snapshot fixture is unaffected.
+    ///
+    /// This row and web `pages/tasks/TaskRow.tsx` are twins — the generic
+    /// label, the count-free treatment (web additionally suppresses its
+    /// `{current} / {max}` status slot, which this row has no column for) and
+    /// the "Counter" subtitle must stay identical on both. Change one, change
+    /// the other in the same commit.
     var isFamilyRoot: Bool = false
 
     var body: some View {
