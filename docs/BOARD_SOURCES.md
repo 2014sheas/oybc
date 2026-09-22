@@ -1485,9 +1485,21 @@ visible in the Tasks-tab library beside its root. Two rules:
 
 1. **Skip the mint when the derived row would be identical to its root.**
    In `planDerivedTasks` (TS ↔ `BoardSources.planDerivedTasks`), a
-   board-sourced counting member — or a split part — whose resolved target
-   equals its own goal *and* whose vary level is off is **placed as the root
-   task itself**, exactly as pool-sourced and hand-added members already are.
+   board-sourced counting member — or a split part — that **is itself a
+   root** (`sharedCounterId == null`), whose resolved target equals its own
+   goal *and* whose vary level is off is **placed as the root task itself**,
+   exactly as pool-sourced and hand-added members already are. The root
+   condition is load-bearing, not a nicety: a member that is *already* a
+   window-stamped derived counter (a daily built from yesterday's daily
+   supplies `derivedTaskId(boardA, R)` under its own id) must still be
+   re-minted for *this* window, or board B places board A's row and reads
+   day A's `baseline` against the root's lifetime — today's square then shows
+   yesterday+today's progress and can open already complete (the
+   phantom-completion class), and `refreshDerivedBaselines` never heals it
+   because it recomputes from the stale row's own `startDate`. The manual
+   branch has always guarded this with `isWindowStampedMember`; the board
+   branch got it for free by always minting. Pinned by a vector: a
+   window-stamped member pulled same-timeframe with vary off is still minted.
    A derived counter exists to carry a *different* target (pro-rated or
    hand-set) or a vary range; when it would carry neither, Windowed
    Completion already evaluates the root against the target board's window
