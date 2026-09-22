@@ -223,10 +223,25 @@ final class TasksTabViewModel {
         }
     }
 
+    /// Title / description / generic-counter-name match.
+    ///
+    /// The pair-derived name is tested for EVERY counting task, not just
+    /// family roots: since the 2026-09-22 ruling a family root's row reads
+    /// "Read pages" rather than its stored "Read 35 pages", so a query typed
+    /// against what the user can see would otherwise find nothing. Testing it
+    /// unconditionally is cheaper than threading the root set down here and is
+    /// harmless for a standalone counter — its generic name derives from the
+    /// same `(action, unit)` pair its title already contains. The stored title
+    /// keeps matching, so "Read 35" still finds the row too. Web twin:
+    /// `useTasksFilters.ts` `matchesSearch`.
     static func matchesSearch(_ task: Task, trimmedLower: String) -> Bool {
         guard !trimmedLower.isEmpty else { return true }
         if task.title.lowercased().contains(trimmedLower) { return true }
         if let desc = task.description, desc.lowercased().contains(trimmedLower) { return true }
+        if task.type == .counting {
+            let generic = CounterName.formatCounterName(action: task.action, unit: task.unit)
+            if !generic.isEmpty, generic.lowercased().contains(trimmedLower) { return true }
+        }
         return false
     }
 

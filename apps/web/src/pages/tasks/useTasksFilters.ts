@@ -4,6 +4,7 @@ import {
   BoardStatus,
   TaskType,
   computeBrowsableTasks,
+  formatCounterName,
   isTaskExpired,
   type Board,
   type BoardTask,
@@ -295,10 +296,27 @@ export function matchesTypeFilter(task: Task, filter: TypeFilter): boolean {
   }
 }
 
-function matchesSearch(task: Task, trimmedLowerQuery: string): boolean {
+/**
+ * Title / description / generic-counter-name match.
+ *
+ * The pair-derived name is tested for EVERY counting task, not just family
+ * roots: since the 2026-09-22 ruling a family root's row reads "Read pages"
+ * rather than its stored "Read 35 pages", so a query typed against what the
+ * user can see would otherwise find nothing. Testing it unconditionally is
+ * cheaper than threading the root set down here and is harmless for a
+ * standalone counter — its generic name is derived from the same `(action,
+ * unit)` pair its title already contains. The stored title keeps matching, so
+ * "Read 35" still finds the row too. iOS twin:
+ * `TasksTabViewModel.matchesSearch`.
+ */
+export function matchesSearch(task: Task, trimmedLowerQuery: string): boolean {
   if (!trimmedLowerQuery) return true;
   if (task.title.toLowerCase().includes(trimmedLowerQuery)) return true;
   if (task.description?.toLowerCase().includes(trimmedLowerQuery)) return true;
+  if (task.type === TaskType.COUNTING) {
+    const generic = formatCounterName(task.action, task.unit);
+    if (generic && generic.toLowerCase().includes(trimmedLowerQuery)) return true;
+  }
   return false;
 }
 
