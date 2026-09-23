@@ -1298,12 +1298,25 @@ the pull **immediately when the source is untouched** and **asks first when
 it carries configuration** — the owner repeatedly configured exclusions and
 counter targets, then lost them all to a misclick. "Carries configuration"
 is the shared, vector-pinned `sourceHasConfiguration` (`boardSources.ts` ↔
-`BoardSources`): any excluded task, any member rule (an all-default rule is
-already pruned to absent by `withMemberRule`), a range narrowed from the
+`BoardSources`): any excluded task, any **authored** member rule, a range narrowed from the
 `[0, all]` mint default, or a filter that differs from the **kind-scoped
 creation default** `newSourceFilter(kind)` — never from the Swift
 `BoardSource.init` default `.all`, which is the legacy-decode default and
-would make every fresh board source look configured. The dialog names the
+would make every fresh board source look configured. **A member rule counts
+only if someone authored it** (amended 2026-09-23, after the first cut
+fired the dialog on every fresh board source): on a one-off board,
+`prefillRemainingTargets` seeds `memberRules[id].target` for every counting
+member the moment a board source is pulled, so a rule whose only field is a
+`target` equal to what the prefill would seed *right now*
+(`prefilledOneOffTarget` over the same goal / `windowCountByTaskId` /
+`sourceWindow` / wizard window) is machine-written and is **not**
+configuration. A rule with `vary`, `split`, any `parts`, or a `target` that
+differs from that seed is. The gate recomputes the seed at removal time and
+passes it to the shared predicate as `seededTargetByTaskId`; if the wizard's
+timeframe changed after the pull, the recomputed seed no longer matches the
+stored one and the rule counts as configured — the user did change something,
+so asking is right. The loss sentence names the filter by its label
+(`the "Not done yet" filter`), not as "the squares filter". The dialog names the
 loss via the shared `removeSourceLossSentence` ("You'll lose 3 exclusions
 and 2 member rules."), appends "Changes apply from the next board." while
 editing a repeating board, and offers Cancel / Remove. Web: an
