@@ -180,6 +180,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 
 ---
 
+- **E6 — e2e suite has 10 pre-existing failures on `dev`, hidden by `continue-on-error`** (found 2026-09-23 while landing #493). Playwright could not run locally for weeks because `apps/web/tsconfig.json` referenced `packages/shared` as a *directory* and Playwright's tsconfig loader appends `.json` to directory references (fixed on #493 by referencing `packages/shared/tsconfig.json`; the "Node 24" diagnosis in project memory was wrong). With the suite runnable, `dev` @ `8bdce2fc` fails 10 of 61: `counter-arrivals` (arrival banner), `windowed-completion-note`, `member-rules` › expired derived counters (`Show expired tasks` checkbox click does not change state), `pool-row-editor` ×2 (counting/compound editor, light + dark), `repeat-board` ×2 (manage row; "Repeat this board…" CTA), `specific-board-square` ×3 (achievement creator). Console shows `Sync userId does not match authenticated user` and Firestore `insufficient permissions` under the dev bypass in several — consistent with the old "bypass flaky under Playwright" note, not diagnosed. Because `web.yml` runs the e2e step under `continue-on-error: true`, every one has merged green. Acceptance: diagnose and fix the 10, then drop `continue-on-error` so e2e becomes a real gate. Until then, treat the check mark as no information and read the artifact.
 ## Track E — Docs, tests & workflow debt
 
 ### E1 — Docs accuracy pass — SHIPPED (this PR)
