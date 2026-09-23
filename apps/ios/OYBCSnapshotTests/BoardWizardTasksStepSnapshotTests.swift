@@ -318,9 +318,25 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
 
     // MARK: - Full-step: member rules (B3)
 
-    /// A board source pulled onto a one-off board: its counting member
-    /// carries the 22pt target stepper + "of 35 mi" caption + dice (off),
-    /// while the plain member carries only the ✕.
+    /// A board source pulled onto a one-off board, with no rules stored:
+    /// every member row is COLLAPSED, which is what B3.1 made the default
+    /// (see §Member row at phone width — "always collapsed on open",
+    /// including for a member whose rule is already stored, so row height
+    /// never depends on hidden state).
+    ///
+    /// So of the member rows it pictures line 1 and only line 1 (the rest
+    /// of the step — the pool meter, the add-tasks rows, the source
+    /// panel's All squares / Not done yet filter and its range slider — is
+    /// the surrounding frame, not the subject). The counting member reads
+    /// `badge · "Run 35 mi" · collapsed chevron · ✕`, with NO summary chip:
+    /// `countingSummary` is suppressed exactly when
+    /// `target == goal && vary == .off`, which is this row with no rule
+    /// stored. The plain member reads `badge · title · ✕` and no chevron
+    /// at all — there is nothing to reveal.
+    ///
+    /// The stepper and the dice are NOT in this baseline. The case that
+    /// pictures them is `testMemberRowCountingVaryOnExpanded`, which
+    /// renders the row leaf with its disclosure seeded open.
     func testSourceCountingMemberRule() {
         assertSnapshot(
             of: makeMemberRulesView(rules: [:]),
