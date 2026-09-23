@@ -10,10 +10,14 @@ import GRDB
 ///   `manualTaskVary` (dice for hand-added counting members), resolved live
 ///   at every spawn via `BoardSources.sourcesForRecord` →
 ///   `BoardSources.selectBoardTasks` (`AppDatabase+RecurringTemplates.swift`).
-/// - Decode-compat: `seedTaskIds`, `poolIds`, `removedTaskIds`. The trio is
-///   still written as a derived mirror and read only through
-///   `sourcesForRecord` when `sources` is absent; `seedTaskIds` is read back
-///   only for a genuinely un-migrated record (every generalized field nil).
+/// - `poolIds` / `removedTaskIds`: a derived mirror of `sources`; the spawn
+///   reads it only through `sourcesForRecord`, but pool-health / deck-preview
+///   (`PoolHealth`, `RepeatingBoardMixEditor`) still read it directly.
+/// - `seedTaskIds`: never read by the spawn; still read by un-migrated
+///   hydration, the Task-detail templates-referencing query
+///   (`fetchTemplatesReferencingTask`), and the roster loading fallbacks —
+///   note it is a creation-time snapshot the edit path leaves stale (audit
+///   follow-up).
 /// - The optional fields are **tri-state, null-preserving**: `nil` ⇒ absent
 ///   on the wire (pre-stamp), `[]` ⇒ present-but-empty. Array fields are
 ///   JSON-string TEXT columns (custom `init(from:)` / `encode(to:)`).
@@ -36,8 +40,9 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     var isRandomized: Bool
     var seedTaskIds: [String]
 
-    // Legacy trio (see type doc): `poolIds`/`removedTaskIds` decode-compat,
-    // `manualTaskIds` live. `nil` ⇒ absent on the wire; `[]` ⇒ empty.
+    // Legacy trio (see type doc): `poolIds`/`removedTaskIds` are the derived
+    // mirror of `sources`, `manualTaskIds` is live. `nil` ⇒ absent on the
+    // wire; `[]` ⇒ empty.
     var poolIds: [String]?
     var manualTaskIds: [String]?
     var removedTaskIds: [String]?

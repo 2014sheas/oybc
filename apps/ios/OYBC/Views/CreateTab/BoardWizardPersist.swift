@@ -667,7 +667,9 @@ enum RecurringTemplatePersistOutcome {
 ///      session's staged inline edits, in one transaction via
 ///      `writeWizardPendingTasksAndEnqueue`, BEFORE anything below reads
 ///      tasks. Staged edits always apply: a template has no draft state
-///      (the cancel dialog's "Save Draft" calls this function too).
+///      (when editing an existing template, the cancel dialog's "Save Draft"
+///      calls this function too; a new recurring wizard's "Save Draft" goes
+///      through `persistWizardBoard` — see `BoardWizardView.handleDialogSaveDraft`).
 ///   2. **Edit** (`editingTemplateId` set): re-saves the template with the
 ///      controller's current `sources` / `manualTaskIds` / `manualTaskVary`
 ///      (+ the derived legacy trio). Does NOT spawn — edits never rewrite
@@ -678,9 +680,11 @@ enum RecurringTemplatePersistOutcome {
 ///      Sequential transactions: if the spawn fails, the template survives
 ///      with `lastSpawnedWindowKey=nil` and the next Boards-tab open retries.
 ///
-/// `seedTaskIds` is a decode-compat snapshot of the final selection. It is
-/// read back only for a genuinely un-migrated record (every generalized
-/// field absent — see `BoardWizardViewModel.init`'s template branch).
+/// `seedTaskIds` is a snapshot of the final selection: never read by the
+/// spawn; still read by un-migrated hydration, the Task-detail
+/// templates-referencing query (`fetchTemplatesReferencingTask`), and the
+/// roster loading fallbacks — note it is a creation-time snapshot the edit
+/// path leaves stale (audit follow-up).
 ///
 /// Runs on a background queue; dispatches callbacks on the main queue.
 func persistRecurringTemplate(
@@ -794,8 +798,8 @@ func persistRecurringTemplate(
                     boardSize: boardSize,
                     centerSquareType: centerType,
                     isRandomized: isRandomized,
-                    // Left verbatim — decode-compat snapshot (see the
-                    // function doc above).
+                    // Left verbatim — the creation-time snapshot goes
+                    // stale on edit (see the function doc above).
                     seedTaskIds: existing.seedTaskIds,
                     poolIds: poolIds,
                     manualTaskIds: manualTaskIds,

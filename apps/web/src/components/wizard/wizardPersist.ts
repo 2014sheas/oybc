@@ -491,8 +491,11 @@ export interface PersistRecurringTemplateArgs {
  * Written fields: `sources` (the wizard's native state — ranges, excludes,
  * filters, board-kind sources), `manualTaskIds`, `manualTaskVary`, the
  * derived legacy trio (`poolIds` / `removedTaskIds`), and — on create only —
- * `seedTaskIds`, a decode-compat snapshot of the final selection (read back
- * only for a genuinely un-migrated record; see `useBoardWizard`).
+ * `seedTaskIds`, a snapshot of the final selection. `seedTaskIds` is never
+ * read by the spawn; still read by un-migrated hydration, the Task-detail
+ * templates-referencing query (`fetchTemplatesReferencingTask`), and the
+ * roster loading fallbacks — note it is a creation-time snapshot the edit
+ * path leaves stale (audit follow-up).
  *
  * Every pending (inline-created) task in the FULL selection — not just a
  * placed subset, since future windows draw from the whole supply — is
@@ -570,8 +573,8 @@ export async function persistRecurringTemplate({
   // §Member rules (B3, RC3) — dice for hand-added counters, persisted on the
   // record so each recurring board rolls them for its own window.
   const manualTaskVary = controller.manualTaskVary;
-  // Decode-compat snapshot only — never read back after this write (see
-  // this function's docstring / docs/POOLS_RECURRING.md §Migration).
+  // Creation-time snapshot — not read by the spawn, but still read by
+  // other surfaces (see this function's docstring).
   const seedTaskIds = Array.from(controller.selectedTaskIds);
 
   if (controller.editingTemplateId !== null) {
@@ -590,7 +593,7 @@ export async function persistRecurringTemplate({
       // `isActive` isn't surfaced in the wizard form (the templates list
       // owns the pause toggle), so leave it untouched on edit.
       // `seedTaskIds` intentionally omitted — the create-time snapshot is
-      // left verbatim (decode-compat; see the function doc).
+      // left verbatim, and so goes stale on edit (see the function doc).
     });
     return { templateId: editingTemplateId, spawnedBoardId: null };
   }

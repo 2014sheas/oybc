@@ -18,10 +18,15 @@ import { BoardSize } from "../constants";
  * `sourcesForRecord`, which derives `[0, all]` pool sources from the legacy
  * `poolIds` / `removedTaskIds` trio (no data backfill).
  *
- * Decode-compat fields: `seedTaskIds`, `poolIds`, `removedTaskIds`. They
- * are still written (the trio as a derived mirror for old clients) but the
- * spawn never reads them directly; `seedTaskIds` is read back only for a
- * genuinely un-migrated record (every generalized field absent).
+ * Legacy fields, still written:
+ * - `poolIds` / `removedTaskIds` — a derived mirror of `sources`; the spawn
+ *   reads it only through `sourcesForRecord`, but pool-health / deck-preview
+ *   still read it directly.
+ * - `seedTaskIds` — never read by the spawn; still read by un-migrated
+ *   hydration, the Task-detail templates-referencing query
+ *   (`fetchTemplatesReferencingTask`), and the roster loading fallbacks.
+ *   Note it is a creation-time snapshot the edit path leaves stale (audit
+ *   follow-up).
  *
  * - `lastSpawnedWindowKey` is the local-ISO `startDate` of the last spawned
  *   window (idempotent spawning); `null` ⇒ spawn immediately on next open.
@@ -39,23 +44,27 @@ export interface RecurringBoardTemplate {
   centerSquareType: CenterSquareType; // FREE / NONE (no CHOSEN in MVP)
   isRandomized: boolean; // Whether the spawn shuffles its selection + placement
   /**
-   * Decode-compat: a snapshot of the wizard selection at create time. Never
-   * read by the spawn; read back only as the hand-added layer of a
-   * genuinely un-migrated record (every generalized field absent).
+   * Creation-time snapshot of the wizard selection. Never read by the spawn;
+   * still read by un-migrated hydration, the Task-detail
+   * templates-referencing query (`fetchTemplatesReferencingTask`), and the
+   * roster loading fallbacks — note it is a creation-time snapshot the edit
+   * path leaves stale (audit follow-up).
    */
   seedTaskIds: string[];
 
   /**
-   * Decode-compat (legacy trio): pools pulled into the pre-sources mix.
-   * Still written as a derived mirror of `sources`; read only via
-   * `sourcesForRecord` when `sources` is absent.
+   * Legacy trio: a derived mirror of `sources`' pool entries. The spawn
+   * reads it only through `sourcesForRecord`, but pool-health /
+   * deck-preview still read it directly.
    */
   poolIds?: string[];
   /** The hand-added layer — live in the sources model; always wins over exclusions. */
   manualTaskIds?: string[];
   /**
-   * Decode-compat (legacy trio): flat removals of pool-sourced tasks.
-   * `sourcesForRecord` maps them onto each derived source's `excludedTaskIds`.
+   * Legacy trio: flat removals of pool-sourced tasks — a derived mirror of
+   * `sources`' exclusions. The spawn reads it only through
+   * `sourcesForRecord` (mapped onto each derived source's
+   * `excludedTaskIds`), but pool-health still reads it directly.
    */
   removedTaskIds?: string[];
 
@@ -96,11 +105,8 @@ export interface CreateRecurringBoardTemplateInput {
   isRandomized: boolean;
   seedTaskIds: string[];
   isActive: boolean;
-  // P1 — additive, optional. The legacy create path (still the only path
-  // until P4's wizard ships) sets these itself (`poolIds: [mintedPoolId]`,
-  // `manualTaskIds: []`, `removedTaskIds: []`) rather than accepting them
-  // from the caller; kept here so a future P4 caller can pass a
-  // generalized create shape without a separate input type.
+  // Legacy trio — the derived mirror of `sources` (see the entity doc);
+  // written verbatim when supplied. The canonical shape is `sources`.
   poolIds?: string[];
   manualTaskIds?: string[];
   removedTaskIds?: string[];
@@ -122,8 +128,8 @@ export interface UpdateRecurringBoardTemplateInput {
   isRandomized?: boolean;
   seedTaskIds?: string[];
   isActive?: boolean;
-  // P1 — additive, optional. See `RecurringBoardTemplate`'s docstring for
-  // the mix formula and the "legacy shape" write-through rule.
+  // Legacy trio — the derived mirror of `sources`; see
+  // `RecurringBoardTemplate`'s doc and `sourcesForRecord`.
   poolIds?: string[];
   manualTaskIds?: string[];
   removedTaskIds?: string[];

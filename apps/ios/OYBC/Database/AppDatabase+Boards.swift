@@ -597,8 +597,9 @@ extension AppDatabase {
     /// could push the supply below the fillable floor and skip the window).
     ///
     /// Also applies the session's staged inline edits in the SAME
-    /// transaction, always (a template has no draft state — the cancel
-    /// dialog's "Save Draft" calls the same path). Per-type handling matches
+    /// transaction, always (a template has no draft state — when editing an
+    /// existing template, the cancel dialog's "Save Draft" calls the same
+    /// path). Per-type handling matches
     /// `saveWizardBoard`:
     ///   • compound (library OR pending) — parent-field + child/link CRUD via
     ///     `applyStagedCompoundChildEdits`, then `saveTaskAndCascade`. A
