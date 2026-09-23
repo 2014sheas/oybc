@@ -807,7 +807,7 @@ extension AppDatabase {
                     if index < placementIds.count { row.taskId = placementIds[index] }
                     guard seenTaskIds.insert(row.taskId).inserted else {
                         #if DEBUG
-                        print("saveWizardBoard: task \(row.taskId) resolved twice on board \(board.id); leaving cell \(index) empty")
+                        dlog("saveWizardBoard: task \(row.taskId) resolved twice on board \(board.id); leaving cell \(index) empty")
                         #endif
                         continue
                     }

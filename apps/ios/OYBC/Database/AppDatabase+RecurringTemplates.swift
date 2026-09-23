@@ -490,7 +490,7 @@ extension AppDatabase {
                 ).filter { row in
                     guard placedTaskIds.insert(row.taskId).inserted else {
                         #if DEBUG
-                        print("spawnRecurringBoard: task \(row.taskId) resolved twice on board \(boardId); leaving its cell empty")
+                        dlog("spawnRecurringBoard: task \(row.taskId) resolved twice on board \(boardId); leaving its cell empty")
                         #endif
                         return false
                     }
