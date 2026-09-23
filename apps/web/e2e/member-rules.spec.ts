@@ -451,12 +451,23 @@ test.describe('Wizard member rules — the expanded source panel', () => {
 
     // PART scale, not member scale (`.partUndo` vs `.undo` in
     // MemberRuleRow.module.css) — this guard exists because someone once
-    // shipped the control at the wrong size, so assert the class the
+    // shipped the control at the wrong size, so assert the scale the
     // styling implies rather than just the control's presence. `.partUndo`
     // is a filled 1.5px-bordered pill (riso-paper-2 background); the
     // member-scale `.undo` is a bare 2px outline with no fill.
-    await expect(partUndo).toHaveCSS('border-top-width', '1.5px');
+    //
+    // The border is asserted as "NOT the member scale", never as the literal
+    // 1.5px the stylesheet carries: `toHaveCSS` reads the COMPUTED style, and
+    // Chromium snaps a 1.5px border to 1px at devicePixelRatio 1 while
+    // leaving it 1.5px on a Retina display — a literal assertion is red on CI
+    // and green on a laptop, which is worse than simply red. 2px survives
+    // every DPR, so "not 2px" separates the two scales without encoding one.
+    await expect(partUndo).not.toHaveCSS('border-top-width', '2px');
     await expect(partUndo).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    // The positive anchor: a member-scale control can satisfy neither of the
+    // negatives above AND carry this class. CSS-module hashing keeps the key
+    // (`_partUndo_a1b2c`), so the regex is stable across builds.
+    await expect(partUndo).toHaveClass(/partUndo/);
   });
 
   test('an expanded counting row exposes the stepper suffix, dice, and inline range (the only web coverage since B3.1)', async ({
