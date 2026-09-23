@@ -573,12 +573,44 @@ struct BoardWizardTasksStepView: View {
     private func requestRemoveSource(_ source: BoardSource) {
         if BoardSources.sourceHasConfiguration(
             source,
-            defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind)
+            defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind),
+            seededTargetByTaskId: seededTargets(for: source)
         ) {
             pendingSourceRemoval = source
         } else {
             onRemoveSource(source.sourceId)
         }
+    }
+
+    /// What the one-off prefill would seed for this source RIGHT NOW — the
+    /// input that keeps the remove gate from mistaking a machine-written
+    /// target for configuration (amended ruling 2026-09-23).
+    ///
+    /// Empty unless the prefill itself would run: a `.board` source on a
+    /// ONE-OFF wizard (`prefillRemainingTargets` guards on
+    /// `editingTemplateId == nil, !isRecurring` and is called from
+    /// `pullBoard` alone). A pool source and every repeating session seed
+    /// nothing, so every stored target there is hand-set by definition.
+    ///
+    /// Recomputed per call rather than remembered from the pull, so a
+    /// timeframe change since then correctly reads as configuration.
+    ///
+    /// Web twin: `seededTargetsForRemoval` in `wizardSourcesLogic.ts`.
+    private func seededTargets(for source: BoardSource) -> [String: Int] {
+        guard !isRecurring, editingTemplateId == nil, source.kind == .board,
+              let supply = supplyInfoBySourceId[source.sourceId] else { return [:] }
+        let byId = effectiveTaskById
+        var tasksById: [String: BoardSources.SeededTargetTask] = [:]
+        for id in supply.rawSupplyTaskIds {
+            if let task = byId[id] { tasksById[id] = BoardSources.SeededTargetTask(task) }
+        }
+        return BoardSources.seededTargetsForSource(
+            supplyTaskIds: supply.rawSupplyTaskIds,
+            tasksById: tasksById,
+            windowCountByTaskId: supply.windowCountByTaskId,
+            sourceWindow: supply.sourceWindow,
+            targetWindow: wizardWindow
+        )
     }
 
     /// The pulled source's display name, for the confirm's title.
@@ -594,7 +626,8 @@ struct BoardWizardTasksStepView: View {
         let loss = BoardSources.removeSourceLossSentence(
             BoardSources.sourceConfiguration(
                 source,
-                defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind)
+                defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind),
+                seededTargetByTaskId: seededTargets(for: source)
             )
         ) ?? ""
         guard editingTemplateId != nil else { return loss }
