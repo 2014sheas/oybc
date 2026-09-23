@@ -105,10 +105,44 @@ final class BoardSourceVectorTests: XCTestCase {
         let expectedMixFields: RawMixFields
     }
 
+    private struct RawConfigurationDetail: Decodable {
+        let excludedCount: Int
+        let memberRuleCount: Int
+        let rangeNarrowed: Bool
+        let filterChanged: Bool
+
+        var detail: BoardSources.ConfigurationDetail {
+            BoardSources.ConfigurationDetail(
+                excludedCount: excludedCount,
+                memberRuleCount: memberRuleCount,
+                rangeNarrowed: rangeNarrowed,
+                filterChanged: filterChanged
+            )
+        }
+    }
+
+    /// Decodes `BoardSource` itself (not `RawSource`) — these vectors carry
+    /// `memberRules`, which the supply-shaped `RawSource` deliberately omits.
+    private struct ConfigurationVector: Decodable {
+        let name: String
+        let source: BoardSource
+        let defaultFilter: String
+        let expected: RawConfigurationDetail
+        let expectedHasConfiguration: Bool
+    }
+
+    private struct LossSentenceVector: Decodable {
+        let name: String
+        let detail: RawConfigurationDetail
+        let expected: String?
+    }
+
     private struct Fixture: Decodable {
         let capacityVectors: [CapacityVector]
         let selectionVectors: [SelectionVector]
         let conversionVectors: [ConversionVector]
+        let configurationVectors: [ConfigurationVector]
+        let lossSentenceVectors: [LossSentenceVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -182,6 +216,44 @@ final class BoardSourceVectorTests: XCTestCase {
             let mixFields = BoardSources.mixFieldsFromSources(sources)
             XCTAssertEqual(mixFields.poolIds, v.expectedMixFields.poolIds, v.name)
             XCTAssertEqual(mixFields.removedTaskIds, v.expectedMixFields.removedTaskIds, v.name)
+        }
+    }
+
+    /// The remove-confirm gate (owner ruling 2026-09-19): an untouched
+    /// source removes instantly, a configured one asks first — and the
+    /// detail names WHAT is configured.
+    func testConfigurationVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.configurationVectors.isEmpty)
+        for v in fixture.configurationVectors {
+            let defaultFilter = try XCTUnwrap(
+                BoardSource.Filter(rawValue: v.defaultFilter), v.name
+            )
+            XCTAssertEqual(
+                BoardSources.sourceConfiguration(v.source, defaultFilter: defaultFilter),
+                v.expected.detail,
+                v.name
+            )
+            XCTAssertEqual(
+                BoardSources.sourceHasConfiguration(v.source, defaultFilter: defaultFilter),
+                v.expectedHasConfiguration,
+                v.name
+            )
+        }
+    }
+
+    /// The remove-confirm's loss sentence — pluralisation and the
+    /// `"A, B and C."` join, pinned so the two platforms can't word it
+    /// differently.
+    func testLossSentenceVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.lossSentenceVectors.isEmpty)
+        for v in fixture.lossSentenceVectors {
+            XCTAssertEqual(
+                BoardSources.removeSourceLossSentence(v.detail.detail),
+                v.expected,
+                v.name
+            )
         }
     }
 

@@ -247,9 +247,13 @@ export {
   sourcesFromMixFields,
   mixFieldsFromSources,
   sourcesForRecord,
+  sourceConfiguration,
+  sourceHasConfiguration,
+  removeSourceLossSentence,
 } from './boardSources';
 
 export type {
+  SourceConfigurationDetail,
   BoardSourceSupply,
   SourceCapacityResult,
   AchievablePoolSizeResult,

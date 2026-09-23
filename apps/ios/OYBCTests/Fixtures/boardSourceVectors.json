@@ -1033,5 +1033,351 @@
         ]
       }
     }
+  ],
+  "configurationVectors": [
+    {
+      "name": "a just-pulled pool row carries nothing",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "all"
+      },
+      "defaultFilter": "all",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": false
+    },
+    {
+      "name": "a just-pulled board row (minted on 'todo') carries nothing",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo"
+      },
+      "defaultFilter": "todo",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": false
+    },
+    {
+      "name": "a board row on 'all' IS configured — the kind default is 'todo', not the legacy-decode 'all'",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "all"
+      },
+      "defaultFilter": "todo",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": true
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "one exclusion",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [
+          "task-1"
+        ],
+        "filter": "all"
+      },
+      "defaultFilter": "all",
+      "expected": {
+        "excludedCount": 1,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "three exclusions",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [
+          "task-1",
+          "task-2",
+          "task-3"
+        ],
+        "filter": "all"
+      },
+      "defaultFilter": "all",
+      "expected": {
+        "excludedCount": 3,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "an empty memberRules map is no rules",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo",
+        "memberRules": {}
+      },
+      "defaultFilter": "todo",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": false
+    },
+    {
+      "name": "one member rule (an explicit target)",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo",
+        "memberRules": {
+          "task-1": {
+            "target": 12
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 1,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "two member rules — a dice level and a split with a part rule",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo",
+        "memberRules": {
+          "task-1": {
+            "vary": 2
+          },
+          "task-2": {
+            "split": true,
+            "parts": {
+              "child-1": {
+                "excluded": true
+              }
+            }
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 2,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "a narrowed minimum",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 2,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "all"
+      },
+      "defaultFilter": "all",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": true,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "a narrowed maximum (the 'all' latch dropped)",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 0,
+        "max": 5,
+        "excludedTaskIds": [],
+        "filter": "all"
+      },
+      "defaultFilter": "all",
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": true,
+        "filterChanged": false
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "everything at once",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 1,
+        "max": 4,
+        "excludedTaskIds": [
+          "task-1",
+          "task-2"
+        ],
+        "filter": "all",
+        "memberRules": {
+          "task-3": {
+            "target": 7
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "expected": {
+        "excludedCount": 2,
+        "memberRuleCount": 1,
+        "rangeNarrowed": true,
+        "filterChanged": true
+      },
+      "expectedHasConfiguration": true
+    }
+  ],
+  "lossSentenceVectors": [
+    {
+      "name": "nothing configured has nothing to say",
+      "detail": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expected": null
+    },
+    {
+      "name": "one exclusion is singular",
+      "detail": {
+        "excludedCount": 1,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expected": "You'll lose 1 exclusion."
+    },
+    {
+      "name": "two exclusions are plural",
+      "detail": {
+        "excludedCount": 2,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expected": "You'll lose 2 exclusions."
+    },
+    {
+      "name": "one member rule is singular",
+      "detail": {
+        "excludedCount": 0,
+        "memberRuleCount": 1,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expected": "You'll lose 1 member rule."
+    },
+    {
+      "name": "three member rules are plural",
+      "detail": {
+        "excludedCount": 0,
+        "memberRuleCount": 3,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expected": "You'll lose 3 member rules."
+    },
+    {
+      "name": "the range alone",
+      "detail": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": true,
+        "filterChanged": false
+      },
+      "expected": "You'll lose the narrowed range."
+    },
+    {
+      "name": "the filter alone",
+      "detail": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": true
+      },
+      "expected": "You'll lose the squares filter."
+    },
+    {
+      "name": "two pieces join with 'and'",
+      "detail": {
+        "excludedCount": 3,
+        "memberRuleCount": 2,
+        "rangeNarrowed": false,
+        "filterChanged": false
+      },
+      "expected": "You'll lose 3 exclusions and 2 member rules."
+    },
+    {
+      "name": "three pieces take commas then 'and'",
+      "detail": {
+        "excludedCount": 1,
+        "memberRuleCount": 0,
+        "rangeNarrowed": true,
+        "filterChanged": true
+      },
+      "expected": "You'll lose 1 exclusion, the narrowed range and the squares filter."
+    },
+    {
+      "name": "all four, in fixed order",
+      "detail": {
+        "excludedCount": 2,
+        "memberRuleCount": 1,
+        "rangeNarrowed": true,
+        "filterChanged": true
+      },
+      "expected": "You'll lose 2 exclusions, 1 member rule, the narrowed range and the squares filter."
+    }
   ]
 }

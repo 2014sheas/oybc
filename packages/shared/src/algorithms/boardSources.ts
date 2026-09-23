@@ -56,7 +56,7 @@
 import { fisherYatesShuffle } from '@oybc/bingo-core';
 import { BoardStatus, TaskType } from '../constants/enums';
 import type { Board } from '../types/board';
-import type { BoardSource } from '../types/boardSource';
+import type { BoardSource, BoardSourceFilter } from '../types/boardSource';
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
 
@@ -567,4 +567,109 @@ export function sourcesForRecord(
   record: LegacyMixFields & { sources?: BoardSource[] },
 ): BoardSource[] {
   return record.sources ?? sourcesFromMixFields(record);
+}
+
+/**
+ * What a pulled source carries BEYOND its as-minted defaults — the detail
+ * behind {@link sourceHasConfiguration}, so the wizard's remove-confirm can
+ * name what would be lost instead of warning vaguely.
+ *
+ * Every field is a difference from the creation defaults, never an absolute
+ * reading of the row: an untouched source reads all-zero/false.
+ */
+export interface SourceConfigurationDetail {
+  /** Members this board suppressed from the source's supply (`excludedTaskIds`). */
+  excludedCount: number;
+  /** Members carrying a rule (`memberRules` entries). */
+  memberRuleCount: number;
+  /** The range was dragged off the `[0, all]` mint default. */
+  rangeNarrowed: boolean;
+  /** The done-filter differs from the kind-scoped creation default. */
+  filterChanged: boolean;
+}
+
+/**
+ * Describe how far one pulled source has been configured away from the row
+ * the wizard mints when you pull it.
+ *
+ * `memberRules` is tested by ENTRY COUNT, not by inspecting each rule's
+ * fields: `withMemberRule`/`withPartRule` prune an all-default rule (`vary:
+ * 0`, `split: false`, an empty `parts`) out of the map entirely and drop the
+ * `memberRules` key when the last one goes, so "has an entry" already means
+ * "carries something the person chose".
+ *
+ * @param source - The pulled source row.
+ * @param defaultFilter - The filter this source's KIND mints on — `'todo'`
+ *   for a board, `'all'` for a pool (web `newSourceFilter`, iOS
+ *   `BoardWizardViewModel.newSourceFilter(for:)`). Passed in rather than
+ *   derived here so this module never reaches into wizard-local code; do
+ *   NOT pass the legacy-decode default (`'all'` for every kind), which
+ *   would make every freshly pulled board look configured.
+ * @returns The per-dimension detail.
+ */
+export function sourceConfiguration(
+  source: BoardSource,
+  defaultFilter: BoardSourceFilter,
+): SourceConfigurationDetail {
+  return {
+    excludedCount: source.excludedTaskIds.length,
+    memberRuleCount: Object.keys(source.memberRules ?? {}).length,
+    rangeNarrowed: source.min !== 0 || source.max !== null,
+    filterChanged: source.filter !== defaultFilter,
+  };
+}
+
+/**
+ * True when removing this source would throw away work the person did on it
+ * — the gate on the wizard's remove-confirm (owner ruling 2026-09-19: an
+ * untouched source removes instantly; a configured one asks first).
+ *
+ * @param source - The pulled source row.
+ * @param defaultFilter - See {@link sourceConfiguration}.
+ * @returns Whether the row carries any configuration.
+ */
+export function sourceHasConfiguration(
+  source: BoardSource,
+  defaultFilter: BoardSourceFilter,
+): boolean {
+  const detail = sourceConfiguration(source, defaultFilter);
+  return (
+    detail.excludedCount > 0 ||
+    detail.memberRuleCount > 0 ||
+    detail.rangeNarrowed ||
+    detail.filterChanged
+  );
+}
+
+/**
+ * The one sentence the remove-confirm uses to name what a removal costs —
+ * shared so the two platforms can't word it differently.
+ *
+ * Order is fixed (exclusions, member rules, range, filter) and the pieces
+ * join naturally: `"A."` · `"A and B."` · `"A, B and C."`.
+ *
+ * @param detail - From {@link sourceConfiguration}.
+ * @returns The sentence, or `null` when nothing is configured (in which case
+ *   no confirm is shown at all).
+ */
+export function removeSourceLossSentence(
+  detail: SourceConfigurationDetail,
+): string | null {
+  const parts: string[] = [];
+  if (detail.excludedCount > 0) {
+    parts.push(`${detail.excludedCount} exclusion${detail.excludedCount === 1 ? '' : 's'}`);
+  }
+  if (detail.memberRuleCount > 0) {
+    parts.push(`${detail.memberRuleCount} member rule${detail.memberRuleCount === 1 ? '' : 's'}`);
+  }
+  if (detail.rangeNarrowed) parts.push('the narrowed range');
+  if (detail.filterChanged) parts.push('the squares filter');
+  if (parts.length === 0) return null;
+  return `You'll lose ${joinNaturally(parts)}.`;
+}
+
+/** `["a"]` → `"a"`; `["a","b"]` → `"a and b"`; `["a","b","c"]` → `"a, b and c"`. */
+function joinNaturally(parts: string[]): string {
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }

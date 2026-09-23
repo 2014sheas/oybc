@@ -479,4 +479,105 @@ enum BoardSources {
         // for the same lookback a completed board gets, then let it go.
         return endsAt >= cutoff
     }
+
+    // MARK: - Remove-confirm (owner ruling 2026-09-19)
+
+    /// What a pulled source carries BEYOND its as-minted defaults — the
+    /// detail behind `sourceHasConfiguration`, so the wizard's
+    /// remove-confirm can name what would be lost instead of warning
+    /// vaguely. TS twin: `SourceConfigurationDetail`.
+    ///
+    /// Every field is a DIFFERENCE from the creation defaults, never an
+    /// absolute reading of the row: an untouched source reads all-zero/false.
+    struct ConfigurationDetail: Equatable {
+        /// Members this board suppressed from the source's supply.
+        let excludedCount: Int
+        /// Members carrying a rule (`memberRules` entries).
+        let memberRuleCount: Int
+        /// The range was dragged off the `[0, all]` mint default.
+        let rangeNarrowed: Bool
+        /// The done-filter differs from the kind-scoped creation default.
+        let filterChanged: Bool
+    }
+
+    /// Describe how far one pulled source has been configured away from the
+    /// row the wizard mints when you pull it. TS twin: `sourceConfiguration`.
+    ///
+    /// `memberRules` is tested by ENTRY COUNT, not by inspecting each rule's
+    /// fields: the rule setters prune an all-default rule (`vary: 0`,
+    /// `split: false`, an empty `parts`) out of the map entirely and drop
+    /// the map when the last one goes, so "has an entry" already means
+    /// "carries something the person chose".
+    ///
+    /// - Parameters:
+    ///   - source: The pulled source row.
+    ///   - defaultFilter: The filter this source's KIND mints on — `.todo`
+    ///     for a board, `.all` for a pool
+    ///     (`BoardWizardViewModel.newSourceFilter(for:)`). Passed in rather
+    ///     than derived here so this helper never reaches into wizard code;
+    ///     do NOT pass `BoardSource.init`'s own default (`.all` for every
+    ///     kind), which is the legacy-decode default and would make every
+    ///     freshly pulled board look configured.
+    /// - Returns: The per-dimension detail.
+    static func sourceConfiguration(
+        _ source: BoardSource,
+        defaultFilter: BoardSource.Filter
+    ) -> ConfigurationDetail {
+        ConfigurationDetail(
+            excludedCount: source.excludedTaskIds.count,
+            memberRuleCount: source.memberRules?.count ?? 0,
+            rangeNarrowed: source.min != 0 || source.max != nil,
+            filterChanged: source.filter != defaultFilter
+        )
+    }
+
+    /// True when removing this source would throw away work the person did
+    /// on it — the gate on the wizard's remove-confirm (an untouched source
+    /// removes instantly; a configured one asks first). TS twin:
+    /// `sourceHasConfiguration`.
+    ///
+    /// - Parameters:
+    ///   - source: The pulled source row.
+    ///   - defaultFilter: See `sourceConfiguration(_:defaultFilter:)`.
+    /// - Returns: Whether the row carries any configuration.
+    static func sourceHasConfiguration(
+        _ source: BoardSource,
+        defaultFilter: BoardSource.Filter
+    ) -> Bool {
+        let detail = sourceConfiguration(source, defaultFilter: defaultFilter)
+        return detail.excludedCount > 0
+            || detail.memberRuleCount > 0
+            || detail.rangeNarrowed
+            || detail.filterChanged
+    }
+
+    /// The one sentence the remove-confirm uses to name what a removal costs
+    /// — shared so the two platforms can't word it differently. TS twin:
+    /// `removeSourceLossSentence`.
+    ///
+    /// Order is fixed (exclusions, member rules, range, filter) and the
+    /// pieces join naturally: `"A."` / `"A and B."` / `"A, B and C."`.
+    ///
+    /// - Parameter detail: From `sourceConfiguration(_:defaultFilter:)`.
+    /// - Returns: The sentence, or `nil` when nothing is configured (in
+    ///   which case no confirm is shown at all).
+    static func removeSourceLossSentence(_ detail: ConfigurationDetail) -> String? {
+        var parts: [String] = []
+        if detail.excludedCount > 0 {
+            parts.append("\(detail.excludedCount) exclusion" + (detail.excludedCount == 1 ? "" : "s"))
+        }
+        if detail.memberRuleCount > 0 {
+            parts.append("\(detail.memberRuleCount) member rule" + (detail.memberRuleCount == 1 ? "" : "s"))
+        }
+        if detail.rangeNarrowed { parts.append("the narrowed range") }
+        if detail.filterChanged { parts.append("the squares filter") }
+        guard !parts.isEmpty else { return nil }
+        return "You'll lose \(joinNaturally(parts))."
+    }
+
+    /// `["a"]` → `"a"`; `["a","b"]` → `"a and b"`; `["a","b","c"]` → `"a, b and c"`.
+    private static func joinNaturally(_ parts: [String]) -> String {
+        guard parts.count > 1, let last = parts.last else { return parts.first ?? "" }
+        return parts.dropLast().joined(separator: ", ") + " and " + last
+    }
 }

@@ -28,6 +28,11 @@ import {
   type Task,
   computeAchievablePoolSize,
   buildCounterFamilyMap,
+  sourceConfiguration,
+  sourceHasConfiguration,
+  removeSourceLossSentence,
+  type BoardSourceFilter,
+  type SourceConfigurationDetail,
 } from '../../src';
 import { TaskType } from '../../src/constants/enums';
 
@@ -64,6 +69,18 @@ interface Fixture {
     pinnedTaskId?: string;
     expected: { ok: true; taskIds: string[] } | { ok: false; shortBy: number };
   }>;
+  configurationVectors: Array<{
+    name: string;
+    source: BoardSource;
+    defaultFilter: BoardSourceFilter;
+    expected: SourceConfigurationDetail;
+    expectedHasConfiguration: boolean;
+  }>;
+  lossSentenceVectors: Array<{
+    name: string;
+    detail: SourceConfigurationDetail;
+    expected: string | null;
+  }>;
   conversionVectors: Array<{
     name: string;
     record: { poolIds?: string[]; removedTaskIds?: string[]; sources?: BoardSource[] };
@@ -89,7 +106,26 @@ describe('boardSourceVectors fixture', () => {
     expect(fixture.capacityVectors.length).toBeGreaterThan(0);
     expect(fixture.selectionVectors.length).toBeGreaterThan(0);
     expect(fixture.conversionVectors.length).toBeGreaterThan(0);
+    expect(fixture.configurationVectors.length).toBeGreaterThan(0);
+    expect(fixture.lossSentenceVectors.length).toBeGreaterThan(0);
   });
+
+  test.each(fixture.configurationVectors.map((v) => [v.name, v] as const))(
+    'configuration: %s',
+    (_name, v) => {
+      expect(sourceConfiguration(v.source, v.defaultFilter)).toEqual(v.expected);
+      expect(sourceHasConfiguration(v.source, v.defaultFilter)).toBe(
+        v.expectedHasConfiguration,
+      );
+    },
+  );
+
+  test.each(fixture.lossSentenceVectors.map((v) => [v.name, v] as const))(
+    'loss sentence: %s',
+    (_name, v) => {
+      expect(removeSourceLossSentence(v.detail)).toBe(v.expected);
+    },
+  );
 
   test.each(fixture.capacityVectors.map((v) => [v.name, v] as const))(
     'capacity: %s',
