@@ -631,6 +631,8 @@ GitHub Actions workflows run on PRs to `dev` and on merge:
 | **Drift guardrails** | `.github/workflows/drift-guardrails.yml` | Every PR/push to `dev` (no path filter — cross-cutting; see below) |
 | **Monthly audit reminder** | `.github/workflows/audit-reminder.yml` | `schedule` (1st of month) + `workflow_dispatch`; files a `drift-audit` reminder issue |
 
+**Web e2e is advisory**: `web.yml` runs the Playwright step under `continue-on-error: true`, and 10 specs fail on `dev` today (ROADMAP E7) — a green Web check says nothing about e2e; read the uploaded artifact.
+
 **Dependabot** (`.github/dependabot.yml`): npm weekly (minor/patch grouped, majors separate), GitHub Actions monthly. SPM not supported — iOS deps bumped manually.
 
 **Copilot code review**: request on PRs via `gh api --method POST repos/{owner}/{repo}/pulls/{n}/requested_reviewers --input - <<< '{"reviewers":["Copilot"]}'`. Address review comments before merging.
@@ -651,9 +653,11 @@ Output of the 2026-08 deep-dive audit: the findings that a machine can check are
 
 | Check | Script | Baseline | Catches |
 | --- | --- | --- | --- |
-| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (23 known-dead exports) | new unused web exports/types; any unused file/dependency (never baselined) |
+| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (its `unusedExports` entries are the known-dead exports) | new unused web exports/types; any unused file/dependency (never baselined — but see the caveat below) |
 | God-file regrowth | `scripts/check-file-sizes.mjs` (in `drift-guardrails.yml`) | `scripts/audit/file-size-allowlist.json` (its entries are the frozen offenders = ROADMAP B6 roster) | any source file >1000 lines; any allowlisted file growing past its frozen count |
 | Sync-contract ↔ rules | `scripts/check-sync-contract-rules.mjs` (in `drift-guardrails.yml`) | none (must be exactly equal) | `SYNC_COLLECTIONS`/`USER_SCOPED_SYNC_COLLECTIONS` (shared) diverging from `isKnownCollection()`/`requiresUserIdField()` (`firestore.rules`) |
+
+**Caveat — knip's unused-FILE detection is currently defeated.** `apps/web/src/db/operations/__tests__/dbBoundary.test.ts` loads every source file via `import.meta.glob('/src/**/*.{ts,tsx}', { query: '?raw', … })`; knip ignores the `query` option and treats that glob as a real import of every file, so no web file can ever look unused (e.g. `components/BoardListItem.tsx` has zero importers and the check stays green). A fix is tracked in the 2026-09-23 audit; until it lands, don't assume a dead file fails the check.
 
 Rule for all three: **shrink the baseline as you clean up (the scripts emit a note when an entry is stale); never grow it to dodge a fix.** Bumping a file-size cap or adding a knip-baseline entry is a deliberate, reviewed act.
 
