@@ -16,75 +16,37 @@ import { generateUUID, currentTimestamp } from '../utils';
 
 /**
  * Dexie v16 data migration — Task Pools + Recurring Boards Rework
- * first-launch backfill (docs/POOLS_RECURRING.md §Migration).
+ * first-launch backfill (docs/POOLS_RECURRING.md §Migration). Twin of iOS
+ * `MigrationV25Helpers.swift`. Runs inside the v16 upgrade callback (one
+ * atomic transaction), after v15 created the `pools` / `coreBoardDefaults`
+ * stores empty. Two steps, each idempotent by state (no marker table):
  *
- * Runs inside the v16 upgrade callback (one atomic transaction), AFTER v15
- * created the `pools` / `coreBoardDefaults` stores empty. Two independent
- * steps, both idempotent by construction (a second run is a no-op — see
- * each step's guard below), mirroring the state-based idempotency pattern
- * used by `migrationV13`/`migrationV14` (no separate "migration completed"
- * marker table):
+ *   1. Each non-deleted `DefaultPool` → a `Pool` named "<Timeframe> default"
+ *      + a `CoreBoardDefault` with `corePoolIds: [pool.id]`; the
+ *      `DefaultPool` is then soft-deleted. A re-run reads only
+ *      `!isDeleted` rows, so it does nothing.
+ *   2. Each `RecurringBoardTemplate` with `poolIds` ABSENT → its
+ *      `seedTaskIds` extracted into a `Pool` named "<name> pool"; the
+ *      template is stamped `poolIds: [pool.id]`, `manualTaskIds: []`,
+ *      `removedTaskIds: []` (`seedTaskIds` left verbatim, decode-compat).
+ *      A re-run reads only `poolIds === undefined` rows, so it does nothing.
+ *      Soft-deleted templates are migrated too (the minted pool is inert).
  *
- *   1. Each non-deleted `DefaultPool` row → a `Pool` named
- *      "<Timeframe> default" + a `CoreBoardDefault` row for that timeframe
- *      with `corePoolIds: [newPool.id]`, `coreDefaultTaskIds: []`. The
- *      `DefaultPool` row is then soft-deleted (tombstone drains to
- *      Firestore via the push path per the known-collections precedent;
- *      `defaultPools` joins `LEGACY_PULL_SKIP_COLLECTIONS`).
+ * Both steps enqueue sync entries directly (NOT `addToSyncQueue`, which
+ * opens its own transaction and isn't upgrade-tx-aware).
  *
- *      Idempotency: the loop only reads `!isDeleted` DefaultPool rows. A
- *      second run sees every row already soft-deleted by the first run,
- *      so it does nothing.
+ * Determinism: minted ids use `uuidv5` (`migrationDefaultPoolToPoolId` /
+ * `migrationDefaultPoolToCoreBoardDefaultId` / `migrationTemplateToPoolId`),
+ * never `generateUUID()`, so two devices migrating the same source row
+ * independently mint the SAME id instead of converging into duplicates
+ * after sync (the `backfillTaskEventId` precedent). The namespace strings
+ * must stay byte-identical to the Swift port (cross-platform id-literal
+ * test in each suite).
  *
- *   2. Each `RecurringBoardTemplate` whose `poolIds` field is ABSENT (the
- *      "genuinely un-migrated" half of `isLegacyShapedRecord`'s two cases
- *      — see `packages/shared/src/algorithms/poolMix.ts`) has its
- *      `seedTaskIds` extracted into a `Pool` named "<template name> pool";
- *      the template is stamped with `poolIds: [newPool.id]`,
- *      `manualTaskIds: []`, `removedTaskIds: []`. `seedTaskIds` itself is
- *      left VERBATIM (decode-compat, the `lastSyncedCount` precedent) and
- *      is never read by any P1+ code path after this migration runs.
- *
- *      Idempotency: the loop only reads templates where `poolIds` is
- *      `undefined`. A second run sees every row already stamped with a
- *      `poolIds` array (even an empty one would count — but this
- *      migration always stamps a length-1 array) by the first run, so it
- *      does nothing. Soft-deleted templates are still migrated (matches
- *      the doc's unconditional "Each RecurringBoardTemplate →" framing) —
- *      an already-deleted template's minted pool is simply inert, same
- *      as the template itself.
- *
- * Both steps enqueue sync entries directly (NOT `addToSyncQueue` — that
- * helper opens its own transaction and isn't upgrade-tx-aware; mirrors
- * `migrationV13`/`migrationV14`).
- *
- * Determinism (review finding C2): the minted `Pool` / `CoreBoardDefault`
- * ids use `uuidv5` (`migrationDefaultPoolToPoolId` /
- * `migrationDefaultPoolToCoreBoardDefaultId` / `migrationTemplateToPoolId`
- * in `@oybc/shared`'s `migrationHelpers.ts`), NOT `generateUUID()`. Two
- * devices independently migrating the same `DefaultPool` / template row
- * (e.g. both offline pre-sync, or racing the first post-upgrade launch)
- * must derive the SAME Pool/CoreBoardDefault id — a random id per device
- * would converge, post-sync, into two duplicate rows per source instead of
- * one. This mirrors the Windowed Completion backfill's
- * `backfillTaskEventId` precedent exactly. iOS's `MigrationV25Helpers.swift`
- * mints the identical ids via the Swift `UUIDv5` port — the namespace
- * strings must stay byte-identical across platforms (see that file + the
- * cross-platform id-literal test in each suite).
- *
- * The user-action-time LEGACY-CREATE mint paths (`wizardPersist.ts`,
- * iOS `BoardWizardPersist.swift`) are NOT part of this — those mint on one
- * device only (then sync as a normal CREATE), so random ids there are
- * correct and unchanged.
- *
- * Name clamp (review finding I1): a `RecurringBoardTemplate.name` can be
- * up to 120 chars; appending " pool" would push the minted Pool's name
- * over `PoolSchema`'s 120-char max, which fails Zod on the next device's
- * pull (the mint itself succeeds locally — no local Zod check on write —
- * so this silently strands the doc on ONE device). `clampMintedPoolName`
- * (`@oybc/shared`'s `poolMix.ts`) clamps the source text before appending
- * the suffix at both mint sites below, and at the two `wizardPersist.ts` /
- * `BoardWizardPersist.swift` legacy-create sites.
+ * Name clamp: a template name can be 120 chars; appending " pool" would
+ * exceed `PoolSchema`'s 120-char max and fail Zod on the next device's pull
+ * (the local write succeeds, silently stranding the doc on one device).
+ * `clampMintedPoolName` clamps the source text at both mint sites below.
  *
  * @param _tx The Dexie upgrade transaction (unused directly — Dexie binds
  *            all `db` table ops to the active transaction inside the
