@@ -1312,10 +1312,17 @@ member the moment a board source is pulled, so a rule whose only field is a
 `sourceWindow` / wizard window) is machine-written and is **not**
 configuration. A rule with `vary`, `split`, any `parts`, or a `target` that
 differs from that seed is. The gate recomputes the seed at removal time and
-passes it to the shared predicate as `seededTargetByTaskId`; if the wizard's
-timeframe changed after the pull, the recomputed seed no longer matches the
-stored one and the rule counts as configured — the user did change something,
-so asking is right. The loss sentence names the filter by its label
+passes it to the shared predicate as `seededTargetByTaskId`, recomputed from
+the LIBRARY-backed task map the prefill itself read (never the wizard's
+staged-edit overlay — an inline goal edit must not turn an untouched source
+into a "1 member rule" confirm, since that edit survives the removal). The
+recomputation reads live inputs, so three things can make it differ from the
+stored target and an otherwise untouched source then asks — all erring the
+same safe way, and none of them a bug: the wizard's **timeframe** changed
+after the pull (the user did change something, so asking is right); a
+**resumed one-off draft**, whose hydrated sources are never re-seeded; and a
+**supply re-fetch after a sync pull**, since `windowCountByTaskId` is live
+progress. The loss sentence names the filter by its label
 (`the "Not done yet" filter`), not as "the squares filter". The dialog names the
 loss via the shared `removeSourceLossSentence` ("You'll lose 3 exclusions
 and 2 member rules."), appends "Changes apply from the next board." while
