@@ -137,17 +137,19 @@ targets:
     sources:
       - OYBCTests
     resources:
-      # Sync-contract cross-platform enforcement fixtures (workstream C4 /
-      # issue #261). Canonical source of truth is
-      # packages/shared/tests/fixtures/{syncContract,lwwVectors}.json —
-      # xcodegen can't add resources from outside the project root
-      # (apps/ios), so these are checked-in copies. Jest tests in
-      # packages/shared/tests/ assert byte-for-byte equality against the
-      # canonical files, so an un-synced copy fails `pnpm --filter
-      # @oybc/shared test` — regenerate syncContract.json's copy via
-      # `pnpm --filter @oybc/shared run gen:sync-contract` (writes both
-      # locations); lwwVectors.json is hand-authored, copy both when
-      # editing. See SyncContractTests.swift / LwwVectorTests.swift.
+      # Cross-platform test-vector fixtures (workstreams C4 / C1, issues
+      # #261 / #267). Every JSON file in OYBCTests/Fixtures is a checked-in
+      # copy of a canonical fixture under packages/shared/tests/fixtures/ or
+      # packages/bingo-core/tests/fixtures/ — xcodegen can't bundle a
+      # resource from outside the project root (apps/ios), so a real copy
+      # lives here. packages/shared/tests/fixtures/fixtureSync.test.ts
+      # asserts each copy is byte-identical to its canonical source, so an
+      # un-synced copy fails the Jest run. After adding or editing a
+      # fixture, run `pnpm --filter @oybc/shared run gen:sync-fixtures`
+      # (scripts/sync-fixtures-to-ios.js copies them all). syncContract.json
+      # is generated from src/constants/syncContract.ts by
+      # `pnpm --filter @oybc/shared run gen:sync-contract`, which writes both
+      # locations itself.
       - path: OYBCTests/Fixtures
     dependencies:
       - target: OYBC
