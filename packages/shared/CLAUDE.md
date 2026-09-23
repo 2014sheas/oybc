@@ -13,7 +13,9 @@ Single source of truth for types, algorithms, validation, and constants shared a
 ```
 src/
 ├── types/        # Board, Task, CompoundChild, BoardTask, User,
-│                 #   SyncQueueItem, RecurringBoardTemplate, DefaultPool
+│                 #   SyncQueueItem, RecurringBoardTemplate, DefaultPool, Pool,
+│                 #   CoreBoardDefault, TaskEvent, BoardSource (+ member rules),
+│                 #   Entitlement (one file per entity — see src/types/)
 │                 #   (TaskStep / CompositeTask / CompositeNode / ProgressCounter were
 │                 #    removed in the progress-tasks teardown — Wave 2, PRs #411–#414)
 ├── algorithms/   # bingo detection, shuffle, calendar boundaries, compound evaluation,
