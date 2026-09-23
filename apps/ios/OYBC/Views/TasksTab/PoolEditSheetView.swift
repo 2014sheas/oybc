@@ -1,26 +1,18 @@
 import SwiftUI
 
-/// PoolEditSheetView — Task Pools + Recurring Boards Rework (P2). The
-/// Tasks-tab pool editor for the new `Pool` entity.
-///
-/// **NOT** the legacy `PoolEditSheet` in
-/// `Views/ProfileTab/DefaultPoolsListView.swift`, which keeps editing
-/// `DefaultPool` rows unchanged until P7 — that sheet is untouched. This
-/// is a separate view for `Pool` rows, extending that sheet's baseline
-/// (grabber / header / chips / add-row / picker / preview / footer) with
-/// a NAME field replacing the old timeframe-keyed FEEDS segmented. See
-/// docs/POOLS_RECURRING.md §Surfaces item 2 + the handoff screenshot
-/// `02-pool-edit-sheet.png`.
+/// PoolEditSheetView — the Tasks-tab editor for `Pool` rows (Task Pools +
+/// Recurring Boards Rework, P2): grabber / header / NAME field / chips /
+/// add-row / picker / preview / footer. See docs/POOLS_RECURRING.md
+/// §Surfaces item 2.
 ///
 /// **NO board-related actions render here** (locked decision) — this
-/// sheet only populates the pool; boards pull pools in from the wizard
-/// side.
+/// sheet only populates the pool; boards pull pools in from the wizard's
+/// Sources sheet ("Add from a pool or board").
 ///
 /// Owns its own persistence (via `AppDatabase+Pools.swift`'s
 /// `createPoolAndEnqueue` / `updatePoolAndEnqueue` /
 /// `softDeletePoolAndEnqueue`) and busy/error state — mirrors web's
-/// `PoolEditSheet.tsx` rather than the legacy iOS sheet's
-/// "caller persists" pattern, so quick-add / chip-remove / delete are all
+/// `PoolEditSheet.tsx`, so quick-add / chip-remove / delete are all
 /// disabled while a save or delete is in flight (a web parity lesson:
 /// P2 Task 2 review caught a double-submit gap from NOT gating this).
 struct PoolEditSheetView: View {
@@ -35,11 +27,9 @@ struct PoolEditSheetView: View {
     /// task's title resolves immediately once the library reloads.
     let library: TaskLibraryViewModel
     let userId: String
-    /// Task Pools + Recurring Boards Rework (P3) — pre-seeds the CREATE-mode
-    /// form's task chips (e.g. the wizard's "Save these N as a new pool…"
-    /// affordance). Ignored in edit mode (`pool` non-nil always seeds from
-    /// `pool.taskIds`). Existing call sites omit this (defaults to `[]`,
-    /// today's unchanged "New pool" behavior).
+    /// Pre-seeds the CREATE-mode form's task chips. Ignored in edit mode
+    /// (`pool` non-nil always seeds from `pool.taskIds`). No current caller
+    /// passes it (defaults to `[]` — an empty "New pool").
     var initialTaskIds: [String] = []
     /// Fired after a successful create or save.
     let onSaved: () -> Void

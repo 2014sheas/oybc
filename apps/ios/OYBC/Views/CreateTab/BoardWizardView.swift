@@ -42,12 +42,11 @@ struct BoardWizardView: View {
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
 
-    // Task Pools + Recurring Boards Rework (P3) — the user's pools + active
-    // recurring templates, for the Tasks step's "PULL IN A POOL" card and
-    // "Save as pool" sheet. Owned here (mirrors `library`) rather than on
-    // the wizard VM, so `pullPool`/`untogglePool`/`provenanceByTaskId` stay
-    // pure functions of caller-supplied lookups instead of a VM-cached copy
-    // that could go stale relative to a fresh load.
+    // The user's pools + active recurring templates, for the Tasks step's
+    // Sources sheet ("Add from a pool or board"). Owned here (mirrors
+    // `library`) rather than on the wizard VM, so `pullPool` stays a pure
+    // function of caller-supplied lookups instead of a VM-cached copy that
+    // could go stale relative to a fresh load.
     @State private var pools: [Pool] = []
     /// Board Sources P2 — the source sheet's BOARDS rows, loaded off-main
     /// in `loadPools()` (walks every active board).

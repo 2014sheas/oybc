@@ -636,9 +636,10 @@ extension AppDatabase {
     ///     `persistRecurringTemplate`); compound payloads are edited here.
     ///   - stagedEdits: The wizard's full `controller.stagedEdits` snapshot
     ///     (keyed by taskId). A task leaving the pool always purges its
-    ///     staged edit (`toggleTaskSelection`/`untogglePool`), so every
-    ///     remaining key is still in `selectedTaskIds` — no extra filtering
-    ///     needed, matching the one-off path's unfiltered application.
+    ///     staged edit (`toggleTaskSelection` /
+    ///     `recomputeSelectionFromSources`), so every remaining key is still
+    ///     in `selectedTaskIds` — no extra filtering needed, matching the
+    ///     one-off path's unfiltered application.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
     func writeWizardPendingTasksAndEnqueue(
         _ pendingTasks: [PendingTaskPayload],
