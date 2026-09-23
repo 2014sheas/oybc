@@ -20,6 +20,7 @@ import {
   withPartRule,
   remainingTarget,
   prefilledOneOffTarget,
+  seededTargetsForSource,
   countingSummary,
   compoundSummary,
 } from '../../src/algorithms/memberRulesDisplay';
@@ -156,6 +157,22 @@ describe('prefilledOneOffTarget', () => {
         })
       ).toBe(23);
     }
+  });
+});
+
+describe('seededTargetsForSource', () => {
+  it.each(V.seededTargetsForSource as any[])('$name', (v: any) => {
+    expect(
+      seededTargetsForSource(
+        {
+          supplyTaskIds: v.supplyTaskIds,
+          windowCountByTaskId: v.windowCountByTaskId,
+          sourceWindow: v.sourceWindow ? win(v.sourceWindow) : undefined,
+        },
+        v.tasks,
+        win(v.targetWindow)
+      )
+    ).toEqual(v.expected);
   });
 });
 

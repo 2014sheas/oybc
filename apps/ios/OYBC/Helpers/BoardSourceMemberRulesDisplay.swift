@@ -712,4 +712,80 @@ extension BoardSources {
         }
         return true
     }
+
+    // MARK: - Seeded targets (remove-confirm, amended ruling 2026-09-23)
+
+    /// The two task fields `seededTargetsForSource` needs to spot a seedable
+    /// member. TS twin: `Pick<Task, 'type' | 'maxCount'>`
+    /// (`SeededTargetTask`). A struct rather than the full `Task` so the
+    /// helper stays a pure function of the two fields that matter — and so
+    /// the vector suite can build one without a GRDB row.
+    struct SeededTargetTask {
+        let type: TaskType
+        let maxCount: Int?
+
+        init(type: TaskType, maxCount: Int?) {
+            self.type = type
+            self.maxCount = maxCount
+        }
+
+        /// Narrow a live task down to what the seed calculation reads.
+        init(_ task: Task) {
+            self.init(type: task.type, maxCount: task.maxCount)
+        }
+    }
+
+    /// What the one-off prefill WOULD seed, right now, for each counting
+    /// member of a board source — task id → target.
+    ///
+    /// The same loop `prefillRemainingTargets` runs at pull time
+    /// (`BoardWizardViewModel+MemberRules.swift`), minus its "don't overwrite
+    /// an existing target" skip: this answers "is the stored target
+    /// machine-written or hand-set?", which needs the seed regardless of what
+    /// is stored.
+    ///
+    /// Feed the result to `sourceConfiguration` as `seededTargetByTaskId` so
+    /// the remove-confirm doesn't count a seeded target as configuration —
+    /// the first cut fired the dialog on every fresh board source, naming
+    /// member rules nobody authored.
+    ///
+    /// Deliberately recomputed at read time, not remembered from the pull.
+    /// If the wizard's timeframe changed since, the recomputed seed no longer
+    /// matches the stored target and the rule reads as configured — which is
+    /// correct: the person did change something, so asking is right.
+    ///
+    /// Call it only where the prefill itself runs — a `.board` source on a
+    /// ONE-OFF wizard. A recurring wizard seeds nothing, so its callers pass
+    /// no map and every stored target is hand-set by definition.
+    ///
+    /// TS twin: `seededTargetsForSource` in `memberRulesDisplay.ts`.
+    ///
+    /// - Parameters:
+    ///   - supplyTaskIds: The source's RAW supply ids, in order.
+    ///   - tasksById: Live id → task fields, for the member's type and goal.
+    ///   - windowCountByTaskId: Per-member progress in the SOURCE board's
+    ///     window (a missing id reads as 0).
+    ///   - sourceWindow: The source board's own window, if known.
+    ///   - targetWindow: The window of the board being assembled.
+    /// - Returns: id → seeded target, for seedable counting members only.
+    static func seededTargetsForSource(
+        supplyTaskIds: [String],
+        tasksById: [String: SeededTargetTask],
+        windowCountByTaskId: [String: Int],
+        sourceWindow: BoardWindow?,
+        targetWindow: BoardWindow
+    ) -> [String: Int] {
+        var seeded: [String: Int] = [:]
+        for id in supplyTaskIds {
+            guard let task = tasksById[id], task.type == .counting else { continue }
+            guard let goal = task.maxCount, goal >= 1 else { continue }
+            seeded[id] = prefilledOneOffTarget(
+                goal: goal,
+                windowCount: windowCountByTaskId[id] ?? 0,
+                sourceWindow: sourceWindow,
+                targetWindow: targetWindow
+            )
+        }
+        return seeded
+    }
 }

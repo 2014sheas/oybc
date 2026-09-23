@@ -480,7 +480,7 @@ enum BoardSources {
         return endsAt >= cutoff
     }
 
-    // MARK: - Remove-confirm (owner ruling 2026-09-19)
+    // MARK: - Remove-confirm (owner ruling 2026-09-19, amended 2026-09-23)
 
     /// What a pulled source carries BEYOND its as-minted defaults — the
     /// detail behind `sourceHasConfiguration`, so the wizard's
@@ -488,26 +488,57 @@ enum BoardSources {
     /// vaguely. TS twin: `SourceConfigurationDetail`.
     ///
     /// Every field is a DIFFERENCE from the creation defaults, never an
-    /// absolute reading of the row: an untouched source reads all-zero/false.
+    /// absolute reading of the row: an untouched source reads
+    /// all-zero/false/nil.
     struct ConfigurationDetail: Equatable {
         /// Members this board suppressed from the source's supply.
         let excludedCount: Int
-        /// Members carrying a rule (`memberRules` entries).
+        /// Members carrying an AUTHORED rule — see `sourceConfiguration`.
         let memberRuleCount: Int
         /// The range was dragged off the `[0, all]` mint default.
         let rangeNarrowed: Bool
         /// The done-filter differs from the kind-scoped creation default.
         let filterChanged: Bool
+        /// The non-default filter the row is on, or nil. Exactly nil when
+        /// `filterChanged` is false — the VALUE is carried (rather than
+        /// derived by the caller) so `removeSourceLossSentence` can name the
+        /// control by its on-screen label without being handed the source.
+        let filter: BoardSource.Filter?
+    }
+
+    /// True when a member rule is something a PERSON wrote, as opposed to
+    /// the one-off prefill's machine-written target.
+    ///
+    /// `vary`, `split` and any `parts` entry are only ever authored (the
+    /// setters prune their defaults away). A lone `target` is ambiguous: on a
+    /// one-off board, `prefillRemainingTargets` writes one for every counting
+    /// member of a board source the moment it is pulled. So a rule whose ONLY
+    /// field is a `target` equal to `seededTargetByTaskId[taskId]` is
+    /// machine-written and does not count.
+    ///
+    /// The seed map is authoritative only for the keys it has: a target on a
+    /// member the map doesn't mention (a pool member, or any caller that
+    /// passed no map) is hand-set by definition and counts.
+    private static func isAuthoredMemberRule(
+        _ rule: BoardSourceMemberRule,
+        seededTarget: Int?
+    ) -> Bool {
+        if rule.vary != nil || rule.split != nil { return true }
+        if let parts = rule.parts, !parts.isEmpty { return true }
+        guard let target = rule.target else { return false }
+        guard let seededTarget else { return true }
+        return target != seededTarget
     }
 
     /// Describe how far one pulled source has been configured away from the
     /// row the wizard mints when you pull it. TS twin: `sourceConfiguration`.
     ///
-    /// `memberRules` is tested by ENTRY COUNT, not by inspecting each rule's
-    /// fields: the rule setters prune an all-default rule (`vary: 0`,
-    /// `split: false`, an empty `parts`) out of the map entirely and drop
-    /// the map when the last one goes, so "has an entry" already means
-    /// "carries something the person chose".
+    /// Member rules are counted by AUTHORSHIP, not by entry count (amended
+    /// ruling 2026-09-23): the setters already prune an all-default rule out
+    /// of the map, but the one-off prefill still writes a `target` for every
+    /// counting member of a freshly pulled board source — counting those made
+    /// the confirm fire on the exact misclick-right-after-adding case it was
+    /// meant to skip. See `isAuthoredMemberRule`.
     ///
     /// - Parameters:
     ///   - source: The pulled source row.
@@ -518,16 +549,28 @@ enum BoardSources {
     ///     do NOT pass `BoardSource.init`'s own default (`.all` for every
     ///     kind), which is the legacy-decode default and would make every
     ///     freshly pulled board look configured.
+    ///   - seededTargetByTaskId: What the one-off prefill would seed right
+    ///     now, from `seededTargetsForSource`. Empty for a pool source, a
+    ///     recurring wizard, and any non-wizard caller — every stored target
+    ///     then counts as authored.
     /// - Returns: The per-dimension detail.
     static func sourceConfiguration(
         _ source: BoardSource,
-        defaultFilter: BoardSource.Filter
+        defaultFilter: BoardSource.Filter,
+        seededTargetByTaskId: [String: Int] = [:]
     ) -> ConfigurationDetail {
-        ConfigurationDetail(
+        var memberRuleCount = 0
+        for (taskId, rule) in source.memberRules ?? [:]
+        where isAuthoredMemberRule(rule, seededTarget: seededTargetByTaskId[taskId]) {
+            memberRuleCount += 1
+        }
+        let filterChanged = source.filter != defaultFilter
+        return ConfigurationDetail(
             excludedCount: source.excludedTaskIds.count,
-            memberRuleCount: source.memberRules?.count ?? 0,
+            memberRuleCount: memberRuleCount,
             rangeNarrowed: source.min != 0 || source.max != nil,
-            filterChanged: source.filter != defaultFilter
+            filterChanged: filterChanged,
+            filter: filterChanged ? source.filter : nil
         )
     }
 
@@ -538,17 +581,29 @@ enum BoardSources {
     ///
     /// - Parameters:
     ///   - source: The pulled source row.
-    ///   - defaultFilter: See `sourceConfiguration(_:defaultFilter:)`.
+    ///   - defaultFilter: See `sourceConfiguration(_:defaultFilter:seededTargetByTaskId:)`.
+    ///   - seededTargetByTaskId: Likewise.
     /// - Returns: Whether the row carries any configuration.
     static func sourceHasConfiguration(
         _ source: BoardSource,
-        defaultFilter: BoardSource.Filter
+        defaultFilter: BoardSource.Filter,
+        seededTargetByTaskId: [String: Int] = [:]
     ) -> Bool {
-        let detail = sourceConfiguration(source, defaultFilter: defaultFilter)
+        let detail = sourceConfiguration(
+            source,
+            defaultFilter: defaultFilter,
+            seededTargetByTaskId: seededTargetByTaskId
+        )
         return detail.excludedCount > 0
             || detail.memberRuleCount > 0
             || detail.rangeNarrowed
             || detail.filterChanged
+    }
+
+    /// The done-filter segmented's on-screen labels — quoted verbatim in the
+    /// loss sentence so the copy names the control the person actually used.
+    private static func filterLabel(_ filter: BoardSource.Filter) -> String {
+        filter == .all ? "All squares" : "Not done yet"
     }
 
     /// The one sentence the remove-confirm uses to name what a removal costs
@@ -558,7 +613,7 @@ enum BoardSources {
     /// Order is fixed (exclusions, member rules, range, filter) and the
     /// pieces join naturally: `"A."` / `"A and B."` / `"A, B and C."`.
     ///
-    /// - Parameter detail: From `sourceConfiguration(_:defaultFilter:)`.
+    /// - Parameter detail: From `sourceConfiguration(_:defaultFilter:seededTargetByTaskId:)`.
     /// - Returns: The sentence, or `nil` when nothing is configured (in
     ///   which case no confirm is shown at all).
     static func removeSourceLossSentence(_ detail: ConfigurationDetail) -> String? {
@@ -570,7 +625,7 @@ enum BoardSources {
             parts.append("\(detail.memberRuleCount) member rule" + (detail.memberRuleCount == 1 ? "" : "s"))
         }
         if detail.rangeNarrowed { parts.append("the narrowed range") }
-        if detail.filterChanged { parts.append("the squares filter") }
+        if let filter = detail.filter { parts.append("the \"\(filterLabel(filter))\" filter") }
         guard !parts.isEmpty else { return nil }
         return "You'll lose \(joinNaturally(parts))."
     }

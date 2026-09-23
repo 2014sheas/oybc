@@ -1050,7 +1050,8 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": false
     },
@@ -1069,7 +1070,8 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": false
     },
@@ -1088,7 +1090,8 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": true
+        "filterChanged": true,
+        "filter": "all"
       },
       "expectedHasConfiguration": true
     },
@@ -1109,7 +1112,8 @@
         "excludedCount": 1,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": true
     },
@@ -1132,7 +1136,8 @@
         "excludedCount": 3,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": true
     },
@@ -1152,12 +1157,13 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": false
     },
     {
-      "name": "one member rule (an explicit target)",
+      "name": "one member rule (an explicit target, no seed map)",
       "source": {
         "sourceId": "board-1",
         "kind": "board",
@@ -1176,7 +1182,8 @@
         "excludedCount": 0,
         "memberRuleCount": 1,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": true
     },
@@ -1208,7 +1215,8 @@
         "excludedCount": 0,
         "memberRuleCount": 2,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": true
     },
@@ -1227,7 +1235,8 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": true,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": true
     },
@@ -1246,7 +1255,8 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": true,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": true
     },
@@ -1273,7 +1283,183 @@
         "excludedCount": 2,
         "memberRuleCount": 1,
         "rangeNarrowed": true,
-        "filterChanged": true
+        "filterChanged": true,
+        "filter": "all"
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "seeded target only — the one-off prefill's own write is not configuration",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo",
+        "memberRules": {
+          "task-1": {
+            "target": 7
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "seededTargetByTaskId": {
+        "task-1": 7
+      },
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false,
+        "filter": null
+      },
+      "expectedHasConfiguration": false
+    },
+    {
+      "name": "seeded target plus a dice level — the dice is authored",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo",
+        "memberRules": {
+          "task-1": {
+            "target": 7,
+            "vary": 1
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "seededTargetByTaskId": {
+        "task-1": 7
+      },
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 1,
+        "rangeNarrowed": false,
+        "filterChanged": false,
+        "filter": null
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "a target the person changed off the seed is authored",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo",
+        "memberRules": {
+          "task-1": {
+            "target": 3
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "seededTargetByTaskId": {
+        "task-1": 7
+      },
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 1,
+        "rangeNarrowed": false,
+        "filterChanged": false,
+        "filter": null
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "the seed map is authoritative only for the keys it has",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "all",
+        "memberRules": {
+          "task-9": {
+            "target": 7
+          }
+        }
+      },
+      "defaultFilter": "all",
+      "seededTargetByTaskId": {
+        "task-1": 7
+      },
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 1,
+        "rangeNarrowed": false,
+        "filterChanged": false,
+        "filter": null
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "two members, one seeded one hand-set — only the hand-set one counts",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo",
+        "memberRules": {
+          "task-1": {
+            "target": 7
+          },
+          "task-2": {
+            "target": 2
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "seededTargetByTaskId": {
+        "task-1": 7,
+        "task-2": 5
+      },
+      "expected": {
+        "excludedCount": 0,
+        "memberRuleCount": 1,
+        "rangeNarrowed": false,
+        "filterChanged": false,
+        "filter": null
+      },
+      "expectedHasConfiguration": true
+    },
+    {
+      "name": "a seeded target on a source that IS otherwise configured still doesn't inflate the count",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [
+          "task-4"
+        ],
+        "filter": "todo",
+        "memberRules": {
+          "task-1": {
+            "target": 7
+          }
+        }
+      },
+      "defaultFilter": "todo",
+      "seededTargetByTaskId": {
+        "task-1": 7
+      },
+      "expected": {
+        "excludedCount": 1,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": false,
+        "filter": null
       },
       "expectedHasConfiguration": true
     }
@@ -1285,7 +1471,8 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expected": null
     },
@@ -1295,7 +1482,8 @@
         "excludedCount": 1,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expected": "You'll lose 1 exclusion."
     },
@@ -1305,7 +1493,8 @@
         "excludedCount": 2,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expected": "You'll lose 2 exclusions."
     },
@@ -1315,7 +1504,8 @@
         "excludedCount": 0,
         "memberRuleCount": 1,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expected": "You'll lose 1 member rule."
     },
@@ -1325,7 +1515,8 @@
         "excludedCount": 0,
         "memberRuleCount": 3,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expected": "You'll lose 3 member rules."
     },
@@ -1335,19 +1526,32 @@
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": true,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expected": "You'll lose the narrowed range."
     },
     {
-      "name": "the filter alone",
+      "name": "the filter alone, named by its on-screen label (board flipped to All squares)",
       "detail": {
         "excludedCount": 0,
         "memberRuleCount": 0,
         "rangeNarrowed": false,
-        "filterChanged": true
+        "filterChanged": true,
+        "filter": "all"
       },
-      "expected": "You'll lose the squares filter."
+      "expected": "You'll lose the \"All squares\" filter."
+    },
+    {
+      "name": "the other filter label (pool flipped to Not done yet)",
+      "detail": {
+        "excludedCount": 0,
+        "memberRuleCount": 0,
+        "rangeNarrowed": false,
+        "filterChanged": true,
+        "filter": "todo"
+      },
+      "expected": "You'll lose the \"Not done yet\" filter."
     },
     {
       "name": "two pieces join with 'and'",
@@ -1355,7 +1559,8 @@
         "excludedCount": 3,
         "memberRuleCount": 2,
         "rangeNarrowed": false,
-        "filterChanged": false
+        "filterChanged": false,
+        "filter": null
       },
       "expected": "You'll lose 3 exclusions and 2 member rules."
     },
@@ -1365,9 +1570,10 @@
         "excludedCount": 1,
         "memberRuleCount": 0,
         "rangeNarrowed": true,
-        "filterChanged": true
+        "filterChanged": true,
+        "filter": "todo"
       },
-      "expected": "You'll lose 1 exclusion, the narrowed range and the squares filter."
+      "expected": "You'll lose 1 exclusion, the narrowed range and the \"Not done yet\" filter."
     },
     {
       "name": "all four, in fixed order",
@@ -1375,9 +1581,10 @@
         "excludedCount": 2,
         "memberRuleCount": 1,
         "rangeNarrowed": true,
-        "filterChanged": true
+        "filterChanged": true,
+        "filter": "all"
       },
-      "expected": "You'll lose 2 exclusions, 1 member rule, the narrowed range and the squares filter."
+      "expected": "You'll lose 2 exclusions, 1 member rule, the narrowed range and the \"All squares\" filter."
     }
   ]
 }

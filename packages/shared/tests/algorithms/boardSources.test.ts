@@ -73,6 +73,7 @@ interface Fixture {
     name: string;
     source: BoardSource;
     defaultFilter: BoardSourceFilter;
+    seededTargetByTaskId?: Record<string, number>;
     expected: SourceConfigurationDetail;
     expectedHasConfiguration: boolean;
   }>;
@@ -113,10 +114,12 @@ describe('boardSourceVectors fixture', () => {
   test.each(fixture.configurationVectors.map((v) => [v.name, v] as const))(
     'configuration: %s',
     (_name, v) => {
-      expect(sourceConfiguration(v.source, v.defaultFilter)).toEqual(v.expected);
-      expect(sourceHasConfiguration(v.source, v.defaultFilter)).toBe(
-        v.expectedHasConfiguration,
-      );
+      expect(
+        sourceConfiguration(v.source, v.defaultFilter, v.seededTargetByTaskId),
+      ).toEqual(v.expected);
+      expect(
+        sourceHasConfiguration(v.source, v.defaultFilter, v.seededTargetByTaskId),
+      ).toBe(v.expectedHasConfiguration);
     },
   );
 

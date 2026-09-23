@@ -110,13 +110,16 @@ final class BoardSourceVectorTests: XCTestCase {
         let memberRuleCount: Int
         let rangeNarrowed: Bool
         let filterChanged: Bool
+        /// Absent key and JSON `null` both mean "filter unchanged".
+        let filter: String?
 
         var detail: BoardSources.ConfigurationDetail {
             BoardSources.ConfigurationDetail(
                 excludedCount: excludedCount,
                 memberRuleCount: memberRuleCount,
                 rangeNarrowed: rangeNarrowed,
-                filterChanged: filterChanged
+                filterChanged: filterChanged,
+                filter: filter.flatMap { BoardSource.Filter(rawValue: $0) }
             )
         }
     }
@@ -127,6 +130,8 @@ final class BoardSourceVectorTests: XCTestCase {
         let name: String
         let source: BoardSource
         let defaultFilter: String
+        /// What the one-off prefill would seed right now; absent = no map.
+        let seededTargetByTaskId: [String: Int]?
         let expected: RawConfigurationDetail
         let expectedHasConfiguration: Bool
     }
@@ -229,13 +234,22 @@ final class BoardSourceVectorTests: XCTestCase {
             let defaultFilter = try XCTUnwrap(
                 BoardSource.Filter(rawValue: v.defaultFilter), v.name
             )
+            let seeded = v.seededTargetByTaskId ?? [:]
             XCTAssertEqual(
-                BoardSources.sourceConfiguration(v.source, defaultFilter: defaultFilter),
+                BoardSources.sourceConfiguration(
+                    v.source,
+                    defaultFilter: defaultFilter,
+                    seededTargetByTaskId: seeded
+                ),
                 v.expected.detail,
                 v.name
             )
             XCTAssertEqual(
-                BoardSources.sourceHasConfiguration(v.source, defaultFilter: defaultFilter),
+                BoardSources.sourceHasConfiguration(
+                    v.source,
+                    defaultFilter: defaultFilter,
+                    seededTargetByTaskId: seeded
+                ),
                 v.expectedHasConfiguration,
                 v.name
             )

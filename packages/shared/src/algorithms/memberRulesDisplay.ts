@@ -22,7 +22,9 @@
  * to `apps/ios/OYBCTests/Fixtures/`). A change here is a change in two places.
  */
 
+import { TaskType } from '../constants/enums';
 import type { BoardSource, BoardSourceMemberRule, BoardSourcePartRule, VaryLevel } from '../types/boardSource';
+import type { Task } from '../types/task';
 import { autoTarget, nominalWindowDays, varyRange } from './memberRules';
 import type { BoardWindow, PlanMode } from './memberRules';
 
@@ -417,4 +419,67 @@ export function compoundSummary(
 ): MemberSummary {
   if (split) return { text: splitSquaresNote(partIds, excludedPartIds), varying: false };
   return { text: '1 square', varying: level !== 0 };
+}
+
+/** The source-supply fields {@link seededTargetsForSource} reads. */
+export interface SeededTargetSupply {
+  /** The source's RAW supply ids, in order. */
+  supplyTaskIds: readonly string[];
+  /** Per-member progress in the SOURCE board's window (absent ⇒ 0). */
+  windowCountByTaskId?: Record<string, number>;
+  /** The source board's own window, if known. */
+  sourceWindow?: BoardWindow | null;
+}
+
+/** The task fields {@link seededTargetsForSource} needs to spot a seedable member. */
+export type SeededTargetTask = Pick<Task, 'type' | 'maxCount'>;
+
+/**
+ * What the one-off prefill WOULD seed, right now, for each counting member
+ * of a board source — task id → target.
+ *
+ * The same loop `prefillRemainingTargets` runs at pull time (web
+ * `wizardMemberRulesLogic.ts`, iOS
+ * `BoardWizardViewModel+MemberRules.swift`), minus its "don't overwrite an
+ * existing target" skip: this answers "is the stored target machine-written
+ * or hand-set?", which needs the seed regardless of what is stored.
+ *
+ * Feed the result to `sourceConfiguration` as `seededTargetByTaskId` so the
+ * remove-confirm doesn't count a seeded target as configuration (amended
+ * ruling 2026-09-23 — the first cut fired the dialog on every fresh board
+ * source, naming member rules nobody authored).
+ *
+ * Deliberately recomputed at read time, not remembered from the pull. If
+ * the wizard's timeframe changed since, the recomputed seed no longer
+ * matches the stored target and the rule reads as configured — which is
+ * correct: the person did change something, so asking is right.
+ *
+ * Call it only where the prefill itself runs — a `kind: 'board'` source on a
+ * ONE-OFF wizard. A recurring wizard seeds nothing, so its callers pass no
+ * map and every stored target is hand-set by definition.
+ *
+ * @param supply - The source's resolved supply (ids + window counts + window).
+ * @param tasksById - Live id → task, for the member's type and goal.
+ * @param targetWindow - The window of the board being assembled.
+ * @returns id → seeded target, for seedable counting members only.
+ */
+export function seededTargetsForSource(
+  supply: SeededTargetSupply,
+  tasksById: Record<string, SeededTargetTask | undefined>,
+  targetWindow: BoardWindow
+): Record<string, number> {
+  const seeded: Record<string, number> = {};
+  for (const id of supply.supplyTaskIds) {
+    const task = tasksById[id];
+    if (task === undefined || task.type !== TaskType.COUNTING) continue;
+    const goal = task.maxCount;
+    if (typeof goal !== 'number' || goal < 1) continue;
+    seeded[id] = prefilledOneOffTarget({
+      goal,
+      windowCount: supply.windowCountByTaskId?.[id] ?? 0,
+      sourceWindow: supply.sourceWindow,
+      targetWindow,
+    });
+  }
+  return seeded;
 }

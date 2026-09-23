@@ -464,12 +464,32 @@ final class MemberRuleVectorTests: XCTestCase {
         let expected: MemberSummaryExpected
     }
 
+    /// The two task fields `seededTargetsForSource` reads — the fixture's
+    /// `tasks` map (TS twin: `Pick<Task, 'type' | 'maxCount'>`).
+    private struct SeededTaskSpec: Decodable {
+        let type: String
+        let maxCount: Int?
+    }
+
+    private struct SeededTargetsVector: Decodable {
+        let name: String
+        let supplyTaskIds: [String]
+        let tasks: [String: SeededTaskSpec]
+        let windowCountByTaskId: [String: Int]
+        /// Bare timeframe string; absent = no source window (fixture note
+        /// `windows`) — the unknowable-span branch.
+        let sourceWindow: String?
+        let targetWindow: String
+        let expected: [String: Int]
+    }
+
     private struct DisplaySection: Decodable {
         let effectiveMemberTarget: [EffectiveTargetVector]
         let varyRangeLabel: [VaryRangeLabelVector]
         let splitSquaresNote: [SplitSquaresNoteVector]
         let remainingTarget: [RemainingTargetVector]
         let prefilledOneOffTarget: [PrefilledOneOffTargetVector]
+        let seededTargetsForSource: [SeededTargetsVector]
         let memberRuleFor: [MemberRuleForVector]
         let partRuleFor: [PartRuleForVector]
         let withMemberRule: [WithRuleVector]
@@ -1458,6 +1478,32 @@ final class MemberRuleVectorTests: XCTestCase {
                 ),
                 23,
                 "\(tf) source to \(tf) target must not pro-rate"
+            )
+        }
+    }
+
+    /// The seed map the remove-confirm recomputes at removal time (amended
+    /// ruling 2026-09-23) — same vectors as the TS twin, so the two
+    /// hand-mirrored loops can't disagree about which members get seeded.
+    func testSeededTargetsForSource() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.seededTargetsForSource.isEmpty)
+        for v in section.seededTargetsForSource {
+            var tasksById: [String: BoardSources.SeededTargetTask] = [:]
+            for (id, spec) in v.tasks {
+                let type = try XCTUnwrap(TaskType(rawValue: spec.type), v.name)
+                tasksById[id] = BoardSources.SeededTargetTask(type: type, maxCount: spec.maxCount)
+            }
+            XCTAssertEqual(
+                BoardSources.seededTargetsForSource(
+                    supplyTaskIds: v.supplyTaskIds,
+                    tasksById: tasksById,
+                    windowCountByTaskId: v.windowCountByTaskId,
+                    sourceWindow: try v.sourceWindow.map { try window($0) },
+                    targetWindow: try window(v.targetWindow)
+                ),
+                v.expected,
+                v.name
             )
         }
     }
