@@ -158,6 +158,11 @@ struct BoardWizardTasksStepView: View {
     var onToggleSourceExclude: (_ sourceId: String, _ taskId: String) -> Void = { _, _ in }
     var onPullPoolSource: (_ pool: Pool) -> Void = { _ in }
     var onPullBoardSource: (_ boardId: String) -> Void = { _ in }
+    /// The repeating board under edit (`BoardWizardViewModel.editingTemplateId`),
+    /// or nil for every other session. Only used to append the
+    /// `WizardEditModeNote` line to the remove-source confirm, so the dialog
+    /// can't read as if it were changing the board already on the Boards tab.
+    var editingTemplateId: String? = nil
 
     // MARK: - Member rules (B3, docs/BOARD_SOURCES.md §Member rules)
 
@@ -189,6 +194,12 @@ struct BoardWizardTasksStepView: View {
 
     // Board Sources P2 — "Add from a pool or board" sheet.
     @State private var showSourceSheet = false
+
+    /// The pulled source a ✕ (or a sheet un-toggle) asked to remove while it
+    /// still carried configuration — the remove-confirm's subject (owner
+    /// ruling 2026-09-19). nil whenever no confirm is up; an UNTOUCHED source
+    /// never lands here, it removes on the spot.
+    @State private var pendingSourceRemoval: BoardSource? = nil
 
     // MARK: - Derived
 
@@ -508,24 +519,89 @@ struct BoardWizardTasksStepView: View {
                 boards: sheetBoardEntries,
                 pulledSourceIds: Set(sources.map { $0.sourceId }),
                 onTogglePool: { pool in
-                    if sources.contains(where: { $0.sourceId == pool.id }) {
-                        onRemoveSource(pool.id)
+                    // Un-toggling an already-pulled row is the same
+                    // destructive act as the row's ✕ — same gate.
+                    if let pulled = sources.first(where: { $0.sourceId == pool.id }) {
+                        requestRemoveSource(pulled)
                     } else {
                         onPullPoolSource(pool)
                     }
                 },
                 onToggleBoard: { boardId in
-                    if sources.contains(where: { $0.sourceId == boardId }) {
-                        onRemoveSource(boardId)
+                    if let pulled = sources.first(where: { $0.sourceId == boardId }) {
+                        requestRemoveSource(pulled)
                     } else {
                         onPullBoardSource(boardId)
                     }
                 }
             )
         }
+        // The remove-source confirm (owner ruling 2026-09-19). A native
+        // `.confirmationDialog` — the app's idiom for a two-choice
+        // destructive confirm (`RecurringTemplateCardView`); the Riso kit's
+        // own sheet exists for the counter-delete case because that one
+        // LISTS members, which this doesn't.
+        .confirmationDialog(
+            pendingSourceRemoval.map { "Remove \"\(displayName(for: $0))\"?" } ?? "",
+            isPresented: Binding(
+                get: { pendingSourceRemoval != nil },
+                set: { if !$0 { pendingSourceRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingSourceRemoval
+        ) { source in
+            Button("Remove", role: .destructive) {
+                onRemoveSource(source.sourceId)
+                pendingSourceRemoval = nil
+            }
+            Button("Cancel", role: .cancel) { pendingSourceRemoval = nil }
+        } message: { source in
+            Text(removeSourceMessage(for: source))
+        }
     }
 
     // MARK: - Sources UI (Board Sources P2)
+
+    /// The gate EVERY source-removal path goes through (the row's ✕ AND the
+    /// source sheet's un-toggle): a source carrying configuration opens the
+    /// confirm, an untouched one is removed on the spot.
+    ///
+    /// The default filter is KIND-SCOPED (`newSourceFilter(for:)`) — comparing
+    /// against `BoardSource.init`'s `.all` (the legacy-decode default) would
+    /// make every freshly pulled board look configured. Web twin:
+    /// `sourceRemovalNeedsConfirm` in `wizardSourcesLogic.ts`.
+    private func requestRemoveSource(_ source: BoardSource) {
+        if BoardSources.sourceHasConfiguration(
+            source,
+            defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind)
+        ) {
+            pendingSourceRemoval = source
+        } else {
+            onRemoveSource(source.sourceId)
+        }
+    }
+
+    /// The pulled source's display name, for the confirm's title.
+    private func displayName(for source: BoardSource) -> String {
+        supplyInfoBySourceId[source.sourceId]?.displayName ?? "this source"
+    }
+
+    /// The confirm's body: what the removal costs, worded by the SHARED
+    /// sentence builder so web and iOS can't drift, plus the edit-mode line
+    /// while a repeating board is under edit (the same sentence
+    /// `WizardEditModeNote` uses).
+    private func removeSourceMessage(for source: BoardSource) -> String {
+        let loss = BoardSources.removeSourceLossSentence(
+            BoardSources.sourceConfiguration(
+                source,
+                defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind)
+            )
+        ) ?? ""
+        guard editingTemplateId != nil else { return loss }
+        return loss.isEmpty
+            ? "Changes apply from the next board."
+            : loss + " Changes apply from the next board."
+    }
 
     /// Dashed "Add from a pool or board" entry row — styled like the library
     /// entry row (2pt dashed keyline, grid icon, trailing count badge =
@@ -576,7 +652,7 @@ struct BoardWizardTasksStepView: View {
                     isExpanded: expandedSourceIds.contains(source.sourceId),
                     taskById: effectiveTaskById,
                     onToggleExpanded: { onToggleSourceExpanded(source.sourceId) },
-                    onRemove: { onRemoveSource(source.sourceId) },
+                    onRemove: { requestRemoveSource(source) },
                     onSetFilter: { onSetSourceFilter(source.sourceId, $0) },
                     onSetRange: { onSetSourceRange(source.sourceId, $0, $1) },
                     onToggleExclude: { onToggleSourceExclude(source.sourceId, $0) },

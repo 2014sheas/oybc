@@ -360,6 +360,77 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         XCTAssertEqual(vm.sources.first(where: { $0.sourceId == "b1" })?.filter, .todo)
     }
 
+    // MARK: - Remove-source confirm gate (owner ruling 2026-09-19)
+
+    /// The Tasks step's ✕ asks before dropping a source that carries work,
+    /// and goes silently when it doesn't. What this adds over the shared
+    /// `configurationVectors` (already pinned on both platforms) is the
+    /// KIND-SCOPED default the WIZARD feeds the predicate — the part a caller
+    /// can get wrong: a board mints on `.todo`, so judging it against
+    /// `BoardSource.init`'s `.all` would flag every fresh pull as configured.
+    /// Web twin: the `sourceRemovalNeedsConfirm` cases in
+    /// `useWizardSources.test.ts`.
+    func test_removeConfirmGate_freshPulls_needNoConfirm() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"])
+        let (poolsById, tasksById) = workedExampleFixtures()
+
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullBoard(boardId: "b1")
+
+        for source in vm.sources {
+            XCTAssertFalse(
+                BoardSources.sourceHasConfiguration(
+                    source,
+                    defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind)
+                ),
+                "a just-pulled \(source.kind) row should remove without asking"
+            )
+        }
+    }
+
+    func test_removeConfirmGate_asksAfterAnExclusion_andNamesIt() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        let (poolsById, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        let memberId = try XCTUnwrap(vm.supplyInfoBySourceId["A"]?.rawSupplyTaskIds.first)
+
+        vm.toggleSourceExclude(sourceId: "A", taskId: memberId)
+
+        let source = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "A" }))
+        let defaultFilter = BoardWizardViewModel.newSourceFilter(for: source.kind)
+        XCTAssertTrue(BoardSources.sourceHasConfiguration(source, defaultFilter: defaultFilter))
+        XCTAssertEqual(
+            BoardSources.removeSourceLossSentence(
+                BoardSources.sourceConfiguration(source, defaultFilter: defaultFilter)
+            ),
+            "You'll lose 1 exclusion."
+        )
+    }
+
+    /// Flipping a BOARD row to "All squares" is configuration too — it is the
+    /// only dimension whose default differs by kind.
+    func test_removeConfirmGate_asksAfterFlippingTheSquaresFilter() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"])
+        vm.pullBoard(boardId: "b1")
+
+        vm.setSourceFilter(sourceId: "b1", filter: .all)
+
+        let source = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "b1" }))
+        let defaultFilter = BoardWizardViewModel.newSourceFilter(for: source.kind)
+        XCTAssertTrue(BoardSources.sourceHasConfiguration(source, defaultFilter: defaultFilter))
+        XCTAssertEqual(
+            BoardSources.removeSourceLossSentence(
+                BoardSources.sourceConfiguration(source, defaultFilter: defaultFilter)
+            ),
+            "You'll lose the squares filter."
+        )
+    }
+
     func test_pullBoard_missingBoard_noOp() {
         let vm = makeVM()
         vm.pullBoard(boardId: "ghost")
