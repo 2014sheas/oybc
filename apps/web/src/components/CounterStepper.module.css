@@ -52,13 +52,18 @@
   color: var(--riso-muted);
 }
 
-/* ── `compact` variant — the wizard's 22px member-row target pill
-   (docs/BOARD_SOURCES.md §Member rules; handoff "Counting member"). ── */
+/* ── `compact` variant — the wizard's 32px member-row target pill
+   (docs/BOARD_SOURCES.md §Member rules; handoff "Counting member"). It
+   was 22px, with 22px buttons and an 11px field, until the owner
+   reported the member-row controls — "the stepper inputs for counter
+   task quantity" above all — as too small to use comfortably
+   (2026-09-22); pill, buttons and type grew together, and the iOS twin
+   (`RisoInlineStepperView.compactBody`) moved by the same numbers. ── */
 .compactPill {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  height: 22px;
+  height: 32px;
   border: 1.5px solid var(--riso-ink);
   border-radius: 999px;
   background: var(--riso-paper-2);
@@ -68,8 +73,9 @@
 
 .compactButton {
   flex: 0 0 auto;
-  width: 22px;
+  width: 32px;
   height: 100%;
+  /* No inner padding: the whole 32px is the hit rect. */
   padding: 0;
   border: none;
   background: transparent;
@@ -103,7 +109,7 @@
   background: transparent;
   text-align: center;
   font-family: var(--riso-font-body);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--riso-ink);
   font-variant-numeric: tabular-nums;
@@ -118,7 +124,7 @@
 .compactSuffix {
   padding-right: 2px;
   font-family: var(--riso-font-body);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--riso-muted);
   white-space: nowrap;

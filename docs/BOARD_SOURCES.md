@@ -1277,10 +1277,16 @@ the two together; where they disagree, B3.1 wins.
 
 | Member | Controls (B3.1: on the expanded row's second line) |
 | --- | --- |
-| Counting, board source | 22pt stepper pill (− / numeric field, `.numberPad`, select-all on focus / ＋) · caption "of 35 mi" · dice |
+| Counting, board source | 32pt stepper pill (− / numeric field, `.numberPad`, select-all on focus / ＋) · caption "of 35 mi" · dice |
 | Counting, pool source | dice only |
 | Compound | 69pt-indent line: **One square / Split up** pill + "1 square" / "2 squares" note + dice (One square only). One line per part: name · [stepper · "of 210" when board source] · dice (Split only) · ✕ (Split only; the last part can't be removed) |
 | dice on | blue 10.5/600 range line beneath the row/part with the bare range from `varyRange`: "4–6 mi" / "24–36" — never on the compound itself |
+
+The pill was 22pt (22×22 −/＋, 11pt value) until the owner, device-testing
+#493 on 2026-09-22, reported the add-from-a-board/pool inputs — "especially
+the stepper inputs for counter task quantity" — as too small to use
+comfortably; the pill, its buttons and its type grew together to 32pt /
+32×32 / 13pt on both platforms.
 
 Stepper shows `target ?? auto`, step 1, clamp 1…goal, **no reset**
 affordance; the unit appears once, in the caption. Excluded rows keep

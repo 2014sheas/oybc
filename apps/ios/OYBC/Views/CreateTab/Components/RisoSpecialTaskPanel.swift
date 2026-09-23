@@ -635,9 +635,9 @@ struct RisoSpecialTaskPanel: View {
 /// - `.regular` (default): the shipped 44pt −/＋ pair around a read-only
 ///   value — the achievement required-count field and the compound
 ///   At-least-N threshold. Rendering is untouched.
-/// - `.compact`: the 22pt pill the wizard's member rows use
+/// - `.compact`: the 32pt pill the wizard's member rows use
 ///   (docs/BOARD_SOURCES.md §Member rules; handoff "Counting member") —
-///   1.5pt ink border, radius 999, 22pt − / typeable value / 22pt ＋.
+///   1.5pt ink border, radius 999, 32pt − / typeable value / 32pt ＋.
 ///   Web twin: `CounterStepper`'s `size="compact"`.
 enum RisoInlineStepperStyle {
     case regular
@@ -716,8 +716,12 @@ struct RisoInlineStepperView: View {
 
     // MARK: - Compact (B3 member rows)
 
-    /// 22pt pill: 22×22 −/＋ buttons (disabled at the bounds, mirroring
-    /// web) around a numeric text field. Typing is committed when the
+    /// 32pt pill: 32×32 −/＋ buttons (disabled at the bounds, mirroring
+    /// web) around a numeric text field. It was a 22pt pill with 22×22
+    /// buttons until the owner reported the member-row controls — "the
+    /// stepper inputs for counter task quantity" above all — as too small
+    /// to use comfortably (2026-09-22); the pill, its buttons and its
+    /// type all grew together so the row reads at the same rhythm. Typing is committed when the
     /// field loses focus, or folded into a −/＋ tap (see
     /// ``RisoCompactStepperMath``), and clamped to `min…max`; the step is
     /// always 1 and there is no reset affordance (handoff §Interactions
@@ -729,14 +733,14 @@ struct RisoInlineStepperView: View {
                 step(by: -1)
             }
             TextField("", text: compactText)
-                .font(.risoBody(11, .extraBold))
+                .font(.risoBody(13, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .multilineTextAlignment(.center)
                 .keyboardType(.numberPad)
                 .focused($isFieldFocused)
                 // Width follows the goal's digit count so a 4-digit goal
                 // isn't clipped (web sizes the input the same way).
-                .frame(width: CGFloat(Swift.max(2, String(max).count) + 1) * 7)
+                .frame(width: CGFloat(Swift.max(2, String(max).count) + 1) * 8)
                 .accessibilityLabel("Target")
                 .onChange(of: isFieldFocused) { _, focused in
                     if focused {
@@ -756,7 +760,7 @@ struct RisoInlineStepperView: View {
                 }
             if let suffix {
                 Text(suffix)
-                    .font(.risoBody(10, .semibold))
+                    .font(.risoBody(11, .semibold))
                     .foregroundStyle(Color.risoMuted)
                     .lineLimit(1)
                     .fixedSize()
@@ -781,7 +785,7 @@ struct RisoInlineStepperView: View {
                 step(by: 1)
             }
         }
-        .frame(height: 22)
+        .frame(height: 32)
         .background(Color.risoPaper2)
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
@@ -838,7 +842,7 @@ struct RisoInlineStepperView: View {
             Text(glyph)
                 .font(.risoHead(12, .extraBold))
                 .foregroundStyle(Color.risoInk)
-                .frame(width: 22, height: 22)
+                .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

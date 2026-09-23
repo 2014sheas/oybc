@@ -19,7 +19,7 @@ interface CounterStepperProps {
    */
   label?: string;
   /**
-   * `default` (the compound builder's −/+ pair) or `compact` — the 22px
+   * `default` (the compound builder's −/+ pair) or `compact` — the 32px
    * pill used by the wizard's member rows (docs/BOARD_SOURCES.md §Member
    * rules): 1.5px ink border, radius 999, a typeable numeric middle.
    */

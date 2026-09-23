@@ -6,7 +6,7 @@ import { compactStepperBase } from '../counterStepperMath';
 
 /**
  * `size="compact"` (B3, docs/BOARD_SOURCES.md §Member rules) adds the
- * wizard member row's 22px target pill WITHOUT disturbing the default
+ * wizard member row's 32px target pill WITHOUT disturbing the default
  * variant the compound builder already ships — hence the literal
  * equality check on the default markup below.
  *
