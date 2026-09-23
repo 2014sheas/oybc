@@ -521,6 +521,36 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
         )
     }
 
+    /// The part line at its WORST width, which no fixture exercised until
+    /// now: a long part name competing with every control the line can
+    /// carry at once — stepper pill, "of N" caption, dice AND ✕.
+    ///
+    /// `testMemberRowCompoundSplitUpWithExcludedPartExpanded` above cannot
+    /// stand in for it twice over: its parts are "Push-ups" (8 characters)
+    /// and its one included part is the LAST one, so it renders no ✕ and
+    /// hands the name 32pt it would not otherwise have. Growing the
+    /// stepper to a 32pt pill and the dice to 28×28 (2026-09-22) spent
+    /// ~30pt of that line, taking the name's share from ~135pt to
+    /// **~105pt** — close enough to a realistic 17-character part name
+    /// (measured at ~102pt in Archivo SemiBold 12) that arithmetic is not
+    /// evidence. This baseline is: if the name ever ellipsizes, the PNG
+    /// shows it.
+    ///
+    /// Both parts are included and counting, so `canExcludeAny` holds and
+    /// every part line carries the full set of controls. The goal is
+    /// deliberately THREE digits (210 — the field is sized
+    /// `(max(2, digits) + 1) × 8`), which is the widest pill a part is
+    /// likely to have; a four-digit goal takes another 8pt off the name
+    /// and would ellipsize this title, which is recorded as a known limit
+    /// rather than pictured here.
+    func testMemberRowCompoundSplitUpLongPartNameExpanded() {
+        assertSnapshot(
+            of: makeLongPartNameMemberRow(),
+            as: .image(layout: .fixed(width: 393, height: 190)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Leaf: hand-added rows with the dice (B3)
 
     /// A hand-added COUNTING row earns a dice before the 32pt pencil, and
@@ -634,6 +664,64 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             rule: rule,
             parts: library.compoundChildrenByCompound[taskId] ?? [],
             fromBoard: kind == .board,
+            wizardWindow: BoardSources.BoardWindow(timeframe: .monthly),
+            mode: .oneOff,
+            onToggleExclude: { },
+            onSetTarget: { _ in },
+            onSetVary: { _ in },
+            onSetSplit: { _ in },
+            onSetPartExcluded: { _, _ in },
+            onSetPartTarget: { _, _ in },
+            onSetPartVary: { _, _ in },
+            initiallyExpanded: true
+        )
+        .background(Color.risoPaper)
+    }
+
+    /// A split compound whose first part has a realistically long name and
+    /// a three-digit goal, built INLINE rather than added to
+    /// `SnapshotFixtures.memberRulesTaskSet()`: the member-rules library
+    /// feeds the full-step baselines too, and this row only needs to exist
+    /// for one leaf case. Both parts are counting and included, so each
+    /// part line renders `name · stepper · "of N" · dice · ✕` — the widest
+    /// the line gets.
+    private func makeLongPartNameMemberRow() -> some View {
+        let compound = SnapshotFixtures.makeTask(
+            id: "t-lp-compound", title: "Strength day", type: .compound, operatorType: .and
+        )
+        // 17 characters — the length the 32pt pill's margin is about.
+        let cooldown = SnapshotFixtures.makeTask(
+            id: "t-lp-cooldown", title: "Cool down 10 reps", type: .counting,
+            action: "Do", unit: "reps", maxCount: 210
+        )
+        let warmup = SnapshotFixtures.makeTask(
+            id: "t-lp-warmup", title: "Warm up", type: .counting,
+            action: "Do", unit: "reps", maxCount: 20
+        )
+        let taskById: [String: OYBC.Task] = [
+            compound.id: compound, cooldown.id: cooldown, warmup.id: warmup,
+        ]
+        let parts = [
+            SnapshotFixtures.makeCompoundChild(
+                id: "cc-lp-1", compoundTaskId: compound.id,
+                childTaskId: cooldown.id, childIndex: 0
+            ),
+            SnapshotFixtures.makeCompoundChild(
+                id: "cc-lp-2", compoundTaskId: compound.id,
+                childTaskId: warmup.id, childIndex: 1
+            ),
+        ]
+        return RisoMemberRuleRowView(
+            task: compound,
+            taskById: taskById,
+            state: .included,
+            clashTitle: nil,
+            rule: BoardSourceMemberRule(
+                split: true,
+                parts: [cooldown.id: BoardSourcePartRule(vary: .little)]
+            ),
+            parts: parts,
+            fromBoard: true,
             wizardWindow: BoardSources.BoardWindow(timeframe: .monthly),
             mode: .oneOff,
             onToggleExclude: { },
