@@ -1293,6 +1293,26 @@ affordance; the unit appears once, in the caption. Excluded rows keep
 strikethrough + UNDO; excluding a split compound removes all its parts.
 Dice cycles off → a little (blue fill, 2 pips) → a lot (5 pips) → off.
 
+**Removing a source row (owner ruling 2026-09-23).** The row's ✕ removes
+the pull **immediately when the source is untouched** and **asks first when
+it carries configuration** — the owner repeatedly configured exclusions and
+counter targets, then lost them all to a misclick. "Carries configuration"
+is the shared, vector-pinned `sourceHasConfiguration` (`boardSources.ts` ↔
+`BoardSources`): any excluded task, any member rule (an all-default rule is
+already pruned to absent by `withMemberRule`), a range narrowed from the
+`[0, all]` mint default, or a filter that differs from the **kind-scoped
+creation default** `newSourceFilter(kind)` — never from the Swift
+`BoardSource.init` default `.all`, which is the legacy-decode default and
+would make every fresh board source look configured. The dialog names the
+loss via the shared `removeSourceLossSentence` ("You'll lose 3 exclusions
+and 2 member rules."), appends "Changes apply from the next board." while
+editing a repeating board, and offers Cancel / Remove. Web: an
+`alertdialog` sharing `CounterDeleteConfirmDialog`'s styles; iOS: a native
+`.confirmationDialog` (the two-choice destructive idiom — the kit's own
+sheet exists only where members must be listed). Locked by an e2e that
+configures a source, taps ✕, cancels, and asserts the row and its exclusion
+survive.
+
 **Hand-added rows:** dice on counting rows only, before the 32pt edit
 button; the range line sits under the row.
 
