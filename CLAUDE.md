@@ -502,7 +502,7 @@ oybc/
 
 ### Database Schema (Identical Across Platforms)
 
-**Tables**: `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
+**Tables** (iOS GRDB names; web Dexie uses the camelCase store names in `apps/web/src/db/database.ts`; canonical: the GRDB migrations in `apps/ios/OYBC/Database/AppDatabase+Migrations.swift` and the Dexie schema): `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `recurring_board_templates`, `default_pools`, `pools`, `core_board_defaults`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
 
 **Key Design Elements**:
 
@@ -523,7 +523,7 @@ oybc/
 
 **Conflict Resolution** (MVP): Last-write-wins using version fields. Higher version wins; same version → newer timestamp wins.
 
-**Sync collections** (`SYNC_COLLECTIONS` in `@oybc/shared`, mirrored in both platforms' sync services, enforced by the C4 sync-contract fixture): `boards`, `tasks`, `boardTasks`, `compoundChildren`, `recurringBoardTemplates`, `defaultPools`, `taskEvents`. `taskEvents` (Windowed Completion) syncs by per-row LWW + soft-delete tombstones, **union by id** — exactly like `compoundChildren`, no new conflict machinery.
+**Sync collections** (`SYNC_COLLECTIONS` in `@oybc/shared`, mirrored in both platforms' sync services, enforced by the C4 sync-contract fixture): as of this writing `boards`, `tasks`, `boardTasks`, `compoundChildren`, `recurringBoardTemplates`, `defaultPools`, `taskEvents`, `pools`, `coreBoardDefaults`. The canonical list is the `SYNC_COLLECTIONS` constant in `packages/shared/src/constants/syncContract.ts`, which the `check-sync-contract-rules` CI guardrail holds equal to `firestore.rules` (see §Drift guardrails) — trust that over this sentence. `taskEvents` (Windowed Completion) syncs by per-row LWW + soft-delete tombstones, **union by id** — exactly like `compoundChildren`, no new conflict machinery.
 
 **Cross-Board Features**: Achievement squares and bingo lines always recomputed from source data.
 
