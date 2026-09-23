@@ -125,7 +125,7 @@ For iOS UI verification, the only two tools agents should reach for are:
 1. **Snapshot tests** (`OYBCSnapshotTests` target) — fast, deterministic, runnable from `xcodebuild`. The default surface for visual regression checks; see the section below.
 2. **`xcodebuild test`** for the logic-test scheme — also fine to run from any agent session.
 
-For anything else (interactive flows, real-device behavior, "does this actually work end-to-end on iPhone 16 sim"), **agents must NOT** drive the simulator from the CLI:
+For anything else (interactive flows, real-device behavior, "does this actually work end-to-end on iPhone 17 sim"), **agents must NOT** drive the simulator from the CLI:
 
 - ❌ Don't run `xcrun simctl boot/install/launch` to spin up an interactive sim from this session.
 - ❌ Don't open `Simulator.app` and try to script taps via AppleScript / accessibility / `simctl ui`.
@@ -152,10 +152,10 @@ xcodegen generate    # only if you added new test files
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.3.1' \
-  -derivedDataPath /tmp/oybc-derived test
+  -derivedDataPath /Volumes/Stephen/oybc-derived test
 ```
 
-**Pin the runtime explicitly — never `OS=latest`.** `OS=latest` resolves to the newest *installed* iOS runtime, not to the one shipping with your pinned Xcode, so installing a newer runtime silently repoints every snapshot run. Measured on one machine carrying both 26.3.1 and 26.5, same commit, nothing changed but the runtime: **26.3.1 → 345 passed / 27 failed; `OS=latest` (26.5) → 22 passed / 350 failed.** A mass-red snapshot run almost always means the runtime moved, not that the UI broke. Check what you actually have with `xcodebuild -scheme OYBCSnapshotTests -showdestinations`; the device name drifts too, since Xcode upgrades uninstall older iPhone sims, so `name=` is a moving target in a way the `OS=` pin is not.
+**Pin the runtime explicitly — never `OS=latest`.** `OS=latest` resolves to the newest *installed* iOS runtime, not to the one shipping with your pinned Xcode, so installing a newer runtime silently repoints every snapshot run. Measured on one machine carrying both 26.3.1 and 26.5, same commit, nothing changed but the runtime: **26.3.1 → 345 passed / 27 failed; `OS=latest` (26.5) → 22 passed / 350 failed.** A mass-red snapshot run almost always means the runtime moved, not that the UI broke. Check what you actually have with `xcodebuild -scheme OYBCSnapshotTests -showdestinations`; the device name drifts too, since Xcode upgrades uninstall older iPhone sims, so `name=` is a moving target in a way the `OS=` pin is not. (This rule is for **local** runs. CI's `ios.yml` deliberately uses `OS=latest` on the runner — see its comment: with the Xcode pin, the runner's newest runtime is the one shipped with that Xcode, so it is deterministic there.)
 
 This matters more than it looks: `ios.yml` runs the snapshot step under `continue-on-error: true` (ROADMAP A8), so baselines recorded against the wrong runtime **merge without a single red check**. CI cannot catch this class of error for you.
 
@@ -169,9 +169,9 @@ xcodebuild … -only-testing:OYBCSnapshotTests test > /tmp/a.log 2>&1
 grep "' failed (" /tmp/a.log | sed -E "s/.*\.([A-Za-z]+ test[A-Za-z0-9_]+)\]' failed.*/\1/" | sort -u
 ```
 
-Compare sets, never counts — a matching count can still hide one new red cancelling one fixed. As of 2026-09-22 on `OS=26.3.1` the standing reds are `BoardEditCenterToggle` ×5, `CountersHub` ×2, `RisoDeleteConfirm` ×2, `RisoTasksTab` ×4, `SyncSheet` ×4 (ROADMAP A8 debt, baselines last written 2026-06 to 2026-09), plus the calendar pair below.
+Compare sets, never counts — a matching count can still hide one new red cancelling one fixed. As of 2026-09-22 on `OS=26.3.1` the standing reds are `BoardEditCenterToggle` ×5, `CountersHub` ×2, `RisoDeleteConfirm` ×2, `RisoTasksTab` ×4 (ROADMAP A8 debt, baselines last written 2026-06 to 2026-09), plus the calendar-dependent reds below (`SyncSheet` ×4 and the `RisoEditBoard` pair).
 
-**Two reds are calendar-dependent false failures.** `RisoEditBoardSnapshotTests.testFormWeeklyNone{Light,Dark}` pass a fixed `customStartDate`, but that only binds `.custom` — for `.weekly` the form derives the **current** week from `now`, so both go red at every week rollover and green again once re-recorded. The `…MonthlyFree` siblings do the same at month rollover. **The Weekly-red / Monthly-green split is the tell**: when a date-shaped pair fails asymmetrically like that, suspect the calendar before your diff. This cost a regression hunt during B3.1 — all four were green three days earlier and nothing on the branch touched `BoardSetupFormView`. See also `reference_snapshot_date_dependent`.
+**Some reds are calendar-dependent false failures.** `SyncSheet` ×4: `Views/ProfileTab/SyncSheet.swift` formats its relative timestamps against the live `Date()` (`relativeTo: Date()`) while the tests pass a fixed date, so the rendered "… ago" text drifts with the wall clock — not A8 baseline debt. The 2026-09-23 audit cleanup PR injects `now:` and re-records them. Separately, `RisoEditBoardSnapshotTests.testFormWeeklyNone{Light,Dark}` pass a fixed `customStartDate`, but that only binds `.custom` — for `.weekly` the form derives the **current** week from `now`, so both go red at every week rollover and green again once re-recorded. The `…MonthlyFree` siblings do the same at month rollover. **The Weekly-red / Monthly-green split is the tell**: when a date-shaped pair fails asymmetrically like that, suspect the calendar before your diff. This cost a regression hunt during B3.1 — all four were green three days earlier and nothing on the branch touched `BoardSetupFormView`. See also `reference_snapshot_date_dependent`.
 
 Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
 
