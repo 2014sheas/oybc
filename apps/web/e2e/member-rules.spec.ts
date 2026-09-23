@@ -211,6 +211,59 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await expect(memberRow.getByText('3–8 miles')).toBeVisible();
   });
 
+  test('a board source the prefill seeded removes with NO confirm — a seeded target is not configuration', async ({
+    page,
+  }) => {
+    // The amended ruling (2026-09-23). Pulling this board seeds an explicit
+    // `target` on its counting member, so the FIRST cut of the remove-confirm
+    // asked on every fresh board source — the exact misclick-right-after-
+    // adding case the ruling meant to skip.
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+
+    const sourceRow = page.getByRole('button', { name: /^Last Week Board, 8 not done/ });
+    await expect(sourceRow).toBeVisible();
+
+    // Prove the prefill actually ran before testing that it doesn't count —
+    // otherwise this passes for the wrong reason (nothing seeded yet). The
+    // 5 is the pro-rated seed a WEEKLY source gives this DAILY board.
+    await sourceRow.click();
+    const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
+    await memberRow.getByTestId('member-disclosure').click();
+    await expect(
+      memberRow.getByRole('textbox', { name: 'Target', exact: true }),
+    ).toHaveValue('5');
+
+    // Touch nothing else. The ✕ removes on the spot.
+    await page.getByRole('button', { name: 'Remove Last Week Board' }).click();
+    await expect(page.getByTestId('remove-source-confirm')).toHaveCount(0);
+    await expect(sourceRow).toHaveCount(0);
+  });
+
+  test('changing that seeded target DOES bring the confirm back, naming one member rule', async ({
+    page,
+  }) => {
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    await page.getByRole('button', { name: /^Last Week Board, 8 not done/ }).click();
+
+    const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
+    await memberRow.getByTestId('member-disclosure').click();
+    const target = memberRow.getByRole('textbox', { name: 'Target', exact: true });
+    await expect(target).toHaveValue('5');
+    await memberRow.getByRole('button', { name: 'Increase target' }).click();
+    await expect(target).toHaveValue('6');
+
+    await page.getByRole('button', { name: 'Remove Last Week Board' }).click();
+    const confirm = page.getByTestId('remove-source-confirm');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText("You'll lose 1 member rule.");
+    await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: /^Last Week Board, 8 not done/ }),
+    ).toBeVisible();
+  });
+
   test('Split up turns a compound into one square per part; a part can be excluded and undone', async ({
     page,
   }) => {
