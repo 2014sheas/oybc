@@ -337,14 +337,21 @@ Top-level React-Router pages and their iOS root-view counterparts.
 
 ```
 apps/web/src/pages/                               apps/ios/OYBC/Views/
-├── Home.tsx                      (dev-only)     (no iOS counterpart — auth-gate → MainTabView)
+├── HomePage.tsx                                 (web-only signed-in landing at /home — no iOS
+│                                                 counterpart; iOS launches AuthGateView → MainTabView)
 ├── BoardsPage.tsx             ←→                Views/BoardsTab/BoardListView.swift
 ├── BoardPlayPage.tsx          ←→                Views/BoardsTab/BoardPlayView.swift
+├── core-board-browser/
+│   └── CoreBoardWindowPage.tsx ←→               Views/BoardsTab/CoreBoardWindowView.swift
 ├── CreateHubPage.tsx          ←→                Views/CreateTab/CreateHubView.swift
 ├── BoardWizardPage.tsx        ←→                Views/CreateTab/BoardWizardView.swift
 ├── TasksPage.tsx              ←→                Views/TasksTab/TasksTabView.swift
 ├── TaskDetailPage.tsx         ←→                Views/TasksTab/TaskDetailView.swift
 ├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
+├── StreaksPage.tsx            ←→                Views/ProfileTab/StreaksView.swift
+├── AccountSecurityPage.tsx    ←→                Views/ProfileTab/AccountSecurityView.swift
+├── CountersHubPage.tsx        ←→                Views/ProfileTab/CountersHubView.swift
+├── CounterDetailPage.tsx      ←→                Views/ProfileTab/CounterDetailView.swift
 ├── BoardSettingsPage.tsx      ←→                Views/ProfileTab/BoardSettingsView.swift
 │   (pools/recurring rework P7 + #430: replaced BoardPreferencesPage/View +
 │    the retired RecurringTemplates/DefaultPools pages. New-board defaults +
