@@ -465,10 +465,12 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
     ///
     /// KNOWN DEFECT, pictured deliberately: the stepper pill reads
     /// "− … / 35 mi ＋" because `RisoInlineStepperView` sizes its field in
-    /// fixed points (`String(max).count + 1) * 7`) while the font scales
+    /// fixed points (`(String(max).count + 1) * 8`) while the font scales
     /// with the content-size category, so the value truncates at
     /// `.accessibilityMedium`. Pre-existing — it entered with the compact
-    /// stepper in `8bdce2fc`, before this branch — and iOS-only: web sizes
+    /// stepper in `8bdce2fc`, before this branch, and the 2026-09-22 growth
+    /// to a 32pt pill scaled the multiplier (7 → 8) with the type without
+    /// changing the underlying fixed-point sizing — and iOS-only: web sizes
     /// the same input in `ch`, which scales with the font. This baseline
     /// locks the CURRENT rendering, not the intended one; tracked under
     /// docs/ROADMAP.md F11 B3.1.
