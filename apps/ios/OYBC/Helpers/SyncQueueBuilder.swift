@@ -63,9 +63,9 @@ enum SyncQueueBuilder {
     }
 
     /// D3 (issue #296) precedence — decide how an incoming sync op coalesces
-    /// with an existing PENDING op for the *same entity*. Pure, so both the
-    /// enqueue path and unit tests can call it. Mirrors the web
-    /// `coalesceSyncOperation`.
+    /// with an existing PENDING op for the *same entity*. Pure. Swift twin of
+    /// web `coalesceSyncOperation` (`syncQueue.ts`) — see it for the
+    /// reasoning behind each cell.
     ///
     /// Precedence table (rows = existing PENDING op, cols = incoming op):
     ///
@@ -76,38 +76,8 @@ enum SyncQueueBuilder {
     /// delete       create (resurr.)  update (resurr.)  delete
     /// ```
     /// *DROP only when the existing row was never attempted
-    /// (`existingNeverAttempted`); otherwise delete.
-    ///
-    /// Reasoning:
-    /// - **create + update → create**: the entity hasn't reached the server
-    ///   yet, so it must still arrive as a create-equivalent. (The push path
-    ///   treats create/update identically — both a `setDoc(merge)` after the
-    ///   same version conflict-check — so the op type is cosmetic; keeping
-    ///   create preserves the "not yet on server" semantic.)
-    /// - **create + delete → DROP only if never attempted, else delete**:
-    ///   dropping is safe only when the server provably never saw the entity.
-    ///   PENDING alone doesn't prove that — a push whose `setDoc` landed but
-    ///   whose completion write failed (or a force-quit mid-push) leaves the
-    ///   row failed/inProgress and it is re-promoted/reset back to pending
-    ///   with the doc already on the server; dropping the delete then would
-    ///   orphan a live remote doc forever. Both platforms stamp
-    ///   `lastAttemptAt` when claiming an item for push, so
-    ///   `existingNeverAttempted` (`lastAttemptAt == nil`) proves no push was
-    ///   ever attempted → ids are client-generated UUIDs, no other device
-    ///   knows the entity, create-then-delete nets to nothing anywhere →
-    ///   drop. Otherwise keep the row as delete — pushing a tombstone for a
-    ///   doc that may not exist is harmless (it writes an inert
-    ///   `isDeleted=true` doc), whereas an orphaned live doc is silent
-    ///   divergence.
-    /// - **update + delete → delete**: a standalone PENDING update means the
-    ///   create already pushed (server has the doc), so the tombstone (a full
-    ///   snapshot with `isDeleted=true`) must push to mark it deleted.
-    /// - **delete + create/update → new op (resurrection)**: the un-pushed
-    ///   tombstone is stale — the latest local snapshot (isDeleted=false,
-    ///   higher version) is the truth. Pushing that one full snapshot under
-    ///   LWW yields the correct server state in a single write, with no
-    ///   ordering dependency (strictly better than a separate DELETE-then-
-    ///   CREATE pair).
+    /// (`existingNeverAttempted`, i.e. `lastAttemptAt == nil`); otherwise
+    /// delete — a claimed-then-reset row may already be on the server.
     static func coalesce(
         existing: SyncOperationType,
         incoming: SyncOperationType,

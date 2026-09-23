@@ -770,49 +770,15 @@ extension AppDatabase {
 
     // MARK: - Board-deletion sweep (RB5)
 
-    /// The window-stamped derived rows a board's deletion orphans (RB5).
-    ///
-    /// A "live placement" is a `board_tasks` row with `isDeleted == false`
-    /// whose board is itself live — so a derived row placed on another live
-    /// board SURVIVES `boardId`'s deletion, while one whose only other
-    /// placement sits on an already-tombstoned board does not. Call this AFTER
-    /// the board row is tombstoned: `boardId` is then excluded by the
-    /// live-board rule anyway, and the explicit id check keeps the helper
-    /// correct if a caller reverses that.
-    ///
-    /// **Ordering** — candidates come from EVERY `board_tasks` row of this
-    /// board, the tombstoned ones included, exactly so the answer cannot
-    /// depend on when the caller runs relative to any placement tombstoning.
-    /// `deleteBoard` does not tombstone its own placements today (the
-    /// pre-existing gap B2 ring-fenced); were it to start, a live-only
-    /// candidate query would find nothing and silently retire nothing — a
-    /// no-op no test would catch.
-    ///
-    /// That widening is only safe because a stale placement alone no longer
-    /// makes a candidate: ``isMintedForBoard(db:task:board:)`` additionally
-    /// requires the row to be THIS board's own artifact. So a derived counter
-    /// minted for board B that was swapped out of B (Board Edit) and placed
-    /// nowhere else live still dies with B — its id encodes B and it can never
-    /// legitimately belong to another board — while a row minted for a
-    /// DIFFERENT board that merely left a tombstoned placement behind here is
-    /// untouched.
-    ///
-    /// Two kinds of orphan come back:
-    ///   1. **Placed** derived rows — counters and per-window derived compounds.
-    ///   2. **Parts of a derived compound being retired** — a derived counter
-    ///      minted as a child of a One-square derived compound has no
-    ///      placement of its own, so it is unreachable from `board_tasks`.
-    ///      Left behind it would be a per-window row with no board, still
-    ///      collecting `refreshDerivedBaselines` writes forever — and the
-    ///      root-delete path DOES retire it, so skipping it here would leave
-    ///      the two deletion paths disagreeing. A part qualifies only when its
-    ///      parent is itself being retired, it has no live placement of its
-    ///      own (RB5 again), and no OTHER live parent link outside the retired
-    ///      set still holds it.
+    /// The window-stamped derived rows a board's deletion orphans. Swift twin
+    /// of `windowStampedDerivedOrphanedByBoard` in
+    /// `apps/web/src/db/operations/derivedCounters.ts` — see it for the
+    /// live-placement rule, why candidates include tombstoned placements, and
+    /// the two orphan kinds (placed rows + parts of a retired derived compound).
     ///
     /// Reads only — the caller feeds the result to
     /// ``softDeleteWindowStampedDerived(db:taskIds:now:)`` inside its own
-    /// transaction.
+    /// transaction. Call it AFTER the board row is tombstoned.
     ///
     /// - Parameters:
     ///   - db: The caller's open transaction.
