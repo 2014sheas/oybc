@@ -201,6 +201,10 @@ struct BoardWizardTasksStepView: View {
     /// never lands here, it removes on the spot.
     @State private var pendingSourceRemoval: BoardSource? = nil
 
+    /// A removal requested from INSIDE the source sheet, parked until that
+    /// sheet has finished dismissing (see `requestRemoveSource(_:fromSheet:)`).
+    @State private var sourceRemovalAfterSheetDismiss: BoardSource? = nil
+
     // MARK: - Derived
 
     /// Bug #85 — Effective task pool for BROWSE surfaces (the "add from
@@ -513,7 +517,18 @@ struct BoardWizardTasksStepView: View {
             if let toast { toastOverlay(toast) }
         }
         // Board Sources P2 — the "Add from a pool or board" sheet (frames 2c/5c).
-        .sheet(isPresented: $showSourceSheet) {
+        //
+        // `onDismiss` is where a sheet-originated remove-confirm is finally
+        // presented: SwiftUI will not reliably present a confirmation dialog
+        // from a host that is already presenting a sheet, and parking the
+        // request here means the dialog goes up only once the sheet is
+        // genuinely gone — no timer, no animation race.
+        .sheet(isPresented: $showSourceSheet, onDismiss: {
+            if let queued = sourceRemovalAfterSheetDismiss {
+                sourceRemovalAfterSheetDismiss = nil
+                pendingSourceRemoval = queued
+            }
+        }) {
             RisoSourcePickerSheetView(
                 pools: pools,
                 boards: sheetBoardEntries,
@@ -522,14 +537,14 @@ struct BoardWizardTasksStepView: View {
                     // Un-toggling an already-pulled row is the same
                     // destructive act as the row's ✕ — same gate.
                     if let pulled = sources.first(where: { $0.sourceId == pool.id }) {
-                        requestRemoveSource(pulled)
+                        requestRemoveSource(pulled, fromSheet: true)
                     } else {
                         onPullPoolSource(pool)
                     }
                 },
                 onToggleBoard: { boardId in
                     if let pulled = sources.first(where: { $0.sourceId == boardId }) {
-                        requestRemoveSource(pulled)
+                        requestRemoveSource(pulled, fromSheet: true)
                     } else {
                         onPullBoardSource(boardId)
                     }
@@ -570,15 +585,33 @@ struct BoardWizardTasksStepView: View {
     /// against `BoardSource.init`'s `.all` (the legacy-decode default) would
     /// make every freshly pulled board look configured. Web twin:
     /// `sourceRemovalNeedsConfirm` in `wizardSourcesLogic.ts`.
-    private func requestRemoveSource(_ source: BoardSource) {
-        if BoardSources.sourceHasConfiguration(
+    /// - Parameters:
+    ///   - source: The row the ✕ (or a sheet un-toggle) named.
+    ///   - fromSheet: True when the request came from inside the "Add from a
+    ///     pool or board" sheet. A confirmation dialog cannot be reliably
+    ///     presented from a host that is already presenting that sheet — the
+    ///     usual result is that nothing appears and the dialog pops later,
+    ///     orphaned — so the request is parked in
+    ///     `sourceRemovalAfterSheetDismiss` and the sheet is closed; the
+    ///     sheet's `onDismiss` then raises the dialog. The person also ends
+    ///     up looking at the row they are about to lose, which is the better
+    ///     read anyway. The UNCONFIGURED path is untouched: it removes on the
+    ///     spot and leaves the sheet open, so un-toggling several untouched
+    ///     sources in one visit still works.
+    private func requestRemoveSource(_ source: BoardSource, fromSheet: Bool = false) {
+        guard BoardSources.sourceHasConfiguration(
             source,
             defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind),
             seededTargetByTaskId: seededTargets(for: source)
-        ) {
-            pendingSourceRemoval = source
-        } else {
+        ) else {
             onRemoveSource(source.sourceId)
+            return
+        }
+        if fromSheet {
+            sourceRemovalAfterSheetDismiss = source
+            showSourceSheet = false
+        } else {
+            pendingSourceRemoval = source
         }
     }
 
