@@ -124,7 +124,7 @@ async function migrateRecurringBoardTemplates(): Promise<void> {
   // `poolIds === undefined` is the "genuinely un-migrated" half of
   // isLegacyShapedRecord's two cases — see poolMix.ts. Deliberately not
   // filtered by `isDeleted`: every RecurringBoardTemplate row gets its
-  // seedTaskIds carried forward, matching the doc's unconditional framing.
+  // seedTaskIds carried forward.
   const templates = await db.recurringBoardTemplates
     .filter((t) => t.poolIds === undefined)
     .toArray();

@@ -26,8 +26,8 @@
  * `pages/createHub/useBoardWizard.ts`) can import it without crossing the
  * `db/internal` access boundary unnecessarily.
  *
- * iOS twin: `BoardWizardViewModel.RecurringDraftMixPayload`
- * (`apps/ios/OYBC/Views/CreateTab/ViewModels/BoardWizardViewModel.swift`).
+ * iOS twin: the top-level `RecurringDraftMixPayload` struct
+ * (`apps/ios/OYBC/Views/CreateTab/RecurringDraftMixPayload.swift`).
  */
 
 import { sourcesFromMixFields, type BoardSource, type VaryLevel } from '@oybc/shared';

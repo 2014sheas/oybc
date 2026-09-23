@@ -25,11 +25,14 @@ enum BrowsableTasks {
     /// library-browse surfaces (the Tasks tab list, the wizard's Library
     /// sheet). Hides wizard-orphans, goal-less counters, and shared-counter
     /// members whose root is present — the full rule and its rationale live
-    /// on the TS twin `computeBrowsableTasks` (`browsableTasks.ts`).
+    /// on the TS twin `computeBrowsableTasks` (`browsableTasks.ts`). One
+    /// difference: callers must pass live (non-deleted) placements; the TS
+    /// twin filters tombstoned `boardTasks` internally.
     ///
     /// - Parameters:
     ///   - tasks: candidate library tasks (already user-scoped + non-deleted).
-    ///   - boardTasks: all `board_task` placement rows.
+    ///   - boardTasks: live (non-deleted) `board_task` placement rows —
+    ///     this helper does not filter tombstones itself.
     ///   - boardStatusById: non-deleted `boardId → status`. Placements on
     ///     missing (deleted) boards are ignored.
     ///   - childToParents: child taskId → parent compound taskId(s). A

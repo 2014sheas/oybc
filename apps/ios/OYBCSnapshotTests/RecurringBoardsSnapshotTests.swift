@@ -100,9 +100,9 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
     /// plus only Board size + Center square (no name field, no timeframe
     /// selector, no recurring/randomize toggles).
     ///
-    /// Pins `targetWindowDate` to `SnapshotFixtures.fixedReferenceDate` so
-    /// the window caption is deterministic (it no longer drifts with the
-    /// calendar month).
+    /// The caption is the pinned `controller.name` below, so the render is
+    /// already calendar-independent; the `targetWindowDate` pin is
+    /// defensive only (keeps any window-derived state deterministic too).
     func testSetupStepCoreBoard() {
         let prefs = SnapshotFixtures.makeUserPreferences()
         let controller = BoardWizardViewModel(
@@ -110,8 +110,8 @@ final class RecurringBoardsSnapshotTests: XCTestCase {
             prefilledRecurringTimeframe: .monthly,
             targetWindowDate: SnapshotFixtures.fixedReferenceDate
         )
-        // Pin a stable name so the snapshot doesn't drift across months
-        // (the core layout shows this as the read-only window caption).
+        // Pin a stable name — the core layout shows it as the read-only
+        // window caption, so this is what keeps the snapshot stable.
         controller.name = "May 2026"
 
         let view = BoardWizardSetupStepView(
