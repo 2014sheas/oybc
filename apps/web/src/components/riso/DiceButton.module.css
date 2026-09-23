@@ -1,11 +1,16 @@
-/* DiceButton — 26×22 variation toggle (handoff §Interactions "Variation
-   (dice)"). Off: muted 1.5px outline, no pips. On: blue fill, ink-static
-   pips (adaptive ink on a coloured fill is the dark-mode trap). */
+/* DiceButton — 28×28 variation toggle (handoff §Interactions "Variation
+   (dice)"). Off: muted 1.5px outline, one faint centred pip. On: blue fill,
+   ink-static pips (adaptive ink on a coloured fill is the dark-mode trap).
+
+   It was 22×22 until 2026-09-22, when the owner reported the member-row
+   controls as too small to use comfortably (#493): at 28 it no longer sits
+   visibly smaller than the 32px stepper pill beside it, and it matches the
+   row's 28px ✕. */
 
 .dice {
   flex: 0 0 auto;
-  width: 26px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -38,4 +43,11 @@
 .pips {
   display: block;
   fill: var(--riso-ink-static);
+}
+
+/* The off face's single pip sits on PAPER, not on a coloured fill — so it
+   takes --riso-muted, not the --riso-ink-static the lit pips use. */
+.offPip {
+  fill: var(--riso-muted);
+  opacity: 0.45;
 }

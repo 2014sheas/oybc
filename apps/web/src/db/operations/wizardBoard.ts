@@ -565,7 +565,11 @@ async function mintWizardDerivedRows(
     window,
     // A repeating board never reaches here (its "Create Board" persists a
     // record and spawns through `spawnTemplateBoard`), so this path is always
-    // the one-off mode — which is what suppresses auto targets.
+    // the one-off mode. A board-pulled counting target still pro-rates by
+    // window length here — mode no longer gates that — but 'oneOff' makes
+    // this path prefill the pro-rated target explicitly rather than leaving
+    // it to auto-target at spawn (owner ruling 2026-09-21:
+    // docs/BOARD_SOURCES.md §Member rules).
     mode: 'oneOff',
     tasksById,
     childrenByCompoundId,

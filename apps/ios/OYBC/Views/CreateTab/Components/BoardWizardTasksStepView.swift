@@ -19,7 +19,7 @@ private struct PoolEditToast: Identifiable {
 /// §Surfaces item 1 / handoff frame 2a):
 ///   1. Pool header card — capacity/required, progress bar, model note.
 ///   2. "ADD TASKS" section — quick-add row + special-type panel button.
-///   3. "Add a pool or board" dashed row → the source sheet (2c/5c).
+///   3. "Add from a pool or board" dashed row → the source sheet (2c/5c).
 ///   4. Library entry button (dashed) → bottom sheet at .fraction(0.76).
 ///   5. "On your board" — SOURCE rows (expandable range/filter/member
 ///      panels) + hand-added task rows.
@@ -29,7 +29,7 @@ private struct PoolEditToast: Identifiable {
 /// Sub-views (separate files):
 ///   - `RisoTasksPoolHeaderView`    — pool header card (capacity-based)
 ///   - `RisoSourceRowView`          — one pulled source row + expanded panel
-///   - `RisoSourcePickerSheetView`  — "Add a pool or board" sheet
+///   - `RisoSourcePickerSheetView`  — "Add from a pool or board" sheet
 ///   - `RisoQuickAddRowView`        — text input + red Add button
 ///   - `RisoSpecialTaskPanel`       — collapsed/expanded type-specific panel
 ///   - `RisoLibrarySheetView`       — dashed entry button + bottom sheet (owns search,
@@ -158,6 +158,11 @@ struct BoardWizardTasksStepView: View {
     var onToggleSourceExclude: (_ sourceId: String, _ taskId: String) -> Void = { _, _ in }
     var onPullPoolSource: (_ pool: Pool) -> Void = { _ in }
     var onPullBoardSource: (_ boardId: String) -> Void = { _ in }
+    /// The repeating board under edit (`BoardWizardViewModel.editingTemplateId`),
+    /// or nil for every other session. Only used to append the
+    /// `WizardEditModeNote` line to the remove-source confirm, so the dialog
+    /// can't read as if it were changing the board already on the Boards tab.
+    var editingTemplateId: String? = nil
 
     // MARK: - Member rules (B3, docs/BOARD_SOURCES.md §Member rules)
 
@@ -187,8 +192,18 @@ struct BoardWizardTasksStepView: View {
     @State private var toast: PoolEditToast? = nil
     @State private var toastDismiss: _Concurrency.Task<Void, Never>? = nil
 
-    // Board Sources P2 — "Add a pool or board" sheet.
+    // Board Sources P2 — "Add from a pool or board" sheet.
     @State private var showSourceSheet = false
+
+    /// The pulled source a ✕ (or a sheet un-toggle) asked to remove while it
+    /// still carried configuration — the remove-confirm's subject (owner
+    /// ruling 2026-09-19). nil whenever no confirm is up; an UNTOUCHED source
+    /// never lands here, it removes on the spot.
+    @State private var pendingSourceRemoval: BoardSource? = nil
+
+    /// A removal requested from INSIDE the source sheet, parked until that
+    /// sheet has finished dismissing (see `requestRemoveSource(_:fromSheet:)`).
+    @State private var sourceRemovalAfterSheetDismiss: BoardSource? = nil
 
     // MARK: - Derived
 
@@ -421,13 +436,13 @@ struct BoardWizardTasksStepView: View {
                     )
                 }
 
-                // 3. Add a pool or board (Board Sources P2, frame 2a) —
+                // 3. Add from a pool or board (Board Sources P2, frame 2a) —
                 // dashed row styled like the library row; opens the sheet.
                 sourceSheetEntry
 
                 // 4. Library entry button (dashed) → bottom sheet.
                 // HIDDEN for UX testing (owner, 2026-09-17): quick-add's
-                // search and the "Add a pool or board" sheet cover most of
+                // search and the "Add from a pool or board" sheet cover most of
                 // what this did, and the dashed row was mostly taking up
                 // space. All logic is kept — flip `libraryEntryEnabled` to
                 // restore.
@@ -501,33 +516,177 @@ struct BoardWizardTasksStepView: View {
         .overlay(alignment: .bottom) {
             if let toast { toastOverlay(toast) }
         }
-        // Board Sources P2 — the "Add a pool or board" sheet (frames 2c/5c).
-        .sheet(isPresented: $showSourceSheet) {
+        // Board Sources P2 — the "Add from a pool or board" sheet (frames 2c/5c).
+        //
+        // `onDismiss` is where a sheet-originated remove-confirm is finally
+        // presented: SwiftUI will not reliably present a confirmation dialog
+        // from a host that is already presenting a sheet, and parking the
+        // request here means the dialog goes up only once the sheet is
+        // genuinely gone — no timer, no animation race.
+        .sheet(isPresented: $showSourceSheet, onDismiss: {
+            if let queued = sourceRemovalAfterSheetDismiss {
+                sourceRemovalAfterSheetDismiss = nil
+                pendingSourceRemoval = queued
+            }
+        }) {
             RisoSourcePickerSheetView(
                 pools: pools,
                 boards: sheetBoardEntries,
                 pulledSourceIds: Set(sources.map { $0.sourceId }),
                 onTogglePool: { pool in
-                    if sources.contains(where: { $0.sourceId == pool.id }) {
-                        onRemoveSource(pool.id)
+                    // Un-toggling an already-pulled row is the same
+                    // destructive act as the row's ✕ — same gate.
+                    if let pulled = sources.first(where: { $0.sourceId == pool.id }) {
+                        requestRemoveSource(pulled, fromSheet: true)
                     } else {
                         onPullPoolSource(pool)
                     }
                 },
                 onToggleBoard: { boardId in
-                    if sources.contains(where: { $0.sourceId == boardId }) {
-                        onRemoveSource(boardId)
+                    if let pulled = sources.first(where: { $0.sourceId == boardId }) {
+                        requestRemoveSource(pulled, fromSheet: true)
                     } else {
                         onPullBoardSource(boardId)
                     }
                 }
             )
         }
+        // The remove-source confirm (owner ruling 2026-09-19). A native
+        // `.confirmationDialog` — the app's idiom for a two-choice
+        // destructive confirm (`RecurringTemplateCardView`); the Riso kit's
+        // own sheet exists for the counter-delete case because that one
+        // LISTS members, which this doesn't.
+        .confirmationDialog(
+            pendingSourceRemoval.map { "Remove \"\(displayName(for: $0))\"?" } ?? "",
+            isPresented: Binding(
+                get: { pendingSourceRemoval != nil },
+                set: { if !$0 { pendingSourceRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingSourceRemoval
+        ) { source in
+            Button("Remove", role: .destructive) {
+                onRemoveSource(source.sourceId)
+                pendingSourceRemoval = nil
+            }
+            Button("Cancel", role: .cancel) { pendingSourceRemoval = nil }
+        } message: { source in
+            Text(removeSourceMessage(for: source))
+        }
     }
 
     // MARK: - Sources UI (Board Sources P2)
 
-    /// Dashed "Add a pool or board" entry row — styled like the library
+    /// The gate EVERY source-removal path goes through (the row's ✕ AND the
+    /// source sheet's un-toggle): a source carrying configuration opens the
+    /// confirm, an untouched one is removed on the spot.
+    ///
+    /// The default filter is KIND-SCOPED (`newSourceFilter(for:)`) — comparing
+    /// against `BoardSource.init`'s `.all` (the legacy-decode default) would
+    /// make every freshly pulled board look configured. Web twin:
+    /// `sourceRemovalNeedsConfirm` in `wizardSourcesLogic.ts`.
+    /// - Parameters:
+    ///   - source: The row the ✕ (or a sheet un-toggle) named.
+    ///   - fromSheet: True when the request came from inside the "Add from a
+    ///     pool or board" sheet. A confirmation dialog cannot be reliably
+    ///     presented from a host that is already presenting that sheet — the
+    ///     usual result is that nothing appears and the dialog pops later,
+    ///     orphaned — so the request is parked in
+    ///     `sourceRemovalAfterSheetDismiss` and the sheet is closed; the
+    ///     sheet's `onDismiss` then raises the dialog. The person also ends
+    ///     up looking at the row they are about to lose, which is the better
+    ///     read anyway. The UNCONFIGURED path is untouched: it removes on the
+    ///     spot and leaves the sheet open, so un-toggling several untouched
+    ///     sources in one visit still works.
+    private func requestRemoveSource(_ source: BoardSource, fromSheet: Bool = false) {
+        guard BoardSources.sourceHasConfiguration(
+            source,
+            defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind),
+            seededTargetByTaskId: seededTargets(for: source)
+        ) else {
+            onRemoveSource(source.sourceId)
+            return
+        }
+        if fromSheet {
+            sourceRemovalAfterSheetDismiss = source
+            showSourceSheet = false
+        } else {
+            pendingSourceRemoval = source
+        }
+    }
+
+    /// What the one-off prefill would seed for this source RIGHT NOW — the
+    /// input that keeps the remove gate from mistaking a machine-written
+    /// target for configuration (amended ruling 2026-09-23).
+    ///
+    /// Empty unless the prefill itself would run: a `.board` source on a
+    /// ONE-OFF wizard (`prefillRemainingTargets` guards on
+    /// `editingTemplateId == nil, !isRecurring` and is called from
+    /// `pullBoard` alone). A pool source and every repeating session seed
+    /// nothing, so every stored target there is hand-set by definition.
+    ///
+    /// Recomputed per call rather than remembered from the pull, so an input
+    /// that has moved since makes the recomputed seed differ and the rule
+    /// read as configured. Known cases, all erring the same safe way (ask
+    /// rather than discard silently):
+    ///
+    /// - the wizard's TIMEFRAME changed after the pull — the person did
+    ///   change something, so asking is right;
+    /// - a RESUMED one-off draft, whose hydrated sources are never
+    ///   re-seeded, or a supply re-fetch after a sync pull: both can move
+    ///   `windowCountByTaskId` (it is live progress) while the stored target
+    ///   stays, so an otherwise untouched source asks. A report of that is
+    ///   this, not a bug.
+    ///
+    /// Reads the LIBRARY-backed task map, never `effectiveTaskById`: the
+    /// prefill read persisted tasks (`database.fetchTasks(ids:)`), so an
+    /// inline staged goal edit must not shift the recomputed seed — the
+    /// staged edit lives on the task and survives the removal, so claiming
+    /// "1 member rule" would be false.
+    ///
+    /// Web twin: `seededTargetsForRemoval` in `wizardSourcesLogic.ts`.
+    private func seededTargets(for source: BoardSource) -> [String: Int] {
+        guard !isRecurring, editingTemplateId == nil, source.kind == .board,
+              let supply = supplyInfoBySourceId[source.sourceId] else { return [:] }
+        var byId: [String: OYBC.Task] = [:]
+        for task in library.libraryTasks { byId[task.id] = task }
+        var tasksById: [String: BoardSources.SeededTargetTask] = [:]
+        for id in supply.rawSupplyTaskIds {
+            if let task = byId[id] { tasksById[id] = BoardSources.SeededTargetTask(task) }
+        }
+        return BoardSources.seededTargetsForSource(
+            supplyTaskIds: supply.rawSupplyTaskIds,
+            tasksById: tasksById,
+            windowCountByTaskId: supply.windowCountByTaskId,
+            sourceWindow: supply.sourceWindow,
+            targetWindow: wizardWindow
+        )
+    }
+
+    /// The pulled source's display name, for the confirm's title.
+    private func displayName(for source: BoardSource) -> String {
+        supplyInfoBySourceId[source.sourceId]?.displayName ?? "this source"
+    }
+
+    /// The confirm's body: what the removal costs, worded by the SHARED
+    /// sentence builder so web and iOS can't drift, plus the edit-mode line
+    /// while a repeating board is under edit (the same sentence
+    /// `WizardEditModeNote` uses).
+    private func removeSourceMessage(for source: BoardSource) -> String {
+        let loss = BoardSources.removeSourceLossSentence(
+            BoardSources.sourceConfiguration(
+                source,
+                defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind),
+                seededTargetByTaskId: seededTargets(for: source)
+            )
+        ) ?? ""
+        guard editingTemplateId != nil else { return loss }
+        return loss.isEmpty
+            ? "Changes apply from the next board."
+            : loss + " Changes apply from the next board."
+    }
+
+    /// Dashed "Add from a pool or board" entry row — styled like the library
     /// entry row (2pt dashed keyline, grid icon, trailing count badge =
     /// pools + active boards).
     private var sourceSheetEntry: some View {
@@ -538,7 +697,7 @@ struct BoardWizardTasksStepView: View {
                 Image(systemName: "square.grid.3x3")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Color.risoMuted)
-                Text("Add a pool or board")
+                Text("Add from a pool or board")
                     .font(.risoHead(13, .bold))
                     .foregroundStyle(Color.risoInk)
                 Spacer()
@@ -560,7 +719,7 @@ struct BoardWizardTasksStepView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Add a pool or board")
+        .accessibilityLabel("Add from a pool or board")
     }
 
     /// The source rows rendered at the top of the "On your board" list.
@@ -576,7 +735,7 @@ struct BoardWizardTasksStepView: View {
                     isExpanded: expandedSourceIds.contains(source.sourceId),
                     taskById: effectiveTaskById,
                     onToggleExpanded: { onToggleSourceExpanded(source.sourceId) },
-                    onRemove: { onRemoveSource(source.sourceId) },
+                    onRemove: { requestRemoveSource(source) },
                     onSetFilter: { onSetSourceFilter(source.sourceId, $0) },
                     onSetRange: { onSetSourceRange(source.sourceId, $0, $1) },
                     onToggleExclude: { onToggleSourceExclude(source.sourceId, $0) },

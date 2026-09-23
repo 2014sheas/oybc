@@ -113,6 +113,48 @@ private func pickPrimaryBoard(
     return candidates.first
 }
 
+/// The set of task ids that HEAD a shared-counter family.
+///
+/// A root is either (a) a live task pointed at by some live task's
+/// `sharedCounterId` — window-stamped derived counters and P5 linked members
+/// alike — or (b) a P5 hub-born counter (`counting` + `isCounter == true` +
+/// no `sharedCounterId` of its own), which is a counter in its own right even
+/// with zero members. This is exactly the root test
+/// `buildSharedCounterGroups` runs, extracted so the library's row renderers
+/// can ask "does this task head a family?" without rebuilding the whole
+/// Counters-Hub view-model (owner ruling 2026-09-22: one generic family row in
+/// the library, tapping through to the hub).
+///
+/// Soft-deleted tasks are ignored on BOTH sides: a deleted member does not
+/// make its target a root, and a deleted `isCounter` row is not one either.
+///
+/// A link target counts only when it is actually PRESENT, live, and a COUNTING
+/// task — the same predicate `buildSharedCounterGroups` applies when it skips
+/// an orphaned group, so the two can never disagree. That matters twice over:
+/// a dangling `sharedCounterId` (mid-sync, or a row an old client wrote) must
+/// not conjure a family whose hub page would be empty, and it must not let
+/// `BrowsableTasks.computeBrowsableTasks` hide a member the hub would never
+/// show.
+///
+/// Mirror of the TS `sharedCounterGroups.ts` `sharedCounterRootIds`.
+///
+/// - Parameter tasks: Candidate tasks (soft-deleted rows filtered internally).
+/// - Returns: The root ids.
+func sharedCounterRootIds(_ tasks: [Task]) -> Set<String> {
+    let live = tasks.filter { !$0.isDeleted }
+    let liveById = Dictionary(live.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    var roots = Set<String>()
+    for task in live {
+        guard let srcId = task.sharedCounterId else { continue }
+        if let root = liveById[srcId], root.type == .counting { roots.insert(srcId) }
+    }
+    for task in live
+    where task.type == .counting && task.isCounter == true && task.sharedCounterId == nil {
+        roots.insert(task.id)
+    }
+    return roots
+}
+
 /// Build the Counters-Hub / Counter-Detail view-models from the task graph.
 ///
 /// Returns one `SharedCounterGroup` per source counting task that has at least
@@ -135,28 +177,25 @@ func buildSharedCounterGroups(
     let tasksById = Dictionary(uniqueKeysWithValues: liveTasks.map { ($0.id, $0) })
     let boardsById = Dictionary(uniqueKeysWithValues: boards.map { ($0.id, $0) })
 
-    // Map source task id → its linked (derived) tasks.
+    // Map source task id → its linked (derived) tasks. The key set is
+    // `sharedCounterRootIds` — every task pointed at by a live
+    // `sharedCounterId`, PLUS the P5 hub-born counters (a COUNTING task
+    // flagged `isCounter` is a counter in its own right, even with zero
+    // linked tasks) — which is the same walk this used to inline. Seeding an
+    // empty linked list for a member-less root lets it flow through the same
+    // member-view pipeline as a single-member group. A flagged row that is
+    // itself derived (`sharedCounterId` set) is malformed — the create-input
+    // validators reject the combination, but synced rows are unguarded — and
+    // the helper ignores it defensively.
     var linkedBySource: [String: [Task]] = [:]
+    for rootId in sharedCounterRootIds(liveTasks) { linkedBySource[rootId] = [] }
     for t in liveTasks {
         guard let srcId = t.sharedCounterId else { continue }
-        linkedBySource[srcId, default: []].append(t)
-    }
-
-    // P5 — hub-born counters: a COUNTING task flagged `isCounter` is a
-    // counter in its own right, even with zero linked tasks. Seed an empty
-    // linked list for flagged sources the link walk didn't already
-    // discover, so they flow through the same member-view pipeline as
-    // single-member groups. A flagged row that is itself derived
-    // (`sharedCounterId` set) is malformed — the create-input validators
-    // reject the combination, but synced rows are unguarded — and is
-    // ignored defensively here.
-    for t in liveTasks {
-        if t.type == .counting,
-           t.isCounter == true,
-           t.sharedCounterId == nil,
-           linkedBySource[t.id] == nil {
-            linkedBySource[t.id] = []
-        }
+        // A link whose target is missing / deleted / not a counter has no key
+        // — the helper already applied this function's own orphan predicate,
+        // so the optional chain drops exactly the members whose group the
+        // loop below would skip.
+        linkedBySource[srcId]?.append(t)
     }
 
     var groups: [SharedCounterGroup] = []

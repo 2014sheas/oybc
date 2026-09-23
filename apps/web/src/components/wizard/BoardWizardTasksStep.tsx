@@ -41,7 +41,7 @@ import { LibrarySheet } from './LibrarySheet';
  * Renders the "Add from your library" dashed entry row + bottom sheet.
  *
  * Set to false for UX testing (owner, 2026-09-17) — the row was mostly
- * taking up space next to quick-add's search and the "Add a pool or board"
+ * taking up space next to quick-add's search and the "Add from a pool or board"
  * sheet. Every code path behind it is intact; flip this to bring it back.
  *
  * Typed `boolean` (not inferred `false`) so the guarded JSX below stays a
@@ -54,12 +54,13 @@ import { PoolList } from './PoolList';
 import { PoolRowEditor } from './PoolRowEditor';
 import { RowContextMenu } from './RowContextMenu';
 import { SourcePickerSheet } from './SourcePickerSheet';
-import { SourceRow } from './SourceRow';
 import { SpecialTaskPanel } from './SpecialTaskPanel';
 import { mergeSuggestionPool } from './suggestionPool';
 import { TasksPoolHeader } from './TasksPoolHeader';
+import { WizardSourceRows } from './WizardSourceRows';
 import { WizardQuickAddRow } from './WizardQuickAddRow';
 import { TaskDetailSheet } from '../TaskDetailSheet';
+import { useRemoveSourceConfirm } from './useRemoveSourceConfirm';
 import styles from './BoardWizardTasksStep.module.css';
 
 export interface BoardWizardTasksStepProps {
@@ -170,6 +171,13 @@ export interface BoardWizardTasksStepProps {
   onToggleSourceExclude: (sourceId: string, taskId: string) => void;
   onPullPoolSource: (poolId: string) => void;
   onPullBoardSource: (boardId: string) => void;
+  /**
+   * The repeating board under edit (`useBoardWizard.editingTemplateId`), or
+   * `null` for every other session. Only used to append the
+   * `WizardEditModeNote` line to the remove-source confirm, so the dialog
+   * can't read as if it were changing the board already on the Boards tab.
+   */
+  editingTemplateId?: string | null;
 
   // ── §Member rules (B3) — per-member rule editing on pulled sources, plus
   // the dice for hand-added counters. All optional so a read-only mount
@@ -284,6 +292,7 @@ export function BoardWizardTasksStep({
   onToggleSourceExclude,
   onPullPoolSource,
   onPullBoardSource,
+  editingTemplateId = null,
   manualTaskVary,
   onSetManualVary,
   onSetMemberTarget = NO_RULE_ACTION,
@@ -394,6 +403,22 @@ export function BoardWizardTasksStep({
    *  Mirrors iOS BoardWizardTasksStepView's "Open in library" context-menu
    *  affordance. */
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
+
+  /** Removing a pulled source asks first once it carries configuration
+   *  (owner ruling 2026-09-19); an untouched one goes instantly. */
+  const { requestRemoveSource, removeSourceConfirm } = useRemoveSourceConfirm({
+    sources,
+    supplyInfoBySourceId,
+    // `library.taskMap`, not `effectiveTaskMap`: the seed must be recomputed
+    // from the same map `prefillRemainingTargets` read (`tasksById:
+    // library.taskMap` in `BoardWizardPage`), so a staged inline goal edit
+    // can't turn an untouched source into a "1 member rule" confirm.
+    taskById: library.taskMap,
+    wizardWindow,
+    isRecurring,
+    editingTemplateId,
+    onRemoveSource,
+  });
 
   // ── Inline pool-row editor (Web inline-editing port PR-2) ──────────────
   // At most one row open at a time.
@@ -639,28 +664,30 @@ export function BoardWizardTasksStep({
         />
       </div>
 
-      {/* 3. "Add a pool or board" — dashed entry row + sheet (frames
+      {/* 3. "Add from a pool or board" — dashed entry row + sheet (frames
           2a/2c/5c). Sheet taps toggle: pull when absent, remove when
           pulled (mirrors iOS's sheet wiring). */}
       <SourcePickerSheet
         pools={pools}
         boardEntries={sheetBoardEntries}
         pulledSourceIds={useMemo(() => new Set(sources.map((s) => s.sourceId)), [sources])}
-        onTogglePool={(poolId) =>
-          sources.some((s) => s.sourceId === poolId)
-            ? onRemoveSource(poolId)
-            : onPullPoolSource(poolId)
-        }
-        onToggleBoard={(boardId) =>
-          sources.some((s) => s.sourceId === boardId)
-            ? onRemoveSource(boardId)
-            : onPullBoardSource(boardId)
-        }
+        onTogglePool={(poolId) => {
+          // Un-toggling an already-pulled row is the same destructive act as
+          // the row's ✕, so it takes the same gate.
+          const pulled = sources.find((s) => s.sourceId === poolId);
+          if (pulled) requestRemoveSource(pulled);
+          else onPullPoolSource(poolId);
+        }}
+        onToggleBoard={(boardId) => {
+          const pulled = sources.find((s) => s.sourceId === boardId);
+          if (pulled) requestRemoveSource(pulled);
+          else onPullBoardSource(boardId);
+        }}
       />
 
       {/* 4. Library entry button → bottom sheet.
           HIDDEN for UX testing (owner, 2026-09-17): quick-add's search and
-          the "Add a pool or board" sheet cover most of what this did, and
+          the "Add from a pool or board" sheet cover most of what this did, and
           the dashed row was mostly taking up space. All logic is kept —
           flip `LIBRARY_ENTRY_ENABLED` to restore. */}
       {LIBRARY_ENTRY_ENABLED && (
@@ -678,6 +705,7 @@ export function BoardWizardTasksStep({
         onContextMenu={(taskId, x, y) => setRowContextMenu({ taskId, x, y })}
         currentTimeframe={currentTimeframe}
         parentBoardTasks={parentBoardTasks}
+        familyRootIds={library.familyRootIds}
       />
       )}
 
@@ -711,51 +739,30 @@ export function BoardWizardTasksStep({
         onSetManualVary={onSetManualVary}
         countOverride={capacity}
         leadingRows={
-          sources.length > 0
-            ? sources.map((source) => (
-                <SourceRow
-                  key={source.sourceId}
-                  source={source}
-                  supply={
-                    supplyInfoBySourceId[source.sourceId] ?? {
-                      displayName: '',
-                      rawSupplyTaskIds: [],
-                      doneTaskIds: new Set<string>(),
-                    }
-                  }
-                  availableCount={availableCountForSource(source.sourceId)}
-                  isExpanded={expandedSourceIds.has(source.sourceId)}
-                  taskById={effectiveTaskMap}
-                  onToggleExpanded={() => onToggleSourceExpanded(source.sourceId)}
-                  onRemove={() => onRemoveSource(source.sourceId)}
-                  onSetFilter={(filter) => onSetSourceFilter(source.sourceId, filter)}
-                  onSetRange={(min, max) => onSetSourceRange(source.sourceId, min, max)}
-                  onToggleExclude={(taskId) => onToggleSourceExclude(source.sourceId, taskId)}
-                  counterClashByTaskId={counterClashByTaskId}
-                  compoundChildrenByCompound={effectiveChildrenByCompound}
-                  mode={planMode}
-                  wizardWindow={wizardWindow}
-                  onSetMemberTarget={(taskId, target) =>
-                    onSetMemberTarget(source.sourceId, taskId, target)
-                  }
-                  onSetMemberVary={(taskId, level) =>
-                    onSetMemberVary(source.sourceId, taskId, level)
-                  }
-                  onSetMemberSplit={(taskId, split) =>
-                    onSetMemberSplit(source.sourceId, taskId, split)
-                  }
-                  onSetPartExcluded={(taskId, childId, excluded) =>
-                    onSetPartExcluded(source.sourceId, taskId, childId, excluded)
-                  }
-                  onSetPartTarget={(taskId, childId, target) =>
-                    onSetPartTarget(source.sourceId, taskId, childId, target)
-                  }
-                  onSetPartVary={(taskId, childId, level) =>
-                    onSetPartVary(source.sourceId, taskId, childId, level)
-                  }
-                />
-              ))
-            : undefined
+          sources.length > 0 ? (
+            <WizardSourceRows
+              sources={sources}
+              supplyInfoBySourceId={supplyInfoBySourceId}
+              availableCountForSource={availableCountForSource}
+              expandedSourceIds={expandedSourceIds}
+              taskById={effectiveTaskMap}
+              counterClashByTaskId={counterClashByTaskId}
+              compoundChildrenByCompound={effectiveChildrenByCompound}
+              mode={planMode}
+              wizardWindow={wizardWindow}
+              onToggleExpanded={onToggleSourceExpanded}
+              onRemove={requestRemoveSource}
+              onSetFilter={onSetSourceFilter}
+              onSetRange={onSetSourceRange}
+              onToggleExclude={onToggleSourceExclude}
+              onSetMemberTarget={onSetMemberTarget}
+              onSetMemberVary={onSetMemberVary}
+              onSetMemberSplit={onSetMemberSplit}
+              onSetPartExcluded={onSetPartExcluded}
+              onSetPartTarget={onSetPartTarget}
+              onSetPartVary={onSetPartVary}
+            />
+          ) : undefined
         }
       />
 
@@ -971,6 +978,8 @@ export function BoardWizardTasksStep({
           }}
         />
       )}
+
+      {removeSourceConfirm}
 
     </div>
   );

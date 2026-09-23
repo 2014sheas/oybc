@@ -1,6 +1,21 @@
 import SwiftUI
 import GRDB
 
+/// A Tasks-tab push that is NOT a plain Task-detail id.
+///
+/// `path` is a `NavigationPath`, so mixed value types coexist happily: a bare
+/// `String` still means "open `TaskDetailView` for this task id", and this
+/// enum carries the destinations that need their own view. Precedent:
+/// `ProfileRoute` in `Views/BoardsTab/TutorialLessons.swift`, dispatched in
+/// `MainTabView`.
+enum TasksTabRoute: Hashable {
+    /// Owner ruling 2026-09-22 — a task that HEADS a shared-counter family
+    /// opens the Counters hub's detail for that root (the page that already
+    /// lists the family's per-window rows) instead of Task detail. The
+    /// library shows the counter once, generically; the hub owns the windows.
+    case counter(id: String)
+}
+
 /// Tasks tab — Riso-styled library browser.
 ///
 /// Reskinned in the "Riso" direction: cream paper background, Bricolage
@@ -13,7 +28,9 @@ import GRDB
 /// intact). A bottom-sheet approach would require a separate sheet layer on
 /// top of the existing edit/delete/new-task sheets; the push path is simpler
 /// and already wired correctly for board navigation. Noted as a divergence
-/// from the prototype's sheet tap in the phase summary.
+/// from the prototype's sheet tap in the phase summary. Since the 2026-09-22
+/// ruling a row whose task heads a shared-counter family pushes
+/// `TasksTabRoute.counter` instead — see `openTask(_:)`.
 ///
 /// iOS twin of web's `TasksPage.tsx`.
 struct TasksTabView: View {
@@ -184,7 +201,7 @@ struct TasksTabView: View {
 
                         if isExpandable {
                             Button {
-                                path.append(task.id)
+                                openTask(task.id)
                             } label: {
                               RisoCompoundGroupRowView(
                                 task: task,
@@ -206,7 +223,8 @@ struct TasksTabView: View {
                                 },
                                 childPlacementCounts: placementCounts,
                                 childActivePlacementCounts: activeCounts,
-                                onChildTap: { childId in path.append(childId) }
+                                onChildTap: { childId in openTask(childId) },
+                                childFamilyRootIds: library.familyRootIds
                             )
                             }
                             .buttonStyle(.plain)
@@ -240,14 +258,15 @@ struct TasksTabView: View {
                             }
                         } else {
                             Button {
-                                path.append(task.id)
+                                openTask(task.id)
                             } label: {
                                 RisoTaskRowView(
                                     task: task,
                                     placementCount: placementCounts[task.id] ?? 0,
                                     activePlacementCount: activeCounts[task.id] ?? 0,
                                     usageCountsLoaded: vm.usageCountsLoaded,
-                                    childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0
+                                    childCount: library.compoundChildrenByCompound[task.id]?.count ?? 0,
+                                    isFamilyRoot: library.familyRootIds.contains(task.id)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -377,6 +396,12 @@ struct TasksTabView: View {
             )
         }
         // ── Navigation destination ────────────────────────────────────
+        .navigationDestination(for: TasksTabRoute.self) { route in
+            switch route {
+            case .counter(let counterId):
+                CounterDetailView(counterId: counterId)
+            }
+        }
         .navigationDestination(for: String.self) { taskId in
             TaskDetailView(
                 taskId: taskId,
@@ -459,6 +484,20 @@ struct TasksTabView: View {
         .padding(16)
         .frame(maxWidth: .infinity)
         .risoCard(keyline: Riso.Keyline.dense, fill: .risoPaper2)
+    }
+
+    // MARK: - Navigation
+
+    /// Row tap. Owner ruling 2026-09-22 — a task that HEADS a shared-counter
+    /// family opens the Counters hub's detail for that root; everything else
+    /// opens Task detail, exactly as before. iOS twin of web's
+    /// `TasksPage.openTask`.
+    private func openTask(_ taskId: String) {
+        if library.familyRootIds.contains(taskId) {
+            path.append(TasksTabRoute.counter(id: taskId))
+        } else {
+            path.append(taskId)
+        }
     }
 
     // MARK: - Quick-action handlers

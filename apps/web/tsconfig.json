@@ -32,6 +32,6 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../packages/shared" }
+    { "path": "../../packages/shared/tsconfig.json" }
   ]
 }

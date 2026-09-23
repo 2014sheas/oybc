@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PARENT_TIMEFRAMES, TaskType, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
+import { PARENT_TIMEFRAMES, TaskType, formatCounterName, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { renderTaskRow } from './TaskRow';
 import stepStyles from './BoardWizardTasksStep.module.css';
@@ -51,6 +51,13 @@ export interface LibrarySheetProps {
   /** Reactive list of tasks placed on currently-active PARENT boards
    *  (Phase 6.1). Empty when the current timeframe has no parents. */
   parentBoardTasks: Task[];
+  /** Owner ruling 2026-09-22 — task ids that HEAD a shared-counter family
+   *  (`useTaskLibrary().familyRootIds`). Such a row shows the generic
+   *  `formatCounterName` label instead of its stored title; tapping it still
+   *  adds the root itself, exactly as before. Passed in rather than derived
+   *  here because it must be computed over the FULL library — the browse rule
+   *  has already removed the members from `effectiveAllTasks`. */
+  familyRootIds?: Set<string>;
 }
 
 /**
@@ -82,6 +89,7 @@ export function LibrarySheet({
   onContextMenu,
   currentTimeframe,
   parentBoardTasks,
+  familyRootIds,
 }: LibrarySheetProps): React.ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -119,11 +127,26 @@ export function LibrarySheet({
 
   const visible = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const matches = (title: string): boolean => q.length === 0 || title.toLowerCase().includes(q);
+    // Match the stored title OR — for a counting task — the pair-derived
+    // generic name, because a family root's row here reads "Read pages" rather
+    // than its stored "Read 35 pages" (owner ruling 2026-09-22). Tested for
+    // every counting task, not just roots: cheaper than threading the root set
+    // through, and harmless for a standalone counter whose title already
+    // contains the same `(action, unit)` pair. Twin of `useTasksFilters`'s
+    // `matchesSearch` and iOS `RisoLibrarySheetView.matches`.
+    const matches = (t: Task): boolean => {
+      if (q.length === 0) return true;
+      if (t.title.toLowerCase().includes(q)) return true;
+      if (t.type === TaskType.COUNTING) {
+        const generic = formatCounterName(t.action, t.unit);
+        if (generic && generic.toLowerCase().includes(q)) return true;
+      }
+      return false;
+    };
     const notExpired = (t: Task): boolean => !isTaskExpired(t);
 
     if (activeFilter === 'from-parents') {
-      const filtered = parentBoardTasks.filter((t) => notExpired(t) && matches(t.title));
+      const filtered = parentBoardTasks.filter((t) => notExpired(t) && matches(t));
       return { tasks: filtered, composites: [] as Task[] };
     }
 
@@ -132,17 +155,17 @@ export function LibrarySheet({
     const tasks =
       activeFilter === 'all'
         ? effectiveAllTasks.filter(
-            (t) => notExpired(t) && t.type !== TaskType.COMPOUND && notGroupedChild(t) && matches(t.title),
+            (t) => notExpired(t) && t.type !== TaskType.COMPOUND && notGroupedChild(t) && matches(t),
           )
         : activeFilter === 'compound'
           ? []
           : effectiveAllTasks.filter(
-              (t) => notExpired(t) && t.type === activeFilter && notGroupedChild(t) && matches(t.title),
+              (t) => notExpired(t) && t.type === activeFilter && notGroupedChild(t) && matches(t),
             );
 
     const composites =
       activeFilter === 'all' || activeFilter === 'compound'
-        ? effectiveAllTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t.title))
+        ? effectiveAllTasks.filter((t) => notExpired(t) && t.type === TaskType.COMPOUND && matches(t))
         : [];
 
     return { tasks, composites };
@@ -298,6 +321,7 @@ export function LibrarySheet({
                           showCenterStar: centerTaskMode && isSelected,
                           isCenter,
                           onCenterClick: () => onCenterClick(task.id),
+                          isFamilyRoot: familyRootIds?.has(task.id) ?? false,
                         })}
                       </li>
                     );

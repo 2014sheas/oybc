@@ -10,7 +10,7 @@ import {
 /**
  * Board Sources P4 (docs/BOARD_SOURCES.md §Surfaces items 1–2) — e2e
  * coverage for the wizard's Tasks-step sources model: pulling a pool via
- * the "Add a pool or board" sheet creates a source ROW (not a flat task
+ * the "Add from a pool or board" sheet creates a source ROW (not a flat task
  * union), the header counts CAPACITY, the expanded panel's member ✕
  * excludes a task for this board only (UNDO restores), a hand-added task
  * survives removing the source, and the sheet shows its empty state when
@@ -54,10 +54,10 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    // Step 2 mounted — the dashed "Add a pool or board" entry opens the
+    // Step 2 mounted — the dashed "Add from a pool or board" entry opens the
     // source sheet with the seeded pool as a toggleable row.
-    await page.getByRole('button', { name: 'Add a pool or board' }).click();
-    const sourceSheet = page.getByRole('dialog', { name: 'Add a pool or board' });
+    await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
     await expect(sourceSheet).toBeVisible();
     const sheetPoolRow = sourceSheet.getByRole('button', { name: /Morning Kickstart/ });
     await expect(sheetPoolRow).toHaveAttribute('aria-pressed', 'false');
@@ -124,12 +124,86 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
     // Remove the source via the row's ✕: the source's tasks drop; the
     // hand-added task survives (the manual layer is never touched by a
     // source removal).
+    //
+    // NO confirm here, deliberately: the exclusion above was UNDOne, so at
+    // this point the row is back to exactly what `appendSource` minted
+    // ([0, all], no excludes, pool filter 'all', no member rules) and
+    // `sourceRemovalNeedsConfirm` is false — the instant path. The
+    // confirm's own coverage is the spec below.
     await page.getByRole('button', { name: 'Remove Morning Kickstart' }).click();
+    await expect(page.getByTestId('remove-source-confirm')).toHaveCount(0);
     await expect(sourceRow).toHaveCount(0);
     await expect(manualRow).toBeVisible();
     await expect(page.getByLabel('Capacity 1 of 8 tasks')).toBeVisible();
     await page.waitForTimeout(200);
     await page.screenshot({ path: '.playwright-mcp/sources-05-source-removed.png' });
+  });
+
+  test('a configured source asks before it is removed, and Cancel keeps it intact', async ({
+    page,
+  }) => {
+    // The owner's exact complaint, locked: configure a source, misclick its
+    // ✕, and the exclusion must still be there afterwards.
+    const poolTaskIds = Array.from(
+      { length: 8 },
+      (_, i) => `dddddddd-0000-0000-0000-00000000000${i}`,
+    );
+    for (const [i, id] of poolTaskIds.entries()) {
+      await seedTask(page, { id, title: `Kept Task ${i + 1}`, type: 'normal' });
+    }
+    await seedPool(page, {
+      id: 'eeeeeeee-0000-0000-0000-000000000001',
+      name: 'Evening Winddown',
+      taskIds: poolTaskIds,
+    });
+
+    await openCreateHub(page);
+    await startOneOffWizard(page);
+    await page.getByLabel(/board name/i).fill('Confirm Test Board');
+    await page.getByRole('button', { name: '3×3', exact: true }).click();
+    await page
+      .getByRole('group', { name: 'Timeframe' })
+      .getByRole('button', { name: 'Daily', exact: true })
+      .click();
+    await page.getByRole('button', { name: /^Next/ }).click();
+
+    await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
+    await sourceSheet.getByRole('button', { name: /Evening Winddown/ }).click();
+    await sourceSheet.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(sourceSheet).toBeHidden();
+
+    // Configure it: exclude one member for this board only.
+    const sourceRow = page.getByRole('button', { name: /Evening Winddown, 8 tasks/ });
+    await sourceRow.click();
+    await page.getByRole('button', { name: 'Exclude Kept Task 1 for this board' }).click();
+    const configuredRow = page.getByRole('button', {
+      name: /Evening Winddown, 8 tasks · 1 excluded/,
+    });
+    await expect(configuredRow).toBeVisible();
+
+    // The ✕ now ASKS, and names the loss.
+    await page.getByRole('button', { name: 'Remove Evening Winddown' }).click();
+    const confirm = page.getByTestId('remove-source-confirm');
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toContainText('Remove "Evening Winddown"?');
+    await expect(confirm).toContainText("You'll lose 1 exclusion.");
+    await page.screenshot({ path: '.playwright-mcp/sources-06-remove-confirm.png' });
+
+    // Cancel: the row AND its exclusion survive.
+    await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(confirm).toBeHidden();
+    await expect(configuredRow).toBeVisible();
+    await expect(page.getByLabel('Capacity 7 of 8 tasks')).toBeVisible();
+
+    // Confirming really does remove it.
+    await page.getByRole('button', { name: 'Remove Evening Winddown' }).click();
+    await page
+      .getByTestId('remove-source-confirm')
+      .getByRole('button', { name: 'Remove', exact: true })
+      .click();
+    await expect(configuredRow).toHaveCount(0);
+    await expect(page.getByLabel('Capacity 0 of 8 tasks')).toBeVisible();
   });
 
   test('shows the sheet empty state when the user has nothing to pull from', async ({
@@ -144,8 +218,8 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
       .click();
     await page.getByRole('button', { name: /^Next/ }).click();
 
-    await page.getByRole('button', { name: 'Add a pool or board' }).click();
-    const sourceSheet = page.getByRole('dialog', { name: 'Add a pool or board' });
+    await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
     await expect(sourceSheet.getByText('Nothing to pull from yet')).toBeVisible();
     await expect(
       sourceSheet.getByText('Boards you make and pools you save will show up here.'),

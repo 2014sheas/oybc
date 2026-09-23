@@ -177,7 +177,7 @@ export type {
 // counters interaction). The module + its tests/fixtures were deleted in WC PR D.
 
 // ===== Shared Counters — Hub / Detail read-model builder (P1) =====
-export { buildSharedCounterGroups } from './sharedCounterGroups';
+export { buildSharedCounterGroups, sharedCounterRootIds } from './sharedCounterGroups';
 
 export type {
   SharedCounterGroup,
@@ -247,9 +247,13 @@ export {
   sourcesFromMixFields,
   mixFieldsFromSources,
   sourcesForRecord,
+  sourceConfiguration,
+  sourceHasConfiguration,
+  removeSourceLossSentence,
 } from './boardSources';
 
 export type {
+  SourceConfigurationDetail,
   BoardSourceSupply,
   SourceCapacityResult,
   AchievablePoolSizeResult,
@@ -302,6 +306,16 @@ export {
   withMemberRule,
   withPartRule,
   remainingTarget,
+  prefilledOneOffTarget,
+  seededTargetsForSource,
+  countingSummary,
+  compoundSummary,
+} from './memberRulesDisplay';
+
+export type {
+  MemberSummary,
+  SeededTargetSupply,
+  SeededTargetTask,
 } from './memberRulesDisplay';
 
 // ===== Seeded RNG — the repo's one deterministic LCG (see seededRng.ts) =====

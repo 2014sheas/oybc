@@ -106,6 +106,46 @@ final class RisoTasksTabSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - RisoTaskRowView — shared-counter family root
+
+    /// Owner ruling 2026-09-22 — the library shows ONE generic row per counter
+    /// family. This pictures that row: the pair-derived "Read pages" label in
+    /// place of the stored "Read 35 pages", the goal-free "Counter" subtitle,
+    /// and no count anywhere. Contrast `testRowCounting*` above, which is the
+    /// same component with `isFamilyRoot` false and shows "Drink · goal 8 cups".
+    /// Web twin: `pages/tasks/__tests__/TaskRow.test.ts`.
+    func testRowCounterFamilyRootLight() {
+        let task = SnapshotFixtures.counterFamily().root
+        let view = wrap(
+            RisoTaskRowView(
+                task: task, placementCount: 3, activePlacementCount: 2,
+                childCount: 0, isFamilyRoot: true
+            ),
+            width: 353, height: 80
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 353, height: 80), traits: lightTraits()),
+            record: recordMode
+        )
+    }
+
+    func testRowCounterFamilyRootDark() {
+        let task = SnapshotFixtures.counterFamily().root
+        let view = wrap(
+            RisoTaskRowView(
+                task: task, placementCount: 3, activePlacementCount: 2,
+                childCount: 0, isFamilyRoot: true
+            ),
+            width: 353, height: 80
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 353, height: 80), traits: darkTraits()),
+            record: recordMode
+        )
+    }
+
     // MARK: - RisoTaskRowView — Compound
 
     func testRowCompoundLight() {

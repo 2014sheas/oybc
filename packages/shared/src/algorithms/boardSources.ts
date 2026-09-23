@@ -56,7 +56,11 @@
 import { fisherYatesShuffle } from '@oybc/bingo-core';
 import { BoardStatus, TaskType } from '../constants/enums';
 import type { Board } from '../types/board';
-import type { BoardSource } from '../types/boardSource';
+import type {
+  BoardSource,
+  BoardSourceFilter,
+  BoardSourceMemberRule,
+} from '../types/boardSource';
 import type { Pool } from '../types/pool';
 import type { Task } from '../types/task';
 
@@ -567,4 +571,179 @@ export function sourcesForRecord(
   record: LegacyMixFields & { sources?: BoardSource[] },
 ): BoardSource[] {
   return record.sources ?? sourcesFromMixFields(record);
+}
+
+/**
+ * What a pulled source carries BEYOND its as-minted defaults — the detail
+ * behind {@link sourceHasConfiguration}, so the wizard's remove-confirm can
+ * name what would be lost instead of warning vaguely.
+ *
+ * Every field is a difference from the creation defaults, never an absolute
+ * reading of the row: an untouched source reads all-zero/false/null.
+ */
+export interface SourceConfigurationDetail {
+  /** Members this board suppressed from the source's supply (`excludedTaskIds`). */
+  excludedCount: number;
+  /** Members carrying an AUTHORED rule — see {@link sourceConfiguration}. */
+  memberRuleCount: number;
+  /** The range was dragged off the `[0, all]` mint default. */
+  rangeNarrowed: boolean;
+  /**
+   * The non-default filter the row is on, or `null` — the ONLY stored form
+   * of "the filter changed". The value is carried (rather than derived by
+   * the caller) so {@link removeSourceLossSentence} can name the control by
+   * its on-screen label without being handed the source too.
+   */
+  filter: BoardSourceFilter | null;
+  /**
+   * `filter !== null`, COMPUTED — never a second stored bit. Storing both
+   * allowed the illegal `{ filterChanged: true, filter: null }`, where the
+   * predicate said "configured" and the sentence dropped the clause. Kept
+   * as a named member because it reads well at call sites and the vectors
+   * pin it.
+   */
+  readonly filterChanged: boolean;
+}
+
+/**
+ * True when a member rule is something a PERSON wrote, as opposed to the
+ * one-off prefill's machine-written target.
+ *
+ * `vary`, `split` and any `parts` entry are only ever authored (the setters
+ * prune their defaults away). A lone `target` is ambiguous: on a one-off
+ * board, `prefillRemainingTargets` writes one for every counting member of a
+ * board source the moment it is pulled. So a rule whose ONLY field is a
+ * `target` equal to `seededTargetByTaskId[taskId]` is machine-written and
+ * does not count.
+ *
+ * The seed map is authoritative only for the keys it has: a target on a
+ * member the map doesn't mention (a pool member, or any caller that passed
+ * no map) is hand-set by definition and counts.
+ */
+function isAuthoredMemberRule(
+  rule: BoardSourceMemberRule,
+  seededTarget: number | undefined,
+): boolean {
+  if (rule.vary != null || rule.split != null) return true;
+  if (rule.parts != null && Object.keys(rule.parts).length > 0) return true;
+  // `== null` (not `=== undefined`) throughout: iOS decodes a missing key to
+  // `nil` and can round-trip an explicit JSON `null`, so an absent field must
+  // read the same on both platforms.
+  if (rule.target == null) return false;
+  return seededTarget == null || rule.target !== seededTarget;
+}
+
+/**
+ * Describe how far one pulled source has been configured away from the row
+ * the wizard mints when you pull it.
+ *
+ * Member rules are counted by AUTHORSHIP, not by entry count (amended ruling
+ * 2026-09-23): the setters already prune an all-default rule (`vary: 0`,
+ * `split: false`, an empty `parts`) out of the map, but the one-off prefill
+ * still writes a `target` for every counting member of a freshly pulled
+ * board source — counting those made the confirm fire on the exact
+ * misclick-right-after-adding case it was meant to skip. See
+ * {@link isAuthoredMemberRule}.
+ *
+ * @param source - The pulled source row.
+ * @param defaultFilter - The filter this source's KIND mints on — `'todo'`
+ *   for a board, `'all'` for a pool (web `newSourceFilter`, iOS
+ *   `BoardWizardViewModel.newSourceFilter(for:)`). Passed in rather than
+ *   derived here so this module never reaches into wizard-local code; do
+ *   NOT pass the legacy-decode default (`'all'` for every kind), which
+ *   would make every freshly pulled board look configured.
+ * @param seededTargetByTaskId - What the one-off prefill would seed right
+ *   now, from `seededTargetsForSource`. Optional: a pool source, a recurring
+ *   wizard, and any non-wizard caller pass nothing and every stored target
+ *   counts as authored.
+ * @returns The per-dimension detail.
+ */
+export function sourceConfiguration(
+  source: BoardSource,
+  defaultFilter: BoardSourceFilter,
+  seededTargetByTaskId?: Record<string, number>,
+): SourceConfigurationDetail {
+  let memberRuleCount = 0;
+  for (const [taskId, rule] of Object.entries(source.memberRules ?? {})) {
+    if (isAuthoredMemberRule(rule, seededTargetByTaskId?.[taskId])) memberRuleCount += 1;
+  }
+  const filter = source.filter !== defaultFilter ? source.filter : null;
+  return {
+    excludedCount: source.excludedTaskIds.length,
+    memberRuleCount,
+    // `!= null`, not `!== null`: a record written without the key decodes to
+    // `undefined` on web and `nil` on iOS, and both mean "the all latch".
+    rangeNarrowed: source.min !== 0 || source.max != null,
+    filter,
+    get filterChanged(): boolean {
+      return this.filter !== null;
+    },
+  };
+}
+
+/**
+ * True when removing this source would throw away work the person did on it
+ * — the gate on the wizard's remove-confirm (owner ruling 2026-09-19: an
+ * untouched source removes instantly; a configured one asks first).
+ *
+ * @param source - The pulled source row.
+ * @param defaultFilter - See {@link sourceConfiguration}.
+ * @param seededTargetByTaskId - See {@link sourceConfiguration}.
+ * @returns Whether the row carries any configuration.
+ */
+export function sourceHasConfiguration(
+  source: BoardSource,
+  defaultFilter: BoardSourceFilter,
+  seededTargetByTaskId?: Record<string, number>,
+): boolean {
+  const detail = sourceConfiguration(source, defaultFilter, seededTargetByTaskId);
+  return (
+    detail.excludedCount > 0 ||
+    detail.memberRuleCount > 0 ||
+    detail.rangeNarrowed ||
+    // Reads `filter`, the stored form, for the same reason
+    // `removeSourceLossSentence` does: the two must never disagree, not even
+    // for a detail some caller hand-built.
+    detail.filter !== null
+  );
+}
+
+/** The done-filter segmented's on-screen labels — quoted verbatim in the
+ *  loss sentence so the copy names the control the person actually used. */
+const FILTER_LABEL: Record<BoardSourceFilter, string> = {
+  all: 'All squares',
+  todo: 'Not done yet',
+};
+
+/**
+ * The one sentence the remove-confirm uses to name what a removal costs —
+ * shared so the two platforms can't word it differently.
+ *
+ * Order is fixed (exclusions, member rules, range, filter) and the pieces
+ * join naturally: `"A."` · `"A and B."` · `"A, B and C."`.
+ *
+ * @param detail - From {@link sourceConfiguration}.
+ * @returns The sentence, or `null` when nothing is configured (in which case
+ *   no confirm is shown at all).
+ */
+export function removeSourceLossSentence(
+  detail: SourceConfigurationDetail,
+): string | null {
+  const parts: string[] = [];
+  if (detail.excludedCount > 0) {
+    parts.push(`${detail.excludedCount} exclusion${detail.excludedCount === 1 ? '' : 's'}`);
+  }
+  if (detail.memberRuleCount > 0) {
+    parts.push(`${detail.memberRuleCount} member rule${detail.memberRuleCount === 1 ? '' : 's'}`);
+  }
+  if (detail.rangeNarrowed) parts.push('the narrowed range');
+  if (detail.filter !== null) parts.push(`the "${FILTER_LABEL[detail.filter]}" filter`);
+  if (parts.length === 0) return null;
+  return `You'll lose ${joinNaturally(parts)}.`;
+}
+
+/** `["a"]` → `"a"`; `["a","b"]` → `"a and b"`; `["a","b","c"]` → `"a, b and c"`. */
+function joinNaturally(parts: string[]): string {
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }

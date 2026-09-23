@@ -4,6 +4,7 @@ import {
   TaskType,
   BoardStatus,
   computeBrowsableTasks,
+  sharedCounterRootIds,
   type Task,
   type CompoundChild,
   type Board,
@@ -55,6 +56,15 @@ export interface TaskLibrary {
   /** Reverse map: child task id → array of parent compound task ids.
    *  A child can belong to multiple parents (multi-parent display). */
   childToParents: Record<string, string[]>;
+  /** Owner ruling 2026-09-22 — every task id that HEADS a shared-counter
+   *  family (a link target, or a hub-born `isCounter` counter). Row
+   *  renderers show such a task under its generic `formatCounterName` label
+   *  and route its tap to the Counters hub instead of Task detail.
+   *
+   *  Computed over `allTasks`, NOT the browsable subset: the browse rule
+   *  hides the members, so a set derived from `useBrowsableTasks` output
+   *  would find no link targets at all. */
+  familyRootIds: Set<string>;
 }
 
 export function useTaskLibrary(userId: string | undefined): TaskLibrary {
@@ -113,6 +123,8 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     return { childTaskIds: ids, childToParents: parents };
   }, [compoundChildrenByCompound]);
 
+  const familyRootIds = useMemo(() => sharedCounterRootIds(allTasks), [allTasks]);
+
   return {
     allTasks,
     allCompoundChildren,
@@ -120,6 +132,7 @@ export function useTaskLibrary(userId: string | undefined): TaskLibrary {
     compoundChildrenByCompound,
     childTaskIds,
     childToParents,
+    familyRootIds,
   };
 }
 

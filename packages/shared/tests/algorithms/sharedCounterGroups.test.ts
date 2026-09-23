@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildSharedCounterGroups } from '../../src/algorithms/sharedCounterGroups';
+import {
+  buildSharedCounterGroups,
+  sharedCounterRootIds,
+} from '../../src/algorithms/sharedCounterGroups';
 import { BoardStatus, TaskType, Timeframe, CenterSquareType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 import type { Board } from '../../src/types/board';
@@ -158,6 +161,96 @@ function toBoardTask(m: MiniBoardTask): BoardTask {
  * fixture builders as the vector-driven suite above, spreading `isCounter`
  * onto the `MiniTask`-built `Task` since `MiniTask` predates the P5 flag.
  */
+describe('sharedCounterRootIds — the extracted family-root test', () => {
+  const counting = (id: string, over: Partial<Task> = {}): Task => ({
+    ...toTask({
+      id,
+      title: `Task ${id}`,
+      currentCount: 0,
+      maxCount: 10,
+      sharedCounterId: null,
+      baseline: null,
+      isDeleted: false,
+    }),
+    ...over,
+  });
+
+  it('does NOT name a link target that is absent, deleted, or not a counting task', () => {
+    const memberOfMissing = counting('member-of-missing', { sharedCounterId: 'never-synced' });
+    const deletedRoot = counting('deleted-root', { isDeleted: true });
+    const memberOfDeleted = counting('member-of-deleted', { sharedCounterId: 'deleted-root' });
+    const normalRoot: Task = { ...counting('normal-root'), type: TaskType.NORMAL };
+    const memberOfNormal = counting('member-of-normal', { sharedCounterId: 'normal-root' });
+
+    const roots = sharedCounterRootIds([
+      memberOfMissing,
+      deletedRoot,
+      memberOfDeleted,
+      normalRoot,
+      memberOfNormal,
+    ]);
+
+    // A dangling link must not conjure a family whose hub page would be empty.
+    expect(roots).toEqual(new Set());
+  });
+
+  it('names a root by link, a hub-born root by flag, and neither a plain counter nor a deleted member\u2019s target', () => {
+    const linkRoot = counting('link-root');
+    const member = counting('member', { sharedCounterId: 'link-root' });
+    const hubBorn = counting('hub-born', { isCounter: true });
+    const plain = counting('plain'); // a standalone counter heads no family
+    const ghostTarget = counting('ghost-target');
+    const deletedMember = counting('deleted-member', {
+      sharedCounterId: 'ghost-target',
+      isDeleted: true,
+    });
+
+    const roots = sharedCounterRootIds([
+      linkRoot,
+      member,
+      hubBorn,
+      plain,
+      ghostTarget,
+      deletedMember,
+    ]);
+
+    expect(roots).toEqual(new Set(['link-root', 'hub-born']));
+  });
+
+  it('agrees with the hub in BOTH directions — the helper and the groups name the same set', () => {
+    const linkRoot = counting('link-root');
+    const member = counting('member', { sharedCounterId: 'link-root' });
+    const hubBorn = counting('hub-born', { isCounter: true });
+    const plain = counting('plain');
+    // Orphan links of every flavour: none may head a group, none may be a root.
+    const memberOfMissing = counting('member-of-missing', { sharedCounterId: 'never-synced' });
+    const deletedRoot = counting('deleted-root', { isDeleted: true });
+    const memberOfDeleted = counting('member-of-deleted', { sharedCounterId: 'deleted-root' });
+    const normalRoot: Task = { ...counting('normal-root'), type: TaskType.NORMAL };
+    const memberOfNormal = counting('member-of-normal', { sharedCounterId: 'normal-root' });
+
+    const tasks = [
+      linkRoot,
+      member,
+      hubBorn,
+      plain,
+      memberOfMissing,
+      deletedRoot,
+      memberOfDeleted,
+      normalRoot,
+      memberOfNormal,
+    ];
+    const groups = buildSharedCounterGroups({ tasks, boardTasks: [], boards: [] });
+    const roots = sharedCounterRootIds(tasks);
+
+    expect(groups.map((g) => g.counterId).sort()).toEqual(['hub-born', 'link-root']);
+    // Both directions: no group without a root, and no root without a group.
+    // `computeBrowsableTasks` hides a member on the strength of this set, so a
+    // one-way check would let a root exist that the hub never renders.
+    expect(new Set(groups.map((g) => g.counterId))).toEqual(roots);
+  });
+});
+
 describe('hub-born counters (P5)', () => {
   it('a flagged zero-link source becomes a single-member group', () => {
     const source = {

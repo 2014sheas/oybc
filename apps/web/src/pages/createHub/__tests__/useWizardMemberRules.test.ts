@@ -4,8 +4,8 @@ import {
   Timeframe,
   memberRuleFor,
   partRuleFor,
-  remainingTarget,
   type BoardSource,
+  type BoardWindow,
   type Task,
 } from '@oybc/shared';
 import {
@@ -311,9 +311,20 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
   const tasksById: Record<string, Task> = {
     c10: counter('c10', 10),
     c5: counter('c5', 5),
+    c30: counter('c30', 30),
     accumulator: makeTask('accumulator', { type: TaskType.COUNTING }),
     plain: makeTask('plain'),
   };
+
+  /** The board being assembled. WEEKLY, matching the default supply's source
+   *  window, so every pre-existing expectation below is also the safety
+   *  assertion: a same-length window pro-rates by a ratio of 1. */
+  const weeklyTarget: BoardWindow = {
+    timeframe: Timeframe.WEEKLY,
+    startDate: null,
+    endDate: null,
+  };
+  const dailyTarget: BoardWindow = { timeframe: Timeframe.DAILY, startDate: null, endDate: null };
 
   function supply(overrides: Partial<WizardSourceSupply> = {}): WizardSourceSupply {
     return {
@@ -326,20 +337,60 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
     };
   }
 
-  it('seeds each counting member with goal minus its progress in the source window', () => {
+  it('seeds each counting member with goal minus its progress in the source window (same-length window: ratio 1, so NOT pro-rated)', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const { sources: next, settled } = prefillRemainingTargets(sources, 'b1', supply(), tasksById);
-    expect(memberRuleFor(next[0], 'c10').target).toBe(remainingTarget(10, 3));
+    const { sources: next, settled } = prefillRemainingTargets(
+      sources,
+      'b1',
+      supply(),
+      tasksById,
+      weeklyTarget,
+    );
+    // 10 − 3 = 7, and a weekly→weekly pull must not scale it.
     expect(memberRuleFor(next[0], 'c10').target).toBe(7);
     // No recorded progress -> the whole goal remains.
     expect(memberRuleFor(next[0], 'c5').target).toBe(5);
     expect(settled).toBe(true);
   });
 
+  it('pro-rates onto a SHORTER window (owner ruling 2026-09-21) — the reported bug', () => {
+    // "Run 30 Miles a Month" pulled from a monthly board onto a ONE-OFF daily
+    // board: remaining 30, then ceil(30 × 1 / 30) = 1. Before the ruling this
+    // seeded the full 30, and the explicit seed then beat the auto branch.
+    const sources = [makeSource({ sourceId: 'b1' })];
+    const { sources: next } = prefillRemainingTargets(
+      sources,
+      'b1',
+      supply({
+        rawSupplyTaskIds: ['c30'],
+        windowCountByTaskId: {},
+        sourceWindow: { timeframe: Timeframe.MONTHLY, startDate: '2026-09-01', endDate: null },
+      }),
+      tasksById,
+      dailyTarget,
+    );
+    expect(memberRuleFor(next[0], 'c30').target).toBe(1);
+  });
+
+  it('leaves the remaining amount alone when the source window never resolved', () => {
+    // No `sourceWindow` -> unknowable source length -> autoTarget's null-source
+    // branch -> the plain remaining amount (10 − 3 = 7), even onto a daily board.
+    const sources = [makeSource({ sourceId: 'b1' })];
+    const { sources: next } = prefillRemainingTargets(
+      sources,
+      'b1',
+      supply({ sourceWindow: undefined }),
+      tasksById,
+      dailyTarget,
+    );
+    expect(memberRuleFor(next[0], 'c10').target).toBe(7);
+  });
+
   it('skips goal-less counters and non-counting members', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
     const rules =
-      prefillRemainingTargets(sources, 'b1', supply(), tasksById).sources[0].memberRules ?? {};
+      prefillRemainingTargets(sources, 'b1', supply(), tasksById, weeklyTarget).sources[0]
+        .memberRules ?? {};
     expect(Object.keys(rules).sort()).toEqual(['c10', 'c5']);
   });
 
@@ -350,15 +401,22 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
       'b1',
       supply({ windowCountByTaskId: { c10: 12 } }),
       tasksById,
+      weeklyTarget,
     );
     expect(memberRuleFor(next[0], 'c10').target).toBe(1);
   });
 
   it('never overwrites an edited target — a re-resolve is idempotent', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const { sources: seeded } = prefillRemainingTargets(sources, 'b1', supply(), tasksById);
+    const { sources: seeded } = prefillRemainingTargets(
+      sources,
+      'b1',
+      supply(),
+      tasksById,
+      weeklyTarget,
+    );
     const edited = withMemberRuleInSource(seeded, 'b1', 'c10', { target: 2 });
-    const again = prefillRemainingTargets(edited, 'b1', supply(), tasksById);
+    const again = prefillRemainingTargets(edited, 'b1', supply(), tasksById, weeklyTarget);
     expect(memberRuleFor(again.sources[0], 'c10').target).toBe(2);
     expect(again.sources).toBe(edited); // nothing left to seed -> same identity
     expect(again.settled).toBe(true);
@@ -366,7 +424,7 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
 
   it('is a no-op for a source that is not pulled (and counts as settled)', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const result = prefillRemainingTargets(sources, 'ghost', supply(), tasksById);
+    const result = prefillRemainingTargets(sources, 'ghost', supply(), tasksById, weeklyTarget);
     expect(result.sources).toBe(sources);
     expect(result.settled).toBe(true);
   });
@@ -378,6 +436,7 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
       'b1',
       supply({ rawSupplyTaskIds: ['plain'], windowCountByTaskId: {} }),
       tasksById,
+      weeklyTarget,
     );
     expect(result.sources).toBe(sources);
     expect(result.settled).toBe(true);
@@ -385,12 +444,18 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
 
   it('is NOT settled while a supplied member is unknown to the task map — a slow live query is retried, not lost', () => {
     const sources = [makeSource({ sourceId: 'b1' })];
-    const result = prefillRemainingTargets(sources, 'b1', supply(), {});
+    const result = prefillRemainingTargets(sources, 'b1', supply(), {}, weeklyTarget);
     expect(result.sources).toBe(sources);
     expect(result.settled).toBe(false);
 
     // The retry (library now loaded) seeds as usual.
-    const retry = prefillRemainingTargets(result.sources, 'b1', supply(), tasksById);
+    const retry = prefillRemainingTargets(
+      result.sources,
+      'b1',
+      supply(),
+      tasksById,
+      weeklyTarget,
+    );
     expect(retry.settled).toBe(true);
     expect(memberRuleFor(retry.sources[0], 'c10').target).toBe(7);
   });
@@ -403,7 +468,7 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
       target: 2,
     });
     expect(initialPrefilledSourceIds(saved).has('b1')).toBe(true);
-    const anyway = prefillRemainingTargets(saved, 'b1', supply(), tasksById);
+    const anyway = prefillRemainingTargets(saved, 'b1', supply(), tasksById, weeklyTarget);
     expect(memberRuleFor(anyway.sources[0], 'c10').target).toBe(2);
   });
 });

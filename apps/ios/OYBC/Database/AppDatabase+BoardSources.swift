@@ -107,7 +107,7 @@ extension AppDatabase {
         }
     }
 
-    /// Rows for the "Add a pool or board" sheet's BOARDS section: ACTIVE,
+    /// Rows for the "Add from a pool or board" sheet's BOARDS section: ACTIVE,
     /// non-deleted boards, each with squares/done counts from the same
     /// predicate the member rows use. One read transaction, batched
     /// queries per board (never per-row) — call sites still dispatch this

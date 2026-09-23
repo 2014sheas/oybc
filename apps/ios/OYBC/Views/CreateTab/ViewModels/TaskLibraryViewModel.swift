@@ -91,6 +91,18 @@ final class TaskLibraryViewModel {
     /// iOS twin of web's `TaskLibrary.childToParents`. (#73)
     var childToParents: [String: [String]] = [:]
 
+    /// Owner ruling 2026-09-22 — every task id that HEADS a shared-counter
+    /// family (a link target, or a hub-born `isCounter` counter). Row
+    /// renderers show such a task under its generic
+    /// `CounterName.formatCounterName` label with no target count, and route
+    /// its tap to the Counters hub instead of Task detail.
+    ///
+    /// Computed over `libraryTasks`, NOT `browsableTasks`: the browse rule
+    /// hides the members, so a set derived from the browsable subset would
+    /// find no link targets at all. iOS twin of web's
+    /// `TaskLibrary.familyRootIds`.
+    var familyRootIds: Set<String> = []
+
     /// Most recent load error, surfaced to the user as a caption.
     /// Cleared on successful reload.
     var loadError: String?
@@ -178,6 +190,7 @@ final class TaskLibraryViewModel {
                 self.compoundChildrenByCompound = grouped
                 self.childTaskIds = childIds
                 self.childToParents = reverseMap
+                self.familyRootIds = sharedCounterRootIds(tasks)
                 self.loadError = nil
             }
         } catch {

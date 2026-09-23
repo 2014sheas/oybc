@@ -22,6 +22,7 @@ import {
   toggleExcludeInSource,
   type SupplyInfoMap,
 } from '../../pages/createHub/wizardSources';
+import { appendSource } from '../../pages/createHub/wizardSourcesLogic';
 import { BoardWizardTasksStep } from '../wizard/BoardWizardTasksStep';
 import { PLAYGROUND_USER_ID } from './playgroundUtils';
 import styles from './BoardWizardTasksPlayground.module.css';
@@ -183,26 +184,12 @@ export function BoardWizardTasksPlayground(): React.ReactElement {
     [supplyInfoBySourceId],
   );
 
-  const handlePullPool = useCallback(
-    (poolId: string): void => {
-      setSources((prev) =>
-        prev.some((source) => source.sourceId === poolId)
-          ? prev
-          : [
-              ...prev,
-              {
-                sourceId: poolId,
-                kind: 'pool' as const,
-                min: 0,
-                max: null,
-                excludedTaskIds: [],
-                filter: 'all' as const,
-              },
-            ],
-      );
-    },
-    [],
-  );
+  // Through the production `appendSource` rather than a literal of its own:
+  // this harness exists to eyeball the real wizard row, so it must mint a
+  // row with the real creation defaults (`[0, all]` + `newSourceFilter`).
+  const handlePullPool = useCallback((poolId: string): void => {
+    setSources((prev) => appendSource(prev, poolId, 'pool'));
+  }, []);
 
   const handleRemoveSource = useCallback(
     (sourceId: string): void => {

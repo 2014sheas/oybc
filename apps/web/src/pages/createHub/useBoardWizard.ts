@@ -7,6 +7,7 @@ import {
   getTimeframeBoundaries,
   sourcesForRecord,
   type BoardSource,
+  type BoardWindow,
   type CompoundChild,
   type Pool,
   type Task,
@@ -16,6 +17,7 @@ import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
 import { excludeFromEverySupplier, selectionUnion } from './wizardSources';
 import { canApplyTaskToggle } from './wizardMemberRulesLogic';
+import { appendSource } from './wizardSourcesLogic';
 import { useWizardSources } from './useWizardSources';
 import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
 import { useWizardDerived } from './useWizardDerived';
@@ -389,6 +391,22 @@ export function useBoardWizard({
     stagedEdits,
   );
 
+  // §Member rules (B3, RC4) — the window a one-off prefill pro-rates a
+  // board-pulled counting target AGAINST. Only `nominalWindowDays` reads it,
+  // and that reads start/end for CUSTOM alone (as the `YYYY-MM-DD` prefix),
+  // so the raw custom-date inputs are interchangeable with the resolved ISO
+  // strings `resolveWizardDates` would produce — and using them keeps this
+  // hook off the persist module's date helper. Web twin of iOS
+  // `BoardWizardViewModel.prefillTargetWindow`.
+  const prefillTargetWindow = useMemo<BoardWindow>(
+    () => ({
+      timeframe,
+      startDate: customStartDate || null,
+      endDate: customEndDate || null,
+    }),
+    [timeframe, customStartDate, customEndDate],
+  );
+
   // Board Sources P4 — the sources layer (state + async supply resolution +
   // the nine source actions) lives in its own hook; see `useWizardSources`.
   const {
@@ -428,6 +446,7 @@ export function useBoardWizard({
     // targets; a repeating board auto-targets against each board's own
     // window instead.
     prefillRemainingTargetsOnResolve: !isRecurring,
+    targetWindow: prefillTargetWindow,
     selectedTaskIds,
     purgeDroppedIds,
     markUserTouched,
@@ -520,19 +539,17 @@ export function useBoardWizard({
     // prefill must not seed unresolvable rows (draft/template hydration
     // deliberately KEEPS refs, since those are the user's own saved
     // state).
+    //
+    // Minted through `appendSource` rather than an inline literal so the
+    // creation defaults (`[0, all]` + the kind-scoped `newSourceFilter`,
+    // i.e. `'all'` for these pools) have exactly ONE definition — the two
+    // mint paths drifting apart is the whole reason this is a shared helper.
     const prefillSources: BoardSource[] = coreBoardDefault.corePoolIds
       .filter((poolId) => {
         const pool = poolsById[poolId];
         return pool !== undefined && !pool.isDeleted;
       })
-      .map((poolId) => ({
-        sourceId: poolId,
-        kind: 'pool',
-        min: 0,
-        max: null,
-        excludedTaskIds: [],
-        filter: 'all',
-      }));
+      .reduce<BoardSource[]>((acc, poolId) => appendSource(acc, poolId, 'pool'), []);
     const prefillManual = coreBoardDefault.coreDefaultTaskIds.filter((taskId) => {
       const task = tasksById[taskId];
       return task !== undefined && !task.isDeleted;

@@ -92,6 +92,17 @@ function incrementEvent(id: string, taskId: string, delta: number, occurredAt: s
   };
 }
 
+/**
+ * A member rule whose target (20) differs from the root's goal (35), so the
+ * mint is NOT collapsed by the no-identical-clone rule (owner ruling
+ * 2026-09-22). `mintArgs`'s source window is weekly and so is `WINDOW`, so the
+ * auto target would otherwise pro-rate to exactly 35 — an identical clone,
+ * which `planDerivedTasks` now places as the root instead of minting. These
+ * tests exercise the mint MACHINERY (baseline, idempotence, tombstone revive),
+ * so they need a member that genuinely derives.
+ */
+const retargeted = (): Partial<BoardSource> => ({ memberRules: { [ROOT]: { target: 20 } } });
+
 const boardSource = (over: Partial<BoardSource> = {}): BoardSource => ({
   sourceId: 'src-board',
   kind: 'board',
@@ -169,7 +180,9 @@ describe('planAndMintDerivedRows — mint (RB2/RB3)', () => {
     ];
     await db.taskEvents.bulkAdd(events);
 
-    const placementIds = await mint(mintArgs([ROOT], boardSource(), [root], [], events));
+    const placementIds = await mint(
+      mintArgs([ROOT], boardSource(retargeted()), [root], [], events),
+    );
 
     const derivedId = derivedTaskId(BOARD, ROOT);
     expect(placementIds).toEqual([derivedId]);
@@ -179,11 +192,11 @@ describe('planAndMintDerivedRows — mint (RB2/RB3)', () => {
     // window's progress, not baseline.
     expect(derived?.baseline).toBe(22);
     expect(derived?.currentCount).toBe(30); // mirrors the root's lifetime count
-    expect(derived?.maxCount).toBe(35);
+    expect(derived?.maxCount).toBe(20); // the member rule's explicit target
     expect(derived?.sharedCounterId).toBe(ROOT);
     expect(derived?.startDate).toBe(WINDOW_START);
     expect(derived?.createdInWizard).toBe(true);
-    expect(derived?.isCompleted).toBe(false); // 30 − 22 = 8 of 35
+    expect(derived?.isCompleted).toBe(false); // 30 − 22 = 8 of 20
     expect(derived?.version).toBe(1);
 
     const queued = await db.syncQueue.toArray();
@@ -200,13 +213,15 @@ describe('planAndMintDerivedRows — mint (RB2/RB3)', () => {
     const events = [incrementEvent('ev-1', ROOT, 10, BEFORE_A)];
     await db.taskEvents.bulkAdd(events);
 
-    await mint(mintArgs([ROOT], boardSource(), [root], [], events));
+    await mint(mintArgs([ROOT], boardSource(retargeted()), [root], [], events));
     const derivedId = derivedTaskId(BOARD, ROOT);
     const first = await db.tasks.get(derivedId);
     const queueAfterFirst = await db.syncQueue.count();
 
     // Same args, a second save/spawn of the same window.
-    const placementIds = await mint(mintArgs([ROOT], boardSource(), [root], [], events));
+    const placementIds = await mint(
+      mintArgs([ROOT], boardSource(retargeted()), [root], [], events),
+    );
 
     expect(placementIds).toEqual([derivedId]);
     const second = await db.tasks.get(derivedId);
@@ -235,7 +250,7 @@ describe('planAndMintDerivedRows — mint (RB2/RB3)', () => {
       }),
     );
 
-    await mint(mintArgs([ROOT], boardSource(), [root], [], events));
+    await mint(mintArgs([ROOT], boardSource(retargeted()), [root], [], events));
 
     const revived = await db.tasks.get(derivedId);
     expect(revived?.isDeleted).toBe(false);
@@ -268,6 +283,23 @@ describe('planAndMintDerivedRows — mint (RB2/RB3)', () => {
     const derived = await db.tasks.get(derivedTaskId(BOARD, ROOT));
     expect(derived?.maxCount).toBe(5); // ceil(35 × 1 / 7)
     expect(derived?.title).toBe('Run 5 km');
+  });
+
+  it('places the ROOT and mints nothing when the derived row would be identical', async () => {
+    const root = countingTask(ROOT, { currentCount: 30 });
+    await db.tasks.add(root);
+    const events = [incrementEvent('ev-1', ROOT, 10, BEFORE_A)];
+    await db.taskEvents.bulkAdd(events);
+
+    // Weekly source → weekly board, vary off, no explicit target: the auto
+    // target pro-rates to exactly the root's own goal (35), so a derived row
+    // would be a byte-for-byte clone. Owner ruling 2026-09-22 — place the root.
+    const placementIds = await mint(mintArgs([ROOT], boardSource(), [root], [], events));
+
+    expect(placementIds).toEqual([ROOT]);
+    expect(await db.tasks.get(derivedTaskId(BOARD, ROOT))).toBeUndefined();
+    expect(await db.tasks.count()).toBe(1); // the root, and only the root
+    expect(await db.syncQueue.count()).toBe(0);
   });
 });
 

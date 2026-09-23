@@ -31,21 +31,27 @@ extension BoardSources {
     /// the same pro-rated math `planDerivedTasks` applies at mint time,
     /// without requiring a full plan run.
     ///
-    /// One-off boards never auto-target (`explicit ?? goal`); recurring
-    /// boards only auto-target when the member came from a BOARD source —
-    /// `fromBoard` mirrors `resolveTarget`'s real gate inside
-    /// `planDerivedTasks` (`fromBoard && mode == .recurring`), so a
-    /// pool-sourced or hand-added member falls straight to `explicit ?? goal`
-    /// even in recurring mode. When the gate is open the target pro-rates via
-    /// ``autoTarget(goal:sourceDays:targetDays:)`` over the nominal
-    /// day-lengths of the two windows; a missing `sourceWindow` behaves
-    /// exactly like `autoTarget` with a nil source (falls back to `goal`).
-    /// Either way the result is floored and clamped to `1…goal`.
+    /// The auto-target gate is `fromBoard` ALONE: a board-pulled member
+    /// pro-rates on one-off and recurring boards alike (owner ruling
+    /// 2026-09-21 — pulling "Run 30 miles a month" onto a daily board must
+    /// preview ~1, not 30), while a pool-sourced or hand-added member always
+    /// falls to `explicit ?? goal` (those offer vary / split /
+    /// part-exclusion, never a target). This mirrors `resolveTarget`'s real
+    /// gate inside `planDerivedTasks` exactly. When the gate is open the
+    /// target pro-rates via ``autoTarget(goal:sourceDays:targetDays:)`` over
+    /// the nominal day-lengths of the two windows; a missing `sourceWindow`
+    /// behaves exactly like `autoTarget` with a nil source (falls back to
+    /// `goal`), and a target window at least as long as the source's also
+    /// falls back to `goal`, so a same-timeframe pull is unchanged. Either
+    /// way the result is floored and clamped to `1…goal`.
     ///
     /// - Parameters:
     ///   - goal: The member's own `maxCount` (integer ≥ 1).
     ///   - explicit: A stored member-/part-level `target` override, if any.
     ///   - mode: Whether the board being assembled is one-off or recurring.
+    ///     **Not read** — see `planDerivedTasks`' `mode`; accepted so this
+    ///     helper keeps one shape with the planner and the vector fixture can
+    ///     pin mode-independence.
     ///   - fromBoard: Whether the supplying source is `kind == .board`.
     ///   - sourceWindow: The window the member was pulled from, if known.
     ///   - targetWindow: The window of the board being assembled.
@@ -66,7 +72,7 @@ extension BoardSources {
         let base: Int
         if let explicit {
             base = explicit
-        } else if fromBoard, mode == .recurring {
+        } else if fromBoard {
             base = autoTarget(
                 goal: goal,
                 sourceDays: sourceWindow.flatMap {
@@ -84,16 +90,34 @@ extension BoardSources {
     /// `lo...hi` from ``varyRange(t:level:goal:)``, rendered as
     /// `"lo–hi unit"` (EN DASH, U+2013; the unit omitted entirely when empty).
     ///
+    /// **A COLLAPSED range renders as the single value** (owner ruling
+    /// 2026-09-22): pro-rating routinely collapses a range — a weekly
+    /// 10-rep counter on a daily board targets `ceil(10/7) = 2`, and
+    /// `varyRange(2, .little, 10) = 2...2` — and "2–2 reps" is a range
+    /// that isn't one. It reads as `"2 reps"` instead, still blue, still
+    /// signalling a lit dice.
+    ///
+    /// Deliberately NOT nil in that case: nil is this function's "there is
+    /// no range" signal and ``countingSummary`` reads it to decide
+    /// `varying`, so a collapsed range returning nil would fall through to
+    /// the non-varying branch and render the chip in muted grey beside a
+    /// LIT dice. Returning the single formatted value — same unit handling
+    /// as the range form — keeps `varying == true` without a second flag.
+    ///
     /// - Parameters:
     ///   - t: The pre-vary target (see ``effectiveMemberTarget``).
     ///   - level: Vary level. `.off` renders nothing — there is no range.
     ///   - goal: The member's own `maxCount`, the hard ceiling.
     ///   - unit: The counting member's unit, or `""` when it has none.
-    /// - Returns: The label, or nil at vary level `.off`.
+    /// - Returns: `"lo–hi unit"`, `"lo unit"` when the range collapsed, or
+    ///   nil at vary level `.off`.
     static func varyRangeLabel(t: Int, level: VaryLevel, goal: Int, unit: String) -> String? {
         guard level != .off else { return nil }
         let range = varyRange(t: t, level: level, goal: goal)
         let suffix = unit.isEmpty ? "" : " \(unit)"
+        guard range.lowerBound != range.upperBound else {
+            return "\(range.lowerBound)\(suffix)"
+        }
         return "\(range.lowerBound)\u{2013}\(range.upperBound)\(suffix)"
     }
 
@@ -127,6 +151,134 @@ extension BoardSources {
     /// - Returns: The remaining target (integer ≥ 1).
     static func remainingTarget(goal: Int, windowCount: Int) -> Int {
         Swift.max(1, goal - windowCount)
+    }
+
+    /// The explicit `target` a ONE-OFF wizard prefills for a counting member
+    /// pulled from a BOARD source: the member's remaining amount in the
+    /// source board's window, then pro-rated to the window being assembled.
+    ///
+    /// `autoTarget(remainingTarget(goal, windowCount), sourceDays, targetDays)`
+    /// — the same window arithmetic ``effectiveMemberTarget(goal:explicit:mode:fromBoard:sourceWindow:targetWindow:)``
+    /// previews and `planDerivedTasks` mints with, over the same
+    /// ``nominalWindowDays(_:startDate:endDate:)`` inputs, so the prefilled
+    /// number and the auto number can never disagree.
+    ///
+    /// Owner ruling 2026-09-21: one-off boards pro-rate too. Pulling a
+    /// "Run 30 miles a month" counter (nothing logged yet) onto a one-off
+    /// DAILY board seeds `autoTarget(30, 30, 1) = ceil(30 × 1 / 30) = 1`,
+    /// not 30.
+    ///
+    /// **Same-length windows are unchanged**: `autoTarget`'s
+    /// `targetDays >= sourceDays` branch returns its `goal` argument
+    /// verbatim, so `autoTarget(remaining, d, d) == remaining` — a
+    /// same-timeframe pull (and any pull onto a LONGER window, and any pull
+    /// whose source window length is unknown) seeds exactly the remaining
+    /// amount it seeded before this change.
+    ///
+    /// TS twin: `prefilledOneOffTarget` in `memberRulesDisplay.ts`.
+    ///
+    /// - Parameters:
+    ///   - goal: The member's own `maxCount` (integer ≥ 1).
+    ///   - windowCount: Its progress in the SOURCE board's window.
+    ///   - sourceWindow: The source board's own window, if known.
+    ///   - targetWindow: The window of the board being assembled.
+    /// - Returns: The target to seed (integer ≥ 1, ≤ the remaining amount).
+    static func prefilledOneOffTarget(
+        goal: Int,
+        windowCount: Int,
+        sourceWindow: BoardWindow? = nil,
+        targetWindow: BoardWindow
+    ) -> Int {
+        autoTarget(
+            goal: remainingTarget(goal: goal, windowCount: windowCount),
+            sourceDays: sourceWindow.flatMap {
+                nominalWindowDays($0.timeframe, startDate: $0.startDate, endDate: $0.endDate)
+            },
+            targetDays: nominalWindowDays(
+                targetWindow.timeframe,
+                startDate: targetWindow.startDate,
+                endDate: targetWindow.endDate
+            )
+        )
+    }
+
+    // MARK: - Collapsed-row summaries (B3.1)
+
+    /// What a collapsed member row shows in place of its controls — the
+    /// row's current answer, never a second control. TS twin:
+    /// `MemberSummary` in `memberRulesDisplay.ts`.
+    struct MemberSummary: Equatable {
+        /// The chip's text.
+        let text: String
+        /// True when this member's dice is lit — the row tints the chip
+        /// `risoBlue` rather than `risoMuted`.
+        let varying: Bool
+    }
+
+    /// Collapsed-row summary for a counting member: the vary range when the
+    /// dice is lit, otherwise the plain target (with its unit, when it has
+    /// one) — or NOTHING when the chip would only restate the row's own
+    /// title. Dispatches to ``varyRangeLabel(t:level:goal:unit:)`` so the chip
+    /// and the expanded row's blue range line can never disagree —
+    /// including on a COLLAPSED range (`lo == hi`, routine once pro-rating
+    /// shrinks a target), which both inherit from that one function: it
+    /// renders the single value rather than returning nil, so the chip
+    /// stays on the varying branch and stays blue beside its lit dice.
+    ///
+    /// Counting titles are auto-generated from action + goal + unit
+    /// (`generateCounterTaskTitle`), so a member at its full goal with no
+    /// vary is a row reading "Run 35 mi" beside a chip reading "35 mi". The
+    /// chip earns its place exactly when it says something the title cannot:
+    /// a pro-rated or hand-set target (`target != goal`), or a vary range.
+    ///
+    /// The suppression is a rule on the VALUES, never a comparison against
+    /// the title string — a hand-renamed title must not change whether the
+    /// chip appears, and this helper is not given the title at all.
+    ///
+    /// - Parameters:
+    ///   - target: The pre-vary target (see ``effectiveMemberTarget``).
+    ///   - level: The member's vary level.
+    ///   - goal: The member's own `maxCount`, the hard ceiling.
+    ///   - unit: The counting member's unit, or `""` when it has none.
+    /// - Returns: The chip, or nil when it would only restate the title.
+    static func countingSummary(
+        target: Int, level: VaryLevel, goal: Int, unit: String
+    ) -> MemberSummary? {
+        if let range = varyRangeLabel(t: target, level: level, goal: goal, unit: unit) {
+            return MemberSummary(text: range, varying: true)
+        }
+        if level == .off, target == goal { return nil }
+        return MemberSummary(text: unit.isEmpty ? "\(target)" : "\(target) \(unit)", varying: false)
+    }
+
+    /// Collapsed-row summary for a compound member: how many squares it
+    /// contributes. While split the dice lives on the parts, so the
+    /// member-level chip never reports varying; while One square the
+    /// member's dice rolls for the whole square.
+    ///
+    /// Unlike ``countingSummary(target:level:goal:unit:)`` this chip is
+    /// NEVER suppressed: "1 square" / "3 squares" is not implied by any
+    /// title, so it always adds something.
+    ///
+    /// - Parameters:
+    ///   - split: Whether the member is in Split up mode.
+    ///   - partIds: The member's own, live part ids.
+    ///   - excludedPartIds: Part ids excluded by this member's split rule.
+    ///   - level: The member's own vary level.
+    /// - Returns: The chip's text and whether the dice is lit.
+    static func compoundSummary(
+        split: Bool,
+        partIds: [String],
+        excludedPartIds: Set<String>,
+        level: VaryLevel
+    ) -> MemberSummary {
+        if split {
+            return MemberSummary(
+                text: splitSquaresNote(partIds: partIds, excludedPartIds: excludedPartIds),
+                varying: false
+            )
+        }
+        return MemberSummary(text: "1 square", varying: level != .off)
     }
 
     /// The delete-confirm line warning that window-stamped derived counters
@@ -559,5 +711,81 @@ extension BoardSources {
             }
         }
         return true
+    }
+
+    // MARK: - Seeded targets (remove-confirm, amended ruling 2026-09-23)
+
+    /// The two task fields `seededTargetsForSource` needs to spot a seedable
+    /// member. TS twin: `Pick<Task, 'type' | 'maxCount'>`
+    /// (`SeededTargetTask`). A struct rather than the full `Task` so the
+    /// helper stays a pure function of the two fields that matter — and so
+    /// the vector suite can build one without a GRDB row.
+    struct SeededTargetTask {
+        let type: TaskType
+        let maxCount: Int?
+
+        init(type: TaskType, maxCount: Int?) {
+            self.type = type
+            self.maxCount = maxCount
+        }
+
+        /// Narrow a live task down to what the seed calculation reads.
+        init(_ task: Task) {
+            self.init(type: task.type, maxCount: task.maxCount)
+        }
+    }
+
+    /// What the one-off prefill WOULD seed, right now, for each counting
+    /// member of a board source — task id → target.
+    ///
+    /// The same loop `prefillRemainingTargets` runs at pull time
+    /// (`BoardWizardViewModel+MemberRules.swift`), minus its "don't overwrite
+    /// an existing target" skip: this answers "is the stored target
+    /// machine-written or hand-set?", which needs the seed regardless of what
+    /// is stored.
+    ///
+    /// Feed the result to `sourceConfiguration` as `seededTargetByTaskId` so
+    /// the remove-confirm doesn't count a seeded target as configuration —
+    /// the first cut fired the dialog on every fresh board source, naming
+    /// member rules nobody authored.
+    ///
+    /// Deliberately recomputed at read time, not remembered from the pull.
+    /// If the wizard's timeframe changed since, the recomputed seed no longer
+    /// matches the stored target and the rule reads as configured — which is
+    /// correct: the person did change something, so asking is right.
+    ///
+    /// Call it only where the prefill itself runs — a `.board` source on a
+    /// ONE-OFF wizard. A recurring wizard seeds nothing, so its callers pass
+    /// no map and every stored target is hand-set by definition.
+    ///
+    /// TS twin: `seededTargetsForSource` in `memberRulesDisplay.ts`.
+    ///
+    /// - Parameters:
+    ///   - supplyTaskIds: The source's RAW supply ids, in order.
+    ///   - tasksById: Live id → task fields, for the member's type and goal.
+    ///   - windowCountByTaskId: Per-member progress in the SOURCE board's
+    ///     window (a missing id reads as 0).
+    ///   - sourceWindow: The source board's own window, if known.
+    ///   - targetWindow: The window of the board being assembled.
+    /// - Returns: id → seeded target, for seedable counting members only.
+    static func seededTargetsForSource(
+        supplyTaskIds: [String],
+        tasksById: [String: SeededTargetTask],
+        windowCountByTaskId: [String: Int],
+        sourceWindow: BoardWindow?,
+        targetWindow: BoardWindow
+    ) -> [String: Int] {
+        var seeded: [String: Int] = [:]
+        for id in supplyTaskIds {
+            guard let task = tasksById[id], task.type == .counting else { continue }
+            guard let goal = task.maxCount, goal >= 1 else { continue }
+            seeded[id] = prefilledOneOffTarget(
+                goal: goal,
+                windowCount: windowCountByTaskId[id] ?? 0,
+                sourceWindow: sourceWindow,
+                targetWindow: targetWindow
+            )
+        }
+        return seeded
     }
 }

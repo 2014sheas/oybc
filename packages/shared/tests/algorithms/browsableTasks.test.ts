@@ -226,6 +226,71 @@ describe('goal-less counter exclusion (P5)', () => {
     expect(ids(result)).toEqual(new Set(['a']));
   });
 
+  it('hides a linked shared-counter MEMBER but keeps its root (one generic family row)', () => {
+    const root = task('root', false, {
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 35,
+    });
+    const member = task('member', true, {
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 5,
+      sharedCounterId: 'root',
+      startDate: '2026-09-18T00:00:00',
+    });
+    // The member IS placed on a live active board — so the wizard-orphan rule
+    // would keep it visible. Only the new member rule hides it.
+    const result = computeBrowsableTasks(
+      [root, member],
+      [placement('member', 'b1')],
+      { b1: BoardStatus.ACTIVE },
+    );
+    expect(ids(result)).toEqual(new Set(['root']));
+  });
+
+  it('keeps a member whose root is ABSENT — it would be reachable from nowhere', () => {
+    const orphan = task('orphan', false, {
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 5,
+      sharedCounterId: 'root-that-never-synced',
+    });
+    const result = computeBrowsableTasks([orphan], [], {});
+    expect(ids(result)).toEqual(new Set(['orphan']));
+  });
+
+  it('keeps a member whose root is DELETED or not COUNTING — the hub shows neither', () => {
+    const deletedRoot = task('deleted-root', false, {
+      type: TaskType.COUNTING,
+      maxCount: 35,
+      isDeleted: true,
+    });
+    const memberOfDeleted = task('member-of-deleted', false, {
+      type: TaskType.COUNTING,
+      maxCount: 5,
+      sharedCounterId: 'deleted-root',
+    });
+    const normalRoot = task('normal-root', false, { type: TaskType.NORMAL });
+    const memberOfNormal = task('member-of-normal', false, {
+      type: TaskType.COUNTING,
+      maxCount: 5,
+      sharedCounterId: 'normal-root',
+    });
+    const result = computeBrowsableTasks(
+      [deletedRoot, memberOfDeleted, normalRoot, memberOfNormal],
+      [],
+      {},
+    );
+    // `deletedRoot` is present in the input but soft-deleted — callers filter
+    // those upstream; what matters is that its member is NOT collapsed away.
+    expect(ids(result)).toContain('member-of-deleted');
+    expect(ids(result)).toContain('member-of-normal');
+  });
+
   it('isGoalLessCounter truth table', () => {
     expect(
       isGoalLessCounter({

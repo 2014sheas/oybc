@@ -43,7 +43,8 @@ BoardSource {
                                // available count); default null
   excludedTaskIds: string[],   // per-board exclusions; the saved pool/board
                                // is NEVER modified
-  filter: 'all' | 'todo'       // boards only; pools always 'all'
+  filter: 'all' | 'todo'       // boards only; pools always 'all';
+                               // a FRESH pull starts on 'todo'
 }
 ```
 
@@ -55,6 +56,18 @@ BoardSource {
 - `expanded` (row open/closed) is **UI state only — never persisted, never
   synced**.
 - Default range for a fresh pull is `[0, all]`; **Use all** resets to it.
+- **Default filter for a fresh pull is kind-scoped: `'todo'`** ("Not done
+  yet") **for a board source, `'all'` for a pool** — owner directive
+  2026-09-19, so pulling a board supplies what is still outstanding rather
+  than re-dealing finished squares, while a pool (no per-board done state
+  to filter on) still defaults wide. One definition per platform:
+  `newSourceFilter(kind)` (web `wizardSourcesLogic.ts`) ↔
+  `BoardWizardViewModel.newSourceFilter(for:)` (iOS). Scoped strictly to
+  CREATION: a source already stored on a board or template keeps its saved
+  filter, `sourcesFromMixFields` (legacy-trio decode) still mints `'all'`,
+  and nothing coerces on decode. No clamp is needed at mint time — `[0,
+  all]` is the one range valid against ANY supply, so a narrowed filter
+  can't leave a row wider than its filtered supply.
 - **Min cap** (enforced in UI and clamped defensively in validation):
   `min ≤ min(availableCount, fillableCellCount(size, center))`.
 
@@ -290,7 +303,7 @@ the pool-generation surface, both platforms:
 1. **Tasks step (2a)** — content order: pool header card (count/progress =
    §3 header math; copy "N more to fill the board. Widen a pool's range or
    add tasks." / "✓ Fills your board · N extras rotate in" — no "min"
-   suffix), quick-add card, dashed **"Add a pool or board"** row (opens the
+   suffix), quick-add card, dashed **"Add from a pool or board"** row (opens the
    sheet), dashed library row, **"On your board"** list = source rows +
    hand-added task rows, red gate line when short. Source row: letter square
    (pool = ink "P", board = **gold fill + ink-static "B"** — dark-contract
@@ -298,7 +311,7 @@ the pool-generation surface, both platforms:
    Expanded panel: segmented **All squares / Not done yet** (boards only),
    the range block (two-handle slider, "Use all", note line only when range
    ≠ default), member rows (✕ exclude / UNDO pill / green-✓ filtered-done).
-2. **Add a pool or board sheet (2c, empty state 5c)** — bottom sheet, search,
+2. **Add from a pool or board sheet (2c, empty state 5c)** — bottom sheet, search,
    POOLS then BOARDS sections, tap-to-toggle check circles; empty state
    "Nothing to pull from yet" with the dashed mini-grid.
 3. **One-off Preview (2b)** — the grid + full-width **↻ Shuffle** (exists
@@ -574,7 +587,7 @@ Both platforms, one PR. Web deleted `FromBoardPicker`/`FromBoardGrid`/`BoardThum
 
 `BoardSource.memberRules` + `RecurringBoardTemplate.manualTaskVary` are additive on both platforms' types/Zod/Dexie/GRDB — nothing writes them yet (inert). GRDB v30 (moved verbatim) + v31 relocated into a new `AppDatabase+Migrations.swift` (`registerBoardSourcesMigrations`) to keep `AppDatabase.swift` under the file-size allowlist (1010 → 1005). Pure helpers live in new `packages/shared/src/algorithms/memberRules.ts` ↔ `apps/ios/OYBC/Helpers/BoardSourceMemberRules.swift` (`extension BoardSources`) — not `boardSources.ts` (1000-line ceiling) — vector-pinned by `packages/shared/tests/fixtures/memberRuleVectors.json` (24 `planDerivedTasks` vectors, synced to `apps/ios/OYBCTests/Fixtures/`, mutation-tested both platforms).
 
-Rulings: **R1** `planDerivedTasks(mode: 'oneOff' | 'recurring')`; `autoTarget` runs only for recurring; a one-off member with no explicit target resolves to `goal`. **R2** `applyMemberRules` returns `ExpandedSupply` = supply + `partOf: Record<childId, compoundId>`. **R3** last-part guard: exclusions that would exclude every child leave all children contributing; `split` on a non-compound/childless member contributes the member itself. **R4** a One-square compound with no rule places as-is; it derives only once a counting part has a target (part-level, or member-level `vary` auto on a board source) or `vary > 0`. **R5** `resolvedTarget = clamp(rule/auto/goal, 1, goal)` then roll; members with no `maxCount ≥ 1` place as-is. **R6** one rng sample per roll, `selectedIds` order then `childIndex` order inside a compound; no sample when `lo == hi`. **R7** `nominalWindowDays(CUSTOM)` = inclusive calendar-day span via UTC `YYYY-MM-DD` arithmetic; `null` if a bound is missing; INDEFINITE → `null`. **R8** derived title = `generateCounterTaskTitle(action, target, unit, action ? undefined : title)`. **R-pool** pool-sourced members ignore `target` at both member and part level (vary/split/exclusion only). **R-rename** the planner arg is `sourceWindowByTaskId`, keyed by supplied members AND the children of a One-square compound. **R-round** `varyRange` rounds half-up (`Math.round` ↔ Swift `.rounded()`), pinned by tie vectors. **R11** corrupt `manualTaskVary` levels: TS drops only the bad key, iOS drops the whole map — both converge to "no dice" (unobservable once B3 writes valid levels). **R12** `varyRange`/`rollTarget` for `goal < 1` and the title of an action-less, title-less counting member are unreachable via `goalOf` / real task data — left as-is on both platforms. **R13** two things sharing a shared-counter root collapse onto ONE derived counter, and the dedupe is checked BEFORE the roll, so a collapsed occurrence consumes no rng sample; inside a One-square compound the collapsed parts are additionally deduped by resolved child id (first in `childIndex` order wins, keeping its own `childIndex`/`linkId`), because `derivedLinkId` is a pure function of `(compound, child)` and a repeat is one `compound_children` primary key written twice. **R14** both `childIndex` sorts use a total comparator (`childIndex`, then `childTaskId`) — Swift's `sorted` is not stable, so a duplicate index would otherwise expand/roll (and consume the seeded rng) differently on each platform.
+Rulings: **R1** `planDerivedTasks(mode: 'oneOff' | 'recurring')`; `autoTarget` runs only for recurring; a one-off member with no explicit target resolves to `goal`. **SUPERSEDED 2026-09-21 — see §Target math and §Owner ruling: one-off boards pro-rate too.** `autoTarget` now runs for ANY board-sourced member in either mode; `mode` is still on both signatures but is no longer read by `resolveTarget` / `effectiveMemberTarget`. **R2** `applyMemberRules` returns `ExpandedSupply` = supply + `partOf: Record<childId, compoundId>`. **R3** last-part guard: exclusions that would exclude every child leave all children contributing; `split` on a non-compound/childless member contributes the member itself. **R4** a One-square compound with no rule places as-is; it derives only once a counting part has a target (part-level, or member-level `vary` auto on a board source) or `vary > 0`. **R5** `resolvedTarget = clamp(rule/auto/goal, 1, goal)` then roll; members with no `maxCount ≥ 1` place as-is. **R6** one rng sample per roll, `selectedIds` order then `childIndex` order inside a compound; no sample when `lo == hi`. **R7** `nominalWindowDays(CUSTOM)` = inclusive calendar-day span via UTC `YYYY-MM-DD` arithmetic; `null` if a bound is missing; INDEFINITE → `null`. **R8** derived title = `generateCounterTaskTitle(action, target, unit, action ? undefined : title)`. **R-pool** pool-sourced members ignore `target` at both member and part level (vary/split/exclusion only). **R-rename** the planner arg is `sourceWindowByTaskId`, keyed by supplied members AND the children of a One-square compound. **R-round** `varyRange` rounds half-up (`Math.round` ↔ Swift `.rounded()`), pinned by tie vectors. **R11** corrupt `manualTaskVary` levels: TS drops only the bad key, iOS drops the whole map — both converge to "no dice" (unobservable once B3 writes valid levels). **R12** `varyRange`/`rollTarget` for `goal < 1` and the title of an action-less, title-less counting member are unreachable via `goalOf` / real task data — left as-is on both platforms. **R13** two things sharing a shared-counter root collapse onto ONE derived counter, and the dedupe is checked BEFORE the roll, so a collapsed occurrence consumes no rng sample; inside a One-square compound the collapsed parts are additionally deduped by resolved child id (first in `childIndex` order wins, keeping its own `childIndex`/`linkId`), because `derivedLinkId` is a pure function of `(compound, child)` and a repeat is one `compound_children` primary key written twice. **R14** both `childIndex` sorts use a total comparator (`childIndex`, then `childTaskId`) — Swift's `sorted` is not stable, so a duplicate index would otherwise expand/roll (and consume the seeded rng) differently on each platform.
 
 Task 2's test measured a worst-case `RecurringBoardTemplate` (20 board sources × 8 members × 3 parts) at 43,193 bytes; `firestore.rules`' `request.resource.size() < 10000` can't be the byte-size check the spec assumed (Firestore rules expose no byte-size API — the real cap is the 1 MiB/doc platform limit), so the test instead guards a regression ceiling (< 65,536 bytes). B2 item: an emulator rules test that writes a worst-case record to settle what that clause measures and whether it needs to change.
 
@@ -675,7 +688,7 @@ window-stamped derived counters B2 started minting.
   remaining part never gets). Dice-on renders the blue range line from
   `varyRange` under the row or part, never on the compound header itself.
   New primitives: `DiceButton`/`riso/DiceButton.tsx` ↔ `RisoDiceButton.swift`
-  (26×22, 0/2/5 pips, `--riso-ink-static`/`risoInkStatic` fill so the pips
+  (22×22 — square, revised 2026-09-21; 0/2/5 pips, `--riso-ink-static`/`risoInkStatic` fill so the pips
   stay visible in dark mode), a compact `CounterStepper`/`CounterStepperView`
   size, and a compact `RisoSegmented` size for the One square / Split up
   pill — all added to the existing kit rather than one-off UI, each with a
@@ -890,9 +903,10 @@ untouched); variety stays memoryless; `max: null` "all" latch
 (coordinator-proposed representation of the design's max-follows-all
 behavior).
 
-Member-rules pass (2026-09-17), owner decisions: **recurring target divisor
+Member-rules pass (2026-09-17), owner decisions: **target divisor
 = window-length ratio** (`ceil(goal × targetDays ÷ sourceDays)`; one-off =
-the source's remaining amount); **target stepper only on board-pulled
+the source's remaining amount — *revised 2026-09-21: the one-off remaining
+amount is pro-rated by that same ratio, see §Target math*); **target stepper only on board-pulled
 members** (pool / hand-added counters place at their own goal, dice
 optional); **derived per-window counters are shown in the library like any
 task**; **dead/empty source stays silent stale-inert**; compound rule = the
@@ -1059,16 +1073,40 @@ instances, any task list for a recurring board.
    - `autoTarget(goal, sourceDays, targetDays)` — four explicit branches,
      in order: `sourceDays == null` → `goal`; `targetDays == null` →
      `goal`; `targetDays ≥ sourceDays` → `goal`; else
-     `min(goal, ceil(goal × targetDays / sourceDays))`. Recurring only.
-     Inputs: `goal` = the pulled member's own `maxCount` (for a member that
-     is itself a window-stamped derived counter that is its per-window
-     target, and the root is `member.sharedCounterId`); `sourceDays` =
-     `nominalWindowDays` of the **source board's** timeframe
+     `min(goal, ceil(goal × targetDays / sourceDays))`. Runs for any
+     **board-sourced** member, one-off and recurring alike (owner ruling
+     2026-09-21, below); pool-sourced and hand-added members never
+     auto-target. Inputs: `goal` = the pulled member's own `maxCount` (for a
+     member that is itself a window-stamped derived counter that is its
+     per-window target, and the root is `member.sharedCounterId`);
+     `sourceDays` = `nominalWindowDays` of the **source board's** timeframe
      (`sourceWindowByMemberId`); `targetDays` = `nominalWindowDays` of the
      board being made.
    - One-off: the wizard writes an explicit `target` at pull time, prefilled
-     with the source's **remaining** (`goal − count in the source board's
-     window`, floor 1). There is no "auto" on a one-off board.
+     with the source's **remaining, pro-rated to this board's window** —
+     `prefilledOneOffTarget = autoTarget(remainingTarget(goal, windowCount),
+     sourceDays, targetDays)`, where `windowCount` is the member's count in
+     the source board's window (`remainingTarget` floors at 1). Because
+     `resolveTarget` is `explicit ?? auto`, that written number IS what the
+     board gets — which is why the pro-rating has to happen here too, not
+     only in the auto branch.
+
+   **Owner ruling 2026-09-21 — one-off boards pro-rate too.** Reported from
+   device testing of PR #493: "the defaults for Counter tasks pulled in from
+   boards do not seem to adjust with timeframe" — pulling "Run 30 miles a
+   month" from a monthly board onto a **one-off daily** board defaulted the
+   target to 30 instead of ~1. Two mechanisms produced that number and both
+   changed: (1) `resolveTarget` / `effectiveMemberTarget` gated auto-targeting
+   on `fromBoard && mode === 'recurring'` — the gate is now `fromBoard`
+   alone; (2) the one-off prefill wrote `remainingTarget(goal, done)`
+   unscaled, and `explicit ?? auto` meant that always won — it now writes
+   `prefilledOneOffTarget(...)`. **Safety property (pinned by vectors on both
+   platforms):** when the source and target windows have the same nominal
+   length the ratio is 1, so `autoTarget(x, d, d) === x` via the
+   `targetDays ≥ sourceDays` branch — every same-timeframe pull (and any pull
+   onto a LONGER window, and any pull whose source window length is unknown:
+   INDEFINITE, an unresolved supply, or a CUSTOM window missing a bound)
+   behaves exactly as it did before the ruling.
    - `varyRange(t, level, goal) = [max(1, round(t·(1−p))), min(goal, round(t·(1+p)))]`,
      `p ∈ {0, 0.2, 0.5}`; `rollTarget(t, level, goal, rng)` picks a whole
      number uniformly in that range. `t` is clamped 1…goal first.
@@ -1232,26 +1270,80 @@ is a pre-existing bug that B makes visible; fix it, don't special-case.
 `memberActionsMenu` (`RisoSourceRowView.swift`), and the
 `setDerivingFromTask` wiring in `BoardWizardTasksStep.tsx`.
 
-| Member | Inline after the title |
+**Amended by B3.1** (§Member row at phone width, below): these controls are
+no longer *inline after the title* — they sit on a second line revealed by a
+disclosure, and the "of 35 mi" caption is folded into the stepper pill. Read
+the two together; where they disagree, B3.1 wins.
+
+| Member | Controls (B3.1: on the expanded row's second line) |
 | --- | --- |
-| Counting, board source | 22pt stepper pill (− / numeric field, `.numberPad`, select-all on focus / ＋) · caption "of 35 mi" · dice |
+| Counting, board source | 32pt stepper pill (− / numeric field, `.numberPad`, select-all on focus / ＋) · caption "of 35 mi" · dice |
 | Counting, pool source | dice only |
 | Compound | 69pt-indent line: **One square / Split up** pill + "1 square" / "2 squares" note + dice (One square only). One line per part: name · [stepper · "of 210" when board source] · dice (Split only) · ✕ (Split only; the last part can't be removed) |
 | dice on | blue 10.5/600 range line beneath the row/part with the bare range from `varyRange`: "4–6 mi" / "24–36" — never on the compound itself |
+
+The pill was 22pt (22×22 −/＋, 11pt value) until the owner, device-testing
+#493 on 2026-09-22, reported the add-from-a-board/pool inputs — "especially
+the stepper inputs for counter task quantity" — as too small to use
+comfortably; the pill, its buttons and its type grew together to 32pt /
+32×32 / 13pt on both platforms.
 
 Stepper shows `target ?? auto`, step 1, clamp 1…goal, **no reset**
 affordance; the unit appears once, in the caption. Excluded rows keep
 strikethrough + UNDO; excluding a split compound removes all its parts.
 Dice cycles off → a little (blue fill, 2 pips) → a lot (5 pips) → off.
 
+**Removing a source row (owner ruling 2026-09-23).** The row's ✕ removes
+the pull **immediately when the source is untouched** and **asks first when
+it carries configuration** — the owner repeatedly configured exclusions and
+counter targets, then lost them all to a misclick. "Carries configuration"
+is the shared, vector-pinned `sourceHasConfiguration` (`boardSources.ts` ↔
+`BoardSources`): any excluded task, any **authored** member rule, a range narrowed from the
+`[0, all]` mint default, or a filter that differs from the **kind-scoped
+creation default** `newSourceFilter(kind)` — never from the Swift
+`BoardSource.init` default `.all`, which is the legacy-decode default and
+would make every fresh board source look configured. **A member rule counts
+only if someone authored it** (amended 2026-09-23, after the first cut
+fired the dialog on every fresh board source): on a one-off board,
+`prefillRemainingTargets` seeds `memberRules[id].target` for every counting
+member the moment a board source is pulled, so a rule whose only field is a
+`target` equal to what the prefill would seed *right now*
+(`prefilledOneOffTarget` over the same goal / `windowCountByTaskId` /
+`sourceWindow` / wizard window) is machine-written and is **not**
+configuration. A rule with `vary`, `split`, any `parts`, or a `target` that
+differs from that seed is. The gate recomputes the seed at removal time and
+passes it to the shared predicate as `seededTargetByTaskId`, recomputed from
+the LIBRARY-backed task map the prefill itself read (never the wizard's
+staged-edit overlay — an inline goal edit must not turn an untouched source
+into a "1 member rule" confirm, since that edit survives the removal). The
+recomputation reads live inputs, so three things can make it differ from the
+stored target and an otherwise untouched source then asks — all erring the
+same safe way, and none of them a bug: the wizard's **timeframe** changed
+after the pull (the user did change something, so asking is right); a
+**resumed one-off draft**, whose hydrated sources are never re-seeded; and a
+**supply re-fetch after a sync pull**, since `windowCountByTaskId` is live
+progress. The loss sentence names the filter by its label
+(`the "Not done yet" filter`), not as "the squares filter". The dialog names the
+loss via the shared `removeSourceLossSentence` ("You'll lose 3 exclusions
+and 2 member rules."), appends "Changes apply from the next board." while
+editing a repeating board, and offers Cancel / Remove. Web: an
+`alertdialog` sharing `CounterDeleteConfirmDialog`'s styles; iOS: a native
+`.confirmationDialog` (the two-choice destructive idiom — the kit's own
+sheet exists only where members must be listed). Locked by an e2e that
+configures a source, taps ✕, cancels, and asserts the row and its exclusion
+survive.
+
 **Hand-added rows:** dice on counting rows only, before the 32pt edit
 button; the range line sits under the row.
 
 **Primitives (reuse before create):** check `CounterStepper.tsx` ↔
 `CounterStepperView.swift` for a compact size before adding one. New
-`DiceButton` (26×22, 0/2/5 pips, blue fill; pips use
+`DiceButton` (28×28, 0/2/5 pips in a 24×24 inner box, blue fill; pips use
 `--riso-ink-static` / `risoInkStatic` — adaptive ink on a coloured fill is
-the known dark-mode trap). A pill toggle only if `RisoSegmented` /
+the known dark-mode trap; the face was 22×22 with an 18×18 box until the
+owner's 2026-09-22 request above — it grew with the stepper pill so it does
+not sit visibly smaller beside it, and it now matches the row's 28pt ✕).
+A pill toggle only if `RisoSegmented` /
 `riso/Segmented` can't be sized down. Kit location `components/riso/` ↔
 `Views/Riso/RisoControls.swift`, each with a `RisoKitSnapshotTests`
 baseline.
@@ -1261,8 +1353,9 @@ symmetric names): `setMemberTarget`, `setMemberVary`, `setMemberSplit`,
 `setPartExcluded`, `setPartTarget`, `setPartVary`, `setManualVary` —
 writing `sources[i].memberRules` / `manualTaskVary`. Split and
 part-exclusion re-run `refreshSourceSupplies` → `clampAllSourceRanges`. A
-one-off pull writes `target = remaining`. Drafts ride `commitSources` →
-`recurringDraftMix`.
+one-off pull writes `target = prefilledOneOffTarget(...)` — the remaining
+amount, pro-rated to the board's window (owner ruling 2026-09-21). Drafts
+ride `commitSources` → `recurringDraftMix`.
 
 **Preview.** 2b one-off: cells render `DerivedTaskDraft` titles (joined
 with `pendingTasks`); Shuffle re-rolls via `shuffleNonce`. 5b recurring:
@@ -1280,6 +1373,229 @@ a recurring board; Save = wizard save. One-off boards stay locked.
 **Copy** verbatim from the handoff; the §Copy rules apply (never
 "deal"/"draw"/"template"/"spawn"). A11y: dice "Vary: off / a little / a
 lot"; stepper "Decrease target" / "Increase target".
+
+### Member row at phone width (B3.1 — design locked 2026-09-19)
+
+**Why.** Device-testing #492 showed the B3 member row attempting a desktop
+layout on a 393pt screen. Three distinct failures, not one: titles
+ellipsized to uselessness ("Att…", "Run 30 M…", "Read 1 Bo…"); the dice at
+`.off` — an empty bordered square sitting next to an ✕ — reading as an
+unchecked checkbox rather than a die; and the caption restating the title,
+because counting titles are auto-generated from action + goal + unit
+(`generateCounterTaskTitle`), so "Run 30 Miles a Month · of 30 Miles" says
+the goal twice while the ellipsis eats it once.
+
+Measured at 393pt: badge 20 + stepper 78 + caption 48 + dice 26 + ✕ 28 +
+five 8pt gaps + 51pt row padding = **291pt of fixed furniture, leaving the
+title ~102pt**.
+
+**The model: disclosure, not compression.** Folding the goal into the pill
+(dropping the caption, widening the pill) nets only ~27pt — worth doing, but
+it does not fix the row. What fixes the row is not rendering the controls
+until they are wanted: a collapsed row's furniture is 92pt plus a ~56pt
+summary chip, leaving the title **~194pt**.
+
+Three shapes, chosen by what the row actually has:
+
+| Row | Shape |
+| --- | --- |
+| Normal / achievement / childless compound; any excluded or filtered-done member | Single line, no disclosure — there is nothing to reveal (`isOn` already gates every control). Not *unchanged*, though: the uniform-row-height rule below **lifts** the two shapes that were shorter than 42pt — filtered-done's 22pt ✓ and excluded's ~24pt UNDO pill — to the same height as every other row. |
+| Counting member (board **or** pool source) | Collapsed: `badge · title · summary chip · chevron · ✕`. Expanded adds line 2 at the existing 69pt indent: `stepper pill · dice · range`. |
+| Compound with parts | Same collapsed line. Expanded reveals the One square / Split up line and the part lines exactly as B3 built them. |
+
+**Rules**
+
+- **Always collapsed on open** — including a member whose rule is already
+  stored. Row height then never depends on hidden state, a 20-member source
+  stays scannable, and the chip keeps a saved rule legible without
+  expanding. (The rejected alternative, auto-expanding rows with a non-empty
+  rule, makes list height a function of `memberRules` — which also varies by
+  whether the user has resumed a draft.)
+- **The chip is the row's current answer**, never a second control: the
+  `varyRangeLabel` string in `--riso-blue` when the dice is lit ("24–30
+  Miles"), target + unit in `--riso-muted` when it is not ("12 Classes"),
+  `splitSquaresNote` for a compound ("3 squares").
+- **A collapsed vary range renders as the single value, not `"N–N"`**
+  (owner ruling, 2026-09-22): pro-rating a board-pulled target onto a short
+  window now makes a collapsed range easy to hit — a weekly 10-rep counter
+  pulled onto a daily board targets `ceil(10/7) = 2`, and ±20% of 2 rounds
+  right back to `2...2` — so `varyRangeLabel` reads the chip as "2 reps"
+  rather than "2–2 reps". It deliberately returns that value instead of
+  `null`: `countingSummary` decides `varying: true` by
+  `varyRangeLabel(...) !== null`, so a `null` here would render the chip
+  muted-grey next to a dice that is still lit.
+- **A counting chip that only restates the title is suppressed** (owner
+  ruling, 2026-09-19, after seeing the first re-recorded baselines): when
+  `vary == 0` **and** `target == goal`, `countingSummary` returns `null` /
+  `nil` and the row renders no chip. Rationale: counting titles are
+  auto-generated from action + goal + unit
+  (`generateCounterTaskTitle`), so a row titled "Run 35 mi" carrying a
+  chip reading "35 mi" reproduces — in milder form — the duplicate-caption
+  failure this whole section exists to fix. The chip then appears exactly
+  when it adds something the title does not: a pro-rated or hand-set target
+  (`target != goal`, e.g. "5 Miles" on a daily pulled from a monthly), or a
+  vary range. This is a rule on the *values*, not a string comparison
+  against the title — a title the user renamed by hand never changes
+  whether the chip appears. Compound chips are unaffected: "1 square" vs
+  "3 squares" is never implied by the title.
+- **Every row in a panel is the same height** — a 42pt floor on the row's
+  main line (7pt + 28pt + 7pt), pinned explicitly rather than inherited.
+  Before B3.1 it fell out of the inline 28pt ✕; moving that ✕ to an
+  overlay on *expandable rows only* would have left their 20pt badge
+  setting the height and mixed ~34pt and ~42pt rows in one list. So the
+  floor is stated: web `min-height: 42px` on `.disclosure` / `.staticLine`
+  (border-box, padding included), iOS `.frame(minHeight: 28)` on the main
+  line inside its 7+7 padding. It restores B3 exactly for an included row
+  and deliberately **lifts** the two shapes that were already shorter —
+  filtered-done's 22pt ✓ and excluded's ~24pt UNDO pill — rather than
+  merely preserving them. It is a floor, not a clamp: a counter-clash
+  row's two-line title still grows past it. (Three `RisoSourceSnapshotTests`
+  baselines were re-recorded for the lift; `e2e/member-rules.spec.ts` pins
+  it across all three render paths. That e2e check measures the *inner*
+  line element, never the `<li>` — the `<li>` also carries the 1.5px
+  hairline that `:first-child` lacks.)
+- **The range moves inline** onto line 2 instead of taking a third line, so
+  an expanded counting row is exactly two lines — the same height the B3
+  handoff already budgeted for its separate vary-range line.
+- **Parts stay single-line.** A part line at the 69pt indent still leaves
+  ~155pt for the name, and part names are short; splitting them too would
+  make a 3-part compound seven lines.
+- **The disclosure is the whole row rect, not the text.** The hit area is
+  the entire row — full width, full height, the row's 7pt vertical and 40pt
+  leading padding included — minus only the ✕'s own 28×28 rect. A row whose
+  title is short must still expand when tapped in the empty space after the
+  title, and a tap in the padding above or below the title must count.
+  Concretely: the row's padding moves *onto* the disclosure control (web:
+  `<button aria-expanded>` carrying `width: 100%` and the row's own
+  `padding: 7px 11px 7px 40px`, which `.disclosure` then overrides to
+  `padding-right: 39px` — the content reserves the whole gutter so the
+  chevron never sits under the ✕, while the ✕ itself is absolutely
+  positioned at `right: 11px`, so the 11 lives on the control rather than
+  on the button's padding; iOS: the same content in a **plain container**
+  carrying the padding, then **`.contentShape(Rectangle())`** — the
+  paddings must precede it — plus `.onTapGesture`,
+  `.accessibilityElement(children: .contain)` and
+  `.accessibilityAddTraits(.isButton)`, with the ✕ as a **sibling**
+  `Button` in an `.overlay(alignment: .trailing)` **on that padded main
+  line**, never nested inside the tappable container and never on the
+  outer stack). The overlay's host is load-bearing, not a detail: on the
+  outer `VStack` the ✕ would centre on the row *including* its expanded
+  second line and drift down past the main line — the exact bug a fix
+  round closed by moving it onto the main line. Likewise the
+  `contentShape` ruling: a SwiftUI container without it registers taps
+  only on its opaque children, which is exactly the "short title, dead
+  row" frustration this project has hit before.
+
+  **Why a tap gesture and not a `Button`** (revised 2026-09-19 during
+  implementation; this section's first draft said `Button` + `ZStack`):
+  `RisoSourceRowView.headerRow` carries a written warning against exactly
+  that shape — *"never a Button nested in a Button (unreliable gesture
+  arbitration)"* — and uses the tap-gesture form for its own header. Neither
+  snapshot tests nor XCTest can prove gesture arbitration, and this repo
+  forbids agents driving the simulator, so where the behaviour is untestable
+  the construction the codebase already trusts wins.
+
+  **The trailing control's padding must equal the row's own** (7pt vertical,
+  11pt trailing) — never a value tuned to the main line's intrinsic height.
+  Both axes were got wrong once each during implementation by padding the
+  overlay to something other than the row's own values, and each time the ✕
+  drifted out of line with the inline ✕ on a non-expandable row directly
+  above or below it. `11 = 39 − 28` also makes the reserved gutter exact.
+
+**Surfaces**
+
+- shared `countingSummary(target, level, goal, unit)` (nullable — see the chip-suppression rule above) and
+  `compoundSummary(split, partIds, excludedPartIds, level)`, each returning
+  `MemberSummary { text, varying }`: they dispatch to the existing
+  `varyRangeLabel` / `splitSquaresNote` rather than formatting anything new,
+  so the Swift twin and the `display` section of `memberRuleVectors.json`
+  stay a thin delta. Two narrow functions rather than one polymorphic
+  `memberSummaryLabel`, so each is independently vector-pinnable and neither
+  takes arguments the other ignores.
+- compact stepper gains an optional `suffix` ("/ 30 Miles"), rendered as
+  static text inside the pill border. Back-compatible — `RisoSpecialTaskPanel`
+  passes none. Only the number stays editable, so the Task 7 ruling (commit
+  the typed draft before stepping) is untouched.
+- dice `.off` gains one centred pip — the 20×16 inner box's (10, 8) — at 45%
+  `--riso-muted` / `.risoMuted`. The lit faces are unchanged, same 26×22 box
+  (the face was squared to 22×22 in a later owner-requested fix — see the
+  Primitives note above; this paragraph records the dice-face change as shipped)
+  and same pip coordinates. Because this lands in the Riso primitive, the
+  hand-added pool rows are fixed for free; nothing else about them changes.
+- `MemberRuleRowModel.caption` → `targetSuffix`; the struct gains
+  `isExpandable` and `summary`.
+
+**Owner ruling 2026-09-22 — no identical derived clones, and one generic
+family row in the library.** Device-testing #493 surfaced that pulling a
+counting task from a board always mints a window-stamped derived counter,
+even when nothing differs: "Read 1 book" (goal 1, can't be subdivided, vary
+off) spawned a second "Read 1 book" with an identical regenerated title,
+visible in the Tasks-tab library beside its root. Two rules:
+
+1. **Skip the mint when the derived row would be identical to its root.**
+   In `planDerivedTasks` (TS ↔ `BoardSources.planDerivedTasks`), a
+   board-sourced counting member — or a split part — that **is itself a
+   root** (`sharedCounterId == null`), whose resolved target equals its own
+   goal *and* whose vary level is off is **placed as the root task itself**,
+   exactly as pool-sourced and hand-added members already are. The root
+   condition is load-bearing, not a nicety: a member that is *already* a
+   window-stamped derived counter (a daily built from yesterday's daily
+   supplies `derivedTaskId(boardA, R)` under its own id) must still be
+   re-minted for *this* window, or board B places board A's row and reads
+   day A's `baseline` against the root's lifetime — today's square then shows
+   yesterday+today's progress and can open already complete (the
+   phantom-completion class), and `refreshDerivedBaselines` never heals it
+   because it recomputes from the stale row's own `startDate`. The manual
+   branch has always guarded this with `isWindowStampedMember`; the board
+   branch got it for free by always minting. Pinned by a vector: a
+   window-stamped member pulled same-timeframe with vary off is still minted.
+   A derived counter exists to carry a *different* target (pro-rated or
+   hand-set) or a vary range; when it would carry neither, Windowed
+   Completion already evaluates the root against the target board's window
+   and the shared-task semantics (an increment on the daily counts on the
+   monthly) are the documented intent. Persist, Preview and the deletion
+   cascade all tolerate a member with no derived row (`isMintedForBoard`
+   matches window-stamped rows only, so a directly-placed root is never
+   mistaken for minted content). A later rule edit on a repeating board
+   correctly flips root → derived at the next spawn, because each window
+   re-plans. Every pre-existing vector pulls cross-timeframe, so the skip
+   case is pinned by new vectors: same-timeframe board pull with vary off →
+   the root id in `placement`, no derived row; the same with vary on → still
+   minted; explicit `target == goal` with vary off → the root.
+2. **The Tasks-tab library shows ONE generic row per counter family.**
+   Library browse (`computeBrowsableTasks` ↔ `BrowsableTasks`) hides every
+   task with a live `sharedCounterId` — window-stamped derived rows *and*
+   P5 shared-counter members — and keeps the family root. A root that heads
+   a family (≥1 live member links to it, or it is a hub-born `isCounter`
+   counter — the same root test `buildSharedCounterGroups` uses, extracted
+   into a shared `sharedCounterRootIds(tasks)` helper with a Swift twin)
+   renders with the **generic label `formatCounterName(action, unit)`**
+   ("Read book", "Run miles", "Push-ups") in place of its stored title, with
+   no target count in the title or subtitle, and **tapping it opens the
+   Counters hub detail** for that root (web `/profile/counters/:rootId`, iOS
+   `CounterDetailView(counterId:)` via a `TasksTabRoute` pushed on the
+   existing `NavigationPath`) — the page that already lists the family's
+   windows. A standalone counter (no members, not `isCounter`) is unchanged:
+   "Read 1 book" keeps its count and opens `TaskDetail`. The wizard's
+   Library sheet renders from the same browse set, so members drop out of it
+   too and the family root appears there under its generic label; adding it
+   adds the root, as before. Owner's words: "do we really need a new task in
+   the library for EVERY different target count?" — no; the hub is the home
+   for per-window rows, and the library shows the counter once.
+
+**Out of scope, deliberately**: wrapping a title to two lines (full width
+fits realistic titles; genuinely extreme ones still ellipsize); any
+hand-added-row change beyond the dice face; the B3 follow-up backlog above.
+
+**Test impact**: `e2e/member-rules.spec.ts` reaches into a member row and
+drives the stepper and dice directly at three call sites (`:166`, `:196`,
+`:237`) — each needs a disclosure click first. Also
+`MemberRuleRowModelTests`, `MemberRuleRow.test.ts`, `DiceButton.test.ts`,
+`memberRulesDisplay.test.ts`, and re-recorded baselines for
+`testSourceCountingMemberRule`, `testSourceCountingMemberVaryOn`,
+`testPoolSourceCountingMemberHasDiceButNoStepper`,
+`testSourceCompoundOneSquare`, `testSourceCompoundSplitUpWithExcludedPart`,
+`testMemberRulePrimitivesLight`/`Dark`.
 
 ### Test strategy (B)
 

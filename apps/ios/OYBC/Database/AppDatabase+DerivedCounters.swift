@@ -193,7 +193,13 @@ extension AppDatabase {
     ///   - manualTaskIds: Hand-added ids — they win over any source copy.
     ///   - manualTaskVary: Hand-added members' vary levels.
     ///   - window: The window being assembled.
-    ///   - mode: Auto targets apply to `.recurring` only.
+    ///   - mode: Whether the board being assembled is one-off or recurring.
+    ///     Doesn't gate the target math — a board-sourced counting target
+    ///     pro-rates by window length in BOTH modes (owner ruling
+    ///     2026-09-21: docs/BOARD_SOURCES.md §Member rules). `mode` only
+    ///     decides WHEN that target is written: a one-off pull prefills an
+    ///     explicit, pro-rated `target`; a recurring board leaves it absent
+    ///     and auto-targets at each spawn.
     ///   - tasksById: Every id `selectedIds` / the supplies / the links name.
     ///   - childrenByCompoundId: Compound id → its live `compound_children` rows.
     ///   - sourceWindowByTaskId: Board-source members' (and their compound
@@ -435,8 +441,12 @@ extension AppDatabase {
             manualTaskVary: manualTaskVary,
             window: window,
             // A repeating board never reaches here (its "Create Board"
-            // persists a record and spawns), so this path is always one-off —
-            // which is what suppresses auto targets.
+            // persists a record and spawns), so this path is always one-off.
+            // A board-pulled counting target still pro-rates by window
+            // length here — mode no longer gates that — but `.oneOff` makes
+            // this path prefill the pro-rated `target` explicitly rather
+            // than leaving it to auto-target at spawn (owner ruling
+            // 2026-09-21: docs/BOARD_SOURCES.md §Member rules).
             mode: .oneOff,
             tasksById: tasksById,
             childrenByCompoundId: childrenByCompoundId,

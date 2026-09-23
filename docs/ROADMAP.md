@@ -58,6 +58,19 @@ The review's core CI/CD finding: coverage tracks where the *apps* are, not where
 - **Why:** the snapshot step is `continue-on-error: true` (`ios.yml:96`) because the CI runner's iOS simulator minor differs from local; visual regressions currently produce a green check.
 - **Scope:** already documented in CLAUDE.md — either wait for a macos-15 image shipping iOS 26.3, or install the iOS 26.2 runtime locally, re-record baselines on `OS=26.2`, and drop the flag. Track the runner-image state in the dependabot-sweep reminder.
 - **Acceptance:** a genuine snapshot diff fails the PR.
+- **Open snapshot debt — one unexplained baseline offset (filed 2026-09-22, B3.1):**
+  `BoardWizardTasksStepSnapshotTests.testDenseLibraryWithSourcesPulled`. The test
+  was legitimately re-recorded for a renamed label, but the new baseline ALSO
+  absorbed a **~6px downward offset of the struck-out excluded-member row** on
+  the dense-library Tasks-step screen. That offset was never root-caused, and it
+  **predates the `feature/member-rules-b31` branch** — i.e. it is evidence that an
+  earlier PR shipped an unreviewed render change to that row, and re-recording
+  destroyed the last signal of it. Deliberately NOT fixed here (a blind nudge
+  would only bury it further); recorded so the next person to touch the excluded
+  member row, or to take A8 strict, knows the baseline is not a clean reference.
+  This is exactly the failure mode A8 exists to close: with the snapshot step
+  advisory, an unintended render change reaches `dev` behind a green check and is
+  only noticed when an unrelated re-record swallows it.
 
 ---
 
@@ -195,6 +208,11 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 - **Scope:** one PR per major, not a combined sweep: zod 4 migration (run the shared Jest suite as the safety net — this is exactly what its 34 test files are for), then GRDB 7 (read the migration guide; the `Codable`/record conformances are the risk surface; full iOS test + snapshot suites gate it).
 - **Acceptance:** both majors current or an explicit pin-with-reason comment where staying back is the right call.
 
+### E7 — e2e suite: 10 pre-existing failures on `dev`, hidden by `continue-on-error` — `M`
+- **Why:** found 2026-09-23 while landing #493. Playwright could not run locally for weeks because `apps/web/tsconfig.json` referenced `packages/shared` as a *directory* and Playwright's tsconfig loader appends `.json` to directory references (fixed on #493 by referencing `packages/shared/tsconfig.json`; the "Node 24" diagnosis in project memory was wrong). With the suite runnable, `dev` @ `8bdce2fc` fails 10 of 61: `counter-arrivals` (arrival banner), `windowed-completion-note`, `member-rules` › expired derived counters (`Show expired tasks` checkbox click does not change state), `pool-row-editor` ×2 (counting/compound editor, light + dark), `repeat-board` ×2 (manage row; "Repeat this board…" CTA), `specific-board-square` ×3 (achievement creator). Because `web.yml` runs the e2e step under `continue-on-error: true`, every one has merged green — the check mark is no information; read the artifact.
+- **Scope:** diagnose the class first — console shows `Sync userId does not match authenticated user` and Firestore `insufficient permissions` under the dev bypass in several (consistent with the old "bypass flaky under Playwright" note, not diagnosed), so one harness fix may clear most of them — then fix the remainder spec-by-spec.
+- **Acceptance:** the suite is green on `dev`; `continue-on-error` is dropped from the e2e step so it becomes a real gate.
+
 ### E5 — Pre-existing small polish debts (absorbed for completeness) — `S` each
 - ~~Blip mood picker persistence~~ — **RESOLVED**: the dead picker was removed rather than wired (it persisted nothing; no shared `blipMood` field ever existed). The mascot itself was later retired too — `RisoMiniBoardArt` (mini-board motif) + `RisoInitialAvatar` replaced `BlipPlaceholder` on all eight surfaces (Blip-retirement handoff, 2026-09-10).
 - DEBUG-gate the ~29 ungated iOS `print()` calls.
@@ -256,6 +274,19 @@ From the end-user review. Theme: the deep machinery is built — most opportunit
 - **Canonical doc:** `docs/BOARD_SOURCES.md` (data model, selection algorithm, migration, phase-by-phase implementation notes, locked decisions).
 - **Shipped:** P0 docs #457 · P1 schema/algorithm lockstep #458 · P2 iOS Tasks step #459 · P3 Preview 5b + deleted-source ask + spawn board supply #460 · P4 web parity #463 · P5 cleanup (dead-code retirement, copy-rule sweep, e2e/snapshot locks, allowlist shrinks). Acceptance met: both platforms on the sources model, migrated records spawn behavior-identically, removed affordances e2e-locked gone, and FOUR god-file allowlist entries shrank (schemas.ts + BoardWizardViewModel.swift off the list; useBoardWizard.ts 1191→1120; BoardWizardTasksStep.tsx 1041→888).
 - **Member-rules train (`docs/BOARD_SOURCES.md` §Member rules) — COMPLETE:** A retire-the-grid-picker #487 · B0 spec #486 · B1 types/codecs/GRDB v31/pure helpers #489 · B2 mint/baseline/deletion-cascade wiring #491 · B3 rule-authoring UI (member rows, Preview dry run, hub expired filter) #492. Follow-ups recorded in the Plan B3 notes: derived-compound provenance, post-activation Board-Edit window re-derive, a Firestore rules-cap emulator test, splitting `CounterDetailContent` out of `CounterDetailView.swift`, and an `.nvmrc`/Node-20 engines pin for local Playwright.
+- **B3.1 — member row at phone width** (`docs/BOARD_SOURCES.md` §Member row at phone width, design locked 2026-09-19): device-testing #492 found the B3 member row using a desktop layout at 393pt — ellipsized titles, an off-dice reading as an unchecked checkbox, a caption restating an auto-generated title. Fix: disclosure-not-compression (rows collapse to `badge · title · summary chip · chevron · ✕`, controls reveal on tap), the goal folded into the stepper pill, a centred-pip off-dice face. Both platforms; e2e repair + new coverage (full-row hit area, split-compound part-scale UNDO rendering, expanded stepper/dice/range, row-height uniformity) landed on `feature/member-rules-b31` — PR not yet opened as of this entry.
+  - **Known defect carried forward (iOS only, pre-existing):** the compact
+    member-row stepper truncates its value at accessibility text sizes —
+    `RisoInlineStepperView` sizes the field in fixed points
+    (`(String(max).count + 1) * 7`) while its font is `relativeTo: .body`,
+    so at `.accessibilityMedium` the pill reads `− … / 35 mi ＋`. It
+    entered with the compact stepper in `8bdce2fc` (B3, #492), not with
+    B3.1, and web is unaffected (the input is sized in `ch`, which scales
+    with the font). The B3.1 baseline
+    `testMemberRowCountingClashExpandedLargeText` pictures it deliberately
+    so the rendering is locked, not endorsed. Fix when touched: size the
+    field with `@ScaledMetric` (or let it size intrinsically with a
+    `minWidth`).
 
 ### Explicit non-goal: AI board generation
 "Describe a goal, get a board" demos well but fights the app's soul (offline-first, no server dependency, user-owned data), and F2's starter templates capture most of the same "help me begin" value with zero infrastructure. If ever, a launch-later cloud nicety — recorded here so it isn't re-litigated from scratch.

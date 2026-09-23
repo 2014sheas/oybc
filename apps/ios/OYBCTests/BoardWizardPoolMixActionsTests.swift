@@ -17,10 +17,13 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         BoardWizardViewModel(preferences: .defaults, database: try! AppDatabase.makeTestInstance())
     }
 
-    private func makeTask(id: String, isDeleted: Bool = false) -> OYBC.Task {
+    /// `goal` non-nil makes it a COUNTING task (the remove-confirm's seeded-
+    /// target case needs one); nil keeps the normal task every other test uses.
+    private func makeTask(id: String, isDeleted: Bool = false, goal: Int? = nil) -> OYBC.Task {
         OYBC.Task(
-            id: id, userId: "u1", title: "Task \(id)", description: nil, type: .normal,
-            action: nil, unit: nil, maxCount: nil,
+            id: id, userId: "u1", title: "Task \(id)", description: nil,
+            type: goal == nil ? .normal : .counting,
+            action: goal == nil ? nil : "Run", unit: goal == nil ? nil : "miles", maxCount: goal,
             operatorType: nil, threshold: nil,
             totalCompletions: 0, totalInstances: 0,
             isCompleted: false, completedAt: nil, currentCount: nil,
@@ -285,7 +288,8 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
     // MARK: - pullBoard (board-kind sources)
 
     private func seedBoardWithTasks(
-        _ db: AppDatabase, boardId: String, name: String, taskIds: [String]
+        _ db: AppDatabase, boardId: String, name: String, taskIds: [String],
+        countingGoals: [String: Int] = [:]
     ) throws {
         let now = "2026-01-01T00:00:00.000Z"
         let boardDict: [String: Any] = [
@@ -308,7 +312,7 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
             ).insert(grdb)
             try board.insert(grdb)
             for (i, taskId) in taskIds.enumerated() {
-                try makeTask(id: taskId).insert(grdb)
+                try makeTask(id: taskId, goal: countingGoals[taskId]).insert(grdb)
                 try BoardTask(
                     id: "bt-\(taskId)", boardId: boardId, taskId: taskId,
                     row: i / 3, col: i % 3, isCenter: false,
@@ -328,11 +332,221 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
 
         XCTAssertEqual(vm.sources.map { $0.sourceId }, ["b1"])
         XCTAssertEqual(vm.sources.first?.kind, .board)
-        XCTAssertEqual(vm.sources.first?.filter, .all)
+        // Owner directive 2026-09-19 — a freshly pulled BOARD starts on
+        // "Not done yet" (`BoardWizardViewModel.newSourceFilter(for:)`), so
+        // it supplies what is still outstanding. Nothing is complete in
+        // this fixture, so the supply below is unaffected either way.
+        XCTAssertEqual(vm.sources.first?.filter, .todo)
         XCTAssertEqual(vm.selectedTaskIds, ["bt1", "bt2", "bt3"])
         XCTAssertEqual(vm.supplyInfoBySourceId["b1"]?.displayName, "Weekday Core")
         // Board sources are NOT in the legacy poolIds mirror.
         XCTAssertTrue(vm.pulledPoolIds.isEmpty)
+    }
+
+    /// The `.todo` creation default is KIND-SCOPED: the done-filter is a
+    /// boards-only field by contract (docs/BOARD_SOURCES.md §The model —
+    /// "pools always 'all'"), so a pulled POOL must keep `.all` while a
+    /// pulled BOARD takes `.todo`. Asserted as a PAIR in one test so
+    /// neither half can regress on its own — gating the mint on the wrong
+    /// kind fails here whichever way it is wrong. Web twin: the
+    /// "starts a new BOARD row on todo and a new POOL row on all" case in
+    /// `useWizardSources.test.ts`.
+    func test_newSourceFilter_isKindScoped_poolStaysAll_boardIsTodo() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"])
+        let (poolsById, tasksById) = workedExampleFixtures()
+
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullBoard(boardId: "b1")
+
+        XCTAssertEqual(vm.sources.first(where: { $0.sourceId == "A" })?.filter, .all)
+        XCTAssertEqual(vm.sources.first(where: { $0.sourceId == "b1" })?.filter, .todo)
+    }
+
+    // MARK: - Remove-source confirm gate (owner ruling 2026-09-19)
+
+    /// The Tasks step's ✕ asks before dropping a source that carries work,
+    /// and goes silently when it doesn't. What this adds over the shared
+    /// `configurationVectors` (already pinned on both platforms) is the
+    /// KIND-SCOPED default the WIZARD feeds the predicate — the part a caller
+    /// can get wrong: a board mints on `.todo`, so judging it against
+    /// `BoardSource.init`'s `.all` would flag every fresh pull as configured.
+    /// Web twin: the `sourceRemovalNeedsConfirm` cases in
+    /// `useWizardSources.test.ts`.
+    func test_removeConfirmGate_freshPulls_needNoConfirm() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"])
+        let (poolsById, tasksById) = workedExampleFixtures()
+
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        vm.pullBoard(boardId: "b1")
+
+        for source in vm.sources {
+            XCTAssertFalse(
+                BoardSources.sourceHasConfiguration(
+                    source,
+                    defaultFilter: BoardWizardViewModel.newSourceFilter(for: source.kind)
+                ),
+                "a just-pulled \(source.kind) row should remove without asking"
+            )
+        }
+    }
+
+    func test_removeConfirmGate_asksAfterAnExclusion_andNamesIt() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        let (poolsById, tasksById) = workedExampleFixtures()
+        vm.pullPool(poolsById["A"]!, tasksById: tasksById)
+        let memberId = try XCTUnwrap(vm.supplyInfoBySourceId["A"]?.rawSupplyTaskIds.first)
+
+        vm.toggleSourceExclude(sourceId: "A", taskId: memberId)
+
+        let source = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "A" }))
+        let defaultFilter = BoardWizardViewModel.newSourceFilter(for: source.kind)
+        XCTAssertTrue(BoardSources.sourceHasConfiguration(source, defaultFilter: defaultFilter))
+        XCTAssertEqual(
+            BoardSources.removeSourceLossSentence(
+                BoardSources.sourceConfiguration(source, defaultFilter: defaultFilter)
+            ),
+            "You'll lose 1 exclusion."
+        )
+    }
+
+    /// Flipping a BOARD row to "All squares" is configuration too — it is the
+    /// only dimension whose default differs by kind.
+    func test_removeConfirmGate_asksAfterFlippingTheSquaresFilter() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"])
+        vm.pullBoard(boardId: "b1")
+
+        vm.setSourceFilter(sourceId: "b1", filter: .all)
+
+        let source = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "b1" }))
+        let defaultFilter = BoardWizardViewModel.newSourceFilter(for: source.kind)
+        XCTAssertTrue(BoardSources.sourceHasConfiguration(source, defaultFilter: defaultFilter))
+        XCTAssertEqual(
+            BoardSources.removeSourceLossSentence(
+                BoardSources.sourceConfiguration(source, defaultFilter: defaultFilter)
+            ),
+            "You'll lose the \"All squares\" filter."
+        )
+    }
+
+    /// The amended ruling (2026-09-23): the one-off prefill writes a target
+    /// for every counting member the moment a board source is pulled, and
+    /// those are NOT configuration. Pulling a board whose members include a
+    /// counting task must still remove silently.
+    func test_removeConfirmGate_seededTargets_areNotConfiguration() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        // A COUNTING member with a goal is what the one-off prefill seeds.
+        try seedBoardWithTasks(
+            db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"],
+            countingGoals: ["bt1": 10]
+        )
+
+        vm.pullBoard(boardId: "b1")
+
+        let source = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "b1" }))
+        // The prefill really did write a rule — otherwise this test would
+        // pass for the wrong reason (nothing to mistake for configuration).
+        let seededTarget = try XCTUnwrap(BoardSources.memberRule(for: "bt1", in: source).target)
+        XCTAssertEqual(seededTarget, 10, "an untouched daily 10 pulled onto a daily board seeds 10")
+
+        let seeded = seededTargetMap(vm: vm, sourceId: "b1", db: db)
+        XCTAssertEqual(seeded, ["bt1": 10])
+        XCTAssertFalse(
+            BoardSources.sourceHasConfiguration(
+                source,
+                defaultFilter: BoardWizardViewModel.newSourceFilter(for: .board),
+                seededTargetByTaskId: seeded
+            ),
+            "a freshly pulled board source is not configured just because the prefill ran"
+        )
+
+        // …but editing that seeded target IS configuration, and is named.
+        vm.setMemberTarget(sourceId: "b1", taskId: "bt1", target: 2)
+        let edited = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "b1" }))
+        XCTAssertTrue(
+            BoardSources.sourceHasConfiguration(
+                edited,
+                defaultFilter: BoardWizardViewModel.newSourceFilter(for: .board),
+                seededTargetByTaskId: seeded
+            )
+        )
+        XCTAssertEqual(
+            BoardSources.removeSourceLossSentence(
+                BoardSources.sourceConfiguration(
+                    edited,
+                    defaultFilter: BoardWizardViewModel.newSourceFilter(for: .board),
+                    seededTargetByTaskId: seeded
+                )
+            ),
+            "You'll lose 1 member rule."
+        )
+    }
+
+    /// I2: the seed is recomputed from the LIBRARY-backed task map the
+    /// prefill read, never from the wizard's staged-edit overlay. A staged
+    /// inline goal edit survives the removal, so letting it move the seed
+    /// would make an untouched source claim "1 member rule" falsely.
+    func test_removeConfirmGate_stagedGoalEdit_doesNotMoveTheSeed() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(
+            db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"],
+            countingGoals: ["bt1": 10]
+        )
+        vm.pullBoard(boardId: "b1")
+        let source = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "b1" }))
+        let librarySeed = seededTargetMap(vm: vm, sourceId: "b1", db: db)
+        XCTAssertEqual(librarySeed, ["bt1": 10])
+
+        // What the STAGED overlay would compute instead, had the gate read it.
+        let supply = try XCTUnwrap(vm.supplyInfoBySourceId["b1"])
+        let stagedSeed = BoardSources.seededTargetsForSource(
+            supplyTaskIds: supply.rawSupplyTaskIds,
+            tasksById: ["bt1": BoardSources.SeededTargetTask(type: .counting, maxCount: 40)],
+            windowCountByTaskId: supply.windowCountByTaskId,
+            sourceWindow: supply.sourceWindow,
+            targetWindow: vm.prefillTargetWindow
+        )
+        XCTAssertEqual(stagedSeed, ["bt1": 40], "the overlay really would give a different seed")
+
+        let defaultFilter = BoardWizardViewModel.newSourceFilter(for: .board)
+        XCTAssertFalse(
+            BoardSources.sourceHasConfiguration(
+                source, defaultFilter: defaultFilter, seededTargetByTaskId: librarySeed
+            ),
+            "judged against the library seed the source is untouched"
+        )
+        XCTAssertTrue(
+            BoardSources.sourceHasConfiguration(
+                source, defaultFilter: defaultFilter, seededTargetByTaskId: stagedSeed
+            ),
+            "…and the staged seed is exactly what would have made it lie"
+        )
+    }
+
+    /// Rebuilds the seed map the way `BoardWizardTasksStepView.seededTargets(for:)`
+    /// does at removal time — from the VM's own supply cache and window.
+    private func seededTargetMap(
+        vm: BoardWizardViewModel, sourceId: String, db: AppDatabase
+    ) -> [String: Int] {
+        guard let supply = vm.supplyInfoBySourceId[sourceId] else { return [:] }
+        let tasks = (try? db.fetchTasks(ids: supply.rawSupplyTaskIds)) ?? []
+        var tasksById: [String: BoardSources.SeededTargetTask] = [:]
+        for task in tasks { tasksById[task.id] = BoardSources.SeededTargetTask(task) }
+        return BoardSources.seededTargetsForSource(
+            supplyTaskIds: supply.rawSupplyTaskIds,
+            tasksById: tasksById,
+            windowCountByTaskId: supply.windowCountByTaskId,
+            sourceWindow: supply.sourceWindow,
+            targetWindow: vm.prefillTargetWindow
+        )
     }
 
     func test_pullBoard_missingBoard_noOp() {
@@ -347,6 +561,12 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         let vm = BoardWizardViewModel(preferences: .defaults, database: db)
         try seedBoardWithTasks(db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1", "bt2"])
         vm.pullBoard(boardId: "b1")
+
+        // Flip to `.all` first: a pulled source now STARTS on `.todo`, so
+        // setting `.todo` straight away would assert nothing about the
+        // transition this test exists to cover.
+        vm.setSourceFilter(sourceId: "b1", filter: .all)
+        XCTAssertEqual(vm.availableCount(forSourceId: "b1"), 2)
 
         vm.setSourceFilter(sourceId: "b1", filter: .todo)
         // No completions seeded → nothing is done → supply unchanged.

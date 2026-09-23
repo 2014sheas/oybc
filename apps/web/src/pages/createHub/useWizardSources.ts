@@ -22,7 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import type { BoardSource, CompoundChild, Pool, Task } from '@oybc/shared';
+import type { BoardSource, BoardWindow, CompoundChild, Pool, Task } from '@oybc/shared';
 import { fetchBoardSourceSupply } from '../../db/operations/boardSources';
 import {
   buildSupplyInfoMap,
@@ -75,6 +75,13 @@ export interface UseWizardSourcesArgs {
    * against its own window instead.
    */
   prefillRemainingTargetsOnResolve: boolean;
+  /**
+   * §Member rules (B3, RC4) — the window of the board being assembled, so a
+   * one-off prefill can PRO-RATE the remaining target it seeds (owner ruling
+   * 2026-09-21). Read through a ref after the supply's awaits, so changing
+   * the wizard's timeframe never re-runs the prefill effect.
+   */
+  targetWindow: BoardWindow;
   /** The wizard's current selection — the diff base for purges. */
   selectedTaskIds: Set<string>;
   /** Purge center/pending/staged state for ids a transition drops. */
@@ -128,6 +135,7 @@ export function useWizardSources({
   tasksById,
   childrenByCompoundId,
   prefillRemainingTargetsOnResolve,
+  targetWindow,
   selectedTaskIds,
   purgeDroppedIds,
   markUserTouched,
@@ -194,6 +202,12 @@ export function useWizardSources({
   useEffect(() => {
     tasksByIdRef.current = tasksById;
   }, [tasksById]);
+  // Same reason as `tasksByIdRef`: the prefill pro-rates against the board's
+  // CURRENT window, read after the supply fetch resolves.
+  const targetWindowRef = useRef(targetWindow);
+  useEffect(() => {
+    targetWindowRef.current = targetWindow;
+  }, [targetWindow]);
   /**
    * §Member rules (B3, RC4) — the board sources whose prefill decision is
    * already settled at mount: everything the wizard HYDRATED (a resumed
@@ -234,7 +248,13 @@ export function useWizardSources({
         if (seededSourceIdsRef.current.has(boardId)) continue;
         const supply = next[boardId];
         setSources((prev) => {
-          const result = prefillRemainingTargets(prev, boardId, supply, tasksByIdRef.current);
+          const result = prefillRemainingTargets(
+            prev,
+            boardId,
+            supply,
+            tasksByIdRef.current,
+            targetWindowRef.current,
+          );
           // Mark seeded only once the decision is final (see the ref's doc):
           // a member the task map doesn't know yet leaves it open for a retry.
           if (result.settled) seededSourceIdsRef.current.add(boardId);
@@ -291,7 +311,9 @@ export function useWizardSources({
 
   /**
    * Board Sources P4 — pull a board as a source row (sheet BOARDS tap).
-   * Defaults: `[0, all]`, filter "All squares".
+   * Defaults: `[0, all]`, filter "Not done yet" (owner directive
+   * 2026-09-19 — see `newSourceFilter`, which is kind-scoped: a POOL
+   * pulled just above still mints `'all'`).
    */
   const pullBoard = useCallback(
     (boardId: string) => {

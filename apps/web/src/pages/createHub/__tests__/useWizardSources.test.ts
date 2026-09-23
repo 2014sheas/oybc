@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { Timeframe, type BoardSource } from '@oybc/shared';
+import { TaskType, Timeframe, type BoardSource, type Task } from '@oybc/shared';
 import {
   appendSource,
   boardSupplyEntry,
   droppedSelectionIds,
   removeSourceById,
+  seededTargetsForRemoval,
+  sourceRemovalLossSentence,
+  sourceRemovalNeedsConfirm,
   toggleIdInSet,
   withResetSourceRange,
   withSourceFilter,
   withSourceRange,
 } from '../wizardSourcesLogic';
-import { availableCountForSource, selectionUnion, type SupplyInfoMap } from '../wizardSources';
+import {
+  availableCountForSource,
+  clampAllSourceRanges,
+  selectionUnion,
+  type SupplyInfoMap,
+} from '../wizardSources';
 
 /**
  * `useWizardSources` extraction (B3 Task 3, commit 1) — the nine source
@@ -42,7 +50,7 @@ function supplyEntry(
 }
 
 describe('appendSource (pullPool / pullBoard)', () => {
-  it('appends a pool row with the default [0, all] range and "all" filter', () => {
+  it('appends a pool row with the default [0, all] range and the "all" filter', () => {
     const next = appendSource([], 'pool-1', 'pool');
     expect(next).toEqual([
       {
@@ -58,6 +66,32 @@ describe('appendSource (pullPool / pullBoard)', () => {
 
   it('appends a board row with kind "board"', () => {
     expect(appendSource([], 'board-1', 'board')[0].kind).toBe('board');
+  });
+
+  // Owner directive 2026-09-19 — a freshly pulled board supplies what is
+  // still outstanding, so the row starts on "Not done yet" rather than
+  // "All squares". The default is KIND-SCOPED: the done-filter is a
+  // boards-only field by contract (docs/BOARD_SOURCES.md §The model —
+  // "pools always 'all'"), so a pool must NOT pick it up. Asserted as a
+  // PAIR in one test so neither half can regress on its own: gating the
+  // mint on the wrong kind fails here whichever way it is wrong.
+  it('starts a new BOARD row on "todo" and a new POOL row on "all"', () => {
+    expect(appendSource([], 'board-1', 'board')[0].filter).toBe('todo');
+    expect(appendSource([], 'pool-1', 'pool')[0].filter).toBe('all');
+  });
+
+  // The narrowed filter shrinks the eligible supply, so the minted range
+  // must still be valid against it. `[0, all]` is the one range that is
+  // valid against ANY supply — re-clamping it is a no-op, which is what
+  // lets the pull paths skip the clamp the filter/exclude paths run.
+  it('mints a range that survives the clamp against its FILTERED supply', () => {
+    const [source] = appendSource([], 'board-1', 'board');
+    const supplyInfo: SupplyInfoMap = {
+      'board-1': supplyEntry('Board', ['t1', 't2', 't3'], ['t1', 't2', 't3']),
+    };
+    const clamped = clampAllSourceRanges([source], supplyInfo, 9);
+    expect(availableCountForSource([source], supplyInfo, 'board-1')).toBe(0);
+    expect(clamped[0]).toEqual(source);
   });
 
   it('is a no-op (same identity) when the id is already pulled — a re-tap never resets a range', () => {
@@ -193,5 +227,155 @@ describe('boardSupplyEntry (the async board-supply effect mapping)', () => {
     expect(entry.rawSupplyTaskIds).toEqual([]);
     expect(entry.isPending).toBeUndefined();
     expect(entry.sourceWindow).toBeUndefined();
+  });
+});
+
+/**
+ * The wizard Tasks step's remove gate (owner ruling 2026-09-19). These two
+ * helpers ARE the step's decision — the ✕ handler is `if
+ * sourceRemovalNeedsConfirm(source) → open the dialog, else remove` — so
+ * everything about WHEN the confirm appears, and what it says, is asserted
+ * here rather than through a DOM harness this repo doesn't have.
+ *
+ * The shared predicate itself is vector-pinned on both platforms
+ * (`boardSourceVectors.json` → `configurationVectors` /
+ * `lossSentenceVectors`); what these add is the KIND-SCOPED default the
+ * wizard feeds it, which is the part a caller can get wrong.
+ */
+describe('sourceRemovalNeedsConfirm (the Tasks-step ✕ gate)', () => {
+  it('lets a just-pulled pool row go without asking', () => {
+    expect(sourceRemovalNeedsConfirm(appendSource([], 'pool-1', 'pool')[0])).toBe(false);
+  });
+
+  it('lets a just-pulled BOARD row go without asking — the default is its kind\'s, not "all"', () => {
+    // The row mints on 'todo'. Comparing it against the legacy-decode 'all'
+    // default would flag every freshly pulled board as configured.
+    const board = appendSource([], 'board-1', 'board')[0];
+    expect(board.filter).toBe('todo');
+    expect(sourceRemovalNeedsConfirm(board)).toBe(false);
+  });
+
+  it('asks once the board row is flipped to "All squares"', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    expect(sourceRemovalNeedsConfirm({ ...board, filter: 'all' })).toBe(true);
+  });
+
+  it('asks once a pool row is flipped to "Not done yet"', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(sourceRemovalNeedsConfirm({ ...pool, filter: 'todo' })).toBe(true);
+  });
+
+  it('asks after an exclusion, a member rule, or a narrowed range', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(sourceRemovalNeedsConfirm({ ...pool, excludedTaskIds: ['t1'] })).toBe(true);
+    expect(sourceRemovalNeedsConfirm({ ...pool, memberRules: { t1: { vary: 2 } } })).toBe(true);
+    expect(sourceRemovalNeedsConfirm({ ...pool, max: 4 })).toBe(true);
+  });
+
+  // ── Seeded targets are not configuration (amended ruling 2026-09-23) ──
+  it('still goes silently when the one-off prefill seeded every target', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    const seeded = { t1: 7, t2: 3 };
+    expect(
+      sourceRemovalNeedsConfirm(
+        { ...board, memberRules: { t1: { target: 7 }, t2: { target: 3 } } },
+        seeded,
+      ),
+    ).toBe(false);
+  });
+
+  it('asks once the person changes a seeded target, and says so', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    const source = { ...board, memberRules: { t1: { target: 7 }, t2: { target: 9 } } };
+    const seeded = { t1: 7, t2: 3 };
+    expect(sourceRemovalNeedsConfirm(source, seeded)).toBe(true);
+    expect(sourceRemovalLossSentence(source, seeded)).toBe("You'll lose 1 member rule.");
+  });
+
+  it('asks when a dice rides along with a seeded target', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    expect(
+      sourceRemovalNeedsConfirm(
+        { ...board, memberRules: { t1: { target: 7, vary: 1 } } },
+        { t1: 7 },
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('seededTargetsForRemoval (what the prefill would write right now)', () => {
+  const board = appendSource([], 'board-1', 'board')[0];
+  const pool = appendSource([], 'pool-1', 'pool')[0];
+  const window = { timeframe: Timeframe.WEEKLY, startDate: null, endDate: null };
+  const supply = {
+    displayName: 'Weekday Core',
+    rawSupplyTaskIds: ['t1', 't2'],
+    doneTaskIds: new Set<string>(),
+    windowCountByTaskId: { t1: 3 },
+  };
+  const tasksById = {
+    t1: { type: TaskType.COUNTING, maxCount: 10 } as Task,
+    t2: { type: TaskType.NORMAL } as Task,
+  };
+
+  it('seeds a board source on a one-off wizard — the counting member only', () => {
+    expect(seededTargetsForRemoval(board, supply, tasksById, window, false)).toEqual({ t1: 7 });
+  });
+
+  it('reads the LIBRARY map, so a staged goal edit cannot move the seed', () => {
+    // The staged overlay would have this counter at a goal of 40; the library
+    // (what the prefill read) still says 10. The seed must follow the
+    // library, or an untouched source starts claiming "1 member rule" the
+    // moment someone renames/retargets a task inline — an edit that survives
+    // the removal, so the claim would be false.
+    const staged = { ...tasksById, t1: { type: TaskType.COUNTING, maxCount: 40 } as Task };
+    expect(seededTargetsForRemoval(board, supply, tasksById, window, false)).toEqual({ t1: 7 });
+    expect(seededTargetsForRemoval(board, supply, staged, window, false)).toEqual({ t1: 37 });
+    // …so a source whose stored target IS the library seed reads unconfigured
+    // when judged with the library map, and only the staged map would flip it.
+    const source = { ...board, memberRules: { t1: { target: 7 } } };
+    expect(
+      sourceRemovalNeedsConfirm(
+        source,
+        seededTargetsForRemoval(board, supply, tasksById, window, false),
+      ),
+    ).toBe(false);
+  });
+
+  it('seeds nothing on a repeating wizard — the prefill never runs there', () => {
+    expect(seededTargetsForRemoval(board, supply, tasksById, window, true)).toEqual({});
+  });
+
+  it('seeds nothing for a POOL source — the prefill is board-only', () => {
+    expect(seededTargetsForRemoval(pool, supply, tasksById, window, false)).toEqual({});
+  });
+
+  it('seeds nothing while the supply is unresolved', () => {
+    expect(seededTargetsForRemoval(board, undefined, tasksById, window, false)).toEqual({});
+  });
+});
+
+describe('sourceRemovalLossSentence (the confirm body)', () => {
+  it('names a single exclusion — the owner\'s exact complaint', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(sourceRemovalLossSentence({ ...pool, excludedTaskIds: ['t1'] })).toBe(
+      "You'll lose 1 exclusion.",
+    );
+  });
+
+  it('joins several losses in the shared fixed order', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(
+      sourceRemovalLossSentence({
+        ...pool,
+        excludedTaskIds: ['t1', 't2'],
+        memberRules: { t3: { target: 7 } },
+        min: 1,
+      }),
+    ).toBe("You'll lose 2 exclusions, 1 member rule and the narrowed range.");
+  });
+
+  it('has nothing to say about an untouched row', () => {
+    expect(sourceRemovalLossSentence(appendSource([], 'pool-1', 'pool')[0])).toBeNull();
   });
 });

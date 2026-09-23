@@ -275,8 +275,9 @@ extension BoardSources {
 
     // MARK: - Plan
 
-    /// Which kind of board is being assembled — auto targets apply to
-    /// `.recurring` only.
+    /// Which kind of board is being assembled. Auto targets apply to BOTH
+    /// kinds (owner ruling 2026-09-21) — the mode only decides *when* a
+    /// board-pulled counting target is written, never how it is computed.
     enum PlanMode {
         case oneOff
         case recurring
@@ -397,6 +398,17 @@ extension BoardSources {
     /// honoured on board sources only (a pool member offers vary / split /
     /// part-exclusion and nothing else).
     ///
+    /// No-identical-clone rule (owner ruling 2026-09-22): a board-sourced
+    /// counting member — or split part — that IS a root (`sharedCounterId ==
+    /// nil`) and whose RESOLVED target equals its own goal with vary off is
+    /// placed as the root task itself rather than minted, because the derived
+    /// row would be an exact clone. Windowed Completion already evaluates the
+    /// root against the placing board's window. A member that is itself a
+    /// window-stamped derived counter never takes this path — it always
+    /// re-mints for the new window, or its old window's baseline would be
+    /// evaluated on this board. A later rule edit flips root → derived at the
+    /// next spawn, because every window re-plans from scratch.
+    ///
     /// Collapse rule, mirrored verbatim from the TS twin: two things that
     /// share a shared-counter root resolve to ONE derived counter (the first
     /// one's roll). The dedupe is checked BEFORE the roll, so a collapsed
@@ -420,7 +432,15 @@ extension BoardSources {
     ///   - manualTaskVary: Hand-added id → its dice.
     ///   - boardId: The board being assembled (seeds every derived id).
     ///   - window: The board's window; every derived draft is stamped with it.
-    ///   - mode: Auto targets apply to `.recurring` only.
+    ///   - mode: Whether the board being assembled is one-off or recurring.
+    ///     **No longer gates the target math** (owner ruling 2026-09-21:
+    ///     one-off boards pro-rate too — docs/BOARD_SOURCES.md §Member
+    ///     rules). Kept on the signature because every caller already has it
+    ///     and the vector fixture uses it to pin that a board-sourced member
+    ///     resolves IDENTICALLY in both modes; the one-off/recurring
+    ///     difference now lives entirely in WHEN the target is written (a
+    ///     one-off pull prefills an explicit, pro-rated `target`; a recurring
+    ///     board leaves it absent and auto-targets at each spawn).
     ///   - tasksById: Id → task, for every selected id and compound child.
     ///   - childrenByCompoundId: Compound id → its `compound_children` rows.
     ///   - sourceWindowByTaskId: Task id → the window of the source board it
@@ -467,11 +487,19 @@ extension BoardSources {
                 endDate: sourceWindow.endDate
             )
         }
-        /// The pre-vary target. The final `min(max(1, floor(base)), goal)`
-        /// clamp is redundant for integer targets (`varyRange` re-clamps `t`
-        /// to `1…goal` identically) and is only observable on a fractional
-        /// explicit target, which Zod already forbids — kept verbatim so the
-        /// two platforms can never disagree about a malformed stored rule.
+        /// The pre-vary target: an explicit rule if there is one, else the
+        /// window-pro-rated ``autoTarget(goal:sourceDays:targetDays:)`` for a
+        /// BOARD-sourced member, else the member's own goal. The gate is
+        /// `fromBoard` alone — pool-sourced and hand-added members never
+        /// auto-target (they offer vary / split / part-exclusion only), while
+        /// a board-pulled member pro-rates on one-off AND recurring boards
+        /// alike (owner ruling 2026-09-21).
+        ///
+        /// The final `min(max(1, floor(base)), goal)` clamp is redundant for
+        /// integer targets (`varyRange` re-clamps `t` to `1…goal`
+        /// identically) and is only observable on a fractional explicit
+        /// target, which Zod already forbids — kept verbatim so the two
+        /// platforms can never disagree about a malformed stored rule.
         func resolveTarget(
             goal: Int,
             explicit: Int?,
@@ -481,7 +509,7 @@ extension BoardSources {
             let base: Double
             if let explicit {
                 base = Double(explicit)
-            } else if fromBoard && mode == .recurring {
+            } else if fromBoard {
                 base = Double(autoTarget(
                     goal: goal,
                     sourceDays: sourceDaysFor(taskIdForWindow),
@@ -573,6 +601,34 @@ extension BoardSources {
                             fromBoard: fromBoard,
                             taskIdForWindow: id
                         )
+                        // No identical clone (owner ruling 2026-09-22): a
+                        // derived row exists to carry a DIFFERENT target or a
+                        // vary range. When the resolved target already equals
+                        // the part's own goal and vary is off, place the root
+                        // part itself, exactly as the pool / hand-added
+                        // branches do. Decided on `resolveTarget`'s RESULT, so
+                        // the pro-rating stays intact. `rollTarget` consumes no
+                        // rng at `.off`, so the skip cannot shift a seeded
+                        // sequence on either platform. (TS twin, verbatim.)
+                        //
+                        // `sharedCounterId == nil` is load-bearing: you may
+                        // only place "the root task itself" when the member IS
+                        // the root. A member that is already a window-stamped
+                        // derived counter (yesterday's daily, pulled into
+                        // today's) resolves to `autoTarget(goal, 1, 1) == goal`
+                        // with vary off, and placing it would put ANOTHER
+                        // window's row on this board — its `startDate` still
+                        // names the old window, so the derived-counter
+                        // carve-out reads that window's baseline and the square
+                        // can open already complete, with
+                        // `refreshDerivedBaselines` recomputing from the same
+                        // stale `startDate` so it never heals. It must re-mint
+                        // for THIS window, exactly as the hand-added branch's
+                        // `isWindowStampedMember` guard above already ensures.
+                        if target == goal, vary == .off, task.sharedCounterId == nil {
+                            placementIds.append(id)
+                            continue
+                        }
                         placementIds.append(
                             mint(task, replacesId: id, target: target, vary: vary).id
                         )
@@ -590,6 +646,13 @@ extension BoardSources {
                         fromBoard: true,
                         taskIdForWindow: id
                     )
+                    // No identical clone (owner ruling 2026-09-22) — see the
+                    // split-part branch above for the reasoning, the
+                    // `sharedCounterId` guard included; same rule, same shape.
+                    if target == goal, vary == .off, task.sharedCounterId == nil {
+                        placementIds.append(id)
+                        continue
+                    }
                     placementIds.append(mint(task, replacesId: id, target: target, vary: vary).id)
                     continue
                 }

@@ -32,6 +32,16 @@ struct RisoCompoundGroupRowView: View {
     /// Called when the user taps a child row to navigate to its detail.
     let onChildTap: (String) -> Void
 
+    /// Owner ruling 2026-09-22 — child task ids that HEAD a shared-counter
+    /// family, so a nested child renders the same generic row the top-level
+    /// list gives it (`RisoTaskRowView.isFamilyRoot`). The caller already
+    /// routes such a child's tap to the Counters hub; without this the row
+    /// would say "Read 35 pages · goal 35" and then open the hub. Web twin:
+    /// `TasksPage.tsx` threads `isFamilyRoot` into its nested `TaskRow`.
+    /// Defaults empty so existing call sites and snapshot fixtures are
+    /// unaffected.
+    var childFamilyRootIds: Set<String> = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // ── Parent row + chevron ───────────────────────────────────
@@ -79,7 +89,8 @@ struct RisoCompoundGroupRowView: View {
                                         placementCount: childPlacementCounts[child.id] ?? 0,
                                         activePlacementCount: childActivePlacementCounts[child.id] ?? 0,
                                         usageCountsLoaded: usageCountsLoaded,
-                                        childCount: 0
+                                        childCount: 0,
+                                        isFamilyRoot: childFamilyRootIds.contains(child.id)
                                     )
                                 }
                             }

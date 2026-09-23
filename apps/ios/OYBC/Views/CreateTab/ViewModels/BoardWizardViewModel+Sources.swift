@@ -133,8 +133,43 @@ extension BoardWizardViewModel {
 
     // MARK: - Pull / remove
 
+    /// The done-filter a NEWLY minted source row starts on — owner
+    /// directive 2026-09-19: "Not done yet" is the default, so pulling a
+    /// board supplies what is still outstanding rather than re-dealing
+    /// squares the person has already finished. Web twin:
+    /// `newSourceFilter(kind:)` in `wizardSourcesLogic.ts`.
+    ///
+    /// KIND-SCOPED, deliberately. The done-filter is a **boards-only**
+    /// field by contract (docs/BOARD_SOURCES.md §The model:
+    /// `filter: 'all' | 'todo'  // boards only; pools always 'all'`), so
+    /// only `.board` takes the `.todo` default; a pool mints `.all`,
+    /// exactly like the legacy-trio decode
+    /// `BoardSources.sourcesFromMixFields` and `BoardSource.init`'s own
+    /// default. Minting a pool row on `.todo` reads as inert today (every
+    /// filter read on both platforms is kind-scoped) but it persists data
+    /// that contradicts the contract, and the first kind-blind read anyone
+    /// adds would silently done-filter pool supply.
+    ///
+    /// Deliberately scoped to CREATION: sources already stored on a board
+    /// or a `RecurringBoardTemplate` keep whatever filter they were saved
+    /// with, and nothing coerces a decoded row.
+    ///
+    /// ONE definition per platform: every iOS mint path (`pullPool`,
+    /// `pullBoard`, the core-defaults prefill in `BoardWizardViewModel`)
+    /// asks this function rather than writing a literal.
+    ///
+    /// - Parameter kind: Which kind of source is being minted.
+    /// - Returns: `.todo` for a board, `.all` for a pool.
+    static func newSourceFilter(for kind: BoardSource.Kind) -> BoardSource.Filter {
+        kind == .board ? .todo : .all
+    }
+
     /// Pull a pool in as a `[0, all]` source row. No-op when soft-deleted
     /// or already pulled. The saved `Pool` is never modified.
+    ///
+    /// Takes the `newSourceFilter(for:)` default like every freshly minted
+    /// row, which for a pool is `.all` — pools are always `.all` by
+    /// contract.
     func pullPool(_ pool: Pool, tasksById: [String: Task]) {
         guard !pool.isDeleted, !sources.contains(where: { $0.sourceId == pool.id }) else { return }
         supplyInfoBySourceId[pool.id] = WizardSourceSupply(
@@ -144,14 +179,23 @@ extension BoardWizardViewModel {
             ),
             doneTaskIds: []
         )
-        sources.append(BoardSource(sourceId: pool.id, kind: .pool))
+        sources.append(BoardSource(sourceId: pool.id, kind: .pool, filter: Self.newSourceFilter(for: .pool)))
         refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
 
-    /// Pull a board in as a `[0, all]` source row (filter `.all`). No-op
-    /// when the board is missing/soft-deleted or already pulled. The
-    /// source board is never modified.
+    /// Pull a board in as a `[0, all]` source row on the
+    /// `newSourceFilter(for:)` default, which for a board is `.todo`
+    /// ("Not done yet"). No-op when the board is
+    /// missing/soft-deleted or already pulled. The source board is never
+    /// modified.
+    ///
+    /// No range clamp is needed even though `.todo` shrinks the available
+    /// count: `[0, all]` is the one range valid against ANY supply
+    /// (`clampSourceMin` leaves `min == 0` alone, and a nil max is the
+    /// live-availability latch), so a row can't be minted wider than its
+    /// filtered supply. Every later filter/exclude/range change still
+    /// re-clamps as before.
     func pullBoard(boardId: String) {
         guard !sources.contains(where: { $0.sourceId == boardId }) else { return }
         guard let info = try? database.fetchBoardSourceSupply(boardId: boardId) else {
@@ -164,7 +208,7 @@ extension BoardWizardViewModel {
             windowCountByTaskId: info.windowCountByTaskId,
             sourceWindow: info.sourceWindow
         )
-        sources.append(BoardSource(sourceId: boardId, kind: .board))
+        sources.append(BoardSource(sourceId: boardId, kind: .board, filter: Self.newSourceFilter(for: .board)))
         // §Member rules (B3, RC4) — a board pulled in THIS session seeds its
         // counting members' REMAINING target on a one-off board. iOS resolves
         // the supply synchronously right here, so the seeding happens at pull

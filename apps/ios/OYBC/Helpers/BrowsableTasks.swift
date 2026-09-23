@@ -25,7 +25,7 @@ enum BrowsableTasks {
     /// library-browse surfaces (the Tasks tab list, the wizard "add from
     /// library" picker).
     ///
-    /// Two independent classes of task are hidden:
+    /// Three independent classes of task are hidden:
     ///
     /// 1. Wizard-orphans — a task is HIDDEN iff it is wizard-born
     /// (`createdInWizard == true`) AND it has no placement on a live, non-draft board.
@@ -41,6 +41,21 @@ enum BrowsableTasks {
     /// and no `maxCount` cannot evaluate on a board; it lives in the
     /// Counters Hub, not the library. See `isGoalLessCounter` for the exact
     /// predicate and why it keys on the pair rather than bare absent-`maxCount`.
+    ///
+    /// 3. Shared-counter MEMBERS (owner ruling 2026-09-22) — a task whose
+    /// `sharedCounterId` points at a root that is PRESENT, live and COUNTING
+    /// in this same `tasks` set. That covers both the window-stamped derived
+    /// counters a board pull mints and the P5 linked members. The library
+    /// shows ONE generic row per counter family — the root — and the Counters
+    /// Hub is the home for the per-window rows. The root itself is never
+    /// hidden by this rule.
+    ///
+    /// The root-presence condition is exactly the orphan predicate
+    /// `buildSharedCounterGroups` (and so `sharedCounterRootIds`) applies, and
+    /// it must stay exactly that: a member is hidden here ONLY when the hub
+    /// really shows it under its family. A dangling `sharedCounterId` —
+    /// mid-sync on a fresh device, or a row an old client wrote — would
+    /// otherwise be reachable from nowhere at all.
     ///
     /// Pure and fully derived at read time — no clearing logic: a hidden
     /// wizard-orphan reappears automatically the moment it lands on a
@@ -74,8 +89,24 @@ enum BrowsableTasks {
             guard boardStatusById[bt.boardId] != nil else { continue }
             placementsByTask[bt.taskId, default: []].insert(bt.boardId)
         }
+        // Live id → task, for the member rule's root lookup below. Callers
+        // pass a non-deleted set already; the `isDeleted` filter is
+        // belt-and-braces so this can't disagree with the hub, which filters
+        // deleted rows itself.
+        var liveById: [String: Task] = [:]
+        for task in tasks where !task.isDeleted { liveById[task.id] = task }
         return tasks.filter { task in
             if isGoalLessCounter(task) { return false }
+            // One generic family row (owner ruling 2026-09-22): a member —
+            // a window-stamped derived counter or a P5 linked member — is
+            // represented in the library by its ROOT, but only when that root
+            // really exists, so a dangling link stays visible here rather than
+            // being reachable from nowhere.
+            if let srcId = task.sharedCounterId,
+               let root = liveById[srcId],
+               root.type == .counting {
+                return false
+            }
             guard task.createdInWizard else { return true }
             // Effective placements: own + inherited from parent compound(s).
             var boardIds = placementsByTask[task.id] ?? []

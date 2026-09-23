@@ -126,8 +126,11 @@ private func previewSourceWindowByTaskId(
 
 /// The prospective board's window — the SAME resolution the Save handler
 /// persists. A date validation error (an unfinished CUSTOM range) resolves to
-/// a date-less window: the Save button surfaces the error, and a one-off plan
-/// never reads the window days anyway (auto targets are recurring-only).
+/// a date-less window: the Save button surfaces the error, and a date-less
+/// CUSTOM window has no knowable length, so `autoTarget` falls back to each
+/// member's own goal until the range is finished (owner ruling 2026-09-21 —
+/// auto targets are no longer recurring-only, so the window IS read on a
+/// one-off plan).
 ///
 /// - Parameter controller: Live wizard state.
 /// - Returns: The window the plan stamps derived rows with.

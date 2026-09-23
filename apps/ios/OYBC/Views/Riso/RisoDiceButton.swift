@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// RisoDiceButton — the 26×22 opt-in "variation" toggle that sits after a
+/// RisoDiceButton — the 28×28 opt-in "variation" toggle that sits after a
 /// counting target (docs/BOARD_SOURCES.md §Member rules; handoff
 /// §Interactions "Variation (dice)").
 ///
-/// Off renders a muted 1.5pt outline with no pips; on renders a blue fill
-/// with `risoInkStatic` pips — adaptive `risoInk` on a coloured fill is the
+/// Off renders a muted 1.5pt outline with one faint centred pip (a die
+/// face, not an empty checkbox); on renders a blue fill with
+/// `risoInkStatic` pips — adaptive `risoInk` on a coloured fill is the
 /// dark-mode trap (see memory `reference_riso_adaptive_ink_fill_darkmode`).
 ///
 /// Stateless: the caller owns the level and decides what one tap means, so
@@ -19,23 +20,50 @@ struct RisoDiceButton: View {
     /// Advance one step around the off → a little → a lot → off cycle.
     let onCycle: () -> Void
 
-    /// Pip centres per vary level, in the button's 20×16 inner box:
+    /// Pip centres per vary level, in the button's 24×24 inner box:
+    /// `.off` = one centred pip, dimmed (B3.1 — an empty bordered square
+    /// beside the row's ✕ reads as an unchecked checkbox, not a die);
     /// `.little` = two pips on the diagonal, `.lot` = the five-pip
-    /// quincunx. `.off` draws nothing (handoff: "Off state: muted 1.5pt
-    /// outline, no pips"). Same coordinates as the web SVG viewBox.
-    private static let pips: [VaryLevel: [CGPoint]] = [
-        .off: [],
-        .little: [CGPoint(x: 6, y: 5), CGPoint(x: 14, y: 11)],
+    /// quincunx — a true quincunx now that the box is square. Same
+    /// coordinates as the web SVG viewBox.
+    ///
+    /// The face grew 22×22 → 28×28 on 2026-09-22 (owner, device-testing
+    /// #493: the member-row controls were too small to use comfortably),
+    /// so it no longer sits visibly smaller than the 32pt stepper pill
+    /// beside it and matches the row's 28pt ✕. The whole geometry scaled
+    /// with it: the inner box 18 → 24 (the same 2pt inset inside the
+    /// face), ``pipDiameter`` 3.2 → 4, and every coordinate by 24/18,
+    /// rounded to integers — 9 → 12, 5 → 7, 13 → 17 — identically to the
+    /// web SVG. The proportions of the B3.1 review that set the corners
+    /// at 5/13 rather than 6/12 are therefore preserved.
+    ///
+    /// Clearance to the keyline is now **5.5pt**: the outermost pip edge
+    /// sits at 17 + 2 (radius) = 19 in the 24-box, so 21 in face
+    /// coordinates (the box is centred, inset 2), while the 1.5pt
+    /// ``Riso/Keyline/dense`` has its inner edge at 26.5 — 26.5 − 21 =
+    /// 5.5. The worst pip-EDGE gap, corner to centre, is
+    /// √(5²+5²) = 7.071 − 4 = **3.07pt** (was 2.46pt at the old scale).
+    /// The `Riso.cellRadius` corner does not bite — its arc centre sits
+    /// inside the pip centre on both axes, so the straight edges govern.
+    ///
+    /// Internal rather than private so `RisoDiceButtonTests` can pin the
+    /// coordinates against the web twin's `PIPS` table — cross-platform
+    /// coordinate parity is the whole point of the square-dice face, and
+    /// the iOS snapshot baselines that would otherwise be the only cover
+    /// are advisory in CI (ROADMAP A8).
+    static let pips: [VaryLevel: [CGPoint]] = [
+        .off: [CGPoint(x: 12, y: 12)],
+        .little: [CGPoint(x: 7, y: 7), CGPoint(x: 17, y: 17)],
         .lot: [
-            CGPoint(x: 6, y: 5),
-            CGPoint(x: 14, y: 5),
-            CGPoint(x: 10, y: 8),
-            CGPoint(x: 6, y: 11),
-            CGPoint(x: 14, y: 11),
+            CGPoint(x: 7, y: 7),
+            CGPoint(x: 17, y: 7),
+            CGPoint(x: 12, y: 12),
+            CGPoint(x: 7, y: 17),
+            CGPoint(x: 17, y: 17),
         ],
     ]
 
-    private static let pipDiameter: CGFloat = 3.2
+    static let pipDiameter: CGFloat = 4
 
     /// Accessible name = the CURRENT state (B3 RC1), not the action. The
     /// button cycles through THREE states, so it deliberately carries no
@@ -62,7 +90,7 @@ struct RisoDiceButton: View {
                         )
                 )
                 .overlay { pipsView }
-                .frame(width: 26, height: 22)
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -75,7 +103,12 @@ struct RisoDiceButton: View {
             Color.clear
             ForEach(points.indices, id: \.self) { index in
                 Circle()
-                    .fill(Color.risoInkStatic)
+                    // The off face's pip sits on PAPER, so it takes the
+                    // adaptive muted ink; the lit faces' pips sit on the
+                    // blue fill and must stay risoInkStatic (the
+                    // dark-mode trap).
+                    .fill(level == .off ? Color.risoMuted : Color.risoInkStatic)
+                    .opacity(level == .off ? 0.45 : 1)
                     .frame(width: Self.pipDiameter, height: Self.pipDiameter)
                     .offset(
                         x: points[index].x - Self.pipDiameter / 2,
@@ -83,7 +116,7 @@ struct RisoDiceButton: View {
                     )
             }
         }
-        .frame(width: 20, height: 16)
+        .frame(width: 24, height: 24)
     }
 }
 

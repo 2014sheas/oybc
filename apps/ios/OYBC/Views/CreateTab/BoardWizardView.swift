@@ -478,6 +478,7 @@ struct BoardWizardView: View {
                     wizard.pullPool(pool, tasksById: tasksById)
                 },
                 onPullBoardSource: { wizard.pullBoard(boardId: $0) },
+                editingTemplateId: wizard.editingTemplateId,
                 // §Member rules (B3) — the seven rule actions + the
                 // hand-added dice map (`BoardWizardViewModel+MemberRules`).
                 manualTaskVary: wizard.manualTaskVary,

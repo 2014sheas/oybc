@@ -19,7 +19,9 @@ final class BrowsableTasksTests: XCTestCase {
         createdInWizard: Bool,
         type: TaskType = .normal,
         maxCount: Int? = nil,
-        isCounter: Bool = false
+        isCounter: Bool = false,
+        sharedCounterId: String? = nil,
+        startDate: String? = nil
     ) -> Task {
         Task(
             id: id,
@@ -33,6 +35,8 @@ final class BrowsableTasksTests: XCTestCase {
             updatedAt: "2026-07-01T12:00:00.000Z",
             version: 1,
             isDeleted: false,
+            startDate: startDate,
+            sharedCounterId: sharedCounterId,
             createdInWizard: createdInWizard,
             isCounter: isCounter
         )
@@ -204,6 +208,60 @@ final class BrowsableTasksTests: XCTestCase {
             boardStatusById: [:]
         )
         XCTAssertEqual(ids(result), ["a"])
+    }
+
+    /// Owner ruling 2026-09-22 — one generic family row in the library: a
+    /// linked member (a window-stamped derived counter or a P5 member) is
+    /// hidden, its root is not. The member here IS placed on a live ACTIVE
+    /// board, so the wizard-orphan rule would keep it visible — only the new
+    /// member rule hides it. Mirror of `browsableTasks.test.ts`.
+    func test_linkedMemberIsHidden_butItsRootIsNot() {
+        let root = task("root", createdInWizard: false, type: .counting, maxCount: 35)
+        let member = task(
+            "member",
+            createdInWizard: true,
+            type: .counting,
+            maxCount: 5,
+            sharedCounterId: "root",
+            startDate: "2026-09-18T00:00:00"
+        )
+        let result = BrowsableTasks.computeBrowsableTasks(
+            tasks: [root, member],
+            boardTasks: [placement("member", on: "b1")],
+            boardStatusById: ["b1": .active]
+        )
+        XCTAssertEqual(ids(result), ["root"])
+    }
+
+    /// The root-presence gate: a member whose root is absent / deleted / not a
+    /// counting task is NOT collapsed away — the hub would never show it under
+    /// a family, so hiding it here would make it reachable from nowhere.
+    /// Mirror of `browsableTasks.test.ts`.
+    func test_memberWithNoLiveCountingRoot_staysVisible() {
+        let orphan = task(
+            "orphan", createdInWizard: false, type: .counting, maxCount: 5,
+            sharedCounterId: "root-that-never-synced"
+        )
+        let deletedRootMember = task(
+            "member-of-deleted", createdInWizard: false, type: .counting, maxCount: 5,
+            sharedCounterId: "deleted-root"
+        )
+        var deletedRoot = task("deleted-root", createdInWizard: false, type: .counting, maxCount: 35)
+        deletedRoot.isDeleted = true
+        let normalRoot = task("normal-root", createdInWizard: false, type: .normal)
+        let normalRootMember = task(
+            "member-of-normal", createdInWizard: false, type: .counting, maxCount: 5,
+            sharedCounterId: "normal-root"
+        )
+
+        let result = BrowsableTasks.computeBrowsableTasks(
+            tasks: [orphan, deletedRoot, deletedRootMember, normalRoot, normalRootMember],
+            boardTasks: [],
+            boardStatusById: [:]
+        )
+        XCTAssertTrue(ids(result).contains("orphan"))
+        XCTAssertTrue(ids(result).contains("member-of-deleted"))
+        XCTAssertTrue(ids(result).contains("member-of-normal"))
     }
 
     func test_isGoalLessCounterTruthTable() {

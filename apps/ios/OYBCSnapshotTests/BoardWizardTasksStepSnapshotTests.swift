@@ -18,13 +18,27 @@ import SnapshotTesting
 ///   - empty pool state (light + dark)
 ///   - pool list: a hand-added counting row with the dice on (light + dark)
 ///
-/// Board Sources §Member rules (B3) full-step variants — an expanded
-/// board source over the `.memberRules` library:
-///   - counting member: target stepper + "of 35 mi" caption + dice off
-///   - counting member with the dice on: the blue range line
-///   - the same counting member pulled from a POOL: dice, no stepper
-///   - compound member One square: pill toggle + "1 square" + line dice
-///   - compound member Split up with an excluded part
+/// Board Sources §Member rules (B3, re-recorded for B3.1) full-step
+/// variants — an expanded board source over the `.memberRules` library.
+/// B3.1 collapses every member row's controls behind a disclosure, so
+/// these five now picture the CLOSED row (title at full width + summary
+/// chip + chevron), not the controls:
+///   - counting member: chip "35 mi" in muted ink
+///   - counting member with the dice on: chip "28–35 mi" in blue
+///   - the same counting member pulled from a POOL: identical collapsed
+///     row (RC5's stepper/no-stepper split now shows only when expanded)
+///   - compound member One square: chip "1 square", blue (member dice)
+///   - compound member Split up with an excluded part: chip "1 square"
+///
+/// B3.1 leaf variants — the same rows with the disclosure seeded OPEN,
+/// which is where the stepper, dice, inline range and part lines live:
+///   - counting, dice on: pill "35 / 35 mi" · dice · "28–35 mi" inline
+///   - the SAME counting member from a POOL: dice alone, no stepper (RC5)
+///   - a counting member carrying the counter-family clash hint: a
+///     TWO-LINE title block, so the row is taller than `minHeight: 28`
+///   - compound Split up with an excluded part: toggle + note + parts,
+///     the included part's own dice lit so its blue range line is under
+///     THAT part and not on the compound
 ///
 /// Each test renders at iPhone 16 width (393pt). iOS-version pinning is
 /// enforced at the scheme level (see CLAUDE.md → Snapshot Testing).
@@ -304,9 +318,25 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
 
     // MARK: - Full-step: member rules (B3)
 
-    /// A board source pulled onto a one-off board: its counting member
-    /// carries the 22pt target stepper + "of 35 mi" caption + dice (off),
-    /// while the plain member carries only the ✕.
+    /// A board source pulled onto a one-off board, with no rules stored:
+    /// every member row is COLLAPSED, which is what B3.1 made the default
+    /// (see §Member row at phone width — "always collapsed on open",
+    /// including for a member whose rule is already stored, so row height
+    /// never depends on hidden state).
+    ///
+    /// So of the member rows it pictures line 1 and only line 1 (the rest
+    /// of the step — the pool meter, the add-tasks rows, the source
+    /// panel's All squares / Not done yet filter and its range slider — is
+    /// the surrounding frame, not the subject). The counting member reads
+    /// `badge · "Run 35 mi" · collapsed chevron · ✕`, with NO summary chip:
+    /// `countingSummary` is suppressed exactly when
+    /// `target == goal && vary == .off`, which is this row with no rule
+    /// stored. The plain member reads `badge · title · ✕` and no chevron
+    /// at all — there is nothing to reveal.
+    ///
+    /// The stepper and the dice are NOT in this baseline. The case that
+    /// pictures them is `testMemberRowCountingVaryOnExpanded`, which
+    /// renders the row leaf with its disclosure seeded open.
     func testSourceCountingMemberRule() {
         assertSnapshot(
             of: makeMemberRulesView(rules: [:]),
@@ -382,6 +412,157 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
                 ]
             ),
             as: .image(layout: .fixed(width: 393, height: 900)),
+            record: recordMode
+        )
+    }
+
+    // MARK: - Leaf: the EXPANDED member row (B3.1)
+
+    /// B3.1 collapses a member row's controls behind a disclosure, so the
+    /// full-step cases above now picture them CLOSED. These two render the
+    /// row leaf with the disclosure seeded open, keeping the layout this
+    /// design exists to fix under test: the stepper's folded-in goal, the
+    /// dice, and the vary range INLINE on line 2 (never a third line).
+    func testMemberRowCountingVaryOnExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(layout: .fixed(width: 393, height: 90)),
+            record: recordMode
+        )
+    }
+
+    /// RC5's headline distinction, which the COLLAPSED pool case can no
+    /// longer show (collapsed, a pool member and a board member render
+    /// identically): expanded, the pool member has the dice ALONE — no
+    /// stepper pill, because it has no window to pro-rate a target
+    /// against. Compare against `testMemberRowCountingVaryOnExpanded`,
+    /// the same task from a BOARD source.
+    func testMemberRowPoolCountingVaryOnExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                kind: .pool,
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(layout: .fixed(width: 393, height: 90)),
+            record: recordMode
+        )
+    }
+
+    /// The counter-family clash hint, which had NO baseline watching it
+    /// until now: the title block grows to two lines, so `minHeight: 28`
+    /// (a floor, not a clamp) stops governing the row's height. This is
+    /// the case that proves the ✕ is centred by the LAYOUT — it stays
+    /// level with the badge here as well as on a one-line row, which an
+    /// absolute top offset could not manage at both heights.
+    func testMemberRowCountingClashExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                clashTitle: "Run 100 mi",
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(layout: .fixed(width: 393, height: 100)),
+            record: recordMode
+        )
+    }
+
+    /// The same clash row at an accessibility text size. This is the case
+    /// that actually exceeds `minHeight: 28` — measured at default type
+    /// the two-line title still fits inside the 28pt floor, so the plain
+    /// clash case above pictures the state without stretching it. Riso
+    /// fonts are `relativeTo: .body`, so a large content-size category
+    /// grows both lines and the main line genuinely outgrows the floor;
+    /// the ✕ must still come out level with the badge, which only
+    /// layout-driven centring can manage.
+    ///
+    /// KNOWN DEFECT, pictured deliberately: the stepper pill reads
+    /// "− … / 35 mi ＋" because `RisoInlineStepperView` sizes its field in
+    /// fixed points (`(String(max).count + 1) * 8`) while the font scales
+    /// with the content-size category, so the value truncates at
+    /// `.accessibilityMedium`. Pre-existing — it entered with the compact
+    /// stepper in `8bdce2fc`, before this branch, and the 2026-09-22 growth
+    /// to a 32pt pill scaled the multiplier (7 → 8) with the type without
+    /// changing the underlying fixed-point sizing — and iOS-only: web sizes
+    /// the same input in `ch`, which scales with the font. This baseline
+    /// locks the CURRENT rendering, not the intended one; tracked under
+    /// docs/ROADMAP.md F11 B3.1.
+    func testMemberRowCountingClashExpandedLargeText() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.run,
+                clashTitle: "Run 100 mi",
+                rule: BoardSourceMemberRule(vary: .little)
+            ),
+            as: .image(
+                layout: .fixed(width: 393, height: 150),
+                traits: .init(preferredContentSizeCategory: .accessibilityMedium)
+            ),
+            record: recordMode
+        )
+    }
+
+    /// The Split-up compound expanded: the One square / Split up pill and
+    /// the "1 square" note on line 2, then one line per part — the
+    /// excluded one struck with its UNDO pill, the last included one
+    /// without a ✕.
+    ///
+    /// The included part (Push-ups, goal 210) also carries `vary: .little`,
+    /// so this baseline is the only guard left for the §Member rules
+    /// clause "the blue range line sits beneath the row/**part** — never
+    /// on the compound itself": it pictures "168–210" under the Push-ups
+    /// line, with nothing beside the One square / Split up pill. The unit
+    /// test that used to assert that placement was dropped in the B3.1
+    /// rework; the web backstop is the `getByText('8–10')` structural
+    /// assertion in `e2e/member-rules.spec.ts`.
+    func testMemberRowCompoundSplitUpWithExcludedPartExpanded() {
+        assertSnapshot(
+            of: makeExpandedMemberRow(
+                taskId: SnapshotFixtures.MemberRuleTask.compound,
+                rule: BoardSourceMemberRule(
+                    split: true,
+                    parts: [
+                        SnapshotFixtures.MemberRuleTask.pushups:
+                            BoardSourcePartRule(vary: .little),
+                        SnapshotFixtures.MemberRuleTask.plank:
+                            BoardSourcePartRule(excluded: true),
+                    ]
+                )
+            ),
+            as: .image(layout: .fixed(width: 393, height: 190)),
+            record: recordMode
+        )
+    }
+
+    /// The part line at its WORST width, which no fixture exercised until
+    /// now: a long part name competing with every control the line can
+    /// carry at once — stepper pill, "of N" caption, dice AND ✕.
+    ///
+    /// `testMemberRowCompoundSplitUpWithExcludedPartExpanded` above cannot
+    /// stand in for it twice over: its parts are "Push-ups" (8 characters)
+    /// and its one included part is the LAST one, so it renders no ✕ and
+    /// hands the name 32pt it would not otherwise have. Growing the
+    /// stepper to a 32pt pill and the dice to 28×28 (2026-09-22) spent
+    /// ~30pt of that line, taking the name's share from ~135pt to
+    /// **~105pt** — close enough to a realistic 17-character part name
+    /// (measured at ~102pt in Archivo SemiBold 12) that arithmetic is not
+    /// evidence. This baseline is: if the name ever ellipsizes, the PNG
+    /// shows it.
+    ///
+    /// Both parts are included and counting, so `canExcludeAny` holds and
+    /// every part line carries the full set of controls. The goal is
+    /// deliberately THREE digits (210 — the field is sized
+    /// `(max(2, digits) + 1) × 8`), which is the widest pill a part is
+    /// likely to have; a four-digit goal takes another 8pt off the name
+    /// and would ellipsize this title, which is recorded as a known limit
+    /// rather than pictured here.
+    func testMemberRowCompoundSplitUpLongPartNameExpanded() {
+        assertSnapshot(
+            of: makeLongPartNameMemberRow(),
+            as: .image(layout: .fixed(width: 393, height: 190)),
             record: recordMode
         )
     }
@@ -473,6 +654,102 @@ final class BoardWizardTasksStepSnapshotTests: XCTestCase {
             ],
             expandedSourceIds: [sourceId]
         )
+    }
+
+    /// One member row on its own, disclosure seeded OPEN. The row owns its
+    /// own `@State`, so `initiallyExpanded` (documented "snapshot use
+    /// only") is the seam — the alternative, plumbing an expansion set
+    /// through `RisoSourceRowView` and `BoardWizardTasksStepView`, would
+    /// add production API to three files for a test.
+    private func makeExpandedMemberRow(
+        taskId: String,
+        kind: BoardSource.Kind = .board,
+        clashTitle: String? = nil,
+        rule: BoardSourceMemberRule
+    ) -> some View {
+        let library = SnapshotFixtures.makeTaskLibrary(state: .memberRules)
+        let taskById: [String: OYBC.Task] = Dictionary(
+            library.libraryTasks.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return RisoMemberRuleRowView(
+            task: taskById[taskId],
+            taskById: taskById,
+            state: .included,
+            clashTitle: clashTitle,
+            rule: rule,
+            parts: library.compoundChildrenByCompound[taskId] ?? [],
+            fromBoard: kind == .board,
+            wizardWindow: BoardSources.BoardWindow(timeframe: .monthly),
+            mode: .oneOff,
+            onToggleExclude: { },
+            onSetTarget: { _ in },
+            onSetVary: { _ in },
+            onSetSplit: { _ in },
+            onSetPartExcluded: { _, _ in },
+            onSetPartTarget: { _, _ in },
+            onSetPartVary: { _, _ in },
+            initiallyExpanded: true
+        )
+        .background(Color.risoPaper)
+    }
+
+    /// A split compound whose first part has a realistically long name and
+    /// a three-digit goal, built INLINE rather than added to
+    /// `SnapshotFixtures.memberRulesTaskSet()`: the member-rules library
+    /// feeds the full-step baselines too, and this row only needs to exist
+    /// for one leaf case. Both parts are counting and included, so each
+    /// part line renders `name · stepper · "of N" · dice · ✕` — the widest
+    /// the line gets.
+    private func makeLongPartNameMemberRow() -> some View {
+        let compound = SnapshotFixtures.makeTask(
+            id: "t-lp-compound", title: "Strength day", type: .compound, operatorType: .and
+        )
+        // 17 characters — the length the 32pt pill's margin is about.
+        let cooldown = SnapshotFixtures.makeTask(
+            id: "t-lp-cooldown", title: "Cool down 10 reps", type: .counting,
+            action: "Do", unit: "reps", maxCount: 210
+        )
+        let warmup = SnapshotFixtures.makeTask(
+            id: "t-lp-warmup", title: "Warm up", type: .counting,
+            action: "Do", unit: "reps", maxCount: 20
+        )
+        let taskById: [String: OYBC.Task] = [
+            compound.id: compound, cooldown.id: cooldown, warmup.id: warmup,
+        ]
+        let parts = [
+            SnapshotFixtures.makeCompoundChild(
+                id: "cc-lp-1", compoundTaskId: compound.id,
+                childTaskId: cooldown.id, childIndex: 0
+            ),
+            SnapshotFixtures.makeCompoundChild(
+                id: "cc-lp-2", compoundTaskId: compound.id,
+                childTaskId: warmup.id, childIndex: 1
+            ),
+        ]
+        return RisoMemberRuleRowView(
+            task: compound,
+            taskById: taskById,
+            state: .included,
+            clashTitle: nil,
+            rule: BoardSourceMemberRule(
+                split: true,
+                parts: [cooldown.id: BoardSourcePartRule(vary: .little)]
+            ),
+            parts: parts,
+            fromBoard: true,
+            wizardWindow: BoardSources.BoardWindow(timeframe: .monthly),
+            mode: .oneOff,
+            onToggleExclude: { },
+            onSetTarget: { _ in },
+            onSetVary: { _ in },
+            onSetSplit: { _ in },
+            onSetPartExcluded: { _, _ in },
+            onSetPartTarget: { _, _ in },
+            onSetPartVary: { _, _ in },
+            initiallyExpanded: true
+        )
+        .background(Color.risoPaper)
     }
 
     private func makePoolListView(

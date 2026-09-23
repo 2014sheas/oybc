@@ -635,9 +635,9 @@ struct RisoSpecialTaskPanel: View {
 /// - `.regular` (default): the shipped 44pt −/＋ pair around a read-only
 ///   value — the achievement required-count field and the compound
 ///   At-least-N threshold. Rendering is untouched.
-/// - `.compact`: the 22pt pill the wizard's member rows use
+/// - `.compact`: the 32pt pill the wizard's member rows use
 ///   (docs/BOARD_SOURCES.md §Member rules; handoff "Counting member") —
-///   1.5pt ink border, radius 999, 22pt − / typeable value / 22pt ＋.
+///   1.5pt ink border, radius 999, 32pt − / typeable value / 32pt ＋.
 ///   Web twin: `CounterStepper`'s `size="compact"`.
 enum RisoInlineStepperStyle {
     case regular
@@ -652,6 +652,11 @@ struct RisoInlineStepperView: View {
     let min: Int
     let max: Int
     var style: RisoInlineStepperStyle = .regular
+    /// Static text rendered inside the COMPACT pill after the field — the
+    /// member row's goal ("/ 30 Miles"), folded in so the row needs no
+    /// separate caption (B3.1). Ignored by `.regular`. Web twin: the
+    /// `suffix` prop on `CounterStepper`.
+    var suffix: String? = nil
 
     /// Uncommitted typing in the compact field; nil while not editing, so
     /// an external value change (a Split-up recompute, an undo) shows
@@ -711,8 +716,12 @@ struct RisoInlineStepperView: View {
 
     // MARK: - Compact (B3 member rows)
 
-    /// 22pt pill: 22×22 −/＋ buttons (disabled at the bounds, mirroring
-    /// web) around a numeric text field. Typing is committed when the
+    /// 32pt pill: 32×32 −/＋ buttons (disabled at the bounds, mirroring
+    /// web) around a numeric text field. It was a 22pt pill with 22×22
+    /// buttons until the owner reported the member-row controls — "the
+    /// stepper inputs for counter task quantity" above all — as too small
+    /// to use comfortably (2026-09-22); the pill, its buttons and its
+    /// type all grew together so the row reads at the same rhythm. Typing is committed when the
     /// field loses focus, or folded into a −/＋ tap (see
     /// ``RisoCompactStepperMath``), and clamped to `min…max`; the step is
     /// always 1 and there is no reset affordance (handoff §Interactions
@@ -724,14 +733,14 @@ struct RisoInlineStepperView: View {
                 step(by: -1)
             }
             TextField("", text: compactText)
-                .font(.risoBody(11, .extraBold))
+                .font(.risoBody(13, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .multilineTextAlignment(.center)
                 .keyboardType(.numberPad)
                 .focused($isFieldFocused)
                 // Width follows the goal's digit count so a 4-digit goal
                 // isn't clipped (web sizes the input the same way).
-                .frame(width: CGFloat(Swift.max(2, String(max).count) + 1) * 7)
+                .frame(width: CGFloat(Swift.max(2, String(max).count) + 1) * 8)
                 .accessibilityLabel("Target")
                 .onChange(of: isFieldFocused) { _, focused in
                     if focused {
@@ -749,11 +758,34 @@ struct RisoInlineStepperView: View {
                         commitDraft()
                     }
                 }
+            if let suffix {
+                Text(suffix)
+                    .font(.risoBody(11, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.trailing, 2)
+                    // Hidden from VoiceOver because on its own it names
+                    // nothing: between the "Target" field and "Increase
+                    // target" it would be read as a stray "slash 30 miles"
+                    // — half a label. NOT because the goal is announced
+                    // elsewhere: the member row's summary chip is
+                    // suppressed exactly when `vary == 0 && target ==
+                    // goal` (`BoardSources.countingSummary`), the common
+                    // case, so the goal then reaches VoiceOver only
+                    // through the auto-generated counting title ("Run 30
+                    // miles"). A hand-renamed member at its goal genuinely
+                    // loses it — accepted, and identical on web
+                    // (`CounterStepper.tsx`). The fix, if ever wanted, is
+                    // a composed field label ("Target, of 30 miles"), not
+                    // unhiding this text (B3.1).
+                    .accessibilityHidden(true)
+            }
             compactStepButton("＋", label: "Increase target", disabled: effectiveValue >= max) {
                 step(by: 1)
             }
         }
-        .frame(height: 22)
+        .frame(height: 32)
         .background(Color.risoPaper2)
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
@@ -808,9 +840,13 @@ struct RisoInlineStepperView: View {
     ) -> some View {
         Button(action: action) {
             Text(glyph)
-                .font(.risoHead(12, .extraBold))
+                // 15, not the 12 the 22pt pill used: at 32pt the smaller
+                // glyph read thin against the 13pt value beside it
+                // (2026-09-22 review of the grown controls). Web's
+                // `.compactButton` carries the same 15px.
+                .font(.risoHead(15, .extraBold))
                 .foregroundStyle(Color.risoInk)
-                .frame(width: 22, height: 22)
+                .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

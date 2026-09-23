@@ -442,6 +442,70 @@ final class SharedCounterGroupsTests: XCTestCase {
         XCTAssertEqual(visible.map(\.id), ["root", "member"])
     }
 
+    // MARK: - sharedCounterRootIds (the extracted family-root test)
+
+    /// Owner ruling 2026-09-22 — the library's "does this task head a family?"
+    /// test, extracted from `buildSharedCounterGroups`. Mirror of
+    /// `sharedCounterGroups.test.ts`.
+    func test_sharedCounterRootIds_linkRootAndHubBornOnly() {
+        let linkRoot = counter("link-root", maxCount: 10)
+        let member = counter("member", maxCount: 5, sharedCounterId: "link-root")
+        let hubBorn = counter("hub-born", maxCount: 10, isCounter: true)
+        let plain = counter("plain", maxCount: 10) // standalone — heads no family
+        let ghostTarget = counter("ghost-target", maxCount: 10)
+        let deletedMember = counter(
+            "deleted-member", maxCount: 5, sharedCounterId: "ghost-target", isDeleted: true
+        )
+
+        let roots = sharedCounterRootIds(
+            [linkRoot, member, hubBorn, plain, ghostTarget, deletedMember]
+        )
+
+        XCTAssertEqual(roots, ["link-root", "hub-born"])
+    }
+
+    /// A dangling link must not conjure a family whose hub page would be empty.
+    func test_sharedCounterRootIds_ignoresAbsentDeletedAndNonCountingTargets() {
+        let memberOfMissing = counter("member-of-missing", sharedCounterId: "never-synced")
+        let deletedRoot = counter("deleted-root", isDeleted: true)
+        let memberOfDeleted = counter("member-of-deleted", sharedCounterId: "deleted-root")
+        var normalRoot = counter("normal-root")
+        normalRoot.type = .normal
+        let memberOfNormal = counter("member-of-normal", sharedCounterId: "normal-root")
+
+        let roots = sharedCounterRootIds([
+            memberOfMissing, deletedRoot, memberOfDeleted, normalRoot, memberOfNormal
+        ])
+
+        XCTAssertEqual(roots, [])
+    }
+
+    /// The helper and the hub must not drift, in BOTH directions: no group
+    /// without a root, and no root without a group. `computeBrowsableTasks`
+    /// hides a member on the strength of this set, so a one-way check would
+    /// let a root exist that the hub never renders.
+    func test_sharedCounterRootIds_agreesWithTheHub() {
+        let linkRoot = counter("link-root", maxCount: 10)
+        let member = counter("member", maxCount: 5, sharedCounterId: "link-root")
+        let hubBorn = counter("hub-born", maxCount: 10, isCounter: true)
+        let plain = counter("plain", maxCount: 10)
+        // Orphan links of every flavour: none may head a group, none a root.
+        let memberOfMissing = counter("member-of-missing", sharedCounterId: "never-synced")
+        let deletedRoot = counter("deleted-root", isDeleted: true)
+        let memberOfDeleted = counter("member-of-deleted", sharedCounterId: "deleted-root")
+        var normalRoot = counter("normal-root")
+        normalRoot.type = .normal
+        let memberOfNormal = counter("member-of-normal", sharedCounterId: "normal-root")
+        let tasks = [
+            linkRoot, member, hubBorn, plain,
+            memberOfMissing, deletedRoot, memberOfDeleted, normalRoot, memberOfNormal
+        ]
+
+        let groups = buildSharedCounterGroups(tasks: tasks, boardTasks: [], boards: [])
+        XCTAssertEqual(Set(groups.map { $0.counterId }), ["link-root", "hub-born"])
+        XCTAssertEqual(Set(groups.map { $0.counterId }), sharedCounterRootIds(tasks))
+    }
+
     func test_filterCounterTasks_hidingAMemberAlsoRemovesItsGroupContribution() {
         // The filter runs BEFORE grouping, so an expired member can't
         // contribute a board row to the group the hub renders.

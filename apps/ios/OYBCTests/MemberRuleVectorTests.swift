@@ -371,6 +371,21 @@ final class MemberRuleVectorTests: XCTestCase {
         let expected: Int
     }
 
+    private struct PrefilledOneOffTargetVector: Decodable {
+        let name: String
+        let goal: Int
+        let windowCount: Int
+        /// Bare timeframe string; absent = no source window (fixture note
+        /// `windows`). `sourceWindowDates` / `targetWindowDates` carry the
+        /// `[start, end]` bounds a CUSTOM window needs — a one-element array
+        /// means the end bound is MISSING.
+        let sourceWindow: String?
+        let sourceWindowDates: [String]?
+        let targetWindow: String
+        let targetWindowDates: [String]?
+        let expected: Int
+    }
+
     private struct MemberRuleForVector: Decodable {
         let name: String
         let memberRules: [String: BoardSourceMemberRule]?
@@ -422,16 +437,66 @@ final class MemberRuleVectorTests: XCTestCase {
         let steps: [RawPatchStep]
     }
 
+    private struct MemberSummaryExpected: Decodable {
+        let text: String
+        let varying: Bool
+    }
+
+    private struct CountingSummaryVector: Decodable {
+        let name: String
+        let target: Int
+        let level: Int
+        let goal: Int
+        let unit: String
+        /// Nullable: a counting chip is SUPPRESSED when it would only
+        /// restate the row's own auto-generated title. `CompoundSummaryVector`
+        /// keeps a non-optional `expected` on purpose — a compound chip is
+        /// never suppressed, and the type says so.
+        let expected: MemberSummaryExpected?
+    }
+
+    private struct CompoundSummaryVector: Decodable {
+        let name: String
+        let split: Bool
+        let partIds: [String]
+        let excludedPartIds: [String]
+        let level: Int
+        let expected: MemberSummaryExpected
+    }
+
+    /// The two task fields `seededTargetsForSource` reads — the fixture's
+    /// `tasks` map (TS twin: `Pick<Task, 'type' | 'maxCount'>`).
+    private struct SeededTaskSpec: Decodable {
+        let type: String
+        let maxCount: Int?
+    }
+
+    private struct SeededTargetsVector: Decodable {
+        let name: String
+        let supplyTaskIds: [String]
+        let tasks: [String: SeededTaskSpec]
+        let windowCountByTaskId: [String: Int]
+        /// Bare timeframe string; absent = no source window (fixture note
+        /// `windows`) — the unknowable-span branch.
+        let sourceWindow: String?
+        let targetWindow: String
+        let expected: [String: Int]
+    }
+
     private struct DisplaySection: Decodable {
         let effectiveMemberTarget: [EffectiveTargetVector]
         let varyRangeLabel: [VaryRangeLabelVector]
         let splitSquaresNote: [SplitSquaresNoteVector]
         let remainingTarget: [RemainingTargetVector]
+        let prefilledOneOffTarget: [PrefilledOneOffTargetVector]
+        let seededTargetsForSource: [SeededTargetsVector]
         let memberRuleFor: [MemberRuleForVector]
         let partRuleFor: [PartRuleForVector]
         let withMemberRule: [WithRuleVector]
         let withPartRule: [WithRuleVector]
         let immutability: [ImmutabilityVector]
+        let countingSummary: [CountingSummaryVector]
+        let compoundSummary: [CompoundSummaryVector]
     }
 
     private struct Fixture: Decodable {
@@ -1227,6 +1292,17 @@ final class MemberRuleVectorTests: XCTestCase {
         BoardSources.BoardWindow(timeframe: try timeframe(raw))
     }
 
+    /// Same, but with the optional `[start, end]` bounds a CUSTOM vector
+    /// carries. A one-element array leaves the end bound nil — the fixture's
+    /// way of pinning the unknowable-span branch.
+    private func window(_ raw: String, _ dates: [String]?) throws -> BoardSources.BoardWindow {
+        BoardSources.BoardWindow(
+            timeframe: try timeframe(raw),
+            startDate: dates?.first,
+            endDate: (dates?.count ?? 0) > 1 ? dates?[1] : nil
+        )
+    }
+
     private func memberPatch(_ raw: RawPatch) throws -> BoardSources.MemberRulePatch {
         var patch = BoardSources.MemberRulePatch()
         if let value = raw.set?.target { patch.target = .set(value) }
@@ -1326,12 +1402,106 @@ final class MemberRuleVectorTests: XCTestCase {
         }
     }
 
+    func testCountingSummaryVectors() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.countingSummary.isEmpty)
+        for v in section.countingSummary {
+            let summary = BoardSources.countingSummary(
+                target: v.target, level: try varyLevel(v.level), goal: v.goal, unit: v.unit
+            )
+            guard let expected = v.expected else {
+                XCTAssertNil(summary, v.name)
+                continue
+            }
+            XCTAssertEqual(summary?.text, expected.text, v.name)
+            XCTAssertEqual(summary?.varying, expected.varying, v.name)
+        }
+    }
+
+    func testCompoundSummaryVectors() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.compoundSummary.isEmpty)
+        for v in section.compoundSummary {
+            let summary = BoardSources.compoundSummary(
+                split: v.split,
+                partIds: v.partIds,
+                excludedPartIds: Set(v.excludedPartIds),
+                level: try varyLevel(v.level)
+            )
+            XCTAssertEqual(summary.text, v.expected.text, v.name)
+            XCTAssertEqual(summary.varying, v.expected.varying, v.name)
+        }
+    }
+
     func testRemainingTarget() throws {
         let section = try loadFixture().display
         XCTAssertFalse(section.remainingTarget.isEmpty)
         for v in section.remainingTarget {
             XCTAssertEqual(
                 BoardSources.remainingTarget(goal: v.goal, windowCount: v.windowCount),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    func testPrefilledOneOffTarget() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.prefilledOneOffTarget.isEmpty)
+        for v in section.prefilledOneOffTarget {
+            XCTAssertEqual(
+                BoardSources.prefilledOneOffTarget(
+                    goal: v.goal,
+                    windowCount: v.windowCount,
+                    sourceWindow: try v.sourceWindow.map { try window($0, v.sourceWindowDates) },
+                    targetWindow: try window(v.targetWindow, v.targetWindowDates)
+                ),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    /// The safety property the 2026-09-21 ruling rests on, asserted directly:
+    /// when the source and target windows are the same nominal length the
+    /// ratio is 1, so the prefill is the remaining amount VERBATIM. Each
+    /// expectation is the hand-computed `goal - windowCount` (23 = 35 - 12),
+    /// never a second call to the function under test.
+    func testPrefilledOneOffTargetSameTimeframeIsUnchanged() {
+        for tf in [Timeframe.daily, .weekly, .monthly, .yearly] {
+            XCTAssertEqual(
+                BoardSources.prefilledOneOffTarget(
+                    goal: 35,
+                    windowCount: 12,
+                    sourceWindow: BoardSources.BoardWindow(timeframe: tf),
+                    targetWindow: BoardSources.BoardWindow(timeframe: tf)
+                ),
+                23,
+                "\(tf) source to \(tf) target must not pro-rate"
+            )
+        }
+    }
+
+    /// The seed map the remove-confirm recomputes at removal time (amended
+    /// ruling 2026-09-23) — same vectors as the TS twin, so the two
+    /// hand-mirrored loops can't disagree about which members get seeded.
+    func testSeededTargetsForSource() throws {
+        let section = try loadFixture().display
+        XCTAssertFalse(section.seededTargetsForSource.isEmpty)
+        for v in section.seededTargetsForSource {
+            var tasksById: [String: BoardSources.SeededTargetTask] = [:]
+            for (id, spec) in v.tasks {
+                let type = try XCTUnwrap(TaskType(rawValue: spec.type), v.name)
+                tasksById[id] = BoardSources.SeededTargetTask(type: type, maxCount: spec.maxCount)
+            }
+            XCTAssertEqual(
+                BoardSources.seededTargetsForSource(
+                    supplyTaskIds: v.supplyTaskIds,
+                    tasksById: tasksById,
+                    windowCountByTaskId: v.windowCountByTaskId,
+                    sourceWindow: try v.sourceWindow.map { try window($0) },
+                    targetWindow: try window(v.targetWindow)
+                ),
                 v.expected,
                 v.name
             )

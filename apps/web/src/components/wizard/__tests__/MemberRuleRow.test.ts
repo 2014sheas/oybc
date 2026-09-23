@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   TaskType,
   Timeframe,
+  countingSummary,
   varyRangeLabel,
   type BoardWindow,
   type CompoundChild,
@@ -13,22 +14,31 @@ import { MemberRuleRow } from '../MemberRuleRow';
 
 /**
  * The member row is the rule-authoring surface of the wizard's expanded
- * source panel (docs/BOARD_SOURCES.md §Member rules; handoff "Expanded
- * source panel" item 3). What these tests pin:
+ * source panel (docs/BOARD_SOURCES.md §Member rules + §Member row at phone
+ * width).
  *
- * - the target stepper shows the PRO-RATED target (a weekly source read
- *   into a daily board), with the "of {goal} {unit}" caption beside it —
- *   the caption never tracks the override (there is no reset affordance);
- * - a POOL member has no window to pro-rate against, so it gets the dice
- *   alone (B3 RC5);
- * - the blue range line is exactly `varyRangeLabel`'s output — a second
- *   formatting of the same range here is how the two drift apart;
- * - the compound shapes: One square (pill + note + ONE dice), Split up
- *   (part lines with per-part dice/✕, excluded part struck + UNDO), and a
- *   childless compound (no toggle at all, B3 RC10).
+ * **What these tests can and cannot see.** Since B3.1 the row opens
+ * COLLAPSED: a counting or compound member shows `badge · title · summary
+ * chip · chevron · ✕` and renders its controls only once the disclosure is
+ * opened. There is no DOM harness here — `apps/web/vitest.config.ts` is
+ * `environment: 'node'` on purpose, so these tests render to a STRING and
+ * cannot click. Everything below therefore pins the COLLAPSED row, which
+ * is where the interesting new decisions live:
  *
- * Rendered with `react-dom/server` — no jsdom/RTL harness in this repo
- * (see `BoardSetupForm.test.ts`). Clicks/typing are Playwright's job.
+ * - the chip is the row's current answer — the pro-rated target for a
+ *   board source, the un-pro-rated goal for a pool one, `varyRangeLabel`'s
+ *   exact string once the dice is lit, `splitSquaresNote`'s for a compound;
+ * - a chip that would only restate an auto-generated counting title
+ *   (`vary == 0 && target == goal`) is SUPPRESSED entirely;
+ * - which rows are expandable at all: a normal / achievement / childless
+ *   compound member, and every excluded or filtered-done member, keep the
+ *   pre-B3.1 single line with no disclosure (ruling C2).
+ *
+ * The expanded layout itself (stepper + suffix, dice, inline range, split
+ * toggle, part lines) is covered by `e2e/member-rules.spec.ts`, which can
+ * actually open the disclosure. Adding jsdom/RTL to unit-test it here is a
+ * separate infra decision (ROADMAP E3), deliberately not taken on a layout
+ * change.
  */
 
 const NOW = '2026-09-18T00:00:00.000Z';
@@ -105,6 +115,11 @@ function diceCount(html: string): number {
   return html.split('aria-label="Vary: ').length - 1;
 }
 
+/** Whether the row offers a disclosure (i.e. has controls to reveal). */
+function hasDisclosure(html: string): boolean {
+  return html.includes('data-testid="member-disclosure"');
+}
+
 const READING = makeTask('t-read', {
   title: 'Read',
   type: TaskType.COUNTING,
@@ -113,61 +128,121 @@ const READING = makeTask('t-read', {
   maxCount: 35,
 });
 
-describe('MemberRuleRow — counting member', () => {
-  it('pro-rates the target for a board source and captions it with the whole goal', () => {
+describe('MemberRuleRow — collapsed by default', () => {
+  it('starts collapsed, showing the summary chip instead of the controls', () => {
+    const html = render({ task: READING });
+    // The chip carries the answer…
+    expect(html).toContain('5 pages');
+    // …and not one of the controls it stands in for is in the markup.
+    expect(html).not.toContain('aria-label="Target"');
+    expect(diceCount(html)).toBe(0);
+    expect(html).not.toContain('data-testid="stepper-suffix"');
+  });
+
+  it('marks the collapsed disclosure as not expanded', () => {
+    const html = render({ task: READING });
+    expect(hasDisclosure(html)).toBe(true);
+    expect(html).toContain('aria-expanded="false"');
+  });
+
+  it('gives a plain normal member no disclosure at all', () => {
+    const html = render({ task: makeTask('t-plain', { title: 'Stretch' }) });
+    expect(hasDisclosure(html)).toBe(false);
+    // …and no chip: there is no rule to summarise.
+    expect(html).toMatch(/class="[^"]*_exclude_/);
+    expect(html).not.toMatch(/class="[^"]*_chip_/);
+  });
+
+  it('keeps its trailing ✕ out of the disclosure button', () => {
+    const html = render({ task: READING });
+    // The ✕ is a SIBLING of the disclosure, never nested inside it —
+    // a button inside a button is invalid and swallows the inner click.
+    const disclosureStart = html.indexOf('data-testid="member-disclosure"');
+    // Guard the slice below: a -1 here would make `inside` empty and every
+    // `not.toContain` under it pass for the wrong reason.
+    expect(disclosureStart).not.toBe(-1);
+    const disclosureEnd = html.indexOf('</button>', disclosureStart);
+    const inside = html.slice(disclosureStart, disclosureEnd);
+    expect(inside).not.toContain('aria-label="Exclude Read for this board"');
+    expect(html).toContain('aria-label="Exclude Read for this board"');
+  });
+});
+
+describe('MemberRuleRow — counting chip', () => {
+  it('chips the PRO-RATED target for a board source, not the goal', () => {
     const html = render({ task: READING });
     // 35 pages over a weekly source → ceil(35 × 1 ÷ 7) = 5 on a daily board.
-    expect(html).toContain('value="5"');
-    expect(html).toContain('aria-label="Target"');
-    expect(html).toContain('of 35 pages');
-    expect(diceCount(html)).toBe(1);
+    expect(html).toContain('5 pages');
+    expect(html).not.toContain('35 pages');
+    expect(html).toContain(countingSummary(5, 0, 35, 'pages')?.text as string);
   });
 
-  it('honours a stored override instead of the pro-rated target', () => {
+  it('chips a stored override instead of the pro-rated target', () => {
     const html = render({ task: READING, rule: { target: 8 } });
-    expect(html).toContain('value="8"');
-    // The caption still shows the member's own goal — no reset affordance.
-    expect(html).toContain('of 35 pages');
+    expect(html).toContain('8 pages');
+    expect(html).not.toContain('5 pages');
   });
 
-  it('gives a POOL member the dice alone — no stepper, no caption', () => {
+  it('does not pro-rate a POOL member — it has no source window', () => {
+    // A pool member sits at its full goal, so with the dice lit its range
+    // is the goal's, not the daily-pro-rated 5's.
+    const html = render({ task: READING, fromBoard: false, sourceWindow: undefined, rule: { vary: 1 } });
+    expect(html).toContain('28–35 pages');
+    expect(html).toContain(varyRangeLabel(35, 1, 35, 'pages') as string);
+    expect(html).not.toContain('4–6 pages');
+  });
+
+  it('suppresses a chip that would only restate the title', () => {
+    // vary off AND target === goal — the counting title is auto-generated
+    // from action + goal + unit, so the chip would say the goal twice.
     const html = render({ task: READING, fromBoard: false, sourceWindow: undefined });
-    expect(html).not.toContain('aria-label="Target"');
-    expect(html).not.toContain('of 35 pages');
-    expect(diceCount(html)).toBe(1);
+    expect(html).not.toMatch(/class="[^"]*_chip_/);
+    expect(html).not.toContain('35 pages');
+    // …but the row is still expandable — it has a dice to reveal.
+    expect(hasDisclosure(html)).toBe(true);
   });
 
-  it('shows the shared range label under the row once the dice is on', () => {
+  it('chips the shared range label once the dice is on', () => {
     const off = render({ task: READING });
     expect(off).not.toContain('–');
 
-    // Both the literal the README's example implies AND the shared helper,
-    // so a format change in `varyRangeLabel` can't slide both sides together.
+    // Both the literal AND the shared helper, so a format change in
+    // `varyRangeLabel` can't slide both sides together.
     const little = render({ task: READING, rule: { vary: 1 } });
     expect(little).toContain('4–6 pages');
     expect(little).toContain(varyRangeLabel(5, 1, 35, 'pages') as string);
+    // A lit dice colours the chip blue; an unlit one leaves it muted.
+    expect(little).toMatch(/class="[^"]*_chipVarying_/);
 
     const lot = render({ task: READING, rule: { vary: 2 } });
     expect(lot).toContain('3–8 pages');
     expect(lot).toContain(varyRangeLabel(5, 2, 35, 'pages') as string);
-  });
 
+    expect(off).not.toMatch(/class="[^"]*_chipVarying_/);
+  });
+});
+
+describe('MemberRuleRow — a member that is off the board', () => {
   it('strikes an excluded member through and offers UNDO', () => {
     const html = render({ task: READING, state: 'excluded' });
     expect(html).toContain('UNDO');
     expect(html).toMatch(/class="[^"]*_struck_/);
   });
 
-  it('drops every rule control once the member is off the board', () => {
+  it('drops the disclosure and the chip once the member is off the board', () => {
+    // Ruling C2: an excluded / filtered-done member renders exactly what
+    // it did before B3.1 — one line, an inline control, nothing to reveal.
     const excluded = render({ task: READING, state: 'excluded', rule: { vary: 1 } });
+    expect(hasDisclosure(excluded)).toBe(false);
+    expect(excluded).not.toMatch(/class="[^"]*_chip_/);
     expect(excluded).not.toContain('aria-label="Target"');
     expect(excluded).not.toContain('aria-label="Vary: ');
-    expect(excluded).not.toContain('of 35 pages');
     expect(excluded).not.toContain('4–6 pages');
 
     const filtered = render({ task: READING, state: 'filteredDone' });
-    expect(filtered).not.toContain('aria-label="Target"');
-    expect(filtered).not.toContain('aria-label="Vary: ');
+    expect(hasDisclosure(filtered)).toBe(false);
+    expect(filtered).not.toMatch(/class="[^"]*_chip_/);
+    expect(filtered).toMatch(/class="[^"]*_doneCheck_/);
   });
 });
 
@@ -184,40 +259,34 @@ describe('MemberRuleRow — compound member', () => {
   const PARTS = [makeChild(CIRCUIT.id, RUN.id, 0), makeChild(CIRCUIT.id, STRETCH.id, 1)];
   const TASK_BY_ID: Record<string, Task> = { [RUN.id]: RUN, [STRETCH.id]: STRETCH };
 
-  it('offers One square / Split up with the squares note and ONE dice while unsplit', () => {
+  it('chips "1 square" while unsplit and hides the toggle behind the disclosure', () => {
     const html = render({ task: CIRCUIT, taskById: TASK_BY_ID, parts: PARTS });
-    expect(html).toContain('One square');
-    expect(html).toContain('Split up');
-    // One square puts the WHOLE compound on as one square — the note must
-    // not contradict the selected segment.
+    expect(hasDisclosure(html)).toBe(true);
+    // One square puts the WHOLE compound on as one square — the chip must
+    // not contradict the segment that is selected underneath.
     expect(html).toContain('1 square');
     expect(html).not.toContain('2 squares');
-    // One dice on the toggle line; the parts have none while unsplit.
-    expect(diceCount(html)).toBe(1);
-    // Part lines are listed either way, with the counting part's stepper.
-    expect(html).toContain('Run');
-    expect(html).toContain('Stretch');
-    expect(html).toContain('of 210');
+    // The toggle and the part lines are not rendered until it is opened.
+    expect(html).not.toContain('One square');
+    expect(html).not.toContain('Split up');
+    expect(html).not.toContain('Stretch');
+    expect(diceCount(html)).toBe(0);
   });
 
-  it('moves the dice onto each counting part when split, and offers per-part ✕', () => {
+  it('chips the square COUNT once split', () => {
     const html = render({
       task: CIRCUIT,
       taskById: TASK_BY_ID,
       parts: PARTS,
       rule: { split: true },
     });
-    // Split up puts each included part on as its own square.
     expect(html).toContain('2 squares');
-    // The toggle-line dice disappears; only the counting part keeps one.
-    expect(diceCount(html)).toBe(1);
-    expect(html).toContain('aria-label="Exclude Run for this board"');
-    expect(html).toContain('aria-label="Exclude Stretch for this board"');
-    // Only the counting part gets a target stepper.
-    expect(html.split('aria-label="Target"').length - 1).toBe(1);
+    // …and stops saying the One-square answer, which is what it said a
+    // moment ago — the chip is the row's CURRENT answer, not a label.
+    expect(html).not.toContain('1 square');
   });
 
-  it('strikes an excluded part through, offers UNDO, and recounts the note', () => {
+  it('recounts the chip when a part is excluded', () => {
     const html = render({
       task: CIRCUIT,
       taskById: TASK_BY_ID,
@@ -225,56 +294,60 @@ describe('MemberRuleRow — compound member', () => {
       rule: { split: true, parts: { [STRETCH.id]: { excluded: true } } },
     });
     expect(html).toContain('1 square');
-    expect(html).toContain('aria-label="Undo excluding Stretch"');
-    // …at PART scale (`.partUndo`), not the member row's `.undo` — iOS
-    // renders the part-level UNDO smaller (final review I2/I3).
-    expect(html).toMatch(/class="[^"]*_partUndo_/);
-    expect(html).not.toContain('aria-label="Exclude Stretch for this board"');
-    // …and the ONE surviving part can't be dropped, so it offers no ✕ at
-    // all — an inert control would read as a broken toggle.
-    expect(html).not.toContain('aria-label="Exclude Run for this board"');
+    expect(html).not.toContain('2 squares');
   });
 
-  it('restores both ✕s when the excluded part comes back', () => {
-    const html = render({
-      task: CIRCUIT,
-      taskById: TASK_BY_ID,
-      parts: PARTS,
-      rule: { split: true },
-    });
-    expect(html).toContain('aria-label="Exclude Run for this board"');
-    expect(html).toContain('aria-label="Exclude Stretch for this board"');
-  });
-
-  it('hides the toggle and the parts for a filtered-done compound', () => {
-    const html = render({
-      task: CIRCUIT,
-      taskById: TASK_BY_ID,
-      parts: PARTS,
-      state: 'filteredDone',
-    });
-    expect(html).not.toContain('One square');
-    expect(html).not.toContain('Split up');
-    expect(html).not.toContain('Stretch');
-    expect(diceCount(html)).toBe(0);
-  });
-
-  it('puts a part range line under that part, never on the compound itself', () => {
+  it("never lets a PART's dice colour the member's own chip", () => {
+    // While split the dice lives on the parts, so the member-level chip
+    // reports squares in muted ink however the parts are set.
     const html = render({
       task: CIRCUIT,
       taskById: TASK_BY_ID,
       parts: PARTS,
       rule: { split: true, parts: { [RUN.id]: { vary: 2 } } },
     });
-    // 210 over a weekly source → 30 on a daily board; ±50 % of that.
-    expect(html).toContain('15–45');
-    expect(html).toContain(varyRangeLabel(30, 2, 210, '') as string);
+    expect(html).toContain('2 squares');
+    expect(html).not.toMatch(/class="[^"]*_chipVarying_/);
+    expect(html).not.toContain('–');
   });
 
-  it('treats a childless compound as a plain member — no toggle', () => {
+  it("lights the chip while One square, where the member's own dice rolls", () => {
+    const html = render({
+      task: CIRCUIT,
+      taskById: TASK_BY_ID,
+      parts: PARTS,
+      rule: { vary: 1 },
+    });
+    expect(html).toContain('1 square');
+    expect(html).toMatch(/class="[^"]*_chipVarying_/);
+  });
+
+  it('gives a filtered-done compound no disclosure and no chip', () => {
+    const html = render({
+      task: CIRCUIT,
+      taskById: TASK_BY_ID,
+      parts: PARTS,
+      state: 'filteredDone',
+    });
+    // Anchor first: the row DID render, as its pre-B3.1 single line with
+    // the dimmed ✓ inline. Without this the three negatives below would
+    // all hold against a component that rendered nothing at all.
+    expect(html).toContain('Circuit');
+    expect(html).toMatch(/class="[^"]*_doneCheck_/);
+    expect(hasDisclosure(html)).toBe(false);
+    expect(html).not.toMatch(/class="[^"]*_chip_/);
+    expect(html).not.toContain('1 square');
+  });
+
+  it('treats a childless compound as a plain member — no disclosure, no chip', () => {
     const html = render({ task: CIRCUIT, taskById: TASK_BY_ID, parts: [] });
+    // Anchor first (see above): an INCLUDED plain member renders its title
+    // and its inline ✕, so the negatives below mean "no disclosure" rather
+    // than "no output".
+    expect(html).toContain('Circuit');
+    expect(html).toMatch(/class="[^"]*_exclude_/);
+    expect(hasDisclosure(html)).toBe(false);
+    expect(html).not.toMatch(/class="[^"]*_chip_/);
     expect(html).not.toContain('One square');
-    expect(html).not.toContain('Split up');
-    expect(diceCount(html)).toBe(0);
   });
 });
