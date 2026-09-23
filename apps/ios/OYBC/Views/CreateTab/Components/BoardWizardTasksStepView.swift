@@ -625,14 +625,31 @@ struct BoardWizardTasksStepView: View {
     /// `pullBoard` alone). A pool source and every repeating session seed
     /// nothing, so every stored target there is hand-set by definition.
     ///
-    /// Recomputed per call rather than remembered from the pull, so a
-    /// timeframe change since then correctly reads as configuration.
+    /// Recomputed per call rather than remembered from the pull, so an input
+    /// that has moved since makes the recomputed seed differ and the rule
+    /// read as configured. Known cases, all erring the same safe way (ask
+    /// rather than discard silently):
+    ///
+    /// - the wizard's TIMEFRAME changed after the pull — the person did
+    ///   change something, so asking is right;
+    /// - a RESUMED one-off draft, whose hydrated sources are never
+    ///   re-seeded, or a supply re-fetch after a sync pull: both can move
+    ///   `windowCountByTaskId` (it is live progress) while the stored target
+    ///   stays, so an otherwise untouched source asks. A report of that is
+    ///   this, not a bug.
+    ///
+    /// Reads the LIBRARY-backed task map, never `effectiveTaskById`: the
+    /// prefill read persisted tasks (`database.fetchTasks(ids:)`), so an
+    /// inline staged goal edit must not shift the recomputed seed — the
+    /// staged edit lives on the task and survives the removal, so claiming
+    /// "1 member rule" would be false.
     ///
     /// Web twin: `seededTargetsForRemoval` in `wizardSourcesLogic.ts`.
     private func seededTargets(for source: BoardSource) -> [String: Int] {
         guard !isRecurring, editingTemplateId == nil, source.kind == .board,
               let supply = supplyInfoBySourceId[source.sourceId] else { return [:] }
-        let byId = effectiveTaskById
+        var byId: [String: OYBC.Task] = [:]
+        for task in library.libraryTasks { byId[task.id] = task }
         var tasksById: [String: BoardSources.SeededTargetTask] = [:]
         for id in supply.rawSupplyTaskIds {
             if let task = byId[id] { tasksById[id] = BoardSources.SeededTargetTask(task) }

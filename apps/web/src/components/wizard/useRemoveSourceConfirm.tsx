@@ -15,7 +15,12 @@ export interface UseRemoveSourceConfirmArgs {
   /** Per-source display/supply cache — the heading's name, and the window
    *  counts + source window the seed recomputation reads. */
   supplyInfoBySourceId: SupplyInfoMap;
-  /** Staged-edit-overlaid id → task, for each member's type and goal. */
+  /**
+   * LIBRARY-backed id → task (`library.taskMap`) — the same map the prefill
+   * read, NOT the staged-edit overlay. An inline goal edit must not shift
+   * the recomputed seed: the staged edit lives on the task and survives the
+   * removal, so claiming "1 member rule" would be false.
+   */
   taskById: Record<string, Task | undefined>;
   /** The window of the board being assembled (the prefill's target window). */
   wizardWindow: BoardWindow;

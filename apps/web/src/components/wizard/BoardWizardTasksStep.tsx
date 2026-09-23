@@ -409,7 +409,11 @@ export function BoardWizardTasksStep({
   const { requestRemoveSource, removeSourceConfirm } = useRemoveSourceConfirm({
     sources,
     supplyInfoBySourceId,
-    taskById: effectiveTaskMap,
+    // `library.taskMap`, not `effectiveTaskMap`: the seed must be recomputed
+    // from the same map `prefillRemainingTargets` read (`tasksById:
+    // library.taskMap` in `BoardWizardPage`), so a staged inline goal edit
+    // can't turn an untouched source into a "1 member rule" confirm.
+    taskById: library.taskMap,
     wizardWindow,
     isRecurring,
     editingTemplateId,

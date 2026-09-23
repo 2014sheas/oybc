@@ -489,6 +489,48 @@ final class BoardWizardPoolMixActionsTests: XCTestCase {
         )
     }
 
+    /// I2: the seed is recomputed from the LIBRARY-backed task map the
+    /// prefill read, never from the wizard's staged-edit overlay. A staged
+    /// inline goal edit survives the removal, so letting it move the seed
+    /// would make an untouched source claim "1 member rule" falsely.
+    func test_removeConfirmGate_stagedGoalEdit_doesNotMoveTheSeed() throws {
+        let db = try AppDatabase.makeTestInstance()
+        let vm = BoardWizardViewModel(preferences: .defaults, database: db)
+        try seedBoardWithTasks(
+            db, boardId: "b1", name: "Weekday Core", taskIds: ["bt1"],
+            countingGoals: ["bt1": 10]
+        )
+        vm.pullBoard(boardId: "b1")
+        let source = try XCTUnwrap(vm.sources.first(where: { $0.sourceId == "b1" }))
+        let librarySeed = seededTargetMap(vm: vm, sourceId: "b1", db: db)
+        XCTAssertEqual(librarySeed, ["bt1": 10])
+
+        // What the STAGED overlay would compute instead, had the gate read it.
+        let supply = try XCTUnwrap(vm.supplyInfoBySourceId["b1"])
+        let stagedSeed = BoardSources.seededTargetsForSource(
+            supplyTaskIds: supply.rawSupplyTaskIds,
+            tasksById: ["bt1": BoardSources.SeededTargetTask(type: .counting, maxCount: 40)],
+            windowCountByTaskId: supply.windowCountByTaskId,
+            sourceWindow: supply.sourceWindow,
+            targetWindow: vm.prefillTargetWindow
+        )
+        XCTAssertEqual(stagedSeed, ["bt1": 40], "the overlay really would give a different seed")
+
+        let defaultFilter = BoardWizardViewModel.newSourceFilter(for: .board)
+        XCTAssertFalse(
+            BoardSources.sourceHasConfiguration(
+                source, defaultFilter: defaultFilter, seededTargetByTaskId: librarySeed
+            ),
+            "judged against the library seed the source is untouched"
+        )
+        XCTAssertTrue(
+            BoardSources.sourceHasConfiguration(
+                source, defaultFilter: defaultFilter, seededTargetByTaskId: stagedSeed
+            ),
+            "…and the staged seed is exactly what would have made it lie"
+        )
+    }
+
     /// Rebuilds the seed map the way `BoardWizardTasksStepView.seededTargets(for:)`
     /// does at removal time — from the VM's own supply cache and window.
     private func seededTargetMap(

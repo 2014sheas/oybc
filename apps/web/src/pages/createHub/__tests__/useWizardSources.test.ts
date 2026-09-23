@@ -322,6 +322,26 @@ describe('seededTargetsForRemoval (what the prefill would write right now)', () 
     expect(seededTargetsForRemoval(board, supply, tasksById, window, false)).toEqual({ t1: 7 });
   });
 
+  it('reads the LIBRARY map, so a staged goal edit cannot move the seed', () => {
+    // The staged overlay would have this counter at a goal of 40; the library
+    // (what the prefill read) still says 10. The seed must follow the
+    // library, or an untouched source starts claiming "1 member rule" the
+    // moment someone renames/retargets a task inline — an edit that survives
+    // the removal, so the claim would be false.
+    const staged = { ...tasksById, t1: { type: TaskType.COUNTING, maxCount: 40 } as Task };
+    expect(seededTargetsForRemoval(board, supply, tasksById, window, false)).toEqual({ t1: 7 });
+    expect(seededTargetsForRemoval(board, supply, staged, window, false)).toEqual({ t1: 37 });
+    // …so a source whose stored target IS the library seed reads unconfigured
+    // when judged with the library map, and only the staged map would flip it.
+    const source = { ...board, memberRules: { t1: { target: 7 } } };
+    expect(
+      sourceRemovalNeedsConfirm(
+        source,
+        seededTargetsForRemoval(board, supply, tasksById, window, false),
+      ),
+    ).toBe(false);
+  });
+
   it('seeds nothing on a repeating wizard — the prefill never runs there', () => {
     expect(seededTargetsForRemoval(board, supply, tasksById, window, true)).toEqual({});
   });

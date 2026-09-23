@@ -118,9 +118,26 @@ export function removeSourceById(sources: BoardSource[], sourceId: string): Boar
  * `useBoardWizard`). A pool source and every recurring session seed nothing,
  * so every stored target there is hand-set by definition.
  *
+ * Recomputed per call rather than remembered from the pull, so an input that
+ * has moved since makes the recomputed seed differ and the rule read as
+ * configured. Known cases, all erring the same safe way (ask rather than
+ * discard silently):
+ *
+ * - the wizard's TIMEFRAME changed after the pull — the person did change
+ *   something, so asking is right;
+ * - a RESUMED one-off draft, whose hydrated sources are never re-seeded, or
+ *   a supply re-fetch after a sync pull: both can move
+ *   `windowCountByTaskId` (it is live progress) while the stored target
+ *   stays, so an otherwise untouched source asks. A report of that is this,
+ *   not a bug.
+ *
  * @param source - The pulled source row.
  * @param supply - Its resolved supply (`windowCountByTaskId` + `sourceWindow`).
- * @param tasksById - Live id → task, for each member's type and goal.
+ * @param tasksById - LIBRARY-backed id → task (`library.taskMap`), the same
+ *   map the prefill read — never the staged-edit overlay. An inline goal
+ *   edit must not shift the recomputed seed: the staged edit lives on the
+ *   task and survives the removal, so claiming "1 member rule" would be
+ *   false.
  * @param targetWindow - The window of the board being assembled.
  * @param isRecurring - Whether this is a repeating-board session.
  * @returns id → seeded target, or `{}` when nothing would be seeded.
