@@ -75,15 +75,18 @@ export const PRESET_LOG_AMOUNTS = [1, 10, 25] as const;
 /**
  * The chip to pre-select when a picker opens: the counter's remembered
  * `defaultLogAmount` when it happens to be a preset (so a habitual amount is
- * one tap away), otherwise `10` — the fixed rows have no dynamic chip to
+ * one tap away), otherwise `1` — the fixed rows have no dynamic chip to
  * carry an off-preset default, and a non-preset initial value would leave no
- * chip highlighted. (The remembered default still drives the one-tap board
- * paths — plain tap, Hub "+ Log" pill — independent of this.)
+ * chip highlighted. `1` is the fallback because it matches the one-tap
+ * board paths (plain tap, Hub "+ Log" pill), which log `defaultLogAmount ?? 1`;
+ * a fresh counter must not open on `+10` when everything else about it
+ * steps by one. (The remembered default still drives those one-tap paths
+ * independent of this.)
  */
 export function initialChipAmount(defaultLogAmount: number | null | undefined): number {
   return defaultLogAmount != null && (PRESET_LOG_AMOUNTS as readonly number[]).includes(defaultLogAmount)
     ? defaultLogAmount
-    : 10;
+    : 1;
 }
 
 /**
