@@ -497,13 +497,18 @@ enum BoardSources {
         let memberRuleCount: Int
         /// The range was dragged off the `[0, all]` mint default.
         let rangeNarrowed: Bool
-        /// The done-filter differs from the kind-scoped creation default.
-        let filterChanged: Bool
-        /// The non-default filter the row is on, or nil. Exactly nil when
-        /// `filterChanged` is false — the VALUE is carried (rather than
+        /// The non-default filter the row is on, or nil — the ONLY stored
+        /// form of "the filter changed". The value is carried (rather than
         /// derived by the caller) so `removeSourceLossSentence` can name the
         /// control by its on-screen label without being handed the source.
         let filter: BoardSource.Filter?
+
+        /// `filter != nil`, COMPUTED — never a second stored bit. Storing
+        /// both allowed the illegal `(filterChanged: true, filter: nil)`,
+        /// where the predicate said "configured" and the sentence dropped
+        /// the clause. Kept as a named member because it reads well at call
+        /// sites and the vectors pin it.
+        var filterChanged: Bool { filter != nil }
     }
 
     /// True when a member rule is something a PERSON wrote, as opposed to
@@ -564,13 +569,11 @@ enum BoardSources {
         where isAuthoredMemberRule(rule, seededTarget: seededTargetByTaskId[taskId]) {
             memberRuleCount += 1
         }
-        let filterChanged = source.filter != defaultFilter
         return ConfigurationDetail(
             excludedCount: source.excludedTaskIds.count,
             memberRuleCount: memberRuleCount,
             rangeNarrowed: source.min != 0 || source.max != nil,
-            filterChanged: filterChanged,
-            filter: filterChanged ? source.filter : nil
+            filter: source.filter != defaultFilter ? source.filter : nil
         )
     }
 
@@ -597,7 +600,10 @@ enum BoardSources {
         return detail.excludedCount > 0
             || detail.memberRuleCount > 0
             || detail.rangeNarrowed
-            || detail.filterChanged
+            // Reads `filter`, the stored form, for the same reason
+            // `removeSourceLossSentence` does: the two must never disagree,
+            // not even for a detail some caller hand-built.
+            || detail.filter != nil
     }
 
     /// The done-filter segmented's on-screen labels — quoted verbatim in the

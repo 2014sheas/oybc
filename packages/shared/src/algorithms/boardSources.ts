@@ -588,15 +588,21 @@ export interface SourceConfigurationDetail {
   memberRuleCount: number;
   /** The range was dragged off the `[0, all]` mint default. */
   rangeNarrowed: boolean;
-  /** The done-filter differs from the kind-scoped creation default. */
-  filterChanged: boolean;
   /**
-   * The non-default filter the row is on, or `null`. Exactly `null` when
-   * `filterChanged` is false — the VALUE is carried (rather than derived by
+   * The non-default filter the row is on, or `null` — the ONLY stored form
+   * of "the filter changed". The value is carried (rather than derived by
    * the caller) so {@link removeSourceLossSentence} can name the control by
    * its on-screen label without being handed the source too.
    */
   filter: BoardSourceFilter | null;
+  /**
+   * `filter !== null`, COMPUTED — never a second stored bit. Storing both
+   * allowed the illegal `{ filterChanged: true, filter: null }`, where the
+   * predicate said "configured" and the sentence dropped the clause. Kept
+   * as a named member because it reads well at call sites and the vectors
+   * pin it.
+   */
+  readonly filterChanged: boolean;
 }
 
 /**
@@ -618,10 +624,13 @@ function isAuthoredMemberRule(
   rule: BoardSourceMemberRule,
   seededTarget: number | undefined,
 ): boolean {
-  if (rule.vary !== undefined || rule.split !== undefined) return true;
-  if (rule.parts !== undefined && Object.keys(rule.parts).length > 0) return true;
-  if (rule.target === undefined) return false;
-  return seededTarget === undefined || rule.target !== seededTarget;
+  if (rule.vary != null || rule.split != null) return true;
+  if (rule.parts != null && Object.keys(rule.parts).length > 0) return true;
+  // `== null` (not `=== undefined`) throughout: iOS decodes a missing key to
+  // `nil` and can round-trip an explicit JSON `null`, so an absent field must
+  // read the same on both platforms.
+  if (rule.target == null) return false;
+  return seededTarget == null || rule.target !== seededTarget;
 }
 
 /**
@@ -658,13 +667,17 @@ export function sourceConfiguration(
   for (const [taskId, rule] of Object.entries(source.memberRules ?? {})) {
     if (isAuthoredMemberRule(rule, seededTargetByTaskId?.[taskId])) memberRuleCount += 1;
   }
-  const filterChanged = source.filter !== defaultFilter;
+  const filter = source.filter !== defaultFilter ? source.filter : null;
   return {
     excludedCount: source.excludedTaskIds.length,
     memberRuleCount,
-    rangeNarrowed: source.min !== 0 || source.max !== null,
-    filterChanged,
-    filter: filterChanged ? source.filter : null,
+    // `!= null`, not `!== null`: a record written without the key decodes to
+    // `undefined` on web and `nil` on iOS, and both mean "the all latch".
+    rangeNarrowed: source.min !== 0 || source.max != null,
+    filter,
+    get filterChanged(): boolean {
+      return this.filter !== null;
+    },
   };
 }
 
@@ -688,7 +701,10 @@ export function sourceHasConfiguration(
     detail.excludedCount > 0 ||
     detail.memberRuleCount > 0 ||
     detail.rangeNarrowed ||
-    detail.filterChanged
+    // Reads `filter`, the stored form, for the same reason
+    // `removeSourceLossSentence` does: the two must never disagree, not even
+    // for a detail some caller hand-built.
+    detail.filter !== null
   );
 }
 

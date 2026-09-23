@@ -113,12 +113,14 @@ final class BoardSourceVectorTests: XCTestCase {
         /// Absent key and JSON `null` both mean "filter unchanged".
         let filter: String?
 
+        /// `filterChanged` is COMPUTED on the struct, so it falls out of
+        /// synthesized equality — `testConfigurationVectors` asserts the
+        /// fixture's raw boolean separately so the bit stays pinned.
         var detail: BoardSources.ConfigurationDetail {
             BoardSources.ConfigurationDetail(
                 excludedCount: excludedCount,
                 memberRuleCount: memberRuleCount,
                 rangeNarrowed: rangeNarrowed,
-                filterChanged: filterChanged,
                 filter: filter.flatMap { BoardSource.Filter(rawValue: $0) }
             )
         }
@@ -235,15 +237,16 @@ final class BoardSourceVectorTests: XCTestCase {
                 BoardSource.Filter(rawValue: v.defaultFilter), v.name
             )
             let seeded = v.seededTargetByTaskId ?? [:]
-            XCTAssertEqual(
-                BoardSources.sourceConfiguration(
-                    v.source,
-                    defaultFilter: defaultFilter,
-                    seededTargetByTaskId: seeded
-                ),
-                v.expected.detail,
-                v.name
+            let detail = BoardSources.sourceConfiguration(
+                v.source,
+                defaultFilter: defaultFilter,
+                seededTargetByTaskId: seeded
             )
+            XCTAssertEqual(detail, v.expected.detail, v.name)
+            // Computed, so outside synthesized equality — pin it against the
+            // fixture's own boolean rather than against `filter != nil`,
+            // which would be the implementation compared to itself.
+            XCTAssertEqual(detail.filterChanged, v.expected.filterChanged, v.name)
             XCTAssertEqual(
                 BoardSources.sourceHasConfiguration(
                     v.source,
