@@ -40,6 +40,12 @@ describe('RemoveSourceConfirmDialog', () => {
     );
   });
 
+  it('renders a filter-label sentence without mangling its quotes', () => {
+    expect(render({ lossSentence: 'You\'ll lose the "Not done yet" filter.' })).toContain(
+      'You&#x27;ll lose the &quot;Not done yet&quot; filter.',
+    );
+  });
+
   it('offers Cancel and Remove', () => {
     const html = render();
     expect(html).toContain('>Cancel<');

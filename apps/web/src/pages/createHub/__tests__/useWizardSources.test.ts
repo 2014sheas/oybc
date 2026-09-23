@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Timeframe, type BoardSource } from '@oybc/shared';
+import { TaskType, Timeframe, type BoardSource, type Task } from '@oybc/shared';
 import {
   appendSource,
   boardSupplyEntry,
   droppedSelectionIds,
   removeSourceById,
+  seededTargetsForRemoval,
   sourceRemovalLossSentence,
   sourceRemovalNeedsConfirm,
   toggleIdInSet,
@@ -269,6 +270,68 @@ describe('sourceRemovalNeedsConfirm (the Tasks-step ✕ gate)', () => {
     expect(sourceRemovalNeedsConfirm({ ...pool, excludedTaskIds: ['t1'] })).toBe(true);
     expect(sourceRemovalNeedsConfirm({ ...pool, memberRules: { t1: { vary: 2 } } })).toBe(true);
     expect(sourceRemovalNeedsConfirm({ ...pool, max: 4 })).toBe(true);
+  });
+
+  // ── Seeded targets are not configuration (amended ruling 2026-09-23) ──
+  it('still goes silently when the one-off prefill seeded every target', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    const seeded = { t1: 7, t2: 3 };
+    expect(
+      sourceRemovalNeedsConfirm(
+        { ...board, memberRules: { t1: { target: 7 }, t2: { target: 3 } } },
+        seeded,
+      ),
+    ).toBe(false);
+  });
+
+  it('asks once the person changes a seeded target, and says so', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    const source = { ...board, memberRules: { t1: { target: 7 }, t2: { target: 9 } } };
+    const seeded = { t1: 7, t2: 3 };
+    expect(sourceRemovalNeedsConfirm(source, seeded)).toBe(true);
+    expect(sourceRemovalLossSentence(source, seeded)).toBe("You'll lose 1 member rule.");
+  });
+
+  it('asks when a dice rides along with a seeded target', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    expect(
+      sourceRemovalNeedsConfirm(
+        { ...board, memberRules: { t1: { target: 7, vary: 1 } } },
+        { t1: 7 },
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('seededTargetsForRemoval (what the prefill would write right now)', () => {
+  const board = appendSource([], 'board-1', 'board')[0];
+  const pool = appendSource([], 'pool-1', 'pool')[0];
+  const window = { timeframe: Timeframe.WEEKLY, startDate: null, endDate: null };
+  const supply = {
+    displayName: 'Weekday Core',
+    rawSupplyTaskIds: ['t1', 't2'],
+    doneTaskIds: new Set<string>(),
+    windowCountByTaskId: { t1: 3 },
+  };
+  const tasksById = {
+    t1: { type: TaskType.COUNTING, maxCount: 10 } as Task,
+    t2: { type: TaskType.NORMAL } as Task,
+  };
+
+  it('seeds a board source on a one-off wizard — the counting member only', () => {
+    expect(seededTargetsForRemoval(board, supply, tasksById, window, false)).toEqual({ t1: 7 });
+  });
+
+  it('seeds nothing on a repeating wizard — the prefill never runs there', () => {
+    expect(seededTargetsForRemoval(board, supply, tasksById, window, true)).toEqual({});
+  });
+
+  it('seeds nothing for a POOL source — the prefill is board-only', () => {
+    expect(seededTargetsForRemoval(pool, supply, tasksById, window, false)).toEqual({});
+  });
+
+  it('seeds nothing while the supply is unresolved', () => {
+    expect(seededTargetsForRemoval(board, undefined, tasksById, window, false)).toEqual({});
   });
 });
 

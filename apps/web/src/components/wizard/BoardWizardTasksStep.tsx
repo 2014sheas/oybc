@@ -409,6 +409,9 @@ export function BoardWizardTasksStep({
   const { requestRemoveSource, removeSourceConfirm } = useRemoveSourceConfirm({
     sources,
     supplyInfoBySourceId,
+    taskById: effectiveTaskMap,
+    wizardWindow,
+    isRecurring,
     editingTemplateId,
     onRemoveSource,
   });

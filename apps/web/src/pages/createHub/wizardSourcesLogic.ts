@@ -16,11 +16,14 @@
 
 import {
   removeSourceLossSentence,
+  seededTargetsForSource,
   sourceConfiguration,
   sourceHasConfiguration,
   type BoardSource,
   type BoardSourceFilter,
   type BoardSourceKind,
+  type BoardWindow,
+  type Task,
 } from '@oybc/shared';
 import type { BoardSourceSupplyInfo } from '../../db/operations/boardSources';
 import {
@@ -106,10 +109,46 @@ export function removeSourceById(sources: BoardSource[], sourceId: string): Boar
 }
 
 /**
+ * What the one-off prefill would seed for this source RIGHT NOW — the input
+ * that keeps the remove gate from mistaking a machine-written target for
+ * configuration (amended ruling 2026-09-23).
+ *
+ * Empty unless the prefill itself would run: a `kind: 'board'` source on a
+ * ONE-OFF wizard (`prefillRemainingTargetsOnResolve: !isRecurring` in
+ * `useBoardWizard`). A pool source and every recurring session seed nothing,
+ * so every stored target there is hand-set by definition.
+ *
+ * @param source - The pulled source row.
+ * @param supply - Its resolved supply (`windowCountByTaskId` + `sourceWindow`).
+ * @param tasksById - Live id → task, for each member's type and goal.
+ * @param targetWindow - The window of the board being assembled.
+ * @param isRecurring - Whether this is a repeating-board session.
+ * @returns id → seeded target, or `{}` when nothing would be seeded.
+ */
+export function seededTargetsForRemoval(
+  source: BoardSource,
+  supply: WizardSourceSupply | undefined,
+  tasksById: Record<string, Task | undefined>,
+  targetWindow: BoardWindow,
+  isRecurring: boolean,
+): Record<string, number> {
+  if (isRecurring || source.kind !== 'board' || supply === undefined) return {};
+  return seededTargetsForSource(
+    {
+      supplyTaskIds: supply.rawSupplyTaskIds,
+      windowCountByTaskId: supply.windowCountByTaskId,
+      sourceWindow: supply.sourceWindow,
+    },
+    tasksById,
+    targetWindow,
+  );
+}
+
+/**
  * Whether dropping this source should ask first — the wizard Tasks step's
  * remove gate (owner ruling 2026-09-19: an untouched source removes
- * instantly; one carrying exclusions / member rules / a narrowed range / a
- * flipped squares filter asks, because a misclick on the row's ✕ was
+ * instantly; one carrying exclusions / authored member rules / a narrowed
+ * range / a flipped filter asks, because a misclick on the row's ✕ was
  * throwing that work away silently).
  *
  * This exists so the kind-scoped default ({@link newSourceFilter}) is
@@ -118,10 +157,15 @@ export function removeSourceById(sources: BoardSource[], sourceId: string): Boar
  * make every freshly pulled board look configured.
  *
  * @param source - The pulled source row the ✕ (or a sheet un-toggle) named.
+ * @param seededTargetByTaskId - From {@link seededTargetsForRemoval}; a
+ *   target equal to its seed is the prefill's own write, not configuration.
  * @returns True when a confirm is owed.
  */
-export function sourceRemovalNeedsConfirm(source: BoardSource): boolean {
-  return sourceHasConfiguration(source, newSourceFilter(source.kind));
+export function sourceRemovalNeedsConfirm(
+  source: BoardSource,
+  seededTargetByTaskId?: Record<string, number>,
+): boolean {
+  return sourceHasConfiguration(source, newSourceFilter(source.kind), seededTargetByTaskId);
 }
 
 /**
@@ -129,12 +173,16 @@ export function sourceRemovalNeedsConfirm(source: BoardSource): boolean {
  * the shared `removeSourceLossSentence` so web and iOS can't drift.
  *
  * @param source - The pulled source row.
+ * @param seededTargetByTaskId - See {@link sourceRemovalNeedsConfirm}.
  * @returns The sentence, or `null` when the row carries nothing (in which
  *   case {@link sourceRemovalNeedsConfirm} is false and no dialog opens).
  */
-export function sourceRemovalLossSentence(source: BoardSource): string | null {
+export function sourceRemovalLossSentence(
+  source: BoardSource,
+  seededTargetByTaskId?: Record<string, number>,
+): string | null {
   return removeSourceLossSentence(
-    sourceConfiguration(source, newSourceFilter(source.kind)),
+    sourceConfiguration(source, newSourceFilter(source.kind), seededTargetByTaskId),
   );
 }
 

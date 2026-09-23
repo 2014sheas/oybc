@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import type { BoardSource } from '@oybc/shared';
+import type { BoardSource, BoardWindow, Task } from '@oybc/shared';
 import type { SupplyInfoMap } from '../../pages/createHub/wizardSources';
 import {
+  seededTargetsForRemoval,
   sourceRemovalLossSentence,
   sourceRemovalNeedsConfirm,
 } from '../../pages/createHub/wizardSourcesLogic';
@@ -11,8 +12,16 @@ export interface UseRemoveSourceConfirmArgs {
   /** The wizard's pulled sources, in row order — the live read the pending
    *  confirm resolves against. */
   sources: BoardSource[];
-  /** Per-source display/supply cache, for the heading's name. */
+  /** Per-source display/supply cache — the heading's name, and the window
+   *  counts + source window the seed recomputation reads. */
   supplyInfoBySourceId: SupplyInfoMap;
+  /** Staged-edit-overlaid id → task, for each member's type and goal. */
+  taskById: Record<string, Task | undefined>;
+  /** The window of the board being assembled (the prefill's target window). */
+  wizardWindow: BoardWindow;
+  /** True on a repeating-board session — the prefill never runs there, so
+   *  every stored target is hand-set by definition. */
+  isRecurring: boolean;
   /** The repeating board under edit, or `null` — appends the
    *  `WizardEditModeNote` line to the confirm. */
   editingTemplateId: string | null;
@@ -58,14 +67,29 @@ export interface RemoveSourceConfirm {
 export function useRemoveSourceConfirm({
   sources,
   supplyInfoBySourceId,
+  taskById,
+  wizardWindow,
+  isRecurring,
   editingTemplateId,
   onRemoveSource,
 }: UseRemoveSourceConfirmArgs): RemoveSourceConfirm {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const pending = sources.find((s) => s.sourceId === pendingId) ?? null;
 
+  /** What the one-off prefill would seed for this source RIGHT NOW —
+   *  recomputed per call rather than remembered from the pull, so a
+   *  timeframe change since then correctly reads as configuration. */
+  const seeded = (source: BoardSource): Record<string, number> =>
+    seededTargetsForRemoval(
+      source,
+      supplyInfoBySourceId[source.sourceId],
+      taskById,
+      wizardWindow,
+      isRecurring,
+    );
+
   const requestRemoveSource = (source: BoardSource): void => {
-    if (sourceRemovalNeedsConfirm(source)) setPendingId(source.sourceId);
+    if (sourceRemovalNeedsConfirm(source, seeded(source))) setPendingId(source.sourceId);
     else onRemoveSource(source.sourceId);
   };
 
@@ -74,7 +98,7 @@ export function useRemoveSourceConfirm({
     removeSourceConfirm: pending && (
       <RemoveSourceConfirmDialog
         displayName={supplyInfoBySourceId[pending.sourceId]?.displayName ?? 'this source'}
-        lossSentence={sourceRemovalLossSentence(pending) ?? ''}
+        lossSentence={sourceRemovalLossSentence(pending, seeded(pending)) ?? ''}
         editingRepeatingBoard={editingTemplateId !== null}
         onCancel={() => setPendingId(null)}
         onConfirm={() => {
