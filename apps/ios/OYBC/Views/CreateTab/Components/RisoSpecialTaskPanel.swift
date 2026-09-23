@@ -840,7 +840,11 @@ struct RisoInlineStepperView: View {
     ) -> some View {
         Button(action: action) {
             Text(glyph)
-                .font(.risoHead(12, .extraBold))
+                // 15, not the 12 the 22pt pill used: at 32pt the smaller
+                // glyph read thin against the 13pt value beside it
+                // (2026-09-22 review of the grown controls). Web's
+                // `.compactButton` carries the same 15px.
+                .font(.risoHead(15, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())

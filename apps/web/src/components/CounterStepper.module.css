@@ -81,7 +81,9 @@
   background: transparent;
   color: var(--riso-ink);
   font-family: var(--riso-font-head);
-  font-size: 12px;
+  /* 15, not the 12 the 22px pill used: at 32px the smaller glyph read thin
+     against the 13px value beside it. iOS matches (`compactStepButton`). */
+  font-size: 15px;
   font-weight: 800;
   line-height: 1;
   cursor: pointer;
