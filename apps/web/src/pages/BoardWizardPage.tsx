@@ -361,6 +361,7 @@ export function BoardWizardPage({
             onToggleSourceExclude={wizard.toggleSourceExclude}
             onPullPoolSource={wizard.pullPool}
             onPullBoardSource={wizard.pullBoard}
+            editingTemplateId={wizard.editingTemplateId}
             manualTaskVary={wizard.manualTaskVary}
             onSetManualVary={wizard.setManualVary}
             onSetMemberTarget={wizard.setMemberTarget}

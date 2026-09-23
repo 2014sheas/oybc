@@ -5,6 +5,8 @@ import {
   boardSupplyEntry,
   droppedSelectionIds,
   removeSourceById,
+  sourceRemovalLossSentence,
+  sourceRemovalNeedsConfirm,
   toggleIdInSet,
   withResetSourceRange,
   withSourceFilter,
@@ -224,5 +226,73 @@ describe('boardSupplyEntry (the async board-supply effect mapping)', () => {
     expect(entry.rawSupplyTaskIds).toEqual([]);
     expect(entry.isPending).toBeUndefined();
     expect(entry.sourceWindow).toBeUndefined();
+  });
+});
+
+/**
+ * The wizard Tasks step's remove gate (owner ruling 2026-09-19). These two
+ * helpers ARE the step's decision — the ✕ handler is `if
+ * sourceRemovalNeedsConfirm(source) → open the dialog, else remove` — so
+ * everything about WHEN the confirm appears, and what it says, is asserted
+ * here rather than through a DOM harness this repo doesn't have.
+ *
+ * The shared predicate itself is vector-pinned on both platforms
+ * (`boardSourceVectors.json` → `configurationVectors` /
+ * `lossSentenceVectors`); what these add is the KIND-SCOPED default the
+ * wizard feeds it, which is the part a caller can get wrong.
+ */
+describe('sourceRemovalNeedsConfirm (the Tasks-step ✕ gate)', () => {
+  it('lets a just-pulled pool row go without asking', () => {
+    expect(sourceRemovalNeedsConfirm(appendSource([], 'pool-1', 'pool')[0])).toBe(false);
+  });
+
+  it('lets a just-pulled BOARD row go without asking — the default is its kind\'s, not "all"', () => {
+    // The row mints on 'todo'. Comparing it against the legacy-decode 'all'
+    // default would flag every freshly pulled board as configured.
+    const board = appendSource([], 'board-1', 'board')[0];
+    expect(board.filter).toBe('todo');
+    expect(sourceRemovalNeedsConfirm(board)).toBe(false);
+  });
+
+  it('asks once the board row is flipped to "All squares"', () => {
+    const board = appendSource([], 'board-1', 'board')[0];
+    expect(sourceRemovalNeedsConfirm({ ...board, filter: 'all' })).toBe(true);
+  });
+
+  it('asks once a pool row is flipped to "Not done yet"', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(sourceRemovalNeedsConfirm({ ...pool, filter: 'todo' })).toBe(true);
+  });
+
+  it('asks after an exclusion, a member rule, or a narrowed range', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(sourceRemovalNeedsConfirm({ ...pool, excludedTaskIds: ['t1'] })).toBe(true);
+    expect(sourceRemovalNeedsConfirm({ ...pool, memberRules: { t1: { vary: 2 } } })).toBe(true);
+    expect(sourceRemovalNeedsConfirm({ ...pool, max: 4 })).toBe(true);
+  });
+});
+
+describe('sourceRemovalLossSentence (the confirm body)', () => {
+  it('names a single exclusion — the owner\'s exact complaint', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(sourceRemovalLossSentence({ ...pool, excludedTaskIds: ['t1'] })).toBe(
+      "You'll lose 1 exclusion.",
+    );
+  });
+
+  it('joins several losses in the shared fixed order', () => {
+    const pool = appendSource([], 'pool-1', 'pool')[0];
+    expect(
+      sourceRemovalLossSentence({
+        ...pool,
+        excludedTaskIds: ['t1', 't2'],
+        memberRules: { t3: { target: 7 } },
+        min: 1,
+      }),
+    ).toBe("You'll lose 2 exclusions, 1 member rule and the narrowed range.");
+  });
+
+  it('has nothing to say about an untouched row', () => {
+    expect(sourceRemovalLossSentence(appendSource([], 'pool-1', 'pool')[0])).toBeNull();
   });
 });

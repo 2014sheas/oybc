@@ -14,7 +14,14 @@
  * input), so a hook can use it inside a functional `setState` updater.
  */
 
-import type { BoardSource, BoardSourceFilter, BoardSourceKind } from '@oybc/shared';
+import {
+  removeSourceLossSentence,
+  sourceConfiguration,
+  sourceHasConfiguration,
+  type BoardSource,
+  type BoardSourceFilter,
+  type BoardSourceKind,
+} from '@oybc/shared';
 import type { BoardSourceSupplyInfo } from '../../db/operations/boardSources';
 import {
   availableCountForSource,
@@ -96,6 +103,39 @@ export function appendSource(
  */
 export function removeSourceById(sources: BoardSource[], sourceId: string): BoardSource[] {
   return sources.filter((source) => source.sourceId !== sourceId);
+}
+
+/**
+ * Whether dropping this source should ask first — the wizard Tasks step's
+ * remove gate (owner ruling 2026-09-19: an untouched source removes
+ * instantly; one carrying exclusions / member rules / a narrowed range / a
+ * flipped squares filter asks, because a misclick on the row's ✕ was
+ * throwing that work away silently).
+ *
+ * This exists so the kind-scoped default ({@link newSourceFilter}) is
+ * applied in exactly ONE place: the shared predicate compares against the
+ * CREATION default, and passing the legacy-decode `'all'` instead would
+ * make every freshly pulled board look configured.
+ *
+ * @param source - The pulled source row the ✕ (or a sheet un-toggle) named.
+ * @returns True when a confirm is owed.
+ */
+export function sourceRemovalNeedsConfirm(source: BoardSource): boolean {
+  return sourceHasConfiguration(source, newSourceFilter(source.kind));
+}
+
+/**
+ * The confirm's body copy: what removing this source would cost, worded by
+ * the shared `removeSourceLossSentence` so web and iOS can't drift.
+ *
+ * @param source - The pulled source row.
+ * @returns The sentence, or `null` when the row carries nothing (in which
+ *   case {@link sourceRemovalNeedsConfirm} is false and no dialog opens).
+ */
+export function sourceRemovalLossSentence(source: BoardSource): string | null {
+  return removeSourceLossSentence(
+    sourceConfiguration(source, newSourceFilter(source.kind)),
+  );
 }
 
 /**
