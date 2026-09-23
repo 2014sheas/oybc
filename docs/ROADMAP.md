@@ -215,7 +215,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 
 ### E5 — Pre-existing small polish debts (absorbed for completeness) — `S` each
 - ~~Blip mood picker persistence~~ — **RESOLVED**: the dead picker was removed rather than wired (it persisted nothing; no shared `blipMood` field ever existed). The mascot itself was later retired too — `RisoMiniBoardArt` (mini-board motif) + `RisoInitialAvatar` replaced `BlipPlaceholder` on all eight surfaces (Blip-retirement handoff, 2026-09-10).
-- DEBUG-gate the ungated iOS `print()` calls — 2 remained as of 2026-09-23 (`AppDatabase+Boards.swift`, `AppDatabase+RecurringTemplates.swift`), converted in the 2026-09-23 audit cleanup PR.
+- DEBUG-gate the ungated iOS `print()` calls — RESOLVED: as of 2026-09-23 every `print(` outside `DebugLog.swift` is inside `#if DEBUG` (the audit's initial "2 remain" read was a grep that missed the enclosing conditional; the cleanup PR routes those DEBUG-only prints through `dlog` for consistency).
 - ~~`autoArchiveCompleted` — wire it or remove the pref~~ — **RESOLVED (removed)**: the field + toggle were deleted from shared types, Zod, and both platforms (no consumer read it). See the obsolete-controls removal.
 - CAPTCHA / auth rate-limit hardening — pre-public-launch gate, tracked not scheduled.
 
