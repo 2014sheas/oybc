@@ -485,46 +485,27 @@ export interface PersistRecurringTemplateArgs {
 }
 
 /**
- * Persist path for `controller.isRecurring === true`.
+ * Persist path for `controller.isRecurring === true`. Twin of iOS
+ * `persistRecurringTemplate` (`BoardWizardPersist.swift`).
  *
- * P4 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md §P4)
- * made this the ONLY shape this path writes — the P1 legacy write-through
- * (mint-a-Pool-on-create / write-through-to-the-linked-Pool-on-edit,
- * shape-scoped via `isLegacyShapedRecord`) is retired. `controller.pulledPoolIds`
- * / `manualTaskIds` / `removedTaskIds` — P3's "PULL IN A POOL" session
- * state — are now the authoritative persisted fields, written straight
- * through:
+ * Written fields: `sources` (the wizard's native state — ranges, excludes,
+ * filters, board-kind sources), `manualTaskIds`, `manualTaskVary`, the
+ * derived legacy trio (`poolIds` / `removedTaskIds`), and — on create only —
+ * `seedTaskIds`, a decode-compat snapshot of the final selection (read back
+ * only for a genuinely un-migrated record; see `useBoardWizard`).
  *
- *   - `poolIds: [...controller.pulledPoolIds]`
- *   - `manualTaskIds: Array.from(controller.manualTaskIds)`
- *   - `removedTaskIds: Array.from(controller.removedTaskIds)`
- *   - `seedTaskIds: Array.from(controller.selectedTaskIds)` — kept ONLY as
- *     a decode-compat snapshot (docs/POOLS_RECURRING.md §Migration
- *     "seedTaskIds end state") — never read back.
- *
- * **The pending-task drain (the actual P4 bug fix):** BEFORE building any
- * of the above, every pending (in-memory, not-yet-persisted) task in the
- * FULL `controller.selectedTaskIds` — not just a placed subset — is
- * written via `persistWizardPendingTasks`. The prior implementation only
- * ever read `controller.selectedTaskIds` into a Pool/template without
- * writing the underlying Task row for a pending (wizard-inline-created)
- * task, so `resolveMix`'s resolvable-id filter silently and permanently
- * dropped it from the mix — if enough pending tasks were involved, the mix
- * could fall below the fillable floor and the window would skip forever
- * with `pool_too_small`. The FULL selection (not a placed-today subset) is
- * drained because a repeating board's future windows draw from the whole
- * pool, not just today's dealt cells.
+ * Every pending (inline-created) task in the FULL selection — not just a
+ * placed subset, since future windows draw from the whole supply — is
+ * drained via `persistWizardPendingTasks` BEFORE anything reads tasks, so
+ * the spawn never sees an unresolvable id.
  *
  * Branches on `editingTemplateId`:
- * - **Edit**: `updateRecurringBoardTemplate` with the native fields above.
- *   No spawn — edits don't retroactively change previously-spawned boards;
- *   the next window's spawn naturally picks up the new mix.
- * - **Fresh create**: `createRecurringBoardTemplate` with the native
- *   fields, then immediately spawns the current window's board via
- *   `spawnTemplateBoard`. If the spawn fails (e.g. a genuinely-unresolvable
- *   mix), the template still exists with `lastSpawnedWindowKey=null` and
- *   the next Boards-tab open will retry. Locked decision: first-spawn
- *   timing = immediate.
+ * - **Edit**: `updateRecurringBoardTemplate`. No spawn — edits never rewrite
+ *   already-spawned boards; the next window's spawn resolves the new sources.
+ * - **Fresh create**: `createRecurringBoardTemplate`, then immediately
+ *   `spawnTemplateBoard` for the current window. If the spawn fails, the
+ *   template survives with `lastSpawnedWindowKey=null` and the next
+ *   Boards-tab open retries.
  */
 export async function persistRecurringTemplate({
   controller,
@@ -608,9 +589,8 @@ export async function persistRecurringTemplate({
       manualTaskVary,
       // `isActive` isn't surfaced in the wizard form (the templates list
       // owns the pause toggle), so leave it untouched on edit.
-      // `seedTaskIds` intentionally omitted — left verbatim/stale, never
-      // read after P1 (docs/POOLS_RECURRING.md §Migration "seedTaskIds
-      // end state").
+      // `seedTaskIds` intentionally omitted — the create-time snapshot is
+      // left verbatim (decode-compat; see the function doc).
     });
     return { templateId: editingTemplateId, spawnedBoardId: null };
   }
