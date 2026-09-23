@@ -1,11 +1,16 @@
-/* DiceButton — 22×22 variation toggle (handoff §Interactions "Variation
+/* DiceButton — 28×28 variation toggle (handoff §Interactions "Variation
    (dice)"). Off: muted 1.5px outline, one faint centred pip. On: blue fill,
-   ink-static pips (adaptive ink on a coloured fill is the dark-mode trap). */
+   ink-static pips (adaptive ink on a coloured fill is the dark-mode trap).
+
+   It was 22×22 until 2026-09-22, when the owner reported the member-row
+   controls as too small to use comfortably (#493): at 28 it no longer sits
+   visibly smaller than the 32px stepper pill beside it, and it matches the
+   row's 28px ✕. */
 
 .dice {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   display: inline-flex;
   align-items: center;

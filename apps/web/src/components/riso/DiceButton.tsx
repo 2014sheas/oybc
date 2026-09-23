@@ -2,41 +2,46 @@ import type { VaryLevel } from '@oybc/shared';
 import styles from './DiceButton.module.css';
 
 /**
- * Pip centres per vary level, in the button's 18×18 inner viewBox:
+ * Pip centres per vary level, in the button's 24×24 inner viewBox:
  * level 0 = one centred pip, dimmed (B3.1 — an empty bordered square
  * beside the row's ✕ reads as an unchecked checkbox, not a die);
  * level 1 = two pips on the diagonal, level 2 = the five-pip quincunx —
  * a true quincunx now that the box is square.
  *
- * The corners sit at 5/13 rather than 6/12 (B3.1 review): at 6/12 the
- * worst gap — corner to centre — was √(3²+3²) = 4.243 between centres
- * minus the 3.2 pip diameter = **1.04px**, and the whole pattern spanned
- * 6×6 inside a 22×22 face, reading as a tight cluster in a wide margin.
- * Pulling the corners out one step on each axis gives **2.46px** on the
- * diagonal (√(4²+4²) = 5.657 − 3.2) and an 8×8 span, while keeping
- * **3.9px** of clearance to the keyline: a corner centre lands at 7 in
- * face coordinates (the 18-box is inset 2 by the 1.5 border + 0.5 of
- * centring), so 7 − 1.6 (r) − 1.5 (border) = 3.9. The 6px corner radius
- * does not bite — its arc centre is at (6, 6), inside the pip centre on
- * both axes, so the straight edges govern. The centre pip and `r` are
- * unchanged.
+ * The face grew 22×22 → 28×28 on 2026-09-22 (owner, device-testing #493:
+ * the member-row controls were too small to use comfortably), so it no
+ * longer sits visibly smaller than the 32px stepper pill beside it and
+ * matches the row's 28px ✕. The whole geometry scaled with it: the inner
+ * viewBox 18 → 24 (the same 2px inset inside the face), `r` 1.6 → 2, and
+ * every coordinate by 24/18, rounded to integers — 9 → 12, 5 → 7,
+ * 13 → 17 — identically to the Swift table. The proportions of the B3.1
+ * review that set the corners at 5/13 rather than 6/12 are therefore
+ * preserved.
+ *
+ * Clearance to the keyline is now **5.5px**: the outermost pip edge sits
+ * at 17 + 2 (r) = 19 in the 24-box, so 21 in face coordinates (the box is
+ * centred, inset 2), while the 1.5px border has its inner edge at 26.5 —
+ * 26.5 − 21 = 5.5. The worst pip-EDGE gap, corner to centre, is
+ * √(5²+5²) = 7.071 − 4 = **3.07px** (was 2.46px at the old scale). The
+ * 6px corner radius does not bite — its arc centre is at (6, 6), inside
+ * the pip centre on both axes, so the straight edges govern.
  *
  * Coordinate-for-coordinate identical to the Swift twin's `pips` table
  * (`RisoDiceButton.swift`); pinned on both platforms so a one-sided tweak
  * can't ship.
  */
 const PIPS: Record<VaryLevel, ReadonlyArray<readonly [number, number]>> = {
-  0: [[9, 9]],
+  0: [[12, 12]],
   1: [
-    [5, 5],
-    [13, 13],
+    [7, 7],
+    [17, 17],
   ],
   2: [
-    [5, 5],
-    [13, 5],
-    [9, 9],
-    [5, 13],
-    [13, 13],
+    [7, 7],
+    [17, 7],
+    [12, 12],
+    [7, 17],
+    [17, 17],
   ],
 };
 
@@ -61,7 +66,7 @@ interface DiceButtonProps {
 }
 
 /**
- * DiceButton — the 22×22 opt-in "variation" toggle that sits after a
+ * DiceButton — the 28×28 opt-in "variation" toggle that sits after a
  * counting target (docs/BOARD_SOURCES.md §Member rules; handoff
  * §Interactions "Variation (dice)").
  *
@@ -87,9 +92,9 @@ export function DiceButton({ level, onCycle }: DiceButtonProps): React.ReactElem
       title={label}
       onClick={onCycle}
     >
-      <svg className={styles.pips} viewBox="0 0 18 18" width="18" height="18" aria-hidden="true">
+      <svg className={styles.pips} viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
         {PIPS[level].map(([cx, cy]) => (
-          <circle key={`${cx}-${cy}`} className={level === 0 ? styles.offPip : undefined} cx={cx} cy={cy} r="1.6" />
+          <circle key={`${cx}-${cy}`} className={level === 0 ? styles.offPip : undefined} cx={cx} cy={cy} r="2" />
         ))}
       </svg>
     </button>
