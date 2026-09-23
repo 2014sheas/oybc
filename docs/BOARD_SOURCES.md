@@ -667,6 +667,32 @@ Both platforms, one PR (#491).
   orphan sweep reads candidates from every placement row, live or
   tombstoned, so it stays correct either way if a future change starts
   tombstoning the ordinary ones too.
+- **Window-stamped derived counters — completion from root events
+  (amended 2026-09-23, audit finding #1).** A stored row with all three
+  marks (`isWindowStampedDerived`: `sharedCounterId`, `startDate`,
+  `createdInWizard`) is resolved by the derivation kernel from its ROOT's
+  increment events inside the row's own inclusive `[startDate, endDate]`
+  (`endDate == null` = unbounded), bounded additionally at `sealedAt` on
+  the sealed path: `max(0, Σ signed deltas) >= (maxCount ?? 0)`, overshoot
+  valid (`resolveDerivedCounterWindowState` in `taskEvents.ts` ↔
+  `TaskEvents.swift`, pinned by `derivationPassVectors.json` +
+  `sealReDerivationVectors.json`). The row's one-way `isCompleted` latch is
+  no longer read for it — propagation stamped that latch from ANY later
+  increment, so a past window's cell went green from a later window and
+  sealed re-derivation diverged across devices. Propagation to a row whose
+  window has ended freezes (no authored write, no enqueue, no cascade),
+  which bounds the per-increment fan-out; a changed root id now reaches the
+  sealed boards that place its window-stamped rows, so a late in-window root
+  event converges every device's sealed snapshot. Hub-linked derived rows
+  (no `startDate`) keep the latch carve-out unchanged. Canonical:
+  [`WINDOWED_COMPLETION.md` §Derived-task carve-out](WINDOWED_COMPLETION.md#derived-task-carve-out).
+- **`baseline` is display-only.** It stays the non-authored, event-derived
+  cache defined above (`refreshDerivedBaselines` unchanged, no version bump,
+  no enqueue) and feeds only `deriveDisplayedCount`; the kernel never reads
+  it. Known follow-up: a frozen row's displayed count is its value at freeze
+  time, so a late-synced in-window event is reflected in the cell's
+  completion but not its number until display moves onto the same
+  root-event window sum.
 
 #### Plan B3 — implementation notes (2026-09-19)
 

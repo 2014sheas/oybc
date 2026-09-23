@@ -133,7 +133,7 @@ local-ISO vs UTC-`Z` encoding hazards — in the evaluation hot path entirely.)
 | ---- | ------------------------ | ----- |
 | Normal | complete iff a non-deleted `completion` event exists with `occurredAt >= B.startDate` | |
 | Counting (plain / source) | `windowCount = max(0, Σ delta of non-deleted increments with occurredAt >= B.startDate)`; complete iff `windowCount >= maxCount` | Low-end clamp only — **overshoot invariant preserved**, sums are never high-clamped |
-| Counting (**derived**, `sharedCounterId` set) | **unchanged from today**: `deriveDisplayedCount(baseline, source lifetime count)` — NOT windowed, NOT event-owning | See [§Derived-task carve-out](#derived-task-carve-out) |
+| Counting (**derived**, `sharedCounterId` set) | hub-linked (no `startDate`): **unchanged from today** — the propagation-stamped cache, NOT windowed, NOT event-owning. **Window-stamped** (`startDate` set, wizard-born): complete iff `max(0, Σ delta of the ROOT's non-deleted increments with occurredAt in [row.startDate, row.endDate]) >= maxCount` | See [§Derived-task carve-out](#derived-task-carve-out) (rule 4, amended 2026-09-23) |
 | Compound | derived from children as today, but child state is resolved **against the host board's window** | `evaluateCompound` gains a window-context parameter; nested compounds inherit the same host window; derived-counting children resolve via the carve-out row above |
 | Achievement | unchanged (reads referenced board / spawn-set state) | Sealing makes watched historical state *more* stable |
 
@@ -173,25 +173,57 @@ finding C1). Explicitly:
    applies only to event-owning tasks. Derived-task caches remain
    propagation-stamped (preserving the one-way completion latch); compound /
    achievement cache fields remain never-written/never-read as today.
-4. **Derivation-pass branch.** `computeBoardStatsUpdate` resolves derived
-   counting squares via baseline math (today's behavior), not
-   `resolveTaskWindowState`.
+4. **Derivation-pass branch** (amended 2026-09-23). A *hub-linked* derived
+   counting square (`sharedCounterId` set, no `startDate`) resolves from its
+   propagation-stamped `isCompleted` cache, not `resolveTaskWindowState`. A
+   *window-stamped* derived counter (`isWindowStampedDerived`) resolves from
+   its ROOT's events instead — see the next paragraph. Neither reads
+   `baseline`.
 
 **Honest consequence:** a *hub-authored* derived counter square on a recurring
 board still bleeds across windows in v1; a *plain* counting square does not.
 
 **Window-stamped derived counters (Board Sources member rules, design locked
-2026-09-17 — [`BOARD_SOURCES.md` §Member rules](BOARD_SOURCES.md#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17))
-close that bleed for the counters the wizard/spawn mints:** a derived task with
-`sharedCounterId != null && startDate != null` is windowed *through its
-baseline* — `baseline = Σ root increment events with occurredAt <
-board.startDate`, recomputed as a **non-authored cache** (no version bump, no
-enqueue) on local root writes and in a dedicated pull sub-step after
-`recomputeTaskCachesFromPull(rootId)`. Carve-out items 1–4 above still hold
-for them (they own no events; `currentCount` stays the propagation-stamped
-root mirror; the board reads `deriveDisplayedCount`). This supersedes the
-earlier `linkedAt` idea: the board window is the anchor, and it already lives
-on the derived task.
+2026-09-17 — [`BOARD_SOURCES.md` §Member rules](BOARD_SOURCES.md#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17);
+kernel rule amended 2026-09-23)** close that bleed for the counters the
+wizard/spawn mints. A row with `sharedCounterId != null && startDate != null`
+(and `createdInWizard`, the exported `isWindowStampedDerived`) is resolved by
+the derivation kernel — `computeBoardGrid` and compound children alike, via
+`resolveDerivedCounterWindowState` (`taskEvents.ts` ↔ `TaskEvents.swift`) —
+from the **root's** increment events: `max(0, Σ delta of non-deleted root
+increments with occurredAt in [row.startDate, row.endDate])` (inclusive both
+ends, the `isWithinTimeframe` convention; `endDate == null` = unbounded;
+signed deltas summed as-is), complete iff `>= (maxCount ?? 0)`, overshoot
+valid. The row's own `isCompleted` latch is **never** read for it: that latch
+is one-way and propagation stamps it from *any* later increment, so before
+this amendment a past window's cell latched green from a later window and a
+sealed board re-derived differently on each device (audit 2026-09-23 finding
+#1). On the sealed path the context is also bounded at `sealedAt`
+(`boundWindowContextAtSeal`), so a sealed derived cell is a pure function of
+the converged in-window root-event union like every other sealed cell, and a
+late in-window root event re-derives every sealed board placing a derived row
+linked to that root (`reDeriveSealedBoardsForTasks` ↔ `reDeriveSealedBoards`
+expand a changed root id to its window-stamped rows). Unlike a plain counting
+square, a derived cell ignores root events logged in its board's
+post-`endDate` overtime — its window is the row's own stamped window. Context
+builders must therefore keep the workspace-wide event map: the root is
+usually not placed. A context-less (lifetime) resolution is the only place the
+latch still decides.
+
+Carve-out items 1–3 still hold for window-stamped rows: they own no events,
+`currentCount` stays the propagation-stamped root mirror, and `baseline =
+Σ root increment events with occurredAt < row.startDate` stays a
+**non-authored display cache** (no version bump, no enqueue; recomputed on
+local root writes and in the pull sub-step after
+`recomputeTaskCachesFromPull(rootId)` — `refreshDerivedBaselines` is
+unchanged). The kernel does not read `baseline`; propagation to a row whose
+window has ended is frozen (the fan-out bound, same PR train). **Known
+follow-up:** the displayed count (`deriveDisplayedCount(baseline, root
+count)`) is still baseline math, so a frozen row shows its count at freeze
+time — a late-synced in-window event changes the cell's completion (kernel)
+but not its displayed number until a later pass moves display onto the same
+root-event window sum. This supersedes the earlier `linkedAt` idea: the board
+window is the anchor, and it already lives on the derived task.
 
 ### `Task.isCompleted` / `currentCount` / `completedAt` become caches
 
