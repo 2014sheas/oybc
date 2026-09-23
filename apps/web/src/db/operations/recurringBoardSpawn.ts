@@ -100,10 +100,9 @@ export async function spawnTemplateBoard(
       // record's SOURCES: the stamped `sources` array when present, else
       // the legacy trio derived on the fly (`sourcesForRecord` — no data
       // backfill required; rows written by old clients keep working). Pool
-      // sources supply their resolvable taskIds; board-source resolution
-      // lands with P2, and until then such an entry supplies nothing —
-      // it contributes nothing and never blocks (the design's
-      // empty-source rule).
+      // sources supply their resolvable taskIds; board sources resolve
+      // through `resolveSourceBoard` below. An EMPTY source contributes
+      // nothing and never blocks (the design's empty-source rule).
       //
       // Single full-table reads (tasks, pools): the supply resolvers need
       // a `tasksById` map to filter each pool's OWN resolvable supply
@@ -254,10 +253,9 @@ export async function spawnTemplateBoard(
       }
 
       // Pick exactly the fillable cell count, honoring each source's
-      // membership range (min/max — [0, all] for every migrated shape, so
-      // this is the old uniform-subset draw until P2 writes real ranges).
-      // A range-infeasible pick (only possible with P2+ data) maps to the
-      // same skip-and-warn family as a small pool.
+      // membership range (min/max — `[0, all]` for a migrated shape). A
+      // range-infeasible pick maps to the same skip-and-warn family as a
+      // small pool.
       const selection = selectBoardTasks({
         // The expanded supplies (see above) — `selectBoardTasks` re-applies
         // `resolveSourceAvailable` internally, which is a no-op on an already

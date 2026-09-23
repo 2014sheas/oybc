@@ -172,9 +172,9 @@ extension AppDatabase {
                 // array when present, else the legacy trio derived on the
                 // fly (`BoardSources.sourcesForRecord` — no data backfill;
                 // rows written by old clients keep working). Pool sources
-                // supply their resolvable taskIds; board-source resolution
-                // lands with P2, and until then such an entry supplies
-                // nothing — it contributes nothing and never blocks.
+                // supply their resolvable taskIds; board sources resolve
+                // through `resolveSourceBoard` below. An EMPTY source
+                // contributes nothing and never blocks.
                 //
                 // Full-table task read: the supply resolvers need a
                 // `tasksById` map to filter each pool's OWN resolvable
@@ -324,10 +324,9 @@ extension AppDatabase {
                 }
 
                 // Pick exactly the fillable cell count, honoring each
-                // source's membership range ([0, all] for every migrated
-                // shape — the old uniform-subset draw — until P2 writes
-                // real ranges). A range-infeasible pick (P2+ data only)
-                // maps to the same skip-and-warn family as a small pool.
+                // source's membership range (`[0, all]` for a migrated
+                // shape). A range-infeasible pick maps to the same
+                // skip-and-warn family as a small pool.
                 // `randomize:` honors the template's determinism contract —
                 // an `isRandomized: false` template keeps its stable
                 // first-N subset + order (review-caught; `placeBoard`'s

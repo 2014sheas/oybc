@@ -3,69 +3,29 @@ import type { BoardSource, VaryLevel } from "./boardSource";
 import { BoardSize } from "../constants";
 
 /**
- * RecurringBoardTemplate — Phase 6.2 (Preset-pool Recurring Boards)
+ * RecurringBoardTemplate — a repeating board: a record that spawns a fresh
+ * board for each new window when the user opens the Boards tab (lazy
+ * detection only — never background creation). Canonical design:
+ * docs/BOARD_SOURCES.md §Data model (task source) + docs/ARCHITECTURE.md
+ * §Phase 6 (spawn lifecycle).
  *
- * A user-curated task pool that automatically creates a fresh board every window when
- * the user opens the Boards tab. Differs from Phase 6.1's
- * `findPendingRecurringBoards` (which surfaces a banner inviting the user to
- * *create* a board for the current window) — templates spawn boards
- * automatically without any banner. Spawned boards appear directly in the
- * board list.
+ * Task source: `sources` (pulled pools/boards, each with a min/max range,
+ * exclusions and a done-filter) + `manualTaskIds` (the hand-added layer) +
+ * `manualTaskVary` (dice for hand-added counting members). Each spawn
+ * resolves them live via `sourcesForRecord` → `selectBoardTasks`
+ * (`../algorithms/boardSources`), shuffling only when `isRandomized`.
+ * A record written before the `sources` stamp is read through
+ * `sourcesForRecord`, which derives `[0, all]` pool sources from the legacy
+ * `poolIds` / `removedTaskIds` trio (no data backfill).
  *
- * Canonical design: docs/ARCHITECTURE.md §Phase 6.2.
+ * Decode-compat fields: `seedTaskIds`, `poolIds`, `removedTaskIds`. They
+ * are still written (the trio as a derived mirror for old clients) but the
+ * spawn never reads them directly; `seedTaskIds` is read back only for a
+ * genuinely un-migrated record (every generalized field absent).
  *
- * Design notes:
- *
- * - `seedTaskIds` is the pool the spawn function draws from. It is stored
- *   verbatim — soft-deletion of one of the referenced tasks does NOT
- *   automatically remove the id from the array; instead the spawn skips that
- *   template's current window and surfaces a "needs attention" indicator on
- *   the template row. This keeps the user's intent intact while preventing
- *   broken boards from being spawned.
- *
- * - `lastSpawnedWindowKey` is the `startDate` (local ISO8601) of the most
- *   recently spawned window. Compared to the current window's `startDate`
- *   from `getTimeframeBoundaries(timeframe, now, weekStartDay)` for
- *   idempotent spawning. `null` ⇒ never spawned ⇒ spawn immediately on next
- *   Boards-tab open (locked decision: first-spawn timing is immediate, not
- *   "wait for next rollover").
- *
- * - `Timeframe.CUSTOM` is excluded — same reason as Phase 6.1: custom
- *   boards have user-specified dates incompatible with computed-window
- *   recurrence. The Zod schema enforces this.
- *
- * - `CenterSquareType.CHOSEN` is excluded for the MVP — the form supports
- *   FREE / NONE only. CHOSEN can be added later as an
- *   additive change (`centerTaskId?: string` field). The Zod schema
- *   enforces this.
- *
- * ## Task Pools + Recurring Boards Rework (P1) — generalized task source
- *
- * `seedTaskIds` is RETIRED: left verbatim on migrated records for
- * decode-compat (the `lastSyncedCount` precedent) and never read after P1
- * — no fallback. The record's task source generalizes to three additive,
- * optional fields — `poolIds` / `manualTaskIds` / `removedTaskIds` — whose
- * mix is resolved by `resolveMix` in `../algorithms/poolMix`:
- *
- *     mix = (union(pools' resolvable tasks) − removedTaskIds) + manualTaskIds
- *
- * Evaluation order is normative: removals subtract from the pool union
- * FIRST, then the manual layer adds — so a task id present in BOTH
- * `manualTaskIds` and `removedTaskIds` IS in the mix (manual wins;
- * removals only ever suppress pool-sourced supply). See
- * docs/POOLS_RECURRING.md §Changed: the spawn record for the full
- * removals semantics (supply-based untoggle clearing, stale-inert
- * entries) and the worked example that is the P1 unit-test vector set.
- *
- * **"Legacy shape"** (`isLegacyShapedRecord` in `../algorithms/poolMix`):
- * at most one pool, no manual additions, no removals — i.e. either a
- * genuinely un-migrated record (`poolIds`/`manualTaskIds`/`removedTaskIds`
- * all absent, `seedTaskIds` present) or a migration/legacy-create-minted
- * record (`poolIds.length === 1`, `manualTaskIds: []`, `removedTaskIds:
- * []`). This is the ONLY shape the legacy template editor's write-through
- * may mutate the linked Pool's `taskIds` for — a richer shape falls back
- * to writing `manualTaskIds` and clearing `poolIds`/`removedTaskIds`
- * instead (the legacy editor never writes a Pool it didn't mint).
+ * - `lastSpawnedWindowKey` is the local-ISO `startDate` of the last spawned
+ *   window (idempotent spawning); `null` ⇒ spawn immediately on next open.
+ * - `Timeframe.CUSTOM` and `CenterSquareType.CHOSEN` are excluded (Zod-enforced).
  */
 export interface RecurringBoardTemplate {
   // Identity
@@ -77,50 +37,32 @@ export interface RecurringBoardTemplate {
   timeframe: Timeframe; // DAILY / WEEKLY / MONTHLY / YEARLY (no CUSTOM)
   boardSize: BoardSize; // 3, 4, or 5
   centerSquareType: CenterSquareType; // FREE / NONE (no CHOSEN in MVP)
-  isRandomized: boolean; // Whether spawn shuffles seedTaskIds
+  isRandomized: boolean; // Whether the spawn shuffles its selection + placement
   /**
-   * Pool the spawn function draws from. Length must be ≥ the fillable
-   * cell count (`boardSize² - (FREE ? 1 : 0)`); the spawn shuffles
-   * (when `isRandomized`) and slices to the cell count, so any extras
-   * become the "random subset" pool. The earlier `poolStrategy` field
-   * — which let users choose between strict-fit and loose-fit — was
-   * dropped during the Phase 6.2 UX rework: strict-fit is just a
-   * special case of loose-fit where the user picked exactly N tasks,
-   * and the selector added friction without capability.
+   * Decode-compat: a snapshot of the wizard selection at create time. Never
+   * read by the spawn; read back only as the hand-added layer of a
+   * genuinely un-migrated record (every generalized field absent).
    */
   seedTaskIds: string[];
 
   /**
-   * P1 — pools pulled into this record's mix (may be empty; absent on a
-   * genuinely un-migrated record — see the class docstring's "legacy
-   * shape"). Order is preserved and is significant: `resolveMix`'s
-   * `suppliedByPool`/union order is first-seen-pool order.
+   * Decode-compat (legacy trio): pools pulled into the pre-sources mix.
+   * Still written as a derived mirror of `sources`; read only via
+   * `sourcesForRecord` when `sources` is absent.
    */
   poolIds?: string[];
-  /**
-   * P1 — hand-picked additions layered on top of the pool union. Manual
-   * always wins over a removal (see `resolveMix`).
-   */
+  /** The hand-added layer — live in the sources model; always wins over exclusions. */
   manualTaskIds?: string[];
   /**
-   * P1 — flat per-record removals of pool-sourced tasks (no per-pool
-   * attribution — a removal suppresses that task regardless of which
-   * pool(s) supply it). See `clearRemovalsForUntoggle` in
-   * `../algorithms/poolMix` for the supply-based untoggle-clearing rule.
+   * Decode-compat (legacy trio): flat removals of pool-sourced tasks.
+   * `sourcesForRecord` maps them onto each derived source's `excludedTaskIds`.
    */
   removedTaskIds?: string[];
 
   /**
-   * Board Sources rework (docs/BOARD_SOURCES.md, P1) — the canonical
-   * persisted task-source shape going forward: one entry per pulled
-   * source (pool or board) with range/excludes/filter. Absent on records
-   * that predate the stamp — read through
-   * `sourcesForRecord(...)` (`../algorithms/boardSources`), which derives
-   * a `[0, all]` mapping from the legacy trio above. During P1 every
-   * write stamps BOTH `sources` and the trio (the trio is the legacy
-   * mirror for pre-rework readers + old clients; P2 retires it to
-   * decode-compat). `manualTaskIds` stays live — it is the hand-added
-   * layer in both models.
+   * Canonical task source (docs/BOARD_SOURCES.md §Data model): one entry
+   * per pulled pool or board with range/excludes/filter. Absent on records
+   * that predate the stamp — read through `sourcesForRecord`.
    */
   sources?: BoardSource[];
   /** Dice for hand-added counters on a recurring board (§Member rules). Additive; absent = {}. */
