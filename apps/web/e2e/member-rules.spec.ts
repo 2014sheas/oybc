@@ -225,14 +225,22 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     await expect(sourceRow).toBeVisible();
 
     // Prove the prefill actually ran before testing that it doesn't count —
-    // otherwise this passes for the wrong reason (nothing seeded yet). The
-    // 5 is the pro-rated seed a WEEKLY source gives this DAILY board.
+    // otherwise this passes for the wrong reason (nothing seeded yet).
     await sourceRow.click();
     const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
     await memberRow.getByTestId('member-disclosure').click();
-    await expect(
-      memberRow.getByRole('textbox', { name: 'Target', exact: true }),
-    ).toHaveValue('5');
+    const target = memberRow.getByRole('textbox', { name: 'Target', exact: true });
+    // 5 is the pro-rated seed a WEEKLY source gives this DAILY board — but
+    // the field renders `target ?? auto` and auto is ALSO 5 here, so reading
+    // 5 alone would pass even if nothing had been stored. Nudging up and
+    // back down writes a real `target` of exactly the seed: from here the
+    // spec can only pass if a STORED target exists AND equals the seed —
+    // which also pins "restoring the seed un-configures it".
+    await expect(target).toHaveValue('5');
+    await memberRow.getByRole('button', { name: 'Increase target' }).click();
+    await expect(target).toHaveValue('6');
+    await memberRow.getByRole('button', { name: 'Decrease target' }).click();
+    await expect(target).toHaveValue('5');
 
     // Touch nothing else. The ✕ removes on the spot.
     await page.getByRole('button', { name: 'Remove Last Week Board' }).click();
