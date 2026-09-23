@@ -502,7 +502,7 @@ oybc/
 
 ### Database Schema (Identical Across Platforms)
 
-**Tables** (iOS GRDB names; web Dexie uses the camelCase store names in `apps/web/src/db/database.ts`; canonical: the GRDB migrations in `apps/ios/OYBC/Database/AppDatabase+Migrations.swift` and the Dexie schema): `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `recurring_board_templates`, `default_pools`, `pools`, `core_board_defaults`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
+**Tables** (iOS GRDB names; web Dexie uses the camelCase store names in `apps/web/src/db/database.ts`; canonical: the GRDB migrations registered in `apps/ios/OYBC/Database/AppDatabase.swift` (+ `AppDatabase+Migrations.swift`) and the Dexie schema): `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `recurring_board_templates`, `default_pools`, `pools`, `core_board_defaults`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
 
 **Key Design Elements**:
 
