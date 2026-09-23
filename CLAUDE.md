@@ -258,26 +258,30 @@ apps/web/src/                                        apps/ios/OYBC/
 │       │                        tree + PlaygroundView.swift were removed in #119)
 │       ├── playgroundUtils.ts                      (iOS: the production-used date/timeframe
 │       │                                            helpers moved to Utils/TimeframeFormatting.swift)
-│       ├── BoardTaskSelectionPlayground.tsx        (no iOS counterpart)
 │       ├── BoardGeneratorPlayground.tsx            (no iOS counterpart)
-│       ├── UnifiedTaskCreatorPlayground.tsx        (no iOS counterpart)
-│       ├── TaskSquareActionsPlayground.tsx         (no iOS counterpart)
-│       ├── CrossBoardRollupPlayground.tsx          (no iOS counterpart)
-│       └── SubtaskDerivationPlayground.tsx         (no iOS counterpart)
-│       (Playground parity is an intentional, temporary divergence. The Riso redesign
-│        shipped iOS-first; the WEB Riso pass is now in progress — Phase 0 foundation
-│        (token layer + primitive kit) shipped, screens re-skinned phase-by-phase. See
-│        docs/RISO_WEB.md. compound-task creation: web components/compoundWizard/; iOS is
-│        now INLINE in RisoCompoundFieldsView within the special-type panel —
+│       ├── BoardWizardTasksPlayground.tsx          (no iOS counterpart)
+│       ├── CreateHubPlayground.tsx                 (no iOS counterpart)
+│       ├── RisoKitPlayground.tsx                   (no iOS counterpart; iOS kit gallery is
+│       │                                            Views/Riso/RisoKitGallery.swift)
+│       ├── SharedCounterPlayground.tsx             (no iOS counterpart)
+│       ├── SyncSimulationPlayground.tsx            (no iOS counterpart — iOS SyncDashboardPlayground
+│       │                                            removed in #119; sync is exercised in-app)
+│       └── TaskSquareActionsPlayground.tsx         (no iOS counterpart)
+│       (Playground parity is an intentional divergence: the iOS Playground was removed
+│        in #119. Compound-task creation: web components/compoundWizard/; iOS is INLINE
+│        in RisoCompoundFieldsView within the special-type panel —
 │        Views/Components/CompositeWizard/ was removed in the Riso redesign.)
 │
-└── components/                                     Views/Components/
+└── components/                                     Views/ (Riso views live per tab, e.g.
+    │                                                Views/BoardsTab/Components/, plus Views/Riso/)
     ├── riso/ (RisoButton/Card/    ←→               Views/Riso/RisoControls.swift
     │   Chip/Segmented/SectionLabel;                (web Riso primitive kit; tokens in
-    │   barrel index.ts)                             src/styles/riso.css — see docs/RISO_WEB.md)
+    │   barrel index.ts)                             packages/riso-tokens/riso.css, imported by
+    │                                                apps/web/src/main.tsx — see docs/RISO_WEB.md)
     │   (Navbar.tsx — REMOVED, dead code; was web dev-only, no iOS counterpart)
-    ├── BingoBoard.tsx          ←→                  BingoBoard.swift
-    ├── BingoSquare.tsx         ←→                  BingoSquare.swift
+    ├── BingoBoard.tsx / BingoSquare.tsx            (no iOS counterpart — the iOS BingoBoard/
+    │   (only BoardGeneratorPlayground renders       BingoSquare views are gone; the Riso play
+    │    BingoBoard today, so effectively dev-only)  grid is BoardsTab/Components/RisoBoardPlayCell.swift)
     ├── InteractiveTaskSquare.tsx ←→                 (iOS: removed — Riso uses RisoBoardPlayCell)
     ├── TypeBadge.tsx           ←→                  (iOS: removed — Riso uses RisoTypeBadge)
     │   (FilterTabs.tsx — REMOVED, dead code; iOS already removed — Riso uses RisoChip)
@@ -288,10 +292,11 @@ apps/web/src/                                        apps/ios/OYBC/
     │    PoolCard/PoolEditSheet/PoolPickerSheet ←→ PoolEditSheetView/
     │    PoolsBrowseView/PoolPickerSheetView + CreateTab/Components/RisoPool*)
     │   (SubtaskChip.tsx — REMOVED, dead code; iOS SubtaskChipView.swift also removed)
-    ├── OperatorSelector.tsx    ←→                  OperatorSelectorView.swift
-    ├── CounterStepper.tsx      ←→                  CounterStepperView.swift
+    ├── OperatorSelector.tsx    ←→                  (no standalone iOS view — compound operator +
+    ├── CounterStepper.tsx      ←→                   counting fields are inline in
+    ├── CountingStepFields.tsx  ←→                   CreateTab/Components/RisoCompoundFieldsView.swift
+    │                                                and RisoSpecialTaskPanel.swift)
     │   (ProgressStepRow.tsx — REMOVED, dead code; helpers live on in subtaskDraftUtils.ts)
-    ├── CountingStepFields.tsx  ←→                  CountingStepFieldsView.swift
     │   (CountingDerivationPanel.tsx — REMOVED, dead code; iOS CountingDerivationPanelView.swift also removed)
     │   (ProgressDerivationPanel.tsx / *View.swift + CompositeDerivationPanel.tsx /
     │    *View.swift — all REMOVED in the progress/composite teardown, PRs #404–#415)
@@ -300,13 +305,18 @@ apps/web/src/                                        apps/ios/OYBC/
     │       SignInModal, SignedOutArt,               landing + sign-in modal — no iOS
     │       useSignedOutTheme)                        counterpart; iOS launches into the
     │                                                 login form directly. See docs/RISO_WEB.md)
-    ├── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
-    ├── BoardStatusBadge.tsx       ←→               Views/Components/BoardStatusBadgeView.swift
-    ├── BoardListItem.tsx          ←→               Views/Components/BoardListItemView.swift
+    ├── boards/BoardCard.tsx       ←→               Views/BoardsTab/Components/RisoBoardCard.swift
+    ├── RecurringBadge.tsx         ←→               Views/BoardsTab/Components/RisoRecurringBadge.swift
+    ├── BoardStatusBadge.tsx                        (no standalone iOS view)
+    ├── BoardListItem.tsx                           (no iOS counterpart; zero importers on web —
+    │                                                dead code the knip file check currently
+    │                                                misses, see §Drift guardrails)
+    │   (BoardCreatorPanel.tsx / BoardCreatorPanelView.swift — REMOVED on both platforms)
     ├── appShell/ (AppShell,       ←→               Views/MainTabView.swift (SwiftUI TabView — intentionally platform-idiomatic)
     │   AppTopNav, AppBottomNav,                    (web Riso shell: desktop top nav that detaches into a mobile
     │   navItems)                                    bottom tab bar; replaced the old TabBar.tsx in the Riso pass)
-    └── SyncStatusIndicator.tsx    ←→               Views/Components/SyncStatusIndicatorView.swift
+    └── SyncStatusIndicator.tsx    ←→               Views/ProfileTab/Components/RisoSyncRow.swift
+                                                     (+ Views/ProfileTab/SyncSheet.swift, iOS-only detail sheet)
 │
 ├── firebase/                                       Services/
 │   ├── config.ts                  ←→               OYBCApp.swift (FirebaseApp.configure)
@@ -319,10 +329,6 @@ apps/web/src/                                        apps/ios/OYBC/
 │   (no web counterpart yet —     ←→               Services/NotificationService.swift (Phase 7, iOS only)
 │    deferred, see §Notifications)                 Services/NotificationPlanner.swift (pure; Phase 7, iOS only)
 │                                                   Services/NotificationDelegate.swift (Phase 7, iOS only)
-│
-└── components/playground/
-    └── SyncSimulationPlayground.tsx                (web dev-only — iOS SyncDashboardPlayground
-                                                     removed in #119; sync is exercised in-app)
 ```
 
 ### Pages ↔ Root Views
@@ -598,7 +604,7 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 - `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (Normal / Counting / Compound; cross-board square mechanisms live on `BoardTask`, see ARCHITECTURE.md §Phase 6)
 - `docs/NOTIFICATIONS.md` — Phase 7 iOS local-notification design (reconcile model, triggers, 64-cap budgeting, prefs, App Store compliance, iOS-only parity exception). See also CLAUDE.md [§Notifications](#notifications-phase-7--ios-local-reminders).
 - `docs/RISO_UI_CHECKLIST.md` — iOS "Riso" design-system consistency checklist (use the kit / tokens not magic numbers / layout pitfalls). Run it when building or reviewing any Riso surface; the canonical components are in `Views/Riso/RisoControls.swift` and visually baselined by `RisoKitSnapshotTests`.
-- `docs/RISO_WEB.md` — **web** Riso pass: token layer (`src/styles/riso.css`), primitive kit (`components/riso/`), the dark contract, conventions for re-skinning a screen, and the phase roadmap. Companion to the iOS checklist; read it before touching any web Riso surface.
+- `docs/RISO_WEB.md` — **web** Riso pass: token layer (`packages/riso-tokens/riso.css`), primitive kit (`components/riso/`), the dark contract, conventions for re-skinning a screen, and the phase roadmap. Companion to the iOS checklist; read it before touching any web Riso surface.
 - `docs/BOARD_INTEGRITY.md` — the 2026-07-24 four-auditor board/placement-pipeline audit + the five-PR hardening program (issues #358–#362), **ALL FIVE SHIPPED**: the tombstone defect (PR-1 #358 — `BoardTask` gained `isDeleted`/`deletedAt` like every other synced collection), placement-integrity repair + determinism + sealed guards (PR-2 #359), the unified per-cell board resolver (PR-3 #360, closes the web-only achievement-render bug), sync + atomicity hardening (PR-4 #361 — pull-path local-wins re-enqueue, rules version-monotonicity, atomic Board-Edit Save), and the kernel-pins + minors sweep (PR-5 #362 — shared placement/shuffle test vectors, a TS/Swift shuffle rng-edge clamp, the isCenter-uniqueness write guard, plus a "residual accepted risks" closing section). Read before touching `BoardTask` deletion, the boardTasks-pull cascade, `placeBoard`/`fisherYatesShuffle`, or any per-cell "is this complete?" render logic.
 - `docs/BOARD_SOURCES.md` — **Board Sources rework (SHIPPED 2026-09, PRs #457–#463 — ROADMAP F11)**: the wizard assembles boards from *sources* (pulled pools AND pulled boards, each with a min/max range, per-board exclusions, and a done-filter) plus hand-added tasks; recurring boards store source references resolved live at every spawn. Supersedes the POOLS_RECURRING.md spawn-record mix model (`poolIds`/`removedTaskIds`) and the wizard's pull-card/chip-strip/save-as-pool surfaces. Read before touching the wizard Tasks step, `resolveMix`/spawn resolution, `recurringDraftMix`, or `RecurringBoardTemplate` fields. **§Member rules (design locked 2026-09-17, PR train A → B0–B3)** adds per-member rules for counting/compound members pulled from sources (`BoardSource.memberRules`, `RecurringBoardTemplate.manualTaskVary`, GRDB v31) realised as per-window **window-stamped derived counters** (`sharedCounterId != null && startDate != null`; deterministic `uuidv5` ids; event-derived `baseline` kept as a **non-authored cache** — no version bump, no enqueue; board/root deletion cascades). Plan A retires the "From a board…" grid picker and its vocabulary. Read it before touching wizard member rows, `planDerivedTasks`, `deleteCounterWithUnlink`/`deleteBoard`, or any read of a linked task's `currentCount`. B1 (types/codecs/v31/pure helpers, inert) shipped in #489; the resolution helpers live in `memberRules.ts` ↔ `BoardSourceMemberRules.swift` and are vector-pinned by `memberRuleVectors.json`. B2 (mint at active persist + recurring board creation, non-authored baseline refresh, deletion cascades, read audit; both platforms) shipped in #491 — counting members pulled from *board* sources are now per-window derived counters with an auto-scaled target; see the Plan B2 notes for the B3 hand-offs. B3 (rule-authoring UI: member rows with target stepper / vary dice / One square–Split up, Preview dry run, hub expired filter; both platforms) shipped in #492 — the member-rules train (A → B0–B3) is complete.
 
