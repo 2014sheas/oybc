@@ -94,7 +94,7 @@ final class RecurringBoardSpawnViewModel {
             var attention: [String: SpawnAttentionReason] = [:]
             for spawn in pending {
                 do {
-                    let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn)
+                    let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn, database: database)
                     switch outcome {
                     case .spawned(_, let templateId, _):
                         succeeded.append(templateId)

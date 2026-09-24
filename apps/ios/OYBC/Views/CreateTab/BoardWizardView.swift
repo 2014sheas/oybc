@@ -204,6 +204,7 @@ struct BoardWizardView: View {
             persistRecurringTemplate(
                 controller: wizard,
                 userId: userId,
+                database: wizard.database,
                 onSuccess: { outcome in
                     isSavingFromCancel = false
                     showCancelDialog = false
@@ -236,6 +237,7 @@ struct BoardWizardView: View {
             placement: placement,
             dates: (start, end),
             status: .draft,
+            database: wizard.database,
             onSuccess: { boardId in
                 isSavingFromCancel = false
                 showCancelDialog = false
