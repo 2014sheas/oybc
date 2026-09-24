@@ -24,26 +24,6 @@ import {
 } from './derivedCounters';
 
 /**
- * Soft delete a task.
- *
- * Increments `version` so LWW conflict resolution treats the deletion as
- * a later-wins operation against any concurrent update on another device.
- * A soft delete without a version bump could be overwritten by a stale
- * edit that happens to have a newer `updatedAt` timestamp.
- */
-export async function deleteTask(id: string): Promise<void> {
-  const existing = await db.tasks.get(id);
-  if (!existing) return;
-  await db.tasks.update(id, {
-    isDeleted: true,
-    deletedAt: currentTimestamp(),
-    updatedAt: currentTimestamp(),
-    version: (existing.version ?? 0) + 1,
-  });
-  const task = await db.tasks.get(id);
-  if (task) await addToSyncQueue('tasks', id, SyncOperationType.DELETE, task);
-}
-/**
  * Summary of what `deleteTaskWithCascade` (or a dry-run) would remove.
  * Lets the UI surface affected counts in a confirm dialog before the
  * user commits.
@@ -154,7 +134,7 @@ export async function computeTaskDeletionImpact(
  *    deleted. The parent compound loses this child; sibling links and
  *    the parent Task itself are untouched.
  * 4. **The Task itself** — soft-deleted (version bump + isDeleted=true
- *    + deletedAt), matching `deleteTask`'s LWW semantics.
+ *    + deletedAt), the standard LWW soft-delete semantics.
  * 4b. **Window-stamped derived counters deriving from this task** (Board
  *    Sources §Member rules, B2) — retired the same way, with their own
  *    placements and links. Ordinary linked members are NOT touched here.

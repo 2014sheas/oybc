@@ -23,18 +23,6 @@ import { addToSyncQueue } from './syncQueue';
  */
 
 /**
- * Fetch all non-deleted templates for a user, sorted by `updatedAt desc`.
- */
-export async function fetchRecurringBoardTemplates(
-  userId: string,
-): Promise<RecurringBoardTemplate[]> {
-  return db.recurringBoardTemplates
-    .filter((t) => t.userId === userId && !t.isDeleted)
-    .reverse()
-    .sortBy('updatedAt');
-}
-
-/**
  * Fetch every non-deleted template across all users, sorted by name.
  *
  * Used by the Achievement template picker, which lists all templates (not
@@ -252,4 +240,3 @@ export async function fetchTemplatesReferencingTask(
     .filter((t) => !t.isDeleted && Array.isArray(t.seedTaskIds) && t.seedTaskIds.includes(taskId))
     .toArray();
 }
-

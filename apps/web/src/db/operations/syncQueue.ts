@@ -297,13 +297,6 @@ export async function markSyncItemFailed(
 }
 
 /**
- * Delete sync item
- */
-export async function deleteSyncItem(id: string): Promise<void> {
-  await db.syncQueue.delete(id);
-}
-
-/**
  * Clear completed sync items
  */
 export async function clearCompletedSyncItems(): Promise<void> {

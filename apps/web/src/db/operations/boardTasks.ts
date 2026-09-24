@@ -29,21 +29,9 @@ export async function fetchBoardTasks(boardId: string): Promise<BoardTask[]> {
 }
 
 /**
- * Fetch a single board task by ID. Returns tombstoned rows too — callers
- * that only want live placements should check `.isDeleted` themselves
- * (mirrors `fetchCompoundChild`/`fetchBoard`, which are also un-filtered
- * single-id lookups; the filtering convention lives on the collection-scan
- * helpers, not point lookups).
- */
-export async function fetchBoardTask(id: string): Promise<BoardTask | undefined> {
-  return db.boardTasks.get(id);
-}
-
-/**
  * Fetch every non-deleted BoardTask placement row referencing a given Task.
  *
- * Distinct from `fetchBoardsUsingTask` (which returns just the boardIds) —
- * this returns the full placement rows for per-placement UI (task detail).
+ * Returns the full placement rows for per-placement UI (task detail).
  *
  * @param taskId - The placed Task's id.
  * @returns All non-deleted BoardTask rows whose `taskId` matches.
@@ -120,24 +108,6 @@ export function buildBoardTaskTombstone(existing: BoardTask, now: string): Board
  */
 export async function fetchAllBoardTasks(): Promise<BoardTask[]> {
   return db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
-}
-
-/**
- * Fetch non-deleted BoardTask rows for the given board ids, grouped by boardId.
- * Returns a Map keyed by boardId; boards with no live BoardTasks have an empty array entry.
- */
-export async function fetchBoardTasksForBoards(
-  boardIds: string[],
-): Promise<Map<string, BoardTask[]>> {
-  const out = new Map<string, BoardTask[]>();
-  for (const id of boardIds) out.set(id, []);
-  if (boardIds.length === 0) return out;
-  const rows = await db.boardTasks.where('boardId').anyOf(boardIds).filter((bt) => !bt.isDeleted).toArray();
-  for (const row of rows) {
-    const arr = out.get(row.boardId);
-    if (arr) arr.push(row);
-  }
-  return out;
 }
 
 /**
@@ -238,14 +208,6 @@ export async function createBoardTask(
   });
 
   return boardTask;
-}
-
-/**
- * Find all boards using a specific task (live placements only)
- */
-export async function fetchBoardsUsingTask(taskId: string): Promise<string[]> {
-  const boardTasks = await db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
-  return [...new Set(boardTasks.map((bt) => bt.boardId))];
 }
 
 // ─── removeBoardTaskFromBoard ────────────────────────────────────────────────

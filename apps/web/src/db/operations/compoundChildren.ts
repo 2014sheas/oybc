@@ -4,10 +4,9 @@
  * All writes go to Dexie first (local source of truth), then enqueue a sync
  * entry so the background SyncService can propagate changes to Firestore.
  *
- * ⚠️ MUTATOR CAVEAT (pre-WC audit, issue #379): `createCompoundChild`,
- * `softDeleteCompoundChild`, and `reorderCompoundChildren` have NO production
- * callers today (compound authoring is create-only via `createCompound`) and
- * none of them runs the board derivation cascade. Restructuring a compound's
+ * ⚠️ MUTATOR CAVEAT (pre-WC audit, issue #379): `createCompoundChild` has NO
+ * production callers today (compound authoring is create-only via
+ * `createCompound`) and does not run the board derivation cascade. Restructuring a compound's
  * children changes every placed parent's windowed completion — a future
  * compound-editing UI that reuses these MUST follow each write with
  * `runBoardCascadeForTask(parentCompoundId, ...)` (orchestration.ts) or the
@@ -73,16 +72,6 @@ export async function fetchCompoundChildrenByCompoundIds(
   return matching.filter((c) => !c.isDeleted);
 }
 
-/**
- * Fetch one compound child by id.
- *
- * @param id - The compound child row id.
- * @returns The CompoundChild row, or undefined if not found.
- */
-export async function fetchCompoundChild(id: string): Promise<CompoundChild | undefined> {
-  return db.compoundChildren.get(id);
-}
-
 // ─── Write Operations ─────────────────────────────────────────────────────────
 
 /**
@@ -120,81 +109,4 @@ export async function createCompoundChild(input: CreateCompoundChildInput): Prom
   await db.compoundChildren.add(row);
   await addToSyncQueue('compoundChildren', row.id, SyncOperationType.CREATE, row);
   return row;
-}
-
-/**
- * Soft-delete a compound child. Bumps version + updatedAt; enqueues UPDATE sync.
- *
- * The derivation pass reads non-deleted children only, so a soft-delete makes
- * the parent compound recompute as if the child was removed.
- *
- * @param id - The compound child row id to soft-delete.
- */
-export async function softDeleteCompoundChild(id: string): Promise<void> {
-  const existing = await db.compoundChildren.get(id);
-  if (!existing || existing.isDeleted) return;
-  const update: Partial<CompoundChild> = {
-    isDeleted: true,
-    deletedAt: currentTimestamp(),
-    updatedAt: currentTimestamp(),
-    version: existing.version + 1,
-  };
-  await db.compoundChildren.update(id, update);
-  await addToSyncQueue('compoundChildren', id, SyncOperationType.UPDATE, { ...existing, ...update });
-}
-
-/**
- * Reorder a compound's children to match `orderedChildIds`. Updates each row's
- * `childIndex` to its position in the array. Each modified row gets version++,
- * updatedAt bumped, and an UPDATE sync entry. Rows whose position is unchanged
- * are skipped.
- *
- * Wrapped in a single Dexie transaction for atomicity.
- *
- * @param compoundTaskId - The parent compound task id (used as a guard: rows
- *   belonging to a different parent are silently skipped).
- * @param orderedChildIds - Child row ids in the desired order. Index in the
- *   array becomes the new `childIndex`.
- */
-export async function reorderCompoundChildren(
-  compoundTaskId: string,
-  orderedChildIds: string[],
-): Promise<void> {
-  await db.transaction('rw', [db.compoundChildren, db.syncQueue], async () => {
-    for (let i = 0; i < orderedChildIds.length; i++) {
-      const id = orderedChildIds[i];
-      const existing = await db.compoundChildren.get(id);
-      if (!existing) continue;
-      if (existing.compoundTaskId !== compoundTaskId) continue;
-      if (existing.childIndex === i) continue;
-      const update: Partial<CompoundChild> = {
-        childIndex: i,
-        updatedAt: currentTimestamp(),
-        version: existing.version + 1,
-      };
-      await db.compoundChildren.update(id, update);
-      await addToSyncQueue('compoundChildren', id, SyncOperationType.UPDATE, {
-        ...existing,
-        ...update,
-      });
-    }
-  });
-}
-
-/**
- * Find every parent compound that lists this `childTaskId` as a child.
- * Used when soft-deleting a Task: the caller should cascade by soft-deleting
- * matching compound_children rows so parent compounds recompute.
- *
- * @param childTaskId - The task id to look up as a child.
- * @returns All non-deleted CompoundChild rows where childTaskId matches.
- */
-export async function findCompoundChildrenByChildTaskId(
-  childTaskId: string,
-): Promise<CompoundChild[]> {
-  return db.compoundChildren
-    .where('childTaskId')
-    .equals(childTaskId)
-    .filter((c) => !c.isDeleted)
-    .toArray();
 }

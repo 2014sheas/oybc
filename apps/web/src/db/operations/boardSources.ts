@@ -237,8 +237,8 @@ export async function fetchBoardSourceSupply(
 export async function fetchSourceSheetBoardEntries(
   userId: string,
 ): Promise<SourceSheetBoardEntry[]> {
-  // No bare `userId` index on boards — the `.filter` scan matches the
-  // `fetchRecurringBoardTemplates` pattern (local data sizes).
+  // No bare `userId` index on boards — a `.filter` scan is fine at local
+  // data sizes.
   //
   // Eligibility is the `isEligibleSourceBoard` rule, shared with
   // the Swift twin. This sheet previously filtered on
