@@ -272,6 +272,52 @@ test.describe('Wizard member rules — the expanded source panel', () => {
     ).toBeVisible();
   });
 
+  test('the remove-source confirm is a real modal: Escape cancels, focus opens on Cancel, Tab wraps, focus returns', async ({
+    page,
+  }) => {
+    // 2026-09 audit (web a11y) — `useModalA11y`. Configure the source so the
+    // ✕ asks first (a changed seeded target = one member rule).
+    await openTasksStep(page);
+    await pullSourceBoard(page);
+    const sourceRow = page.getByRole('button', { name: /^Last Week Board, 8 not done/ });
+    await sourceRow.click();
+    const memberRow = page.getByTestId('member-row').filter({ hasText: 'Run 30 miles' });
+    await memberRow.getByTestId('member-disclosure').click();
+    await memberRow.getByRole('button', { name: 'Increase target' }).click();
+    await expect(memberRow.getByRole('textbox', { name: 'Target', exact: true })).toHaveValue('6');
+
+    const removeX = page.getByRole('button', { name: 'Remove Last Week Board' });
+    const confirm = page.getByRole('alertdialog', { name: 'Confirm remove source' });
+    const cancel = confirm.getByRole('button', { name: 'Cancel', exact: true });
+    const remove = confirm.getByRole('button', { name: 'Remove', exact: true });
+
+    // Escape closes the confirm WITHOUT removing, and hands focus back to ✕.
+    await removeX.click();
+    await expect(confirm).toBeVisible();
+    await expect(confirm).toHaveAttribute('aria-modal', 'true');
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(confirm).toHaveCount(0);
+    await expect(sourceRow).toBeVisible();
+    await expect(removeX).toBeFocused();
+
+    // Tab stays inside: Cancel → Remove, then Tab from the LAST button wraps
+    // to the first; Shift+Tab from the first wraps back to the last.
+    await removeX.click();
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(remove).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(remove).toBeFocused();
+
+    // And the dialog still does its job afterwards.
+    await cancel.click();
+    await expect(confirm).toHaveCount(0);
+    await expect(sourceRow).toBeVisible();
+  });
+
   test('Split up turns a compound into one square per part; a part can be excluded and undone', async ({
     page,
   }) => {
