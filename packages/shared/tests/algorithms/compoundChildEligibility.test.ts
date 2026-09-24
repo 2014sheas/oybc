@@ -9,6 +9,9 @@
 
 import {
   compoundChildLinkProblem,
+  compoundChildPickerCandidates,
+  isIncompleteCountingChild,
+  searchCompoundChildCandidates,
   COMPOUND_CHILD_LINK_MESSAGES,
   type CompoundChildCandidate,
 } from '../../src/algorithms/compoundChildEligibility';
@@ -153,5 +156,53 @@ describe('compoundChildLinkProblem — check order', () => {
         new Set(),
       ),
     ).toBe('Counters without a goal can’t be sub-tasks.');
+  });
+});
+
+describe('compoundChildPickerCandidates', () => {
+  type Row = CompoundChildCandidate & { title: string; unit?: string };
+  function row(id: string, title: string, overrides: Partial<Row> = {}): Row {
+    return { id, title, type: TaskType.NORMAL, isDeleted: false, ...overrides };
+  }
+
+  // P (being edited) contains X; Q contains P (so linking Q under P loops).
+  const links: CompoundChild[] = [link('P', 'X'), link('Q', 'P')];
+  const library: Row[] = [
+    row('P', 'Parent itself', { type: TaskType.COMPOUND }),
+    row('X', 'Already here'),
+    row('A', 'Achievement', { type: TaskType.ACHIEVEMENT }),
+    row('D', 'Deleted', { isDeleted: true }),
+    row('G', 'Goal-less hub counter', { type: TaskType.COUNTING, isCounter: true, unit: 'pages' }),
+    row('Q', 'Loop parent', { type: TaskType.COMPOUND }),
+    row('NU', 'Counter without unit', { type: TaskType.COUNTING, maxCount: 5, unit: '  ' }),
+    row('NG', 'Counter with zero goal', { type: TaskType.COUNTING, maxCount: 0, unit: 'km' }),
+    row('c', 'stretch'),
+    row('R', 'Run 5 km', { type: TaskType.COUNTING, maxCount: 5, unit: 'km' }),
+    row('N', 'Nested compound', { type: TaskType.COMPOUND }),
+    row('b', 'Stretch'),
+  ];
+
+  it('keeps only linkable, save-valid tasks, ordered by title then id', () => {
+    const ids = compoundChildPickerCandidates('P', library, links, new Set(['X'])).map((t) => t.id);
+    expect(ids).toEqual(['N', 'R', 'b', 'c']);
+  });
+
+  it('drops a task once it is picked (current children)', () => {
+    const ids = compoundChildPickerCandidates('P', library, links, new Set(['X', 'R'])).map((t) => t.id);
+    expect(ids).not.toContain('R');
+  });
+
+  it('flags only counting tasks lacking a positive goal or a unit', () => {
+    expect(isIncompleteCountingChild({ type: TaskType.COUNTING, maxCount: 5, unit: 'km' })).toBe(false);
+    expect(isIncompleteCountingChild({ type: TaskType.COUNTING, maxCount: 5 })).toBe(true);
+    expect(isIncompleteCountingChild({ type: TaskType.COUNTING, unit: 'km' })).toBe(true);
+    expect(isIncompleteCountingChild({ type: TaskType.COUNTING, maxCount: 0, unit: 'km' })).toBe(true);
+    expect(isIncompleteCountingChild({ type: TaskType.NORMAL })).toBe(false);
+  });
+
+  it('searches titles case-insensitively; a blank query keeps all', () => {
+    const rows = [row('1', 'Morning Run'), row('2', 'Read'), row('3', 'run club')];
+    expect(searchCompoundChildCandidates(rows, '  RUN ').map((t) => t.id)).toEqual(['1', '3']);
+    expect(searchCompoundChildCandidates(rows, '   ').map((t) => t.id)).toEqual(['1', '2', '3']);
   });
 });

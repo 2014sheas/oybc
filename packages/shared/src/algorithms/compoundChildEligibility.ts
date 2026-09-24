@@ -71,3 +71,72 @@ export function compoundChildLinkProblem(
   }
   return null;
 }
+
+/**
+ * A counting task the compound editor can't keep as a sub-task: no positive
+ * goal (`maxCount`) or a blank unit. `validatePatch` refuses such a counting
+ * sub-task on save, so the picker hides it rather than offering a row that
+ * can only fail later.
+ *
+ * @param task - The candidate task.
+ * @returns `true` when the task is COUNTING and lacks a goal or unit.
+ */
+export function isIncompleteCountingChild(
+  task: Pick<Task, 'type' | 'maxCount' | 'unit'>,
+): boolean {
+  if (task.type !== TaskType.COUNTING) return false;
+  return !(typeof task.maxCount === 'number' && task.maxCount > 0) || (task.unit ?? '').trim() === '';
+}
+
+/**
+ * The "+ Existing task…" picker's candidate list: the browsable library
+ * (pass `computeBrowsableTasks` output — it already hides wizard drafts and
+ * deleted rows) narrowed to tasks that can be linked under `parentId` right
+ * now (`compoundChildLinkProblem === null`) and that would survive the save's
+ * validation (not {@link isIncompleteCountingChild}), ordered by title.
+ *
+ * Swift twin: `CompoundChildEligibility.pickerCandidates`.
+ *
+ * @param parentId - The compound being edited.
+ * @param browsable - The browsable library tasks.
+ * @param allLinks - Live links across ALL compounds.
+ * @param currentChildIds - The editor's current kept children.
+ * @returns The eligible tasks, sorted by lower-cased title (plain code-unit
+ *   order, locale-independent so both platforms agree), then id.
+ */
+export function compoundChildPickerCandidates<T extends CompoundChildCandidate & Pick<Task, 'title' | 'unit'>>(
+  parentId: string,
+  browsable: readonly T[],
+  allLinks: readonly CompoundChild[],
+  currentChildIds: ReadonlySet<string>,
+): T[] {
+  return browsable
+    .filter(
+      (t) =>
+        !isIncompleteCountingChild(t) &&
+        compoundChildLinkProblem(parentId, t, allLinks, currentChildIds) === null,
+    )
+    .sort((a, b) => {
+      const ta = a.title.toLowerCase();
+      const tb = b.title.toLowerCase();
+      if (ta !== tb) return ta < tb ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+}
+
+/**
+ * Case-insensitive title search over picker candidates (a blank query keeps
+ * every row). Swift twin: `CompoundChildEligibility.searchCandidates`.
+ *
+ * @param tasks - The candidates.
+ * @param query - The search text.
+ * @returns The candidates whose title contains `query`.
+ */
+export function searchCompoundChildCandidates<T extends Pick<Task, 'title'>>(
+  tasks: readonly T[],
+  query: string,
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (q === '') return [...tasks];
+  return tasks.filter((t) => t.title.toLowerCase().includes(q));
+}
