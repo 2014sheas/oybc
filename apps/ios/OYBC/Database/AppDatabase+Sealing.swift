@@ -311,11 +311,7 @@ extension AppDatabase {
         // sealed boards placing those rows, or two devices that sealed from
         // different root-event sets never converge. Mirrors the TS
         // `reDeriveSealedBoardsForTasks`.
-        var reachable = changedTaskIds
-        for t in lookups.taskById.values where !t.isDeleted {
-            guard let root = t.sharedCounterId, changedTaskIds.contains(root) else { continue }
-            if BoardSources.isWindowStampedDerived(t) { reachable.insert(t.id) }
-        }
+        let reachable = expandToWindowStampedDerived(ids: changedTaskIds, tasks: lookups.taskById.values)
 
         var affectedBoardIds = Set<String>()
         for taskId in reachable {

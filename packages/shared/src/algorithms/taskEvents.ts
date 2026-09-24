@@ -218,6 +218,40 @@ export function resolveDerivedCounterWindowState(
 }
 
 /**
+ * Cascade reachability for window-stamped derived counters: return `ids`
+ * UNION the ids of every live window-stamped derived row
+ * ({@link isWindowStampedDerived}) whose `sharedCounterId` is in `ids`.
+ *
+ * A shared-counter ROOT is never placed on a board, but every window-stamped
+ * derived row linked to it resolves FROM the root's events
+ * ({@link resolveDerivedCounterWindowState}). So whenever a root's event set
+ * changes (a pulled / healed event), the placement walk that finds affected
+ * boards must start from those derived rows too — both the LIVE pull cascade
+ * and the SEALED re-derivation. Hub-linked rows (no `startDate`) are NOT
+ * added: they resolve from their latch, which only an authored task write
+ * changes (and that write cascades on its own). Ids that aren't roots pass
+ * through unchanged.
+ *
+ * @param ids   The task ids whose events changed.
+ * @param tasks Candidate task rows (any superset of the linked rows — the
+ *              whole workspace, or just the rows with `sharedCounterId` in `ids`).
+ * @returns A new set: `ids` plus the reachable window-stamped derived row ids.
+ */
+export function expandToWindowStampedDerived(
+  ids: Iterable<string>,
+  tasks: Iterable<Pick<Task, 'id' | 'isDeleted' | 'sharedCounterId' | 'startDate' | 'createdInWizard'>>,
+): Set<string> {
+  const roots = new Set(ids);
+  const out = new Set(roots);
+  if (roots.size === 0) return out;
+  for (const t of tasks) {
+    if (t.isDeleted || !t.sharedCounterId || !roots.has(t.sharedCounterId)) continue;
+    if (isWindowStampedDerived(t)) out.add(t.id);
+  }
+  return out;
+}
+
+/**
  * Bound a window context's events at a sealed board's `sealedAt` (docs §Seal
  * snapshots re-derive from the event union): keep only events with
  * `occurredAt <= sealedAtMs`, dropping a task's key when none survive. Applied

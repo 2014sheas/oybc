@@ -5,6 +5,7 @@ import {
   buildDerivedRows,
   computeWindowBaseline,
   derivedTaskId,
+  expandToWindowStampedDerived,
   isWindowStampedDerived,
   planDerivedTasks,
   type Board,
@@ -341,6 +342,26 @@ export async function refreshDerivedBaselines(
     touched += 1;
   }
   return touched;
+}
+
+/**
+ * Live-cascade reachability for a pull that moved some roots' event sets:
+ * `taskIds` plus every live window-stamped derived row linked to one of them
+ * (shared `expandToWindowStampedDerived`, indexed on `sharedCounterId`). The
+ * root is never placed, but those rows resolve from its events in the
+ * derivation kernel, so the batched board cascade must start from them too —
+ * otherwise a pulled root event leaves every live board placing its derived
+ * row with stale `completedTasks`/lines until an unrelated write.
+ *
+ * Must run inside the caller's open transaction (scoping `tasks`).
+ *
+ * @param taskIds - The tasks whose events changed in this pull.
+ * @returns A new set: `taskIds` plus the reachable derived row ids.
+ */
+export async function withWindowStampedDerived(taskIds: Set<string>): Promise<Set<string>> {
+  if (taskIds.size === 0) return new Set(taskIds);
+  const linked = await db.tasks.where('sharedCounterId').anyOf([...taskIds]).toArray();
+  return expandToWindowStampedDerived(taskIds, linked);
 }
 
 /**

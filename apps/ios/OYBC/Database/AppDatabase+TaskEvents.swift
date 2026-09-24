@@ -408,6 +408,24 @@ extension AppDatabase {
         return WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
     }
 
+    /// Live-cascade reachability for a pull that moved some roots' event sets:
+    /// `taskIds` plus every live window-stamped derived row linked to one of
+    /// them (shared `expandToWindowStampedDerived`, via the v32
+    /// `idx_tasks_shared_counter` index). The root is never placed, but those
+    /// rows resolve from its events in the derivation kernel, so the batched
+    /// board cascade must start from them too. Mirrors the web
+    /// `withWindowStampedDerived` (`db/operations/derivedCounters.ts`).
+    ///
+    /// - Parameters:
+    ///   - db: The pull's open transaction.
+    ///   - taskIds: The tasks whose events changed in this pull.
+    /// - Returns: `taskIds` plus the reachable derived row ids.
+    static func withWindowStampedDerived(db: Database, taskIds: Set<String>) throws -> Set<String> {
+        guard !taskIds.isEmpty else { return taskIds }
+        let linked = try Task.filter(taskIds.contains(Column("sharedCounterId"))).fetchAll(db)
+        return expandToWindowStampedDerived(ids: taskIds, tasks: linked)
+    }
+
     /// Resolve a single event-owning task's windowed state for `taskId` in the
     /// given board window. Convenience used by write choke points that need the
     /// current windowed count before computing a delta.

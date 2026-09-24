@@ -8,7 +8,7 @@ import {
   findAffectedBoardIds,
   findTransitiveParentCompounds,
   isBoardPastBackstop,
-  isWindowStampedDerived,
+  expandToWindowStampedDerived,
   resolvePlacements,
   type Board,
   type BoardTask,
@@ -394,13 +394,10 @@ export async function reDeriveSealedBoardsForTasks(
   // docs §Derived-task carve-out rule 4, amended 2026-09-23). A late in-window
   // root event must therefore re-derive the sealed boards placing those rows,
   // or two devices that sealed from different root-event sets never converge.
-  for (const t of Object.values(lookups.taskById)) {
-    if (t.isDeleted || !t.sharedCounterId || !changed.has(t.sharedCounterId)) continue;
-    if (isWindowStampedDerived(t)) changed.add(t.id);
-  }
+  const reachable = expandToWindowStampedDerived(changed, Object.values(lookups.taskById));
 
   const affectedBoardIds = new Set<string>();
-  for (const taskId of changed) {
+  for (const taskId of reachable) {
     const parents = findTransitiveParentCompounds(taskId, allChildren);
     for (const id of findAffectedBoardIds(taskId, parents, lookups.allBoardTasks)) {
       affectedBoardIds.add(id);

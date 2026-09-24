@@ -8,6 +8,7 @@ import {
   type CellState,
 } from '../../src/algorithms/derivationPass';
 import { CenterSquareType, TaskType, BoardStatus, Timeframe } from '../../src/constants/enums';
+import { expandToWindowStampedDerived } from '../../src/algorithms/taskEvents';
 import type {
   Task,
   CompoundChild,
@@ -146,10 +147,24 @@ interface CbsuVector {
   expectedCells?: CellState[];
 }
 
+interface EtwsdVector {
+  name: string;
+  ids: string[];
+  tasks: {
+    id: string;
+    isDeleted: boolean;
+    sharedCounterId: string | null;
+    startDate: string | null;
+    createdInWizard: boolean;
+  }[];
+  expected: string[];
+}
+
 interface Fixture {
   findTransitiveParentCompounds: FtpcVector[];
   findAffectedBoardIds: FabiVector[];
   computeBoardStatsUpdate: CbsuVector[];
+  expandToWindowStampedDerived: EtwsdVector[];
 }
 
 const fixture: Fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
@@ -301,6 +316,23 @@ describe('findAffectedBoardIds (fixture-driven, tests/fixtures/derivationPassVec
       const boardTasks = v.boardTasks.map(toBoardTaskRef);
       const result = findAffectedBoardIds(v.changedTaskId, new Set(v.parentCompounds), boardTasks);
       expect([...result].sort()).toEqual([...v.expected].sort());
+    });
+  }
+});
+
+describe('expandToWindowStampedDerived (fixture-driven, tests/fixtures/derivationPassVectors.json)', () => {
+  it('fixture is non-empty', () => {
+    expect(fixture.expandToWindowStampedDerived.length).toBeGreaterThan(0);
+  });
+
+  for (const v of fixture.expandToWindowStampedDerived) {
+    it(v.name, () => {
+      const tasks = v.tasks.map((t) => ({
+        ...t,
+        sharedCounterId: t.sharedCounterId ?? undefined,
+        startDate: t.startDate ?? undefined,
+      }));
+      expect([...expandToWindowStampedDerived(v.ids, tasks)].sort()).toEqual(v.expected);
     });
   }
 });

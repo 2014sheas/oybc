@@ -22,7 +22,7 @@ interface VectorBoard {
   boardSize: number;
   centerSquareType: string;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
   status: string;
   linesCompleted: number;
   completedLineIds: string[] | null;
@@ -74,7 +74,7 @@ function toBoard(b: VectorBoard): Board {
     boardSize: b.boardSize as Board['boardSize'],
     timeframe: Timeframe.DAILY,
     startDate: b.startDate,
-    endDate: b.endDate,
+    endDate: b.endDate ?? undefined,
     centerSquareType: b.centerSquareType as CenterSquareType,
     isRandomized: false,
     totalTasks: b.boardSize * b.boardSize,

@@ -198,6 +198,30 @@ func resolveDerivedCounterWindowState(
     return resolveWindowStampedDerivedState(task: task, rootEvents: eventsByTaskId[rootId] ?? [])
 }
 
+/// Cascade reachability for window-stamped derived counters: `ids` UNION the
+/// ids of every live window-stamped derived row
+/// (`BoardSources.isWindowStampedDerived`) whose `sharedCounterId` is in `ids`.
+/// A root is never placed, but its window-stamped rows resolve FROM its
+/// events, so a changed root must reach the boards placing them — in the LIVE
+/// pull cascade and the SEALED re-derivation alike. Hub-linked rows are not
+/// added (they resolve from their latch). Non-root ids pass through.
+///
+/// Mirrors the TS `expandToWindowStampedDerived`.
+///
+/// - Parameters:
+///   - ids: The task ids whose events changed.
+///   - tasks: Candidate rows (any superset of the linked rows).
+/// - Returns: `ids` plus the reachable window-stamped derived row ids.
+func expandToWindowStampedDerived<S: Sequence>(ids: Set<String>, tasks: S) -> Set<String> where S.Element == Task {
+    var out = ids
+    guard !ids.isEmpty else { return out }
+    for t in tasks where !t.isDeleted {
+        guard let root = t.sharedCounterId, ids.contains(root) else { continue }
+        if BoardSources.isWindowStampedDerived(t) { out.insert(t.id) }
+    }
+    return out
+}
+
 /// Bound a window context's events at a sealed board's `sealedAt` (docs §Seal
 /// snapshots re-derive from the event union): keep only events with
 /// `occurredAt <= sealedAtMs`, dropping a task's key when none survive. Applied

@@ -32,6 +32,7 @@ export {
   resolveTaskWindowState,
   resolveWindowStampedDerivedState,
   resolveDerivedCounterWindowState,
+  expandToWindowStampedDerived,
   boundWindowContextAtSeal,
   backstopWindowMs,
   computeBackstopDeadlineMs,

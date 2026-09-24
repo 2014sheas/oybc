@@ -264,6 +264,35 @@ describe('pull paths — window-stamped derived baseline refresh', () => {
     return derivedId;
   }
 
+  it('a pulled in-window ROOT event re-derives the LIVE board that places only the derived row', async () => {
+    // The root is never placed; the derived row resolves from the root's events
+    // (derivation kernel, 2026-09-23 amendment). The live cascade must reach
+    // the board through the derived row, or its stored stats stay stale.
+    const derivedId = await seedRootAndDerived();
+    const BOARD = '40000000-0000-4000-8000-0000000000b1';
+    await seedBoardWithTasks(BOARD, [derivedId]);
+
+    const res = await applyTaskEventsBatch(USER, [
+      {
+        id: '40000000-0000-4000-8000-0000000000e1',
+        userId: USER,
+        taskId: ROOT,
+        kind: 'increment',
+        delta: 5,
+        occurredAt: '2026-06-10T12:00:00.000Z', // inside the derived row's window
+        createdAt: '2026-06-10T12:00:00.000Z',
+        updatedAt: '2026-06-10T12:00:00.000Z',
+        version: 1,
+        isDeleted: false,
+      },
+    ]);
+    expect(res.pulled).toBe(1);
+
+    const board = await db.boards.get(BOARD);
+    expect(board?.completedTasks).toBe(1);
+    expect(board?.version).toBe(2);
+  });
+
   it('a batch carrying a backdated increment moves the derived baseline without authoring a write', async () => {
     const derivedId = await seedRootAndDerived();
     const before = await db.tasks.get(derivedId);
