@@ -302,7 +302,7 @@ apps/web/src/                                        apps/ios/OYBC/
     │                                                 login form directly. See docs/RISO_WEB.md)
     ├── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
     ├── BoardStatusBadge.tsx       ←→               Views/Components/BoardStatusBadgeView.swift
-    ├── BoardListItem.tsx          ←→               Views/Components/BoardListItemView.swift
+    │   (BoardListItem.tsx — REMOVED, dead code; iOS BoardListItemView.swift also removed)
     ├── appShell/ (AppShell,       ←→               Views/MainTabView.swift (SwiftUI TabView — intentionally platform-idiomatic)
     │   AppTopNav, AppBottomNav,                    (web Riso shell: desktop top nav that detaches into a mobile
     │   navItems)                                    bottom tab bar; replaced the old TabBar.tsx in the Riso pass)
