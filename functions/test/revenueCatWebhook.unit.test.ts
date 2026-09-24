@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveEntitlement,
+  DEFAULT_ALLOWED_ENVIRONMENTS,
   isAllowedEnvironment,
   isValidAppUserId,
   safeEqual,
@@ -36,8 +37,23 @@ describe("isAllowedEnvironment (sandbox gate)", () => {
   it("accepts PRODUCTION under the prod config", () => {
     expect(isAllowedEnvironment("PRODUCTION", "PRODUCTION")).toBe(true);
   });
-  it("accepts SANDBOX under the default (dev) config, tolerating spaces", () => {
+  it("accepts SANDBOX under the dev config, tolerating spaces", () => {
     expect(isAllowedEnvironment("SANDBOX", "PRODUCTION, SANDBOX")).toBe(true);
+  });
+  describe("code default (no functions/.env.<id> for the project)", () => {
+    it("is production-only", () => {
+      expect(DEFAULT_ALLOWED_ENVIRONMENTS).toBe("PRODUCTION");
+    });
+    it("ignores a SANDBOX event", () => {
+      expect(isAllowedEnvironment("SANDBOX", DEFAULT_ALLOWED_ENVIRONMENTS)).toBe(false);
+    });
+    it("rejects an event with no environment", () => {
+      expect(isAllowedEnvironment(undefined, DEFAULT_ALLOWED_ENVIRONMENTS)).toBe(false);
+      expect(isAllowedEnvironment(null, DEFAULT_ALLOWED_ENVIRONMENTS)).toBe(false);
+    });
+    it("accepts a PRODUCTION event", () => {
+      expect(isAllowedEnvironment("PRODUCTION", DEFAULT_ALLOWED_ENVIRONMENTS)).toBe(true);
+    });
   });
   it("rejects a non-string environment", () => {
     expect(isAllowedEnvironment(42, "PRODUCTION,SANDBOX")).toBe(false);
@@ -45,7 +61,7 @@ describe("isAllowedEnvironment (sandbox gate)", () => {
   describe("absent environment", () => {
     it.each([
       ["PRODUCTION only (prod) — fails closed", "PRODUCTION", false],
-      ["PRODUCTION,SANDBOX (dev default) — accepted", "PRODUCTION,SANDBOX", true],
+      ["PRODUCTION,SANDBOX (dev .env) — accepted", "PRODUCTION,SANDBOX", true],
       ["SANDBOX only — accepted", "SANDBOX", true],
       ["lower-case, spaced dev list — accepted", " production , sandbox ", true],
       ["empty allow-list — fails closed", "", false],

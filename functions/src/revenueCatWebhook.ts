@@ -20,13 +20,14 @@
  *
  * Hardening (2026-09 security audit):
  *  - ENVIRONMENT GATE: events whose `environment` is not in the
- *    `REVENUECAT_ALLOWED_ENVIRONMENTS` param (comma-separated; default
- *    `PRODUCTION,SANDBOX` so the dev project keeps accepting sandbox
- *    purchases) are acknowledged with 200 and write nothing. **The prod
- *    project MUST set `REVENUECAT_ALLOWED_ENVIRONMENTS=PRODUCTION`** (via
- *    `functions/.env.<prod-project-id>`, see functions/README.md) — otherwise a
- *    free sandbox purchase would grant real Pro. An event with NO
- *    `environment` is accepted only where SANDBOX is (fails closed in prod).
+ *    `REVENUECAT_ALLOWED_ENVIRONMENTS` param (comma-separated; the code
+ *    default is `PRODUCTION` so a project with no `functions/.env.<id>` fails
+ *    closed) are acknowledged with 200 and write nothing. The dev and emulator
+ *    projects opt in to sandbox purchases explicitly with
+ *    `PRODUCTION,SANDBOX` in their committed `functions/.env.<id>` files; the
+ *    prod project's file sets `PRODUCTION` (see functions/README.md). An event
+ *    with NO `environment` is accepted only where SANDBOX is (fails closed in
+ *    prod).
  *  - `app_user_id` must look like a Firebase uid (`/^[A-Za-z0-9]{20,128}$/`);
  *    anything else is acknowledged with 200 (so RevenueCat stops retrying)
  *    and writes nothing. Only the SHAPE of bad input is logged.
@@ -55,11 +56,15 @@ export const REVENUECAT_WEBHOOK_AUTH = defineSecret("REVENUECAT_WEBHOOK_AUTH");
  * Comma-separated RevenueCat `environment` values this deployment accepts
  * (documented values: `SANDBOX`, `PRODUCTION` —
  * https://www.revenuecat.com/docs/integrations/webhooks/event-types-and-fields).
- * Default keeps the dev project working with sandbox purchases; the PROD project
- * must override it to `PRODUCTION` (see functions/README.md).
+ * The default is production-only so a deploy to a project without a
+ * `functions/.env.<id>` can never grant real Pro for a free sandbox purchase;
+ * dev/emulator projects set `PRODUCTION,SANDBOX` explicitly (see
+ * functions/README.md).
  */
+export const DEFAULT_ALLOWED_ENVIRONMENTS = "PRODUCTION";
+
 export const REVENUECAT_ALLOWED_ENVIRONMENTS = defineString("REVENUECAT_ALLOWED_ENVIRONMENTS", {
-  default: "PRODUCTION,SANDBOX",
+  default: DEFAULT_ALLOWED_ENVIRONMENTS,
 });
 
 /** A Firebase Auth uid: alphanumeric (28 chars in practice); bounds are defensive. */

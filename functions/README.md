@@ -29,8 +29,11 @@ is gitignored for local overrides).
 acknowledged with `200 {ok:true, ignored:'environment'}` and writes nothing.
 An event with no `environment` at all is accepted only when the list includes
 `SANDBOX` (dev); a production-only list rejects it (fails closed).
-The dev project accepts `SANDBOX` so test purchases work. **When the prod
-Firebase project is created (ROADMAP Track A4), add
-`functions/.env.<prod-project-id>` containing
-`REVENUECAT_ALLOWED_ENVIRONMENTS=PRODUCTION`** — otherwise a free sandbox
-purchase would grant real Pro in production.
+The code default is **`PRODUCTION`** (fails closed): a project with no
+`.env.<id>` file never accepts sandbox purchases. The dev and emulator
+projects opt in to `SANDBOX` explicitly in their committed files so test
+purchases work. **When the prod Firebase project is created (ROADMAP Track
+A4), add `functions/.env.<prod-project-id>` containing
+`REVENUECAT_ALLOWED_ENVIRONMENTS=PRODUCTION`** — the default already matches,
+but the committed file keeps non-interactive deploys from failing and makes
+the prod setting explicit.

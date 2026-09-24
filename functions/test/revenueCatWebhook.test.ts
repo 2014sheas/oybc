@@ -181,8 +181,9 @@ describe("revenueCatWebhook", () => {
   });
 
   it("acknowledges (200) an event from a non-allowed environment without writing", async () => {
-    // The default REVENUECAT_ALLOWED_ENVIRONMENTS is PRODUCTION,SANDBOX, so an
-    // unknown environment exercises the gate's wiring end-to-end.
+    // The emulator project's committed functions/.env.demo-oybc-functions-test
+    // sets PRODUCTION,SANDBOX, so an unknown environment exercises the gate's
+    // wiring end-to-end.
     const uid = freshUid();
     const { status, json } = await postWebhook(buildEvent(uid, { environment: "STAGING" }));
     expect(status).toBe(200);
