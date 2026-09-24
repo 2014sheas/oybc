@@ -11,18 +11,19 @@ import {
   type Task,
 } from '@oybc/shared';
 import {
+  CompoundEditValidationError,
   fetchBoard,
   fetchBoardsByIds,
   fetchBoardTasksForTask,
   fetchCompoundChildren,
   fetchTask,
   fetchTasksByIds,
+  saveTaskEdit,
 } from '../../db/operations';
 import {
   computeTaskDeletionImpact,
   deleteTaskWithCascade,
   fetchCompoundParentsForTask,
-  updateTaskAndCascade,
   type TaskDeletionImpact,
 } from '../../db/operations/tasks';
 import {
@@ -453,9 +454,6 @@ export function TaskDetailContent({
               })}
             </div>
           )}
-          <p className={styles.subtaskHint}>
-            Compound subtasks are edited from the board-creation wizard.
-          </p>
         </section>
       )}
 
@@ -556,10 +554,12 @@ export function TaskDetailContent({
           task={task}
           onSubmit={async (patch) => {
             try {
-              await updateTaskAndCascade(taskId, patch);
+              await saveTaskEdit(taskId, patch);
               onChanged();
               setIsEditing(false);
             } catch (e) {
+              // Structure validation is shown inline by the sheet.
+              if (e instanceof CompoundEditValidationError) throw e;
               setError(`Failed to save: ${(e as Error).message}`);
             }
           }}

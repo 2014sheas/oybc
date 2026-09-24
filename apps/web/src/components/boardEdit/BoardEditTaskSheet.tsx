@@ -244,8 +244,8 @@ export function BoardEditTaskSheet({
         {/* Compound: show read-only step info */}
         {task.type === TaskType.COMPOUND && (
           <p className={styles.compoundNote}>
-            Compound subtask structure is edited from the task library — only the
-            name can be changed here.
+            Sub-tasks and the completion rule are edited from the task&apos;s detail
+            page — only the name can be changed here.
           </p>
         )}
 

@@ -3,6 +3,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import {
+  OperatorType,
   TaskType,
   Timeframe,
   type Board,
@@ -86,6 +87,11 @@ function makeTask(id: string, over: Partial<Task> = {}): Task {
 }
 
 const TASK = makeTask('t-1', { title: 'Read' });
+const COMPOUND = makeTask('t-3', {
+  title: 'Morning routine',
+  type: TaskType.COMPOUND,
+  operator: OperatorType.AND,
+});
 const COUNTER = makeTask('t-2', {
   title: 'Run 30 miles',
   type: TaskType.COUNTING,
@@ -204,6 +210,13 @@ const CASES: DialogCase[] = [
     name: 'TaskEditSheet',
     element: () =>
       React.createElement(TaskEditSheet, { task: TASK, onSubmit: async () => {}, onCancel: noop }),
+  },
+  {
+    // Compound mode loads its sub-tasks in an effect — a static render must
+    // still produce the dialog without touching Dexie.
+    name: 'TaskEditSheet (compound)',
+    element: () =>
+      React.createElement(TaskEditSheet, { task: COMPOUND, onSubmit: async () => {}, onCancel: noop }),
   },
   {
     name: 'TaskDetailSheet',

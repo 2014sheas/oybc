@@ -1,18 +1,34 @@
 import { useEffect, useState } from 'react';
 import { AchievementTrigger, TaskType, Timeframe, toLocalISO, type Task } from '@oybc/shared';
 import type { Board, RecurringBoardTemplate } from '@oybc/shared';
-import { fetchAllBoardsSortedByName } from '../../db/operations';
-import { fetchAllTemplatesSortedByName } from '../../db/operations/recurringBoardTemplates';
 import {
-  checkAchievementRetargetCycle,
-  type UpdateTaskPatch,
-} from '../../db/operations/tasks';
+  CompoundEditValidationError,
+  fetchAllBoardsSortedByName,
+  fetchCompoundChildren,
+  fetchTasksByIds,
+  type TaskEditSubmit,
+} from '../../db/operations';
+import { fetchAllTemplatesSortedByName } from '../../db/operations/recurringBoardTemplates';
+import { checkAchievementRetargetCycle } from '../../db/operations/tasks';
+import {
+  childPatchFromTask,
+  seedPatchForEditor,
+  validatePatch,
+  type TaskEditPatch,
+} from '../../db/taskEditPatch';
+import { CompoundFields } from '../../components/wizard/CompoundFields';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
 
 export interface TaskEditSheetProps {
   task: Task;
-  onSubmit: (patch: UpdateTaskPatch) => Promise<void>;
+  /**
+   * Persists the edit (callers route it through `saveTaskEdit`). For a
+   * compound the submit carries `compound` — the edited rule + sub-tasks,
+   * whose `title` is the sheet's Title field. A rejection with
+   * `CompoundEditValidationError` is shown inline in the sheet.
+   */
+  onSubmit: (submit: TaskEditSubmit) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -23,6 +39,12 @@ export interface TaskEditSheetProps {
  *   - Timeboxed fields: timeframe / startDate / endDate (all task types).
  *   - Achievement re-target: mode toggle (specific board vs recurring template)
  *     + picker. Cycle detection runs before submit.
+ *
+ * Compound tasks: the rule (All of / Any of / At least N) and sub-tasks are
+ * edited in place via the shared `CompoundFields` editor. The current
+ * sub-tasks load once on open (an effect, so a static render never touches
+ * Dexie); Save stays disabled until they have loaded and the structure is
+ * valid.
  *
  * Shares CSS module with `TaskDetailContent` to avoid styling drift.
  */
@@ -89,6 +111,48 @@ export function TaskEditSheet({
     void load();
   }, [task.type]);
 
+  // Compound structure (rule + sub-tasks). `null` until the current
+  // sub-tasks have loaded; the draft's own `title` is ignored — the sheet's
+  // Title field is the single source (merged in at render + submit).
+  const isCompound = task.type === TaskType.COMPOUND;
+  const [compoundDraft, setCompoundDraft] = useState<TaskEditPatch | null>(null);
+  const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (task.type !== TaskType.COMPOUND) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const links = (await fetchCompoundChildren(task.id))
+          .filter((l) => !l.isDeleted)
+          .sort((a, b) => a.childIndex - b.childIndex);
+        const kids = await fetchTasksByIds(links.map((l) => l.childTaskId));
+        const byId = new Map(kids.map((t) => [t.id, t]));
+        const seeded: TaskEditPatch = {
+          ...seedPatchForEditor(task),
+          children: links
+            .map((l) => byId.get(l.childTaskId))
+            .filter((t): t is Task => !!t && !t.isDeleted)
+            .map(childPatchFromTask),
+        };
+        if (!cancelled) setCompoundDraft(seeded);
+      } catch (e) {
+        if (!cancelled) setCompoundLoadError(`Couldn't load sub-tasks: ${(e as Error).message}`);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // Seed once per task identity — later edits to `task` (e.g. a live
+    // query refresh while the sheet is open) must not clobber the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, task.type]);
+
+  const compoundValidation =
+    compoundDraft !== null ? validatePatch({ ...compoundDraft, title }, TaskType.COMPOUND) : null;
+  const compoundBlocked = isCompound && (compoundDraft === null || compoundValidation !== null);
+
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -102,7 +166,7 @@ export function TaskEditSheet({
 
   const handleSubmit = async () => {
     setValidationError(null);
-    const patch: UpdateTaskPatch = {
+    const patch: TaskEditSubmit = {
       title: title.trim(),
       description: description.trim() || undefined,
     };
@@ -202,9 +266,25 @@ export function TaskEditSheet({
       }
     }
 
+    if (isCompound) {
+      if (compoundDraft === null) return;
+      patch.compound = { ...compoundDraft, title: title.trim() };
+    }
+
     setSubmitting(true);
-    await onSubmit(patch);
-    setSubmitting(false);
+    try {
+      await onSubmit(patch);
+    } catch (e) {
+      // Call sites surface other failures themselves; a structure
+      // validation failure belongs next to the editor.
+      if (e instanceof CompoundEditValidationError) {
+        setValidationError(e.message);
+      } else {
+        throw e;
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -351,11 +431,25 @@ export function TaskEditSheet({
           </>
         )}
 
-        {task.type === TaskType.COMPOUND && (
-          <p className={styles.compoundHint}>
-            Compound subtasks are edited from the board-creation wizard. The
-            title and description can still be changed here.
-          </p>
+        {isCompound && (
+          <fieldset className={styles.fieldset}>
+            <legend className={styles.fieldsetLegend}>Sub-tasks &amp; rule</legend>
+            {compoundDraft !== null ? (
+              <CompoundFields
+                draft={{ ...compoundDraft, title }}
+                onDraftChange={(next) => setCompoundDraft(next)}
+              />
+            ) : compoundLoadError !== null ? (
+              <p className={styles.compoundStatus} role="alert">
+                {compoundLoadError}
+              </p>
+            ) : (
+              <p className={styles.compoundStatus}>Loading sub-tasks…</p>
+            )}
+            {compoundValidation !== null && (
+              <p className={styles.compoundValidation}>{compoundValidation}</p>
+            )}
+          </fieldset>
         )}
 
         {/* Timeboxed fields — shown for all task types */}
@@ -419,7 +513,7 @@ export function TaskEditSheet({
             type="button"
             className={styles.saveButton}
             onClick={handleSubmit}
-            disabled={submitting || !title.trim()}
+            disabled={submitting || !title.trim() || compoundBlocked}
           >
             {submitting ? 'Saving…' : 'Save changes'}
           </button>
