@@ -492,9 +492,12 @@ export async function updateTaskAndCascade(
   // 3. Run the derivation cascade in a single transaction. One call to
   //    `runBoardCascadeForTask` covers all affected boards for this task —
   //    the function resolves the full affected-board set internally.
+  //    `taskEvents` MUST be in scope: the cascade's `buildWindowContext()`
+  //    reads it, and Dexie throws NotFoundError for an out-of-scope table
+  //    (so without it every edit of a placed task failed at this step).
   await db.transaction(
     'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.syncQueue],
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
       await runBoardCascadeForTask(id);
     },
