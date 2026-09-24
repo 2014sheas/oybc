@@ -111,10 +111,12 @@ export async function applyStagedCompoundChildEdits(
       const existingChild = await db.tasks.get(childId);
       if (existingChild) {
         const updated = applyStepToChildTask(existingChild, step, title);
+        // `?? ''`: the editor round-trips an absent action/unit as '' — that
+        // is not a change (a picked unit-less counter must stay untouched).
         const changed =
           updated.title !== existingChild.title ||
-          updated.action !== existingChild.action ||
-          updated.unit !== existingChild.unit ||
+          (updated.action ?? '') !== (existingChild.action ?? '') ||
+          (updated.unit ?? '') !== (existingChild.unit ?? '') ||
           updated.maxCount !== existingChild.maxCount;
         if (changed) {
           const saved: Task = { ...updated, version: (existingChild.version ?? 1) + 1, updatedAt: now };
@@ -320,10 +322,13 @@ export async function editCompoundStructure(
   // Pre-checks run outside any transaction so a validation failure never
   // opens one.
   assertLiveCompound(await db.tasks.get(taskId), taskId);
-  const problem = validatePatch(structure, TaskType.COMPOUND);
-  if (problem !== null) throw new CompoundEditValidationError(problem);
+  // Link eligibility first: a picked task that can never be a sub-task
+  // (e.g. a goal-less hub counter) gets its specific reason rather than
+  // validatePatch's generic "needs a goal and a unit".
   const linkProblem = await compoundLinkProblemForPatch(taskId, structure);
   if (linkProblem !== null) throw new CompoundEditValidationError(linkProblem);
+  const problem = validatePatch(structure, TaskType.COMPOUND);
+  if (problem !== null) throw new CompoundEditValidationError(problem);
   const now = currentTimestamp();
   await db.transaction('rw', CASCADE_TABLES(), async () => {
     // Re-read INSIDE the transaction: the full row written below is built

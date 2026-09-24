@@ -441,6 +441,20 @@ describe('editCompoundStructure — linking an EXISTING library task as a sub-ta
     expect((await db.boards.get(X_ID))?.completedTasks).toBe(1);
   });
 
+  it('linking an existing counting task with no stored action leaves its row untouched', async () => {
+    // action undefined ('' in the editor) must not read as a change.
+    const C = makeTask({ id: uuid(40), title: 'Read 10 pages', type: TaskType.COUNTING, maxCount: 10, unit: 'pages' });
+    await db.tasks.add(C);
+    await editCompoundStructure(
+      P_ID,
+      structureFor({ title: 'P', operator: OperatorType.AND }, [...keepAB(), childPatchFromTask(C)]),
+    );
+    expect(await db.tasks.get(C.id)).toEqual(C);
+    expect((await db.syncQueue.toArray()).filter((r) => r.entityType === 'tasks' && r.entityId === C.id)).toHaveLength(0);
+    const live = (await db.compoundChildren.where('compoundTaskId').equals(P_ID).toArray()).filter((l) => !l.isDeleted);
+    expect(live.map((l) => l.childTaskId)).toContain(C.id);
+  });
+
   it('allows linking a nested compound that forms no loop', async () => {
     const N = makeTask({ id: uuid(7), title: 'N', type: TaskType.COMPOUND, operator: OperatorType.AND });
     await db.tasks.add(N);
@@ -478,6 +492,15 @@ describe('editCompoundStructure — linking an EXISTING library task as a sub-ta
         return [...keepAB(), childPatchFromTask(L)];
       },
       'That task was deleted.',
+    ],
+    [
+      'goal-less counter',
+      async () => {
+        const G = makeTask({ id: uuid(9), title: 'G', type: TaskType.COUNTING, isCounter: true });
+        await db.tasks.add(G);
+        return [...keepAB(), childPatchFromTask(G)];
+      },
+      'Counters without a goal can’t be sub-tasks.',
     ],
     [
       'loop (L already contains P)',

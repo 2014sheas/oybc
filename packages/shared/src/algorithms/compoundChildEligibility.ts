@@ -19,24 +19,32 @@
 import { TaskType } from '../constants/enums';
 import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
+import { isGoalLessCounter } from './browsableTasks';
 import { findTransitiveParentCompounds } from './derivationPass';
 
 /** The fields of a candidate task the guard reads. */
-export type CompoundChildCandidate = Pick<Task, 'id' | 'type' | 'isDeleted' | 'createdInWizard'>;
+export type CompoundChildCandidate = Pick<
+  Task,
+  'id' | 'type' | 'isDeleted' | 'createdInWizard' | 'isCounter' | 'maxCount'
+>;
 
-/** The five user-facing refusal messages (byte-identical on iOS). */
+/** The six user-facing refusal messages (byte-identical on iOS). */
 export const COMPOUND_CHILD_LINK_MESSAGES = {
   self: 'A compound can’t contain itself.',
   duplicate: 'That task is already a sub-task here.',
   achievement: 'Achievements can’t be sub-tasks.',
   deleted: 'That task was deleted.',
+  goalLessCounter: 'Counters without a goal can’t be sub-tasks.',
   loop: 'That would create a loop — it already contains this compound.',
 } as const;
 
 /**
  * Returns null when `candidate` may be linked under `parentId`, else the
  * user-facing reason. Checks run in this order: self, duplicate,
- * achievement, deleted, loop — the first failing check wins.
+ * achievement, deleted, goal-less counter, loop — the first failing check
+ * wins. The goal-less check mirrors the `isGoalLessCounter` write guard every
+ * other compound-child write enforces (a hub counter with no goal can't
+ * evaluate as a sub-task).
  *
  * @param parentId - The compound the candidate would be linked under.
  * @param candidate - The existing task being linked.
@@ -56,6 +64,7 @@ export function compoundChildLinkProblem(
   if (currentChildIds.has(candidate.id)) return COMPOUND_CHILD_LINK_MESSAGES.duplicate;
   if (candidate.type === TaskType.ACHIEVEMENT) return COMPOUND_CHILD_LINK_MESSAGES.achievement;
   if (candidate.isDeleted) return COMPOUND_CHILD_LINK_MESSAGES.deleted;
+  if (isGoalLessCounter(candidate)) return COMPOUND_CHILD_LINK_MESSAGES.goalLessCounter;
   // A loop closes iff the candidate already (transitively) contains the parent.
   if (findTransitiveParentCompounds(parentId, [...allLinks]).has(candidate.id)) {
     return COMPOUND_CHILD_LINK_MESSAGES.loop;
