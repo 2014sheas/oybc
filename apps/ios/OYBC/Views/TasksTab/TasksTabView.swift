@@ -98,6 +98,9 @@ struct TasksTabView: View {
     /// than warning-less cards, so "Short on N boards" never pops in after
     /// first paint (the late-mutation rule; web twin: `isPoolHealthResolved`).
     @State private var poolHealthSettled = false
+    /// `true` after the first successful pools commit — lets the gate tell
+    /// "no pools" (paint the empty state) from "not loaded yet" (loading).
+    @State private var poolsLoaded = false
     /// Monotonic token for `loadPools()` — it runs on appear, on segment
     /// change and after a pool save/delete with no ordering between them;
     /// only the newest run may commit (the `RecurringBoardTemplatesViewModel`
@@ -185,7 +188,7 @@ struct TasksTabView: View {
                         (pool.id, pool.taskIds.compactMap { tasksById[$0] })
                     })
 
-                    if poolHealthSettled || pools.isEmpty {
+                    if poolHealthSettled || (poolsLoaded && pools.isEmpty) {
                         PoolsBrowseView(
                             pools: pools,
                             poolTasksById: poolTasksById,
@@ -459,7 +462,13 @@ struct TasksTabView: View {
         // edits/deletes made in Library mode, which change what each
         // repeating board can deal.
         .onChange(of: segment) { _, newSegment in
-            if newSegment == .pools { loadPools() }
+            if newSegment == .pools {
+                // Drop cached health on every re-entry (web parity: web
+                // unmounts PoolsBrowse outside Pools mode) so the re-resolve
+                // never flips warnings on an already-painted list.
+                poolHealthSettled = false
+                loadPools()
+            }
         }
     }
 
@@ -616,12 +625,16 @@ struct TasksTabView: View {
                     poolTemplates = snapshot.templates
                     poolAchievableTaskIds = snapshot.achievableTaskIds
                     poolHealthSettled = snapshot.healthSettled
+                    poolsLoaded = true
                     poolLoadError = nil
                 }
             } catch {
                 await MainActor.run {
                     guard mySeq == poolLoadSeq else { return }
                     poolLoadError = "Failed to load pools: \(error.localizedDescription)"
+                    // Never leave the loading row up forever beside the
+                    // error: paint the cached list without health.
+                    poolHealthSettled = true
                 }
             }
         }
