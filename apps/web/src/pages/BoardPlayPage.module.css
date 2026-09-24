@@ -105,7 +105,7 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  background: var(--riso-ink);
+  background: var(--riso-ink-static);
   color: var(--riso-gold);
   border: 2px solid var(--riso-ink);
   border-radius: var(--riso-r-cell);

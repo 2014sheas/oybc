@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -12,13 +15,22 @@ import { describe, expect, it } from 'vitest';
  * catches a regression even if lint is skipped).
  */
 
-// Load every source file's raw text via Vite's glob (no node builtins needed).
+// Load every source file's raw text from disk (the suite runs in vitest's
+// `node` environment). Deliberately NOT `import.meta.glob(…, { query: '?raw' })`:
+// knip's Vite plugin ignores glob options, so a `?raw` glob makes every file
+// look imported and silently defeats knip's unused-file check (knip #2016).
 // Keys are project-root-relative paths, e.g. `/src/pages/Playground.tsx`.
-const sources = import.meta.glob('/src/**/*.{ts,tsx}', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>;
+const webRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+const srcDir = join(webRoot, 'src');
+const sources: Record<string, string> = Object.fromEntries(
+  readdirSync(srcDir, { recursive: true, encoding: 'utf8' })
+    .filter((rel) => /\.tsx?$/.test(rel))
+    .map((rel) => {
+      const abs = join(srcDir, rel);
+      const key = '/' + relative(webRoot, abs).split(sep).join('/');
+      return [key, readFileSync(abs, 'utf8')] as const;
+    }),
+);
 
 /** Dirs whose files ARE the data layer (allowed to import `db/internal`). */
 const ALLOWED_PREFIXES = ['/src/db/', '/src/hooks/', '/src/firebase/'];

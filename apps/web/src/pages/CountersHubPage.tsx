@@ -6,7 +6,10 @@ import { useTasks } from '../hooks/useTasks';
 import {
   CounterLedgerCard,
   CounterLogToast,
+  CounterWriteError,
   CreateCounterSheet,
+  attemptCounterWrite,
+  COUNTER_NOT_UPDATED_MESSAGE,
   type CounterLoggedEvent,
 } from '../components/counters';
 import { undoLastCounterLog } from '../db/operations/tasks';
@@ -52,6 +55,9 @@ export function CountersHubPage(): React.ReactElement {
   // auto-dismiss timer doesn't restart on unrelated re-renders (e.g. the live
   // `groups` query updating after the log writes).
   const [toast, setToast] = useState<(CounterLoggedEvent & { toastKey: string }) | null>(null);
+  // One page-level error line for a failed "+ Log" or Undo (the card never
+  // renders its own, like the toast). Cleared by the next successful write.
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   function handleShowExpiredChange(next: boolean): void {
     const params = new URLSearchParams(searchParams);
@@ -67,13 +73,21 @@ export function CountersHubPage(): React.ReactElement {
   }
 
   function handleLogged(event: CounterLoggedEvent): void {
+    setWriteError(null);
     setToast({ ...event, toastKey: generateUUID() });
+  }
+
+  function handleLogFailed(): void {
+    setWriteError(COUNTER_NOT_UPDATED_MESSAGE);
   }
 
   async function handleUndo(): Promise<void> {
     if (!toast) return;
-    await undoLastCounterLog(toast.counterId);
+    const counterId = toast.counterId;
+    const ok = await attemptCounterWrite('hub undo', () => undoLastCounterLog(counterId));
+    // The toast goes either way; a failed undo is announced, never silent.
     setToast(null);
+    setWriteError(ok ? null : COUNTER_NOT_UPDATED_MESSAGE);
   }
 
   return (
@@ -111,6 +125,8 @@ export function CountersHubPage(): React.ReactElement {
         </div>
       )}
 
+      <CounterWriteError message={writeError} />
+
       {/* Counter cards — Ledger layout */}
       {groups.length === 0 ? (
         <EmptyState onNewCounter={() => setSheetOpen(true)} />
@@ -121,6 +137,7 @@ export function CountersHubPage(): React.ReactElement {
               <CounterLedgerCard
                 group={group}
                 onLogged={handleLogged}
+                onLogFailed={handleLogFailed}
                 showExpired={showExpired}
               />
             </div>

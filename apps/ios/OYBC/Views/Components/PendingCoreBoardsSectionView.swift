@@ -64,10 +64,10 @@ struct CoreBoardsSectionView: View {
             onSelect(slot)
         } label: {
             HStack(spacing: 12) {
-                // Ink-keyline icon square
+                // Ink-keyline icon square — glyph on gold takes static ink
                 Image(systemName: icon(for: slot.timeframe))
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Color.risoInk)
+                    .foregroundStyle(Color.risoInkStatic)
                     .frame(width: 40, height: 40)
                     .background(
                         RoundedRectangle(cornerRadius: Riso.cellRadius)

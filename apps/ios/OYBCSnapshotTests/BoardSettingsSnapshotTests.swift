@@ -60,6 +60,7 @@ final class BoardSettingsSnapshotTests: XCTestCase {
             pools: pools,
             tasks: [t1, t2, t3, t4],
             templates: [],
+            achievableTaskIdsByTemplateId: [:],
             library: makeLibrary([t1, t2, t3, t4]),
             userId: SnapshotFixtures.userId,
             onSaved: {}

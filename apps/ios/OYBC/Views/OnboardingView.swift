@@ -610,9 +610,10 @@ private struct OnboardingPosterGrid: View {
 
         ZStack {
             if isFree {
-                // FREE cell — ink black + gold star
+                // FREE cell — static ink + gold star (adaptive ink would go
+                // cream in dark mode and wash the star out)
                 RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.risoInk)
+                    .fill(Color.risoInkStatic)
                     .overlay(
                         RoundedRectangle(cornerRadius: 5)
                             .strokeBorder(Color.risoInk, lineWidth: 1.5)
@@ -736,7 +737,7 @@ struct NotifPrimingStepView: View {
             // Bell badge — ink keyline square with bell icon
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.risoInk)
+                    .fill(Color.risoInkStatic)
                     .frame(width: 36, height: 36)
                 Image(systemName: "bell.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -777,7 +778,7 @@ struct NotifPrimingStepView: View {
         ZStack {
             if isFree {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.risoInk)
+                    .fill(Color.risoInkStatic)
                 Image(systemName: "star.fill")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.risoGold)

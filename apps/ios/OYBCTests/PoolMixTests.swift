@@ -62,31 +62,19 @@ final class PoolMixTests: XCTestCase {
         XCTAssertEqual(result.taskIds, ["x", "z", "w"])
     }
 
-    func testWorkedExample_Step2_UntoggleB_RemovalOfYPersists_YieldsXW() {
+    func testWorkedExample_Step2_BUntoggled_RemovalOfYKept_YieldsXW() {
         let (poolsById, tasksById) = workedExampleFixtures()
-        let clearedRemovals = PoolMix.clearRemovalsForUntoggle(
-            PoolMixInput(poolIds: ["A", "B"], manualTaskIds: ["w"], removedTaskIds: ["y"]),
-            untoggledPoolId: "B", poolsById: poolsById
-        )
-        XCTAssertEqual(clearedRemovals, ["y"])
-
         let result = PoolMix.resolveMix(
-            PoolMixInput(poolIds: ["A"], manualTaskIds: ["w"], removedTaskIds: clearedRemovals),
+            PoolMixInput(poolIds: ["A"], manualTaskIds: ["w"], removedTaskIds: ["y"]),
             poolsById: poolsById, tasksById: tasksById
         )
         XCTAssertEqual(result.taskIds, ["x", "w"])
     }
 
-    func testWorkedExample_Step3_UntoggleAToo_RemovalCleared_YieldsW() {
+    func testWorkedExample_Step3_AUntoggledToo_RemovalCleared_YieldsW() {
         let (poolsById, tasksById) = workedExampleFixtures()
-        let clearedRemovals = PoolMix.clearRemovalsForUntoggle(
-            PoolMixInput(poolIds: ["A"], manualTaskIds: ["w"], removedTaskIds: ["y"]),
-            untoggledPoolId: "A", poolsById: poolsById
-        )
-        XCTAssertEqual(clearedRemovals, [])
-
         let result = PoolMix.resolveMix(
-            PoolMixInput(poolIds: [], manualTaskIds: ["w"], removedTaskIds: clearedRemovals),
+            PoolMixInput(poolIds: [], manualTaskIds: ["w"], removedTaskIds: []),
             poolsById: poolsById, tasksById: tasksById
         )
         XCTAssertEqual(result.taskIds, ["w"])
@@ -253,70 +241,6 @@ final class PoolMixTests: XCTestCase {
         XCTAssertEqual(result.taskIds, ["x"])
     }
 
-    // MARK: - clearRemovalsForUntoggle — additional cases
-
-    func testClearRemovalsForUntoggle_NeverSoleSupplier_LeavesUnrelatedRemovalsUntouched() {
-        let poolA = buildPool("A", ["x"])
-        let poolB = buildPool("B", ["y"])
-        let poolsById = byId([poolA, poolB]) { $0.id }
-
-        let cleared = PoolMix.clearRemovalsForUntoggle(
-            PoolMixInput(poolIds: ["A", "B"], manualTaskIds: [], removedTaskIds: ["x"]),
-            untoggledPoolId: "B", poolsById: poolsById
-        )
-        // x is still supplied by A (untouched by B's untoggle) → persists.
-        XCTAssertEqual(cleared, ["x"])
-    }
-
-    func testClearRemovalsForUntoggle_DeletedRemainingPool_DoesNotCountAsSupply() {
-        let poolA = buildPool("A", ["x"], isDeleted: true)
-        let poolB = buildPool("B", ["y"])
-        let poolsById = byId([poolA, poolB]) { $0.id }
-
-        let cleared = PoolMix.clearRemovalsForUntoggle(
-            PoolMixInput(poolIds: ["A", "B"], manualTaskIds: [], removedTaskIds: ["x"]),
-            untoggledPoolId: "B", poolsById: poolsById
-        )
-        // A is soft-deleted, so it no longer counts as supply — x's removal clears.
-        XCTAssertEqual(cleared, [])
-    }
-
-    // MARK: - isLegacyShapedRecord — truth table
-
-    func testIsLegacyShapedRecord_AllThreeFieldsAbsent_True() {
-        XCTAssertTrue(PoolMix.isLegacyShapedRecord(PoolMixInput()))
-    }
-
-    func testIsLegacyShapedRecord_MigrationMintedShape_True() {
-        XCTAssertTrue(PoolMix.isLegacyShapedRecord(
-            PoolMixInput(poolIds: ["A"], manualTaskIds: [], removedTaskIds: [])
-        ))
-    }
-
-    func testIsLegacyShapedRecord_ZeroPoolsExplicitEmptyArrays_True() {
-        XCTAssertTrue(PoolMix.isLegacyShapedRecord(
-            PoolMixInput(poolIds: [], manualTaskIds: [], removedTaskIds: [])
-        ))
-    }
-
-    func testIsLegacyShapedRecord_TwoOrMorePools_False() {
-        XCTAssertFalse(PoolMix.isLegacyShapedRecord(
-            PoolMixInput(poolIds: ["A", "B"], manualTaskIds: [], removedTaskIds: [])
-        ))
-    }
-
-    func testIsLegacyShapedRecord_AnyManualAdditions_False() {
-        XCTAssertFalse(PoolMix.isLegacyShapedRecord(
-            PoolMixInput(poolIds: ["A"], manualTaskIds: ["m"], removedTaskIds: [])
-        ))
-    }
-
-    func testIsLegacyShapedRecord_AnyRemovals_False() {
-        XCTAssertFalse(PoolMix.isLegacyShapedRecord(
-            PoolMixInput(poolIds: ["A"], manualTaskIds: [], removedTaskIds: ["r"])
-        ))
-    }
-
     // MARK: - clampMintedPoolName (review finding I1)
 
     func testClampMintedPoolName_ShortSourceLeftUntouched() {
@@ -372,58 +296,14 @@ final class PoolMixTests: XCTestCase {
         XCTAssertLessThanOrEqual(clamped.utf16.count, 120)
     }
 
-    // MARK: - F5: legacy-template edit preserves soft-deleted-but-not-removed refs
-    // Swift twins of poolMix.test.ts's `mergeLegacyPoolTaskIds` cases.
-
-    func testMergeLegacyPoolTaskIds_PreservesSoftDeletedNotRemovedRef() {
-        let live = buildTask("live")
-        let gone = buildTask("gone", isDeleted: true)
-        let tasksById = byId([live, gone], id: { $0.id })
-        let merged = PoolMix.mergeLegacyPoolTaskIds(
-            ["live", "gone"], selectedTaskIds: ["live"], tasksById: tasksById
-        )
-        // `gone` survives (never shown to the user → can't have been removed).
-        XCTAssertEqual(merged, ["live", "gone"])
-    }
-
-    func testMergeLegacyPoolTaskIds_DropsExplicitlyRemovedResolvableRef() {
-        let a = buildTask("a")
-        let b = buildTask("b")
-        let tasksById = byId([a, b], id: { $0.id })
-        let merged = PoolMix.mergeLegacyPoolTaskIds(
-            ["a", "b"], selectedTaskIds: ["a"], tasksById: tasksById
-        )
-        XCTAssertEqual(merged, ["a"])
-    }
-
-    func testMergeLegacyPoolTaskIds_AppendsAdditionsAfterPreservedOrder() {
-        let a = buildTask("a")
-        let gone = buildTask("gone", isDeleted: true)
-        let added = buildTask("added")
-        let tasksById = byId([a, gone, added], id: { $0.id })
-        let merged = PoolMix.mergeLegacyPoolTaskIds(
-            ["a", "gone"], selectedTaskIds: ["a", "added"], tasksById: tasksById
-        )
-        XCTAssertEqual(merged, ["a", "gone", "added"])
-    }
-
-    func testMergeLegacyPoolTaskIds_PreservesRefMissingFromLibrary() {
-        let a = buildTask("a")
-        let tasksById = byId([a], id: { $0.id })
-        let merged = PoolMix.mergeLegacyPoolTaskIds(
-            ["a", "orphan"], selectedTaskIds: ["a"], tasksById: tasksById
-        )
-        XCTAssertEqual(merged, ["a", "orphan"])
-    }
-
-    // MARK: - resolvePoolPullAdditions / resolvePoolUntoggleRemovals (P3 wizard actions)
+    // MARK: - resolvePoolPullAdditions (P3 wizard action)
     //
-    // Both operate on the SAME worked-example-shaped fixtures as resolveMix
-    // above, but drive the wizard's flat `selectedTaskIds` mutation directly
+    // Operates on the SAME worked-example-shaped fixtures as resolveMix
+    // above, but drives the wizard's flat `selectedTaskIds` mutation directly
     // (rather than recomputing the whole mix) — see
     // docs/POOLS_RECURRING.md §Surfaces item 5 (Wizard step 2) + §Data model
     // "Union rule". Line-for-line mirror of poolMix.test.ts's
-    // `resolvePoolPullAdditions` / `resolvePoolUntoggleRemovals` describe blocks.
+    // `resolvePoolPullAdditions` describe block.
 
     func testResolvePoolPullAdditions_FreshPool_ReturnsFullResolvableSupply() {
         let (poolsById, tasksById) = pullAdditionsFixtures()
@@ -481,95 +361,24 @@ final class PoolMixTests: XCTestCase {
         return (byId([poolA, poolB]) { $0.id }, byId([x, y, z]) { $0.id })
     }
 
-    func testResolvePoolUntoggleRemovals_OnlyPulledPool_RemovesWholeNonManualSupply() {
-        let (poolsById, tasksById) = untoggleRemovalsFixtures()
-        XCTAssertEqual(
-            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: [], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
-            ["x", "y"]
-        )
-    }
+    // MARK: - summarizeSpawnProvenance(supplies:) / formatSpawnProvenanceNote (P6)
+    //
+    // Twin of poolMix.test.ts's `summarizeSpawnProvenanceFromSupplies +
+    // formatSpawnProvenanceNote` block — same vectors the retired pool-trio
+    // overload used, now fed as resolved source supplies.
 
-    func testResolvePoolUntoggleRemovals_ManualWins_ManuallyAddedTaskNeverInRemovalSet() {
-        let (poolsById, tasksById) = untoggleRemovalsFixtures()
-        XCTAssertEqual(
-            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: [], manualTaskIds: ["x"], poolsById: poolsById, tasksById: tasksById),
-            ["y"]
-        )
+    private func poolSupply(_ sourceId: String, _ supplyTaskIds: [String]) -> BoardSources.Supply {
+        BoardSources.Supply(source: BoardSource(sourceId: sourceId, kind: .pool), supplyTaskIds: supplyTaskIds)
     }
-
-    func testResolvePoolUntoggleRemovals_TaskStillSuppliedByRemainingPool_NotRemoved() {
-        let (poolsById, tasksById) = untoggleRemovalsFixtures()
-        // Untoggling A while B stays pulled: y is also supplied by B → keep it.
-        XCTAssertEqual(
-            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: ["B"], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
-            ["x"]
-        )
-    }
-
-    func testResolvePoolUntoggleRemovals_UntoggleBWithARemaining_RemovesOnlyZ() {
-        let (poolsById, tasksById) = untoggleRemovalsFixtures()
-        // y stays (A still supplies it).
-        XCTAssertEqual(
-            PoolMix.resolvePoolUntoggleRemovals("B", remainingPoolIds: ["A"], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
-            ["z"]
-        )
-    }
-
-    func testResolvePoolUntoggleRemovals_RemainingSupplyCheckedStructurally_EvenIfTaskSoftDeleted() {
-        let (poolsById, _) = untoggleRemovalsFixtures()
-        // y is soft-deleted (unresolvable) but B's RAW taskIds still list it, so
-        // it still counts as "remaining supply" and is not removed by A's untoggle.
-        let deletedY = byId([buildTask("x"), buildTask("y", isDeleted: true), buildTask("z"), buildTask("w")], id: { $0.id })
-        XCTAssertEqual(
-            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: ["B"], manualTaskIds: [], poolsById: poolsById, tasksById: deletedY),
-            ["x"]
-        )
-    }
-
-    func testResolvePoolUntoggleRemovals_SoftDeletedRemainingPool_ContributesNoSupply() {
-        let (poolsById, tasksById) = untoggleRemovalsFixtures()
-        var poolsWithDeletedB = poolsById
-        poolsWithDeletedB["B"]?.isDeleted = true
-        // B is soft-deleted, so its previously-shared task (y) is now removed too.
-        XCTAssertEqual(
-            PoolMix.resolvePoolUntoggleRemovals("A", remainingPoolIds: ["B"], manualTaskIds: [], poolsById: poolsWithDeletedB, tasksById: tasksById),
-            ["x", "y"]
-        )
-    }
-
-    func testResolvePoolUntoggleRemovals_MissingOrSoftDeletedTargetPool_ContributesNoRemovalsNotAnError() {
-        let (poolsById, tasksById) = untoggleRemovalsFixtures()
-        XCTAssertEqual(
-            PoolMix.resolvePoolUntoggleRemovals("ghost", remainingPoolIds: ["A"], manualTaskIds: [], poolsById: poolsById, tasksById: tasksById),
-            []
-        )
-    }
-
-    private func untoggleRemovalsFixtures() -> (poolsById: [String: Pool], tasksById: [String: Task]) {
-        let x = buildTask("x")
-        let y = buildTask("y")
-        let z = buildTask("z")
-        let w = buildTask("w")
-        let poolA = buildPool("A", ["x", "y"])
-        let poolB = buildPool("B", ["y", "z"])
-        return (byId([poolA, poolB]) { $0.id }, byId([x, y, z, w]) { $0.id })
-    }
-
-    // MARK: - summarizeSpawnProvenance / formatSpawnProvenanceNote (P6)
 
     func testSummarizeSpawnProvenance_PurePool_AllDealtAreFromThePool() {
         let poolTaskIds = (0..<10).map { "p\($0)" }
-        let pool = buildPool("pool-1", poolTaskIds)
-        let tasks = poolTaskIds.map { buildTask($0) }
-        let source = PoolMixInput(poolIds: ["pool-1"], manualTaskIds: [], removedTaskIds: [])
-        let poolsById = byId([pool]) { $0.id }
-        let tasksById = byId(tasks) { $0.id }
-
-        // Loose-fit overfill: the mix has 10 resolvable tasks but only 8
-        // cells were actually dealt.
+        // Loose-fit overfill: the pool has 10 tasks but only 8 cells were
+        // actually dealt.
         let dealt = Array(poolTaskIds.prefix(8))
         let summary = PoolMix.summarizeSpawnProvenance(
-            spawnSource: source, poolsById: poolsById, tasksById: tasksById, dealtTaskIds: dealt
+            supplies: [poolSupply("pool-1", poolTaskIds)],
+            manualTaskIds: [], counterFamilyByTaskId: [:], dealtTaskIds: dealt
         )
         XCTAssertEqual(summary.dealt, 8)
         XCTAssertEqual(summary.mixSize, 10)
@@ -581,12 +390,8 @@ final class PoolMixTests: XCTestCase {
     func testSummarizeSpawnProvenance_PureManual_AllDealtAreAddedToday() {
         // "Repeat this board…" shape: zero pools, everything manual.
         let manualIds = (0..<5).map { "m\($0)" }
-        let tasks = manualIds.map { buildTask($0) }
-        let source = PoolMixInput(poolIds: [], manualTaskIds: manualIds, removedTaskIds: [])
-        let tasksById = byId(tasks) { $0.id }
-
         let summary = PoolMix.summarizeSpawnProvenance(
-            spawnSource: source, poolsById: [:], tasksById: tasksById, dealtTaskIds: manualIds
+            supplies: [], manualTaskIds: manualIds, counterFamilyByTaskId: [:], dealtTaskIds: manualIds
         )
         XCTAssertEqual(summary.dealt, 5)
         XCTAssertEqual(summary.mixSize, 5)
@@ -598,16 +403,11 @@ final class PoolMixTests: XCTestCase {
     func testSummarizeSpawnProvenance_Mixed_CountsSplitAccurately() {
         let poolTaskIds = (0..<6).map { "p\($0)" }
         let manualIds = ["m0", "m1"]
-        let pool = buildPool("pool-1", poolTaskIds)
-        let tasks = (poolTaskIds + manualIds).map { buildTask($0) }
-        let source = PoolMixInput(poolIds: ["pool-1"], manualTaskIds: manualIds, removedTaskIds: [])
-        let poolsById = byId([pool]) { $0.id }
-        let tasksById = byId(tasks) { $0.id }
-
         // mix = 6 pool + 2 manual = 8. Dealt: 5 pool-sourced + both manual = 7.
         let dealt = Array(poolTaskIds.prefix(5)) + manualIds
         let summary = PoolMix.summarizeSpawnProvenance(
-            spawnSource: source, poolsById: poolsById, tasksById: tasksById, dealtTaskIds: dealt
+            supplies: [poolSupply("pool-1", poolTaskIds)],
+            manualTaskIds: manualIds, counterFamilyByTaskId: [:], dealtTaskIds: dealt
         )
         XCTAssertEqual(summary.dealt, 7)
         XCTAssertEqual(summary.mixSize, 8)

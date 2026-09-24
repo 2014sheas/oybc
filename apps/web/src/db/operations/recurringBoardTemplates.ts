@@ -3,13 +3,17 @@ import type {
   RecurringBoardTemplate,
   CreateRecurringBoardTemplateInput,
   UpdateRecurringBoardTemplateInput,
+  Pool,
+  Task,
 } from '@oybc/shared';
 import {
   SyncOperationType,
   mixFieldsFromSources,
+  poolSourceSupplyById,
   sourcesForRecord,
+  templateReferencesTask,
 } from '@oybc/shared';
-import { resolveSourceBoard } from './boardSources';
+import { fetchBoardSourceSupply, resolveSourceBoard } from './boardSources';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -21,18 +25,6 @@ import { addToSyncQueue } from './syncQueue';
  * multiple writes inside a single Dexie transaction; the helpers here
  * are single-row CRUD.
  */
-
-/**
- * Fetch all non-deleted templates for a user, sorted by `updatedAt desc`.
- */
-export async function fetchRecurringBoardTemplates(
-  userId: string,
-): Promise<RecurringBoardTemplate[]> {
-  return db.recurringBoardTemplates
-    .filter((t) => t.userId === userId && !t.isDeleted)
-    .reverse()
-    .sortBy('updatedAt');
-}
 
 /**
  * Fetch every non-deleted template across all users, sorted by name.
@@ -86,8 +78,8 @@ export async function createRecurringBoardTemplate(
   // (`wizardPersist.ts persistRecurringTemplate`) mints a Pool and passes
   // these so the record is born already-migrated-shaped; callers that omit
   // them (pre-P1 tests, any future un-migrated path) get the "genuinely
-  // un-migrated" shape (fields absent), same as `isLegacyShapedRecord`'s
-  // docstring describes.
+  // un-migrated" shape (fields absent), per `RecurringBoardTemplate`'s
+  // "Legacy shape" doc.
   if (input.poolIds !== undefined) template.poolIds = [...input.poolIds];
   if (input.manualTaskIds !== undefined) template.manualTaskIds = [...input.manualTaskIds];
   if (input.removedTaskIds !== undefined) template.removedTaskIds = [...input.removedTaskIds];
@@ -235,21 +227,51 @@ export async function softDeleteRecurringBoardTemplate(id: string): Promise<void
 }
 
 /**
- * Fetch all non-deleted recurring board templates that include the given
- * task ID in their `seedTaskIds` pool.
+ * Fetch every non-deleted repeating board that can pull the given task —
+ * Task Detail's "used in repeating boards" list (2026-09 audit T2).
  *
- * Soft-deleted tasks are intentionally retained in `seedTaskIds` per the
- * schema (the template itself may still be active). This query therefore
- * filters only on template `isDeleted`, not on the task's state.
+ * Membership is the shared {@link templateReferencesTask}: the task is in
+ * the record's hand-added layer, or in the available supply (raw supply −
+ * excludes) of any of its sources. Supplies come from the same resolvers
+ * the spawn uses — pool: {@link poolSourceSupplyById}; board: the
+ * series-bound live instance via {@link fetchBoardSourceSupply} — with the
+ * done-filter and ranges deliberately NOT applied (a person deciding
+ * whether to edit/delete the task needs every board that could deal it) —
+ * by ruling, not omission. Split-up child tasks are NOT listed: only the
+ * source's own supply counts, so a compound member's parts (dealt via
+ * Split-up) don't list the board; the compound itself does.
+ *
+ * This used to match `seedTaskIds`, a creation-time snapshot the template
+ * edit path leaves stale — so a task removed in an edit stayed listed and
+ * a task added in an edit never appeared.
  *
  * @param taskId - ID of the task to scan for
- * @returns templates whose seedTaskIds contains taskId
+ * @returns templates that reference taskId
+ * @throws Propagates Dexie read errors.
  */
 export async function fetchTemplatesReferencingTask(
   taskId: string,
 ): Promise<RecurringBoardTemplate[]> {
-  return db.recurringBoardTemplates
-    .filter((t) => !t.isDeleted && Array.isArray(t.seedTaskIds) && t.seedTaskIds.includes(taskId))
-    .toArray();
-}
+  const templates = await db.recurringBoardTemplates.filter((t) => !t.isDeleted).toArray();
+  if (templates.length === 0) return [];
+  const sources = templates.flatMap((t) => sourcesForRecord(t));
 
+  const poolIds = [...new Set(sources.filter((s) => s.kind === 'pool').map((s) => s.sourceId))];
+  const pools = poolIds.length > 0 ? await db.pools.where('id').anyOf(poolIds).toArray() : [];
+  const poolsById: Record<string, Pool> = Object.fromEntries(pools.map((p) => [p.id, p]));
+  const memberIds = [...new Set(pools.flatMap((p) => p.taskIds))];
+  const members = memberIds.length > 0 ? await db.tasks.where('id').anyOf(memberIds).toArray() : [];
+  const tasksById: Record<string, Task> = Object.fromEntries(members.map((t) => [t.id, t]));
+
+  const suppliesBySourceId: Record<string, string[]> = {};
+  for (const poolId of poolIds) {
+    suppliesBySourceId[poolId] = poolSourceSupplyById(poolId, poolsById, tasksById);
+  }
+  const boardIds = new Set(sources.filter((s) => s.kind === 'board').map((s) => s.sourceId));
+  for (const boardId of boardIds) {
+    const info = await fetchBoardSourceSupply(boardId);
+    suppliesBySourceId[boardId] = info?.supplyTaskIds ?? [];
+  }
+
+  return templates.filter((t) => templateReferencesTask(t, taskId, suppliesBySourceId));
+}

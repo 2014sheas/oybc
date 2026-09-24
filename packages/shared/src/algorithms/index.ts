@@ -136,16 +136,11 @@ export type {
 } from './recurringBoardTemplates';
 
 // ===== Task Pools + Recurring Boards Rework (P1) — mix resolver =====
-// ===== P3 adds resolvePoolPullAdditions / resolvePoolUntoggleRemovals =====
+// ===== P3 adds resolvePoolPullAdditions =====
 export {
   resolveMix,
-  clearRemovalsForUntoggle,
-  isLegacyShapedRecord,
-  mergeLegacyPoolTaskIds,
   clampMintedPoolName,
   resolvePoolPullAdditions,
-  resolvePoolUntoggleRemovals,
-  summarizeSpawnProvenance,
   summarizeSpawnProvenanceFromSupplies,
   formatSpawnProvenanceNote,
 } from './poolMix';
@@ -153,12 +148,13 @@ export {
 export type { PoolMixSource, ResolveMixResult, SpawnProvenanceSummary } from './poolMix';
 
 // ===== Task Pools + Recurring Boards Rework (P2) — pool health =====
-export { computePoolHealth, formatPoolShortSummary } from './poolHealth';
+export { computePoolHealth, formatPoolShortSummary, templateConsumesPool } from './poolHealth';
 
 export type {
   PoolHealthConsumer,
   PoolHealthResult,
   ComputePoolHealthInput,
+  PoolHealthTemplateSupply,
 } from './poolHealth';
 
 export { isTaskExpired } from './taskExpiry';
@@ -256,6 +252,7 @@ export {
   sourceConfiguration,
   sourceHasConfiguration,
   removeSourceLossSentence,
+  templateReferencesTask,
 } from './boardSources';
 
 export type {
@@ -266,6 +263,7 @@ export type {
   SelectBoardTasksArgs,
   SelectBoardTasksResult,
   LegacyMixFields,
+  TemplateReferenceRecord,
 } from './boardSources';
 
 // ===== Member rules (B1, docs/BOARD_SOURCES.md §Member rules) =====

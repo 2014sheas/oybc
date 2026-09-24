@@ -57,25 +57,70 @@ extension AppDatabase {
         }
     }
 
-    /// Fetch all non-deleted recurring templates whose seedTaskIds contain the
-    /// given taskId. Soft-deleted tasks are intentionally retained in
-    /// seedTaskIds per the schema, so this query filters only on template
-    /// isDeleted — not on the task's own deletion state.
+    /// Fetch every non-deleted repeating board that can pull the given task —
+    /// Task Detail's "used in repeating boards" list (2026-09 audit T2).
+    ///
+    /// Membership is the shared `BoardSources.templateReferencesTask`: the
+    /// task is in the record's hand-added layer, or in the available supply
+    /// (raw supply − excludes) of any of its sources. Supplies come from the
+    /// resolvers the spawn uses — pool: `BoardSources.poolSourceSupplyById`;
+    /// board: the series-bound live instance via `fetchBoardSourceSupply` —
+    /// with the done-filter and ranges deliberately NOT applied (a person
+    /// deciding whether to edit/delete the task needs every board that could
+    /// deal it) — by ruling, not omission. Split-up child tasks are NOT
+    /// listed: only the source's own supply counts, so a compound member's
+    /// parts (dealt via Split-up) don't list the board; the compound itself
+    /// does. Web twin: `fetchTemplatesReferencingTask`.
+    ///
+    /// This used to match `seedTaskIds`, a creation-time snapshot the
+    /// template edit path leaves stale — so a task removed in an edit stayed
+    /// listed and a task added in an edit never appeared.
+    ///
+    /// Opens several reads (not one transaction): `fetchBoardSourceSupply`
+    /// opens its own `read`, and nesting it would deadlock. Call off-main.
     ///
     /// - Parameter taskId: The task ID to search for.
     /// - Returns: Non-deleted templates referencing the task.
+    /// - Throws: A GRDB error from any of the reads.
     func fetchTemplatesReferencingTask(_ taskId: String) throws -> [RecurringBoardTemplate] {
-        return try read { db in
-            // Fetch all non-deleted templates, then filter in-process.
-            // seedTaskIds is stored as a JSON string; LIKE '%taskId%' would
-            // be a cheaper SQL predicate, but it risks false-positives on
-            // UUID prefix collisions and is harder to read. The template
-            // table is small (tens of rows per user), so in-process filter
-            // is acceptable here.
-            let all = try RecurringBoardTemplate
+        let templates = try read { db in
+            try RecurringBoardTemplate
                 .filter(Column("isDeleted") == false)
                 .fetchAll(db)
-            return all.filter { $0.seedTaskIds.contains(taskId) }
+        }
+        guard !templates.isEmpty else { return [] }
+        let sources = templates.flatMap { t in
+            BoardSources.sourcesForRecord(
+                sources: t.sources, poolIds: t.poolIds, removedTaskIds: t.removedTaskIds
+            )
+        }
+
+        var poolIds: [String] = []
+        var boardIds: [String] = []
+        for source in sources {
+            switch source.kind {
+            case .pool where !poolIds.contains(source.sourceId): poolIds.append(source.sourceId)
+            case .board where !boardIds.contains(source.sourceId): boardIds.append(source.sourceId)
+            default: break
+            }
+        }
+        let pools = try fetchPools(ids: poolIds)
+        let poolsById = Dictionary(pools.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let members = try fetchTasks(ids: Array(Set(pools.flatMap { $0.taskIds })))
+        let tasksById = Dictionary(members.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        var suppliesBySourceId: [String: [String]] = [:]
+        for poolId in poolIds {
+            suppliesBySourceId[poolId] = BoardSources.poolSourceSupplyById(
+                poolId, poolsById: poolsById, tasksById: tasksById
+            )
+        }
+        for boardId in boardIds {
+            suppliesBySourceId[boardId] = try fetchBoardSourceSupply(boardId: boardId)?.supplyTaskIds ?? []
+        }
+
+        return templates.filter {
+            BoardSources.templateReferencesTask($0, taskId: taskId, suppliesBySourceId: suppliesBySourceId)
         }
     }
 

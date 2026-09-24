@@ -3,6 +3,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TaskType, Timeframe, type BoardSource, type BoardWindow, type Task } from '@oybc/shared';
 import { SourceRow } from '../SourceRow';
+import { findNestedInteractives } from '../../__tests__/nestedInteractive';
 import type { WizardSourceSupply } from '../../../pages/createHub/wizardSources';
 
 /**
@@ -43,7 +44,7 @@ function makeTask(id: string, title: string, over: Partial<Task> = {}): Task {
   };
 }
 
-function render(source: BoardSource, tasks: Task[]): string {
+function render(source: BoardSource, tasks: Task[], isExpanded = true): string {
   const taskById: Record<string, Task> = {};
   for (const t of tasks) taskById[t.id] = t;
   const supply: WizardSourceSupply = {
@@ -56,7 +57,7 @@ function render(source: BoardSource, tasks: Task[]): string {
       source,
       supply,
       availableCount: tasks.length,
-      isExpanded: true,
+      isExpanded,
       taskById,
       onToggleExpanded: () => {},
       onRemove: () => {},
@@ -112,5 +113,25 @@ describe('SourceRow', () => {
     expect(html).toContain('aria-label="Undo excluding Make the bed"');
     expect(html).toContain('UNDO');
     expect(html).toMatch(/class="[^"]*_struck_/);
+  });
+
+  // 2026-09 audit (T1 Task 2): the ✕ used to be a <button> inside the
+  // header's `role="button"` div, whose Enter/Space handler cancelled it.
+  it.each([
+    ['collapsed', false],
+    ['expanded', true],
+  ])('nests no control inside another (%s)', (_label, isExpanded) => {
+    const counting = makeTask('t-read', 'Read', {
+      type: TaskType.COUNTING,
+      action: 'Read',
+      unit: 'pages',
+      maxCount: 35,
+    });
+    const html = render(POOL_SOURCE, [counting, makeTask('t-plain', 'Make the bed')], isExpanded);
+
+    // Non-vacuous: the header's two controls are really in this markup.
+    expect(html).toContain('aria-label="Remove Morning Kickstart"');
+    expect(html).toMatch(/<button[^>]*aria-expanded="(true|false)"[^>]*aria-label="Morning Kickstart, /);
+    expect(findNestedInteractives(html)).toEqual([]);
   });
 });

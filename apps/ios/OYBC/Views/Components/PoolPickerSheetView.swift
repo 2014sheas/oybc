@@ -15,9 +15,9 @@ import SwiftUI
 ///   layer).
 /// - A `manualTaskIds`/`removedTaskIds`-bearing record (e.g. the recurring
 ///   wizard's own pool-mix state, `BoardWizardViewModel.pullPool`/
-///   `untogglePool`) instead needs `PoolMix.resolvePoolPullAdditions` /
-///   `resolvePoolUntoggleRemovals` / `clearRemovalsForUntoggle` against
-///   that union-rule bookkeeping — never just a membership flip. (P7's
+///   `untogglePool`) instead needs `PoolMix.resolvePoolPullAdditions` and
+///   its own untoggle bookkeeping against that union rule — never just a
+///   membership flip. (P7's
 ///   `RepeatingBoardEditSheetView` was this shape; Board Creation Split
 ///   PR B retired it in favor of editing via the wizard directly, which
 ///   uses its own pool-pull card rather than this sheet.)

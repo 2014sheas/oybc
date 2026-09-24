@@ -3,18 +3,16 @@
  *
  * Used by CountersHubPage and CounterDetailPage.
  * P3 arrival-banner components will be added here.
+ *
+ * Prop types are exported from each component file; re-export here only
+ * when a consumer needs one.
  */
 export { CounterLedgerCard } from './CounterLedgerCard';
 export type { CounterLoggedEvent } from './CounterLedgerCard';
 export { CounterDetailTaskCard } from './CounterDetailTaskCard';
 export { CreateCounterSheet } from './CreateCounterSheet';
-export type { CreateCounterSheetProps } from './CreateCounterSheet';
 export { CounterLinkHint } from './CounterLinkHint';
-export type { CounterLinkHintProps } from './CounterLinkHint';
 export { CounterDeleteConfirmDialog } from './CounterDeleteConfirmDialog';
-export type {
-  CounterDeleteConfirmDialogProps,
-  CounterDeleteConfirmMember,
-} from './CounterDeleteConfirmDialog';
 export { CounterLogToast } from './CounterLogToast';
-export type { CounterLogToastProps } from './CounterLogToast';
+export { CounterWriteError } from './CounterWriteError';
+export { attemptCounterWrite, COUNTER_NOT_UPDATED_MESSAGE } from './counterWriteFeedback';

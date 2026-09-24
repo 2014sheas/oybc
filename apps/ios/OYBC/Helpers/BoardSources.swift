@@ -669,3 +669,56 @@ enum BoardSources {
         return parts.dropLast().joined(separator: ", ") + " and " + last
     }
 }
+
+extension BoardSources {
+    /// Can this repeating board pull `taskId`? Task Detail's "used in
+    /// repeating boards" list (2026-09 audit T2) — read by a person deciding
+    /// whether editing or deleting the task affects the board. TS twin:
+    /// `templateReferencesTask`, pinned by `boardSourceVectors.json`
+    /// (`referenceVectors`).
+    ///
+    /// True when the task is in the record's hand-added layer, OR is in the
+    /// AVAILABLE supply of any of its sources (raw supply − that source's
+    /// `excludedTaskIds`). Ranges and the done-filter are deliberately
+    /// ignored: a capped source or a "Not done yet" board source can still
+    /// deal the task in some window, so the list over-includes rather than
+    /// hides a board that would be affected. Ignoring ranges and the
+    /// done-filter is a ruling, not an omission. Split-up child tasks are
+    /// NOT listed: a board lists only the tasks in its sources' own supply,
+    /// so a compound member's parts (dealt via Split-up) don't list the
+    /// board; the compound itself does.
+    ///
+    /// The hand-added layer follows the resolvers' un-migrated rule: a
+    /// record with none of `sources` / `poolIds` / `manualTaskIds` /
+    /// `removedTaskIds` treats `seedTaskIds` as manual. Any other record
+    /// never reads `seedTaskIds` — a creation-time snapshot the edit path
+    /// leaves stale, which is the defect this replaces.
+    ///
+    /// - Parameters:
+    ///   - template: The repeating board (sources via `sourcesForRecord`).
+    ///   - taskId: The task being asked about.
+    ///   - suppliesBySourceId: Each source's RAW supply keyed by its stored
+    ///     `sourceId` (pool: `poolSourceSupplyById`; board: the series-bound
+    ///     live instance's placements, done-filter NOT applied). A source
+    ///     with no entry supplies nothing.
+    /// - Returns: Whether the template references the task.
+    static func templateReferencesTask(
+        _ template: RecurringBoardTemplate,
+        taskId: String,
+        suppliesBySourceId: [String: [String]]
+    ) -> Bool {
+        let isUnmigrated = template.sources == nil && template.poolIds == nil
+            && template.manualTaskIds == nil && template.removedTaskIds == nil
+        let manual = isUnmigrated ? template.seedTaskIds : (template.manualTaskIds ?? [])
+        if manual.contains(taskId) { return true }
+        let sources = sourcesForRecord(
+            sources: template.sources,
+            poolIds: template.poolIds,
+            removedTaskIds: template.removedTaskIds
+        )
+        return sources.contains { source in
+            !source.excludedTaskIds.contains(taskId)
+                && (suppliesBySourceId[source.sourceId] ?? []).contains(taskId)
+        }
+    }
+}

@@ -1,19 +1,8 @@
 import Foundation
 
-/// Wizard pool-mix persistence payloads — extracted from
+/// Wizard draft-mix persistence payload — extracted from
 /// `BoardWizardViewModel.swift` in the Board Sources rework (P1) so the
 /// frozen god-file shrinks instead of growing (ROADMAP B6 posture).
-
-/// Minimal `PoolMixSource` wrapper for the wizard's raw pool-mix state,
-/// which isn't itself a `RecurringBoardTemplate`. Used by
-/// `BoardWizardViewModel.resolvePoolMixHydration` to feed a draft blob's
-/// legacy trio to `PoolMix.resolveMix`. Internal (not `private`) so both
-/// files see it.
-struct WizardPoolMixRecord: PoolMixSource {
-    var poolIds: [String]?
-    var manualTaskIds: [String]?
-    var removedTaskIds: [String]?
-}
 
 /// Board Creation Split (PR B) — the JSON payload snapshotted into
 /// `Board.recurringDraftMix` so a wizard draft's FULL pool mix survives a

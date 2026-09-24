@@ -3,7 +3,7 @@ import GRDB
 import Observation
 
 /// Filter options for the Existing Tasks tab. Four user-facing tabs map
-/// onto the unified TaskType values (mirrors web's ExistingFilter):
+/// onto the unified TaskType values:
 ///   - .all      → every task
 ///   - .normal   → type=.normal
 ///   - .counting → type=.counting

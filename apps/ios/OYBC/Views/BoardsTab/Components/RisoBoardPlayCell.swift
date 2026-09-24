@@ -230,12 +230,14 @@ struct RisoBoardPlayCell: View {
                     Circle()
                         .fill(Color.risoGold)
                         .frame(width: 15, height: 15)
+                    // Keyline + glyph sit on gold → static ink (dark contract;
+                    // web twin RisoBoard.module.css `.check` does the same).
                     Circle()
-                        .strokeBorder(Color.risoInk, lineWidth: 1.5)
+                        .strokeBorder(Color.risoInkStatic, lineWidth: 1.5)
                         .frame(width: 15, height: 15)
                     Image(systemName: "checkmark")
                         .font(.system(size: 7, weight: .black))
-                        .foregroundStyle(Color.risoInk)
+                        .foregroundStyle(Color.risoInkStatic)
                 }
                 .padding(.top, 3)
                 .padding(.trailing, 3)

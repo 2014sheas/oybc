@@ -201,12 +201,30 @@ export async function updateDisplayName(newName: string): Promise<void> {
   await updateUserDisplayName(firebaseUser.uid, trimmed);
 }
 
+/** User-facing copy when the pre-sign-out queue clear fails (mirrors iOS `AuthServiceError.syncQueueClearFailed`). */
+export const SIGN_OUT_QUEUE_CLEAR_FAILED_MESSAGE =
+  "Couldn't sign out safely — local changes couldn't be cleared. Try again.";
+
 /**
  * Sign out the current user and clear the sync queue.
+ *
+ * The queue is cleared FIRST; if that fails, sign-out is aborted (the user
+ * stays signed in) — a leftover queue would push this user's pending writes
+ * under the next account that signs in on this device.
+ *
+ * @throws Error with `SIGN_OUT_QUEUE_CLEAR_FAILED_MESSAGE` if the queue clear
+ *   fails, or the Firebase error if sign-out itself fails.
  */
 export async function signOut(): Promise<void> {
   // Clear sync queue before signing out to prevent cross-user pollution
-  await db.syncQueue.clear();
+  const cleared = await db.syncQueue.clear().then(
+    () => true,
+    (err: unknown) => {
+      console.error('[authService] signOut: sync-queue clear failed, aborting sign-out', err);
+      return false;
+    }
+  );
+  if (!cleared) throw new Error(SIGN_OUT_QUEUE_CLEAR_FAILED_MESSAGE);
   await firebaseSignOut(auth);
 }
 

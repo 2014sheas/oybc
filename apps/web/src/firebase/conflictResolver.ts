@@ -9,4 +9,4 @@
  * so existing imports of `./conflictResolver` elsewhere in this app
  * don't need to change.
  */
-export { resolveConflict, type SyncableEntity, type ConflictResult } from '@oybc/shared';
+export { resolveConflict, type SyncableEntity } from '@oybc/shared';

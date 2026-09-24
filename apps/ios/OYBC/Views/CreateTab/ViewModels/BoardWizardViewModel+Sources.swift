@@ -57,8 +57,26 @@ extension BoardWizardViewModel {
 
     /// The uncached expansion — see ``expandedSupplies``.
     private func computeExpandedSupplies() -> [BoardSources.ExpandedSupply] {
+        Self.expandedSupplies(
+            sources: sources,
+            supplyInfo: supplyInfoBySourceId,
+            childrenByCompoundId: childrenByCompoundId,
+            tasksById: supplyTasksById
+        )
+    }
+
+    /// The expansion over any sources state — the one code path both the
+    /// live wizard (``expandedSupplies``) and a saved draft's
+    /// ``resolveDraftCapacity(board:database:)`` go through, so the drafts
+    /// list and the reopened wizard can't disagree on a draft's pool size.
+    static func expandedSupplies(
+        sources: [BoardSource],
+        supplyInfo: [String: WizardSourceSupply],
+        childrenByCompoundId: [String: [CompoundChild]],
+        tasksById: [String: Task]
+    ) -> [BoardSources.ExpandedSupply] {
         let raw = sources.map { source -> BoardSources.Supply in
-            let info = supplyInfoBySourceId[source.sourceId]
+            let info = supplyInfo[source.sourceId]
             let ids = BoardSources.availableSupplyIds(
                 source: source,
                 supplyTaskIds: info?.rawSupplyTaskIds ?? [],
@@ -74,7 +92,7 @@ extension BoardWizardViewModel {
         return BoardSources.applyMemberRules(
             raw,
             childrenByCompoundId: childrenByCompoundId,
-            tasksById: supplyTasksById
+            tasksById: tasksById
         )
     }
 
@@ -537,6 +555,72 @@ extension BoardWizardViewModel {
     }
 }
 
+// MARK: - Saved-draft pool size (drafts list + resume step)
+
+extension BoardWizardViewModel {
+    /// A saved draft's honest pool size — the SAME number the wizard's
+    /// header and Step-2 gate (``sourceCapacity``) show once the draft is
+    /// reopened (2026-09 audit T2, docs/BOARD_SOURCES.md §Selection step 3).
+    ///
+    /// Reads the blob's canonical `sources` (+ `manualTaskIds`) through
+    /// ``hydrateSourcesState(sources:manualTaskIds:database:)`` — the exact
+    /// hydration the wizard runs on open — never the retired pool-mix
+    /// mirror (`poolIds`/`removedTaskIds`), which drops board-kind sources
+    /// and every min/max range. A v1 blob with no `sources` is already
+    /// mapped forward by `RecurringDraftMixPayload.decoded(from:)`
+    /// (`sourcesFromMixFields`, the `[0, all]` rule), so no legacy branch is
+    /// needed here.
+    ///
+    /// The count is `BoardSources.computeSourceCapacity` (the
+    /// `computeAchievablePoolSize` dry-run) over ``expandedSupplies(sources:supplyInfo:childrenByCompoundId:tasksById:)``:
+    /// excludes, the `'todo'` filter, Split-up expansion, counter-family
+    /// exclusivity and the chosen center pinned. Fetch failures degrade to
+    /// empty supplies (0), matching the hydration's posture.
+    ///
+    /// Web twin: `resolveDraftCapacity` (`pages/createHub/resolveDraftCapacity.ts`).
+    ///
+    /// - Parameters:
+    ///   - board: The draft board; only its blob and center fields are read.
+    ///   - database: The database to resolve supplies against.
+    /// - Returns: The achievable pool size.
+    static func resolveDraftCapacity(board: Board, database: AppDatabase) -> Int {
+        let mix = RecurringDraftMixPayload.decoded(from: board.recurringDraftMix)
+        let hydrated = hydrateSourcesState(
+            sources: mix.sources ?? [],
+            manualTaskIds: mix.manualTaskIds,
+            database: database
+        )
+        var supplied: [String] = []
+        var seen = Set<String>()
+        for source in hydrated.sources {
+            for id in hydrated.supplyInfo[source.sourceId]?.rawSupplyTaskIds ?? []
+            where seen.insert(id).inserted {
+                supplied.append(id)
+            }
+        }
+        // §Member rules (B3, RC7) — a Split-up member counts as its parts.
+        let childrenByCompoundId =
+            (try? database.fetchCompoundChildren(forCandidateTaskIds: supplied)) ?? [:]
+        var referenced = seen.union(mix.manualTaskIds)
+        for links in childrenByCompoundId.values {
+            for link in links { referenced.insert(link.childTaskId) }
+        }
+        let tasks = (try? database.fetchTasks(ids: Array(referenced))) ?? []
+        let tasksById = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let supplies = expandedSupplies(
+            sources: hydrated.sources,
+            supplyInfo: hydrated.supplyInfo,
+            childrenByCompoundId: childrenByCompoundId,
+            tasksById: tasksById
+        ).map { $0.asSupply }
+        return BoardSources.computeSourceCapacity(
+            supplies,
+            manualTaskIds: mix.manualTaskIds,
+            counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(tasks),
+            pinnedTaskId: board.centerSquareType == .chosen ? board.centerTaskId : nil
+        ).capacity
+    }
+}
 
 /// What the Tasks step's pool/board pickers read: the user's pools, their
 /// recurring templates, and the "Add from a pool or board" sheet's BOARDS

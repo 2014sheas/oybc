@@ -332,6 +332,7 @@ export function BoardSettingsPage(): React.ReactElement {
           existingDefault={coreDefaultByTimeframe[defaultsSheetTimeframe] ?? undefined}
           pools={pools}
           templates={templates}
+          achievableTaskIdsByTemplateId={templateMixes}
           allTasks={library.allTasks}
           browsableTasks={browsableTasks}
           onClose={() => setDefaultsSheetTimeframe(null)}

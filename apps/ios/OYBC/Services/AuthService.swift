@@ -512,7 +512,12 @@ final class AuthService: ObservableObject {
             try User.fetchOne(db, key: user.uid)?.email
         }) ?? nil
         guard localEmail != firebaseEmail else { return }
-        try? persistUserMutation { $0.email = firebaseEmail }
+        do {
+            try persistUserMutation { $0.email = firebaseEmail }
+        } catch {
+            // Non-fatal: re-attempted on the next foreground / launch.
+            dlog("⚠️ AuthService.reconcileEmailIfChanged failed to persist email: \(error)")
+        }
     }
 
     /// Sends a password-reset email to the signed-in user's address — an escape
@@ -688,11 +693,21 @@ final class AuthService: ObservableObject {
 
     /// Signs out of Firebase and clears the local current user.
     ///
-    /// - Throws: A Firebase `AuthError` if sign-out fails.
+    /// - Throws: `AuthServiceError.syncQueueClearFailed` if the local sync
+    ///   queue can't be cleared (sign-out is then NOT performed — see below),
+    ///   or a Firebase `AuthError` if sign-out itself fails.
     func signOut() throws {
-        // Clear sync queue to prevent cross-user data leakage
-        try? AppDatabase.shared.write { db in
-            try db.execute(sql: "DELETE FROM sync_queue")
+        // Clear sync queue to prevent cross-user data leakage. If this fails
+        // we must NOT continue: a leftover queue would push this user's
+        // pending writes under the next account that signs in on the device.
+        // Stay signed in and surface the error (ProfileView shows it).
+        do {
+            try AppDatabase.shared.write { db in
+                try db.execute(sql: "DELETE FROM sync_queue")
+            }
+        } catch {
+            dlog("⚠️ AuthService.signOut: sync-queue clear failed, aborting sign-out: \(error)")
+            throw AuthServiceError.syncQueueClearFailed
         }
         try Auth.auth().signOut()
         currentUser = nil
@@ -818,6 +833,7 @@ enum AuthServiceError: LocalizedError {
     case invalidAppleCredential
     case noCurrentUser
     case cannotUnlinkLastProvider
+    case syncQueueClearFailed
 
     var errorDescription: String? {
         switch self {
@@ -829,6 +845,8 @@ enum AuthServiceError: LocalizedError {
             return "You're not signed in."
         case .cannotUnlinkLastProvider:
             return "You can't remove your only sign-in method. Add another first."
+        case .syncQueueClearFailed:
+            return "Couldn't sign out safely — local changes couldn't be cleared. Try again."
         }
     }
 }

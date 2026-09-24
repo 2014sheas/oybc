@@ -21,17 +21,6 @@ export interface SubtaskFormState {
 }
 
 /**
- * Validation error state for a single inline subtask.
- * Exported so parent FormErrors types can reference it.
- */
-export interface SubtaskFormErrors {
-  title?: string;
-  action?: string;
-  unit?: string;
-  maxCount?: string;
-}
-
-/**
  * Generates a unique client-side ID for form subtask tracking.
  *
  * @returns A unique string ID

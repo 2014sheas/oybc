@@ -7,7 +7,8 @@
   Dark-contract rules applied here (RISO_WEB.md):
     - Body text on riso-paper background  → var(--riso-ink)  [adaptive, flips]
     - "Done" label on risoGold fill       → var(--riso-ink-static)  [never flips]
-    - Toast text on risoInk fill          → var(--riso-on-color)    [never flips]
+    - Toast fill                          → var(--riso-ink-static)  [dark in both modes]
+    - Toast text on the static ink fill   → var(--riso-on-color)    [never flips]
     - Hard-shadow offset                  → var(--riso-shadow-ink)  [near-black both modes]
     - Modal scrim                         → rgba(0, 0, 0, 0.55)     [fixed]
     - Focus rings                         → var(--riso-ink) inset outline
@@ -216,9 +217,10 @@
   font-family: var(--riso-font-head);
   font-weight: 800;
   font-size: 12px;
-  /* Toast text on dark ink fill → static cream (never flips) */
+  /* Static dark fill (never flips — adaptive --riso-ink would go cream in dark
+     mode and wash out the cream text) + static cream text. */
   color: var(--riso-on-color);
-  background: var(--riso-ink);
+  background: var(--riso-ink-static);
   border-radius: 100px;
   padding: 8px 14px;
   white-space: nowrap;

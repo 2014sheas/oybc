@@ -397,7 +397,7 @@ final class AppDatabase {
         //   `taskIds` is JSON-encoded text (same pattern as
         //   `seedTaskIds` on templates and `completedLineIds` on boards).
         //   Uniqueness on `(userId, timeframe)` is enforced at the
-        //   application layer (`upsertDefaultPool`); no SQL UNIQUE
+        //   application layer (at the time, `upsertDefaultPool`); no SQL UNIQUE
         //   constraint so soft-deleted rows can coexist with their
         //   recreated replacements during sync.
         migrator.registerMigration("v13") { db in
@@ -795,7 +795,7 @@ final class AppDatabase {
         //      path; `defaultPools` joins `LEGACY_PULL_SKIP_COLLECTIONS`
         //      in SyncService.swift).
         //   2. Each `RecurringBoardTemplate` whose `poolIds` column IS NULL
-        //      (the "genuinely un-migrated" half of `PoolMix.isLegacyShapedRecord`)
+        //      (the "genuinely un-migrated" legacy shape)
         //      has its `seedTaskIds` extracted into a `Pool` named
         //      "<template name> pool"; the template is stamped with
         //      `poolIds: [newPool.id]`, `manualTaskIds: []`,

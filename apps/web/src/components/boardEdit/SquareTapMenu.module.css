@@ -127,5 +127,5 @@
    hover keeps the shared gold fill (kit convention) with ink-static text so the
    label stays legible on gold in both schemes (dark contract). */
 .menuItemDanger {
-  color: var(--danger, #dc2626);
+  color: var(--riso-red);
 }

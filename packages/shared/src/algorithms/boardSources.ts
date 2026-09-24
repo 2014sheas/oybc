@@ -62,6 +62,7 @@ import type {
   BoardSourceMemberRule,
 } from '../types/boardSource';
 import type { Pool } from '../types/pool';
+import type { RecurringBoardTemplate } from '../types/recurringBoardTemplate';
 import type { Task } from '../types/task';
 
 /**
@@ -776,4 +777,59 @@ export function removeSourceLossSentence(
 function joinNaturally(parts: string[]): string {
   if (parts.length === 1) return parts[0];
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+/** The slice of a repeating board {@link templateReferencesTask} reads. */
+export type TemplateReferenceRecord = Pick<
+  RecurringBoardTemplate,
+  'sources' | 'poolIds' | 'removedTaskIds' | 'manualTaskIds' | 'seedTaskIds'
+>;
+
+/**
+ * Can this repeating board pull `taskId`? Task Detail's "used in repeating
+ * boards" list (2026-09 audit T2) — read by a person deciding whether
+ * editing or deleting the task affects the board.
+ *
+ * True when the task is in the record's hand-added layer, OR is in the
+ * AVAILABLE supply of any of its sources (raw supply − that source's
+ * `excludedTaskIds`). Ranges and the done-filter are deliberately ignored:
+ * a `max: 3` source or a "Not done yet" board source can still deal the
+ * task in some window, so the list over-includes rather than hides a
+ * board that would be affected. Ignoring ranges and the done-filter is a
+ * ruling, not an omission. Split-up child tasks are NOT listed: a board
+ * lists only the tasks in its sources' own supply, so a compound member's
+ * parts (dealt via Split-up) don't list the board; the compound itself does.
+ *
+ * The hand-added layer follows the resolvers' un-migrated rule: a record
+ * with none of `sources` / `poolIds` / `manualTaskIds` / `removedTaskIds`
+ * treats `seedTaskIds` as manual. Any other record never reads
+ * `seedTaskIds` — it is a creation-time snapshot the edit path leaves
+ * stale, which is the defect this replaces.
+ *
+ * @param template - The repeating board (sources read via {@link sourcesForRecord}).
+ * @param taskId - The task being asked about.
+ * @param suppliesBySourceId - Each source's RAW supply keyed by its stored
+ *   `sourceId`, as the platform resolvers produce it (pool:
+ *   {@link poolSourceSupplyById}; board: the series-bound live instance's
+ *   placements, done-filter NOT applied). A source with no entry supplies
+ *   nothing.
+ * @returns Whether the template references the task.
+ */
+export function templateReferencesTask(
+  template: TemplateReferenceRecord,
+  taskId: string,
+  suppliesBySourceId: Readonly<Record<string, readonly string[]>>,
+): boolean {
+  const isUnmigrated =
+    template.sources === undefined &&
+    template.poolIds === undefined &&
+    template.manualTaskIds === undefined &&
+    template.removedTaskIds === undefined;
+  const manual = isUnmigrated ? template.seedTaskIds : (template.manualTaskIds ?? []);
+  if (manual.includes(taskId)) return true;
+  return sourcesForRecord(template).some(
+    (source) =>
+      !source.excludedTaskIds.includes(taskId) &&
+      (suppliesBySourceId[source.sourceId] ?? []).includes(taskId),
+  );
 }

@@ -1,11 +1,8 @@
 import { useMemo } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { BoardStatus, type Board, type BoardTask } from '@oybc/shared';
-import { useBoards, useBoardTasks, useRecurringDraftMix } from '../../hooks';
-
-export interface DraftWithTaskCount {
-  board: Board;
-  taskCount: number;
-}
+import { useBoards, useBoardTasks } from '../../hooks';
+import { resolveDraftCapacity } from './resolveDraftCapacity';
 
 /**
  * Reactive list of DRAFT boards for the given user, most recently
@@ -31,23 +28,22 @@ export function useDrafts(userId: string | undefined): Board[] {
  * drafts-list rows so each row can show "X of Y tasks" without the
  * hub having to fetch every BoardTask upfront.
  *
- * Board Creation Split (web PR D) — a recurring draft's true pool size
- * lives in `recurringDraftMix`, not the placed `BoardTask` rows (which
- * truncate an intentionally overfilled pool to the grid size — see
- * `Board.recurringDraftMix`'s doc). Both hooks are called unconditionally
- * (rule of hooks); only the branch below decides which result to use, so
- * a one-off draft never pays for the (short-circuited, empty) mix
- * resolution and vice versa.
+ * A draft carrying a mix blob counts from its SOURCES — the wizard's own
+ * capacity number (`resolveDraftCapacity`), so a board-kind source or a
+ * capped range counts exactly as the reopened wizard will show it (2026-09
+ * audit T2; the old pool-mix read counted a board-only draft as 0). The
+ * placed `BoardTask` rows would truncate an intentionally overfilled pool
+ * (see `Board.recurringDraftMix`'s doc), so they only count for a legacy
+ * blob-less one-off draft. Both hooks are called unconditionally (rule of
+ * hooks); the branch below picks the result.
  */
 export function useDraftTaskCount(board: Board): number {
   const boardTasks: BoardTask[] = useBoardTasks(board.id) ?? [];
-  // Board Sources P1 — one-off drafts saved post-P1 carry the blob too;
-  // count from it whenever present (same truncation rationale). Legacy
-  // blob-less one-off drafts keep the boardTasks count.
   const hasMixBlob = board.isRecurringDraft || board.recurringDraftMix !== undefined;
-  const recurringMix = useRecurringDraftMix(
-    hasMixBlob ? board.recurringDraftMix : undefined,
+  const capacity = useLiveQuery(
+    async () => (hasMixBlob ? resolveDraftCapacity(board) : 0),
+    [hasMixBlob, board.recurringDraftMix, board.centerSquareType, board.centerTaskId],
   );
-  if (hasMixBlob) return recurringMix?.size ?? 0;
+  if (hasMixBlob) return capacity ?? 0;
   return boardTasks.length;
 }

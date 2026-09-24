@@ -7,7 +7,7 @@ import GRDB
 /// unified-persist-path rewrite.
 ///
 /// P4 retired the P1→P3 shape-scoped legacy write-through
-/// (`PoolMix.isLegacyShapedRecord` / pool-minting via
+/// (single-pool-shape check / pool-minting via
 /// `createPoolAndEnqueue`/`updatePoolAndEnqueue`) entirely: this function now
 /// ALWAYS persists the controller's own `pulledPoolIds`/`manualTaskIds`/
 /// `removedTaskIds` directly — no Pool write-through on edit, no Pool minted

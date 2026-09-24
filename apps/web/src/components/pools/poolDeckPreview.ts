@@ -1,4 +1,4 @@
-import { CenterSquareType, fillableCellCount } from '@oybc/shared';
+import { CenterSquareType, fillableCellCount, templateConsumesPool } from '@oybc/shared';
 import type { RecurringBoardTemplate } from '@oybc/shared';
 
 /** The floor a deck-preview line measures a pool's live task count against. */
@@ -23,7 +23,8 @@ const DEFAULT_DECK_FLOOR: DeckFloor = {
 /**
  * The floor the pool-edit sheet's deck-preview line measures against: the
  * SMALLEST fillable floor among the pool's active, non-deleted consumers
- * (repeating-board spawn records whose `poolIds` include this pool), or
+ * (repeating-board spawn records with a pool source naming this pool —
+ * `templateConsumesPool`, never the `poolIds` mirror), or
  * the 3×3-FREE default when there are none. Mirrors the "smallest
  * consuming floor" rule in docs/POOLS_RECURRING.md §Surfaces item 2.
  */
@@ -34,7 +35,7 @@ export function computeDeckFloor(
   let best: DeckFloor | null = null;
   for (const template of templates) {
     if (template.isDeleted || !template.isActive) continue;
-    if (!(template.poolIds ?? []).includes(poolId)) continue;
+    if (!templateConsumesPool(template, poolId)) continue;
 
     const floor = fillableCellCount(template.boardSize, template.centerSquareType);
     if (!best || floor < best.floor) {

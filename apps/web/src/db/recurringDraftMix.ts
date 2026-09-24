@@ -21,10 +21,9 @@
  * decode/sync compat; it is historical.
  *
  * No DB access, no React — a leaf module under `db/` (not `db/operations/`)
- * so both the operations layer (`db/operations/recurringDraftMix.ts`) and
- * the wizard's component-tree code (`components/wizard/wizardPersist.ts`,
- * `pages/createHub/useBoardWizard.ts`) can import it without crossing the
- * `db/internal` access boundary unnecessarily.
+ * so the wizard's component-tree code (`components/wizard/wizardPersist.ts`,
+ * `pages/createHub/useBoardWizard.ts`, `pages/createHub/resolveDraftCapacity.ts`)
+ * can import it without crossing the `db/internal` access boundary.
  *
  * iOS twin: the top-level `RecurringDraftMixPayload` struct
  * (`apps/ios/OYBC/Views/CreateTab/RecurringDraftMixPayload.swift`).
