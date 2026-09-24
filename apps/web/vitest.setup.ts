@@ -8,7 +8,10 @@
 import 'fake-indexeddb/auto';
 
 /*
- * DAG-tolerant key conversion for `IDBKeyRange` factories.
+ * DAG-tolerant key conversion for `IDBKeyRange` factories. Scope: the range
+ * factories only — Dexie's virtual-cursor `continue(pad(...))` path is not
+ * wrapped; a reverse key-jumping iteration over a padded index could still
+ * hit the fake's DataError.
  *
  * Root cause: for a compound index like `[status+priority+createdAt]`,
  * Dexie's virtual-index middleware serves `where('status').equals(S)` as
