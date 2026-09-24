@@ -431,8 +431,14 @@ extension BoardPlayViewModel {
                     for (task, override) in taskOverridePairs {
                         var updated = task
                         updated.title = override.title
-                        updated.type  = override.type
-                        switch override.type {
+                        // Board Edit never switches a task into or out of
+                        // Compound: out would orphan its compound_children,
+                        // in would mint a zero-child, rule-less compound. The
+                        // sheet no longer offers it; this guards stale drafts.
+                        if override.type != .compound && task.type != .compound {
+                            updated.type = override.type
+                        }
+                        switch updated.type {
                         case .counting:
                             // action can be cleared (nil) — assign unconditionally so the
                             // commit matches the draft grid (which clears it on blank).

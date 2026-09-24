@@ -6,16 +6,17 @@ import SwiftUI
 /// mode (Phase 2 — Edit tasks sub-mode).
 ///
 /// This sheet edits **only** the subset of task fields exposed in the board-edit
-/// flow: name, type (Simple / Counting / Compound), and type-specific counters.
+/// flow: name, type (Simple / Counting), and type-specific counters.
 /// Nothing is written to the database on Done — the parent (`BoardPlayView`)
 /// stages a `StagedTaskOverride` and commits on "Save changes".
 ///
 /// Key invariants:
 ///   - Achievement tasks are never surfaced here (the tap-menu skips them).
 ///   - The "Free" type chip is Phase 2b (center conversion) — omitted here.
-///   - Compound → Simple/Counting type switches are staged but DO NOT cascade-
-///     delete `compound_children` rows — that cleanup is deferred and safe
-///     (orphaned rows with a changed parent type are inert).
+///   - No switching into or out of Compound: the type picker offers Simple /
+///     Counting only and is hidden for a compound (whose sub-tasks and rule
+///     are edited from Task Detail). The commit path ignores such an override
+///     too (`BoardPlayViewModel+EditCommit`).
 ///   - The "everywhere" hint is always visible so the user understands they are
 ///     editing the task globally, not cloning it per-square.
 ///
@@ -111,7 +112,7 @@ struct SquareEditTaskSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     headerBadge
                     nameSection
-                    typeSection
+                    if task.type != .compound { typeSection }
                     if type == .counting { countingSection }
                     if type == .compound { compoundSection }
                     everywhereHint
@@ -170,7 +171,6 @@ struct SquareEditTaskSheet: View {
                 options: [
                     (.normal,   "Simple"),
                     (.counting, "Counting"),
-                    (.compound, "Compound"),
                 ],
                 selection: $type
             )
@@ -209,7 +209,7 @@ struct SquareEditTaskSheet: View {
     /// the board-edit flow — direct the user to the wizard.
     private var compoundSection: some View {
         editSection(label: "Compound") {
-            Text("Compound subtasks are edited from the board-creation wizard. The title can still be changed here.")
+            Text("Sub-tasks and the completion rule are edited from the task's detail page. The title can still be changed here.")
                 .font(.risoBody(13, .semibold))
                 .foregroundStyle(Color.risoMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)

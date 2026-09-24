@@ -327,8 +327,11 @@ final class BoardPlayViewModel: ObservableObject {
         for (taskId, override) in editTaskOverrides {
             guard var t = map[taskId] else { continue }
             t.title = override.title
-            t.type  = override.type
-            if override.type == .counting {
+            // Same guard as the commit: never into or out of Compound.
+            if override.type != .compound && t.type != .compound {
+                t.type = override.type
+            }
+            if t.type == .counting {
                 t.action   = override.action
                 t.unit     = override.unit
                 t.maxCount = override.maxCount

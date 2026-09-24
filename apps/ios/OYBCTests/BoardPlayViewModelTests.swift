@@ -1070,6 +1070,52 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(bt.col, 1, "position move committed")
     }
 
+    /// Board Edit can no longer switch a task into or out of Compound: a
+    /// compound → Simple override would orphan its `compound_children`, and a
+    /// Simple → Compound override would mint a zero-child compound with no
+    /// rule (below the 2-sub-task minimum). The title still commits.
+    func test_editCommit_ignoresTypeOverrideIntoOrOutOfCompound() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeCompoundTask("tc"))
+        try db.saveTask(makeTask("c1"))
+        try db.saveTask(makeTask("c2"))
+        try db.saveTask(makeTask("tn"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-c", boardId: "b1", taskId: "tc", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt-n", boardId: "b1", taskId: "tn", row: 0, col: 1))
+        try db.dbQueue.write { database in
+            try makeCompoundChild(parent: "tc", child: "c1", idx: 0).insert(database)
+            try makeCompoundChild(parent: "tc", child: "c2", idx: 1).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let board = try XCTUnwrap(vm.board)
+        vm.seedEditDraft(from: board)
+        vm.handleEditTaskOverride(
+            taskId: "tc",
+            patch: .init(title: "Renamed compound", type: .normal, action: "", unit: "", maxCount: nil)
+        )
+        vm.handleEditTaskOverride(
+            taskId: "tn",
+            patch: .init(title: "Renamed normal", type: .compound, action: "", unit: "", maxCount: nil)
+        )
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"), "save should dispatch")
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
+                      "handleEditSave never emitted .saved")
+
+        let compound = try XCTUnwrap(dbTask(db, "tc"))
+        XCTAssertEqual(compound.type, .compound, "a compound cannot be switched out of Compound")
+        XCTAssertEqual(compound.title, "Renamed compound", "the title still commits")
+        XCTAssertEqual(try db.fetchCompoundChildrenTasks(parentTaskId: "tc").map(\.id), ["c1", "c2"],
+                       "the compound's links stay intact")
+
+        let normal = try XCTUnwrap(dbTask(db, "tn"))
+        XCTAssertEqual(normal.type, .normal, "a task cannot be switched into Compound")
+        XCTAssertEqual(normal.title, "Renamed normal", "the title still commits")
+    }
+
     func test_handleEditSave_blankName_doesNotStart() throws {
         let db = try makeDb()
         try seedWorkspace(db)
