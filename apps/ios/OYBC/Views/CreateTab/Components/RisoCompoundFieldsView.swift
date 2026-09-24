@@ -442,11 +442,11 @@ struct RisoCompoundFieldsView: View {
                             compoundThreshold = CompoundEvaluation.clampCompoundThreshold(compoundThreshold, childCount: compoundSubs.count)
                         }
                     } label: {
-                        // 10pt glyph; a 9pt slop makes the target >= 28pt.
+                        // 10pt glyph; a 10pt slop clears 28pt even for a sub-point glyph box.
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.risoMuted)
-                            .risoHitSlop(9)
+                            .risoHitSlop(10)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove \(sub.displayTitle)")

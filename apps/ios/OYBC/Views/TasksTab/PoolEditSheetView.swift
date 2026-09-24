@@ -261,12 +261,12 @@ struct PoolEditSheetView: View {
             Button {
                 poolTaskIds.removeAll { $0 == task.id }
             } label: {
-                // 9pt glyph; a 10pt slop makes the target >= 28pt without
+                // 9pt glyph; an 11pt slop clears 28pt (even for a sub-point glyph box) without
                 // moving the chip layout.
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.risoInk)
-                    .risoHitSlop(10)
+                    .risoHitSlop(11)
             }
             .buttonStyle(.plain)
             .disabled(busy)
