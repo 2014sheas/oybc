@@ -261,16 +261,12 @@ struct PoolEditSheetView: View {
             Button {
                 poolTaskIds.removeAll { $0 == task.id }
             } label: {
-                // 9pt glyph, 28pt hit area: the negative padding hands the
-                // frame's extra size back to layout, so the chip keeps its
-                // visual size while the touch target overhangs it.
+                // 9pt glyph; a 10pt slop makes the target >= 28pt without
+                // moving the chip layout.
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.risoInk)
-                    .frame(minWidth: 28, minHeight: 28)
-                    .contentShape(Rectangle())
-                    .padding(.vertical, -7)
-                    .padding(.horizontal, -10)
+                    .risoHitSlop(10)
             }
             .buttonStyle(.plain)
             .disabled(busy)

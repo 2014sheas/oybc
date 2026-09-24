@@ -139,7 +139,7 @@ struct RisoSpecialTaskPanel: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Close special task")
+                .accessibilityLabel("Close special task panel")
             }
 
             // Type chips row

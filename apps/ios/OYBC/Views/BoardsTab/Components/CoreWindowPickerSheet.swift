@@ -95,7 +95,7 @@ struct CoreWindowPickerSheet: View {
                     Text("‹ \(page.prevTitle)")
                         .font(.risoBody(12, .bold))
                         .foregroundStyle(Color.risoMuted)
-                        .footerHitArea()
+                        .footerHitArea(alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Previous page")
@@ -120,7 +120,7 @@ struct CoreWindowPickerSheet: View {
                     Text("\(page.nextTitle) ›")
                         .font(.risoBody(12, .bold))
                         .foregroundStyle(Color.risoMuted)
-                        .footerHitArea()
+                        .footerHitArea(alignment: .trailing)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Next page")
@@ -374,9 +374,13 @@ private extension View {
     /// 44pt-tall, >= 44pt-wide touch target (HIG minimum). The footer row
     /// grows to match rather than overlapping the tile grid above it (a
     /// negative-padding overhang would steal taps from the last tile row).
-    func footerHitArea() -> some View {
+    ///
+    /// - Parameter alignment: where the label sits inside the 44pt frame —
+    ///   `.leading` for ‹ prev and `.trailing` for next › keep them flush
+    ///   with the tile grid's edges when the label is narrower than 44pt.
+    func footerHitArea(alignment: Alignment = .center) -> some View {
         self
-            .frame(minWidth: 44, minHeight: 44)
+            .frame(minWidth: 44, minHeight: 44, alignment: alignment)
             .contentShape(Rectangle())
     }
 }

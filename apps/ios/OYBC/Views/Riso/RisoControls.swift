@@ -541,9 +541,26 @@ struct RisoImpactNote: View {
     }
 }
 
+// MARK: - Hit slop
+
+extension View {
+    /// Extends this view's touch target by `inset` on every side WITHOUT
+    /// moving layout: the padding grows the rect the content shape is laid
+    /// on, then the equal negative padding hands the size back. Use it on a
+    /// small glyph button's label, choosing `inset` so glyph + 2 × inset is
+    /// at least 28pt (the Riso small-control floor) — because it is
+    /// symmetric it stays layout-neutral whatever the glyph size.
+    /// (`RisoSubPageHeader`'s back button uses the same pattern for 44pt.)
+    func risoHitSlop(_ inset: CGFloat) -> some View {
+        padding(inset)
+            .contentShape(Rectangle())
+            .padding(-inset)
+    }
+}
+
 // MARK: - Undo pill
 
-/// The one "UNDO" pill that reverses an exclusion in place — a member row's
+/// The exclusion UNDO pill, which reverses an exclusion in place — a member row's
 /// excluded state and a compound part line's excluded state.
 ///
 /// Before the audit T2 sweep those two sites each hand-rolled a capsule, both

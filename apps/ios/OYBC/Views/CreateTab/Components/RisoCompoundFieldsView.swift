@@ -442,16 +442,11 @@ struct RisoCompoundFieldsView: View {
                             compoundThreshold = CompoundEvaluation.clampCompoundThreshold(compoundThreshold, childCount: compoundSubs.count)
                         }
                     } label: {
-                        // 28pt hit area; the negative padding hands the
-                        // extra size back to layout so the capsule's
-                        // visual size is unchanged.
+                        // 10pt glyph; a 9pt slop makes the target >= 28pt.
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.risoMuted)
-                            .frame(minWidth: 28, minHeight: 28)
-                            .contentShape(Rectangle())
-                            .padding(.vertical, -7)
-                            .padding(.horizontal, -9)
+                            .risoHitSlop(9)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove \(sub.displayTitle)")

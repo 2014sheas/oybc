@@ -190,10 +190,7 @@ struct CellSwapSheet: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Color.risoMuted)
-                        .frame(minWidth: 28, minHeight: 28)
-                        .contentShape(Rectangle())
-                        .padding(.vertical, -7)
-                        .padding(.horizontal, -5)
+                        .risoHitSlop(6)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
