@@ -9,11 +9,12 @@ import {
   type Board,
   type BoardTask,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { addToSyncQueue, setSyncQueueOwnerProvider } from '../syncQueue';
 import { applyRemoteSubdoc } from '../pullApply';
-import { healMissingCompletionEvents } from '../taskEventPull';
+import { applyTaskEventsBatch, healMissingCompletionEvents } from '../taskEventPull';
 
 /**
  * docs/GUEST_MODE.md §Collision, fix round 1 — sync-internal enqueues are
@@ -121,6 +122,43 @@ describe('sync-internal enqueues are owned by the pull uid, not the live uid', (
     const rows = await db.syncQueue.toArray();
     const types = rows.map((r) => r.entityType).sort();
     expect(types).toEqual(expect.arrayContaining(['boards', 'taskEvents']));
+    expect(new Set(rows.map((r) => r.ownerUid))).toEqual(new Set([ANON]));
+  });
+
+  it('a remote-win pulled task for ANON reaching the board cascade, while live auth is REAL, leaves only ANON-owned rows', async () => {
+    await db.tasks.add(task());
+    await seedBoardPlacing(TASK);
+    await db.syncQueue.clear(); // only the pull's enqueues are asserted
+
+    // Remote completes the task at a higher version → remote wins → cascade.
+    const remote: Task = { ...task(), isCompleted: true, version: 2, updatedAt: NEWER };
+    expect(await applyRemoteSubdoc('tasks', remote, ANON)).toContain('Pulled tasks/');
+
+    const rows = await db.syncQueue.toArray();
+    expect(rows.map((r) => r.entityType)).toContain('boards');
+    expect(new Set(rows.map((r) => r.ownerUid))).toEqual(new Set([ANON]));
+  });
+
+  it('a pulled taskEvents batch for ANON reaching the board cascade, while live auth is REAL, leaves only ANON-owned rows', async () => {
+    await db.tasks.add(task());
+    await seedBoardPlacing(TASK);
+    await db.syncQueue.clear();
+
+    const event: TaskEvent = {
+      id: '60000000-0000-4000-8000-000000000003',
+      userId: ANON,
+      taskId: TASK,
+      kind: 'completion',
+      occurredAt: '2026-06-01T00:00:00.000Z',
+      createdAt: '2026-06-01T00:00:00.000Z',
+      updatedAt: '2026-06-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    };
+    expect((await applyTaskEventsBatch(ANON, [event])).pulled).toBe(1);
+
+    const rows = await db.syncQueue.toArray();
+    expect(rows.map((r) => r.entityType)).toContain('boards');
     expect(new Set(rows.map((r) => r.ownerUid))).toEqual(new Set([ANON]));
   });
 
