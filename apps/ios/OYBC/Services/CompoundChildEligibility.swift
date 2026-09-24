@@ -74,7 +74,7 @@ enum CompoundChildEligibility {
         return !hasGoal || !hasUnit
     }
 
-    /// The "+ Existing task…" picker's candidate list: the browsable library
+    /// The compound sub-task quick-add row's candidate list: the browsable library
     /// narrowed to tasks `linkProblem` accepts under `parentId` and that would
     /// survive save validation (not `isIncompleteCountingChild`), ordered by
     /// lower-cased title (plain code-unit order, locale-independent so it
@@ -103,18 +103,5 @@ enum CompoundChildEligibility {
                 if ta != tb { return ta.lexicographicallyPrecedes(tb) }
                 return Array(a.id.utf16).lexicographicallyPrecedes(Array(b.id.utf16))
             }
-    }
-
-    /// Case-insensitive title search over picker candidates (a blank query
-    /// keeps every row). Twin of web `searchCompoundChildCandidates`.
-    ///
-    /// - Parameters:
-    ///   - tasks: The candidates.
-    ///   - query: The search text.
-    /// - Returns: The candidates whose title contains `query`.
-    static func searchCandidates(_ tasks: [Task], query: String) -> [Task] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return tasks }
-        return tasks.filter { $0.title.lowercased().contains(q) }
     }
 }

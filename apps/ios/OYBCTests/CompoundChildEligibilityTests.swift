@@ -203,12 +203,6 @@ final class CompoundChildEligibilityTests: XCTestCase {
         XCTAssertFalse(CompoundChildEligibility.isIncompleteCountingChild(row("5", "e")))
     }
 
-    func test_searchCandidates_caseInsensitive_blankKeepsAll() {
-        let rows = [row("1", "Morning Run"), row("2", "Read"), row("3", "run club")]
-        XCTAssertEqual(CompoundChildEligibility.searchCandidates(rows, query: "  RUN ").map(\.id), ["1", "3"])
-        XCTAssertEqual(CompoundChildEligibility.searchCandidates(rows, query: "   ").map(\.id), ["1", "2", "3"])
-    }
-
     func test_keptChildTaskIds_skipsDeletedAndNewDrafts() {
         var d = TaskEditPatch(title: "P")
         var gone = ChildPatch(id: "g", childTaskId: "g", title: "Gone", isCounting: false)

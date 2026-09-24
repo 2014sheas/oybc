@@ -75,7 +75,6 @@ export { hasCycle } from './cycleDetection';
 export {
   compoundChildLinkProblem,
   compoundChildPickerCandidates,
-  searchCompoundChildCandidates,
   isIncompleteCountingChild,
   COMPOUND_CHILD_LINK_MESSAGES,
 } from './compoundChildEligibility';

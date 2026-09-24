@@ -89,7 +89,7 @@ export function isIncompleteCountingChild(
 }
 
 /**
- * The "+ Existing task…" picker's candidate list: the browsable library
+ * The compound sub-task quick-add row's candidate list: the browsable library
  * (pass `computeBrowsableTasks` output — it already hides wizard drafts and
  * deleted rows) narrowed to tasks that can be linked under `parentId` right
  * now (`compoundChildLinkProblem === null`) and that would survive the save's
@@ -122,21 +122,4 @@ export function compoundChildPickerCandidates<T extends CompoundChildCandidate &
       if (ta !== tb) return ta < tb ? -1 : 1;
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
-}
-
-/**
- * Case-insensitive title search over picker candidates (a blank query keeps
- * every row). Swift twin: `CompoundChildEligibility.searchCandidates`.
- *
- * @param tasks - The candidates.
- * @param query - The search text.
- * @returns The candidates whose title contains `query`.
- */
-export function searchCompoundChildCandidates<T extends Pick<Task, 'title'>>(
-  tasks: readonly T[],
-  query: string,
-): T[] {
-  const q = query.trim().toLowerCase();
-  if (q === '') return [...tasks];
-  return tasks.filter((t) => t.title.toLowerCase().includes(q));
 }

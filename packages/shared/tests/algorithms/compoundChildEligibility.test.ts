@@ -11,7 +11,6 @@ import {
   compoundChildLinkProblem,
   compoundChildPickerCandidates,
   isIncompleteCountingChild,
-  searchCompoundChildCandidates,
   COMPOUND_CHILD_LINK_MESSAGES,
   type CompoundChildCandidate,
 } from '../../src/algorithms/compoundChildEligibility';
@@ -198,11 +197,5 @@ describe('compoundChildPickerCandidates', () => {
     expect(isIncompleteCountingChild({ type: TaskType.COUNTING, unit: 'km' })).toBe(true);
     expect(isIncompleteCountingChild({ type: TaskType.COUNTING, maxCount: 0, unit: 'km' })).toBe(true);
     expect(isIncompleteCountingChild({ type: TaskType.NORMAL })).toBe(false);
-  });
-
-  it('searches titles case-insensitively; a blank query keeps all', () => {
-    const rows = [row('1', 'Morning Run'), row('2', 'Read'), row('3', 'run club')];
-    expect(searchCompoundChildCandidates(rows, '  RUN ').map((t) => t.id)).toEqual(['1', '3']);
-    expect(searchCompoundChildCandidates(rows, '   ').map((t) => t.id)).toEqual(['1', '2', '3']);
   });
 });
