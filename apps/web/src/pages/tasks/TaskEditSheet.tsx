@@ -17,6 +17,7 @@ import {
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
 import { CompoundFields } from '../../components/wizard/CompoundFields';
+import { compoundStructureChanged, compoundSubmitFor } from './compoundEditGate';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
 
@@ -43,8 +44,10 @@ export interface TaskEditSheetProps {
  * Compound tasks: the rule (All of / Any of / At least N) and sub-tasks are
  * edited in place via the shared `CompoundFields` editor. The current
  * sub-tasks load once on open (an effect, so a static render never touches
- * Dexie); Save stays disabled until they have loaded and the structure is
- * valid.
+ * Dexie); Save stays disabled until they have loaded. The structure is
+ * submitted (and must validate) only when it was edited — an unedited
+ * compound saves through the basic route, so one whose stored structure is
+ * already invalid can still be renamed.
  *
  * Shares CSS module with `TaskDetailContent` to avoid styling drift.
  */
@@ -116,6 +119,8 @@ export function TaskEditSheet({
   // Title field is the single source (merged in at render + submit).
   const isCompound = task.type === TaskType.COMPOUND;
   const [compoundDraft, setCompoundDraft] = useState<TaskEditPatch | null>(null);
+  // What the editor opened with — only an edited structure is submitted.
+  const [compoundBaseline, setCompoundBaseline] = useState<TaskEditPatch | null>(null);
   const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -135,7 +140,10 @@ export function TaskEditSheet({
             .filter((t): t is Task => !!t && !t.isDeleted)
             .map(childPatchFromTask),
         };
-        if (!cancelled) setCompoundDraft(seeded);
+        if (!cancelled) {
+          setCompoundBaseline(seeded);
+          setCompoundDraft(seeded);
+        }
       } catch (e) {
         if (!cancelled) setCompoundLoadError(`Couldn't load sub-tasks: ${(e as Error).message}`);
       }
@@ -151,7 +159,12 @@ export function TaskEditSheet({
 
   const compoundValidation =
     compoundDraft !== null ? validatePatch({ ...compoundDraft, title }, TaskType.COMPOUND) : null;
-  const compoundBlocked = isCompound && (compoundDraft === null || compoundValidation !== null);
+  // Save is gated on the structure only when it was edited: a compound whose
+  // STORED structure is already invalid can still take a rename /
+  // description / time-window edit through the basic route.
+  const structureChanged = compoundStructureChanged(compoundBaseline, compoundDraft);
+  const compoundBlocked =
+    isCompound && (compoundDraft === null || (structureChanged && compoundValidation !== null));
 
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -268,7 +281,8 @@ export function TaskEditSheet({
 
     if (isCompound) {
       if (compoundDraft === null) return;
-      patch.compound = { ...compoundDraft, title: title.trim() };
+      const compound = compoundSubmitFor(compoundBaseline, compoundDraft, title);
+      if (compound) patch.compound = compound;
     }
 
     setSubmitting(true);
