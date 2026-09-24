@@ -4,13 +4,34 @@ import {
   MAX_SYNC_RETRIES,
   SyncOperationType,
   SyncStatus,
+  canCoalesceSyncOwners,
   isFailedItemEligibleForRetry,
+  isForeignOwnedSyncItem,
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 
 /**
  * SyncQueue Operations
  */
+
+/**
+ * Returns the uid signed in right now, used to stamp `ownerUid` on every
+ * enqueued item (docs/GUEST_MODE.md §Collision). Registered by the sync
+ * service (`firebase/syncService.ts`) so this module stays firebase-free and
+ * unit-testable; until registered it returns null (→ legacy unstamped rows,
+ * which push as before).
+ */
+let currentOwnerUid: () => string | null = () => null;
+
+/**
+ * Register the provider of the enqueue-time owner uid. Read on every enqueue,
+ * so it must reflect the LIVE auth state (read `auth.currentUser`, don't cache).
+ *
+ * @param provider - Returns the signed-in uid, or null when signed out.
+ */
+export function setSyncQueueOwnerProvider(provider: () => string | null): void {
+  currentOwnerUid = provider;
+}
 
 /**
  * The outcome of coalescing an incoming enqueue against an existing PENDING
@@ -170,17 +191,27 @@ export async function addToSyncQueue(
     if (payloadObj?.userId === 'playground-user-1') return;
   }
 
+  // Stamp the owner at enqueue time (docs/GUEST_MODE.md §Collision): the
+  // push path drops rows owned by another uid instead of pushing them.
+  const ownerUid = currentOwnerUid();
+
   await db.transaction('rw', [db.syncQueue], async () => {
     // Coalesce against an existing PENDING row for the same entity. There is
     // at most one post-coalescing; if legacy duplicates exist we target the
-    // earliest (by createdAt) to preserve queue position.
+    // earliest (by createdAt) to preserve queue position. Only rows this
+    // owner may coalesce into count — a row owned by another uid is left
+    // alone (the push path drops it) and this op appends its own row.
     const existingPending = (
       await db.syncQueue
         .where('[entityType+entityId]')
         .equals([entityType, entityId])
         .toArray()
     )
-      .filter((row) => row.status === SyncStatus.PENDING)
+      .filter(
+        (row) =>
+          row.status === SyncStatus.PENDING &&
+          canCoalesceSyncOwners(row.ownerUid, ownerUid)
+      )
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
 
     if (existingPending) {
@@ -206,6 +237,8 @@ export async function addToSyncQueue(
         status: SyncStatus.PENDING,
         retryCount: 0,
         lastError: undefined,
+        // A legacy unstamped row adopted by a stamped op takes its owner.
+        ownerUid: ownerUid ?? existingPending.ownerUid ?? null,
       });
       return;
     }
@@ -220,6 +253,7 @@ export async function addToSyncQueue(
       retryCount: 0,
       createdAt: currentTimestamp(),
       priority,
+      ownerUid,
     };
 
     await db.syncQueue.add(item);
@@ -250,6 +284,34 @@ export async function fetchPendingSyncItems(): Promise<SyncQueueItem[]> {
     )
     .reverse()
     .toArray();
+}
+
+/**
+ * Drop every item owned by an account other than `userId`, returning the
+ * rest (docs/GUEST_MODE.md §Collision). Called by `pushSync` on the fetched
+ * PENDING list before the per-item loop. A foreign-owned item can never
+ * become valid for this account — pushing it would file the previous
+ * account's `boardTasks`/`compoundChildren` (no `userId` field, so the rules
+ * accept them) into this one — so it is deleted from the queue and logged,
+ * never pushed. Legacy unstamped items are kept.
+ *
+ * @param items - PENDING items, in push order.
+ * @param userId - The uid the push is running for.
+ * @returns The items owned by `userId` (or unstamped), order preserved.
+ */
+export async function dropForeignOwnedSyncItems(
+  items: SyncQueueItem[],
+  userId: string
+): Promise<SyncQueueItem[]> {
+  const foreign = items.filter((item) => isForeignOwnedSyncItem(item.ownerUid, userId));
+  if (foreign.length === 0) return items;
+  for (const item of foreign) {
+    console.warn(
+      `[sync] dropped ${item.entityType}/${item.entityId} (${item.operationType}) — queued by another account, never pushed under this one`
+    );
+  }
+  await db.syncQueue.bulkDelete(foreign.map((item) => item.id));
+  return items.filter((item) => !isForeignOwnedSyncItem(item.ownerUid, userId));
 }
 
 /**

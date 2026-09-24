@@ -31,6 +31,15 @@ export interface SyncQueueItem {
 
   // Priority (lower number = higher priority)
   priority: number;              // Default: 0, Critical operations: -1
+
+  // Ownership (LOCAL queue column only — never on the wire; see
+  // docs/GUEST_MODE.md §Collision). The Firebase uid that was signed in when
+  // the item was enqueued. The push path DROPS an item whose `ownerUid` is set
+  // and differs from the uid it is pushing for, so a queue written under one
+  // account (e.g. a discarded guest) can never be accepted into another during
+  // an account switch. Absent/null = legacy row (pre-stamp) or enqueued with no
+  // signed-in user → pushes as before.
+  ownerUid?: string | null;
 }
 
 /**

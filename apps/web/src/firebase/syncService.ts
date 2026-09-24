@@ -31,6 +31,8 @@ import {
   countExhaustedSyncItems,
   retryExhaustedSyncItems,
   addToSyncQueue,
+  dropForeignOwnedSyncItems,
+  setSyncQueueOwnerProvider,
 } from '../db/operations/syncQueue';
 import {
   SyncOperationType,
@@ -44,6 +46,10 @@ import {
 } from '@oybc/shared';
 import { applyTaskEventsBatch, healMissingCompletionEvents } from '../db/operations/taskEventPull';
 import { applyRemoteSubdoc, rowsGenuinelyDiffer } from '../db/operations/pullApply';
+
+// Stamp every enqueue with the LIVE signed-in uid (docs/GUEST_MODE.md
+// §Collision) — `pushSync` drops rows owned by any other uid.
+setSyncQueueOwnerProvider(() => auth.currentUser?.uid ?? null);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -162,7 +168,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
   // (rare), the next debounce will.
   await promoteEligibleFailedItems();
 
-  const pendingItems = await fetchPendingSyncItems();
+  const pendingItems = await dropForeignOwnedSyncItems(await fetchPendingSyncItems(), userId);
   if (pendingItems.length === 0) {
     // Nothing pending, but exhausted FAILED items may still be stranded
     // (e.g. pre-existing stuck items on a fresh page load after

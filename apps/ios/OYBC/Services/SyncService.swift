@@ -478,7 +478,7 @@ final class SyncService: ObservableObject {
 
         let pendingItems: [SyncQueueItem]
         do {
-            pendingItems = try AppDatabase.shared.fetchPendingSyncItems()
+            pendingItems = try AppDatabase.shared.dropForeignOwnedSyncItems(AppDatabase.shared.fetchPendingSyncItems(), userId: userId)
         } catch {
             let msg = "Push failed: could not read sync queue: \(error.localizedDescription)"
             log(msg)

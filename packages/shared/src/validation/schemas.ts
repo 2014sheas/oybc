@@ -668,6 +668,9 @@ export const SyncQueueItemSchema = z.object({
   lastAttemptAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
   priority: z.number().int(),
+  // Local-only enqueue-time owner uid (docs/GUEST_MODE.md §Collision); null /
+  // absent on legacy rows.
+  ownerUid: z.string().nullable().optional(),
 });
 
 // ===== RecurringBoardTemplate Schemas (Phase 6.2) =====
