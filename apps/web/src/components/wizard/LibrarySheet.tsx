@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PARENT_TIMEFRAMES, TaskType, formatCounterName, isTaskExpired, type CompoundChild, type Task, type Timeframe } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoChip, RisoTypeBadge } from '../riso';
 import { renderTaskRow } from './TaskRow';
 import stepStyles from './BoardWizardTasksStep.module.css';
@@ -100,15 +101,12 @@ export function LibrarySheet({
    *  over verbatim). */
   const [groupByCompound, setGroupByCompound] = useState(true);
 
-  // Escape closes the sheet, matching every other modal in the app.
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') setIsOpen(false);
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen]);
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore —
+  // the contract every modal in the app shares.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: isOpen,
+    onCancel: () => setIsOpen(false),
+  });
 
   const hasParentTimeframes = PARENT_TIMEFRAMES[currentTimeframe].length > 0;
 
@@ -224,10 +222,11 @@ export function LibrarySheet({
       {isOpen && (
         <div className={styles.backdrop} onClick={() => setIsOpen(false)}>
           <div
+            ref={modalRef}
             className={styles.sheet}
             role="dialog"
-            aria-modal="true"
             aria-label="Your library"
+            {...modalProps}
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.grabHandle} aria-hidden="true" />

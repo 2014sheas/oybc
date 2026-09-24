@@ -1,4 +1,5 @@
 import type { RecurringBoardTemplate, UserPreferences } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { BoardWizardPage } from '../../pages/BoardWizardPage';
 import styles from './RepeatingBoardWizardOverlay.module.css';
 
@@ -33,14 +34,32 @@ export interface RepeatingBoardWizardOverlayProps {
  * Pause/Resume stays a direct roster-row toggle
  * (`RepeatingBoardRow.toggleActive`) — no wizard hop.
  */
+/** Escape handler for the full-screen wizard overlay — see the call site. */
+function ignoreEscape(): void {}
+
 export function RepeatingBoardWizardOverlay({
   userId,
   preferences,
   template,
   onClose,
 }: RepeatingBoardWizardOverlayProps): React.ReactElement {
+  // aria-modal, initial focus, Tab trap, focus restore. Escape is
+  // deliberately inert on this overlay: closing straight to Board settings
+  // would bypass the wizard's own unsaved-changes prompt (its Cancel button
+  // → `BoardWizardCancelDialog`, which handles Escape itself).
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: ignoreEscape,
+  });
+
   return (
-    <div className={styles.overlay} role="dialog" aria-modal="true" aria-label="Edit recurring board">
+    <div
+      ref={modalRef}
+      className={styles.overlay}
+      role="dialog"
+      aria-label="Edit recurring board"
+      {...modalProps}
+    >
       <div className={styles.canvas}>
         <BoardWizardPage
           userId={userId}

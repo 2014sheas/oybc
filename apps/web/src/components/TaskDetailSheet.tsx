@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { fetchTask } from '../db/operations';
+import { useModalA11y } from '../hooks/useModalA11y';
 import { TaskDetailContent } from '../pages/tasks/TaskDetailContent';
 import styles from './TaskDetailSheet.module.css';
 
@@ -9,7 +10,7 @@ interface TaskDetailSheetProps {
    * Task ID to display. When null, the sheet renders nothing (closed state).
    */
   taskId: string | null;
-  /** Called when the user dismisses the sheet (Done button or backdrop tap). */
+  /** Called when the user dismisses the sheet (Done button, backdrop tap, or Escape). */
   onClose: () => void;
   /**
    * Called when a chip or child row inside the detail content wants to
@@ -91,6 +92,10 @@ function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.React
   // URL, so they don't trigger this effect.
   const location = useLocation();
   const initialPath = useRef(location.pathname);
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
   useEffect(() => {
     if (location.pathname !== initialPath.current) {
       onClose();
@@ -139,10 +144,11 @@ function SheetBody({ taskId, onClose, onOpenTask }: SheetBodyProps): React.React
       role="presentation"
     >
       <div
+        ref={modalRef}
         className={styles.sheetPanel}
         role="dialog"
-        aria-modal="true"
         aria-label="Task detail"
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top-right Done button */}

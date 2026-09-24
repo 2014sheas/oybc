@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Timeframe, type CoreBoardDefault, type Pool, type RecurringBoardTemplate, type Task } from '@oybc/shared';
 import { upsertCoreBoardDefault } from '../../db/operations/coreBoardDefaults';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
 import { selectLibraryPickerResults } from '../pools/poolEditSheetSelectors';
@@ -78,13 +79,15 @@ export function CoreDefaultsSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape' && !busy && !showPoolPicker) onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, busy, showPoolPicker]);
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
+  // While the pool picker is stacked on top, it owns Escape (and this sheet
+  // ignores a stray one) — the same guard the old document listener had.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: () => {
+      if (!busy && !showPoolPicker) onClose();
+    },
+  });
 
   const poolsById = useMemo(() => {
     const m: Record<string, Pool> = {};
@@ -147,9 +150,10 @@ export function CoreDefaultsSheet({
   return (
     <>
       <div
+        ref={modalRef}
         role="dialog"
-        aria-modal="true"
         aria-labelledby="core-defaults-sheet-title"
+        {...modalProps}
         className={styles.backdrop}
         onClick={() => !busy && onClose()}
       >

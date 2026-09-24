@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TaskType, type Task } from '@oybc/shared';
+import { useModalA11y } from '../hooks/useModalA11y';
 import { TypeBadge } from './TypeBadge';
 import styles from './CellSwapModal.module.css';
 
@@ -136,14 +137,12 @@ export function CellSwapModal({
     searchRef.current?.focus();
   }, []);
 
-  // Close on Escape key.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // aria-modal, Escape → close, Tab trap, focus restore. Declared after the
+  // search auto-focus above, so the search field keeps initial focus.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
 
   // Eligible task types for a non-center square.
   const ELIGIBLE_TYPES = new Set<string>([
@@ -181,11 +180,12 @@ export function CellSwapModal({
       role="presentation"
     >
       <div
+        ref={modalRef}
         className={styles.modal}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-modal="true"
         aria-labelledby="swap-modal-title"
+        {...modalProps}
       >
         {/* Header */}
         <div className={styles.header}>
