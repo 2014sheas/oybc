@@ -1,14 +1,12 @@
 import {
   resolveMix,
-  clearRemovalsForUntoggle,
-  isLegacyShapedRecord,
-  mergeLegacyPoolTaskIds,
   clampMintedPoolName,
   resolvePoolPullAdditions,
-  resolvePoolUntoggleRemovals,
-  summarizeSpawnProvenance,
+  summarizeSpawnProvenanceFromSupplies,
   formatSpawnProvenanceNote,
 } from '../../src/algorithms/poolMix';
+import type { BoardSourceSupply } from '../../src/algorithms/boardSources';
+import type { BoardSource } from '../../src/types/boardSource';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 import type { Pool } from '../../src/types/pool';
@@ -88,32 +86,18 @@ describe('resolveMix — worked example', () => {
     expect(result.taskIds).toEqual(['x', 'z', 'w']);
   });
 
-  it('step 2: untoggle B → removal of y persists (still supplied by A) → {x,w}', () => {
-    const clearedRemovals = clearRemovalsForUntoggle(
-      { poolIds: ['A', 'B'], manualTaskIds: ['w'], removedTaskIds: ['y'] },
-      'B',
-      poolsById,
-    );
-    expect(clearedRemovals).toEqual(['y']);
-
+  it('step 2: B untoggled, removal of y kept (still supplied by A) → {x,w}', () => {
     const result = resolveMix(
-      { poolIds: ['A'], manualTaskIds: ['w'], removedTaskIds: clearedRemovals },
+      { poolIds: ['A'], manualTaskIds: ['w'], removedTaskIds: ['y'] },
       poolsById,
       tasksById,
     );
     expect(result.taskIds).toEqual(['x', 'w']);
   });
 
-  it('step 3: untoggle A too → y now unsupplied → removal cleared → {w}', () => {
-    const clearedRemovals = clearRemovalsForUntoggle(
-      { poolIds: ['A'], manualTaskIds: ['w'], removedTaskIds: ['y'] },
-      'A',
-      poolsById,
-    );
-    expect(clearedRemovals).toEqual([]);
-
+  it('step 3: A untoggled too, y unsupplied so its removal is cleared → {w}', () => {
     const result = resolveMix(
-      { poolIds: [], manualTaskIds: ['w'], removedTaskIds: clearedRemovals },
+      { poolIds: [], manualTaskIds: ['w'], removedTaskIds: [] },
       poolsById,
       tasksById,
     );
@@ -301,42 +285,10 @@ describe('resolveMix — edge inputs', () => {
   });
 });
 
-// ─── clearRemovalsForUntoggle — additional cases ──────────────────────────────
-
-describe('clearRemovalsForUntoggle', () => {
-  it('untoggling a pool that was never the sole supplier leaves unrelated removals untouched', () => {
-    const poolA = buildPool('A', ['x']);
-    const poolB = buildPool('B', ['y']);
-    const poolsById = byId([poolA, poolB]);
-
-    const cleared = clearRemovalsForUntoggle(
-      { poolIds: ['A', 'B'], manualTaskIds: [], removedTaskIds: ['x'] },
-      'B',
-      poolsById,
-    );
-    // x is still supplied by A (untouched by B's untoggle) → persists.
-    expect(cleared).toEqual(['x']);
-  });
-
-  it('a deleted remaining pool does not count as supply for clearing purposes', () => {
-    const poolA = buildPool('A', ['x'], { isDeleted: true });
-    const poolB = buildPool('B', ['y']);
-    const poolsById = byId([poolA, poolB]);
-
-    const cleared = clearRemovalsForUntoggle(
-      { poolIds: ['A', 'B'], manualTaskIds: [], removedTaskIds: ['x'] },
-      'B',
-      poolsById,
-    );
-    // A is soft-deleted, so it no longer counts as supply — x's removal clears.
-    expect(cleared).toEqual([]);
-  });
-});
-
-// ─── resolvePoolPullAdditions / resolvePoolUntoggleRemovals (P3 wizard actions) ──
+// ─── resolvePoolPullAdditions (P3 wizard action) ─────────────────────────────
 //
-// Both operate on the SAME worked-example fixtures as `resolveMix` above,
-// but drive the wizard's flat `selectedTaskIds` mutation directly (rather
+// Operates on the SAME worked-example fixtures as `resolveMix` above, but
+// drives the wizard's flat `selectedTaskIds` mutation directly (rather
 // than recomputing the whole mix) — see docs/POOLS_RECURRING.md §Surfaces
 // item 5 (Wizard step 2) + §Data model "Union rule".
 
@@ -370,91 +322,6 @@ describe('resolvePoolPullAdditions', () => {
     expect(resolvePoolPullAdditions('ghost', [], poolsById, tasksById)).toEqual([]);
     const deletedPoolsById = byId([{ ...poolA, isDeleted: true }, poolB]);
     expect(resolvePoolPullAdditions('A', [], deletedPoolsById, tasksById)).toEqual([]);
-  });
-});
-
-describe('resolvePoolUntoggleRemovals', () => {
-  const x = buildTask('x');
-  const y = buildTask('y');
-  const z = buildTask('z');
-  const w = buildTask('w');
-  const poolA = buildPool('A', ['x', 'y']);
-  const poolB = buildPool('B', ['y', 'z']);
-  const tasksById = byId([x, y, z, w]);
-  const poolsById = byId([poolA, poolB]);
-
-  it('untoggling the only pulled pool removes its whole non-manual supply', () => {
-    expect(resolvePoolUntoggleRemovals('A', [], [], poolsById, tasksById)).toEqual(['x', 'y']);
-  });
-
-  it('manual-wins: a manually-added task is never in the removal set', () => {
-    expect(resolvePoolUntoggleRemovals('A', [], ['x'], poolsById, tasksById)).toEqual(['y']);
-  });
-
-  it('a task still supplied by a REMAINING pulled pool is not removed', () => {
-    // Untoggling A while B stays pulled: y is also supplied by B → keep it.
-    expect(resolvePoolUntoggleRemovals('A', ['B'], [], poolsById, tasksById)).toEqual(['x']);
-  });
-
-  it('untoggling B (with A remaining) removes only z — y stays (A still supplies it)', () => {
-    expect(resolvePoolUntoggleRemovals('B', ['A'], [], poolsById, tasksById)).toEqual(['z']);
-  });
-
-  it('"remaining supply" is checked structurally (raw taskIds), even if the task is soft-deleted', () => {
-    const deletedY = byId([x, buildTask('y', { isDeleted: true }), z, w]);
-    // y is soft-deleted (unresolvable) but B's RAW taskIds still list it, so
-    // it still counts as "remaining supply" and is not removed by A's untoggle.
-    expect(resolvePoolUntoggleRemovals('A', ['B'], [], poolsById, deletedY)).toEqual(['x']);
-  });
-
-  it('a soft-deleted remaining pool contributes no supply — its previously-shared task is removed', () => {
-    const deletedB = byId([{ ...poolB, isDeleted: true }]);
-    const poolsWithDeletedB = { A: poolA, ...deletedB };
-    expect(
-      resolvePoolUntoggleRemovals('A', ['B'], [], poolsWithDeletedB, tasksById),
-    ).toEqual(['x', 'y']);
-  });
-
-  it('a missing or soft-deleted target pool contributes no removals, not an error', () => {
-    expect(resolvePoolUntoggleRemovals('ghost', ['A'], [], poolsById, tasksById)).toEqual([]);
-  });
-});
-
-// ─── isLegacyShapedRecord — truth table ───────────────────────────────────────
-
-describe('isLegacyShapedRecord', () => {
-  it('true: all three fields absent (genuinely un-migrated record)', () => {
-    expect(isLegacyShapedRecord({})).toBe(true);
-  });
-
-  it('true: migration/legacy-create-minted shape (exactly one pool, empty manual+removed)', () => {
-    expect(
-      isLegacyShapedRecord({ poolIds: ['A'], manualTaskIds: [], removedTaskIds: [] }),
-    ).toBe(true);
-  });
-
-  it('true: zero pools, empty manual+removed (explicit empty arrays, not absent)', () => {
-    expect(
-      isLegacyShapedRecord({ poolIds: [], manualTaskIds: [], removedTaskIds: [] }),
-    ).toBe(true);
-  });
-
-  it('false: two or more pools (richer shape)', () => {
-    expect(
-      isLegacyShapedRecord({ poolIds: ['A', 'B'], manualTaskIds: [], removedTaskIds: [] }),
-    ).toBe(false);
-  });
-
-  it('false: any manual additions', () => {
-    expect(
-      isLegacyShapedRecord({ poolIds: ['A'], manualTaskIds: ['m'], removedTaskIds: [] }),
-    ).toBe(false);
-  });
-
-  it('false: any removals', () => {
-    expect(
-      isLegacyShapedRecord({ poolIds: ['A'], manualTaskIds: [], removedTaskIds: ['r'] }),
-    ).toBe(false);
   });
 });
 
@@ -515,66 +382,34 @@ describe('clampMintedPoolName', () => {
   });
 });
 
-// ─── F5: legacy-template edit preserves soft-deleted-but-not-removed refs ─────
-
-describe('mergeLegacyPoolTaskIds', () => {
-  it('preserves a soft-deleted-but-not-removed pool ref the resolved selection dropped', () => {
-    // Pool has [live, gone] where `gone` is soft-deleted. `resolveMix` would
-    // hydrate the wizard selection to just [live] (deleted filtered out), so a
-    // plain write of the selection would PRUNE `gone` — the contract breach.
-    const live = buildTask('live');
-    const gone = buildTask('gone', { isDeleted: true });
-    const tasksById = byId([live, gone]);
-    const merged = mergeLegacyPoolTaskIds(['live', 'gone'], ['live'], tasksById);
-    // `gone` survives (never shown to the user → can't have been removed).
-    expect(merged).toEqual(['live', 'gone']);
-  });
-
-  it('drops a resolvable ref the user explicitly removed from the selection', () => {
-    const a = buildTask('a');
-    const b = buildTask('b');
-    const tasksById = byId([a, b]);
-    // Both resolvable; user removed `b` (selection is just [a]) → `b` drops.
-    const merged = mergeLegacyPoolTaskIds(['a', 'b'], ['a'], tasksById);
-    expect(merged).toEqual(['a']);
-  });
-
-  it('appends newly-selected ids after the preserved existing order, deduped', () => {
-    const a = buildTask('a');
-    const gone = buildTask('gone', { isDeleted: true });
-    const added = buildTask('added');
-    const tasksById = byId([a, gone, added]);
-    // existing [a, gone] (gone soft-deleted, preserved); selection adds `added`.
-    const merged = mergeLegacyPoolTaskIds(['a', 'gone'], ['a', 'added'], tasksById);
-    expect(merged).toEqual(['a', 'gone', 'added']);
-  });
-
-  it('preserves a ref whose task is entirely missing from the library', () => {
-    const a = buildTask('a');
-    const tasksById = byId([a]); // `orphan` resolves to nothing
-    const merged = mergeLegacyPoolTaskIds(['a', 'orphan'], ['a'], tasksById);
-    expect(merged).toEqual(['a', 'orphan']);
-  });
-});
-
-// ─── summarizeSpawnProvenance + formatSpawnProvenanceNote (P6) ────────────────
+// ─── summarizeSpawnProvenanceFromSupplies + formatSpawnProvenanceNote (P6) ────
 //
 // docs/POOLS_RECURRING.md §Surfaces item 7 — the board-screen spawn-success
 // provenance note, e.g. "Picked 8 of 10 — 7 from the pool, 1 added today".
 // Locked decision C: generic "pulled in" wording (not the doc's
 // "defaults"-specific example text), since this note also covers a
-// "repeat this board" spawn with zero pool involvement.
+// "repeat this board" spawn with zero pool involvement. Same vectors the
+// retired pool-trio overload used, now fed as resolved source supplies.
 
-describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
+function poolSupply(sourceId: string, supplyTaskIds: string[]): BoardSourceSupply {
+  const source: BoardSource = {
+    sourceId,
+    kind: 'pool',
+    min: 0,
+    max: null,
+    excludedTaskIds: [],
+    filter: 'all',
+  };
+  return { source, supplyTaskIds };
+}
+
+describe('summarizeSpawnProvenanceFromSupplies + formatSpawnProvenanceNote', () => {
   it('pure-pool spawn: manualSourcedCount is 0, note reads "N pulled in" only', () => {
-    const poolA = buildPool('pool-a', ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
-    const tasksById = byId(poolA.taskIds.map((id) => buildTask(id)));
-    const poolsById = byId([poolA]);
-    const spawnSource = { poolIds: ['pool-a'], manualTaskIds: [], removedTaskIds: [] };
+    const supply = poolSupply('pool-a', ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10']);
     // Board only fit 8 of the 10-task mix (loose-fit overfill).
     const dealtTaskIds = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'];
 
-    const summary = summarizeSpawnProvenance(spawnSource, poolsById, tasksById, dealtTaskIds);
+    const summary = summarizeSpawnProvenanceFromSupplies([supply], [], {}, dealtTaskIds);
     expect(summary).toEqual({
       dealt: 8,
       mixSize: 10,
@@ -585,11 +420,9 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
   });
 
   it('pure-manual spawn (e.g. "repeat this board", zero pools): poolSourcedCount is 0, note reads "N added today" only', () => {
-    const tasksById = byId(['m1', 'm2', 'm3', 'm4', 'm5'].map((id) => buildTask(id)));
-    const spawnSource = { poolIds: [], manualTaskIds: ['m1', 'm2', 'm3', 'm4', 'm5'], removedTaskIds: [] };
-    const dealtTaskIds = ['m1', 'm2', 'm3', 'm4', 'm5'];
+    const manual = ['m1', 'm2', 'm3', 'm4', 'm5'];
 
-    const summary = summarizeSpawnProvenance(spawnSource, {}, tasksById, dealtTaskIds);
+    const summary = summarizeSpawnProvenanceFromSupplies([], manual, {}, manual);
     expect(summary).toEqual({
       dealt: 5,
       mixSize: 5,
@@ -599,15 +432,17 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
     expect(formatSpawnProvenanceNote(summary)).toBe('Picked 5 of 5 — 5 added today');
   });
 
-  it('mixed spawn: pool + manual both present, counts match the doc\'s numeric structure', () => {
-    const poolA = buildPool('pool-a', ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7']);
-    const tasksById = byId([...poolA.taskIds.map((id) => buildTask(id)), buildTask('m1')]);
-    const poolsById = byId([poolA]);
-    const spawnSource = { poolIds: ['pool-a'], manualTaskIds: ['m1'], removedTaskIds: [] };
+  it("mixed spawn: pool + manual both present, counts match the doc's numeric structure", () => {
+    const poolTaskIds = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
     // Mix size = 7 pool + 1 manual = 8; board dealt all 8 (exact fit).
-    const dealtTaskIds = [...poolA.taskIds, 'm1'];
+    const dealtTaskIds = [...poolTaskIds, 'm1'];
 
-    const summary = summarizeSpawnProvenance(spawnSource, poolsById, tasksById, dealtTaskIds);
+    const summary = summarizeSpawnProvenanceFromSupplies(
+      [poolSupply('pool-a', poolTaskIds)],
+      ['m1'],
+      {},
+      dealtTaskIds,
+    );
     expect(summary).toEqual({
       dealt: 8,
       mixSize: 8,
@@ -618,7 +453,7 @@ describe('summarizeSpawnProvenance + formatSpawnProvenanceNote', () => {
   });
 
   it('zero-dealt edge case: note reads "Picked 0 of N" with no breakdown clause', () => {
-    const summary = summarizeSpawnProvenance({ poolIds: [], manualTaskIds: [], removedTaskIds: [] }, {}, {}, []);
+    const summary = summarizeSpawnProvenanceFromSupplies([], [], {}, []);
     expect(summary).toEqual({ dealt: 0, mixSize: 0, poolSourcedCount: 0, manualSourcedCount: 0 });
     expect(formatSpawnProvenanceNote(summary)).toBe('Picked 0 of 0');
   });

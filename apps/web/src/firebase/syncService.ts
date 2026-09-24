@@ -89,6 +89,27 @@ export interface SyncResult {
   pull: PullResult;
 }
 
+// ─── Auth guard ───────────────────────────────────────────────────────────────
+
+/** Thrown when a sync entry point is called for a uid other than the signed-in one. */
+const SYNC_USER_MISMATCH_MESSAGE = 'Sync userId does not match authenticated user';
+
+/**
+ * Defense-in-depth: refuse to sync for any uid other than the authenticated
+ * Firebase user. Runs at the top of `pushSync`, `pullSync` and `fullSync`, so
+ * the loop's direct `pushTick` path is covered as well as the full cycle — a
+ * loop outliving an account switch must never push/pull the previous user's
+ * data. iOS twin: the `currentUser?.uid == userId` guard in `pushSyncCore`.
+ *
+ * @param userId - The uid the caller intends to sync for.
+ * @throws Error(SYNC_USER_MISMATCH_MESSAGE) when it isn't the signed-in uid.
+ */
+function assertSyncUserMatches(userId: string): void {
+  if (auth.currentUser?.uid !== userId) {
+    throw new Error(SYNC_USER_MISMATCH_MESSAGE);
+  }
+}
+
 // ─── Push Sync ────────────────────────────────────────────────────────────────
 
 /**
@@ -104,8 +125,11 @@ export interface SyncResult {
  *
  * @param userId - The authenticated user's ID (for Firestore path)
  * @returns Push result summary
+ * @throws Error(SYNC_USER_MISMATCH_MESSAGE) before touching Dexie or Firestore
+ *   when `userId` is not the signed-in uid.
  */
 export async function pushSync(userId: string): Promise<PushResult> {
+  assertSyncUserMatches(userId);
   const result: PushResult = { pushed: 0, conflicts: 0, failed: 0, details: [] };
 
   // Reset stale IN_PROGRESS items (e.g., from a crash/reload mid-sync).
@@ -367,6 +391,7 @@ export async function pullSync(
   userId: string,
   lastSyncedAt?: string,
 ): Promise<PullResult> {
+  assertSyncUserMatches(userId);
   const result: PullResult = { pulled: 0, conflicts: 0, details: [] };
   let hadPullError = false;
 
@@ -602,10 +627,9 @@ export function attachPullListeners(
  * @returns Combined push and pull results
  */
 export async function fullSync(userId: string): Promise<SyncResult> {
-  // Defense-in-depth: verify userId matches the authenticated user
-  if (auth.currentUser?.uid !== userId) {
-    throw new Error('Sync userId does not match authenticated user');
-  }
+  // Checked here too (not only in push/pull) so a mismatched uid never even
+  // reads the local user row.
+  assertSyncUserMatches(userId);
 
   // Get lastSyncedAt before pushing (so we don't miss changes during push)
   const user = await db.users.get(userId);
@@ -652,10 +676,36 @@ export const SYNC_SAFETY_NET_MS = 5 * 60 * 1000;
  *  rapid local writes (e.g. a slider that emits per-tick) into one push. */
 const PUSH_DEBOUNCE_MS = 500;
 
+/**
+ * The one running sync loop (web runs at most one, like iOS's single
+ * `SyncService` instance), so code outside React — `deleteAccount` — can stop
+ * it synchronously via `stopSyncLoop()` without owning the hook's cleanup.
+ */
+let activeLoop: { userId: string; teardown: () => void } | null = null;
+
+/**
+ * Stops the running sync loop, if any: clears its timers, unsubscribes the
+ * queue observation and detaches the Firestore listeners. Safe to call when
+ * nothing is running. Mirrors iOS `SyncService.stop()`; used by
+ * `deleteAccount` so no push/pull can race the account deletion.
+ *
+ * @returns The uid the stopped loop was running for, or null if none was
+ *   running — lets a caller restart exactly what it stopped.
+ */
+export function stopSyncLoop(): string | null {
+  const loop = activeLoop;
+  activeLoop = null;
+  loop?.teardown();
+  return loop?.userId ?? null;
+}
+
 export function startSyncLoop(
   userId: string,
   intervalMs: number = SYNC_SAFETY_NET_MS,
 ): () => void {
+  // One loop at a time: a new start (account switch, or a restart after a
+  // failed account delete) replaces whatever was running.
+  stopSyncLoop();
   let timer: ReturnType<typeof setInterval> | null = null;
   let pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let isSyncing = false;
@@ -707,6 +757,8 @@ export function startSyncLoop(
    *  into one. If a push is already running, the trailing-edge fire still
    *  schedules — the queue observation will re-fire when state changes. */
   function scheduleFlush(): void {
+    // A tick that was in flight when the loop stopped must not re-arm it.
+    if (cleanedUp) return;
     if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
     pushDebounceTimer = setTimeout(() => {
       pushDebounceTimer = null;
@@ -787,8 +839,10 @@ export function startSyncLoop(
   // the listeners warm up).
   void fullTick();
 
-  // Cleanup
-  return () => {
+  // Teardown (idempotent: `stopSyncLoop` and the returned cleanup can both
+  // reach it).
+  function teardown(): void {
+    if (cleanedUp) return;
     cleanedUp = true;
     if (timer) clearInterval(timer);
     if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
@@ -801,6 +855,15 @@ export function startSyncLoop(
     // Counters are session-scoped — drop them when the loop tears down
     // so the next sign-in starts from zero.
     resetSyncStatus();
+  }
+  activeLoop = { userId, teardown };
+
+  // Cleanup for the caller (useSyncLoop's effect). Also stops a loop that
+  // was restarted for the same user outside React (deleteAccount's
+  // failed-delete resume), so sign-out never leaks one.
+  return () => {
+    teardown();
+    if (activeLoop?.userId === userId) stopSyncLoop();
   };
 }
 

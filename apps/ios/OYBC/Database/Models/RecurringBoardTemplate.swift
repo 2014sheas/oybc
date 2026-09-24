@@ -12,7 +12,7 @@ import GRDB
 ///   `BoardSources.selectBoardTasks` (`AppDatabase+RecurringTemplates.swift`).
 /// - `poolIds` / `removedTaskIds`: a derived mirror of `sources`; the spawn
 ///   reads it only through `sourcesForRecord`, but pool-health / deck-preview
-///   (`PoolHealth`, `RepeatingBoardMixEditor`) still read it directly.
+///   (`PoolHealth`) still read it directly.
 /// - `seedTaskIds`: never read by the spawn; still read by un-migrated
 ///   hydration, the Task-detail templates-referencing query
 ///   (`fetchTemplatesReferencingTask`), and the roster loading fallbacks —
@@ -203,7 +203,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     /// fails to parse; the decoded array (possibly `[]`) when a JSON
     /// string is present and valid. Never manufactures `[]` from a missing
     /// key — that would collapse "genuinely un-migrated" into "migrated,
-    /// empty", which `PoolMix.isLegacyShapedRecord` depends on being
+    /// empty", which the v25 migration depends on being
     /// distinguishable at the (`nil` poolIds, absent seedTaskIds fallback)
     /// vs (`poolIds: []`) boundary. Used by all three P1 fields; not
     /// applicable to `seedTaskIds`, which intentionally always defaults to

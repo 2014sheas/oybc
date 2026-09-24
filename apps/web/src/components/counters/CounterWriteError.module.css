@@ -1,0 +1,8 @@
+/* Mirrors CounterDetailPage's `.deleteError` line (Riso red, head font). */
+.error {
+  margin: 10px 2px;
+  color: var(--riso-red);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.9rem;
+}

@@ -1,13 +1,8 @@
 /**
- * Non-component helpers + style re-export shared by `InteractiveTaskSquare`
+ * Non-component helpers shared by `InteractiveTaskSquare`
  * and its consumers. Split out of `InteractiveTaskSquare.tsx` so that
  * file exports components only — required for Fast Refresh / HMR.
  */
-
-import styles from './InteractiveTaskSquare.module.css';
-
-/** Exported CSS module styles for use by consumers rendering custom FloatingContextMenu children */
-export { styles as interactiveTaskSquareStyles };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

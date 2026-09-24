@@ -211,30 +211,6 @@ export async function seedTemplate(page: Page, template: SeedTemplate): Promise<
   }, row);
 }
 
-/**
- * Clears all rows from the `recurringBoardTemplates` table without
- * tearing down the Dexie connection. Use in tests that need a known
- * empty starting state for the templates list.
- */
-export async function clearTemplates(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    return new Promise<void>((resolve, reject) => {
-      const openReq = indexedDB.open('oybc');
-      openReq.onerror = () => reject(openReq.error);
-      openReq.onsuccess = () => {
-        const db = openReq.result;
-        const tx = db.transaction(['recurringBoardTemplates'], 'readwrite');
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => reject(tx.error);
-        tx.objectStore('recurringBoardTemplates').clear();
-      };
-    });
-  });
-}
-
 // ─── Task Pools + Recurring Boards Rework (P1/P3) — Pool seed helper ───────
 
 /** Shape of a `Pool` row (P1). Same loose-typed-Record convention as
@@ -282,29 +258,6 @@ export async function seedPool(page: Page, pool: SeedPool): Promise<void> {
       };
     });
   }, row);
-}
-
-/**
- * Clears all rows from the `pools` table without tearing down the Dexie
- * connection. Mirrors `clearTemplates`.
- */
-export async function clearPools(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    return new Promise<void>((resolve, reject) => {
-      const openReq = indexedDB.open('oybc');
-      openReq.onerror = () => reject(openReq.error);
-      openReq.onsuccess = () => {
-        const db = openReq.result;
-        const tx = db.transaction(['pools'], 'readwrite');
-        tx.oncomplete = () => {
-          db.close();
-          resolve();
-        };
-        tx.onerror = () => reject(tx.error);
-        tx.objectStore('pools').clear();
-      };
-    });
-  });
 }
 
 // ─── Phase 6.3 — Board / Task / BoardTask seed helpers ──────────────────────

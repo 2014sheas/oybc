@@ -26,9 +26,10 @@ const WEBHOOK_URL = `http://${FUNCTIONS_HOST}/${PROJECT_ID}/us-central1/revenueC
 const AUTH = process.env.REVENUECAT_WEBHOOK_AUTH ?? "test-rc-webhook-secret";
 
 let counter = 0;
+/** Firebase-uid-shaped (alphanumeric, ≥ 20 chars) — the webhook ignores anything else. */
 function freshUid(): string {
   counter += 1;
-  return `rc-test-uid-${Date.now()}-${counter}`;
+  return `rctestuid${Date.now()}x${counter}`;
 }
 
 interface EventOverrides {
@@ -177,6 +178,60 @@ describe("revenueCatWebhook", () => {
     expect(status).toBe(200);
     expect(json.ignored).toBe("not_pro_or_unknown_type");
     expect((await entitlement(uid)).exists).toBe(false);
+  });
+
+  it("acknowledges (200) an event from a non-allowed environment without writing", async () => {
+    // The emulator project's committed functions/.env.demo-oybc-functions-test
+    // sets PRODUCTION,SANDBOX, so an unknown environment exercises the gate's
+    // wiring end-to-end.
+    const uid = freshUid();
+    const { status, json } = await postWebhook(buildEvent(uid, { environment: "STAGING" }));
+    expect(status).toBe(200);
+    expect(json.ignored).toBe("environment");
+    expect((await entitlement(uid)).exists).toBe(false);
+  });
+
+  it("acknowledges (200) a non-uid-shaped app_user_id without writing", async () => {
+    const uid = freshUid();
+    const badUid = "$RCAnonymousID:abc";
+    const { status, json } = await postWebhook(buildEvent(uid, { app_user_id: badUid }));
+    expect(status).toBe(200);
+    expect(json.ignored).toBe("app_user_id");
+    // Nothing written under either id: the uid buildEvent was seeded with,
+    // nor the rejected app_user_id itself.
+    expect((await entitlement(uid)).exists).toBe(false);
+    expect((await entitlement(badUid)).exists).toBe(false);
+  });
+
+  it("does NOT grant on a CANCELLATION with a null expiry", async () => {
+    const uid = freshUid();
+    const { status } = await postWebhook(
+      buildEvent(uid, { type: "CANCELLATION", cancel_reason: "UNSUBSCRIBE", expiration_at_ms: null }),
+    );
+    expect(status).toBe(200);
+    expect((await entitlement(uid)).exists).toBe(false);
+  });
+
+  it("does NOT grant when entitlement ids are absent", async () => {
+    const uid = freshUid();
+    const { status } = await postWebhook(buildEvent(uid, { entitlement_ids: null }));
+    expect(status).toBe(200);
+    expect((await entitlement(uid)).exists).toBe(false);
+  });
+
+  it("revokes on a refund CANCELLATION (cancel_reason CUSTOMER_SUPPORT)", async () => {
+    const uid = freshUid();
+    await postWebhook(buildEvent(uid)); // becomes pro
+    await postWebhook(
+      buildEvent(uid, {
+        type: "CANCELLATION",
+        cancel_reason: "CUSTOMER_SUPPORT",
+        event_timestamp_ms: Date.now() + 1000,
+      }),
+    );
+    const data = (await entitlement(uid)).data()!;
+    expect(data.tier).toBe("free");
+    expect(data.isPro).toBe(false);
   });
 
   it("acknowledges a TRANSFER without writing", async () => {

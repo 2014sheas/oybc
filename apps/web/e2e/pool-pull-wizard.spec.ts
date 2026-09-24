@@ -225,4 +225,66 @@ test.describe('Wizard Tasks step — sources (Board Sources P4)', () => {
       sourceSheet.getByText('Boards you make and pools you save will show up here.'),
     ).toBeVisible();
   });
+  test('the source row ✕ removes the row from the keyboard — Enter and Space — without expanding it', async ({
+    page,
+  }) => {
+    // 2026-09 audit (T1 Task 2): the ✕ used to sit INSIDE the header's
+    // `role="button"` div, whose keydown handler cancelled Enter/Space and
+    // toggled the panel instead — so a keyboard user could never remove a
+    // source. Unconfigured sources take the instant (no-confirm) path, so
+    // the keypress alone must remove the row.
+    for (const [p, name] of ['Keyboard Pool A', 'Keyboard Pool B'].entries()) {
+      const ids = Array.from(
+        { length: 4 },
+        (_, i) => `ffffffff-000${p}-0000-0000-00000000000${i}`,
+      );
+      for (const [i, id] of ids.entries()) {
+        await seedTask(page, { id, title: `${name} Task ${i + 1}`, type: 'normal' });
+      }
+      await seedPool(page, { id: `ffffffff-000${p}-0000-0000-000000000099`, name, taskIds: ids });
+    }
+
+    await openCreateHub(page);
+    await startOneOffWizard(page);
+    await page.getByLabel(/board name/i).fill('Keyboard Remove Board');
+    await page.getByRole('button', { name: '3×3', exact: true }).click();
+    await page
+      .getByRole('group', { name: 'Timeframe' })
+      .getByRole('button', { name: 'Daily', exact: true })
+      .click();
+    await page.getByRole('button', { name: /^Next/ }).click();
+
+    await page.getByRole('button', { name: 'Add from a pool or board' }).click();
+    const sourceSheet = page.getByRole('dialog', { name: 'Add from a pool or board' });
+    await sourceSheet.getByRole('button', { name: /Keyboard Pool A/ }).click();
+    await sourceSheet.getByRole('button', { name: /Keyboard Pool B/ }).click();
+    await sourceSheet.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(sourceSheet).toBeHidden();
+
+    const headerA = page.getByRole('button', { name: /Keyboard Pool A, 4 tasks/ });
+    const headerB = page.getByRole('button', { name: /Keyboard Pool B, 4 tasks/ });
+    await expect(headerA).toHaveAttribute('aria-expanded', 'false');
+    await expect(headerB).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByLabel('Capacity 8 of 8 tasks')).toBeVisible();
+
+    // Enter on A's ✕ removes A; B is untouched and nothing expanded.
+    await page.getByRole('button', { name: 'Remove Keyboard Pool A' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('remove-source-confirm')).toHaveCount(0);
+    await expect(headerA).toHaveCount(0);
+    await expect(headerB).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('member-row')).toHaveCount(0);
+    await expect(page.getByLabel('Capacity 4 of 8 tasks')).toBeVisible();
+
+    // The header is still its own keyboard control: Enter expands it...
+    await headerB.focus();
+    await page.keyboard.press('Enter');
+    await expect(headerB).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId('member-row')).toHaveCount(4);
+    // ...and Space on B's ✕ removes B (not a collapse).
+    await page.getByRole('button', { name: 'Remove Keyboard Pool B' }).focus();
+    await page.keyboard.press('Space');
+    await expect(headerB).toHaveCount(0);
+    await expect(page.getByLabel('Capacity 0 of 8 tasks')).toBeVisible();
+  });
 });

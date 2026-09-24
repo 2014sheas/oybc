@@ -121,8 +121,8 @@ async function migrateDefaultPools(): Promise<void> {
 
 async function migrateRecurringBoardTemplates(): Promise<void> {
   const now = currentTimestamp();
-  // `poolIds === undefined` is the "genuinely un-migrated" half of
-  // isLegacyShapedRecord's two cases — see poolMix.ts. Deliberately not
+  // `poolIds === undefined` is the "genuinely un-migrated" legacy shape
+  // (see RecurringBoardTemplate's doc in @oybc/shared). Deliberately not
   // filtered by `isDeleted`: every RecurringBoardTemplate row gets its
   // seedTaskIds carried forward.
   const templates = await db.recurringBoardTemplates

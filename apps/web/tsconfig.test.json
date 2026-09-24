@@ -1,0 +1,12 @@
+{
+  // Test-only program: the app program (tsconfig.json) excludes tests so
+  // Node globals (process, Buffer, node:*) never typecheck in browser code.
+  // This one re-includes everything under src and adds the Node types the
+  // tests need (e.g. dbBoundary.test.ts reads sources via node:fs).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": []
+}

@@ -202,7 +202,7 @@
   z-index: 1;
 }
 .soCell.free {
-  background: var(--riso-ink);
+  background: var(--riso-ink-static);
 }
 .soCell.free::after {
   content: '★';
@@ -300,7 +300,7 @@
   z-index: 1;
 }
 .soBeatMini i.free {
-  background: var(--riso-ink);
+  background: var(--riso-ink-static);
 }
 .soBeatMini i.free::after {
   content: '★';

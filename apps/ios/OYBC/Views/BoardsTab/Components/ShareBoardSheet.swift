@@ -157,7 +157,7 @@ struct ShareBoardSheet: View {
                 Text("GREENLOG")
                     .font(.risoHead(11, .extraBold))
                     .tracking(0.88)
-                    .foregroundStyle(Color.risoInk)
+                    .foregroundStyle(Color.risoInkStatic) // static: matches web SharePoster + the light-forced export
                     .padding(.vertical, 3)
                     .padding(.horizontal, 10)
                     .background(Capsule().fill(Color.risoGreen))
@@ -274,7 +274,7 @@ struct ShareBoardSheet: View {
                                 Group {
                                     if isCenter {
                                         StarShape()
-                                            .fill(Color.risoInk)
+                                            .fill(Color.risoInkStatic)
                                             .padding(4)
                                     }
                                 }

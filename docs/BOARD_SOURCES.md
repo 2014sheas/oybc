@@ -556,7 +556,8 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
 - Deferred (recorded, not done): `@oybc/shared`'s
   `clearRemovalsForUntoggle`/`resolvePoolUntoggleRemovals` still exist
   for the legacy `resolveMix` spawn path shared with iOS — they retire
-  whenever `resolveMix` itself does (post-migration horizon).
+  whenever `resolveMix` itself does (post-migration horizon). (Retired
+  in the 2026-09 audit, T1 Task 3.)
 
 ## Delivery — phases (docs-PR-first; iOS-first UI, web in-effort — locked)
 

@@ -253,7 +253,7 @@
   outline-offset: 2px;
 }
 
-/* Delete confirmation dialog — fixed overlay, same vocabulary as BoardListItem. */
+/* Delete confirmation dialog — fixed overlay, same vocabulary as the board rows. */
 .bcardConfirmBackdrop {
   position: fixed;
   inset: 0;

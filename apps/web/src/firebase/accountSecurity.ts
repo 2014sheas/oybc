@@ -23,6 +23,7 @@ import {
   type AuthError,
 } from 'firebase/auth';
 import { auth } from './config';
+import { startSyncLoop, stopSyncLoop } from './syncService';
 import { db } from '../db/internal';
 import { updateUserEmail } from '../db/operations/users';
 
@@ -280,7 +281,8 @@ export async function unlinkProvider(providerId: string): Promise<void> {
  * covers web too, and callable-first would risk purging Firestore and then
  * leaving a live account if `delete()` failed.
  *
- * After the Auth user is gone we wipe every local Dexie table (sync queue
+ * The sync loop is stopped before the delete (and restarted if it fails). After
+ * the Auth user is gone we wipe every local Dexie table (sync queue
  * included, so nothing re-pushes and resurrects the just-purged Firestore data).
  * The Firebase auth-state listener then nils the session → the app shows the
  * signed-out home. Requires recent login (caller reauthenticates first).
@@ -289,10 +291,24 @@ export async function deleteAccount(): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error('No signed-in user');
 
-  // 1. Delete the Auth user (→ server-side onUserDeleted purges Firestore).
-  await user.delete();
+  // 1. Stop the sync loop BEFORE deleting: a push racing the server-side
+  //    purge would resurrect just-deleted Firestore data, and the ID token
+  //    stays valid until it expires. (iOS orders it differently — it calls
+  //    `syncService.stop()` AFTER `user.delete()`, and its `pushSyncCore` uid
+  //    guard skips any push once `currentUser` is nil.) If the
+  //    delete fails (e.g. requires-recent-login) the account is intact, so
+  //    restart the loop it stopped rather than leave a signed-in user without sync.
+  const stoppedLoopFor = stopSyncLoop();
 
-  // 2. Wipe all device-local data. Clearing every table (vs db.delete()) keeps
+  // 2. Delete the Auth user (→ server-side onUserDeleted purges Firestore).
+  try {
+    await user.delete();
+  } catch (err) {
+    if (stoppedLoopFor) startSyncLoop(stoppedLoopFor);
+    throw err;
+  }
+
+  // 3. Wipe all device-local data. Clearing every table (vs db.delete()) keeps
   //    the Dexie connection open and is FK-free under IndexedDB, so order
   //    doesn't matter. The sync queue is one of the tables — cleared too.
   await Promise.all(db.tables.map((table) => table.clear()));
