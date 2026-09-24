@@ -638,7 +638,7 @@ Output of the 2026-08 deep-dive audit: the findings that a machine can check are
 
 | Check | Script | Baseline | Catches |
 | --- | --- | --- | --- |
-| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (empty since the 2026-09 audit — keep it that way; never `import.meta.glob` source files, knip reads a glob as importing every match) | new unused web exports/types; any unused file/dependency (never baselined) |
+| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (empty since the 2026-09 audit — keep it that way; never `import.meta.glob` a broad source glob in a test — knip reads it as importing every match and stops reporting unused files) | new unused web exports/types; any unused file/dependency (never baselined) |
 | God-file regrowth | `scripts/check-file-sizes.mjs` (in `drift-guardrails.yml`) | `scripts/audit/file-size-allowlist.json` (9 frozen offenders = ROADMAP B6 roster) | any source file >1000 lines; any allowlisted file growing past its frozen count |
 | Sync-contract ↔ rules | `scripts/check-sync-contract-rules.mjs` (in `drift-guardrails.yml`) | none (must be exactly equal) | `SYNC_COLLECTIONS`/`USER_SCOPED_SYNC_COLLECTIONS` (shared) diverging from `isKnownCollection()`/`requiresUserIdField()` (`firestore.rules`) |
 
