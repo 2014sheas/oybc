@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../firebase/useAuth';
 import { isOfflineError } from '../../firebase/authService';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
 import { ModalArt } from './SignedOutArt';
 import styles from './SignedOut.module.css';
@@ -37,14 +38,20 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
   const isUp = mode === 'signup';
+
+  // aria-modal, Escape → close, Tab trap, focus restore.
+  const { ref: cardRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
 
   // Move focus into the dialog on open (WCAG 2.4.3) — onto the card container
   // rather than an action button, so an accidental Enter can't fire a popup.
+  // Runs after the hook's initial-focus effect, so the card wins.
   useEffect(() => {
     cardRef.current?.focus();
-  }, []);
+  }, [cardRef]);
 
   // Clear a stale error when the user toggles sign-in ↔ sign-up.
   useEffect(() => {
@@ -98,11 +105,10 @@ export function SignInModal({ mode, onClose, onSwitchMode }: SignInModalProps): 
     <div className={styles.soAuthScrim} onClick={onClose} role="presentation">
       <div
         ref={cardRef}
-        tabIndex={-1}
         className={styles.soAuthCard}
         role="dialog"
-        aria-modal="true"
         aria-label={isUp ? 'Create your account' : 'Sign in to OYBC'}
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         <button type="button" className={styles.soAuthX} onClick={onClose} aria-label="Close">

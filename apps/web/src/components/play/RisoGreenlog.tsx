@@ -1,5 +1,6 @@
 import type { BoardSize } from '@oybc/shared';
 import { getCenterSquareIndex } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton, RisoIcon } from '../riso';
 import styles from './Play.module.css';
 
@@ -73,9 +74,20 @@ export function RisoGreenlog({
   const centerIndex = getCenterSquareIndex(boardSize);
   const total = boardSize * boardSize;
   const confetti = buildConfetti(celebrationIntensity);
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
 
   return (
-    <div className={styles.greenlog} role="dialog" aria-modal="true" aria-label="Board complete">
+    <div
+      ref={modalRef}
+      className={styles.greenlog}
+      role="dialog"
+      aria-label="Board complete"
+      {...modalProps}
+    >
       <div className={styles.confetti} aria-hidden="true">
         {confetti.map((c, i) => (
           <i

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { TaskType, generateCounterTaskTitle, type Task } from '@oybc/shared';
 import type { UpdateTaskPatch } from '../../db/operations/tasks';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { TypeBadge } from '../TypeBadge';
 import styles from './BoardEditTaskSheet.module.css';
 
@@ -64,6 +65,12 @@ export function BoardEditTaskSheet({
   onDone,
   onCancel,
 }: BoardEditTaskSheetProps): React.ReactElement {
+  // aria-modal, Escape → cancel, initial focus, Tab trap, focus restore.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel,
+  });
+
   // ── Seed from task (which has overrides pre-merged by caller) ────────────
 
   const [title, setTitle] = useState(task.title ?? '');
@@ -139,10 +146,11 @@ export function BoardEditTaskSheet({
   return (
     <div className={styles.backdrop} onClick={onCancel} role="presentation">
       <div
+        ref={modalRef}
         className={styles.sheet}
         role="dialog"
-        aria-modal="true"
         aria-label="Edit task"
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

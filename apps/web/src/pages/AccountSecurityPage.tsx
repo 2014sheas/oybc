@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useAuth } from '../firebase/useAuth';
@@ -23,6 +23,7 @@ import {
   updateAccountPassword,
   type ProviderState,
 } from '../firebase/accountSecurity';
+import { useModalA11y } from '../hooks/useModalA11y';
 import styles from './AccountSecurityPage.module.css';
 
 /** Which action sheet is open. */
@@ -495,42 +496,26 @@ function Sheet({
   busy?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
-  const sheetRef = useRef<HTMLDivElement>(null);
-
-  // Escape closes (unless busy); Tab/Shift+Tab cycle within the dialog
-  // (aria-modal alone does not trap physical keyboard focus — important for a
-  // sensitive auth form).
-  const onKeyDown = (e: React.KeyboardEvent): void => {
-    if (e.key === 'Escape') {
+  // aria-modal, Escape → close (unless busy), initial focus (an autoFocus
+  // password field keeps it), Tab/Shift+Tab trap — aria-modal alone does not
+  // trap physical keyboard focus, which matters for a sensitive auth form —
+  // and focus restored to the row that opened the sheet.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: () => {
       if (!busy) onClose();
-      return;
-    }
-    if (e.key !== 'Tab') return;
-    const focusable = sheetRef.current?.querySelectorAll<HTMLElement>(
-      'a[href], button:not(:disabled), input, textarea, select, [tabindex]:not([tabindex="-1"])',
-    );
-    if (!focusable || focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
+    },
+  });
 
   return (
     <div className={styles.backdrop} onClick={busy ? undefined : onClose} role="presentation">
       <div
-        ref={sheetRef}
+        ref={modalRef}
         className={styles.sheet}
         role="dialog"
-        aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={onKeyDown}
+        {...modalProps}
       >
         <h2 className={styles.sheetTitle}>{title}</h2>
         {children}

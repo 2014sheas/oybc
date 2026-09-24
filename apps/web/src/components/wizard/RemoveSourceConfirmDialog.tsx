@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useModalA11y } from '../../hooks/useModalA11y';
 // Deliberately the counter sheet's module, not a third copy: this dialog is
 // the same Riso confirm shape (backdrop scrim → bordered sheet → heading →
 // body → Cancel + red destructive action), and the repo already has two
@@ -44,8 +44,8 @@ export interface RemoveSourceConfirmDialogProps {
  * `BoardWizardTasksStepView.swift` (native two-choice destructive confirm),
  * wording the loss with the SAME shared sentence builder.
  *
- * Focus lands on Cancel when it opens and Escape cancels, so the safe
- * choice is always one keystroke away.
+ * Focus lands on Cancel when it opens, Escape cancels and Tab stays inside
+ * (`useModalA11y`), so the safe choice is always one keystroke away.
  *
  * @param props - See {@link RemoveSourceConfirmDialogProps}.
  * @returns The modal confirm.
@@ -57,28 +57,19 @@ export function RemoveSourceConfirmDialog({
   onConfirm,
   onCancel,
 }: RemoveSourceConfirmDialogProps): React.ReactElement {
-  const cancelRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    cancelRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onCancel();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onCancel]);
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel,
+    initialFocus: 'cancel',
+  });
 
   return (
     <div className={styles.backdrop} onClick={onCancel}>
       <div
+        ref={modalRef}
         className={styles.sheet}
         role="alertdialog"
+        {...modalProps}
         aria-label="Confirm remove source"
         data-testid="remove-source-confirm"
         onClick={(e) => e.stopPropagation()}
@@ -91,8 +82,8 @@ export function RemoveSourceConfirmDialog({
 
         <div className={styles.sheetActions}>
           <button
-            ref={cancelRef}
             type="button"
+            data-modal-cancel
             className={styles.cancelButton}
             onClick={onCancel}
           >

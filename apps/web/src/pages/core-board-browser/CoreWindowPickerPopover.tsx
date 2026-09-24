@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Timeframe, type Board, type WeekStartDay } from '@oybc/shared';
 import { RisoChip } from '../../components/riso';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   buildPickerPage,
   pickerCopy,
@@ -74,7 +75,12 @@ export function CoreWindowPickerPopover({
   onSelect,
   onClose,
 }: CoreWindowPickerPopoverProps): React.ReactElement {
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  // aria-modal, Esc → close, initial focus, Tab trap, focus restore (back to
+  // the window chip). Outside-click light-dismiss stays below.
+  const { ref: rootRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
   const [pageDate, setPageDate] = useState<Date>(() =>
     pickerPageStart(timeframe, new Date(displayedWindowStart)),
   );
@@ -85,24 +91,19 @@ export function CoreWindowPickerPopover({
   );
   const copy = pickerCopy(timeframe);
 
-  // Close on outside click / Esc.
+  // Close on outside click (Esc is handled by `useModalA11y`).
   useEffect(() => {
     const onPointerDown = (e: PointerEvent): void => {
       const root = rootRef.current;
       if (root && e.target instanceof Node && !root.contains(e.target)) onClose();
     };
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
     // Capture phase so a click on the chip (which toggles) doesn't
     // immediately re-open after the outside-close fires.
     document.addEventListener('pointerdown', onPointerDown, true);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('keydown', onKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, rootRef]);
 
   const gridClass =
     timeframe === Timeframe.DAILY
@@ -116,7 +117,13 @@ export function CoreWindowPickerPopover({
   const dayHeads = weekStartDay === 'sunday' ? DAY_HEADS_SUNDAY : DAY_HEADS_MONDAY;
 
   return (
-    <div ref={rootRef} className={styles.popover} role="dialog" aria-label={copy.title}>
+    <div
+      ref={rootRef}
+      className={styles.popover}
+      role="dialog"
+      aria-label={copy.title}
+      {...modalProps}
+    >
       <div className={styles.popoverHead}>
         <div>
           <div className={styles.popoverKicker}>{copy.kicker}</div>

@@ -83,8 +83,8 @@ describe('sync entry points — authenticated-uid guard', () => {
   it('pushSync for the signed-in uid gets past the guard into the queue', async () => {
     const whereSpy = vi.spyOn(db.syncQueue, 'where');
 
-    // Whatever the queue read does under fake-indexeddb, it must not be the
-    // uid-mismatch rejection — the guard lets the signed-in uid through.
+    // The outcome of the queue read is not under test here; it must simply
+    // not be the uid-mismatch rejection — the guard lets the signed-in uid through.
     const outcome = await pushSync('me').then(
       () => null,
       (err: unknown) => err

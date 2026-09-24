@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { classifyCounterCreateMatch, formatCounterName, type Task } from '@oybc/shared';
 import { createCounterTask } from '../../db/operations/tasks';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
 import styles from './CreateCounterSheet.module.css';
 
@@ -64,15 +65,14 @@ export function CreateCounterSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Escape-to-cancel, mirroring DeriveCounterModal. Guard against in-flight ops.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape' && !busy) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose, busy]);
+  // aria-modal, Escape → cancel, Tab trap, focus restore (the noun field
+  // keeps its autoFocus). Guard against in-flight ops.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open,
+    onCancel: () => {
+      if (!busy) onClose();
+    },
+  });
 
   // Reset field state each time the sheet (re)opens so a prior session's
   // partial input never bleeds into the next. Increment generation counter
@@ -139,9 +139,10 @@ export function CreateCounterSheet({
 
   return (
     <div
+      ref={modalRef}
       role="dialog"
-      aria-modal="true"
       aria-label="New counter"
+      {...modalProps}
       className={styles.backdrop}
       onClick={() => !busy && onClose()}
     >

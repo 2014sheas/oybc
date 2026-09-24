@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './SquareTapMenu.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -86,14 +86,11 @@ export function SquareTapMenu({
   if (y + menuH > window.innerHeight - PAD) y = clickY - menuH - 8;
   y = Math.max(PAD, y);
 
-  // ── Keyboard dismiss ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // ── Keyboard: aria-modal, Escape → close, Tab trap, focus restore ────────
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -105,10 +102,11 @@ export function SquareTapMenu({
         aria-hidden="true"
       />
       <div
+        ref={modalRef}
         className={styles.menu}
         role="dialog"
-        aria-modal="true"
         aria-label={`Options for square: ${taskTitle}`}
+        {...modalProps}
         style={{ left: x, top: y }}
       >
         {/* Header: SQUARE kicker + truncated task name */}

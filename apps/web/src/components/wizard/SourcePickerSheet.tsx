@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { Pool } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import type { SourceSheetBoardEntry } from '../../db/operations/boardSources';
 import styles from './SourcePickerSheet.module.css';
 
@@ -38,14 +39,11 @@ export function SourcePickerSheet({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') setIsOpen(false);
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen]);
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: isOpen,
+    onCancel: () => setIsOpen(false),
+  });
 
   const trimmedQuery = query.trim();
   const isEmptyStore = pools.length === 0 && boardEntries.length === 0;
@@ -85,10 +83,11 @@ export function SourcePickerSheet({
       {isOpen && (
         <div className={styles.backdrop} onClick={() => setIsOpen(false)}>
           <div
+            ref={modalRef}
             className={styles.sheet}
             role="dialog"
-            aria-modal="true"
             aria-label="Add from a pool or board"
+            {...modalProps}
             onClick={(e) => e.stopPropagation()}
           >
             <div className={styles.grabHandle} aria-hidden="true" />

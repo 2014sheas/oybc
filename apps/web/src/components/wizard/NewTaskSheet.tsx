@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { useCreateFormState, type PendingTaskPayload } from '../../pages/createPage/useCreateFormState';
 import { CreateNewTaskForm } from '../../pages/createPage/CreateNewTaskForm';
 import { useLinkedCounterCreate } from './useLinkedCounterCreate';
@@ -82,15 +82,6 @@ export function NewTaskSheet({
   deferPersist = false,
   suggestionPool,
 }: NewTaskSheetProps): React.ReactElement | null {
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   return (
@@ -127,6 +118,11 @@ function NewTaskSheetBody({
   deferPersist = false,
   suggestionPool,
 }: Omit<NewTaskSheetProps, 'isOpen'>): React.ReactElement {
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
   const form = useCreateFormState({
     userId,
     onTaskCreated: (task) => {
@@ -171,10 +167,11 @@ function NewTaskSheetBody({
           readers should announce the label when focus enters the
           dialog content, which is the inner sheet div. */}
       <div
+        ref={modalRef}
         className={styles.sheet}
         role="dialog"
-        aria-modal="true"
         aria-labelledby="new-task-sheet-title"
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>

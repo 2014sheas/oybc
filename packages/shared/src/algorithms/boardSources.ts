@@ -525,6 +525,45 @@ export function isEligibleSourceBoard(
   return endsAt >= cutoff;
 }
 
+/** The board fields {@link pickSeriesInstance} reads. */
+export type SeriesInstanceCandidate = Pick<Board, 'id' | 'startDate'>;
+
+/**
+ * Series binding's tie-break: picks the instance a recurring-series source
+ * should pull from out of an already-filtered candidate set — the LATEST
+ * `startDate`, and on an equal `startDate` the LOWEST `id`.
+ *
+ * Two offline devices can each spawn the same window (spawn ids are
+ * random), so a series may hold two instances with one `startDate`. The
+ * `id` secondary key makes the pick independent of input order, so web
+ * and iOS pull supply from the same board. Both keys compare
+ * lexicographically by code unit (`<`, never `localeCompare`) — board
+ * dates are fixed-format local ISO strings and ids are UUIDs, and the
+ * Swift twin's `String <` orders these ASCII strings identically.
+ *
+ * Mirrors the iOS `BoardSources.pickSeriesInstance` in
+ * `Helpers/BoardSources.swift` — keep in lockstep (pinned by
+ * `seriesInstanceVectors` in `tests/fixtures/boardSourceVectors.json`).
+ *
+ * @param candidates - the live instances to choose among (any order)
+ * @returns the chosen instance, or `null` when `candidates` is empty
+ */
+export function pickSeriesInstance<T extends SeriesInstanceCandidate>(
+  candidates: readonly T[],
+): T | null {
+  let best: T | null = null;
+  for (const c of candidates) {
+    if (
+      best === null ||
+      c.startDate > best.startDate ||
+      (c.startDate === best.startDate && c.id < best.id)
+    ) {
+      best = c;
+    }
+  }
+  return best;
+}
+
 /**
  * Raw supply for a pool-kind source: the pool's own `taskIds`, filtered to
  * present + non-deleted + supply-eligible ({@link isSourceSupplyTask})

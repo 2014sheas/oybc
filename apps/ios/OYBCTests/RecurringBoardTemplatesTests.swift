@@ -738,4 +738,82 @@ final class RecurringBoardTemplatesTests: XCTestCase {
         )
         XCTAssertTrue(pending.isEmpty)
     }
+
+    // MARK: - setTemplateActive (lost-update-safe pause/resume)
+
+    /// A spawn pass bumps `lastSpawnedWindowKey` + `version` on the live
+    /// row AFTER a caller captured the template (roster load / edit-mode
+    /// open). The toggle must patch the live row, not the captured copy:
+    /// the spawn's window key survives and the version is spawn-bump + 1.
+    func testSetTemplateActive_AfterSpawnBump_KeepsWindowKeyAndBumpsLiveVersion() throws {
+        let testDb = try AppDatabase.makeTestInstance()
+        let captured = makeTemplate(lastSpawnedWindowKey: "2026-05-06", isActive: true)
+        try testDb.dbQueue.write { db in try captured.insert(db) }
+
+        // Simulated spawn bump on the live row (what spawnRecurringBoard does).
+        try testDb.dbQueue.write { db in
+            var live = try XCTUnwrap(RecurringBoardTemplate.fetchOne(db, key: captured.id))
+            live.lastSpawnedWindowKey = "2026-05-07"
+            live.version += 1
+            try live.update(db)
+        }
+
+        let now = "2026-05-07T12:00:00.000Z"
+        let written = try testDb.setTemplateActive(id: captured.id, isActive: false, now: now)
+        XCTAssertNotNil(written)
+
+        let stored = try XCTUnwrap(testDb.dbQueue.read { db in
+            try RecurringBoardTemplate.fetchOne(db, key: captured.id)
+        })
+        XCTAssertFalse(stored.isActive)
+        XCTAssertEqual(stored.lastSpawnedWindowKey, "2026-05-07")
+        XCTAssertEqual(stored.version, 3, "live version (2) + 1, not captured (1) + 1")
+        XCTAssertEqual(stored.updatedAt, now)
+
+        // The enqueued payload carries the live fields too, so the push
+        // doesn't revert the spawn server-side.
+        let rows = try testDb.fetchPendingSyncItems().filter {
+            $0.entityType == "recurringBoardTemplates" && $0.entityId == captured.id
+        }
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.operationType, .update)
+        let payload = try XCTUnwrap(rows.first?.payload)
+        XCTAssertTrue(payload.contains("2026-05-07\""), "payload: \(payload)")
+        XCTAssertFalse(payload.contains("2026-05-06"), "payload: \(payload)")
+    }
+
+    /// Already at the requested value (e.g. a pulled pause) → no write,
+    /// no version bump, no sync item.
+    func testSetTemplateActive_AlreadyAtValue_IsNoOp() throws {
+        let testDb = try AppDatabase.makeTestInstance()
+        let tpl = makeTemplate(isActive: false)
+        try testDb.dbQueue.write { db in try tpl.insert(db) }
+
+        let written = try testDb.setTemplateActive(
+            id: tpl.id, isActive: false, now: "2026-05-07T12:00:00.000Z"
+        )
+        XCTAssertNil(written)
+        let stored = try XCTUnwrap(testDb.dbQueue.read { db in
+            try RecurringBoardTemplate.fetchOne(db, key: tpl.id)
+        })
+        XCTAssertEqual(stored.version, 1)
+        XCTAssertTrue(try testDb.fetchPendingSyncItems().isEmpty)
+    }
+
+    /// A soft-deleted (tombstoned) template is never resurrected / bumped;
+    /// a missing id is a no-op.
+    func testSetTemplateActive_DeletedOrMissing_IsNoOp() throws {
+        let testDb = try AppDatabase.makeTestInstance()
+        let tpl = makeTemplate(isActive: true, isDeleted: true)
+        try testDb.dbQueue.write { db in try tpl.insert(db) }
+
+        XCTAssertNil(try testDb.setTemplateActive(id: tpl.id, isActive: false, now: "2026-05-07T12:00:00.000Z"))
+        XCTAssertNil(try testDb.setTemplateActive(id: "nope", isActive: false, now: "2026-05-07T12:00:00.000Z"))
+        let stored = try XCTUnwrap(testDb.dbQueue.read { db in
+            try RecurringBoardTemplate.fetchOne(db, key: tpl.id)
+        })
+        XCTAssertEqual(stored.version, 1)
+        XCTAssertTrue(stored.isActive)
+        XCTAssertTrue(try testDb.fetchPendingSyncItems().isEmpty)
+    }
 }

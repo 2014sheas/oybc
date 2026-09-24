@@ -359,8 +359,9 @@ struct BoardListView: View {
 
     /// Handles the deleted-source ask's actions: drop the dead board-kind
     /// source(s) (then re-run the spawn pass so the window fills from the
-    /// remaining sources) or pause the repeating board. Off-main write,
-    /// mirrors `toggleTemplateActive`'s posture.
+    /// remaining sources) or pause the repeating board. Off-main write; the
+    /// pause routes through `AppDatabase.setTemplateActive` (re-reads the
+    /// live row inside the write), like `BoardSettingsView.setActive`.
     private func resolveMissingSource(_ template: RecurringBoardTemplate, pause: Bool) {
         missingSourceAsk = nil
         guard let userId = authService.currentUser?.id else { return }
@@ -369,12 +370,10 @@ struct BoardListView: View {
         _Concurrency.Task {
             do {
                 if pause {
-                    var updated = template
-                    updated.isActive = false
-                    updated.updatedAt = now
-                    updated.version += 1
-                    try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                        updated, operation: .update, now: now
+                    // Re-read-in-write: never save the captured `template`
+                    // (a spawn/pull since capture would be reverted).
+                    try AppDatabase.shared.setTemplateActive(
+                        id: template.id, isActive: false, now: now
                     )
                 } else {
                     _ = try AppDatabase.shared.removeMissingBoardSources(

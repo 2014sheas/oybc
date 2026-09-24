@@ -507,6 +507,39 @@ enum BoardSources {
         return endsAt >= cutoff
     }
 
+    // MARK: - Series binding tie-break
+
+    /// Series binding's tie-break: picks the instance a recurring-series
+    /// source should pull from out of an already-filtered candidate set —
+    /// the LATEST `startDate`, and on an equal `startDate` the LOWEST `id`.
+    ///
+    /// Two offline devices can each spawn the same window (spawn ids are
+    /// random), so a series may hold two instances with one `startDate`.
+    /// The `id` secondary key makes the pick independent of input order, so
+    /// iOS and web pull supply from the same board. (`max(by:)` on
+    /// `startDate` alone — like web's stable sort — let a tie fall to
+    /// whichever row came first, and GRDB and Dexie return rows in
+    /// different orders.) Both keys compare with `String <`, which
+    /// for these fixed-format ASCII strings (local ISO dates, UUIDs) orders
+    /// identically to the TS twin's code-unit `<`.
+    ///
+    /// TS twin: `pickSeriesInstance` — keep in lockstep (pinned by
+    /// `seriesInstanceVectors` in `boardSourceVectors.json`).
+    ///
+    /// - Parameter candidates: The live instances to choose among (any order).
+    /// - Returns: The chosen instance, or nil when `candidates` is empty.
+    static func pickSeriesInstance<T: SeriesInstanceCandidate>(_ candidates: [T]) -> T? {
+        var best: T?
+        for c in candidates {
+            guard let current = best else { best = c; continue }
+            if c.startDate > current.startDate
+                || (c.startDate == current.startDate && c.id < current.id) {
+                best = c
+            }
+        }
+        return best
+    }
+
     // MARK: - Remove-confirm (owner ruling 2026-09-19, amended 2026-09-23)
 
     /// What a pulled source carries BEYOND its as-minted defaults — the
@@ -669,6 +702,15 @@ enum BoardSources {
         return parts.dropLast().joined(separator: ", ") + " and " + last
     }
 }
+
+/// The fields `BoardSources.pickSeriesInstance` reads — TS twin
+/// `SeriesInstanceCandidate` (`Pick<Board, 'id' | 'startDate'>`).
+protocol SeriesInstanceCandidate {
+    var id: String { get }
+    var startDate: String { get }
+}
+
+extension Board: SeriesInstanceCandidate {}
 
 extension BoardSources {
     /// Can this repeating board pull `taskId`? Task Detail's "used in

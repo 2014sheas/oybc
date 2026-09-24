@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../firebase/useAuth';
 import {
   friendlyError,
@@ -7,7 +7,9 @@ import {
   linkGoogle,
   linkPassword,
 } from '../../firebase/accountSecurity';
+import { runCollisionSwitch } from '../../firebase/guestCollisionSwitch';
 import { clearSyncQueue } from '../../db/operations/syncQueue';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
 import styles from './SignedOut.module.css';
 
@@ -34,9 +36,9 @@ type Collision = { kind: 'google' } | { kind: 'apple' } | { kind: 'password'; em
  * `email-already-in-use`, the identity already belongs to a different
  * account. Merging two Firestore trees is out of scope — the modal swaps to
  * a confirm step ("discard this guest's boards, sign into the existing
- * account instead"). Confirming deletes the anonymous user FIRST (purges the
- * near-empty anon tree + wipes local Dexie, so no orphan accrual), then runs
- * the normal `signInWith*`/`signIn` for the existing identity.
+ * account instead"). Confirming signs into the existing identity FIRST and
+ * only then clears the anon sync queue (verify before destroy — see
+ * `confirmSwitchAccount`); the anonymous account is never deleted here.
  */
 export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement {
   const { signInWithGoogle, signInWithApple, signIn, refreshAfterUpgrade } = useAuth();
@@ -45,12 +47,24 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [collision, setCollision] = useState<Collision | null>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+  // aria-modal, Escape → close, Tab trap, focus restore — one hook for both
+  // steps (the ref follows whichever card is rendered). Escape is inert while
+  // a link/delete op is in flight (this modal has two call sites, so the
+  // guard lives here rather than duplicated per-parent).
+  const { ref: cardRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: () => {
+      if (!busy) onClose();
+    },
+  });
+  const onCollisionStep = collision !== null;
 
-  // Move focus into the dialog on open (WCAG 2.4.3), mirroring SignInModal.
+  // Move focus into the dialog on open (WCAG 2.4.3), mirroring SignInModal —
+  // and again when the collision step swaps the card, so focus never falls
+  // out to the page behind.
   useEffect(() => {
     cardRef.current?.focus();
-  }, []);
+  }, [cardRef, onCollisionStep]);
 
   // Lock background scroll while the modal is open (restored on close).
   useEffect(() => {
@@ -60,17 +74,6 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
       document.body.style.overflow = prev;
     };
   }, []);
-
-  // Escape closes — unless a link/delete op is in flight (this modal has two
-  // call sites, so the handler lives here rather than duplicated per-parent).
-  useEffect(() => {
-    if (busy) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
 
   /** Run a link action; on collision, swap to the confirm step instead of
    *  surfacing a raw error. */
@@ -112,11 +115,17 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
     setBusy(true);
     setError(null);
     try {
-      if (collision.kind === 'google') await signInWithGoogle();
-      else if (collision.kind === 'apple') await signInWithApple();
-      else await signIn(collision.email, collision.password);
-      await clearSyncQueue();
-      onClose();
+      // Ordering (sign in → clear queue → close) is the pure, tested
+      // `collisionSwitchEffects` table (guestCollisionSwitch.test.ts).
+      await runCollisionSwitch({
+        signInExisting: async () => {
+          if (collision.kind === 'google') await signInWithGoogle();
+          else if (collision.kind === 'apple') await signInWithApple();
+          else await signIn(collision.email, collision.password);
+        },
+        clearAnonQueue: clearSyncQueue,
+        switchSession: onClose,
+      });
     } catch (err) {
       // Sign-in failed (e.g. wrong password) — nothing was destroyed. Keep the
       // confirm step open so the user can retry or cancel.
@@ -131,11 +140,10 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
       <div className={styles.soAuthScrim} onClick={busy ? undefined : onClose} role="presentation">
         <div
           ref={cardRef}
-          tabIndex={-1}
           className={styles.soAuthCard}
           role="dialog"
-          aria-modal="true"
           aria-label="That account already exists"
+          {...modalProps}
           onClick={(e) => e.stopPropagation()}
         >
           {!busy && (
@@ -170,11 +178,10 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
     <div className={styles.soAuthScrim} onClick={busy ? undefined : onClose} role="presentation">
       <div
         ref={cardRef}
-        tabIndex={-1}
         className={styles.soAuthCard}
         role="dialog"
-        aria-modal="true"
         aria-label="Save your account"
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         {!busy && (

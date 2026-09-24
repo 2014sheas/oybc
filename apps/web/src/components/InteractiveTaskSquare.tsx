@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
+import { useModalA11y } from '../hooks/useModalA11y';
 import styles from './InteractiveTaskSquare.module.css';
 import {
   progressFraction,
@@ -504,14 +505,11 @@ export function DetailModal({
   quickAmount,
   achievementBadge,
 }: DetailModalProps) {
-  // Close on Escape key
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
 
   const fraction = progressFraction(sq, state);
   const barLabel = progressBarLabel(sq, state);
@@ -533,11 +531,12 @@ export function DetailModal({
     >
       {/* Inner content stops propagation so clicks don't close */}
       <div
+        ref={modalRef}
         className={styles.modal}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-modal="true"
         aria-labelledby="modal-title"
+        {...modalProps}
       >
         <button
           className={styles.modalCloseButton}

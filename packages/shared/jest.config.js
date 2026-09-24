@@ -10,6 +10,10 @@ module.exports = {
     'src/**/*.ts',
     '!src/**/*.d.ts',
     '!src/index.ts',
+    // Barrel files: `export *` compiles to CommonJS re-export getters that
+    // count as uncovered "functions" but are not code. Measurement hygiene
+    // only — the thresholds below are unchanged and enforced in CI (web.yml).
+    '!src/**/index.ts',
   ],
   coverageThreshold: {
     global: {
