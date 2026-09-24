@@ -3,50 +3,19 @@ import GRDB
 
 /// First-launch data-migration helpers for GRDB v25 (Task Pools +
 /// Recurring Boards Rework, P1; docs/POOLS_RECURRING.md §Migration). Twin
-/// of web's Dexie `runMigrationV16` (`apps/web/src/db/operations/migrationV16.ts`).
-/// See `AppDatabase.swift`'s v25 registration for the full design
-/// rationale; this file holds the implementation so the migrator closure
-/// stays short (mirrors `MigrationV7Helpers.swift`'s split).
+/// of web's Dexie `runMigrationV16` (`apps/web/src/db/operations/migrationV16.ts`)
+/// — see that file's doc for the shared rationale (the two steps, their
+/// state-based idempotency, uuidv5 determinism, and the name clamp).
+/// This file holds the implementation so the migrator closure stays short.
 ///
-/// Both steps below are idempotent by construction (state-based — no
-/// separate "migration completed" marker table), matching the
-/// `v20`/`v22` Windowed Completion backfill precedent:
-///
-///   1. `migrateDefaultPools` only reads `!isDeleted` `DefaultPool` rows.
-///      A second run sees every row already soft-deleted by the first
-///      run, so it does nothing.
-///   2. `migrateRecurringBoardTemplates` only reads templates where
-///      `poolIds IS NULL`. A second run sees every row already stamped
-///      with a `poolIds` array (this migration always stamps a length-1
-///      array) by the first run, so it does nothing.
-///
-/// Determinism (review finding C2): the minted `Pool` / `CoreBoardDefault`
-/// ids use `UUIDv5.uuidv5` (`defaultPoolToPoolId` /
-/// `defaultPoolToCoreBoardDefaultId` / `templateToPoolId` below), NOT
-/// `AppDatabase.generateUUID()`. Two devices independently migrating the
-/// same `DefaultPool` / template row (e.g. both offline pre-sync, or
-/// racing the first post-upgrade launch) must derive the SAME
-/// Pool/CoreBoardDefault id — a random id per device would converge, post-
-/// sync, into two duplicate rows per source instead of one. This mirrors
-/// the Windowed Completion backfill's `backfillTaskEventId` precedent
-/// exactly. Web's `migrationV16.ts` mints the identical ids via
-/// `@oybc/shared`'s `migrationDefaultPoolToPoolId` /
-/// `migrationDefaultPoolToCoreBoardDefaultId` / `migrationTemplateToPoolId`
-/// — the namespace strings below MUST stay byte-identical to that file's
-/// (see `OYBCTests/PoolsCoreBoardDefaultsMigrationTests.swift`'s cross-platform id-literal
-/// test).
-///
-/// The user-action-time LEGACY-CREATE mint path (`BoardWizardPersist.swift`)
-/// is NOT part of this — it mints on one device only (then syncs as a
-/// normal CREATE), so a random id there is correct and unchanged.
-///
-/// Name clamp (review finding I1): a `RecurringBoardTemplate.name` can be
-/// up to 120 chars; appending " pool" would push the minted Pool's name
-/// over `PoolSchema`'s 120-char max, failing schema validation on the next
-/// device's pull (the mint itself succeeds locally, so this would silently
-/// strand the doc on one device). `PoolMix.clampMintedPoolName` clamps the
-/// source text before appending the suffix at both mint sites below, and
-/// at the two `BoardWizardPersist.swift` legacy-create sites.
+/// Swift specifics:
+///   - Step 2 selects templates where `poolIds IS NULL`.
+///   - Ids are minted by `UUIDv5.uuidv5` (`defaultPoolToPoolId` /
+///     `defaultPoolToCoreBoardDefaultId` / `templateToPoolId` below); the
+///     namespace strings MUST stay byte-identical to web's (pinned by
+///     `OYBCTests/PoolsCoreBoardDefaultsMigrationTests.swift`).
+///   - `PoolMix.clampMintedPoolName` clamps the source text at both mint
+///     sites below.
 enum MigrationV25Helpers {
 
     static func run(_ db: Database, now: String) throws {

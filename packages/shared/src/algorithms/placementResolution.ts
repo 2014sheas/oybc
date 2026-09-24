@@ -1,44 +1,34 @@
 import type { BoardTask } from '../types';
 
 /**
- * Board-integrity PR-2 (docs/BOARD_INTEGRITY.md) — deterministic placement
- * winner rule + pure repair core.
+ * Deterministic placement winner rule + pure repair core
+ * (docs/BOARD_INTEGRITY.md, PR-2). Swift twin: `PlacementIntegrity.swift`.
  *
- * PR-1 gave `BoardTask` durable tombstones, but did nothing to fix ALREADY
- * corrupted boards (duplicate placement rows left behind from the
- * pre-tombstone era — e.g. an interrupted Replace/Move edit, or two devices
- * independently writing to the same cell offline before converging), nor to
- * make collision resolution deterministic across every reader. Two problems,
- * one root fix:
+ * Duplicate live `BoardTask` rows can exist on one board (legacy data, an
+ * interrupted edit, two devices writing the same cell offline). Two needs:
  *
- *  1. When more than one live `BoardTask` row lands on the same cell (or the
- *     same Task ends up placed more than once on one board), every reader —
- *     render, edit-draft seeding, the derivation kernel — must pick the SAME
- *     winner, or the visible grid and the persisted stats (bingo lines,
- *     completedTasks) can disagree (see `duplicatePlacementDivergence.test.ts`
- *     for the original diagnostic evidence).
- *  2. The repair pass (Part 1, `apps/web/src/db/operations/placementIntegrity.ts`
- *     + the iOS twin) needs a PURE decision procedure for which rows to
- *     tombstone, so two devices independently repairing the SAME corrupted
- *     board converge on tombstoning the SAME losers — no ping-pong, no new
- *     conflict machinery, ordinary LWW reconciles the tombstones afterward.
+ *  1. Every reader — render, edit-draft seeding, the derivation kernel —
+ *     must pick the SAME winner per cell, or the visible grid and persisted
+ *     stats (bingo lines, completedTasks) disagree.
+ *  2. The repair pass (`apps/web/src/db/operations/placementIntegrity.ts` +
+ *     the iOS twin) needs a PURE decision of which rows to tombstone, so two
+ *     devices repairing the same board tombstone the SAME losers and plain
+ *     LWW reconciles afterward.
  *
- * Both are driven by ONE winner rule, vector-pinned cross-platform via
+ * One winner rule serves both, vector-pinned cross-platform via
  * `tests/fixtures/placementResolutionVectors.json`:
  *
  *   highest `version` → newest `updatedAt` → lowest `id` (lexicographic).
  *
- * `resolvePlacements` is the ROW-SET selector Part 2 wires into render
- * (`btByPosition`), edit-draft seeding (`squaresDraft`), and every cascade's
- * derivation-input assembly — before repair even runs, no two readers can
- * disagree about which row occupies a cell. Full per-cell resolver
- * unification (task-duplicate collapsing, achievement fan-out, etc.) is
- * deferred to PR-3; this function only unifies the (row, col) row-set.
+ * `resolvePlacements` is the row-set selector every reader uses (render,
+ * edit-draft seeding, cascade derivation input). It unifies only the
+ * (row, col) row-set — it does not
+ * collapse same-task duplicates across different cells; per-cell completion
+ * is resolved downstream by `computeBoardGrid` (`derivationPass.ts`).
  *
- * `computePlacementIntegrityRepair` is the Part 1 core: given a board's full
- * live placement set, decide which rows are corrupt and must be tombstoned —
- * cell collisions AND same-task duplicates (a Task placed at >1 row on one
- * board), plus straight out-of-bounds rows (no winner to pick, they just go).
+ * `computePlacementIntegrityRepair` decides which rows to tombstone: cell
+ * collisions, same-task duplicates (a Task at >1 cell on one board), and
+ * out-of-bounds rows.
  */
 
 /**

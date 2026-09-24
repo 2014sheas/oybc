@@ -507,9 +507,9 @@ export function useBoardWizard({
   // hydrated the selection, look up the user's CoreBoardDefault for that
   // timeframe and fold its `corePoolIds` + `coreDefaultTaskIds` into
   // `selectedTaskIds`/`pulledPoolIds` via `applyCoreBoardDefaultPrefill`.
-  // One-shot via the SAME ref flag `pullPool`/`untogglePool`/
-  // `toggleTaskSelection` already set — a user who starts interacting
-  // with pool chips before this resolves is respected; a CoreBoardDefault
+  // One-shot via the SAME ref flag the source actions and
+  // `toggleTaskSelection` already set — a user who starts editing the
+  // selection before this resolves is respected; a CoreBoardDefault
   // that arrives later via sync can never stomp their edits.
   //
   // `useCoreBoardDefault` returns a tri-state: `undefined` while loading,

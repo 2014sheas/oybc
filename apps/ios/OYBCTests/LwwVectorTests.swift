@@ -34,9 +34,10 @@ final class LwwVectorTests: XCTestCase {
             withExtension: "json"
         ) else {
             XCTFail(
-                "lwwVectors.json not found in test bundle — check project.yml's " +
-                "OYBCTests `resources` entry for packages/shared/tests/fixtures, " +
-                "and that xcodegen generate has been re-run."
+                "lwwVectors.json not found in test bundle — check that " +
+                "OYBCTests/Fixtures holds a copy (pnpm --filter @oybc/shared " +
+                "run gen:sync-fixtures) and project.yml's OYBCTests/Fixtures " +
+                "resources entry, then re-run xcodegen generate."
             )
             throw XCTSkip("Fixture missing")
         }

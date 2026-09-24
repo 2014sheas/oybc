@@ -157,7 +157,10 @@ final class BoardDisplayNameTests: XCTestCase {
     func testFormatTimeframeLabelStillSaysTodayForLiveChrome() {
         // The relative label is correct and wanted at render time — the
         // window chip and pager caption rely on it.
-        XCTAssertEqual(formatTimeframeLabel(timeframe: .daily, startDate: Date()), "Today")
+        // One instant for both sides, so a run straddling midnight can't
+        // compare yesterday's window against today's clock.
+        let now = Date()
+        XCTAssertEqual(formatTimeframeLabel(timeframe: .daily, startDate: now, now: now), "Today")
     }
 
     func testFormatTimeframeLabelHonoursAPinnedNow() {

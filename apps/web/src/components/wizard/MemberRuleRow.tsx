@@ -62,11 +62,10 @@ interface MemberRuleRowProps {
  * per-member rule controls (docs/BOARD_SOURCES.md §Member rules + §Member
  * row at phone width; handoff "Expanded source panel" item 3).
  *
- * **B3.1: disclosure, not compression.** At 393pt the B3 row's inline
- * furniture (badge + stepper + caption + dice + ✕) left the title ~102pt
- * and ellipsised real ones. A row that HAS rule controls now opens
- * collapsed — `badge · title · summary chip · chevron · ✕`, ~194pt of
- * title — and reveals them on a second line at the 69pt indent:
+ * **Disclosure, not compression**: a phone-width row can't fit its rule
+ * controls inline without ellipsising the title, so a row that HAS rule
+ * controls opens collapsed — `badge · title · summary chip · chevron · ✕` —
+ * and reveals them on a second line at the indent:
  *
  * - **Counting** — a compact target stepper carrying the goal as a suffix
  *   INSIDE its pill (board sources only; a pool member has no window to
@@ -77,10 +76,9 @@ interface MemberRuleRowProps {
  *   line per part: name · stepper · "of {goal}" · dice and ✕ while split.
  *   A part's range line still sits under that part's own line.
  * - **Anything else** (normal, achievement, childless compound) and every
- *   excluded or filtered-done member — the pre-B3.1 single line with its
- *   inline trailing control and NO disclosure: there is nothing to reveal,
- *   and the excluded state's ~60px UNDO pill does not fit the 28px gutter
- *   the overlaid ✕ uses (ruling C2).
+ *   excluded or filtered-done member — a single line with its inline
+ *   trailing control and NO disclosure: there is nothing to reveal, and the
+ *   excluded state's UNDO pill does not fit the gutter the overlaid ✕ uses.
  *
  * The collapsed chip is the row's current answer, never a second control,
  * and it comes from the shared `countingSummary` / `compoundSummary` — so

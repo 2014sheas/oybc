@@ -228,27 +228,21 @@ export interface BoardWizardTasksStepProps {
 /**
  * BoardWizardTasksStep — Step 2 of the board-creation wizard.
  *
- * Pool-first restructure (Web inline-editing port PR-1 — the RESTRUCTURE
- * half; the inline row editor is PR-2). Order (mirrors iOS
- * `BoardWizardTasksStepView` so the two platforms stop diverging):
+ * Order (mirrors iOS `BoardWizardTasksStepView`):
  *
  *   1. `TasksPoolHeader` — kicker, N/required count, progress bar, note.
- *   2. "PULL IN A POOL" card (+ P5 core-setup section) — unchanged.
- *   3. "Add tasks" — quick-add row + `SpecialTaskPanel`.
- *   4. `LibrarySheet` — dashed entry button → bottom sheet. The library
- *      (search, filters, compound expand) lives ENTIRELY
- *      inside the sheet now; it's no longer primary content.
- *   5. `PoolList` — the tasks actually on this board, in `poolOrder`.
- *      Each row's ✎ slot is a disabled PR-1 stub (PR-2 wires the inline
- *      editor); the slot is still rendered so the trailing gutter's
- *      column alignment doesn't shift when PR-2 lands.
- *   6. "Save these N as a new pool…" (P3) — unchanged.
- *   7. Footer — Back / Next.
+ *   2. "Add tasks" — quick-add row + `SpecialTaskPanel`.
+ *   3. Sources sheet — "Add from a pool or board" dashed entry row + sheet.
+ *   4. Library sheet — "Add from your library" dashed entry row + sheet
+ *      (search, filters, compound expand live entirely inside it).
+ *   5. `PoolList` — the board's pulled sources (`WizardSourceRows`, as
+ *      leading rows) then the hand-added tasks in `poolOrder`; each row's
+ *      ✎ opens the inline `PoolRowEditor`.
+ *   6. Footer — Back / Next.
  *
  * Cross-cutting overlays (right-click menu, derive-smaller modal,
- * task-detail sheet, save-as-pool sheet) stay owned here since the
- * SAME `RowContextMenu` instance now serves both `LibrarySheet` and
- * `PoolList` rows.
+ * task-detail sheet) stay owned here since the SAME `RowContextMenu`
+ * instance serves both `LibrarySheet` and `PoolList` rows.
  *
  * The component is controlled — `selectedTaskIds`, `poolOrder`,
  * `centerTaskId`, and navigation callbacks are owned by the wizard's

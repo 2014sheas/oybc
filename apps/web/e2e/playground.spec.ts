@@ -1,16 +1,10 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Playground smoke test — the only Playwright coverage that runs today.
- *
- * The web app's auth-gated routes (where the Phase 6.2 UX rework lives —
- * the wizard's Setup-step recurring toggle, the Profile templates page)
- * cannot be exercised without sign-in. The `/playground` route is
- * unauthenticated and serves as a sanity check that the dev server +
- * Playwright harness boot cleanly.
- *
- * See `playwright.config.ts` for the follow-up plan to enable
- * meaningful auth-gated coverage.
+ * Playground smoke test — a sanity check that the dev server + Playwright
+ * harness boot cleanly on the unauthenticated `/playground` route. The
+ * auth-gated routes are covered by the other specs in this folder via the
+ * `_fixtures/bypass` test-auth fixture.
  */
 test.describe('playground (unauthenticated route)', () => {
   test('renders without throwing', async ({ page }) => {

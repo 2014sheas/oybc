@@ -225,9 +225,10 @@ export async function persistWizardPendingTasks(
  * @param allowedTaskIds - Only pending payloads whose id is in this set are
  *   written (mirrors `persistWizardPendingTasks`).
  * @param stagedEdits - The wizard's full `stagedEdits` snapshot. A task
- *   leaving the pool always purges its staged edit (`toggleTaskSelection`/
- *   `untogglePool`), so every remaining key is still in `allowedTaskIds` —
- *   no extra filtering needed here, matching the one-off path.
+ *   leaving the pool always purges its staged edit (`toggleTaskSelection`,
+ *   or a source action via `purgeDroppedIds`), so every remaining key is
+ *   still in `allowedTaskIds` — no extra filtering needed here, matching
+ *   the one-off path.
  * @param now - ISO8601 timestamp for the sync-queue rows / version bumps.
  */
 export async function persistWizardPendingTasksAndStagedEdits(

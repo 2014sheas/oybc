@@ -263,15 +263,12 @@ export function formatSpawnProvenanceNote(summary: SpawnProvenanceSummary): stri
  * word to a source name (a `RecurringBoardTemplate.name` — itself bounded
  * to 120 — or a fixed timeframe label) must clamp the source FIRST, or the
  * appended result can exceed 120 and fail `PoolSchema` on the next device's
- * pull (review finding I1) — the doc never lands there, silently, since the
- * mint itself succeeds locally (no local Zod check on write).
+ * pull — the doc never lands there, silently, since the mint itself
+ * succeeds locally (no local Zod check on write).
  *
- * Used by all four mint sites, both platforms: the P1 migration
- * (`migrationV16.ts` / `MigrationV25Helpers.swift`, `" default"` /
- * `" pool"` suffixes) and the legacy-create wizard-persist mint
- * (`wizardPersist.ts` / `BoardWizardPersist.swift`, `" pool"` suffix). Has
- * a Swift twin: `PoolMix.swift`'s `clampMintedPoolName` — keep them in
- * sync.
+ * Used by the P1 migration's two mint sites (`migrationV16.ts` /
+ * `MigrationV25Helpers.swift`, `" default"` / `" pool"` suffixes). Swift
+ * twin: `PoolMix.swift`'s `clampMintedPoolName` — keep them in sync.
  *
  * `.length` (JS) and `.utf16.count` (Swift) both measure UTF-16 code units,
  * the same unit `PoolSchema`'s `.max(120)` counts — so the two platforms

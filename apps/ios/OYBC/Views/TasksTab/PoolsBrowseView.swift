@@ -16,11 +16,8 @@ import SwiftUI
 /// state; this view does no I/O and no per-card health computation (see
 /// `PoolHealth.computePoolHealth`'s "batched once per screen" contract).
 ///
-/// Mirrors web's `PoolsBrowse.tsx` + `PoolCard.tsx` (kept as one file here,
-/// following this screen's existing single-file convention — see
-/// `DefaultPoolsListView.swift`, which combines its list + card in one
-/// file too). Card visual language mirrors `DefaultPoolsListView.poolCard`
-/// minus the "FEEDS" tag (pools are no longer timeframe-keyed).
+/// Mirrors web's `PoolsBrowse.tsx` + `PoolCard.tsx` (list + card kept in
+/// one file here).
 struct PoolsBrowseView: View {
 
     /// The user's non-deleted pools, in display order.
