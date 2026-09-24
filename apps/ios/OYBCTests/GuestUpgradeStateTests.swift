@@ -150,15 +150,65 @@ final class GuestUpgradeStateTests: XCTestCase {
         XCTAssertEqual(wiped.subtracting(live), [], "wipe-list names with no table")
     }
 
+    /// Inserts one row into `table`, driven by the live schema so it never
+    /// drifts as columns are added: the PK gets `seed-<table>`, every FK column
+    /// points at the referenced table's own seed row (`seed-<parent>`), and any
+    /// other NOT NULL column without a default gets a type-appropriate filler.
+    /// Must run inside a transaction with `defer_foreign_keys = ON` so insert
+    /// order doesn't matter — every parent is seeded by COMMIT.
+    private func seedRow(_ db: Database, table: String) throws {
+        var fkTargets: [String: String] = [:]
+        for fk in try Row.fetchAll(db, sql: "PRAGMA foreign_key_list(\(table))") {
+            let from: String = fk["from"]
+            let parent: String = fk["table"]
+            fkTargets[from] = "seed-\(parent)"
+        }
+        var columns: [String] = []
+        var values: [DatabaseValueConvertible] = []
+        for col in try Row.fetchAll(db, sql: "PRAGMA table_info(\(table))") {
+            let name: String = col["name"]
+            let type = ((col["type"] as String?) ?? "").uppercased()
+            let notNull: Bool = col["notnull"]
+            let hasDefault = !(col["dflt_value"] as DatabaseValue).isNull
+            let isPK = (col["pk"] as Int) > 0
+            if isPK {
+                columns.append(name)
+                values.append(type.contains("INT") ? 1 : "seed-\(table)")
+            } else if let target = fkTargets[name] {
+                columns.append(name)
+                values.append(target)
+            } else if notNull && !hasDefault {
+                columns.append(name)
+                values.append(type.contains("INT") || type.contains("BOOL") || type.contains("REAL") ? 0 : "seed")
+            }
+        }
+        let placeholders = Array(repeating: "?", count: columns.count).joined(separator: ", ")
+        try db.execute(
+            sql: "INSERT INTO \(table) (\(columns.joined(separator: ", "))) VALUES (\(placeholders))",
+            arguments: StatementArguments(values)
+        )
+    }
+
+    /// Seeds one row into every table named by `AuthService.userScopedTables`
+    /// AND every table in the live schema (the union: iterating only the
+    /// constant would let a table dropped from it go unseeded, making the
+    /// "wiped afterwards" assertion vacuous for exactly the regression it
+    /// exists to catch). Then proves each is non-empty before and empty after.
     func testWipeLocalDatabaseEmptiesEveryTable() throws {
         let database = try AppDatabase.makeTestInstance()
-        try seedAnonRow(database)
-        try seedSyncItem(database, id: "q1")
+        let tables = Set(AuthService.userScopedTables).union(try liveTables(database)).sorted()
+        try database.write { db in
+            try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
+            for table in tables { try seedRow(db, table: table) }
+        }
+        for table in tables {
+            XCTAssertGreaterThan(try rowCount(database, table), 0, "\(table) not seeded — precondition vacuous")
+        }
         let auth = AuthService(authClient: FakeAuthClient(), database: database)
 
         auth.wipeLocalDatabase()
 
-        for table in try liveTables(database) {
+        for table in tables {
             XCTAssertEqual(try rowCount(database, table), 0, "\(table) not wiped")
         }
     }
