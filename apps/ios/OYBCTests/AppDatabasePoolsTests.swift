@@ -5,8 +5,9 @@ import GRDB
 /// CRUD + enqueue coverage for `AppDatabase+Pools.swift` (Task Pools +
 /// Recurring Boards Rework, P1). iOS twin of web's `pools.test.ts` /
 /// `coreBoardDefaults.test.ts` (`apps/web/src/db/operations/__tests__/`).
-/// Modeled on the existing `AppDatabase+DefaultPools.swift` coverage
-/// pattern in `AppDatabaseSyncEnqueueTests.swift`.
+/// Modeled on the retired DefaultPool coverage pattern in
+/// `AppDatabaseSyncEnqueueTests.swift` (helpers:
+/// `AppDatabase+DefaultPoolsTestSupport.swift`).
 final class AppDatabasePoolsTests: XCTestCase {
 
     private let userId = "u1"
