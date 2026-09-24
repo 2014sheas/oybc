@@ -455,6 +455,9 @@ struct TasksTabView: View {
         .onAppear {
             library.loadLibrary(userId: userId)
             vm.reloadAsync()
+            // `segment` survives tab switches: returning while already in
+            // Pools mode must not re-resolve on the painted list.
+            if segment == .pools { poolHealthSettled = false }
             loadPools()
         }
         // Resolve pool health on entering Pools mode — the only place it
@@ -634,6 +637,7 @@ struct TasksTabView: View {
                     poolLoadError = "Failed to load pools: \(error.localizedDescription)"
                     // Never leave the loading row up forever beside the
                     // error: paint the cached list without health.
+                    poolAchievableTaskIds = nil
                     poolHealthSettled = true
                 }
             }
