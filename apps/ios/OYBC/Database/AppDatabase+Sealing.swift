@@ -66,24 +66,6 @@ extension AppDatabase {
         )
     }
 
-    /// Build a windowed-evaluation context bounded to `occurredAt <= sealedAtMs`
-    /// (the `[startDate, sealedAt]` window). At seal time `sealedAtMs = now`, so
-    /// nothing is dropped; the filter matters for re-derivation.
-    private static func boundedWindowContext(
-        eventsByTaskId: [String: [TaskEvent]],
-        sealedAtMs: Double
-    ) -> WindowEvaluationContext {
-        var bounded: [String: [TaskEvent]] = [:]
-        for (taskId, evs) in eventsByTaskId {
-            let kept = evs.filter {
-                guard let occurred = DateFormatting.parseISO($0.occurredAt) else { return false }
-                return occurred.timeIntervalSince1970 * 1000 <= sealedAtMs
-            }
-            if !kept.isEmpty { bounded[taskId] = kept }
-        }
-        return WindowEvaluationContext(eventsByTaskId: bounded)
-    }
-
     /// The frozen fields written to a sealed board row.
     struct SealSnapshot {
         let completedTasks: Int
@@ -105,7 +87,10 @@ extension AppDatabase {
             lookups.allBoardTasks.filter { $0.boardId == board.id },
             boardSize: board.boardSize
         )
-        let windowContext = boundedWindowContext(eventsByTaskId: lookups.eventsByTaskId, sealedAtMs: sealedAtMs)
+        // Bound EVERY task's events (incl. shared-counter roots, which
+        // window-stamped derived cells read) at `sealedAt` — the shared filter
+        // (TaskEvents.swift ↔ taskEvents.ts) the seal vectors pin.
+        let windowContext = boundWindowContextAtSeal(eventsByTaskId: lookups.eventsByTaskId, sealedAtMs: sealedAtMs)
         let stats = DerivationPass.computeBoardStatsUpdate(
             board: board,
             boardTasksOnBoard: boardTasksOnBoard,
@@ -307,7 +292,8 @@ extension AppDatabase {
 
     /// Pull-path seal re-derivation (docs §Seal snapshots re-derive from the
     /// event union). For every sealed board that places one of `changedTaskIds`
-    /// (directly or via a compound), re-derive its frozen snapshot from the
+    /// (directly, via a compound, or — for a shared-counter root — via a
+    /// window-stamped derived counter linked to it), re-derive its frozen snapshot from the
     /// converged event union bounded at its own `sealedAt`. Local-only:
     /// overwrites the snapshot fields WITHOUT bumping `version` or enqueuing
     /// sync (pull paths don't author writes; the input converges, so every
@@ -318,8 +304,21 @@ extension AppDatabase {
         guard !changedTaskIds.isEmpty else { return }
         let lookups = try loadSealLookups(db: db)
 
+        // A shared-counter ROOT is never placed itself, but every
+        // window-stamped derived counter linked to it resolves FROM its events
+        // (derivation kernel, docs §Derived-task carve-out rule 4, amended
+        // 2026-09-23). A late in-window root event must therefore re-derive the
+        // sealed boards placing those rows, or two devices that sealed from
+        // different root-event sets never converge. Mirrors the TS
+        // `reDeriveSealedBoardsForTasks`.
+        var reachable = changedTaskIds
+        for t in lookups.taskById.values where !t.isDeleted {
+            guard let root = t.sharedCounterId, changedTaskIds.contains(root) else { continue }
+            if BoardSources.isWindowStampedDerived(t) { reachable.insert(t.id) }
+        }
+
         var affectedBoardIds = Set<String>()
-        for taskId in changedTaskIds {
+        for taskId in reachable {
             let parents = DerivationPass.findTransitiveParentCompounds(
                 changedTaskId: taskId,
                 children: lookups.allChildren

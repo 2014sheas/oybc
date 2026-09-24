@@ -395,10 +395,12 @@ extension AppDatabase {
     /// Build the windowed-evaluation context from every non-deleted TaskEvent in
     /// the workspace, grouped by `taskId` (docs §Sync). Passed into
     /// `computeBoardStatsUpdate` so each board evaluates against its own window
-    /// (`board.startDate`). Derived / compound / achievement squares are carved
-    /// out INSIDE the shared kernel (they read their lifetime caches), so passing
-    /// the full event map is always safe. Mirrors `buildWindowContext` in
-    /// orchestration.ts.
+    /// (`board.startDate`). The map MUST stay workspace-wide (never scoped to
+    /// the placed tasks): a window-stamped derived counter resolves from its
+    /// ROOT's events, and the root is usually not placed on the board.
+    /// Hub-linked derived / compound / achievement squares are carved out
+    /// INSIDE the shared kernel, so passing the full event map is always safe.
+    /// Mirrors `buildWindowContext` in `db/operations/windowContext.ts`.
     static func buildWindowContext(db: Database) throws -> WindowEvaluationContext {
         let events = try TaskEvent.filter(Column("isDeleted") == false).fetchAll(db)
         var eventsByTaskId: [String: [TaskEvent]] = [:]
