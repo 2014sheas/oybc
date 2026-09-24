@@ -20,6 +20,7 @@ import {
   saveTaskEdit,
 } from '../compoundStructureEdit';
 import { updateTaskAndCascade } from '../tasks.crud';
+import { applyStagedTaskEditsForWizardPersist } from '../wizardBoard';
 
 /**
  * Compound Task Editing After Creation (Task 1, web) — the standalone
@@ -384,6 +385,143 @@ describe('editCompoundStructure — standalone Task Detail save', () => {
     await expect(editCompoundStructure('nope', structureFor({ title: 'x' }, keepAB()))).rejects.toThrow(
       /not found/i,
     );
+  });
+});
+
+describe('editCompoundStructure — linking an EXISTING library task as a sub-task (Task 6)', () => {
+  const L_ID = uuid(6);
+  let L: Task;
+
+  beforeEach(async () => {
+    // L: a standalone library task with an in-window completion.
+    L = makeTask({ id: L_ID, title: 'L' });
+    await db.tasks.add(L);
+    await db.taskEvents.add(completionEvent(L_ID));
+  });
+
+  const snapshot = async () => ({
+    p: await db.tasks.get(P_ID),
+    tasks: await db.tasks.toArray(),
+    links: await db.compoundChildren.toArray(),
+    x: await db.boards.get(X_ID),
+    q: await db.syncQueue.count(),
+  });
+
+  it('links an existing task: link CREATE enqueued, task row untouched, cascade re-derives the board', async () => {
+    // OR(B, L): B undone, L done → P complete ONLY if the L link exists.
+    expect((await db.boards.get(X_ID))?.completedTasks).toBe(0);
+    await editCompoundStructure(
+      P_ID,
+      structureFor({ title: 'P', operator: OperatorType.OR }, [childPatchFromTask(B), childPatchFromTask(L)]),
+    );
+
+    const live = (await db.compoundChildren.where('compoundTaskId').equals(P_ID).toArray())
+      .filter((l) => !l.isDeleted)
+      .sort((a, b) => a.childIndex - b.childIndex);
+    expect(live.map((l) => [l.childTaskId, l.childIndex])).toEqual([
+      [B_ID, 0],
+      [L_ID, 1],
+    ]);
+    const lLink = live[1];
+    expect(lLink.version).toBe(1);
+
+    const rows = await db.syncQueue.toArray();
+    expect(
+      rows.filter(
+        (r) =>
+          r.entityType === 'compoundChildren' &&
+          r.entityId === lLink.id &&
+          r.operationType === SyncOperationType.CREATE,
+      ),
+    ).toHaveLength(1);
+    // The picked task itself is not rewritten or enqueued.
+    expect(await db.tasks.get(L_ID)).toEqual(L);
+    expect(rows.filter((r) => r.entityType === 'tasks' && r.entityId === L_ID)).toHaveLength(0);
+    // The board placing P re-derived with L counted.
+    expect((await db.boards.get(X_ID))?.completedTasks).toBe(1);
+  });
+
+  it('allows linking a nested compound that forms no loop', async () => {
+    const N = makeTask({ id: uuid(7), title: 'N', type: TaskType.COMPOUND, operator: OperatorType.AND });
+    await db.tasks.add(N);
+    await db.compoundChildren.add(makeLink(uuid(23), N.id, Q_ID, 0));
+    await editCompoundStructure(
+      P_ID,
+      structureFor({ title: 'P', operator: OperatorType.AND }, [...keepAB(), childPatchFromTask(N)]),
+    );
+    const live = (await db.compoundChildren.where('compoundTaskId').equals(P_ID).toArray()).filter(
+      (l) => !l.isDeleted,
+    );
+    expect(live.map((l) => l.childTaskId).sort()).toEqual([A_ID, B_ID, N.id].sort());
+  });
+
+  const refusals: Array<[string, () => Promise<ChildPatch[]>, string]> = [
+    ['self', async () => [...keepAB(), childPatchFromTask(P)], 'A compound can’t contain itself.'],
+    [
+      'duplicate (the same library task picked twice)',
+      async () => [childPatchFromTask(A), childPatchFromTask(L), { ...childPatchFromTask(L), id: 'dup-row' }],
+      'That task is already a sub-task here.',
+    ],
+    [
+      'achievement',
+      async () => {
+        const W = makeTask({ id: uuid(8), title: 'W', type: TaskType.ACHIEVEMENT });
+        await db.tasks.add(W);
+        return [...keepAB(), childPatchFromTask(W)];
+      },
+      'Achievements can’t be sub-tasks.',
+    ],
+    [
+      'deleted',
+      async () => {
+        await db.tasks.update(L_ID, { isDeleted: true });
+        return [...keepAB(), childPatchFromTask(L)];
+      },
+      'That task was deleted.',
+    ],
+    [
+      'loop (L already contains P)',
+      async () => {
+        await db.tasks.update(L_ID, { type: TaskType.COMPOUND, operator: OperatorType.AND });
+        await db.compoundChildren.add(makeLink(uuid(24), L_ID, P_ID, 0));
+        return [...keepAB(), childPatchFromTask({ ...L, type: TaskType.COMPOUND })];
+      },
+      'That would create a loop — it already contains this compound.',
+    ],
+  ];
+
+  it.each(refusals)('refuses %s before any write', async (_name, build, message) => {
+    const children = await build();
+    const before = await snapshot();
+    const structure = structureFor({ title: 'P2', operator: OperatorType.OR }, children);
+    await expect(editCompoundStructure(P_ID, structure)).rejects.toBeInstanceOf(CompoundEditValidationError);
+    await expect(editCompoundStructure(P_ID, structure)).rejects.toThrow(message);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('wizard staged path: an ineligible link skips the whole edit silently; an eligible one links', async () => {
+    const tables = [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue];
+    const before = await snapshot();
+    await db.transaction('rw', tables, () =>
+      applyStagedTaskEditsForWizardPersist(
+        new Map([[P_ID, structureFor({ title: 'P2', operator: OperatorType.OR }, [...keepAB(), childPatchFromTask(P)])]]),
+        new Set(),
+        IN_WINDOW,
+      ),
+    );
+    expect(await snapshot()).toEqual(before); // not half-applied (title / rule untouched too)
+
+    await db.transaction('rw', tables, () =>
+      applyStagedTaskEditsForWizardPersist(
+        new Map([[P_ID, structureFor({ title: 'P', operator: OperatorType.OR }, [childPatchFromTask(B), childPatchFromTask(L)])]]),
+        new Set(),
+        IN_WINDOW,
+      ),
+    );
+    const live = (await db.compoundChildren.where('compoundTaskId').equals(P_ID).toArray()).filter(
+      (l) => !l.isDeleted,
+    );
+    expect(live.map((l) => l.childTaskId).sort()).toEqual([B_ID, L_ID].sort());
   });
 });
 

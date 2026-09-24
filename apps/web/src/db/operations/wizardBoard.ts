@@ -30,7 +30,10 @@ import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
 import { runBoardCascadeForTask } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
-import { applyCompoundStructureEditInTransaction } from './compoundStructureEdit';
+import {
+  applyCompoundStructureEditInTransaction,
+  compoundLinkProblemForPatch,
+} from './compoundStructureEdit';
 
 /**
  * One not-yet-persisted task created inside the wizard's New Task sheet
@@ -298,6 +301,9 @@ export async function applyStagedTaskEditsForWizardPersist(
     if (validatePatch(patch, task.type) !== null) continue;
 
     if (task.type === TaskType.COMPOUND) {
+      // An ineligible newly linked existing task skips the whole edit
+      // (never half-applied), exactly like an invalid patch.
+      if ((await compoundLinkProblemForPatch(taskId, patch)) !== null) continue;
       await applyCompoundStructureEditInTransaction(task, patch, {}, now);
     } else {
       if (skipIfPendingIds.has(taskId)) continue;

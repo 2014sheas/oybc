@@ -21,7 +21,13 @@
  * Import direction: this module imports `updateTaskAndCascade` from
  * `./tasks.crud`; `tasks.crud.ts` must NEVER import this module (circular).
  */
-import { SyncOperationType, TaskType, type CompoundChild, type Task } from '@oybc/shared';
+import {
+  SyncOperationType,
+  TaskType,
+  compoundChildLinkProblem,
+  type CompoundChild,
+  type Task,
+} from '@oybc/shared';
 import { db } from '../internal';
 import { currentTimestamp, generateUUID } from '../utils';
 import {
@@ -46,7 +52,8 @@ import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
  *
  * Semantics: a kept new sub-task mints a child Task + link; a kept existing
  * sub-task edits its child Task GLOBALLY (reindexing its link to display
- * order); a removed sub-task (deleted or blank-titled) soft-deletes the
+ * order, or — for an existing library task picked as a sub-task, which has
+ * no link yet — minting its link at that position); a removed sub-task (deleted or blank-titled) soft-deletes the
  * LINK only — the child Task survives (orphans acceptable). Sub-tasks
  * persist in `patch.children` order.
  *
@@ -116,9 +123,30 @@ export async function applyStagedCompoundChildEdits(
           touchedChildIds.push(childId);
         }
       }
-      // Reindex the link to display order if it moved.
       const link = linkByChildId.get(childId);
-      if (link && link.childIndex !== index) {
+      if (!link) {
+        // An existing library task picked as a sub-task: it has no link to
+        // this compound yet, so mint one at its display position. Callers
+        // have already run `compoundLinkProblemForPatch`; the live-row check
+        // here is defensive only (never link a missing / deleted task).
+        if (existingChild && !existingChild.isDeleted) {
+          const newLink: CompoundChild = {
+            id: generateUUID(),
+            compoundTaskId: parentId,
+            childTaskId: childId,
+            childIndex: index,
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+            isDeleted: false,
+          };
+          await db.compoundChildren.add(newLink);
+          await addToSyncQueue('compoundChildren', newLink.id, SyncOperationType.CREATE, newLink);
+          // A newly linked child changes the parent's state; the caller's
+          // cascade covers the parent id, so no extra id is needed here.
+        }
+      } else if (link.childIndex !== index) {
+        // Reindex the link to display order if it moved.
         const updatedLink: CompoundChild = { ...link, childIndex: index, version: link.version + 1, updatedAt: now };
         await db.compoundChildren.update(link.id, updatedLink);
         await addToSyncQueue('compoundChildren', link.id, SyncOperationType.UPDATE, updatedLink);
@@ -136,6 +164,47 @@ export async function applyStagedCompoundChildEdits(
   }
 
   return touchedChildIds;
+}
+
+/**
+ * Runs the shared {@link compoundChildLinkProblem} guard for every kept
+ * sub-task in `patch` that names an EXISTING task with no live link to
+ * `parentId` yet — i.e. a library task picked as a new sub-task. Kept =
+ * not marked deleted and not blank-titled (exactly what
+ * {@link applyStagedCompoundChildEdits} keeps). A task id missing from the
+ * DB is checked as deleted.
+ *
+ * Read-only; safe inside or outside a transaction covering `tasks` and
+ * `compoundChildren`.
+ *
+ * @param parentId - The compound being edited.
+ * @param patch - The staged / submitted compound patch.
+ * @returns The first user-facing problem, or `null` when every new link is
+ *   eligible.
+ */
+export async function compoundLinkProblemForPatch(
+  parentId: string,
+  patch: TaskEditPatch,
+): Promise<string | null> {
+  const kept = patch.children.filter(
+    (c) => !c.markedDeleted && c.title.trim().length > 0 && !isNewChild(c) && c.childTaskId,
+  );
+  if (kept.length === 0) return null;
+  const allLinks = (await db.compoundChildren.toArray()).filter((l) => !l.isDeleted);
+  const linkedHere = new Set(
+    allLinks.filter((l) => l.compoundTaskId === parentId).map((l) => l.childTaskId),
+  );
+  for (let i = 0; i < kept.length; i++) {
+    const childId = kept[i].childTaskId as string;
+    if (linkedHere.has(childId)) continue;
+    // "Already a sub-task here" = any OTHER kept row names the same task.
+    const others = new Set(kept.filter((_, j) => j !== i).map((c) => c.childTaskId as string));
+    const stored = await db.tasks.get(childId);
+    const candidate = stored ?? { id: childId, type: TaskType.NORMAL, isDeleted: true };
+    const problem = compoundChildLinkProblem(parentId, candidate, allLinks, others);
+    if (problem !== null) return problem;
+  }
+  return null;
 }
 
 /**
@@ -239,8 +308,9 @@ function assertLiveCompound(task: Task | undefined, taskId: string): asserts tas
  * @param structure - The edited title / operator / threshold / sub-tasks.
  * @param basic - Optional description / time-window fields (same version bump).
  * @throws Error when the task is missing/deleted or is not a compound.
- * @throws CompoundEditValidationError (message = `validatePatch`'s) before
- *   writing anything when the patch is invalid.
+ * @throws CompoundEditValidationError (message = `validatePatch`'s, or the
+ *   `compoundChildLinkProblem` reason for a newly linked existing task)
+ *   before writing anything when the patch is invalid.
  */
 export async function editCompoundStructure(
   taskId: string,
@@ -252,6 +322,8 @@ export async function editCompoundStructure(
   assertLiveCompound(await db.tasks.get(taskId), taskId);
   const problem = validatePatch(structure, TaskType.COMPOUND);
   if (problem !== null) throw new CompoundEditValidationError(problem);
+  const linkProblem = await compoundLinkProblemForPatch(taskId, structure);
+  if (linkProblem !== null) throw new CompoundEditValidationError(linkProblem);
   const now = currentTimestamp();
   await db.transaction('rw', CASCADE_TABLES(), async () => {
     // Re-read INSIDE the transaction: the full row written below is built
@@ -260,6 +332,11 @@ export async function editCompoundStructure(
     // overwritten with stale fields. A throw here aborts with no writes.
     const fresh = await db.tasks.get(taskId);
     assertLiveCompound(fresh, taskId);
+    // Re-check the link guard against in-transaction state (a concurrent
+    // write could have closed a loop since the pre-check); a throw aborts
+    // the transaction with no writes.
+    const freshLinkProblem = await compoundLinkProblemForPatch(taskId, structure);
+    if (freshLinkProblem !== null) throw new CompoundEditValidationError(freshLinkProblem);
     await applyCompoundStructureEditInTransaction(fresh, structure, basic, now);
   });
 }
