@@ -540,3 +540,74 @@ struct RisoImpactNote: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
+// MARK: - Undo pill
+
+/// The one "UNDO" pill that reverses an exclusion in place — a member row's
+/// excluded state and a compound part line's excluded state.
+///
+/// Before the audit T2 sweep those two sites each hand-rolled a capsule, both
+/// under the 28pt hit-area floor the neighbouring ✕ buttons use. The two
+/// VISUAL scales are a design-handoff contract (the part line is "a size
+/// down": 10.5pt / 1.5pt keyline / paper-2 fill vs the member row's 11.5pt /
+/// 2pt bare outline — web pins the difference in `e2e/member-rules.spec.ts`),
+/// so they survive as `Scale`; what is now shared is the builder and the
+/// 28pt-tall touch target, which extends past the visual capsule. Web twin:
+/// `MemberRuleRow.module.css` `.undo` / `.partUndo`.
+struct RisoUndoPill: View {
+
+    /// Visual scale — member row vs compound part line.
+    enum Scale {
+        case member
+        case part
+    }
+
+    /// Which visual scale to draw.
+    var scale: Scale = .member
+
+    /// VoiceOver label, e.g. "Undo excluding Pushups" — the visible "UNDO"
+    /// alone does not say what comes back.
+    let accessibilityLabel: String
+
+    /// Invoked on tap.
+    let action: () -> Void
+
+    /// Minimum touch-target height, matching the rows' 28pt ✕ buttons.
+    static let hitHeight: CGFloat = 28
+
+    var body: some View {
+        Button(action: action) {
+            capsule
+                .frame(minHeight: Self.hitHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    @ViewBuilder
+    private var capsule: some View {
+        switch scale {
+        case .member:
+            Text("UNDO")
+                .font(.risoBody(11.5, .extraBold))
+                .foregroundStyle(Color.risoInk)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .overlay(
+                    Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+                )
+        case .part:
+            Text("UNDO")
+                .font(.risoBody(10.5, .extraBold))
+                .tracking(0.6)
+                .foregroundStyle(Color.risoInk)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.risoPaper2))
+                .overlay(
+                    Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                )
+        }
+    }
+}
