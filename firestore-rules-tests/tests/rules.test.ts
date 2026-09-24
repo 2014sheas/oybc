@@ -566,3 +566,81 @@ describe("entitlements/{userId} — server-authoritative (docs/MONETIZATION.md)"
     await assertFails(deleteDoc(doc(db, `entitlements/${uid}`)));
   });
 });
+
+describe("deletedUsers/{uid} post-deletion write fence (2026-09 audit T2)", () => {
+  /** Seeds the marker the purge Cloud Functions write BEFORE the recursive
+   * delete (functions/src/purgeUser.ts) — Admin-SDK-equivalent, rules off. */
+  async function markDeleted(uid: string) {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `deletedUsers/${uid}`), {
+        deletedAt: new Date().toISOString(),
+      });
+    });
+  }
+
+  it("without the marker, the owner can still create + update the parent doc and entity docs (control)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertSucceeds(setDoc(doc(db, `users/${uid}`), { id: uid, version: 1 }));
+    await assertSucceeds(setDoc(doc(db, `users/${uid}`), { id: uid, version: 2 }));
+    await assertSucceeds(
+      setDoc(doc(db, `users/${uid}/boards/b1`), boardPayload(uid, "b1")),
+    );
+    await assertSucceeds(
+      setDoc(doc(db, `users/${uid}/boards/b1`), boardPayload(uid, "b1", { version: 2 })),
+    );
+    await assertSucceeds(
+      setDoc(doc(db, `users/${uid}/boardTasks/bt1`), childPayload("bt1")),
+    );
+  });
+
+  it("with the marker, the (still-authenticated) owner cannot re-create the purged parent doc", async () => {
+    const uid = "alice";
+    await markDeleted(uid);
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertFails(setDoc(doc(db, `users/${uid}`), { id: uid, version: 1 }));
+  });
+
+  it("with the marker, the owner cannot create entity docs (user-scoped or child)", async () => {
+    const uid = "alice";
+    await markDeleted(uid);
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertFails(
+      setDoc(doc(db, `users/${uid}/boards/b1`), boardPayload(uid, "b1")),
+    );
+    await assertFails(
+      setDoc(doc(db, `users/${uid}/boardTasks/bt1`), childPayload("bt1")),
+    );
+  });
+
+  it("with the marker, the owner cannot update docs that survive (e.g. a push racing the purge)", async () => {
+    const uid = "alice";
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await setDoc(doc(adminDb, `users/${uid}`), { id: uid, version: 1 });
+      await setDoc(doc(adminDb, `users/${uid}/boards/b1`), boardPayload(uid, "b1"));
+    });
+    await markDeleted(uid);
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertFails(setDoc(doc(db, `users/${uid}`), { id: uid, version: 2 }));
+    await assertFails(
+      setDoc(doc(db, `users/${uid}/boards/b1`), boardPayload(uid, "b1", { version: 2 })),
+    );
+  });
+
+  it("another user's marker does not fence this user", async () => {
+    await markDeleted("mallory");
+    const db = testEnv.authenticatedContext("alice").firestore();
+    await assertSucceeds(setDoc(doc(db, "users/alice"), { id: "alice", version: 1 }));
+  });
+
+  it("clients can neither read nor write deletedUsers docs (even their own)", async () => {
+    const uid = "alice";
+    await markDeleted(uid);
+    const db = testEnv.authenticatedContext(uid).firestore();
+    await assertFails(getDoc(doc(db, `deletedUsers/${uid}`)));
+    await assertFails(setDoc(doc(db, `deletedUsers/${uid}`), { deletedAt: "x" }));
+    await assertFails(deleteDoc(doc(db, `deletedUsers/${uid}`)));
+    await assertFails(setDoc(doc(db, "deletedUsers/bob"), { deletedAt: "x" }));
+  });
+});
