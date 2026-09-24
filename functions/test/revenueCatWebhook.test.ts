@@ -191,10 +191,14 @@ describe("revenueCatWebhook", () => {
   });
 
   it("acknowledges (200) a non-uid-shaped app_user_id without writing", async () => {
+    const uid = freshUid();
     const badUid = "$RCAnonymousID:abc";
-    const { status, json } = await postWebhook(buildEvent(freshUid(), { app_user_id: badUid }));
+    const { status, json } = await postWebhook(buildEvent(uid, { app_user_id: badUid }));
     expect(status).toBe(200);
     expect(json.ignored).toBe("app_user_id");
+    // Nothing written under either id: the uid buildEvent was seeded with,
+    // nor the rejected app_user_id itself.
+    expect((await entitlement(uid)).exists).toBe(false);
     expect((await entitlement(badUid)).exists).toBe(false);
   });
 

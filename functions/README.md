@@ -27,6 +27,8 @@ is gitignored for local overrides).
 **`REVENUECAT_ALLOWED_ENVIRONMENTS`** — comma-separated RevenueCat event
 `environment` values the `revenueCatWebhook` accepts; anything else is
 acknowledged with `200 {ok:true, ignored:'environment'}` and writes nothing.
+An event with no `environment` at all is accepted only when the list includes
+`SANDBOX` (dev); a production-only list rejects it (fails closed).
 The dev project accepts `SANDBOX` so test purchases work. **When the prod
 Firebase project is created (ROADMAP Track A4), add
 `functions/.env.<prod-project-id>` containing

@@ -25,7 +25,8 @@
  *    purchases) are acknowledged with 200 and write nothing. **The prod
  *    project MUST set `REVENUECAT_ALLOWED_ENVIRONMENTS=PRODUCTION`** (via
  *    `functions/.env.<prod-project-id>`, see functions/README.md) — otherwise a
- *    free sandbox purchase would grant real Pro.
+ *    free sandbox purchase would grant real Pro. An event with NO
+ *    `environment` is accepted only where SANDBOX is (fails closed in prod).
  *  - `app_user_id` must look like a Firebase uid (`/^[A-Za-z0-9]{20,128}$/`);
  *    anything else is acknowledged with 200 (so RevenueCat stops retrying)
  *    and writes nothing. Only the SHAPE of bad input is logged.
@@ -145,18 +146,23 @@ export function safeEqual(a: string, b: string): boolean {
 /**
  * Whether an event's `environment` is accepted by this deployment.
  *
+ * An ABSENT `environment` fails closed on a deployment that does not accept
+ * SANDBOX (a production-only allow-list): RevenueCat always sends the field,
+ * so a missing one can't be shown to be production and must not grant there.
+ * Where SANDBOX is allowed (dev), anything goes anyway, so absence is accepted.
+ *
  * @param environment - The event's `environment` field (may be absent).
  * @param allowList - Comma-separated accepted values (the param's value).
- * @returns `true` when the field is absent (RevenueCat always sends it; an
- *   absent value is not evidence of sandbox) or listed; `false` otherwise.
+ * @returns `true` when the field is listed, or absent while SANDBOX is listed;
+ *   `false` otherwise (including absent under a production-only list).
  */
 export function isAllowedEnvironment(environment: unknown, allowList: string): boolean {
-  if (environment === undefined || environment === null) return true;
-  if (typeof environment !== "string") return false;
   const allowed = allowList
     .split(",")
     .map((e) => e.trim().toUpperCase())
     .filter((e) => e.length > 0);
+  if (environment === undefined || environment === null) return allowed.includes("SANDBOX");
+  if (typeof environment !== "string") return false;
   return allowed.includes(environment.toUpperCase());
 }
 

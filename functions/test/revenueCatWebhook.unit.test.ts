@@ -42,6 +42,18 @@ describe("isAllowedEnvironment (sandbox gate)", () => {
   it("rejects a non-string environment", () => {
     expect(isAllowedEnvironment(42, "PRODUCTION,SANDBOX")).toBe(false);
   });
+  describe("absent environment", () => {
+    it.each([
+      ["PRODUCTION only (prod) — fails closed", "PRODUCTION", false],
+      ["PRODUCTION,SANDBOX (dev default) — accepted", "PRODUCTION,SANDBOX", true],
+      ["SANDBOX only — accepted", "SANDBOX", true],
+      ["lower-case, spaced dev list — accepted", " production , sandbox ", true],
+      ["empty allow-list — fails closed", "", false],
+    ])("%s", (_label, allowList, expected) => {
+      expect(isAllowedEnvironment(undefined, allowList)).toBe(expected);
+      expect(isAllowedEnvironment(null, allowList)).toBe(expected);
+    });
+  });
 });
 
 describe("isValidAppUserId", () => {
