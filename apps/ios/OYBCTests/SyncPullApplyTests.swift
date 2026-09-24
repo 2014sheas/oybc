@@ -815,4 +815,102 @@ final class SyncPullApplyTests: XCTestCase {
         let after = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: fi1DerivedId) })
         XCTAssertEqual(after.baseline, 0, "not window-stamped — this pipeline must not touch it")
     }
+
+    // MARK: - Derived-counter freeze, Task 3 item 1 — sealed board through the pull path
+
+    /// The audit 2026-09-23 finding #1 scenario end to end through the PULL
+    /// path. A sealed weekly places a window-stamped derived counter whose
+    /// local latch says complete (a pre-freeze client propagated later logs
+    /// into it). Pulling (1) the sealed board doc and (2) a ROOT increment
+    /// that occurred AFTER `sealedAt` both re-derive the sealed snapshot
+    /// (`reDeriveSealedBoards(db:boardIds:)` on the board branch;
+    /// `reDeriveSealedBoards(db:changedTaskIds:)` on the event batch, which
+    /// expands the root to its window-stamped rows). The snapshot must stay
+    /// what the in-window root events say — byte-stable across the post-seal
+    /// event — while a LATE in-window event still converges it. Twin of web
+    /// `derivedCounterSealedPull.test.ts`.
+    func test_sealedBoardPull_windowStampedDerived_postSealRootEventKeepsSnapshotByteStable() throws {
+        let db = try makeDb(); try seedUser(db)
+        let ws = "2026-09-14T00:00:00.000Z", we = "2026-09-20T23:59:59.999Z"
+        let sealedAt = "2026-09-22T19:00:00.000Z"
+        let bid = newId()
+        var root = makeTask("root-s", type: .counting, currentCount: 22)
+        root.maxCount = 80
+        let derived = Task(
+            id: "derived-s", userId: userId, title: "Read 3 pages", type: .counting,
+            action: "Read", unit: "pages", maxCount: 3,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: true, currentCount: 22,   // stale latch
+            createdAt: ws, updatedAt: ws, version: 2, isDeleted: false,
+            timeframe: .weekly, startDate: ws, endDate: we,
+            sharedCounterId: "root-s", baseline: 0, createdInWizard: true
+        )
+        func inc(_ delta: Int, _ at: String) -> [String: Any] {
+            [
+                "id": AppDatabase.generateUUID(), "userId": userId, "taskId": "root-s",
+                "kind": "increment", "delta": delta, "occurredAt": at,
+                "createdAt": at, "updatedAt": at, "version": 1, "isDeleted": false,
+            ]
+        }
+        // The local board before the seal landed (placements need it: FK).
+        let localBoard = try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: [
+            "id": bid, "userId": userId, "name": "Last week", "status": "active",
+            "boardSize": 3, "timeframe": Timeframe.weekly.rawValue, "startDate": ws, "endDate": we,
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": ws, "updatedAt": ws, "version": 2, "isDeleted": false,
+        ] as [String: Any]))
+        try db.write { grdb in
+            try root.save(grdb)
+            try derived.save(grdb)
+            try localBoard.save(grdb)
+            try self.makeBoardTask(id: self.newId(), boardId: bid, taskId: "derived-s").save(grdb) // cell 0
+            // In-window +2 (< 3); post-window, pre-seal overtime +20 (outside the row's window).
+            for (delta, at) in [(2, "2026-09-16T18:00:00.000Z"), (20, "2026-09-21T09:00:00.000Z")] {
+                try TaskEvent(
+                    id: AppDatabase.generateUUID(), userId: self.userId, taskId: "root-s",
+                    kind: .increment, delta: delta, occurredAt: at, boardId: nil,
+                    createdAt: at, updatedAt: at, lastSyncedAt: nil,
+                    version: 1, isDeleted: false, deletedAt: nil
+                ).save(grdb)
+            }
+        }
+        let sut = makeSut(db)
+
+        // (1) Pull the sealed board doc as the sealing device pushed it.
+        let remote: [String: Any] = [
+            "id": bid, "userId": userId, "name": "Last week", "status": "active",
+            "boardSize": 3, "timeframe": Timeframe.weekly.rawValue,
+            "startDate": ws, "endDate": we,
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": ws, "updatedAt": sealedAt, "version": 3, "isDeleted": false,
+            "sealedAt": sealedAt, "sealedCompletedCells": "[]",
+        ]
+        sut.applyRemoteSubdoc(collection: boardsCol, remoteData: remote, authenticatedUserId: userId)
+        let afterBoardPull = try XCTUnwrap(try db.fetchBoard(id: bid))
+        // The stale latch is NOT read: in-window 2 < 3 → nothing complete.
+        XCTAssertEqual(afterBoardPull.sealedCompletedCells ?? [], [])
+        XCTAssertEqual(afterBoardPull.completedTasks, 0)
+        let boardRowsBefore = try syncRows(db).filter { $0.entityId == bid }.count
+
+        // (2) Pull a ROOT increment that occurred AFTER sealedAt → byte-stable.
+        XCTAssertEqual(sut.applyTaskEventsBatch(userId: userId, rawDocs: [inc(5, "2026-09-23T12:00:00.000Z")]).pulled, 1)
+        let afterPostSeal = try XCTUnwrap(try db.fetchBoard(id: bid))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        XCTAssertEqual(
+            String(decoding: try encoder.encode(afterPostSeal), as: UTF8.self),
+            String(decoding: try encoder.encode(afterBoardPull), as: UTF8.self),
+            "sealed record must be byte-stable across a post-seal root event"
+        )
+        XCTAssertEqual(try syncRows(db).filter { $0.entityId == bid }.count, boardRowsBefore)
+
+        // (3) Control — a LATE in-window event (pre-seal) converges it: 2 + 1 = 3.
+        XCTAssertEqual(sut.applyTaskEventsBatch(userId: userId, rawDocs: [inc(1, "2026-09-19T08:00:00.000Z")]).pulled, 1)
+        let converged = try XCTUnwrap(try db.fetchBoard(id: bid))
+        XCTAssertEqual(converged.sealedCompletedCells, [0])
+        XCTAssertEqual(converged.completedTasks, 1)
+    }
 }
+

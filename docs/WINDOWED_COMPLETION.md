@@ -376,9 +376,10 @@ log but never reach the frozen record. Instead:
 - `sealedCompletedCells` (+ the frozen `completedTasks` / `linesCompleted` /
   `completedLineIds` / greenlog status) are defined as a **pure function of the
   converged in-window event union**: whenever a pulled `taskEvent` (or tombstone)
-  for a placed task lands with `occurredAt` in `[startDate, sealedAt]` of a
-  sealed board, that board's snapshot is **re-derived locally** inside the pull
-  transaction.
+  for a placed task — or for the ROOT of a placed window-stamped derived row —
+  lands with `occurredAt` in `[startDate, sealedAt]` of a sealed board, that
+  board's snapshot is **re-derived locally** inside the pull transaction. A
+  derived row's propagated latch is never an input (amended 2026-09-23).
 - Re-derivation is **local-only**: no `version` bump, no sync enqueue. Every
   device converges independently because the input (the event union) converges.
   There is no snapshot LWW fight, and no unbounded mutability — the recompute
@@ -420,10 +421,14 @@ real integrity gain. Recorded as intentional.
 
 ## Shared counters interaction
 
-- **Source count** = lifetime event sum (cache `currentCount`). `deriveDisplayedCount`
-  (baseline math) is unchanged; `buildSharedCounterGroups` unchanged. Derived
-  tasks are fully carved out of the event machinery — see
-  [§Derived-task carve-out](#derived-task-carve-out).
+- **Source count** = lifetime event sum (cache `currentCount`). Derived tasks
+  own no events — see [§Derived-task carve-out](#derived-task-carve-out). A
+  HUB-LINKED derived member still displays `deriveDisplayedCount` (baseline
+  math) and completes by its latch; a WINDOW-STAMPED member (amended
+  2026-09-23) displays and completes from its ROOT's events inside its own
+  window via `resolveLinkedCounterDisplay` — on board cells, previews, the
+  Sources done-filter and the Counters hub (`buildSharedCounterGroups` takes
+  an optional `eventsByTaskId` for this).
 - **Retired: `sharedCounterMerge` + `lastSyncedCount` stamping — in PR B, not
   later** (review minor: between an event-writing client and a still-active merge
   branch, the pull path would author merged `currentCount` writes with no backing
@@ -447,7 +452,17 @@ real integrity gain. Recorded as intentional.
   caches **once**, then run **one** derivation pass per affected live board and
   one seal re-derivation per affected sealed board — all inside the same
   transaction (per the atomic pull-path invariant). Do not bump `version` on the
-  recompute stamps (pull paths don't author writes).
+  recompute stamps (pull paths don't author writes). A shared-counter ROOT is
+  never placed, but its window-stamped derived rows resolve from its events, so
+  both passes expand a changed root id to those rows
+  (`expandToWindowStampedDerived`); the sealed pass reads the root's events
+  bounded at `sealedAt`, never a derived row's latch — a post-seal root
+  increment leaves a sealed snapshot byte-stable, a late in-window one
+  converges it (pinned end to end by web `derivedCounterSealedPull.test.ts` ↔
+  iOS `SyncPullApplyTests.test_sealedBoardPull_windowStampedDerived_…`). The
+  per-root `refreshDerivedBaselines` sweep only rewrites window-stamped rows'
+  non-authored `baseline`, which no board stat reads, and those rows are
+  already in the expanded cascade set.
 - **Pull ordering**: a `taskEvent` can arrive before its `Task` row (per-collection
   listeners have no cross-collection ordering). Events whose task isn't local yet
   are applied as rows but skipped by recompute; the safety-net pull picks them up
