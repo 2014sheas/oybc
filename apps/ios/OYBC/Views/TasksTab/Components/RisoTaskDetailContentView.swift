@@ -356,19 +356,9 @@ struct RisoTaskDetailContentView: View {
         case .compound:
             let n = compoundChildren.count
             guard n > 0 else { return nil }
-            let ruleLabel: String
-            if let op = task.operatorType {
-                switch op {
-                case .or: ruleLabel = "any of \(n)"
-                case .and: ruleLabel = "all of \(n)"
-                case .mOfN:
-                    let threshold = task.threshold ?? n
-                    ruleLabel = "≥\(threshold) of \(n)"
-                }
-            } else {
-                ruleLabel = "all of \(n)"
-            }
-            return "\(n) sub-task\(n == 1 ? "" : "s") · \(ruleLabel)"
+            // The rule itself reads under the SUBTASKS heading
+            // (`CompoundEvaluation.compoundRuleLabel`) — not repeated here.
+            return "\(n) sub-task\(n == 1 ? "" : "s")"
         case .achievement:
             let trigger = task.achievementTrigger ?? .greenlog
             let trig = trigger == .bingo ? "First Bingo" : "GREENLOG"

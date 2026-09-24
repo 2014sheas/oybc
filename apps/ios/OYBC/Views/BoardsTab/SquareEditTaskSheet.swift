@@ -206,7 +206,7 @@ struct SquareEditTaskSheet: View {
     }
 
     /// Read-only notice for compound tasks. Subtasks are not editable from
-    /// the board-edit flow — direct the user to the wizard.
+    /// the board-edit flow — direct the user to the task's detail page.
     private var compoundSection: some View {
         editSection(label: "Compound") {
             Text("Sub-tasks and the completion rule are edited from the task's detail page. The title can still be changed here.")
