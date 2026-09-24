@@ -30,6 +30,9 @@ export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './deriva
 export {
   isEventOwningTask,
   resolveTaskWindowState,
+  resolveWindowStampedDerivedState,
+  resolveDerivedCounterWindowState,
+  boundWindowContextAtSeal,
   backstopWindowMs,
   computeBackstopDeadlineMs,
   buildSealImmuneWindows,

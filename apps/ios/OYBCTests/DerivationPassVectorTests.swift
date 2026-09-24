@@ -61,12 +61,18 @@ final class DerivationPassVectorTests: XCTestCase {
         let maxCount: Int?
         let currentCount: Int?
         let sharedCounterId: String?
+        // 2026-09-23 amendment: window-stamped derived counters carry their own
+        // window + the wizard-born mark (absent = nil / nil / false).
+        let startDate: String?
+        let endDate: String?
+        let createdInWizard: Bool?
 
         enum CodingKeys: String, CodingKey {
             case id, type, isCompleted, isDeleted, threshold
             case operatorField = "operator"
             case referencedBoardId, referencedTemplateId, achievementTrigger, requiredCount
             case maxCount, currentCount, sharedCounterId
+            case startDate, endDate, createdInWizard
         }
     }
 
@@ -229,7 +235,10 @@ final class DerivationPassVectorTests: XCTestCase {
             updatedAt: ts,
             version: 1,
             isDeleted: m.isDeleted,
-            sharedCounterId: m.sharedCounterId
+            startDate: m.startDate,
+            endDate: m.endDate,
+            sharedCounterId: m.sharedCounterId,
+            createdInWizard: m.createdInWizard ?? false
         )
     }
 

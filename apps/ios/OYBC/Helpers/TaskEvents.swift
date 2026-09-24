@@ -26,8 +26,9 @@ struct TaskWindowState: Equatable {
 /// Context threaded through windowed compound evaluation (docs §Semantics —
 /// "evaluateCompound gains a window-context parameter"). When present,
 /// primitive children resolve against `windowStart` via
-/// `resolveTaskWindowState`; derived-counting children fall back to their
-/// lifetime cache (the carve-out); nested compounds inherit the SAME
+/// `resolveTaskWindowState`; window-stamped derived counters resolve from
+/// their root's events (`resolveDerivedCounterWindowState`); hub-linked
+/// derived-counting children fall back to their lifetime cache (the carve-out); nested compounds inherit the SAME
 /// `windowStart` (host-window inheritance). Mirrors the TS `CompoundWindowContext`.
 struct CompoundWindowContext {
     /// Window lower bound (`board.startDate`), or `nil` for lifetime.
@@ -133,6 +134,93 @@ func resolveTaskWindowState(
         completions += 1
     }
     return TaskWindowState(isCompleted: completions > 0, count: completions)
+}
+
+// MARK: - Window-stamped derived counters (amended carve-out, 2026-09-23)
+
+/// Resolve a **window-stamped derived counter**'s state from its ROOT's events
+/// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23;
+/// docs/BOARD_SOURCES.md §Plan B2 notes → "Window-stamped derived counters").
+///
+/// The row owns no events, but carries its own window (`startDate` /
+/// `endDate`, stamped from the board it was minted for) and per-window target
+/// (`maxCount`), so its completion is a pure function of the root's converged
+/// increment events inside that window — never the one-way propagation latch,
+/// which a LATER window's increments can set (audit 2026-09-23 finding #1).
+///
+/// Window membership uses `DateFormatting.isWithinTimeframe` — the same
+/// `[startDate, endDate]` convention (inclusive both ends, parsed compare,
+/// `nil` `endDate` = unbounded) the kernel uses for board windows. Signed
+/// deltas are summed as-is, then low-clamped at 0; completion is
+/// `count >= (maxCount ?? 0)` (the `deriveDisplayedCount` convention).
+/// Overshoot is valid. `baseline` is NOT read.
+///
+/// Mirrors the TS `resolveWindowStampedDerivedState`.
+///
+/// - Parameters:
+///   - task: The window-stamped derived counter (its window + target).
+///   - rootEvents: The ROOT task's events; deleted rows and completion events
+///     are ignored internally.
+/// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
+func resolveWindowStampedDerivedState(task: Task, rootEvents: [TaskEvent]) -> TaskWindowState {
+    var sum = 0
+    if let startDate = task.startDate, !startDate.isEmpty {
+        for e in rootEvents where !e.isDeleted && e.kind == .increment {
+            guard DateFormatting.isWithinTimeframe(
+                e.occurredAt, startDate: startDate, endDate: task.endDate
+            ) else { continue }
+            sum += e.delta ?? 0
+        }
+    }
+    let count = max(0, sum)
+    return TaskWindowState(isCompleted: count >= (task.maxCount ?? 0), count: count)
+}
+
+/// Kernel dispatch for the window-stamped derived-counter branch: a `.counting`
+/// row that `BoardSources.isWindowStampedDerived` identifies resolves from its
+/// root's events via `resolveWindowStampedDerivedState`; anything else returns
+/// `nil` so the caller falls through (event-owning → `resolveTaskWindowState`;
+/// hub-linked derived with no `startDate` → the lifetime latch, unchanged).
+///
+/// A root with no entry in `eventsByTaskId` resolves as zero events — never as
+/// a latch fallback. Every production context builder loads the workspace's
+/// non-deleted events keyed by `taskId`, and the sealed context drops only keys
+/// whose events were all bounded away. The only latch fallback is a
+/// context-less (lifetime) resolution, handled by callers before this branch.
+///
+/// Mirrors the TS `resolveDerivedCounterWindowState`.
+func resolveDerivedCounterWindowState(
+    task: Task,
+    eventsByTaskId: [String: [TaskEvent]]
+) -> TaskWindowState? {
+    guard task.type == .counting, BoardSources.isWindowStampedDerived(task),
+          let rootId = task.sharedCounterId else { return nil }
+    return resolveWindowStampedDerivedState(task: task, rootEvents: eventsByTaskId[rootId] ?? [])
+}
+
+/// Bound a window context's events at a sealed board's `sealedAt` (docs §Seal
+/// snapshots re-derive from the event union): keep only events with
+/// `occurredAt <= sealedAtMs`, dropping a task's key when none survive. Applied
+/// to EVERY task's events — including a shared-counter ROOT's, which a
+/// window-stamped derived cell reads — so a post-seal increment never leaks
+/// into a frozen record. An unparseable `occurredAt` is dropped (mirrors JS
+/// `NaN <= x === false`).
+///
+/// Mirrors the TS `boundWindowContextAtSeal`; both platforms' sealing data
+/// layers and the seal vectors run it.
+func boundWindowContextAtSeal(
+    eventsByTaskId: [String: [TaskEvent]],
+    sealedAtMs: Double
+) -> WindowEvaluationContext {
+    var bounded: [String: [TaskEvent]] = [:]
+    for (taskId, evs) in eventsByTaskId {
+        let kept = evs.filter {
+            guard let occurred = DateFormatting.parseISO($0.occurredAt) else { return false }
+            return occurred.timeIntervalSince1970 * 1000 <= sealedAtMs
+        }
+        if !kept.isEmpty { bounded[taskId] = kept }
+    }
+    return WindowEvaluationContext(eventsByTaskId: bounded)
 }
 
 // MARK: - Sealed-window tombstone immunity (Decision 9)

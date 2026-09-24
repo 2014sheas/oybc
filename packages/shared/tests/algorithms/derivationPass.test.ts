@@ -76,6 +76,11 @@ interface MiniTask {
   maxCount?: number | null;
   currentCount?: number | null;
   sharedCounterId?: string | null;
+  /** Optional — window-stamped derived counters (2026-09-23 amendment) carry
+   *  their own window + the wizard-born mark. */
+  startDate?: string | null;
+  endDate?: string | null;
+  createdInWizard?: boolean;
 }
 
 /** Minimal event shape for windowed vectors; the consumer fills the
@@ -192,6 +197,9 @@ function toTask(m: MiniTask): Task {
     maxCount: m.maxCount ?? undefined,
     currentCount: m.currentCount ?? undefined,
     sharedCounterId: m.sharedCounterId ?? undefined,
+    startDate: m.startDate ?? undefined,
+    endDate: m.endDate ?? undefined,
+    createdInWizard: m.createdInWizard ?? false,
     isCompleted: m.isCompleted,
     totalCompletions: 0,
     totalInstances: 0,
