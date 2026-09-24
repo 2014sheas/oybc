@@ -172,10 +172,11 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 - **Scope:** owner decision first (privacy vs. re-pull cost). If yes, reuse `deleteAccount`'s wipe (web generic `db.tables` clear; iOS `wipeLocalDatabase()`) after the queue clear, on both platforms in one PR; guest sign-out is already withheld (see CLAUDE.md §Guest Mode), so this touches real accounts only.
 - **Acceptance:** decision recorded here; if wiping, a sign-out → sign-in-as-another-user test shows no rows of the first user remain locally on either platform.
 
-### C8 — On-colour contract (content on red/blue/green fills) — `S`
+### C8 — On-colour contract (content on red/blue/green fills) — `S` — DECIDED: static
 - **Why:** web puts static cream `--riso-on-color` on red/blue/green fills (`docs/RISO_WEB.md` token table); iOS uses the adaptive `Color.risoPaper` in the same role (`RisoControls.swift` button/chip foregrounds, `CreateHubBoardCTAView.swift`, `RisoBingoToast.swift`). Contrast passes either way, but the two platforms render different colours in dark mode for the same component.
 - **Scope:** pick one (**static** is planned in the 2026-09 audit's T2, `fix/audit-t2-minors` — not shipped yet) and write the rule into both `docs/RISO_UI_CHECKLIST.md` and `docs/RISO_WEB.md`; convert the iOS sites to the static token.
 - **Acceptance:** both checklists state the same on-colour rule; this entry records which one was chosen and the PR.
+- **Decision (2026-09, `fix/audit-t2-minors-b`):** **static** cream: `--riso-on-color` / `Color.risoOnColor` (`#FBF6EA` in both themes). Web already complied. On iOS, every `risoPaper` foreground on a red/blue/green/achievement fill was converted, and the rule is written into `docs/RISO_UI_CHECKLIST.md` and `docs/RISO_WEB.md`. This also moves iOS light mode from `#F1E9D9` to web's `#FBF6EA`. Paper-on-ink pairs stay adaptive.
 
 
 ---

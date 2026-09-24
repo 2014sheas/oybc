@@ -64,6 +64,9 @@ Which static token depends on the fill's lightness: **dark** fills
 carries `--riso-ink-static` (static dark) — using adaptive `--riso-ink` on gold
 would go cream-on-gold in dark mode and fail WCAG AA. Adaptive `--riso-ink` is
 only for content on `--riso-paper`/`--riso-paper-2`.
+**Both platforms state the same on-colour rule:** content on a red/blue/green
+(or achievement) fill is static `--riso-on-color` on web and `Color.risoOnColor`
+on iOS, never the adaptive paper token.
 
 ### Shape & motion (also in `riso.css`)
 

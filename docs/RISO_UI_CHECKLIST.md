@@ -13,7 +13,7 @@ dark) is `RisoKitGallery` / `RisoKitSnapshotTests`.
       `small` for inline rows). Not a raw `Button` with manual
       `.background(RoundedRectangle).overlay(strokeBorder)`.
 - [ ] **Toolbar Done / Save / Delete** → `RisoToolbarPill` (gold default;
-      `fill: .risoRed, foreground: .risoPaper` for destructive). Not a
+      `fill: .risoRed, foreground: .risoOnColor` for destructive). Not a
       hand-rolled `Capsule().fill(...)` pill.
 - [ ] **Segmented controls** → `RisoSegmented` (`equalWidth: false` when labels
       differ in length; `selectedFill:` for per-value color coding). Not a
@@ -31,6 +31,10 @@ dark) is `RisoKitGallery` / `RisoKitSnapshotTests`.
 - [ ] **Colors** are `Color.riso*`. Never `Color.blue/.orange/.indigo`,
       `.systemGray*`, `.white/.black`, `.primary/.secondary`, or raw
       `Color(red:green:blue:)`.
+- [ ] **On-colour contract:** content (text, icons, keylines) on a red / blue /
+      green (or achievement) fill is the static `Color.risoOnColor` cream —
+      never adaptive `risoPaper`, which flips near-black in dark mode (on gold
+      it is `risoInkStatic`; on an ink fill, adaptive `risoPaper`).
 - [ ] **Fonts** are `.risoHead(...)` / `.risoBody(...)`. Never
       `.system(size:)`, `.font(.headline)`, or bare `.fontWeight(...)`.
 - [ ] **Radius** = `Riso.cardRadius` (cards/controls) or `Riso.cellRadius`
