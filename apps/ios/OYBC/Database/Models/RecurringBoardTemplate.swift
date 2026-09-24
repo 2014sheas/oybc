@@ -1,50 +1,32 @@
 import Foundation
 import GRDB
 
-/// RecurringBoardTemplate — Phase 6.2 (Preset-pool Recurring Boards).
+/// RecurringBoardTemplate — a repeating board: spawns a fresh board for
+/// each new window when the user opens the Boards tab (lazy detection only).
+/// iOS twin of `RecurringBoardTemplate` in `@oybc/shared` (see its doc);
+/// canonical design: docs/BOARD_SOURCES.md §Data model.
 ///
-/// User-curated task pool that automatically creates a fresh board every window
-/// when the user opens the Boards tab. iOS twin of TypeScript
-/// `RecurringBoardTemplate` in `@oybc/shared`.
-///
-/// Design notes:
-///
-/// - `seedTaskIds` is stored as a JSON-string TEXT column (mirror of
-///   `Board.completedLineIds` pattern) since SQLite has no native array
-///   type. Custom `init(from:)` + `encode(to:)` handle the round-trip.
-///
-/// - `lastSpawnedWindowKey` is the `startDate` (local ISO8601) of the
-///   most recently spawned window. Compared to the current window's
-///   `startDate` from `computeTimeframeBoundaries(...)` for idempotent
-///   spawning. `nil` ⇒ never spawned ⇒ next Boards-tab open spawns the
-///   current window immediately.
-///
-/// - `Timeframe.custom` and `CenterSquareType.chosen` are excluded at
-///   the form layer (and validated by the shared Zod schema on pull).
-///   The model itself accepts them; the spawn path returns
-///   `unsupported_timeframe` / `unsupported_center` and skips spawn.
-///
-/// - **P1 (Task Pools + Recurring Boards Rework)** generalizes the task
-///   source: `seedTaskIds` is RETIRED (migrated, then decode-compat only —
-///   never read live post-migration; see `PoolMix.swift` +
-///   docs/POOLS_RECURRING.md §Migration "seedTaskIds end state"). The mix
-///   is `poolIds` / `manualTaskIds` / `removedTaskIds`, resolved via
-///   `PoolMix.resolveMix`. All three are **tri-state, null-preserving**
-///   (mirrors `lastSpawnedWindowKey`'s force-encode-null pattern, NOT
-///   `seedTaskIds`'s always-`[]` pattern): `nil` means "genuinely
-///   un-migrated" (the field is absent on the wire); `[]` is a real empty
-///   array. `RecurringBoardTemplate` conforms to `PoolMixSource` (see
-///   `PoolMix.swift`) so it can be passed to `resolveMix` /
-///   `clearRemovalsForUntoggle` directly.
-///
-/// - **P4** made this the ONLY shape `persistRecurringTemplate`
-///   (`BoardWizardPersist.swift`) ever writes, for both fresh-create AND
-///   edit — the P1→P3 shape-scoped legacy write-through
-///   (`PoolMix.isLegacyShapedRecord`, which still exists as a pure helper
-///   for the retired call site's shape check and its own unit tests, but
-///   is no longer read by any production write path) is retired. A
-///   fresh-create no longer mints a Pool at all; an own-mix, zero-pool
-///   repeating board is first-class.
+/// - Task source: `sources` + `manualTaskIds` (hand-added layer) +
+///   `manualTaskVary` (dice for hand-added counting members), resolved live
+///   at every spawn via `BoardSources.sourcesForRecord` →
+///   `BoardSources.selectBoardTasks` (`AppDatabase+RecurringTemplates.swift`).
+/// - `poolIds` / `removedTaskIds`: a derived mirror of `sources`; the spawn
+///   reads it only through `sourcesForRecord`, but pool-health / deck-preview
+///   (`PoolHealth`, `RepeatingBoardMixEditor`) still read it directly.
+/// - `seedTaskIds`: never read by the spawn; still read by un-migrated
+///   hydration, the Task-detail templates-referencing query
+///   (`fetchTemplatesReferencingTask`), and the roster loading fallbacks —
+///   note it is a creation-time snapshot the edit path leaves stale (audit
+///   follow-up).
+/// - The optional fields are **tri-state, null-preserving**: `nil` ⇒ absent
+///   on the wire (pre-stamp), `[]` ⇒ present-but-empty. Array fields are
+///   JSON-string TEXT columns (custom `init(from:)` / `encode(to:)`).
+/// - `lastSpawnedWindowKey` is the local-ISO `startDate` of the last spawned
+///   window (idempotent spawning); `nil` ⇒ spawn on next Boards-tab open.
+/// - `.custom` timeframe / `.chosen` center are excluded at the form layer;
+///   the spawn path skips them (`unsupported_timeframe` / `_center`).
+/// - Conforms to `PoolMixSource` so `PoolHealth` can still pass it to
+///   `PoolMix.resolveMix`.
 struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     // Identity
     var id: String
@@ -58,18 +40,16 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     var isRandomized: Bool
     var seedTaskIds: [String]
 
-    // P1 — generalized task source (see type doc above). `nil` ⇒ absent on
-    // the wire (genuinely un-migrated); `[]` ⇒ present-but-empty.
+    // Legacy trio (see type doc): `poolIds`/`removedTaskIds` are the derived
+    // mirror of `sources`, `manualTaskIds` is live. `nil` ⇒ absent on the
+    // wire; `[]` ⇒ empty.
     var poolIds: [String]?
     var manualTaskIds: [String]?
     var removedTaskIds: [String]?
 
-    // Board Sources rework (docs/BOARD_SOURCES.md, P1) — the canonical
-    // persisted task-source shape going forward. Same tri-state contract
-    // as the trio above (`nil` ⇒ pre-stamp record; read through
-    // `BoardSources.sourcesForRecord`), stored as a JSON-string TEXT
-    // column (migration v30). During P1 every write stamps BOTH this and
-    // the trio; `manualTaskIds` stays live in both models.
+    // Canonical task source (docs/BOARD_SOURCES.md). Same tri-state
+    // contract (`nil` ⇒ pre-stamp record; read through
+    // `BoardSources.sourcesForRecord`); JSON-string TEXT column (v30).
     var sources: [BoardSource]?
 
     // Board Sources §Member rules (docs/BOARD_SOURCES.md, B1) — dice for
@@ -77,7 +57,6 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     // carry their dice inside `BoardSource.memberRules`). Same tri-state
     // JSON-string TEXT contract as `sources` (migration v31): `nil` ⇒
     // absent/pre-stamp, a valid JSON object (even `{}`) ⇒ that map.
-    // INERT in B1 — nothing reads it until B2 wires the write path.
     var manualTaskVary: [String: VaryLevel]?
 
     // Spawn state

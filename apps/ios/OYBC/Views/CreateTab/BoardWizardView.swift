@@ -42,15 +42,14 @@ struct BoardWizardView: View {
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
 
-    // Task Pools + Recurring Boards Rework (P3) — the user's pools + active
-    // recurring templates, for the Tasks step's "PULL IN A POOL" card and
-    // "Save as pool" sheet. Owned here (mirrors `library`) rather than on
-    // the wizard VM, so `pullPool`/`untogglePool`/`provenanceByTaskId` stay
-    // pure functions of caller-supplied lookups instead of a VM-cached copy
-    // that could go stale relative to a fresh load.
+    // The user's pools + active recurring templates, for the Tasks step's
+    // Sources sheet ("Add from a pool or board"). Owned here (mirrors
+    // `library`) rather than on the wizard VM, so `pullPool` stays a pure
+    // function of caller-supplied lookups instead of a VM-cached copy that
+    // could go stale relative to a fresh load.
     @State private var pools: [Pool] = []
     /// Board Sources P2 — the source sheet's BOARDS rows, loaded off-main
-    /// in `loadPools()` (walks every active board).
+    /// in `loadSources()` (walks every active board).
     @State private var sheetBoardEntries: [RisoSourcePickerSheetView.BoardEntry] = []
     @State private var templates: [RecurringBoardTemplate] = []
 
@@ -111,44 +110,25 @@ struct BoardWizardView: View {
         }
     }
 
-    /// Loads the user's pools + active recurring templates for the Tasks
-    /// step. Fire-and-forget, mirroring `library.loadLibrary`'s shim —
-    /// silent on error (the pull card just renders empty/stale, same
-    /// resilience posture as the DefaultPool prefill in the wizard VM's init).
-    private func loadPools() {
-        let uid = userId
-        _Concurrency.Task {
-            do {
-                let loadedPools = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.fetchPools(userId: uid)
-                }.value
-                let loadedTemplates = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
-                }.value
-                // Board Sources P2 — the source sheet's BOARDS rows walk
-                // every active board (batched reads), so they load here,
-                // off-main, alongside pools (review finding 2).
-                let loadedEntries = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.fetchSourceSheetBoardEntries(userId: uid).map {
-                        RisoSourcePickerSheetView.BoardEntry(
-                            board: $0.board,
-                            squares: $0.info.supplyTaskIds.count,
-                            done: $0.info.doneTaskIds.count
-                        )
-                    }
-                }.value
-                await MainActor.run {
-                    pools = loadedPools
-                    templates = loadedTemplates
-                    sheetBoardEntries = loadedEntries
-                    // Board Sources P2 — re-resolve pulled sources' supplies
-                    // against the fresh pools/library so ranges/counts track
-                    // live edits.
-                    wizard.refreshSourceSupplies(poolsById: poolsById, tasksById: tasksById)
-                }
-            } catch {
-                // Non-fatal: the pull card renders with whatever it already had.
-            }
+    /// Loads the user's pools + recurring templates + the Sources sheet's
+    /// BOARDS rows (through `wizard.loadSourceCatalog`, i.e. the wizard's
+    /// injected database). Runs from `.task`, so leaving the wizard cancels
+    /// it and a late result never lands. Logged, otherwise silent on error —
+    /// the pickers render with whatever they already had.
+    private func loadSources() async {
+        do {
+            let catalog = try await wizard.loadSourceCatalog(userId: userId)
+            pools = catalog.pools
+            templates = catalog.templates
+            sheetBoardEntries = catalog.boardEntries
+            // Board Sources P2 — re-resolve pulled sources' supplies
+            // against the fresh pools/library so ranges/counts track
+            // live edits.
+            wizard.refreshSourceSupplies(poolsById: poolsById, tasksById: tasksById)
+        } catch is CancellationError {
+            // The wizard went away mid-load — nothing to apply.
+        } catch {
+            dlog("board wizard: failed to load sources catalog: \(error)")
         }
     }
 
@@ -204,6 +184,7 @@ struct BoardWizardView: View {
             persistRecurringTemplate(
                 controller: wizard,
                 userId: userId,
+                database: wizard.database,
                 onSuccess: { outcome in
                     isSavingFromCancel = false
                     showCancelDialog = false
@@ -236,6 +217,7 @@ struct BoardWizardView: View {
             placement: placement,
             dates: (start, end),
             status: .draft,
+            database: wizard.database,
             onSuccess: { boardId in
                 isSavingFromCancel = false
                 showCancelDialog = false
@@ -381,9 +363,10 @@ struct BoardWizardView: View {
         }
         .onAppear {
             library.loadLibrary(userId: userId)
-            loadPools()
             wizard.refreshCounterFamilies(libraryTasks: library.libraryTasks)
         }
+        // Structured, so disappearing cancels the load (see `loadSources`).
+        .task { await loadSources() }
         // Counter-family exclusivity (2026-09-08) — keep the wizard VM's
         // library-half family map in lockstep with the live library. The
         // signature is only the counting tasks' id|sharedCounterId pairs,

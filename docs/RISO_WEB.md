@@ -235,7 +235,7 @@ worktrees off dev, zero file overlap):
   `FilterTabs`→`RisoChip` / `TypeBadge`→`RisoTypeBadge` in BuildStep + SubtaskCard.
 - **b3 — From-a-board + modals** (PR #178): `FromBoardGrid`/`FromBoardPicker` CSS;
   the 3 inline-styled modals (`CopyTaskModal`/`DeriveCounterModal`/`RowContextMenu`)
-  converted to `.module.css`. FREE center uses `--riso-ink-static`. *(FromBoardGrid/FromBoardPicker/CopyTaskModal retired 2026-09 in Plan A; DeriveCounterModal + RowContextMenu remain.)*
+  converted to `.module.css`. Rule: an ink fill under gold content (e.g. the FREE center) must use `--riso-ink-static`, never adaptive `--riso-ink` (which inverts to cream in dark mode) — the live board-play FREE-center styles still use `--riso-ink` as of 2026-09-23 (audit finding; CSS fix tracked separately). *(FromBoardGrid/FromBoardPicker/CopyTaskModal retired 2026-09 in Plan A; DeriveCounterModal + RowContextMenu remain.)*
 
 **⚠️ Recurring re-skin gotcha (caught 4× now — b3 once, b2 thrice):** never use
 adaptive `var(--riso-ink)` as a **fill** behind static `var(--riso-on-color)`

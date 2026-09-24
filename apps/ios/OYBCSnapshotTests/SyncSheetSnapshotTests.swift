@@ -112,7 +112,11 @@ final class SyncSheetSnapshotTests: XCTestCase {
 
     func testSyncedWithExhaustedItemsLight() {
         assertSnapshot(
-            of: SyncSheet(state: .synced(lastSyncedAt: fixedDate), exhaustedCount: 3),
+            of: SyncSheet(
+                state: .synced(lastSyncedAt: fixedDate),
+                exhaustedCount: 3,
+                now: SnapshotFixtures.fixedReferenceDate
+            ),
             as: .image(layout: .fixed(width: 393, height: 560)),
             record: recordMode
         )
@@ -120,7 +124,11 @@ final class SyncSheetSnapshotTests: XCTestCase {
 
     func testSyncedWithExhaustedItemsDark() {
         assertSnapshot(
-            of: SyncSheet(state: .synced(lastSyncedAt: fixedDate), exhaustedCount: 3),
+            of: SyncSheet(
+                state: .synced(lastSyncedAt: fixedDate),
+                exhaustedCount: 3,
+                now: SnapshotFixtures.fixedReferenceDate
+            ),
             as: .image(
                 layout: .fixed(width: 393, height: 560),
                 traits: .init(userInterfaceStyle: .dark)
@@ -131,16 +139,15 @@ final class SyncSheetSnapshotTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Renders with `now` pinned to `SnapshotFixtures.fixedReferenceDate`, so
+    /// the relative "last backup" label is stable across runs.
     private func syncSheetView(state: SyncSheetState) -> some View {
-        SyncSheet(state: state)
+        SyncSheet(state: state, now: SnapshotFixtures.fixedReferenceDate)
     }
 
-    /// Fixed date 5 minutes in the past so the relative-date label ("5 minutes ago")
-    /// is stable during a single test run. The exact wording may vary by locale,
-    /// but the snapshot baseline captures whatever the formatter produces.
+    /// Five minutes before the pinned `now`, so the synced label reads as a
+    /// fixed "5 min. ago"-style string (wording is the formatter's).
     private var fixedDate: Date {
-        // Use a calendar-pinned reference so we avoid any system clock drift
-        // between the get and snapshot rendering.
         SnapshotFixtures.fixedReferenceDate.addingTimeInterval(-300)
     }
 }

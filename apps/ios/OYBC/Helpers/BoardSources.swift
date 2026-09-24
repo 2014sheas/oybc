@@ -78,6 +78,33 @@ enum BoardSources {
         return Swift.min(max, availableCount)
     }
 
+    /// A source's supply after its done-filter — the ids a platform hands
+    /// in as `Supply.supplyTaskIds`. Only a BOARD source on `.todo` ("Not
+    /// done yet") drops anything: the ids in `doneTaskIds` (complete in that
+    /// board's window). A pool source, or a board source on `.all`, returns
+    /// `supplyTaskIds` unchanged. Excludes are NOT applied here — that stays
+    /// `resolveSourceAvailable`'s job. Order preserved; no dedupe.
+    ///
+    /// TS twin: `availableSupplyIds` (`packages/shared/src/algorithms/
+    /// boardSources.ts`), pinned by `doneFilterVectors` in
+    /// `boardSourceVectors.json`.
+    ///
+    /// - Parameters:
+    ///   - source: The source row (only `kind` and `filter` are read).
+    ///   - supplyTaskIds: The RAW supply (pre-filter, pre-exclude); `[]`
+    ///     for an unresolved source.
+    ///   - doneTaskIds: The supply ids complete in the source board's
+    ///     window; empty for pools and unresolved sources.
+    /// - Returns: The supply with the done-filter applied.
+    static func availableSupplyIds(
+        source: BoardSource,
+        supplyTaskIds: [String],
+        doneTaskIds: Set<String>
+    ) -> [String] {
+        guard source.kind == .board, source.filter == .todo else { return supplyTaskIds }
+        return supplyTaskIds.filter { !doneTaskIds.contains($0) }
+    }
+
     /// The header/gate math (docs/BOARD_SOURCES.md §Selection step 3) —
     /// with `capacity` computed as the achievable dry-run size. TS twin:
     /// `computeSourceCapacity`.

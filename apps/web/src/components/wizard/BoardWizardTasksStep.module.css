@@ -312,9 +312,6 @@
   outline-offset: 2px;
 }
 
-/* "Save these N as a new pool…" — dashed affordance (P3), mirrors
-   PoolsBrowse.module.css's `.newPoolButton`. */
-
 /* ── Footer ── */
 .footer {
   display: flex;

@@ -7,6 +7,7 @@ import {
   computeBoardStatsUpdate,
   isGoalLessCounter,
   poolSourceSupplyById,
+  availableSupplyIds,
   resolveSourceAvailable,
   type BoardSource,
   type BoardSourceSupply,
@@ -29,7 +30,7 @@ import {
   validatePatch,
 } from '../taskEditPatch';
 import { activateBoard, createBoard, updateBoard } from './boards';
-import { resolveBoardSourceSupply, resolveSourceBoard } from './boardSources';
+import { resolveBoardSourceSupply, resolveSourceBoard, supplyEventTaskIds } from './boardSources';
 import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
 import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 import { buildWindowContext } from './windowContext';
@@ -224,9 +225,10 @@ export async function persistWizardPendingTasks(
  * @param allowedTaskIds - Only pending payloads whose id is in this set are
  *   written (mirrors `persistWizardPendingTasks`).
  * @param stagedEdits - The wizard's full `stagedEdits` snapshot. A task
- *   leaving the pool always purges its staged edit (`toggleTaskSelection`/
- *   `untogglePool`), so every remaining key is still in `allowedTaskIds` —
- *   no extra filtering needed here, matching the one-off path.
+ *   leaving the pool always purges its staged edit (`toggleTaskSelection`,
+ *   or a source action via `purgeDroppedIds`), so every remaining key is
+ *   still in `allowedTaskIds` — no extra filtering needed here, matching
+ *   the one-off path.
  * @param now - ISO8601 timestamp for the sync-queue rows / version bumps.
  */
 export async function persistWizardPendingTasksAndStagedEdits(
@@ -497,9 +499,17 @@ async function mintWizardDerivedRows(
     };
     const rows = await db.boardTasks.where('boardId').equals(board.id).toArray();
     const liveIds = [...new Set(rows.filter((bt) => !bt.isDeleted).map((bt) => bt.taskId))];
+    // Placed ids + the roots of window-stamped derived rows (their done-state
+    // reads the root's events).
+    const eventTaskIds = [
+      ...new Set([
+        ...liveIds,
+        ...supplyEventTaskIds(liveIds.flatMap((id) => (tasksById[id] ? [tasksById[id]] : []))),
+      ]),
+    ];
     const eventsByTaskId: Record<string, TaskEvent[]> = {};
-    if (liveIds.length > 0) {
-      for (const e of await db.taskEvents.where('taskId').anyOf(liveIds).toArray()) {
+    if (eventTaskIds.length > 0) {
+      for (const e of await db.taskEvents.where('taskId').anyOf(eventTaskIds).toArray()) {
         if (e.isDeleted) continue;
         (eventsByTaskId[e.taskId] ??= []).push(e);
       }
@@ -507,10 +517,7 @@ async function mintWizardDerivedRows(
     const info = resolveBoardSourceSupply(board, rows, tasksById, eventsByTaskId);
     rawSupplies.push({
       source,
-      supplyTaskIds:
-        source.filter === 'todo'
-          ? info.supplyTaskIds.filter((id) => !info.doneTaskIds.has(id))
-          : info.supplyTaskIds,
+      supplyTaskIds: availableSupplyIds(source, info.supplyTaskIds, info.doneTaskIds),
     });
   }
 

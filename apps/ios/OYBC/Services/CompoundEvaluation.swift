@@ -59,15 +59,24 @@ enum CompoundEvaluation {
     }
 
     /// Resolve a single primitive (non-compound) child's completion, honoring
-    /// the window context when present. Derived-counting children are carved
-    /// out (read their lifetime cache); every other event-owning primitive
-    /// resolves windowed. Mirrors the TS `resolvePrimitiveChildState`.
+    /// the window context when present. Window-stamped derived counters
+    /// resolve from their root's events; hub-linked derived-counting children
+    /// are carved out (read their lifetime cache); every other event-owning
+    /// primitive resolves windowed. Mirrors the TS `resolvePrimitiveChildState`.
     private static func resolvePrimitiveChildState(
         _ child: Task,
         _ windowContext: CompoundWindowContext?
     ) -> Bool {
         guard let windowContext else { return child.isCompleted }
-        // Derived-task carve-out: shared-counter-linked counting children keep
+        // Window-stamped derived counter child (a "Split up" member's part):
+        // resolve from the ROOT's events inside the child's own window, never
+        // the latch — the same branch `DerivationPass.computeBoardGrid` takes.
+        if let derived = resolveDerivedCounterWindowState(
+            task: child, eventsByTaskId: windowContext.eventsByTaskId
+        ) {
+            return derived.isCompleted
+        }
+        // Derived-task carve-out: HUB-LINKED derived counting children keep
         // their propagation-stamped lifetime cache — they don't own events.
         if !isEventOwningTask(child) { return child.isCompleted }
         let events = windowContext.eventsByTaskId[child.id] ?? []

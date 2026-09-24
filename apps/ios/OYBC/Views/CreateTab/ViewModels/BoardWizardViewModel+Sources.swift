@@ -59,10 +59,11 @@ extension BoardWizardViewModel {
     private func computeExpandedSupplies() -> [BoardSources.ExpandedSupply] {
         let raw = sources.map { source -> BoardSources.Supply in
             let info = supplyInfoBySourceId[source.sourceId]
-            var ids = info?.rawSupplyTaskIds ?? []
-            if source.kind == .board, source.filter == .todo, let done = info?.doneTaskIds {
-                ids.removeAll { done.contains($0) }
-            }
+            let ids = BoardSources.availableSupplyIds(
+                source: source,
+                supplyTaskIds: info?.rawSupplyTaskIds ?? [],
+                doneTaskIds: info?.doneTaskIds ?? []
+            )
             return BoardSources.Supply(
                 source: source,
                 supplyTaskIds: BoardSources.resolveSourceAvailable(
@@ -520,10 +521,11 @@ extension BoardWizardViewModel {
         var union = Set<String>()
         for source in rawSources {
             let info = supplyInfo[source.sourceId]
-            var raw = info?.rawSupplyTaskIds ?? []
-            if source.kind == .board, source.filter == .todo, let done = info?.doneTaskIds {
-                raw.removeAll { done.contains($0) }
-            }
+            let raw = BoardSources.availableSupplyIds(
+                source: source,
+                supplyTaskIds: info?.rawSupplyTaskIds ?? [],
+                doneTaskIds: info?.doneTaskIds ?? []
+            )
             let excluded = Set(source.excludedTaskIds)
             for id in raw where !excluded.contains(id) { union.insert(id) }
         }
@@ -535,3 +537,54 @@ extension BoardWizardViewModel {
     }
 }
 
+
+/// What the Tasks step's pool/board pickers read: the user's pools, their
+/// recurring templates, and the "Add from a pool or board" sheet's BOARDS
+/// rows (see ``BoardWizardViewModel/loadSourceCatalog(userId:)``).
+struct WizardSourceCatalog {
+    var pools: [Pool]
+    var templates: [RecurringBoardTemplate]
+    var boardEntries: [RisoSourcePickerSheetView.BoardEntry]
+}
+
+extension BoardWizardViewModel {
+
+    // MARK: - Sources-sheet catalog load
+
+    /// Load the Sources sheet's catalog off the main thread, through this
+    /// view-model's injected `database`.
+    ///
+    /// Run it from a structured context (the view's `.task`) so leaving the
+    /// wizard cancels it: each read is checked for cancellation, and a
+    /// cancelled load throws `CancellationError` instead of returning stale
+    /// data for a screen that is gone.
+    ///
+    /// - Parameter userId: The owner whose pools/templates/boards to read.
+    /// - Returns: The catalog.
+    /// - Throws: `CancellationError` when cancelled, or any GRDB read error.
+    func loadSourceCatalog(userId: String) async throws -> WizardSourceCatalog {
+        let db = database
+        try _Concurrency.Task.checkCancellation()
+        let pools = try await _Concurrency.Task.detached(priority: .userInitiated) {
+            try db.fetchPools(userId: userId)
+        }.value
+        try _Concurrency.Task.checkCancellation()
+        let templates = try await _Concurrency.Task.detached(priority: .userInitiated) {
+            try db.fetchRecurringBoardTemplates(userId: userId)
+        }.value
+        try _Concurrency.Task.checkCancellation()
+        // Board Sources P2 — the BOARDS rows walk every active board
+        // (batched reads), so they load here, off-main, alongside pools.
+        let entries = try await _Concurrency.Task.detached(priority: .userInitiated) {
+            try db.fetchSourceSheetBoardEntries(userId: userId).map {
+                RisoSourcePickerSheetView.BoardEntry(
+                    board: $0.board,
+                    squares: $0.info.supplyTaskIds.count,
+                    done: $0.info.doneTaskIds.count
+                )
+            }
+        }.value
+        try _Concurrency.Task.checkCancellation()
+        return WizardSourceCatalog(pools: pools, templates: templates, boardEntries: entries)
+    }
+}

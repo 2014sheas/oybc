@@ -19,12 +19,15 @@ Dexie.js / IndexedDB. Live entities:
 - **Task** — reusable task definitions (Normal / Counting / Compound / Achievement); global completion lives here
 - **BoardTask** — pure placement record linking a board cell to a task
 - **CompoundChild** — one row per compound parent→child link (replaced the retired `task_steps` / `composite_nodes`)
-- **ProgressCounter** — cross-board cumulative counters
-- **RecurringBoardTemplate** — preset-pool recurring board definitions
+- **RecurringBoardTemplate** — repeating-board definitions; each spawn resolves its `sources` live (see `docs/BOARD_SOURCES.md`)
+- **Pool** — user-named collection of task references (Tasks tab)
+- **CoreBoardDefault** — per-timeframe core-board defaults (replaces `DefaultPool`)
+- **DefaultPool** — legacy per-timeframe pool, still in the schema and sync contract
+- **TaskEvent** — Windowed Completion occurrence log (completion / increment) for event-owning tasks
 - **User** — profile and preferences
 - **SyncQueue** — offline sync queue
 
-`TaskStep` / `CompositeTask` persist only as legacy migration-read types. The schema + indexes are defined in `src/db/database.ts`.
+The schema + indexes are defined in `src/db/database.ts`.
 
 ## Project Structure
 

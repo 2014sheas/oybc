@@ -7,8 +7,11 @@ import {
   isEligibleSourceBoard,
   isEventOwningTask,
   isSourceSupplyTask,
+  isWindowStampedDerived,
   pickSeriesInstance,
   poolSourceSupplyById,
+  availableSupplyIds,
+  resolveDerivedCounterWindowState,
   resolveTaskWindowState,
   sourcesForRecord,
   TaskType,
@@ -35,10 +38,12 @@ import {
  * Done-state predicate mirrors iOS
  * `AppDatabase+BoardSources.resolveSupply` / the play surfaces:
  * event-owning primitives resolve via `resolveTaskWindowState` against
- * the source board's window; compound / achievement / derived counting
- * read the lifetime `Task.isCompleted` cache (the documented per-cell
- * carve-out — these surfaces carry no compound/achievement evaluation
- * context of their own).
+ * the source board's window; window-stamped derived counters resolve
+ * from their ROOT's events in their own window
+ * (`resolveDerivedCounterWindowState`, the kernel rule); compound /
+ * achievement / hub-linked derived counting read the lifetime
+ * `Task.isCompleted` cache (the documented per-cell carve-out — these
+ * surfaces carry no compound/achievement evaluation context of their own).
  */
 
 /** iOS twin: `BoardSourceSupplyInfo` (`AppDatabase+BoardSources.swift`). */
@@ -55,9 +60,9 @@ export interface BoardSourceSupplyInfo {
    * count (Σ non-deleted increment deltas inside THIS board's window), the
    * same number the source board's own squares display. Keyed by task id;
    * a member with no entry has made no measurable progress here (or isn't
-   * an event-owning counter at all — compounds, achievements and
-   * window-stamped derived counters are the documented per-cell carve-out
-   * and read their own caches instead).
+   * an event-owning counter at all — compounds, achievements and derived
+   * counters get no entry; a window-stamped derived row's window count is
+   * deliberately NOT fed into this prefill map).
    *
    * Feeds the one-off wizard's "remaining" target prefill: pull a
    * 3-of-10-done counter onto a fresh one-off board and its member rule is
@@ -112,7 +117,15 @@ export function resolveBoardSourceSupply(
     seen.add(task.id);
     supply.push(task.id);
     let isDone: boolean;
-    if (isEventOwningTask(task)) {
+    // A window-stamped derived counter is done by its ROOT's increments inside
+    // its own window — the kernel's rule (docs §Derived-task carve-out,
+    // amended 2026-09-23) — never the one-way latch, which a later window's
+    // logs can set. Its window count is deliberately NOT fed to the prefill
+    // (`windowCountByTaskId`): that map stays event-owning counters only.
+    const derived = resolveDerivedCounterWindowState(task, eventsByTaskId);
+    if (derived) {
+      isDone = derived.isCompleted;
+    } else if (isEventOwningTask(task)) {
       const state = resolveTaskWindowState(task, eventsByTaskId[task.id] ?? [], board.startDate);
       isDone = state.isCompleted;
       // §Member rules (B3, RC4) — the same windowed resolution that decides
@@ -137,6 +150,24 @@ export function resolveBoardSourceSupply(
   };
 }
 
+/**
+ * The task ids whose events {@link resolveBoardSourceSupply} reads for a
+ * board's placed `tasks`: every placed id, plus the ROOT of each
+ * window-stamped derived row (its done-state resolves from the root's events,
+ * and a root is never placed itself).
+ *
+ * @param tasks - The board's placed tasks.
+ * @returns Distinct ids to load events for.
+ */
+export function supplyEventTaskIds(tasks: Iterable<Task>): string[] {
+  const ids = new Set<string>();
+  for (const t of tasks) {
+    ids.add(t.id);
+    if (t.sharedCounterId && isWindowStampedDerived(t)) ids.add(t.sharedCounterId);
+  }
+  return [...ids];
+}
+
 /** Batched per-board reads (three queries), shared by the fetch helpers. */
 async function resolveFromDb(board: Board): Promise<BoardSourceSupplyInfo> {
   const rows = await db.boardTasks.where('boardId').equals(board.id).toArray();
@@ -146,10 +177,10 @@ async function resolveFromDb(board: Board): Promise<BoardSourceSupplyInfo> {
     taskIds.length > 0 ? await db.tasks.where('id').anyOf(taskIds).toArray() : [];
   const tasksById: Record<string, Task> = {};
   for (const t of tasks) tasksById[t.id] = t;
-  const eventOwningIds = tasks.filter((t) => isEventOwningTask(t)).map((t) => t.id);
+  const eventTaskIds = supplyEventTaskIds(tasks);
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
-  if (eventOwningIds.length > 0) {
-    const events = await db.taskEvents.where('taskId').anyOf(eventOwningIds).toArray();
+  if (eventTaskIds.length > 0) {
+    const events = await db.taskEvents.where('taskId').anyOf(eventTaskIds).toArray();
     for (const e of events) {
       if (e.isDeleted) continue;
       (eventsByTaskId[e.taskId] ??= []).push(e);
@@ -369,13 +400,9 @@ export async function fetchTemplateSupplyResolution(
         continue;
       }
       const info = supplyByStoredId.get(source.sourceId);
-      const raw = info?.supplyTaskIds ?? [];
       supplies.push({
         source,
-        supplyTaskIds:
-          source.filter === 'todo' && info
-            ? raw.filter((id) => !info.doneTaskIds.has(id))
-            : raw,
+        supplyTaskIds: availableSupplyIds(source, info?.supplyTaskIds ?? [], info?.doneTaskIds),
       });
     }
     byTemplateId[entry.template.id] = {

@@ -155,6 +155,14 @@ final class BoardSourceVectorTests: XCTestCase {
         let expectedId: String
     }
 
+    private struct DoneFilterVector: Decodable {
+        let name: String
+        let source: BoardSource
+        let supplyTaskIds: [String]
+        let doneTaskIds: [String]
+        let expected: [String]
+    }
+
     private struct Fixture: Decodable {
         let capacityVectors: [CapacityVector]
         let selectionVectors: [SelectionVector]
@@ -162,6 +170,7 @@ final class BoardSourceVectorTests: XCTestCase {
         let configurationVectors: [ConfigurationVector]
         let lossSentenceVectors: [LossSentenceVector]
         let seriesInstanceVectors: [SeriesInstanceVector]
+        let doneFilterVectors: [DoneFilterVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -297,6 +306,25 @@ final class BoardSourceVectorTests: XCTestCase {
         for v in fixture.lossSentenceVectors {
             XCTAssertEqual(
                 BoardSources.removeSourceLossSentence(v.detail.detail),
+                v.expected,
+                v.name
+            )
+        }
+    }
+
+    /// The board-source done-filter ("Not done yet") — pool untouched,
+    /// board `.all` untouched, board `.todo` drops done ids, excludes left
+    /// for `resolveSourceAvailable`.
+    func testDoneFilterVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.doneFilterVectors.isEmpty)
+        for v in fixture.doneFilterVectors {
+            XCTAssertEqual(
+                BoardSources.availableSupplyIds(
+                    source: v.source,
+                    supplyTaskIds: v.supplyTaskIds,
+                    doneTaskIds: Set(v.doneTaskIds)
+                ),
                 v.expected,
                 v.name
             )

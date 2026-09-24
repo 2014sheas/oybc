@@ -3,21 +3,17 @@ import { db } from '../internal';
 import { decodeRecurringDraftMix } from '../recurringDraftMix';
 
 /**
- * Resolves a recurring draft's raw `recurringDraftMix` JSON into the
- * concrete, deterministically-ordered task-id mix it describes —
- * `resolveMix`'s ordered result over the pools/tasks the mix references.
+ * Resolves a draft's raw `recurringDraftMix` JSON into the ordered task-id
+ * mix its legacy trio (`poolIds` / `manualTaskIds` / `removedTaskIds`)
+ * describes, via the shared `resolveMix`. Reads only the trio, not the
+ * blob's `sources` — the wizard itself hydrates from `sources`.
  *
- * Board Creation Split (web PR D) — used by `useRecurringDraftMix` (reactive
- * hook, for wizard hydration) and `useResumableDraft` (one-shot, for the
- * draft-resume initial-step computation). Mirrors iOS
- * `BoardWizardViewModel.resolvePoolMixHydration`'s DB-lookup shape: fetch
- * only the referenced pools, then only the referenced tasks, then delegate
- * to the shared `resolveMix` algorithm.
+ * Callers: `useRecurringDraftMix` (the drafts-list task count in
+ * `useDrafts`) and `useResumableDraft` (the draft-resume initial step).
+ * Twin of iOS `BoardWizardViewModel.resolvePoolMixHydration`.
  *
- * Returns `[]` (never throws) for a missing/malformed mix or an unresolvable
- * reference — a fresh recurring draft's mix is the only shape that has ever
- * existed, so there's no legacy fallback to preserve; the wizard still
- * opens with an empty selection and the user rebuilds the pool.
+ * Returns `[]` (never throws) for a missing/malformed mix or an
+ * unresolvable reference.
  */
 export async function resolveRecurringDraftMixTaskIds(
   mixJson: string | undefined,

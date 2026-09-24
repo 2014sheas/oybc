@@ -20,6 +20,9 @@ struct RisoTaskDetailContentView: View {
     let parentCompounds: [Task]
     let compoundChildren: [Task]
     let templates: [RecurringBoardTemplate]
+    /// Injected database (ROADMAP B3 seam) — only the linked-counter caption
+    /// reads it; defaults to the app singleton.
+    var database: AppDatabase = .shared
     var saveError: String? = nil
     var allBoardsForPicker: [Board] = []
     var allTemplatesForPicker: [RecurringBoardTemplate] = []
@@ -44,7 +47,7 @@ struct RisoTaskDetailContentView: View {
                 // Shared-counter link caption (Phase 2) — restored so linked
                 // counting tasks surface their source here, like the original detail.
                 if task.type == .counting, let sharedCounterId = task.sharedCounterId {
-                    LinkedCounterCaptionView(sharedCounterId: sharedCounterId)
+                    LinkedCounterCaptionView(sharedCounterId: sharedCounterId, database: database)
                 }
                 usageRow
                 if task.type == .compound && !compoundChildren.isEmpty {

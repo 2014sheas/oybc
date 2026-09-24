@@ -2,6 +2,7 @@ import type { Task, CompoundChild } from '../types';
 import { OperatorType, TaskType } from '../constants/enums';
 import {
   resolveTaskWindowState,
+  resolveDerivedCounterWindowState,
   isEventOwningTask,
   type CompoundWindowContext,
 } from './taskEvents';
@@ -28,8 +29,9 @@ import {
  * **Windowed evaluation (Windowed Completion, PR A).** When `windowContext`
  * is supplied, primitive children resolve against the host board's window via
  * `resolveTaskWindowState` instead of reading the lifetime `isCompleted` cache;
- * derived (shared-counter-linked) counting children fall back to their cache
- * (the carve-out); nested compounds inherit the SAME window (host-window
+ * window-stamped derived counting children resolve from their root's events in
+ * their own window (`resolveDerivedCounterWindowState`); hub-linked derived
+ * counting children fall back to their cache (the carve-out); nested compounds inherit the SAME window (host-window
  * inheritance). When `windowContext` is omitted the behavior is byte-identical
  * to before — the lifetime default that keeps every existing caller unchanged.
  *
@@ -54,15 +56,22 @@ export function evaluateCompound(
 
 /**
  * Resolve a single primitive (non-compound) child's completion, honoring the
- * window context when present. Derived-counting children are carved out (read
- * their lifetime cache); every other event-owning primitive resolves windowed.
+ * window context when present. Window-stamped derived counters resolve from
+ * their root's events; hub-linked derived-counting children are carved out
+ * (read their lifetime cache); every other event-owning primitive resolves
+ * windowed.
  */
 function resolvePrimitiveChildState(
   child: Task,
   windowContext: CompoundWindowContext | undefined,
 ): boolean {
   if (!windowContext) return child.isCompleted;
-  // Derived-task carve-out: shared-counter-linked counting children keep their
+  // Window-stamped derived counter child (a "Split up" member's part): resolve
+  // from the ROOT's events inside the child's own window, never the latch —
+  // the same branch `computeBoardGrid`'s `resolvePrimitive` takes.
+  const derived = resolveDerivedCounterWindowState(child, windowContext.eventsByTaskId);
+  if (derived) return derived.isCompleted;
+  // Derived-task carve-out: HUB-LINKED derived counting children keep their
   // propagation-stamped lifetime cache — they don't own events.
   if (!isEventOwningTask(child)) return child.isCompleted;
   const events = windowContext.eventsByTaskId[child.id] ?? [];

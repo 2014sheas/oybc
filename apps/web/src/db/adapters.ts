@@ -1,8 +1,9 @@
 import {
   TaskType,
-  deriveDisplayedCount,
   evaluateCompound,
   isEventOwningTask,
+  resolveDerivedCounterWindowState,
+  resolveLinkedCounterDisplay,
   resolveTaskWindowState,
   type Task,
   type TaskEvent,
@@ -16,9 +17,13 @@ import type { TaskSquareData, SquareState } from '../components/interactiveTaskS
  * window context threaded into {@link taskToSquareState}. When present, primitive
  * (normal / plain-counting) squares resolve against the board's window via
  * TaskEvents instead of the lifetime `isCompleted` / `currentCount` caches;
- * compound squares inherit the window; derived (shared-counter-linked) counters
- * stay on their cache (the carve-out). When absent, behavior is byte-identical
- * to the pre-Windowed-Completion lifetime read (library surfaces, tests).
+ * compound squares inherit the window; window-stamped derived counters resolve
+ * from their ROOT's events inside their own `[startDate, endDate]` (the same
+ * `resolveLinkedCounterDisplay` / `resolveDerivedCounterWindowState` the kernel
+ * uses — docs §Derived-task carve-out, amended 2026-09-23); hub-linked derived
+ * counters stay on their cache (the carve-out). When absent, behavior is
+ * byte-identical to the pre-Windowed-Completion lifetime read (library
+ * surfaces, tests).
  */
 export interface SquareWindowContext {
   /** Window lower bound (`board.startDate`). */
@@ -96,7 +101,9 @@ export function taskToSquareData(
     const cbMap = childrenByCompound ?? {};
     // Windowed Completion: resolve each child row's checkmark against the host
     // board's window so the compound detail sheet agrees with the (windowed)
-    // grid square. Derived-counting children stay on their cache (carve-out).
+    // grid square. Window-stamped derived children resolve from their root's
+    // events in their own window — the kernel's `resolvePrimitiveChildState`
+    // order — and only hub-linked derived children stay on their cache.
     const compoundCtx = windowContext
       ? { windowStart: windowContext.windowStart, eventsByTaskId: windowContext.eventsByTaskId }
       : undefined;
@@ -104,6 +111,10 @@ export function taskToSquareData(
       if (childTask.type === TaskType.COMPOUND) {
         return evaluateCompound(childTask, cbMap, map, compoundCtx);
       }
+      const derived = windowContext
+        ? resolveDerivedCounterWindowState(childTask, windowContext.eventsByTaskId)
+        : null;
+      if (derived) return derived.isCompleted;
       if (windowContext && isEventOwningTask(childTask)) {
         const evts = windowContext.eventsByTaskId[childTask.id] ?? [];
         return resolveTaskWindowState(childTask, evts, windowContext.windowStart).isCompleted;
@@ -139,7 +150,7 @@ export function taskToSquareData(
     maxCount: task.maxCount ?? undefined,
     unit: task.unit ?? undefined,
     // Phase 3 — Shared Counters: map link fields so the render layer can
-    // (a) baseline-adjust the displayed count via `deriveDisplayedCount`,
+    // (a) derive the displayed count via `resolveLinkedCounterDisplay`,
     // and (b) gate decrement/reset actions for linked derived counters.
     sharedCounterId: task.sharedCounterId ?? undefined,
     baseline: task.baseline ?? undefined,
@@ -152,8 +163,8 @@ export function taskToSquareData(
  * Under the unified compound model, BoardTask is placement-only. When
  * `windowContext` is supplied (every board surface), primitive and compound
  * state resolve **windowed** against `task_events` for that board's window —
- * the Task row's lifetime caches are read only for the derived shared-counter
- * carve-out, or as the no-context fallback (library/legacy callers). See
+ * the Task row's lifetime caches are read only for the HUB-LINKED derived
+ * shared-counter carve-out, or as the no-context fallback (library/legacy callers). See
  * docs/WINDOWED_COMPLETION.md §Task caches. Progress-step completion
  * (completedStepIds) is no longer tracked per-board — returns an empty Set
  * for non-compound tasks.
@@ -210,22 +221,22 @@ export function taskToSquareState(
     };
   }
 
-  // Phase 3 — Shared Counters: linked tasks store the source's raw
-  // `currentCount` as a mirrored accumulator. The UI must display the
-  // baseline-adjusted derived value, not the raw source total. Apply
-  // `deriveDisplayedCount` here so every consumer of `SquareState`
-  // (grid squares, DetailModal, FloatingContextMenu, progress bar)
-  // automatically sees the correct derived count without a second call.
-  //
-  // Windowed Completion carve-out (docs §Derived-task carve-out): derived
-  // counters stay on their propagation-stamped lifetime cache — NOT windowed.
+  // Shared Counters — a linked (derived) counting square. `resolveLinkedCounterDisplay`
+  // is the single display rule (docs §Derived-task carve-out, amended
+  // 2026-09-23), so every consumer of `SquareState` (grid squares,
+  // DetailModal, FloatingContextMenu, progress bar) sees the same thing:
+  //   - WINDOW-STAMPED rows: count AND completion are the ROOT's increment sum
+  //     inside the row's own `[startDate, endDate]` — the same function the
+  //     derivation kernel resolves the cell with, so a cell can never paint
+  //     green (or read N/N) while board stats count it incomplete. The
+  //     one-way latch is not read.
+  //   - HUB-LINKED rows (no `startDate`) and context-less reads: the
+  //     baseline-adjusted mirror (`currentCount − baseline`) + the
+  //     propagation-stamped latch — the kernel's carve-out, unchanged.
   if (task.sharedCounterId != null) {
-    const { displayed } = deriveDisplayedCount(
-      { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
-      { currentCount: task.currentCount ?? 0 },
-    );
+    const { displayed, isCompleted } = resolveLinkedCounterDisplay(task, windowContext?.eventsByTaskId);
     return {
-      isCompleted: task.isCompleted,
+      isCompleted,
       currentCount: displayed,
       completedStepIds: new Set<string>(),
     };

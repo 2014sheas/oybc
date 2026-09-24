@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   TaskType,
-  deriveDisplayedCount,
+  resolveLinkedCounterDisplay,
   detectCounterArrivals,
   formatCounterName,
   resolveTaskWindowState,
@@ -27,7 +27,7 @@ export interface BuildArrivalSquaresInput {
   sharedCounterSourceIds: Set<string>;
   /** This board's window read-model — SOURCE counters resolve their count
    *  against the board's window like the grid cell does (issue #377), never
-   *  the lifetime cache. Derived members keep their lifetime carve-out. */
+   *  the lifetime cache. Linked members read `resolveLinkedCounterDisplay`. */
   windowContext: SquareWindowContext;
 }
 
@@ -53,8 +53,9 @@ function counterDisplayName(source: Task | undefined): string {
  * task). Firebase-free — imports only `@oybc/shared` — so it is unit-testable
  * in isolation (issue #280 lesson).
  *
- * `displayed` uses `deriveDisplayedCount` for linked members (baseline-adjusted
- * lifetime carve-out) and the board-WINDOWED count for sources — matching what
+ * `displayed` uses `resolveLinkedCounterDisplay` for linked members (the
+ * root's in-window sum for window-stamped rows, the baseline-adjusted
+ * lifetime carve-out for hub-linked ones) and the board-WINDOWED count for sources — matching what
  * the grid cell shows (issue #377; a source square's cell resolves via
  * `resolveTaskWindowState`, so the arrival baseline must too, or a library
  * decrement that tombstones a pre-window event desyncs the two).
@@ -81,10 +82,7 @@ export function buildArrivalSquares(input: BuildArrivalSquaresInput): ArrivalSqu
 
     const displayed =
       task.sharedCounterId != null
-        ? deriveDisplayedCount(
-            { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
-            { currentCount: task.currentCount ?? 0 },
-          ).displayed
+        ? resolveLinkedCounterDisplay(task, windowContext.eventsByTaskId).displayed
         : resolveTaskWindowState(
             task,
             windowContext.eventsByTaskId[task.id] ?? [],

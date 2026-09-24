@@ -24,8 +24,8 @@ final class BoardEditCenterToggleSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    private static let fixedStart = Date(timeIntervalSince1970: 1_743_508_800)  // 2026-04-01 noon UTC
-    private static let fixedEnd   = Date(timeIntervalSince1970: 1_746_100_800)  // 2026-04-30 noon UTC
+    private static let fixedStart = Date(timeIntervalSince1970: 1_743_508_800)  // 2025-04-01 noon UTC
+    private static let fixedEnd   = Date(timeIntervalSince1970: 1_746_100_800)  // 2025-05-01 noon UTC
 
     // MARK: - FREE center (edit-tasks sub-mode, onCenterTap active)
 

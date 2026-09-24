@@ -61,12 +61,18 @@ final class DerivationPassVectorTests: XCTestCase {
         let maxCount: Int?
         let currentCount: Int?
         let sharedCounterId: String?
+        // 2026-09-23 amendment: window-stamped derived counters carry their own
+        // window + the wizard-born mark (absent = nil / nil / false).
+        let startDate: String?
+        let endDate: String?
+        let createdInWizard: Bool?
 
         enum CodingKeys: String, CodingKey {
             case id, type, isCompleted, isDeleted, threshold
             case operatorField = "operator"
             case referencedBoardId, referencedTemplateId, achievementTrigger, requiredCount
             case maxCount, currentCount, sharedCounterId
+            case startDate, endDate, createdInWizard
         }
     }
 
@@ -158,10 +164,26 @@ final class DerivationPassVectorTests: XCTestCase {
         let expectedCells: [MiniCellState]?
     }
 
+    private struct EtwsdTask: Decodable {
+        let id: String
+        let isDeleted: Bool
+        let sharedCounterId: String?
+        let startDate: String?
+        let createdInWizard: Bool
+    }
+
+    private struct EtwsdVector: Decodable {
+        let name: String
+        let ids: [String]
+        let tasks: [EtwsdTask]
+        let expected: [String]
+    }
+
     private struct Fixture: Decodable {
         let findTransitiveParentCompounds: [FtpcVector]
         let findAffectedBoardIds: [FabiVector]
         let computeBoardStatsUpdate: [CbsuVector]
+        let expandToWindowStampedDerived: [EtwsdVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -229,7 +251,10 @@ final class DerivationPassVectorTests: XCTestCase {
             updatedAt: ts,
             version: 1,
             isDeleted: m.isDeleted,
-            sharedCounterId: m.sharedCounterId
+            startDate: m.startDate,
+            endDate: m.endDate,
+            sharedCounterId: m.sharedCounterId,
+            createdInWizard: m.createdInWizard ?? false
         )
     }
 
@@ -341,6 +366,25 @@ final class DerivationPassVectorTests: XCTestCase {
             let children = v.children.enumerated().map { toChild($1, $0) }
             let result = DerivationPass.findTransitiveParentCompounds(changedTaskId: v.changedTaskId, children: children)
             XCTAssertEqual(result, Set(v.expected), "Vector '\(v.name)'")
+        }
+    }
+
+    func testExpandToWindowStampedDerivedVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.expandToWindowStampedDerived.isEmpty)
+        for v in fixture.expandToWindowStampedDerived {
+            let tasks = v.tasks.map { m in
+                Task(
+                    id: m.id, userId: "u", title: m.id, type: .counting,
+                    totalCompletions: 0, totalInstances: 0,
+                    createdAt: ts, updatedAt: ts, version: 1, isDeleted: m.isDeleted,
+                    startDate: m.startDate,
+                    sharedCounterId: m.sharedCounterId,
+                    createdInWizard: m.createdInWizard
+                )
+            }
+            let result = expandToWindowStampedDerived(ids: Set(v.ids), tasks: tasks)
+            XCTAssertEqual(result.sorted(), v.expected, "Vector '\(v.name)'")
         }
     }
 
