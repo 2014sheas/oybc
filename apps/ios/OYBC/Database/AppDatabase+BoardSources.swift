@@ -79,10 +79,12 @@ extension AppDatabase {
         let containing = instances.filter { b in
             b.startDate <= reference && (b.endDate == nil || reference <= b.endDate!)
         }
-        if let hit = containing.max(by: { $0.startDate < $1.startDate }) { return hit }
+        // `pickSeriesInstance`: latest startDate, lowest id on a tie — two
+        // offline devices can each spawn the same window, and the id key
+        // keeps iOS and web pulling from the same instance.
+        if let hit = BoardSources.pickSeriesInstance(containing) { return hit }
         let started = instances.filter { $0.startDate <= reference }
-        let pool = started.isEmpty ? instances : started
-        return pool.max(by: { $0.startDate < $1.startDate })
+        return BoardSources.pickSeriesInstance(started.isEmpty ? instances : started)
     }
 
     /// Resolve one board's source supply. Series-binding aware: the stored

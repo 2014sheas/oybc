@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toBlob } from 'html-to-image';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { SharePoster } from './SharePoster';
 import { RisoButton, RisoIcon } from '../riso';
 import styles from './ShareBoardSheet.module.css';
@@ -39,7 +40,8 @@ export interface ShareBoardSheetProps {
  *   - No icon-labelled Messages/Stories/More targets: the Web Share API's native
  *     share sheet handles destination selection.
  *
- * Accessibility: `role="dialog"` + `aria-modal="true"` + Escape-to-close.
+ * Accessibility: `role="dialog"` + `useModalA11y` (aria-modal, Escape-to-close,
+ * initial focus, Tab trap, focus restore).
  *
  * @param boardName - Board display name.
  * @param completedTasks - Squares completed.
@@ -68,14 +70,11 @@ export function ShareBoardSheet({
     return () => clearTimeout(t);
   }, [toast]);
 
-  // ── Escape key to dismiss ───────────────────────────────────────────────
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onDismiss();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onDismiss]);
+  // ── aria-modal, Escape → dismiss, initial focus, Tab trap, focus restore ──
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onDismiss,
+  });
 
   // ── Rasterise the poster to a PNG Blob ─────────────────────────────────
 
@@ -170,7 +169,13 @@ export function ShareBoardSheet({
         if (e.target === e.currentTarget) onDismiss();
       }}
     >
-      <div className={styles.sheet} role="dialog" aria-modal="true" aria-label="Share board">
+      <div
+        ref={modalRef}
+        className={styles.sheet}
+        role="dialog"
+        aria-label="Share board"
+        {...modalProps}
+      >
         {/* Sheet header */}
         <div className={styles.header}>
           <span className={styles.headerTitle}>Share board</span>

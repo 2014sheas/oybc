@@ -53,24 +53,20 @@ final class BoardSettingsRosterTests: XCTestCase {
         let template = makeTemplate(id: "tpl-1", name: "Morning Routine", isActive: true)
         try db.saveRecurringBoardTemplateAndEnqueue(template, operation: .create, now: now)
 
-        // Pause — mirrors `BoardSettingsView.setActive(tpl, false)` exactly:
-        // flip isActive, bump version/updatedAt, re-save+enqueue.
-        var paused = template
-        paused.isActive = false
-        paused.updatedAt = AppDatabase.currentTimestamp()
-        paused.version += 1
-        try db.saveRecurringBoardTemplateAndEnqueue(paused, operation: .update, now: paused.updatedAt)
+        // Pause — the same helper `BoardSettingsView.setActive(tpl, false)`
+        // calls: re-read in the write, flip isActive, bump version, enqueue.
+        try db.setTemplateActive(
+            id: template.id, isActive: false, now: AppDatabase.currentTimestamp()
+        )
 
         let afterPause = try XCTUnwrap(try db.fetchRecurringBoardTemplate(id: template.id))
         XCTAssertFalse(afterPause.isActive)
         XCTAssertEqual(afterPause.version, 2)
 
         // Resume.
-        var resumed = afterPause
-        resumed.isActive = true
-        resumed.updatedAt = AppDatabase.currentTimestamp()
-        resumed.version += 1
-        try db.saveRecurringBoardTemplateAndEnqueue(resumed, operation: .update, now: resumed.updatedAt)
+        try db.setTemplateActive(
+            id: template.id, isActive: true, now: AppDatabase.currentTimestamp()
+        )
 
         let afterResume = try XCTUnwrap(try db.fetchRecurringBoardTemplate(id: template.id))
         XCTAssertTrue(afterResume.isActive)

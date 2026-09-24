@@ -200,7 +200,7 @@ export function MemberRuleRow({
         </button>
       )}
       {state === 'filteredDone' && (
-        <span className={styles.doneCheck} aria-label={`${title} is done`}>
+        <span className={styles.doneCheck} role="img" aria-label={`${title} is done`}>
           ✓
         </span>
       )}

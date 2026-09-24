@@ -133,6 +133,47 @@ extension AppDatabase {
         }
     }
 
+    /// Pause / resume a repeating board — the lost-update-safe active toggle.
+    ///
+    /// Re-reads the LIVE row inside the write and patches only `isActive`,
+    /// `updatedAt` and `version` (live `version` + 1), then enqueues — one
+    /// transaction. Callers must NOT save a full in-memory template for this:
+    /// a copy captured before a spawn pass (which bumps
+    /// `lastSpawnedWindowKey` + `version`) or a pulled edit would silently
+    /// revert those fields and push the revert. Web twin:
+    /// `updateRecurringBoardTemplate(id, { isActive })`, which patches the
+    /// fresh row the same way.
+    ///
+    /// - Parameters:
+    ///   - id: The template id.
+    ///   - isActive: The desired active flag.
+    ///   - now: ISO8601 timestamp stamped as `updatedAt` + on the sync item.
+    /// - Returns: The written template, or `nil` when nothing was written
+    ///   (row missing, soft-deleted, or already at `isActive`).
+    /// - Throws: Any GRDB error from the read, save or enqueue.
+    @discardableResult
+    func setTemplateActive(id: String, isActive: Bool, now: String) throws -> RecurringBoardTemplate? {
+        try write { db in
+            guard var template = try RecurringBoardTemplate.fetchOne(db, key: id),
+                  !template.isDeleted,
+                  template.isActive != isActive else {
+                return nil
+            }
+            template.isActive = isActive
+            template.updatedAt = now
+            template.version += 1
+            try template.save(db)
+            try SyncQueueBuilder.makeItem(
+                entityType: "recurringBoardTemplates",
+                entityId: template.id,
+                operationType: .update,
+                payload: template,
+                now: now
+            ).enqueue(db)
+            return template
+        }
+    }
+
     /// Atomically spawn a Board + BoardTasks from a `PendingTemplateSpawn`
     /// and bump the template's `lastSpawnedWindowKey` — all sync-enqueued —
     /// in ONE transaction. Task resolution + pool validation happen INSIDE

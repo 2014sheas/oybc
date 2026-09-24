@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './BoardWizardCancelDialog.module.css';
 
 export interface BoardWizardCancelDialogProps {
@@ -56,23 +56,23 @@ export function BoardWizardCancelDialog({
     if (ok && onDeleteDraft) onDeleteDraft();
   }
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') onKeepEditing();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onKeepEditing]);
+  // aria-modal, Escape → Keep Editing, Tab trap, focus restore. Initial
+  // focus lands on Keep Editing — the safe choice (it discards nothing).
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: isOpen,
+    onCancel: onKeepEditing,
+    initialFocus: 'cancel',
+  });
 
   if (!isOpen) return null;
 
   return (
     <div
+      ref={modalRef}
       className={styles.backdrop}
       role="dialog"
-      aria-modal="true"
       aria-labelledby="wizard-cancel-title"
+      {...modalProps}
       onClick={onKeepEditing}
     >
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
@@ -112,7 +112,7 @@ export function BoardWizardCancelDialog({
             type="button"
             className={styles.keepButton}
             onClick={onKeepEditing}
-            autoFocus
+            data-modal-cancel
           >
             Keep Editing
           </button>

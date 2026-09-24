@@ -508,14 +508,11 @@ extension BoardPlayViewModel {
                                 )
                             }
                         case .setActive(let template, let isActive):
-                            // Mirrors BoardSettingsView.setActive verbatim:
-                            // flip isActive, bump version, save + enqueue.
-                            var updated = template
-                            updated.isActive = isActive
-                            updated.updatedAt = repeatNow
-                            updated.version += 1
-                            try database.saveRecurringBoardTemplateAndEnqueue(
-                                updated, operation: .update, now: repeatNow
+                            // Re-read-in-write toggle: `template` was captured
+                            // when edit mode opened, so a spawn pass or pull
+                            // since then must not be reverted by saving it.
+                            try database.setTemplateActive(
+                                id: template.id, isActive: isActive, now: repeatNow
                             )
                         }
                     } catch {

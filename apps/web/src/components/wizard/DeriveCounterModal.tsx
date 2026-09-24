@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { generateCounterTaskTitle, type Task } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
 import styles from './DeriveCounterModal.module.css';
 
@@ -37,13 +37,12 @@ export function DeriveCounterModal({
   onCancel,
   onSave,
 }: DeriveCounterModalProps): React.ReactElement {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onCancel();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
+  // aria-modal, Escape → cancel, Tab trap, focus restore (the goal field
+  // keeps its autoFocus).
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel,
+  });
 
   const action = (source.action ?? '').trim();
   const unit = (source.unit ?? '').trim();
@@ -55,9 +54,10 @@ export function DeriveCounterModal({
 
   return (
     <div
+      ref={modalRef}
       role="dialog"
-      aria-modal="true"
       aria-label="Smaller version"
+      {...modalProps}
       className={styles.backdrop}
       onClick={onCancel}
     >

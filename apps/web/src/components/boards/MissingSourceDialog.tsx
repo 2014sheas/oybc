@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import type { RecurringBoardTemplate } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './MissingSourceDialog.module.css';
 
 export interface MissingSourceDialogProps {
@@ -29,23 +29,23 @@ export function MissingSourceDialog({
   onPause,
   onDismiss,
 }: MissingSourceDialogProps): React.ReactElement | null {
-  useEffect(() => {
-    if (template === null) return;
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') onDismiss();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [template, onDismiss]);
+  // aria-modal, Escape → "Not now", Tab trap, focus restore. Initial focus
+  // lands on "Not now" — the one choice that changes nothing.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: template !== null,
+    onCancel: onDismiss,
+    initialFocus: 'cancel',
+  });
 
   if (template === null) return null;
 
   return (
     <div
+      ref={modalRef}
       className={styles.backdrop}
       role="dialog"
-      aria-modal="true"
       aria-labelledby="missing-source-title"
+      {...modalProps}
       onClick={onDismiss}
     >
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
@@ -70,7 +70,12 @@ export function MissingSourceDialog({
           >
             Pause this board
           </button>
-          <button type="button" className={styles.cancelButton} onClick={onDismiss}>
+          <button
+            type="button"
+            className={styles.cancelButton}
+            data-modal-cancel
+            onClick={onDismiss}
+          >
             Not now
           </button>
         </div>

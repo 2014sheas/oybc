@@ -32,6 +32,7 @@ import {
   sourceConfiguration,
   sourceHasConfiguration,
   removeSourceLossSentence,
+  pickSeriesInstance,
   templateReferencesTask,
   type TemplateReferenceRecord,
   type BoardSourceFilter,
@@ -98,6 +99,11 @@ interface Fixture {
     expectedSources: BoardSource[];
     expectedMixFields: { poolIds: string[]; removedTaskIds: string[] };
   }>;
+  seriesInstanceVectors: Array<{
+    name: string;
+    candidates: Array<{ id: string; startDate: string }>;
+    expectedId: string;
+  }>;
   referenceVectors: Array<{
     name: string;
     template: TemplateReferenceRecord;
@@ -125,6 +131,7 @@ describe('boardSourceVectors fixture', () => {
     expect(fixture.conversionVectors.length).toBeGreaterThan(0);
     expect(fixture.configurationVectors.length).toBeGreaterThan(0);
     expect(fixture.lossSentenceVectors.length).toBeGreaterThan(0);
+    expect(fixture.seriesInstanceVectors.length).toBeGreaterThan(0);
     expect(fixture.referenceVectors.length).toBeGreaterThan(0);
     expect(fixture.doneFilterVectors.length).toBeGreaterThan(0);
   });
@@ -148,6 +155,16 @@ describe('boardSourceVectors fixture', () => {
       expect(
         availableSupplyIds(v.source, v.supplyTaskIds, new Set(v.doneTaskIds)),
       ).toEqual(v.expected);
+    },
+  );
+
+  test.each(fixture.seriesInstanceVectors.map((v) => [v.name, v] as const))(
+    'series instance: %s',
+    (_name, v) => {
+      expect(pickSeriesInstance(v.candidates)?.id).toBe(v.expectedId);
+      // Input order must not matter — the id tie-break is what makes
+      // two devices with differently-ordered rows agree.
+      expect(pickSeriesInstance([...v.candidates].reverse())?.id).toBe(v.expectedId);
     },
   );
 
@@ -209,6 +226,12 @@ describe('boardSourceVectors fixture', () => {
       expect(mixFieldsFromSources(sources)).toEqual(v.expectedMixFields);
     },
   );
+});
+
+describe('pickSeriesInstance', () => {
+  test('returns null for no candidates', () => {
+    expect(pickSeriesInstance([])).toBeNull();
+  });
 });
 
 describe('resolveSourceAvailable / effectiveSourceMax', () => {

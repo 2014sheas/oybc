@@ -244,6 +244,15 @@ describe('MemberRuleRow — a member that is off the board', () => {
     expect(filtered).not.toMatch(/class="[^"]*_chip_/);
     expect(filtered).toMatch(/class="[^"]*_doneCheck_/);
   });
+
+  it('announces the filtered-done checkmark as an image named for its task', () => {
+    // A bare <span aria-label> has no role, so screen readers drop the
+    // label; role="img" makes "Read is done" the thing that's announced.
+    const html = render({ task: READING, state: 'filteredDone' });
+    const check = html.match(/<span[^>]*_doneCheck_[^>]*>/)?.[0] ?? '';
+    expect(check).toContain('role="img"');
+    expect(check).toContain('aria-label="Read is done"');
+  });
 });
 
 describe('MemberRuleRow — compound member', () => {

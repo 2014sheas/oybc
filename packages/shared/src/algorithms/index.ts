@@ -330,7 +330,8 @@ export { makeSeededRng } from './seededRng';
 export { boardDisplayName } from './boardDisplayName';
 export {
   isEligibleSourceBoard,
+  pickSeriesInstance,
   SOURCE_BOARD_LOOKBACK_DAYS,
 } from './boardSources';
-export type { SourceBoardCandidate } from './boardSources';
+export type { SourceBoardCandidate, SeriesInstanceCandidate } from './boardSources';
 export type { BoardNameFields } from './boardDisplayName';

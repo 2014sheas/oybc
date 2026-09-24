@@ -1,3 +1,4 @@
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { derivedCounterRemovalNote } from './derivedCounterRemovalNote';
 import styles from './CounterDeleteConfirmDialog.module.css';
 
@@ -66,13 +67,22 @@ export function CounterDeleteConfirmDialog({
   // comes from the one helper both web confirm dialogs share, so it can
   // never drift from `TaskConfirmDeleteDialog`'s (or from iOS's).
   const derivedNote = derivedCounterRemovalNote(derivedWindowCounterCount);
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: () => {
+      if (!busy) onCancel();
+    },
+    initialFocus: 'cancel',
+  });
 
   return (
     <div className={styles.backdrop} onClick={() => !busy && onCancel()}>
       <div
+        ref={modalRef}
         className={styles.sheet}
         role="alertdialog"
         aria-label="Confirm delete counter"
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className={styles.sheetHeading}>Delete counter?</h2>
@@ -107,6 +117,7 @@ export function CounterDeleteConfirmDialog({
           <button
             type="button"
             className={styles.cancelButton}
+            data-modal-cancel
             disabled={busy}
             onClick={onCancel}
           >
