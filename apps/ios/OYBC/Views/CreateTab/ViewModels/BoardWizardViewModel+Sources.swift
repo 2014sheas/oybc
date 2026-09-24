@@ -59,10 +59,11 @@ extension BoardWizardViewModel {
     private func computeExpandedSupplies() -> [BoardSources.ExpandedSupply] {
         let raw = sources.map { source -> BoardSources.Supply in
             let info = supplyInfoBySourceId[source.sourceId]
-            var ids = info?.rawSupplyTaskIds ?? []
-            if source.kind == .board, source.filter == .todo, let done = info?.doneTaskIds {
-                ids.removeAll { done.contains($0) }
-            }
+            let ids = BoardSources.availableSupplyIds(
+                source: source,
+                supplyTaskIds: info?.rawSupplyTaskIds ?? [],
+                doneTaskIds: info?.doneTaskIds ?? []
+            )
             return BoardSources.Supply(
                 source: source,
                 supplyTaskIds: BoardSources.resolveSourceAvailable(
@@ -520,10 +521,11 @@ extension BoardWizardViewModel {
         var union = Set<String>()
         for source in rawSources {
             let info = supplyInfo[source.sourceId]
-            var raw = info?.rawSupplyTaskIds ?? []
-            if source.kind == .board, source.filter == .todo, let done = info?.doneTaskIds {
-                raw.removeAll { done.contains($0) }
-            }
+            let raw = BoardSources.availableSupplyIds(
+                source: source,
+                supplyTaskIds: info?.rawSupplyTaskIds ?? [],
+                doneTaskIds: info?.doneTaskIds ?? []
+            )
             let excluded = Set(source.excludedTaskIds)
             for id in raw where !excluded.contains(id) { union.insert(id) }
         }

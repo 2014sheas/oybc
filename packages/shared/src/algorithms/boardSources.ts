@@ -104,6 +104,36 @@ export function effectiveSourceMax(
   return source.max === null ? availableCount : Math.min(source.max, availableCount);
 }
 
+/**
+ * A source's supply after its done-filter — the ids a platform hands in as
+ * `BoardSourceSupply.supplyTaskIds`. Only a BOARD source on `'todo'` ("Not
+ * done yet") drops anything: the ids in `doneTaskIds` (complete in that
+ * board's window). A pool source, or a board source on `'all'`, returns
+ * `supplyTaskIds` unchanged. Excludes are NOT applied here — that stays
+ * {@link resolveSourceAvailable}'s job.
+ *
+ * Order preserved; no dedupe (the raw supply is already deduped by its
+ * resolver). Swift twin: `BoardSources.availableSupplyIds`, pinned by
+ * `doneFilterVectors` in `tests/fixtures/boardSourceVectors.json`.
+ *
+ * @param source - The source row (only `kind` and `filter` are read).
+ * @param supplyTaskIds - The RAW supply (pre-filter, pre-exclude); `[]`
+ *   for an unresolved source.
+ * @param doneTaskIds - The supply ids complete in the source board's
+ *   window; omitted/empty for pools and unresolved sources.
+ * @returns The supply with the done-filter applied.
+ */
+export function availableSupplyIds(
+  source: Pick<BoardSource, 'kind' | 'filter'>,
+  supplyTaskIds: string[],
+  doneTaskIds?: ReadonlySet<string>,
+): string[] {
+  if (source.kind !== 'board' || source.filter !== 'todo' || doneTaskIds === undefined) {
+    return supplyTaskIds;
+  }
+  return supplyTaskIds.filter((id) => !doneTaskIds.has(id));
+}
+
 /** Result of {@link computeSourceCapacity}. */
 export interface SourceCapacityResult {
   /** Distinct placeable things (manual ∪ all availables), counting a

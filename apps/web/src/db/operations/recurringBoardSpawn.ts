@@ -9,11 +9,13 @@ import {
   computeBoardStatsUpdate,
   fillableCellCount,
   poolSourceSupplyById,
+  availableSupplyIds,
   applyMemberRules,
   resolveSourceAvailable,
   selectBoardTasks,
   sourcesForRecord,
   type Board,
+  type BoardSource,
   type BoardWindow,
   type BoardTask,
   type CompoundChild,
@@ -172,12 +174,10 @@ export async function spawnTemplateBoard(
       // wizard's code path — the P3 lock): the source board's placed
       // squares, with the 'todo' filter dropping squares complete in THAT
       // board's window.
-      const resolveBoardSupply = async (sourceBoard: Board, filter: 'all' | 'todo') => {
+      const resolveBoardSupply = async (sourceBoard: Board, source: BoardSource) => {
         const rows = await db.boardTasks.where('boardId').equals(sourceBoard.id).toArray();
         const info = resolveBoardSourceSupply(sourceBoard, rows, tasksById, eventsByTaskId);
-        return filter === 'todo'
-          ? info.supplyTaskIds.filter((id) => !info.doneTaskIds.has(id))
-          : info.supplyTaskIds;
+        return availableSupplyIds(source, info.supplyTaskIds, info.doneTaskIds);
       };
 
       const supplies = [];
@@ -193,7 +193,7 @@ export async function spawnTemplateBoard(
         supplies.push({
           source,
           supplyTaskIds: sourceBoard
-            ? await resolveBoardSupply(sourceBoard, source.filter)
+            ? await resolveBoardSupply(sourceBoard, source)
             : [],
         });
       }

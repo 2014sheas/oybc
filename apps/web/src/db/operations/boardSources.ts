@@ -8,6 +8,7 @@ import {
   isEventOwningTask,
   isSourceSupplyTask,
   poolSourceSupplyById,
+  availableSupplyIds,
   resolveTaskWindowState,
   sourcesForRecord,
   TaskType,
@@ -370,13 +371,9 @@ export async function fetchTemplateSupplyResolution(
         continue;
       }
       const info = supplyByStoredId.get(source.sourceId);
-      const raw = info?.supplyTaskIds ?? [];
       supplies.push({
         source,
-        supplyTaskIds:
-          source.filter === 'todo' && info
-            ? raw.filter((id) => !info.doneTaskIds.has(id))
-            : raw,
+        supplyTaskIds: availableSupplyIds(source, info?.supplyTaskIds ?? [], info?.doneTaskIds),
       });
     }
     byTemplateId[entry.template.id] = {

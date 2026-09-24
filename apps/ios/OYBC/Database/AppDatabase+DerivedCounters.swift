@@ -374,10 +374,11 @@ extension AppDatabase {
                     endDate: board.endDate
                 )
                 let info = try Self.resolveSupply(db: db, board: board)
-                var raw = info.supplyTaskIds
-                if source.filter == .todo {
-                    raw.removeAll { info.doneTaskIds.contains($0) }
-                }
+                let raw = BoardSources.availableSupplyIds(
+                    source: source,
+                    supplyTaskIds: info.supplyTaskIds,
+                    doneTaskIds: info.doneTaskIds
+                )
                 rawSupplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
             }
         }
