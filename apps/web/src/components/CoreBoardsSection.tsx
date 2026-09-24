@@ -29,8 +29,10 @@ export interface CoreBoardsSectionProps {
  * Each row is a single tap target — clicking anywhere on it invokes
  * `onSelect(slot)`. The Boards-tab consumer wires this to push the
  * per-timeframe browser; the Create-tab consumer wires it to launch
- * the wizard for that timeframe's current window. No competing
- * buttons inside the row.
+ * the wizard for that timeframe's current window and passes only
+ * `uncreatedCoreBoardSlots(...)` — a window that already has its core
+ * board is never offered for re-creation. No competing buttons
+ * inside the row.
  *
  * No dismiss affordance — per-timeframe disable lives in Board
  * Preferences. That's the only path to silence a recurring prompt.

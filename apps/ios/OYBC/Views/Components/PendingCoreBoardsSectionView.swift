@@ -6,7 +6,9 @@ import SwiftUI
 /// Each row is a single tap target. The parent decides where it
 /// navigates — the Boards-tab consumer pushes the per-timeframe
 /// browser; the Create-tab consumer launches the wizard for that
-/// timeframe's current window. No competing in-row buttons.
+/// timeframe's current window and passes only
+/// `uncreatedCoreBoardSlots(...)` — a window that already has its core
+/// board is never offered for re-creation. No competing in-row buttons.
 ///
 /// No dismiss affordance — per-timeframe disable lives in Board
 /// Preferences (Profile → Board Preferences → Recurring section).

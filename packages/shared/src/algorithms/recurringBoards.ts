@@ -252,6 +252,22 @@ export function getCoreBoardSlots(
 }
 
 /**
+ * The subset of `getCoreBoardSlots()` output whose current window has
+ * **no** core board yet — the only slots a *creation* surface should
+ * offer. The Create hub renders these (tapping one launches the wizard
+ * for that window); the Boards-tab strip keeps every slot because it
+ * also opens existing boards. Order is preserved.
+ *
+ * Swift twin: `uncreatedCoreBoardSlots(_:)` in `Services/RecurringBoards.swift`.
+ *
+ * @param slots - Output of `getCoreBoardSlots()`.
+ * @returns The slots with `currentBoard === null`, in the same order.
+ */
+export function uncreatedCoreBoardSlots(slots: CoreBoardSlot[]): CoreBoardSlot[] {
+  return slots.filter((slot) => slot.currentBoard === null);
+}
+
+/**
  * Returns the currently-active longer-window "parent" boards for a given
  * child timeframe. Used by the wizard's "From parent boards" filter to
  * surface candidate tasks the user can place on the new child board.
