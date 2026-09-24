@@ -86,6 +86,28 @@ describe('computeDeckFloor', () => {
     });
     expect(computeDeckFloor([large, small], 'p1')).toEqual({ boardSize: 3, floor: 8 });
   });
+
+  // 2026-09 audit T2 — consumption is read from `sources`, never the
+  // `poolIds` mirror (the old predicate), so a sources record is judged
+  // by its pool-kind sources alone.
+  it('counts a sources record whose pool source names the pool (no poolIds mirror)', () => {
+    const template = buildTemplate('tpl1', {
+      poolIds: [],
+      sources: [{ sourceId: 'p1', kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all' }],
+      boardSize: 4,
+      centerSquareType: CenterSquareType.FREE, // floor 16
+    });
+    expect(computeDeckFloor([template], 'p1')).toEqual({ boardSize: 4, floor: 16 });
+  });
+
+  it('ignores a stale poolIds mirror when the record has sources', () => {
+    const template = buildTemplate('tpl1', {
+      poolIds: ['p1'],
+      sources: [{ sourceId: 'b1', kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'all' }],
+      boardSize: 4,
+    });
+    expect(computeDeckFloor([template], 'p1')).toEqual({ boardSize: 3, floor: 8 });
+  });
 });
 
 describe('formatDeckPreview', () => {

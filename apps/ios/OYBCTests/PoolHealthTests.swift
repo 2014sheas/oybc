@@ -287,6 +287,24 @@ final class PoolHealthTests: XCTestCase {
         XCTAssertEqual(result["pA"], PoolHealth.Result(taskCount: 1, consumers: []))
     }
 
+    // MARK: - computeDeckFloor (consumption from sources)
+
+    func testDeckFloor_SourcesRecordPullingThePool_SetsTheFloor() {
+        let template = buildTemplate("tpl", boardSize: 4, centerSquareType: .free, sources: [poolSource("p1")])
+        XCTAssertEqual(
+            PoolHealth.computeDeckFloor(templates: [template], poolId: "p1"),
+            PoolHealth.DeckFloor(boardSize: 4, floor: 16)
+        )
+    }
+
+    func testDeckFloor_StalePoolIdsMirror_IsIgnored() {
+        let template = buildTemplate("tpl", boardSize: 4, poolIds: ["p1"], sources: [boardSource("b1")])
+        XCTAssertEqual(
+            PoolHealth.computeDeckFloor(templates: [template], poolId: "p1"),
+            PoolHealth.defaultDeckFloor
+        )
+    }
+
     // MARK: - formatPoolShortSummary
 
     func testFormatSummary_EmptyConsumers_ReturnsEmptyString() {

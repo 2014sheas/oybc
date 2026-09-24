@@ -206,13 +206,14 @@ enum PoolHealth {
 
     /// The floor the Pool-edit sheet's deck-preview line measures against:
     /// the SMALLEST fillable floor among the pool's active, non-deleted
-    /// consumers, or `defaultDeckFloor` when there are none. Mirrors web's
-    /// `poolDeckPreview.ts`.
+    /// consumers (a pool-kind source naming it — `templateConsumesPool`,
+    /// never the `poolIds` mirror), or `defaultDeckFloor` when there are
+    /// none. Mirrors web's `poolDeckPreview.ts`.
     static func computeDeckFloor(templates: [RecurringBoardTemplate], poolId: String) -> DeckFloor {
         var best: DeckFloor?
         for template in templates {
             guard !template.isDeleted, template.isActive else { continue }
-            guard (template.poolIds ?? []).contains(poolId) else { continue }
+            guard templateConsumesPool(template, poolId: poolId) else { continue }
             let floor = recurringTemplateFillableCellCount(
                 boardSize: template.boardSize, centerSquareType: template.centerSquareType
             )
