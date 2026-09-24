@@ -11,7 +11,10 @@ import SwiftUI
 ///     template) + picker. Cycle detection runs in the caller's save handler
 ///     before the DB write.
 ///
-/// Compound subtasks are still edited from the board-creation wizard.
+/// Compound sub-tasks and the completion rule are edited here (Sub-tasks &
+/// rule section) and saved through AppDatabase.applyTaskEditPatch. The
+/// structure is attached to the `Patch` only when it was actually edited, so
+/// a compound whose stored structure is already invalid can still be renamed.
 ///
 /// Visual design: Riso vocabulary — ScrollView over `Color.risoPaper`,
 /// NavigationStack toolbar with a gold pill Save button and a muted Cancel.
@@ -27,6 +30,10 @@ struct EditTaskSheet: View {
     // Available boards / templates loaded by the parent for the Achievement picker.
     var availableBoards: [Board] = []
     var availableTemplates: [RecurringBoardTemplate] = []
+
+    /// Database the compound's sub-tasks are loaded from (DB-injection seam;
+    /// defaulted so production call sites are unchanged).
+    var database: AppDatabase = .shared
 
     // MARK: - Patch
 
@@ -78,6 +85,13 @@ struct EditTaskSheet: View {
     @State private var refMode: Patch.RefMode
     @State private var selectedBoardId: String
     @State private var selectedTemplateId: String
+    // Compound structure (rule + sub-tasks). nil until the current sub-tasks
+    // have loaded; the draft's own `title` is ignored — the Title field above
+    // is the single source (merged in on validate + submit).
+    @State private var compoundDraft: TaskEditPatch?
+    /// What the editor opened with — only an edited structure is submitted.
+    @State private var compoundBaseline: TaskEditPatch?
+    @State private var compoundLoadError: String?
 
     // MARK: - Init
 
@@ -85,12 +99,15 @@ struct EditTaskSheet: View {
         task: Task,
         availableBoards: [Board] = [],
         availableTemplates: [RecurringBoardTemplate] = [],
+        database: AppDatabase = .shared,
+        seededCompoundChildren: [Task]? = nil,
         onSubmit: @escaping (Patch) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.task = task
         self.availableBoards = availableBoards
         self.availableTemplates = availableTemplates
+        self.database = database
         self.onSubmit = onSubmit
         self.onCancel = onCancel
         _title = State(initialValue: task.title)
@@ -116,6 +133,13 @@ struct EditTaskSheet: View {
         _refMode = State(initialValue: task.referencedTemplateId != nil ? .template : .board)
         _selectedBoardId = State(initialValue: task.referencedBoardId ?? "")
         _selectedTemplateId = State(initialValue: task.referencedTemplateId ?? "")
+        // Compound: a caller already holding the ordered children (snapshot
+        // fixtures) seeds synchronously; otherwise they load on appear.
+        if task.type == .compound, let kids = seededCompoundChildren {
+            let seeded = Self.seedCompoundDraft(task: task, children: kids)
+            _compoundDraft = State(initialValue: seeded)
+            _compoundBaseline = State(initialValue: seeded)
+        }
     }
 
     // MARK: - Body
@@ -140,9 +164,9 @@ struct EditTaskSheet: View {
                         achievementSection
                     }
 
-                    // ── Compound hint ───────────────────────────────────────
+                    // ── Compound sub-tasks & rule ───────────────────────────
                     if task.type == .compound {
-                        compoundHintSection
+                        compoundSection
                     }
 
                     // ── Time window ─────────────────────────────────────────
@@ -151,6 +175,7 @@ struct EditTaskSheet: View {
                 .padding(16)
             }
             .background(Color.risoPaper.ignoresSafeArea())
+            .task(id: task.id) { await loadCompoundChildrenIfNeeded() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -160,7 +185,7 @@ struct EditTaskSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     RisoToolbarPill(title: "Save") { submit() }
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSaveBlocked)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onCancel() }
@@ -279,13 +304,74 @@ struct EditTaskSheet: View {
         }
     }
 
-    /// Compound hint card — shown when the task type is compound.
-    private var compoundHintSection: some View {
-        risoSection(label: "Compound") {
-            Text("Compound subtasks are edited from the board-creation wizard. The title and description can still be changed here.")
-                .font(.risoBody(13, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
+    /// Compound structure card — the shared `RisoCompoundEditFieldsView`
+    /// (rule picker + sub-task cards + add buttons), a load/validation line.
+    private var compoundSection: some View {
+        risoSection(label: "Sub-tasks & rule") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let draft = compoundDraft {
+                    RisoCompoundEditFieldsView(draft: Binding(
+                        get: { compoundDraft ?? draft },
+                        set: { compoundDraft = $0 }
+                    ))
+                    if let problem = compoundValidation {
+                        Text(problem)
+                            .font(.risoBody(11.5, .extraBold))
+                            .foregroundStyle(Color.risoRed)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else if let error = compoundLoadError {
+                    Text(error)
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoRed)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Loading sub-tasks…")
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoMuted)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: - Compound state
+
+    /// Validation of the edited structure titled from the Title field, or nil.
+    private var compoundValidation: String? {
+        guard task.type == .compound, var draft = compoundDraft else { return nil }
+        draft.title = title
+        return draft.validate(type: .compound)
+    }
+
+    /// Save is blocked on an empty title; for a compound, also while the
+    /// sub-tasks are loading, and — only when the structure was edited — on
+    /// structure validation (an unedited, already-invalid stored structure
+    /// still saves through the basic route).
+    private var isSaveBlocked: Bool {
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        guard task.type == .compound else { return false }
+        guard compoundDraft != nil else { return true }
+        return Self.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft)
+            && compoundValidation != nil
+    }
+
+    /// Load the compound's live sub-tasks (childIndex order) off the main
+    /// actor and seed the draft + baseline. No-op for non-compounds and when
+    /// already seeded.
+    private func loadCompoundChildrenIfNeeded() async {
+        guard task.type == .compound, compoundDraft == nil else { return }
+        let db = database
+        let parentId = task.id
+        do {
+            let kids = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try db.fetchCompoundChildrenTasks(parentTaskId: parentId)
+            }.value
+            let seeded = Self.seedCompoundDraft(task: task, children: kids)
+            compoundBaseline = seeded
+            compoundDraft = seeded
+        } catch {
+            compoundLoadError = "Couldn't load sub-tasks: \(error.localizedDescription)"
         }
     }
 
@@ -505,8 +591,60 @@ struct EditTaskSheet: View {
                 refMode: refMode,
                 selectedBoardId: selectedBoardId,
                 selectedTemplateId: selectedTemplateId,
+                compound: task.type == .compound
+                    ? Self.compoundSubmission(baseline: compoundBaseline, draft: compoundDraft, title: title)
+                    : nil
             )
         )
+    }
+}
+
+// MARK: - Compound edit gate (pure — twin of web `pages/tasks/compoundEditGate.ts`)
+
+extension EditTaskSheet {
+    /// The editor seed for a compound: its rule + the given children
+    /// (already in `childIndex` order) as `ChildPatch` rows.
+    ///
+    /// - Parameters:
+    ///   - task: The compound being edited.
+    ///   - children: Its live child tasks, ordered by `childIndex`.
+    /// - Returns: The seeded structure draft.
+    static func seedCompoundDraft(task: Task, children: [Task]) -> TaskEditPatch {
+        var draft = TaskEditPatch.seededForEditor(from: task)
+        draft.children = children.map { ChildPatch(from: $0) }
+        return draft
+    }
+
+    /// Whether the compound's rule / sub-tasks differ from what the sheet
+    /// opened with. The title is ignored — the Title field owns it and it
+    /// saves through either route. `false` while either side is nil.
+    ///
+    /// - Parameters:
+    ///   - baseline: The structure seeded on open (nil until loaded).
+    ///   - draft: The current edited structure (nil until loaded).
+    /// - Returns: `true` only when the structure itself was edited.
+    static func compoundStructureChanged(baseline: TaskEditPatch?, draft: TaskEditPatch?) -> Bool {
+        guard var b = baseline, var d = draft else { return false }
+        b.title = ""
+        d.title = ""
+        return b != d
+    }
+
+    /// The compound structure to submit, or nil to save through the basic
+    /// route. Only an edited structure is submitted, so a compound whose
+    /// STORED structure already fails validation (one sub-task left, a stale
+    /// threshold, zero sub-tasks) can still be renamed / re-described /
+    /// re-timeboxed exactly as before.
+    ///
+    /// - Parameters:
+    ///   - baseline: The structure seeded on open (nil until loaded).
+    ///   - draft: The current edited structure (nil until loaded).
+    ///   - title: The sheet's Title field (trimmed into the structure).
+    /// - Returns: The structure patch titled from the sheet, or nil.
+    static func compoundSubmission(baseline: TaskEditPatch?, draft: TaskEditPatch?, title: String) -> TaskEditPatch? {
+        guard var d = draft, compoundStructureChanged(baseline: baseline, draft: d) else { return nil }
+        d.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return d
     }
 }
 
