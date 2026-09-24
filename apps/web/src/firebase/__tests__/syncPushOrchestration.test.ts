@@ -7,17 +7,6 @@ import type { SyncDocStore } from '../syncService';
 // means the real Firestore handle is never used.
 vi.mock('../config', () => ({ auth: { currentUser: { uid: 'me' } }, firestore: {} }));
 
-// The queue-maintenance reads (`where('status')` — a Dexie virtual index over
-// `[status+priority+createdAt]`) throw a DataError under fake-indexeddb; they
-// are orthogonal to the per-item orchestration pinned here (the stale-reset
-// read is already try/caught in `pushSync`), so stub the two uncaught-or-noisy
-// ones. `fetchPendingSyncItems` (a real compound-index range) runs for real.
-vi.mock('../../db/operations/syncQueue', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../db/operations/syncQueue')>()),
-  promoteEligibleFailedItems: vi.fn(async () => 0),
-  countExhaustedSyncItems: vi.fn(async () => 0),
-}));
-
 const { pushSync } = await import('../syncService');
 const { db } = await import('../../db/internal');
 const { addToSyncQueue } = await import('../../db/operations/syncQueue');
@@ -65,9 +54,6 @@ async function onlyQueueItem() {
  */
 describe('pushSync — LWW orchestration through the doc-store seam', () => {
   beforeEach(async () => {
-    // The stale IN_PROGRESS reset read hits the same fake-indexeddb DataError
-    // and is caught + logged by `pushSync`; keep the log quiet.
-    vi.spyOn(console, 'error').mockImplementation(() => {});
     await db.syncQueue.clear();
     await db.table('tasks').clear();
   });
