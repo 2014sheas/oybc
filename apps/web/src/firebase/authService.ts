@@ -150,6 +150,28 @@ export async function refreshLocalUserFromFirebase(): Promise<User | null> {
   return upsertLocalUser(firebaseUser);
 }
 
+/** Local state a guest→account upgrade must reconcile (see `reconcileAfterUpgrade`). */
+export interface UpgradeReconcileResult {
+  /** The re-upserted local User row, or null if signed out. */
+  user: User | null;
+  /** The session's anon flag, recomputed from the (now linked) Firebase user. */
+  isAnonymous: boolean;
+}
+
+/**
+ * Post-link reconcile (docs/GUEST_MODE.md §Upgrade): re-upsert the local user
+ * row from the linked Firebase user AND recompute the session anon flag —
+ * linking fires no `onAuthStateChanged`, so neither happens on its own.
+ * `AuthContext.refreshAfterUpgrade` applies the result to React state; kept
+ * here (not inline in the provider) so it's unit-testable without React.
+ *
+ * @returns The refreshed row (null if signed out) and the recomputed anon flag
+ */
+export async function reconcileAfterUpgrade(): Promise<UpgradeReconcileResult> {
+  const user = await refreshLocalUserFromFirebase();
+  return { user, isAnonymous: auth.currentUser?.isAnonymous ?? false };
+}
+
 /**
  * Sign out the current user.
  *

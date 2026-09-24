@@ -57,9 +57,22 @@ final class AuthService: ObservableObject {
     /// one account's reminders never linger into another's session.
     let notificationService = NotificationService()
 
+    /// Firebase Auth seam for the link/reconcile path (docs/GUEST_MODE.md
+    /// §Upgrade). Always `FirebaseAuthClient` in production; a fake in tests.
+    private let authClient: AuthClient
+
+    /// Local DB used by the local-user upsert and the guest queue-clear/wipe
+    /// paths. `.shared` in production; `makeTestInstance()` in tests.
+    private let database: AppDatabase
+
     // MARK: - Initialization
 
-    init() {
+    /// - Parameters:
+    ///   - authClient: Firebase Auth seam (defaults to the real client).
+    ///   - database: Local DB for the user upsert + guest wipe paths (defaults to `.shared`).
+    init(authClient: AuthClient = FirebaseAuthClient(), database: AppDatabase = .shared) {
+        self.authClient = authClient
+        self.database = database
         #if DEBUG
         // Debug-only local bypass: when the process is launched with
         // `-bypassAuth YES`, skip Firebase entirely and drop straight
@@ -80,7 +93,7 @@ final class AuthService: ObservableObject {
 
         // Firebase delivers the initial auth state asynchronously on a
         // background thread. We bridge it to the main actor here.
-        authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, firebaseUser in
+        authStateHandle = authClient.addStateDidChangeListener { [weak self] firebaseUser in
             guard let self else { return }
             _Concurrency.Task {
                 if let firebaseUser {
@@ -389,16 +402,18 @@ final class AuthService: ObservableObject {
     /// Reloads the Firebase user and recomputes `providerState` from its
     /// `providerData`. Call after sign-in and after any link/unlink.
     func refreshProviderState() async {
-        try? await Auth.auth().currentUser?.reload()
-        providerState = Self.computeProviderState(Auth.auth().currentUser)
+        try? await authClient.reloadCurrentUser()
+        let snapshot = authClient.currentUserSnapshot
+        providerState = Self.computeProviderState(providerIDs: snapshot?.providerIDs ?? [])
         // Linking a provider to an anonymous user flips `isAnonymous` to false
         // without firing the auth-state listener, so recompute it here too.
-        isAnonymous = Auth.auth().currentUser?.isAnonymous ?? false
+        isAnonymous = snapshot?.isAnonymous ?? false
     }
 
-    /// Derives a `ProviderState` from a Firebase user's linked providers.
-    static func computeProviderState(_ user: FirebaseAuth.User?) -> ProviderState {
-        let ids = Set((user?.providerData ?? []).map { $0.providerID })
+    /// Derives a `ProviderState` from a user's linked provider IDs
+    /// (`providerData[].providerID`).
+    static func computeProviderState(providerIDs: [String]) -> ProviderState {
+        let ids = Set(providerIDs)
         return ProviderState(
             hasPassword: ids.contains(ProviderState.passwordProviderID),
             hasGoogle: ids.contains(ProviderState.googleProviderID),
@@ -533,9 +548,9 @@ final class AuthService: ObservableObject {
     /// idempotent success; any other failure propagates. Refreshes provider
     /// state on success.
     private func linkCredential(_ credential: AuthCredential) async throws {
-        guard let user = Auth.auth().currentUser else { throw AuthServiceError.noCurrentUser }
+        guard authClient.currentUserSnapshot != nil else { throw AuthServiceError.noCurrentUser }
         do {
-            try await user.link(with: credential)
+            try await authClient.linkCurrentUser(with: credential)
         } catch {
             if (error as NSError).code == AuthErrorCode.providerAlreadyLinked.rawValue {
                 await refreshProviderState()
@@ -547,7 +562,7 @@ final class AuthService: ObservableObject {
         // auth-state event, so re-run the local upsert to populate email/
         // displayName from the now-permanent user (docs/GUEST_MODE.md §Upgrade).
         // Harmless for the Account & security link paths (name/email unchanged).
-        if let refreshed = Auth.auth().currentUser {
+        if let refreshed = authClient.currentUserSnapshot {
             let updated = await upsertLocalUser(refreshed)
             currentUser = updated
         }
@@ -603,7 +618,7 @@ final class AuthService: ObservableObject {
     /// check and surface as "changes couldn't sync"). Best-effort; non-fatal.
     func clearPendingSyncQueue() {
         do {
-            try AppDatabase.shared.write { db in
+            try database.write { db in
                 try db.execute(sql: "DELETE FROM sync_queue")
             }
         } catch {
@@ -611,24 +626,28 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Every user-scoped / synced table `wipeLocalDatabase` clears. Kept in
+    /// lockstep with the schema (migrations vN) — web wipes generically via
+    /// `db.tables.map(clear)`, so any table added here must land on both
+    /// platforms. `task_events` (windowed completion / streak history), `pools`,
+    /// and `core_board_defaults` were missing pre-guest-mode; the guest "Discard
+    /// guest data" copy promises full erasure, so they must be cleared too.
+    /// `GuestUpgradeStateTests` pins this against the live schema
+    /// (`sqlite_master`), so a new table that isn't listed here fails the build.
+    static let userScopedTables = [
+        "users", "boards", "tasks", "board_tasks",
+        "sync_queue", "compound_children",
+        "recurring_board_templates", "default_pools",
+        "task_events", "pools", "core_board_defaults"
+    ]
+
     /// Deletes every row across the local tables (preserving `schema_version` so
     /// the migrator stays intact). Row-deletes, not file deletion: the
     /// `AppDatabase` singleton has no reopen path and `fatalError`s on init.
-    private func wipeLocalDatabase() {
-        // Every user-scoped / synced table. Kept in lockstep with the schema
-        // (migrations vN) — web wipes generically via `db.tables.map(clear)`, so
-        // any table added here must land on both platforms. `task_events`
-        // (windowed completion / streak history), `pools`, and
-        // `core_board_defaults` were missing pre-guest-mode; the guest "Discard
-        // guest data" copy promises full erasure, so they must be cleared too.
-        let tables = [
-            "users", "boards", "tasks", "board_tasks",
-            "sync_queue", "compound_children",
-            "recurring_board_templates", "default_pools",
-            "task_events", "pools", "core_board_defaults"
-        ]
+    /// Internal (not private) only so `GuestUpgradeStateTests` can run it.
+    func wipeLocalDatabase() {
         do {
-            try AppDatabase.shared.write { db in
+            try database.write { db in
                 // `foreign_keys = ON` would reject deleting a parent (e.g.
                 // `users`) before its children — no static delete order is
                 // safe. `defer_foreign_keys` (settable inside a transaction,
@@ -640,7 +659,7 @@ final class AuthService: ObservableObject {
                 // `progress_counters` were dropped, and `tasks.parentStepId`
                 // — the FK column itself — was removed.)
                 try db.execute(sql: "PRAGMA defer_foreign_keys = ON")
-                for table in tables {
+                for table in Self.userScopedTables {
                     try db.execute(sql: "DELETE FROM \(table)")
                 }
             }
@@ -719,10 +738,17 @@ final class AuthService: ObservableObject {
     /// - Parameter firebaseUser: The authenticated Firebase user.
     /// - Returns: The up-to-date local `User`.
     private func upsertLocalUser(_ firebaseUser: FirebaseAuth.User) async -> User {
+        await upsertLocalUser(AuthUserSnapshot(firebaseUser: firebaseUser))
+    }
+
+    /// Snapshot core of `upsertLocalUser(_:)` — reads only uid / email /
+    /// displayName / photoURL, so the post-link reconcile can run against a
+    /// fake `AuthClient`.
+    private func upsertLocalUser(_ firebaseUser: AuthUserSnapshot) async -> User {
         let now = AppDatabase.currentTimestamp()
 
         do {
-            if var existing = try AppDatabase.shared.fetchUser(id: firebaseUser.uid) {
+            if var existing = try database.fetchUser(id: firebaseUser.uid) {
                 // Update mutable fields that may have changed.
                 existing.displayName = firebaseUser.displayName
                 existing.photoURL = firebaseUser.photoURL?.absoluteString
@@ -746,7 +772,7 @@ final class AuthService: ObservableObject {
                 }
                 existing.preferences = User.encodePreferences(mergedPrefs)
 
-                try AppDatabase.shared.saveUser(existing)
+                try database.saveUser(existing)
                 return existing
             } else {
                 // First sign-in: create the local user record seeded with
@@ -762,7 +788,7 @@ final class AuthService: ObservableObject {
                     lastSyncedAt: nil,
                     version: 1
                 )
-                try AppDatabase.shared.saveUser(newUser)
+                try database.saveUser(newUser)
                 return newUser
             }
         } catch {
