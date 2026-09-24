@@ -47,8 +47,9 @@ final class RisoSourceSnapshotTests: XCTestCase {
                 rawSupplyTaskIds: supply,
                 doneTaskIds: done
             ),
-            availableCount: supply.filter { !excluded.contains($0) }
-                .filter { !(kind == .board && filter == .todo && done.contains($0)) }.count,
+            availableCount: BoardSources.availableSupplyIds(
+                source: source, supplyTaskIds: supply, doneTaskIds: done
+            ).filter { !excluded.contains($0) }.count,
             isExpanded: expanded,
             taskById: taskById,
             onToggleExpanded: {},

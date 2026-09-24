@@ -125,7 +125,7 @@ export function BoardWizardPage({
   // squares/done counts). Loaded async once per mount + refreshed when
   // the user id changes; the resolution walks every active board's
   // placements, so it must never run synchronously in render (the same
-  // review rule as iOS's off-main `loadPools` batch).
+  // review rule as iOS's off-main `loadSourceCatalog` batch).
   const [sheetBoardEntries, setSheetBoardEntries] = useState<SourceSheetBoardEntry[]>([]);
   useEffect(() => {
     let cancelled = false;

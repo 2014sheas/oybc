@@ -867,10 +867,11 @@ private struct TasksStepHost: View {
         )
         let raw = sources.map { source -> BoardSources.Supply in
             let info = supplyInfoBySourceId[source.sourceId]
-            var ids = info?.rawSupplyTaskIds ?? []
-            if source.kind == .board, source.filter == .todo, let done = info?.doneTaskIds {
-                ids.removeAll { done.contains($0) }
-            }
+            var ids = BoardSources.availableSupplyIds(
+                source: source,
+                supplyTaskIds: info?.rawSupplyTaskIds ?? [],
+                doneTaskIds: info?.doneTaskIds ?? []
+            )
             ids.removeAll { source.excludedTaskIds.contains($0) }
             return BoardSources.Supply(source: source, supplyTaskIds: ids)
         }

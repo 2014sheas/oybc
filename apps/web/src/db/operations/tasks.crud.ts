@@ -7,7 +7,7 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
@@ -601,11 +601,12 @@ export async function checkAchievementRetargetCycle(
 
   const result = hasCycle(cycleCandidate, context);
   if (!result.ok) {
-    // Map raw board ids in the cycle path to display names so the error
-    // is readable in the edit sheet. Fall back to the id when the board
+    // Map raw board ids in the cycle path to healed display names
+    // (`boardDisplayName`, so a frozen "Today" core board reads as its
+    // window) so the error is readable in the edit sheet. Fall back to the id when the board
     // can't be resolved (deleted, or a template id that lives on a
     // different collection).
-    const nameById = new Map(allBoards.map((b) => [b.id, b.name]));
+    const nameById = new Map(allBoards.map((b) => [b.id, boardDisplayName(b)]));
     const friendly = result.cyclePath
       ?.map((id) => nameById.get(id) ?? id)
       .join(' → ') ?? 'cycle detected';

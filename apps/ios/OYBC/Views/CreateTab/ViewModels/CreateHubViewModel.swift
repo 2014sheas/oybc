@@ -92,16 +92,7 @@ final class CreateHubViewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
-                let draftBoards: [Board] = try self.database.read { db in
-                    try Board
-                        .filter(
-                            Column("userId") == userId
-                            && Column("status") == "draft"
-                            && Column("isDeleted") == false
-                        )
-                        .order(Column("updatedAt").desc)
-                        .fetchAll(db)
-                }.healingDisplayNames()
+                let draftBoards = try self.database.fetchDraftBoards(userId: userId)
                 var rows: [DraftRowData] = []
                 for board in draftBoards {
                     let count: Int

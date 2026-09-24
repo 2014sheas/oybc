@@ -35,9 +35,15 @@ enum RecurringBoardSpawn {
     /// sync-enqueued) — is owned by `AppDatabase.spawnRecurringBoard`. Folding
     /// the read inside that write block closes the soft-delete race. This
     /// service only mints the `boardId` / `now` and delegates.
-    static func spawnTemplateBoard(_ spawn: PendingTemplateSpawn) throws -> RecurringSpawnOutcome {
+    ///
+    /// - Parameter database: the database to spawn into (defaults to
+    ///   `.shared`; the wizard persist path passes its injected database).
+    static func spawnTemplateBoard(
+        _ spawn: PendingTemplateSpawn,
+        database: AppDatabase = .shared
+    ) throws -> RecurringSpawnOutcome {
         let boardId = AppDatabase.generateUUID()
         let now = AppDatabase.currentTimestamp()
-        return try AppDatabase.shared.spawnRecurringBoard(spawn, boardId: boardId, now: now)
+        return try database.spawnRecurringBoard(spawn, boardId: boardId, now: now)
     }
 }

@@ -13,6 +13,17 @@ extension AppDatabase {
         }.healingDisplayNames()
     }
 
+    /// The user's live DRAFT boards, most recently edited first, with display
+    /// names healed. Feeds the Create hub's drafts list.
+    func fetchDraftBoards(userId: String) throws -> [Board] {
+        return try read { db in
+            try Board
+                .filter(Column("userId") == userId && Column("status") == "draft" && Column("isDeleted") == false)
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+        }.healingDisplayNames()
+    }
+
     /// Fetch boards by id. Used by the task detail view to render
     /// "placed on" links for the cells where this task lives.
     func fetchBoards(ids: [String]) throws -> [Board] {
