@@ -1,0 +1,109 @@
+/* ExistingTaskPicker — the compound editor's "+ Existing task…" dialog.
+   Riso tokens only; frame mirrors DeriveCounterModal. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.dialog {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 20px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  box-sizing: border-box;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--riso-font-head);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+.search {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--riso-r-card);
+  border: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font: inherit;
+  font-family: var(--riso-font-body);
+  box-sizing: border-box;
+}
+
+.search:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  border-top: 1.5px solid var(--riso-hair);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 4px;
+  border: none;
+  border-bottom: 1.5px solid var(--riso-hair);
+  background: transparent;
+  color: var(--riso-ink);
+  font-family: var(--riso-font-body);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--riso-paper);
+}
+
+.row:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+
+.rowTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  font-family: var(--riso-font-body);
+  font-size: 13px;
+  color: var(--riso-muted);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}

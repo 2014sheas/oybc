@@ -471,6 +471,17 @@ export function BoardWizardTasksStep({
     return overlayCompoundChildrenWithStagedEdits(merged, stagedEdits);
   }, [library.compoundChildrenByCompound, pendingTasks, stagedEdits]);
 
+  // "+ Existing task…" picker: DB-backed browsable tasks (a pick must exist
+  // at staged apply) with staged edits overlaid; links = the effective graph.
+  const pickerLibraryTasks = useMemo<Task[]>(
+    () => browsableTasks.map((t) => effectiveTaskMap[t.id] ?? t),
+    [browsableTasks, effectiveTaskMap],
+  );
+  const pickerLinks = useMemo<CompoundChild[]>(
+    () => Object.values(effectiveChildrenByCompound).flat(),
+    [effectiveChildrenByCompound],
+  );
+
   // Board Sources P4 — the gate compares CAPACITY (the honest achievable
   // pool size since the counter-family rework) against the fillable cell
   // count, mirroring iOS.
@@ -719,12 +730,15 @@ export function BoardWizardTasksStep({
         editor={(task) =>
           editDraft && (
             <PoolRowEditor
+              taskId={task.id}
               taskType={task.type}
               draft={editDraft}
               onDraftChange={setEditDraft}
               onSave={() => saveEdit(task.id)}
               onDiscard={() => discardEdit(task.id)}
               usedOnBoardCount={taskBoardCounts[task.id] ?? 0}
+              libraryTasks={pickerLibraryTasks}
+              allLinks={pickerLinks}
             />
           )
         }

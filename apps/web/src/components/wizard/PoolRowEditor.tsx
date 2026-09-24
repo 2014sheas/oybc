@@ -1,4 +1,4 @@
-import { TaskType } from '@oybc/shared';
+import { TaskType, type CompoundChild, type Task } from '@oybc/shared';
 import { RisoButton, RisoIcon, RisoSectionLabel } from '../riso';
 import { countingPreview, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
 import { CompoundFields } from './CompoundFields';
@@ -13,6 +13,8 @@ const HEADER_LABEL: Record<TaskType, string> = {
 };
 
 export interface PoolRowEditorProps {
+  /** The task being edited (the compound picker's `parentId`). */
+  taskId: string;
   taskType: TaskType;
   draft: TaskEditPatch;
   onDraftChange: (next: TaskEditPatch) => void;
@@ -25,6 +27,10 @@ export interface PoolRowEditorProps {
    * used" copy — mirrors the design handoff's `everywhereLine`.
    */
   usedOnBoardCount: number;
+  /** Compound only — browsable library tasks for "+ Existing task…". */
+  libraryTasks: Task[];
+  /** Compound only — live links across all compounds (loop check). */
+  allLinks: CompoundChild[];
 }
 
 /**
@@ -47,17 +53,25 @@ export interface PoolRowEditorProps {
  * sub-task" / "+ Counting sub-task".
  */
 export function PoolRowEditor({
+  taskId,
   taskType,
   draft,
   onDraftChange,
   onSave,
   onDiscard,
   usedOnBoardCount,
+  libraryTasks,
+  allLinks,
 }: PoolRowEditorProps): React.ReactElement {
   const validationMessage = validatePatch(draft, taskType);
   const isBlocked = validationMessage !== null;
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
+    // Keys pressed inside a dialog nested in the editor (the "+ Existing
+    // task…" picker) belong to that dialog: its Escape must not discard the
+    // whole edit, and ⌘↵ in its search must not save.
+    const nestedModal = (e.target as HTMLElement).closest?.('[aria-modal="true"]');
+    if (e.defaultPrevented || (nestedModal && e.currentTarget.contains(nestedModal))) return;
     if (e.key === 'Escape') {
       e.stopPropagation();
       onDiscard();
@@ -139,7 +153,13 @@ export function PoolRowEditor({
         )}
 
         {taskType === TaskType.COMPOUND && (
-          <CompoundFields draft={draft} onDraftChange={onDraftChange} />
+          <CompoundFields
+            draft={draft}
+            onDraftChange={onDraftChange}
+            parentId={taskId}
+            libraryTasks={libraryTasks}
+            allLinks={allLinks}
+          />
         )}
 
         <div className={styles.footer}>

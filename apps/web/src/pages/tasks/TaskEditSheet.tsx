@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react';
-import { AchievementTrigger, TaskType, Timeframe, toLocalISO, type Task } from '@oybc/shared';
+import {
+  AchievementTrigger,
+  TaskType,
+  Timeframe,
+  computeBrowsableTasks,
+  toLocalISO,
+  type BoardStatus,
+  type CompoundChild,
+  type Task,
+} from '@oybc/shared';
 import type { Board, RecurringBoardTemplate } from '@oybc/shared';
 import {
   CompoundEditValidationError,
+  fetchAllBoards,
+  fetchAllBoardTasks,
   fetchAllBoardsSortedByName,
+  fetchAllCompoundChildren,
   fetchCompoundChildren,
   fetchTasksByIds,
+  fetchTasksForUser,
   type TaskEditSubmit,
 } from '../../db/operations';
 import { fetchAllTemplatesSortedByName } from '../../db/operations/recurringBoardTemplates';
@@ -122,6 +135,10 @@ export function TaskEditSheet({
   // What the editor opened with — only an edited structure is submitted.
   const [compoundBaseline, setCompoundBaseline] = useState<TaskEditPatch | null>(null);
   const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
+  // "+ Existing task…" picker inputs: the browsable library and every live
+  // link (loaded once with the sub-tasks).
+  const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
+  const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
 
   useEffect(() => {
     if (task.type !== TaskType.COMPOUND) return;
@@ -140,7 +157,10 @@ export function TaskEditSheet({
             .filter((t): t is Task => !!t && !t.isDeleted)
             .map(childPatchFromTask),
         };
+        const picker = await loadPickerInputs(task.userId);
         if (!cancelled) {
+          setLibraryTasks(picker.libraryTasks);
+          setAllLinks(picker.allLinks);
           setCompoundBaseline(seeded);
           setCompoundDraft(seeded);
         }
@@ -452,6 +472,9 @@ export function TaskEditSheet({
               <CompoundFields
                 draft={{ ...compoundDraft, title }}
                 onDraftChange={(next) => setCompoundDraft(next)}
+                parentId={task.id}
+                libraryTasks={libraryTasks}
+                allLinks={allLinks}
               />
             ) : compoundLoadError !== null ? (
               <p className={styles.compoundStatus} role="alert">
@@ -535,4 +558,36 @@ export function TaskEditSheet({
       </div>
     </div>
   );
+}
+
+/**
+ * Loads the "+ Existing task…" picker's inputs for `userId`: the browsable
+ * library (`computeBrowsableTasks` — hides wizard drafts, goal-less hub
+ * counters and deleted rows, exactly like the Tasks tab) and every live
+ * compound link under one of the user's compounds (the loop check's graph;
+ * scoped like `useTaskLibrary` so another account's rows on this device
+ * never leak in).
+ *
+ * @param userId - The signed-in user.
+ * @returns The picker's library tasks and live links.
+ */
+async function loadPickerInputs(
+  userId: string,
+): Promise<{ libraryTasks: Task[]; allLinks: CompoundChild[] }> {
+  const [tasks, links, boards, boardTasks] = await Promise.all([
+    fetchTasksForUser(userId),
+    fetchAllCompoundChildren(),
+    fetchAllBoards(),
+    fetchAllBoardTasks(),
+  ]);
+  const compoundIds = new Set(tasks.filter((t) => t.type === TaskType.COMPOUND).map((t) => t.id));
+  const allLinks = links.filter((l) => compoundIds.has(l.compoundTaskId));
+  const boardStatusById: Record<string, BoardStatus> = {};
+  for (const b of boards) boardStatusById[b.id] = b.status;
+  const childToParents: Record<string, string[]> = {};
+  for (const l of allLinks) (childToParents[l.childTaskId] ??= []).push(l.compoundTaskId);
+  return {
+    libraryTasks: computeBrowsableTasks(tasks, boardTasks, boardStatusById, childToParents),
+    allLinks,
+  };
 }

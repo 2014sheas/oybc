@@ -34,6 +34,7 @@ import { RemoveSourceConfirmDialog } from '../wizard/RemoveSourceConfirmDialog';
 import { BoardWizardCancelDialog } from '../wizard/BoardWizardCancelDialog';
 import { DeriveCounterModal } from '../wizard/DeriveCounterModal';
 import { NewTaskSheet } from '../wizard/NewTaskSheet';
+import { ExistingTaskPicker } from '../wizard/ExistingTaskPicker';
 import { MissingSourceDialog } from '../boards/MissingSourceDialog';
 import { BoardEditTaskSheet } from '../boardEdit/BoardEditTaskSheet';
 import { SquareTapMenu } from '../boardEdit/SquareTapMenu';
@@ -217,6 +218,11 @@ const CASES: DialogCase[] = [
     name: 'TaskEditSheet (compound)',
     element: () =>
       React.createElement(TaskEditSheet, { task: COMPOUND, onSubmit: async () => {}, onCancel: noop }),
+  },
+  {
+    name: 'ExistingTaskPicker',
+    element: () =>
+      React.createElement(ExistingTaskPicker, { tasks: [TASK, COUNTER], onPick: noop, onCancel: noop }),
   },
   {
     name: 'TaskDetailSheet',

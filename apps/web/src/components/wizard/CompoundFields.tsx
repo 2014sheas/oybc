@@ -1,9 +1,17 @@
-import { OperatorType } from '@oybc/shared';
+import { useState } from 'react';
+import {
+  OperatorType,
+  compoundChildPickerCandidates,
+  type CompoundChild,
+  type Task,
+} from '@oybc/shared';
 import { RisoSectionLabel } from '../riso';
 import { OperatorSelector } from '../OperatorSelector';
 import { CounterStepper } from '../CounterStepper';
 import {
+  childPatchFromTask,
   clampThreshold,
+  keptChildTaskIds,
   liveChildren,
   newChildPatch,
   readsAsPreview,
@@ -11,6 +19,7 @@ import {
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
 import { MiniTypeBadge } from './MiniTypeBadge';
+import { ExistingTaskPicker } from './ExistingTaskPicker';
 import styles from './PoolRowEditor.module.css';
 
 export interface CompoundFieldsProps {
@@ -18,20 +27,39 @@ export interface CompoundFieldsProps {
   draft: TaskEditPatch;
   /** Receives the whole next draft after any rule / sub-task change. */
   onDraftChange: (next: TaskEditPatch) => void;
+  /** The compound being edited — the link guard's `parentId`. */
+  parentId: string;
+  /**
+   * Browsable library tasks (`computeBrowsableTasks` output — wizard drafts
+   * and deleted rows already hidden). The "+ Existing task…" picker narrows
+   * them to the eligible ones via `compoundChildPickerCandidates`.
+   */
+  libraryTasks: Task[];
+  /** Live compound links across ALL compounds (for the loop check). */
+  allLinks: CompoundChild[];
 }
 
 /**
  * CompoundFields — the compound rule + sub-task editor: operator picker
  * (All of / Any of / At least N, with a threshold stepper), one card per
  * sub-task (title, and Action/Goal/Unit for counting sub-tasks), a delete
- * button per card, and "+ Normal sub-task" / "+ Counting sub-task".
+ * button per card, and "+ Normal sub-task" / "+ Counting sub-task" /
+ * "+ Existing task…" (opens `ExistingTaskPicker`; a pick is appended as a
+ * linked sub-task via `childPatchFromTask`).
  *
  * Shared by the wizard's inline pool-row editor (`PoolRowEditor`) and the
  * Task Detail edit sheet (`TaskEditSheet`). Fully controlled: every edit is
  * a pure function of `draft` handed to `onDraftChange`. Deleting a sub-task
  * clamps an "at least N" threshold to the remaining live count.
  */
-export function CompoundFields({ draft, onDraftChange }: CompoundFieldsProps): React.ReactElement {
+export function CompoundFields({
+  draft,
+  onDraftChange,
+  parentId,
+  libraryTasks,
+  allLinks,
+}: CompoundFieldsProps): React.ReactElement {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const subCount = liveChildren(draft).length;
   const operator = draft.operator ?? OperatorType.AND;
   const threshold = draft.threshold ?? 2;
@@ -65,6 +93,11 @@ export function CompoundFields({ draft, onDraftChange }: CompoundFieldsProps): R
     onDraftChange({ ...draft, children: [...draft.children, newChildPatch(isCounting)] });
   }
 
+  function pickExisting(task: Task): void {
+    setPickerOpen(false);
+    onDraftChange({ ...draft, children: [...draft.children, childPatchFromTask(task)] });
+  }
+
   return (
     <div className={styles.compoundSection}>
       <div className={styles.ruleGroup}>
@@ -95,10 +128,21 @@ export function CompoundFields({ draft, onDraftChange }: CompoundFieldsProps): R
         <button type="button" className={styles.addButton} onClick={() => addChild(true)}>
           + Counting sub-task
         </button>
+        <button type="button" className={styles.addButton} onClick={() => setPickerOpen(true)}>
+          + Existing task…
+        </button>
         <span className={styles.subtaskNote}>
           A sub-task&apos;s type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.
         </span>
       </div>
+
+      {pickerOpen && (
+        <ExistingTaskPicker
+          tasks={compoundChildPickerCandidates(parentId, libraryTasks, allLinks, keptChildTaskIds(draft))}
+          onPick={pickExisting}
+          onCancel={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

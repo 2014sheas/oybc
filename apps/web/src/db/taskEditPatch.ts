@@ -149,6 +149,22 @@ export function seedPatchForEditor(task: Task): TaskEditPatch {
   return patch;
 }
 
+/**
+ * The editor's current kept children for the link guard: the task id of
+ * every existing or picked sub-task not marked deleted (new drafts have no
+ * id yet).
+ *
+ * @param draft - The compound draft.
+ * @returns The kept children's task ids.
+ */
+export function keptChildTaskIds(draft: TaskEditPatch): Set<string> {
+  const ids = new Set<string>();
+  for (const c of draft.children) {
+    if (!c.markedDeleted && c.childTaskId) ids.add(c.childTaskId);
+  }
+  return ids;
+}
+
 /** Kept sub-tasks — excludes deleted and blank-titled entries (dropped on
  *  save). Shared by validation, apply-at-create clamping, the inline rule
  *  picker's max clamp, and the pool's staged-overlay subtitle/preview.
