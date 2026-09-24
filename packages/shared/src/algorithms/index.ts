@@ -32,6 +32,7 @@ export {
   resolveTaskWindowState,
   resolveWindowStampedDerivedState,
   resolveDerivedCounterWindowState,
+  resolveLinkedCounterDisplay,
   expandToWindowStampedDerived,
   boundWindowContextAtSeal,
   backstopWindowMs,

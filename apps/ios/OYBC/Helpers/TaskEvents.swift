@@ -198,6 +198,55 @@ func resolveDerivedCounterWindowState(
     return resolveWindowStampedDerivedState(task: task, rootEvents: eventsByTaskId[rootId] ?? [])
 }
 
+/// What a LINKED (derived) counting square or row SHOWS: its displayed count
+/// and its completion — the events-based variant of `deriveDisplayedCount`
+/// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23).
+///
+/// - Window-stamped (`BoardSources.isWindowStampedDerived`, `.counting`) with
+///   an event map: the ROOT's increment sum inside the row's own
+///   `[startDate, endDate]` via `resolveWindowStampedDerivedState` — the SAME
+///   function the kernel resolves the cell with, so a cell can never paint
+///   green (or read N/N) while board stats count it incomplete. With
+///   `sealedAt` (the row's board is sealed) root events after it are dropped
+///   first, matching `boundWindowContextAtSeal`; an unparseable `sealedAt`
+///   applies no bound. Overshoot is shown, never high-clamped.
+/// - Hub-linked (no `startDate`) or no event map: `currentCount − baseline`
+///   (low-clamped) for the count and the propagation-stamped latch
+///   `task.isCompleted` for completion — the kernel's own carve-out.
+///
+/// Mirrors the TS `resolveLinkedCounterDisplay`; pinned by
+/// `taskWindowStateVectors.json#linkedCounterDisplay`.
+///
+/// - Parameters:
+///   - task: The linked counting task being rendered.
+///   - eventsByTaskId: Non-deleted events grouped by `taskId`, or `nil`.
+///   - sealedAt: The row's board `sealedAt`, when that board is sealed.
+/// - Returns: The displayed count and completion.
+func resolveLinkedCounterDisplay(
+    task: Task,
+    eventsByTaskId: [String: [TaskEvent]]?,
+    sealedAt: String? = nil
+) -> DeriveDisplayedCountResult {
+    if let eventsByTaskId, task.type == .counting, BoardSources.isWindowStampedDerived(task),
+       let rootId = task.sharedCounterId {
+        var rootEvents = eventsByTaskId[rootId] ?? []
+        if let sealedAt, let sealedDate = DateFormatting.parseISO(sealedAt) {
+            rootEvents = rootEvents.filter {
+                guard let occurred = DateFormatting.parseISO($0.occurredAt) else { return false }
+                return occurred <= sealedDate
+            }
+        }
+        let state = resolveWindowStampedDerivedState(task: task, rootEvents: rootEvents)
+        return DeriveDisplayedCountResult(displayed: state.count, isCompleted: state.isCompleted)
+    }
+    let shown = deriveDisplayedCount(
+        derivedBaseline: task.baseline ?? 0,
+        derivedMaxCount: task.maxCount ?? 0,
+        sourceCurrentCount: task.currentCount ?? 0
+    )
+    return DeriveDisplayedCountResult(displayed: shown.displayed, isCompleted: task.isCompleted)
+}
+
 /// Cascade reachability for window-stamped derived counters: `ids` UNION the
 /// ids of every live window-stamped derived row
 /// (`BoardSources.isWindowStampedDerived`) whose `sharedCounterId` is in `ids`.

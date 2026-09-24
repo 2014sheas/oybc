@@ -3,6 +3,7 @@ import type { TaskEvent } from '../types/taskEvent';
 import { TaskType } from '../constants/enums';
 import { isWithinTimeframe } from './calendarBoundaries';
 import { isWindowStampedDerived } from './memberRules';
+import { deriveDisplayedCount } from './sharedCounter';
 
 /**
  * Windowed Completion — pure evaluation helpers
@@ -215,6 +216,52 @@ export function resolveDerivedCounterWindowState(
   if (task.type !== TaskType.COUNTING) return null;
   if (!isWindowStampedDerived(task) || !task.sharedCounterId) return null;
   return resolveWindowStampedDerivedState(task, eventsByTaskId[task.sharedCounterId] ?? []);
+}
+
+/**
+ * What a LINKED (derived) counting square or row SHOWS: its displayed count and
+ * its completion — the events-based variant of `deriveDisplayedCount`
+ * (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23).
+ *
+ * - **Window-stamped** (`isWindowStampedDerived`, COUNTING) with an event map:
+ *   the ROOT's increment sum inside the row's own `[startDate, endDate]` via
+ *   {@link resolveWindowStampedDerivedState} — the SAME function the derivation
+ *   kernel resolves the cell with, so a cell can never paint green (or read
+ *   N/N) while board stats count it incomplete. When `sealedAt` is given (the
+ *   row's board is sealed) root events after it are dropped first, matching
+ *   {@link boundWindowContextAtSeal} on the sealed re-derive; this only binds
+ *   when the row has no `endDate` (an unparseable `sealedAt` applies no bound). Overshoot is shown; never high-clamped.
+ * - **Hub-linked** (no `startDate`), or no event map (library / lifetime
+ *   readers): `currentCount − baseline` (low-clamped) for the count, and the
+ *   propagation-stamped latch `task.isCompleted` for completion — exactly the
+ *   kernel's own carve-out for these rows.
+ *
+ * @param task           The linked counting task being rendered.
+ * @param eventsByTaskId Non-deleted events grouped by `taskId` (the whole
+ *                       workspace, or at least the root's), or `null`/`undefined`
+ *                       when the caller has none.
+ * @param sealedAt       The row's board `sealedAt`, when that board is sealed.
+ * @returns `{ displayed, isCompleted }`.
+ */
+export function resolveLinkedCounterDisplay(
+  task: Task,
+  eventsByTaskId: Record<string, TaskEvent[]> | null | undefined,
+  sealedAt?: string | null,
+): { displayed: number; isCompleted: boolean } {
+  if (eventsByTaskId && task.type === TaskType.COUNTING && isWindowStampedDerived(task) && task.sharedCounterId) {
+    let rootEvents = eventsByTaskId[task.sharedCounterId] ?? [];
+    const sealedAtMs = sealedAt ? new Date(sealedAt).getTime() : NaN;
+    if (!Number.isNaN(sealedAtMs)) {
+      rootEvents = rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
+    }
+    const { count, isCompleted } = resolveWindowStampedDerivedState(task, rootEvents);
+    return { displayed: count, isCompleted };
+  }
+  const { displayed } = deriveDisplayedCount(
+    { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
+    { currentCount: task.currentCount ?? 0 },
+  );
+  return { displayed, isCompleted: task.isCompleted };
 }
 
 /**

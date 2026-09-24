@@ -92,6 +92,57 @@ final class TaskEventVectorTests: XCTestCase {
         }
     }
 
+    // MARK: - resolveLinkedCounterDisplay vectors (Task 3 item 6)
+
+    private struct LinkedDisplayVector: Decodable {
+        struct MiniTask: Decodable {
+            let type: String
+            let maxCount: Int?
+            let sharedCounterId: String?
+            let startDate: String?
+            let endDate: String?
+            let createdInWizard: Bool?
+            let baseline: Int?
+            let currentCount: Int?
+            let isCompleted: Bool
+        }
+        struct Expected: Decodable { let displayed: Int; let isCompleted: Bool }
+        let name: String
+        let task: MiniTask
+        let eventsByTaskId: [String: [WindowEvent]]?
+        let sealedAt: String?
+        let expected: Expected
+    }
+
+    private struct LinkedDisplayFixture: Decodable { let linkedCounterDisplay: [LinkedDisplayVector] }
+
+    func testResolveLinkedCounterDisplayVectors() throws {
+        let fixture = try loadFixture("taskWindowStateVectors", as: LinkedDisplayFixture.self)
+        XCTAssertGreaterThanOrEqual(fixture.linkedCounterDisplay.count, 8)
+        for v in fixture.linkedCounterDisplay {
+            let m = v.task
+            let task = Task(
+                id: "t", userId: "u", title: "t",
+                type: TaskType(rawValue: m.type) ?? .normal,
+                maxCount: m.maxCount,
+                totalCompletions: 0, totalInstances: 0,
+                isCompleted: m.isCompleted, currentCount: m.currentCount,
+                createdAt: ts, updatedAt: ts, version: 1, isDeleted: false,
+                startDate: m.startDate, endDate: m.endDate,
+                sharedCounterId: m.sharedCounterId, baseline: m.baseline,
+                createdInWizard: m.createdInWizard ?? false
+            )
+            let events = v.eventsByTaskId.map { map in
+                Dictionary(uniqueKeysWithValues: map.map { rootId, evs in
+                    (rootId, evs.map { makeEvent($0, taskId: rootId) })
+                })
+            }
+            let result = resolveLinkedCounterDisplay(task: task, eventsByTaskId: events, sealedAt: v.sealedAt)
+            XCTAssertEqual(result.displayed, v.expected.displayed, "Vector '\(v.name)' displayed")
+            XCTAssertEqual(result.isCompleted, v.expected.isCompleted, "Vector '\(v.name)' isCompleted")
+        }
+    }
+
     // MARK: - uuidv5 + backfill vectors
 
     private struct Uuidv5Vector: Decodable {
