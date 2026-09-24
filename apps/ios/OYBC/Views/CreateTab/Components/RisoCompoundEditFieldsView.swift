@@ -25,6 +25,9 @@ struct RisoCompoundEditFieldsView: View {
     var libraryTasks: [Task]
     /// Live compound links across ALL compounds (for the loop check).
     var allLinks: [CompoundChild]
+    /// Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
+    /// on open; the wizard already holds them).
+    var pickerInputsState: RisoExistingTaskPickerSheet.InputsState = .loaded
 
     @State private var isPickerOpen = false
 
@@ -38,6 +41,7 @@ struct RisoCompoundEditFieldsView: View {
                         allLinks: allLinks,
                         currentChildIds: draft.keptChildTaskIds
                     ),
+                    status: pickerInputsState,
                     onPick: { task in
                         draft.children.append(ChildPatch(from: task))
                         isPickerOpen = false
@@ -115,7 +119,7 @@ struct RisoCompoundEditFieldsView: View {
                     .background(RoundedRectangle(cornerRadius: 5).fill(Color.risoPaper2))
                     .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
                 RisoTextField(placeholder: "Sub-task title", text: child.title)
-                subtaskTypeIndicator(isCounting: child.wrappedValue.isCounting)
+                subtaskTypeIndicator(child.wrappedValue)
                 Button {
                     let id = child.wrappedValue.id
                     draft.children.removeAll { $0.id == id }
@@ -154,14 +158,23 @@ struct RisoCompoundEditFieldsView: View {
         .risoCard(fill: .risoPaper)
     }
 
-    private func subtaskTypeIndicator(isCounting: Bool) -> some View {
-        Text(isCounting ? "C" : "N")
-            .font(.risoHead(9.5, .extraBold))
-            .foregroundStyle(isCounting ? Color.risoPaper : Color.risoInk)
+    /// The kit's letter badge (normal N, counting #, compound C) — the same
+    /// square the picker rows use. A picked nested compound badges C; its card
+    /// edits only the title (no counting fields) and ✕ only unlinks it.
+    private func subtaskTypeIndicator(_ child: ChildPatch) -> some View {
+        RisoTypeBadge(kind: RisoTaskKind(taskType: child.childType), style: .letterSquare)
             .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: 6).fill(isCounting ? Color.risoBlue : Color.risoPaper2))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-            .accessibilityLabel(isCounting ? "Counting sub-task" : "Normal sub-task")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.subtaskTypeLabel(child.childType))
+    }
+
+    /// VoiceOver name for a sub-task card's type badge.
+    static func subtaskTypeLabel(_ type: TaskType) -> String {
+        switch type {
+        case .counting: return "Counting sub-task"
+        case .compound: return "Compound sub-task"
+        default: return "Normal sub-task"
+        }
     }
 
     private func addSubtaskButton(title: String, isCounting: Bool) -> some View {

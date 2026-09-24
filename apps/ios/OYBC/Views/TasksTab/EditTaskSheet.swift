@@ -96,6 +96,7 @@ struct EditTaskSheet: View {
     /// live link, loaded with the sub-tasks.
     @State private var pickerLibraryTasks: [Task] = []
     @State private var pickerLinks: [CompoundChild] = []
+    @State private var pickerInputsState: RisoExistingTaskPickerSheet.InputsState = .loading
 
     // MARK: - Init
 
@@ -321,8 +322,15 @@ struct EditTaskSheet: View {
                         ),
                         parentId: task.id,
                         libraryTasks: pickerLibraryTasks,
-                        allLinks: pickerLinks
+                        allLinks: pickerLinks,
+                        pickerInputsState: pickerInputsState
                     )
+                    if pickerInputsState == .failed {
+                        Text("Couldn't load your tasks for “+ Existing task…”. Close and reopen to try again.")
+                            .font(.risoBody(11.5, .semibold))
+                            .foregroundStyle(Color.risoRed)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let problem = compoundValidation {
                         Text(problem)
                             .font(.risoBody(11.5, .extraBold))
@@ -366,32 +374,43 @@ struct EditTaskSheet: View {
     }
 
     /// Load the compound's live sub-tasks (childIndex order) and the
-    /// "+ Existing task…" picker inputs off the main actor, in one detached
-    /// read. The sub-tasks seed the draft + baseline unless a caller already
-    /// seeded them (Task Detail passes the children it holds); the picker
-    /// inputs always load. No-op for non-compounds.
+    /// "+ Existing task…" picker inputs off the main actor. The sub-tasks
+    /// seed the draft + baseline unless a caller already seeded them (Task
+    /// Detail passes the children it holds); the picker inputs always load,
+    /// in their own `do` so a failure there never blocks the sub-task editor
+    /// (it surfaces as `pickerInputsState == .failed`). No-op for
+    /// non-compounds.
     private func loadCompoundChildrenIfNeeded() async {
         guard task.type == .compound else { return }
-        let needsChildren = compoundDraft == nil
         let db = database
         let parentId = task.id
         let userId = task.userId
+        if compoundDraft == nil {
+            do {
+                let kids = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try db.fetchCompoundChildrenTasks(parentTaskId: parentId)
+                }.value
+                if compoundDraft == nil {
+                    let seeded = Self.seedCompoundDraft(task: task, children: kids)
+                    compoundBaseline = seeded
+                    compoundDraft = seeded
+                }
+            } catch {
+                compoundLoadError = "Couldn't load sub-tasks: \(error.localizedDescription)"
+            }
+        }
         do {
-            let (kids, picker) = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                (
-                    needsChildren ? try db.fetchCompoundChildrenTasks(parentTaskId: parentId) : nil,
-                    try db.fetchCompoundPickerInputs(userId: userId)
-                )
+            let picker = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try db.fetchCompoundPickerInputs(userId: userId)
             }.value
             pickerLibraryTasks = picker.libraryTasks
             pickerLinks = picker.allLinks
-            if let kids, compoundDraft == nil {
-                let seeded = Self.seedCompoundDraft(task: task, children: kids)
-                compoundBaseline = seeded
-                compoundDraft = seeded
-            }
+            pickerInputsState = .loaded
         } catch {
-            compoundLoadError = "Couldn't load sub-tasks: \(error.localizedDescription)"
+            #if DEBUG
+            print("[EditTaskSheet] loading existing-task picker inputs failed: \(error)")
+            #endif
+            pickerInputsState = .failed
         }
     }
 

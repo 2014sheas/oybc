@@ -11,7 +11,14 @@ import SwiftUI
 /// this view only searches and lists. Web twin: `ExistingTaskPicker.tsx`.
 struct RisoExistingTaskPickerSheet: View {
 
+    /// Whether the caller's candidate list has arrived (Task Detail loads it
+    /// on open; the wizard already holds it). Twin of web `PickerInputsState`.
+    enum InputsState: Equatable {
+        case loading, loaded, failed
+    }
+
     let tasks: [Task]
+    let status: InputsState
     let onPick: (Task) -> Void
     let onCancel: () -> Void
 
@@ -19,16 +26,19 @@ struct RisoExistingTaskPickerSheet: View {
 
     /// - Parameters:
     ///   - tasks: The eligible candidates.
+    ///   - status: Candidate-list load state; rows show only once `.loaded`.
     ///   - initialQuery: Seeds the search field (snapshot fixtures).
     ///   - onPick: A row was chosen.
     ///   - onCancel: The sheet was cancelled.
     init(
         tasks: [Task],
+        status: InputsState = .loaded,
         initialQuery: String = "",
         onPick: @escaping (Task) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.tasks = tasks
+        self.status = status
         self.onPick = onPick
         self.onCancel = onCancel
         _searchQuery = State(initialValue: initialQuery)
@@ -45,12 +55,12 @@ struct RisoExistingTaskPickerSheet: View {
                 ScrollView {
                     LazyVStack(spacing: 7) {
                         let rows = visibleTasks
-                        if rows.isEmpty {
-                            Text(tasks.isEmpty ? "No tasks can be added to this compound." : "No matching tasks.")
-                                .font(.risoBody(13, .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 8)
+                        if status == .loading {
+                            statusLine("Loading your tasks…", color: .risoMuted)
+                        } else if status == .failed {
+                            statusLine("Couldn't load your tasks. Close and reopen the editor to try again.", color: .risoRed)
+                        } else if rows.isEmpty {
+                            statusLine(tasks.isEmpty ? "No tasks can be added to this compound." : "No matching tasks.", color: .risoMuted)
                         } else {
                             ForEach(rows, id: \.id) { task in row(task) }
                         }
@@ -74,6 +84,15 @@ struct RisoExistingTaskPickerSheet: View {
                 }
             }
         }
+    }
+
+    private func statusLine(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.risoBody(13, .semibold))
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 8)
     }
 
     private var searchBar: some View {
@@ -108,7 +127,7 @@ struct RisoExistingTaskPickerSheet: View {
     private func row(_ task: Task) -> some View {
         Button { onPick(task) } label: {
             HStack(spacing: 9) {
-                RisoTypeBadge(kind: risoKind(for: task.type), style: .letterSquare)
+                RisoTypeBadge(kind: RisoTaskKind(taskType: task.type), style: .letterSquare)
                 Text(task.title)
                     .font(.risoHead(14, .bold))
                     .foregroundStyle(Color.risoInk)
@@ -127,14 +146,5 @@ struct RisoExistingTaskPickerSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Add \(task.title)")
-    }
-
-    private func risoKind(for type: TaskType) -> RisoTaskKind {
-        switch type {
-        case .normal: return .normal
-        case .counting: return .counting
-        case .compound: return .compound
-        case .achievement: return .achievement
-        }
     }
 }

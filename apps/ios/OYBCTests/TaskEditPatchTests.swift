@@ -144,6 +144,27 @@ final class TaskEditPatchTests: XCTestCase {
         XCTAssertEqual(cp.title, "Stretch")
     }
 
+    func test_childPatch_carries_the_linked_task_type_including_compound() {
+        XCTAssertEqual(ChildPatch(from: makeTask(id: "cc", type: .counting, title: "Run", action: "Run", unit: "km", maxCount: 3)).childType, .counting)
+        XCTAssertEqual(ChildPatch(from: makeTask(id: "cn", type: .normal, title: "Stretch")).childType, .normal)
+        // A picked nested compound badges C but stays a title-only card:
+        // not counting, so no Action/Goal/Unit fields.
+        let nested = ChildPatch(from: makeTask(id: "k", type: .compound, title: "Evening routine"))
+        XCTAssertEqual(nested.childType, .compound)
+        XCTAssertFalse(nested.isCounting)
+    }
+
+    func test_new_childPatch_defaults_childType_from_isCounting() {
+        XCTAssertEqual(ChildPatch(id: "a", childTaskId: nil, title: "", isCounting: true).childType, .counting)
+        XCTAssertEqual(ChildPatch(id: "b", childTaskId: nil, title: "", isCounting: false).childType, .normal)
+    }
+
+    func test_subtask_badge_accessibility_labels() {
+        XCTAssertEqual(RisoCompoundEditFieldsView.subtaskTypeLabel(.normal), "Normal sub-task")
+        XCTAssertEqual(RisoCompoundEditFieldsView.subtaskTypeLabel(.counting), "Counting sub-task")
+        XCTAssertEqual(RisoCompoundEditFieldsView.subtaskTypeLabel(.compound), "Compound sub-task")
+    }
+
     func test_compound_empty_title_blocks() {
         var p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")]); p.title = "  "
         XCTAssertEqual(p.validate(type: .compound), "A title is required.")
