@@ -188,6 +188,7 @@
 		72D3E079C97AD509EE1BC5F3 /* BoardWizardPoolOrderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD55457A8953DCE642000CC /* BoardWizardPoolOrderTests.swift */; };
 		72FEEF29276BD38BBE8BF1A6 /* RisoBingoToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF7B94F09C3473C58879F79F /* RisoBingoToast.swift */; };
 		73483333626E98C1924C6D0E /* CounterMilestone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DA8A1C3733036A8098F453B /* CounterMilestone.swift */; };
+		734C4BE32CB67567BD72EEC8 /* SyncResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD290668A0FD5CF32F78C4CF /* SyncResults.swift */; };
 		73F170A613B065E17DE58E9C /* CounterDailyTotals.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3712CFA267080BC78DF53F4 /* CounterDailyTotals.swift */; };
 		74E4406EF8E7C57A98133F85 /* AppDatabase+Pools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D5AF7B218C63139D1B21CFE /* AppDatabase+Pools.swift */; };
 		74F65B4EDBC2C46960798812 /* RisoLibrarySheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD0FA8AF9A534BEF98B1789 /* RisoLibrarySheetView.swift */; };
@@ -748,6 +749,7 @@
 		BC491DEE8ABF2C8193A95057 /* SourceSheetBoardEntriesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceSheetBoardEntriesTests.swift; sourceTree = "<group>"; };
 		BD0FB232935447E7DB1C9A3A /* RisoPoolsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoPoolsSnapshotTests.swift; sourceTree = "<group>"; };
 		BD0FE7C23CC2B5005229E343 /* AppDatabase+SharedCounters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+SharedCounters.swift"; sourceTree = "<group>"; };
+		BD290668A0FD5CF32F78C4CF /* SyncResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncResults.swift; sourceTree = "<group>"; };
 		BE93737F84E7A70BEF4F4499 /* Pool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pool.swift; sourceTree = "<group>"; };
 		BEE590743FB84D4774C6036E /* AchievementSquareBadgeData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementSquareBadgeData.swift; sourceTree = "<group>"; };
 		BF4AC2C553E9B80B11A03CA5 /* TaskEventVectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskEventVectorTests.swift; sourceTree = "<group>"; };
@@ -1025,6 +1027,7 @@
 				34C1E82551617CF266DF7085 /* RecurringBoardTemplates.swift */,
 				6C9306B223CFC8FBAFCBADE7 /* Shuffle.swift */,
 				8A050E4A006F1F0489F02076 /* Streaks.swift */,
+				BD290668A0FD5CF32F78C4CF /* SyncResults.swift */,
 				08F0A3E6144798AD80EB9DAF /* SyncService.swift */,
 				4726875158E06456FF4899F6 /* TutorialProgressStore.swift */,
 			);
@@ -1885,6 +1888,7 @@
 				474CDEF06E6F3968D0ED778A /* StreaksView.swift in Sources */,
 				619A5E4D57F256C847CC9A50 /* SyncQueue.swift in Sources */,
 				2015EA2FCCA896B9F131C1E7 /* SyncQueueBuilder.swift in Sources */,
+				734C4BE32CB67567BD72EEC8 /* SyncResults.swift in Sources */,
 				C0A46EFF73CDF0023708C549 /* SyncService.swift in Sources */,
 				710F2C0C93FFC3DD44C19739 /* SyncSheet.swift in Sources */,
 				F57E79263C14D10B30B783D2 /* SyncWirePayload.swift in Sources */,
