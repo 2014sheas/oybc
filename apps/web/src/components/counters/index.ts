@@ -3,6 +3,9 @@
  *
  * Used by CountersHubPage and CounterDetailPage.
  * P3 arrival-banner components will be added here.
+ *
+ * Prop types are exported from each component file; re-export here only
+ * when a consumer needs one.
  */
 export { CounterLedgerCard } from './CounterLedgerCard';
 export type { CounterLoggedEvent } from './CounterLedgerCard';

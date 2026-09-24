@@ -6,6 +6,9 @@
  * Import from here (`../components/riso`) rather than per-file so the kit's
  * surface stays discoverable as it grows (board cell, badge, toast … land
  * in later phases).
+ *
+ * Prop types are exported from each component file; re-export here only
+ * when a consumer needs one.
  */
 export { RisoButton } from './RisoButton';
 

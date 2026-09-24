@@ -7,12 +7,9 @@ import GRDB
 /// TypeScript `DefaultPool` in `@oybc/shared`.
 ///
 /// Unlike `RecurringBoardTemplate` (Phase 6.2), DefaultPool does NOT
-/// auto-spawn. It's a pure pool definition consumed by:
-///   - The recurring-banner wizard prefill path
-///     (`BoardWizardViewModel` hydrates `selectedTaskIds` from
-///     `pool.taskIds` when banner-launched).
-///   - The pre-spawn flow (future Phase B), pulling tasks for a
-///     user-picked future window.
+/// auto-spawn. Historically it was a pure pool definition read by the
+/// recurring-banner wizard prefill; that reader was retired by the pools
+/// rework (see below), so nothing in production reads it now.
 ///
 /// `taskIds` is stored as a JSON-string TEXT column (same pattern as
 /// `RecurringBoardTemplate.seedTaskIds` and `Board.completedLineIds`).
