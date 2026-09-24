@@ -27,40 +27,6 @@ export function getCharCountClass(
 }
 
 /**
- * Returns the human-readable operator description for a composite operator.
- *
- * @param operatorType - The operator type ('AND', 'OR', or 'M_OF_N')
- * @param threshold - Required for M_OF_N; the minimum count
- * @param leafCount - Total number of leaf nodes
- * @returns Display string such as "All of", "Any of", or "At least 2 of 3"
- */
-export function formatOperatorLabel(
-  operatorType: string,
-  threshold: number | undefined,
-  leafCount: number
-): string {
-  if (operatorType === 'AND') return 'All of';
-  if (operatorType === 'OR') return 'Any of';
-  return `At least ${threshold ?? '?'} of ${leafCount}`;
-}
-
-/**
- * Formats an ISO8601 date string for display.
- *
- * @param isoString - ISO8601 date string
- * @returns Human-readable date string
- */
-export function formatDate(isoString: string): string {
-  return new Date(isoString).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/**
  * Returns a fixed list of realistic sample task titles for seeding the Board Generator.
  *
  * @returns Array of 10 sample task title strings

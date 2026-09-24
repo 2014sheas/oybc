@@ -17,8 +17,6 @@ import {
 } from '../../db/operations';
 import { useTasks } from '../../hooks';
 
-export type ExistingFilter = 'all' | 'normal' | 'counting' | 'compound';
-
 // Stable empty fallbacks for `?? FALLBACK` — see BoardPlayPage.tsx for rationale.
 const EMPTY_TASKS = Object.freeze([]) as unknown as Task[];
 const EMPTY_COMPOUND_CHILDREN = Object.freeze([]) as unknown as CompoundChild[];
@@ -167,33 +165,3 @@ export function useBrowsableTasks(
   );
 }
 
-/**
- * Apply the Existing-Tasks filter to the library.
- *   - 'all'      — every task
- *   - 'normal'   — type=normal
- *   - 'counting' — type=counting
- *   - 'compound' — type=compound
- *
- * Returns a single flat list. Consumers iterate `filteredTasks` and
- * inspect `task.type` to render appropriately.
- */
-export function filterLibraryForDisplay(
-  library: TaskLibrary,
-  filter: ExistingFilter,
-): { filteredTasks: Task[] } {
-  const filtered = library.allTasks.filter((t) => {
-    switch (filter) {
-      case 'all':
-        return true;
-      case 'normal':
-        return t.type === TaskType.NORMAL;
-      case 'counting':
-        return t.type === TaskType.COUNTING;
-      case 'compound':
-        return t.type === TaskType.COMPOUND;
-      default:
-        return false;
-    }
-  });
-  return { filteredTasks: filtered };
-}

@@ -2,11 +2,6 @@ import { useMemo } from 'react';
 import { BoardStatus, type Board, type BoardTask } from '@oybc/shared';
 import { useBoards, useBoardTasks, useRecurringDraftMix } from '../../hooks';
 
-export interface DraftWithTaskCount {
-  board: Board;
-  taskCount: number;
-}
-
 /**
  * Reactive list of DRAFT boards for the given user, most recently
  * updated first. Dexie's `useLiveQuery` ensures the list refreshes

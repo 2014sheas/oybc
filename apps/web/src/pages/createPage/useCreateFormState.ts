@@ -34,7 +34,6 @@ export const TITLE_MAX_LENGTH = 200;
 export const DESCRIPTION_MAX_LENGTH = 1000;
 export const ACTION_MAX_LENGTH = 50;
 export const UNIT_MAX_LENGTH = 50;
-export const STEP_TITLE_MAX_LENGTH = 200;
 
 // ─── Error shape ──────────────────────────────────────────────────────────────
 

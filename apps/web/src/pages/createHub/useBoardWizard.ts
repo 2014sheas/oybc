@@ -33,9 +33,6 @@ const EMPTY_COMPOUND_CHILDREN: Record<string, CompoundChild[]> = {};
 
 export type {
   WizardStep,
-  BoardWizardState,
-  BoardWizardActions,
-  BoardWizardDerived,
   BoardWizardController,
   BoardWizardDraft,
   UseBoardWizardArgs,

@@ -272,12 +272,11 @@ export function buildWizardPlacement(
     : applyPreviewDerivedCells(placement, controller, library, previewRng);
 }
 
-// `resolveWizardDates` + `ResolvedDates` moved to `./wizardDates` (B3 RC6 —
-// `previewDerived.ts` needs the window resolution and this module imports
-// `previewDerived`, so the date helper had to stop living downstream of the
-// cycle). Re-exported here so every existing import site is untouched.
+// `resolveWizardDates` moved to `./wizardDates` (B3 RC6 — `previewDerived.ts`
+// needs the window resolution and this module imports `previewDerived`, so the
+// date helper had to stop living downstream of the cycle). Re-exported here so
+// every existing import site is untouched.
 export { resolveWizardDates } from './wizardDates';
-export type { ResolvedDates } from './wizardDates';
 
 export type WizardStatus = 'active' | 'draft';
 
