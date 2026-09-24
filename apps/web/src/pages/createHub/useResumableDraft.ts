@@ -1,7 +1,6 @@
-import { useCallback } from 'react';
 import type { Board } from '@oybc/shared';
 import { fetchBoardTasks } from '../../db/operations/boardTasks';
-import { resolveRecurringDraftMixTaskIds } from '../../db/operations/recurringDraftMix';
+import { resolveDraftCapacity } from './resolveDraftCapacity';
 import { computeDraftInitialStep } from './resolveDraftInitialStep';
 import { tasksNeededFor, type BoardWizardDraft, type WizardStep } from './useBoardWizard';
 
@@ -19,24 +18,37 @@ export interface ResolvedResumableDraft extends BoardWizardDraft {
  * draft.
  *
  * Board Creation Split (web PR D) — also resolves the furthest-useful
- * resume step. A recurring draft's true selection count comes from its
- * `recurringDraftMix` (resolved via `resolveRecurringDraftMixTaskIds`),
- * never `boardTasks.length` — the placed rows are a possibly-truncated
- * grid subset of an intentionally overfilled pool (see
- * `Board.recurringDraftMix`'s doc), so counting them would send an
- * already-fillable recurring draft back to the Pool step.
+ * resume step. A draft with a mix blob counts from its SOURCES via
+ * `resolveDraftCapacity` — the capacity the reopened wizard's Step-2 gate
+ * compares, so a board-only draft no longer reopens on Setup (2026-09
+ * audit T2). Never `boardTasks.length` for such a draft: the placed rows
+ * are a possibly-truncated grid subset of an intentionally overfilled pool
+ * (see `Board.recurringDraftMix`'s doc), so counting them would send an
+ * already-fillable draft back to the Tasks step.
  */
 export function useResumableDraft(): (board: Board) => Promise<ResolvedResumableDraft> {
-  return useCallback(async (board: Board): Promise<ResolvedResumableDraft> => {
-    const boardTasks = await fetchBoardTasks(board.id);
-    const tasksRequired = tasksNeededFor(board.boardSize as 3 | 4 | 5, board.centerSquareType);
-    // Board Sources P1 — one-off drafts saved post-P1 carry the blob too;
-    // resolve from it whenever present (same truncation rationale).
-    const selectedCount =
-      board.isRecurringDraft || board.recurringDraftMix !== undefined
-        ? (await resolveRecurringDraftMixTaskIds(board.recurringDraftMix)).length
-        : boardTasks.length;
-    const initialStep = computeDraftInitialStep(tasksRequired, selectedCount);
-    return { board, boardTasks, initialStep };
-  }, []);
+  // Module-level and stateless, so already referentially stable — no
+  // `useCallback` needed.
+  return resolveResumableDraft;
+}
+
+/**
+ * The non-React body of {@link useResumableDraft}: fetch the draft's
+ * placements and resolve its resume step. Exported so the resume decision
+ * is unit-testable against fake-indexeddb without rendering a hook.
+ *
+ * @param board - The draft board being resumed.
+ * @returns The hydrated draft plus the step the wizard should open on.
+ */
+export async function resolveResumableDraft(board: Board): Promise<ResolvedResumableDraft> {
+  const boardTasks = await fetchBoardTasks(board.id);
+  const tasksRequired = tasksNeededFor(board.boardSize as 3 | 4 | 5, board.centerSquareType);
+  // Board Sources P1 — one-off drafts saved post-P1 carry the blob too;
+  // resolve from it whenever present (same truncation rationale).
+  const selectedCount =
+    board.isRecurringDraft || board.recurringDraftMix !== undefined
+      ? await resolveDraftCapacity(board)
+      : boardTasks.length;
+  const initialStep = computeDraftInitialStep(tasksRequired, selectedCount);
+  return { board, boardTasks, initialStep };
 }
