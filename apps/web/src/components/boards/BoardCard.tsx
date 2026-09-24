@@ -6,6 +6,7 @@ import { recurringBadgeState } from './recurringBadgeState';
 import { RecurringBadge } from '../RecurringBadge';
 import { BoardMiniGrid } from '../home/BoardMiniGrid';
 import type { BoardPreviewCellsResult } from '../home/boardPreviewCells';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './Boards.module.css';
 
 export interface BoardCardProps {
@@ -91,6 +92,15 @@ export function BoardCard({
 }: BoardCardProps): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // aria-modal, Escape → cancel (not mid-delete), Tab trap, focus restore.
+  // Focus opens on Cancel — this confirm is destructive.
+  const { ref: confirmModalRef, props: confirmModalProps } = useModalA11y<HTMLDivElement>({
+    open: confirmOpen,
+    onCancel: () => {
+      if (!deleting) setConfirmOpen(false);
+    },
+    initialFocus: 'cancel',
+  });
 
   const pct = board.totalTasks > 0 ? Math.round((board.completedTasks / board.totalTasks) * 100) : 0;
   const isComplete = board.status === BoardStatus.COMPLETED || board.status === BoardStatus.ARCHIVED;
@@ -180,9 +190,11 @@ export function BoardCard({
           onClick={() => !deleting && setConfirmOpen(false)}
         >
           <div
+            ref={confirmModalRef}
             className={styles.bcardConfirmDialog}
             role="alertdialog"
             aria-label="Confirm delete board"
+            {...confirmModalProps}
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className={styles.bcardConfirmHeading}>Delete board?</h2>
@@ -193,6 +205,7 @@ export function BoardCard({
               <button
                 type="button"
                 className={styles.bcardConfirmCancel}
+                data-modal-cancel
                 onClick={() => setConfirmOpen(false)}
                 disabled={deleting}
               >

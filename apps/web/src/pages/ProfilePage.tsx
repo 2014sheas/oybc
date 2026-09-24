@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { UserPreferences } from '@oybc/shared';
@@ -10,6 +10,7 @@ import { usePreferences } from '../hooks';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { RisoSegmented, RisoButton } from '../components/riso';
 import { UpgradeModal } from '../components/signedOut/UpgradeModal';
+import { useModalA11y } from '../hooks/useModalA11y';
 import styles from './ProfilePage.module.css';
 
 /**
@@ -61,26 +62,22 @@ export function ProfilePage(): React.ReactElement {
     }
   }, []);
 
-  // Escape-to-close for sign-out / discard-guest-data confirm modals
-  // (mutually exclusive — a guest never sees the sign-out modal, and a
-  // real account never sees the discard one — but guard each independently).
-  useEffect(() => {
-    if (!showSignOutConfirm) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowSignOutConfirm(false);
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [showSignOutConfirm]);
-
-  useEffect(() => {
-    if (!showDiscardConfirm || discardBusy) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowDiscardConfirm(false);
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [showDiscardConfirm, discardBusy]);
+  // aria-modal, Escape → cancel, Tab trap, focus restore for the sign-out /
+  // discard-guest-data confirm modals (mutually exclusive — a guest never
+  // sees the sign-out modal, and a real account never sees the discard one —
+  // but each gets its own hook). Focus opens on Cancel: both are destructive.
+  const { ref: signOutModalRef, props: signOutModalProps } = useModalA11y<HTMLDivElement>({
+    open: showSignOutConfirm,
+    onCancel: () => setShowSignOutConfirm(false),
+    initialFocus: 'cancel',
+  });
+  const { ref: discardModalRef, props: discardModalProps } = useModalA11y<HTMLDivElement>({
+    open: showDiscardConfirm,
+    onCancel: () => {
+      if (!discardBusy) setShowDiscardConfirm(false);
+    },
+    initialFocus: 'cancel',
+  });
 
   // Read displayName reactively from the Dexie user row so edits show
   // immediately. `useAuth().user` only updates on sign-in/sign-out, not
@@ -300,11 +297,12 @@ export function ProfilePage(): React.ReactElement {
           onClick={() => setShowSignOutConfirm(false)}
         >
           <div
+            ref={signOutModalRef}
             className={styles.confirmModal}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-modal="true"
             aria-labelledby="sign-out-title"
+            {...signOutModalProps}
           >
             <h2 id="sign-out-title" className={styles.confirmTitle}>
               Sign out?
@@ -316,6 +314,7 @@ export function ProfilePage(): React.ReactElement {
               <button
                 type="button"
                 className={styles.confirmCancel}
+                data-modal-cancel
                 onClick={() => setShowSignOutConfirm(false)}
               >
                 Cancel
@@ -342,11 +341,12 @@ export function ProfilePage(): React.ReactElement {
           onClick={() => !discardBusy && setShowDiscardConfirm(false)}
         >
           <div
+            ref={discardModalRef}
             className={styles.confirmModal}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
-            aria-modal="true"
             aria-labelledby="discard-guest-title"
+            {...discardModalProps}
           >
             <h2 id="discard-guest-title" className={styles.confirmTitle}>
               Discard guest data?
@@ -360,6 +360,7 @@ export function ProfilePage(): React.ReactElement {
               <button
                 type="button"
                 className={styles.confirmCancel}
+                data-modal-cancel
                 onClick={() => setShowDiscardConfirm(false)}
                 disabled={discardBusy}
               >

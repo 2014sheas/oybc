@@ -3,6 +3,7 @@ import { Timeframe, formatTimeframeLabel, type Board } from '@oybc/shared';
 import { isBoardExpired, getExpiryLabel } from '../utils/boardDisplayUtils';
 import { BoardStatusBadge } from './BoardStatusBadge';
 import { RecurringBadge } from './RecurringBadge';
+import { useModalA11y } from '../hooks/useModalA11y';
 import styles from './BoardListItem.module.css';
 
 interface BoardListItemProps {
@@ -28,6 +29,15 @@ interface BoardListItemProps {
 export function BoardListItem({ board, onClick, onDelete }: BoardListItemProps): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // aria-modal, Escape → cancel (not mid-delete), Tab trap, focus restore.
+  // Focus opens on Cancel — this confirm is destructive.
+  const { ref: confirmModalRef, props: confirmModalProps } = useModalA11y<HTMLDivElement>({
+    open: confirmOpen,
+    onCancel: () => {
+      if (!deleting) setConfirmOpen(false);
+    },
+    initialFocus: 'cancel',
+  });
   const hasBingos = board.linesCompleted > 0;
   const progressPct =
     board.totalTasks > 0
@@ -111,9 +121,11 @@ export function BoardListItem({ board, onClick, onDelete }: BoardListItemProps):
           onClick={() => !deleting && setConfirmOpen(false)}
         >
           <div
+            ref={confirmModalRef}
             className={styles.confirmDialog}
             role="alertdialog"
             aria-label="Confirm delete board"
+            {...confirmModalProps}
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className={styles.confirmHeading}>Delete board?</h2>
@@ -125,6 +137,7 @@ export function BoardListItem({ board, onClick, onDelete }: BoardListItemProps):
               <button
                 type="button"
                 className={styles.confirmCancel}
+                data-modal-cancel
                 onClick={() => setConfirmOpen(false)}
                 disabled={deleting}
               >
