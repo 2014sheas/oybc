@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { isSourceSupplyTask, type Pool, type RecurringBoardTemplate, type Task } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { SpecialTaskPanel } from '../wizard/SpecialTaskPanel';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
 import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
@@ -122,17 +123,23 @@ export function PoolEditSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Escape-to-cancel, mirroring `CreateCounterSheet`. Guards against
-  // dismissing mid-write. (The old "New task" modal's extra Escape guard
-  // went with the modal — the special-type panel is inline, so there's no
-  // stacked sheet to double-dismiss anymore.)
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape' && !busy) onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, busy]);
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
+  // Guards against dismissing mid-write. The inline delete confirm is its
+  // own nested modal: while it's up, Escape/Tab stop there (it handles them
+  // first and stops propagation), so Escape backs out of the confirm only.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: () => {
+      if (!busy) onClose();
+    },
+  });
+  const { ref: deleteConfirmRef, props: deleteConfirmProps } = useModalA11y<HTMLDivElement>({
+    open: confirmingDelete,
+    onCancel: () => {
+      if (!busy) setConfirmingDelete(false);
+    },
+    initialFocus: 'cancel',
+  });
 
   const trimmedName = name.trim();
   const tasksById = useMemo(() => new Map(allTasks.map((t) => [t.id, t] as const)), [allTasks]);
@@ -221,9 +228,10 @@ export function PoolEditSheet({
   return (
     <>
       <div
+        ref={modalRef}
         role="dialog"
-        aria-modal="true"
         aria-labelledby="pool-edit-sheet-title"
+        {...modalProps}
         className={styles.backdrop}
         onClick={() => !busy && onClose()}
       >
@@ -377,7 +385,13 @@ export function PoolEditSheet({
           )}
 
           {confirmingDelete && (
-            <div className={styles.deleteConfirm} role="alertdialog" aria-label="Confirm delete pool">
+            <div
+              ref={deleteConfirmRef}
+              className={styles.deleteConfirm}
+              role="alertdialog"
+              aria-label="Confirm delete pool"
+              {...deleteConfirmProps}
+            >
               <p className={styles.deleteConfirmBody}>
                 Delete &quot;{pool?.name}&quot;? It detaches from any repeating boards and core
                 defaults that draw from it — tasks are never deleted.
@@ -386,6 +400,7 @@ export function PoolEditSheet({
                 <RisoButton
                   kind="neutral"
                   size="small"
+                  data-modal-cancel
                   onClick={() => setConfirmingDelete(false)}
                   disabled={busy}
                 >

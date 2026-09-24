@@ -380,17 +380,17 @@ struct BoardSettingsView: View {
 
     // MARK: - Roster actions
 
-    /// Pause / resume a repeating board. Mirrors the retired
-    /// `RecurringTemplatesView.setActive` verbatim.
+    /// Pause / resume a repeating board. Routes through
+    /// `AppDatabase.setTemplateActive`, which re-reads the live row inside
+    /// the write so a spawn pass or pull since the roster loaded is kept.
     private func setActive(_ tpl: RecurringBoardTemplate, _ newValue: Bool) {
         guard let userId = authService.currentUser?.id else { return }
         let now = AppDatabase.currentTimestamp()
-        var updated = tpl; updated.isActive = newValue
-        updated.updatedAt = now; updated.version += 1
+        let templateId = tpl.id
         _Concurrency.Task.detached {
             do {
-                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                    updated, operation: .update, now: now
+                try AppDatabase.shared.setTemplateActive(
+                    id: templateId, isActive: newValue, now: now
                 )
                 await MainActor.run { rosterVM.reloadAsync(userId: userId) }
             } catch { dlog("[BoardSettingsView] toggle active failed: \(error)") }

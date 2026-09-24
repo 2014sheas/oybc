@@ -1,4 +1,5 @@
 import type { Task } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { BoardStatusBadge } from '../../components/BoardStatusBadge';
 import { derivedCounterRemovalNote } from '../../components/counters/derivedCounterRemovalNote';
 import { isBoardExpired } from '../../utils/boardDisplayUtils';
@@ -46,13 +47,20 @@ export function TaskConfirmDeleteDialog({
   // sentence as the counter sheet, from the one helper (iOS twin:
   // `BoardSources.derivedCounterRemovalNote(count:)`).
   const derivedNote = derivedCounterRemovalNote(impact.derivedWindowCounterCount);
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel,
+    initialFocus: 'cancel',
+  });
 
   return (
     <div className={styles.sheetBackdrop} onClick={onCancel}>
       <div
+        ref={modalRef}
         className={styles.sheet}
         role="alertdialog"
         aria-label="Confirm delete"
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className={styles.sheetHeading}>Delete task?</h2>
@@ -127,6 +135,7 @@ export function TaskConfirmDeleteDialog({
           <button
             type="button"
             className={styles.cancelButton}
+            data-modal-cancel
             onClick={onCancel}
           >
             Cancel

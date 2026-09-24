@@ -7,6 +7,7 @@ import {
   checkAchievementRetargetCycle,
   type UpdateTaskPatch,
 } from '../../db/operations/tasks';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
 
 export interface TaskEditSheetProps {
@@ -30,6 +31,11 @@ export function TaskEditSheet({
   onSubmit,
   onCancel,
 }: TaskEditSheetProps): React.ReactElement {
+  // aria-modal, Escape → cancel, initial focus, Tab trap, focus restore.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel,
+  });
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
 
@@ -204,9 +210,11 @@ export function TaskEditSheet({
   return (
     <div className={styles.sheetBackdrop} onClick={onCancel}>
       <div
+        ref={modalRef}
         className={styles.sheet}
         role="dialog"
         aria-label="Edit task"
+        {...modalProps}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className={styles.sheetHeading}>Edit task</h2>

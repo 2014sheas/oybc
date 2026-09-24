@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { formatPoolShortSummary } from '@oybc/shared';
 import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton, RisoChip } from '../riso';
 import { PoolEditSheet } from './PoolEditSheet';
 import { computePoolHealthByPoolId, isPoolHealthResolved } from './poolHealthBatch';
@@ -68,6 +69,11 @@ export function PoolPickerSheet({
   onClose,
 }: PoolPickerSheetProps): React.ReactElement {
   const [showCreateSheet, setShowCreateSheet] = useState(false);
+  // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
+  const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
+    open: true,
+    onCancel: onClose,
+  });
 
   const healthByPoolId = useMemo(
     () =>
@@ -90,9 +96,10 @@ export function PoolPickerSheet({
   return (
     <>
       <div
+        ref={modalRef}
         role="dialog"
-        aria-modal="true"
         aria-labelledby="pool-picker-sheet-title"
+        {...modalProps}
         className={styles.backdrop}
         onClick={onClose}
       >

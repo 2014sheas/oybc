@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { RisoButton, RisoBrandMark, RisoIcon, RisoSegmented } from '../riso';
 import { HeroBoard, BeatMini, type BeatState } from './SignedOutArt';
 import { SignInModal, type AuthMode } from './SignInModal';
@@ -45,16 +45,6 @@ const TYPES: ReadonlyArray<{ b: string; cls: string; h: string; p: string }> = [
 export function SignedOutHome(): React.ReactElement {
   const [theme, setTheme] = useSignedOutTheme();
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
-
-  // Escape closes the modal.
-  useEffect(() => {
-    if (!authMode) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setAuthMode(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [authMode]);
 
   const scrollTo = (id: string): void => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
