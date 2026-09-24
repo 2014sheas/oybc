@@ -23,8 +23,10 @@ import type {
  * short and a capped pool source read as full.
  *
  * A template with no entry in `achievableTaskIdsByTemplateId` (still
- * loading — pass `undefined` for the whole map) is left out, so a surface
- * never flashes a warning before its supplies resolve.
+ * loading — pass `undefined` for the whole map) is left out. Callers must
+ * NOT paint that partial answer as final: gate the list on
+ * {@link isPoolHealthResolved} and show a loading state until it holds, or
+ * the "Short on N boards" line appears after first paint (late mutation).
  *
  * This function does no I/O of its own.
  *
@@ -53,4 +55,31 @@ export function computePoolHealthByPoolId(
     result[pool.id] = computePoolHealth(pool, { templates: supplies, tasksById });
   }
   return result;
+}
+
+/**
+ * Whether the achievable-pick map covers every candidate consumer, i.e.
+ * whether {@link computePoolHealthByPoolId}'s answer is final for this
+ * roster. A surface renders its loading state until this holds, so the
+ * first paint of a pool card already carries its "Short on N boards" line.
+ *
+ * `computeRosterHealth` gives EVERY template an entry, so a map missing
+ * one is either still loading or stale (the live query was computed for
+ * an older roster and the new template's resolution hasn't landed).
+ *
+ * @param templates - Candidate consumers, or `undefined` while the
+ *   templates query itself loads (a `[]` placeholder would read as
+ *   "resolved" and paint cards with no warnings).
+ * @param achievableTaskIdsByTemplateId - `RosterHealth.mixByTemplateId`,
+ *   or `undefined` while it loads.
+ * @returns `true` once every template has an achievable entry.
+ */
+export function isPoolHealthResolved(
+  templates: readonly RecurringBoardTemplate[] | undefined,
+  achievableTaskIdsByTemplateId: Record<string, string[]> | undefined,
+): boolean {
+  if (templates === undefined || achievableTaskIdsByTemplateId === undefined) return false;
+  return templates.every((t) =>
+    Object.prototype.hasOwnProperty.call(achievableTaskIdsByTemplateId, t.id),
+  );
 }

@@ -16,7 +16,7 @@ import {
 import { db } from '../../../db/internal';
 import { fetchTemplateSupplyResolution } from '../../../db/operations/boardSources';
 import { computeRosterHealth } from '../../recurringTemplates/templateHealth';
-import { computePoolHealthByPoolId } from '../poolHealthBatch';
+import { computePoolHealthByPoolId, isPoolHealthResolved } from '../poolHealthBatch';
 
 /**
  * poolHealthBatch.test.ts — Pools browse batching helper (P2 Task 2).
@@ -283,5 +283,29 @@ describe('computePoolHealthByPoolId — sources-native resolution (DB)', () => {
 
     const result = await healthFromDb([pool], [template]);
     expect(result['pool-1'].consumers).toEqual([]);
+  });
+});
+
+describe('isPoolHealthResolved (first paint is final paint)', () => {
+  const tpl = buildTemplate('tpl', { sources: [poolSource('pA')] });
+
+  it('is false while the templates query is loading', () => {
+    expect(isPoolHealthResolved(undefined, {})).toBe(false);
+  });
+
+  it('is false while the roster map is loading', () => {
+    expect(isPoolHealthResolved([tpl], undefined)).toBe(false);
+  });
+
+  it('is false for a stale map that lacks a template', () => {
+    expect(isPoolHealthResolved([tpl], { other: [] })).toBe(false);
+  });
+
+  it('is true once every template has an entry (an empty pick counts)', () => {
+    expect(isPoolHealthResolved([tpl], { tpl: [] })).toBe(true);
+  });
+
+  it('is true for a resolved empty roster', () => {
+    expect(isPoolHealthResolved([], {})).toBe(true);
   });
 });

@@ -3,7 +3,7 @@ import { formatPoolShortSummary } from '@oybc/shared';
 import type { Pool, RecurringBoardTemplate, Task } from '@oybc/shared';
 import { RisoButton, RisoChip } from '../riso';
 import { PoolEditSheet } from './PoolEditSheet';
-import { computePoolHealthByPoolId } from './poolHealthBatch';
+import { computePoolHealthByPoolId, isPoolHealthResolved } from './poolHealthBatch';
 import { shouldSelectAfterPoolCreated } from './poolPickerLogic';
 import styles from './PoolPickerSheet.module.css';
 
@@ -75,6 +75,11 @@ export function PoolPickerSheet({
     [pools, templates, achievableTaskIdsByTemplateId, tasksById],
   );
   const allTasks = useMemo(() => Object.values(tasksById), [tasksById]);
+  // First paint is final paint: hold the rows until every template's
+  // achievable pick has landed, so a "Short on N boards" note never pops
+  // in after the rows painted (the late-mutation rule; same gate as
+  // `PoolsBrowse`).
+  const healthResolved = isPoolHealthResolved(templates, achievableTaskIdsByTemplateId);
 
   function handlePoolCreated(pool: Pool): void {
     setShowCreateSheet(false);
@@ -104,6 +109,10 @@ export function PoolPickerSheet({
           <div className={styles.body}>
             {pools.length === 0 ? (
               <p className={styles.empty}>You don&apos;t have any pools yet.</p>
+            ) : !healthResolved ? (
+              <p className={styles.empty} role="status" data-testid="pool-picker-loading">
+                Loading pools…
+              </p>
             ) : (
               <ul className={styles.list} role="group" aria-label="Pools">
                 {pools.map((pool) => {
