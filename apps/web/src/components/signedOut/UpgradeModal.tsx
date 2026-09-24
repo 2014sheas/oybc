@@ -7,6 +7,7 @@ import {
   linkGoogle,
   linkPassword,
 } from '../../firebase/accountSecurity';
+import { runCollisionSwitch } from '../../firebase/guestCollisionSwitch';
 import { clearSyncQueue } from '../../db/operations/syncQueue';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { RisoButton } from '../riso';
@@ -35,9 +36,9 @@ type Collision = { kind: 'google' } | { kind: 'apple' } | { kind: 'password'; em
  * `email-already-in-use`, the identity already belongs to a different
  * account. Merging two Firestore trees is out of scope — the modal swaps to
  * a confirm step ("discard this guest's boards, sign into the existing
- * account instead"). Confirming deletes the anonymous user FIRST (purges the
- * near-empty anon tree + wipes local Dexie, so no orphan accrual), then runs
- * the normal `signInWith*`/`signIn` for the existing identity.
+ * account instead"). Confirming signs into the existing identity FIRST and
+ * only then clears the anon sync queue (verify before destroy — see
+ * `confirmSwitchAccount`); the anonymous account is never deleted here.
  */
 export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement {
   const { signInWithGoogle, signInWithApple, signIn, refreshAfterUpgrade } = useAuth();
@@ -114,11 +115,17 @@ export function UpgradeModal({ onClose }: UpgradeModalProps): React.ReactElement
     setBusy(true);
     setError(null);
     try {
-      if (collision.kind === 'google') await signInWithGoogle();
-      else if (collision.kind === 'apple') await signInWithApple();
-      else await signIn(collision.email, collision.password);
-      await clearSyncQueue();
-      onClose();
+      // Ordering (sign in → clear queue → close) is the pure, tested
+      // `collisionSwitchEffects` table (guestCollisionSwitch.test.ts).
+      await runCollisionSwitch({
+        signInExisting: async () => {
+          if (collision.kind === 'google') await signInWithGoogle();
+          else if (collision.kind === 'apple') await signInWithApple();
+          else await signIn(collision.email, collision.password);
+        },
+        clearAnonQueue: clearSyncQueue,
+        switchSession: onClose,
+      });
     } catch (err) {
       // Sign-in failed (e.g. wrong password) — nothing was destroyed. Keep the
       // confirm step open so the user can retry or cancel.

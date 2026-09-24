@@ -7,10 +7,9 @@ import {
   signInWithApple as authSignInWithApple,
   signInAnonymously as authSignInAnonymously,
   signOut as authSignOut,
-  refreshLocalUserFromFirebase,
+  reconcileAfterUpgrade,
   onAuthStateChanged,
 } from './authService';
-import { auth } from './config';
 import { AuthContext, type AuthContextValue } from './authContextValue';
 import { db } from '../db/internal';
 
@@ -154,9 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
   // in place without firing onAuthStateChanged, so refresh the local row and
   // clear the anon flag explicitly (docs/GUEST_MODE.md §Upgrade).
   const refreshAfterUpgrade = async (): Promise<void> => {
-    const refreshed = await refreshLocalUserFromFirebase();
+    const { user: refreshed, isAnonymous: anon } = await reconcileAfterUpgrade();
     if (refreshed) setUser(refreshed);
-    setIsAnonymous(auth.currentUser?.isAnonymous ?? false);
+    setIsAnonymous(anon);
   };
 
   const value: AuthContextValue = {

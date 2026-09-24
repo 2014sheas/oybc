@@ -278,22 +278,28 @@ struct UpgradeAccountSheet: View {
         _Concurrency.Task {
             defer { isBusy = false }
             do {
-                switch method {
-                case .apple:
-                    let (authorization, nonce) = try await appleCoordinator.authenticate()
-                    try await authService.signInWithApple(authorization: authorization, rawNonce: nonce)
-                case .google:
-                    guard let vc = UIApplication.currentRootViewController else {
-                        throw AuthServiceError.noCurrentUser
-                    }
-                    try await authService.signInWithGoogle(presenting: vc)
-                case .email:
-                    try await authService.signIn(email: email, password: password)
-                }
-                // Switched to the existing account — drop the discarded guest's
-                // anon-stamped pending pushes (see the type doc).
-                authService.clearPendingSyncQueue()
-                dismiss()
+                // Ordering (sign in → clear queue → dismiss) is the pure, tested
+                // `GuestCollisionSwitch.effects(for:)` table (GuestCollisionSwitchTests).
+                try await GuestCollisionSwitch.run(
+                    signInExisting: {
+                        switch method {
+                        case .apple:
+                            let (authorization, nonce) = try await appleCoordinator.authenticate()
+                            try await authService.signInWithApple(authorization: authorization, rawNonce: nonce)
+                        case .google:
+                            guard let vc = UIApplication.currentRootViewController else {
+                                throw AuthServiceError.noCurrentUser
+                            }
+                            try await authService.signInWithGoogle(presenting: vc)
+                        case .email:
+                            try await authService.signIn(email: email, password: password)
+                        }
+                    },
+                    // Switched to the existing account — drop the discarded guest's
+                    // anon-stamped pending pushes (see the type doc).
+                    clearAnonQueue: { authService.clearPendingSyncQueue() },
+                    switchSession: { dismiss() }
+                )
             } catch {
                 if !AuthService.isAuthCancellation(error) {
                     errorMessage = error.localizedDescription

@@ -281,6 +281,9 @@ final class TaskEventVectorTests: XCTestCase {
             let type: String
             let maxCount: Int?
             let sharedCounterId: String?
+            /// Compound tasks only (Task-4 breadth vectors).
+            let `operator`: String?
+            let threshold: Int?
             // 2026-09-23 amendment: window-stamped derived counters.
             let startDate: String?
             let endDate: String?
@@ -289,6 +292,12 @@ final class TaskEventVectorTests: XCTestCase {
             let isDeleted: Bool
         }
         struct MiniBoardTask: Decodable { let taskId: String; let row: Int; let col: Int }
+        struct MiniCompoundChild: Decodable {
+            let compoundTaskId: String
+            let childTaskId: String
+            let childIndex: Int
+            let isDeleted: Bool
+        }
         struct MiniEvent: Decodable {
             let id: String
             let taskId: String
@@ -302,11 +311,17 @@ final class TaskEventVectorTests: XCTestCase {
         let tasks: [MiniTask]
         let boardTasks: [MiniBoardTask]
         let events: [MiniEvent]
-        /// Optional — when present the union is bounded at this instant via
-        /// the shared `boundWindowContextAtSeal` (what the sealing data layer
-        /// does before deriving a sealed snapshot).
+        /// Optional — when present the snapshot is computed by the production
+        /// `AppDatabase.computeSealSnapshot`, which bounds the union to
+        /// `occurredAt <= sealedAt` (the `[startDate, sealedAt]` window).
         let sealedAt: String?
+        /// Optional — compound links (absent = none).
+        let compoundChildren: [MiniCompoundChild]?
         let expectedCells: [Int]
+        /// Optional — the sealed snapshot's frozen stats.
+        let expectedCompletedTasks: Int?
+        let expectedLinesCompleted: Int?
+        let expectedCompletedLineIds: [String]?
     }
 
     private struct SealFixture: Decodable { let vectors: [SealVector] }
@@ -334,6 +349,8 @@ final class TaskEventVectorTests: XCTestCase {
             id: m.id, userId: "u", title: m.id,
             type: TaskType(rawValue: m.type) ?? .normal,
             maxCount: m.maxCount,
+            operatorType: m.operator.flatMap { OperatorType(rawValue: $0) },
+            threshold: m.threshold,
             totalCompletions: 0, totalInstances: 0,
             isCompleted: m.isCompleted,
             createdAt: ts, updatedAt: ts, version: 1, isDeleted: m.isDeleted,
@@ -373,26 +390,72 @@ final class TaskEventVectorTests: XCTestCase {
 
             var eventsByTaskId: [String: [TaskEvent]] = [:]
             for e in v.events { eventsByTaskId[e.taskId, default: []].append(toEvent(e)) }
-            let windowContext: WindowEvaluationContext
+
+            let children: [CompoundChild] = (v.compoundChildren ?? []).enumerated().map { i, c in
+                CompoundChild(
+                    id: "cc-\(i)", compoundTaskId: c.compoundTaskId, childTaskId: c.childTaskId,
+                    childIndex: c.childIndex, createdAt: ts, updatedAt: ts,
+                    lastSyncedAt: nil, version: 1, isDeleted: c.isDeleted, deletedAt: nil
+                )
+            }
+            var childrenByCompound: [String: [CompoundChild]] = [:]
+            for c in children { childrenByCompound[c.compoundTaskId, default: []].append(c) }
+
             if let sealedAt = v.sealedAt {
+                // Production path: the sealing data layer's own snapshot builder
+                // (bound + resolvePlacements + stats + cells), so the
+                // `[startDate, sealedAt]` upper bound is exercised for real.
                 let sealedAtDate = try XCTUnwrap(DateFormatting.parseISO(sealedAt), "Vector '\(v.name)' sealedAt")
-                windowContext = boundWindowContextAtSeal(
-                    eventsByTaskId: eventsByTaskId,
+                let lookups = AppDatabase.SealLookups(
+                    childrenByCompound: childrenByCompound,
+                    taskById: taskById,
+                    allBoards: [board],
+                    allBoardTasks: boardTasks,
+                    allChildren: children,
+                    eventsByTaskId: eventsByTaskId
+                )
+                let snapshot = AppDatabase.computeSealSnapshot(
+                    board: board, lookups: lookups,
                     sealedAtMs: sealedAtDate.timeIntervalSince1970 * 1000
                 )
-            } else {
-                windowContext = WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
+                XCTAssertEqual(snapshot.sealedCompletedCells, v.expectedCells, "Vector '\(v.name)' cells")
+                if let expected = v.expectedCompletedTasks {
+                    XCTAssertEqual(snapshot.completedTasks, expected, "Vector '\(v.name)' completedTasks")
+                }
+                if let expected = v.expectedLinesCompleted {
+                    XCTAssertEqual(snapshot.linesCompleted, expected, "Vector '\(v.name)' linesCompleted")
+                }
+                if let expected = v.expectedCompletedLineIds {
+                    XCTAssertEqual(snapshot.completedLineIds, expected, "Vector '\(v.name)' completedLineIds")
+                }
+                continue
             }
 
             let cells = DerivationPass.computeSealedCompletedCells(
                 board: board,
                 boardTasksOnBoard: boardTasks,
-                childrenByCompound: [:],
+                childrenByCompound: childrenByCompound,
                 taskById: taskById,
                 allBoards: [board],
-                windowContext: windowContext
+                windowContext: WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
             )
             XCTAssertEqual(cells, v.expectedCells, "Vector '\(v.name)' cells")
         }
+    }
+
+    /// Task-4 breadth guard: the loop above iterates every vector; this pins
+    /// that the compound / 4x4-bingo / sealedAt-bound cases are present so a
+    /// fixture edit can't silently drop one.
+    func testSealVectorBreadthCasesPresent() throws {
+        let fixture = try loadFixture("sealReDerivationVectors", as: SealFixture.self)
+        let names = Set(fixture.vectors.map(\.name))
+        let required = [
+            "compound-children-complete-in-window-green-and-pre-window-child-keeps-sibling-compound-grey",
+            "bingo-4x4-row-and-main-diagonal-recorded-in-sealed-lines-with-near-misses",
+            "normal-completion-after-endDate-before-sealedAt-counts-and-completes-the-row",
+            "normal-completion-one-ms-after-sealedAt-excluded-even-though-lifetime-cache-says-done",
+            "normal-completion-exactly-at-sealedAt-counts-inclusive-upper-bound",
+        ]
+        XCTAssertEqual(required.filter { !names.contains($0) }, [])
     }
 }
