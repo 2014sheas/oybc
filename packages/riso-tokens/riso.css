@@ -42,6 +42,11 @@
      across themes (no [data-theme='dark'] override). */
   --riso-on-color: #fbf6ea;
   --riso-ink-static: #18120b;
+  /* Pale lavender for secondary copy on the blue celebration grounds
+     (iOS GREENLOG / tutorial-complete overlays). Content-on-color, so it
+     is static like --riso-on-color: no [data-theme='dark'] override.
+     Mirrors iOS Color.risoLavender (same hex). */
+  --riso-lavender: #c9cff2;
 
   /* Shape */
   --riso-r-card: 8px; /* cards, inputs, buttons */

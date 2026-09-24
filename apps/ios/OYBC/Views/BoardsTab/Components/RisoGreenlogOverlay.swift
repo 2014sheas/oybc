@@ -120,7 +120,7 @@ struct RisoGreenlogOverlay: View {
                 // Subtitle
                 Text("Full board. Every single square.\n\(boardName) — crushed.")
                     .font(.risoBody(14, .semibold))
-                    .foregroundStyle(Color(red: 0.79, green: 0.81, blue: 0.95))
+                    .foregroundStyle(Color.risoLavender)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .frame(maxWidth: 240)

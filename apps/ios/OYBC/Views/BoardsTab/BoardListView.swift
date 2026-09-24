@@ -298,7 +298,7 @@ struct BoardListView: View {
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
-                        .tint(.red)
+                        .tint(Color.risoRed)
                     }
                 }
             }

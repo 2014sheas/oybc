@@ -72,7 +72,7 @@ struct TutorialGreenlogOverlay: View {
 
                 Text("You've learned every move.\nGo build your first real board.")
                     .font(.risoBody(14, .semibold))
-                    .foregroundStyle(Color(red: 0.79, green: 0.81, blue: 0.95))
+                    .foregroundStyle(Color.risoLavender)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
                     .frame(maxWidth: 240)
