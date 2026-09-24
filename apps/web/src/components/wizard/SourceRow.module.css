@@ -9,15 +9,33 @@
   overflow: hidden;
 }
 
-/* ── Header ── */
+/* ── Header ──
+   A non-interactive positioning context for two SIBLING buttons: the
+   full-row disclosure and the ✕ overlaid on its trailing gutter (the
+   `MemberRuleRow` `.mainLine` / `.excludeOverlay` pattern). */
 .headerRow {
+  position: relative;
+}
+
+/* The disclosure is the whole header rect. Its right padding is the row's
+   11px plus the ✕'s 28px plus the 10px gap the ✕ used to sit behind as a
+   flex item, so the chevron lands exactly where it did. */
+.headerToggle {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 11px;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 9px 49px 9px 11px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
-.headerRow:focus-visible {
+.headerToggle:focus-visible {
   outline: 3px solid var(--riso-blue);
   outline-offset: -3px;
 }
@@ -90,7 +108,11 @@
 }
 
 .removeButton {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 0;
+  right: 11px;
+  bottom: 0;
+  margin: auto 0;
   width: 28px;
   height: 28px;
   display: inline-flex;

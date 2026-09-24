@@ -59,9 +59,13 @@ export interface SourceRowProps {
  * AND the §Member rules controls (target stepper, dice, One square /
  * Split up + part lines).
  *
- * Header is a plain container + SIBLING remove button — never a button
- * nested in a button (invalid HTML; the iOS row has the same rule for
- * gesture arbitration).
+ * Header is a plain (non-interactive) container holding two SIBLING
+ * buttons: the disclosure (letter, name, subtitle, chevron) and the ✕,
+ * overlaid on the disclosure's trailing gutter — the `MemberRuleRow`
+ * layout. Never a control nested inside a `role="button"`: the wrapper's
+ * Enter/Space handler would cancel the inner button's activation and
+ * toggle the panel instead (2026-09 audit). The iOS row has the same rule
+ * for gesture arbitration.
  */
 export function SourceRow({
   source,
@@ -102,43 +106,36 @@ export function SourceRow({
 
   return (
     <li className={styles.card}>
-      <div
-        className={styles.headerRow}
-        role="button"
-        tabIndex={0}
-        aria-expanded={isExpanded}
-        aria-label={`${supply.displayName}, ${subtitle}`}
-        onClick={onToggleExpanded}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggleExpanded();
-          }
-        }}
-      >
-        <span
-          className={source.kind === 'pool' ? styles.letterPool : styles.letterBoard}
-          aria-hidden="true"
+      <div className={styles.headerRow}>
+        <button
+          type="button"
+          className={styles.headerToggle}
+          aria-expanded={isExpanded}
+          aria-label={`${supply.displayName}, ${subtitle}`}
+          onClick={onToggleExpanded}
         >
-          {source.kind === 'pool' ? 'P' : 'B'}
-        </span>
-        <span className={styles.headerText}>
-          <span className={styles.headerName}>{supply.displayName}</span>
-          <span className={styles.headerSubtitle}>{subtitle}</span>
-        </span>
-        <span
-          className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ''}`}
-          aria-hidden="true"
-        >
-          ›
-        </span>
+          <span
+            className={source.kind === 'pool' ? styles.letterPool : styles.letterBoard}
+            aria-hidden="true"
+          >
+            {source.kind === 'pool' ? 'P' : 'B'}
+          </span>
+          <span className={styles.headerText}>
+            <span className={styles.headerName}>{supply.displayName}</span>
+            <span className={styles.headerSubtitle}>{subtitle}</span>
+          </span>
+          <span
+            className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ''}`}
+            aria-hidden="true"
+          >
+            ›
+          </span>
+        </button>
+        {/* A SIBLING of the disclosure, never nested inside it. */}
         <button
           type="button"
           className={styles.removeButton}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
+          onClick={onRemove}
           aria-label={`Remove ${supply.displayName}`}
         >
           ✕
