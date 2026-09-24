@@ -635,8 +635,14 @@ extension AppDatabase {
             )
 
             // 6. Find all linked (derived) tasks and propagate, exactly like
-            //    increment/decrement.
-            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
+            //    increment/decrement. One fetch serves both step 6 (the
+            //    propagating subset, `fetchPropagatingLinkedTasks`' filter)
+            //    and step 7 (the frozen rows the undo reached — never in the
+            //    propagating subset, so never written below).
+            let allLinkedTasks = try Task
+                .filter(Column("sharedCounterId") == sourceTaskId && Column("isDeleted") == false)
+                .fetchAll(db)
+            let linkedTasks = allLinkedTasks.filter { !BoardSources.isFrozenDerivedRow($0, now: now) }
 
             let propagation = propagateIncrement(
                 sourceAfterCurrentCount: newSourceCount,
@@ -673,9 +679,7 @@ extension AppDatabase {
             //    frozen rows whose window holds the undone event join the
             //    cascade only — no write, no enqueue, no credit.
             let allChangedTaskIds = [sourceTaskId] + linkedTasks.map { $0.id }
-            let reachedFrozenIds = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId && Column("isDeleted") == false)
-                .fetchAll(db)
+            let reachedFrozenIds = allLinkedTasks
                 .filter { BoardSources.isFrozenRowReachedByEvent($0, occurredAt: entry.occurredAt, now: now) }
                 .map { $0.id }
             let creditBoards = try runSharedCounterCascade(
