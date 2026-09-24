@@ -179,6 +179,16 @@ struct RisoTaskDetailContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("SUBTASKS (\(compoundChildren.count))")
                 .risoSectionLabel()
+            // The completion rule ("All of 3" / "Any of 3" / "2 of 3") — the
+            // shared-twin label, so the rule edited in `EditTaskSheet` reads
+            // back here exactly as it does on web.
+            Text(CompoundEvaluation.compoundRuleLabel(
+                task.operatorType,
+                threshold: task.threshold,
+                childCount: compoundChildren.count
+            ))
+            .font(.risoBody(12, .semibold))
+            .foregroundStyle(Color.risoMuted)
             VStack(spacing: 5) {
                 ForEach(compoundChildren, id: \.id) { child in
                     Button {

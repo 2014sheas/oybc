@@ -309,4 +309,35 @@ final class CompoundEvaluationTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - compoundRuleLabel (twin of the shared `compoundRuleLabel` suite —
+    // the strings must be identical on both platforms)
+
+    func test_compoundRuleLabel_and_readsAllOfN() {
+        XCTAssertEqual(CompoundEvaluation.compoundRuleLabel(.and, threshold: nil, childCount: 3), "All of 3")
+    }
+
+    func test_compoundRuleLabel_nilOperator_readsAsAnd() {
+        XCTAssertEqual(CompoundEvaluation.compoundRuleLabel(nil, threshold: nil, childCount: 3), "All of 3")
+    }
+
+    func test_compoundRuleLabel_or_readsAnyOfN() {
+        XCTAssertEqual(CompoundEvaluation.compoundRuleLabel(.or, threshold: nil, childCount: 3), "Any of 3")
+    }
+
+    func test_compoundRuleLabel_mOfN_readsMOfN() {
+        XCTAssertEqual(CompoundEvaluation.compoundRuleLabel(.mOfN, threshold: 2, childCount: 3), "2 of 3")
+    }
+
+    func test_compoundRuleLabel_mOfN_clampsStaleThresholdAboveCount() {
+        XCTAssertEqual(CompoundEvaluation.compoundRuleLabel(.mOfN, threshold: 5, childCount: 3), "3 of 3")
+    }
+
+    func test_compoundRuleLabel_mOfN_clampsThresholdBelowOneUpToOne() {
+        XCTAssertEqual(CompoundEvaluation.compoundRuleLabel(.mOfN, threshold: 0, childCount: 3), "1 of 3")
+    }
+
+    func test_compoundRuleLabel_mOfN_nilThresholdDefaultsToOne() {
+        XCTAssertEqual(CompoundEvaluation.compoundRuleLabel(.mOfN, threshold: nil, childCount: 4), "1 of 4")
+    }
 }
