@@ -61,6 +61,36 @@ export async function migrateLegacyLocalStoragePreferences(userId: string): Prom
   if (storedTheme) clearLocalStorage(LEGACY_THEME_KEY);
 }
 
+// ─── Write seam ───────────────────────────────────────────────────────────────
+
+/**
+ * Persists a preferences patch fire-and-forget style, but never silently:
+ * a rejected write (e.g. an IndexedDB transaction failure) is logged with
+ * context instead of becoming an unhandled promise rejection. The returned
+ * promise always resolves, so callers may `void` it safely.
+ *
+ * @param userId - The authenticated user's id
+ * @param updates - The partial preferences to merge
+ * @param write - The persistence function (injectable for tests); defaults
+ *   to `updateUserPreferences`
+ * @returns A promise that resolves once the write settles (success or logged failure)
+ */
+export function persistPreferenceUpdate(
+  userId: string,
+  updates: Partial<UserPreferences>,
+  write: (
+    userId: string,
+    updates: Partial<UserPreferences>
+  ) => Promise<unknown> = updateUserPreferences
+): Promise<void> {
+  return write(userId, updates).then(
+    () => undefined,
+    (err: unknown) => {
+      console.error('[usePreferences] Failed to update preferences', err);
+    }
+  );
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -105,7 +135,7 @@ export function usePreferences(): [
   const update = useCallback(
     (updates: Partial<UserPreferences>) => {
       if (!userId) return;
-      void updateUserPreferences(userId, updates);
+      void persistPreferenceUpdate(userId, updates);
     },
     [userId]
   );

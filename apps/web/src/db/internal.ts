@@ -28,13 +28,7 @@ if (import.meta.env.DEV) {
     console.log('✅ Dexie database initialized');
   });
 
-  // Log all database operations
   db.on('populate', () => {
     console.log('📊 Database populated with initial data');
   });
-
-  // Uncomment to log all transactions (verbose)
-  // db.on('changes', (changes) => {
-  //   console.log('Database changes:', changes);
-  // });
 }

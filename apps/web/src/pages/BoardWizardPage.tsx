@@ -129,9 +129,15 @@ export function BoardWizardPage({
   const [sheetBoardEntries, setSheetBoardEntries] = useState<SourceSheetBoardEntry[]>([]);
   useEffect(() => {
     let cancelled = false;
-    void fetchSourceSheetBoardEntries(userId).then((entries) => {
-      if (!cancelled) setSheetBoardEntries(entries);
-    });
+    void fetchSourceSheetBoardEntries(userId)
+      .then((entries) => {
+        if (!cancelled) setSheetBoardEntries(entries);
+      })
+      .catch((err: unknown) => {
+        // Leave the sheet's BOARDS rows empty rather than crash; pools and
+        // hand-added tasks still work. Logged so the failure is never silent.
+        console.error('[BoardWizardPage] Failed to load source-sheet board entries', err);
+      });
     return () => {
       cancelled = true;
     };
