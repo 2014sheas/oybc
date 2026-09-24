@@ -273,7 +273,7 @@ describe('REPRO derived counter: completing the daily must not complete the week
       const r = await completeDailyAndAssertWeekly(dailyId, weeklyId, wId);
       expect(r.weeklyTask.isCompleted).toBe(false);
       expect(r.cell).toBeDefined();
-    expect(r.cell!.isCompleted).toBe(false);
+      expect(r.cell!.isCompleted).toBe(false);
       expect(r.board.completedTasks).toBe(0);
     },
   );
