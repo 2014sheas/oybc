@@ -151,18 +151,18 @@ final class TaskEditPatchTests: XCTestCase {
 
     func test_compound_needs_two_steps() {
         let p = compoundPatch([simpleStep("only", id: "a")])
-        XCTAssertEqual(p.validate(type: .compound), "Add at least 2 sub-tasks.")
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
     }
 
     func test_compound_blank_titled_steps_dont_count() {
         let p = compoundPatch([simpleStep("A", id: "a"), simpleStep("   ", id: "b"), simpleStep("", id: "c")])
-        XCTAssertEqual(p.validate(type: .compound), "Add at least 2 sub-tasks.")
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
     }
 
     func test_compound_deleted_steps_dont_count() {
         var deleted = simpleStep("B", id: "b"); deleted.markedDeleted = true
         let p = compoundPatch([simpleStep("A", id: "a"), deleted])
-        XCTAssertEqual(p.validate(type: .compound), "Add at least 2 sub-tasks.")
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
     }
 
     func test_compound_two_simple_steps_valid() {

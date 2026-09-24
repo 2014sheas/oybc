@@ -129,7 +129,7 @@ struct TaskEditPatch: Equatable {
         case .compound:
             if trimmedTitle.isEmpty { return "A title is required." }
             let kept = liveChildren
-            if kept.count < 2 { return "Add at least 2 sub-tasks." }
+            if kept.count < 2 { return "A compound task needs at least two sub-tasks." }
             for child in kept where child.isCounting {
                 let g = Int(child.goal.trimmingCharacters(in: .whitespaces)) ?? 0
                 let u = child.unit.trimmingCharacters(in: .whitespaces)

@@ -51,6 +51,10 @@ struct EditTaskSheet: View {
         var refMode: RefMode
         var selectedBoardId: String
         var selectedTemplateId: String
+        /// Compound structure (operator / threshold / sub-tasks) — nil for
+        /// non-compound tasks and for callers that only edit basic fields.
+        /// Defaulted so every existing memberwise `Patch(...)` call compiles.
+        var compound: TaskEditPatch? = nil
 
         enum RefMode {
             case board, template
