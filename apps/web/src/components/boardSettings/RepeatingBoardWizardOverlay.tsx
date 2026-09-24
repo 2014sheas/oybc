@@ -16,6 +16,9 @@ export interface RepeatingBoardWizardOverlayProps {
   onClose: () => void;
 }
 
+/** Escape handler for the full-screen wizard overlay — see the call site. */
+function ignoreEscape(): void {}
+
 /**
  * RepeatingBoardWizardOverlay — Board Creation Split (web PR D). Board
  * settings' "Edit tasks" affordance now opens the FULL recurring wizard in
@@ -34,9 +37,6 @@ export interface RepeatingBoardWizardOverlayProps {
  * Pause/Resume stays a direct roster-row toggle
  * (`RepeatingBoardRow.toggleActive`) — no wizard hop.
  */
-/** Escape handler for the full-screen wizard overlay — see the call site. */
-function ignoreEscape(): void {}
-
 export function RepeatingBoardWizardOverlay({
   userId,
   preferences,
