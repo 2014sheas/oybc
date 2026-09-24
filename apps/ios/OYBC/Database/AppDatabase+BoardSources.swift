@@ -10,11 +10,13 @@ import GRDB
 ///
 /// Done-state predicate mirrors `BoardPlayViewModel.windowedIsCompleted`:
 /// event-owning primitives resolve via `resolveTaskWindowState` against
-/// the source board's window (`board.startDate`); compound / achievement /
-/// derived counting read the lifetime `Task.isCompleted` cache (the same
-/// documented carve-out the Board-Edit preview surfaces use — these
-/// wizard surfaces have no compound/achievement evaluation context of
-/// their own).
+/// the source board's window (`board.startDate`); window-stamped derived
+/// counters resolve from their ROOT's events in their own window
+/// (`resolveDerivedCounterWindowState`, the kernel rule); compound /
+/// achievement / hub-linked derived counting read the lifetime
+/// `Task.isCompleted` cache (the same documented carve-out the Board-Edit
+/// preview surfaces use — these wizard surfaces have no
+/// compound/achievement evaluation context of their own).
 struct BoardSourceSupplyInfo: Equatable {
     /// The source board's display name (for the row title).
     let displayName: String
@@ -28,8 +30,8 @@ struct BoardSourceSupplyInfo: Equatable {
     /// the same number the source board's own squares display. Keyed by task
     /// id; a member with no entry has made no measurable progress here (or
     /// isn't an event-owning counter at all — compounds, achievements and
-    /// window-stamped derived counters are the documented per-cell carve-out
-    /// and read their own caches instead).
+    /// derived counters get no entry; a window-stamped derived row's window
+    /// count is deliberately NOT fed into this prefill map).
     ///
     /// Feeds the one-off wizard's "remaining" target prefill: pull a
     /// 3-of-10-done counter onto a fresh one-off board and its member rule is

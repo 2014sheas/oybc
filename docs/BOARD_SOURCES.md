@@ -1222,7 +1222,9 @@ their baseline*; the v1 cross-window bleed note is closed for them.
 
 **Read audit (B2):** because `currentCount` on a linked task is the root
 mirror, every surface that shows a linked task's count must read through
-`deriveDisplayedCount` — Tasks tab row, Task detail, Library sheet row,
+`deriveDisplayedCount` (hub-linked rows) or `resolveLinkedCounterDisplay`
+(window-stamped rows, root events in the row's window — amended by the
+2026-09-23 derived-counter freeze) — Tasks tab row, Task detail, Library sheet row,
 Counters hub/detail, wizard member rows — on both platforms. Any straggler
 is a pre-existing bug that B makes visible; fix it, don't special-case.
 
@@ -1233,8 +1235,10 @@ is a pre-existing bug that B makes visible; fix it, don't special-case.
 - Counters hub/detail: the same `isTaskExpired` default + "show expired"
   affordance, applied in the **caller hooks** that assemble the `tasks`
   input (`useSharedCounterGroups.ts` ↔ the hub/detail view-model), NOT
-  inside the vector-pinned pure `buildSharedCounterGroups`, whose contract
-  is unchanged. Roots are never filtered.
+  inside the vector-pinned pure `buildSharedCounterGroups`, whose filtering
+  contract is unchanged (it now also takes an optional `eventsByTaskId` so
+  window-stamped members display their own window's count). Roots are never
+  filtered.
 
 ### Deletion
 

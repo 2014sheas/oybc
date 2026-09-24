@@ -36,10 +36,12 @@ import {
  * Done-state predicate mirrors iOS
  * `AppDatabase+BoardSources.resolveSupply` / the play surfaces:
  * event-owning primitives resolve via `resolveTaskWindowState` against
- * the source board's window; compound / achievement / derived counting
- * read the lifetime `Task.isCompleted` cache (the documented per-cell
- * carve-out — these surfaces carry no compound/achievement evaluation
- * context of their own).
+ * the source board's window; window-stamped derived counters resolve
+ * from their ROOT's events in their own window
+ * (`resolveDerivedCounterWindowState`, the kernel rule); compound /
+ * achievement / hub-linked derived counting read the lifetime
+ * `Task.isCompleted` cache (the documented per-cell carve-out — these
+ * surfaces carry no compound/achievement evaluation context of their own).
  */
 
 /** iOS twin: `BoardSourceSupplyInfo` (`AppDatabase+BoardSources.swift`). */
@@ -56,9 +58,9 @@ export interface BoardSourceSupplyInfo {
    * count (Σ non-deleted increment deltas inside THIS board's window), the
    * same number the source board's own squares display. Keyed by task id;
    * a member with no entry has made no measurable progress here (or isn't
-   * an event-owning counter at all — compounds, achievements and
-   * window-stamped derived counters are the documented per-cell carve-out
-   * and read their own caches instead).
+   * an event-owning counter at all — compounds, achievements and derived
+   * counters get no entry; a window-stamped derived row's window count is
+   * deliberately NOT fed into this prefill map).
    *
    * Feeds the one-off wizard's "remaining" target prefill: pull a
    * 3-of-10-done counter onto a fresh one-off board and its member rule is
