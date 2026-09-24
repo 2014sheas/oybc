@@ -351,4 +351,41 @@ final class RecurringBoardsTests: XCTestCase {
     func testIsFreshlyDealtBoard_OddBoardWithNoneCenter_OneCompletion_NotFresh() {
         XCTAssertFalse(isFreshlyDealtBoard(completedTasks: 1, boardSize: 3, centerSquareType: .none))
     }
+
+    // MARK: - uncreatedCoreBoardSlots (Create-hub offer set)
+
+    func testUncreatedSlotsDropWindowsThatAlreadyHaveACoreBoardKeepingOrder() {
+        let now = date(2026, 5, 18)
+        let todayCore = boardForWindow(timeframe: .daily, referenceDate: now, id: "core-daily", isCore: true)
+        let monthCore = boardForWindow(timeframe: .monthly, referenceDate: now, id: "core-monthly", isCore: true)
+        let slots = getCoreBoardSlots(boards: [todayCore, monthCore], prefs: prefsAllEnabled, now: now)
+        XCTAssertEqual(slots.count, 4)
+
+        let offered = uncreatedCoreBoardSlots(slots)
+        XCTAssertEqual(offered.map { $0.timeframe }, [.weekly, .yearly])
+        XCTAssertTrue(offered.allSatisfy { $0.currentBoard == nil })
+    }
+
+    func testUncreatedSlotsKeepEverySlotWhenNothingIsCreated() {
+        let now = date(2026, 5, 18)
+        let slots = getCoreBoardSlots(boards: [], prefs: prefsAllEnabled, now: now)
+        XCTAssertEqual(uncreatedCoreBoardSlots(slots).map { $0.timeframe }, slots.map { $0.timeframe })
+    }
+
+    func testUncreatedSlotsAreEmptyOnceEveryWindowHasItsCoreBoard() {
+        let now = date(2026, 5, 18)
+        let boards: [Board] = [Timeframe.daily, .weekly, .monthly, .yearly].map {
+            boardForWindow(timeframe: $0, referenceDate: now, id: "core-\($0.rawValue)", isCore: true)
+        }
+        let slots = getCoreBoardSlots(boards: boards, prefs: prefsAllEnabled, now: now)
+        XCTAssertEqual(slots.count, 4)
+        XCTAssertTrue(uncreatedCoreBoardSlots(slots).isEmpty)
+    }
+
+    func testUncreatedSlotsIgnoreNonCoreBoardsForTheWindow() {
+        let now = date(2026, 5, 18)
+        let manualDaily = boardForWindow(timeframe: .daily, referenceDate: now, id: "manual", isCore: false)
+        let slots = getCoreBoardSlots(boards: [manualDaily], prefs: prefsAllEnabled, now: now)
+        XCTAssertTrue(uncreatedCoreBoardSlots(slots).map { $0.timeframe }.contains(.daily))
+    }
 }

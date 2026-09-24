@@ -3,6 +3,7 @@ import {
   type Board,
   type Timeframe,
   type UserPreferences,
+  uncreatedCoreBoardSlots,
 } from '@oybc/shared';
 import { useDrafts } from './createHub/useDrafts';
 import { useNewWizardParam } from './createHub/useNewWizardParam';
@@ -212,7 +213,10 @@ export function CreateHubPage({
       </header>
 
       <CoreBoardsSection
-        slots={coreBoardSlots}
+        // Creation surface: offer only the windows that have NO core
+        // board yet. A window whose core board already exists is
+        // opened from the Boards tab, never re-created from here.
+        slots={uncreatedCoreBoardSlots(coreBoardSlots)}
         // Already on /create — whole-row tap launches the wizard for
         // that timeframe's current window in place, no cross-tab hop.
         // Same end state as the Boards-tab caller's "tap row → browser

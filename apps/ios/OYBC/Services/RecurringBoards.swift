@@ -208,6 +208,20 @@ func getCoreBoardSlots(
     return slots
 }
 
+/// The subset of `getCoreBoardSlots` output whose current window has
+/// **no** core board yet — the only slots a *creation* surface should
+/// offer. The Create hub renders these (tapping one launches the wizard
+/// for that window); the Boards-tab strip keeps every slot because it
+/// also opens existing boards. Order is preserved.
+///
+/// TS twin: `uncreatedCoreBoardSlots` in `packages/shared/src/algorithms/recurringBoards.ts`.
+///
+/// - Parameter slots: Output of `getCoreBoardSlots`.
+/// - Returns: The slots whose `currentBoard` is nil, in the same order.
+func uncreatedCoreBoardSlots(_ slots: [CoreBoardSlot]) -> [CoreBoardSlot] {
+    slots.filter { $0.currentBoard == nil }
+}
+
 /// Whether a board is still "freshly dealt" — i.e. the user hasn't logged
 /// any real progress on it yet. Gates the Board-screen spawn-provenance
 /// note (Task Pools + Recurring Boards Rework, P6) and, in the future, the

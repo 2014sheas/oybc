@@ -105,6 +105,7 @@ export {
   getCoreBoardSlots,
   getParentBoards,
   isFreshlyDealtBoard,
+  uncreatedCoreBoardSlots,
 } from './recurringBoards';
 
 export type { CoreBoardSlot, PendingRecurringBoard } from './recurringBoards';

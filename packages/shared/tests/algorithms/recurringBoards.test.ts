@@ -2,6 +2,7 @@ import {
   PARENT_TIMEFRAMES,
   findPendingRecurringBoards,
   getCoreBoardSlots,
+  uncreatedCoreBoardSlots,
   getParentBoards,
   isFreshlyDealtBoard,
 } from '../../src/algorithms/recurringBoards';
@@ -612,5 +613,51 @@ describe('isFreshlyDealtBoard', () => {
     expect(
       isFreshlyDealtBoard({ completedTasks: 1, boardSize: 5, centerSquareType: CenterSquareType.CHOSEN }),
     ).toBe(false);
+  });
+});
+
+// ─── uncreatedCoreBoardSlots ─────────────────────────────────────────────────
+
+describe('uncreatedCoreBoardSlots', () => {
+  const NOW = new Date(2026, 4, 18, 12, 0, 0); // Mon May 18, 2026 noon
+
+  it('drops the slots whose current window already has a core board, keeping order', () => {
+    const todayCore = boardForWindow(Timeframe.DAILY, NOW, {
+      id: 'core-daily',
+      isCore: true,
+    });
+    const monthCore = boardForWindow(Timeframe.MONTHLY, NOW, {
+      id: 'core-monthly',
+      isCore: true,
+    });
+    const slots = getCoreBoardSlots([todayCore, monthCore], PREFS_ALL_ENABLED, NOW);
+    expect(slots).toHaveLength(4);
+
+    const offered = uncreatedCoreBoardSlots(slots);
+    expect(offered.map((s) => s.timeframe)).toEqual([Timeframe.WEEKLY, Timeframe.YEARLY]);
+    expect(offered.every((s) => s.currentBoard === null)).toBe(true);
+  });
+
+  it('keeps every slot when nothing has been created yet', () => {
+    const slots = getCoreBoardSlots([], PREFS_ALL_ENABLED, NOW);
+    expect(uncreatedCoreBoardSlots(slots)).toEqual(slots);
+  });
+
+  it('returns an empty list once every enabled window has its core board', () => {
+    const boards = [
+      Timeframe.DAILY,
+      Timeframe.WEEKLY,
+      Timeframe.MONTHLY,
+      Timeframe.YEARLY,
+    ].map((tf) => boardForWindow(tf, NOW, { id: `core-${tf}`, isCore: true }));
+    const slots = getCoreBoardSlots(boards, PREFS_ALL_ENABLED, NOW);
+    expect(slots).toHaveLength(4);
+    expect(uncreatedCoreBoardSlots(slots)).toEqual([]);
+  });
+
+  it('a non-core board for the window does not hide the slot', () => {
+    const manualDaily = boardForWindow(Timeframe.DAILY, NOW, { id: 'manual', isCore: false });
+    const slots = getCoreBoardSlots([manualDaily], PREFS_ALL_ENABLED, NOW);
+    expect(uncreatedCoreBoardSlots(slots).map((s) => s.timeframe)).toContain(Timeframe.DAILY);
   });
 });

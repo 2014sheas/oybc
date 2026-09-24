@@ -23,20 +23,23 @@ export interface CoreBoardsSectionProps {
 }
 
 /**
- * CoreBoardsSection — persistent home-screen section showing one row
- * per *enabled* recurring timeframe (daily/weekly/monthly/yearly).
+ * CoreBoardsSection — the Create hub's "Core boards" section: one row per
+ * enabled recurring timeframe (daily/weekly/monthly/yearly) whose current
+ * window has **no** core board yet. The consumer passes
+ * `uncreatedCoreBoardSlots(useCoreBoardSlots(userId))`; a window whose
+ * core board already exists is opened from the Boards tab (`CoreStrip`),
+ * never re-created from here.
  *
  * Each row is a single tap target — clicking anywhere on it invokes
- * `onSelect(slot)`. The Boards-tab consumer wires this to push the
- * per-timeframe browser; the Create-tab consumer wires it to launch
- * the wizard for that timeframe's current window. No competing
- * buttons inside the row.
+ * `onSelect(slot)`, which launches the wizard for that timeframe's
+ * current window. No competing buttons inside the row.
  *
  * No dismiss affordance — per-timeframe disable lives in Board
  * Preferences. That's the only path to silence a recurring prompt.
  *
- * Returns `null` when `slots.length === 0` (no recurring timeframes
- * enabled at all) so the parent doesn't render an empty heading.
+ * Returns `null` when `slots.length === 0` — no recurring timeframe is
+ * enabled, or every enabled window already has its core board — so the
+ * parent doesn't render an empty heading.
  */
 export function CoreBoardsSection({
   slots,

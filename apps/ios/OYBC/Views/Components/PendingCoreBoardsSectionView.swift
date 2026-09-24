@@ -1,15 +1,20 @@
 import SwiftUI
 
-/// CoreBoardsSectionView — persistent home-screen section showing one
-/// row per *enabled* recurring timeframe (daily/weekly/monthly/yearly).
+/// CoreBoardsSectionView — the Create hub's "Core boards" section: one
+/// row per enabled recurring timeframe (daily/weekly/monthly/yearly)
+/// whose current window has **no** core board yet. The consumer passes
+/// `uncreatedCoreBoardSlots(...)`; a window whose core board already
+/// exists is opened from the Boards tab's core grid, never re-created
+/// from here.
 ///
-/// Each row is a single tap target. The parent decides where it
-/// navigates — the Boards-tab consumer pushes the per-timeframe
-/// browser; the Create-tab consumer launches the wizard for that
+/// Each row is a single tap target that launches the wizard for that
 /// timeframe's current window. No competing in-row buttons.
 ///
 /// No dismiss affordance — per-timeframe disable lives in Board
 /// Preferences (Profile → Board Preferences → Recurring section).
+///
+/// Renders nothing when `slots` is empty — no recurring timeframe is
+/// enabled, or every enabled window already has its core board.
 ///
 /// File kept at the original path so the Xcode project doesn't need
 /// regeneration. Old type name preserved via a typealias at the
@@ -24,10 +29,8 @@ struct CoreBoardsSectionView: View {
     /// Invoked when the user taps anywhere on a row.
     let onSelect: (CoreBoardSlot) -> Void
 
-    /// Issue #321 — one-line muted subtitle under the section heading,
-    /// scoped to the Create-hub consumer (this view is also mounted
-    /// elsewhere without the subtitle, hence `nil` default rather than a
-    /// hardcoded string here).
+    /// Issue #321 — one-line muted subtitle under the section heading
+    /// (`nil` renders no subtitle; the Create hub passes its copy).
     var subtitle: String? = nil
 
     // MARK: - Body

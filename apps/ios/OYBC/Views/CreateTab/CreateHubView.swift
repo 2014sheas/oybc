@@ -180,7 +180,11 @@ struct CreateHubView: View {
                     hubHeader
 
                     CoreBoardsSectionView(
-                        slots: pendingRecurringVM.slots,
+                        // Creation surface: offer only the windows that
+                        // have NO core board yet. A window whose core
+                        // board already exists is opened from the Boards
+                        // tab, never re-created from here.
+                        slots: uncreatedCoreBoardSlots(pendingRecurringVM.slots),
                         onSelect: { slot in
                             // Already on the Create tab — whole-row tap flips
                             // mode directly into the wizard for that
