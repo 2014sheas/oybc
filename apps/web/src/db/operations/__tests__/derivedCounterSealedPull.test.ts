@@ -174,7 +174,7 @@ describe('sealed board + window-stamped derived row through the pull path', () =
 
 describe('sealed board + INDEFINITE window-stamped derived row through the pull path', () => {
   /**
-   * The row has `endDate: null` (window `[startDate, ∞)`), so its own window
+   * The row has no `endDate` (window `[startDate, ∞)`), so its own window
    * never excludes a later root event — `sealedAt` is the ONLY bound between
    * the post-seal increment and the sealed snapshot. The test above is
    * satisfied by the row's `endDate` alone; this one pins the seal bound.
@@ -191,7 +191,7 @@ describe('sealed board + INDEFINITE window-stamped derived row through the pull 
         currentCount: 2,
         isCompleted: false,
         startDate: WS,
-        endDate: null,
+        // no endDate: window [startDate, ∞)
         createdInWizard: true,
         timeframe: Timeframe.WEEKLY,
       }),
