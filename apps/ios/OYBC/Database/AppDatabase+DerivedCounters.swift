@@ -476,8 +476,7 @@ extension AppDatabase {
     }
 
     /// Recompute every window-stamped derived counter's `baseline` from the
-    /// root's current event log (docs/BOARD_SOURCES.md §Member rules —
-    /// *Baseline*).
+    /// root's current event log (docs/BOARD_SOURCES.md §Member rules — *Baseline*).
     ///
     /// A NON-AUTHORED write, exactly like `recomputeTaskCachesFromPull`: a raw
     /// `UPDATE tasks SET baseline = ?` and nothing else — no `updatedAt`, no
