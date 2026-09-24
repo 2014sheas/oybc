@@ -40,6 +40,11 @@ concurrency:
   group: web-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN (2026-09 audit T1): every job only reads the
+# repo. Widen per job, never here, and only where a step needs more.
+permissions:
+  contents: read
+
 jobs:
   build-test-lint:
     runs-on: ubuntu-latest
@@ -70,9 +75,8 @@ jobs:
         run: pnpm -w build
 
       - name: Test
-        # Turbo runs the `test` task in any package that defines one.
-        # Today: shared (Jest, 297 tests). Web has no `test` script
-        # and is silently skipped — that's the right behaviour.
+        # Turbo runs the `test` task in any package that defines one:
+        # shared + bingo-core (Jest) and web (Vitest + fake-indexeddb).
         run: pnpm -w test
 
       - name: Lint

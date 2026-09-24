@@ -32,6 +32,11 @@ concurrency:
   group: play-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN (2026-09 audit T1): every job only reads the
+# repo. Widen per job, never here, and only where a step needs more.
+permissions:
+  contents: read
+
 jobs:
   build-lint-typecheck:
     runs-on: ubuntu-latest
