@@ -17,13 +17,17 @@ GRDB-backed local storage. Live entities (`OYBC/Database/Models/`):
 - **Task** — reusable task definitions (Normal / Counting / Compound / Achievement); global completion lives here
 - **BoardTask** — pure placement record linking a board cell to a task
 - **CompoundChild** — one row per compound parent→child link (replaced the retired `task_steps` / `composite_nodes`)
-- **ProgressCounter** — cross-board cumulative counters
-- **RecurringBoardTemplate** — preset-pool recurring board definitions
-- **DefaultPool** — saved task pools
+- **RecurringBoardTemplate** — repeating-board definitions; each spawn resolves its `sources` live (see `docs/BOARD_SOURCES.md`)
+- **BoardSource** — a source reference (pool or board, with range / exclusions / member rules) embedded as JSON in templates and recurring drafts — a value type, not its own table
+- **Pool** — user-named collection of task references (Tasks tab)
+- **CoreBoardDefault** — per-timeframe core-board defaults, one row per `(userId, timeframe)` (replaces `DefaultPool`)
+- **DefaultPool** — legacy per-timeframe pool (Phase 6.X), still in the schema and sync contract
+- **TaskEvent** — Windowed Completion occurrence log (completion / increment) for event-owning tasks
+- **Entitlement** — monetization "is Pro" record (pure model + `Constants/ProGating.swift` helpers); lives in a server-authoritative Firestore collection, not a GRDB table and not in the sync contract
 - **User** — profile and preferences
 - **SyncQueue** — offline sync queue
 
-`TaskStep` / `CompositeTask` persist only as legacy migration-read types (first-launch backfill into `CompoundChild`). See `OYBC/Database/Schema.sql` for the base schema and `AppDatabase.swift` for the GRDB migrations.
+See `OYBC/Database/Schema.sql` for the base schema and `OYBC/Database/AppDatabase.swift` (+ `AppDatabase+Migrations.swift`) for the GRDB migrations.
 
 ## Project Structure
 
@@ -46,7 +50,7 @@ OYBC/
 
 ### Prerequisites
 
-- Xcode 26.3 (CI pins this; the simulator that ships with it is what `OS=latest` resolves to)
+- Xcode 26.3 (CI pins this). Locally, pin the simulator runtime explicitly (`OS=26.3.1`) — `OS=latest` picks the newest *installed* runtime and repoints snapshot runs (see root `CLAUDE.md` §iOS snapshot tests)
 - iOS 17+ deployment target
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
@@ -79,8 +83,8 @@ Declared in `project.yml`, resolved via Swift Package Manager:
 xcodegen generate   # if test files were added
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
-  -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
-  -derivedDataPath ~/oybc-derived test
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.3.1' \
+  -derivedDataPath /Volumes/Stephen/oybc-derived test
 ```
 
 Use the `OYBC` scheme for the logic-test target. See the root `CLAUDE.md` (§iOS snapshot tests) for the snapshot workflow and re-recording baselines.
