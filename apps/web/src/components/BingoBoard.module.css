@@ -1,4 +1,4 @@
-/* Bingo board (Riso) — the wizard-preview board renderer (BingoBoard → BingoSquare).
+/* Bingo board (Riso) — BingoBoard → BingoSquare, used only by the Playground (BoardGeneratorPlayground).
    Matches the Riso play-grid frame from Phase 3b. */
 .boardContainer {
   display: flex;

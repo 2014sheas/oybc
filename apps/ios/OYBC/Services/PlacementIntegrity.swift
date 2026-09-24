@@ -1,48 +1,22 @@
 import Foundation
 
-/// Board-integrity PR-2 (docs/BOARD_INTEGRITY.md) — deterministic placement
-/// winner rule + pure repair core. Swift twin of
+/// Deterministic placement winner rule + pure repair core
+/// (docs/BOARD_INTEGRITY.md, PR-2). Swift twin of
 /// `packages/shared/src/algorithms/placementResolution.ts`, case-for-case —
-/// keep them in lockstep, same pattern as `PoolMix.swift`. Vector-pinned
-/// cross-platform by `Fixtures/placementResolutionVectors.json`
-/// (`PlacementResolutionVectorTests.swift` runs the SAME fixture the TS
-/// suite does).
+/// see that file's doc for the rationale. Vector-pinned by
+/// `Fixtures/placementResolutionVectors.json`
+/// (`PlacementResolutionVectorTests.swift` runs the same fixture as TS).
 ///
-/// PR-1 gave `BoardTask` durable tombstones, but did nothing to fix ALREADY
-/// corrupted boards (duplicate placement rows left behind from the
-/// pre-tombstone era), nor to make collision resolution deterministic
-/// across every reader. Two problems, one root fix:
+/// Winner rule: highest `version` → newest `updatedAt` → lowest `id`.
 ///
-///  1. When more than one live `BoardTask` row lands on the same cell (or
-///     the same Task ends up placed more than once on one board), every
-///     reader — render, edit-draft seeding, the derivation kernel — must
-///     pick the SAME winner, or the visible grid and the persisted stats
-///     can disagree.
-///  2. The repair pass (Part 1, `AppDatabase+Sealing.repairPlacementIntegrityTx`)
-///     needs a PURE decision procedure for which rows to tombstone, so two
-///     devices independently repairing the SAME corrupted board converge on
-///     tombstoning the SAME losers — no ping-pong, ordinary LWW reconciles
-///     the tombstones afterward.
-///
-/// Both are driven by ONE winner rule: highest `version` → newest
-/// `updatedAt` → lowest `id` (lexicographic).
-///
-/// `resolvePlacements` is the ROW-SET selector Part 2 wires into render
-/// (`BoardPlayView.btByPosition`), edit-draft seeding (`seedEditDraft`), and
-/// every cascade's derivation-input assembly — before repair even runs, no
-/// two readers can disagree about which row occupies a cell. It resolves
-/// ONLY same-cell collisions — it deliberately does NOT collapse same-task
-/// duplicates across different (non-colliding) cells; two non-colliding
-/// cells legitimately render/derive independently even when they happen to
-/// share a taskId (that IS a board-wide invariant violation, but it's a
-/// repair-pass concern, not a per-cell rendering concern). Full per-cell
-/// resolver unification (task-duplicate collapsing at render time, etc.) is
-/// deferred to PR-3.
-///
-/// `computeRepair` is the Part 1 core: given a board's full live placement
-/// set, decide which rows are corrupt and must be tombstoned — cell
-/// collisions AND same-task duplicates (a Task placed at >1 row on one
-/// board), plus straight out-of-bounds rows (no winner to pick).
+/// - `resolvePlacements`: the per-cell row-set selector used by render
+///   (`BoardPlayViewModel`), edit-draft seeding (`seedEditDraft`) and every
+///   cascade's derivation input. Resolves only same-cell collisions;
+///   per-cell completion is resolved downstream by
+///   `DerivationPass.computeBoardGrid`.
+/// - `computeRepair`: the decision core of
+///   `AppDatabase+Sealing.repairPlacementIntegrityTx` — which rows to
+///   tombstone (cell collisions, same-task duplicates, out-of-bounds rows).
 enum PlacementIntegrity {
 
     // MARK: - Winner rule

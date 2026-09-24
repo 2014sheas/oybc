@@ -11,8 +11,9 @@ import { test, expect } from './_fixtures/bypass';
  *
  * Kept deliberately minimal: just confirm the page renders its two core
  * sections (Core-board defaults rows + the Repeating boards roster) rather
- * than timing out on a deleted route. Deeper roster-editing behavior is
- * covered by unit tests (`components/boardSettings/__tests__/`).
+ * than timing out on a deleted route. Deeper roster-editing behavior has no
+ * dedicated coverage here (`components/boardSettings/__tests__/` covers only
+ * `formatDefaultsSummary`).
  */
 test.describe('Board settings page', () => {
   test('renders the Board settings heading, core-defaults rows, and repeating-boards section', async ({

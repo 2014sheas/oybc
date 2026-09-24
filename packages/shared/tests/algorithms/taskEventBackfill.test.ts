@@ -11,8 +11,8 @@ import { TaskType } from '../../src/constants/enums';
 /**
  * taskEventBackfill.test.ts — Windowed Completion PR A migration helpers
  * (docs/WINDOWED_COMPLETION.md §Migration & backfill). Fixture-driven from
- * `tests/fixtures/backfillEventVectors.json` — the SAME file the deferred iOS
- * `BackfillEventVectorTests.swift` (PR B) will run through the Swift mirror.
+ * `tests/fixtures/backfillEventVectors.json` — the SAME file run by iOS
+ * `TaskEventVectorTests.swift` through the Swift mirror.
  * The determinism the vectors pin is what makes the union-dedupe converge.
  */
 

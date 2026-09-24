@@ -567,8 +567,8 @@ final class BoardWizardViewModel {
     /// `coreDefaultTaskIds` into the core-board setup wizard's initial
     /// selection. Task Pools + Recurring Boards Rework (P5),
     /// docs/POOLS_RECURRING.md §Surfaces item 6 ("pre-filled chips plain").
-    /// iOS twin of web's core-setup prefill resolver; mirrors
-    /// `resolveTemplateHydrationTaskIds`'s shape and fallback posture.
+    /// iOS twin of web's core-setup prefill resolver; same fallback
+    /// posture as `hydrateSourcesState` (fetch failures degrade to empty).
     ///
     /// - Folds `PoolMix.resolvePoolPullAdditions` across `corePoolIds` (no
     ///   removals at this stage — a fresh wizard has none yet), unioning

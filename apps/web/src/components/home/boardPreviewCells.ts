@@ -40,30 +40,23 @@ export interface BoardPreviewCellsResult {
  * preview can never show a state the real board doesn't have.
  *
  * Mirrors `apps/ios/OYBC/Helpers/BoardPreviewCells.swift` — keep both in
- * lockstep; see BoardPlaySurface.tsx's grid-render loop (~line 539) and
- * BoardPlayView.swift's `risoPlaySquare` for the canonical derivation this
- * is factored out of.
+ * lockstep; the canonical derivation is BoardPlaySurface.tsx's grid render
+ * (its `taskToSquareState` calls) and BoardPlayView.swift's `risoPlaySquare`.
  *
  * Rules (must match the play surface, not reinvented here):
  * - **Sealed board** (`board.sealedAt != null`): a placed cell's completion
  *   comes straight from `board.sealedCompletedCells` (indexes are
  *   `row*size+col`) — never from live event derivation.
  * - **Live board**: completion comes from `taskToSquareState`, the same
- *   function the play grid calls — it already implements the compound /
- *   derived-counter-lifetime-carve-out / windowed-event / achievement
- *   branch order, so this function does not re-derive any of that.
- * - **FREE center** on an odd board with no task placed there
- *   renders `freeCenter` — the auto-completed center square.
- * - Any other unplaced position renders `empty`.
+ *   function the play grid calls (compound / derived-counter / windowed-event
+ *   / achievement branch order lives there).
+ * - **FREE center** on an odd board with no task placed there renders
+ *   `freeCenter`; any other unplaced position renders `empty`.
  *
- * Board-integrity PR-3 (issue #360) — the ACHIEVEMENT branch of
- * `taskToSquareState` needs the kernel's per-cell resolution (it has no
- * cross-board context of its own). This function runs `computeBoardGrid`
- * ONCE per board (over just this board's own placements) to get that
- * resolution, then threads each cell's `CellState` through
- * `taskToSquareState` exactly like `BoardPlaySurface`'s live grid does —
- * closing this preview's inherited copy of the same web achievement-render
- * gap (docs/BOARD_INTEGRITY.md finding 2).
+ * Achievement cells need the kernel's per-cell resolution, so this runs
+ * `computeBoardGrid` ONCE per board (over this board's own placements) and
+ * threads each cell's `CellState` through `taskToSquareState`, exactly like
+ * the live grid.
  *
  * @param board - The resolved board being previewed.
  * @param boardTasks - This board's BoardTask placements (any scope — extra rows for other boards are ignored via `boardId` filtering by the caller).

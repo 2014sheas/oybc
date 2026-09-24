@@ -25,8 +25,8 @@ struct RecurringDraftMixPayload: Codable {
     var removedTaskIds: [String]
     /// Board Sources P1 — canonical sources shape. Always populated on
     /// `decoded(from:)` (derived from the trio for a v1 blob); derived at
-    /// `encoded()` time when constructed without one (the wizard UI can
-    /// only express [0, all] pool pulls until P2).
+    /// `encoded()` time when constructed without one (lossless only for
+    /// `[0, all]` pool pulls — the wizard always passes its native sources).
     var sources: [BoardSource]?
     /// §Member rules B1 (inert) — dice for hand-added counting members,
     /// keyed by task id. Always present on decode (`[:]` default) and
