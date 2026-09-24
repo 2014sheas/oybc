@@ -251,6 +251,7 @@ export {
   sourceConfiguration,
   sourceHasConfiguration,
   removeSourceLossSentence,
+  templateReferencesTask,
 } from './boardSources';
 
 export type {
@@ -261,6 +262,7 @@ export type {
   SelectBoardTasksArgs,
   SelectBoardTasksResult,
   LegacyMixFields,
+  TemplateReferenceRecord,
 } from './boardSources';
 
 // ===== Member rules (B1, docs/BOARD_SOURCES.md §Member rules) =====

@@ -1586,5 +1586,190 @@
       },
       "expected": "You'll lose 2 exclusions, 1 member rule, the narrowed range and the \"All squares\" filter."
     }
+  ],
+  "referenceVectors": [
+    {
+      "name": "manual hit — a hand-added task is referenced; the stale seed snapshot is not",
+      "template": {
+        "seedTaskIds": [
+          "task-a"
+        ],
+        "sources": [
+          {
+            "sourceId": "pool-1",
+            "kind": "pool",
+            "min": 0,
+            "max": null,
+            "excludedTaskIds": [],
+            "filter": "all"
+          }
+        ],
+        "manualTaskIds": [
+          "task-b"
+        ]
+      },
+      "suppliesBySourceId": {
+        "pool-1": [
+          "task-c"
+        ]
+      },
+      "cases": [
+        {
+          "taskId": "task-b",
+          "expected": true
+        },
+        {
+          "taskId": "task-a",
+          "expected": false
+        },
+        {
+          "taskId": "task-c",
+          "expected": true
+        }
+      ]
+    },
+    {
+      "name": "pool-source hit, exclude miss — the range is ignored, the exclude is not",
+      "template": {
+        "seedTaskIds": [],
+        "sources": [
+          {
+            "sourceId": "pool-1",
+            "kind": "pool",
+            "min": 0,
+            "max": 1,
+            "excludedTaskIds": [
+              "task-2"
+            ],
+            "filter": "all"
+          }
+        ],
+        "manualTaskIds": []
+      },
+      "suppliesBySourceId": {
+        "pool-1": [
+          "task-1",
+          "task-2",
+          "task-3"
+        ]
+      },
+      "cases": [
+        {
+          "taskId": "task-1",
+          "expected": true
+        },
+        {
+          "taskId": "task-3",
+          "expected": true
+        },
+        {
+          "taskId": "task-2",
+          "expected": false
+        },
+        {
+          "taskId": "task-9",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "name": "board-source hit — the done-filter is ignored; a source with no supply entry supplies nothing",
+      "template": {
+        "seedTaskIds": [],
+        "sources": [
+          {
+            "sourceId": "board-1",
+            "kind": "board",
+            "min": 0,
+            "max": null,
+            "excludedTaskIds": [],
+            "filter": "todo"
+          },
+          {
+            "sourceId": "board-dead",
+            "kind": "board",
+            "min": 0,
+            "max": null,
+            "excludedTaskIds": [],
+            "filter": "all"
+          }
+        ],
+        "manualTaskIds": []
+      },
+      "suppliesBySourceId": {
+        "board-1": [
+          "task-5",
+          "task-6"
+        ]
+      },
+      "cases": [
+        {
+          "taskId": "task-5",
+          "expected": true
+        },
+        {
+          "taskId": "task-6",
+          "expected": true
+        },
+        {
+          "taskId": "task-7",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "name": "un-migrated record — seedTaskIds is the hand-added layer",
+      "template": {
+        "seedTaskIds": [
+          "task-a"
+        ]
+      },
+      "suppliesBySourceId": {},
+      "cases": [
+        {
+          "taskId": "task-a",
+          "expected": true
+        },
+        {
+          "taskId": "task-b",
+          "expected": false
+        }
+      ]
+    },
+    {
+      "name": "legacy trio record — poolIds/removedTaskIds map through sourcesForRecord",
+      "template": {
+        "seedTaskIds": [
+          "task-x"
+        ],
+        "poolIds": [
+          "pool-1"
+        ],
+        "removedTaskIds": [
+          "task-2"
+        ],
+        "manualTaskIds": []
+      },
+      "suppliesBySourceId": {
+        "pool-1": [
+          "task-1",
+          "task-2"
+        ]
+      },
+      "cases": [
+        {
+          "taskId": "task-1",
+          "expected": true
+        },
+        {
+          "taskId": "task-2",
+          "expected": false
+        },
+        {
+          "taskId": "task-x",
+          "expected": false
+        }
+      ]
+    }
   ]
 }

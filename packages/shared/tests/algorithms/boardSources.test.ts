@@ -31,6 +31,8 @@ import {
   sourceConfiguration,
   sourceHasConfiguration,
   removeSourceLossSentence,
+  templateReferencesTask,
+  type TemplateReferenceRecord,
   type BoardSourceFilter,
   type SourceConfigurationDetail,
 } from '../../src';
@@ -88,6 +90,12 @@ interface Fixture {
     expectedSources: BoardSource[];
     expectedMixFields: { poolIds: string[]; removedTaskIds: string[] };
   }>;
+  referenceVectors: Array<{
+    name: string;
+    template: TemplateReferenceRecord;
+    suppliesBySourceId: Record<string, string[]>;
+    cases: Array<{ taskId: string; expected: boolean }>;
+  }>;
 }
 
 const fixture: Fixture = JSON.parse(
@@ -109,7 +117,21 @@ describe('boardSourceVectors fixture', () => {
     expect(fixture.conversionVectors.length).toBeGreaterThan(0);
     expect(fixture.configurationVectors.length).toBeGreaterThan(0);
     expect(fixture.lossSentenceVectors.length).toBeGreaterThan(0);
+    expect(fixture.referenceVectors.length).toBeGreaterThan(0);
   });
+
+  test.each(fixture.referenceVectors.map((v) => [v.name, v] as const))(
+    'references: %s',
+    (_name, v) => {
+      expect(v.cases.length).toBeGreaterThan(0);
+      for (const c of v.cases) {
+        expect([
+          c.taskId,
+          templateReferencesTask(v.template, c.taskId, v.suppliesBySourceId),
+        ]).toEqual([c.taskId, c.expected]);
+      }
+    },
+  );
 
   test.each(fixture.configurationVectors.map((v) => [v.name, v] as const))(
     'configuration: %s',

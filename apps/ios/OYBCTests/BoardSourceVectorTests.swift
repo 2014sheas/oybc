@@ -144,12 +144,53 @@ final class BoardSourceVectorTests: XCTestCase {
         let expected: String?
     }
 
+    private struct RawReferenceTemplate: Decodable {
+        let seedTaskIds: [String]
+        let poolIds: [String]?
+        let removedTaskIds: [String]?
+        let manualTaskIds: [String]?
+        let sources: [RawSource]?
+
+        var template: RecurringBoardTemplate {
+            RecurringBoardTemplate(
+                id: "t-ref",
+                userId: "u1",
+                name: "T",
+                timeframe: .daily,
+                boardSize: 3,
+                centerSquareType: .free,
+                isRandomized: true,
+                seedTaskIds: seedTaskIds,
+                poolIds: poolIds,
+                manualTaskIds: manualTaskIds,
+                removedTaskIds: removedTaskIds,
+                sources: sources.map { $0.map { $0.boardSource } },
+                isActive: true,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z"
+            )
+        }
+    }
+
+    private struct ReferenceCase: Decodable {
+        let taskId: String
+        let expected: Bool
+    }
+
+    private struct ReferenceVector: Decodable {
+        let name: String
+        let template: RawReferenceTemplate
+        let suppliesBySourceId: [String: [String]]
+        let cases: [ReferenceCase]
+    }
+
     private struct Fixture: Decodable {
         let capacityVectors: [CapacityVector]
         let selectionVectors: [SelectionVector]
         let conversionVectors: [ConversionVector]
         let configurationVectors: [ConfigurationVector]
         let lossSentenceVectors: [LossSentenceVector]
+        let referenceVectors: [ReferenceVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -223,6 +264,28 @@ final class BoardSourceVectorTests: XCTestCase {
             let mixFields = BoardSources.mixFieldsFromSources(sources)
             XCTAssertEqual(mixFields.poolIds, v.expectedMixFields.poolIds, v.name)
             XCTAssertEqual(mixFields.removedTaskIds, v.expectedMixFields.removedTaskIds, v.name)
+        }
+    }
+
+    /// Task Detail's "used in repeating boards" membership (2026-09 audit
+    /// T2): hand-added OR in a source's available supply; ranges and the
+    /// done-filter ignored; the stale `seedTaskIds` snapshot never read for
+    /// a migrated record.
+    func testReferenceVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.referenceVectors.isEmpty)
+        for v in fixture.referenceVectors {
+            XCTAssertFalse(v.cases.isEmpty, v.name)
+            let template = v.template.template
+            for c in v.cases {
+                XCTAssertEqual(
+                    BoardSources.templateReferencesTask(
+                        template, taskId: c.taskId, suppliesBySourceId: v.suppliesBySourceId
+                    ),
+                    c.expected,
+                    "\(v.name) — \(c.taskId)"
+                )
+            }
         }
     }
 
