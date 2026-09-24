@@ -23,6 +23,7 @@ import {
   computeWindowBaseline,
   isWindowStampedDerived,
   isFrozenDerivedRow,
+  isFrozenRowReachedByEvent,
   buildDerivedRows,
 } from '../../src/algorithms/memberRules';
 import type { BaselineEvent } from '../../src/algorithms/memberRules';
@@ -307,6 +308,21 @@ describe('isFrozenDerivedRow', () => {
       createdInWizard: v.task.createdInWizard,
     };
     expect(isFrozenDerivedRow(task, v.now)).toBe(v.expected);
+  });
+});
+
+describe('isFrozenRowReachedByEvent', () => {
+  it('fixture carries vectors (no silent skip)', () => {
+    expect((V.frozenRowReachedByEvent as any[]).length).toBeGreaterThanOrEqual(5);
+  });
+  it.each(V.frozenRowReachedByEvent as any[])('$name', (v: any) => {
+    const task = {
+      sharedCounterId: v.task.sharedCounterId,
+      startDate: v.task.startDate ?? undefined,
+      endDate: v.task.endDate ?? undefined,
+      createdInWizard: v.task.createdInWizard,
+    };
+    expect(isFrozenRowReachedByEvent(task, v.occurredAt, v.now)).toBe(v.expected);
   });
 });
 

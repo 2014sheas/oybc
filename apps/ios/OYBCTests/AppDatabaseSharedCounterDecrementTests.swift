@@ -558,4 +558,61 @@ final class AppDatabaseSharedCounterDecrementTests: XCTestCase {
         try assertEndedUntouched(db)
         XCTAssertEqual(result.affectedBoards.map(\.boardId), [freezeBoardLive])
     }
+
+    // MARK: - Undo across the window end (Task 3 item 7)
+
+    /// A log made 2s before a day window closed (23:59:58), undone after it
+    /// closed: the row is FROZEN, so it gets no authored write — but the
+    /// tombstoned event sat inside its window, so the kernel's sum for it
+    /// dropped and the ended board's STORED stats must revert with the undo
+    /// (cascade only), not wait for a seal or pull. iOS `currentTimestamp()`
+    /// reads the real clock, so the log is seeded at 23:59:58 of a past day
+    /// and the undo runs "now" (after that window) — the same boundary.
+    func test_undoAcrossWindowEnd_cascadesEndedBoardWithoutWritingFrozenRow() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveTask(makeSourceTask(id: "root-u", currentCount: 1, maxCount: 100))
+        var day = makeLinkedTask(id: "derived-day", sourceId: "root-u", baseline: 0, maxCount: 1, isCompleted: true)
+        day.currentCount = 1
+        day.version = 4
+        day.startDate = "2020-01-07T00:00:00.000Z"
+        day.endDate = "2020-01-07T23:59:59.999Z"
+        day.createdInWizard = true
+        try db.saveTask(day)
+        // The board's stats as the log's cascade left them: the FREE center
+        // plus the derived square (1 of 1 in-window).
+        var board = makeBoard(id: "board-day", name: "Day")
+        board.completedTasks = 2
+        try db.saveBoard(board)
+        try db.saveBoardTask(makeBoardTask(boardId: "board-day", taskId: "derived-day"))
+        let logAt = "2020-01-07T23:59:58.000Z"
+        try db.write { d in
+            try TaskEvent(
+                id: "log-1", userId: "u1", taskId: "root-u", kind: .increment, delta: 1,
+                occurredAt: logAt, boardId: nil, createdAt: logAt, updatedAt: logAt, lastSyncedAt: nil,
+                version: 1, isDeleted: false, deletedAt: nil
+            ).save(d)
+            try d.execute(sql: "DELETE FROM sync_queue")
+        }
+
+        let before = try XCTUnwrap(try db.read { try Board.fetchOne($0, key: "board-day") })
+        XCTAssertEqual(before.completedTasks, 2, "precondition: FREE center + the derived square")
+        let rowBefore = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-day") })
+
+        let result = try db.undoLastCounterLog(sourceTaskId: "root-u")
+        XCTAssertEqual(result.undoneAmount, 1)
+
+        // The ended board's stored stats revert with the undo …
+        let after = try XCTUnwrap(try db.read { try Board.fetchOne($0, key: "board-day") })
+        XCTAssertEqual(after.completedTasks, 1, "ended board must re-derive: only the FREE center remains")
+        XCTAssertEqual(after.version, before.version + 1)
+        XCTAssertTrue(try queuedIds(db, "boards").contains("board-day"))
+        // … but the frozen row is never written or enqueued (the freeze holds) …
+        let row = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: "derived-day") })
+        XCTAssertEqual(row.version, rowBefore.version, "frozen row must not get an authored write")
+        XCTAssertEqual(row.updatedAt, rowBefore.updatedAt)
+        XCTAssertFalse(try queuedIds(db, "tasks").contains("derived-day"))
+        // … and is not credited in the "also counted" set.
+        XCTAssertFalse(result.affectedBoards.map(\.boardId).contains("board-day"))
+    }
 }

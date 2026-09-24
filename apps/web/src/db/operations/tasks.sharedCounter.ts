@@ -7,6 +7,7 @@ import {
   SyncOperationType,
   TaskType,
   isFrozenDerivedRow,
+  isFrozenRowReachedByEvent,
   propagateIncrement,
   selectLastIncrementEntry,
 } from '@oybc/shared';
@@ -30,19 +31,25 @@ export interface AffectedBoard {
  *
  * Propagation freeze (docs/WINDOWED_COMPLETION.md §Derived-task carve-out,
  * docs/BOARD_SOURCES.md §Plan B2 notes): a window-stamped derived row whose
- * window has ended (`isFrozenDerivedRow`) is skipped entirely — no authored
- * write, no enqueue, no cascade, not credited. The kernel resolves such rows
- * from the root's in-window events, so skipping them cannot change board
- * completion; it bounds each "+1" to the rows whose windows are still open.
- * Hub-linked rows (no `startDate`), indefinite rows and in-window rows
- * propagate as before.
+ * window has ended (`isFrozenDerivedRow`) gets no authored write, no enqueue
+ * and no credit. The kernel resolves such rows from the root's in-window
+ * events, not the latch; an increment / decrement stamps its event `now`
+ * (after every frozen window), so it cannot change a frozen row's completion
+ * and the row is left out of the cascade too — each "+1" is bounded to the
+ * rows whose windows are still open. An UNDO tombstones an EARLIER event
+ * (`undoneOccurredAt`) that may sit inside a frozen row's window, which DOES
+ * change that row's kernel sum: those rows (`isFrozenRowReachedByEvent`) join
+ * the cascade set — cascade only, still no write / enqueue — so their boards'
+ * stored stats revert with the undo. Hub-linked rows (no `startDate`),
+ * indefinite rows and in-window rows propagate as before.
  *
  * Must run inside the caller's `rw` transaction covering `tasks`,
  * `taskEvents`, `boards`, `boardTasks`, `compoundChildren` and `syncQueue`.
  *
- * @param sourceTaskId   The shared-counter root whose count just changed.
- * @param newSourceCount The root's `currentCount` after the change.
- * @param now            The operation's ISO8601 timestamp (also the freeze clock).
+ * @param sourceTaskId     The shared-counter root whose count just changed.
+ * @param newSourceCount   The root's `currentCount` after the change.
+ * @param now              The operation's ISO8601 timestamp (also the freeze clock).
+ * @param undoneOccurredAt UNDO only — the tombstoned event's `occurredAt`.
  * @returns The live ACTIVE boards placing the source or an unfrozen linked row,
  *   read BEFORE the cascade rewrites board status.
  */
@@ -50,14 +57,22 @@ async function propagateToLinkedRows(
   sourceTaskId: string,
   newSourceCount: number,
   now: string,
+  undoneOccurredAt?: string,
 ): Promise<AffectedBoard[]> {
   // Indexed read (the `sharedCounterId` index exists since Dexie v11), then
-  // drop tombstones and rows whose window has ended.
-  const linkedTasks = await db.tasks
+  // drop tombstones; split off the rows whose window has ended.
+  const linkedRows = await db.tasks
     .where('sharedCounterId')
     .equals(sourceTaskId)
-    .filter((t) => !t.isDeleted && !isFrozenDerivedRow(t, now))
+    .filter((t) => !t.isDeleted)
     .toArray();
+  const linkedTasks = linkedRows.filter((t) => !isFrozenDerivedRow(t, now));
+  // Undo across the window end — cascade-only reach into frozen rows whose
+  // window holds the undone event.
+  const reachedFrozenIds =
+    undoneOccurredAt === undefined
+      ? []
+      : linkedRows.filter((t) => isFrozenRowReachedByEvent(t, undoneOccurredAt, now)).map((t) => t.id);
 
   const propagationResults = propagateIncrement(
     { currentCount: newSourceCount },
@@ -108,7 +123,7 @@ async function propagateToLinkedRows(
   // ONE batched cascade: lookups + window context built once, each affected
   // board recomputed once (it reads the rows written above, same transaction).
   // Its per-board result map is not needed — credit comes from the pre-read above.
-  await runBoardCascadeForTasks(allChangedTaskIds);
+  await runBoardCascadeForTasks([...allChangedTaskIds, ...reachedFrozenIds]);
 
   return affectedBoards;
 }
@@ -361,7 +376,10 @@ export interface UndoCounterLogResult {
  *      narrow reversal of the ledger entry, not a full re-derivation.)
  *   5. Propagate to live linked tasks via `propagateIncrement` and run ONE
  *      batched board cascade for the source + those linked tasks, exactly
- *      like increment/decrement.
+ *      like increment/decrement — plus (cascade only, no write) any FROZEN
+ *      window-stamped row whose window contains the undone entry's
+ *      `occurredAt`, whose kernel sum the tombstone just changed (undo across
+ *      the window end; see {@link propagateToLinkedRows}).
  *
  * No-op (returns `{ affectedBoards: [], undoneAmount: 0 }`) when the source
  * is missing/deleted or has no undoable entry — callers should treat that
@@ -453,8 +471,14 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
       );
 
       // 6–8. Propagate to the live linked rows exactly like
-      // increment/decrement, then run ONE batched board cascade.
-      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now);
+      // increment/decrement, then run ONE batched board cascade — which also
+      // reaches (cascade-only) frozen rows whose window holds the undone event.
+      const affectedBoards = await propagateToLinkedRows(
+        sourceTaskId,
+        newSourceCount,
+        now,
+        entry.occurredAt,
+      );
 
       return { affectedBoards, undoneAmount: Math.abs(entryDelta) };
     },

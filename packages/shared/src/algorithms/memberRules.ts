@@ -35,7 +35,7 @@ import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import type { BoardSourceSupply } from './boardSources';
-import { isTimeframeExpired } from './calendarBoundaries';
+import { isTimeframeExpired, isWithinTimeframe } from './calendarBoundaries';
 import { deriveDisplayedCount } from './sharedCounter';
 import { generateCounterTaskTitle } from './taskTitle';
 import { uuidv5 } from './uuidv5';
@@ -748,12 +748,17 @@ export function isWindowStampedDerived(
  * Is this STORED row a window-stamped derived counter whose window has ENDED,
  * so shared-counter propagation must skip it (the propagation freeze)?
  *
- * Shared-counter increment / decrement / undo skip a frozen row entirely — no
- * authored write, no sync enqueue, no board cascade — which bounds each "+1"
- * to the rows whose windows are still open instead of one row per board per
- * window forever. Freezing cannot change board completion: the kernel resolves
+ * Shared-counter increment / decrement / undo skip a frozen row's authored
+ * write and sync enqueue — which bounds each "+1" to the rows whose windows
+ * are still open instead of one row per board per window forever. The
+ * propagated latch is not what completion reads: the kernel resolves
  * window-stamped rows from the ROOT's events inside `[startDate, endDate]`
- * (`resolveDerivedCounterWindowState`), never from the propagated latch.
+ * (`resolveDerivedCounterWindowState`). So an increment / decrement (whose
+ * new event is stamped `now`, after every frozen window) cannot change a
+ * frozen row's completion and skips its cascade too. An UNDO can: it
+ * tombstones an EARLIER event that may lie inside a frozen window — undo
+ * therefore still cascades (never writes) the frozen rows
+ * {@link isFrozenRowReachedByEvent} names.
  * (`refreshDerivedBaselines` is non-authored and is NOT gated by this.)
  *
  * "Ended" uses the kernel's window convention (`isWithinTimeframe`, inclusive
@@ -775,6 +780,35 @@ export function isFrozenDerivedRow(
 ): boolean {
   if (!isWindowStampedDerived(t) || t.endDate == null) return false;
   return isTimeframeExpired(t.endDate, new Date(now));
+}
+
+/**
+ * Undo across the window end: is `t` a FROZEN window-stamped derived row
+ * ({@link isFrozenDerivedRow} at `now`) whose own window `[startDate,
+ * endDate]` contains `occurredAt` — the instant of the event an undo just
+ * tombstoned?
+ *
+ * The kernel counts that event toward such a row, so tombstoning it can flip
+ * the row's completion; the freeze still forbids an authored write, but the
+ * row's BOARD must be re-derived (cascade only — no task write, no enqueue)
+ * or its stored `completedTasks` / `linesCompleted` / status stay stale until
+ * a seal or pull. Window membership is the kernel's own `isWithinTimeframe`
+ * (inclusive both ends, parsed compare), so this names exactly the frozen
+ * rows whose kernel sum the undo changed. An unparseable date is "not
+ * reached" (it cannot be frozen either).
+ *
+ * @param t          - The linked task row to test.
+ * @param occurredAt - The undone event's `occurredAt`.
+ * @param now        - The undo's timestamp (the freeze clock).
+ * @returns True when the undo must cascade (never write) this frozen row.
+ */
+export function isFrozenRowReachedByEvent(
+  t: Pick<Task, 'sharedCounterId' | 'startDate' | 'createdInWizard' | 'endDate'>,
+  occurredAt: string,
+  now: string,
+): boolean {
+  if (!isFrozenDerivedRow(t, now) || !t.startDate) return false;
+  return isWithinTimeframe(occurredAt, t.startDate, t.endDate ?? null);
 }
 
 /**

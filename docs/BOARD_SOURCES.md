@@ -680,21 +680,25 @@ Both platforms, one PR (#491).
   no longer read for it — propagation stamped that latch from ANY later
   increment, so a past window's cell went green from a later window and
   sealed re-derivation diverged across devices. Propagation to a row whose
-  window has ended freezes (no authored write, no enqueue, no cascade — the
+  window has ended freezes (no authored write, no enqueue, no credit — the
   shared `isFrozenDerivedRow(row, now)` predicate + Swift twin, vector-pinned
   in `memberRuleVectors.json`; `endDate` inclusive), which bounds the
-  per-increment fan-out; a changed root id now reaches the
+  per-increment fan-out; increment / decrement skip its cascade too (their
+  event is stamped after every frozen window), while an undo cascade-only
+  re-derives the frozen rows whose window holds the undone event
+  (`isFrozenRowReachedByEvent`); a changed root id now reaches the
   sealed boards that place its window-stamped rows, so a late in-window root
   event converges every device's sealed snapshot. Hub-linked derived rows
   (no `startDate`) keep the latch carve-out unchanged. Canonical:
   [`WINDOWED_COMPLETION.md` §Derived-task carve-out](WINDOWED_COMPLETION.md#derived-task-carve-out).
-- **`baseline` is display-only.** It stays the non-authored, event-derived
-  cache defined above (`refreshDerivedBaselines` unchanged, no version bump,
-  no enqueue) and feeds only `deriveDisplayedCount`; the kernel never reads
-  it. Known follow-up: a frozen row's displayed count is its value at freeze
-  time, so a late-synced in-window event is reflected in the cell's
-  completion but not its number until display moves onto the same
-  root-event window sum.
+- **`baseline` is a lifetime-display cache only.** It stays the
+  non-authored, event-derived cache defined above (`refreshDerivedBaselines`
+  unchanged, no version bump, no enqueue); the kernel never reads it, and
+  neither does any board / hub / preview surface for a window-stamped row:
+  those read `resolveLinkedCounterDisplay` — count AND completion from the
+  same root-event window sum the kernel uses (pinned by
+  `taskWindowStateVectors.json#linkedCounterDisplay`). Only readers with no
+  event map (and hub-linked rows) still show `currentCount − baseline`.
 
 #### Plan B3 — implementation notes (2026-09-19)
 

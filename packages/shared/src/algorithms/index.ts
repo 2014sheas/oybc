@@ -284,6 +284,7 @@ export {
   computeWindowBaseline,
   isWindowStampedDerived,
   isFrozenDerivedRow,
+  isFrozenRowReachedByEvent,
   buildDerivedRows,
 } from './memberRules';
 

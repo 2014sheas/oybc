@@ -241,3 +241,57 @@ describe('shared-counter propagation freeze', () => {
     expect(ids.sort()).toEqual([HUB, LIVE, ROOT].sort());
   });
 });
+
+/**
+ * Undo across the window end (Task 3 item 7). A log made 2s before a daily
+ * window closes, undone 2s after it closed: the row is now FROZEN (no
+ * authored write), but the tombstoned event sat inside its window, so the
+ * kernel's sum for it dropped — the ended board's STORED stats must revert
+ * with the undo (cascade only), not wait for a seal or a pull.
+ */
+describe('undo across the window end', () => {
+  const DAY = 'derived-day';
+  const BOARD_DAY = 'board-day';
+
+  it("re-derives the ended board's stored stats without writing the frozen row", async () => {
+    await db.tasks.add(
+      derived(DAY, {
+        maxCount: 1,
+        timeframe: Timeframe.DAILY,
+        startDate: '2026-09-22T00:00:00.000Z',
+        endDate: '2026-09-22T23:59:59.999Z',
+      }),
+    );
+    await seedBoard(BOARD_DAY, '2026-09-22T00:00:00.000Z', '2026-09-22T23:59:59.999Z');
+    await seedPlacement('bt-day', BOARD_DAY, DAY);
+
+    // 23:59:58 on the window's last day — the row is live and completes.
+    vi.setSystemTime(new Date('2026-09-22T23:59:58.000Z'));
+    await incrementSharedCounter(ROOT, 1);
+    expect((await db.boards.get(BOARD_DAY))!.completedTasks).toBe(1);
+    const rowAfterLog = (await db.tasks.get(DAY))!;
+    const boardVersionAfterLog = (await db.boards.get(BOARD_DAY))!.version;
+    await db.syncQueue.clear();
+
+    // 00:00:02 — the window has ended; undo the log.
+    vi.setSystemTime(new Date('2026-09-23T00:00:02.000Z'));
+    const { undoneAmount, affectedBoards } = await undoLastCounterLog(ROOT);
+    expect(undoneAmount).toBe(1);
+
+    // The ended board's stored stats revert with the undo …
+    const day = (await db.boards.get(BOARD_DAY))!;
+    expect(day.completedTasks).toBe(0);
+    expect(day.version).toBe(boardVersionAfterLog + 1);
+    expect(await queuedIds('boards')).toContain(BOARD_DAY);
+    // … but the frozen row is never written or enqueued (the freeze holds) …
+    const row = (await db.tasks.get(DAY))!;
+    expect(row.version).toBe(rowAfterLog.version);
+    expect(row.updatedAt).toBe(rowAfterLog.updatedAt);
+    expect(await queuedIds('tasks')).not.toContain(DAY);
+    // … and is not credited in the "also counted" set.
+    expect(affectedBoards.map((b) => b.boardId)).not.toContain(BOARD_DAY);
+    // A frozen row whose window does NOT hold the undone event is not reached.
+    await expectEndedUntouched();
+  });
+});
+

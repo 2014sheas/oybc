@@ -227,18 +227,34 @@ window has ended is frozen — `isFrozenDerivedRow(row, now)` (shared
 `memberRules.ts` ↔ `BoardSources.isFrozenDerivedRow`, pinned by the
 `frozenDerivedRow` vectors in `memberRuleVectors.json`): a window-stamped row
 with `now` strictly after its `endDate` (inclusive, `isWithinTimeframe`
-convention) gets no authored write, no enqueue, no cascade and no credit on
-increment / decrement / undo; no-`endDate`, hub-linked and in-window rows
-propagate as before, and `refreshDerivedBaselines` still refreshes a frozen
-row's non-authored `baseline`. The web ops run ONE batched
-`runBoardCascadeForTasks` over the root + unfrozen rows (iOS already batched
-via `runSharedCounterCascade`). **Known
-follow-up:** the displayed count (`deriveDisplayedCount(baseline, root
-count)`) is still baseline math, so a frozen row shows its count at freeze
-time — a late-synced in-window event changes the cell's completion (kernel)
-but not its displayed number until a later pass moves display onto the same
-root-event window sum. This supersedes the earlier `linkedAt` idea: the board
-window is the anchor, and it already lives on the derived task.
+convention) gets no authored write, no enqueue and no credit on increment /
+decrement / undo. The precise completion statement: an increment or decrement
+stamps its new event `now`, after every frozen window, so it cannot change a
+frozen row's kernel sum and the row is also left out of the cascade. An
+**undo** can — it tombstones an EARLIER event whose `occurredAt` may lie
+inside a frozen row's window (log at 23:59:58, undo at 00:00:02) — so undo
+additionally cascades, cascade-only (still no write / enqueue / credit), the
+frozen rows whose window contains the undone entry's `occurredAt`
+(`isFrozenRowReachedByEvent(row, occurredAt, now)`, shared + Swift twin,
+`frozenRowReachedByEvent` vectors), and the ended board's stored stats revert
+with the undo instead of waiting for a seal or pull. No-`endDate`, hub-linked
+and in-window rows propagate as before, and `refreshDerivedBaselines` still
+refreshes a frozen row's non-authored `baseline`. The web ops run ONE batched
+`runBoardCascadeForTasks` over the root + unfrozen rows (+ undo's reached
+frozen rows); iOS batches via `runSharedCounterCascade` (`cascadeOnlyTaskIds`).
+**Display (2026-09-23, same train):** every render / filter read of a
+window-stamped row — play cell (count text + green), poster / preview cells,
+compound detail child rows, the wizard Preview, the Sources done-filter, the
+arrival snapshot and the Counters hub row — goes through
+`resolveLinkedCounterDisplay` (`taskEvents.ts` ↔ `TaskEvents.swift`, pinned by
+`taskWindowStateVectors.json#linkedCounterDisplay`): count AND completion are
+the same root-event window sum the kernel uses (hub rows also bounded at the
+board's `sealedAt`), so a cell never paints green or reads N/N while board
+stats count it incomplete, and a late-synced in-window event moves both. Only
+hub-linked rows and context-less (lifetime) readers still show
+`currentCount − baseline`. Sealed play cells keep their max/0 snapshot display.
+This supersedes the earlier `linkedAt` idea: the board window is the anchor,
+and it already lives on the derived task.
 
 ### `Task.isCompleted` / `currentCount` / `completedAt` become caches
 
