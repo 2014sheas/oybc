@@ -680,7 +680,8 @@ window-stamped derived counters B2 started minting.
   `memberHasActions`/`buildMemberMenuItems`/`onDeriveMember`/`onAddTask` and
   `SourceRow.tsx`'s wiring; `memberActionsMenu` and the `RisoSourceRowView.swift`
   call site) and replaced by inline member-row controls: `MemberRuleRow.tsx`
-  ↔ `RisoMemberRuleRowView.swift` render the 22pt target stepper + "of N
+  ↔ `RisoMemberRuleRowView.swift` render the target stepper (32pt since B3.1; 22pt as B3 landed it — see the
+  phone-width section) + "of N
   unit" caption for a counting member pulled from a **board** source, dice
   only for a counting member pulled from a **pool** source, and for a
   compound member the One square / Split up pill with a "1 square" /
