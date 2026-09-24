@@ -6,7 +6,7 @@ Canonical output of the full project review run on **2026-07-06** (concept / arc
 
 **Sizing legend:** S = single small PR (< ~200 lines), M = one substantial PR or 2–3 small ones, L = a phased mini-project with its own doc.
 
-**As of 2026-07-08: B-track (B1–B4) COMPLETE; drift fixes #263/#236/#272 shipped; flaky-test race fixed (#283).** **D-track COMPLETE (D1 #293 · D2 #295 · D3 #297); E1 #298 + E3 #301 shipped — the review's directive-ready queue is EMPTY (2026-07-08).** Every remaining item needs a decision or user action: #262 secret (Stephen-only, blocks rules+hosting auto-deploy), E6 dependency majors (Dependabot #249/#251 + red #250), A4 project split, A7 repo-settings half, A8 runner image, E4 issue-hygiene (optional), E5 polish debts, F-track features (F1 Shared Counters P2–P4 remains the active feature directive), and the launch-era items (#300 version skew, web pull-apply tests). **Decision/user-gated:** — A6/C4/C1/B1 all shipped (see below). **Everything remaining needs a decision or user action first:** #262 (missing FIREBASE_SERVICE_ACCOUNT secret — blocks rules+hosting auto-deploy), #263 (LWW edge canon — one-vector fix once decided), A4 (project split), E6 (dependency majors — Dependabot #249/#251 firebase runtime + red #250 vitest 4), B2 (play-surface extraction — sequenced after B1 settles; L-sized, worth a Gate-1 plan), A7's repo-settings half, A8 (runner image), D1–D3 (sync hardening — D1 has UX copy decisions), E-track items, F-track features.
+**As of 2026-07-08: B-track (B1–B4) COMPLETE; drift fixes #263/#236/#272 shipped; flaky-test race fixed (#283).** **D-track COMPLETE (D1 #293 · D2 #295 · D3 #297); E1 #298 + E3 #301 shipped — the review's directive-ready queue is EMPTY (2026-07-08).** Every remaining item needs a decision or user action: #262 secret (Stephen-only, blocks rules+hosting auto-deploy), E6 dependency majors (Dependabot #249/#251 + red #250), A4 project split, A7 repo-settings half, A8 runner image, E4 issue-hygiene (optional), E5 polish debts, F-track features (F1 Shared Counters P2–P4 remains the active feature directive), and the launch-era items (#300 version skew, web pull-apply tests). **Decision/user-gated:** — A6/C4/C1/B1 all shipped (see below). **Everything remaining needs a decision or user action first:** #262 (missing FIREBASE_SERVICE_ACCOUNT secret — blocks rules+hosting auto-deploy), #263 (LWW edge canon — one-vector fix once decided), A4 (project split), E6 (dependency majors — Dependabot #249/#251 firebase runtime + red #250 vitest 4), A7's repo-settings half, A8 (runner image), E-track items, F-track features. *(B2 and D1–D3 were listed here before they shipped — see the B-track/D-track COMPLETE notes above and their sections below.)*
 
 **Shipped 2026-07-06/07 (agentic execution):** the ENTIRE Track G transition — T1 #229 · T2 #233 · T3 #234 · T4 #230 · T5 #238 · T6 #239 — plus A3 #232 (closes #231) and C3 #237 (closes #235; review surfaced web twin bug → #236). The Play Phase-0 architecture spike can now build inside `apps/play`.
 
@@ -187,7 +187,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 - **Scope:** delete/correct the `bingo_lines` claim; fix the BoardPlayView figure (or better, land B1/B2 first and write the new truth); add shared-counter model coverage to TASK_SYSTEM/SYNC_STRATEGY (much of it can lift from `SHARED_COUNTERS.md`); add this ROADMAP.md to CLAUDE.md's Documentation list.
 - **Acceptance:** no doc describes a table, size, or model the code contradicts.
 
-### E2 — Web unit-test harness (Vitest + fake-indexeddb) — `M`
+### E2 — Web unit-test harness (Vitest + fake-indexeddb) — SHIPPED (minimal harness landed with B2-W2 [#273](https://github.com/2014sheas/oybc/pull/273); `apps/web/vitest.config.ts`, `vitest run` as the web `test` script, run in CI via turbo)
 - **Why:** web has **zero** unit tests; all web logic rides on 7 Playwright specs no workflow even runs. Long-standing follow-up. Sequenced deliberately: it pays off most *after* B2/B3 give it a layered surface to test.
 - **Scope:** Vitest + fake-indexeddb wired into `apps/web` with a `test` script (web CI picks it up automatically — turbo runs `test` where defined); first targets: `db/operations` (post-B1 split modules), `wizardPersist`, `useBoardWizard` reducer logic. Optionally add a CI job (or scheduled job) that runs the Playwright suite.
 - **Acceptance:** `pnpm -w test` runs web tests in CI; the shared-counter and deletion-cascade operations have direct coverage.
@@ -205,7 +205,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 
 ### E6 — Dependency majors pass — `M`
 - **Why:** the health audit found two deliberate-upgrade candidates: `zod` pinned to v3 in `packages/shared` (v4 is out; it's the shared package's only runtime dep, so the migration touches every schema) and iOS `GRDB` on 6.x (7.x is out; SPM deps are hand-bumped with no automated CVE coverage — see A7). The web stack is otherwise current-to-bleeding (React 19 / Vite 8 / TS 6).
-- **Scope:** one PR per major, not a combined sweep: zod 4 migration (run the shared Jest suite as the safety net — this is exactly what its 34 test files are for), then GRDB 7 (read the migration guide; the `Codable`/record conformances are the risk surface; full iOS test + snapshot suites gate it).
+- **Scope:** one PR per major, not a combined sweep: zod 4 migration (run the shared Jest suite as the safety net — this is exactly what its test suite is for), then GRDB 7 (read the migration guide; the `Codable`/record conformances are the risk surface; full iOS test + snapshot suites gate it).
 - **Acceptance:** both majors current or an explicit pin-with-reason comment where staying back is the right call.
 
 ### E7 — e2e suite: 10 pre-existing failures on `dev`, hidden by `continue-on-error` — `M`
@@ -215,7 +215,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 
 ### E5 — Pre-existing small polish debts (absorbed for completeness) — `S` each
 - ~~Blip mood picker persistence~~ — **RESOLVED**: the dead picker was removed rather than wired (it persisted nothing; no shared `blipMood` field ever existed). The mascot itself was later retired too — `RisoMiniBoardArt` (mini-board motif) + `RisoInitialAvatar` replaced `BlipPlaceholder` on all eight surfaces (Blip-retirement handoff, 2026-09-10).
-- DEBUG-gate the ~29 ungated iOS `print()` calls.
+- DEBUG-gate the ungated iOS `print()` calls — RESOLVED: as of 2026-09-23 every `print(` outside `DebugLog.swift` is inside `#if DEBUG` (the audit's initial "2 remain" read was a grep that missed the enclosing conditional; the cleanup PR routes those DEBUG-only prints through `dlog` for consistency).
 - ~~`autoArchiveCompleted` — wire it or remove the pref~~ — **RESOLVED (removed)**: the field + toggle were deleted from shared types, Zod, and both platforms (no consumer read it). See the obsolete-controls removal.
 - CAPTCHA / auth rate-limit hardening — pre-public-launch gate, tracked not scheduled.
 
@@ -226,7 +226,7 @@ Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade 
 From the end-user review. Theme: the deep machinery is built — most opportunity is making it **visible, reachable, and pre-loaded**, not adding new kinds of depth. Order below is the recommended sequence.
 
 ### F1 — Shared Counters P2–P4 — `L`, **in flight**
-- Canonical doc: `docs/SHARED_COUNTERS.md`. P2 board-play polish (shared marker, credited toast), P3 arrival banner (also closes the unwired `counterArrivals.ts`), P4 rich stats. This is the differentiator — finish making the engine visible before starting new tracks.
+- Canonical doc: `docs/SHARED_COUNTERS.md`. P2 board-play polish (shared marker, credited toast), P3 arrival banner — **SHIPPED** [#307](https://github.com/2014sheas/oybc/pull/307) (`counterArrivals.ts` is now wired: web `hooks/useCounterArrivals.ts` in `BoardPlaySurface`, iOS `detectCounterArrivals` in `BoardPlayViewModel`), P4 rich stats (deferred per the canonical doc). This is the differentiator — finish making the engine visible before starting new tracks.
 
 ### F2 — Starter board gallery + tutorial rework (#157) — `L`
 - **Why:** the biggest funnel risk is cold start — empty library + a 24-square authoring lift before any fun. Starter templates and the tutorial rework are the same "first session" problem; do them as one design effort.

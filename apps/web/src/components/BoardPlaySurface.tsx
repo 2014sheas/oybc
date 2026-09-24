@@ -1117,7 +1117,7 @@ export function BoardPlaySurface({
         const modalSourceId = resolveSharedCounterSourceId(task, sharedCounterSourceIds);
         const activeQuickAmount =
           modalQuickAmount && modalQuickAmount.boardTaskId === bt.id ? modalQuickAmount : null;
-        // Initial highlighted chip for the amount picker — a preset (or 10),
+        // Initial highlighted chip for the amount picker — a preset (or 1),
         // NOT the raw remembered default (fixed rows have no off-preset chip).
         // The remembered default still drives the plain grid tap + Hub pill.
         const modalDefaultAmount = initialChipAmount(

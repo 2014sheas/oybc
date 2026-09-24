@@ -198,6 +198,8 @@ CREATE TABLE boards (
 
 ### Phase 2: Core Game Loop & Task System (Offline-Only) (Weeks 3-7)
 
+> **Historical plan — shipped/superseded.** The checklist below is the original Phase 2 plan, kept as a record. Phase 2 shipped; its unchecked `[ ]` boxes were never back-filled, and parts of it (Progress/Composite task types, the `task_steps` / `composite_tasks` / `composite_nodes` tables) were later superseded and removed. See root `CLAUDE.md` and [`TASK_SYSTEM.md`](TASK_SYSTEM.md) for the current model.
+
 **Goal**: Complete bingo game with comprehensive task system working entirely offline
 
 **Week 3: Board Creation UI**

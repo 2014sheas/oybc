@@ -28,10 +28,12 @@ describe('initialChipAmount', () => {
     expect(initialChipAmount(10)).toBe(10);
     expect(initialChipAmount(25)).toBe(25);
   });
-  it('falls back to 10 for an off-preset or missing default', () => {
-    expect(initialChipAmount(7)).toBe(10);
-    expect(initialChipAmount(null)).toBe(10);
-    expect(initialChipAmount(undefined)).toBe(10);
+  it('falls back to 1 for an off-preset or missing default', () => {
+    // A fresh counter (no remembered default) must open on +1, matching the
+    // one-tap paths (`defaultLogAmount ?? 1`) — not +10.
+    expect(initialChipAmount(7)).toBe(1);
+    expect(initialChipAmount(null)).toBe(1);
+    expect(initialChipAmount(undefined)).toBe(1);
   });
 });
 
