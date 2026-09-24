@@ -369,12 +369,10 @@ struct BoardListView: View {
         _Concurrency.Task {
             do {
                 if pause {
-                    var updated = template
-                    updated.isActive = false
-                    updated.updatedAt = now
-                    updated.version += 1
-                    try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
-                        updated, operation: .update, now: now
+                    // Re-read-in-write: never save the captured `template`
+                    // (a spawn/pull since capture would be reverted).
+                    try AppDatabase.shared.setTemplateActive(
+                        id: template.id, isActive: false, now: now
                     )
                 } else {
                     _ = try AppDatabase.shared.removeMissingBoardSources(
