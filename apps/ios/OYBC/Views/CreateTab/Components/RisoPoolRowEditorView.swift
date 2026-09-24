@@ -6,17 +6,17 @@ import SwiftUI
 /// Replaces a resting `RisoPoolListView` row in place: an accent header bar, a
 /// Title field (autofocused), the counting Action/Goal/Unit row with a live
 /// "Reads as" preview, the compound SUB-TASKS editor (`RisoCompoundEditFieldsView`:
-/// the shared `RisoCompoundRulePicker` + sub-task cards + add-sub-task buttons), a
+/// the shared `RisoCompoundRulePicker` + sub-task cards + the quick-add row), a
 /// validation line, and Discard / Save actions. Edits are staged only —
 /// nothing touches the DB until the board is created (`onSave` writes the
 /// parent's `stagedEdits`).
 struct RisoPoolRowEditorView: View {
 
-    /// The task being edited (the compound picker's `parentId`).
+    /// The task being edited (the compound link guard's `parentId`).
     let taskId: String
     let taskType: TaskType
     @Binding var draft: TaskEditPatch
-    /// Compound only — browsable library tasks for "+ Existing task…".
+    /// Compound only — browsable library tasks the sub-task quick-add row matches against.
     let libraryTasks: [Task]
     /// Compound only — live links across all compounds (loop check).
     let allLinks: [CompoundChild]

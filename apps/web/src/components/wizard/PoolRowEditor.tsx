@@ -3,7 +3,6 @@ import { RisoButton, RisoIcon, RisoSectionLabel } from '../riso';
 import { countingPreview, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
 import { CompoundFields } from './CompoundFields';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
-import { isNestedDialogKey } from './nestedDialogKey';
 import styles from './PoolRowEditor.module.css';
 
 const HEADER_LABEL: Record<TaskType, string> = {
@@ -14,7 +13,7 @@ const HEADER_LABEL: Record<TaskType, string> = {
 };
 
 export interface PoolRowEditorProps {
-  /** The task being edited (the compound picker's `parentId`). */
+  /** The task being edited (the compound link guard's `parentId`). */
   taskId: string;
   taskType: TaskType;
   draft: TaskEditPatch;
@@ -28,7 +27,7 @@ export interface PoolRowEditorProps {
    * used" copy — mirrors the design handoff's `everywhereLine`.
    */
   usedOnBoardCount: number;
-  /** Compound only — browsable library tasks for "+ Existing task…". */
+  /** Compound only — browsable library tasks the sub-task quick-add row matches against. */
   libraryTasks: Task[];
   /** Compound only — live links across all compounds (loop check). */
   allLinks: CompoundChild[];
@@ -40,7 +39,7 @@ export interface PoolRowEditorProps {
  * 4px blue left rail, a hairline header strip ("EDITING · <TYPE>" + the
  * Esc/⌘↵ hint), Title (+ Action/Goal/Unit on one line for Counting, +
  * live "Reads as" preview), the Compound sub-task editor (operator picker
- * + sub-task cards + add buttons), a footer staging line + validation
+ * + sub-task cards + the quick-add row), a footer staging line + validation
  * message, and Discard / Save actions.
  *
  * Edits are staged only — `onSave` hands the current `draft` up to the
@@ -50,8 +49,8 @@ export interface PoolRowEditorProps {
  *
  * Current-iOS vocabulary throughout (NOT the handoff's retired "steps" /
  * "In order" terms): **sub-tasks**, an operator picker (All of / Any of /
- * At least N — reusing the existing `OperatorSelector`), "+ Normal
- * sub-task" / "+ Counting sub-task".
+ * At least N — reusing the existing `OperatorSelector`), and the wizard's
+ * own quick-add row to add a sub-task ("New sub: Normal / Counting").
  */
 export function PoolRowEditor({
   taskId,
@@ -68,7 +67,6 @@ export function PoolRowEditor({
   const isBlocked = validationMessage !== null;
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
-    if (isNestedDialogKey(e)) return;
     if (e.key === 'Escape') {
       e.stopPropagation();
       onDiscard();

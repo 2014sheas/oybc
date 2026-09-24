@@ -83,7 +83,8 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         )
         // +80 vs. the pre-rework baseline: the new shared `RisoCompoundRulePicker`
         // (rule chips row) above the sub-tasks list. +40 more for the
-        // "+ Existing task…" button row (compound editing Task 7).
+        // sub-task quick-add row + "New sub:" chips (compound editing Task 9;
+        // they replaced Task 7's add / "+ Existing task…" buttons).
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 680)), record: recordMode)
     }
 

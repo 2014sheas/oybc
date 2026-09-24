@@ -471,7 +471,7 @@ export function BoardWizardTasksStep({
     return overlayCompoundChildrenWithStagedEdits(merged, stagedEdits);
   }, [library.compoundChildrenByCompound, pendingTasks, stagedEdits]);
 
-  // "+ Existing task…" picker: DB-backed browsable tasks (a pick must exist
+  // Compound sub-task quick-add matches: DB-backed browsable tasks (a pick must exist
   // at staged apply) with staged edits overlaid; links = the effective graph.
   const pickerLibraryTasks = useMemo<Task[]>(
     () => browsableTasks.map((t) => effectiveTaskMap[t.id] ?? t),

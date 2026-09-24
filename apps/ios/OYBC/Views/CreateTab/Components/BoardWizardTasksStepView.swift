@@ -332,7 +332,7 @@ struct BoardWizardTasksStepView: View {
         )
     }
 
-    /// "+ Existing task…" picker source: the DB-backed browsable tasks (a pick
+    /// Compound sub-task quick-add match source: the DB-backed browsable tasks (a pick
     /// must exist when the staged edit applies — pending tasks are left out)
     /// with staged edits overlaid. Twin of web `pickerLibraryTasks`.
     private var pickerLibraryTasks: [OYBC.Task] {

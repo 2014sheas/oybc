@@ -4,10 +4,11 @@ import { test, expect, seedTask, seedCompoundChild, openTab } from './_fixtures/
 /**
  * Task Detail edits a compound's rule and sub-tasks (Compound Task Editing
  * After Creation, web). Seeds a 2-sub-task "All of" compound, then through
- * the real UI: Tasks tab → detail → Edit → "+ Normal sub-task" "Third" →
- * "At least N of" (2 of 3) → Save. The detail's Subtasks list shows three
- * rows, survives a reload, and the stored row carries the M-of-N rule.
- * A second case links an EXISTING library task through "+ Existing task…".
+ * the real UI: Tasks tab → detail → Edit → type "Third" + Enter in the
+ * sub-task quick-add row → "At least N of" (2 of 3) → Save. The detail's
+ * Subtasks list shows three rows, survives a reload, and the stored row
+ * carries the M-of-N rule. A second case links an EXISTING library task by
+ * typing part of its title and clicking the match.
  */
 
 const PARENT_ID = 'cccccccc-0001-0000-0000-000000000001';
@@ -70,8 +71,12 @@ test.describe('Task Detail — compound editing', () => {
     await expect(sheet.getByLabel('Sub-task 1 title')).toHaveValue('Pushups');
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
 
-    await sheet.getByRole('button', { name: '+ Normal sub-task' }).click();
-    await sheet.getByLabel('Sub-task 3 title').fill('Third');
+    // The wizard's quick-add row: Enter appends a NEW sub-task (even with
+    // matches showing — a match is linked only by clicking it).
+    await sheet.getByLabel('New normal task title').fill('Third');
+    await sheet.getByLabel('New normal task title').press('Enter');
+    await expect(sheet.getByLabel('Sub-task 3 title')).toHaveValue('Third');
+    await expect(sheet.getByLabel('New normal task title')).toHaveValue('');
     await sheet.getByRole('button', { name: 'At least N of' }).click();
     await expect(sheet.getByText('of 3 sub-tasks')).toBeVisible();
 
@@ -133,8 +138,8 @@ test.describe('Task Detail — compound editing', () => {
     await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
   });
 
-  test('links an existing library task through "+ Existing task…"', async ({ page }) => {
-    await seedTask(page, { id: LIBRARY_ID, title: 'Plank', type: 'normal' });
+  test('links an existing library task by typing and clicking its match', async ({ page }) => {
+    await seedTask(page, { id: LIBRARY_ID, title: 'Stretch', type: 'normal' });
     // A counting task with no unit would fail save validation — never offered.
     await seedTask(page, { id: UNITLESS_ID, title: 'Read 10', type: 'counting', action: 'Read', maxCount: 10 });
     await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
@@ -143,38 +148,31 @@ test.describe('Task Detail — compound editing', () => {
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const sheet = page.getByRole('dialog', { name: 'Edit task' });
     await expect(sheet.getByLabel('Sub-task 2 title')).toHaveValue('Squats');
-    await sheet.getByRole('button', { name: '+ Existing task…' }).click();
+    const field = sheet.getByLabel('New normal task title');
+    const matches = sheet.getByRole('list', { name: 'Matching library tasks' });
 
-    const picker = page.getByRole('dialog', { name: 'Add an existing task' });
-    const rows = picker.getByRole('list', { name: 'Tasks you can add' });
-    await expect(rows.getByRole('button', { name: 'Add Plank' })).toBeVisible();
-    // Current sub-tasks, the compound itself and the unit-less counter are hidden.
-    await expect(rows.getByRole('button', { name: /Add (Pushups|Squats|Workout routine|Read 10)/ })).toHaveCount(0);
-    await picker.getByLabel('Search tasks').fill('pla');
-    await rows.getByRole('button', { name: 'Add Plank' }).click();
-    await expect(picker).toHaveCount(0);
-    // The edit sheet stays open with the picked task as sub-task 3.
-    await expect(sheet.getByLabel('Sub-task 3 title')).toHaveValue('Plank');
+    // The unit-less counter is never offered; a current sub-task isn't either.
+    await field.fill('Read');
+    await expect(matches).toHaveCount(0);
+    await field.fill('Squ');
+    await expect(matches).toHaveCount(0);
+
+    await field.fill('Stret');
+    await matches.getByRole('button', { name: /Stretch/ }).click();
+    await expect(matches).toHaveCount(0);
+    await expect(field).toHaveValue('');
+    // The picked task is linked as sub-task 3; no new task was created.
+    await expect(sheet.getByLabel('Sub-task 3 title')).toHaveValue('Stretch');
 
     await sheet.getByRole('button', { name: /save changes/i }).click();
     await expect(sheet).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Open subtask: Plank' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open subtask: Stretch' })).toBeVisible();
 
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Open subtask: Plank' })).toBeVisible();
-  });
-
-  test('Escape closes the picker but keeps the edit sheet open', async ({ page }) => {
-    await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: 'Edit', exact: true }).click();
-    const sheet = page.getByRole('dialog', { name: 'Edit task' });
-    await sheet.getByRole('button', { name: '+ Existing task…' }).click();
-    const picker = page.getByRole('dialog', { name: 'Add an existing task' });
-    await expect(picker.getByLabel('Search tasks')).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(picker).toHaveCount(0);
-    await expect(sheet).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open subtask: Stretch' })).toBeVisible();
+    await page.getByRole('button', { name: 'Open subtask: Stretch' }).click();
+    await expect(page).toHaveURL(new RegExp(`/tasks/${LIBRARY_ID}`));
   });
 });

@@ -27,8 +27,7 @@ import {
   validatePatch,
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
-import { CompoundFields } from '../../components/wizard/CompoundFields';
-import type { PickerInputsState } from '../../components/wizard/ExistingTaskPicker';
+import { CompoundFields, type LibraryInputsState } from '../../components/wizard/CompoundFields';
 import { compoundStructureChanged, compoundSubmitFor } from './compoundEditGate';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
@@ -128,11 +127,11 @@ export function TaskEditSheet({
   // What the editor opened with — only an edited structure is submitted.
   const [compoundBaseline, setCompoundBaseline] = useState<TaskEditPatch | null>(null);
   const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
-  // "+ Existing task…" picker inputs: the browsable library and every live
-  // link (loaded once with the sub-tasks).
+  // Sub-task quick-add inputs: the browsable library (its matches) and every
+  // live link (the loop check), loaded once with the sub-tasks.
   const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
   const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
-  const [pickerInputsState, setPickerInputsState] = useState<PickerInputsState>('loading');
+  const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
 
   useEffect(() => {
     if (task.type !== TaskType.COMPOUND) return;
@@ -159,23 +158,23 @@ export function TaskEditSheet({
         if (!cancelled) setCompoundLoadError(`Couldn't load sub-tasks: ${(e as Error).message}`);
       }
     };
-    // The picker's inputs load on their own: a failure there leaves the
-    // sub-task editor usable (only "+ Existing task…" is affected).
-    const loadPicker = async () => {
+    // The library inputs load on their own: a failure there leaves the
+    // sub-task editor usable (only linking an existing task is affected).
+    const loadLibrary = async () => {
       try {
-        const picker = await loadPickerInputs(task.userId);
+        const library = await loadLibraryInputs(task.userId);
         if (!cancelled) {
-          setLibraryTasks(picker.libraryTasks);
-          setAllLinks(picker.allLinks);
-          setPickerInputsState('loaded');
+          setLibraryTasks(library.libraryTasks);
+          setAllLinks(library.allLinks);
+          setLibraryInputsState('loaded');
         }
       } catch (e) {
-        console.error('[TaskEditSheet] loading existing-task picker inputs failed', e);
-        if (!cancelled) setPickerInputsState('failed');
+        console.error('[TaskEditSheet] loading sub-task library inputs failed', e);
+        if (!cancelled) setLibraryInputsState('failed');
       }
     };
     void load();
-    void loadPicker();
+    void loadLibrary();
     return () => {
       cancelled = true;
     };
@@ -447,7 +446,7 @@ export function TaskEditSheet({
                 parentId={task.id}
                 libraryTasks={libraryTasks}
                 allLinks={allLinks}
-                pickerInputsState={pickerInputsState}
+                libraryInputsState={libraryInputsState}
               />
             ) : compoundLoadError !== null ? (
               <p className={styles.compoundStatus} role="alert">
@@ -492,7 +491,7 @@ export function TaskEditSheet({
 }
 
 /**
- * Loads the "+ Existing task…" picker's inputs for `userId`: the browsable
+ * Loads the sub-task quick-add row's inputs for `userId`: the browsable
  * library (`computeBrowsableTasks` — hides wizard drafts, goal-less hub
  * counters and deleted rows, exactly like the Tasks tab) and every live
  * compound link under one of the user's compounds (the loop check's graph;
@@ -500,9 +499,9 @@ export function TaskEditSheet({
  * never leak in).
  *
  * @param userId - The signed-in user.
- * @returns The picker's library tasks and live links.
+ * @returns The library tasks and live links.
  */
-async function loadPickerInputs(
+async function loadLibraryInputs(
   userId: string,
 ): Promise<{ libraryTasks: Task[]; allLinks: CompoundChild[] }> {
   const [tasks, links, boards, boardTasks] = await Promise.all([

@@ -1,27 +1,29 @@
 import { useState } from 'react';
-import {
-  OperatorType,
-  TaskType,
-  compoundChildPickerCandidates,
-  type CompoundChild,
-  type Task,
-} from '@oybc/shared';
-import { RisoSectionLabel } from '../riso';
+import { OperatorType, TaskType, type CompoundChild, type Task } from '@oybc/shared';
+import { RisoChip, RisoSectionLabel } from '../riso';
 import { OperatorSelector } from '../OperatorSelector';
 import { CounterStepper } from '../CounterStepper';
 import {
-  childPatchFromTask,
+  appendPickedChild,
+  appendTypedChild,
   clampThreshold,
-  keptChildTaskIds,
   liveChildren,
-  newChildPatch,
   readsAsPreview,
+  subtaskQuickAddCandidates,
   type ChildPatch,
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
-import { ExistingTaskPicker, type PickerInputsState } from './ExistingTaskPicker';
+import { WizardQuickAddRow } from './WizardQuickAddRow';
 import styles from './PoolRowEditor.module.css';
+
+/** Whether the host's library inputs (`libraryTasks` / `allLinks`) have
+ *  arrived. Task Detail loads them on open; the wizard already holds them. */
+export type LibraryInputsState = 'loading' | 'loaded' | 'failed';
+
+/** Stable empty selection for the quick-add row — the candidates already
+ *  exclude the compound's current sub-tasks. */
+const NO_SELECTED_IDS: Set<string> = new Set();
 
 export interface CompoundFieldsProps {
   /** The compound's staged structure (title is not edited here). */
@@ -32,24 +34,27 @@ export interface CompoundFieldsProps {
   parentId: string;
   /**
    * Browsable library tasks (`computeBrowsableTasks` output — wizard drafts
-   * and deleted rows already hidden). The "+ Existing task…" picker narrows
-   * them to the eligible ones via `compoundChildPickerCandidates`.
+   * and deleted rows already hidden). Narrowed to the eligible ones via
+   * `compoundChildPickerCandidates` and offered as the quick-add row's
+   * matches.
    */
   libraryTasks: Task[];
   /** Live compound links across ALL compounds (for the loop check). */
   allLinks: CompoundChild[];
   /** Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
    *  on open; the wizard already holds them). Default `loaded`. */
-  pickerInputsState?: PickerInputsState;
+  libraryInputsState?: LibraryInputsState;
 }
 
 /**
  * CompoundFields — the compound rule + sub-task editor: operator picker
  * (All of / Any of / At least N, with a threshold stepper), one card per
  * sub-task (title, and Action/Goal/Unit for counting sub-tasks), a delete
- * button per card, and "+ Normal sub-task" / "+ Counting sub-task" /
- * "+ Existing task…" (opens `ExistingTaskPicker`; a pick is appended as a
- * linked sub-task via `childPatchFromTask`).
+ * button per card, and the wizard's own quick-add row (`WizardQuickAddRow`)
+ * to add a sub-task: typing lists matching eligible library tasks — click
+ * one to link it (`childPatchFromTask`); Enter / Add appends a NEW sub-task
+ * titled with the text, Normal or Counting per the "New sub:" chips. Same
+ * job, same interface as adding a task to a board.
  *
  * Shared by the wizard's inline pool-row editor (`PoolRowEditor`) and the
  * Task Detail edit sheet (`TaskEditSheet`). Fully controlled: every edit is
@@ -62,9 +67,9 @@ export function CompoundFields({
   parentId,
   libraryTasks,
   allLinks,
-  pickerInputsState = 'loaded',
+  libraryInputsState = 'loaded',
 }: CompoundFieldsProps): React.ReactElement {
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [newSubCounting, setNewSubCounting] = useState(false);
   const subCount = liveChildren(draft).length;
   const operator = draft.operator ?? OperatorType.AND;
   const threshold = draft.threshold ?? 2;
@@ -94,14 +99,7 @@ export function CompoundFields({
     onDraftChange({ ...draft, children: nextChildren, threshold: nextThreshold });
   }
 
-  function addChild(isCounting: boolean): void {
-    onDraftChange({ ...draft, children: [...draft.children, newChildPatch(isCounting)] });
-  }
-
-  function pickExisting(task: Task): void {
-    setPickerOpen(false);
-    onDraftChange({ ...draft, children: [...draft.children, childPatchFromTask(task)] });
-  }
+  const candidates = subtaskQuickAddCandidates(parentId, libraryTasks, allLinks, draft);
 
   return (
     <div className={styles.compoundSection}>
@@ -126,29 +124,37 @@ export function CompoundFields({
         ))}
       </div>
 
-      <div className={styles.addRow}>
-        <button type="button" className={styles.addButton} onClick={() => addChild(false)}>
-          + Normal sub-task
-        </button>
-        <button type="button" className={styles.addButton} onClick={() => addChild(true)}>
-          + Counting sub-task
-        </button>
-        <button type="button" className={styles.addButton} onClick={() => setPickerOpen(true)}>
-          + Existing task…
-        </button>
-        <span className={styles.subtaskNote}>
-          A sub-task&apos;s type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.
-        </span>
+      {/* The wizard's quick-add row, draft-only: Enter appends a new
+          sub-task (no task is created until Save); a clicked match links
+          that existing task. `userId` / `onTaskCreated` feed only the
+          create path, which `onSubmitText` replaces. */}
+      <WizardQuickAddRow
+        userId=""
+        onTaskCreated={() => {}}
+        disabled={libraryInputsState === 'loading'}
+        libraryTasks={candidates}
+        selectedIds={NO_SELECTED_IDS}
+        onExistingTaskPicked={(task) => onDraftChange(appendPickedChild(draft, task))}
+        onSubmitText={(text) => onDraftChange(appendTypedChild(draft, text, newSubCounting))}
+      />
+      <div className={styles.newSubTypeRow}>
+        <span className={styles.newSubTypeLabel}>New sub:</span>
+        <RisoChip on={!newSubCounting} onClick={() => setNewSubCounting(false)}>
+          Normal
+        </RisoChip>
+        <RisoChip on={newSubCounting} onClick={() => setNewSubCounting(true)}>
+          Counting
+        </RisoChip>
       </div>
-
-      {pickerOpen && (
-        <ExistingTaskPicker
-          tasks={compoundChildPickerCandidates(parentId, libraryTasks, allLinks, keptChildTaskIds(draft))}
-          onPick={pickExisting}
-          onCancel={() => setPickerOpen(false)}
-          status={pickerInputsState}
-        />
+      {libraryInputsState === 'loading' && <p className={styles.subtaskNote}>Loading your tasks…</p>}
+      {libraryInputsState === 'failed' && (
+        <p className={styles.libraryError} role="alert">
+          Couldn&apos;t load your tasks to link. New sub-tasks still work — close and reopen the editor to try again.
+        </p>
       )}
+      <span className={styles.subtaskNote}>
+        A sub-task&apos;s type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.
+      </span>
     </div>
   );
 }

@@ -4,15 +4,19 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   OperatorType,
   TaskType,
-  compoundChildPickerCandidates,
   type CompoundChild,
   type Task,
 } from '@oybc/shared';
-import { CompoundFields } from '../CompoundFields';
-import { ExistingTaskPicker } from '../ExistingTaskPicker';
+import { CompoundFields, type LibraryInputsState } from '../CompoundFields';
+import { selectQuickAddMatches } from '../../pools/poolEditSheetSelectors';
+import { WizardQuickAddRow } from '../WizardQuickAddRow';
 import {
+  appendPickedChild,
+  appendTypedChild,
   emptyPatch,
-  keptChildTaskIds,
+  isNewChild,
+  subtaskQuickAddCandidates,
+  liveChildren,
   type ChildPatch,
   type TaskEditPatch,
 } from '../../../db/taskEditPatch';
@@ -21,8 +25,9 @@ import {
  * CompoundFields is the rule + sub-task editor shared by the wizard's inline
  * pool-row editor and the Task Detail edit sheet. Rendered with
  * `react-dom/server` (no jsdom/RTL harness in this repo), so this pins the
- * markup: sub-task cards, the operator picker, both add buttons, and the
- * "at least N" stepper's bounds.
+ * markup: sub-task cards, the operator picker, the wizard's quick-add row
+ * (+ New sub: Normal / Counting chips), and the "at least N" stepper's
+ * bounds; the two append paths are pure helpers pinned directly.
  */
 
 function child(id: string, title: string, over: Partial<ChildPatch> = {}): ChildPatch {
@@ -40,7 +45,7 @@ function child(id: string, title: string, over: Partial<ChildPatch> = {}): Child
   };
 }
 
-function render(draft: TaskEditPatch): string {
+function render(draft: TaskEditPatch, libraryInputsState?: LibraryInputsState): string {
   return renderToStaticMarkup(
     React.createElement(CompoundFields, {
       draft,
@@ -48,6 +53,7 @@ function render(draft: TaskEditPatch): string {
       parentId: 'P',
       libraryTasks: [],
       allLinks: [],
+      libraryInputsState,
     }),
   );
 }
@@ -59,7 +65,7 @@ const TWO_CHILD_AND: TaskEditPatch = {
 };
 
 describe('CompoundFields', () => {
-  it('renders each sub-task, the operator picker and all three add buttons', () => {
+  it('renders each sub-task, the operator picker and the quick-add row with the New sub chips', () => {
     const html = render(TWO_CHILD_AND);
     expect(html).toContain('value="Stretch"');
     expect(html).toContain('value="Read"');
@@ -68,11 +74,43 @@ describe('CompoundFields', () => {
     expect(html).toContain('All of');
     expect(html).toContain('Any of');
     expect(html).toContain('At least N of');
-    expect(html).toContain('+ Normal sub-task');
-    expect(html).toContain('+ Counting sub-task');
-    expect(html).toContain('+ Existing task…');
-    // The picker is closed until the button is pressed.
+    // The wizard's own quick-add row: same field, placeholder and Add button.
+    expect(html).toContain('aria-label="New normal task title"');
+    expect(html).toContain('placeholder="e.g. Meditate 10 min"');
+    expect(html).toMatch(/<button[^>]*aria-label="Add task"[^>]*>Add<\/button>/);
+    // New sub: Normal (default, pressed) / Counting chips.
+    expect(html).toContain('New sub:');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>Normal</);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>Counting</);
+    // Task 7's buttons and picker dialog are gone.
+    expect(html).not.toContain('+ Normal sub-task');
+    expect(html).not.toContain('+ Counting sub-task');
+    expect(html).not.toContain('+ Existing task…');
     expect(html).not.toContain('role="dialog"');
+  });
+
+  it('renders the quick-add row byte-identically to the wizard row', () => {
+    const row = renderToStaticMarkup(
+      React.createElement(WizardQuickAddRow, {
+        userId: '',
+        onTaskCreated: () => {},
+        libraryTasks: [],
+        onExistingTaskPicked: () => {},
+      }),
+    );
+    expect(render(TWO_CHILD_AND)).toContain(row);
+  });
+
+  it('disables the row and says so while the library loads; flags a failed load', () => {
+    const loading = render(TWO_CHILD_AND, 'loading');
+    expect(loading).toMatch(/<input[^>]*aria-label="New normal task title"[^>]*disabled=""/);
+    expect(loading).toContain('Loading your tasks…');
+    const failed = render(TWO_CHILD_AND, 'failed');
+    expect(failed).not.toMatch(/<input[^>]*aria-label="New normal task title"[^>]*disabled=""/);
+    expect(failed).toContain('role="alert"');
+    const loaded = render(TWO_CHILD_AND);
+    expect(loaded).not.toContain('Loading your tasks…');
+    expect(loaded).not.toContain('role="alert"');
   });
 
   it('badges each card by its own type — N / # / C — with a matching accessible name', () => {
@@ -146,7 +184,42 @@ function link(parent: string, childId: string): CompoundChild {
   };
 }
 
-describe('ExistingTaskPicker', () => {
+describe('CompoundFields append paths', () => {
+  it('a picked match is appended as a LINKED sub-task (its own id and type)', () => {
+    const next = appendPickedChild(TWO_CHILD_AND, task('ok-c', 'Run 5 km', { type: TaskType.COUNTING, action: 'Run', maxCount: 5, unit: 'km' }));
+    expect(next.children).toHaveLength(3);
+    expect(next.children[2]).toMatchObject({
+      id: 'ok-c',
+      childTaskId: 'ok-c',
+      title: 'Run 5 km',
+      isCounting: true,
+      childType: TaskType.COUNTING,
+      goal: '5',
+      unit: 'km',
+    });
+    // The input draft is untouched (pure).
+    expect(TWO_CHILD_AND.children).toHaveLength(2);
+  });
+
+  it('Enter appends a NEW Normal sub-task titled with the text', () => {
+    const next = appendTypedChild(TWO_CHILD_AND, 'Third', false);
+    const added = next.children[2];
+    expect(isNewChild(added)).toBe(true);
+    expect(added).toMatchObject({ title: 'Third', isCounting: false, childType: TaskType.NORMAL, action: '' });
+    expect(liveChildren(next)).toHaveLength(3);
+  });
+
+  it('with the Counting chip on, Enter appends a NEW Counting sub-task whose action is the text', () => {
+    const next = appendTypedChild(TWO_CHILD_AND, 'Swim', true);
+    const added = next.children[2];
+    expect(isNewChild(added)).toBe(true);
+    expect(added).toMatchObject({ title: 'Swim', action: 'Swim', isCounting: true, childType: TaskType.COUNTING, goal: '', unit: '' });
+    // Live (non-blank title) — the card then asks for its Goal / Unit.
+    expect(liveChildren(next)).toHaveLength(3);
+  });
+});
+
+describe('CompoundFields quick-add candidates', () => {
   // P is being edited and already holds c-1 ("Stretch"); Q contains P.
   const library: Task[] = [
     task('c-1', 'Stretch'),
@@ -160,43 +233,18 @@ describe('ExistingTaskPicker', () => {
   ];
   const links = [link('P', 'c-1'), link('Q', 'P')];
 
-  function renderPicker(): string {
-    const draft: TaskEditPatch = { ...TWO_CHILD_AND, children: [child('c-1', 'Stretch')] };
-    const tasks = compoundChildPickerCandidates('P', library, links, keptChildTaskIds(draft));
-    return renderToStaticMarkup(
-      React.createElement(ExistingTaskPicker, { tasks, onPick: () => {}, onCancel: () => {} }),
-    );
-  }
+  const draft: TaskEditPatch = { ...TWO_CHILD_AND, children: [child('c-1', 'Stretch')] };
 
-  it('is a labelled modal dialog with a search field', () => {
-    const html = renderPicker();
-    expect(html).toMatch(/<div[^>]*role="dialog"[^>]*aria-label="Add an existing task"[^>]*aria-modal="true"/);
-    expect(html).toContain('aria-label="Search tasks"');
+  it('offers only eligible tasks — no self, current child, loop, achievement, or incomplete counter', () => {
+    const titles = subtaskQuickAddCandidates('P', library, links, draft).map((t) => t.title);
+    expect(titles).toEqual(['Journal', 'Run 5 km']);
   });
 
-  it('lists only eligible tasks — no self, current child, loop, achievement, or incomplete counter', () => {
-    const html = renderPicker();
-    const rows = [...html.matchAll(/<button[^>]*aria-label="Add ([^"]+)"/g)].map((m) => m[1]);
-    expect(rows).toEqual(['Journal', 'Run 5 km']);
-    // Counting without a unit ("Read 10") and without a goal ("Swim") are hidden.
-    expect(html).not.toContain('Read 10');
-    expect(html).not.toContain('Swim');
-  });
-
-  it('shows loading / failed states instead of the list until the inputs arrive', () => {
-    const props = { tasks: library, onPick: () => {}, onCancel: () => {} };
-    const loading = renderToStaticMarkup(React.createElement(ExistingTaskPicker, { ...props, status: 'loading' }));
-    expect(loading).toContain('Loading your tasks…');
-    expect(loading).not.toContain('Tasks you can add');
-    const failed = renderToStaticMarkup(React.createElement(ExistingTaskPicker, { ...props, status: 'failed' }));
-    expect(failed).toContain('role="alert"');
-    expect(failed).not.toContain('Tasks you can add');
-  });
-
-  it('says so when nothing can be added', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(ExistingTaskPicker, { tasks: [], onPick: () => {}, onCancel: () => {} }),
-    );
-    expect(html).toContain('No tasks can be added to this compound.');
+  it('the row matches typed text against those candidates only', () => {
+    const candidates = subtaskQuickAddCandidates('P', library, links, draft);
+    // "r" hits Journal / Run 5 km / Read 10 / Morning routine / Stretch in the raw
+    // library — only the eligible two survive.
+    expect(selectQuickAddMatches(candidates, new Set(), 'r').map((t) => t.title)).toEqual(['Journal', 'Run 5 km']);
+    expect(selectQuickAddMatches(candidates, new Set(), 'stret')).toEqual([]);
   });
 });

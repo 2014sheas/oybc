@@ -196,7 +196,7 @@ extension AppDatabase {
         }
     }
 
-    /// Inputs for the compound editor's "+ Existing task…" picker, read in one
+    /// Inputs for the compound editor's sub-task quick-add row, read in one
     /// snapshot: the user's browsable library (`BrowsableTasks.computeBrowsableTasks`
     /// — hides wizard drafts, goal-less hub counters and shared-counter
     /// members, exactly like the Tasks tab) and every live link under one of

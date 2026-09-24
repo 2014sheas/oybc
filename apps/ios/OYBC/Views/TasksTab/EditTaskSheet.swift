@@ -86,11 +86,11 @@ struct EditTaskSheet: View {
     /// What the editor opened with — only an edited structure is submitted.
     @State private var compoundBaseline: TaskEditPatch?
     @State private var compoundLoadError: String?
-    /// "+ Existing task…" picker inputs — the browsable library and every
-    /// live link, loaded with the sub-tasks.
+    /// Sub-task quick-add inputs — the browsable library (its matches) and
+    /// every live link (the loop check), loaded with the sub-tasks.
     @State private var pickerLibraryTasks: [Task] = []
     @State private var pickerLinks: [CompoundChild] = []
-    @State private var pickerInputsState: RisoExistingTaskPickerSheet.InputsState = .loading
+    @State private var libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loading
 
     // MARK: - Init
 
@@ -289,7 +289,7 @@ struct EditTaskSheet: View {
     }
 
     /// Compound structure card — the shared `RisoCompoundEditFieldsView`
-    /// (rule picker + sub-task cards + add buttons), a load/validation line.
+    /// (rule picker + sub-task cards + the quick-add row), a load/validation line.
     private var compoundSection: some View {
         risoSection(label: "Sub-tasks & rule") {
             VStack(alignment: .leading, spacing: 8) {
@@ -302,14 +302,8 @@ struct EditTaskSheet: View {
                         parentId: task.id,
                         libraryTasks: pickerLibraryTasks,
                         allLinks: pickerLinks,
-                        pickerInputsState: pickerInputsState
+                        libraryInputsState: libraryInputsState
                     )
-                    if pickerInputsState == .failed {
-                        Text("Couldn't load your tasks for “+ Existing task…”. Close and reopen to try again.")
-                            .font(.risoBody(11.5, .semibold))
-                            .foregroundStyle(Color.risoRed)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                     if let problem = compoundValidation {
                         Text(problem)
                             .font(.risoBody(11.5, .extraBold))
@@ -353,11 +347,11 @@ struct EditTaskSheet: View {
     }
 
     /// Load the compound's live sub-tasks (childIndex order) and the
-    /// "+ Existing task…" picker inputs off the main actor. The sub-tasks
+    /// sub-task quick-add row's library inputs off the main actor. The sub-tasks
     /// seed the draft + baseline unless a caller already seeded them (Task
-    /// Detail passes the children it holds); the picker inputs always load,
+    /// Detail passes the children it holds); the library inputs always load,
     /// in their own `do` so a failure there never blocks the sub-task editor
-    /// (it surfaces as `pickerInputsState == .failed`). No-op for
+    /// (it surfaces as `libraryInputsState == .failed`). No-op for
     /// non-compounds.
     private func loadCompoundChildrenIfNeeded() async {
         guard task.type == .compound else { return }
@@ -379,17 +373,17 @@ struct EditTaskSheet: View {
             }
         }
         do {
-            let picker = try await _Concurrency.Task.detached(priority: .userInitiated) {
+            let library = try await _Concurrency.Task.detached(priority: .userInitiated) {
                 try db.fetchCompoundPickerInputs(userId: userId)
             }.value
-            pickerLibraryTasks = picker.libraryTasks
-            pickerLinks = picker.allLinks
-            pickerInputsState = .loaded
+            pickerLibraryTasks = library.libraryTasks
+            pickerLinks = library.allLinks
+            libraryInputsState = .loaded
         } catch {
             #if DEBUG
-            print("[EditTaskSheet] loading existing-task picker inputs failed: \(error)")
+            print("[EditTaskSheet] loading sub-task library inputs failed: \(error)")
             #endif
-            pickerInputsState = .failed
+            libraryInputsState = .failed
         }
     }
 

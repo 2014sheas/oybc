@@ -165,6 +165,57 @@ final class TaskEditPatchTests: XCTestCase {
         XCTAssertEqual(RisoCompoundEditFieldsView.subtaskTypeLabel(.compound), "Compound sub-task")
     }
 
+    // MARK: - Quick-add append paths (RisoCompoundEditFieldsView)
+
+    func test_appendPicked_links_the_existing_task_with_its_own_type() {
+        var d = TaskEditPatch(title: "P")
+        d.children = [ChildPatch(id: "a", childTaskId: "a", title: "A", isCounting: false)]
+        let run = makeTask(id: "r", type: .counting, title: "Run 5 km", action: "Run", unit: "km", maxCount: 5)
+        RisoCompoundEditFieldsView.appendPicked(run, to: &d)
+        XCTAssertEqual(d.children.count, 2)
+        let added = d.children[1]
+        XCTAssertEqual(added.id, "r")
+        XCTAssertEqual(added.childTaskId, "r")
+        XCTAssertFalse(added.isNew)
+        XCTAssertEqual(added.title, "Run 5 km")
+        XCTAssertTrue(added.isCounting)
+        XCTAssertEqual(added.childType, .counting)
+        XCTAssertEqual(added.goal, "5")
+        XCTAssertEqual(added.unit, "km")
+        XCTAssertEqual(d.keptChildTaskIds, ["a", "r"])
+    }
+
+    func test_appendTyped_normal_appends_a_new_titled_subtask() {
+        var d = TaskEditPatch(title: "P")
+        RisoCompoundEditFieldsView.appendTyped("Third", isCounting: false, to: &d)
+        XCTAssertEqual(d.children.count, 1)
+        let added = d.children[0]
+        XCTAssertTrue(added.isNew)
+        XCTAssertEqual(added.title, "Third")
+        XCTAssertFalse(added.isCounting)
+        XCTAssertEqual(added.childType, .normal)
+        XCTAssertEqual(added.action, "")
+        XCTAssertEqual(d.liveChildren.count, 1)
+    }
+
+    func test_appendTyped_counting_takes_the_text_as_its_action() {
+        var d = TaskEditPatch(title: "P")
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, to: &d)
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, to: &d)
+        let added = d.children[0]
+        XCTAssertTrue(added.isNew)
+        XCTAssertEqual(added.title, "Swim")
+        XCTAssertEqual(added.action, "Swim")
+        XCTAssertTrue(added.isCounting)
+        XCTAssertEqual(added.childType, .counting)
+        XCTAssertEqual(added.goal, "")
+        XCTAssertEqual(added.unit, "")
+        // Each typed entry is its own new sub-task (fresh ids).
+        XCTAssertNotEqual(d.children[0].id, d.children[1].id)
+        // Live, so validation then asks for its Goal / Unit on the card.
+        XCTAssertEqual(d.liveChildren.count, 2)
+    }
+
     func test_compound_empty_title_blocks() {
         var p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")]); p.title = "  "
         XCTAssertEqual(p.validate(type: .compound), "A title is required.")

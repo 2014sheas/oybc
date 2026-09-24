@@ -3,9 +3,12 @@ import SwiftUI
 /// The compound structure editor — the shared `RisoCompoundRulePicker`
 /// ("Counts as done when…"), the numbered sub-task cards (title, fixed type
 /// indicator, counting Action/Goal/Unit + "Reads as" preview, ✕ unlink) and
-/// the "+ Normal / + Counting sub-task" buttons, plus "+ Existing task…"
-/// (presents `RisoExistingTaskPickerSheet`; a pick is appended as a linked
-/// sub-task via `ChildPatch(from:)`) — bound to a `TaskEditPatch`.
+/// the wizard's own quick-add row (`RisoQuickAddRowView`) to add a sub-task:
+/// typing lists matching eligible library tasks — tap one to link it
+/// (`appendPicked`); Return / Add appends a NEW sub-task titled with the
+/// text, Normal or Counting per the "New sub:" chips (`appendTyped`). Same
+/// job, same interface as adding a task to a board. Bound to a
+/// `TaskEditPatch`.
 ///
 /// Extracted verbatim from `RisoPoolRowEditorView` so the wizard's inline row
 /// editor and the Task Detail `EditTaskSheet` ("Sub-tasks & rule") edit a
@@ -20,37 +23,59 @@ struct RisoCompoundEditFieldsView: View {
     /// The compound being edited — the link guard's `parentId`.
     var parentId: String
     /// Browsable library tasks (`TaskLibraryViewModel.browsableTasks` —
-    /// wizard drafts and deleted rows already hidden). The picker narrows
-    /// them via `CompoundChildEligibility.pickerCandidates`.
+    /// wizard drafts and deleted rows already hidden). Narrowed via
+    /// `CompoundChildEligibility.pickerCandidates` and offered as the
+    /// quick-add row's matches.
     var libraryTasks: [Task]
     /// Live compound links across ALL compounds (for the loop check).
     var allLinks: [CompoundChild]
     /// Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
     /// on open; the wizard already holds them).
-    var pickerInputsState: RisoExistingTaskPickerSheet.InputsState = .loaded
+    var libraryInputsState: LibraryInputsState = .loaded
 
-    @State private var isPickerOpen = false
+    /// Load state of the host's library inputs. Twin of web `LibraryInputsState`.
+    enum LibraryInputsState: Equatable {
+        case loading, loaded, failed
+    }
+
+    /// The "New sub:" chip — whether Return / Add appends a Counting sub-task.
+    @State private var newSubCounting = false
 
     var body: some View {
         compoundFields
-            .sheet(isPresented: $isPickerOpen) {
-                RisoExistingTaskPickerSheet(
-                    tasks: CompoundChildEligibility.pickerCandidates(
-                        parentId: parentId,
-                        browsable: libraryTasks,
-                        allLinks: allLinks,
-                        currentChildIds: draft.keptChildTaskIds
-                    ),
-                    status: pickerInputsState,
-                    onPick: { task in
-                        draft.children.append(ChildPatch(from: task))
-                        isPickerOpen = false
-                    },
-                    onCancel: { isPickerOpen = false }
-                )
-                .presentationDetents([.fraction(0.76)])
-                .presentationDragIndicator(.visible)
-            }
+    }
+
+    // MARK: - Append paths (static for unit tests)
+
+    /// Appends a library task picked from the quick-add row's matches as a
+    /// LINKED sub-task (the save links the existing task; nothing is created).
+    ///
+    /// - Parameters:
+    ///   - task: The picked (eligible) library task.
+    ///   - draft: The compound structure being edited.
+    static func appendPicked(_ task: Task, to draft: inout TaskEditPatch) {
+        draft.children.append(ChildPatch(from: task))
+    }
+
+    /// Appends a NEW sub-task typed into the quick-add row (Return / Add). A
+    /// Normal sub-task takes the text as its title; a Counting one also takes
+    /// it as its action (Goal / Unit are then filled on its card). Twin of
+    /// web `appendTypedChild`.
+    ///
+    /// - Parameters:
+    ///   - text: The trimmed text from the row.
+    ///   - isCounting: Whether the "Counting" chip is on.
+    ///   - draft: The compound structure being edited.
+    static func appendTyped(_ text: String, isCounting: Bool, to draft: inout TaskEditPatch) {
+        draft.children.append(
+            ChildPatch(
+                id: AppDatabase.generateUUID(),
+                childTaskId: nil,
+                title: text,
+                isCounting: isCounting,
+                action: isCounting ? text : ""
+            )
+        )
     }
 
     /// Compound rule (as a `CompoundRuleChoice`), bridged to `draft.operatorType`.
@@ -96,11 +121,7 @@ struct RisoCompoundEditFieldsView: View {
             ForEach($draft.children) { $child in
                 subtaskCard($child)
             }
-            HStack(spacing: 7) {
-                addSubtaskButton(title: "+ Normal sub-task", isCounting: false)
-                addSubtaskButton(title: "+ Counting sub-task", isCounting: true)
-            }
-            dashedAddButton(title: "+ Existing task…") { isPickerOpen = true }
+            subtaskQuickAdd
             Text("A sub-task's type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.")
                 .font(.risoBody(10.5, .semibold))
                 .foregroundStyle(Color.risoMuted)
@@ -177,28 +198,56 @@ struct RisoCompoundEditFieldsView: View {
         }
     }
 
-    private func addSubtaskButton(title: String, isCounting: Bool) -> some View {
-        dashedAddButton(title: title) {
-            draft.children.append(
-                ChildPatch(id: AppDatabase.generateUUID(), childTaskId: nil, title: "", isCounting: isCounting)
+    /// The wizard's own quick-add row, draft-only (`onSubmitText`): Return
+    /// appends a new sub-task (no task is created until Save); a tapped match
+    /// links that existing task. `userId` / `onTaskCreated` /
+    /// `onLibraryReloadRequested` feed only the create path, which
+    /// `onSubmitText` replaces. Below it: the "New sub:" type chips and the
+    /// library load line.
+    private var subtaskQuickAdd: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RisoQuickAddRowView(
+                userId: "",
+                defaultStartDate: nil,
+                defaultEndDate: nil,
+                onTaskCreated: { _, _, _ in },
+                onPendingCreated: nil,
+                onLibraryReloadRequested: {},
+                libraryTasks: CompoundChildEligibility.pickerCandidates(
+                    parentId: parentId,
+                    browsable: libraryTasks,
+                    allLinks: allLinks,
+                    currentChildIds: draft.keptChildTaskIds
+                ),
+                onExistingTaskPicked: { task in Self.appendPicked(task, to: &draft) },
+                onSubmitText: { text in Self.appendTyped(text, isCounting: newSubCounting, to: &draft) }
             )
-        }
-    }
+            .disabled(libraryInputsState == .loading)
 
-    private func dashedAddButton(title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.risoHead(12, .extraBold))
-                .foregroundStyle(Color.risoInk)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [4, 3]))
-                        .foregroundStyle(Color.risoInk)
-                )
+            HStack(spacing: 8) {
+                Text("New sub:")
+                    .font(.risoBody(12, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+                RisoChip(title: "Normal", isOn: !newSubCounting) { newSubCounting = false }
+                    .accessibilityAddTraits(!newSubCounting ? .isSelected : [])
+                RisoChip(title: "Counting", isOn: newSubCounting) { newSubCounting = true }
+                    .accessibilityAddTraits(newSubCounting ? .isSelected : [])
+            }
+
+            switch libraryInputsState {
+            case .loading:
+                Text("Loading your tasks…")
+                    .font(.risoBody(11.5, .semibold))
+                    .foregroundStyle(Color.risoMuted)
+            case .failed:
+                Text("Couldn't load your tasks to link. New sub-tasks still work — close and reopen to try again.")
+                    .font(.risoBody(11.5, .semibold))
+                    .foregroundStyle(Color.risoRed)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .loaded:
+                EmptyView()
+            }
         }
-        .buttonStyle(.plain)
     }
 
     private func subtaskCountingPreview(_ child: ChildPatch) -> String? {

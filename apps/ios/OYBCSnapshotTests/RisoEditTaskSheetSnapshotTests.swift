@@ -15,7 +15,8 @@ import SnapshotTesting
 ///   3. Achievement watching a specific board — trigger + board picker seeded.
 ///   4. Achievement watching a recurring template — template picker + required count.
 ///   5. Compound task — Details + Sub-tasks & rule editor (rule picker + two
-///      seeded sub-task cards + add / "+ Existing task…" buttons).
+///      seeded sub-task cards + the sub-task quick-add row and "New sub:"
+///      chips).
 ///
 /// Determinism: the sheet has no time-window section (a task's own window
 /// fields aren't user-editable), so no `Date()` value can leak into the
