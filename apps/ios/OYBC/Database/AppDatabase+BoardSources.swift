@@ -298,10 +298,11 @@ extension AppDatabase {
                     supplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
                     continue
                 }
-                var raw = info.supplyTaskIds
-                if source.filter == .todo {
-                    raw.removeAll { info.doneTaskIds.contains($0) }
-                }
+                let raw = BoardSources.availableSupplyIds(
+                    source: source,
+                    supplyTaskIds: info.supplyTaskIds,
+                    doneTaskIds: info.doneTaskIds
+                )
                 supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
             }
             let t = entry.template
@@ -377,10 +378,11 @@ extension AppDatabase {
                 ))
             case .board:
                 let info = (try? fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil
-                var raw = info?.supplyTaskIds ?? []
-                if source.filter == .todo, let done = info?.doneTaskIds {
-                    raw.removeAll { done.contains($0) }
-                }
+                let raw = BoardSources.availableSupplyIds(
+                    source: source,
+                    supplyTaskIds: info?.supplyTaskIds ?? [],
+                    doneTaskIds: info?.doneTaskIds ?? []
+                )
                 supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
             }
         }

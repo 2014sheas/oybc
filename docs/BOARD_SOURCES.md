@@ -490,7 +490,7 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
   verbatim with the spawn path (the P3 wizard-time = spawn-time lock);
   `fetchBoardSourceSupply` + `fetchSourceSheetBoardEntries` (ACTIVE-only)
   are the async wrappers. Loaded off-render at `BoardWizardPage` (the same
-  batching rule as iOS's off-main `loadPools`).
+  batching rule as iOS's off-main `loadSourceCatalog`).
 - **Components**: `RangeSlider` (pointer-driven two-handle slider, "all"
   latch on the top stop, nearer-handle grab with ties-to-min),
   `SourceRow` (header + expanded panel: board segmented filter, range

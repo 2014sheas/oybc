@@ -374,10 +374,11 @@ extension AppDatabase {
                     endDate: board.endDate
                 )
                 let info = try Self.resolveSupply(db: db, board: board)
-                var raw = info.supplyTaskIds
-                if source.filter == .todo {
-                    raw.removeAll { info.doneTaskIds.contains($0) }
-                }
+                let raw = BoardSources.availableSupplyIds(
+                    source: source,
+                    supplyTaskIds: info.supplyTaskIds,
+                    doneTaskIds: info.doneTaskIds
+                )
                 rawSupplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
             }
         }
@@ -475,8 +476,7 @@ extension AppDatabase {
     }
 
     /// Recompute every window-stamped derived counter's `baseline` from the
-    /// root's current event log (docs/BOARD_SOURCES.md §Member rules —
-    /// *Baseline*).
+    /// root's current event log (docs/BOARD_SOURCES.md §Member rules — *Baseline*).
     ///
     /// A NON-AUTHORED write, exactly like `recomputeTaskCachesFromPull`: a raw
     /// `UPDATE tasks SET baseline = ?` and nothing else — no `updatedAt`, no

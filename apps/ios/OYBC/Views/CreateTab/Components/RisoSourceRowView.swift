@@ -153,7 +153,11 @@ struct RisoSourceRowView: View {
             return parts.joined(separator: " · ")
         case .board:
             if source.filter == .todo {
-                let notDone = supply.rawSupplyTaskIds.filter { !supply.doneTaskIds.contains($0) }.count
+                let notDone = BoardSources.availableSupplyIds(
+                    source: source,
+                    supplyTaskIds: supply.rawSupplyTaskIds,
+                    doneTaskIds: supply.doneTaskIds
+                ).count
                 var parts = ["\(notDone) not done"]
                 if !isDefaultRange { parts.append(rangeText + " on the board") }
                 return parts.joined(separator: " · ")

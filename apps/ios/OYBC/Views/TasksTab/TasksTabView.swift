@@ -37,9 +37,27 @@ struct TasksTabView: View {
     let userId: String
     @Binding var path: NavigationPath
     let onOpenBoard: (String) -> Void
+    /// Injected database (ROADMAP B3 seam); defaults to the app singleton.
+    /// The two view-models, the child detail view and every read/write here
+    /// go through it.
+    let database: AppDatabase
 
-    @State private var library = TaskLibraryViewModel()
-    @State private var vm = TasksTabViewModel()
+    @State private var library: TaskLibraryViewModel
+    @State private var vm: TasksTabViewModel
+
+    init(
+        userId: String,
+        path: Binding<NavigationPath>,
+        onOpenBoard: @escaping (String) -> Void,
+        database: AppDatabase = .shared
+    ) {
+        self.userId = userId
+        _path = path
+        self.onOpenBoard = onOpenBoard
+        self.database = database
+        _library = State(initialValue: TaskLibraryViewModel(database: database))
+        _vm = State(initialValue: TasksTabViewModel(database: database))
+    }
     @State private var showNewTaskSheet = false
     @State private var expandedCompoundIds: Set<String> = []
 
@@ -380,13 +398,14 @@ struct TasksTabView: View {
             }
             guard editingTask?.type == .achievement else { return }
             let uid = userId
+            let db = database
             _Concurrency.Task {
                 do {
                     let boards = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                        try AppDatabase.shared.fetchBoards(userId: uid)
+                        try db.fetchBoards(userId: uid)
                     }.value
                     let templates = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                        try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
+                        try db.fetchRecurringBoardTemplates(userId: uid)
                     }.value
                     await MainActor.run {
                         editPickerBoards = boards
@@ -449,7 +468,8 @@ struct TasksTabView: View {
                     vm.reloadAsync()
                     if !path.isEmpty { path.removeLast() }
                 },
-                onOpenBoard: onOpenBoard
+                onOpenBoard: onOpenBoard,
+                database: database
             )
         }
         .onAppear {
@@ -555,12 +575,13 @@ struct TasksTabView: View {
     private func prepareDelete(for task: Task) {
         quickActionError = nil
         let id = task.id
+        let db = database
         prepareDeleteToken += 1
         let token = prepareDeleteToken
         _Concurrency.Task {
             do {
                 let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
+                    try db.computeTaskDeletionImpact(taskId: id)
                 }.value
                 await MainActor.run {
                     guard token == prepareDeleteToken else { return }
@@ -576,9 +597,10 @@ struct TasksTabView: View {
     }
 
     private func performDelete(taskId: String) async {
+        let db = database
         do {
             try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.deleteTaskWithCascade(taskId: taskId)
+                try db.deleteTaskWithCascade(taskId: taskId)
             }.value
             await MainActor.run {
                 reloadAfterDeleteDismiss = true
@@ -612,6 +634,7 @@ struct TasksTabView: View {
     ///   `fetchPoolsSnapshot` logs it and commits the pools with no health.
     private func loadPools() {
         let uid = userId
+        let db = database
         let wantHealth = segment == .pools
         poolLoadSeq &+= 1
         let mySeq = poolLoadSeq
@@ -619,7 +642,7 @@ struct TasksTabView: View {
             do {
                 let snapshot = try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try Self.fetchPoolsSnapshot(
-                        userId: uid, database: .shared, resolveHealth: wantHealth
+                        userId: uid, database: db, resolveHealth: wantHealth
                     )
                 }.value
                 await MainActor.run {
@@ -644,65 +667,14 @@ struct TasksTabView: View {
         }
     }
 
+    /// Save the edit sheet's patch through `AppDatabase.applyTaskEditPatch`
+    /// (validation + Achievement cycle check + save/cascade in one write).
     private func saveEdits(task: Task, patch: EditTaskSheet.Patch) async {
-        var t = task
-        t.title = patch.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        t.description = patch.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? nil
-            : patch.description.trimmingCharacters(in: .whitespacesAndNewlines)
-        if t.type == .counting {
-            if !patch.action.isEmpty { t.action = patch.action }
-            if !patch.unit.isEmpty { t.unit = patch.unit }
-            if let max = Int(patch.maxCountStr), max > 0 { t.maxCount = max }
-        }
-        if t.type == .achievement {
-            t.achievementTrigger = patch.trigger
-            if patch.refMode == .board {
-                guard !patch.selectedBoardId.isEmpty else {
-                    await MainActor.run { quickActionError = "Please select a specific board to watch." }
-                    return
-                }
-                if let cycleError = await checkCycleForTask(taskId: t.id, referencedBoardId: patch.selectedBoardId, referencedTemplateId: nil) {
-                    await MainActor.run { quickActionError = cycleError }
-                    return
-                }
-                t.referencedBoardId = patch.selectedBoardId
-                t.referencedTemplateId = nil
-                t.requiredCount = nil
-            } else {
-                guard !patch.selectedTemplateId.isEmpty else {
-                    await MainActor.run { quickActionError = "Please select a recurring template to watch." }
-                    return
-                }
-                guard let req = Int(patch.requiredCountStr), req > 0 else {
-                    await MainActor.run { quickActionError = "Required count must be a whole number greater than 0." }
-                    return
-                }
-                if let cycleError = await checkCycleForTask(taskId: t.id, referencedBoardId: nil, referencedTemplateId: patch.selectedTemplateId) {
-                    await MainActor.run { quickActionError = cycleError }
-                    return
-                }
-                t.referencedTemplateId = patch.selectedTemplateId
-                t.referencedBoardId = nil
-                t.requiredCount = req
-            }
-        }
-        if let tf = patch.timeframe {
-            t.timeframe = tf
-            t.startDate = patch.startDate
-            t.endDate = patch.endDate
-        } else if patch.clearTimeboxed {
-            t.timeframe = nil
-            t.startDate = nil
-            t.endDate = nil
-        }
-        t.updatedAt = AppDatabase.currentTimestamp()
-        t.version += 1
-
-        let patched = t
+        let db = database
+        let id = task.id
         do {
-            try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.saveTaskAndCascade(patched)
+            _ = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try db.applyTaskEditPatch(taskId: id, patch: patch)
             }.value
             await MainActor.run {
                 editingTask = nil
@@ -710,46 +682,8 @@ struct TasksTabView: View {
                 vm.reloadAsync()
             }
         } catch {
-            await MainActor.run {
-                quickActionError = "Failed to save: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    private func checkCycleForTask(
-        taskId: String,
-        referencedBoardId: String?,
-        referencedTemplateId: String?
-    ) async -> String? {
-        do {
-            let result = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                let placements = try AppDatabase.shared.fetchBoardTasksForTask(taskId: taskId)
-                let parentBoardIds = Array(Set(placements.map { $0.boardId }))
-                let allBoardTasks = try AppDatabase.shared.fetchAllBoardTasks()
-                let allTasks = try AppDatabase.shared.read { db -> [Task] in
-                    try Task.filter(Column("isDeleted") == false).fetchAll(db)
-                }
-                let allBoards = try AppDatabase.shared.read { db -> [Board] in
-                    try Board.filter(Column("isDeleted") == false).fetchAll(db)
-                }
-                let candidate = CycleCheckCandidate(
-                    parentBoardIds: parentBoardIds,
-                    referencedBoardId: referencedBoardId,
-                    referencedTemplateId: referencedTemplateId
-                )
-                let context = CycleCheckContext(
-                    allBoardTasks: allBoardTasks,
-                    allTasks: allTasks,
-                    allBoards: allBoards
-                )
-                return CycleDetection.hasCycle(candidate: candidate, context: context)
-            }.value
-            switch result {
-            case .ok: return nil
-            case .cycle(let path): return "This reference would create a cycle: \(path.joined(separator: " → "))"
-            }
-        } catch {
-            return "Cycle check failed: \(error.localizedDescription)"
+            let message = AppDatabase.taskEditErrorMessage(error)
+            await MainActor.run { quickActionError = message }
         }
     }
 }

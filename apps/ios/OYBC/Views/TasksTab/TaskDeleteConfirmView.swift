@@ -18,7 +18,7 @@ struct TaskDeleteConfirmView: View {
     let task: Task
     let impact: AppDatabase.TaskDeletionImpact
     /// Called when the user taps Delete. The caller runs
-    /// `AppDatabase.shared.deleteTaskWithCascade(taskId:)` off-main and
+    /// `deleteTaskWithCascade(taskId:)` on the injected database off-main and
     /// dismisses the sheet on success.
     let onConfirm: () -> Void
     let onCancel: () -> Void
