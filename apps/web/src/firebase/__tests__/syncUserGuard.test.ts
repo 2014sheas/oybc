@@ -106,6 +106,10 @@ describe('startSyncLoop / stopSyncLoop — single active loop', () => {
 
   function stubWindow(): void {
     vi.stubGlobal('window', { addEventListener, removeEventListener });
+    // Node 20 (CI) has no global `navigator` (Node 21 added it); the loop's
+    // immediate tick reads `navigator.onLine`. Stub it OFFLINE so every tick
+    // is a no-op here — these tests cover teardown, not syncing.
+    vi.stubGlobal('navigator', { onLine: false });
   }
 
   afterEach(() => {
