@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { SharedCounterGroup, SharedCounterMemberTask } from '@oybc/shared';
 import { incrementSharedCounter } from '../../db/operations/tasks';
 import { timeframeDotColor } from './timeframeDotColor';
+import { attemptCounterWrite } from './counterWriteFeedback';
 import styles from './CounterLedgerCard.module.css';
 
 export interface CounterLoggedEvent {
@@ -20,6 +21,11 @@ interface CounterLedgerCardProps {
    * level — this card never renders its own.
    */
   onLogged: (event: CounterLoggedEvent) => void;
+  /**
+   * Called when the "+ Log" write fails, so the page can show its single
+   * `CounterWriteError` line (never a success toast).
+   */
+  onLogFailed: () => void;
   /**
    * §Member rules (B3, RC9) — the hub's "Show expired tasks" value, carried
    * into the Detail route so the two pages agree. The hub owns the state in
@@ -50,6 +56,7 @@ interface CounterLedgerCardProps {
 export function CounterLedgerCard({
   group,
   onLogged,
+  onLogFailed,
   showExpired = false,
 }: CounterLedgerCardProps): React.ReactElement {
   const navigate = useNavigate();
@@ -68,8 +75,14 @@ export function CounterLedgerCard({
     if (isLogging) return;
     setIsLogging(true);
     try {
-      await incrementSharedCounter(group.counterId, logAmount);
-      onLogged({ counterId: group.counterId, amount: logAmount, unit: group.unit ?? '' });
+      const ok = await attemptCounterWrite('hub log', () =>
+        incrementSharedCounter(group.counterId, logAmount)
+      );
+      if (ok) {
+        onLogged({ counterId: group.counterId, amount: logAmount, unit: group.unit ?? '' });
+      } else {
+        onLogFailed();
+      }
     } finally {
       setIsLogging(false);
     }

@@ -14,3 +14,5 @@ export { CreateCounterSheet } from './CreateCounterSheet';
 export { CounterLinkHint } from './CounterLinkHint';
 export { CounterDeleteConfirmDialog } from './CounterDeleteConfirmDialog';
 export { CounterLogToast } from './CounterLogToast';
+export { CounterWriteError } from './CounterWriteError';
+export { attemptCounterWrite, COUNTER_NOT_UPDATED_MESSAGE } from './counterWriteFeedback';

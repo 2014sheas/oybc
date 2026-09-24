@@ -14,7 +14,14 @@ import {
   type TaskDeletionImpact,
 } from '../db/operations/tasks';
 import { generateUUID } from '../db/utils';
-import { CounterDeleteConfirmDialog, CounterDetailTaskCard, CounterLogToast } from '../components/counters';
+import {
+  CounterDeleteConfirmDialog,
+  CounterDetailTaskCard,
+  CounterLogToast,
+  CounterWriteError,
+  attemptCounterWrite,
+  COUNTER_NOT_UPDATED_MESSAGE,
+} from '../components/counters';
 import { buildAmountChipOptions, initialChipAmount, parseCustomLogAmount } from '../components/counters/amountChips';
 import { RowContextMenu } from '../components/wizard/RowContextMenu';
 import { RisoSectionLabel } from '../components/riso';
@@ -81,6 +88,9 @@ export function CounterDetailPage(): React.ReactElement {
   const [deleteImpact, setDeleteImpact] = useState<TaskDeletionImpact | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Failed log / undo write (see counterWriteFeedback.ts). Cleared on the
+  // next successful write.
+  const [logError, setLogError] = useState<string | null>(null);
 
   const group = groups.find((g) => g.counterId === counterId);
 
@@ -105,14 +115,23 @@ export function CounterDetailPage(): React.ReactElement {
       if (!counterId || isLogging || selectedAmount <= 0) return;
       setIsLogging(true);
       try {
-        if (direction === 'add') {
-          await incrementSharedCounter(counterId, selectedAmount);
-        } else {
-          // decrementSharedCounter clamps to 0 itself — no additional guard needed.
-          await decrementSharedCounter(counterId, selectedAmount);
+        const ok = await attemptCounterWrite(`detail ${direction}`, () =>
+          direction === 'add'
+            ? incrementSharedCounter(counterId, selectedAmount)
+            : // decrementSharedCounter clamps to 0 itself — no additional guard needed.
+              decrementSharedCounter(counterId, selectedAmount)
+        );
+        if (!ok) {
+          setLogError(COUNTER_NOT_UPDATED_MESSAGE);
+          return;
         }
+        setLogError(null);
         // The amount just used becomes the new default (no-op if unchanged).
-        await setCounterDefaultLogAmount(counterId, selectedAmount);
+        // Best-effort: the counter itself already moved, so a failure here is
+        // logged but doesn't turn the log into an error.
+        await attemptCounterWrite('detail default amount', () =>
+          setCounterDefaultLogAmount(counterId, selectedAmount)
+        );
         setToast({
           amount: selectedAmount,
           unit: group?.unit ?? '',
@@ -128,8 +147,10 @@ export function CounterDetailPage(): React.ReactElement {
 
   const handleUndo = useCallback(async () => {
     if (!counterId) return;
-    await undoLastCounterLog(counterId);
+    const ok = await attemptCounterWrite('detail undo', () => undoLastCounterLog(counterId));
+    // The toast goes either way; a failed undo is announced, never silent.
     setToast(null);
+    setLogError(ok ? null : COUNTER_NOT_UPDATED_MESSAGE);
   }, [counterId]);
 
   function selectChip(value: number): void {
@@ -403,6 +424,8 @@ export function CounterDetailPage(): React.ReactElement {
               </button>
             </div>
           </div>
+
+          <CounterWriteError message={logError} />
 
           {/* 4. Explainer copy */}
           <p className={styles.explainer}>
