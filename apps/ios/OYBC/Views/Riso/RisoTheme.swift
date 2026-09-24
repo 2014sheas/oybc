@@ -65,10 +65,9 @@ extension Color {
     /// for content placed on gold and for halftone/overprint dots.
     static let risoInkStatic = Color("RisoInkStatic", bundle: .riso)
     /// Non-inverting cream (`#FBF6EA` in both light and dark) — web's
-    /// `--riso-on-color`. THE on-colour contract: every text/icon/keyline
-    /// sitting on a saturated red/blue/green (or achievement) fill uses this,
-    /// never adaptive `risoPaper`, which would flip to near-black in dark
-    /// mode. (Content on gold is `risoInkStatic`; on ink, `risoPaper`.)
+    /// `--riso-on-color`. Use for content sitting on the saturated accent
+    /// fills (blue/red), e.g. the initials avatar glyph, where `risoPaper`
+    /// would flip to near-black in dark mode.
     static let risoOnColor = Color("RisoOnColor", bundle: .riso)
     /// Non-inverting pale lavender (`#C9CFF2` in both light and dark) — web's
     /// `--riso-lavender`. Secondary copy on the saturated blue celebration

@@ -72,18 +72,18 @@ struct CreateHubBoardCTAView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(.risoHead(16, .extraBold))
-                        .foregroundStyle(Color.risoOnColor)
+                        .foregroundStyle(Color.risoPaper)
                         .lineLimit(1)
                     Text(subtitle)
                         .font(.risoBody(12, .medium))
-                        .foregroundStyle(Color.risoOnColor.opacity(0.85))
+                        .foregroundStyle(Color.risoPaper.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.risoOnColor.opacity(0.7))
+                    .foregroundStyle(Color.risoPaper.opacity(0.7))
             }
             .padding(Riso.cardPadding)
             .risoCard(fill: fill)

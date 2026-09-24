@@ -37,8 +37,8 @@ struct RisoBoardStatusBadge: View {
         }
         var foreground: Color {
             switch self {
-            case .active:    return .risoOnColor
-            case .completed: return .risoOnColor
+            case .active:    return .risoPaper
+            case .completed: return .risoPaper
             case .draft:     return .risoMuted
             case .expiring:  return .risoInk
             case .archived:  return .risoMuted

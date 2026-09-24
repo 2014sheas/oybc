@@ -39,11 +39,11 @@ struct RisoBingoToast: View {
                 Text("BINGO!")
                     .font(.risoHead(19, .extraBold))
                     .tracking(-0.19)
-                    .foregroundStyle(Color.risoOnColor)
+                    .foregroundStyle(Color.risoPaper)
 
                 Text(subtitle)
                     .font(.risoBody(11, .bold))
-                    .foregroundStyle(Color.risoOnColor.opacity(0.92))
+                    .foregroundStyle(Color.risoPaper.opacity(0.92))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

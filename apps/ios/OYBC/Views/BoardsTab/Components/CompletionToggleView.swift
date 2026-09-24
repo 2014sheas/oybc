@@ -30,7 +30,7 @@ struct CompletionToggleView: View {
                     Text(isCompleted ? "Mark incomplete" : "Mark complete")
                 }
                 .font(.risoHead(15, .bold))
-                .foregroundStyle(isCompleted ? Color.risoInk : Color.risoOnColor)
+                .foregroundStyle(isCompleted ? Color.risoInk : Color.risoPaper)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
                 .risoCard(fill: isCompleted ? .risoPaper2 : .risoGreen)

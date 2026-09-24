@@ -65,7 +65,7 @@ struct TutorialGreenlogOverlay: View {
                 Text("YOU'RE READY!")
                     .font(.risoHead(52, .extraBold))
                     .tracking(-1.56)
-                    .foregroundStyle(Color.risoOnColor)
+                    .foregroundStyle(Color.risoPaper)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.bottom, 14)
@@ -88,7 +88,7 @@ struct TutorialGreenlogOverlay: View {
                     Button { onCreateBoard?() } label: {
                         Text("Create my first board")
                             .font(.risoHead(17, .bold))
-                            .foregroundStyle(Color.risoOnColor)
+                            .foregroundStyle(Color.risoPaper)
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
                             .background(Color.risoRed)
@@ -104,11 +104,11 @@ struct TutorialGreenlogOverlay: View {
                     Button { onDismiss?() } label: {
                         Text("Back to boards")
                             .font(.risoHead(17, .bold))
-                            .foregroundStyle(Color.risoOnColor)
+                            .foregroundStyle(Color.risoPaper)
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
                             .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                .strokeBorder(Color.risoOnColor, lineWidth: Riso.Keyline.container))
+                                .strokeBorder(Color.risoPaper, lineWidth: Riso.Keyline.container))
                     }
                     .buttonStyle(.plain)
                 }

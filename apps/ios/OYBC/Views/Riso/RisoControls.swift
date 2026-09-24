@@ -25,9 +25,7 @@ enum RisoButtonKind {
         switch self {
         case .neutral: return .risoInk
         case .gold: return .risoInkStatic
-        // Static cream on red/blue/green — the on-colour contract (web
-        // `--riso-on-color`); adaptive paper would flip dark in dark mode.
-        default: return .risoOnColor
+        default: return .risoPaper
         }
     }
 }
@@ -75,13 +73,13 @@ struct RisoButton: View {
 /// EditTaskSheet, EditBoardSheet, TaskDeleteConfirmView, EditProfileSheet.
 ///
 /// Default is the gold "Done"/"Save" affordance; pass `fill: .risoRed,
-/// foreground: .risoOnColor` for a destructive "Delete".
+/// foreground: .risoPaper` for a destructive "Delete".
 struct RisoToolbarPill: View {
     let title: String
     var fill: Color = .risoGold
     // Default sits on the gold fill — use the non-inverting ink so it stays
     // readable in dark mode (plain `risoInk` flips to cream). The red Delete
-    // variant overrides this with static `.risoOnColor`.
+    // variant overrides this with `.risoPaper`.
     var foreground: Color = .risoInkStatic
     let action: () -> Void
 
@@ -201,10 +199,6 @@ struct RisoSegmented<T: Hashable>: View {
     @Binding var selection: T
     var equalWidth: Bool = true
     var selectedFill: (T) -> Color = { _ in .risoBlue }
-    /// Selected-segment label colour for the `.card` style. Defaults to the
-    /// static on-colour cream (matches the default blue fill); pass
-    /// `.risoPaper` for an ink fill or `.risoInkStatic` for gold.
-    var selectedForeground: (T) -> Color = { _ in .risoOnColor }
     var style: RisoSegmentedStyle = .card
     var size: RisoSegmentedSize = .regular
 
@@ -228,7 +222,7 @@ struct RisoSegmented<T: Hashable>: View {
                         // Only constrain in sizes-to-content mode; `nil` (the
                         // default) leaves the equal-width path unchanged.
                         .lineLimit(equalWidth ? nil : 1)
-                        .foregroundStyle(selection == opt.value ? selectedForeground(opt.value) : Color.risoInk)
+                        .foregroundStyle(selection == opt.value ? Color.risoPaper : Color.risoInk)
                         .frame(maxWidth: equalWidth ? .infinity : nil)
                         .padding(.vertical, 10)
                         .padding(.horizontal, equalWidth ? 0 : 14)
@@ -452,7 +446,7 @@ enum RisoTaskKind {
     var foreground: Color {
         switch self {
         case .normal: return .risoMuted
-        default: return .risoOnColor
+        default: return .risoPaper
         }
     }
 }

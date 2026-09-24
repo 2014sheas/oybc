@@ -19,7 +19,7 @@ struct TutorialLessonSheet: View {
                     HStack(spacing: 12) {
                         Image(systemName: isLearned ? "checkmark" : lesson.systemImage)
                             .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(isLearned ? Color.risoOnColor : Color.risoInk)
+                            .foregroundStyle(isLearned ? Color.risoPaper : Color.risoInk)
                             .frame(width: 52, height: 52)
                             .risoCard(fill: isLearned ? .risoGreen : .risoPaper2)
 

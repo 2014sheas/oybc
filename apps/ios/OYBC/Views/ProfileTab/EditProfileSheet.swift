@@ -212,11 +212,11 @@ struct EditProfileSheet: View {
             Group {
                 if isSaving {
                     ProgressView()
-                        .tint(Color.risoOnColor)
+                        .tint(Color.risoPaper)
                 } else {
                     Text("Save profile")
                         .font(.risoHead(17, .bold))
-                        .foregroundStyle(Color.risoOnColor)
+                        .foregroundStyle(Color.risoPaper)
                 }
             }
             .frame(maxWidth: .infinity)

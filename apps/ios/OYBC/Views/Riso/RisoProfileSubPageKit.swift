@@ -100,17 +100,6 @@ extension Timeframe {
         case .indefinite: return .risoMuted
         }
     }
-
-    /// Content colour for text drawn on `risoColor`. Red/blue/green take the
-    /// static on-colour cream (`risoOnColor`, web `--riso-on-color`) so it
-    /// does not flip with the theme. Gold and muted keep adaptive
-    /// `risoPaper` (unchanged here; the on-gold rule is `risoInkStatic`).
-    var risoOnFill: Color {
-        switch self {
-        case .weekly, .monthly, .yearly: return .risoOnColor
-        case .daily, .custom, .indefinite: return .risoPaper
-        }
-    }
 }
 
 // MARK: - FlowLayout

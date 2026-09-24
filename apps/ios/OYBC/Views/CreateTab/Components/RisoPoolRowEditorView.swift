@@ -56,7 +56,7 @@ struct RisoPoolRowEditorView: View {
                 .textCase(.uppercase)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(Color.risoOnColor) // static on-colour cream on the blue fill
+        .foregroundStyle(Color.risoPaper) // on-color: pairs with the blue fill in both themes
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -256,7 +256,7 @@ struct RisoPoolRowEditorView: View {
     private func subtaskTypeIndicator(isCounting: Bool) -> some View {
         Text(isCounting ? "C" : "N")
             .font(.risoHead(9.5, .extraBold))
-            .foregroundStyle(isCounting ? Color.risoOnColor : Color.risoInk)
+            .foregroundStyle(isCounting ? Color.risoPaper : Color.risoInk)
             .frame(width: 26, height: 26)
             .background(RoundedRectangle(cornerRadius: 6).fill(isCounting ? Color.risoBlue : Color.risoPaper2))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))

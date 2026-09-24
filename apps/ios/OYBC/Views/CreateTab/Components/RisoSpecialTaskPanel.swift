@@ -177,7 +177,7 @@ struct RisoSpecialTaskPanel: View {
         } label: {
             Text(type.rawValue)
                 .font(.risoHead(12, .bold))
-                .foregroundStyle(isOn ? Color.risoOnColor : Color.risoInk)
+                .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 7)
                 .background(
@@ -618,7 +618,7 @@ struct RisoSpecialTaskPanel: View {
         Button(action: action) {
             Text(label)
                 .font(.risoHead(12, .bold))
-                .foregroundStyle(isOn ? Color.risoOnColor : Color.risoInk)
+                .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
                 .padding(.vertical, 6)
                 .padding(.horizontal, 11)
                 .background(

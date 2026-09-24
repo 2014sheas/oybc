@@ -11,8 +11,8 @@ import SwiftUI
 ///
 /// A streak of 0 renders a muted "–" cell; ≥ 1 renders a colored flame chip
 /// (gold for bingo, green for greenlog). On-gold text uses `risoInkStatic`
-/// (non-inverting) so it stays readable in dark mode; on green it uses the
-/// static `risoOnColor` cream, matching the completed-cell convention.
+/// (non-inverting) so it stays readable in dark mode; on green it uses
+/// `risoPaper`, matching the completed-cell convention.
 struct RisoYourStreaksCard: View {
 
     let streaks: [Timeframe: StreakPair]
@@ -59,7 +59,7 @@ struct RisoYourStreaksCard: View {
                     Spacer(minLength: 0)
                     if streaksLoaded {
                         streakCell(count: pair?.bingo ?? 0, timeframe: tf, kind: "bingo", fill: .risoGold, onFill: .risoInkStatic)
-                        streakCell(count: pair?.greenlog ?? 0, timeframe: tf, kind: "greenlog", fill: .risoGreen, onFill: .risoOnColor)
+                        streakCell(count: pair?.greenlog ?? 0, timeframe: tf, kind: "greenlog", fill: .risoGreen, onFill: .risoPaper)
                     } else {
                         // Unknown — a dash per column, never a claimed 0.
                         pendingCell

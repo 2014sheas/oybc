@@ -108,7 +108,7 @@ struct TutorialBoardView: View {
             Text("\(done)/\(total)")
                 .font(.risoHead(13, .extraBold))
                 .monospacedDigit()
-                .foregroundStyle(Color.risoOnColor)
+                .foregroundStyle(Color.risoPaper)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 10)
                 .background(Capsule().fill(Color.risoBlue))
@@ -193,7 +193,7 @@ struct TutorialBoardView: View {
                 Spacer(minLength: 6)
                 Text(lesson.title)
                     .font(.risoBody(12, .bold))
-                    .foregroundStyle(isDone ? Color.risoOnColor : Color.risoInk)
+                    .foregroundStyle(isDone ? Color.risoPaper : Color.risoInk)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -220,7 +220,7 @@ struct TutorialBoardView: View {
             } else {
                 Image(systemName: "arrow.right")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.risoOnColor)
+                    .foregroundStyle(Color.risoPaper)
                     .frame(width: 22, height: 22)
                     .background(Circle().fill(Color.risoBlue))
             }

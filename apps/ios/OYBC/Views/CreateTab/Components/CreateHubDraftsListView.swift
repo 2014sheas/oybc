@@ -170,14 +170,14 @@ private struct RisoDraftRow: View {
     }
 
     /// Typed pill (README §Screens "1. Create hub") — ONE-OFF (red) /
-    /// RECURRING (blue) fill + on-color text (static `.risoOnColor`, matching
+    /// RECURRING (blue) fill + on-color text (`.risoPaper`, matching
     /// `RecurringTemplateCard.timeframeTag`'s identical colored-capsule
     /// pattern) — never adaptive ink on a colored fill.
     private var typePill: some View {
         Text(pillLabel)
             .font(.risoHead(8.5, .bold))
             .tracking(0.3)
-            .foregroundStyle(Color.risoOnColor)
+            .foregroundStyle(Color.risoPaper)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Capsule().fill(pillColor))

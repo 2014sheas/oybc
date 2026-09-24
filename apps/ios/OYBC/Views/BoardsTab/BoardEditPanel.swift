@@ -663,7 +663,7 @@ private struct BoardEditStaticCell: View {
 
     private var textColor: Color {
         if isCenter { return .risoInkStatic }
-        if isTaskCompleted { return .risoOnColor }
+        if isTaskCompleted { return .risoPaper }
         return .risoInk
     }
 

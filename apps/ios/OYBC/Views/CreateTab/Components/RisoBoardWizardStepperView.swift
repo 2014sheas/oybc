@@ -112,7 +112,7 @@ struct RisoBoardWizardStepperView: View {
     }
 
     private func dotForeground(isActive: Bool, isDone: Bool) -> Color {
-        if isActive || isDone { return .risoOnColor }
+        if isActive || isDone { return .risoPaper }
         return .risoMuted
     }
 }
