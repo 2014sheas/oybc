@@ -688,7 +688,7 @@ enum RecurringTemplatePersistOutcome {
 /// `AppDatabase.writeWizardPendingTasksAndEnqueue`'s doc for the full
 /// failure mode). P4 unifies the two paths' pending-task handling and
 /// retires the P1→P3 shape-scoped legacy write-through
-/// (`PoolMix.isLegacyShapedRecord` / pool-minting) entirely — the native
+/// (single-pool-shape check / pool-minting) entirely — the native
 /// `poolIds`/`manualTaskIds`/`removedTaskIds` shape (already tracked on
 /// `BoardWizardViewModel` since P3 for the Tasks-step UI) is now the ONLY
 /// shape this function ever writes, for both fresh-create AND edit.

@@ -34,15 +34,13 @@ import GRDB
 ///   `seedTaskIds`'s always-`[]` pattern): `nil` means "genuinely
 ///   un-migrated" (the field is absent on the wire); `[]` is a real empty
 ///   array. `RecurringBoardTemplate` conforms to `PoolMixSource` (see
-///   `PoolMix.swift`) so it can be passed to `resolveMix` /
-///   `clearRemovalsForUntoggle` directly.
+///   `PoolMix.swift`) so it can be passed to `resolveMix` directly.
 ///
 /// - **P4** made this the ONLY shape `persistRecurringTemplate`
 ///   (`BoardWizardPersist.swift`) ever writes, for both fresh-create AND
 ///   edit — the P1→P3 shape-scoped legacy write-through
-///   (`PoolMix.isLegacyShapedRecord`, which still exists as a pure helper
-///   for the retired call site's shape check and its own unit tests, but
-///   is no longer read by any production write path) is retired. A
+///   (scoped to the single-pool legacy shape; its shape-check helper was
+///   deleted in the 2026-09 audit) is retired. A
 ///   fresh-create no longer mints a Pool at all; an own-mix, zero-pool
 ///   repeating board is first-class.
 struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
@@ -224,7 +222,7 @@ struct RecurringBoardTemplate: Codable, FetchableRecord, PersistableRecord {
     /// fails to parse; the decoded array (possibly `[]`) when a JSON
     /// string is present and valid. Never manufactures `[]` from a missing
     /// key — that would collapse "genuinely un-migrated" into "migrated,
-    /// empty", which `PoolMix.isLegacyShapedRecord` depends on being
+    /// empty", which the v25 migration depends on being
     /// distinguishable at the (`nil` poolIds, absent seedTaskIds fallback)
     /// vs (`poolIds: []`) boundary. Used by all three P1 fields; not
     /// applicable to `seedTaskIds`, which intentionally always defaults to

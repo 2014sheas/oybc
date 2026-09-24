@@ -489,7 +489,7 @@ export interface PersistRecurringTemplateArgs {
  * P4 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md §P4)
  * made this the ONLY shape this path writes — the P1 legacy write-through
  * (mint-a-Pool-on-create / write-through-to-the-linked-Pool-on-edit,
- * shape-scoped via `isLegacyShapedRecord`) is retired. `controller.pulledPoolIds`
+ * scoped to the single-pool legacy shape) is retired. `controller.pulledPoolIds`
  * / `manualTaskIds` / `removedTaskIds` — P3's "PULL IN A POOL" session
  * state — are now the authoritative persisted fields, written straight
  * through:

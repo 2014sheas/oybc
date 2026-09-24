@@ -57,15 +57,13 @@ import { BoardSize } from "../constants";
  * removals semantics (supply-based untoggle clearing, stale-inert
  * entries) and the worked example that is the P1 unit-test vector set.
  *
- * **"Legacy shape"** (`isLegacyShapedRecord` in `../algorithms/poolMix`):
- * at most one pool, no manual additions, no removals — i.e. either a
- * genuinely un-migrated record (`poolIds`/`manualTaskIds`/`removedTaskIds`
- * all absent, `seedTaskIds` present) or a migration/legacy-create-minted
- * record (`poolIds.length === 1`, `manualTaskIds: []`, `removedTaskIds:
- * []`). This is the ONLY shape the legacy template editor's write-through
- * may mutate the linked Pool's `taskIds` for — a richer shape falls back
- * to writing `manualTaskIds` and clearing `poolIds`/`removedTaskIds`
- * instead (the legacy editor never writes a Pool it didn't mint).
+ * **"Legacy shape"**: at most one pool, no manual additions, no removals —
+ * i.e. either a genuinely un-migrated record (`poolIds`/`manualTaskIds`/
+ * `removedTaskIds` all absent, `seedTaskIds` present) or a
+ * migration/legacy-create-minted record (`poolIds.length === 1`,
+ * `manualTaskIds: []`, `removedTaskIds: []`). The P1→P3 legacy template
+ * editor's Pool write-through was scoped to this shape; P4 retired that
+ * write-through (and the 2026-09 audit deleted its shape-check helper).
  */
 export interface RecurringBoardTemplate {
   // Identity
@@ -105,8 +103,8 @@ export interface RecurringBoardTemplate {
   /**
    * P1 — flat per-record removals of pool-sourced tasks (no per-pool
    * attribution — a removal suppresses that task regardless of which
-   * pool(s) supply it). See `clearRemovalsForUntoggle` in
-   * `../algorithms/poolMix` for the supply-based untoggle-clearing rule.
+   * pool(s) supply it). See `resolveMix` in `../algorithms/poolMix` for how
+   * removals apply.
    */
   removedTaskIds?: string[];
 

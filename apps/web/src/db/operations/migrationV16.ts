@@ -37,8 +37,8 @@ import { generateUUID, currentTimestamp } from '../utils';
  *      so it does nothing.
  *
  *   2. Each `RecurringBoardTemplate` whose `poolIds` field is ABSENT (the
- *      "genuinely un-migrated" half of `isLegacyShapedRecord`'s two cases
- *      — see `packages/shared/src/algorithms/poolMix.ts`) has its
+ *      "genuinely un-migrated" legacy shape — see `RecurringBoardTemplate`'s
+ *      "Legacy shape" doc in `@oybc/shared`) has its
  *      `seedTaskIds` extracted into a `Pool` named "<template name> pool";
  *      the template is stamped with `poolIds: [newPool.id]`,
  *      `manualTaskIds: []`, `removedTaskIds: []`. `seedTaskIds` itself is
@@ -159,8 +159,8 @@ async function migrateDefaultPools(): Promise<void> {
 
 async function migrateRecurringBoardTemplates(): Promise<void> {
   const now = currentTimestamp();
-  // `poolIds === undefined` is the "genuinely un-migrated" half of
-  // isLegacyShapedRecord's two cases — see poolMix.ts. Deliberately not
+  // `poolIds === undefined` is the "genuinely un-migrated" legacy shape
+  // (see RecurringBoardTemplate's doc in @oybc/shared). Deliberately not
   // filtered by `isDeleted`: every RecurringBoardTemplate row gets its
   // seedTaskIds carried forward, matching the doc's unconditional framing.
   const templates = await db.recurringBoardTemplates
