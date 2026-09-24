@@ -172,7 +172,7 @@ they share the transaction. Version-bump every mutated row.
 - empty title → "A title is required."
 - counting, goal ≤ 0 or unparsed → "Set a goal above zero."
 - counting, empty unit → "Add a unit, like km or pages."
-- compound with < 2 non-empty steps → "A compound task needs at least two steps."
+- compound with < 2 non-empty sub-tasks → "A compound task needs at least two sub-tasks." (same copy on both platforms and in the wizard's inline compound builder)
 - progress step missing goal/unit → `Progress step "Stretch" needs a goal and a unit.`
 - Blank-titled steps are dropped on save.
 
@@ -234,7 +234,10 @@ every state, then wire it into the wizard.
 ## Invariants (don't regress)
 
 - **No DB write while editing.** Staged edits apply only inside the board-create
-  transaction. A draft board never carries a task edit.
+  transaction **for wizard-staged edits**; a draft board never carries a task
+  edit. Task Detail saves a compound structure immediately through
+  `editCompoundStructure` (web, via `saveTaskEdit`) / `applyTaskEditPatch(patch.compound)`
+  (iOS) — same child-CRUD helper (`applyStagedCompoundChildEdits`), same cascade.
 - **Compound children are Tasks.** Renaming a step edits it globally; deleting a
   step unlinks only (orphans acceptable).
 - **Removal routes through `onToggleSelection`** so `pendingTasks` payloads are

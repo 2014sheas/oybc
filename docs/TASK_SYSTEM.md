@@ -386,7 +386,10 @@ Inline-created children (a child whose definition is authored alongside the pare
 
 ### Editing a task
 
-- **Compound editor**: operator picker + child list with add / remove. Runs the compound-structure-edit transaction (mutate `compound_children`, then run derivation pass for affected boards).
+- **Compound editor — shipped on both platforms, from Task Detail** (web `TaskDetailPage` edit sheet → `CompoundFields`; iOS `TaskDetailView` → `EditTaskSheet` "Sub-tasks & rule" section → `RisoCompoundEditFieldsView`): operator picker + child list with add / rename / remove. Saving runs the compound-structure-edit transaction — web `saveTaskEdit` → `editCompoundStructure` (`apps/web/src/db/operations/compoundStructureEdit.ts`), iOS `applyTaskEditPatch` with `patch.compound` (`AppDatabase+TaskEditing.swift`) — which reuses the wizard's child-CRUD helper `applyStagedCompoundChildEdits` (rename = global edit of the child Task; remove = soft-delete the **link** only, the child Task survives; add = new child Task + link), bumps the parent's version once, then runs ONE batched cascade/derivation pass over the affected boards (sealed boards skipped).
+  - **Baseline gate:** the structure is submitted only when the user actually edited the rule or the sub-tasks. An unedited structure saves through the basic path (`updateTaskAndCascade` / the basic patch), so an already-invalid compound (e.g. one left with a single sub-task) can still be renamed or re-described without first being forced valid.
+  - **Rule label — single source:** the "All of N" / "Any of N" / "M of N" line shown under the Subtasks header on Task Detail comes from `compoundRuleLabel` (`packages/shared/src/algorithms/compoundEvaluation.ts`) ↔ its Swift twin `CompoundEvaluation.compoundRuleLabel` (`apps/ios/OYBC/Services/CompoundEvaluation.swift`). Don't format the rule anywhere else.
+  - **Board Edit does not edit compounds:** the Board Edit square sheet can't switch a task into or out of Compound, and for a compound it edits the title only — its copy points to Task Detail for sub-tasks and the rule.
 
 ### Board grid
 
