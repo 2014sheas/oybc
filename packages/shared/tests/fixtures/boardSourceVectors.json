@@ -1586,5 +1586,86 @@
       },
       "expected": "You'll lose 2 exclusions, 1 member rule, the narrowed range and the \"All squares\" filter."
     }
+  ],
+  "doneFilterVectors": [
+    {
+      "name": "a pool source is never done-filtered, even on 'todo' with done ids present",
+      "source": {
+        "sourceId": "pool-1",
+        "kind": "pool",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "todo"
+      },
+      "supplyTaskIds": [
+        "t1",
+        "t2",
+        "t3"
+      ],
+      "doneTaskIds": [
+        "t2"
+      ],
+      "expected": [
+        "t1",
+        "t2",
+        "t3"
+      ]
+    },
+    {
+      "name": "a board source on 'all' keeps its done squares",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [],
+        "filter": "all"
+      },
+      "supplyTaskIds": [
+        "t1",
+        "t2",
+        "t3"
+      ],
+      "doneTaskIds": [
+        "t1",
+        "t3"
+      ],
+      "expected": [
+        "t1",
+        "t2",
+        "t3"
+      ]
+    },
+    {
+      "name": "a board source on 'todo' drops its done squares, order kept, excludes untouched",
+      "source": {
+        "sourceId": "board-1",
+        "kind": "board",
+        "min": 0,
+        "max": null,
+        "excludedTaskIds": [
+          "t4"
+        ],
+        "filter": "todo"
+      },
+      "supplyTaskIds": [
+        "t4",
+        "t1",
+        "t2",
+        "t3",
+        "t5"
+      ],
+      "doneTaskIds": [
+        "t3",
+        "t1",
+        "zz-not-supplied"
+      ],
+      "expected": [
+        "t4",
+        "t2",
+        "t5"
+      ]
+    }
   ]
 }

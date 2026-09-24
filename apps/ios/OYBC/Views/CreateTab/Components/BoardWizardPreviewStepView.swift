@@ -357,7 +357,7 @@ struct BoardWizardPreviewStepView: View {
     /// Load the events read-model for windowed preview completion.
     private func loadPreviewEvents() {
         do {
-            let events = try AppDatabase.shared.fetchNonDeletedTaskEvents(userId: userId)
+            let events = try controller.database.fetchNonDeletedTaskEvents(userId: userId)
             eventsByTaskId = Dictionary(grouping: events, by: { $0.taskId })
         } catch {
             // Non-fatal: the grid falls back to empty events (all grey for
@@ -832,6 +832,7 @@ private extension BoardWizardPreviewStepView {
             persistRecurringTemplate(
                 controller: controller,
                 userId: userId,
+                database: controller.database,
                 onSuccess: { outcome in
                     isCreating = false
                     switch outcome {
@@ -876,6 +877,7 @@ private extension BoardWizardPreviewStepView {
             placement: snapshot,
             dates: dates,
             status: status,
+            database: controller.database,
             onSuccess: { boardId in
                 isCreating = false
                 onComplete(boardId, status)
@@ -919,6 +921,7 @@ private extension BoardWizardPreviewStepView {
             placement: snapshot,
             dates: dates,
             status: .draft,
+            database: controller.database,
             onSuccess: { boardId in
                 isCreating = false
                 onComplete(boardId, .draft)
