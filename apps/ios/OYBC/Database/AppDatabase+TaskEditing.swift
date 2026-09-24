@@ -76,9 +76,11 @@ extension AppDatabase {
     ///
     /// Compound structure: when `patch.compound` is non-nil and the task is a
     /// Compound, the structure (operator / threshold / sub-tasks) is validated
-    /// first and refused with `TaskEditError.invalid(message:)` BEFORE any
-    /// write. On success the structure's title wins over the basic title, the
-    /// basic description rides along, the parent gets ONE version bump + ONE
+    /// first — then every newly linked existing task through
+    /// `compoundLinkProblem` — and refused with
+    /// `TaskEditError.invalid(message:)` BEFORE any write. On success the
+    /// structure's title wins over the basic title, the basic description
+    /// rides along, the parent gets ONE version bump + ONE
     /// sync enqueue, sub-task CRUD runs through the wizard's
     /// `applyStagedCompoundChildEdits`, then the parent cascades — the same
     /// order as the web twin `editCompoundStructure`. The task is read inside
@@ -106,6 +108,11 @@ extension AppDatabase {
 
             if task.type == .compound, let structure = patch.compound {
                 if let problem = structure.validate(type: .compound) {
+                    throw TaskEditError.invalid(message: problem)
+                }
+                // A library task picked as a new sub-task must be eligible
+                // (not self / duplicate / achievement / deleted / a loop).
+                if let problem = try Self.compoundLinkProblem(db: db, parentId: task.id, patch: structure) {
                     throw TaskEditError.invalid(message: problem)
                 }
                 // title, operatorType, clamped threshold (nil unless M-of-N)

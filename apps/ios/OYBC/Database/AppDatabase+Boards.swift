@@ -474,10 +474,53 @@ extension AppDatabase {
     ///
     /// Semantics (docs/INLINE_TASK_EDITING.md): a kept new sub-task mints a
     /// child Task + link; a kept existing sub-task edits its child Task
-    /// GLOBALLY (with cascade) and reindexes its link to display order; a
+    /// GLOBALLY (with cascade) and reindexes its link to display order — or,
+    /// for an existing library task picked as a sub-task (no link yet), mints
+    /// its link at that position; a
     /// removed sub-task (deleted or blank-titled) soft-deletes the LINK only —
     /// the child Task survives (orphans acceptable). Sub-tasks render/persist
     /// in `patch.children` order.
+    /// Runs `CompoundChildEligibility.linkProblem` for every kept sub-task in
+    /// `patch` that names an EXISTING task with no live link to `parentId` yet
+    /// — i.e. a library task picked as a new sub-task. Kept = not marked
+    /// deleted and not blank-titled (exactly what
+    /// `applyStagedCompoundChildEdits` keeps). A task id missing from the DB
+    /// is refused as deleted. Read-only. Web twin: `compoundLinkProblemForPatch`.
+    ///
+    /// - Parameters:
+    ///   - db: An open GRDB connection (read or write).
+    ///   - parentId: The compound being edited.
+    ///   - patch: The staged / submitted compound patch.
+    /// - Returns: The first user-facing problem, or nil when every new link is
+    ///   eligible.
+    static func compoundLinkProblem(db: Database, parentId: String, patch: TaskEditPatch) throws -> String? {
+        let kept = patch.children.filter {
+            !$0.markedDeleted
+                && !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && $0.childTaskId != nil
+        }
+        guard !kept.isEmpty else { return nil }
+        let allLinks = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
+        let linkedHere = Set(allLinks.filter { $0.compoundTaskId == parentId }.map(\.childTaskId))
+        for (i, step) in kept.enumerated() {
+            guard let childId = step.childTaskId, !linkedHere.contains(childId) else { continue }
+            // "Already a sub-task here" = any OTHER kept row names the same task.
+            var others = Set<String>()
+            for (j, other) in kept.enumerated() where j != i {
+                if let id = other.childTaskId { others.insert(id) }
+            }
+            guard let candidate = try Task.fetchOne(db, key: childId) else {
+                return CompoundChildEligibility.Message.deleted
+            }
+            if let problem = CompoundChildEligibility.linkProblem(
+                parentId: parentId, candidate: candidate, allLinks: allLinks, currentChildIds: others
+            ) {
+                return problem
+            }
+        }
+        return nil
+    }
+
     static func applyStagedCompoundChildEdits(
         db: Database, parent: Task, patch: TaskEditPatch, now: String
     ) throws {
@@ -516,7 +559,8 @@ extension AppDatabase {
             } else if let childId = step.childTaskId {
                 keptChildIds.insert(childId)
                 // Global child edit (rename / goal / unit) → save + cascade.
-                if let existingChild = try Task.fetchOne(db, key: childId) {
+                let existingChild = try Task.fetchOne(db, key: childId)
+                if let existingChild {
                     let updated = applyStagedStepToChild(existingChild, step: step, title: title)
                     let changed = updated.title != existingChild.title
                         || updated.action != existingChild.action
@@ -529,8 +573,27 @@ extension AppDatabase {
                         try Self.saveTaskAndCascade(db: db, task: u)
                     }
                 }
-                // Reindex the link to display order if it moved.
-                if var link = linkByChildId[childId], link.childIndex != index {
+                if linkByChildId[childId] == nil {
+                    // An existing library task picked as a sub-task: it has no
+                    // link to this compound yet, so mint one at its display
+                    // position. Callers have already run
+                    // `compoundLinkProblem(db:parentId:patch:)`; the live-row
+                    // check here is defensive only (never link a missing /
+                    // deleted task). The caller's parent cascade covers the
+                    // parent's changed state.
+                    if let existingChild, !existingChild.isDeleted {
+                        let link = CompoundChild(
+                            id: AppDatabase.generateUUID(), compoundTaskId: parentId, childTaskId: childId,
+                            childIndex: index, createdAt: now, updatedAt: now, lastSyncedAt: nil,
+                            version: 1, isDeleted: false, deletedAt: nil
+                        )
+                        try link.save(db)
+                        try SyncQueueBuilder.makeItem(
+                            entityType: "compoundChildren", entityId: link.id, operationType: .create, payload: link, now: now
+                        ).enqueue(db)
+                    }
+                } else if var link = linkByChildId[childId], link.childIndex != index {
+                    // Reindex the link to display order if it moved.
                     link.childIndex = index
                     link.version += 1
                     link.updatedAt = now
@@ -651,6 +714,9 @@ extension AppDatabase {
                 // Save, but a stale draft shouldn't corrupt the row).
                 guard patch.validate(type: task.type) == nil else { continue }
                 if task.type == .compound {
+                    // An ineligible newly linked existing task skips the whole
+                    // edit (never half-applied), exactly like an invalid patch.
+                    guard try Self.compoundLinkProblem(db: db, parentId: taskId, patch: patch) == nil else { continue }
                     task = patch.applied(to: task)
                     task.version += 1
                     task.updatedAt = now
@@ -746,6 +812,9 @@ extension AppDatabase {
                     // Save, but a stale draft shouldn't corrupt the row).
                     guard patch.validate(type: task.type) == nil else { continue }
                     if task.type == .compound {
+                        // An ineligible newly linked existing task skips the
+                        // whole edit (never half-applied), like an invalid patch.
+                        guard try Self.compoundLinkProblem(db: db, parentId: taskId, patch: patch) == nil else { continue }
                         // Parent fields + child/link CRUD. Works for library AND
                         // pending compounds — the pending loop above already wrote
                         // the pending compound's rows, so they're real rows here.

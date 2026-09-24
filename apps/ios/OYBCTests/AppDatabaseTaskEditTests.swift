@@ -548,4 +548,138 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         XCTAssertEqual(live.map(\.childTaskId), [f.a.id, f.b.id])
         XCTAssertTrue(try db.fetchPendingSyncItems().filter { $0.entityType == "compoundChildren" }.isEmpty)
     }
+
+    // MARK: - Linking an EXISTING library task as a sub-task (Task 6)
+
+    /// Library task L with an in-window completion (P's fixture window).
+    private func seedLibraryTask(_ db: AppDatabase, id: String = "l") throws -> Task {
+        let l = makeTask(id)
+        try db.write { conn in
+            try l.insert(conn)
+            try completionEvent("ev-\(id)", taskId: id, occurredAt: "2026-06-15T00:00:00.000").insert(conn)
+        }
+        return l
+    }
+
+    /// (Task / Board aren't Equatable — compare the fields a write would move.)
+    private typealias DbState = (tasks: [String], links: [CompoundChild], boards: [String], queue: Int)
+
+    private func dbState(_ db: AppDatabase) throws -> DbState {
+        try db.read {
+            (try Task.order(Column("id")).fetchAll($0).map {
+                "\($0.id)|\($0.version)|\($0.updatedAt)|\($0.title)|\($0.isDeleted)|\(String(describing: $0.operatorType))"
+             },
+             try CompoundChild.order(Column("id")).fetchAll($0),
+             try Board.order(Column("id")).fetchAll($0).map { "\($0.id)|\($0.version)|\($0.completedTasks)" },
+             try SyncQueueItem.fetchCount($0))
+        }
+    }
+
+    private func assertUnchanged(
+        _ db: AppDatabase, _ before: DbState,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let after = try dbState(db)
+        XCTAssertEqual(after.tasks, before.tasks, file: file, line: line)
+        XCTAssertEqual(after.links, before.links, file: file, line: line)
+        XCTAssertEqual(after.boards, before.boards, file: file, line: line)
+        XCTAssertEqual(after.queue, before.queue, file: file, line: line)
+    }
+
+    func test_editCompound_linksExistingTask_enqueuesLinkCreate_taskUntouched_reDerivesBoard() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let l = try seedLibraryTask(db)
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 0)
+
+        // OR(B, L): B undone, L done → P complete ONLY if the L link exists.
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .or, children: [ChildPatch(from: f.b), ChildPatch(from: l)])),
+            now: now
+        )
+
+        let live = try liveLinks(db, parent: f.p.id)
+        XCTAssertEqual(live.map(\.childTaskId), [f.b.id, l.id])
+        XCTAssertEqual(live.map(\.childIndex), [0, 1])
+        let lLink = try XCTUnwrap(live.last)
+        XCTAssertEqual(lLink.version, 1)
+        let rows = try db.fetchPendingSyncItems()
+        XCTAssertEqual(rows.filter {
+            $0.entityType == "compoundChildren" && $0.entityId == lLink.id && $0.operationType == .create
+        }.count, 1)
+        let storedL = try db.read { try Task.fetchOne($0, key: l.id) }
+        XCTAssertEqual(storedL?.version, l.version, "the picked task row is untouched")
+        XCTAssertEqual(storedL?.updatedAt, l.updatedAt)
+        XCTAssertEqual(storedL?.title, l.title)
+        XCTAssertTrue(rows.filter { $0.entityType == "tasks" && $0.entityId == l.id }.isEmpty)
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 1)
+    }
+
+    func test_editCompound_linksNestedCompoundWithoutLoop() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var n = makeTask("n", type: .compound); n.operatorType = .and
+        let q = makeTask("q")
+        try db.write { conn in
+            try n.insert(conn); try q.insert(conn)
+            try makeLink(id: "l-nq", parent: "n", child: "q", index: 0).insert(conn)
+        }
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .and, children: [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: n)])),
+            now: now
+        )
+        XCTAssertEqual(try liveLinks(db, parent: f.p.id).map(\.childTaskId), [f.a.id, f.b.id, n.id])
+    }
+
+    func test_editCompound_refusesIneligibleLinks_beforeAnyWrite() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let l = try seedLibraryTask(db)
+        let w = makeTask("w", type: .achievement)
+        var d = makeTask("d"); d.isDeleted = true
+        var loopy = makeTask("loopy", type: .compound); loopy.operatorType = .and
+        try db.write { conn in
+            try w.insert(conn); try d.insert(conn); try loopy.insert(conn)
+            try makeLink(id: "l-loop", parent: "loopy", child: "p", index: 0).insert(conn)
+        }
+        var dupRow = ChildPatch(from: l); dupRow.id = "dup-row"
+        let cases: [(String, [ChildPatch], String)] = [
+            ("self", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: f.p)],
+             "A compound can’t contain itself."),
+            ("duplicate", [ChildPatch(from: f.a), ChildPatch(from: l), dupRow],
+             "That task is already a sub-task here."),
+            ("achievement", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: w)],
+             "Achievements can’t be sub-tasks."),
+            ("deleted", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: d)],
+             "That task was deleted."),
+            ("loop", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: loopy)],
+             "That would create a loop — it already contains this compound."),
+        ]
+        for (name, kids, message) in cases {
+            let before = try dbState(db)
+            XCTAssertThrowsError(try db.applyTaskEditPatch(
+                taskId: f.p.id,
+                patch: basicPatch(title: "P2", compound: structure(f.p, operator: .or, children: kids)),
+                now: now
+            ), name) { err in
+                XCTAssertEqual(err as? AppDatabase.TaskEditError, .invalid(message: message), name)
+            }
+            try assertUnchanged(db, before)
+        }
+    }
+
+    func test_wizardStagedPath_ineligibleLinkSkipsWholeEdit_eligibleLinkApplies() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let l = try seedLibraryTask(db)
+        var bad = structure(f.p, operator: .or, children: [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: f.p)])
+        bad.title = "P2"
+        let before = try dbState(db)
+        try db.writeWizardPendingTasksAndEnqueue([], stagedEdits: [f.p.id: bad], now: now)
+        try assertUnchanged(db, before)
+
+        let good = structure(f.p, operator: .or, children: [ChildPatch(from: f.b), ChildPatch(from: l)])
+        try db.writeWizardPendingTasksAndEnqueue([], stagedEdits: [f.p.id: good], now: now)
+        XCTAssertEqual(try liveLinks(db, parent: f.p.id).map(\.childTaskId), [f.b.id, l.id])
+    }
 }
