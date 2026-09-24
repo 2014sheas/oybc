@@ -261,11 +261,21 @@ struct PoolEditSheetView: View {
             Button {
                 poolTaskIds.removeAll { $0 == task.id }
             } label: {
+                // 9pt glyph, 28pt hit area: the negative padding hands the
+                // frame's extra size back to layout, so the chip keeps its
+                // visual size while the touch target overhangs it.
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.risoInk)
+                    .frame(minWidth: 28, minHeight: 28)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -7)
+                    .padding(.horizontal, -10)
             }
+            .buttonStyle(.plain)
             .disabled(busy)
+            // Mirrors web PoolEditSheet.tsx's aria-label verbatim.
+            .accessibilityLabel("Remove \(task.title.isEmpty ? "task" : task.title) from pool")
         }
         .padding(.vertical, 5).padding(.leading, 10).padding(.trailing, 7)
         .background(Capsule().fill(Color.risoPaper2))
