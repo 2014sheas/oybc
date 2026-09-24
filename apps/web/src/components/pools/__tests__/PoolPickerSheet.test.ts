@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { vi, describe, expect, it } from 'vitest';
+
+// The component/resolver chain reaches `firebase/config` through the hooks
+// barrel (→ useSyncLoop → syncService), whose `initializeApp` throws
+// `auth/invalid-api-key` at import on CI (no .env.local). Stub it, as
+// `firebase/__tests__/guestMode.test.ts` does; nothing here touches Firebase.
+vi.mock('../../../firebase/config', () => ({ auth: {}, firestore: {} }));
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
