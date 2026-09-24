@@ -93,6 +93,23 @@ uid. The near-empty anonymous account orphans server-side (acceptable on a rare
 collision — the alternative is data loss), and the guest's local rows are
 `userId`-filtered out of every view under the signed-in account.
 
+**Queue ownership closes the switch race.** Clearing the anon queue happens
+*after* the sign-in resolves, but the auth listener starts the new uid's sync loop
+(web `startSyncLoop` ticks immediately) in that gap — and `boardTasks` /
+`compoundChildren` payloads carry no `userId`, so the rules would accept the
+guest's placements into the real account. So every queue item is stamped at
+enqueue with `ownerUid` — the uid signed in at that moment (a LOCAL queue column,
+never on the wire; iOS GRDB v33, web Dexie field, shared `SyncQueueItem.ownerUid`)
+— and the push path runs the fetched PENDING list through
+`dropForeignOwnedSyncItems` (web `db/operations/syncQueue.ts`; iOS
+`AppDatabase+Sync.swift`) before its per-item loop: an item owned by another uid
+is **deleted from the queue with a log line, never pushed** (it can never become
+valid for this account). Legacy rows with a null owner push as before, and
+coalescing only merges rows of the same owner (a legacy row is adopted and
+re-stamped), so a new account's edit is never folded into a doomed guest row. The
+predicates are pinned in `@oybc/shared` `syncQueueOwnership.ts` ↔
+`SyncQueueOwnership` (`SyncQueue.swift`).
+
 ## Deletion / discard (Apple 5.1.1(v))
 
 A guest has no "account" to delete until they upgrade, but their local data must be

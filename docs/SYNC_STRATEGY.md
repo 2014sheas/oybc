@@ -540,6 +540,7 @@ The current design is event-driven on both sides, with the polling loop kept as 
   - **iOS**: GRDB `ValueObservation.tracking { db in try SyncQueueItem.filter(...).fetchCount(db) }` started in `SyncService.start(userId:)`.
 - On any non-zero emission the orchestrator schedules a debounced `pushSync` (500 ms window). Repeated enqueues coalesce.
 - The existing `isSyncing` guard is the concurrency lock; the queue observation re-fires as items drain, so nothing is lost if a push is mid-flight when debounce fires.
+- **Queue ownership.** Every queue item carries `ownerUid`, stamped at enqueue with the uid signed in at that moment (web: the provider `syncService.ts` registers via `setSyncQueueOwnerProvider`; iOS: the `SyncQueueItem.ownerUid` default, provider registered in `OYBCApp.init`). It is a **local queue column only** — the push writes `payload`, never the queue row, so the C4 sync contract and wire shape are unchanged. `pushSync` / `pushSyncCore` pass the fetched PENDING list through `dropForeignOwnedSyncItems` before the per-item loop: rows owned by a different uid are deleted and logged, never pushed; null-owner (legacy / pre-stamp, incl. migration-written) rows push as before. Coalescing only merges same-owner rows. Why: an account switch (the guest-collision path, docs/GUEST_MODE.md §Collision) can start the new uid's loop before the old queue is cleared, and `boardTasks` / `compoundChildren` carry no `userId` for the rules to reject.
 
 ### Pull side — Firestore `onSnapshot` listeners
 
