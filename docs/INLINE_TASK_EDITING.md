@@ -165,8 +165,8 @@ they share the transaction. Version-bump every mutated row.
   `onToggleSelection` so it also purges any `pendingTasks` payload.
 - **Step delete** gets no toast (Discard covers it — the panel is one transaction).
 - **No type changes** here (a task's type and a step's type are fixed — hence two
-  add-step buttons). Time window, description, achievement trigger/target →
-  Tasks tab only.
+  add-step buttons). Description, achievement trigger/target → Tasks tab only (a
+  task's own window fields are not user-editable — see TASK_SYSTEM).
 
 **Validation** (blocks Save, message above the buttons):
 - empty title → "A title is required."

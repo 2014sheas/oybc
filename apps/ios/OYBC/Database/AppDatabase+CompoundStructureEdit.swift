@@ -49,20 +49,6 @@ extension AppDatabase {
         return t
     }
 
-    /// Applies a compound patch's child edits to its `compound_children` links +
-    /// child Task rows, inside an active write transaction. Called by
-    /// `saveWizardBoard` for a staged compound edit (library or already-written
-    /// pending compound). The parent Task itself is saved+cascaded by the caller
-    /// AFTER this returns.
-    ///
-    /// Semantics (docs/INLINE_TASK_EDITING.md): a kept new sub-task mints a
-    /// child Task + link; a kept existing sub-task edits its child Task
-    /// GLOBALLY (with cascade) and reindexes its link to display order — or,
-    /// for an existing library task picked as a sub-task (no link yet), mints
-    /// its link at that position; a
-    /// removed sub-task (deleted or blank-titled) soft-deletes the LINK only —
-    /// the child Task survives (orphans acceptable). Sub-tasks render/persist
-    /// in `patch.children` order.
     /// Runs `CompoundChildEligibility.linkProblem` for every kept sub-task in
     /// `patch` that names an EXISTING task with no live link to `parentId` yet
     /// — i.e. a library task picked as a new sub-task. Kept = not marked
@@ -104,6 +90,20 @@ extension AppDatabase {
         return nil
     }
 
+    /// Applies a compound patch's child edits to its `compound_children` links +
+    /// child Task rows, inside an active write transaction. Called by
+    /// `saveWizardBoard` for a staged compound edit (library or already-written
+    /// pending compound). The parent Task itself is saved+cascaded by the caller
+    /// AFTER this returns.
+    ///
+    /// Semantics (docs/INLINE_TASK_EDITING.md): a kept new sub-task mints a
+    /// child Task + link; a kept existing sub-task edits its child Task
+    /// GLOBALLY (with cascade) and reindexes its link to display order — or,
+    /// for an existing library task picked as a sub-task (no link yet), mints
+    /// its link at that position; a
+    /// removed sub-task (deleted or blank-titled) soft-deletes the LINK only —
+    /// the child Task survives (orphans acceptable). Sub-tasks render/persist
+    /// in `patch.children` order.
     static func applyStagedCompoundChildEdits(
         db: Database, parent: Task, patch: TaskEditPatch, now: String
     ) throws {

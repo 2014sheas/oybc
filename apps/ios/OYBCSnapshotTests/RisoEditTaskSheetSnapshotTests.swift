@@ -10,17 +10,17 @@ import SnapshotTesting
 /// capture the actual production view — not a hand-mirrored copy.
 ///
 /// Variants (light + dark each):
-///   1. Normal task — Details + Time-window cards only.
-///   2. Counting task — Details + Counting (action/goal/unit) + Time-window.
+///   1. Normal task — Details card only.
+///   2. Counting task — Details + Counting (action/goal/unit).
 ///   3. Achievement watching a specific board — trigger + board picker seeded.
 ///   4. Achievement watching a recurring template — template picker + required count.
 ///   5. Compound task — Details + Sub-tasks & rule editor (rule picker + two
-///      seeded sub-task cards + add buttons) + Time-window.
+///      seeded sub-task cards + add / "+ Existing task…" buttons).
 ///
-/// Determinism: all fixture tasks have `timeframe = nil` so the Date-pickers
-/// remain hidden and no `Date()` value leaks into the snapshot. Achievement
-/// variants also omit a timeframe. This sidesteps the calendar-rollover
-/// flakiness documented in `reference_snapshot_date_dependent.md`.
+/// Determinism: the sheet has no time-window section (a task's own window
+/// fields aren't user-editable), so no `Date()` value can leak into the
+/// snapshot; fixture tasks also keep `timeframe = nil`. This sidesteps the
+/// calendar-rollover flakiness documented in `reference_snapshot_date_dependent.md`.
 final class RisoEditTaskSheetSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing

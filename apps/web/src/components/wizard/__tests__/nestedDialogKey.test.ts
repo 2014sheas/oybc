@@ -40,6 +40,10 @@ describe('isNestedDialogKey (PoolRowEditor shortcut guard)', () => {
     expect(isNestedDialogKey(key('Enter', { defaultPrevented: true }))).toBe(false);
   });
 
+  it('ignores an Escape a nested dialog consumed even when the target is outside it', () => {
+    expect(isNestedDialogKey(key('Escape', { defaultPrevented: true, inPicker: false }))).toBe(true);
+  });
+
   it('keeps a plain Escape from the editor itself — it still discards', () => {
     expect(isNestedDialogKey(key('Escape'))).toBe(false);
   });

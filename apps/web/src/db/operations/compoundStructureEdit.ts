@@ -298,7 +298,7 @@ function assertLiveCompound(task: Task | undefined, taskId: string): asserts tas
  *
  * @param taskId - The compound Task's id.
  * @param structure - The edited title / operator / threshold / sub-tasks.
- * @param basic - Optional description / time-window fields (same version bump).
+ * @param basic - Optional description field (same version bump).
  * @throws Error when the task is missing/deleted or is not a compound.
  * @throws CompoundEditValidationError (message = `validatePatch`'s, or the
  *   `compoundChildLinkProblem` reason for a newly linked existing task)

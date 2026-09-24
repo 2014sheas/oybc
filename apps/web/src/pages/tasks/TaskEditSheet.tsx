@@ -188,7 +188,7 @@ export function TaskEditSheet({
     compoundDraft !== null ? validatePatch({ ...compoundDraft, title }, TaskType.COMPOUND) : null;
   // Save is gated on the structure only when it was edited: a compound whose
   // STORED structure is already invalid can still take a rename /
-  // description / time-window edit through the basic route.
+  // description edit through the basic route.
   const structureChanged = compoundStructureChanged(compoundBaseline, compoundDraft);
   const compoundBlocked =
     isCompound && (compoundDraft === null || (structureChanged && compoundValidation !== null));
