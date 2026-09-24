@@ -467,12 +467,12 @@ final class RecurringBoardTemplatesTests: XCTestCase {
 
     // MARK: - End-to-end spawn (integration with in-memory GRDB)
     //
-    // Note: the Phase 6.2 spawn driver invokes `AppDatabase.shared.write`
-    // directly, so we can't substitute the in-memory test instance. The
-    // following test verifies the v8 schema by reading + writing through
-    // the test instance, but does not exercise `RecurringBoardSpawn`
-    // itself. End-to-end spawn coverage is via the manual QA pass relayed
-    // to the user (per CLAUDE.md's "no sim-driving" convention).
+    // Note: the following test verifies the v8 schema by reading + writing
+    // through the test instance; it does not exercise `RecurringBoardSpawn`
+    // itself. `RecurringBoardSpawn.spawnTemplateBoard` now takes a
+    // `database:` seam, and its end-to-end path runs against an in-memory
+    // instance in `BoardWizardPersistRecurringTemplateTests` (every
+    // fresh-create persist spawns the current window's board).
 
     func testV8MigrationCreatesRecurringTemplatesTableAndBoardColumn() throws {
         let testDb = try AppDatabase.makeTestInstance()

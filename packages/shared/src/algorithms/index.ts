@@ -30,6 +30,11 @@ export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './deriva
 export {
   isEventOwningTask,
   resolveTaskWindowState,
+  resolveWindowStampedDerivedState,
+  resolveDerivedCounterWindowState,
+  resolveLinkedCounterDisplay,
+  expandToWindowStampedDerived,
+  boundWindowContextAtSeal,
   backstopWindowMs,
   computeBackstopDeadlineMs,
   buildSealImmuneWindows,
@@ -238,6 +243,7 @@ export type { PlacementIntegrityRepairResult } from './placementResolution';
 export {
   resolveSourceAvailable,
   effectiveSourceMax,
+  availableSupplyIds,
   computeSourceCapacity,
   computeAchievablePoolSize,
   buildCounterFamilyMap,
@@ -278,6 +284,8 @@ export {
   planDerivedTasks,
   computeWindowBaseline,
   isWindowStampedDerived,
+  isFrozenDerivedRow,
+  isFrozenRowReachedByEvent,
   buildDerivedRows,
 } from './memberRules';
 

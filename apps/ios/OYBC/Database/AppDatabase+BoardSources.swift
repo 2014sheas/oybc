@@ -10,11 +10,13 @@ import GRDB
 ///
 /// Done-state predicate mirrors `BoardPlayViewModel.windowedIsCompleted`:
 /// event-owning primitives resolve via `resolveTaskWindowState` against
-/// the source board's window (`board.startDate`); compound / achievement /
-/// derived counting read the lifetime `Task.isCompleted` cache (the same
-/// documented carve-out the Board-Edit preview surfaces use — these
-/// wizard surfaces have no compound/achievement evaluation context of
-/// their own).
+/// the source board's window (`board.startDate`); window-stamped derived
+/// counters resolve from their ROOT's events in their own window
+/// (`resolveDerivedCounterWindowState`, the kernel rule); compound /
+/// achievement / hub-linked derived counting read the lifetime
+/// `Task.isCompleted` cache (the same documented carve-out the Board-Edit
+/// preview surfaces use — these wizard surfaces have no
+/// compound/achievement evaluation context of their own).
 struct BoardSourceSupplyInfo: Equatable {
     /// The source board's display name (for the row title).
     let displayName: String
@@ -28,8 +30,8 @@ struct BoardSourceSupplyInfo: Equatable {
     /// the same number the source board's own squares display. Keyed by task
     /// id; a member with no entry has made no measurable progress here (or
     /// isn't an event-owning counter at all — compounds, achievements and
-    /// window-stamped derived counters are the documented per-cell carve-out
-    /// and read their own caches instead).
+    /// derived counters get no entry; a window-stamped derived row's window
+    /// count is deliberately NOT fed into this prefill map).
     ///
     /// Feeds the one-off wizard's "remaining" target prefill: pull a
     /// 3-of-10-done counter onto a fresh one-off board and its member rule is
@@ -161,11 +163,14 @@ extension AppDatabase {
             .fetchAll(db)
         let taskById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
 
-        let eventOwningIds = tasks.filter { isEventOwningTask($0) }.map { $0.id }
+        // Event-owning ids + the ROOT of each window-stamped derived row (its
+        // done-state reads the root's events; a root is never placed).
+        let eventTaskIds = Set(tasks.filter { isEventOwningTask($0) }.map { $0.id })
+            .union(tasks.compactMap { BoardSources.isWindowStampedDerived($0) ? $0.sharedCounterId : nil })
         var eventsByTaskId: [String: [TaskEvent]] = [:]
-        if !eventOwningIds.isEmpty {
+        if !eventTaskIds.isEmpty {
             let events = try TaskEvent
-                .filter(eventOwningIds.contains(Column("taskId")) && Column("isDeleted") == false)
+                .filter(eventTaskIds.contains(Column("taskId")) && Column("isDeleted") == false)
                 .fetchAll(db)
             for e in events { eventsByTaskId[e.taskId, default: []].append(e) }
         }
@@ -183,7 +188,14 @@ extension AppDatabase {
             seen.insert(id)
             supply.append(id)
             let isDone: Bool
-            if isEventOwningTask(task) {
+            // A window-stamped derived counter is done by its ROOT's
+            // increments inside its own window — the kernel's rule (docs
+            // §Derived-task carve-out, amended 2026-09-23) — never the one-way
+            // latch a later window's logs can set. Its count is deliberately
+            // NOT fed to the prefill (`windowCountByTaskId` stays event-owning).
+            if let derived = resolveDerivedCounterWindowState(task: task, eventsByTaskId: eventsByTaskId) {
+                isDone = derived.isCompleted
+            } else if isEventOwningTask(task) {
                 let state = resolveTaskWindowState(
                     task: task,
                     events: eventsByTaskId[id] ?? [],
@@ -252,10 +264,11 @@ extension AppDatabase {
                 ))
             case .board:
                 let info = (try? fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil
-                var raw = info?.supplyTaskIds ?? []
-                if source.filter == .todo, let done = info?.doneTaskIds {
-                    raw.removeAll { done.contains($0) }
-                }
+                let raw = BoardSources.availableSupplyIds(
+                    source: source,
+                    supplyTaskIds: info?.supplyTaskIds ?? [],
+                    doneTaskIds: info?.doneTaskIds ?? []
+                )
                 supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
             }
         }

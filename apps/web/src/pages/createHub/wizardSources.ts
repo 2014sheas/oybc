@@ -12,6 +12,7 @@ import {
   applyMemberRules,
   computeSourceCapacity,
   poolSourceSupplyById,
+  availableSupplyIds,
   resolveSourceAvailable,
   effectiveSourceMax,
   withPartRule,
@@ -100,10 +101,7 @@ export function algorithmSupplies(
 ): ExpandedSupply[] {
   const raw = sources.map((source) => {
     const info = supplyInfo[source.sourceId];
-    let ids = info?.rawSupplyTaskIds ?? [];
-    if (source.kind === 'board' && source.filter === 'todo' && info) {
-      ids = ids.filter((id) => !info.doneTaskIds.has(id));
-    }
+    const ids = availableSupplyIds(source, info?.rawSupplyTaskIds ?? [], info?.doneTaskIds);
     return { source, supplyTaskIds: resolveSourceAvailable({ source, supplyTaskIds: ids }) };
   });
   return applyMemberRules(raw, childrenByCompoundId, tasksById);

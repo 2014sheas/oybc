@@ -17,6 +17,7 @@ import {
   selectBoardTasks,
   resolveSourceAvailable,
   effectiveSourceMax,
+  availableSupplyIds,
   isSourceSupplyTask,
   poolSourceSupplyById,
   sourcesFromMixFields,
@@ -82,6 +83,13 @@ interface Fixture {
     detail: SourceConfigurationDetail;
     expected: string | null;
   }>;
+  doneFilterVectors: Array<{
+    name: string;
+    source: BoardSource;
+    supplyTaskIds: string[];
+    doneTaskIds: string[];
+    expected: string[];
+  }>;
   conversionVectors: Array<{
     name: string;
     record: { poolIds?: string[]; removedTaskIds?: string[]; sources?: BoardSource[] };
@@ -109,7 +117,17 @@ describe('boardSourceVectors fixture', () => {
     expect(fixture.conversionVectors.length).toBeGreaterThan(0);
     expect(fixture.configurationVectors.length).toBeGreaterThan(0);
     expect(fixture.lossSentenceVectors.length).toBeGreaterThan(0);
+    expect(fixture.doneFilterVectors.length).toBeGreaterThan(0);
   });
+
+  test.each(fixture.doneFilterVectors.map((v) => [v.name, v] as const))(
+    'done-filter: %s',
+    (_name, v) => {
+      expect(
+        availableSupplyIds(v.source, v.supplyTaskIds, new Set(v.doneTaskIds)),
+      ).toEqual(v.expected);
+    },
+  );
 
   test.each(fixture.configurationVectors.map((v) => [v.name, v] as const))(
     'configuration: %s',

@@ -25,9 +25,9 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // Fixed pinned dates used throughout — 2026-04-01 and 2026-04-30.
-    private static let fixedStart = Date(timeIntervalSince1970: 1_743_465_600) // 2026-04-01 UTC
-    private static let fixedEnd   = Date(timeIntervalSince1970: 1_746_057_600) // 2026-04-30 UTC
+    // Fixed pinned dates used throughout — 2025-04-01 and 2025-05-01.
+    private static let fixedStart = Date(timeIntervalSince1970: 1_743_465_600) // 2025-04-01 00:00 UTC
+    private static let fixedEnd   = Date(timeIntervalSince1970: 1_746_057_600) // 2025-05-01 00:00 UTC
 
     // MARK: - Form: monthly timeframe, free center (light)
 

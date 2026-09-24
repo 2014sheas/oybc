@@ -385,45 +385,10 @@ extension BoardSources {
     /// Spec step 3 — decide, per selected id, whether it is placed as-is or
     /// replaced by a window-stamped derived counter / derived compound.
     ///
-    /// Pure and deterministic for a seeded `rng`: at most one sample per
-    /// roll, taken in `selectedIds` order (and within a compound, in
-    /// `childIndex` order); a `.off` or degenerate range takes none. Drafts
-    /// are in-memory only — B2 materialises them before the `board_tasks`
-    /// rows in one transaction.
-    ///
-    /// Precedence, in order: hand-added beats any source copy; among
-    /// sources, the FIRST supply that lists the id wins; a split part reads
-    /// its part rule (the parent's member-level `vary` is deliberately
-    /// ignored in split mode); a `target` — member-level OR part-level — is
-    /// honoured on board sources only (a pool member offers vary / split /
-    /// part-exclusion and nothing else).
-    ///
-    /// No-identical-clone rule (owner ruling 2026-09-22): a board-sourced
-    /// counting member — or split part — that IS a root (`sharedCounterId ==
-    /// nil`) and whose RESOLVED target equals its own goal with vary off is
-    /// placed as the root task itself rather than minted, because the derived
-    /// row would be an exact clone. Windowed Completion already evaluates the
-    /// root against the placing board's window. A member that is itself a
-    /// window-stamped derived counter never takes this path — it always
-    /// re-mints for the new window, or its old window's baseline would be
-    /// evaluated on this board. A later rule edit flips root → derived at the
-    /// next spawn, because every window re-plans from scratch.
-    ///
-    /// Collapse rule, mirrored verbatim from the TS twin: two things that
-    /// share a shared-counter root resolve to ONE derived counter (the first
-    /// one's roll). The dedupe is checked BEFORE the roll, so a collapsed
-    /// occurrence consumes no rng sample. Two collapsed SELECTED members
-    /// still both push that one derived id into `placementIds`, so the same
-    /// id can appear twice there — B2 must dedupe before writing
-    /// `board_tasks`. Two collapsed PARTS of one One-square compound are
-    /// deduped here instead (first in `childIndex` order wins, keeping its
-    /// own `childIndex`/`linkId`), because `derivedLinkId` is a pure function
-    /// of `(compound, child)`: a repeated `childTaskId` is one
-    /// `compound_children` primary key written twice, and a compound whose
-    /// `threshold` counts children would count one child twice.
-    /// Counter-family exclusivity constrains board *selection*, not compound
-    /// *authorship*, so the part case is ordinary user data while the member
-    /// case is belt-and-braces.
+    /// Semantics (rng sampling order, precedence, the no-identical-clone rule
+    /// and the collapse rule): see the TS twin `planDerivedTasks` in
+    /// `packages/shared/src/algorithms/memberRules.ts` — mirrored exactly and
+    /// pinned by `memberRuleVectors.json`.
     ///
     /// - Parameters:
     ///   - selectedIds: The task ids picked for the board, in placement order.
@@ -432,15 +397,8 @@ extension BoardSources {
     ///   - manualTaskVary: Hand-added id → its dice.
     ///   - boardId: The board being assembled (seeds every derived id).
     ///   - window: The board's window; every derived draft is stamped with it.
-    ///   - mode: Whether the board being assembled is one-off or recurring.
-    ///     **No longer gates the target math** (owner ruling 2026-09-21:
-    ///     one-off boards pro-rate too — docs/BOARD_SOURCES.md §Member
-    ///     rules). Kept on the signature because every caller already has it
-    ///     and the vector fixture uses it to pin that a board-sourced member
-    ///     resolves IDENTICALLY in both modes; the one-off/recurring
-    ///     difference now lives entirely in WHEN the target is written (a
-    ///     one-off pull prefills an explicit, pro-rated `target`; a recurring
-    ///     board leaves it absent and auto-targets at each spawn).
+    ///   - mode: One-off or recurring. Does not gate the target math (the
+    ///     vectors pin identical resolution in both modes).
     ///   - tasksById: Id → task, for every selected id and compound child.
     ///   - childrenByCompoundId: Compound id → its `compound_children` rows.
     ///   - sourceWindowByTaskId: Task id → the window of the source board it
@@ -825,6 +783,36 @@ extension BoardSources {
         !(task.sharedCounterId ?? "").isEmpty
             && !(task.startDate ?? "").isEmpty
             && task.createdInWizard
+    }
+
+    /// Is this STORED row a window-stamped derived counter whose window has
+    /// ENDED, so shared-counter propagation must skip it (the propagation
+    /// freeze)? Twin of the TS `isFrozenDerivedRow`, pinned by the
+    /// `frozenDerivedRow` section of `memberRuleVectors.json`.
+    ///
+    /// Increment / decrement / undo skip a frozen row's authored write and
+    /// enqueue; completion reads the ROOT's in-window events, not the latch.
+    /// Increment / decrement (event stamped `now`) skip its cascade too; undo
+    /// cascades — never writes — the rows `isFrozenRowReachedByEvent` names
+    /// (TaskEvents.swift). `refreshDerivedBaselines` is NOT gated by this.
+    ///
+    /// "Ended" uses the kernel's inclusive window convention
+    /// (`DateFormatting.isWithinTimeframe`): frozen only once `now` is
+    /// strictly after the `endDate` instant. Rows with no `endDate` and
+    /// hub-linked rows (no `startDate`) are never frozen. An unparseable
+    /// `endDate` or `now` is treated as not frozen.
+    ///
+    /// - Parameters:
+    ///   - task: The linked task row to test.
+    ///   - now: The current instant as an ISO8601 string (a parameter, never
+    ///     read from the clock here, so the predicate stays pure).
+    /// - Returns: True when propagation must skip the row.
+    static func isFrozenDerivedRow(_ task: Task, now: String) -> Bool {
+        guard isWindowStampedDerived(task),
+              let endDate = task.endDate,
+              let end = DateFormatting.parseISO(endDate),
+              let nowDate = DateFormatting.parseISO(now) else { return false }
+        return nowDate > end
     }
 
     /// Output of ``buildDerivedRows(drafts:userId:now:rootsById:compoundsById:)``

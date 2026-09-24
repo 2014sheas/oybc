@@ -490,7 +490,7 @@ The web wizard is now sources-native, mirroring the iOS P2/P3 shape:
   verbatim with the spawn path (the P3 wizard-time = spawn-time lock);
   `fetchBoardSourceSupply` + `fetchSourceSheetBoardEntries` (ACTIVE-only)
   are the async wrappers. Loaded off-render at `BoardWizardPage` (the same
-  batching rule as iOS's off-main `loadPools`).
+  batching rule as iOS's off-main `loadSourceCatalog`).
 - **Components**: `RangeSlider` (pointer-driven two-handle slider, "all"
   latch on the top stop, nearer-handle grab with ties-to-min),
   `SourceRow` (header + expanded panel: board segmented filter, range
@@ -667,6 +667,38 @@ Both platforms, one PR (#491).
   orphan sweep reads candidates from every placement row, live or
   tombstoned, so it stays correct either way if a future change starts
   tombstoning the ordinary ones too.
+- **Window-stamped derived counters — completion from root events
+  (amended 2026-09-23, audit finding #1).** A stored row with all three
+  marks (`isWindowStampedDerived`: `sharedCounterId`, `startDate`,
+  `createdInWizard`) is resolved by the derivation kernel from its ROOT's
+  increment events inside the row's own inclusive `[startDate, endDate]`
+  (`endDate == null` = unbounded), bounded additionally at `sealedAt` on
+  the sealed path: `max(0, Σ signed deltas) >= (maxCount ?? 0)`, overshoot
+  valid (`resolveDerivedCounterWindowState` in `taskEvents.ts` ↔
+  `TaskEvents.swift`, pinned by `derivationPassVectors.json` +
+  `sealReDerivationVectors.json`). The row's one-way `isCompleted` latch is
+  no longer read for it — propagation stamped that latch from ANY later
+  increment, so a past window's cell went green from a later window and
+  sealed re-derivation diverged across devices. Propagation to a row whose
+  window has ended freezes (no authored write, no enqueue, no credit — the
+  shared `isFrozenDerivedRow(row, now)` predicate + Swift twin, vector-pinned
+  in `memberRuleVectors.json`; `endDate` inclusive), which bounds the
+  per-increment fan-out; increment / decrement skip its cascade too (their
+  event is stamped after every frozen window), while an undo cascade-only
+  re-derives the frozen rows whose window holds the undone event
+  (`isFrozenRowReachedByEvent`); a changed root id now reaches the
+  sealed boards that place its window-stamped rows, so a late in-window root
+  event converges every device's sealed snapshot. Hub-linked derived rows
+  (no `startDate`) keep the latch carve-out unchanged. Canonical:
+  [`WINDOWED_COMPLETION.md` §Derived-task carve-out](WINDOWED_COMPLETION.md#derived-task-carve-out).
+- **`baseline` is a lifetime-display cache only.** It stays the
+  non-authored, event-derived cache defined above (`refreshDerivedBaselines`
+  unchanged, no version bump, no enqueue); the kernel never reads it, and
+  neither does any board / hub / preview surface for a window-stamped row:
+  those read `resolveLinkedCounterDisplay` — count AND completion from the
+  same root-event window sum the kernel uses (pinned by
+  `taskWindowStateVectors.json#linkedCounterDisplay`). Only readers with no
+  event map (and hub-linked rows) still show `currentCount − baseline`.
 
 #### Plan B3 — implementation notes (2026-09-19)
 
@@ -1173,6 +1205,8 @@ that entry point stays. The two *wizard* entry points to that flow go away
 (the #471 member menu in B3, the From-a-board grid in A), and the iOS
 Library sheet's derive entry is stripped in B3 for web parity.
 
+(Amended 2026-09-23 for window-stamped rows — see §Plan B2 notes; the paragraphs below describe the pre-amendment model and hub-linked rows.)
+
 **Latch asymmetry, intended.** A refresh RAISES a baseline (a backdated
 increment arrives) and therefore lowers the displayed count, but it never
 re-evaluates the derived row's `isCompleted`. On the *local* counter paths
@@ -1191,7 +1225,9 @@ their baseline*; the v1 cross-window bleed note is closed for them.
 
 **Read audit (B2):** because `currentCount` on a linked task is the root
 mirror, every surface that shows a linked task's count must read through
-`deriveDisplayedCount` — Tasks tab row, Task detail, Library sheet row,
+`deriveDisplayedCount` (hub-linked rows) or `resolveLinkedCounterDisplay`
+(window-stamped rows, root events in the row's window — amended by the
+2026-09-23 derived-counter freeze) — Tasks tab row, Task detail, Library sheet row,
 Counters hub/detail, wizard member rows — on both platforms. Any straggler
 is a pre-existing bug that B makes visible; fix it, don't special-case.
 
@@ -1202,8 +1238,10 @@ is a pre-existing bug that B makes visible; fix it, don't special-case.
 - Counters hub/detail: the same `isTaskExpired` default + "show expired"
   affordance, applied in the **caller hooks** that assemble the `tasks`
   input (`useSharedCounterGroups.ts` ↔ the hub/detail view-model), NOT
-  inside the vector-pinned pure `buildSharedCounterGroups`, whose contract
-  is unchanged. Roots are never filtered.
+  inside the vector-pinned pure `buildSharedCounterGroups`, whose filtering
+  contract is unchanged (it now also takes an optional `eventsByTaskId` so
+  window-stamped members display their own window's count). Roots are never
+  filtered.
 
 ### Deletion
 

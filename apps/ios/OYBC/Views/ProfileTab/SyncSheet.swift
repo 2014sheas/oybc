@@ -109,6 +109,10 @@ struct SyncSheet: View {
     /// showing "Offline"/"Sync failed" copy would be misleading about the one
     /// thing actually missing (cross-device reach).
     var isGuest: Bool = false
+    /// Reference instant for the relative "last backup" labels. Production
+    /// callers keep the live default; snapshot tests pin it so the label
+    /// doesn't drift with the wall clock.
+    var now: Date = Date()
     var onTryAgain: () -> Void = {}
     var onRetryExhausted: () -> Void = {}
     var onSignIn: () -> Void = {}
@@ -334,7 +338,7 @@ struct SyncSheet: View {
             if let date = lastAt {
                 let formatter = RelativeDateTimeFormatter()
                 formatter.unitsStyle = .full
-                let relative = formatter.localizedString(for: date, relativeTo: Date())
+                let relative = formatter.localizedString(for: date, relativeTo: now)
                 return "Last synced \(relative)."
             }
             return "Not synced yet."
@@ -360,7 +364,7 @@ struct SyncSheet: View {
             guard let date = lastAt else { return "Never" }
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .abbreviated
-            return formatter.localizedString(for: date, relativeTo: Date())
+            return formatter.localizedString(for: date, relativeTo: now)
         case .syncing:
             return "Syncing\u{2026}"
         case .offline, .error:

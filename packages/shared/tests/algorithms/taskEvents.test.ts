@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   resolveTaskWindowState,
+  resolveLinkedCounterDisplay,
   isEventOwningTask,
   backstopWindowMs,
   computeBackstopDeadlineMs,
@@ -16,9 +17,8 @@ import { TaskType } from '../../src/constants/enums';
  * (docs/WINDOWED_COMPLETION.md §Semantics per task type + §Sealing).
  *
  * `resolveTaskWindowState` is fixture-driven from
- * `tests/fixtures/taskWindowStateVectors.json` — the SAME file the deferred
- * iOS `TaskWindowStateVectorTests.swift` (PR B) will run through the Swift
- * mirror. `isEventOwningTask` + the backstop helpers are hand-tested here.
+ * `tests/fixtures/taskWindowStateVectors.json` — the SAME file run by iOS
+ * `TaskEventVectorTests.swift` through the Swift mirror. `isEventOwningTask` + the backstop helpers are hand-tested here.
  */
 
 const H = 60 * 60 * 1000;
@@ -70,7 +70,24 @@ interface Vector {
   events: VectorEvent[];
   expected: { isCompleted: boolean; count: number };
 }
-const fixture: { vectors: Vector[] } = JSON.parse(
+interface LinkedDisplayVector {
+  name: string;
+  task: {
+    type: string;
+    maxCount: number | null;
+    sharedCounterId: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    createdInWizard: boolean | null;
+    baseline: number | null;
+    currentCount: number | null;
+    isCompleted: boolean;
+  };
+  eventsByTaskId: Record<string, VectorEvent[]> | null;
+  sealedAt: string | null;
+  expected: { displayed: number; isCompleted: boolean };
+}
+const fixture: { vectors: Vector[]; linkedCounterDisplay: LinkedDisplayVector[] } = JSON.parse(
   fs.readFileSync(path.join(__dirname, '../fixtures/taskWindowStateVectors.json'), 'utf8'),
 );
 
@@ -239,4 +256,45 @@ describe('computeBackstopDeadlineMs (docs §Sealing — keyed off max(endDate, a
     const deadline = computeBackstopDeadlineMs(start, end, activatedAt);
     expect(deadline).toBe(new Date(end).getTime() + 6 * H);
   });
+});
+
+// ─── resolveLinkedCounterDisplay (fixture-driven) ───────────────────────────
+
+describe('resolveLinkedCounterDisplay (fixture-driven, taskWindowStateVectors.json#linkedCounterDisplay)', () => {
+  it('fixture section is present and non-trivial', () => {
+    expect(fixture.linkedCounterDisplay.length).toBeGreaterThanOrEqual(8);
+  });
+
+  for (const v of fixture.linkedCounterDisplay) {
+    it(v.name, () => {
+      const task = makeTask({
+        type: v.task.type as TaskType,
+        maxCount: v.task.maxCount ?? undefined,
+        sharedCounterId: v.task.sharedCounterId ?? undefined,
+        startDate: v.task.startDate ?? undefined,
+        endDate: v.task.endDate ?? undefined,
+        createdInWizard: v.task.createdInWizard ?? undefined,
+        baseline: v.task.baseline ?? undefined,
+        currentCount: v.task.currentCount ?? undefined,
+        isCompleted: v.task.isCompleted,
+      });
+      let eventsByTaskId: Record<string, TaskEvent[]> | null = null;
+      if (v.eventsByTaskId) {
+        eventsByTaskId = {};
+        for (const [taskId, evs] of Object.entries(v.eventsByTaskId)) {
+          eventsByTaskId[taskId] = evs.map((e, i) =>
+            makeEvent({
+              id: `${taskId}-${i}`,
+              taskId,
+              kind: e.kind,
+              delta: e.delta ?? undefined,
+              occurredAt: e.occurredAt,
+              isDeleted: e.isDeleted,
+            }),
+          );
+        }
+      }
+      expect(resolveLinkedCounterDisplay(task, eventsByTaskId, v.sealedAt)).toEqual(v.expected);
+    });
+  }
 });

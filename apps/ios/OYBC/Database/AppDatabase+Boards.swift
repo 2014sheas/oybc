@@ -13,6 +13,17 @@ extension AppDatabase {
         }.healingDisplayNames()
     }
 
+    /// The user's live DRAFT boards, most recently edited first, with display
+    /// names healed. Feeds the Create hub's drafts list.
+    func fetchDraftBoards(userId: String) throws -> [Board] {
+        return try read { db in
+            try Board
+                .filter(Column("userId") == userId && Column("status") == "draft" && Column("isDeleted") == false)
+                .order(Column("updatedAt").desc)
+                .fetchAll(db)
+        }.healingDisplayNames()
+    }
+
     /// Fetch boards by id. Used by the task detail view to render
     /// "placed on" links for the cells where this task lives.
     func fetchBoards(ids: [String]) throws -> [Board] {
@@ -588,44 +599,25 @@ extension AppDatabase {
         }
     }
 
-    /// Standalone-transaction variant of the pending-task drain (Bug #85) —
-    /// Task Pools + Recurring Boards Rework, P4. `persistRecurringTemplate`
-    /// (`BoardWizardPersist.swift`) calls this to write any in-memory
-    /// `PendingTaskPayload`s created via the wizard's inline "New Task" sheet
-    /// BEFORE it mints/updates a `RecurringBoardTemplate` — a repeating
-    /// board has no single Board row to share a transaction with (the spawn
-    /// path resolves the mix fresh from GRDB), so this drains in its own
-    /// transaction ahead of everything else that reads tasks for mix
-    /// resolution or persisted `seedTaskIds`.
+    /// Standalone-transaction variant of the pending-task drain (Bug #85).
+    /// `persistRecurringTemplate` (`BoardWizardPersist.swift`) calls this to
+    /// write the wizard's in-memory `PendingTaskPayload`s BEFORE it creates
+    /// or updates a `RecurringBoardTemplate` — a repeating board has no
+    /// single Board row to share a transaction with, and the spawn's
+    /// `tasksById` lookup silently drops any id that isn't in GRDB (which
+    /// could push the supply below the fillable floor and skip the window).
     ///
-    /// Without this, a pending task selected into a repeating board's pool
-    /// was NEVER written to GRDB — `PoolMix.resolveMix`/the spawn path's
-    /// `tasksById` lookup silently drops any id that doesn't resolve, so the
-    /// pending task fell out of the mix permanently (and could push the mix
-    /// below the fillable floor, skipping the whole window). See P4's
-    /// scope note in docs/POOLS_RECURRING.md.
-    ///
-    /// Also applies any staged inline task edits (Inline Task Editing), in
-    /// the SAME transaction as the pending-task drain — mirroring
-    /// `saveWizardBoard`'s staged-edits block. Unlike the one-off path,
-    /// recurring templates have no draft/active distinction (both the
-    /// Preview step and the cancel dialog's "Save Draft" call this same
-    /// function unconditionally — see `BoardWizardView.handleDialogSaveDraft`),
-    /// so staged edits always apply here; there's no gate to mirror. Per-type
-    /// handling matches `saveWizardBoard` exactly:
-    ///   • compound (library OR pending) — apply parent-field + child/link
-    ///     CRUD via `applyStagedCompoundChildEdits`, then `saveTaskAndCascade`.
-    ///     A pending compound's rows already exist by this point (the drain
-    ///     loop above runs first), so this is its one and only apply.
-    ///   • simple/counting — a PENDING one is merged into its payload
-    ///     in-memory by the caller (`persistRecurringTemplate`, mirroring
-    ///     `persistWizardBoard`'s merge) so it's skipped here via
-    ///     `pendingIds`; a LIBRARY one is applied via `saveTaskAndCascade`.
-    ///
-    /// Without this, an inline edit staged while building/editing a
-    /// repeating board's task pool (rename, goal change, compound sub-task
-    /// edit) was silently dropped on save — the pre-edit task values
-    /// persisted even though the Preview step showed the edit applied.
+    /// Also applies the session's staged inline edits in the SAME
+    /// transaction, always (a template has no draft state — when editing an
+    /// existing template, the cancel dialog's "Save Draft" calls the same
+    /// path). Per-type handling matches
+    /// `saveWizardBoard`:
+    ///   • compound (library OR pending) — parent-field + child/link CRUD via
+    ///     `applyStagedCompoundChildEdits`, then `saveTaskAndCascade`. A
+    ///     pending compound's rows already exist (the drain runs first).
+    ///   • simple/counting — a PENDING one is pre-merged into its payload by
+    ///     the caller and skipped here via `pendingIds`; a LIBRARY one is
+    ///     applied via `saveTaskAndCascade`.
     ///
     /// - Parameters:
     ///   - pendingTasks: The FULL set of pending payloads whose task is in
@@ -636,9 +628,10 @@ extension AppDatabase {
     ///     `persistRecurringTemplate`); compound payloads are edited here.
     ///   - stagedEdits: The wizard's full `controller.stagedEdits` snapshot
     ///     (keyed by taskId). A task leaving the pool always purges its
-    ///     staged edit (`toggleTaskSelection`/`untogglePool`), so every
-    ///     remaining key is still in `selectedTaskIds` — no extra filtering
-    ///     needed, matching the one-off path's unfiltered application.
+    ///     staged edit (`toggleTaskSelection` /
+    ///     `recomputeSelectionFromSources`), so every remaining key is still
+    ///     in `selectedTaskIds` — no extra filtering needed, matching the
+    ///     one-off path's unfiltered application.
     ///   - now: ISO8601 timestamp for the sync-queue rows.
     func writeWizardPendingTasksAndEnqueue(
         _ pendingTasks: [PendingTaskPayload],
@@ -826,7 +819,7 @@ extension AppDatabase {
                     if index < placementIds.count { row.taskId = placementIds[index] }
                     guard seenTaskIds.insert(row.taskId).inserted else {
                         #if DEBUG
-                        print("saveWizardBoard: task \(row.taskId) resolved twice on board \(board.id); leaving cell \(index) empty")
+                        dlog("saveWizardBoard: task \(row.taskId) resolved twice on board \(board.id); leaving cell \(index) empty")
                         #endif
                         continue
                     }

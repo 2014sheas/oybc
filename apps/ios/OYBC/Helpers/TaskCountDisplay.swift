@@ -22,6 +22,14 @@ enum TaskCountDisplay {
     /// (`deriveDisplayedCount` owns that rule; this is only the "which task is
     /// linked?" fork).
     ///
+    /// Deliberately baseline maths, not the window-bounded event sum: this
+    /// site has no event map. A window-stamped derived member's board cell
+    /// reads `resolveLinkedCounterDisplay` (root increments within the row's
+    /// window), so the two can differ — but window-stamped members are hidden
+    /// from the Tasks list (`TaskLibraryViewModel.browsableTasks`), so the difference is
+    /// reachable only by navigating straight to such a member's Task Detail
+    /// (accepted carve-out).
+    ///
     /// - Parameter task: The task being rendered.
     /// - Returns: The displayed count (0 when the task has none).
     static func displayedCount(for task: Task) -> Int {

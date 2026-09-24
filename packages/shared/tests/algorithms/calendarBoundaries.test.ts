@@ -209,9 +209,11 @@ describe('formatTimeframeLabel (fixture-driven, tests/fixtures/calendarBoundarie
   }
 
   it('formats daily as "Today" for current date', () => {
+    // One instant for both the window and `now`, so a run straddling
+    // midnight can't compare yesterday's window against today's clock.
     const today = new Date();
     const boundaries = getDayBoundaries(today);
-    expect(formatTimeframeLabel(Timeframe.DAILY, boundaries.startDate)).toBe('Today');
+    expect(formatTimeframeLabel(Timeframe.DAILY, boundaries.startDate, today)).toBe('Today');
   });
 });
 

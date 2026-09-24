@@ -395,15 +395,35 @@ extension AppDatabase {
     /// Build the windowed-evaluation context from every non-deleted TaskEvent in
     /// the workspace, grouped by `taskId` (docs §Sync). Passed into
     /// `computeBoardStatsUpdate` so each board evaluates against its own window
-    /// (`board.startDate`). Derived / compound / achievement squares are carved
-    /// out INSIDE the shared kernel (they read their lifetime caches), so passing
-    /// the full event map is always safe. Mirrors `buildWindowContext` in
-    /// orchestration.ts.
+    /// (`board.startDate`). The map MUST stay workspace-wide (never scoped to
+    /// the placed tasks): a window-stamped derived counter resolves from its
+    /// ROOT's events, and the root is usually not placed on the board.
+    /// Hub-linked derived / compound / achievement squares are carved out
+    /// INSIDE the shared kernel, so passing the full event map is always safe.
+    /// Mirrors `buildWindowContext` in `db/operations/windowContext.ts`.
     static func buildWindowContext(db: Database) throws -> WindowEvaluationContext {
         let events = try TaskEvent.filter(Column("isDeleted") == false).fetchAll(db)
         var eventsByTaskId: [String: [TaskEvent]] = [:]
         for e in events { eventsByTaskId[e.taskId, default: []].append(e) }
         return WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
+    }
+
+    /// Live-cascade reachability for a pull that moved some roots' event sets:
+    /// `taskIds` plus every live window-stamped derived row linked to one of
+    /// them (shared `expandToWindowStampedDerived`, via the v32
+    /// `idx_tasks_shared_counter` index). The root is never placed, but those
+    /// rows resolve from its events in the derivation kernel, so the batched
+    /// board cascade must start from them too. Mirrors the web
+    /// `withWindowStampedDerived` (`db/operations/derivedCounters.ts`).
+    ///
+    /// - Parameters:
+    ///   - db: The pull's open transaction.
+    ///   - taskIds: The tasks whose events changed in this pull.
+    /// - Returns: `taskIds` plus the reachable derived row ids.
+    static func withWindowStampedDerived(db: Database, taskIds: Set<String>) throws -> Set<String> {
+        guard !taskIds.isEmpty else { return taskIds }
+        let linked = try Task.filter(taskIds.contains(Column("sharedCounterId"))).fetchAll(db)
+        return expandToWindowStampedDerived(ids: taskIds, tasks: linked)
     }
 
     /// Resolve a single event-owning task's windowed state for `taskId` in the

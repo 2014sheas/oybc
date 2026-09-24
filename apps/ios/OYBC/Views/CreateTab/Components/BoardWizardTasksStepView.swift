@@ -147,7 +147,7 @@ struct BoardWizardTasksStepView: View {
     /// sum of source maxes + hand-added, deduped.
     var capacity: Int = 0
     /// The source sheet's BOARDS rows (active boards + counts) — loaded
-    /// off-main by the container alongside `loadPools()` (review finding:
+    /// off-main by the container alongside `wizard.loadSourceCatalog(userId:)` (review finding:
     /// the resolution walks every active board and must never run
     /// synchronously on appear).
     var sheetBoardEntries: [RisoSourcePickerSheetView.BoardEntry] = []

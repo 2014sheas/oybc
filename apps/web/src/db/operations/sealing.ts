@@ -2,11 +2,13 @@ import { db } from '../internal';
 import {
   BoardStatus,
   SyncOperationType,
+  boundWindowContextAtSeal,
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
   findAffectedBoardIds,
   findTransitiveParentCompounds,
   isBoardPastBackstop,
+  expandToWindowStampedDerived,
   resolvePlacements,
   type Board,
   type BoardTask,
@@ -77,24 +79,6 @@ async function loadDerivationLookups(): Promise<DerivationLookups> {
   return { childrenByCompound, taskById, allBoards, allBoardTasks, eventsByTaskId };
 }
 
-/**
- * Build a windowed-evaluation context for a board sealed at `sealedAtMs`,
- * bounding every task's events to `occurredAt <= sealedAtMs` (the `[startDate,
- * sealedAt]` window). At seal time `sealedAtMs = now`, so no event is dropped
- * (nothing is logged in the future) — the filter matters for re-derivation.
- */
-function boundedWindowContext(
-  eventsByTaskId: Record<string, TaskEvent[]>,
-  sealedAtMs: number,
-): WindowEvaluationContext {
-  const bounded: Record<string, TaskEvent[]> = {};
-  for (const [taskId, evs] of Object.entries(eventsByTaskId)) {
-    const kept = evs.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
-    if (kept.length > 0) bounded[taskId] = kept;
-  }
-  return { eventsByTaskId: bounded };
-}
-
 /** The frozen fields written to a sealed board row. */
 interface SealSnapshot {
   completedTasks: number;
@@ -119,7 +103,9 @@ function computeSealSnapshot(
     lookups.allBoardTasks.filter((bt) => bt.boardId === board.id),
     board.boardSize,
   );
-  const windowContext = boundedWindowContext(lookups.eventsByTaskId, sealedAtMs);
+  // Bound EVERY task's events (incl. shared-counter roots, which window-stamped
+  // derived cells read) at `sealedAt` — the shared filter the seal vectors pin.
+  const windowContext = boundWindowContextAtSeal(lookups.eventsByTaskId, sealedAtMs);
   const stats = computeBoardStatsUpdate(
     board,
     boardTasksOnBoard,
@@ -377,8 +363,9 @@ export async function reDeriveActiveBoards(
 
 /**
  * Pull-path seal re-derivation (docs §Seal snapshots re-derive from the event
- * union). For every sealed board that places one of `changedTaskIds` (directly
- * or via a compound), re-derive its frozen snapshot from the converged event
+ * union). For every sealed board that places one of `changedTaskIds` (directly,
+ * via a compound, or — for a shared-counter root — via a window-stamped derived
+ * counter linked to it), re-derive its frozen snapshot from the converged event
  * union bounded at its own `sealedAt`. Local-only: overwrites the snapshot
  * fields WITHOUT bumping `version` or enqueuing sync (pull paths don't author
  * writes; the input converges, so every device converges independently).
@@ -402,8 +389,15 @@ export async function reDeriveSealedBoardsForTasks(
   // `await import()` here would break the ambient Dexie transaction.)
   const allChildren = Object.values(lookups.childrenByCompound).flat();
 
+  // A shared-counter ROOT is never placed itself, but every window-stamped
+  // derived counter linked to it resolves FROM its events (derivation kernel,
+  // docs §Derived-task carve-out rule 4, amended 2026-09-23). A late in-window
+  // root event must therefore re-derive the sealed boards placing those rows,
+  // or two devices that sealed from different root-event sets never converge.
+  const reachable = expandToWindowStampedDerived(changed, Object.values(lookups.taskById));
+
   const affectedBoardIds = new Set<string>();
-  for (const taskId of changed) {
+  for (const taskId of reachable) {
     const parents = findTransitiveParentCompounds(taskId, allChildren);
     for (const id of findAffectedBoardIds(taskId, parents, lookups.allBoardTasks)) {
       affectedBoardIds.add(id);

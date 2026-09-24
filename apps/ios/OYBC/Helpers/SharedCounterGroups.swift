@@ -167,11 +167,19 @@ func sharedCounterRootIds(_ tasks: [Task]) -> Set<String> {
 ///            filtering removes soft-deleted rows.
 ///   - boardTasks: All board-task placement rows visible to the query.
 ///   - boards: All boards for the user (any status).
+///   - eventsByTaskId: Optional non-deleted events grouped by `taskId` (at
+///     least the roots'). When given, a WINDOW-STAMPED derived member's
+///     `logged` is its root's increment sum inside the row's own
+///     `[startDate, endDate]` (bounded at its board's `sealedAt` when sealed)
+///     via `resolveLinkedCounterDisplay` — the play cell's and the kernel's
+///     rule. `nil` keeps the lifetime derivation, byte-identical to before.
+///     Mirrors the TS `BuildSharedCounterGroupsInput.eventsByTaskId`.
 /// - Returns: Sorted `[SharedCounterGroup]`, one per source counter.
 func buildSharedCounterGroups(
     tasks: [Task],
     boardTasks: [BoardTask],
-    boards: [Board]
+    boards: [Board],
+    eventsByTaskId: [String: [TaskEvent]]? = nil
 ) -> [SharedCounterGroup] {
     let liveTasks = tasks.filter { !$0.isDeleted }
     let tasksById = Dictionary(uniqueKeysWithValues: liveTasks.map { ($0.id, $0) })
@@ -217,18 +225,26 @@ func buildSharedCounterGroups(
             // Source has baseline 0 (accumulates the full count).
             let baseline = isSource ? 0 : (m.baseline ?? 0)
             let goal = m.maxCount ?? 0
-            let result = deriveDisplayedCount(
-                derivedBaseline: baseline,
-                derivedMaxCount: goal,
-                sourceCurrentCount: lifetime
-            )
-            let displayed = result.displayed
-
             let board = pickPrimaryBoard(
                 taskId: m.id,
                 boardTasks: boardTasks,
                 boardsById: boardsById
             )
+            // Window-stamped members read their own window from the root's
+            // events (never `lifetime − baseline`, which counts later
+            // windows' logs too).
+            let displayed: Int
+            if !isSource, let eventsByTaskId, BoardSources.isWindowStampedDerived(m) {
+                displayed = resolveLinkedCounterDisplay(
+                    task: m, eventsByTaskId: eventsByTaskId, sealedAt: board?.sealedAt
+                ).displayed
+            } else {
+                displayed = deriveDisplayedCount(
+                    derivedBaseline: baseline,
+                    derivedMaxCount: goal,
+                    sourceCurrentCount: lifetime
+                ).displayed
+            }
             if let b = board { boardIdSet.insert(b.id) }
             let isActive = board?.status == .active
             if isActive { activeCount += 1 }

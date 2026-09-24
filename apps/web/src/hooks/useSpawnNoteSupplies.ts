@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   poolSourceSupplyById,
+  availableSupplyIds,
   sourcesForRecord,
   type BoardSourceSupply,
   type Pool,
@@ -43,13 +44,9 @@ export function useSpawnNoteSupplies(
           continue;
         }
         const info = await fetchBoardSourceSupply(source.sourceId);
-        const raw = info?.supplyTaskIds ?? [];
         resolved.push({
           source,
-          supplyTaskIds:
-            source.filter === 'todo' && info
-              ? raw.filter((id) => !info.doneTaskIds.has(id))
-              : raw,
+          supplyTaskIds: availableSupplyIds(source, info?.supplyTaskIds ?? [], info?.doneTaskIds),
         });
       }
       if (!cancelled) setSupplies(resolved);

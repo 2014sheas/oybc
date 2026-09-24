@@ -289,18 +289,12 @@ enum PoolMix {
     /// (a `RecurringBoardTemplate.name` — itself bounded to 120 — or a
     /// fixed timeframe label) must clamp the source FIRST, or the appended
     /// result can exceed 120 and fail schema validation on the next
-    /// device's pull (review finding I1) — the doc never lands there,
-    /// silently, since the mint itself succeeds locally (no local
-    /// validation on write).
+    /// device's pull — the doc never lands there, silently, since the
+    /// mint itself succeeds locally (no local validation on write).
     ///
-    /// Used by the P1 migration's two mint sites, both platforms
-    /// (`MigrationV25Helpers.swift` / `migrationV16.ts`, `" default"` /
-    /// `" pool"` suffixes). The legacy-create wizard-persist mint
-    /// (`BoardWizardPersist.swift` / `wizardPersist.ts`, `" pool"` suffix)
-    /// was RETIRED in the Task Pools + Recurring Boards Rework P4 rewrite —
-    /// `persistRecurringTemplate` no longer mints a Pool on fresh-create at
-    /// all (an own-mix, zero-pool repeating board is first-class). Swift
-    /// twin of `poolMix.ts`'s `clampMintedPoolName` — keep them in sync.
+    /// Used by the P1 migration's two mint sites (`MigrationV25Helpers.swift`
+    /// / `migrationV16.ts`, `" default"` / `" pool"` suffixes). Swift twin
+    /// of `poolMix.ts`'s `clampMintedPoolName` — keep them in sync.
     ///
     /// - Parameters:
     ///   - sourceName: The un-suffixed source text (template name / timeframe label).

@@ -4,7 +4,10 @@ import {
   computeBoardStatsUpdate,
   computeSealedCompletedCells,
 } from '../../src/algorithms/derivationPass';
-import type { WindowEvaluationContext } from '../../src/algorithms/taskEvents';
+import {
+  boundWindowContextAtSeal,
+  type WindowEvaluationContext,
+} from '../../src/algorithms/taskEvents';
 import type { Task, TaskEvent, Board, BoardTask, CompoundChild } from '../../src/types';
 import {
   TaskType,
@@ -18,7 +21,7 @@ import {
  * sealReDerivation.test.ts — Windowed Completion PR A seal-snapshot builder
  * (docs/WINDOWED_COMPLETION.md §Seal snapshots re-derive from the event union).
  * Fixture-driven from `tests/fixtures/sealReDerivationVectors.json` — the SAME
- * file the deferred iOS seal-re-derivation vectors (PR C) will run. Property:
+ * file run by iOS `TaskEventVectorTests.swift`. Property:
  * the green cell set is a pure function of the converged in-window event union,
  * so the same union (any order) yields the same cells on any device.
  */
@@ -28,7 +31,7 @@ interface VectorBoard {
   boardSize: number;
   centerSquareType: string;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
   status: string;
   linesCompleted: number;
   completedLineIds: string[] | null;
@@ -42,6 +45,10 @@ interface VectorTask {
   /** Compound tasks only (Task-4 breadth vectors). */
   operator?: string | null;
   threshold?: number | null;
+  /** Optional — window-stamped derived counters (2026-09-23 amendment). */
+  startDate?: string | null;
+  endDate?: string | null;
+  createdInWizard?: boolean;
   isCompleted: boolean;
   isDeleted: boolean;
 }
@@ -65,7 +72,9 @@ interface Vector {
   tasks: VectorTask[];
   boardTasks: { taskId: string; row: number; col: number }[];
   events: VectorEvent[];
-  /** Optional — when present the union is bounded to `occurredAt <= sealedAt`. */
+  /** Optional — when present, the event union is bounded at this instant via
+   *  the shared `boundWindowContextAtSeal` (what both platforms' sealing data
+   *  layers do before deriving a sealed snapshot). */
   sealedAt?: string;
   /** Optional — compound links (absent = none). */
   compoundChildren?: VectorCompoundChild[];
@@ -96,7 +105,7 @@ function toBoard(b: VectorBoard): Board {
     boardSize: b.boardSize as Board['boardSize'],
     timeframe: Timeframe.DAILY,
     startDate: b.startDate,
-    endDate: b.endDate,
+    endDate: b.endDate ?? undefined,
     centerSquareType: b.centerSquareType as CenterSquareType,
     isRandomized: false,
     totalTasks: b.boardSize * b.boardSize,
@@ -120,6 +129,9 @@ function toTask(t: VectorTask): Task {
     sharedCounterId: t.sharedCounterId,
     operator: (t.operator ?? undefined) as OperatorType | undefined,
     threshold: t.threshold ?? undefined,
+    startDate: t.startDate ?? undefined,
+    endDate: t.endDate ?? undefined,
+    createdInWizard: t.createdInWizard ?? false,
     isCompleted: t.isCompleted,
     totalCompletions: 0,
     totalInstances: 0,
@@ -143,30 +155,6 @@ function toEvent(e: VectorEvent): TaskEvent {
     version: 1,
     isDeleted: e.isDeleted,
   };
-}
-
-/**
- * The sealing data layers' upper bound, restated for the vector runner: keep
- * events with `occurredAt <= sealedAtMs` (the `[startDate, sealedAt]` window;
- * the kernel itself supplies the `startDate` lower bound). Production owners:
- * `boundedWindowContext` in apps/web/src/db/operations/sealing.ts ↔
- * apps/ios/OYBC/Database/AppDatabase+Sealing.swift — the iOS consumer of this
- * fixture runs the real `AppDatabase.computeSealSnapshot`, so the bound is
- * exercised against production code there; this restatement only lets the TS
- * side reach the same expected values.
- */
-function boundAtSeal(
-  eventsByTaskId: Record<string, TaskEvent[]>,
-  sealedAt: string | undefined,
-): Record<string, TaskEvent[]> {
-  if (sealedAt === undefined) return eventsByTaskId;
-  const sealedAtMs = new Date(sealedAt).getTime();
-  const bounded: Record<string, TaskEvent[]> = {};
-  for (const [taskId, evs] of Object.entries(eventsByTaskId)) {
-    const kept = evs.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
-    if (kept.length > 0) bounded[taskId] = kept;
-  }
-  return bounded;
 }
 
 function runVector(v: Vector): number[] {
@@ -206,9 +194,9 @@ function runSeal(v: Vector): SealResult {
       isDeleted: c.isDeleted,
     });
   });
-  const windowCtx: WindowEvaluationContext = {
-    eventsByTaskId: boundAtSeal(eventsByTaskId, v.sealedAt),
-  };
+  const windowCtx: WindowEvaluationContext = v.sealedAt
+    ? boundWindowContextAtSeal(eventsByTaskId, new Date(v.sealedAt).getTime())
+    : { eventsByTaskId };
   const cells = computeSealedCompletedCells(
     board,
     boardTasks,

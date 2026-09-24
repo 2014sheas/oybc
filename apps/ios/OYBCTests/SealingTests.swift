@@ -414,6 +414,37 @@ final class SealingTests: XCTestCase {
         XCTAssertEqual(board.completedTasks, 1)
     }
 
+    /// 2026-09-23 amendment: the root of a shared counter is never placed, but
+    /// a window-stamped derived counter linked to it resolves FROM its events.
+    /// A changed ROOT id must re-derive the sealed board that places only the
+    /// derived row, or a device that sealed before the root event synced never
+    /// converges with one that sealed after. Twin of the web sealing.test.ts
+    /// case of the same name.
+    func test_reDerivation_lateInWindowRootEventPaintsSealedWindowStampedDerivedCell() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeCountingTask("t-root", maxCount: 10))
+        var derived = makeCountingTask("t-derived", maxCount: 3)
+        derived.sharedCounterId = "t-root"
+        derived.startDate = start
+        derived.endDate = end
+        derived.createdInWizard = true
+        derived.baseline = 0
+        derived.version = 1
+        try db.saveTask(derived)
+        try db.saveBoard(makeBoard(id: "b-sealed", sealedAt: pastBackstop, sealedCompletedCells: []))
+        try db.saveBoardTask(makeBoardTask(id: "bt-s", boardId: "b-sealed", taskId: "t-derived"))
+
+        try db.write { db in
+            try self.makeIncrementEvent("e-root", taskId: "t-root", occurredAt: self.inWindow, delta: 3).save(db)
+            try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: ["t-root"])
+        }
+
+        let board = try fetchBoard(db, "b-sealed")
+        XCTAssertEqual(board.sealedCompletedCells, [0])
+        XCTAssertEqual(board.completedTasks, 1)
+        XCTAssertEqual(board.version, 1) // local-only re-derivation
+    }
+
     // MARK: - Sealed/deleted DB-level guards (bingo-pipeline hardening item 6)
     //
     // UI already gates Board Edit and rearrange on `!sealedAt`, but a sealed

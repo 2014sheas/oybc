@@ -112,11 +112,9 @@ export function BoardWizardPage({
   onDeleteDraft,
 }: BoardWizardPageProps): React.ReactElement {
   const library = useTaskLibrary(userId);
-  // P3 (Task Pools + Recurring Boards Rework) — loaded ONCE here and
-  // threaded into BOTH `useBoardWizard` (pull/untoggle actions +
-  // provenance) and `BoardWizardTasksStep`'s "PULL IN A POOL" card, so the
-  // wizard doesn't run two concurrent `usePools` live queries (mirrors the
-  // `PoolsBrowse`/`TasksPage` "load once, pass down" precedent).
+  // Loaded ONCE here and threaded into BOTH `useBoardWizard` (pool-source
+  // resolution) and `BoardWizardTasksStep`'s Sources sheet, so the wizard
+  // doesn't run two concurrent pools live queries.
   // Tri-state: `undefined` until first resolve, so the wizard can tell
   // "no pools" from "not read yet" (late-mutation audit, shape B).
   const poolsQuery = usePoolsQuery(userId);
@@ -125,7 +123,7 @@ export function BoardWizardPage({
   // squares/done counts). Loaded async once per mount + refreshed when
   // the user id changes; the resolution walks every active board's
   // placements, so it must never run synchronously in render (the same
-  // review rule as iOS's off-main `loadPools` batch).
+  // review rule as iOS's off-main `loadSourceCatalog` batch).
   const [sheetBoardEntries, setSheetBoardEntries] = useState<SourceSheetBoardEntry[]>([]);
   useEffect(() => {
     let cancelled = false;

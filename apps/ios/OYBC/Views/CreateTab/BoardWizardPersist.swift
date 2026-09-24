@@ -76,8 +76,9 @@ enum ResolvedWizardDates {
 /// Save (the "green squares from previous windows" bug).
 ///
 /// Branch order mirrors web `taskToSquareState` (and the play surfaces):
-/// compound → windowed `CompoundEvaluation`; derived (shared-counter-linked)
-/// counting → lifetime carve-out; event-owning primitives → windowed events.
+/// compound → windowed `CompoundEvaluation`; linked counting →
+/// `resolveLinkedCounterDisplay` (window-stamped: root sum in its window;
+/// hub-linked: the latch); event-owning primitives → windowed events.
 /// Achievements aren't placeable via the wizard, so no kernel cell-state is
 /// needed here. Pinned by `WizardPreviewCompletionTests`.
 func wizardPreviewIsCompleted(
@@ -97,6 +98,9 @@ func wizardPreviewIsCompleted(
                 eventsByTaskId: eventsByTaskId
             )
         )
+    }
+    if task.sharedCounterId != nil {
+        return resolveLinkedCounterDisplay(task: task, eventsByTaskId: eventsByTaskId).isCompleted
     }
     guard isEventOwningTask(task) else { return task.isCompleted }
     return resolveTaskWindowState(
@@ -437,13 +441,16 @@ func resolveWizardDates(controller: BoardWizardViewModel) -> ResolvedWizardDates
 ///
 /// Runs on a background queue; dispatches the provided callbacks on
 /// the main queue. Callers should already have validated
-/// `resolveWizardDates` before invoking this.
+/// `resolveWizardDates` before invoking this. Every read and write goes
+/// through `database` (callers pass the ViewModel's injected
+/// `controller.database`; defaults to `.shared`).
 func persistWizardBoard(
     controller: BoardWizardViewModel,
     userId: String,
     placement: WizardPlacement,
     dates: (start: String, end: String?),
     status: WizardStatus,
+    database: AppDatabase = .shared,
     onSuccess: @escaping (_ boardId: String) -> Void,
     onError: @escaping (_ message: String) -> Void
 ) {
@@ -483,7 +490,7 @@ func persistWizardBoard(
     DispatchQueue.global(qos: .userInitiated).async {
         do {
             let isUpdate = draftBoardId != nil
-            let existing: Board? = isUpdate ? try AppDatabase.shared.fetchBoard(id: boardId) : nil
+            let existing: Board? = isUpdate ? try database.fetchBoard(id: boardId) : nil
 
             // Preserve denormalised stats if updating — a draft should
             // never overwrite `completedTasks` / `linesCompleted` /
@@ -618,7 +625,7 @@ func persistWizardBoard(
             // reads exclusively from sync_queue), so that method enqueues one
             // per write. Pending tasks are written FIRST so task → board_task
             // referential integrity holds even on a crash mid-write.
-            try AppDatabase.shared.saveWizardBoard(
+            try database.saveWizardBoard(
                 board: board,
                 boardTasks: boardTasks,
                 pendingTasks: pendingForSave,
@@ -661,69 +668,39 @@ enum RecurringTemplatePersistOutcome {
 /// Persist path for `controller.isRecurring == true`. iOS twin of web
 /// `persistRecurringTemplate`.
 ///
-/// **Inline Task Editing parity fix** — this path used to never apply
-/// `controller.stagedEdits`, so an inline edit staged while building/editing
-/// a repeating board's task pool (rename, counting-goal change, compound
-/// sub-task edit) was silently dropped: the pre-edit task values persisted
-/// even though the Preview step showed the edit applied (via
-/// `buildWizardPlacement`'s staged-edit overlay). Fixed the same way P4
-/// fixed the analogous pending-task drop: staged edits are now applied in
-/// the SAME transaction as the pending-task drain
-/// (`writeWizardPendingTasksAndEnqueue`), mirroring `saveWizardBoard`'s
-/// staged-edits block exactly (see that function's doc for per-type
-/// handling). Applies to BOTH the fresh-create and edit branches below —
-/// staged edits are a property of the wizard session, not of which branch
-/// runs. Unlike the one-off path there's no draft/active gate to mirror:
-/// a `RecurringBoardTemplate` has no draft state (the cancel dialog's "Save
-/// Draft" action calls this exact function too — see
-/// `BoardWizardView.handleDialogSaveDraft`), so staged edits always apply.
-///
-/// **Task Pools + Recurring Boards Rework, P4 rewrite** — this used to be
-/// two separate persist paths (this function for recurring vs.
-/// `persistWizardBoard`/`saveWizardBoard` for one-off) that diverged in a
-/// load-bearing way: `saveWizardBoard` drained the wizard's in-memory
-/// (Bug #85) `pendingTasks` into GRDB before writing the board; this
-/// function never did, so a pending task selected into a repeating
-/// board's pool was silently dropped from the mix forever (see
-/// `AppDatabase.writeWizardPendingTasksAndEnqueue`'s doc for the full
-/// failure mode). P4 unifies the two paths' pending-task handling and
-/// retires the P1→P3 shape-scoped legacy write-through
-/// (`PoolMix.isLegacyShapedRecord` / pool-minting) entirely — the native
-/// `poolIds`/`manualTaskIds`/`removedTaskIds` shape (already tracked on
-/// `BoardWizardViewModel` since P3 for the Tasks-step UI) is now the ONLY
-/// shape this function ever writes, for both fresh-create AND edit.
-///
 /// Sequence:
 ///   1. Drain the FULL selection's pending tasks (not a placement-based
-///      subset — a repeating board's future windows draw from the whole
-///      pool) via `writeWizardPendingTasksAndEnqueue`, in its own
-///      transaction, BEFORE anything below reads tasks for mix resolution
-///      or spawn.
+///      subset — future windows draw from the whole supply) and apply the
+///      session's staged inline edits, in one transaction via
+///      `writeWizardPendingTasksAndEnqueue`, BEFORE anything below reads
+///      tasks. Staged edits always apply: a template has no draft state
+///      (when editing an existing template, the cancel dialog's "Save Draft"
+///      calls this function too; a new recurring wizard's "Save Draft" goes
+///      through `persistWizardBoard` — see `BoardWizardView.handleDialogSaveDraft`).
 ///   2. **Edit** (`editingTemplateId` set): re-saves the template with the
-///      controller's CURRENT `pulledPoolIds`/`manualTaskIds`/
-///      `removedTaskIds` — no Pool write-through, no shape branching, no
-///      pool minting. `seedTaskIds` is left untouched (verbatim/stale,
-///      never read after P1). Does NOT spawn — edits don't retroactively
-///      change previously-spawned boards, and the next window's spawn
-///      naturally picks up the new mix via `PoolMix.resolveMix`.
-///   3. **Fresh create** (no `editingTemplateId`): inserts the
-///      `RecurringBoardTemplate` row with the same native fields (no Pool
-///      is minted — an own-mix, zero-pool repeating board is first-class
-///      per docs/POOLS_RECURRING.md), then immediately spawns the current
-///      window's board via `RecurringBoardSpawn.spawnTemplateBoard`. The
-///      writes are sequential GRDB transactions; if the spawn fails (e.g.
-///      soft-deleted task race), the template still exists with
-///      `lastSpawnedWindowKey=nil` and the next Boards-tab open retries.
+///      controller's current `sources` / `manualTaskIds` / `manualTaskVary`
+///      (+ the derived legacy trio). Does NOT spawn — edits never rewrite
+///      already-spawned boards; the next window's spawn resolves the new
+///      sources via `BoardSources.selectBoardTasks`.
+///   3. **Fresh create**: inserts the template, then immediately spawns the
+///      current window's board via `RecurringBoardSpawn.spawnTemplateBoard`.
+///      Sequential transactions: if the spawn fails, the template survives
+///      with `lastSpawnedWindowKey=nil` and the next Boards-tab open retries.
 ///
-/// `seedTaskIds` is kept ONLY as a decode-compat snapshot of the final
-/// selection (mirrors `lastSyncedCount`'s inert-field precedent) — never
-/// read back by this function or by hydration (see
-/// `BoardWizardViewModel.resolveTemplateHydrationTaskIds`).
+/// `seedTaskIds` is a snapshot of the final selection: never read by the
+/// spawn; still read by un-migrated hydration, the Task-detail
+/// templates-referencing query (`fetchTemplatesReferencingTask`), and the
+/// roster loading fallbacks — note it is a creation-time snapshot the edit
+/// path leaves stale (audit follow-up).
 ///
 /// Runs on a background queue; dispatches callbacks on the main queue.
+/// Every read and write (draft retire, pending drain, template save, and
+/// the fresh-create spawn) goes through `database` (callers pass the
+/// ViewModel's injected `controller.database`; defaults to `.shared`).
 func persistRecurringTemplate(
     controller: BoardWizardViewModel,
     userId: String,
+    database: AppDatabase = .shared,
     onSuccess: @escaping (RecurringTemplatePersistOutcome) -> Void,
     onError: @escaping (_ message: String) -> Void
 ) {
@@ -779,7 +756,7 @@ func persistRecurringTemplate(
         func retireResumedDraftIfNeeded() {
             guard let draftBoardIdToRetire else { return }
             do {
-                try AppDatabase.shared.deleteDraftWithCascade(id: draftBoardIdToRetire)
+                try database.deleteDraftWithCascade(id: draftBoardIdToRetire)
             } catch {
                 dlog("[persistRecurringTemplate] failed to retire resumed draft \(draftBoardIdToRetire): \(error)")
             }
@@ -810,14 +787,14 @@ func persistRecurringTemplate(
             // (library tasks + pending compounds) are applied in the same
             // transaction — see `writeWizardPendingTasksAndEnqueue`'s doc.
             if !pendingForSave.isEmpty || !capturedStagedEdits.isEmpty {
-                try AppDatabase.shared.writeWizardPendingTasksAndEnqueue(
+                try database.writeWizardPendingTasksAndEnqueue(
                     pendingForSave, stagedEdits: capturedStagedEdits, now: now
                 )
             }
 
             // ── Edit path ─────────────────────────────────────────────
             if let templateId = editingTemplateId {
-                guard let existing = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId) else {
+                guard let existing = try database.fetchRecurringBoardTemplate(id: templateId) else {
                     DispatchQueue.main.async {
                         onError("Template no longer exists.")
                     }
@@ -832,8 +809,8 @@ func persistRecurringTemplate(
                     boardSize: boardSize,
                     centerSquareType: centerType,
                     isRandomized: isRandomized,
-                    // Left verbatim/stale — decode-compat only, never read
-                    // after P1 (see the function doc above).
+                    // Left verbatim — the creation-time snapshot goes
+                    // stale on edit (see the function doc above).
                     seedTaskIds: existing.seedTaskIds,
                     poolIds: poolIds,
                     manualTaskIds: manualTaskIds,
@@ -851,7 +828,7 @@ func persistRecurringTemplate(
                     isDeleted: false,
                     deletedAt: nil
                 )
-                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                try database.saveRecurringBoardTemplateAndEnqueue(
                     updated, operation: .update, now: now
                 )
 
@@ -860,11 +837,8 @@ func persistRecurringTemplate(
             }
 
             // ── Fresh-create path ─────────────────────────────────────
-            // No Pool is minted (P4 retires the P1 auto-mint-on-create
-            // behavior) — an own-mix, zero-pool repeating board is
-            // first-class. `poolIds`/`manualTaskIds`/`removedTaskIds` come
-            // straight from the controller's own P3 pool-mix state, which
-            // is now authoritative end-to-end.
+            // No Pool is minted — a zero-pool repeating board is
+            // first-class. Fields come straight from the controller.
             let template = RecurringBoardTemplate(
                 id: AppDatabase.generateUUID(),
                 userId: userId,
@@ -878,8 +852,8 @@ func persistRecurringTemplate(
                 manualTaskIds: manualTaskIds,
                 removedTaskIds: removedTaskIds,
                 sources: sources,
-                // §Member rules — an EMPTY map is never written (final review
-                // M2; web's `createRecurringBoardTemplate` already omits it).
+                // §Member rules — an EMPTY map is never written (web's
+                // `createRecurringBoardTemplate` omits it too).
                 // The controller's map is non-optional, so it would otherwise
                 // promote to `.some([:])` and `encode` would write `"{}"` on a
                 // record the rule editor never touched. The UPDATE path above
@@ -895,7 +869,7 @@ func persistRecurringTemplate(
                 isDeleted: false,
                 deletedAt: nil
             )
-            try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+            try database.saveRecurringBoardTemplateAndEnqueue(
                 template,
                 operation: .create,
                 now: now
@@ -930,7 +904,7 @@ func persistRecurringTemplate(
                 windowEnd: wizardLocalISOString(window.end),
                 suggestedName: deriveSpawnedBoardName(template: template, windowStart: wizardLocalISOString(window.start))
             )
-            let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn)
+            let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn, database: database)
             retireResumedDraftIfNeeded()
             switch outcome {
             case .spawned(let boardId, _, _):

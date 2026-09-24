@@ -311,22 +311,29 @@ struct BoardPlayView: View {
         CompoundWindowContext(windowStart: windowStart, eventsByTaskId: windowEventsByTaskId)
     }
 
-    /// Windowed completed state of an event-owning primitive square. Callers must
-    /// branch derived / compound / achievement before calling.
+    /// Windowed completed state of a primitive square. A linked counter reads
+    /// `resolveLinkedCounterDisplay` — a window-stamped row's root sum in its
+    /// own window (the kernel's rule), a hub-linked row's latch — so a cell
+    /// never paints green while stats count it incomplete. Callers must branch
+    /// compound / achievement before calling.
     private func windowedIsCompleted(_ task: Task) -> Bool {
-        resolveTaskWindowState(
-            task: task,
-            events: windowEventsByTaskId[task.id] ?? [],
-            windowStart: windowStart
+        if task.sharedCounterId != nil {
+            return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).isCompleted
+        }
+        return resolveTaskWindowState(
+            task: task, events: windowEventsByTaskId[task.id] ?? [], windowStart: windowStart
         ).isCompleted
     }
 
-    /// Windowed count of an event-owning counting square (source / plain).
+    /// Windowed count of a counting square: event-owning (source / plain) via
+    /// its own events; a linked counter via `resolveLinkedCounterDisplay`
+    /// (window-stamped: root sum in its window; hub-linked: count − baseline).
     private func windowedCount(_ task: Task) -> Int {
-        resolveTaskWindowState(
-            task: task,
-            events: windowEventsByTaskId[task.id] ?? [],
-            windowStart: windowStart
+        if task.sharedCounterId != nil {
+            return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).displayed
+        }
+        return resolveTaskWindowState(
+            task: task, events: windowEventsByTaskId[task.id] ?? [], windowStart: windowStart
         ).count
     }
 
@@ -989,22 +996,11 @@ struct BoardPlayView: View {
             if let btId = countingStepperBoardTaskId,
                let bt = boardTasks.first(where: { $0.id == btId }),
                let task = taskMap[bt.taskId] {
-                let rawCount = task.currentCount ?? 0
                 let maxVal = task.maxCount ?? 0
                 let isLinked = task.sharedCounterId != nil
-                // Windowed Completion — the stepper shows the WINDOWED count for
-                // event-owning source/plain counters; derived members stay on the
-                // baseline-derived display (carve-out).
-                let displayed: Int = {
-                    if task.sharedCounterId != nil {
-                        return deriveDisplayedCount(
-                            derivedBaseline: task.baseline ?? 0,
-                            derivedMaxCount: maxVal,
-                            sourceCurrentCount: rawCount
-                        ).displayed
-                    }
-                    return windowedCount(task)
-                }()
+                // Windowed Completion — the stepper shows the WINDOWED count
+                // (`windowedCount` owns the linked-counter rule).
+                let displayed = windowedCount(task)
                 // P2: Compute shared hint — other ACTIVE boards where a member
                 // task lives, excluding the current board.
                 let sharedHint: String? = sharedStepperHint(for: task)
@@ -1047,13 +1043,10 @@ struct BoardPlayView: View {
                 pendingOpenBoardId = nil
                 onOpenBoard(target)
             }
-            // Board-integrity PR-5 (Item 5): this sheet's own content
-            // (`detailSheet`) can complete/edit the boardTask's task
-            // directly, and its NESTED child-detail sheet
-            // (`compoundChildDetailTaskId`) edits/deletes a compound
-            // child's `Task` via `AppDatabase.shared` — neither write goes
-            // through this VM, so refresh on dismiss the same way the M4
-            // add-cell sheet does on cancel.
+            // Board-integrity PR-5 (Item 5): this sheet's content (`detailSheet`)
+            // can complete/edit the task, and its NESTED child-detail sheet edits/
+            // deletes a compound child's `Task` itself — neither write goes through
+            // this VM, so refresh on dismiss like the M4 add-cell sheet on cancel.
             viewModel.reloadBoardTasksAndTaskData()
         }) {
             detailSheet
@@ -1078,10 +1071,9 @@ struct BoardPlayView: View {
                     pendingOpenBoardId = nil
                     onOpenBoard(target)
                 }
-                // Board-integrity PR-5 (Item 5): this sheet edits/deletes its
-                // task via `AppDatabase.shared` directly (bypasses this VM) —
-                // refresh so the grid reflects an edited title/type or a
-                // cascade-deleted placement.
+                // Board-integrity PR-5 (Item 5): this sheet edits/deletes its task
+                // itself (bypasses this VM) — refresh so the grid reflects an edited
+                // title/type or a cascade-deleted placement.
                 viewModel.reloadBoardTasksAndTaskData()
             }
         ) { item in
@@ -1091,7 +1083,8 @@ struct BoardPlayView: View {
                 onOpenBoard: { newBoardId in
                     pendingOpenBoardId = newBoardId
                     taskDetailSheetTaskId = nil
-                }
+                },
+                database: viewModel.database
             )
         }
         // Share board sheet — presented from the GREENLOG overlay's "Share my board"
@@ -1458,8 +1451,9 @@ struct BoardPlayView: View {
         let userId = b.userId
         let timeframe = b.timeframe
         let weekStartDay = authService.userPreferences.weekStartDay.rawValue
+        let db = viewModel.database
         _Concurrency.Task.detached {
-            let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
+            let boards = (try? db.fetchBoards(userId: userId)) ?? []
             let count = computeStreak(
                 timeframe: timeframe, criterion: .greenlog,
                 boards: boards, weekStartDay: weekStartDay, now: Date()
@@ -1570,15 +1564,13 @@ struct BoardPlayView: View {
                 // the single source of truth; see `kernelCellStates`.
                 return kernelCellStates[boardTask.id]?.isCompleted ?? false
             }
-            // Windowed Completion — derived counters (sharedCounterId set) stay
-            // on their propagation-stamped lifetime cache (carve-out); every
-            // other primitive resolves windowed via events.
-            if task.sharedCounterId != nil { return task.isCompleted }
+            // Windowed Completion — every primitive resolves windowed; linked
+            // counters through `resolveLinkedCounterDisplay` (see helper).
             return windowedIsCompleted(task)
         }()
 
-        // Counting display values — windowed for event-owning source/plain
-        // counters; baseline-derived for linked members (carve-out).
+        // Counting display values — windowed (`windowedCount` owns the
+        // linked-counter rule).
         let rawCount = task?.currentCount ?? 0
         let maxVal = task?.maxCount ?? 0
         let isLinkedCounter = task?.sharedCounterId != nil
@@ -1588,13 +1580,6 @@ struct BoardPlayView: View {
         let current: Int = {
             if isSealed { return isCompleted ? maxVal : 0 }
             guard let t = task else { return 0 }
-            if t.sharedCounterId != nil {
-                return deriveDisplayedCount(
-                    derivedBaseline: t.baseline ?? 0,
-                    derivedMaxCount: t.maxCount ?? 0,
-                    sourceCurrentCount: rawCount
-                ).displayed
-            }
             if t.type == .counting { return windowedCount(t) }
             return rawCount
         }()
@@ -1623,8 +1608,7 @@ struct BoardPlayView: View {
                     windowContext: boardWindowContext
                 )
             }
-            // Windowed child progress — carve out derived counters.
-            if childTask.sharedCounterId != nil { return childTask.isCompleted }
+            // Windowed child progress (linked children via the helper).
             return windowedIsCompleted(childTask)
         }.count
 
@@ -1839,11 +1823,10 @@ struct BoardPlayView: View {
                     // parent detail sheet; its onDismiss drains
                     // `pendingOpenBoardId` in a clean transaction.
                     if pendingOpenBoardId != nil { detailBoardTaskId = nil }
-                    // Board-integrity PR-5 (Item 5): this nested sheet
-                    // edits/deletes the compound CHILD's `Task` directly via
-                    // `AppDatabase.shared` — the parent `detailSheet`'s
-                    // compound-progress display and the underlying grid both
-                    // read stale in-memory state until refreshed. Reload
+                    // Board-integrity PR-5 (Item 5): this nested sheet edits/deletes
+                    // the compound CHILD's `Task` itself — the parent `detailSheet`'s
+                    // compound-progress display and the grid both read stale
+                    // in-memory state until refreshed. Reload
                     // unconditionally (not just on cross-board nav) so a
                     // plain "Done" dismiss after an edit/delete still picks
                     // up the change. When `detailBoardTaskId` is ALSO about
@@ -1859,7 +1842,8 @@ struct BoardPlayView: View {
                     onOpenBoard: { newBoardId in
                         pendingOpenBoardId = newBoardId
                         compoundChildDetailTaskId = nil
-                    }
+                    },
+                    database: viewModel.database
                 )
             }
         }
@@ -1941,10 +1925,11 @@ struct BoardPlayView: View {
             let children = compoundChildrenByCompound[task.id] ?? []
             candidateIds.append(contentsOf: children.map { $0.childTaskId })
         }
+        let db = viewModel.database
         _Concurrency.Task.detached(priority: .utility) {
             var blocked: Set<String> = []
             for id in candidateIds {
-                if let isBlocked = try? AppDatabase.shared.isUncompleteBlockedBySeal(taskId: id), isBlocked {
+                if let isBlocked = try? db.isUncompleteBlockedBySeal(taskId: id), isBlocked {
                     blocked.insert(id)
                 }
             }
@@ -1978,11 +1963,8 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private func countingDetailContent(boardTask: BoardTask, task: Task) -> some View {
-        // currentCount lives on Task after compound-tasks unification.
-        // For linked derived counters (sharedCounterId != nil), apply
-        // deriveDisplayedCount so the detail sheet shows the baseline-adjusted
-        // value rather than the raw source accumulator.
-        let rawCount = task.currentCount ?? 0
+        // Linked derived counters show `resolveLinkedCounterDisplay`'s count
+        // (via `windowedCount`), never the raw source accumulator.
         let maxVal = task.maxCount ?? 0
         let unitText = task.unit ?? ""
         let isLinkedCounter = task.sharedCounterId != nil
@@ -1994,15 +1976,8 @@ struct BoardPlayView: View {
                 let done = board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false
                 return done ? maxVal : 0
             }
-            if task.sharedCounterId != nil {
-                return deriveDisplayedCount(
-                    derivedBaseline: task.baseline ?? 0,
-                    derivedMaxCount: maxVal,
-                    sourceCurrentCount: rawCount
-                ).displayed
-            }
-            // Windowed Completion — event-owning source/plain counter shows the
-            // windowed count.
+            // Windowed Completion — the windowed count (`windowedCount` owns
+            // the linked-counter rule).
             return windowedCount(task)
         }()
 
@@ -2094,8 +2069,7 @@ struct BoardPlayView: View {
                                     windowContext: boardWindowContext
                                 )
                             }
-                            // Windowed child state — carve out derived counters.
-                            if ct.sharedCounterId != nil { return ct.isCompleted }
+                            // Windowed child state (linked children via the helper).
                             return windowedIsCompleted(ct)
                         }()
                         // Windowed Completion (docs Decision 9) — a child whose
