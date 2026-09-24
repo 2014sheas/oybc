@@ -1,9 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { computeSealedCompletedCells } from '../../src/algorithms/derivationPass';
+import {
+  computeBoardStatsUpdate,
+  computeSealedCompletedCells,
+} from '../../src/algorithms/derivationPass';
 import type { WindowEvaluationContext } from '../../src/algorithms/taskEvents';
-import type { Task, TaskEvent, Board, BoardTask } from '../../src/types';
-import { TaskType, Timeframe, BoardStatus, CenterSquareType } from '../../src/constants/enums';
+import type { Task, TaskEvent, Board, BoardTask, CompoundChild } from '../../src/types';
+import {
+  TaskType,
+  Timeframe,
+  BoardStatus,
+  CenterSquareType,
+  OperatorType,
+} from '../../src/constants/enums';
 
 /**
  * sealReDerivation.test.ts — Windowed Completion PR A seal-snapshot builder
@@ -30,7 +39,16 @@ interface VectorTask {
   type: string;
   maxCount: number | null;
   sharedCounterId: string | null;
+  /** Compound tasks only (Task-4 breadth vectors). */
+  operator?: string | null;
+  threshold?: number | null;
   isCompleted: boolean;
+  isDeleted: boolean;
+}
+interface VectorCompoundChild {
+  compoundTaskId: string;
+  childTaskId: string;
+  childIndex: number;
   isDeleted: boolean;
 }
 interface VectorEvent {
@@ -47,7 +65,22 @@ interface Vector {
   tasks: VectorTask[];
   boardTasks: { taskId: string; row: number; col: number }[];
   events: VectorEvent[];
+  /** Optional — when present the union is bounded to `occurredAt <= sealedAt`. */
+  sealedAt?: string;
+  /** Optional — compound links (absent = none). */
+  compoundChildren?: VectorCompoundChild[];
   expectedCells: number[];
+  /** Optional — the sealed snapshot's frozen stats (computeBoardStatsUpdate). */
+  expectedCompletedTasks?: number;
+  expectedLinesCompleted?: number;
+  expectedCompletedLineIds?: string[];
+}
+
+interface SealResult {
+  cells: number[];
+  completedTasks: number;
+  linesCompleted: number;
+  completedLineIds: string[];
 }
 
 const fixture: { vectors: Vector[] } = JSON.parse(
@@ -85,6 +118,8 @@ function toTask(t: VectorTask): Task {
     type: t.type as TaskType,
     maxCount: t.maxCount ?? undefined,
     sharedCounterId: t.sharedCounterId,
+    operator: (t.operator ?? undefined) as OperatorType | undefined,
+    threshold: t.threshold ?? undefined,
     isCompleted: t.isCompleted,
     totalCompletions: 0,
     totalInstances: 0,
@@ -110,7 +145,35 @@ function toEvent(e: VectorEvent): TaskEvent {
   };
 }
 
+/**
+ * The sealing data layers' upper bound, restated for the vector runner: keep
+ * events with `occurredAt <= sealedAtMs` (the `[startDate, sealedAt]` window;
+ * the kernel itself supplies the `startDate` lower bound). Production owners:
+ * `boundedWindowContext` in apps/web/src/db/operations/sealing.ts ↔
+ * apps/ios/OYBC/Database/AppDatabase+Sealing.swift — the iOS consumer of this
+ * fixture runs the real `AppDatabase.computeSealSnapshot`, so the bound is
+ * exercised against production code there; this restatement only lets the TS
+ * side reach the same expected values.
+ */
+function boundAtSeal(
+  eventsByTaskId: Record<string, TaskEvent[]>,
+  sealedAt: string | undefined,
+): Record<string, TaskEvent[]> {
+  if (sealedAt === undefined) return eventsByTaskId;
+  const sealedAtMs = new Date(sealedAt).getTime();
+  const bounded: Record<string, TaskEvent[]> = {};
+  for (const [taskId, evs] of Object.entries(eventsByTaskId)) {
+    const kept = evs.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
+    if (kept.length > 0) bounded[taskId] = kept;
+  }
+  return bounded;
+}
+
 function runVector(v: Vector): number[] {
+  return runSeal(v).cells;
+}
+
+function runSeal(v: Vector): SealResult {
   const board = toBoard(v.board);
   const taskById: Record<string, Task> = {};
   for (const t of v.tasks) taskById[t.id] = toTask(t);
@@ -130,8 +193,44 @@ function runVector(v: Vector): number[] {
   for (const e of v.events) {
     (eventsByTaskId[e.taskId] ??= []).push(toEvent(e));
   }
-  const windowCtx: WindowEvaluationContext = { eventsByTaskId };
-  return computeSealedCompletedCells(board, boardTasks, {}, taskById, [], windowCtx);
+  const childrenByCompound: Record<string, CompoundChild[]> = {};
+  (v.compoundChildren ?? []).forEach((c, i) => {
+    (childrenByCompound[c.compoundTaskId] ??= []).push({
+      id: `cc-${i}`,
+      compoundTaskId: c.compoundTaskId,
+      childTaskId: c.childTaskId,
+      childIndex: c.childIndex,
+      createdAt: board.startDate,
+      updatedAt: board.startDate,
+      version: 1,
+      isDeleted: c.isDeleted,
+    });
+  });
+  const windowCtx: WindowEvaluationContext = {
+    eventsByTaskId: boundAtSeal(eventsByTaskId, v.sealedAt),
+  };
+  const cells = computeSealedCompletedCells(
+    board,
+    boardTasks,
+    childrenByCompound,
+    taskById,
+    [board],
+    windowCtx,
+  );
+  const stats = computeBoardStatsUpdate(
+    board,
+    boardTasks,
+    childrenByCompound,
+    taskById,
+    [board],
+    windowCtx,
+  );
+  return {
+    cells,
+    completedTasks: stats.completedTasks,
+    linesCompleted: stats.linesCompleted,
+    completedLineIds: stats.completedLineIds,
+  };
 }
 
 describe('computeSealedCompletedCells (fixture-driven, tests/fixtures/sealReDerivationVectors.json)', () => {
@@ -141,9 +240,34 @@ describe('computeSealedCompletedCells (fixture-driven, tests/fixtures/sealReDeri
 
   for (const v of fixture.vectors) {
     it(v.name, () => {
-      expect(runVector(v)).toEqual(v.expectedCells);
+      const result = runSeal(v);
+      expect(result.cells).toEqual(v.expectedCells);
+      if (v.expectedCompletedTasks !== undefined) {
+        expect(result.completedTasks).toBe(v.expectedCompletedTasks);
+      }
+      if (v.expectedLinesCompleted !== undefined) {
+        expect(result.linesCompleted).toBe(v.expectedLinesCompleted);
+      }
+      if (v.expectedCompletedLineIds !== undefined) {
+        expect(result.completedLineIds).toEqual(v.expectedCompletedLineIds);
+      }
     });
   }
+
+  it('Task-4 breadth: compound, 4x4 bingo, and the three sealedAt-bound vectors are all present', () => {
+    // Guards against a fixture edit silently dropping a breadth case: the
+    // loop above iterates every vector, this pins that the named ones exist.
+    const names = new Set(fixture.vectors.map((v) => v.name));
+    expect(
+      [
+        'compound-children-complete-in-window-green-and-pre-window-child-keeps-sibling-compound-grey',
+        'bingo-4x4-row-and-main-diagonal-recorded-in-sealed-lines-with-near-misses',
+        'normal-completion-after-endDate-before-sealedAt-counts-and-completes-the-row',
+        'normal-completion-one-ms-after-sealedAt-excluded-even-though-lifetime-cache-says-done',
+        'normal-completion-exactly-at-sealedAt-counts-inclusive-upper-bound',
+      ].filter((n) => !names.has(n)),
+    ).toEqual([]);
+  });
 
   it('re-derivation is order-independent: shuffling the event union yields the same cells', () => {
     const v = fixture.vectors[0];

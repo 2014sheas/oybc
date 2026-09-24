@@ -93,6 +93,227 @@
         { "id": "e0000000-0000-0000-0000-000000000004", "taskId": "30000000-0000-0000-0000-000000000003", "kind": "completion", "delta": null, "occurredAt": "2026-06-28T08:00:00.000Z", "isDeleted": false }
       ],
       "expectedCells": [0, 4]
+    },
+    {
+      "name": "compound-children-complete-in-window-green-and-pre-window-child-keeps-sibling-compound-grey",
+      "_why": "C=AND(N1,K1,C3) at (0,0): N1 in-window completion; K1 counting goal 2 reached by 1+1 in-window; C3=OR(N3,N5) nested, N5 in-window => C3 true => C true (cell 0) although C's lifetime cache says false. C2=AND(N1,N3) at (0,1): N3's only completion is pre-window (06-30) => false (cell 1 grey) although C2's lifetime cache says true. Children are not placed. FREE center => cell 4. Cells [0,4]; completedTasks 2; no line (row_0 needs 0,1,2).",
+      "board": {
+        "id": "b4000000-0000-0000-0000-000000000001",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T06:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000001", "type": "compound", "maxCount": null, "sharedCounterId": null, "operator": "AND", "threshold": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000002", "type": "compound", "maxCount": null, "sharedCounterId": null, "operator": "AND", "threshold": null, "isCompleted": true, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000003", "type": "compound", "maxCount": null, "sharedCounterId": null, "operator": "OR", "threshold": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000011", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000012", "type": "counting", "maxCount": 2, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000013", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": true, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000015", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false }
+      ],
+      "compoundChildren": [
+        { "compoundTaskId": "40000000-0000-0000-0000-000000000001", "childTaskId": "40000000-0000-0000-0000-000000000011", "childIndex": 0, "isDeleted": false },
+        { "compoundTaskId": "40000000-0000-0000-0000-000000000001", "childTaskId": "40000000-0000-0000-0000-000000000012", "childIndex": 1, "isDeleted": false },
+        { "compoundTaskId": "40000000-0000-0000-0000-000000000001", "childTaskId": "40000000-0000-0000-0000-000000000003", "childIndex": 2, "isDeleted": false },
+        { "compoundTaskId": "40000000-0000-0000-0000-000000000003", "childTaskId": "40000000-0000-0000-0000-000000000013", "childIndex": 0, "isDeleted": false },
+        { "compoundTaskId": "40000000-0000-0000-0000-000000000003", "childTaskId": "40000000-0000-0000-0000-000000000015", "childIndex": 1, "isDeleted": false },
+        { "compoundTaskId": "40000000-0000-0000-0000-000000000002", "childTaskId": "40000000-0000-0000-0000-000000000011", "childIndex": 0, "isDeleted": false },
+        { "compoundTaskId": "40000000-0000-0000-0000-000000000002", "childTaskId": "40000000-0000-0000-0000-000000000013", "childIndex": 1, "isDeleted": false }
+      ],
+      "boardTasks": [
+        { "taskId": "40000000-0000-0000-0000-000000000001", "row": 0, "col": 0 },
+        { "taskId": "40000000-0000-0000-0000-000000000002", "row": 0, "col": 1 }
+      ],
+      "events": [
+        { "id": "e4000000-0000-0000-0000-000000000001", "taskId": "40000000-0000-0000-0000-000000000011", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T08:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000002", "taskId": "40000000-0000-0000-0000-000000000012", "kind": "increment", "delta": 1, "occurredAt": "2026-07-01T09:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000003", "taskId": "40000000-0000-0000-0000-000000000012", "kind": "increment", "delta": 1, "occurredAt": "2026-07-01T10:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000004", "taskId": "40000000-0000-0000-0000-000000000013", "kind": "completion", "delta": null, "occurredAt": "2026-06-30T12:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000005", "taskId": "40000000-0000-0000-0000-000000000015", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T11:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [0, 4],
+      "expectedCompletedTasks": 2,
+      "expectedLinesCompleted": 0,
+      "expectedCompletedLineIds": []
+    },
+    {
+      "name": "bingo-4x4-row-and-main-diagonal-recorded-in-sealed-lines-with-near-misses",
+      "_why": "4x4, center 'none' (even board: no auto-fill). Placed idx 0,1,3,4,5,6,7,9,10,12,13,15. Green: every placed normal with an in-window completion (0,1,3,4,5,6,9,10,15) + idx 7 counting 2+2=4 >= goal 3 (overshoot kept) => cells [0,1,3,4,5,6,7,9,10,15], completedTasks 10. idx 12's only completion is pre-window (grey, cache true), idx 13 has no events (grey); 2,8,11,14 unplaced. Lines: row_1 (4,5,6,7) yes; diag_main (0,5,10,15) yes; col_1 (1,5,9,13) no (13); diag_anti (3,6,9,12) no (12); row_0 no (2); col_3 no (11). detectBingos order rows,cols,diag_main,diag_anti => [row_1, diag_main], linesCompleted 2. The board row's stored linesCompleted 0 / completedLineIds null are stale inputs the snapshot must not echo.",
+      "board": {
+        "id": "b4000000-0000-0000-0000-000000000002",
+        "boardSize": 4,
+        "centerSquareType": "none",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T06:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000100", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000101", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000103", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000104", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000105", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000106", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000107", "type": "counting", "maxCount": 3, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000109", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000110", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000112", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": true, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000113", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000115", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false }
+      ],
+      "compoundChildren": [],
+      "boardTasks": [
+        { "taskId": "40000000-0000-0000-0000-000000000100", "row": 0, "col": 0 },
+        { "taskId": "40000000-0000-0000-0000-000000000101", "row": 0, "col": 1 },
+        { "taskId": "40000000-0000-0000-0000-000000000103", "row": 0, "col": 3 },
+        { "taskId": "40000000-0000-0000-0000-000000000104", "row": 1, "col": 0 },
+        { "taskId": "40000000-0000-0000-0000-000000000105", "row": 1, "col": 1 },
+        { "taskId": "40000000-0000-0000-0000-000000000106", "row": 1, "col": 2 },
+        { "taskId": "40000000-0000-0000-0000-000000000107", "row": 1, "col": 3 },
+        { "taskId": "40000000-0000-0000-0000-000000000109", "row": 2, "col": 1 },
+        { "taskId": "40000000-0000-0000-0000-000000000110", "row": 2, "col": 2 },
+        { "taskId": "40000000-0000-0000-0000-000000000112", "row": 3, "col": 0 },
+        { "taskId": "40000000-0000-0000-0000-000000000113", "row": 3, "col": 1 },
+        { "taskId": "40000000-0000-0000-0000-000000000115", "row": 3, "col": 3 }
+      ],
+      "events": [
+        { "id": "e4000000-0000-0000-0000-000000000020", "taskId": "40000000-0000-0000-0000-000000000100", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T06:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000021", "taskId": "40000000-0000-0000-0000-000000000101", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T07:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000022", "taskId": "40000000-0000-0000-0000-000000000103", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T09:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000023", "taskId": "40000000-0000-0000-0000-000000000104", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T10:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000024", "taskId": "40000000-0000-0000-0000-000000000105", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T11:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000025", "taskId": "40000000-0000-0000-0000-000000000106", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T12:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000026", "taskId": "40000000-0000-0000-0000-000000000107", "kind": "increment", "delta": 2, "occurredAt": "2026-07-01T09:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000027", "taskId": "40000000-0000-0000-0000-000000000107", "kind": "increment", "delta": 2, "occurredAt": "2026-07-01T15:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000028", "taskId": "40000000-0000-0000-0000-000000000109", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T15:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000029", "taskId": "40000000-0000-0000-0000-000000000110", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T16:30:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000030", "taskId": "40000000-0000-0000-0000-000000000112", "kind": "completion", "delta": null, "occurredAt": "2026-06-25T08:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000031", "taskId": "40000000-0000-0000-0000-000000000115", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T21:30:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [0, 1, 3, 4, 5, 6, 7, 9, 10, 15],
+      "expectedCompletedTasks": 10,
+      "expectedLinesCompleted": 2,
+      "expectedCompletedLineIds": ["row_1", "diag_main"]
+    },
+    {
+      "name": "normal-completion-after-endDate-before-sealedAt-counts-and-completes-the-row",
+      "_why": "RULE PINNED: a sealed snapshot's event bound is [startDate, sealedAt] inclusive (sealing.ts boundedWindowContext keeps occurredAt <= sealedAt; the kernel's only lower bound is startDate) \u2014 endDate is NOT a bound. N's completion at 2026-07-02T03:00 is after endDate (07-01T23:59:59.999) but before sealedAt (07-02T06:00) => counts. Cells [0,1,2,4]; completedTasks 4; row_0 => [row_0], linesCompleted 1. col_0/diag need 3,6/8 \u2014 unplaced.",
+      "board": {
+        "id": "b4000000-0000-0000-0000-000000000003",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T06:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000201", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000202", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000203", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false }
+      ],
+      "compoundChildren": [],
+      "boardTasks": [
+        { "taskId": "40000000-0000-0000-0000-000000000201", "row": 0, "col": 0 },
+        { "taskId": "40000000-0000-0000-0000-000000000202", "row": 0, "col": 1 },
+        { "taskId": "40000000-0000-0000-0000-000000000203", "row": 0, "col": 2 }
+      ],
+      "events": [
+        { "id": "e4000000-0000-0000-0000-000000000301", "taskId": "40000000-0000-0000-0000-000000000201", "kind": "completion", "delta": null, "occurredAt": "2026-07-02T03:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000302", "taskId": "40000000-0000-0000-0000-000000000202", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T12:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000303", "taskId": "40000000-0000-0000-0000-000000000203", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T13:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [0, 1, 2, 4],
+      "expectedCompletedTasks": 4,
+      "expectedLinesCompleted": 1,
+      "expectedCompletedLineIds": ["row_0"]
+    },
+    {
+      "name": "normal-completion-one-ms-after-sealedAt-excluded-even-though-lifetime-cache-says-done",
+      "_why": "N's completion at 2026-07-02T06:00:00.001Z is 1ms after sealedAt => belongs to the next window, must NOT count; N's lifetime isCompleted cache is true and must not leak in either. Cells [1,2,4]; completedTasks 3; row_0 broken at 0 => no lines.",
+      "board": {
+        "id": "b4000000-0000-0000-0000-000000000003",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T06:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000201", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": true, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000202", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000203", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false }
+      ],
+      "compoundChildren": [],
+      "boardTasks": [
+        { "taskId": "40000000-0000-0000-0000-000000000201", "row": 0, "col": 0 },
+        { "taskId": "40000000-0000-0000-0000-000000000202", "row": 0, "col": 1 },
+        { "taskId": "40000000-0000-0000-0000-000000000203", "row": 0, "col": 2 }
+      ],
+      "events": [
+        { "id": "e4000000-0000-0000-0000-000000000301", "taskId": "40000000-0000-0000-0000-000000000201", "kind": "completion", "delta": null, "occurredAt": "2026-07-02T06:00:00.001Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000302", "taskId": "40000000-0000-0000-0000-000000000202", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T12:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000303", "taskId": "40000000-0000-0000-0000-000000000203", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T13:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [1, 2, 4],
+      "expectedCompletedTasks": 3,
+      "expectedLinesCompleted": 0,
+      "expectedCompletedLineIds": []
+    },
+    {
+      "name": "normal-completion-exactly-at-sealedAt-counts-inclusive-upper-bound",
+      "_why": "N's completion at exactly sealedAt (2026-07-02T06:00:00.000Z) counts: the upper bound is inclusive (occurredAt <= sealedAt; matches the [startDate, sealedAt] immunity window in taskEvents.ts). Same result as the post-endDate vector: cells [0,1,2,4]; completedTasks 4; [row_0].",
+      "board": {
+        "id": "b4000000-0000-0000-0000-000000000003",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T06:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000201", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000202", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "40000000-0000-0000-0000-000000000203", "type": "normal", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false }
+      ],
+      "compoundChildren": [],
+      "boardTasks": [
+        { "taskId": "40000000-0000-0000-0000-000000000201", "row": 0, "col": 0 },
+        { "taskId": "40000000-0000-0000-0000-000000000202", "row": 0, "col": 1 },
+        { "taskId": "40000000-0000-0000-0000-000000000203", "row": 0, "col": 2 }
+      ],
+      "events": [
+        { "id": "e4000000-0000-0000-0000-000000000301", "taskId": "40000000-0000-0000-0000-000000000201", "kind": "completion", "delta": null, "occurredAt": "2026-07-02T06:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000302", "taskId": "40000000-0000-0000-0000-000000000202", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T12:00:00.000Z", "isDeleted": false },
+        { "id": "e4000000-0000-0000-0000-000000000303", "taskId": "40000000-0000-0000-0000-000000000203", "kind": "completion", "delta": null, "occurredAt": "2026-07-01T13:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [0, 1, 2, 4],
+      "expectedCompletedTasks": 4,
+      "expectedLinesCompleted": 1,
+      "expectedCompletedLineIds": ["row_0"]
     }
-  ]
+  ],
+  "_noteBreadthVectors": "Task-4 breadth vectors (2026-09-23 audit T2, prefix b4/4\u2026): OPTIONAL per-vector fields \u2014 `sealedAt` (top-level; when present the consumer bounds the union to occurredAt <= sealedAt, the [startDate, sealedAt] rule the sealing data layers apply \u2014 iOS runs AppDatabase.computeSealSnapshot itself); `compoundChildren` [{compoundTaskId, childTaskId, childIndex, isDeleted}] (absent = none); compound tasks carry `operator` + `threshold`; `expectedCompletedTasks` / `expectedLinesCompleted` / `expectedCompletedLineIds` assert the sealed snapshot's frozen stats (computeBoardStatsUpdate) when present; `_why` is the hand computation. Absent optional fields keep the original three vectors' semantics unchanged."
 }
