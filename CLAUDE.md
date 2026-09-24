@@ -128,7 +128,7 @@ For iOS UI verification, the only two tools agents should reach for are:
 1. **Snapshot tests** (`OYBCSnapshotTests` target) — fast, deterministic, runnable from `xcodebuild`. The default surface for visual regression checks; see the section below.
 2. **`xcodebuild test`** for the logic-test scheme — also fine to run from any agent session.
 
-For anything else (interactive flows, real-device behavior, "does this actually work end-to-end on iPhone 16 sim"), **agents must NOT** drive the simulator from the CLI:
+For anything else (interactive flows, real-device behavior, "does this actually work end-to-end on iPhone 17 sim"), **agents must NOT** drive the simulator from the CLI:
 
 - ❌ Don't run `xcrun simctl boot/install/launch` to spin up an interactive sim from this session.
 - ❌ Don't open `Simulator.app` and try to script taps via AppleScript / accessibility / `simctl ui`.
@@ -155,10 +155,10 @@ xcodegen generate    # only if you added new test files
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild -project OYBC.xcodeproj -scheme OYBCSnapshotTests \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.3.1' \
-  -derivedDataPath /tmp/oybc-derived test
+  -derivedDataPath /Volumes/Stephen/oybc-derived test
 ```
 
-**Pin the runtime explicitly — never `OS=latest`.** `OS=latest` resolves to the newest *installed* iOS runtime, not to the one shipping with your pinned Xcode, so installing a newer runtime silently repoints every snapshot run. Measured on one machine carrying both 26.3.1 and 26.5, same commit, nothing changed but the runtime: **26.3.1 → 345 passed / 27 failed; `OS=latest` (26.5) → 22 passed / 350 failed.** A mass-red snapshot run almost always means the runtime moved, not that the UI broke. Check what you actually have with `xcodebuild -scheme OYBCSnapshotTests -showdestinations`; the device name drifts too, since Xcode upgrades uninstall older iPhone sims, so `name=` is a moving target in a way the `OS=` pin is not.
+**Pin the runtime explicitly — never `OS=latest`.** `OS=latest` resolves to the newest *installed* iOS runtime, not to the one shipping with your pinned Xcode, so installing a newer runtime silently repoints every snapshot run. Measured on one machine carrying both 26.3.1 and 26.5, same commit, nothing changed but the runtime: **26.3.1 → 345 passed / 27 failed; `OS=latest` (26.5) → 22 passed / 350 failed.** A mass-red snapshot run almost always means the runtime moved, not that the UI broke. Check what you actually have with `xcodebuild -scheme OYBCSnapshotTests -showdestinations`; the device name drifts too, since Xcode upgrades uninstall older iPhone sims, so `name=` is a moving target in a way the `OS=` pin is not. (This rule is for **local** runs. CI's `ios.yml` deliberately uses `OS=latest` on the runner — see its comment: with the Xcode pin, the runner's newest runtime is the one shipped with that Xcode, so it is deterministic there.)
 
 This matters more than it looks: `ios.yml` runs the snapshot step under `continue-on-error: true` (ROADMAP A8), so baselines recorded against the wrong runtime **merge without a single red check**. CI cannot catch this class of error for you.
 
@@ -172,9 +172,9 @@ xcodebuild … -only-testing:OYBCSnapshotTests test > /tmp/a.log 2>&1
 grep "' failed (" /tmp/a.log | sed -E "s/.*\.([A-Za-z]+ test[A-Za-z0-9_]+)\]' failed.*/\1/" | sort -u
 ```
 
-Compare sets, never counts — a matching count can still hide one new red cancelling one fixed. As of 2026-09-22 on `OS=26.3.1` the standing reds are `BoardEditCenterToggle` ×5, `CountersHub` ×2, `RisoDeleteConfirm` ×2, `RisoTasksTab` ×4, `SyncSheet` ×4 (ROADMAP A8 debt, baselines last written 2026-06 to 2026-09), plus the calendar pair below.
+Compare sets, never counts — a matching count can still hide one new red cancelling one fixed. As of 2026-09-22 on `OS=26.3.1` the standing reds are `BoardEditCenterToggle` ×5, `CountersHub` ×2, `RisoDeleteConfirm` ×2, `RisoTasksTab` ×4 (ROADMAP A8 debt, baselines last written 2026-06 to 2026-09), plus the calendar-dependent reds below (`SyncSheet` ×4 and the `RisoEditBoard` pair).
 
-**Two reds are calendar-dependent false failures.** `RisoEditBoardSnapshotTests.testFormWeeklyNone{Light,Dark}` pass a fixed `customStartDate`, but that only binds `.custom` — for `.weekly` the form derives the **current** week from `now`, so both go red at every week rollover and green again once re-recorded. The `…MonthlyFree` siblings do the same at month rollover. **The Weekly-red / Monthly-green split is the tell**: when a date-shaped pair fails asymmetrically like that, suspect the calendar before your diff. This cost a regression hunt during B3.1 — all four were green three days earlier and nothing on the branch touched `BoardSetupFormView`. See also `reference_snapshot_date_dependent`.
+**Some reds are calendar-dependent false failures.** `SyncSheet` ×4: `Views/ProfileTab/SyncSheet.swift` formats its relative timestamps against the live `Date()` (`relativeTo: Date()`) while the tests pass a fixed date, so the rendered "… ago" text drifts with the wall clock — not A8 baseline debt. The 2026-09-23 audit cleanup PR injects `now:` and re-records them. Separately, `RisoEditBoardSnapshotTests.testFormWeeklyNone{Light,Dark}` pass a fixed `customStartDate`, but that only binds `.custom` — for `.weekly` the form derives the **current** week from `now`, so both go red at every week rollover and green again once re-recorded. The `…MonthlyFree` siblings do the same at month rollover. **The Weekly-red / Monthly-green split is the tell**: when a date-shaped pair fails asymmetrically like that, suspect the calendar before your diff. This cost a regression hunt during B3.1 — all four were green three days earlier and nothing on the branch touched `BoardSetupFormView`. See also `reference_snapshot_date_dependent`.
 
 Each test runs in ~0.1–0.5s; full suite finishes in ~1–2s after build. Build adds ~10–15s on a clean derived-data dir. End-to-end loop: ~15–20s.
 
@@ -261,26 +261,30 @@ apps/web/src/                                        apps/ios/OYBC/
 │       │                        tree + PlaygroundView.swift were removed in #119)
 │       ├── playgroundUtils.ts                      (iOS: the production-used date/timeframe
 │       │                                            helpers moved to Utils/TimeframeFormatting.swift)
-│       ├── BoardTaskSelectionPlayground.tsx        (no iOS counterpart)
 │       ├── BoardGeneratorPlayground.tsx            (no iOS counterpart)
-│       ├── UnifiedTaskCreatorPlayground.tsx        (no iOS counterpart)
-│       ├── TaskSquareActionsPlayground.tsx         (no iOS counterpart)
-│       ├── CrossBoardRollupPlayground.tsx          (no iOS counterpart)
-│       └── SubtaskDerivationPlayground.tsx         (no iOS counterpart)
-│       (Playground parity is an intentional, temporary divergence. The Riso redesign
-│        shipped iOS-first; the WEB Riso pass is now in progress — Phase 0 foundation
-│        (token layer + primitive kit) shipped, screens re-skinned phase-by-phase. See
-│        docs/RISO_WEB.md. compound-task creation: web components/compoundWizard/; iOS is
-│        now INLINE in RisoCompoundFieldsView within the special-type panel —
+│       ├── BoardWizardTasksPlayground.tsx          (no iOS counterpart)
+│       ├── CreateHubPlayground.tsx                 (no iOS counterpart)
+│       ├── RisoKitPlayground.tsx                   (no iOS counterpart; iOS kit gallery is
+│       │                                            Views/Riso/RisoKitGallery.swift)
+│       ├── SharedCounterPlayground.tsx             (no iOS counterpart)
+│       ├── SyncSimulationPlayground.tsx            (no iOS counterpart — iOS SyncDashboardPlayground
+│       │                                            removed in #119; sync is exercised in-app)
+│       └── TaskSquareActionsPlayground.tsx         (no iOS counterpart)
+│       (Playground parity is an intentional divergence: the iOS Playground was removed
+│        in #119. Compound-task creation: web components/compoundWizard/; iOS is INLINE
+│        in RisoCompoundFieldsView within the special-type panel —
 │        Views/Components/CompositeWizard/ was removed in the Riso redesign.)
 │
-└── components/                                     Views/Components/
+└── components/                                     Views/ (Riso views live per tab, e.g.
+    │                                                Views/BoardsTab/Components/, plus Views/Riso/)
     ├── riso/ (RisoButton/Card/    ←→               Views/Riso/RisoControls.swift
     │   Chip/Segmented/SectionLabel;                (web Riso primitive kit; tokens in
-    │   barrel index.ts)                             src/styles/riso.css — see docs/RISO_WEB.md)
+    │   barrel index.ts)                             packages/riso-tokens/riso.css, imported by
+    │                                                apps/web/src/main.tsx — see docs/RISO_WEB.md)
     │   (Navbar.tsx — REMOVED, dead code; was web dev-only, no iOS counterpart)
-    ├── BingoBoard.tsx          ←→                  BingoBoard.swift
-    ├── BingoSquare.tsx         ←→                  BingoSquare.swift
+    ├── BingoBoard.tsx / BingoSquare.tsx            (no iOS counterpart — the iOS BingoBoard/
+    │   (only BoardGeneratorPlayground renders       BingoSquare views are gone; the Riso play
+    │    BingoBoard today, so effectively dev-only)  grid is BoardsTab/Components/RisoBoardPlayCell.swift)
     ├── InteractiveTaskSquare.tsx ←→                 (iOS: removed — Riso uses RisoBoardPlayCell)
     ├── TypeBadge.tsx           ←→                  (iOS: removed — Riso uses RisoTypeBadge)
     │   (FilterTabs.tsx — REMOVED, dead code; iOS already removed — Riso uses RisoChip)
@@ -291,10 +295,11 @@ apps/web/src/                                        apps/ios/OYBC/
     │    PoolCard/PoolEditSheet/PoolPickerSheet ←→ PoolEditSheetView/
     │    PoolsBrowseView/PoolPickerSheetView + CreateTab/Components/RisoPool*)
     │   (SubtaskChip.tsx — REMOVED, dead code; iOS SubtaskChipView.swift also removed)
-    ├── OperatorSelector.tsx    ←→                  OperatorSelectorView.swift
-    ├── CounterStepper.tsx      ←→                  CounterStepperView.swift
+    ├── OperatorSelector.tsx    ←→                  (no standalone iOS view — compound operator +
+    ├── CounterStepper.tsx      ←→                   counting fields are inline in
+    ├── CountingStepFields.tsx  ←→                   CreateTab/Components/RisoCompoundFieldsView.swift
+    │                                                and RisoSpecialTaskPanel.swift)
     │   (ProgressStepRow.tsx — REMOVED, dead code; helpers live on in subtaskDraftUtils.ts)
-    ├── CountingStepFields.tsx  ←→                  CountingStepFieldsView.swift
     │   (CountingDerivationPanel.tsx — REMOVED, dead code; iOS CountingDerivationPanelView.swift also removed)
     │   (ProgressDerivationPanel.tsx / *View.swift + CompositeDerivationPanel.tsx /
     │    *View.swift — all REMOVED in the progress/composite teardown, PRs #404–#415)
@@ -303,13 +308,18 @@ apps/web/src/                                        apps/ios/OYBC/
     │       SignInModal, SignedOutArt,               landing + sign-in modal — no iOS
     │       useSignedOutTheme)                        counterpart; iOS launches into the
     │                                                 login form directly. See docs/RISO_WEB.md)
-    ├── BoardCreatorPanel.tsx      ←→               Views/Components/BoardCreatorPanelView.swift
-    ├── BoardStatusBadge.tsx       ←→               Views/Components/BoardStatusBadgeView.swift
-    ├── BoardListItem.tsx          ←→               Views/Components/BoardListItemView.swift
+    ├── boards/BoardCard.tsx       ←→               Views/BoardsTab/Components/RisoBoardCard.swift
+    ├── RecurringBadge.tsx         ←→               Views/BoardsTab/Components/RisoRecurringBadge.swift
+    ├── BoardStatusBadge.tsx                        (no standalone iOS view)
+    ├── BoardListItem.tsx                           (no iOS counterpart; zero importers on web —
+    │                                                dead code the knip file check currently
+    │                                                misses, see §Drift guardrails)
+    │   (BoardCreatorPanel.tsx / BoardCreatorPanelView.swift — REMOVED on both platforms)
     ├── appShell/ (AppShell,       ←→               Views/MainTabView.swift (SwiftUI TabView — intentionally platform-idiomatic)
     │   AppTopNav, AppBottomNav,                    (web Riso shell: desktop top nav that detaches into a mobile
     │   navItems)                                    bottom tab bar; replaced the old TabBar.tsx in the Riso pass)
-    └── SyncStatusIndicator.tsx    ←→               Views/Components/SyncStatusIndicatorView.swift
+    └── SyncStatusIndicator.tsx    ←→               Views/ProfileTab/Components/RisoSyncRow.swift
+                                                     (+ Views/ProfileTab/SyncSheet.swift, iOS-only detail sheet)
 │
 ├── firebase/                                       Services/
 │   ├── config.ts                  ←→               OYBCApp.swift (FirebaseApp.configure)
@@ -322,10 +332,6 @@ apps/web/src/                                        apps/ios/OYBC/
 │   (no web counterpart yet —     ←→               Services/NotificationService.swift (Phase 7, iOS only)
 │    deferred, see §Notifications)                 Services/NotificationPlanner.swift (pure; Phase 7, iOS only)
 │                                                   Services/NotificationDelegate.swift (Phase 7, iOS only)
-│
-└── components/playground/
-    └── SyncSimulationPlayground.tsx                (web dev-only — iOS SyncDashboardPlayground
-                                                     removed in #119; sync is exercised in-app)
 ```
 
 ### Pages ↔ Root Views
@@ -334,14 +340,21 @@ Top-level React-Router pages and their iOS root-view counterparts.
 
 ```
 apps/web/src/pages/                               apps/ios/OYBC/Views/
-├── Home.tsx                      (dev-only)     (no iOS counterpart — auth-gate → MainTabView)
+├── HomePage.tsx                                 (web-only signed-in landing at /home — no iOS
+│                                                 counterpart; iOS launches AuthGateView → MainTabView)
 ├── BoardsPage.tsx             ←→                Views/BoardsTab/BoardListView.swift
 ├── BoardPlayPage.tsx          ←→                Views/BoardsTab/BoardPlayView.swift
+├── core-board-browser/
+│   └── CoreBoardWindowPage.tsx ←→               Views/BoardsTab/CoreBoardWindowView.swift
 ├── CreateHubPage.tsx          ←→                Views/CreateTab/CreateHubView.swift
 ├── BoardWizardPage.tsx        ←→                Views/CreateTab/BoardWizardView.swift
 ├── TasksPage.tsx              ←→                Views/TasksTab/TasksTabView.swift
 ├── TaskDetailPage.tsx         ←→                Views/TasksTab/TaskDetailView.swift
 ├── ProfilePage.tsx            ←→                Views/ProfileTab/ProfileView.swift
+├── StreaksPage.tsx            ←→                Views/ProfileTab/StreaksView.swift
+├── AccountSecurityPage.tsx    ←→                Views/ProfileTab/AccountSecurityView.swift
+├── CountersHubPage.tsx        ←→                Views/ProfileTab/CountersHubView.swift
+├── CounterDetailPage.tsx      ←→                Views/ProfileTab/CounterDetailView.swift
 ├── BoardSettingsPage.tsx      ←→                Views/ProfileTab/BoardSettingsView.swift
 │   (pools/recurring rework P7 + #430: replaced BoardPreferencesPage/View +
 │    the retired RecurringTemplates/DefaultPools pages. New-board defaults +
@@ -397,8 +410,8 @@ Notes that keep these straight:
 - `syncService.ts` uses module-level functions + a React hook for orchestration; iOS embeds orchestration in a `@MainActor ObservableObject` bound to `AuthService`'s lifecycle. Same push/pull/LWW rules, same collection list — when you change one, mirror the other in the same PR.
 - **Create Hub + board wizard**: web `components/wizard/*` + `components/createHub/*` + `pages/createHub/useBoardWizard.ts` ←→ iOS `Views/CreateTab/Components/*` + `ViewModels/BoardWizardViewModel.swift`. Non-obvious bits: `useDrafts.ts` has no iOS twin (iOS inlines the GRDB query in `CreateHubView.reloadDrafts()`, reloading on `.onAppear` + after wizard dismiss, since SwiftUI lacks `useLiveQuery`); `wizardPersist.ts` ←→ `BoardWizardPersist.swift` is a helper not a view (so iOS keeps it in `Views/CreateTab/`, not `Components/`), both exporting `buildWizardPlacement` / `resolveWizardDates` / `persistWizardBoard`.
 - **Compound-task creation — platform divergence (Riso redesign)**: **web** keeps the 3-step Setup → Build → Review mini-wizard (`components/compoundWizard/*`, `CompoundTaskWizard`) that replaced the legacy `CompositeTaskForm` monoliths. **iOS** retired that flow entirely — `Views/Components/CompositeWizard/*` (`CompositeTaskWizardView` + step/card files) was DELETED; compound authoring is now INLINE via `RisoCompoundFieldsView` inside `RisoSpecialTaskPanel` (the same panel used by both the board-wizard Tasks step and the Tasks-tab `NewTaskSheetView`), writing through `CreateFormViewModel.handleCreateCompoundAndAddToPool` (deferred Bug#85 + immediate paths). Re-converge web onto the inline pattern when web gets its Riso pass. (Wave 1c of the progress-task removal renamed the web files/symbols from "composite" to "compound" vocabulary — behavior-preserving; the retired iOS directory name above is left as accurate history.)
-- **Tasks tab**: `pages/TasksPage.tsx` ←→ `Views/TasksTab/TasksTabView.swift` (library list, search + type chips + status/usage/sort). The filter pipeline is shared in spirit but implemented per platform; the `BoardWizardTasksStep` row renderer is intentionally *not* shared (entangled with selection / center-pinning). Achievement shows on the Tasks-tab filter chips even though it's hidden from the wizard row. `TaskDetailPage` ←→ `TaskDetailView` covers per-task stats / inline edit / cascade delete. **Cascade delete**: `deleteTaskWithCascade(id)` (web `db/operations/tasks.deletion.ts`, re-exported via the `tasks.ts` barrel; iOS `AppDatabase+Tasks.swift`, one of the 9 domain extensions the B1 split produced) tombstones (soft-deletes) BoardTask rows — see [§Board Integrity](docs/BOARD_INTEGRITY.md), `BoardTask` gained `isDeleted`/`deletedAt` in PR-1 (#358) so a placement delete carries a version bump that wins the sync tie-break instead of self-reverting — soft-deletes CompoundChild links both directions, then soft-deletes the Task — atomically; `computeTaskDeletionImpact(id)` is the read-only preview for the confirm dialog (Achievement tasks reference boards/templates, not tasks, so they skip the task-side cascade). **Quick-add** (`CreateHubQuickAdd*`) now lives atop the Tasks tab, not the Create hub (which is board-creation only).
-- **Core board window pager**: tapping a Core board on the Boards screen opens the current window's board (web route `/boards/core/:timeframe/:date` → `CoreBoardWindowPage`; iOS `CoreWindowRoute` → `CoreBoardWindowView`), with swipe/±1 paging in place and a **window chip** that opens a picker sheet (iOS half-sheet / web popover) for long-range jumps — the old `≡ list` vertical browser (`/boards/core/:timeframe`, `CoreBoardBrowserView`/`Page`) is retired; the route redirects to today's window. Edit obeys ONE gate on both platforms (`status == active && sealedAt == nil && !editMode`) from the title row. Empty windows show a lazy setup prompt (no board row until the user acts, including from picker-tile taps). **Web extracts `BoardPlaySurface`** from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; **iOS embeds `BoardPlayView` whole behind an `embedded` flag** (the view self-loads by `boardId`, so embedding beats extraction). Date-only route params are parsed as local noon, not `new Date(dateStr)` (UTC parse shifts the day west of UTC). See [ARCHITECTURE.md §Phase 6](docs/ARCHITECTURE.md). (Post-B2, both play surfaces had their write logic extracted out from under this embedding: web's is `BoardPlaySurface.tsx` (~1,088 lines) over `useBoardPlayData`/`useBoardPlay` hooks + a `toggleTaskCompletionAndCascade` operation; iOS's is `BoardPlayView.swift` (~2,000 lines of rendering) over the DB-injected, unit-tested `BoardPlayViewModel`. All *writes* on both surfaces go through `db/operations` cascade helpers (web) / the injected `AppDatabase` (iOS) — never a raw mutation. The web `useBoardPlay` hook still does a few raw `db.boards.get()` *reads* (before/after snapshots for bingo/greenlog diffing); that read seam is deliberate, not drift. See `docs/ROADMAP.md` Track B2.)
+- **Tasks tab**: `pages/TasksPage.tsx` ←→ `Views/TasksTab/TasksTabView.swift` (library list, search + type chips + status/usage/sort). The filter pipeline is shared in spirit but implemented per platform; the `BoardWizardTasksStep` row renderer is intentionally *not* shared (entangled with selection / center-pinning). Achievement shows on the Tasks-tab filter chips even though it's hidden from the wizard row. `TaskDetailPage` ←→ `TaskDetailView` covers per-task stats / inline edit / cascade delete. **Cascade delete**: `deleteTaskWithCascade(id)` (web `db/operations/tasks.deletion.ts`, re-exported via the `tasks.ts` barrel; iOS `AppDatabase+Tasks.swift`, one of the `AppDatabase+*.swift` domain extensions the B1 split started) tombstones (soft-deletes) BoardTask rows — see [§Board Integrity](docs/BOARD_INTEGRITY.md), `BoardTask` gained `isDeleted`/`deletedAt` in PR-1 (#358) so a placement delete carries a version bump that wins the sync tie-break instead of self-reverting — soft-deletes CompoundChild links both directions, then soft-deletes the Task — atomically; `computeTaskDeletionImpact(id)` is the read-only preview for the confirm dialog (Achievement tasks reference boards/templates, not tasks, so they skip the task-side cascade). **Quick-add** (`CreateHubQuickAdd*`) now lives atop the Tasks tab, not the Create hub (which is board-creation only).
+- **Core board window pager**: tapping a Core board on the Boards screen opens the current window's board (web route `/boards/core/:timeframe/:date` → `CoreBoardWindowPage`; iOS `CoreWindowRoute` → `CoreBoardWindowView`), with swipe/±1 paging in place and a **window chip** that opens a picker sheet (iOS half-sheet / web popover) for long-range jumps — the old `≡ list` vertical browser (`/boards/core/:timeframe`, `CoreBoardBrowserView`/`Page`) is retired; the route redirects to today's window. Edit obeys ONE gate on both platforms (`status == active && sealedAt == nil && !editMode`) from the title row. Empty windows show a lazy setup prompt (no board row until the user acts, including from picker-tile taps). **Web extracts `BoardPlaySurface`** from `BoardPlayPage` and reuses it in both the `/boards/:id` page and the pager; **iOS embeds `BoardPlayView` whole behind an `embedded` flag** (the view self-loads by `boardId`, so embedding beats extraction). Date-only route params are parsed as local noon, not `new Date(dateStr)` (UTC parse shifts the day west of UTC). See [ARCHITECTURE.md §Phase 6](docs/ARCHITECTURE.md). (Post-B2, both play surfaces had their write logic extracted out from under this embedding: web's is `BoardPlaySurface.tsx` over `useBoardPlayData`/`useBoardPlay` hooks + a `toggleTaskCompletionAndCascade` operation; iOS's is `BoardPlayView.swift` (rendering) over the DB-injected, unit-tested `BoardPlayViewModel`. Both files are oversized and frozen in `scripts/audit/file-size-allowlist.json` (ROADMAP B6). All *writes* on both surfaces go through `db/operations` cascade helpers (web) / the injected `AppDatabase` (iOS) — never a raw mutation. The web `useBoardPlay` hook still does a few raw `db.boards.get()` *reads* (before/after snapshots for bingo/greenlog diffing); that read seam is deliberate, not drift. See `docs/ROADMAP.md` Track B2.)
 - **Wizard "From a board…" grid picker — RETIRED** (shipped in [#82](https://github.com/2014sheas/oybc/pull/82), Riso-reskinned in [#128](https://github.com/2014sheas/oybc/pull/128), removed in Plan A of the Board Sources member-rules train — see `docs/BOARD_SOURCES.md` §Member rules). Both platforms deleted the picker, the per-square grid, the `⎘ Add a copy of this task…` Copy modal/sheet, `useSourceBoards`/`SourceBoardsViewModel`, and `copyTask`/`copyCompound`. The "Add from a pool or board" Sources sheet is the only cross-board supply path.
 
 **Rules**:
@@ -492,7 +505,7 @@ oybc/
 
 ### Database Schema (Identical Across Platforms)
 
-**Tables**: `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
+**Tables** (iOS GRDB names; web Dexie uses the camelCase store names in `apps/web/src/db/database.ts`; canonical: the GRDB migrations registered in `apps/ios/OYBC/Database/AppDatabase.swift` (+ `AppDatabase+Migrations.swift`) and the Dexie schema): `users`, `boards`, `tasks`, `compound_children`, `board_tasks`, `task_events`, `recurring_board_templates`, `default_pools`, `pools`, `core_board_defaults`, `sync_queue`. `task_events` is the Windowed Completion occurrence log (`kind: completion | increment` + `occurredAt`) — see [§Windowed Completion](#windowed-completion-event-sourced-shipped). The legacy `task_steps` / `composite_tasks` / `composite_nodes` / `progress_counters` tables were **removed in Wave 2 (PRs #411–#414)** — see top-of-doc Task model section.
 
 **Key Design Elements**:
 
@@ -513,7 +526,7 @@ oybc/
 
 **Conflict Resolution** (MVP): Last-write-wins using version fields. Higher version wins; same version → newer timestamp wins.
 
-**Sync collections** (`SYNC_COLLECTIONS` in `@oybc/shared`, mirrored in both platforms' sync services, enforced by the C4 sync-contract fixture): `boards`, `tasks`, `boardTasks`, `compoundChildren`, `recurringBoardTemplates`, `defaultPools`, `taskEvents`. `taskEvents` (Windowed Completion) syncs by per-row LWW + soft-delete tombstones, **union by id** — exactly like `compoundChildren`, no new conflict machinery.
+**Sync collections** (`SYNC_COLLECTIONS` in `@oybc/shared`, mirrored in both platforms' sync services, enforced by the C4 sync-contract fixture): as of this writing `boards`, `tasks`, `boardTasks`, `compoundChildren`, `recurringBoardTemplates`, `defaultPools`, `taskEvents`, `pools`, `coreBoardDefaults`. The canonical list is the `SYNC_COLLECTIONS` constant in `packages/shared/src/constants/syncContract.ts`, which the `check-sync-contract-rules` CI guardrail holds equal to `firestore.rules` (see §Drift guardrails) — trust that over this sentence. `taskEvents` (Windowed Completion) syncs by per-row LWW + soft-delete tombstones, **union by id** — exactly like `compoundChildren`, no new conflict machinery.
 
 **Cross-Board Features**: Achievement squares and bingo lines always recomputed from source data.
 
@@ -601,7 +614,7 @@ await db.transaction("rw", [db.tasks, db.compoundChildren], async () => {
 - `docs/TASK_SYSTEM.md` — Comprehensive task system documentation (Normal / Counting / Compound; cross-board square mechanisms live on `BoardTask`, see ARCHITECTURE.md §Phase 6)
 - `docs/NOTIFICATIONS.md` — Phase 7 iOS local-notification design (reconcile model, triggers, 64-cap budgeting, prefs, App Store compliance, iOS-only parity exception). See also CLAUDE.md [§Notifications](#notifications-phase-7--ios-local-reminders).
 - `docs/RISO_UI_CHECKLIST.md` — iOS "Riso" design-system consistency checklist (use the kit / tokens not magic numbers / layout pitfalls). Run it when building or reviewing any Riso surface; the canonical components are in `Views/Riso/RisoControls.swift` and visually baselined by `RisoKitSnapshotTests`.
-- `docs/RISO_WEB.md` — **web** Riso pass: token layer (`src/styles/riso.css`), primitive kit (`components/riso/`), the dark contract, conventions for re-skinning a screen, and the phase roadmap. Companion to the iOS checklist; read it before touching any web Riso surface.
+- `docs/RISO_WEB.md` — **web** Riso pass: token layer (`packages/riso-tokens/riso.css`), primitive kit (`components/riso/`), the dark contract, conventions for re-skinning a screen, and the phase roadmap. Companion to the iOS checklist; read it before touching any web Riso surface.
 - `docs/BOARD_INTEGRITY.md` — the 2026-07-24 four-auditor board/placement-pipeline audit + the five-PR hardening program (issues #358–#362), **ALL FIVE SHIPPED**: the tombstone defect (PR-1 #358 — `BoardTask` gained `isDeleted`/`deletedAt` like every other synced collection), placement-integrity repair + determinism + sealed guards (PR-2 #359), the unified per-cell board resolver (PR-3 #360, closes the web-only achievement-render bug), sync + atomicity hardening (PR-4 #361 — pull-path local-wins re-enqueue, rules version-monotonicity, atomic Board-Edit Save), and the kernel-pins + minors sweep (PR-5 #362 — shared placement/shuffle test vectors, a TS/Swift shuffle rng-edge clamp, the isCenter-uniqueness write guard, plus a "residual accepted risks" closing section). Read before touching `BoardTask` deletion, the boardTasks-pull cascade, `placeBoard`/`fisherYatesShuffle`, or any per-cell "is this complete?" render logic.
 - `docs/BOARD_SOURCES.md` — **Board Sources rework (SHIPPED 2026-09, PRs #457–#463 — ROADMAP F11)**: the wizard assembles boards from *sources* (pulled pools AND pulled boards, each with a min/max range, per-board exclusions, and a done-filter) plus hand-added tasks; recurring boards store source references resolved live at every spawn. Supersedes the POOLS_RECURRING.md spawn-record mix model (`poolIds`/`removedTaskIds`) and the wizard's pull-card/chip-strip/save-as-pool surfaces. Read before touching the wizard Tasks step, `resolveMix`/spawn resolution, `recurringDraftMix`, or `RecurringBoardTemplate` fields. **§Member rules (design locked 2026-09-17, PR train A → B0–B3)** adds per-member rules for counting/compound members pulled from sources (`BoardSource.memberRules`, `RecurringBoardTemplate.manualTaskVary`, GRDB v31) realised as per-window **window-stamped derived counters** (`sharedCounterId != null && startDate != null`; deterministic `uuidv5` ids; event-derived `baseline` kept as a **non-authored cache** — no version bump, no enqueue; board/root deletion cascades). Plan A retires the "From a board…" grid picker and its vocabulary. Read it before touching wizard member rows, `planDerivedTasks`, `deleteCounterWithUnlink`/`deleteBoard`, or any read of a linked task's `currentCount`. B1 (types/codecs/v31/pure helpers, inert) shipped in #489; the resolution helpers live in `memberRules.ts` ↔ `BoardSourceMemberRules.swift` and are vector-pinned by `memberRuleVectors.json`. B2 (mint at active persist + recurring board creation, non-authored baseline refresh, deletion cascades, read audit; both platforms) shipped in #491 — counting members pulled from *board* sources are now per-window derived counters with an auto-scaled target; see the Plan B2 notes for the B3 hand-offs. B3 (rule-authoring UI: member rows with target stepper / vary dice / One square–Split up, Preview dry run, hub expired filter; both platforms) shipped in #492 — the member-rules train (A → B0–B3) is complete.
 
@@ -620,6 +633,8 @@ GitHub Actions workflows run on PRs to `dev` and on merge:
 | **Firestore rules** | `.github/workflows/firestore-rules.yml` | Push to `dev` touching `firestore.rules` / `firestore.indexes.json` (deploy only, no PR trigger) |
 | **Drift guardrails** | `.github/workflows/drift-guardrails.yml` | Every PR/push to `dev` (no path filter — cross-cutting; see below) |
 | **Monthly audit reminder** | `.github/workflows/audit-reminder.yml` | `schedule` (1st of month) + `workflow_dispatch`; files a `drift-audit` reminder issue |
+
+**Web e2e is advisory**: `web.yml` runs the Playwright step under `continue-on-error: true`, and 10 specs fail on `dev` today (ROADMAP E7) — a green Web check says nothing about e2e; read the uploaded artifact.
 
 **Dependabot** (`.github/dependabot.yml`): npm weekly (minor/patch grouped, majors separate), GitHub Actions monthly. SPM not supported — iOS deps bumped manually.
 
@@ -641,9 +656,11 @@ Output of the 2026-08 deep-dive audit: the findings that a machine can check are
 
 | Check | Script | Baseline | Catches |
 | --- | --- | --- | --- |
-| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (23 known-dead exports) | new unused web exports/types; any unused file/dependency (never baselined) |
-| God-file regrowth | `scripts/check-file-sizes.mjs` (in `drift-guardrails.yml`) | `scripts/audit/file-size-allowlist.json` (9 frozen offenders = ROADMAP B6 roster) | any source file >1000 lines; any allowlisted file growing past its frozen count |
+| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (its `unusedExports` entries are the known-dead exports) | new unused web exports/types; any unused file/dependency (never baselined — but see the caveat below) |
+| God-file regrowth | `scripts/check-file-sizes.mjs` (in `drift-guardrails.yml`) | `scripts/audit/file-size-allowlist.json` (its entries are the frozen offenders = ROADMAP B6 roster) | any source file >1000 lines; any allowlisted file growing past its frozen count |
 | Sync-contract ↔ rules | `scripts/check-sync-contract-rules.mjs` (in `drift-guardrails.yml`) | none (must be exactly equal) | `SYNC_COLLECTIONS`/`USER_SCOPED_SYNC_COLLECTIONS` (shared) diverging from `isKnownCollection()`/`requiresUserIdField()` (`firestore.rules`) |
+
+**Caveat — knip's unused-FILE detection is currently defeated.** `apps/web/src/db/operations/__tests__/dbBoundary.test.ts` loads every source file via `import.meta.glob('/src/**/*.{ts,tsx}', { query: '?raw', … })`; knip ignores the `query` option and treats that glob as a real import of every file, so no web file can ever look unused (e.g. `components/BoardListItem.tsx` has zero importers and the check stays green). A fix is tracked in the 2026-09-23 audit; until it lands, don't assume a dead file fails the check.
 
 Rule for all three: **shrink the baseline as you clean up (the scripts emit a note when an entry is stale); never grow it to dodge a fix.** Bumping a file-size cap or adding a knip-baseline entry is a deliberate, reviewed act.
 
@@ -657,14 +674,14 @@ Rule for all three: **shrink the baseline as you clean up (the scripts emit a no
 
 **Navigation**: bottom tab bar — Boards (default), Tasks, Create, Profile.
 
-**Routes (web)**: `/boards`, `/boards/:id`, `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/board-preferences`, `/profile/board-settings`, `/playground` (dev tool). (`/profile/recurring-templates` and `/profile/default-pools`(+`/:timeframe`) retired in the Task Pools + Recurring Boards Rework P7 — see [`docs/POOLS_RECURRING.md`](docs/POOLS_RECURRING.md) §Surfaces item 9 — merged into the one `/profile/board-settings` page; iOS twin is `Views/ProfileTab/BoardSettingsView.swift`, replacing the deleted `RecurringTemplatesView`/`DefaultPoolsListView`.)
+**Routes (web)** (canonical: `apps/web/src/App.tsx`): `/home`, `/boards`, `/boards/:id`, `/boards/core/:timeframe/:date` (`/boards/core/:timeframe` redirects to today's window), `/tasks`, `/tasks/:id`, `/create`, `/profile`, `/profile/streaks`, `/profile/board-settings`, `/profile/account-security`, `/profile/counters`, `/profile/counters/:counterId`, `/playground` (dev builds only). `/` and unknown paths redirect to `/home`. (`/profile/recurring-templates` and `/profile/default-pools`(+`/:timeframe`) retired in the Task Pools + Recurring Boards Rework P7 — see [`docs/POOLS_RECURRING.md`](docs/POOLS_RECURRING.md) §Surfaces item 9 — merged into the one `/profile/board-settings` page; iOS twin is `Views/ProfileTab/BoardSettingsView.swift`, replacing the deleted `RecurringTemplatesView`/`DefaultPoolsListView`.)
 
 ### Known follow-ups
 
 - **Streaks — SHIPPED** (PR #152 algorithm + celebration/poster; persistent surfaces PR #154). Per-timeframe **bingo + greenlog** streaks on core boards, computed live (no persisted log) by the pure `computeStreak`/`computeAllStreaks` (`packages/shared/src/algorithms/streaks.ts` ↔ `apps/ios/OYBC/Services/Streaks.swift`). Surfaced in the GREENLOG overlay + share poster (real value, hidden for non-core boards), the core-timeframe grid badge, the core-window pager bar, and the Profile "Your streaks" card. The old hardcoded "7d" is gone. Onboarding's streak/GREENLOG-history copy is now accurate. (`docs`/memory: `project_streaks`.) Remaining streak idea if desired later: a persistent "GREENLOG history" view.
-- **Web unit-test harness — SHIPPED** (Track E2, riding in on B2): Vitest + fake-indexeddb wired into `apps/web` (`apps/web/vitest.config.ts`); `pnpm -w test` runs it in CI via turbo, and `test:coverage` reports (does not gate) coverage — see §Testing Standards. At first ship: 8 test files / 49 tests (96 files / 927 tests by 2026-09-23), covering `db/operations` (shared-counter completion cascade, deletion, greenlog/bingo-gating orchestration). `packages/shared` still covers the cross-platform pure-logic surface separately. Broadening coverage (wizard persist, `useBoardWizard` reducer, more of `db/operations`) is Track E3 in `docs/ROADMAP.md`.
+- **Web unit-test harness — SHIPPED** (Track E2, riding in on B2): Vitest + fake-indexeddb wired into `apps/web` (`apps/web/vitest.config.ts`); `pnpm -w test` runs it in CI via turbo, and `test:coverage` reports (does not gate) coverage — see §Testing Standards. Test files live beside their subjects under `apps/web/src` (`find apps/web/src -name '*.test.ts*'` for the current set). `packages/shared` still covers the cross-platform pure-logic surface separately. Broadening coverage (wizard persist, `useBoardWizard` reducer, more of `db/operations`) is Track E3 in `docs/ROADMAP.md`.
 - **Pre-web-launch hardening — mostly resolved**: `/playground` gating **shipped** (Track A3, PR #232) — the route and the Profile "Developer" section are both conditional on `import.meta.env.DEV` (`apps/web/src/App.tsx`, `apps/web/src/pages/ProfilePage.tsx`), so a production build serves neither. The raw-error leak is **also fixed**: `SyncStatusIndicator` no longer renders `lastError.message` — it shows the iOS-mirrored minimal three-state row ("Up to date"/"Syncing…"/"Offline") plus a Track D1 "N changes couldn't sync — Retry" affordance when items exhaust their retry budget, never raw error text (`apps/web/src/components/SyncStatusIndicator.tsx`). Remaining pre-launch gates: CAPTCHA/rate-limiting (below) and the prod/dev Firebase project split (`docs/ROADMAP.md` Track A4).
-- **Pre-launch polish (deferred from the sync-row sweep):** ~29 ungated `print()` calls ship in Release (internal ids, DB path, every sync event — no PII/secrets) and should be DEBUG-gated. (Tracked as `docs/ROADMAP.md` Track E5.) *(The Edit-profile "Blip mood" picker — a dead control that persisted nothing — was removed in the obsolete-controls sweep; the Blip mascot itself was later retired entirely in favour of the `RisoMiniBoardArt` mini-board motif + `RisoInitialAvatar` initials avatar — see the Blip-retirement handoff PR.)*
+- **Pre-launch polish — Release logging (RESOLVED):** every iOS `print(` outside `Utils/DebugLog.swift` sits inside `#if DEBUG`, so Release builds ship no raw prints. (The 2026-09-23 audit first reported two "ungated" prints in `AppDatabase+Boards.swift` / `AppDatabase+RecurringTemplates.swift`; a line-level grep missed their enclosing `#if DEBUG` blocks — they were gated. The audit cleanup PR routes those three DEBUG-only prints through `dlog` for consistency, nothing more.) A grep for `^\s*print(` is NOT sufficient to prove a leak; check the enclosing conditional.
 - **Web notifications** (the Phase 7 web counterpart) — needs a PWA conversion (manifest + service worker) plus FCM/VAPID + a backend scheduler for background delivery. Separately scoped; the shared prefs already round-trip via sync (`notificationsEnabled` / `recurringWindowReminders` / `dailyPlayReminderEnabled` / `dailyPlayReminderTime`), web just doesn't act on them yet. Not yet a `docs/ROADMAP.md` track — pick up by directive.
 - **Tutorial board rework** ([#157](https://github.com/2014sheas/oybc/issues/157)): the Getting Started tutorial (Riso handoff §0a, PR #155) shipped as an MVP — a bespoke 3×3 screen backed by a UserDefaults `TutorialProgressStore`, with lesson sheets that deep-link into real flows and a mascot-free completion GREENLOG. It's "good enough for now" but should be reworked later for a richer, more interactive feel (e.g. tighter integration with a real first board rather than a stand-in screen, deeper polish/animation, revisited copy). **Tracked as GitHub issue #157** and as `docs/ROADMAP.md` Track F2 (folded in with the starter-board-gallery work). (memory: `project_design_handoff_3`.)
 - **Web Account & security — SHIPPED** (the §5c web counterpart): `firebase/accountSecurity.ts` + `pages/AccountSecurityPage.tsx` (routed `/profile/account-security`) mirror the iOS change-email/password + provider link/unlink + delete flows with the Firebase JS SDK, over the shared `onUserDeleted`/`deleteUserData` Cloud Functions. Guest mode's upgrade flow reuses this link layer. (This closes the earlier iOS-only gap; see [§Intentional platform divergences] correction above.)
