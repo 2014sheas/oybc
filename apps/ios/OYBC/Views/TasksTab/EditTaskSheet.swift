@@ -5,8 +5,12 @@ import SwiftUI
 /// `TaskDetailSheetView` (sheet-over-board) can present it without
 /// duplication.
 ///
+/// A task's own window (`timeframe` / `startDate` / `endDate`) is NOT
+/// editable here: it is set only at creation and by member-rules stamping
+/// (where it is a window-stamped derived row's completion window), so no
+/// `Patch` field carries it.
+///
 /// M1 additions:
-///   - Timeboxed fields: timeframe / startDate / endDate (all task types).
 ///   - Achievement re-target: mode toggle (specific board vs recurring
 ///     template) + picker. Cycle detection runs in the caller's save handler
 ///     before the DB write.
@@ -21,7 +25,7 @@ import SwiftUI
 /// Each section is a `.risoCard(fill: .risoPaper2)` block with a
 /// `.risoSectionLabel()` heading. Text fields use the kit's
 /// `RisoTextField` / `RisoNumberField`; pickers use `RisoSegmented`
-/// (2-option rows) or a Riso-styled `Menu` (6-option timeframe row).
+/// (2-option rows) or a Riso-styled `Menu`.
 struct EditTaskSheet: View {
     let task: Task
     let onSubmit: (Patch) -> Void
@@ -45,12 +49,6 @@ struct EditTaskSheet: View {
         var action: String
         var unit: String
         var maxCountStr: String
-        // Timeboxed (all types) — nil means "no change"; clearTimeboxed=true
-        // signals the user explicitly cleared the window.
-        var timeframe: Timeframe?
-        var startDate: String?
-        var endDate: String?
-        var clearTimeboxed: Bool
         // Achievement
         var trigger: AchievementTrigger
         var requiredCountStr: String
@@ -75,10 +73,6 @@ struct EditTaskSheet: View {
     @State private var action: String
     @State private var unit: String
     @State private var maxCountStr: String
-    // Timeboxed
-    @State private var timeframe: Timeframe?
-    @State private var startDate: Date?
-    @State private var endDate: Date?
     // Achievement
     @State private var trigger: AchievementTrigger
     @State private var requiredCountStr: String
@@ -120,18 +114,6 @@ struct EditTaskSheet: View {
         _action = State(initialValue: task.action ?? "")
         _unit = State(initialValue: task.unit ?? "")
         _maxCountStr = State(initialValue: task.maxCount.map { String($0) } ?? "")
-        // Timeboxed
-        _timeframe = State(initialValue: task.timeframe)
-        _startDate = State(initialValue: task.startDate.flatMap { iso in
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return fmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        })
-        _endDate = State(initialValue: task.endDate.flatMap { iso in
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return fmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        })
         // Achievement
         _trigger = State(initialValue: task.achievementTrigger ?? .greenlog)
         _requiredCountStr = State(initialValue: task.requiredCount.map { String($0) } ?? "")
@@ -173,9 +155,6 @@ struct EditTaskSheet: View {
                     if task.type == .compound {
                         compoundSection
                     }
-
-                    // ── Time window ─────────────────────────────────────────
-                    timeWindowSection
                 }
                 .padding(16)
             }
@@ -414,104 +393,6 @@ struct EditTaskSheet: View {
         }
     }
 
-    /// Time window card — shown for all task types.
-    private var timeWindowSection: some View {
-        risoSection(label: "Time window (optional)") {
-            VStack(alignment: .leading, spacing: 11) {
-                // Timeframe — 6 options; use a Riso-styled Menu row so all
-                // options fit cleanly at 393pt without a cramped segmented bar.
-                fieldRow(label: "Timeframe") {
-                    risoTimeframeMenu
-                }
-
-                if timeframe != nil {
-                    // Start date
-                    HStack {
-                        Text("Start date")
-                            .font(.risoBody(14, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                        Spacer()
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { startDate ?? Date() },
-                                set: { startDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                        .tint(Color.risoBlue)
-                    }
-                    // End date
-                    HStack {
-                        Text("End date")
-                            .font(.risoBody(14, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                        Spacer()
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { endDate ?? Date() },
-                                set: { endDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                        .tint(Color.risoBlue)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Timeframe Menu
-
-    /// Riso-styled Menu row for the 6-option timeframe picker. Ink keyline,
-    /// chevron trailing, selected label shown inline.
-    private var risoTimeframeMenu: some View {
-        Menu {
-            Button("None") { timeframe = nil }
-            Divider()
-            Button("Daily")   { timeframe = .daily }
-            Button("Weekly")  { timeframe = .weekly }
-            Button("Monthly") { timeframe = .monthly }
-            Button("Yearly")  { timeframe = .yearly }
-            Button("Custom")  { timeframe = .custom }
-        } label: {
-            HStack {
-                Text(timeframeLabel)
-                    .font(.risoHead(14, .bold))
-                    .foregroundStyle(Color.risoInk)
-                    .lineLimit(1)
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.risoMuted)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 10)
-            .background(Color.risoPaper)
-            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-            )
-        }
-    }
-
-    /// Human-readable label for the currently selected timeframe.
-    private var timeframeLabel: String {
-        switch timeframe {
-        case .none:    return "None"
-        case .daily:   return "Daily"
-        case .weekly:  return "Weekly"
-        case .monthly: return "Monthly"
-        case .yearly:  return "Yearly"
-        case .custom:  return "Custom"
-        case .indefinite: return "Ongoing"
-        }
-    }
-
     // MARK: - Shared Riso layout helpers
 
     /// A card section: `.risoSectionLabel()` heading above a `.risoCard` body.
@@ -595,25 +476,6 @@ struct EditTaskSheet: View {
     // MARK: - Submit
 
     private func submit() {
-        let hadTimeboxed = task.timeframe != nil
-        let nowHasTimeboxed = timeframe != nil
-        let clearTimeboxed = hadTimeboxed && !nowHasTimeboxed
-
-        // Snap to local start-of-day / end-of-day and serialize via
-        // `wizardLocalISOString` so the calendar window matches the
-        // wizard's storage convention (no timezone suffix, full-day
-        // coverage). Earlier `ISO8601DateFormatter` path stored UTC
-        // strings with `Z` suffix, which shifted the day in non-UTC
-        // zones and didn't sit on day boundaries.
-        let cal = Calendar.current
-        func snapStart(_ d: Date) -> String {
-            wizardLocalISOString(cal.startOfDay(for: d))
-        }
-        func snapEnd(_ d: Date) -> String {
-            let startNext = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: d))!
-            return wizardLocalISOString(startNext.addingTimeInterval(-0.001))
-        }
-
         onSubmit(
             Patch(
                 title: title,
@@ -621,10 +483,6 @@ struct EditTaskSheet: View {
                 action: action,
                 unit: unit,
                 maxCountStr: maxCountStr,
-                timeframe: timeframe,
-                startDate: startDate.map { snapStart($0) },
-                endDate: endDate.map { snapEnd($0) },
-                clearTimeboxed: clearTimeboxed,
                 trigger: trigger,
                 requiredCountStr: requiredCountStr,
                 refMode: refMode,
@@ -672,8 +530,8 @@ extension EditTaskSheet {
     /// The compound structure to submit, or nil to save through the basic
     /// route. Only an edited structure is submitted, so a compound whose
     /// STORED structure already fails validation (one sub-task left, a stale
-    /// threshold, zero sub-tasks) can still be renamed / re-described /
-    /// re-timeboxed exactly as before.
+    /// threshold, zero sub-tasks) can still be renamed / re-described
+    /// exactly as before.
     ///
     /// - Parameters:
     ///   - baseline: The structure seeded on open (nil until loaded).

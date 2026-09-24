@@ -315,7 +315,7 @@ describe('editCompoundStructure — standalone Task Detail save', () => {
     expect((await db.boards.get(X_ID))?.completedTasks).toBe(1);
   });
 
-  it('basic fields ride along: description and time window are applied in the same version bump', async () => {
+  it('description rides along in the same version bump; a stored window is left untouched', async () => {
     await db.tasks.update(P_ID, {
       timeframe: Timeframe.WEEKLY,
       startDate: '2026-07-06T00:00:00.000',
@@ -324,14 +324,16 @@ describe('editCompoundStructure — standalone Task Detail save', () => {
     await editCompoundStructure(
       P_ID,
       structureFor({ title: 'P2', operator: OperatorType.AND }, keepAB()),
-      { description: '  desc  ', timeframe: null, startDate: null, endDate: null },
+      { description: '  desc  ' },
     );
     const p = await db.tasks.get(P_ID);
     expect(p?.title).toBe('P2');
     expect(p?.description).toBe('desc');
-    expect(p?.timeframe).toBeUndefined();
-    expect(p?.startDate).toBeUndefined();
-    expect(p?.endDate).toBeUndefined();
+    // No edit path writes a task's own window (it may be a derived row's
+    // stamped completion window) — the stored one survives the save.
+    expect(p?.timeframe).toBe(Timeframe.WEEKLY);
+    expect(p?.startDate).toBe('2026-07-06T00:00:00.000');
+    expect(p?.endDate).toBe('2026-07-12T23:59:59.999');
     expect(p?.version).toBe(P.version + 1);
     const parentRows = (await db.syncQueue.toArray()).filter(
       (r) => r.entityId === P_ID && r.entityType === 'tasks',

@@ -318,6 +318,11 @@ export async function createCompound(
  *
  * `null` clears the field; `undefined` leaves it unchanged;
  * a value replaces it.
+ *
+ * `timeframe` / `startDate` / `endDate` are omitted outright: a task's own
+ * window is set only at creation (wizard) and by member-rules stamping,
+ * where it IS a window-stamped derived row's completion window. No edit
+ * path may write it (it would un-stamp or move the derived row's window).
  */
 export type UpdateTaskPatch = Omit<
   Partial<Task>,
@@ -333,9 +338,6 @@ export type UpdateTaskPatch = Omit<
   referencedTemplateId?: string | null;
   achievementTrigger?: AchievementTrigger | null;
   requiredCount?: number | null;
-  timeframe?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
 };
 /**
  * Update a task.
@@ -437,9 +439,6 @@ export async function updateTask(
   if (updates.referencedTemplateId === null) patch.referencedTemplateId = undefined;
   if (updates.achievementTrigger === null) patch.achievementTrigger = undefined;
   if (updates.requiredCount === null) patch.requiredCount = undefined;
-  if (updates.timeframe === null) patch.timeframe = undefined;
-  if (updates.startDate === null) patch.startDate = undefined;
-  if (updates.endDate === null) patch.endDate = undefined;
 
   await db.transaction('rw', [db.tasks, db.syncQueue], async () => {
     await db.tasks.update(id, patch);

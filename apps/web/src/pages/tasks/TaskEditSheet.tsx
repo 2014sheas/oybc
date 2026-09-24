@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   AchievementTrigger,
   TaskType,
-  Timeframe,
   computeBrowsableTasks,
-  toLocalISO,
   type BoardStatus,
   type CompoundChild,
   type Task,
@@ -50,8 +48,11 @@ export interface TaskEditSheetProps {
 /**
  * TaskEditSheet — modal sheet for editing a task's editable fields.
  *
+ * A task's own window (`timeframe` / `startDate` / `endDate`) is NOT
+ * editable here: it is set only at creation and by member-rules stamping
+ * (where it is a window-stamped derived row's completion window).
+ *
  * M1 additions:
- *   - Timeboxed fields: timeframe / startDate / endDate (all task types).
  *   - Achievement re-target: mode toggle (specific board vs recurring template)
  *     + picker. Cycle detection runs before submit.
  *
@@ -83,15 +84,6 @@ export function TaskEditSheet({
   const [unit, setUnit] = useState(task.unit ?? '');
   const [maxCountStr, setMaxCountStr] = useState(
     task.maxCount !== undefined ? String(task.maxCount) : '',
-  );
-
-  // Timeboxed fields (all types)
-  const [timeframe, setTimeframe] = useState<Timeframe | ''>(task.timeframe ?? '');
-  const [startDate, setStartDate] = useState(
-    task.startDate ? task.startDate.slice(0, 10) : '',
-  );
-  const [endDate, setEndDate] = useState(
-    task.endDate ? task.endDate.slice(0, 10) : '',
   );
 
   // Achievement fields
@@ -230,41 +222,6 @@ export function TaskEditSheet({
       if (result !== 'empty') {
         patch.maxCount = result;
       }
-    }
-
-    // Timeboxed fields — all task types.
-    // Dates come from <input type="date"> as YYYY-MM-DD strings. Snap
-    // start to local 00:00:00.000 and end to local 23:59:59.999 so the
-    // calendar window covers the whole day, and serialize via
-    // `toLocalISO` (no timezone suffix) to match the convention used by
-    // the wizard and by `calendarBoundaries`. The earlier
-    // `new Date(s + 'T12:00:00').toISOString()` path produced a UTC
-    // mid-day string that could shift the date in non-UTC zones and
-    // didn't sit at day boundaries.
-    function snapStart(ymd: string): string {
-      const [y, m, d] = ymd.split('-').map(Number);
-      return toLocalISO(new Date(y, m - 1, d, 0, 0, 0, 0));
-    }
-    function snapEnd(ymd: string): string {
-      const [y, m, d] = ymd.split('-').map(Number);
-      return toLocalISO(new Date(y, m - 1, d, 23, 59, 59, 999));
-    }
-    if (timeframe) {
-      patch.timeframe = timeframe as Timeframe;
-      // Validate ordering — matches the wizard's "End date must be on or
-      // after the start date" check so live edits can't produce inverted
-      // windows.
-      if (startDate && endDate && endDate < startDate) {
-        setValidationError('End date must be on or after the start date.');
-        return;
-      }
-      patch.startDate = startDate ? snapStart(startDate) : null;
-      patch.endDate = endDate ? snapEnd(endDate) : null;
-    } else if (task.timeframe !== undefined) {
-      // Cleared by the user — send null sentinels to wipe the fields.
-      patch.timeframe = null;
-      patch.startDate = null;
-      patch.endDate = null;
     }
 
     if (task.type === TaskType.ACHIEVEMENT) {
@@ -504,48 +461,6 @@ export function TaskEditSheet({
             )}
           </fieldset>
         )}
-
-        {/* Timeboxed fields — shown for all task types */}
-        <fieldset className={styles.fieldset}>
-          <legend className={styles.fieldsetLegend}>Time window (optional)</legend>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Timeframe</span>
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value as Timeframe | '')}
-              className={styles.fieldInput}
-            >
-              <option value="">— none —</option>
-              <option value={Timeframe.DAILY}>Daily</option>
-              <option value={Timeframe.WEEKLY}>Weekly</option>
-              <option value={Timeframe.MONTHLY}>Monthly</option>
-              <option value={Timeframe.YEARLY}>Yearly</option>
-              <option value={Timeframe.CUSTOM}>Custom</option>
-            </select>
-          </label>
-          {timeframe && (
-            <>
-              <label className={styles.field}>
-                <span className={styles.fieldLabel}>Start date</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className={styles.fieldInput}
-                />
-              </label>
-              <label className={styles.field}>
-                <span className={styles.fieldLabel}>End date</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className={styles.fieldInput}
-                />
-              </label>
-            </>
-          )}
-        </fieldset>
 
         {validationError !== null && (
           <p className={styles.error} role="alert">

@@ -301,10 +301,8 @@ export const UpdateTaskInputSchema = z.object({
   referencedTemplateId: z.string().uuid().nullable().optional(),
   achievementTrigger: z.nativeEnum(AchievementTrigger).nullable().optional(),
   requiredCount: z.number().int().positive().nullable().optional(),
-  // Phase 6.Y — Timeboxed Tasks update.
-  timeframe: z.nativeEnum(Timeframe).nullable().optional(),
-  startDate: z.string().nullable().optional(),
-  endDate: z.string().nullable().optional(),
+  // `timeframe` / `startDate` / `endDate` are not updatable (see
+  // `UpdateTaskInput`) — z.object strips them if a caller sends them.
   // Phase 2 — Shared Counters. `null` clears; `undefined` leaves unchanged.
   // UUID constraint matches CreateTaskInputSchema and other nullable ID fields
   // (e.g. referencedBoardId/referencedTemplateId) — rejects empty strings.

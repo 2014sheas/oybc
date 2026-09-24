@@ -301,14 +301,10 @@ export interface UpdateTaskInput {
    *  in recurring-template mode. */
   requiredCount?: number | null;
 
-  /** Phase 6.Y — Timeboxed Tasks. `null` clears the field (sets task
-   *  to indefinite); `undefined` leaves unchanged. All three fields
-   *  travel together by convention (the New Task / edit form sends
-   *  them as a set), but Zod does not enforce the invariant — callers
-   *  are responsible for keeping them consistent. */
-  timeframe?: Timeframe | null;
-  startDate?: string | null;
-  endDate?: string | null;
+  // `timeframe` / `startDate` / `endDate` are deliberately NOT updatable.
+  // A task's own window is set only at creation (wizard board window) and
+  // by member-rules stamping of window-stamped derived rows, whose
+  // completion window it IS — an edit path must never un-stamp or move it.
 
   /**
    * Phase 2 — Shared Counters. `null` clears the shared-counter link

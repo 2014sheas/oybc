@@ -178,8 +178,8 @@ export interface UseCreateFormStateArgs {
   /** Phase 6.Y — Timeboxed Tasks. When provided (typically from the
    *  board wizard), every task created through this form auto-inherits
    *  this triple. Standalone Tasks-tab quick-add passes nothing and
-   *  resulting tasks are indefinite. Editing the timeframe post-create
-   *  happens via TaskDetailContent. Kept on UseCreateFormStateArgs (vs.
+   *  resulting tasks are indefinite. The window is NOT editable
+   *  post-create (no edit path writes it — see `UpdateTaskPatch`). Kept on UseCreateFormStateArgs (vs.
    *  per-call) so the wizard sets it once at mount; users who never
    *  open the wizard see indefinite tasks. */
   defaultTimeframe?: import('@oybc/shared').Timeframe;

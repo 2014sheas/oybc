@@ -22,8 +22,8 @@ export function compoundStructureChanged(
  * The compound structure the sheet should submit, or `undefined` to save
  * through the basic route. Only an edited structure is submitted, so a
  * compound whose STORED structure already fails validation (one sub-task
- * left, a stale threshold, zero sub-tasks) can still be renamed,
- * re-described or re-timeboxed exactly as before.
+ * left, a stale threshold, zero sub-tasks) can still be renamed or
+ * re-described exactly as before.
  *
  * @param baseline - The structure seeded on open (`null` until loaded).
  * @param draft - The current edited structure (`null` until loaded).

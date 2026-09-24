@@ -119,7 +119,6 @@ extension AppDatabase {
                 }
                 // title, operatorType, clamped threshold (nil unless M-of-N)
                 task = structure.applied(to: task)
-                Self.applyTimebox(of: patch, to: &task)
                 task.updatedAt = now
                 task.version += 1
                 try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: structure, now: now)
@@ -149,7 +148,6 @@ extension AppDatabase {
                 task.requiredCount = retarget.requiredCount
             }
 
-            Self.applyTimebox(of: patch, to: &task)
             task.updatedAt = now
             task.version += 1
             try Self.saveTaskAndCascade(db: db, task: task)
@@ -238,19 +236,6 @@ extension AppDatabase {
             if !patch.action.isEmpty { task.action = patch.action }
             if !patch.unit.isEmpty { task.unit = patch.unit }
             if let max = Int(patch.maxCountStr), max > 0 { task.maxCount = max }
-        }
-    }
-
-    /// Timeboxed window: set when a timeframe is given, cleared on request.
-    private static func applyTimebox(of patch: EditTaskSheet.Patch, to task: inout Task) {
-        if let timeframe = patch.timeframe {
-            task.timeframe = timeframe
-            task.startDate = patch.startDate
-            task.endDate = patch.endDate
-        } else if patch.clearTimeboxed {
-            task.timeframe = nil
-            task.startDate = nil
-            task.endDate = nil
         }
     }
 

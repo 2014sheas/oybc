@@ -112,7 +112,6 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         EditTaskSheet.Patch(
             title: title, description: description,
             action: "", unit: "", maxCountStr: "",
-            timeframe: nil, startDate: nil, endDate: nil, clearTimeboxed: false,
             trigger: trigger, requiredCountStr: requiredCountStr,
             refMode: refMode, selectedBoardId: selectedBoardId, selectedTemplateId: selectedTemplateId
         )
@@ -144,6 +143,25 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         XCTAssertEqual(stored.title, "Renamed")
         XCTAssertEqual(stored.version, 2)
         XCTAssertEqual(try taskUpdateRows(db, "n1").count, 1)
+    }
+
+    /// No edit path writes a task's own window: it may be a window-stamped
+    /// derived row's completion window, so a basic edit must leave it as stored.
+    func test_apply_basicEdit_leavesStoredWindowUntouched() throws {
+        let db = try makeDb()
+        var task = makeTask("w1")
+        task.timeframe = .weekly
+        task.startDate = "2026-07-06T00:00:00.000"
+        task.endDate = "2026-07-12T23:59:59.999"
+        try db.write { try task.insert($0) }
+
+        let saved = try db.applyTaskEditPatch(taskId: "w1", patch: patch(title: "Renamed"), now: now)
+
+        XCTAssertEqual(saved.title, "Renamed")
+        let stored = try XCTUnwrap(try db.fetchTask(id: "w1"))
+        XCTAssertEqual(stored.timeframe, .weekly)
+        XCTAssertEqual(stored.startDate, "2026-07-06T00:00:00.000")
+        XCTAssertEqual(stored.endDate, "2026-07-12T23:59:59.999")
     }
 
     func test_apply_nonCyclingRetarget_savesNewReference() throws {
@@ -341,7 +359,6 @@ final class AppDatabaseTaskEditTests: XCTestCase {
     ) -> EditTaskSheet.Patch {
         EditTaskSheet.Patch(
             title: title, description: description, action: "", unit: "", maxCountStr: "",
-            timeframe: nil, startDate: nil, endDate: nil, clearTimeboxed: false,
             trigger: .bingo, requiredCountStr: "", refMode: .board,
             selectedBoardId: "", selectedTemplateId: "", compound: compound
         )

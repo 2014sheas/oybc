@@ -211,17 +211,14 @@ export async function compoundLinkProblemForPatch(
 
 /**
  * Basic (non-structural) fields that ride along with a standalone compound
- * save, so the Task Detail sheet's description/time-window edits land in the
- * SAME version bump as the structure change (the title rides in
- * `structure.title`, not here). `null` clears a field
- * (mapped to `undefined`, exactly as `updateTask` maps its `null` sentinels);
- * `undefined` leaves the stored value untouched.
+ * save, so the Task Detail sheet's description edit lands in the SAME version
+ * bump as the structure change (the title rides in `structure.title`, not
+ * here). `undefined` leaves the stored value untouched. A task's own window
+ * (`timeframe` / `startDate` / `endDate`) is deliberately absent — no edit
+ * path writes it (see `UpdateTaskPatch`).
  */
 export type CompoundEditBasic = {
   description?: string;
-  timeframe?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
 };
 
 /**
@@ -274,13 +271,6 @@ export async function applyCompoundStructureEditInTransaction(
   const saved: Task = {
     ...updated,
     ...(basic.description !== undefined ? { description: basic.description.trim() || undefined } : {}),
-    // `null` → `undefined`: the same sentinel mapping `updateTask` applies
-    // (and the same `string` → `Timeframe` cast its `as Partial<Task>` makes).
-    ...(basic.timeframe !== undefined
-      ? { timeframe: (basic.timeframe ?? undefined) as Task['timeframe'] }
-      : {}),
-    ...(basic.startDate !== undefined ? { startDate: basic.startDate ?? undefined } : {}),
-    ...(basic.endDate !== undefined ? { endDate: basic.endDate ?? undefined } : {}),
     version: (task.version ?? 1) + 1,
     updatedAt: now,
   };
@@ -367,14 +357,13 @@ export type TaskEditSubmit = UpdateTaskPatch & { compound?: TaskEditPatch };
 export async function saveTaskEdit(taskId: string, submit: TaskEditSubmit): Promise<void> {
   const { compound, ...basicPatch } = submit;
   if (compound) {
-    const { timeframe, startDate, endDate } = basicPatch;
     // The sheet sends `description: undefined` to CLEAR a description (Dexie
     // deletes a key whose update value is `undefined`, which is how
     // `updateTask` clears it). `CompoundEditBasic` reads `undefined` as
     // "untouched", so a present-but-undefined key becomes '' (→ cleared) to
     // keep both routes agreeing; an absent key stays untouched.
     const description = 'description' in basicPatch ? (basicPatch.description ?? '') : undefined;
-    await editCompoundStructure(taskId, compound, { description, timeframe, startDate, endDate });
+    await editCompoundStructure(taskId, compound, { description });
     return;
   }
   await updateTaskAndCascade(taskId, basicPatch);
