@@ -912,5 +912,75 @@ final class SyncPullApplyTests: XCTestCase {
         XCTAssertEqual(converged.sealedCompletedCells, [0])
         XCTAssertEqual(converged.completedTasks, 1)
     }
-}
 
+    /// Twin of web `derivedCounterSealedPull.test.ts` › INDEFINITE row. The
+    /// row has `endDate: nil` (window `[startDate, ∞)`), so `sealedAt` is the
+    /// ONLY bound between a post-seal root increment and the sealed snapshot
+    /// — the test above is satisfied by the row's `endDate` alone.
+    func test_sealedBoardPull_indefiniteWindowStampedDerived_sealBoundKeepsSnapshotByteStable() throws {
+        let db = try makeDb(); try seedUser(db)
+        let ws = "2026-09-14T00:00:00.000Z", we = "2026-09-20T23:59:59.999Z"
+        let sealedAt = "2026-09-22T19:00:00.000Z"
+        let bid = newId()
+        var root = makeTask("root-i", type: .counting, currentCount: 2)
+        root.maxCount = 80
+        let derived = Task(
+            id: "derived-i", userId: userId, title: "Read 3 pages", type: .counting,
+            action: "Read", unit: "pages", maxCount: 3,
+            totalCompletions: 0, totalInstances: 0,
+            isCompleted: false, currentCount: 2,
+            createdAt: ws, updatedAt: ws, version: 2, isDeleted: false,
+            timeframe: .weekly, startDate: ws, endDate: nil,
+            sharedCounterId: "root-i", baseline: 0, createdInWizard: true
+        )
+        var boardDoc: [String: Any] = [
+            "id": bid, "userId": userId, "name": "Last week", "status": "active",
+            "boardSize": 3, "timeframe": Timeframe.weekly.rawValue, "startDate": ws, "endDate": we,
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": ws, "updatedAt": ws, "version": 2, "isDeleted": false,
+        ]
+        let localBoard = try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: boardDoc))
+        try db.write { grdb in
+            try root.save(grdb)
+            try derived.save(grdb)
+            try localBoard.save(grdb)
+            try self.makeBoardTask(id: self.newId(), boardId: bid, taskId: "derived-i").save(grdb) // cell 0
+            let at = "2026-09-16T18:00:00.000Z" // pre-seal, in-window +2 (< 3)
+            try TaskEvent(
+                id: AppDatabase.generateUUID(), userId: self.userId, taskId: "root-i",
+                kind: .increment, delta: 2, occurredAt: at, boardId: nil,
+                createdAt: at, updatedAt: at, lastSyncedAt: nil,
+                version: 1, isDeleted: false, deletedAt: nil
+            ).save(grdb)
+        }
+        let sut = makeSut(db)
+
+        boardDoc["updatedAt"] = sealedAt; boardDoc["version"] = 3
+        boardDoc["sealedAt"] = sealedAt; boardDoc["sealedCompletedCells"] = "[]"
+        sut.applyRemoteSubdoc(collection: boardsCol, remoteData: boardDoc, authenticatedUserId: userId)
+        let afterBoardPull = try XCTUnwrap(try db.fetchBoard(id: bid))
+        XCTAssertEqual(afterBoardPull.sealedCompletedCells ?? [], [])
+        XCTAssertEqual(afterBoardPull.completedTasks, 0)
+        let boardRowsBefore = try syncRows(db).filter { $0.entityId == bid }.count
+
+        // +5 after sealedAt: inside the row's unbounded window, outside the
+        // seal. Unbounded, 2 + 5 = 7 >= 3 would turn cell 0 green.
+        let at = "2026-09-23T12:00:00.000Z"
+        let postSeal: [String: Any] = [
+            "id": AppDatabase.generateUUID(), "userId": userId, "taskId": "root-i",
+            "kind": "increment", "delta": 5, "occurredAt": at,
+            "createdAt": at, "updatedAt": at, "version": 1, "isDeleted": false,
+        ]
+        XCTAssertEqual(sut.applyTaskEventsBatch(userId: userId, rawDocs: [postSeal]).pulled, 1)
+        let afterPostSeal = try XCTUnwrap(try db.fetchBoard(id: bid))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        XCTAssertEqual(
+            String(decoding: try encoder.encode(afterPostSeal), as: UTF8.self),
+            String(decoding: try encoder.encode(afterBoardPull), as: UTF8.self),
+            "sealedAt must bound an indefinite row's root events"
+        )
+        XCTAssertEqual(try syncRows(db).filter { $0.entityId == bid }.count, boardRowsBefore)
+    }
+}

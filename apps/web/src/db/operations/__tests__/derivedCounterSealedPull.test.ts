@@ -171,3 +171,56 @@ describe('sealed board + window-stamped derived row through the pull path', () =
     expect(converged.completedTasks).toBe(1);
   });
 });
+
+describe('sealed board + INDEFINITE window-stamped derived row through the pull path', () => {
+  /**
+   * The row has `endDate: null` (window `[startDate, ∞)`), so its own window
+   * never excludes a later root event — `sealedAt` is the ONLY bound between
+   * the post-seal increment and the sealed snapshot. The test above is
+   * satisfied by the row's `endDate` alone; this one pins the seal bound.
+   */
+  it('a post-seal ROOT increment leaves the sealed snapshot byte-stable when sealedAt is the binding bound', async () => {
+    await db.tasks.add(task({ maxCount: 80, currentCount: 2 }));
+    await db.tasks.add(
+      task({
+        id: DERIVED,
+        title: 'Read 3 pages',
+        maxCount: 3,
+        sharedCounterId: ROOT,
+        baseline: 0,
+        currentCount: 2,
+        isCompleted: false,
+        startDate: WS,
+        endDate: null,
+        createdInWizard: true,
+        timeframe: Timeframe.WEEKLY,
+      }),
+    );
+    await db.boardTasks.add({
+      id: '30000000-0000-4000-8000-000000000004',
+      boardId: BOARD,
+      taskId: DERIVED,
+      row: 0,
+      col: 0,
+      isCenter: false,
+      createdAt: T,
+      updatedAt: T,
+      version: 1,
+      isDeleted: false,
+    });
+    // Pre-seal, in the row's window: +2 (< 3).
+    await db.taskEvents.add(inc(1, 2, '2026-09-16T18:00:00.000Z'));
+
+    expect(await applyRemoteSubdoc('boards', sealedBoardDoc(), USER)).toMatch(/^Pulled boards\//);
+    const afterBoardPull = (await db.boards.get(BOARD))!;
+    expect(afterBoardPull.sealedCompletedCells ?? []).toEqual([]);
+    expect(afterBoardPull.completedTasks).toBe(0);
+
+    // +5 after sealedAt: inside the row's unbounded window, outside the seal.
+    // Unbounded, 2 + 5 = 7 >= 3 would turn cell 0 green.
+    const postSeal = await applyTaskEventsBatch(USER, [inc(3, 5, '2026-09-23T12:00:00.000Z')]);
+    expect(postSeal.pulled).toBe(1);
+    expect(await db.boards.get(BOARD)).toEqual(afterBoardPull);
+    expect((await db.syncQueue.toArray()).filter((q) => q.entityType === 'boards')).toEqual([]);
+  });
+});
