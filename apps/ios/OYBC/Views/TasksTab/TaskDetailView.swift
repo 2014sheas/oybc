@@ -51,6 +51,7 @@ struct TaskDetailView: View {
                     parentCompounds: parentCompounds,
                     compoundChildren: compoundChildren,
                     templates: templates,
+                    database: database,
                     saveError: saveError,
                     allBoardsForPicker: allBoardsForPicker,
                     allTemplatesForPicker: allTemplatesForPicker,
@@ -80,7 +81,8 @@ struct TaskDetailView: View {
                 userId: userId,
                 onChanged: onChanged,
                 onDeleted: onChanged,
-                onOpenBoard: onOpenBoard
+                onOpenBoard: onOpenBoard,
+                database: database
             )
         }
         .alert("Delete task?", isPresented: $showDeleteConfirm, presenting: deleteImpact) { _ in
@@ -98,21 +100,24 @@ struct TaskDetailView: View {
     // MARK: - Reload
 
     private func reload() async {
+        let db = database
+        let taskId = taskId
+        let userId = userId
         do {
             let snapshot = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                let loaded = try AppDatabase.shared.fetchTask(id: taskId)
+                let loaded = try db.fetchTask(id: taskId)
                 var bts: [BoardTask] = []
                 var boards: [Board] = []
                 var parents: [Task] = []
                 var children: [Task] = []
                 var tpls: [RecurringBoardTemplate] = []
                 if let loaded = loaded, !loaded.isDeleted {
-                    bts = try AppDatabase.shared.fetchBoardTasksForTask(taskId: taskId)
+                    bts = try db.fetchBoardTasksForTask(taskId: taskId)
                     let boardIds = Array(Set(bts.map { $0.boardId }))
-                    boards = try AppDatabase.shared.fetchBoards(ids: boardIds)
-                    parents = try AppDatabase.shared.fetchCompoundParents(forTaskId: taskId)
-                    children = try AppDatabase.shared.fetchCompoundChildrenTasks(parentTaskId: taskId)
-                    tpls = try AppDatabase.shared.fetchTemplatesReferencingTask(taskId)
+                    boards = try db.fetchBoards(ids: boardIds)
+                    parents = try db.fetchCompoundParents(forTaskId: taskId)
+                    children = try db.fetchCompoundChildrenTasks(parentTaskId: taskId)
+                    tpls = try db.fetchTemplatesReferencingTask(taskId)
                 }
                 // Load picker data for Achievement re-target — only when
                 // the task is actually an achievement. Skipping for other
@@ -122,8 +127,8 @@ struct TaskDetailView: View {
                 var pickerBoards: [Board] = []
                 var pickerTemplates: [RecurringBoardTemplate] = []
                 if loaded?.type == .achievement {
-                    pickerBoards = try AppDatabase.shared.fetchBoards(userId: userId)
-                    pickerTemplates = try AppDatabase.shared.fetchRecurringBoardTemplates(userId: userId)
+                    pickerBoards = try db.fetchBoards(userId: userId)
+                    pickerTemplates = try db.fetchRecurringBoardTemplates(userId: userId)
                 }
                 return (loaded, bts, boards, parents, children, tpls, pickerBoards, pickerTemplates)
             }.value
@@ -171,8 +176,9 @@ struct TaskDetailView: View {
     private func prepareDelete() async {
         do {
             let id = taskId
+            let db = database
             let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
+                try db.computeTaskDeletionImpact(taskId: id)
             }.value
             await MainActor.run {
                 deleteImpact = impact
@@ -187,8 +193,9 @@ struct TaskDetailView: View {
     private func performDelete() async {
         do {
             let id = taskId
+            let db = database
             try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.deleteTaskWithCascade(taskId: id)
+                try db.deleteTaskWithCascade(taskId: id)
             }.value
             await MainActor.run { onDeleted() }
         } catch {

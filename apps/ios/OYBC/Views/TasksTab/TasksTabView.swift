@@ -38,10 +38,26 @@ struct TasksTabView: View {
     @Binding var path: NavigationPath
     let onOpenBoard: (String) -> Void
     /// Injected database (ROADMAP B3 seam); defaults to the app singleton.
-    var database: AppDatabase = .shared
+    /// The two view-models, the child detail view and every read/write here
+    /// go through it.
+    let database: AppDatabase
 
-    @State private var library = TaskLibraryViewModel()
-    @State private var vm = TasksTabViewModel()
+    @State private var library: TaskLibraryViewModel
+    @State private var vm: TasksTabViewModel
+
+    init(
+        userId: String,
+        path: Binding<NavigationPath>,
+        onOpenBoard: @escaping (String) -> Void,
+        database: AppDatabase = .shared
+    ) {
+        self.userId = userId
+        _path = path
+        self.onOpenBoard = onOpenBoard
+        self.database = database
+        _library = State(initialValue: TaskLibraryViewModel(database: database))
+        _vm = State(initialValue: TasksTabViewModel(database: database))
+    }
     @State private var showNewTaskSheet = false
     @State private var expandedCompoundIds: Set<String> = []
 
@@ -348,13 +364,14 @@ struct TasksTabView: View {
             }
             guard editingTask?.type == .achievement else { return }
             let uid = userId
+            let db = database
             _Concurrency.Task {
                 do {
                     let boards = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                        try AppDatabase.shared.fetchBoards(userId: uid)
+                        try db.fetchBoards(userId: uid)
                     }.value
                     let templates = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                        try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
+                        try db.fetchRecurringBoardTemplates(userId: uid)
                     }.value
                     await MainActor.run {
                         editPickerBoards = boards
@@ -417,7 +434,8 @@ struct TasksTabView: View {
                     vm.reloadAsync()
                     if !path.isEmpty { path.removeLast() }
                 },
-                onOpenBoard: onOpenBoard
+                onOpenBoard: onOpenBoard,
+                database: database
             )
         }
         .onAppear {
@@ -507,12 +525,13 @@ struct TasksTabView: View {
     private func prepareDelete(for task: Task) {
         quickActionError = nil
         let id = task.id
+        let db = database
         prepareDeleteToken += 1
         let token = prepareDeleteToken
         _Concurrency.Task {
             do {
                 let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
+                    try db.computeTaskDeletionImpact(taskId: id)
                 }.value
                 await MainActor.run {
                     guard token == prepareDeleteToken else { return }
@@ -528,9 +547,10 @@ struct TasksTabView: View {
     }
 
     private func performDelete(taskId: String) async {
+        let db = database
         do {
             try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.deleteTaskWithCascade(taskId: taskId)
+                try db.deleteTaskWithCascade(taskId: taskId)
             }.value
             await MainActor.run {
                 reloadAfterDeleteDismiss = true
@@ -557,13 +577,14 @@ struct TasksTabView: View {
     /// pool create/save/delete so the browse list + segment count refresh.
     private func loadPools() {
         let uid = userId
+        let db = database
         _Concurrency.Task {
             do {
                 let loadedPools = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.fetchPools(userId: uid)
+                    try db.fetchPools(userId: uid)
                 }.value
                 let loadedTemplates = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
+                    try db.fetchRecurringBoardTemplates(userId: uid)
                 }.value
                 await MainActor.run {
                     pools = loadedPools

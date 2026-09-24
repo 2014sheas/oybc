@@ -71,6 +71,7 @@ struct TaskDetailSheetView: View {
                         parentCompounds: parentCompounds,
                         compoundChildren: compoundChildren,
                         templates: templates,
+                        database: database,
                         saveError: saveError,
                         allBoardsForPicker: allBoardsForPicker,
                         allTemplatesForPicker: allTemplatesForPicker,
@@ -125,20 +126,21 @@ struct TaskDetailSheetView: View {
     private func reload() async {
         do {
             let id = currentTaskId
+            let db = database
             let snapshot = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                let loaded = try AppDatabase.shared.fetchTask(id: id)
+                let loaded = try db.fetchTask(id: id)
                 var bts: [BoardTask] = []
                 var boards: [Board] = []
                 var parents: [Task] = []
                 var children: [Task] = []
                 var tpls: [RecurringBoardTemplate] = []
                 if let loaded = loaded, !loaded.isDeleted {
-                    bts = try AppDatabase.shared.fetchBoardTasksForTask(taskId: id)
+                    bts = try db.fetchBoardTasksForTask(taskId: id)
                     let boardIds = Array(Set(bts.map { $0.boardId }))
-                    boards = try AppDatabase.shared.fetchBoards(ids: boardIds)
-                    parents = try AppDatabase.shared.fetchCompoundParents(forTaskId: id)
-                    children = try AppDatabase.shared.fetchCompoundChildrenTasks(parentTaskId: id)
-                    tpls = try AppDatabase.shared.fetchTemplatesReferencingTask(id)
+                    boards = try db.fetchBoards(ids: boardIds)
+                    parents = try db.fetchCompoundParents(forTaskId: id)
+                    children = try db.fetchCompoundChildrenTasks(parentTaskId: id)
+                    tpls = try db.fetchTemplatesReferencingTask(id)
                 }
                 // Load picker data for Achievement re-target — only when
                 // the loaded task is actually an achievement. Skipping for
@@ -148,8 +150,8 @@ struct TaskDetailSheetView: View {
                 var pickerBoards: [Board] = []
                 var pickerTemplates: [RecurringBoardTemplate] = []
                 if let loaded = loaded, loaded.type == .achievement {
-                    pickerBoards = try AppDatabase.shared.fetchBoards(userId: loaded.userId)
-                    pickerTemplates = try AppDatabase.shared.fetchRecurringBoardTemplates(userId: loaded.userId)
+                    pickerBoards = try db.fetchBoards(userId: loaded.userId)
+                    pickerTemplates = try db.fetchRecurringBoardTemplates(userId: loaded.userId)
                 }
                 return (loaded, bts, boards, parents, children, tpls, pickerBoards, pickerTemplates)
             }.value
@@ -196,8 +198,9 @@ struct TaskDetailSheetView: View {
     private func prepareDelete() async {
         do {
             let id = currentTaskId
+            let db = database
             let impact = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.computeTaskDeletionImpact(taskId: id)
+                try db.computeTaskDeletionImpact(taskId: id)
             }.value
             await MainActor.run {
                 deleteImpact = impact
@@ -212,8 +215,9 @@ struct TaskDetailSheetView: View {
     private func performDelete() async {
         do {
             let id = currentTaskId
+            let db = database
             try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try AppDatabase.shared.deleteTaskWithCascade(taskId: id)
+                try db.deleteTaskWithCascade(taskId: id)
             }.value
             // After delete, close the sheet.
             await MainActor.run { onClose() }
