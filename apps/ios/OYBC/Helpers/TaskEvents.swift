@@ -148,7 +148,7 @@ func resolveTaskWindowState(
 /// increment events inside that window — never the one-way propagation latch,
 /// which a LATER window's increments can set (audit 2026-09-23 finding #1).
 ///
-/// Window membership uses `DateFormatting.isWithinTimeframe` — the same
+/// Window membership follows `DateFormatting.isWithinTimeframe` — the same
 /// `[startDate, endDate]` convention (inclusive both ends, parsed compare,
 /// `nil` `endDate` = unbounded) the kernel uses for board windows. Signed
 /// deltas are summed as-is, then low-clamped at 0; completion is
@@ -163,16 +163,53 @@ func resolveTaskWindowState(
 ///     are ignored internally.
 /// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
 func resolveWindowStampedDerivedState(task: Task, rootEvents: [TaskEvent]) -> TaskWindowState {
-    var sum = 0
-    if let startDate = task.startDate, !startDate.isEmpty {
+    windowStampedDerivedState(task: task, rootEvents: rootEvents, sealedBound: nil)
+}
+
+/// Shared body of `resolveWindowStampedDerivedState` and the sealed display
+/// path. The window bounds (and `sealedBound`) are parsed ONCE per call and
+/// each event's `occurredAt` once, then compared as `Date`s — a wizard row's
+/// local-ISO bounds cost a `DateFormatter` allocation per `parseISO`, so
+/// re-parsing them per event (via `isWithinTimeframe`) was thousands of
+/// allocations per body pass on the main thread.
+///
+/// Edge semantics are exactly `DateFormatting.isWithinTimeframe`'s: an
+/// unparseable `startDate` → count 0; an `endDate` present but unparseable →
+/// count 0; `endDate == nil` → unbounded above; inclusive both ends; an
+/// unparseable `occurredAt` is out. `sealedBound` additionally drops events
+/// with `occurredAt > sealedBound` (the `boundWindowContextAtSeal` rule).
+///
+/// - Parameters:
+///   - task: The window-stamped derived counter.
+///   - rootEvents: The ROOT task's events.
+///   - sealedBound: The parsed `sealedAt` of the row's board, or `nil`.
+/// - Returns: `{ isCompleted, count }` with `count` the clamped in-window sum.
+private func windowStampedDerivedState(
+    task: Task,
+    rootEvents: [TaskEvent],
+    sealedBound: Date?
+) -> TaskWindowState {
+    /// Clamped-below in-window sum; 0 when the bounds don't parse.
+    func windowSum() -> Int {
+        guard let startDate = task.startDate, !startDate.isEmpty,
+              let lower = DateFormatting.parseISO(startDate) else { return 0 }
+        var upper: Date?
+        if let endDate = task.endDate {
+            // Present but unparseable → nothing is in-window.
+            guard let parsed = DateFormatting.parseISO(endDate) else { return 0 }
+            upper = parsed
+        }
+        var sum = 0
         for e in rootEvents where !e.isDeleted && e.kind == .increment {
-            guard DateFormatting.isWithinTimeframe(
-                e.occurredAt, startDate: startDate, endDate: task.endDate
-            ) else { continue }
+            guard let occurred = DateFormatting.parseISO(e.occurredAt),
+                  occurred >= lower else { continue }
+            if let upper, occurred > upper { continue }
+            if let sealedBound, occurred > sealedBound { continue }
             sum += e.delta ?? 0
         }
+        return sum
     }
-    let count = max(0, sum)
+    let count = max(0, windowSum())
     return TaskWindowState(isCompleted: count >= (task.maxCount ?? 0), count: count)
 }
 
@@ -229,14 +266,11 @@ func resolveLinkedCounterDisplay(
 ) -> DeriveDisplayedCountResult {
     if let eventsByTaskId, task.type == .counting, BoardSources.isWindowStampedDerived(task),
        let rootId = task.sharedCounterId {
-        var rootEvents = eventsByTaskId[rootId] ?? []
-        if let sealedAt, let sealedDate = DateFormatting.parseISO(sealedAt) {
-            rootEvents = rootEvents.filter {
-                guard let occurred = DateFormatting.parseISO($0.occurredAt) else { return false }
-                return occurred <= sealedDate
-            }
-        }
-        let state = resolveWindowStampedDerivedState(task: task, rootEvents: rootEvents)
+        // An unparseable `sealedAt` applies no bound (parsed once, not per event).
+        let sealedBound = sealedAt.flatMap { DateFormatting.parseISO($0) }
+        let state = windowStampedDerivedState(
+            task: task, rootEvents: eventsByTaskId[rootId] ?? [], sealedBound: sealedBound
+        )
         return DeriveDisplayedCountResult(displayed: state.count, isCompleted: state.isCompleted)
     }
     let shown = deriveDisplayedCount(
