@@ -111,8 +111,9 @@ describe('spawnTemplateBoard — P1 pool-mix resolution', () => {
     };
     await db.recurringBoardTemplates.add(template);
 
-    // Independent expectation computed directly via resolveMix (the same
-    // pure function the spawn path calls internally).
+    // Independent expectation via the legacy `resolveMix` formula — the
+    // spawn itself goes through `sourcesForRecord` → `selectBoardTasks`, so
+    // this pins that the sources path reproduces the legacy-trio mix.
     const tasksById: Record<string, Task> = {};
     for (const t of await db.tasks.toArray()) tasksById[t.id] = t;
     const expectedMix = resolveMix(template, { 'pool-a': poolA, 'pool-b': poolB }, tasksById);

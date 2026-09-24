@@ -16,9 +16,8 @@ import { TaskType } from '../../src/constants/enums';
  * (docs/WINDOWED_COMPLETION.md §Semantics per task type + §Sealing).
  *
  * `resolveTaskWindowState` is fixture-driven from
- * `tests/fixtures/taskWindowStateVectors.json` — the SAME file the deferred
- * iOS `TaskWindowStateVectorTests.swift` (PR B) will run through the Swift
- * mirror. `isEventOwningTask` + the backstop helpers are hand-tested here.
+ * `tests/fixtures/taskWindowStateVectors.json` — the SAME file run by iOS
+ * `TaskEventVectorTests.swift` through the Swift mirror. `isEventOwningTask` + the backstop helpers are hand-tested here.
  */
 
 const H = 60 * 60 * 1000;

@@ -523,15 +523,13 @@ final class BoardWizardViewModel {
     }
 
 
-    /// Resolves a recurring draft's raw `recurringDraftMix` fields into a
-    /// hydrated selection + display order. Board Creation Split (PR B) —
-    /// mirrors `resolveTemplateHydrationTaskIds`'s DB-lookup shape, but
-    /// (a) returns an ORDERED result (`poolOrder` needs a deterministic
-    /// sequence, unlike the template path's `Set`) and (b) has no
-    /// `seedTaskIds`-style legacy fallback to preserve — a fresh recurring
-    /// draft's mix is the only shape that has ever existed, so any lookup
-    /// failure just yields an empty selection (the wizard still opens;
-    /// the user rebuilds the pool) rather than a stale substitute.
+    /// Resolves a draft blob's legacy pool-mix trio (`poolIds` /
+    /// `manualTaskIds` / `removedTaskIds`) into an ordered selection via
+    /// `PoolMix.resolveMix`. Callers: the Create hub's draft count
+    /// (`CreateHubViewModel`) and `resolveDraftInitialStep`. Note it reads
+    /// only the legacy trio, not `mix.sources` — the wizard itself
+    /// hydrates a resumed draft through `hydrateSourcesState`. Any lookup
+    /// failure yields an empty selection rather than blocking.
     static func resolvePoolMixHydration(
         poolIds: [String],
         manualTaskIds: [String],
@@ -609,8 +607,8 @@ final class BoardWizardViewModel {
     /// `coreDefaultTaskIds` into the core-board setup wizard's initial
     /// selection. Task Pools + Recurring Boards Rework (P5),
     /// docs/POOLS_RECURRING.md §Surfaces item 6 ("pre-filled chips plain").
-    /// iOS twin of web's core-setup prefill resolver; mirrors
-    /// `resolveTemplateHydrationTaskIds`'s shape and fallback posture.
+    /// iOS twin of web's core-setup prefill resolver; same fallback
+    /// posture as `hydrateSourcesState` (fetch failures degrade to empty).
     ///
     /// - Folds `PoolMix.resolvePoolPullAdditions` across `corePoolIds` (no
     ///   removals at this stage — a fresh wizard has none yet), unioning

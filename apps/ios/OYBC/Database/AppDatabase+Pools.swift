@@ -9,8 +9,8 @@ extension AppDatabase {
     // `(userId, timeframe)` uniqueness) rather than one-per-timeframe.
 
     /// Fetch all non-deleted pools for a user. Used by the Tasks-tab Pools
-    /// segment (P2) and by the legacy template write-through / migration
-    /// to look up a specific pool's current `taskIds`.
+    /// segment, the wizard's Sources sheet (`BoardWizardView`) and Board
+    /// settings.
     func fetchPools(userId: String) throws -> [Pool] {
         return try read { db in
             try Pool
@@ -28,9 +28,9 @@ extension AppDatabase {
 
     /// Fetch multiple pools by id in one query, regardless of `isDeleted`
     /// (callers that need to distinguish should check the returned rows).
-    /// Used by `PoolMix.resolveMix` callers (spawn path, wizard
-    /// template-mix hydration, template attention/preview) that already
-    /// have a `poolIds` array and need a `poolsById` lookup.
+    /// Used by the wizard's hydration paths (`hydrateSourcesState`, draft
+    /// count, core-default prefill) and `RecurringBoardTemplatesViewModel`
+    /// when they already have pool ids and need a `poolsById` lookup.
     func fetchPools(ids: [String]) throws -> [Pool] {
         guard !ids.isEmpty else { return [] }
         return try read { db in
@@ -110,7 +110,7 @@ extension AppDatabase {
     /// Soft-delete a pool and enqueue the delete op atomically. Never
     /// cascades to the tasks it references, and never cascades to
     /// consumers (spawn records / core defaults) that pulled it in —
-    /// detachment is derived at read time (`PoolMix.resolveMix` /
+    /// detachment is derived at read time (source-supply resolution and
     /// core-defaults resolution skip `isDeleted` pools), matching `Pool`'s
     /// docstring.
     func softDeletePoolAndEnqueue(id: String, now: String) throws {

@@ -6,7 +6,7 @@ import Foundation
 /// Pure, testable extraction of `RepeatingBoardEditSheetView`'s pool-toggle
 /// and task-chip mutators. Operates DIRECTLY on a `RecurringBoardTemplate`'s
 /// native `poolIds` / `manualTaskIds` / `removedTaskIds` fields — unlike
-/// `BoardWizardViewModel.pullPool`/`untogglePool` (which maintain a
+/// `BoardWizardViewModel.pullPool`/`removeSource` (which maintain a
 /// separate flat `selectedTaskIds` the wizard's own UI needs for
 /// drag-reorder / center-pinning), the roster editor has no such derived
 /// selection to keep in sync: the displayed mix is simply
@@ -47,9 +47,8 @@ enum RepeatingBoardMixEditor {
 
     /// Untoggle a pool — drops it from `poolIds` and clears exactly the
     /// removal entries no longer supplied by any REMAINING pulled pool
-    /// (`PoolMix.clearRemovalsForUntoggle` — the same call
-    /// `BoardWizardViewModel.untogglePool` makes). The manual layer is
-    /// never touched.
+    /// (`PoolMix.clearRemovalsForUntoggle`). The manual layer is never
+    /// touched.
     static func untogglePool(
         _ poolId: String,
         from template: RecurringBoardTemplate,
@@ -107,8 +106,7 @@ enum RepeatingBoardMixEditor {
     /// True when `taskId` is in the resolvable supply of any pool
     /// currently attached to `template` — a non-deleted pool in
     /// `template.poolIds` whose raw `taskIds` contains it, and the task
-    /// itself isn't soft-deleted. Mirrors
-    /// `BoardWizardViewModel.isSuppliedByPulledPool`.
+    /// itself isn't soft-deleted.
     static func isSuppliedByAttachedPool(
         _ taskId: String,
         template: RecurringBoardTemplate,

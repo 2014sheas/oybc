@@ -145,7 +145,7 @@ final class AuthService: ObservableObject {
                     self.startUserRowObservation(userId: user.id)
                 }
             } catch {
-                print("⚠️ Debug auth bypass failed: \(error)")
+                dlog("⚠️ Debug auth bypass failed: \(error)")
             }
             self.isLoading = false
         }

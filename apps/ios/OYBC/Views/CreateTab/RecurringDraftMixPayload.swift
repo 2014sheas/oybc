@@ -6,14 +6,9 @@ import Foundation
 
 /// Minimal `PoolMixSource` wrapper for the wizard's raw pool-mix state,
 /// which isn't itself a `RecurringBoardTemplate`. Used by
-/// `BoardWizardViewModel.untogglePool`'s `PoolMix.clearRemovalsForUntoggle`
-/// call. (Pre-P4, this was also reused by `BoardWizardPersist
-/// .persistRecurringTemplate` to evaluate `PoolMix.isLegacyShapedRecord`
-/// against the wizard's session shape — P4 retired that shape-scoped
-/// write-through entirely, so persistence now reads
-/// `pulledPoolIds`/`manualTaskIds`/`removedTaskIds` directly.)
-/// Mirrors the ad-hoc fixture pattern `OYBCTests/PoolMixTests.swift`'s
-/// `PoolMixInput` already uses. Internal (not `private`) so both files see it.
+/// `BoardWizardViewModel.resolvePoolMixHydration` to feed a draft blob's
+/// legacy trio to `PoolMix.resolveMix`. Internal (not `private`) so both
+/// files see it.
 struct WizardPoolMixRecord: PoolMixSource {
     var poolIds: [String]?
     var manualTaskIds: [String]?
@@ -41,8 +36,8 @@ struct RecurringDraftMixPayload: Codable {
     var removedTaskIds: [String]
     /// Board Sources P1 — canonical sources shape. Always populated on
     /// `decoded(from:)` (derived from the trio for a v1 blob); derived at
-    /// `encoded()` time when constructed without one (the wizard UI can
-    /// only express [0, all] pool pulls until P2).
+    /// `encoded()` time when constructed without one (lossless only for
+    /// `[0, all]` pool pulls — the wizard always passes its native sources).
     var sources: [BoardSource]?
     /// §Member rules B1 (inert) — dice for hand-added counting members,
     /// keyed by task id. Always present on decode (`[:]` default) and

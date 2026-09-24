@@ -9,7 +9,7 @@ import { TaskType, Timeframe, BoardStatus, CenterSquareType } from '../../src/co
  * sealReDerivation.test.ts — Windowed Completion PR A seal-snapshot builder
  * (docs/WINDOWED_COMPLETION.md §Seal snapshots re-derive from the event union).
  * Fixture-driven from `tests/fixtures/sealReDerivationVectors.json` — the SAME
- * file the deferred iOS seal-re-derivation vectors (PR C) will run. Property:
+ * file run by iOS `TaskEventVectorTests.swift`. Property:
  * the green cell set is a pure function of the converged in-window event union,
  * so the same union (any order) yields the same cells on any device.
  */

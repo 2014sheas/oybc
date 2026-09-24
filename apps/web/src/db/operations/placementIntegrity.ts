@@ -5,11 +5,10 @@ import { addToSyncQueue } from './syncQueue';
 import { buildBoardTaskTombstone } from './boardTasks';
 
 /**
- * Board-integrity PR-2 (docs/BOARD_INTEGRITY.md, Part 1) — placement-integrity
- * repair pass. PR-1 gave `BoardTask` durable tombstones, but did nothing to
- * fix boards ALREADY corrupted from the pre-tombstone era (duplicate
- * placement rows left behind by an interrupted Replace/Move edit, or two
- * offline devices independently writing to the same cell before converging).
+ * Placement-integrity repair pass (docs/BOARD_INTEGRITY.md, PR-2 Part 1):
+ * tombstones duplicate / colliding / out-of-bounds placement rows (legacy
+ * data, an interrupted Replace/Move edit, or two offline devices writing the
+ * same cell).
  *
  * Runs as a PRE-step in the existing app-open self-heal, BEFORE
  * `reDeriveActiveBoards` (`sealing.ts`) — see `useBackstopAutoSeal.ts` for
