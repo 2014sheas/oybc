@@ -65,7 +65,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build
-        # `tsc && vite build` for web (catches type errors via tsc),
+        # web: `tsc && tsc -p tsconfig.test.json && vite build` (app + test programs),
         # `tsc` for shared. No separate typecheck step needed.
         run: pnpm -w build
 
