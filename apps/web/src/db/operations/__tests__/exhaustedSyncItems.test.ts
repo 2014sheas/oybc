@@ -106,9 +106,8 @@ describe('recovery chain (reset → pending → drainable)', () => {
 
     // The reset item is now PENDING (drainable by the push loop), retry
     // budget cleared; the in-backoff item stays FAILED; exhausted count
-    // clears. (`promoteEligibleFailedItems` / `fetchPendingSyncItems` use a
-    // compound-index `where('status')` query that fake-indexeddb can't
-    // emulate, so we assert the row state directly rather than through them.)
+    // clears. (Row state is asserted directly by choice — the helpers are
+    // covered by `syncPushOrchestration.test.ts`.)
     const resetItem = await db.syncQueue.get('reset-me');
     expect(resetItem?.status).toBe(SyncStatus.PENDING);
     expect(resetItem?.retryCount).toBe(0);

@@ -113,6 +113,46 @@ function assertSyncUserMatches(userId: string): void {
 // ─── Push Sync ────────────────────────────────────────────────────────────────
 
 /**
+ * The remote document store the push path reads (conflict check) and writes
+ * through, addressed by slash-joined Firestore path
+ * (`users/{uid}/{collection}/{id}`, or `users/{uid}` for the user doc).
+ * Production uses `firestoreDocStore`; tests inject an in-memory fake so the
+ * read → LWW → write → mark-completed orchestration runs without a network.
+ * iOS twin: the `FirestoreDocStore` protocol (`FirestoreDocStore.swift`).
+ */
+export interface SyncDocStore {
+  /**
+   * Reads one document.
+   * @param path - Slash-joined Firestore document path.
+   * @returns The document's data, or `null` when it doesn't exist.
+   */
+  getDoc(path: string): Promise<SyncableEntity | null>;
+  /**
+   * Merge-writes one document (`setDoc(..., { merge: true })` semantics).
+   * @param path - Slash-joined Firestore document path.
+   * @param data - The wire-shaped payload built by `writeSingleDoc`.
+   */
+  setDoc(path: string, data: Record<string, unknown>): Promise<void>;
+}
+
+/** The real Firestore-backed `SyncDocStore` — the default for `pushSync`. */
+const firestoreDocStore: SyncDocStore = {
+  async getDoc(path) {
+    const snap = await getDoc(doc(firestore, path));
+    return snap.exists() ? (snap.data() as SyncableEntity) : null;
+  },
+  async setDoc(path, data) {
+    await setDoc(doc(firestore, path), data, { merge: true });
+  },
+};
+
+/** Options for `pushSync`. */
+export interface PushSyncOptions {
+  /** Remote doc store to push through. Defaults to the real Firestore. */
+  store?: SyncDocStore;
+}
+
+/**
  * Pushes pending sync queue items to Firestore.
  *
  * For each pending item:
@@ -124,12 +164,17 @@ function assertSyncUserMatches(userId: string): void {
  * 6. Marks the queue item COMPLETED or FAILED
  *
  * @param userId - The authenticated user's ID (for Firestore path)
+ * @param opts - Optional `store` override (tests only; default = Firestore)
  * @returns Push result summary
  * @throws Error(SYNC_USER_MISMATCH_MESSAGE) before touching Dexie or Firestore
  *   when `userId` is not the signed-in uid.
  */
-export async function pushSync(userId: string): Promise<PushResult> {
+export async function pushSync(
+  userId: string,
+  opts: PushSyncOptions = {},
+): Promise<PushResult> {
   assertSyncUserMatches(userId);
+  const store = opts.store ?? firestoreDocStore;
   const result: PushResult = { pushed: 0, conflicts: 0, failed: 0, details: [] };
 
   // Reset stale IN_PROGRESS items (e.g., from a crash/reload mid-sync).
@@ -186,11 +231,11 @@ export async function pushSync(userId: string): Promise<PushResult> {
 
       // The `users` entity lives at `users/{userId}` (the parent scope doc),
       // not in a `users/{userId}/users` subcollection, so it has a dedicated
-      // docRef. Every other entity is a subcollection child under the user.
-      const docRef =
+      // path. Every other entity is a subcollection child under the user.
+      const docPath =
         entityType === 'users'
-          ? doc(firestore, 'users', item.entityId)
-          : doc(firestore, 'users', userId, entityType, item.entityId);
+          ? `users/${item.entityId}`
+          : `users/${userId}/${entityType}/${item.entityId}`;
 
       // User entities are never DELETE-synced; clearing the user doc would
       // remove the scope root for every other collection.
@@ -202,9 +247,8 @@ export async function pushSync(userId: string): Promise<PushResult> {
 
       if (item.operationType === SyncOperationType.DELETE) {
         // Deletes still check conflict resolution — don't overwrite a newer remote version
-        const remoteDeleteSnap = await getDoc(docRef);
-        if (remoteDeleteSnap.exists()) {
-          const remoteData = remoteDeleteSnap.data() as SyncableEntity;
+        const remoteData = await store.getDoc(docPath);
+        if (remoteData) {
           const resolution = resolveConflict(payload, remoteData);
           if (resolution.winner === 'remote') {
             // Remote is newer — don't delete, keep remote version locally
@@ -217,7 +261,7 @@ export async function pushSync(userId: string): Promise<PushResult> {
             continue;
           }
         }
-        await writeSingleDoc(docRef, payload);
+        await writeSingleDoc(store, docPath, entityType, payload);
         await markSyncItemCompleted(item.id);
         result.pushed++;
         recordSyncEvent('pushed');
@@ -226,11 +270,11 @@ export async function pushSync(userId: string): Promise<PushResult> {
       }
 
       // Check for remote version
-      const remoteSnap = await getDoc(docRef);
+      const remoteData = await store.getDoc(docPath);
 
-      if (!remoteSnap.exists()) {
+      if (!remoteData) {
         // No remote — push directly
-        await writeSingleDoc(docRef, payload);
+        await writeSingleDoc(store, docPath, entityType, payload);
         await markSyncItemCompleted(item.id);
         result.pushed++;
         recordSyncEvent('pushed');
@@ -239,12 +283,11 @@ export async function pushSync(userId: string): Promise<PushResult> {
       }
 
       // Remote exists — resolve conflict
-      const remoteData = remoteSnap.data() as SyncableEntity;
       const resolution = resolveConflict(payload, remoteData);
 
       if (resolution.winner === 'local') {
         // Local wins — push to Firestore
-        await writeSingleDoc(docRef, payload);
+        await writeSingleDoc(store, docPath, entityType, payload);
         await markSyncItemCompleted(item.id);
         result.pushed++;
         recordSyncEvent('pushed');
@@ -870,10 +913,18 @@ export function startSyncLoop(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Writes a single document to Firestore, stripping undefined values.
+ * Writes a single document through `store`, stripping undefined values and
+ * applying the Firestore wire shaping (`_syncedAt`, board field deletes).
+ *
+ * @param store - The doc store to write through (Firestore in production).
+ * @param docPath - Slash-joined document path.
+ * @param entityType - The document's collection (`'users'` for the user doc).
+ * @param data - The local payload.
  */
 async function writeSingleDoc(
-  docRef: ReturnType<typeof doc>,
+  store: SyncDocStore,
+  docPath: string,
+  entityType: string,
   data: Record<string, unknown>,
 ): Promise<void> {
   // Firestore doesn't accept undefined values — strip them
@@ -891,7 +942,7 @@ async function writeSingleDoc(
   // pull — silently un-converting the board. Explicitly delete the field so
   // the remote doc matches the local source of truth. (Harmless no-op on a
   // fresh doc / a board that never had an endDate.)
-  if (docRef.parent.id === 'boards' && cleaned.endDate === undefined) {
+  if (entityType === 'boards' && cleaned.endDate === undefined) {
     cleaned.endDate = deleteField();
   }
 
@@ -901,9 +952,9 @@ async function writeSingleDoc(
   // PRESERVE the stale completion timestamp on the remote doc for other
   // devices to pull. Explicitly delete it so the remote matches the local
   // source of truth. (Harmless no-op on docs that never had a completedAt.)
-  if (docRef.parent.id === 'boards' && cleaned.completedAt === undefined) {
+  if (entityType === 'boards' && cleaned.completedAt === undefined) {
     cleaned.completedAt = deleteField();
   }
 
-  await setDoc(docRef, cleaned, { merge: true });
+  await store.setDoc(docPath, cleaned);
 }

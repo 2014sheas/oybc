@@ -540,6 +540,7 @@ The current design is event-driven on both sides, with the polling loop kept as 
   - **iOS**: GRDB `ValueObservation.tracking { db in try SyncQueueItem.filter(...).fetchCount(db) }` started in `SyncService.start(userId:)`.
 - On any non-zero emission the orchestrator schedules a debounced `pushSync` (500 ms window). Repeated enqueues coalesce.
 - The existing `isSyncing` guard is the concurrency lock; the queue observation re-fires as items drain, so nothing is lost if a push is mid-flight when debounce fires.
+- The push path reads and writes remote docs through a path-addressed doc-store seam — web `SyncDocStore` (`pushSync(userId, { store })`), iOS `FirestoreDocStore` (`SyncService(docStore:)`) — defaulting to real Firestore and swapped for an in-memory fake only in tests (`syncPushOrchestration.test.ts` / `SyncPushOrchestrationTests.swift`), which pin the four push LWW outcomes.
 
 ### Pull side — Firestore `onSnapshot` listeners
 

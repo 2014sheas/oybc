@@ -7,9 +7,8 @@ import XCTest
 /// `pushSync`/`pullSync` (apps/web `syncUserGuard.test.ts`).
 ///
 /// The signed-in uid is injected through `SyncService(currentAuthUid:)`, so no
-/// Firebase session is needed. Only the SKIP path is exercised: the pass path
-/// runs queue maintenance on `AppDatabase.shared` (push isn't DB-injected — see
-/// the E3 scope caveat on `init`), which a unit test must not touch.
+/// Firebase session is needed. Only the SKIP path is exercised here; the pass
+/// path (queue drain + LWW) is pinned by `SyncPushOrchestrationTests`.
 @MainActor
 final class SyncPushUidGuardTests: XCTestCase {
 
