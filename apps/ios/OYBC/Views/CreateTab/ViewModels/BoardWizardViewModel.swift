@@ -622,48 +622,14 @@ final class BoardWizardViewModel {
     ///   present + non-deleted — tasks) in their own stored order,
     ///   appended AFTER the pool-resolved tasks, deduped against what's
     ///   already selected.
-    /// - Silent on any DB error (`try?`) or empty input — mirrors the
-    ///   retired `DefaultPool` prefill's fallback posture: the wizard
-    ///   still opens with an empty selection rather than blocking.
-    private static func resolveCoreBoardDefaultPrefill(
-        corePoolIds: [String],
-        coreDefaultTaskIds: [String],
-        database: AppDatabase
-    ) -> (selectedTaskIds: Set<String>, poolOrder: [String], pulledPoolIds: [String]) {
-        guard !corePoolIds.isEmpty || !coreDefaultTaskIds.isEmpty else {
-            return (Set(), [], [])
-        }
-        guard let pools = try? database.fetchPools(ids: corePoolIds) else {
-            return (Set(), [], [])
-        }
-        let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
-
-        var referencedIds = Set<String>()
-        for pool in pools { referencedIds.formUnion(pool.taskIds) }
-        referencedIds.formUnion(coreDefaultTaskIds)
-
-        guard let tasks = try? database.fetchTasks(ids: Array(referencedIds)) else {
-            return (Set(), [], [])
-        }
-        let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-
-        return Self.resolveCoreBoardDefaultPrefill(
-            corePoolIds: corePoolIds,
-            coreDefaultTaskIds: coreDefaultTaskIds,
-            poolsById: poolsById,
-            tasksById: tasksById
-        )
-    }
-
-    /// Pure core of `resolveCoreBoardDefaultPrefill(corePoolIds:coreDefaultTaskIds:database:)`
-    /// above, taking pre-fetched lookups instead of hitting the DB itself.
-    /// `internal` (not `private`) so the P7 Board-settings surfaces
-    /// (`BoardSettingsView`'s per-timeframe summary line,
-    /// `CoreDefaultsEditSheetView`'s seed selection) can reuse the EXACT
-    /// same resolution logic the wizard's core-setup prefill uses, rather
-    /// than a second hand-rolled union — those callers already have
-    /// `pools`/`tasks` loaded for the whole screen (batched once, not
-    /// per-row), so a DB round-trip per call would be wasteful.
+    /// - Empty input resolves to an empty selection — the wizard still
+    ///   opens rather than blocking.
+    ///
+    /// Pure: takes pre-fetched lookups rather than hitting the DB, so the
+    /// P7 Board-settings surfaces (`BoardSettingsView`'s per-timeframe
+    /// summary line, `CoreDefaultsEditSheetView`'s seed selection) reuse
+    /// the EXACT same resolution logic the wizard's core-setup prefill
+    /// uses, with `pools`/`tasks` batched once for the whole screen.
     static func resolveCoreBoardDefaultPrefill(
         corePoolIds: [String],
         coreDefaultTaskIds: [String],
