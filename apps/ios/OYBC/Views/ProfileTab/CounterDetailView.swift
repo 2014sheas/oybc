@@ -122,14 +122,10 @@ struct CounterDetailView: View {
         let id = counterId
         let visibility = showExpired
         _Concurrency.Task.detached(priority: .userInitiated) {
-            let tasks = (try? AppDatabase.shared.fetchTasks(userId: userId)) ?? []
-            let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
-            let boardTasks = (try? AppDatabase.shared.fetchAllBoardTasks()) ?? []
-            // RC9 — filter BEFORE grouping, exactly as the hub does.
-            let visible = filterCounterTasks(tasks, showExpired: visibility)
-            let groups = buildSharedCounterGroups(
-                tasks: visible, boardTasks: boardTasks, boards: boards
-            )
+            // RC9 — filtered BEFORE grouping, exactly as the hub does.
+            let groups = AppDatabase.shared.fetchSharedCounterGroups(
+                userId: userId, showExpired: visibility
+            ).groups
             let found = groups.first { $0.counterId == id }
             let totals = (try? AppDatabase.shared.fetchCounterDailyTotals(
                 sourceTaskId: id, days: Self.sparklineDays, now: AppDatabase.currentTimestamp()

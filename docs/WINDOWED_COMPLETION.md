@@ -128,12 +128,18 @@ Evaluation windows have **a start bound only**. A live board counts events in
 `[board.startDate, ∞)`; the upper bound is enforced by *sealing*, not by
 filtering. (This deliberately sidesteps `endDate` comparisons — and their
 local-ISO vs UTC-`Z` encoding hazards — in the evaluation hot path entirely.)
+**Exception (2026-09-23):** a *window-stamped derived counter* is resolved
+against its own `[startDate, endDate]` in the kernel (see
+[§Derived-task carve-out](#derived-task-carve-out)), so that one branch does
+compare `endDate`; row dates are local-ISO and parse in the evaluating
+device's time zone — the same caveat the `startDate` lower bound already
+carries everywhere.
 
 | Type | State for board B (live) | Notes |
 | ---- | ------------------------ | ----- |
 | Normal | complete iff a non-deleted `completion` event exists with `occurredAt >= B.startDate` | |
 | Counting (plain / source) | `windowCount = max(0, Σ delta of non-deleted increments with occurredAt >= B.startDate)`; complete iff `windowCount >= maxCount` | Low-end clamp only — **overshoot invariant preserved**, sums are never high-clamped |
-| Counting (**derived**, `sharedCounterId` set) | **unchanged from today**: `deriveDisplayedCount(baseline, source lifetime count)` — NOT windowed, NOT event-owning | See [§Derived-task carve-out](#derived-task-carve-out) |
+| Counting (**derived**, `sharedCounterId` set) | hub-linked (no `startDate`): **unchanged from today** — the propagation-stamped cache, NOT windowed, NOT event-owning. **Window-stamped** (`startDate` set, wizard-born): complete iff `max(0, Σ delta of the ROOT's non-deleted increments with occurredAt in [row.startDate, row.endDate]) >= maxCount` | See [§Derived-task carve-out](#derived-task-carve-out) (rule 4, amended 2026-09-23) |
 | Compound | derived from children as today, but child state is resolved **against the host board's window** | `evaluateCompound` gains a window-context parameter; nested compounds inherit the same host window; derived-counting children resolve via the carve-out row above |
 | Achievement | unchanged (reads referenced board / spawn-set state) | Sealing makes watched historical state *more* stable |
 
@@ -173,25 +179,82 @@ finding C1). Explicitly:
    applies only to event-owning tasks. Derived-task caches remain
    propagation-stamped (preserving the one-way completion latch); compound /
    achievement cache fields remain never-written/never-read as today.
-4. **Derivation-pass branch.** `computeBoardStatsUpdate` resolves derived
-   counting squares via baseline math (today's behavior), not
-   `resolveTaskWindowState`.
+4. **Derivation-pass branch** (amended 2026-09-23). A *hub-linked* derived
+   counting square (`sharedCounterId` set, no `startDate`) resolves from its
+   propagation-stamped `isCompleted` cache, not `resolveTaskWindowState`. A
+   *window-stamped* derived counter (`isWindowStampedDerived`) resolves from
+   its ROOT's events instead — see the next paragraph. Neither reads
+   `baseline`.
 
 **Honest consequence:** a *hub-authored* derived counter square on a recurring
 board still bleeds across windows in v1; a *plain* counting square does not.
 
 **Window-stamped derived counters (Board Sources member rules, design locked
-2026-09-17 — [`BOARD_SOURCES.md` §Member rules](BOARD_SOURCES.md#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17))
-close that bleed for the counters the wizard/spawn mints:** a derived task with
-`sharedCounterId != null && startDate != null` is windowed *through its
-baseline* — `baseline = Σ root increment events with occurredAt <
-board.startDate`, recomputed as a **non-authored cache** (no version bump, no
-enqueue) on local root writes and in a dedicated pull sub-step after
-`recomputeTaskCachesFromPull(rootId)`. Carve-out items 1–4 above still hold
-for them (they own no events; `currentCount` stays the propagation-stamped
-root mirror; the board reads `deriveDisplayedCount`). This supersedes the
-earlier `linkedAt` idea: the board window is the anchor, and it already lives
-on the derived task.
+2026-09-17 — [`BOARD_SOURCES.md` §Member rules](BOARD_SOURCES.md#member-rules--counting--compound-tasks-pulled-from-sources-design-locked-2026-09-17);
+kernel rule amended 2026-09-23)** close that bleed for the counters the
+wizard/spawn mints. A row with `sharedCounterId != null && startDate != null`
+(and `createdInWizard`, the exported `isWindowStampedDerived`) is resolved by
+the derivation kernel — `computeBoardGrid` and compound children alike, via
+`resolveDerivedCounterWindowState` (`taskEvents.ts` ↔ `TaskEvents.swift`) —
+from the **root's** increment events: `max(0, Σ delta of non-deleted root
+increments with occurredAt in [row.startDate, row.endDate])` (inclusive both
+ends, the `isWithinTimeframe` convention; `endDate == null` = unbounded;
+signed deltas summed as-is), complete iff `>= (maxCount ?? 0)`, overshoot
+valid. The row's own `isCompleted` latch is **never** read for it: that latch
+is one-way and propagation stamps it from *any* later increment, so before
+this amendment a past window's cell latched green from a later window and a
+sealed board re-derived differently on each device (audit 2026-09-23 finding
+#1). On the sealed path the context is also bounded at `sealedAt`
+(`boundWindowContextAtSeal`), so a sealed derived cell is a pure function of
+the converged in-window root-event union like every other sealed cell, and a
+late in-window root event re-derives every sealed board placing a derived row
+linked to that root (`reDeriveSealedBoardsForTasks` ↔ `reDeriveSealedBoards`
+expand a changed root id to its window-stamped rows). Unlike a plain counting
+square, a derived cell ignores root events logged in its board's
+post-`endDate` overtime — its window is the row's own stamped window. Context
+builders must therefore keep the workspace-wide event map: the root is
+usually not placed. A context-less (lifetime) resolution is the only place the
+latch still decides.
+
+Carve-out items 1–3 still hold for window-stamped rows: they own no events,
+`currentCount` stays the propagation-stamped root mirror, and `baseline =
+Σ root increment events with occurredAt < row.startDate` stays a
+**non-authored display cache** (no version bump, no enqueue; recomputed on
+local root writes and in the pull sub-step after
+`recomputeTaskCachesFromPull(rootId)` — `refreshDerivedBaselines` is
+unchanged). The kernel does not read `baseline`; propagation to a row whose
+window has ended is frozen — `isFrozenDerivedRow(row, now)` (shared
+`memberRules.ts` ↔ `BoardSources.isFrozenDerivedRow`, pinned by the
+`frozenDerivedRow` vectors in `memberRuleVectors.json`): a window-stamped row
+with `now` strictly after its `endDate` (inclusive, `isWithinTimeframe`
+convention) gets no authored write, no enqueue and no credit on increment /
+decrement / undo. The precise completion statement: an increment or decrement
+stamps its new event `now`, after every frozen window, so it cannot change a
+frozen row's kernel sum and the row is also left out of the cascade. An
+**undo** can — it tombstones an EARLIER event whose `occurredAt` may lie
+inside a frozen row's window (log at 23:59:58, undo at 00:00:02) — so undo
+additionally cascades, cascade-only (still no write / enqueue / credit), the
+frozen rows whose window contains the undone entry's `occurredAt`
+(`isFrozenRowReachedByEvent(row, occurredAt, now)`, shared + Swift twin,
+`frozenRowReachedByEvent` vectors), and the ended board's stored stats revert
+with the undo instead of waiting for a seal or pull. No-`endDate`, hub-linked
+and in-window rows propagate as before, and `refreshDerivedBaselines` still
+refreshes a frozen row's non-authored `baseline`. The web ops run ONE batched
+`runBoardCascadeForTasks` over the root + unfrozen rows (+ undo's reached
+frozen rows); iOS batches via `runSharedCounterCascade` (`cascadeOnlyTaskIds`).
+**Display (2026-09-23, same train):** every render / filter read of a
+window-stamped row — play cell (count text + green), poster / preview cells,
+compound detail child rows, the wizard Preview, the Sources done-filter, the
+arrival snapshot and the Counters hub row — goes through
+`resolveLinkedCounterDisplay` (`taskEvents.ts` ↔ `TaskEvents.swift`, pinned by
+`taskWindowStateVectors.json#linkedCounterDisplay`): count AND completion are
+the same root-event window sum the kernel uses (hub rows also bounded at the
+board's `sealedAt`), so a cell never paints green or reads N/N while board
+stats count it incomplete, and a late-synced in-window event moves both. Only
+hub-linked rows and context-less (lifetime) readers still show
+`currentCount − baseline`. Sealed play cells keep their max/0 snapshot display.
+This supersedes the earlier `linkedAt` idea: the board window is the anchor,
+and it already lives on the derived task.
 
 ### `Task.isCompleted` / `currentCount` / `completedAt` become caches
 
@@ -313,9 +376,10 @@ log but never reach the frozen record. Instead:
 - `sealedCompletedCells` (+ the frozen `completedTasks` / `linesCompleted` /
   `completedLineIds` / greenlog status) are defined as a **pure function of the
   converged in-window event union**: whenever a pulled `taskEvent` (or tombstone)
-  for a placed task lands with `occurredAt` in `[startDate, sealedAt]` of a
-  sealed board, that board's snapshot is **re-derived locally** inside the pull
-  transaction.
+  for a placed task — or for the ROOT of a placed window-stamped derived row —
+  lands with `occurredAt` in `[startDate, sealedAt]` of a sealed board, that
+  board's snapshot is **re-derived locally** inside the pull transaction. A
+  derived row's propagated latch is never an input (amended 2026-09-23).
 - Re-derivation is **local-only**: no `version` bump, no sync enqueue. Every
   device converges independently because the input (the event union) converges.
   There is no snapshot LWW fight, and no unbounded mutability — the recompute
@@ -357,10 +421,14 @@ real integrity gain. Recorded as intentional.
 
 ## Shared counters interaction
 
-- **Source count** = lifetime event sum (cache `currentCount`). `deriveDisplayedCount`
-  (baseline math) is unchanged; `buildSharedCounterGroups` unchanged. Derived
-  tasks are fully carved out of the event machinery — see
-  [§Derived-task carve-out](#derived-task-carve-out).
+- **Source count** = lifetime event sum (cache `currentCount`). Derived tasks
+  own no events — see [§Derived-task carve-out](#derived-task-carve-out). A
+  HUB-LINKED derived member still displays `deriveDisplayedCount` (baseline
+  math) and completes by its latch; a WINDOW-STAMPED member (amended
+  2026-09-23) displays and completes from its ROOT's events inside its own
+  window via `resolveLinkedCounterDisplay` — on board cells, previews, the
+  Sources done-filter and the Counters hub (`buildSharedCounterGroups` takes
+  an optional `eventsByTaskId` for this).
 - **Retired: `sharedCounterMerge` + `lastSyncedCount` stamping — in PR B, not
   later** (review minor: between an event-writing client and a still-active merge
   branch, the pull path would author merged `currentCount` writes with no backing
@@ -384,7 +452,17 @@ real integrity gain. Recorded as intentional.
   caches **once**, then run **one** derivation pass per affected live board and
   one seal re-derivation per affected sealed board — all inside the same
   transaction (per the atomic pull-path invariant). Do not bump `version` on the
-  recompute stamps (pull paths don't author writes).
+  recompute stamps (pull paths don't author writes). A shared-counter ROOT is
+  never placed, but its window-stamped derived rows resolve from its events, so
+  both passes expand a changed root id to those rows
+  (`expandToWindowStampedDerived`); the sealed pass reads the root's events
+  bounded at `sealedAt`, never a derived row's latch — a post-seal root
+  increment leaves a sealed snapshot byte-stable, a late in-window one
+  converges it (pinned end to end by web `derivedCounterSealedPull.test.ts` ↔
+  iOS `SyncPullApplyTests.test_sealedBoardPull_windowStampedDerived_…`). The
+  per-root `refreshDerivedBaselines` sweep only rewrites window-stamped rows'
+  non-authored `baseline`, which no board stat reads, and those rows are
+  already in the expanded cascade set.
 - **Pull ordering**: a `taskEvent` can arrive before its `Task` row (per-collection
   listeners have no cross-collection ordering). Events whose task isn't local yet
   are applied as rows but skipped by recompute; the safety-net pull picks them up

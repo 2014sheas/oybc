@@ -247,4 +247,39 @@ extension AppDatabase {
             )
         }
     }
+
+    // MARK: - Counters Hub / Detail read
+
+    /// The Counters Hub / Counter Detail read: the user's live tasks and the
+    /// counter groups built from them (§Member rules RC9 expiry filter applied
+    /// BEFORE grouping). The user's non-deleted events are passed to
+    /// `buildSharedCounterGroups` so a window-stamped member's `logged` is its
+    /// root's in-window sum — the play cell's and the kernel's rule — never
+    /// `lifetime − baseline` (docs/WINDOWED_COMPLETION.md §Derived-task
+    /// carve-out, amended 2026-09-23). Mirrors web `useSharedCounterGroups`.
+    ///
+    /// Read failures degrade to empty sets (the screens show their empty
+    /// state), matching the previous inline `try?` reads.
+    ///
+    /// - Parameters:
+    ///   - userId: The signed-in user.
+    ///   - showExpired: `true` keeps expired derived members in.
+    /// - Returns: The UNfiltered live tasks (the hub's "+ New counter" dedupe
+    ///   set) and the grouped view-models.
+    func fetchSharedCounterGroups(
+        userId: String,
+        showExpired: Bool
+    ) -> (tasks: [Task], groups: [SharedCounterGroup]) {
+        let tasks = (try? fetchTasks(userId: userId)) ?? []
+        let boards = (try? fetchBoards(userId: userId)) ?? []
+        let boardTasks = (try? fetchAllBoardTasks()) ?? []
+        let events = (try? fetchNonDeletedTaskEvents(userId: userId)) ?? []
+        let groups = buildSharedCounterGroups(
+            tasks: filterCounterTasks(tasks, showExpired: showExpired),
+            boardTasks: boardTasks,
+            boards: boards,
+            eventsByTaskId: Dictionary(grouping: events, by: \.taskId)
+        )
+        return (tasks, groups)
+    }
 }

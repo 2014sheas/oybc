@@ -13,7 +13,7 @@ import Foundation
 enum BoardPreviewCell: Equatable {
     /// A real placed square; `completed` is the SAME derivation the play
     /// surface uses (windowed events / compound evaluation / sealed
-    /// snapshot / derived-counter lifetime cache / achievement cross-board
+    /// snapshot / linked-counter `resolveLinkedCounterDisplay` / achievement cross-board
     /// reference — see `BoardPreviewCells.build`).
     case task(completed: Bool)
     /// The odd-board FREE center — always renders "filled" on
@@ -140,9 +140,13 @@ enum BoardPreviewCells {
                 } else if task.type == .achievement {
                     completed = kernelCells[bt.id]?.isCompleted ?? false
                 } else if task.sharedCounterId != nil {
-                    // Windowed Completion carve-out — derived counters stay on
-                    // their propagation-stamped lifetime cache, never windowed.
-                    completed = task.isCompleted
+                    // Linked counters: a window-stamped row resolves from its
+                    // ROOT's events in its own window (the kernel's rule, docs
+                    // §Derived-task carve-out amended 2026-09-23); a hub-linked
+                    // row keeps its propagation-stamped latch.
+                    completed = resolveLinkedCounterDisplay(
+                        task: task, eventsByTaskId: eventsByTaskId
+                    ).isCompleted
                 } else {
                     completed = resolveTaskWindowState(
                         task: task,

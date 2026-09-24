@@ -298,6 +298,38 @@ final class WindowedCompletionTests: XCTestCase {
         XCTAssertEqual(try db.fetchBoard(id: "b1")!.completedTasks, 1)
     }
 
+    /// 2026-09-23 amendment: the root is never placed, but a window-stamped
+    /// derived row resolves from its events in the kernel. A pulled in-window
+    /// ROOT event must reach the LIVE board placing only the derived row (the
+    /// live cascade expands roots via `withWindowStampedDerived`), or the
+    /// board's stored stats stay stale. Twin of the web taskEventPull.test.ts
+    /// case of the same intent.
+    func test_applyTaskEventsBatch_rootEventCascadesLiveBoardPlacingWindowStampedDerived() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("root", type: .counting, maxCount: 20))
+        var derived = makeTask("d1", type: .counting, maxCount: 5, sharedCounterId: "root", baseline: 0)
+        derived.startDate = "2026-06-01T00:00:00.000"
+        derived.endDate = "2026-06-30T23:59:59.999"
+        derived.createdInWizard = true
+        try db.saveTask(derived)
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "d1"))
+        let sut = SyncService(database: db)
+
+        let raw: [String: Any] = [
+            "id": AppDatabase.generateUUID(), "userId": userId, "taskId": "root",
+            "kind": "increment", "delta": 5, "occurredAt": "2026-06-10T00:00:00.000",
+            "createdAt": "2026-06-10T00:00:00.000", "updatedAt": "2026-06-10T00:00:00.000",
+            "version": 1, "isDeleted": false,
+        ]
+        let result = sut.applyTaskEventsBatch(userId: userId, rawDocs: [raw])
+        XCTAssertEqual(result.pulled, 1)
+
+        let board = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(board.completedTasks, 1, "live board re-derived through the derived row")
+        XCTAssertEqual(board.version, 2)
+    }
+
     // MARK: - 8. Derived-task pull leaves propagation-stamped cache + latch intact (C1)
 
     func test_derivedTaskPull_leavesCacheAndLatchIntact() throws {

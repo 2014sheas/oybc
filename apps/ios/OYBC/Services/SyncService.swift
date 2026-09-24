@@ -2229,10 +2229,10 @@ extension SyncService {
                     db: db, taskIds: affectedTaskIds
                 )
 
-                // 4. ONE batched derivation pass per affected LIVE board.
-                //    Sealed boards are excluded here (fan-out exclusion).
+                // 4. ONE batched derivation pass per affected LIVE board (sealed
+                //    excluded); roots expand to their window-stamped derived rows.
                 if !cascadeTaskIds.isEmpty {
-                    try runPullCascadeForTasks(db: db, changedTaskIds: cascadeTaskIds)
+                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: cascadeTaskIds))
                 }
 
                 // 5. Seal re-derivation (docs §Seal snapshots re-derive from the
@@ -2344,7 +2344,7 @@ extension SyncService {
                     db: db, taskIds: healedTaskIds
                 )
                 if !healedTaskIds.isEmpty {
-                    try runPullCascadeForTasks(db: db, changedTaskIds: healedTaskIds)
+                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: healedTaskIds))
                     try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)
                 }
             }

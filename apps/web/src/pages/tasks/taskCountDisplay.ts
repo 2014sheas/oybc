@@ -29,6 +29,13 @@ export type CountDisplayTask = Pick<
  * real progress the user earned and must stay visible (`deriveDisplayedCount`
  * owns that rule; this is only the "which task is linked?" fork).
  *
+ * Deliberately baseline maths, not the window-bounded event sum: this site
+ * has no event map. A window-stamped derived member's board cell reads
+ * `resolveLinkedCounterDisplay` (root increments within the row's window),
+ * so the two can differ — but window-stamped members are hidden from the
+ * Tasks list (`computeBrowsableTasks`), so the difference is reachable only
+ * by navigating straight to such a member's Task Detail (accepted carve-out).
+ *
  * @param task - The task being rendered.
  * @returns The displayed count (0 when the task has none).
  */

@@ -76,8 +76,9 @@ enum ResolvedWizardDates {
 /// Save (the "green squares from previous windows" bug).
 ///
 /// Branch order mirrors web `taskToSquareState` (and the play surfaces):
-/// compound → windowed `CompoundEvaluation`; derived (shared-counter-linked)
-/// counting → lifetime carve-out; event-owning primitives → windowed events.
+/// compound → windowed `CompoundEvaluation`; linked counting →
+/// `resolveLinkedCounterDisplay` (window-stamped: root sum in its window;
+/// hub-linked: the latch); event-owning primitives → windowed events.
 /// Achievements aren't placeable via the wizard, so no kernel cell-state is
 /// needed here. Pinned by `WizardPreviewCompletionTests`.
 func wizardPreviewIsCompleted(
@@ -97,6 +98,9 @@ func wizardPreviewIsCompleted(
                 eventsByTaskId: eventsByTaskId
             )
         )
+    }
+    if task.sharedCounterId != nil {
+        return resolveLinkedCounterDisplay(task: task, eventsByTaskId: eventsByTaskId).isCompleted
     }
     guard isEventOwningTask(task) else { return task.isCompleted }
     return resolveTaskWindowState(

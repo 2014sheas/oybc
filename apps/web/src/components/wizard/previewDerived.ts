@@ -125,8 +125,11 @@ function previewWindow(controller: BoardWizardController): BoardWindow {
  * (nulls skipped), so cell *i*'s task maps positionally to `placementIds[i]`
  * — a replaced cell keeps its place, exactly as the persist path places it.
  *
- * The stand-in copies the original task and overrides only the four fields a
- * person can see change: `title`, `maxCount`, `action`, `unit`. Its `id`
+ * The stand-in copies the original task and overrides the four fields a
+ * person can see change — `title`, `maxCount`, `action`, `unit` — plus the
+ * window-stamped link (`sharedCounterId`/`startDate`/`endDate`/
+ * `createdInWizard`) so its count resolves from the root's events in THIS
+ * board's window, exactly as the minted row will. Its `id`
  * stays the ORIGINAL's — see the comment at the swap; that is what keeps the
  * Save handler writing real `board_tasks` rows. Derived COMPOUNDS are
  * deliberately not stood in for either.
@@ -214,15 +217,18 @@ export function applyPreviewDerivedCells(
       maxCount: counter.maxCount,
       action: counter.action || undefined,
       unit: counter.unit || undefined,
-      // The minted counter is baseline-zeroed to THIS board's window, so it
-      // never inherits another window's progress. Copying the original's
-      // `currentCount`/`baseline` would preview exactly that: an original
-      // that is itself window-stamped carries a baseline for its OWN window,
-      // and `taskToSquareState`'s derived-counter carve-out would render that
-      // stale pair. Zeroing both is what the carve-out honours. A member that
-      // is NOT window-stamped resolves through the windowed-events branch
-      // instead (which reads events, not these fields), so it keeps showing
-      // the in-window progress the real board will show.
+      // The stand-in IS the counter the persist path will mint: a
+      // window-stamped derived row on THIS board's window. So it resolves the
+      // way the real cell will (`resolveLinkedCounterDisplay` — the ROOT's
+      // increments inside `[startDate, endDate]`), never an original's own
+      // window (a pulled member that is itself window-stamped carries its
+      // SOURCE board's window) and never a root's lifetime. The mirror
+      // columns are zeroed: they are not read for a window-stamped row, and a
+      // stale pair must not leak into any lifetime reader.
+      sharedCounterId: counter.rootTaskId,
+      startDate: counter.startDate ?? undefined,
+      endDate: counter.endDate ?? undefined,
+      createdInWizard: true,
       currentCount: 0,
       baseline: 0,
     };

@@ -150,9 +150,11 @@ private func previewWindow(controller: BoardWizardViewModel) -> BoardSources.Boa
 /// (nils skipped), so cell *i*'s task maps positionally to `placementIds[i]` —
 /// a replaced cell keeps its place, exactly as the persist path places it.
 ///
-/// The stand-in copies the original task and overrides only the four fields a
-/// person can see change: `title`, `maxCount`, `action`, `unit` (plus a zeroed
-/// window-local count — see the note at the swap). Its `id` stays the
+/// The stand-in copies the original task and overrides the four fields a
+/// person can see change: `title`, `maxCount`, `action`, `unit` — plus the
+/// window-stamped link (`sharedCounterId`/`startDate`/`endDate`/
+/// `createdInWizard`) so its count resolves from the root's events in THIS
+/// board's window, exactly as the minted row will (see the note at the swap). Its `id` stays the
 /// ORIGINAL's. Derived COMPOUNDS are deliberately not stood in for.
 ///
 /// - Parameters:
@@ -239,15 +241,18 @@ func applyPreviewDerivedCells(
         standIn.maxCount = counter.maxCount
         standIn.action = counter.action.isEmpty ? nil : counter.action
         standIn.unit = counter.unit.isEmpty ? nil : counter.unit
-        // The minted counter is baseline-zeroed to THIS board's window, so it
-        // never inherits another window's progress. Copying the original's
-        // `currentCount`/`baseline` would preview exactly that: an original
-        // that is itself window-stamped carries a baseline for its OWN window,
-        // and the derived-counter carve-out would render that stale pair.
-        // Zeroing both is what the carve-out honours. A member that is NOT
-        // window-stamped resolves through the windowed-events branch instead
-        // (which reads events, not these fields), so it keeps showing the
-        // in-window progress the real board will show.
+        // The stand-in IS the counter the persist path will mint: a
+        // window-stamped derived row on THIS board's window, so it resolves
+        // the way the real cell will (`resolveLinkedCounterDisplay` — the
+        // ROOT's increments inside `[startDate, endDate]`), never an
+        // original's own window (a pulled member that is itself
+        // window-stamped carries its SOURCE board's window) and never a
+        // root's lifetime. The mirror columns are zeroed: they are not read
+        // for a window-stamped row and must not leak into a lifetime reader.
+        standIn.sharedCounterId = counter.rootTaskId
+        standIn.startDate = counter.startDate
+        standIn.endDate = counter.endDate
+        standIn.createdInWizard = true
         standIn.currentCount = 0
         standIn.baseline = 0
         return standIn

@@ -42,11 +42,15 @@ extension AppDatabase {
     ///   - db: The open GRDB `Database` handle (must be inside a write transaction).
     ///   - allChangedTaskIds: All task ids that were written in this transaction
     ///     (`[sourceTaskId] + linkedTasks.map { $0.id }`).
+    ///   - cascadeOnlyTaskIds: Extra ids whose boards are re-derived but which
+    ///     were NOT written and are NOT credited — undo's frozen rows whose
+    ///     window holds the undone event (`BoardSources.isFrozenRowReachedByEvent`).
     ///   - now: The current ISO8601 timestamp (passed through for consistency).
     /// - Returns: ACTIVE `AffectedBoard` entries for the credit toast.
     private func runSharedCounterCascade(
         db: Database,
         allChangedTaskIds: [String],
+        cascadeOnlyTaskIds: [String] = [],
         now: String
     ) throws -> [AffectedBoard] {
         let allTasksWS: [Task] = try Task.fetchAll(db)
@@ -59,8 +63,9 @@ extension AppDatabase {
         let allBoards: [Board] = try Board.fetchAll(db)
         // Windowed Completion — the source counting square is event-owning, so
         // its board reads are windowed; the cascade must evaluate with the event
-        // context (docs §Sync). Derived (linked) squares stay on their
-        // propagation-stamped cache via the carve-out inside the kernel.
+        // context (docs §Sync). Window-stamped derived squares resolve from the
+        // root's events in their own window; hub-linked ones keep their
+        // propagation-stamped cache (the kernel's carve-out).
         let windowContext = try Self.buildWindowContext(db: db)
 
         var taskById: [String: Task] = [:]
@@ -72,7 +77,7 @@ extension AppDatabase {
 
         // Collect all cascade-affected board ids.
         var allAffectedBoardIds = Set<String>()
-        for taskId in allChangedTaskIds {
+        for taskId in allChangedTaskIds + cascadeOnlyTaskIds {
             let parentCompounds = DerivationPass.findTransitiveParentCompounds(
                 changedTaskId: taskId,
                 children: allChildren
@@ -150,10 +155,44 @@ extension AppDatabase {
         return creditBoards
     }
 
+    /// The linked rows a shared-counter increment / decrement / undo must
+    /// propagate to: every live row with `sharedCounterId == sourceTaskId`
+    /// (served by the v32 `idx_tasks_shared_counter` index) EXCEPT a
+    /// window-stamped derived row whose window has ended
+    /// (`BoardSources.isFrozenDerivedRow`) — the propagation freeze
+    /// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out,
+    /// docs/BOARD_SOURCES.md §Plan B2 notes). A frozen row gets no authored
+    /// write, no enqueue and is not credited; the kernel resolves it from the
+    /// root's in-window events, not the latch. An increment / decrement stamps
+    /// its event `now` (after every frozen window), so it cannot change a
+    /// frozen row's completion and the row is not cascaded either; an UNDO
+    /// can (it tombstones an earlier event), so `undoLastCounterLog` still
+    /// cascades — never writes — the frozen rows whose window holds the undone
+    /// event. Hub-linked, indefinite and in-window rows propagate as before.
+    /// Twin of the web `propagateToLinkedRows` read.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's write-transaction database.
+    ///   - sourceTaskId: The shared-counter root.
+    ///   - now: The operation's ISO8601 timestamp (also the freeze clock).
+    /// - Returns: The linked rows to write, enqueue and cascade.
+    private static func fetchPropagatingLinkedTasks(
+        db: Database,
+        sourceTaskId: String,
+        now: String
+    ) throws -> [Task] {
+        try Task
+            .filter(Column("sharedCounterId") == sourceTaskId)
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+            .filter { !BoardSources.isFrozenDerivedRow($0, now: now) }
+    }
+
     /// Increment the shared-counter source task's `currentCount` by `by` (default 1),
-    /// then re-derive every linked task (tasks where `sharedCounterId == sourceTaskId`
-    /// and `!isDeleted`) and run the board derivation cascade for the source AND
-    /// every linked task — all inside a single GRDB write transaction.
+    /// then re-derive every live linked task (tasks where `sharedCounterId == sourceTaskId`,
+    /// `!isDeleted`, and not a window-stamped derived row whose window has ended —
+    /// see `fetchPropagatingLinkedTasks`) and run the board derivation cascade for
+    /// the source AND those linked tasks — all inside a single GRDB write transaction.
     ///
     /// Invariants enforced:
     ///   - NO HIGH-END CLAMP on the source `currentCount`. Overshoot is intentional.
@@ -260,10 +299,7 @@ extension AppDatabase {
             try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
 
             // 3. Fetch all linked (derived) tasks for this source.
-            let linkedTasks = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId)
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
+            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
 
             // 4. Re-derive each linked task via the shared propagation helper
             //    (mirrors `propagateIncrement` in sharedCounter.ts). The helper
@@ -401,10 +437,7 @@ extension AppDatabase {
             try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
 
             // 3. Fetch all linked (derived) tasks for this source.
-            let linkedTasks = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId)
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
+            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
 
             // 4. Re-derive each linked task via the shared propagation helper
             //    (same fan-out as increment; mirrors `propagateIncrement` in
@@ -494,7 +527,10 @@ extension AppDatabase {
     ///      undo does not un-complete an already-completed source.
     ///   5. Propagate to linked tasks via `propagateIncrement` and re-run
     ///      the board derivation cascade for the source + every linked task,
-    ///      exactly like increment/decrement.
+    ///      exactly like increment/decrement — plus (cascade only, no write,
+    ///      no credit) any FROZEN window-stamped row whose window contains the
+    ///      undone entry's `occurredAt`, whose kernel sum the tombstone just
+    ///      changed (undo across the window end).
     ///
     /// No-op (returns `undoneAmount == 0`) when the source is
     /// missing/deleted or has no undoable entry — callers should treat that
@@ -599,11 +635,14 @@ extension AppDatabase {
             )
 
             // 6. Find all linked (derived) tasks and propagate, exactly like
-            //    increment/decrement.
-            let linkedTasks = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId)
-                .filter(Column("isDeleted") == false)
+            //    increment/decrement. One fetch serves both step 6 (the
+            //    propagating subset, `fetchPropagatingLinkedTasks`' filter)
+            //    and step 7 (the frozen rows the undo reached — never in the
+            //    propagating subset, so never written below).
+            let allLinkedTasks = try Task
+                .filter(Column("sharedCounterId") == sourceTaskId && Column("isDeleted") == false)
                 .fetchAll(db)
+            let linkedTasks = allLinkedTasks.filter { !BoardSources.isFrozenDerivedRow($0, now: now) }
 
             let propagation = propagateIncrement(
                 sourceAfterCurrentCount: newSourceCount,
@@ -636,11 +675,17 @@ extension AppDatabase {
                 ).enqueue(db)
             }
 
-            // 7. Board cascade + credit result.
+            // 7. Board cascade + credit result. Undo across the window end:
+            //    frozen rows whose window holds the undone event join the
+            //    cascade only — no write, no enqueue, no credit.
             let allChangedTaskIds = [sourceTaskId] + linkedTasks.map { $0.id }
+            let reachedFrozenIds = allLinkedTasks
+                .filter { BoardSources.isFrozenRowReachedByEvent($0, occurredAt: entry.occurredAt, now: now) }
+                .map { $0.id }
             let creditBoards = try runSharedCounterCascade(
                 db: db,
                 allChangedTaskIds: allChangedTaskIds,
+                cascadeOnlyTaskIds: reachedFrozenIds,
                 now: now
             )
             return UndoCounterLogResult(affectedBoards: creditBoards, undoneAmount: abs(entryDelta))

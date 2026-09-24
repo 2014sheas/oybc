@@ -115,17 +115,12 @@ struct CountersHubView: View {
         guard let userId = authService.currentUser?.id else { return }
         let visibility = showExpired
         _Concurrency.Task.detached(priority: .userInitiated) {
-            let tasks = (try? AppDatabase.shared.fetchTasks(userId: userId)) ?? []
-            let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
-            let boardTasks = (try? AppDatabase.shared.fetchAllBoardTasks()) ?? []
-            // RC9 — filter BEFORE grouping so an expired member can't
+            // RC9 — filtered BEFORE grouping so an expired member can't
             // contribute a board row either. `tasksForDedupe` keeps the
             // UNfiltered set: the "+ New counter" sheet matches against the
             // whole library, not the hub's current view.
-            let result = buildSharedCounterGroups(
-                tasks: filterCounterTasks(tasks, showExpired: visibility),
-                boardTasks: boardTasks,
-                boards: boards
+            let (tasks, result) = AppDatabase.shared.fetchSharedCounterGroups(
+                userId: userId, showExpired: visibility
             )
             await MainActor.run {
                 groups = result

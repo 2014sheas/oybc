@@ -10,7 +10,7 @@ import {
 import { db } from '../internal';
 import { runBoardCascadeForTasks } from './orchestration';
 import { recomputeTaskCachesFromPull } from './taskEvents';
-import { refreshDerivedBaselines } from './derivedCounters';
+import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
 import { addToSyncQueue } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { recordSyncEvent } from '../../firebase/syncStatus';
@@ -108,8 +108,10 @@ export async function applyTaskEventsBatch(
 
       // 4. ONE derivation pass per affected LIVE board (batched over the task
       //    set). Sealed boards are excluded here (fan-out exclusion).
+      //    Expanded to the window-stamped derived rows of each affected root:
+      //    the root is never placed, but those rows resolve from its events.
       if (cascadeTaskIds.size > 0) {
-        await runBoardCascadeForTasks(cascadeTaskIds);
+        await runBoardCascadeForTasks(await withWindowStampedDerived(cascadeTaskIds));
       }
 
       // 5. Seal re-derivation (docs §Seal snapshots re-derive from the event
@@ -211,7 +213,7 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
         // is a new pre-window occurrence for any derived counter on this root.
         await refreshDerivedBaselines(taskId);
       }
-      await runBoardCascadeForTasks(healedTaskIds);
+      await runBoardCascadeForTasks(await withWindowStampedDerived(healedTaskIds));
       await reDeriveSealedBoardsForTasks(healedTaskIds);
     },
   );

@@ -1,7 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { computeSealedCompletedCells } from '../../src/algorithms/derivationPass';
-import type { WindowEvaluationContext } from '../../src/algorithms/taskEvents';
+import {
+  boundWindowContextAtSeal,
+  type WindowEvaluationContext,
+} from '../../src/algorithms/taskEvents';
 import type { Task, TaskEvent, Board, BoardTask } from '../../src/types';
 import { TaskType, Timeframe, BoardStatus, CenterSquareType } from '../../src/constants/enums';
 
@@ -19,7 +22,7 @@ interface VectorBoard {
   boardSize: number;
   centerSquareType: string;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
   status: string;
   linesCompleted: number;
   completedLineIds: string[] | null;
@@ -30,6 +33,10 @@ interface VectorTask {
   type: string;
   maxCount: number | null;
   sharedCounterId: string | null;
+  /** Optional — window-stamped derived counters (2026-09-23 amendment). */
+  startDate?: string | null;
+  endDate?: string | null;
+  createdInWizard?: boolean;
   isCompleted: boolean;
   isDeleted: boolean;
 }
@@ -47,6 +54,10 @@ interface Vector {
   tasks: VectorTask[];
   boardTasks: { taskId: string; row: number; col: number }[];
   events: VectorEvent[];
+  /** Optional — when present, the event union is bounded at this instant via
+   *  the shared `boundWindowContextAtSeal` (what both platforms' sealing data
+   *  layers do before deriving a sealed snapshot). */
+  sealedAt?: string;
   expectedCells: number[];
 }
 
@@ -63,7 +74,7 @@ function toBoard(b: VectorBoard): Board {
     boardSize: b.boardSize as Board['boardSize'],
     timeframe: Timeframe.DAILY,
     startDate: b.startDate,
-    endDate: b.endDate,
+    endDate: b.endDate ?? undefined,
     centerSquareType: b.centerSquareType as CenterSquareType,
     isRandomized: false,
     totalTasks: b.boardSize * b.boardSize,
@@ -85,6 +96,9 @@ function toTask(t: VectorTask): Task {
     type: t.type as TaskType,
     maxCount: t.maxCount ?? undefined,
     sharedCounterId: t.sharedCounterId,
+    startDate: t.startDate ?? undefined,
+    endDate: t.endDate ?? undefined,
+    createdInWizard: t.createdInWizard ?? false,
     isCompleted: t.isCompleted,
     totalCompletions: 0,
     totalInstances: 0,
@@ -130,7 +144,9 @@ function runVector(v: Vector): number[] {
   for (const e of v.events) {
     (eventsByTaskId[e.taskId] ??= []).push(toEvent(e));
   }
-  const windowCtx: WindowEvaluationContext = { eventsByTaskId };
+  const windowCtx: WindowEvaluationContext = v.sealedAt
+    ? boundWindowContextAtSeal(eventsByTaskId, new Date(v.sealedAt).getTime())
+    : { eventsByTaskId };
   return computeSealedCompletedCells(board, boardTasks, {}, taskById, [], windowCtx);
 }
 

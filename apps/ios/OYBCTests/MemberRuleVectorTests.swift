@@ -237,6 +237,28 @@ final class MemberRuleVectorTests: XCTestCase {
         let isDeleted: Bool
     }
 
+    private struct FrozenRowTask: Decodable {
+        let sharedCounterId: String?
+        let startDate: String?
+        let endDate: String?
+        let createdInWizard: Bool
+    }
+
+    private struct FrozenRowVector: Decodable {
+        let name: String
+        let task: FrozenRowTask
+        let now: String
+        let expected: Bool
+    }
+
+    private struct FrozenReachedVector: Decodable {
+        let name: String
+        let task: FrozenRowTask
+        let occurredAt: String
+        let now: String
+        let expected: Bool
+    }
+
     private struct BaselineVector: Decodable {
         let name: String
         let root: String
@@ -505,6 +527,8 @@ final class MemberRuleVectorTests: XCTestCase {
         let varyRange: [VaryRangeVector]
         let rollTarget: [RollTargetVector]
         let windowBaseline: [BaselineVector]
+        let frozenDerivedRow: [FrozenRowVector]
+        let frozenRowReachedByEvent: [FrozenReachedVector]
         let derivedRows: DerivedRowsSection
         let applyMemberRules: ApplySection
         let planDerivedTasks: PlanSection
@@ -905,6 +929,37 @@ final class MemberRuleVectorTests: XCTestCase {
                 XCTAssertEqual(compound.operatorType?.rawValue, titled.operatorType, v.name)
                 XCTAssertEqual(compound.threshold, titled.threshold, v.name)
             }
+        }
+    }
+
+    // MARK: - Propagation freeze: isFrozenDerivedRow
+
+    func testIsFrozenDerivedRow() throws {
+        let fixture = try loadFixture()
+        XCTAssertGreaterThanOrEqual(fixture.frozenDerivedRow.count, 4)
+        for v in fixture.frozenDerivedRow {
+            var task = makeTask(id: "d1", type: .counting)
+            task.sharedCounterId = v.task.sharedCounterId
+            task.startDate = v.task.startDate
+            task.endDate = v.task.endDate
+            task.createdInWizard = v.task.createdInWizard
+            XCTAssertEqual(BoardSources.isFrozenDerivedRow(task, now: v.now), v.expected, v.name)
+        }
+    }
+
+    func testIsFrozenRowReachedByEvent() throws {
+        let fixture = try loadFixture()
+        XCTAssertGreaterThanOrEqual(fixture.frozenRowReachedByEvent.count, 5)
+        for v in fixture.frozenRowReachedByEvent {
+            var task = makeTask(id: "d1", type: .counting)
+            task.sharedCounterId = v.task.sharedCounterId
+            task.startDate = v.task.startDate
+            task.endDate = v.task.endDate
+            task.createdInWizard = v.task.createdInWizard
+            XCTAssertEqual(
+                BoardSources.isFrozenRowReachedByEvent(task, occurredAt: v.occurredAt, now: v.now),
+                v.expected, v.name
+            )
         }
     }
 
