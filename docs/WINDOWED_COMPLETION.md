@@ -128,6 +128,12 @@ Evaluation windows have **a start bound only**. A live board counts events in
 `[board.startDate, ∞)`; the upper bound is enforced by *sealing*, not by
 filtering. (This deliberately sidesteps `endDate` comparisons — and their
 local-ISO vs UTC-`Z` encoding hazards — in the evaluation hot path entirely.)
+**Exception (2026-09-23):** a *window-stamped derived counter* is resolved
+against its own `[startDate, endDate]` in the kernel (see
+[§Derived-task carve-out](#derived-task-carve-out)), so that one branch does
+compare `endDate`; row dates are local-ISO and parse in the evaluating
+device's time zone — the same caveat the `startDate` lower bound already
+carries everywhere.
 
 | Type | State for board B (live) | Notes |
 | ---- | ------------------------ | ----- |
