@@ -303,30 +303,35 @@ final class SyncService: ObservableObject {
     /// first network use, before any real sync).
     private lazy var db = Firestore.firestore()
 
-    /// Local database the pull-apply path writes into. Injected (defaulting
-    /// to `.shared`) so tests can point the seam at an in-memory
-    /// `AppDatabase.makeTestInstance()`. Mirrors the B3 ViewModel injection
-    /// precedent; both `SyncService()` call sites keep working via the default.
+    /// Local database the push path and pull-apply seam use. Injected
+    /// (defaulting to `.shared`) so tests can point them at an in-memory
+    /// `AppDatabase.makeTestInstance()`; both `SyncService()` call sites keep
+    /// working via the default.
     private let database: AppDatabase
 
+    /// Remote store the push path reads/writes through (see FirestoreDocStore.swift).
+    private let docStore: FirestoreDocStore
+
     /// - Parameters:
-    ///   - database: Local DB the pull path writes into. Defaults to
-    ///     `.shared`; overridden only in tests.
+    ///   - database: Local DB for the push path + pull-apply seam. Defaults
+    ///     to `.shared`; overridden only in tests.
     ///   - currentAuthUid: Returns the signed-in Firebase uid (or nil). Read
-    ///     by the push-path uid guard; defaults to `Auth.auth()`, overridden
-    ///     only in tests.
+    ///     by the push-path uid guard; defaults to `Auth.auth()`.
+    ///   - docStore: Remote store for the push path; defaults to Firestore.
     ///
-    /// SCOPE CAVEAT (E3): only `applyRemoteSubdoc` (and everything inside
-    /// its transaction) reads this handle — push/fullSync/safety-net still
-    /// use `AppDatabase.shared` directly. A test injecting
-    /// `makeTestInstance()` may exercise the pull-apply seam ONLY; widening
-    /// the injection is a deliberate future step, not an oversight.
+    /// SCOPE CAVEAT (E3): the push path (`pushSyncCore` → `processPushItem`),
+    /// the users-doc helpers and `applyRemoteSubdoc` read `database`;
+    /// fullSync's collection pull, the listeners and the safety net still use
+    /// `AppDatabase.shared` / Firestore directly — widening is a deliberate
+    /// future step, not an oversight.
     init(
         database: AppDatabase = .shared,
-        currentAuthUid: @escaping () -> String? = { Auth.auth().currentUser?.uid }
+        currentAuthUid: @escaping () -> String? = { Auth.auth().currentUser?.uid },
+        docStore: FirestoreDocStore = LiveFirestoreDocStore()
     ) {
         self.database = database
         self.currentAuthUid = currentAuthUid
+        self.docStore = docStore
     }
 
     /// Reads the signed-in Firebase uid at call time. Injected (defaulting to
@@ -469,8 +474,8 @@ final class SyncService: ObservableObject {
         // ValueObservation on PENDING count, which schedules the next
         // push-on-enqueue debounce.
         do {
-            try AppDatabase.shared.resetStaleInProgressSyncItems()
-            try AppDatabase.shared.promoteEligibleFailedSyncItems()
+            try database.resetStaleInProgressSyncItems()
+            try database.promoteEligibleFailedSyncItems()
         } catch {
             log("Push warning: queue maintenance failed: \(error.localizedDescription)")
             // Non-fatal — fall through and try to push whatever's already pending.
@@ -478,7 +483,7 @@ final class SyncService: ObservableObject {
 
         let pendingItems: [SyncQueueItem]
         do {
-            pendingItems = try AppDatabase.shared.fetchPendingSyncItems()
+            pendingItems = try database.fetchPendingSyncItems()
         } catch {
             let msg = "Push failed: could not read sync queue: \(error.localizedDescription)"
             log(msg)
@@ -598,7 +603,7 @@ final class SyncService: ObservableObject {
             var inProgress = item
             inProgress.status = .inProgress
             inProgress.lastAttemptAt = AppDatabase.currentTimestamp()
-            try AppDatabase.shared.saveSyncItem(inProgress)
+            try database.saveSyncItem(inProgress)
 
             guard let payload = parsePayload(item.payload) else {
                 throw SyncError.invalidPayload("Could not parse payload for \(item.entityType)/\(item.entityId)")
@@ -608,12 +613,9 @@ final class SyncService: ObservableObject {
             // not in a subcollection, and it must never be DELETE-synced — that
             // would wipe the scope for every other collection.
             let isUserEntity = item.entityType == "users"
-            let docRef: DocumentReference = isUserEntity
-                ? db.collection("users").document(item.entityId)
-                : db.collection("users")
-                    .document(userId)
-                    .collection(item.entityType)
-                    .document(item.entityId)
+            let docPath = isUserEntity
+                ? "users/\(item.entityId)"
+                : "users/\(userId)/\(item.entityType)/\(item.entityId)"
 
             if isUserEntity && item.operationType == .delete {
                 try markCompleted(item)
@@ -625,8 +627,7 @@ final class SyncService: ObservableObject {
 
             // DELETE operations: check conflict before overwriting.
             if item.operationType == .delete {
-                let remoteDeleteSnap = try await docRef.getDocument()
-                if remoteDeleteSnap.exists, let remoteData = remoteDeleteSnap.data() {
+                if let remoteData = try await docStore.fetch(path: docPath) {
                     let winner = resolveConflict(local: payload, remote: remoteData)
                     if winner == "remote" {
                         // Remote is newer — don't delete, restore remote version locally
@@ -641,7 +642,7 @@ final class SyncService: ObservableObject {
                         return
                     }
                 }
-                try await writeFirestoreDoc(docRef: docRef, data: payload)
+                try await writeFirestoreDoc(path: docPath, collection: item.entityType, data: payload)
                 try markCompleted(item)
                 result.pushed += 1
                 recordEvent(.pushed)
@@ -652,11 +653,9 @@ final class SyncService: ObservableObject {
             }
 
             // Fetch remote document to check for a conflict.
-            let remoteSnap = try await docRef.getDocument()
-
-            if !remoteSnap.exists {
+            guard let remoteData = try await docStore.fetch(path: docPath) else {
                 // No remote document — push directly.
-                try await writeFirestoreDoc(docRef: docRef, data: payload)
+                try await writeFirestoreDoc(path: docPath, collection: item.entityType, data: payload)
                 try markCompleted(item)
                 result.pushed += 1
                 recordEvent(.pushed)
@@ -667,14 +666,10 @@ final class SyncService: ObservableObject {
             }
 
             // Remote exists — resolve conflict.
-            guard let remoteData = remoteSnap.data() else {
-                throw SyncError.invalidPayload("Empty remote document for \(item.entityType)/\(item.entityId)")
-            }
-
             let winner = resolveConflict(local: payload, remote: remoteData)
 
             if winner == "local" {
-                try await writeFirestoreDoc(docRef: docRef, data: payload)
+                try await writeFirestoreDoc(path: docPath, collection: item.entityType, data: payload)
                 try markCompleted(item)
                 result.pushed += 1
                 recordEvent(.pushed)
@@ -706,7 +701,7 @@ final class SyncService: ObservableObject {
                 failed.lastError = errorMsg
                 failed.retryCount += 1
                 failed.lastAttemptAt = AppDatabase.currentTimestamp()
-                try AppDatabase.shared.saveSyncItem(failed)
+                try database.saveSyncItem(failed)
             } catch {
                 log("Warning: could not update failed sync item \(item.id): \(error.localizedDescription)")
             }
@@ -1162,10 +1157,12 @@ final class SyncService: ObservableObject {
     /// rather than deleted.
     ///
     /// - Parameters:
-    ///   - docRef: The Firestore `DocumentReference` to write to.
+    ///   - path: Slash-joined document path, written through `docStore`.
+    ///   - collection: The doc's collection (`"users"` for the user doc).
     ///   - data: The document data dictionary.
     private func writeFirestoreDoc(
-        docRef: DocumentReference,
+        path: String,
+        collection: String,
         data: [String: Any]
     ) async throws {
         var cleaned = SyncWirePayload.expandJSONStrings(data)
@@ -1178,7 +1175,7 @@ final class SyncService: ObservableObject {
         // board. Explicitly delete the field so the remote doc matches the
         // local source of truth. (Harmless no-op on a fresh doc / a board
         // that never had an endDate.)
-        if docRef.parent.collectionID == "boards", cleaned["endDate"] == nil {
+        if collection == "boards", cleaned["endDate"] == nil {
             cleaned["endDate"] = FieldValue.delete()
         }
 
@@ -1189,11 +1186,11 @@ final class SyncService: ObservableObject {
         // completedAt on an active board. Explicitly delete it so the remote
         // doc matches the local source of truth. (Harmless no-op on boards
         // that never completed.)
-        if docRef.parent.collectionID == "boards", cleaned["completedAt"] == nil {
+        if collection == "boards", cleaned["completedAt"] == nil {
             cleaned["completedAt"] = FieldValue.delete()
         }
 
-        try await docRef.setData(cleaned, merge: true)
+        try await docStore.write(path: path, data: cleaned)
     }
 
     // MARK: - Local DB Helpers
@@ -1206,7 +1203,7 @@ final class SyncService: ObservableObject {
     ///   - id: The primary key of the record.
     /// - Returns: The record as a dictionary, or `nil` if not found.
     private func fetchLocalRecord(grdbTable: String, id: String) throws -> [String: Any]? {
-        return try AppDatabase.shared.read { db in
+        return try database.read { db in
             try fetchLocalRecord(db: db, grdbTable: grdbTable, id: id)
         }
     }
@@ -1245,7 +1242,7 @@ final class SyncService: ObservableObject {
     ///   - grdbTable: The GRDB table name (e.g. `"tasks"`).
     ///   - data: The Firestore document dictionary.
     private func upsertLocalRecord(grdbTable: String, data: [String: Any]) throws {
-        try AppDatabase.shared.write { db in
+        try database.write { db in
             try upsertLocalRecord(db: db, grdbTable: grdbTable, data: data)
         }
     }
@@ -1407,7 +1404,7 @@ final class SyncService: ObservableObject {
         var completed = item
         completed.status = .completed
         completed.completedAt = AppDatabase.currentTimestamp()
-        try AppDatabase.shared.saveSyncItem(completed)
+        try database.saveSyncItem(completed)
     }
 
     // MARK: - User Helpers
@@ -1567,7 +1564,7 @@ extension SyncService {
     /// `setExhaustedCount(await countExhaustedSyncItems())`.
     fileprivate func refreshExhaustedCount() {
         do {
-            exhaustedCount = try AppDatabase.shared.countExhaustedSyncItems()
+            exhaustedCount = try database.countExhaustedSyncItems()
         } catch {
             log("Warning: could not count exhausted sync items: \(error.localizedDescription)")
         }
@@ -1583,7 +1580,7 @@ extension SyncService {
     /// - Parameter userId: The authenticated user's Firestore UID.
     func retryExhaustedItems(userId: String) async {
         do {
-            _ = try AppDatabase.shared.retryExhaustedSyncItems()
+            _ = try database.retryExhaustedSyncItems()
         } catch {
             log("Retry exhausted failed: \(error.localizedDescription)")
             return
