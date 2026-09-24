@@ -148,4 +148,77 @@ final class CompoundChildEligibilityTests: XCTestCase {
             "Counters without a goal can’t be sub-tasks."
         )
     }
+
+    // MARK: - Picker candidates (twin of shared `compoundChildPickerCandidates` tests)
+
+    private func row(
+        _ id: String, _ title: String, type: TaskType = .normal, isDeleted: Bool = false,
+        isCounter: Bool = false, maxCount: Int? = nil, unit: String? = nil
+    ) -> Task {
+        var t = task(id, type: type, isDeleted: isDeleted, isCounter: isCounter, maxCount: maxCount)
+        t.title = title
+        t.unit = unit
+        return t
+    }
+
+    /// P (being edited) contains X; Q contains P (so linking Q under P loops).
+    private var pickerLinks: [CompoundChild] { [link("P", "X"), link("Q", "P")] }
+
+    private var pickerLibrary: [Task] {
+        [
+            row("P", "Parent itself", type: .compound),
+            row("X", "Already here"),
+            row("A", "Achievement", type: .achievement),
+            row("D", "Deleted", isDeleted: true),
+            row("G", "Goal-less hub counter", type: .counting, isCounter: true, unit: "pages"),
+            row("Q", "Loop parent", type: .compound),
+            row("NU", "Counter without unit", type: .counting, maxCount: 5, unit: "  "),
+            row("NG", "Counter with zero goal", type: .counting, maxCount: 0, unit: "km"),
+            row("c", "stretch"),
+            row("R", "Run 5 km", type: .counting, maxCount: 5, unit: "km"),
+            row("N", "Nested compound", type: .compound),
+            row("b", "Stretch"),
+        ]
+    }
+
+    func test_pickerCandidates_keepsOnlyLinkableSaveValidTasks_orderedByTitleThenId() {
+        let ids = CompoundChildEligibility.pickerCandidates(
+            parentId: "P", browsable: pickerLibrary, allLinks: pickerLinks, currentChildIds: ["X"]
+        ).map(\.id)
+        XCTAssertEqual(ids, ["N", "R", "b", "c"])
+    }
+
+    func test_pickerCandidates_dropsAnAlreadyPickedTask() {
+        let ids = CompoundChildEligibility.pickerCandidates(
+            parentId: "P", browsable: pickerLibrary, allLinks: pickerLinks, currentChildIds: ["X", "R"]
+        ).map(\.id)
+        XCTAssertFalse(ids.contains("R"))
+    }
+
+    func test_isIncompleteCountingChild() {
+        XCTAssertFalse(CompoundChildEligibility.isIncompleteCountingChild(row("1", "a", type: .counting, maxCount: 5, unit: "km")))
+        XCTAssertTrue(CompoundChildEligibility.isIncompleteCountingChild(row("2", "b", type: .counting, maxCount: 5)))
+        XCTAssertTrue(CompoundChildEligibility.isIncompleteCountingChild(row("3", "c", type: .counting, unit: "km")))
+        XCTAssertTrue(CompoundChildEligibility.isIncompleteCountingChild(row("4", "d", type: .counting, maxCount: 0, unit: "km")))
+        XCTAssertFalse(CompoundChildEligibility.isIncompleteCountingChild(row("5", "e")))
+    }
+
+    func test_searchCandidates_caseInsensitive_blankKeepsAll() {
+        let rows = [row("1", "Morning Run"), row("2", "Read"), row("3", "run club")]
+        XCTAssertEqual(CompoundChildEligibility.searchCandidates(rows, query: "  RUN ").map(\.id), ["1", "3"])
+        XCTAssertEqual(CompoundChildEligibility.searchCandidates(rows, query: "   ").map(\.id), ["1", "2", "3"])
+    }
+
+    func test_keptChildTaskIds_skipsDeletedAndNewDrafts() {
+        var d = TaskEditPatch(title: "P")
+        var gone = ChildPatch(id: "g", childTaskId: "g", title: "Gone", isCounting: false)
+        gone.markedDeleted = true
+        d.children = [
+            ChildPatch(id: "k", childTaskId: "k", title: "Kept", isCounting: false),
+            gone,
+            ChildPatch(id: "new", childTaskId: nil, title: "Draft", isCounting: false),
+        ]
+        XCTAssertEqual(d.keptChildTaskIds, ["k"])
+    }
 }
+

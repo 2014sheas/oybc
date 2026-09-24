@@ -12,8 +12,14 @@ import SwiftUI
 /// parent's `stagedEdits`).
 struct RisoPoolRowEditorView: View {
 
+    /// The task being edited (the compound picker's `parentId`).
+    let taskId: String
     let taskType: TaskType
     @Binding var draft: TaskEditPatch
+    /// Compound only — browsable library tasks for "+ Existing task…".
+    let libraryTasks: [Task]
+    /// Compound only — live links across all compounds (loop check).
+    let allLinks: [CompoundChild]
     let onSave: () -> Void
     let onDiscard: () -> Void
 
@@ -28,7 +34,14 @@ struct RisoPoolRowEditorView: View {
             VStack(alignment: .leading, spacing: 11) {
                 titleField
                 if taskType == .counting { countingFields }
-                if taskType == .compound { RisoCompoundEditFieldsView(draft: $draft) }
+                if taskType == .compound {
+                    RisoCompoundEditFieldsView(
+                        draft: $draft,
+                        parentId: taskId,
+                        libraryTasks: libraryTasks,
+                        allLinks: allLinks
+                    )
+                }
                 if let msg = validationMessage {
                     Text(msg)
                         .font(.risoBody(11.5, .extraBold))

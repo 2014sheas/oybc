@@ -59,4 +59,62 @@ enum CompoundChildEligibility {
         }
         return nil
     }
+
+    /// A counting task the compound editor can't keep as a sub-task: no
+    /// positive goal (`maxCount`) or a blank unit. `TaskEditPatch.validate`
+    /// refuses such a counting sub-task on save, so the picker hides it.
+    /// Twin of web `isIncompleteCountingChild`.
+    ///
+    /// - Parameter task: The candidate task.
+    /// - Returns: `true` when the task is COUNTING and lacks a goal or unit.
+    static func isIncompleteCountingChild(_ task: Task) -> Bool {
+        guard task.type == .counting else { return false }
+        let hasGoal = (task.maxCount ?? 0) > 0
+        let hasUnit = !(task.unit ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return !hasGoal || !hasUnit
+    }
+
+    /// The "+ Existing task…" picker's candidate list: the browsable library
+    /// narrowed to tasks `linkProblem` accepts under `parentId` and that would
+    /// survive save validation (not `isIncompleteCountingChild`), ordered by
+    /// lower-cased title (plain code-unit order, locale-independent so it
+    /// matches web), then id. Twin of web `compoundChildPickerCandidates`.
+    ///
+    /// - Parameters:
+    ///   - parentId: The compound being edited.
+    ///   - browsable: The browsable library (`TaskLibraryViewModel.browsableTasks`).
+    ///   - allLinks: Live links across ALL compounds.
+    ///   - currentChildIds: The editor's current kept children.
+    /// - Returns: The eligible tasks.
+    static func pickerCandidates(
+        parentId: String,
+        browsable: [Task],
+        allLinks: [CompoundChild],
+        currentChildIds: Set<String>
+    ) -> [Task] {
+        browsable
+            .filter {
+                !isIncompleteCountingChild($0)
+                    && linkProblem(parentId: parentId, candidate: $0, allLinks: allLinks, currentChildIds: currentChildIds) == nil
+            }
+            .sorted { a, b in
+                let ta = Array(a.title.lowercased().utf16)
+                let tb = Array(b.title.lowercased().utf16)
+                if ta != tb { return ta.lexicographicallyPrecedes(tb) }
+                return Array(a.id.utf16).lexicographicallyPrecedes(Array(b.id.utf16))
+            }
+    }
+
+    /// Case-insensitive title search over picker candidates (a blank query
+    /// keeps every row). Twin of web `searchCompoundChildCandidates`.
+    ///
+    /// - Parameters:
+    ///   - tasks: The candidates.
+    ///   - query: The search text.
+    /// - Returns: The candidates whose title contains `query`.
+    static func searchCandidates(_ tasks: [Task], query: String) -> [Task] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return tasks }
+        return tasks.filter { $0.title.lowercased().contains(q) }
+    }
 }

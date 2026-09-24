@@ -3,7 +3,9 @@ import SwiftUI
 /// The compound structure editor — the shared `RisoCompoundRulePicker`
 /// ("Counts as done when…"), the numbered sub-task cards (title, fixed type
 /// indicator, counting Action/Goal/Unit + "Reads as" preview, ✕ unlink) and
-/// the "+ Normal / + Counting sub-task" buttons — bound to a `TaskEditPatch`.
+/// the "+ Normal / + Counting sub-task" buttons, plus "+ Existing task…"
+/// (presents `RisoExistingTaskPickerSheet`; a pick is appended as a linked
+/// sub-task via `ChildPatch(from:)`) — bound to a `TaskEditPatch`.
 ///
 /// Extracted verbatim from `RisoPoolRowEditorView` so the wizard's inline row
 /// editor and the Task Detail `EditTaskSheet` ("Sub-tasks & rule") edit a
@@ -15,9 +17,36 @@ struct RisoCompoundEditFieldsView: View {
 
     /// The compound structure being edited (operator / threshold / children).
     @Binding var draft: TaskEditPatch
+    /// The compound being edited — the link guard's `parentId`.
+    var parentId: String
+    /// Browsable library tasks (`TaskLibraryViewModel.browsableTasks` —
+    /// wizard drafts and deleted rows already hidden). The picker narrows
+    /// them via `CompoundChildEligibility.pickerCandidates`.
+    var libraryTasks: [Task]
+    /// Live compound links across ALL compounds (for the loop check).
+    var allLinks: [CompoundChild]
+
+    @State private var isPickerOpen = false
 
     var body: some View {
         compoundFields
+            .sheet(isPresented: $isPickerOpen) {
+                RisoExistingTaskPickerSheet(
+                    tasks: CompoundChildEligibility.pickerCandidates(
+                        parentId: parentId,
+                        browsable: libraryTasks,
+                        allLinks: allLinks,
+                        currentChildIds: draft.keptChildTaskIds
+                    ),
+                    onPick: { task in
+                        draft.children.append(ChildPatch(from: task))
+                        isPickerOpen = false
+                    },
+                    onCancel: { isPickerOpen = false }
+                )
+                .presentationDetents([.fraction(0.76)])
+                .presentationDragIndicator(.visible)
+            }
     }
 
     /// Compound rule (as a `CompoundRuleChoice`), bridged to `draft.operatorType`.
@@ -67,6 +96,7 @@ struct RisoCompoundEditFieldsView: View {
                 addSubtaskButton(title: "+ Normal sub-task", isCounting: false)
                 addSubtaskButton(title: "+ Counting sub-task", isCounting: true)
             }
+            dashedAddButton(title: "+ Existing task…") { isPickerOpen = true }
             Text("A sub-task's type is fixed once added. Deleting a sub-task unlinks it — if it lives on another board it stays in your library.")
                 .font(.risoBody(10.5, .semibold))
                 .foregroundStyle(Color.risoMuted)
@@ -135,11 +165,15 @@ struct RisoCompoundEditFieldsView: View {
     }
 
     private func addSubtaskButton(title: String, isCounting: Bool) -> some View {
-        Button {
+        dashedAddButton(title: title) {
             draft.children.append(
                 ChildPatch(id: AppDatabase.generateUUID(), childTaskId: nil, title: "", isCounting: isCounting)
             )
-        } label: {
+        }
+    }
+
+    private func dashedAddButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Text(title)
                 .font(.risoHead(12, .extraBold))
                 .foregroundStyle(Color.risoInk)

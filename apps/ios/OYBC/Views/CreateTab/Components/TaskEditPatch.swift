@@ -106,6 +106,13 @@ struct TaskEditPatch: Equatable {
         }
     }
 
+    /// The editor's current kept children for the compound link guard: the
+    /// task id of every existing or picked sub-task not marked deleted (new
+    /// drafts have no id yet). Twin of web `keptChildTaskIds`.
+    var keptChildTaskIds: Set<String> {
+        Set(children.compactMap { $0.markedDeleted ? nil : $0.childTaskId })
+    }
+
     /// Live "Reads as: Action — Goal — Unit" preview for counting editors.
     /// nil when all three fields are blank.
     var countingPreview: String? {

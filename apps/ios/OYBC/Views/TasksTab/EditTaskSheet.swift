@@ -92,6 +92,10 @@ struct EditTaskSheet: View {
     /// What the editor opened with — only an edited structure is submitted.
     @State private var compoundBaseline: TaskEditPatch?
     @State private var compoundLoadError: String?
+    /// "+ Existing task…" picker inputs — the browsable library and every
+    /// live link, loaded with the sub-tasks.
+    @State private var pickerLibraryTasks: [Task] = []
+    @State private var pickerLinks: [CompoundChild] = []
 
     // MARK: - Init
 
@@ -310,10 +314,15 @@ struct EditTaskSheet: View {
         risoSection(label: "Sub-tasks & rule") {
             VStack(alignment: .leading, spacing: 8) {
                 if let draft = compoundDraft {
-                    RisoCompoundEditFieldsView(draft: Binding(
-                        get: { compoundDraft ?? draft },
-                        set: { compoundDraft = $0 }
-                    ))
+                    RisoCompoundEditFieldsView(
+                        draft: Binding(
+                            get: { compoundDraft ?? draft },
+                            set: { compoundDraft = $0 }
+                        ),
+                        parentId: task.id,
+                        libraryTasks: pickerLibraryTasks,
+                        allLinks: pickerLinks
+                    )
                     if let problem = compoundValidation {
                         Text(problem)
                             .font(.risoBody(11.5, .extraBold))
@@ -356,20 +365,31 @@ struct EditTaskSheet: View {
             && compoundValidation != nil
     }
 
-    /// Load the compound's live sub-tasks (childIndex order) off the main
-    /// actor and seed the draft + baseline. No-op for non-compounds and when
-    /// already seeded.
+    /// Load the compound's live sub-tasks (childIndex order) and the
+    /// "+ Existing task…" picker inputs off the main actor, in one detached
+    /// read. The sub-tasks seed the draft + baseline unless a caller already
+    /// seeded them (Task Detail passes the children it holds); the picker
+    /// inputs always load. No-op for non-compounds.
     private func loadCompoundChildrenIfNeeded() async {
-        guard task.type == .compound, compoundDraft == nil else { return }
+        guard task.type == .compound else { return }
+        let needsChildren = compoundDraft == nil
         let db = database
         let parentId = task.id
+        let userId = task.userId
         do {
-            let kids = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                try db.fetchCompoundChildrenTasks(parentTaskId: parentId)
+            let (kids, picker) = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                (
+                    needsChildren ? try db.fetchCompoundChildrenTasks(parentTaskId: parentId) : nil,
+                    try db.fetchCompoundPickerInputs(userId: userId)
+                )
             }.value
-            let seeded = Self.seedCompoundDraft(task: task, children: kids)
-            compoundBaseline = seeded
-            compoundDraft = seeded
+            pickerLibraryTasks = picker.libraryTasks
+            pickerLinks = picker.allLinks
+            if let kids, compoundDraft == nil {
+                let seeded = Self.seedCompoundDraft(task: task, children: kids)
+                compoundBaseline = seeded
+                compoundDraft = seeded
+            }
         } catch {
             compoundLoadError = "Couldn't load sub-tasks: \(error.localizedDescription)"
         }
