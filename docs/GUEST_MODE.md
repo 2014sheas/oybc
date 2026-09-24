@@ -93,6 +93,28 @@ uid. The near-empty anonymous account orphans server-side (acceptable on a rare
 collision — the alternative is data loss), and the guest's local rows are
 `userId`-filtered out of every view under the signed-in account.
 
+## Invariants under test
+
+Each stateful invariant is pinned on both platforms (fake auth client, in-memory
+DB — no network, no real Firebase):
+
+- **Verify before destroy (collision ordering)** — the ordered-effects table +
+  the executor both call sites run: web `firebase/__tests__/guestCollisionSwitch.test.ts`
+  (`guestCollisionSwitch.ts`, used by `UpgradeModal.confirmSwitchAccount`); iOS
+  `GuestCollisionSwitchTests` (`GuestCollisionSwitch.swift`, used by
+  `UpgradeAccountSheet.resolveCollision`).
+- **Post-link reconcile (row re-upserted, `isAnonymous` recomputed)** — web
+  `guestUpgradeState.test.ts` › *post-link reconcile* (`authService.reconcileAfterUpgrade`,
+  what `refreshAfterUpgrade` runs); iOS `GuestUpgradeStateTests.testLinkReupsertsLocalRowAndClearsAnonFlag`
+  (`AuthService.linkCredential` over the `AuthClient` seam).
+- **Collision switch clears only the anon queue** — web `guestUpgradeState.test.ts`
+  › *clearSyncQueue*; iOS `GuestUpgradeStateTests.testClearPendingSyncQueueEmptiesQueueOnly`.
+- **Discard wipes every user-scoped table** — web `guestUpgradeState.test.ts` ›
+  *deleteAccount* (every IndexedDB object store emptied); iOS
+  `GuestUpgradeStateTests.testUserScopedTablesMatchesLiveSchemaExactly` (reads
+  `AuthService.userScopedTables` against `sqlite_master`) +
+  `testWipeLocalDatabaseEmptiesEveryTable`.
+
 ## Deletion / discard (Apple 5.1.1(v))
 
 A guest has no "account" to delete until they upgrade, but their local data must be

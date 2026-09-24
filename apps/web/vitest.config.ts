@@ -12,6 +12,11 @@ import path from 'path';
  * The `@oybc/shared` alias mirrors `vite.config.ts` (source, not `dist`) so
  * tests exercise the same module graph the app does and don't require a
  * prior `pnpm --filter @oybc/shared build`.
+ *
+ * Coverage (`pnpm test:coverage` → `vitest run --coverage`) is REPORTED, not
+ * gated: `text-summary` prints to the log, `json-summary` lands in
+ * `coverage/coverage-summary.json` for the CI artifact. There is deliberately
+ * no `thresholds` block yet — see CLAUDE.md §Testing Standards.
  */
 export default defineConfig({
   resolve: {
@@ -25,5 +30,12 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     setupFiles: ['./vitest.setup.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.ts', 'src/**/*.d.ts'],
+      reporter: ['text-summary', 'json-summary'],
+      reportsDirectory: './coverage',
+    },
   },
 });
