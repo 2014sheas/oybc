@@ -1204,6 +1204,8 @@ that entry point stays. The two *wizard* entry points to that flow go away
 (the #471 member menu in B3, the From-a-board grid in A), and the iOS
 Library sheet's derive entry is stripped in B3 for web parity.
 
+(Amended 2026-09-23 for window-stamped rows — see §Plan B2 notes; the paragraphs below describe the pre-amendment model and hub-linked rows.)
+
 **Latch asymmetry, intended.** A refresh RAISES a baseline (a backdated
 increment arrives) and therefore lowers the displayed count, but it never
 re-evaluates the derived row's `isCompleted`. On the *local* counter paths

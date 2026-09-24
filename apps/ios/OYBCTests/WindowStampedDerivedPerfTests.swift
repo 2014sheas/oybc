@@ -10,17 +10,21 @@ import XCTest
 /// root event turned a root with a few thousand logs into thousands of
 /// formatter inits per pass. The bounds must be parsed once per call.
 ///
-/// The bound is deliberately generous (a regression shows up as an order of
-/// magnitude, not a few percent): measured on the iPhone 17 / iOS 26.3.1
-/// simulator, Debug, the per-event re-parse took ~580 ms (resolve) and
-/// ~260 ms (sealed display); the hoisted body ~50–70 ms, which is the
-/// residual per-event `ISO8601DateFormatter` parse of `occurredAt`. The best
-/// of five runs is compared to damp scheduler noise. The count assertions
+/// Machine-independent: the guard is a RATIO against a same-run baseline —
+/// a loop that only parses the same 2,000 `occurredAt` strings through
+/// `DateFormatting.parseISO` (the cached `ISO8601DateFormatter` path). The
+/// hoisted body is that parse plus a compare per event, so it must stay under
+/// `maxRatio` × the baseline; the per-event bound re-parse was ~10× (resolve)
+/// and ~5× (sealed display) on the iPhone 17 / iOS 26.3.1 simulator, Debug.
+/// Slow shared CI runners scale numerator and denominator alike. A loose
+/// absolute ceiling (`sanityCeilingMs`) still catches a pathological
+/// regression. Best of five runs damps scheduler noise. The count assertions
 /// keep it honest — the fast path must still sum exactly the in-window
 /// increments.
 final class WindowStampedDerivedPerfTests: XCTestCase {
 
-    private let boundMs = 150.0
+    private let maxRatio = 2.0
+    private let sanityCeilingMs = 1_000.0
 
     /// Best-of-`runs` wall time of `body`, in milliseconds.
     private func bestOf(_ runs: Int = 5, _ body: () -> Void) -> Double {
@@ -31,6 +35,26 @@ final class WindowStampedDerivedPerfTests: XCTestCase {
             best = min(best, (CFAbsoluteTimeGetCurrent() - start) * 1000)
         }
         return best
+    }
+
+    /// Same-run baseline: parse every `occurredAt` once, nothing else.
+    private func parseBaselineMs(_ events: [TaskEvent]) -> Double {
+        var parsed = 0
+        let ms = bestOf {
+            parsed = 0
+            for e in events where DateFormatting.parseISO(e.occurredAt) != nil { parsed += 1 }
+        }
+        XCTAssertEqual(parsed, events.count, "baseline must parse every event")
+        return ms
+    }
+
+    /// Asserts `elapsedMs` is within `maxRatio` × `baselineMs` and under the
+    /// absolute sanity ceiling; logs both.
+    private func assertNearParseCost(_ label: String, elapsedMs: Double, baselineMs: Double) {
+        let ratio = elapsedMs / max(baselineMs, 0.001)
+        print("[perf] \(label): \(String(format: "%.2f", elapsedMs)) ms vs parse baseline \(String(format: "%.2f", baselineMs)) ms = \(String(format: "%.2f", ratio))x (best of 5)")
+        XCTAssertLessThan(ratio, maxRatio, "\(label): bounds must be parsed once per call, not per event")
+        XCTAssertLessThan(elapsedMs, sanityCeilingMs, "\(label): pathological slowdown")
     }
 
     private let rootId = "root"
@@ -80,9 +104,9 @@ final class WindowStampedDerivedPerfTests: XCTestCase {
         XCTAssertEqual(state.count, 1_000, "only the mid-window increments count")
         XCTAssertTrue(state.isCompleted)
 
+        let baselineMs = parseBaselineMs(events)
         let elapsedMs = bestOf { _ = resolveWindowStampedDerivedState(task: row, rootEvents: events) }
-        print("[perf] resolveWindowStampedDerivedState 2000 events local-ISO row: \(String(format: "%.2f", elapsedMs)) ms (best of 5)")
-        XCTAssertLessThan(elapsedMs, boundMs, "bounds must be parsed once per call, not per event")
+        assertNearParseCost("resolveWindowStampedDerivedState", elapsedMs: elapsedMs, baselineMs: baselineMs)
     }
 
     func testLinkedDisplayWithSealedAtOverTwoThousandEventsIsFast() {
@@ -97,8 +121,8 @@ final class WindowStampedDerivedPerfTests: XCTestCase {
         XCTAssertEqual(shown.displayed, 721, "events after sealedAt are dropped")
         XCTAssertFalse(shown.isCompleted)
 
+        let baselineMs = parseBaselineMs(map[rootId] ?? [])
         let elapsedMs = bestOf { _ = resolveLinkedCounterDisplay(task: row, eventsByTaskId: map, sealedAt: sealedAt) }
-        print("[perf] resolveLinkedCounterDisplay(sealedAt) 2000 events local-ISO row: \(String(format: "%.2f", elapsedMs)) ms (best of 5)")
-        XCTAssertLessThan(elapsedMs, boundMs, "bounds must be parsed once per call, not per event")
+        assertNearParseCost("resolveLinkedCounterDisplay(sealedAt:)", elapsedMs: elapsedMs, baselineMs: baselineMs)
     }
 }
