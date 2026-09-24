@@ -115,10 +115,10 @@ Invariants not to regress:
 
 - All new features and bug fixes must include unit tests covering core logic.
 - **Coverage — what is actually enforced, reported, and unmeasured:**
-  - **`packages/shared` — enforced in CI.** `jest.config.js` sets an 80% global `coverageThreshold` (statements / branches / functions / lines); `web.yml` runs `pnpm --filter @oybc/shared test:coverage` as a blocking step, separate from the plain Test step. Barrel `index.ts` files (`src/index.ts` and `src/**/index.ts`) are excluded from the measurement — their `export *` re-export getters are counted as uncovered functions but are not code. Do not lower the thresholds to make a run pass.
+  - **`packages/shared` — enforced in CI.** `jest.config.js` sets an 80% global `coverageThreshold` (statements / branches / functions / lines); `web.yml` runs `pnpm --filter @oybc/shared test:coverage` as a blocking step, separate from the plain Test step. `index.ts` files (`src/index.ts` and `src/**/index.ts`) are excluded from the measurement: the re-export barrels' `export *` getters are counted as uncovered functions but carry no logic, and the one non-barrel among them — `src/constants/index.ts`, which also declares a handful of literal constants — has no branches or functions to measure. Do not lower the thresholds to make a run pass.
   - **`apps/web` — reported, not gated.** `pnpm --filter @oybc/web test:coverage` (Vitest + `@vitest/coverage-v8`, no `thresholds`) runs in `web.yml` as a separate `continue-on-error` step after the real Test step, prints a `text-summary` to the job log, and uploads `coverage/coverage-summary.json` as the `web-coverage-summary` artifact. Baseline on 2026-09-23: statements 67.64 / branches 59.84 / functions 62.10 / lines 69.62 over all of `src/`.
   - **iOS and `functions/` — not measured.**
-- Use Jest for TypeScript tests and XCTest for Swift tests.
+- TypeScript: Jest in `packages/shared` and `packages/bingo-core`; Vitest (+ `fake-indexeddb` for Dexie) in `apps/web`. Swift: XCTest (`OYBCTests` logic, `OYBCSnapshotTests` snapshots).
 - Tests should be deterministic and not rely on external services or network calls.
 
 ### iOS verification: snapshot tests + relay-to-user, never sim-driving

@@ -71,9 +71,10 @@ jobs:
 
       - name: Test
         # Turbo runs the `test` task in any package that defines one:
-        # shared (Jest) and web (Vitest). This is the pass/fail test signal —
-        # the coverage step below is separate so a coverage-tooling failure
-        # can never mask (or stand in for) a real test result.
+        # shared + bingo-core (Jest) and web (Vitest + fake-indexeddb). This is
+        # the pass/fail test signal — the coverage step below is separate so a
+        # coverage-tooling failure can never mask (or stand in for) a real
+        # test result.
         run: pnpm -w test
 
       - name: Shared coverage (gated)
