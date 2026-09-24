@@ -18,9 +18,9 @@ import GRDB
 /// `RecurringBoardTemplate.seedTaskIds` and `Board.completedLineIds`).
 ///
 /// One pool per `(userId, timeframe)` — uniqueness enforced at the
-/// application layer (no DB constraint); `AppDatabase` exposes
-/// `upsertDefaultPool` which queries by `(userId, timeframe)` and
-/// creates-or-updates accordingly.
+/// application layer (no DB constraint). Superseded by `Pool` +
+/// `CoreBoardDefault`; the row type survives for the v25 migration and
+/// sync decode (test seeding lives in `OYBCTests/AppDatabase+DefaultPoolsTestSupport.swift`).
 struct DefaultPool: Codable, FetchableRecord, PersistableRecord {
     // Identity
     var id: String
