@@ -113,8 +113,8 @@ struct BoardPlayHeaderView: View {
     private func statusBadge(_ status: BoardStatus) -> some View {
         let (label, fill, fore): (String, Color, Color) = {
             switch status {
-            case .active:    return ("ACTIVE",    Color.risoBlue,  Color.risoPaper)
-            case .completed: return ("COMPLETE",  Color.risoGreen, Color.risoPaper)
+            case .active:    return ("ACTIVE",    Color.risoBlue,  Color.risoOnColor)
+            case .completed: return ("COMPLETE",  Color.risoGreen, Color.risoOnColor)
             case .draft:     return ("DRAFT",     Color.risoPaper2, Color.risoMuted)
             case .archived:  return ("ARCHIVED",  Color.risoPaper2, Color.risoMuted)
             }

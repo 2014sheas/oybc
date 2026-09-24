@@ -848,7 +848,7 @@ struct BoardWizardTasksStepView: View {
         HStack(spacing: 10) {
             Text(toast.text)
                 .font(.risoHead(13, .extraBold))
-                .foregroundStyle(Color.risoPaper)
+                .foregroundStyle(Color.risoOnColor)
                 .fixedSize(horizontal: false, vertical: true)
             if let undo = toast.undo {
                 Spacer(minLength: 8)

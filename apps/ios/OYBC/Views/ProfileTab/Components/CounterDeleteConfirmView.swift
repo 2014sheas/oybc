@@ -81,7 +81,7 @@ struct CounterDeleteConfirmView: View {
                             ? "Delete counter & unlink \(impact.counterMemberCount) tasks"
                             : "Delete counter",
                         fill: .risoRed,
-                        foreground: .risoPaper
+                        foreground: .risoOnColor
                     ) {
                         onConfirm()
                     }

@@ -180,7 +180,7 @@ struct RisoBoardPlayCell: View {
                 // so the title stays readable in dark mode.
                 .foregroundStyle(
                     isCompleted
-                        ? Color.risoPaper
+                        ? Color.risoOnColor
                         : (isBingoLine ? Color.risoInkStatic : Color.risoInk)
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -192,7 +192,7 @@ struct RisoBoardPlayCell: View {
             if taskType == .counting {
                 Text("×\(maxCount)")
                     .font(.risoHead(7, .extraBold))
-                    .foregroundStyle(Color.risoPaper)
+                    .foregroundStyle(Color.risoOnColor)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
                     .background(
@@ -209,7 +209,7 @@ struct RisoBoardPlayCell: View {
             } else if taskType == .compound {
                 Text("C")
                     .font(.risoHead(7, .extraBold))
-                    .foregroundStyle(Color.risoPaper)
+                    .foregroundStyle(Color.risoOnColor)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
                     .background(

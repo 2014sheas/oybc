@@ -186,7 +186,8 @@ struct RisoSourceRowView: View {
                             (value: BoardSource.Filter.todo, label: "Not done yet"),
                         ],
                         selection: Binding(get: { source.filter }, set: { onSetFilter($0) }),
-                        selectedFill: { _ in .risoInk }
+                        selectedFill: { _ in .risoInk },
+                        selectedForeground: { _ in .risoPaper }
                     )
                     .padding(.top, 10)
                     .padding(.horizontal, 16)

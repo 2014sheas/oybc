@@ -72,7 +72,7 @@ struct RisoCompoundRulePicker: View {
         } label: {
             Text(choice.rawValue)
                 .font(.risoHead(11, .bold))
-                .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
+                .foregroundStyle(isOn ? Color.risoOnColor : Color.risoInk)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 9)
                 .background(Capsule().fill(isOn ? Color.risoGreen : Color.risoPaper))

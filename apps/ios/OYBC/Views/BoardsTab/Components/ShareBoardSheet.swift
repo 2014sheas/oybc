@@ -169,14 +169,14 @@ struct ShareBoardSheet: View {
                 Text("OYBC")
                     .font(.risoHead(16, .extraBold))
                     .tracking(-0.16)
-                    .foregroundStyle(Color.risoPaper)
+                    .foregroundStyle(Color.risoOnColor)
             }
 
             // Board name
             Text(boardName)
                 .font(.risoHead(22, .extraBold))
                 .tracking(-0.33)
-                .foregroundStyle(Color.risoPaper)
+                .foregroundStyle(Color.risoOnColor)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
 
@@ -200,7 +200,7 @@ struct ShareBoardSheet: View {
                 .font(.risoHead(10, .bold))
                 .tracking(1.4)
                 .textCase(.uppercase)
-                .foregroundStyle(Color.risoPaper.opacity(0.7))
+                .foregroundStyle(Color.risoOnColor.opacity(0.7))
         }
         .padding(16)
         .frame(maxWidth: .infinity)
@@ -360,7 +360,7 @@ struct ShareBoardSheet: View {
                 // Icon square
                 Image(systemName: linkCopied ? "checkmark" : "link")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(linkCopied ? Color.risoInk : Color.risoPaper)
+                    .foregroundStyle(linkCopied ? Color.risoInk : Color.risoOnColor)
                     .frame(width: 38, height: 38)
                     .background(
                         RoundedRectangle(cornerRadius: 10)
@@ -410,7 +410,7 @@ struct ShareBoardSheet: View {
                 systemImage: "message.fill",
                 label: "Messages",
                 fill: .risoGreen,
-                foreground: .risoPaper
+                foreground: .risoOnColor
             ) {
                 presentShareSheet()
             }
@@ -420,7 +420,7 @@ struct ShareBoardSheet: View {
                 systemImage: "camera.fill",
                 label: "Stories",
                 fill: .risoRed,
-                foreground: .risoPaper
+                foreground: .risoOnColor
             ) {
                 presentShareSheet()
             }

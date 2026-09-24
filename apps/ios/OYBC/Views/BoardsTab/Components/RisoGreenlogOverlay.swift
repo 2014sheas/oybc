@@ -112,7 +112,7 @@ struct RisoGreenlogOverlay: View {
                 Text("GREENLOG!")
                     .font(.risoHead(52, .extraBold))
                     .tracking(-1.56)
-                    .foregroundStyle(Color.risoPaper)
+                    .foregroundStyle(Color.risoOnColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.bottom, 14)
@@ -149,7 +149,7 @@ struct RisoGreenlogOverlay: View {
                             Text("Share my board")
                                 .font(.risoHead(17, .bold))
                         }
-                        .foregroundStyle(Color.risoPaper)
+                        .foregroundStyle(Color.risoOnColor)
                         .frame(maxWidth: .infinity)
                         .frame(height: 56)
                         .background(Color.risoRed)
@@ -172,12 +172,12 @@ struct RisoGreenlogOverlay: View {
                     } label: {
                         Text("Start a new board")
                             .font(.risoHead(17, .bold))
-                            .foregroundStyle(Color.risoPaper)
+                            .foregroundStyle(Color.risoOnColor)
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
                             .overlay(
                                 RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                    .strokeBorder(Color.risoPaper, lineWidth: Riso.Keyline.container)
+                                    .strokeBorder(Color.risoOnColor, lineWidth: Riso.Keyline.container)
                             )
                     }
                     .buttonStyle(.plain)

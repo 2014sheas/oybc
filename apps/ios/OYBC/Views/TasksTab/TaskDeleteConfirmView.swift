@@ -110,7 +110,7 @@ struct TaskDeleteConfirmView: View {
                     RisoToolbarPill(
                         title: isDeleting ? "Deleting…" : "Delete",
                         fill: .risoRed,
-                        foreground: .risoPaper
+                        foreground: .risoOnColor
                     ) {
                         isDeleting = true
                         onConfirm()
@@ -176,7 +176,7 @@ struct TaskDeleteConfirmView: View {
         Text("EXPIRED")
             .font(.risoHead(10, .bold))
             .tracking(0.6)
-            .foregroundStyle(Color.risoPaper)
+            .foregroundStyle(Color.risoOnColor)
             .padding(.vertical, 4)
             .padding(.horizontal, 9)
             .background(Capsule().fill(Color.risoRed))

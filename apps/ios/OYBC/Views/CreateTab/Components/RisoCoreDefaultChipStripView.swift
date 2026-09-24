@@ -58,14 +58,14 @@ struct RisoCoreDefaultChipStripView: View {
         HStack(spacing: 5) {
             Text(task.title.isEmpty ? "(untitled task)" : task.title)
                 .font(.risoBody(12, .semibold))
-                .foregroundStyle(Color.risoPaper)
+                .foregroundStyle(Color.risoOnColor)
                 .lineLimit(1)
             Button {
                 onRemove(task.id)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color.risoPaper)
+                    .foregroundStyle(Color.risoOnColor)
             }
             .accessibilityLabel("Remove \(task.title)")
         }

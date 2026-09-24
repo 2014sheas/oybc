@@ -326,7 +326,7 @@ struct RisoCompoundFieldsView: View {
                     addNewSub()
                 }
                 .font(.risoHead(13, .bold))
-                .foregroundStyle(Color.risoPaper)
+                .foregroundStyle(canAddSub ? Color.risoOnColor : Color.risoPaper)
                 .padding(.vertical, 10)
                 .padding(.horizontal, 14)
                 .background(
@@ -530,7 +530,7 @@ struct RisoCompoundFieldsView: View {
         Button(action: action) {
             Text(label)
                 .font(.risoHead(11, .bold))
-                .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
+                .foregroundStyle(isOn ? Color.risoOnColor : Color.risoInk)
                 .padding(.vertical, 4)
                 .padding(.horizontal, 9)
                 .background(Capsule().fill(isOn ? fill : Color.risoPaper))

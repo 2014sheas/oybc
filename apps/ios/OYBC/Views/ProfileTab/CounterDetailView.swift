@@ -593,10 +593,10 @@ struct CounterDetailContent: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Log \(unitLabel)")
                     .font(.risoHead(15, .extraBold))
-                    .foregroundStyle(Color.risoPaper)
+                    .foregroundStyle(Color.risoOnColor)
                 Text("counts toward \(activeMembers.count) active task\(activeMembers.count == 1 ? "" : "s")")
                     .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoPaper.opacity(0.85))
+                    .foregroundStyle(Color.risoOnColor.opacity(0.85))
             }
 
             chipRow
@@ -610,7 +610,7 @@ struct CounterDetailContent: View {
             if let logError {
                 Text(logError)
                     .font(.risoBody(11, .regular))
-                    .foregroundStyle(Color.risoPaper.opacity(0.9))
+                    .foregroundStyle(Color.risoOnColor.opacity(0.9))
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
             }
@@ -627,7 +627,7 @@ struct CounterDetailContent: View {
 
     /// Amount chip row: 1 / {default} / 25 / # — selected = gold fill +
     /// `risoInkStatic` (dark-mode-safe content on gold); idle = transparent
-    /// with an on-color (`risoPaper`) border/text (content-on-blue-fill
+    /// with a static on-color (`risoOnColor`) border/text (content-on-blue-fill
     /// contract).
     private var chipRow: some View {
         HStack(spacing: 8) {
@@ -642,14 +642,14 @@ struct CounterDetailContent: View {
                 } label: {
                     Text(chip.value == nil && isSelected ? "\(selectedAmount)" : chip.label)
                         .font(.risoHead(13, .extraBold))
-                        .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoPaper)
+                        .foregroundStyle(isSelected ? Color.risoInkStatic : Color.risoOnColor)
                         .frame(minWidth: 40)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 10)
                         .background(Capsule().fill(isSelected ? Color.risoGold : Color.clear))
                         .overlay(
                             Capsule().strokeBorder(
-                                isSelected ? Color.risoInk : Color.risoPaper.opacity(0.6),
+                                isSelected ? Color.risoInk : Color.risoOnColor.opacity(0.6),
                                 lineWidth: Riso.Keyline.dense
                             )
                         )
@@ -682,11 +682,11 @@ struct CounterDetailContent: View {
             } label: {
                 Image(systemName: "minus")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.risoPaper)
+                    .foregroundStyle(Color.risoOnColor)
                     .frame(width: 52, height: 44)
                     .overlay(
                         RoundedRectangle(cornerRadius: Riso.cardRadius)
-                            .strokeBorder(Color.risoPaper.opacity(0.7), lineWidth: Riso.Keyline.dense)
+                            .strokeBorder(Color.risoOnColor.opacity(0.7), lineWidth: Riso.Keyline.dense)
                     )
             }
             .buttonStyle(.plain)

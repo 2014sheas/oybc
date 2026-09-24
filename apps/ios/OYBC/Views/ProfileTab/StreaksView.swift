@@ -327,7 +327,7 @@ struct StreaksContent: View {
                     if filled {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color.risoPaper)
+                            .foregroundStyle(Color.risoOnColor)
                     }
                 }
             )
@@ -414,7 +414,7 @@ struct StreaksContent: View {
             // Green checkmark badge
             Image(systemName: "checkmark")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Color.risoPaper)
+                .foregroundStyle(Color.risoOnColor)
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
@@ -465,7 +465,7 @@ struct StreaksContent: View {
         return Text(label.uppercased())
             .font(.risoHead(9, .bold))
             .tracking(0.45)
-            .foregroundStyle(Color.risoPaper)
+            .foregroundStyle(timeframe.risoOnFill)
             .padding(.vertical, 3)
             .padding(.horizontal, 8)
             .background(Capsule().fill(timeframe.risoColor))

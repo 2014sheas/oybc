@@ -99,7 +99,7 @@ struct SharedCounterLedgerCard: View {
                 Button(action: onLog) {
                     Text("+ Log")
                         .font(.risoHead(12, .extraBold))
-                        .foregroundStyle(Color.risoPaper)
+                        .foregroundStyle(Color.risoOnColor)
                         .padding(.vertical, 7)
                         .padding(.horizontal, 14)
                         .background(Capsule().fill(Color.risoBlue))

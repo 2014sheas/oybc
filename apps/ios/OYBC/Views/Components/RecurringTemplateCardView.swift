@@ -219,7 +219,7 @@ struct RecurringTemplateCard: View {
         Text(template.timeframe.risoDisplayName.uppercased())
             .font(.risoHead(9, .bold))
             .tracking(0.4)
-            .foregroundStyle(Color.risoPaper)
+            .foregroundStyle(template.timeframe.risoOnFill)
             .padding(.vertical, 3)
             .padding(.horizontal, 8)
             .background(Capsule().fill(template.timeframe.risoColor))

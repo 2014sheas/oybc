@@ -290,7 +290,7 @@ struct RearrangeGrid: View {
         // ── Text color ──
         let textColor: Color = {
             if cell.isCenter || isSelected { return .risoInkStatic }
-            if isTaskCompleted             { return .risoPaper }
+            if isTaskCompleted             { return .risoOnColor }
             return isDimmed ? .risoMuted : .risoInk
         }()
 

@@ -45,7 +45,7 @@ struct RisoKitGallery: View {
                     HStack(spacing: 10) {
                         RisoToolbarPill(title: "Done") {}
                         RisoToolbarPill(title: "Save") {}
-                        RisoToolbarPill(title: "Delete", fill: .risoRed, foreground: .risoPaper) {}
+                        RisoToolbarPill(title: "Delete", fill: .risoRed, foreground: .risoOnColor) {}
                     }
 
                     sectionLabel("Chips")
@@ -74,7 +74,8 @@ struct RisoKitGallery: View {
                             case "monthly": return .risoGreen
                             default: return .risoRed
                             }
-                        }
+                        },
+                        selectedForeground: { $0 == "daily" ? .risoInkStatic : .risoOnColor }
                     )
 
                     sectionLabel("Text fields")
@@ -112,7 +113,7 @@ struct RisoKitGallery: View {
                             .risoHardShadow()
                         Text("Done")
                             .font(.risoBody(13, .bold))
-                            .foregroundStyle(Color.risoPaper)
+                            .foregroundStyle(Color.risoOnColor)
                             .frame(width: 64, height: 64)
                             .background(RoundedRectangle(cornerRadius: Riso.cellRadius).fill(Color.risoRed))
                             .risoHalftone()
