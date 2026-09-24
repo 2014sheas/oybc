@@ -163,4 +163,70 @@ final class PoolHealthBatchTests: XCTestCase {
         let result = try health(db, pools: [pool], templates: [tpl])
         XCTAssertEqual(result["pool-1"]?.consumers, [])
     }
+
+    // MARK: - Tasks-tab Pools load (TasksTabView.fetchPoolsSnapshot)
+    //
+    // Final-fix wave: the Tasks tab used to fetch pools and resolve health
+    // in ONE do/catch, so a health-only throw hid the whole Pools list, and
+    // it resolved health even in Library mode. The ordering guard
+    // (`poolLoadSeq`) lives in `@State` on the view and is UI-only; the
+    // decoupling + mode gating are pinned here through the view's static
+    // seam against a real test database.
+
+    private struct HealthBoom: Error {}
+
+    private func insertTemplate(_ db: AppDatabase, _ tpl: RecurringBoardTemplate) throws {
+        try db.write { grdb in try tpl.insert(grdb) }
+    }
+
+    func test_poolsLoad_healthResolutionThrows_stillCommitsPoolsAndTemplates_withNoHealth() throws {
+        let db = try makeDb()
+        _ = try seedPool(db, id: "pool-1", taskIds: ["p1", "p2"])
+        try insertTemplate(db, template(sources: [BoardSource(sourceId: "pool-1", kind: .pool)]))
+
+        let snapshot = try TasksTabView.fetchPoolsSnapshot(
+            userId: userId, database: db, resolveHealth: true,
+            resolveAchievable: { _, _, _ in throw HealthBoom() }
+        )
+
+        XCTAssertEqual(snapshot.pools.map(\.id), ["pool-1"])
+        XCTAssertEqual(snapshot.templates.map(\.id), ["tpl"])
+        XCTAssertNil(snapshot.achievableTaskIds, "a failed resolution shows no warnings")
+        XCTAssertTrue(snapshot.healthSettled, "the list may paint — it must not wait forever")
+    }
+
+    func test_poolsLoad_libraryMode_skipsHealthResolution_andIsNotSettled() throws {
+        let db = try makeDb()
+        _ = try seedPool(db, id: "pool-1", taskIds: ["p1"])
+        try insertTemplate(db, template(sources: [BoardSource(sourceId: "pool-1", kind: .pool)]))
+        var resolverCalls = 0
+
+        let snapshot = try TasksTabView.fetchPoolsSnapshot(
+            userId: userId, database: db, resolveHealth: false,
+            resolveAchievable: { _, _, _ in resolverCalls += 1; return [:] }
+        )
+
+        XCTAssertEqual(resolverCalls, 0, "Library mode must not pay for supply resolution")
+        XCTAssertEqual(snapshot.pools.map(\.id), ["pool-1"], "the segment label still gets its count")
+        XCTAssertNil(snapshot.achievableTaskIds)
+        XCTAssertFalse(snapshot.healthSettled, "Pools mode must resolve before painting cards")
+    }
+
+    func test_poolsLoad_poolsMode_resolvesAchievableFromSources() throws {
+        let db = try makeDb()
+        _ = try seedPool(db, id: "pool-1", taskIds: (0..<10).map { "p\($0)" })
+        try insertTemplate(db, template(
+            name: "Capped", sources: [BoardSource(sourceId: "pool-1", kind: .pool, max: 3)]
+        ))
+
+        let snapshot = try TasksTabView.fetchPoolsSnapshot(
+            userId: userId, database: db, resolveHealth: true
+        )
+
+        XCTAssertTrue(snapshot.healthSettled)
+        // The range caps the pick at 3 of the pool's 10 (the default,
+        // real resolver — not the 10 a poolIds read would give).
+        XCTAssertEqual(snapshot.achievableTaskIds?["tpl"]?.count, 3)
+    }
 }
+

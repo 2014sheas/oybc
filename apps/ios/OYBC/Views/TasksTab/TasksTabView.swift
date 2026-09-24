@@ -88,9 +88,21 @@ struct TasksTabView: View {
     /// Each template's achievable pick — the pool its next spawn could
     /// deal from, resolved from its sources the way the spawn does
     /// (`RecurringBoardTemplatesViewModel.resolveAchievableTaskIds`; 2026-09
-    /// audit T2). `nil` until the first load resolves, so the cards never
-    /// flash a warning before supplies are known.
+    /// audit T2). Resolved only for the Pools segment. `nil` = no warnings:
+    /// either not resolved yet (see `poolHealthSettled`) or the resolution
+    /// threw (logged; the list still shows, just without health).
     @State private var poolAchievableTaskIds: [String: [String]]?
+    /// Whether `poolAchievableTaskIds` is final for the current `pools` —
+    /// a Pools-mode load attempted the resolution (success or logged
+    /// failure). Until it is, the Pools segment shows a loading line rather
+    /// than warning-less cards, so "Short on N boards" never pops in after
+    /// first paint (the late-mutation rule; web twin: `isPoolHealthResolved`).
+    @State private var poolHealthSettled = false
+    /// Monotonic token for `loadPools()` — it runs on appear, on segment
+    /// change and after a pool save/delete with no ordering between them;
+    /// only the newest run may commit (the `RecurringBoardTemplatesViewModel`
+    /// `latestSeq` pattern).
+    @State private var poolLoadSeq: UInt64 = 0
     @State private var poolEditTarget: PoolEditTarget?
     @State private var poolLoadError: String?
 
@@ -157,10 +169,11 @@ struct TasksTabView: View {
 
                 // ── Pools segment content ────────────────────────────
                 if segment == .pools {
-                    // Health/preview lookups — built ONCE here (never per-card),
-                    // and only in Pools mode (matches web, which only computes
-                    // this inside the mounted PoolsBrowse). The achievable
-                    // sizes were resolved from sources in `loadPools()`.
+                    // Health/preview lookups — built ONCE here (never per-card).
+                    // The achievable sizes are resolved from sources by a
+                    // Pools-mode `loadPools()` (never in Library mode — see
+                    // there); until that settles the cards are held behind a
+                    // loading line so their warning is on the first paint.
                     let tasksById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
                     let healthByPoolId = PoolHealth.computePoolHealthByPoolId(
                         pools: pools,
@@ -172,16 +185,26 @@ struct TasksTabView: View {
                         (pool.id, pool.taskIds.compactMap { tasksById[$0] })
                     })
 
-                    PoolsBrowseView(
-                        pools: pools,
-                        poolTasksById: poolTasksById,
-                        healthByPoolId: healthByPoolId,
-                        onSelectPool: { poolEditTarget = .existing($0) },
-                        onNewPool: { poolEditTarget = .new }
-                    )
-                    .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 20, trailing: Riso.gutter))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                    if poolHealthSettled || pools.isEmpty {
+                        PoolsBrowseView(
+                            pools: pools,
+                            poolTasksById: poolTasksById,
+                            healthByPoolId: healthByPoolId,
+                            onSelectPool: { poolEditTarget = .existing($0) },
+                            onNewPool: { poolEditTarget = .new }
+                        )
+                        .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 20, trailing: Riso.gutter))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    } else {
+                        Text("Loading pools…")
+                            .font(.risoBody(13, .regular))
+                            .foregroundStyle(Color.risoMuted)
+                            .accessibilityIdentifier("pools-loading")
+                            .listRowInsets(EdgeInsets(top: 12, leading: Riso.gutter, bottom: 20, trailing: Riso.gutter))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
 
                     if let poolLoadError {
                         Text(poolLoadError)
@@ -431,10 +454,10 @@ struct TasksTabView: View {
             vm.reloadAsync()
             loadPools()
         }
-        // Re-resolve pool health on entering Pools mode: task edits and
-        // deletes made in Library mode change what each repeating board
-        // can deal, and `loadPools()` otherwise only runs on appear and
-        // after a pool save/delete.
+        // Resolve pool health on entering Pools mode — the only place it
+        // is resolved (Library-mode loads skip it). Also picks up task
+        // edits/deletes made in Library mode, which change what each
+        // repeating board can deal.
         .onChange(of: segment) { _, newSegment in
             if newSegment == .pools { loadPools() }
         }
@@ -564,42 +587,40 @@ struct TasksTabView: View {
         }
     }
 
-    /// Loads `pools` + `poolTemplates` + each template's achievable pick
-    /// for the Pools segment. Called on appear (cheap — needed for the
-    /// "Pools · N" segment label immediately, not only once the segment is
-    /// entered), on entering Pools mode, and after any pool
-    /// create/save/delete so the browse list + segment count + health
-    /// refresh.
+    /// Loads `pools` + `poolTemplates`, and — in Pools mode only — each
+    /// template's achievable pick for the "Short on N boards" health.
+    /// Called on appear (cheap in Library mode — the "Pools · N" segment
+    /// label needs `pools` immediately), on entering Pools mode, and after
+    /// any pool create/save/delete.
+    ///
+    /// - Ordering: `poolLoadSeq` tags each run; a run commits only if no
+    ///   newer run started, so a slow Library-mode load can't overwrite a
+    ///   newer Pools-mode commit.
+    /// - Decoupling: a health-resolution failure never hides the list —
+    ///   `fetchPoolsSnapshot` logs it and commits the pools with no health.
     private func loadPools() {
         let uid = userId
+        let wantHealth = segment == .pools
+        poolLoadSeq &+= 1
+        let mySeq = poolLoadSeq
         _Concurrency.Task {
             do {
-                let loadedPools = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.fetchPools(userId: uid)
-                }.value
-                let loadedTemplates = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
-                }.value
-                // Sources-native pool health (2026-09 audit T2): resolve
-                // what each repeating board's next spawn could deal from
-                // — pool AND board sources, ranges, the done-filter.
-                let achievable = try await _Concurrency.Task.detached(priority: .userInitiated) {
-                    let liveTasks = try AppDatabase.shared.fetchTasks(userId: uid)
-                    let tasksById = Dictionary(
-                        liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
-                    )
-                    return try RecurringBoardTemplatesViewModel.resolveAchievableTaskIds(
-                        templates: loadedTemplates, tasksById: tasksById, database: .shared
+                let snapshot = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try Self.fetchPoolsSnapshot(
+                        userId: uid, database: .shared, resolveHealth: wantHealth
                     )
                 }.value
                 await MainActor.run {
-                    pools = loadedPools
-                    poolTemplates = loadedTemplates
-                    poolAchievableTaskIds = achievable
+                    guard mySeq == poolLoadSeq else { return }
+                    pools = snapshot.pools
+                    poolTemplates = snapshot.templates
+                    poolAchievableTaskIds = snapshot.achievableTaskIds
+                    poolHealthSettled = snapshot.healthSettled
                     poolLoadError = nil
                 }
             } catch {
                 await MainActor.run {
+                    guard mySeq == poolLoadSeq else { return }
                     poolLoadError = "Failed to load pools: \(error.localizedDescription)"
                 }
             }
@@ -713,5 +734,74 @@ struct TasksTabView: View {
         } catch {
             return "Cycle check failed: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: - Pools-segment load (testable seam)
+
+extension TasksTabView {
+    /// One Pools-segment load: what `loadPools()` commits.
+    struct PoolsSnapshot {
+        let pools: [Pool]
+        let templates: [RecurringBoardTemplate]
+        /// template id → achievable task ids; `nil` = show no warnings
+        /// (not resolved, or the resolution threw).
+        let achievableTaskIds: [String: [String]]?
+        /// `true` when the health resolution was attempted (success OR a
+        /// logged failure) — the Pools list may paint as final.
+        let healthSettled: Bool
+    }
+
+    /// Fetches the Pools segment's data off-main. The pools + templates
+    /// fetch is the only thing that can fail the load; the health
+    /// resolution runs in its own `do`/`catch` so a throw there is logged
+    /// and degrades to "no warnings" instead of hiding the whole list.
+    ///
+    /// - Parameters:
+    ///   - userId: The signed-in user.
+    ///   - database: The database to read (injected for tests).
+    ///   - resolveHealth: Resolve achievable supply (Pools mode only —
+    ///     Library mode skips it to keep the segment-label load cheap).
+    ///   - resolveAchievable: The supply resolver; defaults to
+    ///     `RecurringBoardTemplatesViewModel.resolveAchievableTaskIds`.
+    ///     Injectable so a test can make it throw.
+    /// - Returns: The snapshot to commit.
+    /// - Throws: A GRDB error from the pools / templates fetch only.
+    static func fetchPoolsSnapshot(
+        userId: String,
+        database: AppDatabase,
+        resolveHealth: Bool,
+        resolveAchievable: (
+            _ templates: [RecurringBoardTemplate],
+            _ tasksById: [String: Task],
+            _ database: AppDatabase
+        ) throws -> [String: [String]] = RecurringBoardTemplatesViewModel.resolveAchievableTaskIds
+    ) throws -> PoolsSnapshot {
+        let loadedPools = try database.fetchPools(userId: userId)
+        let loadedTemplates = try database.fetchRecurringBoardTemplates(userId: userId)
+        guard resolveHealth else {
+            return PoolsSnapshot(
+                pools: loadedPools, templates: loadedTemplates,
+                achievableTaskIds: nil, healthSettled: false
+            )
+        }
+        // Sources-native pool health (2026-09 audit T2): what each
+        // repeating board's next spawn could deal from — pool AND board
+        // sources, ranges, the done-filter.
+        var achievable: [String: [String]]?
+        do {
+            let liveTasks = try database.fetchTasks(userId: userId)
+            let tasksById = Dictionary(
+                liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+            )
+            achievable = try resolveAchievable(loadedTemplates, tasksById, database)
+        } catch {
+            dlog("⚠️ TasksTabView: pool health resolution failed — showing pools without health: \(error)")
+            achievable = nil
+        }
+        return PoolsSnapshot(
+            pools: loadedPools, templates: loadedTemplates,
+            achievableTaskIds: achievable, healthSettled: true
+        )
     }
 }
