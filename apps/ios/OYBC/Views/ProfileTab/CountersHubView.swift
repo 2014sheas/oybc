@@ -36,6 +36,9 @@ struct CountersHubView: View {
     /// Counter ids with an in-flight "+ Log" write — disables that card's pill.
     @State private var loggingCounterIds: Set<String> = []
     @State private var toast: HubToastState?
+    /// Set when a "+ Log" or Undo write fails — shown as an alert instead of
+    /// the success toast (a failed write must never read as "Logged +N").
+    @State private var logError: String?
 
     /// "+ New counter" sheet presentation (P5). `deleteImpact`-style Binding
     /// derivation isn't needed here — the sheet always dismisses via either
@@ -92,6 +95,18 @@ struct CountersHubView: View {
         .navigationDestination(item: $navigateToCounterId) { counterId in
             CounterDetailView(counterId: counterId, showExpired: showExpired)
         }
+        .alert(
+            "Counter not updated",
+            isPresented: Binding(
+                get: { logError != nil },
+                set: { if !$0 { logError = nil } }
+            ),
+            presenting: logError
+        ) { _ in
+            Button("OK", role: .cancel) { logError = nil }
+        } message: { message in
+            Text(message)
+        }
     }
 
     // MARK: - Data loading
@@ -128,10 +143,19 @@ struct CountersHubView: View {
         let counterId = group.counterId
         let unit = group.unit ?? ""
         loggingCounterIds.insert(counterId)
+        logError = nil
         _Concurrency.Task.detached(priority: .userInitiated) {
-            _ = try? AppDatabase.shared.incrementSharedCounter(sourceTaskId: counterId, by: amount)
+            let ok = attemptLoggedWrite("CountersHubView.handleLog(\(counterId))") {
+                _ = try AppDatabase.shared.incrementSharedCounter(sourceTaskId: counterId, by: amount)
+            }
             await MainActor.run {
                 loggingCounterIds.remove(counterId)
+                // Never toast "Logged +N" for a write that didn't land —
+                // surface the failure instead (mirrors CounterDetailView).
+                guard ok else {
+                    logError = "Failed to log. Try again."
+                    return
+                }
                 toast = HubToastState(
                     counterId: counterId, amount: amount, unit: unit,
                     verb: .logged, toastKey: UUID().uuidString
@@ -143,10 +167,12 @@ struct CountersHubView: View {
 
     private func handleUndo(counterId: String) {
         _Concurrency.Task.detached(priority: .userInitiated) {
-            _ = try? AppDatabase.shared.undoLastCounterLog(sourceTaskId: counterId)
+            let ok = attemptLoggedWrite("CountersHubView.handleUndo(\(counterId))") {
+                _ = try AppDatabase.shared.undoLastCounterLog(sourceTaskId: counterId)
+            }
             await MainActor.run {
                 toast = nil
-                loadData()
+                if ok { loadData() } else { logError = "Failed to undo. Try again." }
             }
         }
     }

@@ -5,7 +5,7 @@
     "apps/ios/OYBC/Services/SyncService.swift": 2401,
     "apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift": 1727,
     "apps/web/src/components/BoardPlaySurface.tsx": 1351,
-    "apps/ios/OYBC/Views/ProfileTab/CounterDetailView.swift": 1008,
+    "apps/ios/OYBC/Views/ProfileTab/CounterDetailView.swift": 1007,
     "apps/ios/OYBC/Database/AppDatabase.swift": 1005
   }
 }
