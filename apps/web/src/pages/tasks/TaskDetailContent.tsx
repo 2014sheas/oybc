@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   AchievementTrigger,
   TaskType,
+  compoundRuleLabel,
   type Board,
   type BoardTask,
   type CompoundChild,
@@ -338,6 +339,10 @@ export function TaskDetailContent({
     return m;
   }, [childTasks]);
 
+  // Sub-tasks that actually render (a link whose child row hasn't loaded or
+  // is missing renders nothing) — the rule label counts these.
+  const resolvedChildCount = sortedChildren.filter((link) => !!childTaskMap[link.childTaskId]).length;
+
   // ── Recurring template back-refs ───────────────────────────────────────
 
   const referencingTemplates = useLiveQuery(
@@ -427,6 +432,11 @@ export function TaskDetailContent({
           <h2 className={styles.sectionHeading}>
             Subtasks{sortedChildren.length > 0 ? ` (${sortedChildren.length})` : ''}
           </h2>
+          {resolvedChildCount > 0 && (
+            <p className={styles.metaLine}>
+              {compoundRuleLabel(task.operator, task.threshold, resolvedChildCount)}
+            </p>
+          )}
           {sortedChildren.length === 0 ? (
             <p className={styles.metaLine}>No subtasks yet.</p>
           ) : (

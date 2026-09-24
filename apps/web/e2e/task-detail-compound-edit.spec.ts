@@ -57,6 +57,7 @@ test.describe('Task Detail — compound editing', () => {
     await page.getByRole('button', { name: /open workout routine details/i }).click();
     await expect(page).toHaveURL(new RegExp(`/tasks/${PARENT_ID}`));
     await expect(page.getByRole('heading', { name: 'Subtasks (2)' })).toBeVisible();
+    await expect(page.getByText('All of 2', { exact: true })).toBeVisible();
     // The old "edited from the board-creation wizard" hint is gone.
     await expect(page.getByText(/board-creation wizard/i)).toHaveCount(0);
 
@@ -76,12 +77,14 @@ test.describe('Task Detail — compound editing', () => {
 
     await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Third' })).toBeVisible();
+    await expect(page.getByText('2 of 3', { exact: true })).toBeVisible();
     expect(await readRule(page)).toMatchObject({ operator: 'M_OF_N', threshold: 2, version: 2 });
 
     // Persisted: a reload re-reads IndexedDB.
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Subtasks (3)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open subtask: Third' })).toBeVisible();
+    await expect(page.getByText('2 of 3', { exact: true })).toBeVisible();
 
     // Reopening the sheet shows the saved rule.
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
@@ -99,5 +102,31 @@ test.describe('Task Detail — compound editing', () => {
     await sheet.getByRole('button', { name: 'Delete sub-task' }).nth(1).click();
     await expect(sheet.getByText('A compound task needs at least two sub-tasks.')).toBeVisible();
     await expect(sheet.getByRole('button', { name: /save changes/i })).toBeDisabled();
+  });
+
+  test('an already-invalid compound (one sub-task left) can still be renamed', async ({ page }) => {
+    // Drop Squats' link so the STORED structure fails validation.
+    await page.goto(`/tasks/${PARENT_ID}?__oybc_test_bypass=1`);
+    await seedCompoundChild(page, {
+      id: 'cccccccc-aaaa-0000-0000-000000000002',
+      compoundTaskId: PARENT_ID,
+      childTaskId: CHILD_B_ID,
+      childIndex: 1,
+      isDeleted: true,
+    });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Edit task' });
+    await expect(sheet.getByLabel('Sub-task 1 title')).toHaveValue('Pushups');
+    // The validation line still shows as a hint, but Save isn't blocked by it.
+    await expect(sheet.getByText('A compound task needs at least two sub-tasks.')).toBeVisible();
+    await sheet.getByLabel('Title', { exact: true }).fill('Arm day');
+    await sheet.getByRole('button', { name: /save changes/i }).click();
+
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Arm day' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Subtasks (1)' })).toBeVisible();
   });
 });

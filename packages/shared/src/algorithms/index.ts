@@ -14,6 +14,7 @@ export { formatCounterName } from './counterName';
 export {
   evaluateCompound,
   clampCompoundThreshold,
+  compoundRuleLabel,
 } from './compoundEvaluation';
 
 export {

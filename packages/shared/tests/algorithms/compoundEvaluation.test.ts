@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { evaluateCompound, clampCompoundThreshold } from '../../src/algorithms/compoundEvaluation';
+import {
+  evaluateCompound,
+  clampCompoundThreshold,
+  compoundRuleLabel,
+} from '../../src/algorithms/compoundEvaluation';
 import { OperatorType, TaskType } from '../../src/constants/enums';
 import type { Task, CompoundChild } from '../../src';
 
@@ -127,4 +131,34 @@ describe('clampCompoundThreshold', () => {
       expect(clampCompoundThreshold(v.t, v.count)).toBe(v.expected);
     });
   }
+});
+
+describe('compoundRuleLabel', () => {
+  it('reads "All of N" for AND', () => {
+    expect(compoundRuleLabel(OperatorType.AND, undefined, 3)).toBe('All of 3');
+  });
+
+  it('treats a missing operator as AND', () => {
+    expect(compoundRuleLabel(undefined, undefined, 3)).toBe('All of 3');
+  });
+
+  it('reads "Any of N" for OR', () => {
+    expect(compoundRuleLabel(OperatorType.OR, undefined, 3)).toBe('Any of 3');
+  });
+
+  it('reads "M of N" for M_OF_N', () => {
+    expect(compoundRuleLabel(OperatorType.M_OF_N, 2, 3)).toBe('2 of 3');
+  });
+
+  it('clamps a stale threshold above the child count', () => {
+    expect(compoundRuleLabel(OperatorType.M_OF_N, 5, 3)).toBe('3 of 3');
+  });
+
+  it('clamps a threshold below 1 up to 1', () => {
+    expect(compoundRuleLabel(OperatorType.M_OF_N, 0, 3)).toBe('1 of 3');
+  });
+
+  it('defaults a missing M_OF_N threshold to 1', () => {
+    expect(compoundRuleLabel(OperatorType.M_OF_N, undefined, 4)).toBe('1 of 4');
+  });
 });
