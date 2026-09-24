@@ -357,7 +357,7 @@ struct BoardWizardPreviewStepView: View {
     /// Load the events read-model for windowed preview completion.
     private func loadPreviewEvents() {
         do {
-            let events = try AppDatabase.shared.fetchNonDeletedTaskEvents(userId: userId)
+            let events = try controller.database.fetchNonDeletedTaskEvents(userId: userId)
             eventsByTaskId = Dictionary(grouping: events, by: { $0.taskId })
         } catch {
             // Non-fatal: the grid falls back to empty events (all grey for
