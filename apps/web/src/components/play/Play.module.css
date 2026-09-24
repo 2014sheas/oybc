@@ -363,7 +363,7 @@
   background-size: 6px 6px;
 }
 .glPoster i.free {
-  background: var(--riso-ink);
+  background: var(--riso-ink-static);
   display: grid;
   place-items: center;
 }

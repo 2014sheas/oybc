@@ -165,11 +165,12 @@ struct TutorialBoardView: View {
             Text("FREE")
                 .font(.risoBody(10, .bold))
                 .tracking(1.0)
-                .foregroundStyle(Color.risoPaper)
+                .foregroundStyle(Color.risoOnColor)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 104)
-        .background(RoundedRectangle(cornerRadius: Riso.cellRadius).fill(Color.risoInk))
+        // Static ink fill: gold star + on-color label must not flip with the theme.
+        .background(RoundedRectangle(cornerRadius: Riso.cellRadius).fill(Color.risoInkStatic))
         .accessibilityHidden(true) // decorative, non-interactive
     }
 

@@ -265,7 +265,7 @@
   background: var(--riso-red);
 }
 .miniCell.free {
-  background: var(--riso-ink);
+  background: var(--riso-ink-static);
 }
 .miniGreen .miniCell.on {
   background: var(--riso-green);
