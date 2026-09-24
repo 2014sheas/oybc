@@ -102,15 +102,12 @@ final class CreateHubViewModel {
                         // Board Creation Split (PR B) — the true pool size
                         // lives in `recurringDraftMix`, not the placed
                         // BoardTask rows (which truncate an intentionally
-                        // overfilled pool to the grid size). See
-                        // `DraftRowData`'s doc.
-                        let mix = RecurringDraftMixPayload.decoded(from: board.recurringDraftMix)
-                        count = BoardWizardViewModel.resolvePoolMixHydration(
-                            poolIds: mix.poolIds,
-                            manualTaskIds: mix.manualTaskIds,
-                            removedTaskIds: mix.removedTaskIds,
-                            database: self.database
-                        ).selectedTaskIds.count
+                        // overfilled pool to the grid size). Resolved from
+                        // the blob's SOURCES — the reopened wizard's own
+                        // capacity (2026-09 audit T2). See `DraftRowData`'s doc.
+                        count = BoardWizardViewModel.resolveDraftCapacity(
+                            board: board, database: self.database
+                        )
                     } else {
                         count = try self.database.fetchBoardTasks(boardId: board.id).count
                     }

@@ -13,15 +13,16 @@ import type { WizardStep } from './useBoardWizard';
  * touching Dexie — mirrors `wizardTimeframeSeed.ts`'s "keep the pure math
  * in its own leaf module" precedent. iOS twin:
  * `BoardWizardViewModel.resolveDraftInitialStep` (the math half; the
- * DB-lookup half lives in `useResumableDraft`/`resolveRecurringDraftMixTaskIds`
- * on web, mirroring iOS's own `resolvePoolMixHydration` split).
+ * DB-lookup half lives in `useResumableDraft`/`resolveDraftCapacity` on
+ * web, mirroring iOS's own `resolveDraftCapacity` split).
  *
  * @param tasksRequired - The board's fillable-cell count
  *   (`tasksNeededFor(size, centerType)`).
- * @param selectedCount - The draft's resolved selection size: placed
- *   `BoardTask` rows for a one-off draft, or the FULL resolved
- *   `recurringDraftMix` size for a recurring draft (never the placed-row
- *   count, which silently truncates an intentionally overfilled pool).
+ * @param selectedCount - The draft's resolved selection size: the
+ *   sources capacity (`resolveDraftCapacity`) for a draft with a mix blob,
+ *   else the placed `BoardTask` rows of a legacy blob-less one-off draft
+ *   (never the placed-row count for a blob draft, which silently truncates
+ *   an intentionally overfilled pool).
  */
 export function computeDraftInitialStep(tasksRequired: number, selectedCount: number): WizardStep {
   if (selectedCount === 0) return 1;

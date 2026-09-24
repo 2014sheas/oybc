@@ -16,7 +16,8 @@ import Foundation
 enum PoolHealth {
 
     /// A single repeating board (spawn record) that is short on this pool —
-    /// i.e. its resolved mix doesn't reach its own fillable floor. Only
+    /// i.e. its ACHIEVABLE pool (every source + hand-adds, as the spawn
+    /// resolves them) doesn't reach its own fillable floor. Only
     /// `shortBy > 0` templates ever appear as a consumer; a template that
     /// pulls the pool but is otherwise fully supplied is not included.
     struct Consumer: Equatable {
@@ -28,7 +29,7 @@ enum PoolHealth {
         /// consumers), but kept on the consumer for any other per-template
         /// rendering.
         let boardSize: Int
-        /// How many more resolvable tasks the template's mix needs. Always > 0.
+        /// How many more tasks the template's achievable pool needs. Always > 0.
         let shortBy: Int
     }
 
@@ -41,33 +42,69 @@ enum PoolHealth {
         let consumers: [Consumer]
     }
 
+    /// One candidate consumer, PRE-RESOLVED: the template plus the size of
+    /// the pool its next spawn could actually deal from. The size is
+    /// DB-derived (board-kind sources need live boards), so the pure health
+    /// function never computes it — callers resolve it through the
+    /// sources-native roster path (`AppDatabase.fetchTemplateSupplyResolution`
+    /// → `RecurringBoardTemplatesViewModel.computeRosterHealth`), i.e.
+    /// `computeAchievablePoolSize` over every source (pool AND board kinds,
+    /// ranges, exclusions, the done-filter, Split-up expansion, counter
+    /// families) plus the resolvable hand-added layer. Web twin:
+    /// `PoolHealthTemplateSupply`.
+    ///
+    /// The size is resolved at READ time ("now", with the `.todo`
+    /// done-filter applied as of the read), so near a window boundary it can
+    /// differ from what the spawn itself resolves at its own window start.
+    struct TemplateSupply {
+        let template: RecurringBoardTemplate
+        /// Distinct tasks the template's next spawn could deal from.
+        let achievableSize: Int
+    }
+
+    /// Whether `template` pulls `poolId` — one of its sources is that pool
+    /// (kind `.pool`, `sourceId == poolId`). Read through
+    /// `BoardSources.sourcesForRecord`, so an un-migrated v1 record's
+    /// `poolIds` still count via the decode-time `[0, all]` mapping, but a
+    /// record WITH `sources` is judged by them alone (its `poolIds` mirror
+    /// is never consulted). Web twin: `templateConsumesPool`.
+    ///
+    /// - Parameters:
+    ///   - template: The candidate consumer.
+    ///   - poolId: The pool in question.
+    /// - Returns: `true` when a pool-kind source names `poolId`.
+    static func templateConsumesPool(_ template: RecurringBoardTemplate, poolId: String) -> Bool {
+        BoardSources.sourcesForRecord(
+            sources: template.sources,
+            poolIds: template.poolIds,
+            removedTaskIds: template.removedTaskIds
+        ).contains { $0.kind == .pool && $0.sourceId == poolId }
+    }
+
     /// Derives a pool's resolvable task count and the set of repeating
     /// boards (spawn records) that consume it and are short.
     ///
     /// A template is a consumer only when ALL of:
     ///   - not soft-deleted (`isDeleted == false`)
     ///   - active (`isActive == true`) — a paused template can't spawn, so
-    ///     a short mix there isn't actionable
-    ///   - its `poolIds` includes `pool.id`
-    ///   - its resolved mix (`PoolMix.resolveMix`, reused verbatim — no
-    ///     reimplementation) falls short of its own fillable floor
-    ///     (`recurringTemplateFillableCellCount`)
+    ///     a short pool there isn't actionable
+    ///   - one of its sources is this pool (`templateConsumesPool`)
+    ///   - its pre-resolved `achievableSize` falls short of its own
+    ///     fillable floor (`recurringTemplateFillableCellCount`)
     ///
-    /// Callers compute this ONCE per screen (batched over every pool) —
-    /// never per-card (see `PoolsBrowseView` / `PoolEditSheetView`).
+    /// Callers compute this ONCE per screen (batched over every pool, via
+    /// `computePoolHealthByPoolId`) — never per-card.
     ///
     /// - Parameters:
     ///   - pool: The pool whose health is being derived.
-    ///   - templates: Candidate consumers — filtered internally to
-    ///     non-deleted + active.
-    ///   - poolsById: Lookup for every id in each template's `poolIds`
-    ///     (passed to `PoolMix.resolveMix`).
-    ///   - tasksById: Lookup for filtering `pool.taskIds` / each
-    ///     template's resolved mix.
+    ///   - templates: Candidate consumers with their resolved achievable
+    ///     size — filtered internally to non-deleted + active + pulls-this-pool.
+    ///   - tasksById: Lookup for filtering `pool.taskIds` into the card's
+    ///     task count.
+    /// - Returns: The pool's task count and its short consumers.
     static func computePoolHealth(
         _ pool: Pool,
-        templates: [RecurringBoardTemplate],
-        poolsById: [String: Pool],
+        templates: [TemplateSupply],
         tasksById: [String: Task]
     ) -> Result {
         // Supply-eligible only (`isSourceSupplyTask` — achievements are
@@ -79,16 +116,16 @@ enum PoolHealth {
         }.count
 
         var consumers: [Consumer] = []
-        for template in templates {
+        for supply in templates {
+            let template = supply.template
             guard !template.isDeleted, template.isActive else { continue }
-            guard (template.poolIds ?? []).contains(pool.id) else { continue }
+            guard templateConsumesPool(template, poolId: pool.id) else { continue }
 
-            let mix = PoolMix.resolveMix(template, poolsById: poolsById, tasksById: tasksById)
             let floor = recurringTemplateFillableCellCount(
                 boardSize: template.boardSize,
                 centerSquareType: template.centerSquareType
             )
-            let shortBy = max(0, floor - mix.taskIds.count)
+            let shortBy = max(0, floor - supply.achievableSize)
             guard shortBy > 0 else { continue }
 
             consumers.append(Consumer(
@@ -101,6 +138,40 @@ enum PoolHealth {
         }
 
         return Result(taskCount: taskCount, consumers: consumers)
+    }
+
+    /// Batches `computePoolHealth` across every pool on a surface (the
+    /// Pools browse cards, the pool picker's rows) — one pass over
+    /// already-loaded lookups, never a per-card query. Twin of web's
+    /// `computePoolHealthByPoolId` (`components/pools/poolHealthBatch.ts`).
+    ///
+    /// A template with no entry in `achievableTaskIdsByTemplateId` (still
+    /// loading — pass `nil` for the whole map) is left out, so a surface
+    /// never flashes a warning before its supplies resolve.
+    ///
+    /// - Parameters:
+    ///   - pools: Every pool on the surface.
+    ///   - templates: Candidate consumers (the user's repeating boards).
+    ///   - achievableTaskIdsByTemplateId: The roster's achievable pick per
+    ///     template (`RecurringBoardTemplatesViewModel.mixByTemplateId` /
+    ///     `resolveAchievableTaskIds`), or `nil` while it loads.
+    ///   - tasksById: id → Task, for each pool card's task count.
+    /// - Returns: pool id → that pool's health.
+    static func computePoolHealthByPoolId(
+        pools: [Pool],
+        templates: [RecurringBoardTemplate],
+        achievableTaskIdsByTemplateId: [String: [String]]?,
+        tasksById: [String: Task]
+    ) -> [String: Result] {
+        let supplies: [TemplateSupply] = templates.compactMap { template in
+            guard let achievable = achievableTaskIdsByTemplateId?[template.id] else { return nil }
+            return TemplateSupply(template: template, achievableSize: achievable.count)
+        }
+        var result: [String: Result] = [:]
+        for pool in pools {
+            result[pool.id] = computePoolHealth(pool, templates: supplies, tasksById: tasksById)
+        }
+        return result
     }
 
     /// Formats the single, cross-platform-shared pool-CARD warning line —
@@ -139,13 +210,14 @@ enum PoolHealth {
 
     /// The floor the Pool-edit sheet's deck-preview line measures against:
     /// the SMALLEST fillable floor among the pool's active, non-deleted
-    /// consumers, or `defaultDeckFloor` when there are none. Mirrors web's
-    /// `poolDeckPreview.ts`.
+    /// consumers (a pool-kind source naming it — `templateConsumesPool`,
+    /// never the `poolIds` mirror), or `defaultDeckFloor` when there are
+    /// none. Mirrors web's `poolDeckPreview.ts`.
     static func computeDeckFloor(templates: [RecurringBoardTemplate], poolId: String) -> DeckFloor {
         var best: DeckFloor?
         for template in templates {
             guard !template.isDeleted, template.isActive else { continue }
-            guard (template.poolIds ?? []).contains(poolId) else { continue }
+            guard templateConsumesPool(template, poolId: poolId) else { continue }
             let floor = recurringTemplateFillableCellCount(
                 boardSize: template.boardSize, centerSquareType: template.centerSquareType
             )

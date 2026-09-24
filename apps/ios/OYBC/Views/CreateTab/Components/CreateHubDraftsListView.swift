@@ -7,10 +7,11 @@ import SwiftUI
 ///
 /// Board Creation Split (PR B) — `taskCount` means different things per
 /// `kind`: for a one-off draft it's the placed `BoardTask` row count
-/// (unchanged); for a recurring draft it's the FULL resolved pool size
-/// (`recurringDraftMix`, via `BoardWizardViewModel.resolvePoolMixHydration`)
-/// — never the placed-row count, which silently truncates an intentionally
-/// overfilled pool to the grid size. See `CreateHubViewModel.reloadDrafts`.
+/// (legacy blob-less drafts only); for a draft carrying a
+/// `recurringDraftMix` blob it's the sources capacity the reopened wizard
+/// shows (`BoardWizardViewModel.resolveDraftCapacity`) — never the
+/// placed-row count, which silently truncates an intentionally overfilled
+/// pool to the grid size. See `CreateHubViewModel.reloadDrafts`.
 struct DraftRowData: Identifiable {
     /// One-off (red) vs recurring (blue) — drives the row's typed pill,
     /// meta-line format, and which wizard mode `onResume` reopens

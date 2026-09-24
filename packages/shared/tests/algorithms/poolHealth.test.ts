@@ -1,11 +1,13 @@
 import {
   computePoolHealth,
   formatPoolShortSummary,
+  templateConsumesPool,
 } from '../../src/algorithms/poolHealth';
 import { TaskType, Timeframe, CenterSquareType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
 import type { Pool } from '../../src/types/pool';
 import type { RecurringBoardTemplate } from '../../src/types/recurringBoardTemplate';
+import type { BoardSource } from '../../src/types/boardSource';
 
 /**
  * poolHealth.test.ts — Task Pools + Recurring Boards Rework (P2)
@@ -14,6 +16,14 @@ import type { RecurringBoardTemplate } from '../../src/types/recurringBoardTempl
  * (active-only; deleted templates skipped), shortBy math across sizes/
  * centers, the exact warning-string format, a pool consumed by multiple
  * templates, and a healthy pool (no consumers).
+ *
+ * 2026-09 audit T2: `computePoolHealth` now takes each template's
+ * PRE-RESOLVED achievable size (the spawn's own number, resolved at the DB
+ * layer from every source) and decides consumption from `sources`, never
+ * the `poolIds` mirror. The end-to-end "old wrong answer" cases (pool +
+ * board source; a capped pool source) live where the size is resolved:
+ * web `components/pools/__tests__/poolHealthBatch.test.ts` and iOS
+ * `PoolHealthBatchTests.swift`.
  */
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -75,6 +85,14 @@ function buildTemplate(
   };
 }
 
+function poolSource(sourceId: string, overrides: Partial<BoardSource> = {}): BoardSource {
+  return { sourceId, kind: 'pool', min: 0, max: null, excludedTaskIds: [], filter: 'all', ...overrides };
+}
+
+function boardSource(sourceId: string, overrides: Partial<BoardSource> = {}): BoardSource {
+  return { sourceId, kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'all', ...overrides };
+}
+
 function byId<T extends { id: string }>(items: T[]): Record<string, T> {
   const out: Record<string, T> = {};
   for (const item of items) out[item.id] = item;
@@ -88,71 +106,70 @@ describe('computePoolHealth — taskCount', () => {
     const t1 = buildTask('t1');
     const t2 = buildTask('t2', { isDeleted: true });
     const pool = buildPool('p1', ['t1', 't2', 't3']); // t3 missing from tasksById
-    const tasksById = byId([t1, t2]);
 
-    const result = computePoolHealth(pool, {
-      templates: [],
-      poolsById: byId([pool]),
-      tasksById,
-    });
+    const result = computePoolHealth(pool, { templates: [], tasksById: byId([t1, t2]) });
 
     expect(result.taskCount).toBe(1);
     expect(result.consumers).toEqual([]);
   });
 
-  it('excludes achievements from the count AND the shortBy mix (supply ban, 2026-09-10)', () => {
-    // 8 normals + 1 legacy achievement in the pool; a 3×3 FREE template
-    // (8 fillable) consumes it. The achievement must not count — the pool
-    // reads 8 pullable tasks and the template is NOT short (8 ≥ 8), while
-    // a naive unfiltered count would have claimed 9.
-    const normals = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8'].map((id) => buildTask(id));
+  it('excludes achievements from the card count (supply ban, 2026-09-10)', () => {
+    const normals = ['n1', 'n2', 'n3'].map((id) => buildTask(id));
     const watcher = buildTask('watch', {
       type: TaskType.ACHIEVEMENT,
       referencedBoardId: 'b-elsewhere',
     });
-    const pool = buildPool('p1', [...normals.map((t) => t.id), 'watch']);
-    const template = buildTemplate('tpl', { poolIds: ['p1'] }); // 3×3 FREE = 8
+    const pool = buildPool('p1', ['n1', 'n2', 'n3', 'watch']);
 
     const result = computePoolHealth(pool, {
-      templates: [template],
-      poolsById: byId([pool]),
+      templates: [],
       tasksById: byId([...normals, watcher]),
     });
 
-    expect(result.taskCount).toBe(8);
-    expect(result.consumers).toEqual([]); // 8 pullable covers the 8-cell floor
+    expect(result.taskCount).toBe(3);
+  });
+});
 
-    // Drop one normal: now genuinely short by 1 — the watcher must not
-    // paper over the shortfall (the false-negative the ban would cause
-    // without the health-layer filter).
-    const smallerPool = buildPool('p2', [...normals.slice(0, 7).map((t) => t.id), 'watch']);
-    const shortResult = computePoolHealth(smallerPool, {
-      templates: [buildTemplate('tpl2', { poolIds: ['p2'] })],
-      poolsById: byId([smallerPool]),
-      tasksById: byId([...normals, watcher]),
-    });
-    expect(shortResult.taskCount).toBe(7);
-    expect(shortResult.consumers).toHaveLength(1);
-    expect(shortResult.consumers[0].shortBy).toBe(1);
+// ─── templateConsumesPool ──────────────────────────────────────────────────────
+
+describe('templateConsumesPool — sources decide, never the poolIds mirror', () => {
+  it('a pool-kind source naming the pool consumes it', () => {
+    const template = buildTemplate('tpl', { sources: [poolSource('p1')], poolIds: [] });
+    expect(templateConsumesPool(template, 'p1')).toBe(true);
+  });
+
+  it('a stale poolIds mirror naming the pool does NOT make a sources record a consumer', () => {
+    // The old predicate read `poolIds.includes(pool.id)` and would have
+    // said yes here.
+    const template = buildTemplate('tpl', { sources: [poolSource('p2')], poolIds: ['p1'] });
+    expect(templateConsumesPool(template, 'p1')).toBe(false);
+  });
+
+  it('a board-kind source whose id happens to equal the pool id is not a pool consumer', () => {
+    const template = buildTemplate('tpl', { sources: [boardSource('p1')] });
+    expect(templateConsumesPool(template, 'p1')).toBe(false);
+  });
+
+  it('an un-migrated v1 record (no sources) consumes its poolIds via the decode mapping', () => {
+    const template = buildTemplate('tpl', { poolIds: ['p1'] });
+    expect(template.sources).toBeUndefined();
+    expect(templateConsumesPool(template, 'p1')).toBe(true);
+    expect(templateConsumesPool(template, 'p2')).toBe(false);
   });
 });
 
 // ─── computePoolHealth: consumer detection ─────────────────────────────────────
 
 describe('computePoolHealth — consumer detection', () => {
-  const t1 = buildTask('t1');
-  const t2 = buildTask('t2');
   const pool = buildPool('p1', ['t1', 't2']);
-  const tasksById = byId([t1, t2]);
-  const poolsById = byId([pool]);
+  const tasksById = byId([buildTask('t1'), buildTask('t2')]);
 
-  it('includes an active template short on this pool as a consumer', () => {
-    // 3x3 FREE floor is 8; mix supplies only 2 -> shortBy 6.
-    const template = buildTemplate('tpl1', { poolIds: ['p1'] });
+  it('includes an active template short on its achievable size as a consumer', () => {
+    // 3x3 FREE floor is 8; achievable 2 -> shortBy 6.
+    const template = buildTemplate('tpl1', { sources: [poolSource('p1')] });
 
     const result = computePoolHealth(pool, {
-      templates: [template],
-      poolsById,
+      templates: [{ template, achievableSize: 2 }],
       tasksById,
     });
 
@@ -167,39 +184,55 @@ describe('computePoolHealth — consumer detection', () => {
     ]);
   });
 
-  it('skips a soft-deleted template even if it references the pool', () => {
-    const template = buildTemplate('tpl1', { poolIds: ['p1'], isDeleted: true });
-
+  it('skips a soft-deleted template even if it pulls the pool', () => {
+    const template = buildTemplate('tpl1', { sources: [poolSource('p1')], isDeleted: true });
     const result = computePoolHealth(pool, {
-      templates: [template],
-      poolsById,
+      templates: [{ template, achievableSize: 2 }],
       tasksById,
     });
-
     expect(result.consumers).toEqual([]);
   });
 
   it('skips a paused (isActive: false) template', () => {
-    const template = buildTemplate('tpl1', { poolIds: ['p1'], isActive: false });
-
+    const template = buildTemplate('tpl1', { sources: [poolSource('p1')], isActive: false });
     const result = computePoolHealth(pool, {
-      templates: [template],
-      poolsById,
+      templates: [{ template, achievableSize: 2 }],
       tasksById,
     });
-
     expect(result.consumers).toEqual([]);
   });
 
-  it('skips a template that does not reference this pool', () => {
-    const template = buildTemplate('tpl1', { poolIds: ['other-pool'] });
-
+  it('skips a short template that does not pull this pool', () => {
+    const template = buildTemplate('tpl1', { sources: [poolSource('other-pool')] });
     const result = computePoolHealth(pool, {
-      templates: [template],
-      poolsById,
+      templates: [{ template, achievableSize: 2 }],
       tasksById,
     });
+    expect(result.consumers).toEqual([]);
+  });
 
+  it('skips a short template whose only link to the pool is a stale poolIds mirror', () => {
+    const template = buildTemplate('tpl1', {
+      sources: [boardSource('b1')],
+      poolIds: ['p1'],
+    });
+    const result = computePoolHealth(pool, {
+      templates: [{ template, achievableSize: 2 }],
+      tasksById,
+    });
+    expect(result.consumers).toEqual([]);
+  });
+
+  it('judges the template by its achievable size, not by this pool alone', () => {
+    // The pool supplies 2, but the template's achievable size (pool +
+    // other sources) is 8 = the 3x3 FREE floor -> not short.
+    const template = buildTemplate('tpl1', {
+      sources: [poolSource('p1'), boardSource('b1')],
+    });
+    const result = computePoolHealth(pool, {
+      templates: [{ template, achievableSize: 8 }],
+      tasksById,
+    });
     expect(result.consumers).toEqual([]);
   });
 });
@@ -207,98 +240,70 @@ describe('computePoolHealth — consumer detection', () => {
 // ─── computePoolHealth: shortBy math across sizes/centers ──────────────────────
 
 describe('computePoolHealth — shortBy math across sizes/centers', () => {
-  const t1 = buildTask('t1');
-  const t2 = buildTask('t2');
-  const pool = buildPool('p1', ['t1', 't2']); // supplies 2 resolvable tasks
-  const tasksById = byId([t1, t2]);
-  const poolsById = byId([pool]);
+  const pool = buildPool('p1', ['t1', 't2']);
+  const tasksById = byId([buildTask('t1'), buildTask('t2')]);
 
-  it('3x3 FREE center: floor 8, mix 2 -> shortBy 6', () => {
+  function shortByFor(boardSize: RecurringBoardTemplate['boardSize'], centerSquareType: CenterSquareType, size: number) {
     const template = buildTemplate('tpl1', {
-      poolIds: ['p1'],
-      boardSize: 3,
-      centerSquareType: CenterSquareType.FREE,
+      sources: [poolSource('p1')],
+      boardSize,
+      centerSquareType,
     });
+    return computePoolHealth(pool, {
+      templates: [{ template, achievableSize: size }],
+      tasksById,
+    }).consumers;
+  }
 
-    const result = computePoolHealth(pool, { templates: [template], poolsById, tasksById });
-
-    expect(result.consumers[0].shortBy).toBe(6);
+  it('3x3 FREE center: floor 8, achievable 2 -> shortBy 6', () => {
+    expect(shortByFor(3, CenterSquareType.FREE, 2)[0].shortBy).toBe(6);
   });
 
-  it('3x3 NONE center: floor 9, mix 2 -> shortBy 7', () => {
-    const template = buildTemplate('tpl1', {
-      poolIds: ['p1'],
-      boardSize: 3,
-      centerSquareType: CenterSquareType.NONE,
-    });
-
-    const result = computePoolHealth(pool, { templates: [template], poolsById, tasksById });
-
-    expect(result.consumers[0].shortBy).toBe(7);
+  it('3x3 NONE center: floor 9, achievable 2 -> shortBy 7', () => {
+    expect(shortByFor(3, CenterSquareType.NONE, 2)[0].shortBy).toBe(7);
   });
 
-  it('4x4: floor 16, mix 2 -> shortBy 14, and threads the consuming template\'s boardSize', () => {
-    const template = buildTemplate('tpl1', {
-      poolIds: ['p1'],
-      boardSize: 4,
-      centerSquareType: CenterSquareType.FREE,
-    });
-
-    const result = computePoolHealth(pool, { templates: [template], poolsById, tasksById });
-
-    expect(result.consumers[0].shortBy).toBe(14);
-    // P2 Task 2 review: boardSize is carried on the consumer itself for any
-    // per-template rendering, even though the combined card summary line
-    // (`formatPoolShortSummary`) only counts consumers.
-    expect(result.consumers[0].boardSize).toBe(4);
+  it("4x4: floor 16, achievable 2 -> shortBy 14, and threads the consuming template's boardSize", () => {
+    const consumers = shortByFor(4, CenterSquareType.FREE, 2);
+    expect(consumers[0].shortBy).toBe(14);
+    expect(consumers[0].boardSize).toBe(4);
   });
 
-  it('a template with enough mix to fill is NOT a consumer (shortBy 0 excluded)', () => {
-    const wideTasks = Array.from({ length: 8 }, (_, i) => buildTask(`w${i}`));
-    const widePool = buildPool('p2', wideTasks.map((task) => task.id));
-    const template = buildTemplate('tpl1', {
-      poolIds: ['p2'],
-      boardSize: 3,
-      centerSquareType: CenterSquareType.FREE,
-    });
+  it('achievable exactly at the floor is NOT a consumer (shortBy 0 excluded)', () => {
+    expect(shortByFor(3, CenterSquareType.FREE, 8)).toEqual([]);
+  });
 
-    const result = computePoolHealth(widePool, {
-      templates: [template],
-      poolsById: byId([widePool]),
-      tasksById: byId(wideTasks),
-    });
-
-    expect(result.consumers).toEqual([]);
+  it('achievable one below the floor is short by exactly 1', () => {
+    expect(shortByFor(3, CenterSquareType.FREE, 7)[0].shortBy).toBe(1);
   });
 });
 
 // ─── computePoolHealth: multiple consumers ─────────────────────────────────────
 
 describe('computePoolHealth — pool consumed by multiple templates', () => {
-  it('returns a consumer entry per short template that pulls the pool', () => {
-    const t1 = buildTask('t1');
+  it('returns a consumer entry per short template that pulls the pool, in input order', () => {
     const pool = buildPool('p1', ['t1']);
-    const tasksById = byId([t1]);
-    const poolsById = byId([pool]);
     const tplA = buildTemplate('tplA', {
       name: 'Morning Kickstart',
-      poolIds: ['p1'],
+      sources: [poolSource('p1')],
       timeframe: Timeframe.DAILY,
       boardSize: 3,
       centerSquareType: CenterSquareType.FREE,
     });
     const tplB = buildTemplate('tplB', {
       name: 'Weekly Reset',
-      poolIds: ['p1'],
+      sources: [poolSource('p1')],
       timeframe: Timeframe.WEEKLY,
       boardSize: 3,
       centerSquareType: CenterSquareType.NONE,
     });
 
     const result = computePoolHealth(pool, {
-      templates: [tplA, tplB],
-      poolsById,
-      tasksById,
+      templates: [
+        { template: tplA, achievableSize: 1 },
+        { template: tplB, achievableSize: 1 },
+      ],
+      tasksById: byId([buildTask('t1')]),
     });
 
     expect(result.consumers).toEqual([
@@ -317,23 +322,6 @@ describe('computePoolHealth — pool consumed by multiple templates', () => {
         shortBy: 8,
       },
     ]);
-  });
-});
-
-// ─── computePoolHealth: healthy pool ───────────────────────────────────────────
-
-describe('computePoolHealth — healthy pool (no consumers)', () => {
-  it('returns empty consumers when no template references the pool', () => {
-    const t1 = buildTask('t1');
-    const pool = buildPool('p1', ['t1']);
-
-    const result = computePoolHealth(pool, {
-      templates: [],
-      poolsById: byId([pool]),
-      tasksById: byId([t1]),
-    });
-
-    expect(result.consumers).toEqual([]);
   });
 });
 
