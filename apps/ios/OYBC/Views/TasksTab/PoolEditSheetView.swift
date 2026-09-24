@@ -261,11 +261,17 @@ struct PoolEditSheetView: View {
             Button {
                 poolTaskIds.removeAll { $0 == task.id }
             } label: {
+                // 9pt glyph; an 11pt slop clears 28pt (even for a sub-point glyph box) without
+                // moving the chip layout.
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.risoInk)
+                    .risoHitSlop(11)
             }
+            .buttonStyle(.plain)
             .disabled(busy)
+            // Mirrors web PoolEditSheet.tsx's aria-label verbatim.
+            .accessibilityLabel("Remove \(task.title.isEmpty ? "task" : task.title) from pool")
         }
         .padding(.vertical, 5).padding(.leading, 10).padding(.trailing, 7)
         .background(Capsule().fill(Color.risoPaper2))

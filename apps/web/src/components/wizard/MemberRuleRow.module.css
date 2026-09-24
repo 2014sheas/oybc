@@ -35,7 +35,8 @@
    `min-height` is the 28px trailing control plus the row's 7+7: every row
    in a panel measures the same 42px whether it is expandable (control
    overlaid) or not (control inline), and it lifts the two states that
-   were already shorter than that — the 22px ✓ and the ~24px UNDO pill —
+   are visually shorter than that — the 22px ✓ and the ~26px UNDO pill
+   (whose touch target already reaches 28px via `.undo::before`) —
    rather than merely preserving them. It is a floor, not a clamp: a
    two-line clash title grows the line past it. */
 .disclosure,
@@ -179,6 +180,20 @@
   margin: auto 0;
 }
 
+/* Both UNDO pills keep their handoff visual scale but extend their touch
+   target to >= 28px tall (the rows' ✕ size) with an invisible ::before —
+   iOS twin `RisoUndoPill` (RisoControls.swift), audit T2. */
+.undo,
+.partUndo {
+  position: relative;
+}
+.undo::before,
+.partUndo::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+
 .undo {
   flex: 0 0 auto;
   padding: 4px 10px;
@@ -279,11 +294,16 @@
 }
 
 /* Part-line controls are a size down from the member row's (handoff part
-   line: ✕ 24×24 / 12px, UNDO 1.5px border / 10.5px / 3×9 padding). */
+   line: ✕ 12px glyph, UNDO 1.5px border / 10.5px / 3×9 padding). The ✕'s
+   box is 28×28 like the member row's — the handoff's 24px sat under the
+   touch-target floor (audit T2; iOS twin RisoMemberRuleRowView). The -4px
+   leading margin hands the extra width back to layout (it overhangs the
+   row's gap, not the dice), so part names keep the room they had. */
 .partExclude {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  margin-left: -4px;
   padding: 0;
   display: inline-flex;
   align-items: center;

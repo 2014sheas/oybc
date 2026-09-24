@@ -15,6 +15,10 @@
  *    the account survives (which a pre-delete purge would risk if the delete
  *    then failed). `failurePolicy: true` enables automatic retries so a
  *    transient failure still converges; `recursiveDelete` is idempotent.
+ *  - BOTH paths go through `purgeUserData`, which writes the
+ *    `deletedUsers/{uid}` marker before deleting — `firestore.rules` then
+ *    refuses any later client write under `users/{uid}` from the deleted
+ *    user's still-valid ID token (2026-09 audit T2).
  *  - `deleteUserData` (HTTPS callable) is kept as shared, reusable infra for a
  *    future web client (which may prefer a confirmable synchronous purge before
  *    sign-out). Not called by iOS. Idempotent with the trigger.
@@ -31,6 +35,7 @@ import { createHash } from "crypto";
 import { Resend } from "resend";
 import { confirmationEmailHtml, confirmationEmailText } from "./confirmEmail";
 import { buildSignupNotification } from "./signupNotify";
+import { purgeUserData } from "./purgeUser";
 
 export { validateWin } from "./validateWin";
 export { revenueCatWebhook } from "./revenueCatWebhook";
@@ -38,27 +43,25 @@ export { revenueCatWebhook } from "./revenueCatWebhook";
 initializeApp();
 
 /**
- * Recursively deletes a user's parent doc and every subcollection beneath it
- * (`users/{uid}` + boards/tasks/boardTasks/compoundChildren/... ). Idempotent:
- * deleting already-absent docs is a no-op.
- *
- * Exported (in addition to being used by the two entry points below) so the
- * emulator-backed test suite (`functions/test/purge.test.ts`) can invoke the
- * purge directly against the Firestore emulator without going through the
- * Functions emulator's auth/trigger plumbing.
+ * The recursive purge backing both entry points below — writes the
+ * `deletedUsers/{uid}` write-fence marker BEFORE deleting (see
+ * `./purgeUser.ts` + `firestore.rules`). Re-exported here so the
+ * emulator-backed suite (`functions/test/purge.test.ts`) can invoke it
+ * directly without going through the Functions emulator's auth/trigger
+ * plumbing.
  */
-export async function purgeUserData(uid: string): Promise<void> {
-  const db = getFirestore();
-  const userDoc = db.collection("users").doc(uid);
-  await db.recursiveDelete(userDoc);
-  logger.info(`Purged Firestore data for user ${uid}`);
-}
+export { purgeUserData } from "./purgeUser";
 
 /**
- * HTTPS-callable invoked by the authenticated client immediately before it
- * deletes its own Auth user. The uid is taken from the verified auth context —
- * never from a client-supplied argument — so a caller can only delete its own
- * data.
+ * HTTPS-callable that purges the caller's Firestore tree. Shared infra with
+ * no client caller today (both apps delete the Auth user first and let
+ * `onUserDeleted` purge). If a client ever calls it, it must do so only AFTER
+ * its Auth user is gone: the purge writes a permanent `deletedUsers/{uid}`
+ * marker first, and `firestore.rules` refuses every client create/update
+ * under `users/{uid}` once that marker exists — calling it before a failed
+ * Auth delete would leave a live account write-fenced forever. The uid is
+ * taken from the verified auth context — never from a client-supplied
+ * argument — so a caller can only purge its own data.
  */
 export const deleteUserData = onCall(async (request) => {
   const uid = request.auth?.uid;

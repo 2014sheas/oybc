@@ -26,13 +26,16 @@ enum SyncQueueBuilder {
     /// Constructs a `SyncQueueItem` with `status = .pending` for the
     /// given entity operation. The caller is responsible for saving
     /// the returned item inside the same transaction as the write it
-    /// describes.
+    /// describes. `ownerUid` defaults to the live signed-in uid; sync-internal
+    /// callers (pull/heal) pass the uid the loop runs for instead
+    /// (docs/GUEST_MODE.md §Collision).
     static func makeItem<T: Codable>(
         entityType: String,
         entityId: String,
         operationType: SyncOperationType,
         payload: T,
-        now: String
+        now: String,
+        ownerUid: String? = SyncQueueOwnership.currentUid()
     ) -> SyncQueueItem {
         SyncQueueItem(
             id: AppDatabase.generateUUID(),
@@ -46,7 +49,8 @@ enum SyncQueueBuilder {
             createdAt: now,
             lastAttemptAt: nil,
             completedAt: nil,
-            priority: 1
+            priority: 1,
+            ownerUid: ownerUid
         )
     }
 
@@ -156,12 +160,17 @@ extension SyncQueueItem {
         // At most one PENDING row per entity post-coalescing; if legacy
         // duplicates exist, target the earliest (by createdAt) to preserve
         // queue position.
+        //
+        // Only rows this owner may coalesce into count (docs/GUEST_MODE.md
+        // §Collision) — a row owned by another uid is left alone (the push
+        // path drops it) and this op appends its own row.
         let existing = try SyncQueueItem
             .filter(Column("entityType") == entityType)
             .filter(Column("entityId") == entityId)
             .filter(Column("status") == SyncStatus.pending.rawValue)
             .order(Column("createdAt"))
-            .fetchOne(db)
+            .fetchAll(db)
+            .first { SyncQueueOwnership.canCoalesce(existing: $0.ownerUid, incoming: ownerUid) }
 
         guard let existing else {
             try save(db)
@@ -184,6 +193,8 @@ extension SyncQueueItem {
             merged.status = .pending
             merged.retryCount = 0
             merged.lastError = nil
+            // A legacy unstamped row adopted by a stamped op takes its owner.
+            merged.ownerUid = ownerUid ?? existing.ownerUid
             // NOTE: lastAttemptAt is deliberately PRESERVED — it is the
             // evidence that a push was attempted for this row (its setDoc may
             // have landed), which the create+delete drop-vs-tombstone decision

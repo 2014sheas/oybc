@@ -298,14 +298,27 @@ struct RisoBoardPlayCell: View {
                         .frame(width: fraction * geo.size.width)
                 }
             }
-            Text("\(cur)/\(max)")
-                .font(.system(size: 6, weight: .black, design: .default))
-                .foregroundStyle(Color.risoInk)
-                .frame(maxWidth: .infinity)
+            // The count rides at the cell's own text step (the 9pt title /
+            // FREE label), never below it: the old 6pt system-font count was
+            // illegible. When the bar is too narrow (or Dynamic Type grows
+            // the text past it) the count is HIDDEN rather than shrunk —
+            // the fill still reads, and VoiceOver's cell label always
+            // carries "n of m".
+            ViewThatFits(in: [.horizontal, .vertical]) {
+                Text("\(cur)/\(max)")
+                    .font(.risoHead(9, .extraBold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                    .fixedSize()
+                Color.clear.frame(width: 0, height: 0)
+            }
+            .frame(maxWidth: .infinity)
         }
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: 1.5))
-        .frame(height: 9)
+        // 13pt (was 9): the smallest bar that holds a 9pt count. The
+        // title's 18pt bottom inset already clears 4 + 13.
+        .frame(height: 13)
     }
 
     // MARK: - Computed style helpers

@@ -90,3 +90,17 @@ describe("purgeUserData", () => {
     expect(doc.exists).toBe(false);
   });
 });
+
+describe("purgeUserData deletedUsers marker (emulator)", () => {
+  it("leaves a deletedUsers/{uid} marker with deletedAt that the recursive delete does not remove", async () => {
+    const uid = `purge-marker-${Date.now()}`;
+    await db.doc(`users/${uid}`).set({ id: uid, version: 1 });
+
+    await purgeUserData(uid);
+
+    expect((await db.doc(`users/${uid}`).get()).exists).toBe(false);
+    const marker = await db.doc(`deletedUsers/${uid}`).get();
+    expect(marker.exists).toBe(true);
+    expect(marker.get("deletedAt")).toBeDefined();
+  });
+});

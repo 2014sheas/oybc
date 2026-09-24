@@ -483,7 +483,7 @@ final class SyncService: ObservableObject {
 
         let pendingItems: [SyncQueueItem]
         do {
-            pendingItems = try database.fetchPendingSyncItems()
+            pendingItems = try database.dropForeignOwnedSyncItems(database.fetchPendingSyncItems(), userId: userId)
         } catch {
             let msg = "Push failed: could not read sync queue: \(error.localizedDescription)"
             log(msg)
@@ -750,12 +750,14 @@ final class SyncService: ObservableObject {
     ///   - entityId: The document/row id.
     ///   - localData: The LOCAL row that won the conflict (becomes the payload).
     ///   - remoteData: The remote row that lost, used only for the diff guard.
+    ///   - ownerUid: The uid this pull runs for — stamped on the re-enqueue
+    ///     instead of the live auth uid (docs/GUEST_MODE.md §Collision).
     private func reassertLocalWinIfNeeded(
         db: Database,
         entityType: String,
         entityId: String,
         localData: [String: Any],
-        remoteData: [String: Any]
+        remoteData: [String: Any], ownerUid: String
     ) throws {
         // Loop guard: a local-win under `resolveConflict`'s rules already
         // implies version or updatedAt genuinely differs (a byte-identical
@@ -802,7 +804,7 @@ final class SyncService: ObservableObject {
             createdAt: AppDatabase.currentTimestamp(),
             lastAttemptAt: nil,
             completedAt: nil,
-            priority: 1
+            priority: 1, ownerUid: ownerUid // the pull's uid, not the live one (GUEST_MODE §Collision)
         )
         try item.enqueue(db)
     }
@@ -847,12 +849,12 @@ final class SyncService: ObservableObject {
         entityType: String,
         entityId: String,
         localData: [String: Any],
-        remoteData: [String: Any]
+        remoteData: [String: Any], ownerUid: String
     ) throws {
         try AppDatabase.shared.write { db in
             try reassertLocalWinIfNeeded(
                 db: db, entityType: entityType, entityId: entityId,
-                localData: localData, remoteData: remoteData
+                localData: localData, remoteData: remoteData, ownerUid: ownerUid
             )
         }
     }
@@ -939,7 +941,7 @@ final class SyncService: ObservableObject {
                 // can't strand this device's newer data forever.
                 try reassertLocalWinIfNeeded(
                     entityType: "users", entityId: userId,
-                    localData: localData!, remoteData: remoteData
+                    localData: localData!, remoteData: remoteData, ownerUid: userId
                 )
             }
         } catch {
@@ -1081,7 +1083,7 @@ final class SyncService: ObservableObject {
                             // as the (skipped) upsert.
                             try reassertLocalWinIfNeeded(
                                 db: db, entityType: collection.firestoreName, entityId: remoteId,
-                                localData: localData!, remoteData: remoteData
+                                localData: localData!, remoteData: remoteData, ownerUid: userId
                             )
                         }
                     }
@@ -1090,11 +1092,11 @@ final class SyncService: ObservableObject {
                     // cascade error rolls back the upsert.
                     if didWrite {
                         if collection.firestoreName == "tasks" {
-                            try runPullCascade(db: db, changedTaskId: remoteId)
+                            try runPullCascade(db: db, changedTaskId: remoteId, ownerUid: userId)
                         }
                         if collection.firestoreName == "compoundChildren",
                            let compoundTaskId = remoteData["compoundTaskId"] as? String {
-                            try runPullCascade(db: db, changedTaskId: compoundTaskId)
+                            try runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: userId)
                         }
                         // Board-integrity PR-1 (tombstones, docs/BOARD_INTEGRITY.md):
                         // a pulled `boardTasks` row — live re-placement OR
@@ -1107,7 +1109,7 @@ final class SyncService: ObservableObject {
                         // that board.
                         if collection.firestoreName == "boardTasks",
                            let boardId = remoteData["boardId"] as? String {
-                            try runPullCascadeForBoardTask(db: db, boardId: boardId)
+                            try runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: userId)
                         }
                         // Sealed-board transport convergence: a pulled SEALED
                         // boards doc may carry a stale snapshot (sealed offline
@@ -1771,7 +1773,7 @@ extension SyncService {
             // race can't strand it.
             try reassertLocalWinIfNeeded(
                 entityType: "users", entityId: userId,
-                localData: localData!, remoteData: remoteData
+                localData: localData!, remoteData: remoteData, ownerUid: userId
             )
             return false
         } catch {
@@ -1870,7 +1872,7 @@ extension SyncService {
                         // upsert.
                         try reassertLocalWinIfNeeded(
                             db: db, entityType: collection.firestoreName, entityId: remoteId,
-                            localData: localData!, remoteData: remoteData
+                            localData: localData!, remoteData: remoteData, ownerUid: authenticatedUserId
                         )
                     }
                 }
@@ -1880,18 +1882,18 @@ extension SyncService {
                 // which writes a new local version above).
                 if didWrite {
                     if collection.firestoreName == "tasks" {
-                        try runPullCascade(db: db, changedTaskId: remoteId)
+                        try runPullCascade(db: db, changedTaskId: remoteId, ownerUid: authenticatedUserId)
                     }
                     if collection.firestoreName == "compoundChildren",
                        let compoundTaskId = remoteData["compoundTaskId"] as? String {
-                        try runPullCascade(db: db, changedTaskId: compoundTaskId)
+                        try runPullCascade(db: db, changedTaskId: compoundTaskId, ownerUid: authenticatedUserId)
                     }
                     // Board-integrity PR-1 (tombstones) — see the batch pull
                     // path (`processPullCollection`) for rationale. Same
                     // deterministic, same-transaction semantics.
                     if collection.firestoreName == "boardTasks",
                        let boardId = remoteData["boardId"] as? String {
-                        try runPullCascadeForBoardTask(db: db, boardId: boardId)
+                        try runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: authenticatedUserId)
                     }
                     // Sealed-board transport convergence — see the batch pull
                     // path (`processPullCollection`) for rationale. Same
@@ -1927,7 +1929,7 @@ extension SyncService {
     ///   - db: GRDB transaction in which to perform the cascade. Caller is
     ///         responsible for the enclosing `write { db in ... }` block.
     ///   - changedTaskId: The id of the Task that was just upserted.
-    private func runPullCascade(db: Database, changedTaskId: String) throws {
+    private func runPullCascade(db: Database, changedTaskId: String, ownerUid: String) throws {
         // B2 final-review FI1 (non-authored: baseline only), then the DerivationPass lookups.
         try AppDatabase.refreshPulledDerivedBaseline(db: db, taskId: changedTaskId)
         let allChildren: [CompoundChild] = try CompoundChild
@@ -1998,11 +2000,7 @@ extension SyncService {
             if let updatedBoard = try Board.fetchOne(db, key: boardId) {
                 let payload = try JSONEncoder().encode(updatedBoard)
                 let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
-                try db.execute(sql: """
-                    INSERT INTO sync_queue
-                        (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
-                    VALUES (?, 'boards', ?, 'update', ?, 'pending', 0, ?, 0)
-                    """, arguments: [UUID().uuidString, boardId, payloadStr, now])
+                try Self.insertPullCascadeBoardSync(db: db, boardId: boardId, payload: payloadStr, now: now, ownerUid: ownerUid)
             }
         }
     }
@@ -2032,7 +2030,7 @@ extension SyncService {
     ///   - db: GRDB transaction in which to perform the cascade. Caller is
     ///         responsible for the enclosing `write { db in ... }` block.
     ///   - boardId: The `boardId` of the `BoardTask` row that was just upserted.
-    private func runPullCascadeForBoardTask(db: Database, boardId: String) throws {
+    private func runPullCascadeForBoardTask(db: Database, boardId: String, ownerUid: String) throws {
         guard let board = try Board.fetchOne(db, key: boardId), !board.isDeleted else { return }
 
         if board.sealedAt != nil {
@@ -2089,11 +2087,7 @@ extension SyncService {
         if let updatedBoard = try Board.fetchOne(db, key: boardId) {
             let payload = try JSONEncoder().encode(updatedBoard)
             let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
-            try db.execute(sql: """
-                INSERT INTO sync_queue
-                    (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
-                VALUES (?, 'boards', ?, 'update', ?, 'pending', 0, ?, 0)
-                """, arguments: [UUID().uuidString, boardId, payloadStr, now])
+            try Self.insertPullCascadeBoardSync(db: db, boardId: boardId, payload: payloadStr, now: now, ownerUid: ownerUid)
         }
     }
 
@@ -2106,7 +2100,7 @@ extension SyncService {
     /// - Parameters:
     ///   - db: GRDB write transaction.
     ///   - changedTaskIds: The tasks whose state changed (deduped internally).
-    private func runPullCascadeForTasks(db: Database, changedTaskIds: Set<String>) throws {
+    private func runPullCascadeForTasks(db: Database, changedTaskIds: Set<String>, ownerUid: String) throws {
         let allChildren: [CompoundChild] = try CompoundChild
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
@@ -2159,11 +2153,7 @@ extension SyncService {
             if let updatedBoard = try Board.fetchOne(db, key: boardId) {
                 let payload = try JSONEncoder().encode(updatedBoard)
                 let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
-                try db.execute(sql: """
-                    INSERT INTO sync_queue
-                        (id, entityType, entityId, operationType, payload, status, retryCount, createdAt, priority)
-                    VALUES (?, 'boards', ?, 'update', ?, 'pending', 0, ?, 0)
-                    """, arguments: [UUID().uuidString, boardId, payloadStr, now])
+                try Self.insertPullCascadeBoardSync(db: db, boardId: boardId, payload: payloadStr, now: now, ownerUid: ownerUid)
             }
         }
     }
@@ -2229,7 +2219,7 @@ extension SyncService {
                 // 4. ONE batched derivation pass per affected LIVE board (sealed
                 //    excluded); roots expand to their window-stamped derived rows.
                 if !cascadeTaskIds.isEmpty {
-                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: cascadeTaskIds))
+                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: cascadeTaskIds), ownerUid: userId)
                 }
 
                 // 5. Seal re-derivation (docs §Seal snapshots re-derive from the
@@ -2328,7 +2318,7 @@ extension SyncService {
                         entityId: ev.id,
                         operationType: .create,
                         payload: ev,
-                        now: now
+                        now: now, ownerUid: userId // the heal's uid, not the live one
                     ).enqueue(db)
                     healedTaskIds.insert(ev.taskId)
                     minted += 1
@@ -2341,7 +2331,7 @@ extension SyncService {
                     db: db, taskIds: healedTaskIds
                 )
                 if !healedTaskIds.isEmpty {
-                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: healedTaskIds))
+                    try runPullCascadeForTasks(db: db, changedTaskIds: AppDatabase.withWindowStampedDerived(db: db, taskIds: healedTaskIds), ownerUid: userId)
                     try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: healedTaskIds)
                 }
             }

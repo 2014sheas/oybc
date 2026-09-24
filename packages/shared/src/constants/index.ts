@@ -1,5 +1,6 @@
 export * from './enums';
 export * from './syncRetry';
+export * from './syncQueueOwnership';
 export * from './syncContract';
 export * from './proGating';
 

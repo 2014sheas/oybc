@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import FirebaseAuth
 
 /// Main app entry point for OYBC iOS app
 @main
@@ -31,6 +32,10 @@ struct OYBCApp: App {
 
         _ = AppDatabase.shared
         FirebaseApp.configure()
+
+        // Stamp every sync-queue item with the LIVE signed-in uid so the push
+        // path can drop another account's rows (docs/GUEST_MODE.md §Collision).
+        SyncQueueOwnership.provider = { Auth.auth().currentUser?.uid }
 
         // Register the notification delegate synchronously at launch (NOT
         // lazily after auth) so a cold-launch-from-tap is captured before

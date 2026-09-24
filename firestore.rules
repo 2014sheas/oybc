@@ -1,6 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Post-deletion write fence (2026-09 audit T2). Account deletion purges
+    // `users/{uid}` server-side (`onUserDeleted` / `deleteUserData` in
+    // functions/src/index.ts), but a deleted user's still-unexpired ID token
+    // (up to ~1h) keeps passing `request.auth.uid == userId` — so a second
+    // device or an in-flight sync push could re-create docs AFTER the purge,
+    // and nothing would ever purge them again. Both purge paths write
+    // `deletedUsers/{uid}` with the Admin SDK BEFORE the recursive delete;
+    // every client write under `users/{uid}` (parent doc + subcollections)
+    // is refused once that marker exists.
+    //
+    // Cost: one `exists()` document read per client write (billed as a
+    // read; counts toward the per-request rules-access limit). Reads are not
+    // fenced — there is nothing left to read after the purge.
+    function userNotDeleted(userId) {
+      return !exists(/databases/$(database)/documents/deletedUsers/$(userId));
+    }
+
     // Parent user document: holds the authenticated user's profile + synced
     // preferences. Acts as scope root for the entity subcollections below.
     match /users/{userId} {
@@ -21,7 +38,7 @@ service cloud.firestore {
       allow read: if request.auth != null
                   && request.auth.uid == userId;
 
-      allow create: if validUserWrite();
+      allow create: if validUserWrite() && userNotDeleted(userId);
 
       // Version monotonicity: reject a write whose version has REGRESSED
       // versus what's already stored. `>=` (not `>`) is deliberate —
@@ -31,7 +48,8 @@ service cloud.firestore {
       // board-integrity PR-4 item-1 local-wins re-enqueue) must be
       // permitted, never rejected as a "regression".
       allow update: if validUserWrite()
-                    && request.resource.data.version >= resource.data.version;
+                    && request.resource.data.version >= resource.data.version
+                    && userNotDeleted(userId);
 
       // Parent user doc is never client-deleted — the user is the scope root.
       allow delete: if false;
@@ -101,7 +119,7 @@ service cloud.firestore {
                && request.resource.size() < 10000;
       }
 
-      allow create: if validEntityWrite();
+      allow create: if validEntityWrite() && userNotDeleted(userId);
 
       // Version monotonicity (board-integrity PR-4, item 2,
       // docs/BOARD_INTEGRITY.md): reject a write whose version has
@@ -123,7 +141,8 @@ service cloud.firestore {
       // already exists), and every existing doc satisfies `version is
       // number` per the write rule that created it.
       allow update: if validEntityWrite()
-                    && request.resource.data.version >= resource.data.version;
+                    && request.resource.data.version >= resource.data.version
+                    && userNotDeleted(userId);
 
       // Entity docs are NEVER client-hard-deleted (2026-09 security audit).
       // Deletion is a soft delete: the client pushes a tombstone
@@ -147,6 +166,14 @@ service cloud.firestore {
     match /entitlements/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if false;
+    }
+
+    // Account-deletion markers (see `userNotDeleted` above) - written ONLY by
+    // the purge Cloud Functions via the Admin SDK. Fully client-denied, read
+    // included: `exists()` inside a rule is evaluated with rules privileges,
+    // so the fence works without granting clients any access here.
+    match /deletedUsers/{userId} {
+      allow read, write: if false;
     }
 
     // Deny all other access

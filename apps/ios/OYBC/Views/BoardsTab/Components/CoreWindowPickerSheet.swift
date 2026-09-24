@@ -95,6 +95,7 @@ struct CoreWindowPickerSheet: View {
                     Text("‹ \(page.prevTitle)")
                         .font(.risoBody(12, .bold))
                         .foregroundStyle(Color.risoMuted)
+                        .footerHitArea(alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Previous page")
@@ -107,6 +108,7 @@ struct CoreWindowPickerSheet: View {
                     Text(CoreWindowPicker.todayLabel(timeframe: timeframe, now: now))
                         .font(.risoHead(12, .bold))
                         .foregroundStyle(Color.risoInk)
+                        .footerHitArea()
                 }
                 .buttonStyle(.plain)
 
@@ -118,11 +120,12 @@ struct CoreWindowPickerSheet: View {
                     Text("\(page.nextTitle) ›")
                         .font(.risoBody(12, .bold))
                         .foregroundStyle(Color.risoMuted)
+                        .footerHitArea(alignment: .trailing)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Next page")
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 2)
         }
         .padding(.horizontal, Riso.gutter)
         .background(RisoPaperBackground().ignoresSafeArea())
@@ -363,5 +366,21 @@ struct CoreWindowPickerSheet: View {
         )
         let state = stateText(tile)
         return state.isEmpty ? label : "\(label), \(state)"
+    }
+}
+
+private extension View {
+    /// Pads a bare-text footer button (‹ prev / Today / next ›) out to a
+    /// 44pt-tall, >= 44pt-wide touch target (HIG minimum). The footer row
+    /// grows to match rather than overlapping the tile grid above it (a
+    /// negative-padding overhang would steal taps from the last tile row).
+    ///
+    /// - Parameter alignment: where the label sits inside the 44pt frame —
+    ///   `.leading` for ‹ prev and `.trailing` for next › keep them flush
+    ///   with the tile grid's edges when the label is narrower than 44pt.
+    func footerHitArea(alignment: Alignment = .center) -> some View {
+        self
+            .frame(minWidth: 44, minHeight: 44, alignment: alignment)
+            .contentShape(Rectangle())
     }
 }

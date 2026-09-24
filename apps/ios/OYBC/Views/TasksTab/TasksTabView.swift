@@ -289,7 +289,7 @@ struct TasksTabView: View {
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
-                                .tint(.blue)
+                                .tint(Color.risoBlue)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 // NOTE: deliberately NOT `role: .destructive`.
@@ -306,7 +306,7 @@ struct TasksTabView: View {
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
-                                .tint(.red)
+                                .tint(Color.risoRed)
                             }
                         } else {
                             Button {
@@ -331,7 +331,7 @@ struct TasksTabView: View {
                                 } label: {
                                     Label("Edit", systemImage: "pencil")
                                 }
-                                .tint(.blue)
+                                .tint(Color.risoBlue)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 // NOTE: deliberately NOT `role: .destructive`.
@@ -348,7 +348,7 @@ struct TasksTabView: View {
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
-                                .tint(.red)
+                                .tint(Color.risoRed)
                             }
                         }
                     }

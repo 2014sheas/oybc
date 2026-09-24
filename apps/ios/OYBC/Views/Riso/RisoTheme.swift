@@ -69,6 +69,11 @@ extension Color {
     /// fills (blue/red), e.g. the initials avatar glyph, where `risoPaper`
     /// would flip to near-black in dark mode.
     static let risoOnColor = Color("RisoOnColor", bundle: .riso)
+    /// Non-inverting pale lavender (`#C9CFF2` in both light and dark) — web's
+    /// `--riso-lavender`. Secondary copy on the saturated blue celebration
+    /// grounds (GREENLOG / tutorial-complete overlays); like `risoOnColor`
+    /// it reads against the fill, never the page, so it does not flip.
+    static let risoLavender = Color("RisoLavender", bundle: .riso)
     static let risoMuted = Color("RisoMuted", bundle: .riso)
     static let risoBlue = Color("RisoBlue", bundle: .riso)
     static let risoRed = Color("RisoRed", bundle: .riso)

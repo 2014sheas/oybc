@@ -11,7 +11,7 @@ import { db } from '../internal';
 import { runBoardCascadeForTasks } from './orchestration';
 import { recomputeTaskCachesFromPull } from './taskEvents';
 import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
-import { addToSyncQueue } from './syncQueue';
+import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 
@@ -74,6 +74,8 @@ export async function applyTaskEventsBatch(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
+      // Cascade enqueues are owned by the pull's uid (docs/GUEST_MODE.md §Collision).
+      stampTransactionSyncOwner(userId);
       // 2. LWW-upsert each event row (union by id; tombstone = undo). Collect
       //    the affected task ids.
       const affectedTaskIds = new Set<string>();
@@ -170,6 +172,8 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
+      // Cascade enqueues are owned by the heal's uid (docs/GUEST_MODE.md §Collision).
+      stampTransactionSyncOwner(userId);
       const [tasks, allEvents] = await Promise.all([db.tasks.toArray(), db.taskEvents.toArray()]);
       const hasLiveEvent = new Set<string>();
       for (const e of allEvents) if (!e.isDeleted) hasLiveEvent.add(e.taskId);
@@ -199,7 +203,7 @@ export async function healMissingCompletionEvents(userId: string): Promise<numbe
         // same id just wins by LWW. Enqueue CREATE so the repair reaches Firestore
         // and every peer converges.
         await db.taskEvents.put(ev);
-        await addToSyncQueue('taskEvents', ev.id, SyncOperationType.CREATE, ev);
+        await addToSyncQueue('taskEvents', ev.id, SyncOperationType.CREATE, ev, 0, { ownerUid: userId });
         healedTaskIds.add(ev.taskId);
         minted += 1;
       }

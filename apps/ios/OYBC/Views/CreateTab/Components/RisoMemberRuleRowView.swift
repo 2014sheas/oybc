@@ -491,9 +491,10 @@ struct RisoMemberRuleRowView: View {
         // only would leave their 20pt badge setting the height, mixing
         // ~34pt and ~42pt rows in one list. Pinning the pre-B3.1 control
         // height restores B3 exactly for an INCLUDED row (28 + 7 + 7 = 42)
-        // and deliberately LIFTS the two states that were already shorter
-        // than that — filtered-done's 22pt ✓ and excluded's ~24pt UNDO
-        // pill — so the list is uniform rather than merely unchanged.
+        // and deliberately LIFTS the state that is shorter than that —
+        // filtered-done's 22pt ✓ — so the list is uniform rather than
+        // merely unchanged. (The excluded state's `RisoUndoPill` carries a
+        // 28pt touch target itself since the audit T2 sweep.)
         .frame(minHeight: 28)
     }
 
@@ -511,18 +512,7 @@ struct RisoMemberRuleRowView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Exclude \(title) for this board")
         case .excluded:
-            Button(action: onToggleExclude) {
-                Text("UNDO")
-                    .font(.risoBody(11.5, .extraBold))
-                    .foregroundStyle(Color.risoInk)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .overlay(
-                        Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Undo excluding \(title)")
+            RisoUndoPill(accessibilityLabel: "Undo excluding \(title)", action: onToggleExclude)
         case .filteredDone:
             Circle()
                 .strokeBorder(Color.risoGreen, lineWidth: Riso.Keyline.container)
@@ -620,20 +610,9 @@ struct RisoMemberRuleRowView: View {
                     .strikethrough()
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button { onSetPartExcluded(part.childId, false) } label: {
-                    Text("UNDO")
-                        .font(.risoBody(10.5, .extraBold))
-                        .tracking(0.6)
-                        .foregroundStyle(Color.risoInk)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.risoPaper2))
-                        .overlay(
-                            Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
-                        )
+                RisoUndoPill(scale: .part, accessibilityLabel: "Undo excluding \(part.name)") {
+                    onSetPartExcluded(part.childId, false)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Undo excluding \(part.name)")
             }
             .opacity(0.45)
         } else {
@@ -672,8 +651,17 @@ struct RisoMemberRuleRowView: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Color.risoMuted)
-                                .frame(width: 24, height: 24)
+                                // 28pt hit area, matching the member row's
+                                // ✕ — the part line's old 24pt sat under
+                                // the floor. The -4 leading padding hands
+                                // the extra width back to LAYOUT (the hit
+                                // area overhangs the 8pt HStack gap, not
+                                // the dice), so a part name like "Cool
+                                // down 10 reps" keeps the width it fit in
+                                // at 24pt.
+                                .frame(width: 28, height: 28)
                                 .contentShape(Rectangle())
+                                .padding(.leading, -4)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(

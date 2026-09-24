@@ -95,6 +95,49 @@ final class RisoKitSnapshotTests: XCTestCase {
             record: recordMode
         )
     }
+
+    // MARK: - RisoUndoPill (audit T2)
+    //
+    // Both visual scales side by side. The dashed outline traces each
+    // pill's LAYOUT frame, so the baseline pins the 28pt-tall touch target
+    // extending past the smaller visual capsule — the hit-area floor this
+    // component exists to guarantee — not just the capsule's look.
+
+    private func undoPills() -> some View {
+        HStack(spacing: 16) {
+            ForEach([RisoUndoPill.Scale.member, .part], id: \.self) { scale in
+                RisoUndoPill(scale: scale, accessibilityLabel: "Undo") {}
+                    .overlay(
+                        Rectangle().strokeBorder(
+                            Color.risoBlue,
+                            style: StrokeStyle(lineWidth: 1, dash: [2, 2])
+                        )
+                    )
+            }
+        }
+        .padding(16)
+        .frame(width: 200, height: 60)
+        .background(Color.risoPaper)
+    }
+
+    func testUndoPillLight() {
+        assertSnapshot(
+            of: undoPills(),
+            as: .image(layout: .fixed(width: 200, height: 60)),
+            record: recordMode
+        )
+    }
+
+    func testUndoPillDark() {
+        assertSnapshot(
+            of: undoPills(),
+            as: .image(
+                layout: .fixed(width: 200, height: 60),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
 }
 
 /// `@State` wrappers so the compact stepper + compact segmented render

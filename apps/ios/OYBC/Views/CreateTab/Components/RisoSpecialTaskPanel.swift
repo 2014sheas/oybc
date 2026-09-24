@@ -136,8 +136,10 @@ struct RisoSpecialTaskPanel: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color.risoMuted)
                         .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close special task panel")
             }
 
             // Type chips row

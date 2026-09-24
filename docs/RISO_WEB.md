@@ -64,6 +64,13 @@ Which static token depends on the fill's lightness: **dark** fills
 carries `--riso-ink-static` (static dark) — using adaptive `--riso-ink` on gold
 would go cream-on-gold in dark mode and fail WCAG AA. Adaptive `--riso-ink` is
 only for content on `--riso-paper`/`--riso-paper-2`.
+**Platform divergence (ROADMAP C8, decided 2026-09):** web keeps static
+`--riso-on-color` cream on red/blue/green fills; iOS keeps its *adaptive*
+`Color.risoPaper` there (cream in light, ink in dark) because the lightened
+dark-mode fills put cream at ~1.9:1 (green) / 2.6:1 (red) — below AA — while
+ink reads at ~8.9 / 6.5:1. The two platforms therefore render the same
+component in different foregrounds in dark mode on purpose; do not "fix"
+either side toward the other without re-opening C8.
 
 ### Shape & motion (also in `riso.css`)
 

@@ -983,4 +983,88 @@ final class SyncPullApplyTests: XCTestCase {
         )
         XCTAssertEqual(try syncRows(db).filter { $0.entityId == bid }.count, boardRowsBefore)
     }
+
+    // MARK: - Queue ownership: sync-internal enqueues stamp the PULL's uid
+
+    /// docs/GUEST_MODE.md §Collision (fix round 1): during the collision switch
+    /// an anon snapshot can apply AFTER `signIn` resolves and after the queue
+    /// clear. Its re-enqueues must be owned by the uid the pull runs for
+    /// (`userId` here), never the live auth uid — so the real account's push
+    /// drops them. Simulated by a pull for `userId` while the live-auth
+    /// provider already returns another uid.
+    private let liveRealUid = "live-real-uid"
+
+    /// Seeded rows enqueue their own (unowned) sync items — clear them so only
+    /// the pull's enqueues are asserted, then flip live auth.
+    private func startPullWithLiveAuthFlipped(_ db: AppDatabase) throws {
+        try db.write { _ = try SyncQueueItem.deleteAll($0) }
+        SyncQueueOwnership.provider = { [liveRealUid] in liveRealUid }
+    }
+
+    func test_ownership_localWinReassert_isOwnedByPullUid_notLiveUid() throws {
+        defer { SyncQueueOwnership.provider = { nil } }
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        try db.saveTask(makeTask(tid, title: "Local", version: 5))
+        let sut = makeSut(db)
+        try startPullWithLiveAuthFlipped(db)
+
+        let remote: [String: Any] = [
+            "id": tid, "userId": userId, "title": "Remote", "type": "normal",
+            "isCompleted": false, "version": 2,
+            "updatedAt": "2026-06-01T00:00:00.000",
+            "createdAt": "2026-06-01T00:00:00.000", "isDeleted": false,
+        ]
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+
+        let rows = try syncRows(db)
+        XCTAssertEqual(rows.map(\.entityType), ["tasks"])
+        XCTAssertEqual(rows.map(\.ownerUid), [userId])
+        // …which the live account's push then drops.
+        XCTAssertTrue(try db.dropForeignOwnedSyncItems(rows, userId: liveRealUid).isEmpty)
+    }
+
+    func test_ownership_remoteWinCascadeBoardEnqueue_isOwnedByPullUid() throws {
+        defer { SyncQueueOwnership.provider = { nil } }
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask(tid, version: 1, isCompleted: false))
+        try db.saveBoardTask(makeBoardTask(id: "bt", boardId: "b1", taskId: tid))
+        let sut = makeSut(db)
+        try startPullWithLiveAuthFlipped(db)
+
+        let remote: [String: Any] = [
+            "id": tid, "userId": userId, "title": "Task", "type": "normal",
+            "isCompleted": true, "version": 2,
+            "updatedAt": "2026-06-02T00:00:00.000",
+            "createdAt": "2026-06-01T00:00:00.000", "isDeleted": false,
+        ]
+        sut.applyRemoteSubdoc(collection: taskCol, remoteData: remote, authenticatedUserId: userId)
+
+        let boardRows = try syncRows(db).filter { $0.entityType == "boards" }
+        XCTAssertFalse(boardRows.isEmpty, "the pull cascade enqueues a board push")
+        XCTAssertEqual(Set(boardRows.map(\.ownerUid)), [userId])
+    }
+
+    func test_ownership_healMintAndCascade_areOwnedByPullUid() throws {
+        defer { SyncQueueOwnership.provider = { nil } }
+        let db = try makeDb()
+        try seedUser(db)
+        let tid = newId()
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask(tid, isCompleted: true))
+        try db.saveBoardTask(makeBoardTask(id: "bt", boardId: "b1", taskId: tid))
+        let sut = makeSut(db)
+        try startPullWithLiveAuthFlipped(db)
+
+        XCTAssertEqual(sut.healMissingCompletionEvents(userId: userId), 1)
+
+        let rows = try syncRows(db)
+        XCTAssertTrue(rows.contains { $0.entityType == "taskEvents" })
+        XCTAssertTrue(rows.contains { $0.entityType == "boards" })
+        XCTAssertEqual(Set(rows.map(\.ownerUid)), [userId])
+    }
 }

@@ -19,7 +19,7 @@ import { resolveConflict, type SyncableEntity } from '../../firebase/conflictRes
 import { recordSyncEvent } from '../../firebase/syncStatus';
 import { runBoardCascadeForTask, runBoardCascadeForBoardId } from './orchestration';
 import { reDeriveSealedBoardsByIds } from './sealing';
-import { addToSyncQueue } from './syncQueue';
+import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 
 /**
  * Apply a remote document from a syncable subcollection to the local Dexie
@@ -157,7 +157,11 @@ export async function applyRemoteSubdoc(
         // The row may have changed (or vanished) since the outer read —
         // re-check the guard against the FRESH row before enqueueing it.
         if (fresh && rowsGenuinelyDiffer(fresh, validated)) {
-          await addToSyncQueue(collectionName, fresh.id, SyncOperationType.UPDATE, fresh, 0);
+          // Owned by the uid this pull runs for, NOT the live auth uid
+          // (docs/GUEST_MODE.md §Collision — the uid can flip mid-pull).
+          await addToSyncQueue(collectionName, fresh.id, SyncOperationType.UPDATE, fresh, 0, {
+            ownerUid: authenticatedUserId,
+          });
         }
       });
     }
@@ -186,6 +190,8 @@ export async function applyRemoteSubdoc(
     'rw',
     [table, db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
+      // Cascade enqueues below are owned by the pull's uid, not the live one.
+      stampTransactionSyncOwner(authenticatedUserId);
       await table.put(validated);
 
       // After pulling a Task or CompoundChild, cascade the board derivation

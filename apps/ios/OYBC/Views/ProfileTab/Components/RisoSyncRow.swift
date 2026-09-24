@@ -63,13 +63,14 @@ struct RisoSyncRow: View {
     // MARK: - Derived
 
     private var statusDotColor: Color {
-        // Guest: an informational nudge, not a warning — gold, not orange/green.
+        // Guest: an informational nudge — gold, not green. (Shares gold with the
+        // attention state below; the status text tells the two apart.)
         if authService.isAnonymous { return .risoGold }
-        // Orange only when attention may be warranted (offline, stuck items,
+        // Gold only when attention may be warranted (offline, stuck items,
         // or a sync error); routine in-flight syncing stays green/calm.
         if !networkMonitor.isConnected
             || syncService.exhaustedCount > 0
-            || syncService.lastError != nil { return Color.orange }
+            || syncService.lastError != nil { return .risoGold }
         return .risoGreen
     }
 

@@ -27,6 +27,14 @@ struct SyncQueueItem: Codable, FetchableRecord, PersistableRecord {
     // Priority (higher = more important)
     var priority: Int
 
+    // Ownership — LOCAL queue column only, never on the wire (docs/GUEST_MODE.md
+    // §Collision). The Firebase uid signed in when the item was built; the
+    // default stamps it at every construction site automatically. The push
+    // path DROPS an item whose owner is set and differs from the uid it pushes
+    // for. nil = legacy (pre-v33) row or no signed-in user → pushes as before.
+    // Mirrors `SyncQueueItem.ownerUid` in @oybc/shared.
+    var ownerUid: String? = SyncQueueOwnership.currentUid()
+
     // MARK: - Database Configuration
 
     static let databaseTableName = "sync_queue"
@@ -45,6 +53,49 @@ enum SyncStatus: String, Codable, DatabaseValueConvertible {
     case inProgress = "in_progress"
     case completed
     case failed
+}
+
+// MARK: - Ownership
+
+/// Sync-queue ownership rules (docs/GUEST_MODE.md §Collision). Swift twin of
+/// `packages/shared/src/constants/syncQueueOwnership.ts` — keep the two
+/// predicates in lockstep.
+///
+/// During a guest→account collision switch the new uid's sync loop can start
+/// before the discarded guest's queue is cleared; `boardTasks` and
+/// `compoundChildren` carry no `userId`, so Firestore rules would accept the
+/// guest's rows into the real account. Every item is therefore stamped with
+/// its enqueue-time owner, and a foreign-owned item is dropped, never pushed.
+enum SyncQueueOwnership {
+    private static let lock = NSLock()
+    private static var _provider: () -> String? = { nil }
+
+    /// Returns the uid signed in right now. Registered at launch by
+    /// `OYBCApp.init` as `Auth.auth().currentUser?.uid` (read live, never
+    /// cached) — the Database layer stays Firebase-free. Defaults to nil
+    /// (tests, `-bypassAuth`), which yields legacy unstamped rows.
+    static var provider: () -> String? {
+        get { lock.lock(); defer { lock.unlock() }; return _provider }
+        set { lock.lock(); defer { lock.unlock() }; _provider = newValue }
+    }
+
+    /// The enqueue-time owner stamp: the provider's current uid.
+    static func currentUid() -> String? { provider() }
+
+    /// True when an item belongs to a DIFFERENT account than `userId` and must
+    /// be dropped rather than pushed. A nil owner (legacy row) is never foreign.
+    static func isForeign(ownerUid: String?, userId: String) -> Bool {
+        guard let ownerUid else { return false }
+        return ownerUid != userId
+    }
+
+    /// True when an incoming enqueue owned by `incoming` may coalesce into an
+    /// existing PENDING row owned by `existing`: same owner, or a legacy nil-
+    /// owner row (which the incoming op then re-stamps). A stamped row never
+    /// absorbs a differently-owned (or unowned) op — that op appends its own row.
+    static func canCoalesce(existing: String?, incoming: String?) -> Bool {
+        existing == nil || existing == incoming
+    }
 }
 
 // MARK: - Retry Backoff

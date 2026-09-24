@@ -41,7 +41,7 @@ struct TaskDetailView: View {
         Group {
             if let loadError {
                 Text(loadError)
-                    .foregroundColor(.red)
+                    .foregroundStyle(Color.risoRed)
                     .padding()
             } else if let task {
                 RisoTaskDetailContentView(
@@ -67,7 +67,7 @@ struct TaskDetailView: View {
                     onOpenBoard: onOpenBoard
                 )
             } else {
-                Text("Loading…").foregroundColor(.secondary).padding()
+                Text("Loading…").foregroundStyle(Color.risoMuted).padding()
             }
         }
         .navigationTitle("")

@@ -56,5 +56,15 @@ extension AppDatabase {
                 sql: "CREATE INDEX IF NOT EXISTS idx_tasks_shared_counter ON tasks(sharedCounterId)"
             )
         }
+
+        // v33: sync-queue owner stamp (docs/GUEST_MODE.md §Collision) — not a
+        // Board Sources change, registered here only because new migrations
+        // land in this file (AppDatabase.swift is size-capped). Nullable,
+        // column-only, no backfill: NULL = a pre-stamp row, which the push
+        // path treats as legacy and pushes as before. LOCAL queue column only —
+        // never part of any synced payload.
+        migrator.registerMigration("v33") { db in
+            try db.execute(sql: "ALTER TABLE sync_queue ADD COLUMN ownerUid TEXT")
+        }
     }
 }

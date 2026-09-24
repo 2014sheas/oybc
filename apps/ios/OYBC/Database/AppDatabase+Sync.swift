@@ -13,6 +13,32 @@ extension AppDatabase {
         }
     }
 
+    /// Drop every item owned by an account other than `userId`, returning the
+    /// rest in their original order (docs/GUEST_MODE.md §Collision). Called by
+    /// `SyncService.pushSyncCore` on the fetched PENDING list before the
+    /// per-item loop. A foreign-owned item can never become valid for this
+    /// account — pushing it would file the previous account's `boardTasks` /
+    /// `compoundChildren` (no `userId` field, so the rules accept them) into
+    /// this one — so it is deleted from the queue and logged, never pushed.
+    /// Legacy nil-owner items are kept. Web twin: `dropForeignOwnedSyncItems`.
+    ///
+    /// - Parameters:
+    ///   - items: PENDING items, in push order.
+    ///   - userId: The uid the push is running for.
+    /// - Returns: The items owned by `userId` (or unstamped).
+    /// - Throws: A GRDB error if the delete fails (nothing is pushed then).
+    func dropForeignOwnedSyncItems(_ items: [SyncQueueItem], userId: String) throws -> [SyncQueueItem] {
+        let foreign = items.filter { SyncQueueOwnership.isForeign(ownerUid: $0.ownerUid, userId: userId) }
+        guard !foreign.isEmpty else { return items }
+        try write { db in
+            _ = try SyncQueueItem.deleteAll(db, keys: foreign.map(\.id))
+        }
+        for item in foreign {
+            dlog("[SyncService] dropped \(item.entityType)/\(item.entityId) (\(item.operationType.rawValue)) — queued by another account, never pushed under this one")
+        }
+        return items.filter { !SyncQueueOwnership.isForeign(ownerUid: $0.ownerUid, userId: userId) }
+    }
+
     func saveSyncItem(_ item: SyncQueueItem) throws {
         try write { db in
             try item.save(db)

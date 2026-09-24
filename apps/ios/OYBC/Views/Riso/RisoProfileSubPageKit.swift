@@ -28,8 +28,16 @@ struct RisoSubPageHeader: View {
                     .foregroundStyle(Color.risoInk)
                     .frame(width: 40, height: 40)
                     .risoCard(fill: .risoPaper2)
+                    // 40pt visual square, 44pt touch target (HIG minimum):
+                    // the content shape is laid on a 44pt frame, then the
+                    // negative padding gives the 40pt layout back so the
+                    // button style's hard shadow still traces the card.
+                    .padding(2)
+                    .contentShape(Rectangle())
+                    .padding(-2)
             }
             .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
+            .accessibilityLabel("Back")
             VStack(alignment: .leading, spacing: 2) {
                 Text(kicker).risoKicker(kickerColor)
                 Text(title).risoH2()
