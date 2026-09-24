@@ -56,7 +56,11 @@ final class EditTaskSheetCompoundGateTests: XCTestCase {
         // One sub-task left — the stored structure already fails validation.
         let base = seeded(childCount: 1)
         XCTAssertNotNil(base.validate(type: .compound))
-        XCTAssertNil(EditTaskSheet.compoundSubmission(baseline: base, draft: base, title: "Renamed"))
+        // The draft carries the title edit (like the web twin) — the gate must
+        // be title-insensitive, so a title-only change still submits nothing.
+        var draft = base
+        draft.title = "Renamed"
+        XCTAssertNil(EditTaskSheet.compoundSubmission(baseline: base, draft: draft, title: "Renamed"))
     }
 
     func test_operatorFlip_submitsStructureTitledFromSheet() {

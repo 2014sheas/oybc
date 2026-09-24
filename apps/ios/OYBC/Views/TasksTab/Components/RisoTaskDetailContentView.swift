@@ -75,6 +75,9 @@ struct RisoTaskDetailContentView: View {
                 task: task,
                 availableBoards: allBoardsForPicker,
                 availableTemplates: allTemplatesForPicker,
+                database: database,
+                // Same ordered fetch the detail already made — no re-fetch.
+                seededCompoundChildren: compoundChildren,
                 onSubmit: { patch in
                     showEditSheet = false
                     onEditSubmit(patch)

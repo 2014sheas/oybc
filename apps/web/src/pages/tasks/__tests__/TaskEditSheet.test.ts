@@ -59,12 +59,16 @@ describe('TaskEditSheet — compound mode', () => {
   });
 
   it('keeps Save disabled until the sub-tasks have loaded', () => {
-    expect(saveButton(render(compound))).toContain('disabled');
+    const btn = saveButton(render(compound));
+    expect(btn).not.toBe('');
+    expect(btn).toContain('disabled');
   });
 
   it('leaves a non-compound task without the compound section and Save enabled', () => {
     const html = render(makeTask({ title: 'Read' }));
     expect(html).not.toContain('Sub-tasks &amp; rule');
-    expect(saveButton(html)).not.toContain('disabled');
+    const btn = saveButton(html);
+    expect(btn).not.toBe('');
+    expect(btn).not.toContain('disabled');
   });
 });

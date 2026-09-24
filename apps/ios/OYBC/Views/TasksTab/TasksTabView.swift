@@ -384,6 +384,7 @@ struct TasksTabView: View {
                 task: task,
                 availableBoards: editPickerBoards,
                 availableTemplates: editPickerTemplates,
+                database: database,
                 onSubmit: { patch in
                     _Concurrency.Task { await saveEdits(task: task, patch: patch) }
                 },

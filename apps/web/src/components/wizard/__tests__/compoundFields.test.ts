@@ -62,6 +62,7 @@ describe('CompoundFields', () => {
     const minus = html.match(/<button[^>]*>−<\/button>/)?.[0] ?? '';
     const plus = html.match(/<button[^>]*>\+<\/button>/)?.[0] ?? '';
     expect(plus).toContain('disabled');
+    expect(minus).not.toBe('');
     expect(minus).not.toContain('disabled');
   });
 
