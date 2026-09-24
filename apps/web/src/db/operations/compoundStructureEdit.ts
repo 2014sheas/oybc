@@ -38,8 +38,9 @@ import { updateTaskAndCascade, type UpdateTaskPatch } from './tasks.crud';
 
 /**
  * Applies a staged compound patch's child edits to its `compound_children`
- * links + child Task rows. Called by {@link applyStagedTaskEditsForWizardPersist}
- * for a staged compound edit (library or already-written pending compound).
+ * links + child Task rows. Called by {@link applyCompoundStructureEditInTransaction}
+ * — for a staged wizard compound edit (library or already-written pending
+ * compound) and for the standalone Task Detail save alike.
  * The parent Task itself is saved by the caller AFTER this returns. Web
  * port of iOS `AppDatabase.applyStagedCompoundChildEdits`.
  *
@@ -139,8 +140,9 @@ export async function applyStagedCompoundChildEdits(
 
 /**
  * Basic (non-structural) fields that ride along with a standalone compound
- * save, so the Task Detail sheet's title/description/time-window edits land
- * in the SAME version bump as the structure change. `null` clears a field
+ * save, so the Task Detail sheet's description/time-window edits land in the
+ * SAME version bump as the structure change (the title rides in
+ * `structure.title`, not here). `null` clears a field
  * (mapped to `undefined`, exactly as `updateTask` maps its `null` sentinels);
  * `undefined` leaves the stored value untouched.
  */
@@ -217,6 +219,18 @@ export async function applyCompoundStructureEditInTransaction(
 }
 
 /**
+ * Throws unless `task` is a live (not soft-deleted) compound.
+ *
+ * @param task - The row read for `taskId` (may be undefined).
+ * @param taskId - Id used in the error message.
+ * @throws Error `Task … not found` / `Task … is not a compound task`.
+ */
+function assertLiveCompound(task: Task | undefined, taskId: string): asserts task is Task {
+  if (!task || task.isDeleted) throw new Error(`Task ${taskId} not found`);
+  if (task.type !== TaskType.COMPOUND) throw new Error(`Task ${taskId} is not a compound task`);
+}
+
+/**
  * Standalone Task-Detail save for a compound: validates, then applies the
  * structure edit (plus any basic fields) and re-derives every live board the
  * compound — or a changed sub-task — sits on, all in one transaction.
@@ -233,14 +247,20 @@ export async function editCompoundStructure(
   structure: TaskEditPatch,
   basic: CompoundEditBasic = {},
 ): Promise<void> {
-  const task = await db.tasks.get(taskId);
-  if (!task || task.isDeleted) throw new Error(`Task ${taskId} not found`);
-  if (task.type !== TaskType.COMPOUND) throw new Error(`Task ${taskId} is not a compound task`);
+  // Pre-checks run outside any transaction so a validation failure never
+  // opens one.
+  assertLiveCompound(await db.tasks.get(taskId), taskId);
   const problem = validatePatch(structure, TaskType.COMPOUND);
   if (problem !== null) throw new CompoundEditValidationError(problem);
   const now = currentTimestamp();
   await db.transaction('rw', CASCADE_TABLES(), async () => {
-    await applyCompoundStructureEditInTransaction(task, structure, basic, now);
+    // Re-read INSIDE the transaction: the full row written below is built
+    // from this read, so a sync pull / other-tab write that landed after the
+    // pre-read is preserved (and the version bumps from it) instead of being
+    // overwritten with stale fields. A throw here aborts with no writes.
+    const fresh = await db.tasks.get(taskId);
+    assertLiveCompound(fresh, taskId);
+    await applyCompoundStructureEditInTransaction(fresh, structure, basic, now);
   });
 }
 

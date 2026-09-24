@@ -220,8 +220,9 @@ export function validatePatch(patch: TaskEditPatch, type: TaskType): string | nu
  * Applies the patch's title/counting/compound-rule fields to a base task.
  * Assumes `validatePatch` already passed. Does NOT bump `version`/
  * `updatedAt` — the persist caller owns that. Compound child Task/link CRUD
- * is applied by the persist layer (`applyStagedCompoundChildEdits` in
- * `db/operations/wizardBoard.ts`), not here. Mirrors iOS
+ * is applied by the persist layer (`applyStagedCompoundChildEdits`, reached via
+ * `applyCompoundStructureEditInTransaction` in
+ * `db/operations/compoundStructureEdit.ts`), not here. Mirrors iOS
  * `TaskEditPatch.applied(to:)`.
  */
 export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
@@ -254,7 +255,8 @@ export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
 
 /**
  * Builds a fresh child Task row for a newly-added compound sub-task
- * (`isNewChild(step)`). Pure — the caller (`db/operations/wizardBoard.ts`)
+ * (`isNewChild(step)`). Pure — the caller
+ * (`applyStagedCompoundChildEdits` in `db/operations/compoundStructureEdit.ts`)
  * owns the actual `db.tasks.add` + sync-enqueue. Mirrors iOS
  * `AppDatabase.makeStagedChildTask`.
  */

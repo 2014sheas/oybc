@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BoardStatus,
   CenterSquareType,
@@ -342,6 +342,41 @@ describe('editCompoundStructure — standalone Task Detail save', () => {
   it('a non-compound task is rejected', async () => {
     await expect(editCompoundStructure(Q_ID, structureFor({ title: 'Q' }, []))).rejects.toThrow(
       /not a compound/i,
+    );
+  });
+
+  it('bumps from the stored version (seeded at 7 → 8)', async () => {
+    await db.tasks.update(P_ID, { version: 7 });
+    await editCompoundStructure(P_ID, structureFor({ title: 'P', operator: OperatorType.OR }, keepAB()));
+    expect((await db.tasks.get(P_ID))?.version).toBe(8);
+  });
+
+  it('writes from a row re-read INSIDE the transaction, not the stale pre-read (concurrent write preserved)', async () => {
+    // Simulate a sync pull / other-tab write landing between the op's
+    // pre-read and its transaction: the FIRST `db.tasks.get` (the pre-read)
+    // returns the row as it was, while the DB already holds the newer write.
+    const stale = await db.tasks.get(P_ID);
+    await db.tasks.update(P_ID, { description: 'changed', version: 9 });
+    // (Cast: Dexie's `get` returns a `PromiseExtended`; a plain promise is
+    // all the op awaits.)
+    const getSpy = vi
+      .spyOn(db.tasks, 'get')
+      .mockImplementationOnce((() => Promise.resolve(stale)) as unknown as typeof db.tasks.get);
+    try {
+      await editCompoundStructure(P_ID, structureFor({ title: 'P', operator: OperatorType.OR }, keepAB()));
+    } finally {
+      getSpy.mockRestore();
+    }
+    const p = await db.tasks.get(P_ID);
+    expect(p?.version).toBe(10);
+    expect(p?.description).toBe('changed');
+    expect(p?.operator).toBe(OperatorType.OR);
+  });
+
+  it('a soft-deleted compound is rejected', async () => {
+    await db.tasks.update(P_ID, { isDeleted: true });
+    await expect(editCompoundStructure(P_ID, structureFor({ title: 'P' }, keepAB()))).rejects.toThrow(
+      /not found/,
     );
   });
 
