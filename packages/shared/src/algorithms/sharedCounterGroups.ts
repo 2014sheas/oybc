@@ -29,10 +29,13 @@
 import type { Task } from '../types/task';
 import type { Board } from '../types/board';
 import type { BoardTask } from '../types/boardTask';
+import type { TaskEvent } from '../types/taskEvent';
 import { BoardStatus, TaskType, Timeframe } from '../constants/enums';
 import { deriveDisplayedCount } from './sharedCounter';
 import { formatTimeframeLabel } from './calendarBoundaries';
 import { formatCounterName } from './counterName';
+import { isWindowStampedDerived } from './memberRules';
+import { resolveLinkedCounterDisplay } from './taskEvents';
 
 /**
  * One member task of a shared counter, resolved to its board placement +
@@ -56,7 +59,10 @@ export interface SharedCounterMemberTask {
   window: string | null;
   /** The task's personal target (`maxCount`), 0 when unset. */
   goal: number;
-  /** The task's window-scoped displayed amount (= derived from the lifetime). */
+  /** The task's window-scoped displayed amount: the ROOT's increment sum in
+   *  the row's own window for a window-stamped derived row (when the caller
+   *  supplies `eventsByTaskId`), else derived from the lifetime
+   *  (`lifetime − baseline`). */
   logged: number;
   /** `logged >= goal` (only when `goal > 0`). Over-achievement is real. */
   met: boolean;
@@ -107,6 +113,16 @@ export interface BuildSharedCounterGroupsInput {
   tasks: readonly Task[];
   boardTasks: readonly BoardTask[];
   boards: readonly Board[];
+  /**
+   * Optional — non-deleted events grouped by `taskId` (at least the roots').
+   * When present, a WINDOW-STAMPED derived member's `logged` is its root's
+   * increment sum inside the row's own `[startDate, endDate]` (bounded at its
+   * board's `sealedAt` when sealed) via `resolveLinkedCounterDisplay` — the
+   * rule the play cell and the derivation kernel use, so the hub never reads
+   * a later window's logs into an ended member. Absent → the lifetime
+   * derivation, byte-identical to before.
+   */
+  eventsByTaskId?: Readonly<Record<string, TaskEvent[]>>;
 }
 
 /**
@@ -233,12 +249,18 @@ export function buildSharedCounterGroups(
       // The source is the accumulator (baseline 0); linked tasks derive.
       const baseline = isSource ? 0 : m.baseline ?? 0;
       const goal = m.maxCount ?? 0;
-      const { displayed } = deriveDisplayedCount(
-        { baseline, maxCount: goal },
-        { currentCount: lifetime },
-      );
-
       const board = pickPrimaryBoard(m.id, input.boardTasks, boardsById);
+      // Window-stamped members read their own window from the root's events
+      // (never `lifetime − baseline`, which counts later windows' logs too).
+      const displayed =
+        !isSource && input.eventsByTaskId && isWindowStampedDerived(m)
+          ? resolveLinkedCounterDisplay(
+              m,
+              input.eventsByTaskId as Record<string, TaskEvent[]>,
+              board?.sealedAt ?? null,
+            ).displayed
+          : deriveDisplayedCount({ baseline, maxCount: goal }, { currentCount: lifetime }).displayed;
+
       if (board) boardIds.add(board.id);
       const isActive = board?.status === BoardStatus.ACTIVE;
       if (isActive) activeCount += 1;

@@ -8,6 +8,7 @@ import {
   type CellState,
 } from '../../src/algorithms/derivationPass';
 import { CenterSquareType, TaskType, BoardStatus, Timeframe } from '../../src/constants/enums';
+import { expandToWindowStampedDerived } from '../../src/algorithms/taskEvents';
 import type {
   Task,
   CompoundChild,
@@ -76,6 +77,11 @@ interface MiniTask {
   maxCount?: number | null;
   currentCount?: number | null;
   sharedCounterId?: string | null;
+  /** Optional — window-stamped derived counters (2026-09-23 amendment) carry
+   *  their own window + the wizard-born mark. */
+  startDate?: string | null;
+  endDate?: string | null;
+  createdInWizard?: boolean;
 }
 
 /** Minimal event shape for windowed vectors; the consumer fills the
@@ -141,10 +147,24 @@ interface CbsuVector {
   expectedCells?: CellState[];
 }
 
+interface EtwsdVector {
+  name: string;
+  ids: string[];
+  tasks: {
+    id: string;
+    isDeleted: boolean;
+    sharedCounterId: string | null;
+    startDate: string | null;
+    createdInWizard: boolean;
+  }[];
+  expected: string[];
+}
+
 interface Fixture {
   findTransitiveParentCompounds: FtpcVector[];
   findAffectedBoardIds: FabiVector[];
   computeBoardStatsUpdate: CbsuVector[];
+  expandToWindowStampedDerived: EtwsdVector[];
 }
 
 const fixture: Fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
@@ -192,6 +212,9 @@ function toTask(m: MiniTask): Task {
     maxCount: m.maxCount ?? undefined,
     currentCount: m.currentCount ?? undefined,
     sharedCounterId: m.sharedCounterId ?? undefined,
+    startDate: m.startDate ?? undefined,
+    endDate: m.endDate ?? undefined,
+    createdInWizard: m.createdInWizard ?? false,
     isCompleted: m.isCompleted,
     totalCompletions: 0,
     totalInstances: 0,
@@ -293,6 +316,23 @@ describe('findAffectedBoardIds (fixture-driven, tests/fixtures/derivationPassVec
       const boardTasks = v.boardTasks.map(toBoardTaskRef);
       const result = findAffectedBoardIds(v.changedTaskId, new Set(v.parentCompounds), boardTasks);
       expect([...result].sort()).toEqual([...v.expected].sort());
+    });
+  }
+});
+
+describe('expandToWindowStampedDerived (fixture-driven, tests/fixtures/derivationPassVectors.json)', () => {
+  it('fixture is non-empty', () => {
+    expect(fixture.expandToWindowStampedDerived.length).toBeGreaterThan(0);
+  });
+
+  for (const v of fixture.expandToWindowStampedDerived) {
+    it(v.name, () => {
+      const tasks = v.tasks.map((t) => ({
+        ...t,
+        sharedCounterId: t.sharedCounterId ?? undefined,
+        startDate: t.startDate ?? undefined,
+      }));
+      expect([...expandToWindowStampedDerived(v.ids, tasks)].sort()).toEqual(v.expected);
     });
   }
 });

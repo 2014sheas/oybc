@@ -8,6 +8,7 @@ import { BoardStatus, TaskType, Timeframe, CenterSquareType } from '../../src/co
 import type { Task } from '../../src/types/task';
 import type { Board } from '../../src/types/board';
 import type { BoardTask } from '../../src/types/boardTask';
+import type { TaskEvent } from '../../src/types/taskEvent';
 
 /**
  * C1 (issue #267): fully fixture-driven from
@@ -34,6 +35,10 @@ interface MiniTask {
   isDeleted: boolean;
   /** P5 hub-born-counter flag. Optional — absent/false on the core 11 vectors. */
   isCounter?: boolean;
+  /** Window-stamped derived member fields (optional; Task 3 vectors). */
+  startDate?: string | null;
+  endDate?: string | null;
+  createdInWizard?: boolean;
 }
 
 interface MiniBoard {
@@ -41,6 +46,8 @@ interface MiniBoard {
   name: string;
   status: string;
   isDeleted: boolean;
+  /** Optional — a sealed board's seal instant. */
+  sealedAt?: string;
 }
 
 interface MiniBoardTask {
@@ -76,6 +83,8 @@ interface Vector {
   tasks: MiniTask[];
   boards: MiniBoard[];
   boardTasks: MiniBoardTask[];
+  /** Optional — root id → increment events; passed through as `eventsByTaskId`. */
+  eventsByTaskId?: Record<string, Array<{ id: string; kind: 'increment'; delta: number; occurredAt: string; isDeleted: boolean }>>;
   expected: MiniGroup[];
 }
 
@@ -112,6 +121,9 @@ function toTask(m: MiniTask): Task {
     version: 1,
     isDeleted: m.isDeleted,
     isCounter: m.isCounter,
+    startDate: m.startDate ?? undefined,
+    endDate: m.endDate ?? undefined,
+    createdInWizard: m.createdInWizard,
   };
 }
 
@@ -134,7 +146,24 @@ function toBoard(m: MiniBoard): Board {
     updatedAt: TS,
     version: 1,
     isDeleted: m.isDeleted,
+    sealedAt: m.sealedAt,
   };
+}
+
+function toVectorEvents(v: Vector): Record<string, TaskEvent[]> | undefined {
+  if (!v.eventsByTaskId) return undefined;
+  const out: Record<string, TaskEvent[]> = {};
+  for (const [taskId, evs] of Object.entries(v.eventsByTaskId)) {
+    out[taskId] = evs.map((e) => ({
+      ...e,
+      userId: 'u1',
+      taskId,
+      createdAt: TS,
+      updatedAt: TS,
+      version: 1,
+    }));
+  }
+  return out;
 }
 
 function toBoardTask(m: MiniBoardTask): BoardTask {
@@ -501,6 +530,7 @@ describe('buildSharedCounterGroups (fixture-driven, tests/fixtures/sharedCounter
         tasks: v.tasks.map(toTask),
         boards: v.boards.map(toBoard),
         boardTasks: v.boardTasks.map(toBoardTask),
+        eventsByTaskId: toVectorEvents(v),
       });
 
       expect(groups).toHaveLength(v.expected.length);

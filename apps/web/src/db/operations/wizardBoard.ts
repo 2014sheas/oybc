@@ -30,7 +30,7 @@ import {
   validatePatch,
 } from '../taskEditPatch';
 import { activateBoard, createBoard, updateBoard } from './boards';
-import { resolveBoardSourceSupply, resolveSourceBoard } from './boardSources';
+import { resolveBoardSourceSupply, resolveSourceBoard, supplyEventTaskIds } from './boardSources';
 import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
 import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 import { buildWindowContext } from './windowContext';
@@ -499,9 +499,17 @@ async function mintWizardDerivedRows(
     };
     const rows = await db.boardTasks.where('boardId').equals(board.id).toArray();
     const liveIds = [...new Set(rows.filter((bt) => !bt.isDeleted).map((bt) => bt.taskId))];
+    // Placed ids + the roots of window-stamped derived rows (their done-state
+    // reads the root's events).
+    const eventTaskIds = [
+      ...new Set([
+        ...liveIds,
+        ...supplyEventTaskIds(liveIds.flatMap((id) => (tasksById[id] ? [tasksById[id]] : []))),
+      ]),
+    ];
     const eventsByTaskId: Record<string, TaskEvent[]> = {};
-    if (liveIds.length > 0) {
-      for (const e of await db.taskEvents.where('taskId').anyOf(liveIds).toArray()) {
+    if (eventTaskIds.length > 0) {
+      for (const e of await db.taskEvents.where('taskId').anyOf(eventTaskIds).toArray()) {
         if (e.isDeleted) continue;
         (eventsByTaskId[e.taskId] ??= []).push(e);
       }

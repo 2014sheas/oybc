@@ -27,9 +27,14 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         /// the core 11 vectors; extend with `decodeIfPresent ?? false` since
         /// the Swift `Task.isCounter` field is non-optional.
         let isCounter: Bool
+        /// Window-stamped derived member fields — optional (Task 3 vectors).
+        let startDate: String?
+        let endDate: String?
+        let createdInWizard: Bool
 
         private enum CodingKeys: String, CodingKey {
             case id, title, currentCount, maxCount, sharedCounterId, baseline, isDeleted, isCounter
+            case startDate, endDate, createdInWizard
         }
 
         init(from decoder: Decoder) throws {
@@ -42,6 +47,9 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             baseline = try container.decodeIfPresent(Int.self, forKey: .baseline)
             isDeleted = try container.decode(Bool.self, forKey: .isDeleted)
             isCounter = try container.decodeIfPresent(Bool.self, forKey: .isCounter) ?? false
+            startDate = try container.decodeIfPresent(String.self, forKey: .startDate)
+            endDate = try container.decodeIfPresent(String.self, forKey: .endDate)
+            createdInWizard = try container.decodeIfPresent(Bool.self, forKey: .createdInWizard) ?? false
         }
     }
 
@@ -50,6 +58,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let name: String
         let status: String
         let isDeleted: Bool
+        /// Optional — a sealed board's seal instant.
+        let sealedAt: String?
     }
 
     private struct MiniBoardTask: Decodable {
@@ -84,7 +94,33 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
         let tasks: [MiniTask]
         let boards: [MiniBoard]
         let boardTasks: [MiniBoardTask]
+        /// Optional — root id → increment events, passed through as `eventsByTaskId`.
+        let eventsByTaskId: [String: [MiniEvent]]?
         let expected: [MiniGroup]
+    }
+
+    private struct MiniEvent: Decodable {
+        let id: String
+        let kind: String
+        let delta: Int
+        let occurredAt: String
+        let isDeleted: Bool
+    }
+
+    private func toEvents(_ v: Vector) -> [String: [TaskEvent]]? {
+        v.eventsByTaskId.map { map in
+            map.reduce(into: [String: [TaskEvent]]()) { acc, kv in
+                acc[kv.key] = kv.value.map { e in
+                    TaskEvent(
+                        id: e.id, userId: "u1", taskId: kv.key,
+                        kind: TaskEventKind(rawValue: e.kind) ?? .increment,
+                        delta: e.delta, occurredAt: e.occurredAt, boardId: nil,
+                        createdAt: ts, updatedAt: ts, lastSyncedAt: nil,
+                        version: 1, isDeleted: e.isDeleted, deletedAt: nil
+                    )
+                }
+            }
+        }
     }
 
     private struct Fixture: Decodable {
@@ -134,14 +170,17 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             updatedAt: ts,
             version: 1,
             isDeleted: m.isDeleted,
+            startDate: m.startDate,
+            endDate: m.endDate,
             sharedCounterId: m.sharedCounterId,
             baseline: m.baseline,
+            createdInWizard: m.createdInWizard,
             isCounter: m.isCounter
         )
     }
 
     private func toBoard(_ m: MiniBoard) -> Board {
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
             "id": m.id,
             "userId": "u1",
             "name": m.name,
@@ -160,6 +199,7 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             "version": 1,
             "isDeleted": m.isDeleted,
         ]
+        if let sealedAt = m.sealedAt { dict["sealedAt"] = sealedAt }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -185,7 +225,8 @@ final class SharedCounterGroupsVectorTests: XCTestCase {
             let groups = buildSharedCounterGroups(
                 tasks: v.tasks.map(toTask),
                 boardTasks: v.boardTasks.map(toBoardTask),
-                boards: v.boards.map(toBoard)
+                boards: v.boards.map(toBoard),
+                eventsByTaskId: toEvents(v)
             )
 
             XCTAssertEqual(groups.count, v.expected.count, "Vector '\(v.name)' group count")

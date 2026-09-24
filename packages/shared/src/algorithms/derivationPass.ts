@@ -5,6 +5,7 @@ import { isWithinTimeframe } from './calendarBoundaries';
 import { evaluateCompound } from './compoundEvaluation';
 import {
   resolveTaskWindowState,
+  resolveDerivedCounterWindowState,
   isEventOwningTask,
   type CompoundWindowContext,
   type WindowEvaluationContext,
@@ -270,8 +271,9 @@ export function computeSealedCompletedCells(
  * additive and byte-identical for those two fields. When `windowContext` is
  * absent the resolution is byte-identical to the pre-Windowed-Completion
  * behavior (lifetime `isCompleted` cache); when present, primitive squares
- * resolve against the board's window via events and derived-counting squares
- * stay on their cache (the carve-out).
+ * resolve against the board's window via events, window-stamped derived
+ * counters resolve from their root's events inside their own window, and
+ * hub-linked derived-counting squares stay on their cache (the carve-out).
  */
 export function computeBoardGrid(
   board: Board,
@@ -296,8 +298,16 @@ export function computeBoardGrid(
   /** Resolve a primitive (normal / counting) square, windowed or lifetime. */
   const resolvePrimitive = (t: Task): boolean => {
     if (!windowContext) return t.isCompleted;
-    // Derived-task carve-out: shared-counter-linked counting squares keep their
-    // propagation-stamped lifetime cache (docs §Derived-task carve-out rule 4).
+    // Window-stamped derived counter (`isWindowStampedDerived`): resolved from
+    // its ROOT's increment events inside the row's own `[startDate, endDate]`
+    // — never the one-way latch, which a later window's increments can set
+    // (docs §Derived-task carve-out rule 4, amended 2026-09-23). The sealed
+    // path's context is already bounded at `sealedAt`, so this is a pure
+    // function of the converged in-window event union there too.
+    const derived = resolveDerivedCounterWindowState(t, windowContext.eventsByTaskId);
+    if (derived) return derived.isCompleted;
+    // Derived-task carve-out: HUB-LINKED derived counters (`sharedCounterId`
+    // set, no `startDate`) keep their propagation-stamped lifetime cache.
     if (!isEventOwningTask(t)) return t.isCompleted;
     const events = windowContext.eventsByTaskId[t.id] ?? [];
     return resolveTaskWindowState(t, events, board.startDate).isCompleted;

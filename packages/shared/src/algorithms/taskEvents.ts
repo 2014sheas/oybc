@@ -1,6 +1,9 @@
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import { TaskType } from '../constants/enums';
+import { isWithinTimeframe } from './calendarBoundaries';
+import { isWindowStampedDerived } from './memberRules';
+import { deriveDisplayedCount } from './sharedCounter';
 
 /**
  * Windowed Completion — pure evaluation helpers
@@ -35,7 +38,9 @@ export interface TaskWindowState {
  * Context threaded through windowed compound evaluation (docs §Semantics —
  * "evaluateCompound gains a window-context parameter"). When present, primitive
  * children resolve against `windowStart` via {@link resolveTaskWindowState};
- * derived-counting children fall back to their lifetime cache (the carve-out);
+ * window-stamped derived counters resolve from their root's events in their own
+ * window ({@link resolveDerivedCounterWindowState}); hub-linked derived-counting
+ * children fall back to their lifetime cache (the carve-out);
  * nested compounds inherit the SAME `windowStart` (host-window inheritance).
  */
 export interface CompoundWindowContext {
@@ -135,6 +140,191 @@ export function resolveTaskWindowState(
     completions += 1;
   }
   return { isCompleted: completions > 0, count: completions };
+}
+
+/**
+ * Resolve a **window-stamped derived counter**'s state from its ROOT's events
+ * (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23;
+ * docs/BOARD_SOURCES.md §Plan B2 notes → "Window-stamped derived counters").
+ *
+ * A window-stamped derived counter owns no events (carve-out item 1), but it
+ * carries its own window (`startDate` / `endDate`, stamped from the board it
+ * was minted for) and a per-window target (`maxCount`). Its completion is
+ * therefore a pure function of the root's converged increment events inside
+ * that window — never the propagation-stamped one-way latch, which a LATER
+ * window's increments can set and which made sealed re-derivation diverge
+ * across devices (audit 2026-09-23 finding #1).
+ *
+ * Window membership uses {@link isWithinTimeframe} — the SAME `[startDate,
+ * endDate]` convention (inclusive both ends, parsed-timestamp compare, `null`
+ * `endDate` = unbounded) the kernel already uses for board windows. Deltas are
+ * signed (a decrement is a negative delta) and summed as-is; the sum is then
+ * low-clamped at 0 exactly like {@link resolveTaskWindowState} and
+ * `deriveDisplayedCount`. Completion is `count >= (maxCount ?? 0)` — the
+ * derived-counter convention (`deriveDisplayedCount`: a missing / 0 target is
+ * immediately complete). Overshoot is valid; nothing is high-clamped.
+ *
+ * `baseline` is NOT read — it stays a non-authored display cache.
+ *
+ * @param task       The window-stamped derived counter (its window + target).
+ * @param rootEvents The ROOT task's events (`eventsByTaskId[task.sharedCounterId]`);
+ *                   deleted rows and completion events are ignored internally.
+ * @returns `{ isCompleted, count }` where `count` is the clamped in-window sum.
+ */
+export function resolveWindowStampedDerivedState(
+  task: Pick<Task, 'startDate' | 'endDate' | 'maxCount'>,
+  rootEvents: TaskEvent[],
+): TaskWindowState {
+  let sum = 0;
+  if (task.startDate) {
+    for (const e of rootEvents) {
+      if (e.isDeleted || e.kind !== 'increment') continue;
+      if (!isWithinTimeframe(e.occurredAt, task.startDate, task.endDate ?? null)) continue;
+      sum += e.delta ?? 0;
+    }
+  }
+  const count = Math.max(0, sum);
+  return { isCompleted: count >= (task.maxCount ?? 0), count };
+}
+
+/**
+ * Kernel dispatch for the window-stamped derived-counter branch: when `task`
+ * is a COUNTING row that {@link isWindowStampedDerived} identifies, resolve it
+ * from its root's events via {@link resolveWindowStampedDerivedState};
+ * otherwise return `null` so the caller falls through to its existing branches
+ * (event-owning → `resolveTaskWindowState`; hub-linked derived with no
+ * `startDate` → the lifetime latch, unchanged).
+ *
+ * A root with no entry in `eventsByTaskId` resolves as zero events (count 0) —
+ * never as "fall back to the latch". Every production context builder loads
+ * the whole workspace's non-deleted events keyed by `taskId` (so the root's
+ * events are present even when only the derived row is placed), and the
+ * sealed context drops keys whose events were all bounded away — for that
+ * case "absent" genuinely means "nothing in the window". The only latch
+ * fallback is a context-less (lifetime) resolution, which the callers already
+ * handle before reaching this branch.
+ *
+ * @param task           The task being resolved.
+ * @param eventsByTaskId The window context's grouped events.
+ * @returns The derived window state, or `null` when `task` is not a
+ *          window-stamped derived counter.
+ */
+export function resolveDerivedCounterWindowState(
+  task: Task,
+  eventsByTaskId: Record<string, TaskEvent[]>,
+): TaskWindowState | null {
+  if (task.type !== TaskType.COUNTING) return null;
+  if (!isWindowStampedDerived(task) || !task.sharedCounterId) return null;
+  return resolveWindowStampedDerivedState(task, eventsByTaskId[task.sharedCounterId] ?? []);
+}
+
+/**
+ * What a LINKED (derived) counting square or row SHOWS: its displayed count and
+ * its completion — the events-based variant of `deriveDisplayedCount`
+ * (docs/WINDOWED_COMPLETION.md §Derived-task carve-out, amended 2026-09-23).
+ *
+ * - **Window-stamped** (`isWindowStampedDerived`, COUNTING) with an event map:
+ *   the ROOT's increment sum inside the row's own `[startDate, endDate]` via
+ *   {@link resolveWindowStampedDerivedState} — the SAME function the derivation
+ *   kernel resolves the cell with, so a cell can never paint green (or read
+ *   N/N) while board stats count it incomplete. When `sealedAt` is given (the
+ *   row's board is sealed) root events after it are dropped first, matching
+ *   {@link boundWindowContextAtSeal} on the sealed re-derive; this only binds
+ *   when the row has no `endDate` (an unparseable `sealedAt` applies no bound). Overshoot is shown; never high-clamped.
+ * - **Hub-linked** (no `startDate`), or no event map (library / lifetime
+ *   readers): `currentCount − baseline` (low-clamped) for the count, and the
+ *   propagation-stamped latch `task.isCompleted` for completion — exactly the
+ *   kernel's own carve-out for these rows.
+ *
+ * @param task           The linked counting task being rendered.
+ * @param eventsByTaskId Non-deleted events grouped by `taskId` (the whole
+ *                       workspace, or at least the root's), or `null`/`undefined`
+ *                       when the caller has none.
+ * @param sealedAt       The row's board `sealedAt`, when that board is sealed.
+ * @returns `{ displayed, isCompleted }`.
+ */
+export function resolveLinkedCounterDisplay(
+  task: Task,
+  eventsByTaskId: Record<string, TaskEvent[]> | null | undefined,
+  sealedAt?: string | null,
+): { displayed: number; isCompleted: boolean } {
+  if (eventsByTaskId && task.type === TaskType.COUNTING && isWindowStampedDerived(task) && task.sharedCounterId) {
+    let rootEvents = eventsByTaskId[task.sharedCounterId] ?? [];
+    const sealedAtMs = sealedAt ? new Date(sealedAt).getTime() : NaN;
+    if (!Number.isNaN(sealedAtMs)) {
+      rootEvents = rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
+    }
+    const { count, isCompleted } = resolveWindowStampedDerivedState(task, rootEvents);
+    return { displayed: count, isCompleted };
+  }
+  const { displayed } = deriveDisplayedCount(
+    { baseline: task.baseline ?? 0, maxCount: task.maxCount ?? 0 },
+    { currentCount: task.currentCount ?? 0 },
+  );
+  return { displayed, isCompleted: task.isCompleted };
+}
+
+/**
+ * Cascade reachability for window-stamped derived counters: return `ids`
+ * UNION the ids of every live window-stamped derived row
+ * ({@link isWindowStampedDerived}) whose `sharedCounterId` is in `ids`.
+ *
+ * A shared-counter ROOT is never placed on a board, but every window-stamped
+ * derived row linked to it resolves FROM the root's events
+ * ({@link resolveDerivedCounterWindowState}). So whenever a root's event set
+ * changes (a pulled / healed event), the placement walk that finds affected
+ * boards must start from those derived rows too — both the LIVE pull cascade
+ * and the SEALED re-derivation. Hub-linked rows (no `startDate`) are NOT
+ * added: they resolve from their latch, which only an authored task write
+ * changes (and that write cascades on its own). Ids that aren't roots pass
+ * through unchanged.
+ *
+ * @param ids   The task ids whose events changed.
+ * @param tasks Candidate task rows (any superset of the linked rows — the
+ *              whole workspace, or just the rows with `sharedCounterId` in `ids`).
+ * @returns A new set: `ids` plus the reachable window-stamped derived row ids.
+ */
+export function expandToWindowStampedDerived(
+  ids: Iterable<string>,
+  tasks: Iterable<Pick<Task, 'id' | 'isDeleted' | 'sharedCounterId' | 'startDate' | 'createdInWizard'>>,
+): Set<string> {
+  const roots = new Set(ids);
+  const out = new Set(roots);
+  if (roots.size === 0) return out;
+  for (const t of tasks) {
+    if (t.isDeleted || !t.sharedCounterId || !roots.has(t.sharedCounterId)) continue;
+    if (isWindowStampedDerived(t)) out.add(t.id);
+  }
+  return out;
+}
+
+/**
+ * Bound a window context's events at a sealed board's `sealedAt` (docs §Seal
+ * snapshots re-derive from the event union): keep only events with
+ * `occurredAt <= sealedAtMs`, dropping a task's key when none survive. Applied
+ * to EVERY task's events — including a shared-counter ROOT's, which is what a
+ * window-stamped derived cell now reads — so a post-seal increment can never
+ * leak into a frozen record. At seal time `sealedAtMs = now`, so nothing is
+ * dropped; the bound matters for pull-path re-derivation.
+ *
+ * Shared so both platforms' sealing data layers (web `db/operations/sealing.ts`
+ * ↔ iOS `AppDatabase+Sealing.swift`) and the seal vectors run the same filter.
+ * An unparseable `occurredAt` is dropped (JS `NaN <= x === false`).
+ *
+ * @param eventsByTaskId Non-deleted events grouped by `taskId` (unbounded).
+ * @param sealedAtMs     The board's `sealedAt` as epoch ms (inclusive bound).
+ * @returns A new context; the input is not mutated.
+ */
+export function boundWindowContextAtSeal(
+  eventsByTaskId: Record<string, TaskEvent[]>,
+  sealedAtMs: number,
+): WindowEvaluationContext {
+  const bounded: Record<string, TaskEvent[]> = {};
+  for (const [taskId, evs] of Object.entries(eventsByTaskId)) {
+    const kept = evs.filter((e) => new Date(e.occurredAt).getTime() <= sealedAtMs);
+    if (kept.length > 0) bounded[taskId] = kept;
+  }
+  return { eventsByTaskId: bounded };
 }
 
 /**

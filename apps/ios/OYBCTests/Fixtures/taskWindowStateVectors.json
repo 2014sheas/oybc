@@ -139,5 +139,88 @@
       "events": [],
       "expected": { "isCompleted": false, "count": 0 }
     }
+  ],
+  "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (taskEvents.ts) <-> Swift resolveLinkedCounterDisplay (Helpers/TaskEvents.swift): what a LINKED counting square/row shows. Window-stamped rows (sharedCounterId + startDate + createdInWizard, COUNTING) with an event map = the ROOT's in-window increment sum ([startDate, endDate] inclusive, optional sealedAt bound) for BOTH count and completion; hub-linked rows or no event map = currentCount - baseline (low-clamped) + the latch. eventsByTaskId null = no map. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",
+  "linkedCounterDisplay": [
+    {
+      "name": "window-stamped-in-window-sum-not-lifetime-total",
+      "note": "Owner repro shape: root +20 lifetime, only +3 inside the row's window; the propagated latch says true. Shows 3 and is incomplete (old display: 20 / latch true).",
+      "task": {"type": "counting", "maxCount": 20, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 20, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 3, "occurredAt": "2026-09-16T18:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 17, "occurredAt": "2026-09-23T12:00:00.000Z", "isDeleted": false } ] },
+      "sealedAt": null,
+      "expected": { "displayed": 3, "isCompleted": false }
+    },
+    {
+      "name": "window-stamped-post-endDate-events-ignored",
+      "note": "Every root event lands after endDate: 0, incomplete, despite the latch and currentCount - baseline = 5.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 10, "currentCount": 15, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 2, "occurredAt": "2026-09-21T00:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 3, "occurredAt": "2026-09-22T09:00:00.000Z", "isDeleted": false } ] },
+      "sealedAt": null,
+      "expected": { "displayed": 0, "isCompleted": false }
+    },
+    {
+      "name": "window-stamped-pre-startDate-events-ignored",
+      "note": "A +10 before startDate is excluded; +4 in window < 5.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 0, "isCompleted": false},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 10, "occurredAt": "2026-09-13T23:59:59.999Z", "isDeleted": false }, { "kind": "increment", "delta": 4, "occurredAt": "2026-09-14T00:00:00.000Z", "isDeleted": false } ] },
+      "sealedAt": null,
+      "expected": { "displayed": 4, "isCompleted": false }
+    },
+    {
+      "name": "window-stamped-overshoot-shown-not-clamped",
+      "note": "In-window 25 of 20: displayed 25 (never high-clamped), complete.",
+      "task": {"type": "counting", "maxCount": 20, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 25, "isCompleted": false},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 20, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 5, "occurredAt": "2026-09-20T23:59:59.999Z", "isDeleted": false } ] },
+      "sealedAt": null,
+      "expected": { "displayed": 25, "isCompleted": true }
+    },
+    {
+      "name": "window-stamped-deleted-root-event-ignored",
+      "note": "A tombstoned in-window event is not counted.",
+      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 0, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 2, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 5, "occurredAt": "2026-09-16T08:00:00.000Z", "isDeleted": true } ] },
+      "sealedAt": null,
+      "expected": { "displayed": 2, "isCompleted": false }
+    },
+    {
+      "name": "window-stamped-indefinite-row-bounded-by-sealedAt",
+      "note": "endDate null: only the sealedAt bound applies — +2 before the seal counts, +5 after does not.",
+      "task": {"type": "counting", "maxCount": 5, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": null, "createdInWizard": true, "baseline": 0, "currentCount": 7, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 2, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false }, { "kind": "increment", "delta": 5, "occurredAt": "2026-09-22T09:00:00.000Z", "isDeleted": false } ] },
+      "sealedAt": "2026-09-22T03:00:00.000Z",
+      "expected": { "displayed": 2, "isCompleted": false }
+    },
+    {
+      "name": "window-stamped-no-root-events-zero",
+      "note": "The root has no events in the map: 0, incomplete (never the latch).",
+      "task": {"type": "counting", "maxCount": 1, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 0, "currentCount": 4, "isCompleted": true},
+      "eventsByTaskId": {},
+      "sealedAt": null,
+      "expected": { "displayed": 0, "isCompleted": false }
+    },
+    {
+      "name": "hub-linked-keeps-baseline-math-and-latch",
+      "note": "No startDate (hub-linked P5 member): currentCount - baseline for the count, the latch for completion, even with root events present.",
+      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": null, "endDate": null, "createdInWizard": null, "baseline": 10, "currentCount": 14, "isCompleted": false},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 40, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false } ] },
+      "sealedAt": null,
+      "expected": { "displayed": 4, "isCompleted": false }
+    },
+    {
+      "name": "not-wizard-born-linked-row-keeps-baseline-math",
+      "note": "A hand-linked counter carrying a startDate but createdInWizard=false is not window-stamped: baseline math + latch.",
+      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": false, "baseline": 1, "currentCount": 6, "isCompleted": true},
+      "eventsByTaskId": { "root-1": [ { "kind": "increment", "delta": 1, "occurredAt": "2026-09-15T08:00:00.000Z", "isDeleted": false } ] },
+      "sealedAt": null,
+      "expected": { "displayed": 5, "isCompleted": true }
+    },
+    {
+      "name": "window-stamped-without-event-map-falls-back-to-baseline-math",
+      "note": "No event map (lifetime reader): baseline math + latch, like the kernel's context-less fallback.",
+      "task": {"type": "counting", "maxCount": 3, "sharedCounterId": "root-1", "startDate": "2026-09-14T00:00:00.000Z", "endDate": "2026-09-20T23:59:59.999Z", "createdInWizard": true, "baseline": 2, "currentCount": 9, "isCompleted": true},
+      "eventsByTaskId": null,
+      "sealedAt": null,
+      "expected": { "displayed": 7, "isCompleted": true }
+    }
   ]
 }

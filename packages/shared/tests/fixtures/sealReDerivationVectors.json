@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored cross-platform vectors for seal-snapshot re-derivation determinism (Windowed Completion, docs/WINDOWED_COMPLETION.md §Seal snapshots re-derive from the event union). Exercises packages/shared/src/algorithms/derivationPass.ts's computeSealedCompletedCells with a windowed event context. packages/shared/tests/algorithms/sealReDerivation.test.ts runs these through the shared TS function; apps/ios/OYBCTests/TaskEventVectorTests.swift runs the SAME vectors through the Swift mirror. Property under test: the green cell set is a pure function of the CONVERGED in-window event union — same union (any order) => same cells on any device; a tombstone removes only the event it targets. All boards are 3x3 with a FREE center (auto-filled at index 4). Minimal shapes: board={id,boardSize,centerSquareType,startDate,endDate,status,linesCompleted,completedLineIds,isDeleted}; task={id,type,maxCount(nullable),sharedCounterId(nullable),isCompleted,isDeleted}; boardTask={taskId,row,col}; event={id,taskId,kind,delta(nullable),occurredAt,isDeleted}. windowStart is board.startDate.",
+  "_note": "Hand-authored cross-platform vectors for seal-snapshot re-derivation determinism (Windowed Completion, docs/WINDOWED_COMPLETION.md \u00a7Seal snapshots re-derive from the event union). Exercises packages/shared/src/algorithms/derivationPass.ts's computeSealedCompletedCells with a windowed event context. packages/shared/tests/algorithms/sealReDerivation.test.ts runs these through the shared TS function; apps/ios/OYBCTests/TaskEventVectorTests.swift runs the SAME vectors through the Swift mirror. Property under test: the green cell set is a pure function of the CONVERGED in-window event union \u2014 same union (any order) => same cells on any device; a tombstone removes only the event it targets. All boards are 3x3 with a FREE center (auto-filled at index 4). Minimal shapes: board={id,boardSize,centerSquareType,startDate,endDate,status,linesCompleted,completedLineIds,isDeleted}; task={id,type,maxCount(nullable),sharedCounterId(nullable),isCompleted,isDeleted}; boardTask={taskId,row,col}; event={id,taskId,kind,delta(nullable),occurredAt,isDeleted}. windowStart is board.startDate. Window-stamped derived counters (2026-09-23 amendment, docs/WINDOWED_COMPLETION.md \u00a7Derived-task carve-out rule 4): a task MAY carry optional startDate/endDate/createdInWizard (absent = null/null/false), and a vector MAY carry an optional top-level `sealedAt` \u2014 when present the consumer bounds the event union with the shared boundWindowContextAtSeal (taskEvents.ts \u2194 TaskEvents.swift) before deriving, exactly as both platforms' sealing data layers do. Such a derived cell resolves from its ROOT's increment events inside the row's own [startDate, endDate] (the root itself is not placed) and never from its isCompleted latch.",
   "vectors": [
     {
       "name": "normal-green-counting-green-preWindow-grey-plus-center",
@@ -93,6 +93,141 @@
         { "id": "e0000000-0000-0000-0000-000000000004", "taskId": "30000000-0000-0000-0000-000000000003", "kind": "completion", "delta": null, "occurredAt": "2026-06-28T08:00:00.000Z", "isDeleted": false }
       ],
       "expectedCells": [0, 4]
+    },
+    {
+      "name": "window-stamped-derived-post-seal-root-increment-does-not-green-sealed-cell",
+      "board": {
+        "id": "b0000000-0000-0000-0000-000000000004",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T03:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000004", "type": "counting", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "50000000-0000-0000-0000-000000000005", "type": "counting", "maxCount": 3, "sharedCounterId": "40000000-0000-0000-0000-000000000004", "startDate": "2026-07-01T00:00:00.000Z", "endDate": "2026-07-01T23:59:59.999Z", "createdInWizard": true, "isCompleted": true, "isDeleted": false }
+      ],
+      "boardTasks": [
+        { "taskId": "50000000-0000-0000-0000-000000000005", "row": 0, "col": 1 }
+      ],
+      "events": [
+        { "id": "e0000000-0000-0000-0000-000000000021", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 2, "occurredAt": "2026-07-01T10:00:00.000Z", "isDeleted": false },
+        { "id": "e0000000-0000-0000-0000-000000000022", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 5, "occurredAt": "2026-07-02T09:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [4]
+    },
+    {
+      "name": "window-stamped-derived-late-in-window-root-event-greens-sealed-cell",
+      "board": {
+        "id": "b0000000-0000-0000-0000-000000000004",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T03:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000004", "type": "counting", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "50000000-0000-0000-0000-000000000005", "type": "counting", "maxCount": 3, "sharedCounterId": "40000000-0000-0000-0000-000000000004", "startDate": "2026-07-01T00:00:00.000Z", "endDate": "2026-07-01T23:59:59.999Z", "createdInWizard": true, "isCompleted": false, "isDeleted": false }
+      ],
+      "boardTasks": [
+        { "taskId": "50000000-0000-0000-0000-000000000005", "row": 0, "col": 1 }
+      ],
+      "events": [
+        { "id": "e0000000-0000-0000-0000-000000000031", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 2, "occurredAt": "2026-07-01T10:00:00.000Z", "isDeleted": false },
+        { "id": "e0000000-0000-0000-0000-000000000032", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 1, "occurredAt": "2026-07-01T22:30:00.000Z", "isDeleted": false },
+        { "id": "e0000000-0000-0000-0000-000000000033", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 5, "occurredAt": "2026-07-02T09:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [1, 4]
+    },
+    {
+      "name": "window-stamped-derived-overtime-root-event-excluded-by-row-endDate",
+      "board": {
+        "id": "b0000000-0000-0000-0000-000000000004",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T03:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000004", "type": "counting", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "50000000-0000-0000-0000-000000000005", "type": "counting", "maxCount": 3, "sharedCounterId": "40000000-0000-0000-0000-000000000004", "startDate": "2026-07-01T00:00:00.000Z", "endDate": "2026-07-01T23:59:59.999Z", "createdInWizard": true, "isCompleted": false, "isDeleted": false }
+      ],
+      "boardTasks": [
+        { "taskId": "50000000-0000-0000-0000-000000000005", "row": 0, "col": 1 }
+      ],
+      "events": [
+        { "id": "e0000000-0000-0000-0000-000000000041", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 2, "occurredAt": "2026-07-01T10:00:00.000Z", "isDeleted": false },
+        { "id": "e0000000-0000-0000-0000-000000000042", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 1, "occurredAt": "2026-07-02T01:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [4]
+    },
+    {
+      "name": "plain-counting-post-seal-increment-bounded-away",
+      "board": {
+        "id": "b0000000-0000-0000-0000-000000000005",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": "2026-07-01T23:59:59.999Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T03:00:00.000Z",
+      "tasks": [
+        { "id": "60000000-0000-0000-0000-000000000006", "type": "counting", "maxCount": 3, "sharedCounterId": null, "isCompleted": true, "isDeleted": false }
+      ],
+      "boardTasks": [
+        { "taskId": "60000000-0000-0000-0000-000000000006", "row": 0, "col": 1 }
+      ],
+      "events": [
+        { "id": "e0000000-0000-0000-0000-000000000051", "taskId": "60000000-0000-0000-0000-000000000006", "kind": "increment", "delta": 2, "occurredAt": "2026-07-01T10:00:00.000Z", "isDeleted": false },
+        { "id": "e0000000-0000-0000-0000-000000000052", "taskId": "60000000-0000-0000-0000-000000000006", "kind": "increment", "delta": 5, "occurredAt": "2026-07-02T09:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [4]
+    },
+    {
+      "name": "window-stamped-derived-indefinite-row-post-seal-root-increment-bounded-by-sealedAt",
+      "board": {
+        "id": "b0000000-0000-0000-0000-000000000006",
+        "boardSize": 3,
+        "centerSquareType": "free",
+        "startDate": "2026-07-01T00:00:00.000Z",
+        "endDate": null,
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": null,
+        "isDeleted": false
+      },
+      "sealedAt": "2026-07-02T03:00:00.000Z",
+      "tasks": [
+        { "id": "40000000-0000-0000-0000-000000000004", "type": "counting", "maxCount": null, "sharedCounterId": null, "isCompleted": false, "isDeleted": false },
+        { "id": "70000000-0000-0000-0000-000000000007", "type": "counting", "maxCount": 3, "sharedCounterId": "40000000-0000-0000-0000-000000000004", "startDate": "2026-07-01T00:00:00.000Z", "endDate": null, "createdInWizard": true, "isCompleted": true, "isDeleted": false }
+      ],
+      "boardTasks": [
+        { "taskId": "70000000-0000-0000-0000-000000000007", "row": 0, "col": 1 }
+      ],
+      "events": [
+        { "id": "e0000000-0000-0000-0000-000000000061", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 2, "occurredAt": "2026-07-01T10:00:00.000Z", "isDeleted": false },
+        { "id": "e0000000-0000-0000-0000-000000000062", "taskId": "40000000-0000-0000-0000-000000000004", "kind": "increment", "delta": 5, "occurredAt": "2026-07-02T09:00:00.000Z", "isDeleted": false }
+      ],
+      "expectedCells": [4]
     }
   ]
 }

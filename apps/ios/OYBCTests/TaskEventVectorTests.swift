@@ -92,6 +92,57 @@ final class TaskEventVectorTests: XCTestCase {
         }
     }
 
+    // MARK: - resolveLinkedCounterDisplay vectors (Task 3 item 6)
+
+    private struct LinkedDisplayVector: Decodable {
+        struct MiniTask: Decodable {
+            let type: String
+            let maxCount: Int?
+            let sharedCounterId: String?
+            let startDate: String?
+            let endDate: String?
+            let createdInWizard: Bool?
+            let baseline: Int?
+            let currentCount: Int?
+            let isCompleted: Bool
+        }
+        struct Expected: Decodable { let displayed: Int; let isCompleted: Bool }
+        let name: String
+        let task: MiniTask
+        let eventsByTaskId: [String: [WindowEvent]]?
+        let sealedAt: String?
+        let expected: Expected
+    }
+
+    private struct LinkedDisplayFixture: Decodable { let linkedCounterDisplay: [LinkedDisplayVector] }
+
+    func testResolveLinkedCounterDisplayVectors() throws {
+        let fixture = try loadFixture("taskWindowStateVectors", as: LinkedDisplayFixture.self)
+        XCTAssertGreaterThanOrEqual(fixture.linkedCounterDisplay.count, 8)
+        for v in fixture.linkedCounterDisplay {
+            let m = v.task
+            let task = Task(
+                id: "t", userId: "u", title: "t",
+                type: TaskType(rawValue: m.type) ?? .normal,
+                maxCount: m.maxCount,
+                totalCompletions: 0, totalInstances: 0,
+                isCompleted: m.isCompleted, currentCount: m.currentCount,
+                createdAt: ts, updatedAt: ts, version: 1, isDeleted: false,
+                startDate: m.startDate, endDate: m.endDate,
+                sharedCounterId: m.sharedCounterId, baseline: m.baseline,
+                createdInWizard: m.createdInWizard ?? false
+            )
+            let events = v.eventsByTaskId.map { map in
+                Dictionary(uniqueKeysWithValues: map.map { rootId, evs in
+                    (rootId, evs.map { makeEvent($0, taskId: rootId) })
+                })
+            }
+            let result = resolveLinkedCounterDisplay(task: task, eventsByTaskId: events, sealedAt: v.sealedAt)
+            XCTAssertEqual(result.displayed, v.expected.displayed, "Vector '\(v.name)' displayed")
+            XCTAssertEqual(result.isCompleted, v.expected.isCompleted, "Vector '\(v.name)' isCompleted")
+        }
+    }
+
     // MARK: - uuidv5 + backfill vectors
 
     private struct Uuidv5Vector: Decodable {
@@ -230,6 +281,10 @@ final class TaskEventVectorTests: XCTestCase {
             let type: String
             let maxCount: Int?
             let sharedCounterId: String?
+            // 2026-09-23 amendment: window-stamped derived counters.
+            let startDate: String?
+            let endDate: String?
+            let createdInWizard: Bool?
             let isCompleted: Bool
             let isDeleted: Bool
         }
@@ -247,6 +302,10 @@ final class TaskEventVectorTests: XCTestCase {
         let tasks: [MiniTask]
         let boardTasks: [MiniBoardTask]
         let events: [MiniEvent]
+        /// Optional — when present the union is bounded at this instant via
+        /// the shared `boundWindowContextAtSeal` (what the sealing data layer
+        /// does before deriving a sealed snapshot).
+        let sealedAt: String?
         let expectedCells: [Int]
     }
 
@@ -278,7 +337,10 @@ final class TaskEventVectorTests: XCTestCase {
             totalCompletions: 0, totalInstances: 0,
             isCompleted: m.isCompleted,
             createdAt: ts, updatedAt: ts, version: 1, isDeleted: m.isDeleted,
-            sharedCounterId: m.sharedCounterId
+            startDate: m.startDate,
+            endDate: m.endDate,
+            sharedCounterId: m.sharedCounterId,
+            createdInWizard: m.createdInWizard ?? false
         )
     }
 
@@ -311,6 +373,16 @@ final class TaskEventVectorTests: XCTestCase {
 
             var eventsByTaskId: [String: [TaskEvent]] = [:]
             for e in v.events { eventsByTaskId[e.taskId, default: []].append(toEvent(e)) }
+            let windowContext: WindowEvaluationContext
+            if let sealedAt = v.sealedAt {
+                let sealedAtDate = try XCTUnwrap(DateFormatting.parseISO(sealedAt), "Vector '\(v.name)' sealedAt")
+                windowContext = boundWindowContextAtSeal(
+                    eventsByTaskId: eventsByTaskId,
+                    sealedAtMs: sealedAtDate.timeIntervalSince1970 * 1000
+                )
+            } else {
+                windowContext = WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
+            }
 
             let cells = DerivationPass.computeSealedCompletedCells(
                 board: board,
@@ -318,7 +390,7 @@ final class TaskEventVectorTests: XCTestCase {
                 childrenByCompound: [:],
                 taskById: taskById,
                 allBoards: [board],
-                windowContext: WindowEvaluationContext(eventsByTaskId: eventsByTaskId)
+                windowContext: windowContext
             )
             XCTAssertEqual(cells, v.expectedCells, "Vector '\(v.name)' cells")
         }

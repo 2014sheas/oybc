@@ -257,18 +257,20 @@ final class BoardPlayViewModel: ObservableObject {
     /// live play grid correctly reads windowed
     /// (docs/WINDOWED_COMPLETION.md §Task caches).
     ///
-    /// Only event-owning primitives (normal / plain-source counting) resolve
-    /// against the board's window via `windowedState(forTaskId:)`. Compound,
-    /// achievement, and derived (shared-counter-linked) counting tasks keep
-    /// reading the lifetime `Task.isCompleted` cache, unchanged — only
-    /// event-owning primitives can go stale across a window rollover, and
-    /// these preview surfaces have no compound/achievement evaluation context
-    /// of their own (out of scope for this fix).
+    /// Event-owning primitives (normal / plain-source counting) resolve
+    /// against the board's window via `windowedState(forTaskId:)`; linked
+    /// counters via `resolveLinkedCounterDisplay` (a window-stamped row's root
+    /// sum in its own window — the kernel's rule; a hub-linked row's latch).
+    /// Compound and achievement tasks keep reading the lifetime cache — these
+    /// preview surfaces have no compound/achievement evaluation context.
     ///
     /// - Parameter task: The task to resolve. Title/type may carry staged
     ///   `editTaskOverrides`, but `id`/`isCompleted` always reflect the real
     ///   database values, so the windowed lookup is always against the true task.
     func windowedIsCompleted(for task: Task) -> Bool {
+        if task.sharedCounterId != nil {
+            return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).isCompleted
+        }
         guard isEventOwningTask(task) else { return task.isCompleted }
         return windowedState(forTaskId: task.id).isCompleted
     }
@@ -1490,8 +1492,9 @@ final class BoardPlayViewModel: ObservableObject {
     /// Build the board's current shared-counting `ArrivalSquare`s from the
     /// loaded placements + task graph. One entry per COUNTING square that is a
     /// linked derived counter or a source with ≥1 linked task. `displayed` is
-    /// baseline-adjusted for linked members (via `deriveDisplayedCount` — the
-    /// lifetime carve-out) and the board-WINDOWED count for sources (issue
+    /// `resolveLinkedCounterDisplay` for linked members (root sum in the row's
+    /// window when window-stamped; count − baseline when hub-linked) and the
+    /// board-WINDOWED count for sources (issue
     /// #377) — matching what the grid cell shows.
     ///
     /// Mirrors the web `buildArrivalSquares` pure adapter.
@@ -1518,11 +1521,7 @@ final class BoardPlayViewModel: ObservableObject {
 
             let displayed: Int
             if task.sharedCounterId != nil {
-                displayed = deriveDisplayedCount(
-                    derivedBaseline: task.baseline ?? 0,
-                    derivedMaxCount: task.maxCount ?? 0,
-                    sourceCurrentCount: task.currentCount ?? 0
-                ).displayed
+                displayed = resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).displayed
             } else {
                 // Issue #377: a SOURCE counting square's grid cell shows the
                 // board-WINDOWED count, so the arrival baseline must match —

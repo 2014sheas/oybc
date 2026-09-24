@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { buildSharedCounterGroups, isTaskExpired } from '@oybc/shared';
-import type { SharedCounterGroup, Task } from '@oybc/shared';
+import type { SharedCounterGroup, Task, TaskEvent } from '@oybc/shared';
 import { db } from '../db/internal';
 import { healBoardNames } from '../db/operations/boardNames';
 
@@ -87,7 +87,19 @@ export function useSharedCounterGroups(
           ? await db.boardTasks.where('taskId').anyOf(taskIds).filter((bt) => !bt.isDeleted).toArray()
           : [];
 
-      return buildSharedCounterGroups({ tasks, boardTasks, boards });
+      // Window-stamped members read their root's in-window sum (the play
+      // cell's and the kernel's rule — docs/WINDOWED_COMPLETION.md
+      // §Derived-task carve-out, amended 2026-09-23), so the roots' events
+      // ride along. Indexed on `taskId`; one range scan per chunk.
+      const rootIds = [...new Set(tasks.flatMap((t) => (t.sharedCounterId ? [t.sharedCounterId] : [])))];
+      const eventsByTaskId: Record<string, TaskEvent[]> = {};
+      if (rootIds.length > 0) {
+        for (const e of await db.taskEvents.where('taskId').anyOf(rootIds).toArray()) {
+          if (!e.isDeleted) (eventsByTaskId[e.taskId] ??= []).push(e);
+        }
+      }
+
+      return buildSharedCounterGroups({ tasks, boardTasks, boards, eventsByTaskId });
     },
     [userId, showExpired],
     [] // default while loading

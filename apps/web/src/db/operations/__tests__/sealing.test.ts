@@ -521,6 +521,50 @@ describe('reDeriveSealedBoardsForTasks (late pre-seal event convergence)', () =>
     expect(sealed?.completedTasks).toBe(0);
   });
 
+  it('a late in-window ROOT event re-derives a sealed board that places only its window-stamped derived counter', async () => {
+    // The root is never placed; the sealed board places the derived row, which
+    // the kernel resolves from the root's events (2026-09-23 amendment). A
+    // changed ROOT id must therefore reach that board, or a device that sealed
+    // before the root event synced never converges with one that sealed after.
+    const ROOT = '10000000-0000-4000-8000-0000000000aa';
+    const DERIVED = '10000000-0000-4000-8000-0000000000ab';
+    await seedCountingTask(ROOT, 10);
+    const derived: Task = {
+      id: DERIVED,
+      userId: USER,
+      title: 'D',
+      type: TaskType.COUNTING,
+      maxCount: 3,
+      action: 'Do',
+      unit: 'reps',
+      sharedCounterId: ROOT,
+      startDate: START,
+      endDate: END,
+      createdInWizard: true,
+      baseline: 0,
+      isCompleted: false,
+      currentCount: 0,
+      totalCompletions: 0,
+      totalInstances: 1,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.tasks.add(derived);
+    await seedBoard(BOARD_SEALED, { sealedAt: PAST_BACKSTOP, sealedCompletedCells: [] });
+    await placeTask(BOARD_SEALED, DERIVED, 0);
+
+    await db.taskEvents.add(incrementEvent('e-root-in', ROOT, 3, IN_WINDOW));
+    await reDeriveSealedBoardsForTasks([ROOT]);
+
+    const sealed = await db.boards.get(BOARD_SEALED);
+    expect(sealed?.sealedCompletedCells).toEqual([0]);
+    expect(sealed?.completedTasks).toBe(1);
+    expect(sealed?.version).toBe(1);
+    expect(await boardSyncQueueEntries(BOARD_SEALED)).toHaveLength(0);
+  });
+
   it('re-derivation is idempotent / order-independent (same union → same snapshot)', async () => {
     await seedNormalTask(TASK_A);
     await seedNormalTask(TASK_B);
