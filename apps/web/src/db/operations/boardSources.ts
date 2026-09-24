@@ -7,7 +7,9 @@ import {
   isEligibleSourceBoard,
   isEventOwningTask,
   isSourceSupplyTask,
+  isWindowStampedDerived,
   poolSourceSupplyById,
+  resolveDerivedCounterWindowState,
   resolveTaskWindowState,
   sourcesForRecord,
   TaskType,
@@ -111,7 +113,15 @@ export function resolveBoardSourceSupply(
     seen.add(task.id);
     supply.push(task.id);
     let isDone: boolean;
-    if (isEventOwningTask(task)) {
+    // A window-stamped derived counter is done by its ROOT's increments inside
+    // its own window — the kernel's rule (docs §Derived-task carve-out,
+    // amended 2026-09-23) — never the one-way latch, which a later window's
+    // logs can set. Its window count is deliberately NOT fed to the prefill
+    // (`windowCountByTaskId`): that map stays event-owning counters only.
+    const derived = resolveDerivedCounterWindowState(task, eventsByTaskId);
+    if (derived) {
+      isDone = derived.isCompleted;
+    } else if (isEventOwningTask(task)) {
       const state = resolveTaskWindowState(task, eventsByTaskId[task.id] ?? [], board.startDate);
       isDone = state.isCompleted;
       // §Member rules (B3, RC4) — the same windowed resolution that decides
@@ -136,6 +146,24 @@ export function resolveBoardSourceSupply(
   };
 }
 
+/**
+ * The task ids whose events {@link resolveBoardSourceSupply} reads for a
+ * board's placed `tasks`: every placed id, plus the ROOT of each
+ * window-stamped derived row (its done-state resolves from the root's events,
+ * and a root is never placed itself).
+ *
+ * @param tasks - The board's placed tasks.
+ * @returns Distinct ids to load events for.
+ */
+export function supplyEventTaskIds(tasks: Iterable<Task>): string[] {
+  const ids = new Set<string>();
+  for (const t of tasks) {
+    ids.add(t.id);
+    if (t.sharedCounterId && isWindowStampedDerived(t)) ids.add(t.sharedCounterId);
+  }
+  return [...ids];
+}
+
 /** Batched per-board reads (three queries), shared by the fetch helpers. */
 async function resolveFromDb(board: Board): Promise<BoardSourceSupplyInfo> {
   const rows = await db.boardTasks.where('boardId').equals(board.id).toArray();
@@ -145,10 +173,10 @@ async function resolveFromDb(board: Board): Promise<BoardSourceSupplyInfo> {
     taskIds.length > 0 ? await db.tasks.where('id').anyOf(taskIds).toArray() : [];
   const tasksById: Record<string, Task> = {};
   for (const t of tasks) tasksById[t.id] = t;
-  const eventOwningIds = tasks.filter((t) => isEventOwningTask(t)).map((t) => t.id);
+  const eventTaskIds = supplyEventTaskIds(tasks);
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
-  if (eventOwningIds.length > 0) {
-    const events = await db.taskEvents.where('taskId').anyOf(eventOwningIds).toArray();
+  if (eventTaskIds.length > 0) {
+    const events = await db.taskEvents.where('taskId').anyOf(eventTaskIds).toArray();
     for (const e of events) {
       if (e.isDeleted) continue;
       (eventsByTaskId[e.taskId] ??= []).push(e);
