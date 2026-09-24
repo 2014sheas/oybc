@@ -72,6 +72,13 @@ export {
 
 export { hasCycle } from './cycleDetection';
 
+export {
+  compoundChildLinkProblem,
+  COMPOUND_CHILD_LINK_MESSAGES,
+} from './compoundChildEligibility';
+
+export type { CompoundChildCandidate } from './compoundChildEligibility';
+
 export type {
   CycleCheckCandidate,
   CycleCheckContext,
