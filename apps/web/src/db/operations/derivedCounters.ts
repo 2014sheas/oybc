@@ -37,7 +37,7 @@ import { buildBoardTaskTombstone } from './boardTasks';
  *     Only a board that is being persisted ACTIVE mints: a derived id is
  *     `uuidv5(boardId, root)` and does not encode the window, while a DRAFT's
  *     window is still editable — so minting for a draft and then skipping the
- *     live row (RB3) on the activating save would freeze the board into a
+ *     live row on the activating save would freeze the board into a
  *     window it no longer has. A draft places its original member ids;
  *     activation derives the window once, from final values.
  *  2. **Refresh** — keep a live derived counter's `baseline` honest as the
@@ -59,8 +59,8 @@ import { buildBoardTaskTombstone } from './boardTasks';
  * the board rows it feeds, and the refresh has to be atomic with the event
  * write that made it necessary.
  *
- * Has a Swift twin (B2 tasks 5–6); the write rulings below are pinned in the
- * plan as RB2/RB3/RB6 and must stay identical on both platforms.
+ * Swift twin: `AppDatabase+DerivedCounters.swift` — the write rulings here
+ * must stay identical on both platforms.
  */
 
 /** Inputs to {@link planAndMintDerivedRows}. */
@@ -544,7 +544,7 @@ async function isMintedForBoard(task: Task, board: Board): Promise<boolean> {
 }
 
 /**
- * The window-stamped derived rows a board's deletion orphans (RB5).
+ * The window-stamped derived rows a board's deletion orphans.
  *
  * A "live placement" is a `board_tasks` row with `isDeleted === false` whose
  * board is itself live — so a derived row placed on another live board
@@ -556,9 +556,9 @@ async function isMintedForBoard(task: Task, board: Board): Promise<boolean> {
  * **Ordering** — candidates come from EVERY `board_tasks` row of this board,
  * the tombstoned ones included, exactly so the answer cannot depend on when
  * the caller runs relative to any placement tombstoning. `deleteBoard` does
- * not tombstone its own placements today (the pre-existing gap the B2 brief
- * ring-fenced); were it to start, a live-only candidate query would find
- * nothing and silently retire nothing — a no-op no test would catch.
+ * not tombstone its own placements; were it to start, a live-only candidate
+ * query would find nothing and silently retire nothing — a no-op no test
+ * would catch.
  *
  * That widening is only safe because a stale placement alone no longer makes
  * a candidate: {@link isMintedForBoard} additionally requires the row to be
@@ -576,9 +576,9 @@ async function isMintedForBoard(task: Task, board: Board): Promise<boolean> {
  *      be a per-window row with no board, still collecting
  *      {@link refreshDerivedBaselines} writes forever — and the root-delete
  *      path DOES retire it, so skipping it here would leave the two deletion
- *      paths disagreeing (and the Swift twin copying the asymmetry). A part
- *      qualifies only when its parent is itself being retired, it has no live
- *      placement of its own (RB5 again), and no OTHER live parent link
+ *      paths disagreeing. A part qualifies only when its parent is itself
+ *      being retired, it has no live placement of its own, and no OTHER live
+ *      parent link
  *      outside the retired set still holds it.
  *
  * Reads only — the caller feeds the result to

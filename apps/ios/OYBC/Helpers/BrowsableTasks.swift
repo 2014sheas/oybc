@@ -22,58 +22,19 @@ enum BrowsableTasks {
     }
 
     /// Filters the task library to the set that should appear in
-    /// library-browse surfaces (the Tasks tab list, the wizard "add from
-    /// library" picker).
-    ///
-    /// Three independent classes of task are hidden:
-    ///
-    /// 1. Wizard-orphans — a task is HIDDEN iff it is wizard-born
-    /// (`createdInWizard == true`) AND it has no placement on a live, non-draft board.
-    /// Concretely, a wizard-born task is hidden when it lives ONLY on draft
-    /// boards, or has no live placement at all (removed from the wizard
-    /// pool — its Task row lingers after persist drops the `board_task` —
-    /// or its only board was deleted). Everything else is visible:
-    /// standalone/copied tasks (`createdInWizard` falsy) are never hidden,
-    /// and a wizard-born task with at least one active/completed placement
-    /// is visible.
-    ///
-    /// 2. Goal-less counters (P5) — a COUNTING task with `isCounter == true`
-    /// and no `maxCount` cannot evaluate on a board; it lives in the
-    /// Counters Hub, not the library. See `isGoalLessCounter` for the exact
-    /// predicate and why it keys on the pair rather than bare absent-`maxCount`.
-    ///
-    /// 3. Shared-counter MEMBERS (owner ruling 2026-09-22) — a task whose
-    /// `sharedCounterId` points at a root that is PRESENT, live and COUNTING
-    /// in this same `tasks` set. That covers both the window-stamped derived
-    /// counters a board pull mints and the P5 linked members. The library
-    /// shows ONE generic row per counter family — the root — and the Counters
-    /// Hub is the home for the per-window rows. The root itself is never
-    /// hidden by this rule.
-    ///
-    /// The root-presence condition is exactly the orphan predicate
-    /// `buildSharedCounterGroups` (and so `sharedCounterRootIds`) applies, and
-    /// it must stay exactly that: a member is hidden here ONLY when the hub
-    /// really shows it under its family. A dangling `sharedCounterId` —
-    /// mid-sync on a fresh device, or a row an old client wrote — would
-    /// otherwise be reachable from nowhere at all.
-    ///
-    /// Pure and fully derived at read time — no clearing logic: a hidden
-    /// wizard-orphan reappears automatically the moment it lands on a
-    /// non-draft board.
-    ///
-    /// Compound children inherit their parent compound's placements — a
-    /// wizard-born inline subtask is never *directly* placed (it lives
-    /// under its parent), so without inheritance it would look like a
-    /// placement-less orphan and hide forever. With inheritance it's
-    /// visible exactly when its parent compound is (keeping wizard-created
-    /// subtasks pool-addable once the board goes active).
+    /// library-browse surfaces (the Tasks tab list, the wizard's Library
+    /// sheet). Hides wizard-orphans, goal-less counters, and shared-counter
+    /// members whose root is present — the full rule and its rationale live
+    /// on the TS twin `computeBrowsableTasks` (`browsableTasks.ts`). One
+    /// difference: callers must pass live (non-deleted) placements; the TS
+    /// twin filters tombstoned `boardTasks` internally.
     ///
     /// - Parameters:
     ///   - tasks: candidate library tasks (already user-scoped + non-deleted).
-    ///   - boardTasks: all `board_task` placement rows.
+    ///   - boardTasks: live (non-deleted) `board_task` placement rows —
+    ///     this helper does not filter tombstones itself.
     ///   - boardStatusById: non-deleted `boardId → status`. Placements on
-    ///     missing (deleted) boards are ignored — a board absent from this
-    ///     map is treated as no live placement.
+    ///     missing (deleted) boards are ignored.
     ///   - childToParents: child taskId → parent compound taskId(s). A
     ///     child's effective placements = its own ∪ its parents'. Defaults
     ///     to empty for a flat library.

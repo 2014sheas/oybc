@@ -145,8 +145,8 @@ export interface BoardWizardState {
    * `BoardWizardViewModel.stagedEdits`: applied ONLY inside the board-create
    * transaction (`persistWizardBoardRows` / the recurring-template persist
    * path) — never while the board is a draft. A task leaving the pool
-   * (deselect, or a pool untoggle that drops it) always purges its entry
-   * here — see `toggleTaskSelection` / `untogglePool`.
+   * (deselect, or a source action that drops it) always purges its entry
+   * here — see `toggleTaskSelection` / `purgeDroppedIds`.
    */
   stagedEdits: Map<string, TaskEditPatch>;
 
@@ -420,16 +420,12 @@ export interface UseBoardWizardArgs {
    */
   startRecurring?: boolean;
   /**
-   * P3 (Task Pools + Recurring Boards Rework) — the user's non-deleted
-   * pools, used to resolve `pullPool`/`untogglePool` and the provenance
-   * derivation. Callers should load this ONCE via `usePools(userId)` and
-   * pass it here — `BoardWizardPage` also threads the same array to
-   * `BoardWizardTasksStep`'s "PULL IN A POOL" card so the wizard doesn't
-   * run two concurrent `usePools` live queries (mirrors the
-   * `PoolsBrowse`/`TasksPage` "load once, pass down" precedent). Defaults
-   * to `[]` when omitted — pool actions become no-ops, which is a safe
-   * fallback for callers (tests, future playgrounds) that don't have a
-   * pools source.
+   * The user's non-deleted pools, used to resolve pool sources (`pullPool`,
+   * supply caches). Callers should load this ONCE and pass it here —
+   * `BoardWizardPage` also threads the same array to
+   * `BoardWizardTasksStep`'s Sources sheet so the wizard doesn't run two
+   * concurrent pools live queries. Defaults to `[]` when omitted — pool
+   * actions become no-ops (a safe fallback for tests / playgrounds).
    */
   pools?: Pool[];
   /** False while the pools query is still resolving — an empty `pools`

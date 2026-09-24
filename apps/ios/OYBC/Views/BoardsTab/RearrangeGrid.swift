@@ -51,11 +51,11 @@ struct RearrangeCellData: Identifiable, Equatable {
 /// becomes invisible (dashed hole) at its slot; a ghost tile rendered at the finger position
 /// provides the "lifted" visual.
 ///
-/// ### Phase 4 reuse
-/// Phase 4 (create arrange) will pass its own `[RearrangeCellData]` with `originalRow/Col`
-/// reflecting the wizard's placement array. The view is self-contained; the caller only needs
-/// to supply `cells`, `gridSize`, `taskMap`, `centerSquareType`, `sideLength`, and
-/// handle `onReorder`.
+/// ### Callers
+/// Used by Board Edit (`BoardEditPanel`) and the wizard's Preview step
+/// (`BoardWizardPreviewStepView`, whose cells' `originalRow/Col` reflect the wizard's placement
+/// array). The view is self-contained; the caller only needs to supply `cells`, `gridSize`,
+/// `taskMap`, `centerSquareType`, `sideLength`, and handle `onReorder`.
 ///
 /// - Parameters:
 ///   - cells: Ordered (row-major) array of all grid slots — task cells, center, empties.

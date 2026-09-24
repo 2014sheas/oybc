@@ -26,8 +26,8 @@
  * `pages/createHub/useBoardWizard.ts`) can import it without crossing the
  * `db/internal` access boundary unnecessarily.
  *
- * iOS twin: `BoardWizardViewModel.RecurringDraftMixPayload`
- * (`apps/ios/OYBC/Views/CreateTab/ViewModels/BoardWizardViewModel.swift`).
+ * iOS twin: the top-level `RecurringDraftMixPayload` struct
+ * (`apps/ios/OYBC/Views/CreateTab/RecurringDraftMixPayload.swift`).
  */
 
 import { sourcesFromMixFields, type BoardSource, type VaryLevel } from '@oybc/shared';
@@ -56,8 +56,8 @@ const EMPTY_MIX: RecurringDraftMixPayload = {
 /**
  * Encodes a mix payload to the JSON string stored on
  * `Board.recurringDraftMix`. `sources` may be omitted — it is then derived
- * from the trio (`sourcesFromMixFields`), which is lossless for everything
- * the wizard can express until P2 ships ranges/board sources.
+ * from the trio (`sourcesFromMixFields`), which is lossless only for
+ * `[0, all]` pool pulls — the wizard always passes its native sources.
  */
 export function encodeRecurringDraftMix(
   mix: Omit<RecurringDraftMixPayload, 'sources' | 'manualTaskVary'> & {
