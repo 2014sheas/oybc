@@ -15,6 +15,10 @@ export interface PoolPickerSheetProps {
   /** Active recurring-board templates (spawn records) — batched health
    *  input, same as `PoolsBrowse`'s usage of `computePoolHealthByPoolId`. */
   templates: RecurringBoardTemplate[];
+  /** Each template's achievable pick (`RosterHealth.mixByTemplateId` from
+   *  the caller's `useTemplateRosterHealth`), or `undefined` while it
+   *  loads — the sources-native health input (2026-09 audit T2). */
+  achievableTaskIdsByTemplateId: Record<string, string[]> | undefined;
   /** id → Task lookup for health + the create-sheet's chip resolution. */
   tasksById: Record<string, Task>;
   /** The draft-filtered subset of tasks — passed straight through to the
@@ -55,6 +59,7 @@ export function PoolPickerSheet({
   userId,
   pools,
   templates,
+  achievableTaskIdsByTemplateId,
   tasksById,
   browsableTasks,
   selectedPoolIds,
@@ -65,8 +70,9 @@ export function PoolPickerSheet({
   const [showCreateSheet, setShowCreateSheet] = useState(false);
 
   const healthByPoolId = useMemo(
-    () => computePoolHealthByPoolId(pools, templates, tasksById),
-    [pools, templates, tasksById],
+    () =>
+      computePoolHealthByPoolId(pools, templates, achievableTaskIdsByTemplateId, tasksById),
+    [pools, templates, achievableTaskIdsByTemplateId, tasksById],
   );
   const allTasks = useMemo(() => Object.values(tasksById), [tasksById]);
 

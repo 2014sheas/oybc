@@ -118,6 +118,9 @@ struct BoardSettingsView: View {
                     pools: pools,
                     tasks: tasks,
                     templates: rosterVM.templates,
+                    // Written in the same main-actor commit as `templates`,
+                    // so the two always describe the same roster.
+                    achievableTaskIdsByTemplateId: rosterVM.mixByTemplateId,
                     library: library,
                     userId: authService.currentUser?.id ?? "",
                     onSaved: {

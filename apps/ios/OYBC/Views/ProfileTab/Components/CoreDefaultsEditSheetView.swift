@@ -35,6 +35,11 @@ struct CoreDefaultsEditSheetView: View {
     /// Active templates — only used to compute `PoolPickerSheetView`'s
     /// per-pool health note and the create-mode deck-preview floor.
     let templates: [RecurringBoardTemplate]
+    /// The roster's achievable pick per template (`rosterVM.mixByTemplateId`
+    /// on the owning Board-settings screen) — the sources-native input to
+    /// the pool picker's health note (2026-09 audit T2). `nil` while the
+    /// roster is still loading.
+    let achievableTaskIdsByTemplateId: [String: [String]]?
     /// Read reactively so a quick-added task's title resolves immediately.
     let library: TaskLibraryViewModel
     let userId: String
@@ -60,9 +65,12 @@ struct CoreDefaultsEditSheetView: View {
         Dictionary(uniqueKeysWithValues: localPools.map { ($0.id, $0) })
     }
     private var healthByPoolId: [String: PoolHealth.Result] {
-        Dictionary(uniqueKeysWithValues: localPools.map { pool in
-            (pool.id, PoolHealth.computePoolHealth(pool, templates: templates, poolsById: poolsById, tasksById: tasksById))
-        })
+        PoolHealth.computePoolHealthByPoolId(
+            pools: localPools,
+            templates: templates,
+            achievableTaskIdsByTemplateId: achievableTaskIdsByTemplateId,
+            tasksById: tasksById
+        )
     }
 
     /// The resolved prefill — pool-union tasks first, then

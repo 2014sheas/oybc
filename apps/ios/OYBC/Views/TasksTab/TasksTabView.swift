@@ -85,6 +85,12 @@ struct TasksTabView: View {
     /// consumer detection. Loaded alongside `pools`; batched ONCE per
     /// screen (never per-card — see `PoolHealth.computePoolHealth`).
     @State private var poolTemplates: [RecurringBoardTemplate] = []
+    /// Each template's achievable pick — the pool its next spawn could
+    /// deal from, resolved from its sources the way the spawn does
+    /// (`RecurringBoardTemplatesViewModel.resolveAchievableTaskIds`; 2026-09
+    /// audit T2). `nil` until the first load resolves, so the cards never
+    /// flash a warning before supplies are known.
+    @State private var poolAchievableTaskIds: [String: [String]]?
     @State private var poolEditTarget: PoolEditTarget?
     @State private var poolLoadError: String?
 
@@ -152,14 +158,16 @@ struct TasksTabView: View {
                 // ── Pools segment content ────────────────────────────
                 if segment == .pools {
                     // Health/preview lookups — built ONCE here (never per-card),
-                    // and only in Pools mode so Library-mode keystrokes don't
-                    // re-run resolveMix over every pool×template (matches web,
-                    // which only computes this inside the mounted PoolsBrowse).
+                    // and only in Pools mode (matches web, which only computes
+                    // this inside the mounted PoolsBrowse). The achievable
+                    // sizes were resolved from sources in `loadPools()`.
                     let tasksById = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
-                    let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
-                    let healthByPoolId = Dictionary(uniqueKeysWithValues: pools.map { pool in
-                        (pool.id, PoolHealth.computePoolHealth(pool, templates: poolTemplates, poolsById: poolsById, tasksById: tasksById))
-                    })
+                    let healthByPoolId = PoolHealth.computePoolHealthByPoolId(
+                        pools: pools,
+                        templates: poolTemplates,
+                        achievableTaskIdsByTemplateId: poolAchievableTaskIds,
+                        tasksById: tasksById
+                    )
                     let poolTasksById = Dictionary(uniqueKeysWithValues: pools.map { pool in
                         (pool.id, pool.taskIds.compactMap { tasksById[$0] })
                     })
@@ -423,6 +431,13 @@ struct TasksTabView: View {
             vm.reloadAsync()
             loadPools()
         }
+        // Re-resolve pool health on entering Pools mode: task edits and
+        // deletes made in Library mode change what each repeating board
+        // can deal, and `loadPools()` otherwise only runs on appear and
+        // after a pool save/delete.
+        .onChange(of: segment) { _, newSegment in
+            if newSegment == .pools { loadPools() }
+        }
     }
 
     // MARK: - Header
@@ -549,10 +564,12 @@ struct TasksTabView: View {
         }
     }
 
-    /// Loads `pools` + `poolTemplates` for the Pools segment. Called once
-    /// on appear (cheap — needed for the "Pools · N" segment label
-    /// immediately, not only once the segment is entered) and after any
-    /// pool create/save/delete so the browse list + segment count refresh.
+    /// Loads `pools` + `poolTemplates` + each template's achievable pick
+    /// for the Pools segment. Called on appear (cheap — needed for the
+    /// "Pools · N" segment label immediately, not only once the segment is
+    /// entered), on entering Pools mode, and after any pool
+    /// create/save/delete so the browse list + segment count + health
+    /// refresh.
     private func loadPools() {
         let uid = userId
         _Concurrency.Task {
@@ -563,9 +580,22 @@ struct TasksTabView: View {
                 let loadedTemplates = try await _Concurrency.Task.detached(priority: .userInitiated) {
                     try AppDatabase.shared.fetchRecurringBoardTemplates(userId: uid)
                 }.value
+                // Sources-native pool health (2026-09 audit T2): resolve
+                // what each repeating board's next spawn could deal from
+                // — pool AND board sources, ranges, the done-filter.
+                let achievable = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    let liveTasks = try AppDatabase.shared.fetchTasks(userId: uid)
+                    let tasksById = Dictionary(
+                        liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+                    )
+                    return try RecurringBoardTemplatesViewModel.resolveAchievableTaskIds(
+                        templates: loadedTemplates, tasksById: tasksById, database: .shared
+                    )
+                }.value
                 await MainActor.run {
                     pools = loadedPools
                     poolTemplates = loadedTemplates
+                    poolAchievableTaskIds = achievable
                     poolLoadError = nil
                 }
             } catch {

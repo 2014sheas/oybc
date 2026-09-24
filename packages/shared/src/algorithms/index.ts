@@ -148,12 +148,13 @@ export {
 export type { PoolMixSource, ResolveMixResult, SpawnProvenanceSummary } from './poolMix';
 
 // ===== Task Pools + Recurring Boards Rework (P2) — pool health =====
-export { computePoolHealth, formatPoolShortSummary } from './poolHealth';
+export { computePoolHealth, formatPoolShortSummary, templateConsumesPool } from './poolHealth';
 
 export type {
   PoolHealthConsumer,
   PoolHealthResult,
   ComputePoolHealthInput,
+  PoolHealthTemplateSupply,
 } from './poolHealth';
 
 export { isTaskExpired } from './taskExpiry';

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Pool, Task } from '@oybc/shared';
-import { useRecurringBoardTemplates } from '../../hooks';
+import { useRecurringBoardTemplates, useTemplateRosterHealth } from '../../hooks';
 import { PoolCard } from './PoolCard';
 import { PoolEditSheet } from './PoolEditSheet';
 import { computePoolHealthByPoolId } from './poolHealthBatch';
@@ -43,7 +43,9 @@ type SheetState = { kind: 'closed' } | { kind: 'create' } | { kind: 'edit'; pool
  *
  * Health (the red short-warning line) is computed ONCE per render via
  * `computePoolHealthByPoolId` over the already-loaded pools/templates/
- * tasks — never per-card — per the repo's perf-constraint history.
+ * tasks plus the roster's batched achievable picks
+ * (`useTemplateRosterHealth`) — never per-card — per the repo's
+ * perf-constraint history.
  * `pools`/`allTasks` are props (not local live queries) for the same
  * single-read-set reason — see the props' docstrings.
  */
@@ -54,6 +56,9 @@ export function PoolsBrowse({
   browsableTasks,
 }: PoolsBrowseProps): React.ReactElement {
   const templates = useRecurringBoardTemplates(userId);
+  // Sources-native health input (2026-09 audit T2): each repeating
+  // board's achievable pick, resolved the way its next spawn would.
+  const rosterHealth = useTemplateRosterHealth(templates);
   const [sheet, setSheet] = useState<SheetState>({ kind: 'closed' });
 
   const tasksById = useMemo(() => {
@@ -63,8 +68,9 @@ export function PoolsBrowse({
   }, [allTasks]);
 
   const healthByPoolId = useMemo(
-    () => computePoolHealthByPoolId(pools, templates, tasksById),
-    [pools, templates, tasksById],
+    () =>
+      computePoolHealthByPoolId(pools, templates, rosterHealth?.mixByTemplateId, tasksById),
+    [pools, templates, rosterHealth, tasksById],
   );
 
   const poolTasksById = useMemo(() => {
