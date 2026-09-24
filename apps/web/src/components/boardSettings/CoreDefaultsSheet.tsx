@@ -80,8 +80,9 @@ export function CoreDefaultsSheet({
   const [error, setError] = useState<string | null>(null);
 
   // aria-modal, Escape → close, initial focus, Tab trap, focus restore.
-  // While the pool picker is stacked on top, it owns Escape (and this sheet
-  // ignores a stray one) — the same guard the old document listener had.
+  // The `!showPoolPicker` guard is a safeguard only: the stacked pool picker
+  // is a DOM sibling that takes focus, so its Escape never reaches this
+  // handler — kept from the old document listener in case that changes.
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
     open: true,
     onCancel: () => {

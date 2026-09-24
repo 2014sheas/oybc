@@ -66,24 +66,59 @@ function openingTagAt(source: string, index: number): string {
   return source.slice(start);
 }
 
-/** Every `role="dialog"` / `role="alertdialog"` JSX attribute outside comments. */
-function dialogRoleSites(source: string): number[] {
-  const sites: number[] = [];
-  const re = /role="(?:alert)?dialog"/g;
-  for (let m = re.exec(source); m !== null; m = re.exec(source)) {
-    const lineStart = source.lastIndexOf('\n', m.index) + 1;
-    const line = source.slice(lineStart, m.index).trimStart();
-    if (line.startsWith('*') || line.startsWith('//') || line.includes('`')) continue;
-    sites.push(m.index);
-  }
-  return sites;
+/**
+ * Blank out comments (block, JSX `{/* … *\/}` and `//` line comments) with
+ * spaces, keeping every index and newline in place. A `//` preceded by `:`
+ * (a URL in a string) is left alone; any other `//` inside a string would be
+ * treated as a comment — acceptable for a guard over our own JSX.
+ */
+function stripComments(source: string): string {
+  const blank = (m: string): string => m.replace(/[^\n]/g, ' ');
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/(^|[^:])(\/\/.*)$/gm, (_m, lead: string, comment: string) => lead + blank(comment));
 }
+
+/** `role="dialog"`, `role="alertdialog"`, and the `role={'…'}` / `role={"…"}` forms. */
+const DIALOG_ROLE = /role=(?:"(?:alert)?dialog"|\{\s*['"](?:alert)?dialog['"]\s*\})/g;
+
+/** Index of every dialog-role JSX attribute outside comments. */
+function dialogRoleSites(code: string): number[] {
+  return [...code.matchAll(DIALOG_ROLE)].map((m) => m.index ?? 0);
+}
+
+describe('the guard\'s matcher', () => {
+  it('finds all four attribute forms, ignores comments, keeps template-literal lines', () => {
+    const code = stripComments(
+      [
+        '<div role="dialog">',
+        "<div role={'alertdialog'}>",
+        '<div role={"dialog"}>',
+        '<div role="alertdialog" aria-label={`Delete ${name}`}>',
+        '// <div role="dialog">',
+        '/**',
+        ' * `role="dialog"` in a doc comment',
+        ' */',
+        '{/* <div role="dialog"> */}',
+        '<a href="https://x.test" role="dialog">',
+      ].join('\n'),
+    );
+    const lines = code.split('\n');
+    const matchedLines = dialogRoleSites(code).map(
+      (i) => code.slice(0, i).split('\n').length - 1,
+    );
+    // Lines 0–3 (the four forms) and 9 (after a `://` URL); none of the comments.
+    expect(matchedLines).toEqual([0, 1, 2, 3, 9]);
+    expect(lines).toHaveLength(10);
+  });
+});
 
 describe('no dialog bypasses useModalA11y', () => {
   const offenders: string[] = [];
   let siteCount = 0;
 
-  for (const [file, source] of Object.entries(sources)) {
+  for (const [file, raw] of Object.entries(sources)) {
+    const source = stripComments(raw);
     const sites = dialogRoleSites(source);
     if (sites.length === 0) continue;
     // Prop bags destructured from the hook in this file.

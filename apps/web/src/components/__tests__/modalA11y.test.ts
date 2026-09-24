@@ -54,14 +54,15 @@ import { CoreWindowPickerPopover } from '../../pages/core-board-browser/CoreWind
  * — `environment: 'node'`, no DOM — so this pins the markup half of the
  * contract (aria-modal, a focusable container, a `data-modal-cancel` target
  * for the dialogs that open on Cancel). The keyboard half (Escape, the Tab
- * wrap) is driven in a real browser by `e2e/member-rules.spec.ts`, and the
+ * wrap, focus hand-back) is driven in a real browser by
+ * `e2e/member-rules.spec.ts` + `e2e/modal-focus.spec.ts`, and the
  * wrap decision itself by `hooks/__tests__/useModalA11y.test.ts`.
  *
  * Dialogs that only open from internal state (BoardCard / BoardListItem
  * confirms, Library / Source picker sheets, the Profile confirms, the
  * Account-security sheet, the pool-delete inline confirm, the repeating-
  * board wizard overlay) can't be opened in a string render; the source
- * guard at the bottom of this file keeps them on the hook.
+ * guard in `hooks/__tests__/useModalA11y.test.ts` keeps them on the hook.
  */
 
 const NOW = '2026-09-23T00:00:00.000Z';
