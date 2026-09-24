@@ -53,10 +53,15 @@ initializeApp();
 export { purgeUserData } from "./purgeUser";
 
 /**
- * HTTPS-callable invoked by the authenticated client immediately before it
- * deletes its own Auth user. The uid is taken from the verified auth context —
- * never from a client-supplied argument — so a caller can only delete its own
- * data.
+ * HTTPS-callable that purges the caller's Firestore tree. Shared infra with
+ * no client caller today (both apps delete the Auth user first and let
+ * `onUserDeleted` purge). If a client ever calls it, it must do so only AFTER
+ * its Auth user is gone: the purge writes a permanent `deletedUsers/{uid}`
+ * marker first, and `firestore.rules` refuses every client create/update
+ * under `users/{uid}` once that marker exists — calling it before a failed
+ * Auth delete would leave a live account write-fenced forever. The uid is
+ * taken from the verified auth context — never from a client-supplied
+ * argument — so a caller can only purge its own data.
  */
 export const deleteUserData = onCall(async (request) => {
   const uid = request.auth?.uid;

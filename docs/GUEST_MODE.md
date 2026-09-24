@@ -122,7 +122,7 @@ purgeable. The guest Profile's destructive **"Discard guest data"** action (whic
 replaces "Sign Out") routes through the existing `deleteAccount()` →
 `user.delete()` → the **`onUserDeleted`** Cloud Function, which is an
 `auth.user().onDelete` trigger that fires for **anonymous** users too and recursively
-purges the anon-owned tree. No function change was needed. (Anonymous `user.delete()`
+purges the anon-owned tree. No function change was needed for guest mode as such; since the 2026-09 audit the purge also writes a permanent `deletedUsers/{uid}` marker first, so a discarded guest uid is write-fenced by `firestore.rules` even while its ID token is still valid. (Anonymous `user.delete()`
 requires no recent-login reauth.)
 
 ## Ops prerequisite
