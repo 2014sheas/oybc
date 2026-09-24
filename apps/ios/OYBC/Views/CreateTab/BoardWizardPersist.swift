@@ -441,13 +441,16 @@ func resolveWizardDates(controller: BoardWizardViewModel) -> ResolvedWizardDates
 ///
 /// Runs on a background queue; dispatches the provided callbacks on
 /// the main queue. Callers should already have validated
-/// `resolveWizardDates` before invoking this.
+/// `resolveWizardDates` before invoking this. Every read and write goes
+/// through `database` (callers pass the ViewModel's injected
+/// `controller.database`; defaults to `.shared`).
 func persistWizardBoard(
     controller: BoardWizardViewModel,
     userId: String,
     placement: WizardPlacement,
     dates: (start: String, end: String?),
     status: WizardStatus,
+    database: AppDatabase = .shared,
     onSuccess: @escaping (_ boardId: String) -> Void,
     onError: @escaping (_ message: String) -> Void
 ) {
@@ -487,7 +490,7 @@ func persistWizardBoard(
     DispatchQueue.global(qos: .userInitiated).async {
         do {
             let isUpdate = draftBoardId != nil
-            let existing: Board? = isUpdate ? try AppDatabase.shared.fetchBoard(id: boardId) : nil
+            let existing: Board? = isUpdate ? try database.fetchBoard(id: boardId) : nil
 
             // Preserve denormalised stats if updating — a draft should
             // never overwrite `completedTasks` / `linesCompleted` /
@@ -622,7 +625,7 @@ func persistWizardBoard(
             // reads exclusively from sync_queue), so that method enqueues one
             // per write. Pending tasks are written FIRST so task → board_task
             // referential integrity holds even on a crash mid-write.
-            try AppDatabase.shared.saveWizardBoard(
+            try database.saveWizardBoard(
                 board: board,
                 boardTasks: boardTasks,
                 pendingTasks: pendingForSave,
@@ -725,9 +728,13 @@ enum RecurringTemplatePersistOutcome {
 /// `BoardWizardViewModel.resolveTemplateHydrationTaskIds`).
 ///
 /// Runs on a background queue; dispatches callbacks on the main queue.
+/// Every read and write (draft retire, pending drain, template save, and
+/// the fresh-create spawn) goes through `database` (callers pass the
+/// ViewModel's injected `controller.database`; defaults to `.shared`).
 func persistRecurringTemplate(
     controller: BoardWizardViewModel,
     userId: String,
+    database: AppDatabase = .shared,
     onSuccess: @escaping (RecurringTemplatePersistOutcome) -> Void,
     onError: @escaping (_ message: String) -> Void
 ) {
@@ -783,7 +790,7 @@ func persistRecurringTemplate(
         func retireResumedDraftIfNeeded() {
             guard let draftBoardIdToRetire else { return }
             do {
-                try AppDatabase.shared.deleteDraftWithCascade(id: draftBoardIdToRetire)
+                try database.deleteDraftWithCascade(id: draftBoardIdToRetire)
             } catch {
                 dlog("[persistRecurringTemplate] failed to retire resumed draft \(draftBoardIdToRetire): \(error)")
             }
@@ -814,14 +821,14 @@ func persistRecurringTemplate(
             // (library tasks + pending compounds) are applied in the same
             // transaction — see `writeWizardPendingTasksAndEnqueue`'s doc.
             if !pendingForSave.isEmpty || !capturedStagedEdits.isEmpty {
-                try AppDatabase.shared.writeWizardPendingTasksAndEnqueue(
+                try database.writeWizardPendingTasksAndEnqueue(
                     pendingForSave, stagedEdits: capturedStagedEdits, now: now
                 )
             }
 
             // ── Edit path ─────────────────────────────────────────────
             if let templateId = editingTemplateId {
-                guard let existing = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId) else {
+                guard let existing = try database.fetchRecurringBoardTemplate(id: templateId) else {
                     DispatchQueue.main.async {
                         onError("Template no longer exists.")
                     }
@@ -855,7 +862,7 @@ func persistRecurringTemplate(
                     isDeleted: false,
                     deletedAt: nil
                 )
-                try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+                try database.saveRecurringBoardTemplateAndEnqueue(
                     updated, operation: .update, now: now
                 )
 
@@ -899,7 +906,7 @@ func persistRecurringTemplate(
                 isDeleted: false,
                 deletedAt: nil
             )
-            try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+            try database.saveRecurringBoardTemplateAndEnqueue(
                 template,
                 operation: .create,
                 now: now
@@ -934,7 +941,7 @@ func persistRecurringTemplate(
                 windowEnd: wizardLocalISOString(window.end),
                 suggestedName: deriveSpawnedBoardName(template: template, windowStart: wizardLocalISOString(window.start))
             )
-            let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn)
+            let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn, database: database)
             retireResumedDraftIfNeeded()
             switch outcome {
             case .spawned(let boardId, _, _):

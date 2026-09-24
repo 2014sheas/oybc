@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import OYBC
 
 /// Regression + behavior coverage for `persistRecurringTemplate`
@@ -24,25 +25,33 @@ import XCTest
 /// moot now that there is no write-through branch at all — this file is
 /// rewritten to assert the NEW native-fields-only behavior instead.
 ///
-/// ── AppDatabase.shared, not makeTestInstance() ──────────────────────────
-/// `persistRecurringTemplate` (like `RecurringBoardSpawn.spawnTemplateBoard`
-/// — see `RecurringBoardTemplatesTests`'s "End-to-end spawn" note) is a free
-/// function that reaches for `AppDatabase.shared` directly; it has no
-/// injectable-database seam today, so it cannot be pointed at an isolated
-/// `makeTestInstance()`. This is the ONLY test file in the suite that writes
-/// through `AppDatabase.shared` as a result. Every test uses a fresh
-/// `UUID()`-derived `userId` (and matching real `User`/`Task` rows, required
-/// by `PoolMix.resolveMix`'s resolvability check and by the `tasks`/`boards`
-/// FK on `users(id)`) and hard-deletes (raw SQL, not soft-delete) every row
-/// it creates in a `defer` block scoped by the exact ids it created, so this
-/// doesn't leave residue in the shared local database across runs.
+/// ── Isolated database ──────────────────────────────────────────────────
+/// Every test runs against a fresh in-memory `AppDatabase.makeTestInstance()`
+/// (`db`, rebuilt in `setUpWithError`), handed to the wizard ViewModel and to
+/// `persistRecurringTemplate` through its `database:` seam (which also
+/// carries the fresh-create spawn). No per-test cleanup is needed, and
+/// `test_persist_neverWritesTheProductionSharedDatabase` pins that the
+/// production `AppDatabase.shared` is left untouched.
 final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
+
+    /// Fresh isolated database per test (see the header note).
+    private var db: AppDatabase!
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        db = try AppDatabase.makeTestInstance()
+    }
+
+    override func tearDown() {
+        db = nil
+        super.tearDown()
+    }
 
     // MARK: - Fixtures
 
     private func seedUser(_ userId: String) throws {
         let now = AppDatabase.currentTimestamp()
-        try AppDatabase.shared.saveUser(User(
+        try db.saveUser(User(
             id: userId,
             email: "\(userId)@example.com",
             displayName: "Test User",
@@ -57,7 +66,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
     private func seedTask(_ id: String, userId: String) throws {
         let now = AppDatabase.currentTimestamp()
-        try AppDatabase.shared.saveTask(Task(
+        try db.saveTask(Task(
             id: id, userId: userId, title: "Task \(id)", description: nil, type: .normal,
             action: nil, unit: nil, maxCount: nil,
             operatorType: nil, threshold: nil,
@@ -71,7 +80,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
     /// Seeds a Counting task (Action/Goal/Unit) for staged-edit tests.
     private func seedCountingTask(_ id: String, userId: String, action: String, maxCount: Int, unit: String) throws {
         let now = AppDatabase.currentTimestamp()
-        try AppDatabase.shared.saveTask(Task(
+        try db.saveTask(Task(
             id: id, userId: userId,
             title: TaskTitle.generateCounterTaskTitle(action: action, maxCount: maxCount, unit: unit),
             description: nil, type: .counting,
@@ -82,43 +91,6 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             createdAt: now, updatedAt: now,
             lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
         ))
-    }
-
-    // MARK: - Cleanup helper
-
-    /// Hard-deletes rows created during a test, scoped to the exact ids
-    /// passed in (never a broad `DELETE ... WHERE userId = ?`, so a
-    /// mid-test throw can't leave a wider blast radius than intended).
-    /// Deletion order respects the `tasks`/`boards` → `users` FK
-    /// (`foreign_keys = ON`): boards/tasks are dropped before the user row.
-    private func cleanup(
-        poolIds: [String] = [],
-        templateIds: [String] = [],
-        boardIds: [String] = [],
-        taskIds: [String] = [],
-        userIds: [String] = []
-    ) {
-        try? AppDatabase.shared.write { db in
-            for id in boardIds {
-                try db.execute(sql: "DELETE FROM board_tasks WHERE boardId = ?", arguments: [id])
-                try db.execute(sql: "DELETE FROM boards WHERE id = ?", arguments: [id])
-            }
-            for id in templateIds {
-                try db.execute(sql: "DELETE FROM recurring_board_templates WHERE id = ?", arguments: [id])
-            }
-            for id in poolIds {
-                try db.execute(sql: "DELETE FROM pools WHERE id = ?", arguments: [id])
-            }
-            for id in taskIds {
-                try db.execute(sql: "DELETE FROM tasks WHERE id = ?", arguments: [id])
-            }
-            for id in userIds {
-                try db.execute(sql: "DELETE FROM users WHERE id = ?", arguments: [id])
-            }
-            for id in poolIds + templateIds + boardIds {
-                try db.execute(sql: "DELETE FROM sync_queue WHERE entityId = ?", arguments: [id])
-            }
-        }
     }
 
     /// Runs `persistRecurringTemplate` synchronously (wraps the
@@ -133,6 +105,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         persistRecurringTemplate(
             controller: controller,
             userId: userId,
+            database: controller.database,
             onSuccess: { result in outcome = result; expectation.fulfill() },
             onError: { message in errorMessage = message; expectation.fulfill() }
         )
@@ -151,9 +124,8 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         try seedTask("x", userId: userId)
         try seedTask("y", userId: userId)
         try seedTask("z", userId: userId)
-        defer { cleanup(taskIds: ["x", "y", "z"], userIds: [userId]) }
 
-        let seedPool = try AppDatabase.shared.createPoolAndEnqueue(
+        let seedPool = try db.createPoolAndEnqueue(
             userId: userId, name: "Seed Pool", taskIds: ["x", "y"], now: now
         )
         let existingTemplate = RecurringBoardTemplate(
@@ -173,10 +145,9 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             updatedAt: now,
             version: 1
         )
-        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+        try db.saveRecurringBoardTemplateAndEnqueue(
             existingTemplate, operation: .create, now: now
         )
-        defer { cleanup(poolIds: [seedPool.id], templateIds: [existingTemplate.id]) }
 
         // Hydrate the wizard exactly as the real Edit-template entry point
         // does: via the `editingTemplate:` initializer parameter.
@@ -184,7 +155,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             preferences: .defaults,
             editingTemplate: existingTemplate,
             userId: userId,
-            database: AppDatabase.shared
+            database: db
         )
         XCTAssertEqual(vm.selectedTaskIds, ["x", "y"])
         XCTAssertEqual(vm.pulledPoolIds, [seedPool.id])
@@ -205,14 +176,14 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         // P4: the template's OWN native fields are written directly —
         // poolIds unchanged (still the one pulled pool), manualTaskIds
         // gains "z", removedTaskIds empty.
-        let refetchedTemplate = try AppDatabase.shared.fetchRecurringBoardTemplate(id: existingTemplate.id)
+        let refetchedTemplate = try db.fetchRecurringBoardTemplate(id: existingTemplate.id)
         XCTAssertEqual(refetchedTemplate?.poolIds, [seedPool.id])
         XCTAssertEqual(refetchedTemplate?.manualTaskIds, ["z"])
         XCTAssertEqual(refetchedTemplate?.removedTaskIds, [])
 
         // P4's crux: the shared Pool is NEVER touched by an edit anymore —
         // no write-through. Pre-P4 this pool would have received "z" too.
-        let updatedPool = try AppDatabase.shared.fetchPool(id: seedPool.id)
+        let updatedPool = try db.fetchPool(id: seedPool.id)
         XCTAssertEqual(updatedPool?.taskIds, ["x", "y"])
         XCTAssertEqual(updatedPool?.version, seedPool.version)
     }
@@ -226,31 +197,22 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
         try seedUser(userId)
         for id in allTaskIds { try seedTask(id, userId: userId) }
-        defer { cleanup(taskIds: allTaskIds, userIds: [userId]) }
 
-        let poolA = try AppDatabase.shared.createPoolAndEnqueue(
+        let poolA = try db.createPoolAndEnqueue(
             userId: userId, name: "Pool A", taskIds: ["a1", "a2"], now: now
         )
-        let poolB = try AppDatabase.shared.createPoolAndEnqueue(
+        let poolB = try db.createPoolAndEnqueue(
             userId: userId, name: "Pool B", taskIds: ["b1", "b2"], now: now
         )
         let poolBVersionBefore = poolB.version
         let poolBTaskIdsBefore = poolB.taskIds
         var createdTemplateId: String?
-        var createdBoardId: String?
-        defer {
-            cleanup(
-                poolIds: [poolA.id, poolB.id],
-                templateIds: createdTemplateId.map { [$0] } ?? [],
-                boardIds: createdBoardId.map { [$0] } ?? []
-            )
-        }
 
         // Board Creation Split (iOS PR A) — recurring mode is now fixed at
         // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
         // toggle is gone. Cadence is still adjustable post-init via
         // `updateTimeframe(_:)` (used below where a test wants Daily).
-        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: db)
         vm.name = "Test Recurring"
         vm.size = 2
         vm.centerType = .none
@@ -259,7 +221,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         let poolsById = [poolA.id: poolA, poolB.id: poolB]
         let tasksById = Dictionary(
             uniqueKeysWithValues: try allTaskIds.map { id -> (String, Task) in
-                (id, try XCTUnwrap(AppDatabase.shared.fetchTask(id: id)))
+                (id, try XCTUnwrap(db.fetchTask(id: id)))
             }
         )
         // Pull pool A in, then untoggle it back out — exercising the REAL
@@ -281,9 +243,8 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
         let outcome = try runPersist(controller: vm, userId: userId)
         switch outcome {
-        case .createdAndSpawned(let templateId, let boardId):
+        case .createdAndSpawned(let templateId, _):
             createdTemplateId = templateId
-            createdBoardId = boardId
         case .createdSpawnSkipped(let templateId, _):
             createdTemplateId = templateId
         case .updated:
@@ -298,22 +259,22 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         // P4 crux: NO new pool was minted at all — pull-then-untoggle left
         // the mix entirely in the manual layer, and fresh-create no longer
         // auto-mints a Pool from the selection.
-        let allPoolsForUser = try AppDatabase.shared.fetchPools(userId: userId)
+        let allPoolsForUser = try db.fetchPools(userId: userId)
         let newPools = allPoolsForUser.filter { $0.id != poolA.id && $0.id != poolB.id }
         XCTAssertEqual(newPools.count, 0, "P4 must never mint a Pool on fresh-create")
 
         // Pool A (pulled in, then untoggled) and Pool B (never touched at
         // all) are both completely untouched.
-        let refetchedPoolA = try AppDatabase.shared.fetchPool(id: poolA.id)
+        let refetchedPoolA = try db.fetchPool(id: poolA.id)
         XCTAssertEqual(refetchedPoolA?.taskIds, ["a1", "a2"])
         XCTAssertEqual(refetchedPoolA?.version, poolA.version)
-        let refetchedPoolB = try AppDatabase.shared.fetchPool(id: poolB.id)
+        let refetchedPoolB = try db.fetchPool(id: poolB.id)
         XCTAssertEqual(refetchedPoolB?.version, poolBVersionBefore)
         XCTAssertEqual(refetchedPoolB?.taskIds, poolBTaskIdsBefore)
 
         // The created template carries the native shape straight from the
         // controller's own pool-mix state: no pools pulled, all 4 tasks manual.
-        let refetchedTemplate = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId)
+        let refetchedTemplate = try db.fetchRecurringBoardTemplate(id: templateId)
         XCTAssertEqual(refetchedTemplate?.poolIds, [])
         XCTAssertEqual(Set(refetchedTemplate?.manualTaskIds ?? []), ["m1", "m2", "m3", "m4"])
         XCTAssertEqual(refetchedTemplate?.removedTaskIds, [])
@@ -340,23 +301,13 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         let realTaskIds = (0..<7).map { "real-\($0)" }
         try seedUser(userId)
         for id in realTaskIds { try seedTask(id, userId: userId) }
-        var createdTemplateId: String?
-        var createdBoardId: String?
         let pendingId = "pending-\(UUID().uuidString)"
-        defer {
-            cleanup(
-                templateIds: createdTemplateId.map { [$0] } ?? [],
-                boardIds: createdBoardId.map { [$0] } ?? [],
-                taskIds: realTaskIds + [pendingId],
-                userIds: [userId]
-            )
-        }
 
         // Board Creation Split (iOS PR A) — recurring mode is now fixed at
         // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
         // toggle is gone. Cadence is still adjustable post-init via
         // `updateTimeframe(_:)` (used below where a test wants Daily).
-        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: db)
         vm.name = "Daily Habits"
         vm.size = 3
         vm.centerType = .free // fillable floor = 3*3 - 1 = 8
@@ -380,12 +331,12 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         XCTAssertTrue(vm.isRecurring)
 
         // Sanity: the pending task does NOT exist in GRDB yet.
-        XCTAssertNil(try AppDatabase.shared.fetchTask(id: pendingId))
+        XCTAssertNil(try db.fetchTask(id: pendingId))
 
         let outcome = try runPersist(controller: vm, userId: userId)
 
         // (a) The pending task now exists in GRDB.
-        let persistedPending = try AppDatabase.shared.fetchTask(id: pendingId)
+        let persistedPending = try db.fetchTask(id: pendingId)
         XCTAssertNotNil(persistedPending, "pending task must be drained into GRDB")
         XCTAssertEqual(persistedPending?.title, "Not yet persisted")
 
@@ -395,12 +346,10 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             XCTFail("Expected .createdAndSpawned, got \(outcome) — the pending task likely fell out of the mix")
             return
         }
-        createdTemplateId = templateId
-        createdBoardId = boardId
 
         // (c) The spawned board is filled to exactly the fillable floor and
         // includes the pending task's placement.
-        let boardTasks = try AppDatabase.shared.fetchBoardTasks(boardId: boardId)
+        let boardTasks = try db.fetchBoardTasks(boardId: boardId)
         XCTAssertEqual(boardTasks.count, 8)
         XCTAssertTrue(boardTasks.contains { $0.taskId == pendingId })
     }
@@ -421,22 +370,12 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         let taskIds = (0..<4).map { "t-\($0)" }
         try seedUser(userId)
         for id in taskIds { try seedTask(id, userId: userId) }
-        var createdTemplateId: String?
-        var createdBoardId: String?
-        defer {
-            cleanup(
-                templateIds: createdTemplateId.map { [$0] } ?? [],
-                boardIds: createdBoardId.map { [$0] } ?? [],
-                taskIds: taskIds,
-                userIds: [userId]
-            )
-        }
 
         // Board Creation Split (iOS PR A) — recurring mode is now fixed at
         // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
         // toggle is gone. Cadence is still adjustable post-init via
         // `updateTimeframe(_:)` (used below where a test wants Daily).
-        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: db)
         vm.name = "Weekly Reset"
         vm.size = 2
         vm.centerType = .none
@@ -448,17 +387,15 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             XCTFail("Expected .createdAndSpawned, got \(outcome)")
             return
         }
-        createdTemplateId = templateId
-        createdBoardId = boardId
 
         // A RecurringBoardTemplate row exists...
-        let template = try AppDatabase.shared.fetchRecurringBoardTemplate(id: templateId)
+        let template = try db.fetchRecurringBoardTemplate(id: templateId)
         XCTAssertNotNil(template)
         XCTAssertEqual(template?.timeframe, .weekly)
 
         // ...and the spawned board is ACTIVE, never a draft — this is what
         // the cancel-dialog's pre-P4 bug produced instead of a template.
-        let board = try AppDatabase.shared.fetchBoard(id: boardId)
+        let board = try db.fetchBoard(id: boardId)
         XCTAssertEqual(board?.status, .active)
         XCTAssertEqual(board?.spawnedFromTemplateId, templateId)
     }
@@ -469,7 +406,6 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         try seedUser(userId)
         for id in taskIds { try seedTask(id, userId: userId) }
         let now = AppDatabase.currentTimestamp()
-        defer { cleanup(taskIds: taskIds, userIds: [userId]) }
 
         let existingTemplate = RecurringBoardTemplate(
             id: AppDatabase.generateUUID(),
@@ -488,15 +424,14 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             updatedAt: now,
             version: 1
         )
-        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+        try db.saveRecurringBoardTemplateAndEnqueue(
             existingTemplate, operation: .create, now: now
         )
-        defer { cleanup(templateIds: [existingTemplate.id]) }
 
-        let boardCountBefore = try AppDatabase.shared.fetchBoards(userId: userId).count
+        let boardCountBefore = try db.fetchBoards(userId: userId).count
 
         let vm = BoardWizardViewModel(
-            preferences: .defaults, editingTemplate: existingTemplate, userId: userId, database: AppDatabase.shared
+            preferences: .defaults, editingTemplate: existingTemplate, userId: userId, database: db
         )
         vm.name = "Monthly Check-in (renamed)"
 
@@ -507,11 +442,11 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         }
         XCTAssertEqual(templateId, existingTemplate.id)
 
-        let refetched = try AppDatabase.shared.fetchRecurringBoardTemplate(id: existingTemplate.id)
+        let refetched = try db.fetchRecurringBoardTemplate(id: existingTemplate.id)
         XCTAssertEqual(refetched?.name, "Monthly Check-in (renamed)")
 
         // No new Board was created by an edit.
-        let boardCountAfter = try AppDatabase.shared.fetchBoards(userId: userId).count
+        let boardCountAfter = try db.fetchBoards(userId: userId).count
         XCTAssertEqual(boardCountAfter, boardCountBefore)
     }
 
@@ -527,15 +462,13 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         let allTaskIds = ["a1", "a2", "b1", "b2", "manual-1", "manual-2"]
         try seedUser(userId)
         for id in allTaskIds { try seedTask(id, userId: userId) }
-        defer { cleanup(taskIds: allTaskIds, userIds: [userId]) }
 
-        let poolA = try AppDatabase.shared.createPoolAndEnqueue(
+        let poolA = try db.createPoolAndEnqueue(
             userId: userId, name: "Pool A", taskIds: ["a1", "a2"], now: now
         )
-        let poolB = try AppDatabase.shared.createPoolAndEnqueue(
+        let poolB = try db.createPoolAndEnqueue(
             userId: userId, name: "Pool B", taskIds: ["b1", "b2"], now: now
         )
-        defer { cleanup(poolIds: [poolA.id, poolB.id]) }
 
         let existingTemplate = RecurringBoardTemplate(
             id: AppDatabase.generateUUID(),
@@ -554,13 +487,12 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             updatedAt: now,
             version: 1
         )
-        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+        try db.saveRecurringBoardTemplateAndEnqueue(
             existingTemplate, operation: .create, now: now
         )
-        defer { cleanup(templateIds: [existingTemplate.id]) }
 
         let vm = BoardWizardViewModel(
-            preferences: .defaults, editingTemplate: existingTemplate, userId: userId, database: AppDatabase.shared
+            preferences: .defaults, editingTemplate: existingTemplate, userId: userId, database: db
         )
         // Hydration resolves the mix natively — 2 pools + the manual layer.
         XCTAssertEqual(vm.pulledPoolIds.count, 2)
@@ -576,7 +508,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             return
         }
 
-        let refetched = try AppDatabase.shared.fetchRecurringBoardTemplate(id: existingTemplate.id)
+        let refetched = try db.fetchRecurringBoardTemplate(id: existingTemplate.id)
         // Still 2 pools — the edit didn't collapse/flatten the native shape.
         XCTAssertEqual(refetched?.poolIds?.count, 2)
         XCTAssertEqual(Set(refetched?.poolIds ?? []), [poolA.id, poolB.id])
@@ -585,10 +517,10 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         XCTAssertEqual(refetched?.removedTaskIds, [])
 
         // Neither shared pool was mutated by the edit.
-        let refetchedPoolA = try AppDatabase.shared.fetchPool(id: poolA.id)
+        let refetchedPoolA = try db.fetchPool(id: poolA.id)
         XCTAssertEqual(refetchedPoolA?.taskIds, ["a1", "a2"])
         XCTAssertEqual(refetchedPoolA?.version, poolA.version)
-        let refetchedPoolB = try AppDatabase.shared.fetchPool(id: poolB.id)
+        let refetchedPoolB = try db.fetchPool(id: poolB.id)
         XCTAssertEqual(refetchedPoolB?.taskIds, ["b1", "b2"])
         XCTAssertEqual(refetchedPoolB?.version, poolB.version)
     }
@@ -618,22 +550,12 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         try seedTask("filler-1", userId: userId)
         try seedTask("filler-2", userId: userId)
         let taskIds = ["normal-1", "counting-1", "filler-1", "filler-2"]
-        var createdTemplateId: String?
-        var createdBoardId: String?
-        defer {
-            cleanup(
-                templateIds: createdTemplateId.map { [$0] } ?? [],
-                boardIds: createdBoardId.map { [$0] } ?? [],
-                taskIds: taskIds,
-                userIds: [userId]
-            )
-        }
 
         // Board Creation Split (iOS PR A) — recurring mode is now fixed at
         // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
         // toggle is gone. Cadence is still adjustable post-init via
         // `updateTimeframe(_:)` (used below where a test wants Daily).
-        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: db)
         vm.name = "Daily Chores"
         vm.size = 2
         vm.centerType = .none // fillable floor = 2*2 = 4, matches taskIds.count
@@ -641,13 +563,13 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         XCTAssertEqual(vm.selectedTaskIds.count, 4)
 
         // Stage an inline rename on the Normal task via the real editor patch.
-        let normalTask = try XCTUnwrap(AppDatabase.shared.fetchTask(id: "normal-1"))
+        let normalTask = try XCTUnwrap(db.fetchTask(id: "normal-1"))
         var normalPatch = TaskEditPatch.seededForEditor(from: normalTask)
         normalPatch.title = "Take out recycling"
         vm.stageEdit(normalPatch, for: "normal-1")
 
         // Stage a goal change on the Counting task via the real editor patch.
-        let countingTask = try XCTUnwrap(AppDatabase.shared.fetchTask(id: "counting-1"))
+        let countingTask = try XCTUnwrap(db.fetchTask(id: "counting-1"))
         var countingPatch = TaskEditPatch.seededForEditor(from: countingTask)
         countingPatch.goal = "25"
         vm.stageEdit(countingPatch, for: "counting-1")
@@ -657,11 +579,8 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
         let outcome = try runPersist(controller: vm, userId: userId)
         switch outcome {
-        case .createdAndSpawned(let templateId, let boardId):
-            createdTemplateId = templateId
-            createdBoardId = boardId
-        case .createdSpawnSkipped(let templateId, _):
-            createdTemplateId = templateId
+        case .createdAndSpawned, .createdSpawnSkipped:
+            break
         case .updated:
             XCTFail("Expected a fresh-create outcome, got .updated")
             return
@@ -669,11 +588,11 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
         // The staged edits must be persisted globally on the Task rows —
         // pre-fix, both tasks would still carry their ORIGINAL values here.
-        let persistedNormal = try XCTUnwrap(AppDatabase.shared.fetchTask(id: "normal-1"))
+        let persistedNormal = try XCTUnwrap(db.fetchTask(id: "normal-1"))
         XCTAssertEqual(persistedNormal.title, "Take out recycling")
         XCTAssertGreaterThan(persistedNormal.version, normalTask.version)
 
-        let persistedCounting = try XCTUnwrap(AppDatabase.shared.fetchTask(id: "counting-1"))
+        let persistedCounting = try XCTUnwrap(db.fetchTask(id: "counting-1"))
         XCTAssertEqual(persistedCounting.maxCount, 25)
         XCTAssertEqual(
             persistedCounting.title,
@@ -693,22 +612,12 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         try seedUser(userId)
         for id in realTaskIds { try seedTask(id, userId: userId) }
         let pendingId = "pending-\(UUID().uuidString)"
-        var createdTemplateId: String?
-        var createdBoardId: String?
-        defer {
-            cleanup(
-                templateIds: createdTemplateId.map { [$0] } ?? [],
-                boardIds: createdBoardId.map { [$0] } ?? [],
-                taskIds: realTaskIds + [pendingId],
-                userIds: [userId]
-            )
-        }
 
         // Board Creation Split (iOS PR A) — recurring mode is now fixed at
         // init via `startRecurring`; the retired `setRepeats(_:)` mid-wizard
         // toggle is gone. Cadence is still adjustable post-init via
         // `updateTimeframe(_:)` (used below where a test wants Daily).
-        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: AppDatabase.shared)
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: db)
         vm.name = "Weekly Habits"
         vm.size = 2
         vm.centerType = .none
@@ -733,17 +642,14 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
         let outcome = try runPersist(controller: vm, userId: userId)
         switch outcome {
-        case .createdAndSpawned(let templateId, let boardId):
-            createdTemplateId = templateId
-            createdBoardId = boardId
-        case .createdSpawnSkipped(let templateId, _):
-            createdTemplateId = templateId
+        case .createdAndSpawned, .createdSpawnSkipped:
+            break
         case .updated:
             XCTFail("Expected a fresh-create outcome, got .updated")
             return
         }
 
-        let persistedPending = try XCTUnwrap(AppDatabase.shared.fetchTask(id: pendingId))
+        let persistedPending = try XCTUnwrap(db.fetchTask(id: pendingId))
         XCTAssertEqual(
             persistedPending.title, "Edited before create",
             "the pending task's staged edit must be merged in before the drain write"
@@ -760,7 +666,6 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         try seedUser(userId)
         for id in taskIds { try seedTask(id, userId: userId) }
         let now = AppDatabase.currentTimestamp()
-        defer { cleanup(taskIds: taskIds, userIds: [userId]) }
 
         let existingTemplate = RecurringBoardTemplate(
             id: AppDatabase.generateUUID(),
@@ -779,17 +684,16 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             updatedAt: now,
             version: 1
         )
-        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+        try db.saveRecurringBoardTemplateAndEnqueue(
             existingTemplate, operation: .create, now: now
         )
-        defer { cleanup(templateIds: [existingTemplate.id]) }
 
         let vm = BoardWizardViewModel(
-            preferences: .defaults, editingTemplate: existingTemplate, userId: userId, database: AppDatabase.shared
+            preferences: .defaults, editingTemplate: existingTemplate, userId: userId, database: db
         )
         XCTAssertEqual(vm.selectedTaskIds, ["e1", "e2"])
 
-        let libraryTask = try XCTUnwrap(AppDatabase.shared.fetchTask(id: "e1"))
+        let libraryTask = try XCTUnwrap(db.fetchTask(id: "e1"))
         var patch = TaskEditPatch.seededForEditor(from: libraryTask)
         patch.title = "Brush teeth"
         vm.stageEdit(patch, for: "e1")
@@ -801,7 +705,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         }
         XCTAssertEqual(templateId, existingTemplate.id)
 
-        let persisted = try XCTUnwrap(AppDatabase.shared.fetchTask(id: "e1"))
+        let persisted = try XCTUnwrap(db.fetchTask(id: "e1"))
         XCTAssertEqual(persisted.title, "Brush teeth", "staged edit must apply on the edit branch too")
         XCTAssertGreaterThan(persisted.version, libraryTask.version)
     }
@@ -816,7 +720,6 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
         try seedUser(userId)
         try seedCountingTask("dice", userId: userId, action: "Read", maxCount: 10, unit: "pages")
-        defer { cleanup(taskIds: ["dice"], userIds: [userId]) }
 
         let existingTemplate = RecurringBoardTemplate(
             id: AppDatabase.generateUUID(),
@@ -835,16 +738,15 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             updatedAt: now,
             version: 1
         )
-        try AppDatabase.shared.saveRecurringBoardTemplateAndEnqueue(
+        try db.saveRecurringBoardTemplateAndEnqueue(
             existingTemplate, operation: .create, now: now
         )
-        defer { cleanup(templateIds: [existingTemplate.id]) }
 
         let vm = BoardWizardViewModel(
             preferences: .defaults,
             editingTemplate: existingTemplate,
             userId: userId,
-            database: AppDatabase.shared
+            database: db
         )
         XCTAssertTrue(vm.manualTaskVary.isEmpty, "the record carries no dice yet")
         vm.toggleTaskSelection("dice")
@@ -856,7 +758,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             return
         }
 
-        let refetched = try AppDatabase.shared.fetchRecurringBoardTemplate(id: existingTemplate.id)
+        let refetched = try db.fetchRecurringBoardTemplate(id: existingTemplate.id)
         XCTAssertEqual(refetched?.manualTaskVary, ["dice": .lot])
 
         // …and it hydrates back onto a fresh edit session.
@@ -864,7 +766,7 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
             preferences: .defaults,
             editingTemplate: try XCTUnwrap(refetched),
             userId: userId,
-            database: AppDatabase.shared
+            database: db
         )
         XCTAssertEqual(reopened.manualTaskVary, ["dice": .lot])
     }
@@ -879,20 +781,12 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         try seedUser(userId)
         try seedCountingTask("dice", userId: userId, action: "Read", maxCount: 10, unit: "pages")
         for id in ["f1", "f2", "f3"] { try seedTask(id, userId: userId) }
-        defer { cleanup(taskIds: allTaskIds, userIds: [userId]) }
 
         var templateId: String?
-        var spawnedBoardId: String?
-        defer {
-            cleanup(
-                templateIds: templateId.map { [$0] } ?? [],
-                boardIds: spawnedBoardId.map { [$0] } ?? []
-            )
-        }
 
         let vm = BoardWizardViewModel(
             preferences: .defaults, startRecurring: true, userId: userId,
-            database: AppDatabase.shared
+            database: db
         )
         vm.name = "Dice Weekly"
         vm.size = 2
@@ -903,16 +797,15 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         vm.setManualVary(taskId: "dice", level: .little)
 
         switch try runPersist(controller: vm, userId: userId) {
-        case .createdAndSpawned(let id, let boardId):
+        case .createdAndSpawned(let id, _):
             templateId = id
-            spawnedBoardId = boardId
         case .createdSpawnSkipped(let id, _):
             templateId = id
         case .updated:
             XCTFail("Expected a fresh-create outcome")
         }
 
-        let template = try AppDatabase.shared.fetchRecurringBoardTemplate(
+        let template = try db.fetchRecurringBoardTemplate(
             id: try XCTUnwrap(templateId)
         )
         XCTAssertEqual(template?.manualTaskVary, ["dice": .little])
@@ -930,20 +823,12 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
 
         try seedUser(userId)
         for id in taskIds { try seedTask(id, userId: userId) }
-        defer { cleanup(taskIds: taskIds, userIds: [userId]) }
 
         var templateId: String?
-        var spawnedBoardId: String?
-        defer {
-            cleanup(
-                templateIds: templateId.map { [$0] } ?? [],
-                boardIds: spawnedBoardId.map { [$0] } ?? []
-            )
-        }
 
         let vm = BoardWizardViewModel(
             preferences: .defaults, startRecurring: true, userId: userId,
-            database: AppDatabase.shared
+            database: db
         )
         vm.name = "No Dice Weekly"
         vm.size = 2
@@ -954,18 +839,84 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         XCTAssertTrue(vm.manualTaskVary.isEmpty, "no dice were set")
 
         switch try runPersist(controller: vm, userId: userId) {
-        case .createdAndSpawned(let id, let boardId):
+        case .createdAndSpawned(let id, _):
             templateId = id
-            spawnedBoardId = boardId
         case .createdSpawnSkipped(let id, _):
             templateId = id
         case .updated:
             XCTFail("Expected a fresh-create outcome")
         }
 
-        let template = try AppDatabase.shared.fetchRecurringBoardTemplate(
+        let template = try db.fetchRecurringBoardTemplate(
             id: try XCTUnwrap(templateId)
         )
         XCTAssertNil(template?.manualTaskVary, "an empty map is never written")
+    }
+
+    // MARK: - Isolation: the production database is never written
+
+    /// Counts `userId`'s rows in the user-scoped tables a fresh-create
+    /// persist writes (template, spawned board, drained tasks) on the
+    /// PRODUCTION `AppDatabase.shared`.
+    private func productionRowCount(userId: String) throws -> Int {
+        try AppDatabase.shared.read { database in
+            try ["recurring_board_templates", "boards", "tasks"].reduce(0) { total, table in
+                total + (try Int.fetchOne(
+                    database,
+                    sql: "SELECT COUNT(*) FROM \(table) WHERE userId = ?",
+                    arguments: [userId]
+                ) ?? 0)
+            }
+        }
+    }
+
+    /// The seam this suite relies on: `persistRecurringTemplate` writes the
+    /// ViewModel's injected database, never `AppDatabase.shared`. A fresh
+    /// create (template write + spawn) lands in `db` and leaves the
+    /// production database's rows for this user at zero. Before the
+    /// `database:` seam the function wrote `.shared` directly, so the
+    /// template landed there and this count went 0 → 1.
+    func test_persist_neverWritesTheProductionSharedDatabase() throws {
+        let userId = "test-user-\(UUID().uuidString)"
+        let taskIds = (0..<8).map { "iso-\($0)" }
+        try seedUser(userId)
+        for id in taskIds { try seedTask(id, userId: userId) }
+
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: db)
+        vm.name = "Isolation Daily"
+        vm.size = 3
+        vm.centerType = .free // fillable floor = 8
+        vm.updateTimeframe(.daily)
+        for id in taskIds { vm.toggleTaskSelection(id) }
+
+        let productionBefore = try productionRowCount(userId: userId)
+        XCTAssertEqual(productionBefore, 0)
+
+        // Driven directly (not via `runPersist`) so the production count is
+        // asserted even when the persist reports an error.
+        let expectation = XCTestExpectation(description: "persistRecurringTemplate")
+        var outcome: RecurringTemplatePersistOutcome?
+        var errorMessage: String?
+        persistRecurringTemplate(
+            controller: vm,
+            userId: userId,
+            database: vm.database,
+            onSuccess: { result in outcome = result; expectation.fulfill() },
+            onError: { message in errorMessage = message; expectation.fulfill() }
+        )
+        wait(for: [expectation], timeout: 5.0)
+
+        XCTAssertEqual(
+            try productionRowCount(userId: userId), productionBefore,
+            "persistRecurringTemplate must not write the production AppDatabase.shared"
+        )
+
+        XCTAssertNil(errorMessage)
+        guard case .createdAndSpawned(let templateId, let boardId) = try XCTUnwrap(outcome) else {
+            XCTFail("Expected .createdAndSpawned, got \(String(describing: outcome))")
+            return
+        }
+        XCTAssertNotNil(try db.fetchRecurringBoardTemplate(id: templateId))
+        XCTAssertNotNil(try db.fetchBoard(id: boardId))
     }
 }

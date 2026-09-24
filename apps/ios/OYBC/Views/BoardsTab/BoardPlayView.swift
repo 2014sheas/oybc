@@ -1043,13 +1043,10 @@ struct BoardPlayView: View {
                 pendingOpenBoardId = nil
                 onOpenBoard(target)
             }
-            // Board-integrity PR-5 (Item 5): this sheet's own content
-            // (`detailSheet`) can complete/edit the boardTask's task
-            // directly, and its NESTED child-detail sheet
-            // (`compoundChildDetailTaskId`) edits/deletes a compound
-            // child's `Task` via `AppDatabase.shared` — neither write goes
-            // through this VM, so refresh on dismiss the same way the M4
-            // add-cell sheet does on cancel.
+            // Board-integrity PR-5 (Item 5): this sheet's content (`detailSheet`)
+            // can complete/edit the task, and its NESTED child-detail sheet edits/
+            // deletes a compound child's `Task` itself — neither write goes through
+            // this VM, so refresh on dismiss like the M4 add-cell sheet on cancel.
             viewModel.reloadBoardTasksAndTaskData()
         }) {
             detailSheet
@@ -1074,10 +1071,9 @@ struct BoardPlayView: View {
                     pendingOpenBoardId = nil
                     onOpenBoard(target)
                 }
-                // Board-integrity PR-5 (Item 5): this sheet edits/deletes its
-                // task via `AppDatabase.shared` directly (bypasses this VM) —
-                // refresh so the grid reflects an edited title/type or a
-                // cascade-deleted placement.
+                // Board-integrity PR-5 (Item 5): this sheet edits/deletes its task
+                // itself (bypasses this VM) — refresh so the grid reflects an edited
+                // title/type or a cascade-deleted placement.
                 viewModel.reloadBoardTasksAndTaskData()
             }
         ) { item in
@@ -1087,7 +1083,8 @@ struct BoardPlayView: View {
                 onOpenBoard: { newBoardId in
                     pendingOpenBoardId = newBoardId
                     taskDetailSheetTaskId = nil
-                }
+                },
+                database: viewModel.database
             )
         }
         // Share board sheet — presented from the GREENLOG overlay's "Share my board"
@@ -1454,8 +1451,9 @@ struct BoardPlayView: View {
         let userId = b.userId
         let timeframe = b.timeframe
         let weekStartDay = authService.userPreferences.weekStartDay.rawValue
+        let db = viewModel.database
         _Concurrency.Task.detached {
-            let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
+            let boards = (try? db.fetchBoards(userId: userId)) ?? []
             let count = computeStreak(
                 timeframe: timeframe, criterion: .greenlog,
                 boards: boards, weekStartDay: weekStartDay, now: Date()
@@ -1825,11 +1823,10 @@ struct BoardPlayView: View {
                     // parent detail sheet; its onDismiss drains
                     // `pendingOpenBoardId` in a clean transaction.
                     if pendingOpenBoardId != nil { detailBoardTaskId = nil }
-                    // Board-integrity PR-5 (Item 5): this nested sheet
-                    // edits/deletes the compound CHILD's `Task` directly via
-                    // `AppDatabase.shared` — the parent `detailSheet`'s
-                    // compound-progress display and the underlying grid both
-                    // read stale in-memory state until refreshed. Reload
+                    // Board-integrity PR-5 (Item 5): this nested sheet edits/deletes
+                    // the compound CHILD's `Task` itself — the parent `detailSheet`'s
+                    // compound-progress display and the grid both read stale
+                    // in-memory state until refreshed. Reload
                     // unconditionally (not just on cross-board nav) so a
                     // plain "Done" dismiss after an edit/delete still picks
                     // up the change. When `detailBoardTaskId` is ALSO about
@@ -1845,7 +1842,8 @@ struct BoardPlayView: View {
                     onOpenBoard: { newBoardId in
                         pendingOpenBoardId = newBoardId
                         compoundChildDetailTaskId = nil
-                    }
+                    },
+                    database: viewModel.database
                 )
             }
         }
@@ -1927,10 +1925,11 @@ struct BoardPlayView: View {
             let children = compoundChildrenByCompound[task.id] ?? []
             candidateIds.append(contentsOf: children.map { $0.childTaskId })
         }
+        let db = viewModel.database
         _Concurrency.Task.detached(priority: .utility) {
             var blocked: Set<String> = []
             for id in candidateIds {
-                if let isBlocked = try? AppDatabase.shared.isUncompleteBlockedBySeal(taskId: id), isBlocked {
+                if let isBlocked = try? db.isUncompleteBlockedBySeal(taskId: id), isBlocked {
                     blocked.insert(id)
                 }
             }

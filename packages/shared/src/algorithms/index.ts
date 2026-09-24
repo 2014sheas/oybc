@@ -243,6 +243,7 @@ export type { PlacementIntegrityRepairResult } from './placementResolution';
 export {
   resolveSourceAvailable,
   effectiveSourceMax,
+  availableSupplyIds,
   computeSourceCapacity,
   computeAchievablePoolSize,
   buildCounterFamilyMap,

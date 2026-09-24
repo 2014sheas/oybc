@@ -7,6 +7,7 @@ import {
   computeBoardStatsUpdate,
   isGoalLessCounter,
   poolSourceSupplyById,
+  availableSupplyIds,
   resolveSourceAvailable,
   type BoardSource,
   type BoardSourceSupply,
@@ -515,10 +516,7 @@ async function mintWizardDerivedRows(
     const info = resolveBoardSourceSupply(board, rows, tasksById, eventsByTaskId);
     rawSupplies.push({
       source,
-      supplyTaskIds:
-        source.filter === 'todo'
-          ? info.supplyTaskIds.filter((id) => !info.doneTaskIds.has(id))
-          : info.supplyTaskIds,
+      supplyTaskIds: availableSupplyIds(source, info.supplyTaskIds, info.doneTaskIds),
     });
   }
 
