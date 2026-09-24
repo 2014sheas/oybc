@@ -616,6 +616,26 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 1)
     }
 
+    func test_editCompound_linkingCountingTaskWithNilAction_leavesRowUntouched() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var c = makeTask("cnt", type: .counting)
+        c.title = "Read 10 pages"; c.maxCount = 10; c.unit = "pages"; c.action = nil
+        try db.write { conn in try c.insert(conn) }
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .and, children: [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: c)])),
+            now: now
+        )
+        let stored = try db.read { try Task.fetchOne($0, key: c.id) }
+        XCTAssertEqual(stored?.version, 1, "nil action vs the editor's \"\" is not a change")
+        XCTAssertEqual(stored?.updatedAt, c.updatedAt)
+        XCTAssertNil(stored?.action)
+        XCTAssertTrue(try db.fetchPendingSyncItems().filter { $0.entityType == "tasks" && $0.entityId == c.id }.isEmpty)
+        XCTAssertEqual(try liveLinks(db, parent: f.p.id).map(\.childTaskId), [f.a.id, f.b.id, c.id])
+    }
+
     func test_editCompound_linksNestedCompoundWithoutLoop() throws {
         let db = try makeDb(); let f = try compoundFixture(db)
         var n = makeTask("n", type: .compound); n.operatorType = .and
@@ -639,8 +659,9 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         let w = makeTask("w", type: .achievement)
         var d = makeTask("d"); d.isDeleted = true
         var loopy = makeTask("loopy", type: .compound); loopy.operatorType = .and
+        var goalLess = makeTask("gl", type: .counting); goalLess.isCounter = true
         try db.write { conn in
-            try w.insert(conn); try d.insert(conn); try loopy.insert(conn)
+            try w.insert(conn); try d.insert(conn); try loopy.insert(conn); try goalLess.insert(conn)
             try makeLink(id: "l-loop", parent: "loopy", child: "p", index: 0).insert(conn)
         }
         var dupRow = ChildPatch(from: l); dupRow.id = "dup-row"
@@ -653,6 +674,8 @@ final class AppDatabaseTaskEditTests: XCTestCase {
              "Achievements can’t be sub-tasks."),
             ("deleted", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: d)],
              "That task was deleted."),
+            ("goal-less counter", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: goalLess)],
+             "Counters without a goal can’t be sub-tasks."),
             ("loop", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: loopy)],
              "That would create a loop — it already contains this compound."),
         ]

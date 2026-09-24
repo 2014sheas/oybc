@@ -16,18 +16,22 @@ import Foundation
 /// the browsable-tasks filter, not here.
 enum CompoundChildEligibility {
 
-    /// The five user-facing refusal messages (byte-identical on web).
+    /// The six user-facing refusal messages (byte-identical on web).
     enum Message {
         static let selfContainment = "A compound can’t contain itself."
         static let duplicate = "That task is already a sub-task here."
         static let achievement = "Achievements can’t be sub-tasks."
         static let deleted = "That task was deleted."
+        static let goalLessCounter = "Counters without a goal can’t be sub-tasks."
         static let loop = "That would create a loop — it already contains this compound."
     }
 
     /// Returns nil when `candidate` may be linked under `parentId`, else the
     /// user-facing reason. Checks run in this order: self, duplicate,
-    /// achievement, deleted, loop — the first failing check wins.
+    /// achievement, deleted, goal-less counter, loop — the first failing
+    /// check wins. The goal-less check mirrors the
+    /// `BrowsableTasks.isGoalLessCounter` write guard every other
+    /// compound-child write enforces.
     ///
     /// - Parameters:
     ///   - parentId: The compound the candidate would be linked under.
@@ -47,6 +51,7 @@ enum CompoundChildEligibility {
         if currentChildIds.contains(candidate.id) { return Message.duplicate }
         if candidate.type == .achievement { return Message.achievement }
         if candidate.isDeleted { return Message.deleted }
+        if BrowsableTasks.isGoalLessCounter(candidate) { return Message.goalLessCounter }
         // A loop closes iff the candidate already (transitively) contains the parent.
         if DerivationPass.findTransitiveParentCompounds(changedTaskId: parentId, children: allLinks)
             .contains(candidate.id) {

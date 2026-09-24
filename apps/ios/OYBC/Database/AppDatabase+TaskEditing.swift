@@ -75,9 +75,9 @@ extension AppDatabase {
     /// required count is rejected first, then the re-target is cycle-checked.
     ///
     /// Compound structure: when `patch.compound` is non-nil and the task is a
-    /// Compound, the structure (operator / threshold / sub-tasks) is validated
-    /// first — then every newly linked existing task through
-    /// `compoundLinkProblem` — and refused with
+    /// Compound, every newly linked existing task is checked through
+    /// `compoundLinkProblem`, then the structure (operator / threshold /
+    /// sub-tasks) is validated; either is refused with
     /// `TaskEditError.invalid(message:)` BEFORE any write. On success the
     /// structure's title wins over the basic title, the basic description
     /// rides along, the parent gets ONE version bump + ONE
@@ -107,12 +107,14 @@ extension AppDatabase {
             Self.applyBasicFields(of: patch, to: &task)
 
             if task.type == .compound, let structure = patch.compound {
-                if let problem = structure.validate(type: .compound) {
+                // Link eligibility first: a library task picked as a new
+                // sub-task that can never be one (self / duplicate /
+                // achievement / deleted / goal-less counter / loop) gets its
+                // specific reason, not validate's generic "needs a goal".
+                if let problem = try Self.compoundLinkProblem(db: db, parentId: task.id, patch: structure) {
                     throw TaskEditError.invalid(message: problem)
                 }
-                // A library task picked as a new sub-task must be eligible
-                // (not self / duplicate / achievement / deleted / a loop).
-                if let problem = try Self.compoundLinkProblem(db: db, parentId: task.id, patch: structure) {
+                if let problem = structure.validate(type: .compound) {
                     throw TaskEditError.invalid(message: problem)
                 }
                 // title, operatorType, clamped threshold (nil unless M-of-N)
