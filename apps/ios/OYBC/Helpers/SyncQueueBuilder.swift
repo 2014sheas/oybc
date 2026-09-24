@@ -26,13 +26,16 @@ enum SyncQueueBuilder {
     /// Constructs a `SyncQueueItem` with `status = .pending` for the
     /// given entity operation. The caller is responsible for saving
     /// the returned item inside the same transaction as the write it
-    /// describes.
+    /// describes. `ownerUid` defaults to the live signed-in uid; sync-internal
+    /// callers (pull/heal) pass the uid the loop runs for instead
+    /// (docs/GUEST_MODE.md §Collision).
     static func makeItem<T: Codable>(
         entityType: String,
         entityId: String,
         operationType: SyncOperationType,
         payload: T,
-        now: String
+        now: String,
+        ownerUid: String? = SyncQueueOwnership.currentUid()
     ) -> SyncQueueItem {
         SyncQueueItem(
             id: AppDatabase.generateUUID(),
@@ -46,7 +49,8 @@ enum SyncQueueBuilder {
             createdAt: now,
             lastAttemptAt: nil,
             completedAt: nil,
-            priority: 1
+            priority: 1,
+            ownerUid: ownerUid
         )
     }
 

@@ -371,7 +371,8 @@ async function applyRemoteUserDoc(
   // push loop already special-cases `entityType === 'users'` with its own
   // docRef, so a plain UPDATE enqueue drains through the same path.
   if (rowsGenuinelyDiffer(localSyncable!, remoteSyncable)) {
-    await addToSyncQueue('users', userId, SyncOperationType.UPDATE, localUser, 0);
+    // Owned by the pull's uid, not the live one (docs/GUEST_MODE.md §Collision).
+    await addToSyncQueue('users', userId, SyncOperationType.UPDATE, localUser, 0, { ownerUid: userId });
   }
   return null; // local-wins → re-enqueued (if it differs) so it re-asserts
 }

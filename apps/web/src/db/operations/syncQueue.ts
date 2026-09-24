@@ -1,3 +1,4 @@
+import Dexie from 'dexie';
 import { db } from '../internal';
 import type { SyncQueueItem } from '@oybc/shared';
 import {
@@ -31,6 +32,57 @@ let currentOwnerUid: () => string | null = () => null;
  */
 export function setSyncQueueOwnerProvider(provider: () => string | null): void {
   currentOwnerUid = provider;
+}
+
+/** Expando key carrying a sync-owned transaction's owner uid (see below). */
+const TX_OWNER_KEY = '__oybcSyncQueueOwnerUid';
+
+/**
+ * Mark the CURRENT Dexie transaction as sync-owned by `ownerUid`: every
+ * `addToSyncQueue` reached inside it — including the ones buried in shared
+ * cascade helpers (`runBoardCascadeForTask(s)`, sealing re-derive, …) and in
+ * nested sub-transactions — stamps `ownerUid` instead of the live auth uid.
+ *
+ * Why (docs/GUEST_MODE.md §Collision): a pull runs FOR one uid, but the live
+ * auth uid can flip mid-pull (the guest-collision switch). An anon snapshot
+ * applied after the switch must re-enqueue as anon-owned — so the real
+ * account's push drops it — never as the real uid. Dexie's zone tracking
+ * carries `Dexie.currentTransaction` across awaits inside the transaction, so
+ * this scopes to exactly the pull's writes and never leaks into a concurrent
+ * user write (which runs in its own transaction and keeps the live uid).
+ *
+ * @param ownerUid - The uid the sync loop / pull is running for.
+ * @throws Error when called outside a Dexie transaction.
+ */
+export function stampTransactionSyncOwner(ownerUid: string): void {
+  const tx = Dexie.currentTransaction as unknown as Record<string, unknown> | null;
+  if (!tx) throw new Error('stampTransactionSyncOwner must run inside a Dexie transaction');
+  tx[TX_OWNER_KEY] = ownerUid;
+}
+
+/**
+ * The owner stamped on the current Dexie transaction or any ancestor of it
+ * (sub-transactions are distinct objects linked by `parent`), if any.
+ */
+function ambientTransactionSyncOwner(): string | undefined {
+  type OwnedTx = Record<string, unknown> & { parent?: OwnedTx | null };
+  let tx = Dexie.currentTransaction as unknown as OwnedTx | null;
+  while (tx) {
+    const owner = tx[TX_OWNER_KEY];
+    if (typeof owner === 'string') return owner;
+    tx = tx.parent ?? null;
+  }
+  return undefined;
+}
+
+/** Options for {@link addToSyncQueue}. */
+export interface AddToSyncQueueOptions {
+  /**
+   * Explicit owner stamp. Sync-internal enqueues (pull re-asserts, heal mints)
+   * pass the uid the loop is running for; omit it for user writes, which take
+   * the ambient sync-owned transaction's owner or else the live auth uid.
+   */
+  ownerUid?: string | null;
 }
 
 /**
@@ -181,7 +233,8 @@ export async function addToSyncQueue(
   entityId: string,
   operationType: SyncOperationType,
   payload: unknown,
-  priority: number = 0
+  priority: number = 0,
+  options: AddToSyncQueueOptions = {}
 ): Promise<void> {
   // Skip sync queue for playground data — prevents cross-user pollution.
   // Gated behind DEV so a production build can never silently swallow a
@@ -193,7 +246,12 @@ export async function addToSyncQueue(
 
   // Stamp the owner at enqueue time (docs/GUEST_MODE.md §Collision): the
   // push path drops rows owned by another uid instead of pushing them.
-  const ownerUid = currentOwnerUid();
+  // Precedence: explicit option → a sync-owned transaction's owner (read here,
+  // before the nested transaction below) → the live auth uid.
+  const ownerUid =
+    options.ownerUid !== undefined
+      ? options.ownerUid
+      : ambientTransactionSyncOwner() ?? currentOwnerUid();
 
   await db.transaction('rw', [db.syncQueue], async () => {
     // Coalesce against an existing PENDING row for the same entity. There is
