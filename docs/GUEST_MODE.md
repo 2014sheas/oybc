@@ -104,7 +104,12 @@ never on the wire; iOS GRDB v33, web Dexie field, shared `SyncQueueItem.ownerUid
 `dropForeignOwnedSyncItems` (web `db/operations/syncQueue.ts`; iOS
 `AppDatabase+Sync.swift`) before its per-item loop: an item owned by another uid
 is **deleted from the queue with a log line, never pushed** (it can never become
-valid for this account). Legacy rows with a null owner push as before, and
+valid for this account). Sync-internal enqueues (pull local-wins
+re-asserts, pull cascades, the heal-on-pull mint) are stamped with the uid the
+**pull runs for**, not the live auth uid — an anon snapshot applied after the
+switch stays anon-owned (web: explicit `{ ownerUid }` on `addToSyncQueue` plus
+`stampTransactionSyncOwner` on the pull transactions so shared cascade helpers
+inherit it; iOS: explicit `ownerUid` at every pull enqueue site). Legacy rows with a null owner push as before, and
 coalescing only merges rows of the same owner (a legacy row is adopted and
 re-stamped), so a new account's edit is never folded into a doomed guest row. The
 predicates are pinned in `@oybc/shared` `syncQueueOwnership.ts` ↔
