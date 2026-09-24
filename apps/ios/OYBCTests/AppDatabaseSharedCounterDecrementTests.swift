@@ -446,4 +446,116 @@ final class AppDatabaseSharedCounterDecrementTests: XCTestCase {
             "Must throw when a derived (linked) task id is passed instead of the source"
         )
     }
+
+    // MARK: - Propagation freeze (audit 2026-09-23 finding #1)
+
+    // Twin of web `sharedCounterPropagationFreeze.test.ts`. A window-stamped
+    // derived row whose window has ENDED is skipped by increment / decrement /
+    // undo: no authored write, no enqueue, no cascade, not credited. The
+    // in-window row and a hub-linked row (no startDate → never frozen)
+    // propagate as before. Dates sit far in the past / future so the real
+    // clock `currentTimestamp()` reads can't flip a verdict.
+
+    private let freezeLive = "derived-live"
+    private let freezeEnded = "derived-ended"
+    private let freezeHub = "hub-linked"
+    private let freezeBoardLive = "board-live"
+    private let freezeBoardEnded = "board-ended"
+
+    private func seedFreezeFixture(_ db: AppDatabase) throws {
+        try seedUser(db)
+        try db.saveTask(makeSourceTask(id: "root-f", currentCount: 2, maxCount: 100))
+
+        func derived(_ id: String, start: String?, end: String?, wizard: Bool) -> Task {
+            var t = makeLinkedTask(id: id, sourceId: "root-f", baseline: 0, maxCount: 3)
+            t.currentCount = 2
+            t.version = 4
+            t.startDate = start
+            t.endDate = end
+            t.createdInWizard = wizard
+            return t
+        }
+        try db.saveTask(derived(freezeLive, start: "2020-01-01T00:00:00.000Z", end: "2099-12-31T23:59:59.999Z", wizard: true))
+        try db.saveTask(derived(freezeEnded, start: "2020-01-01T00:00:00.000Z", end: "2020-01-07T23:59:59.999Z", wizard: true))
+        try db.saveTask(derived(freezeHub, start: nil, end: "2020-01-07T23:59:59.999Z", wizard: false))
+
+        try db.saveBoard(makeBoard(id: freezeBoardLive, name: "Live"))
+        // Unsealed + ACTIVE past-window board: still frozen (fan-out bound).
+        try db.saveBoard(makeBoard(id: freezeBoardEnded, name: "Ended"))
+        try db.saveBoardTask(makeBoardTask(boardId: freezeBoardLive, taskId: freezeLive))
+        try db.saveBoardTask(makeBoardTask(boardId: freezeBoardEnded, taskId: freezeEnded))
+    }
+
+    private func queuedIds(_ db: AppDatabase, _ entityType: String) throws -> [String] {
+        try db.read { try SyncQueueItem.fetchAll($0) }
+            .filter { $0.entityType == entityType }
+            .map(\.entityId)
+    }
+
+    private func assertEndedUntouched(_ db: AppDatabase, file: StaticString = #filePath, line: UInt = #line) throws {
+        let ended = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: freezeEnded) })
+        XCTAssertEqual(ended.version, 4, "ended row must not get an authored write", file: file, line: line)
+        XCTAssertEqual(ended.currentCount, 2, file: file, line: line)
+        XCTAssertFalse(ended.isCompleted, file: file, line: line)
+        XCTAssertNil(ended.completedAt, file: file, line: line)
+        XCTAssertFalse(try queuedIds(db, "tasks").contains(freezeEnded), "ended row must not be enqueued", file: file, line: line)
+        let board = try XCTUnwrap(try db.read { try Board.fetchOne($0, key: freezeBoardEnded) })
+        XCTAssertEqual(board.version, 1, "ended row's board must not be cascaded", file: file, line: line)
+        XCTAssertFalse(try queuedIds(db, "boards").contains(freezeBoardEnded), file: file, line: line)
+    }
+
+    func test_freeze_increment_skipsEndedRow_propagatesLiveAndHub() throws {
+        let db = try makeDb()
+        try seedFreezeFixture(db)
+
+        let result = try db.incrementSharedCounter(sourceTaskId: "root-f", by: 1)
+
+        let live = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: freezeLive) })
+        XCTAssertEqual(live.version, 5)
+        XCTAssertEqual(live.currentCount, 3)
+        XCTAssertTrue(live.isCompleted)
+        XCTAssertNotNil(live.completedAt)
+        let hub = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: freezeHub) })
+        XCTAssertEqual(hub.version, 5)
+        XCTAssertEqual(hub.currentCount, 3)
+
+        let queued = try queuedIds(db, "tasks")
+        XCTAssertTrue(queued.contains("root-f"))
+        XCTAssertTrue(queued.contains(freezeLive))
+        XCTAssertTrue(queued.contains(freezeHub))
+        try assertEndedUntouched(db)
+
+        XCTAssertEqual(result.affectedBoards.map(\.boardId), [freezeBoardLive])
+        let liveBoard = try XCTUnwrap(try db.read { try Board.fetchOne($0, key: freezeBoardLive) })
+        XCTAssertEqual(liveBoard.version, 2, "live board must be cascaded")
+    }
+
+    func test_freeze_decrement_skipsEndedRow() throws {
+        let db = try makeDb()
+        try seedFreezeFixture(db)
+
+        let result = try db.decrementSharedCounter(sourceTaskId: "root-f", by: 1)
+
+        XCTAssertEqual(result.effectiveDelta, 1)
+        let live = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: freezeLive) })
+        XCTAssertEqual(live.version, 5)
+        XCTAssertEqual(live.currentCount, 1)
+        try assertEndedUntouched(db)
+        XCTAssertEqual(result.affectedBoards.map(\.boardId), [freezeBoardLive])
+    }
+
+    func test_freeze_undo_skipsEndedRow() throws {
+        let db = try makeDb()
+        try seedFreezeFixture(db)
+
+        _ = try db.incrementSharedCounter(sourceTaskId: "root-f", by: 1)
+        let result = try db.undoLastCounterLog(sourceTaskId: "root-f")
+
+        XCTAssertEqual(result.undoneAmount, 1)
+        let live = try XCTUnwrap(try db.read { try Task.fetchOne($0, key: freezeLive) })
+        XCTAssertEqual(live.version, 6)
+        XCTAssertEqual(live.currentCount, 2)
+        try assertEndedUntouched(db)
+        XCTAssertEqual(result.affectedBoards.map(\.boardId), [freezeBoardLive])
+    }
 }

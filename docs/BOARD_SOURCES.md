@@ -680,8 +680,10 @@ Both platforms, one PR (#491).
   no longer read for it — propagation stamped that latch from ANY later
   increment, so a past window's cell went green from a later window and
   sealed re-derivation diverged across devices. Propagation to a row whose
-  window has ended freezes (no authored write, no enqueue, no cascade),
-  which bounds the per-increment fan-out; a changed root id now reaches the
+  window has ended freezes (no authored write, no enqueue, no cascade — the
+  shared `isFrozenDerivedRow(row, now)` predicate + Swift twin, vector-pinned
+  in `memberRuleVectors.json`; `endDate` inclusive), which bounds the
+  per-increment fan-out; a changed root id now reaches the
   sealed boards that place its window-stamped rows, so a late in-window root
   event converges every device's sealed snapshot. Hub-linked derived rows
   (no `startDate`) keep the latch carve-out unchanged. Canonical:

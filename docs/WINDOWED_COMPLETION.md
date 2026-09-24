@@ -223,7 +223,16 @@ Carve-out items 1–3 still hold for window-stamped rows: they own no events,
 local root writes and in the pull sub-step after
 `recomputeTaskCachesFromPull(rootId)` — `refreshDerivedBaselines` is
 unchanged). The kernel does not read `baseline`; propagation to a row whose
-window has ended is frozen (the fan-out bound, same PR train). **Known
+window has ended is frozen — `isFrozenDerivedRow(row, now)` (shared
+`memberRules.ts` ↔ `BoardSources.isFrozenDerivedRow`, pinned by the
+`frozenDerivedRow` vectors in `memberRuleVectors.json`): a window-stamped row
+with `now` strictly after its `endDate` (inclusive, `isWithinTimeframe`
+convention) gets no authored write, no enqueue, no cascade and no credit on
+increment / decrement / undo; no-`endDate`, hub-linked and in-window rows
+propagate as before, and `refreshDerivedBaselines` still refreshes a frozen
+row's non-authored `baseline`. The web ops run ONE batched
+`runBoardCascadeForTasks` over the root + unfrozen rows (iOS already batched
+via `runSharedCounterCascade`). **Known
 follow-up:** the displayed count (`deriveDisplayedCount(baseline, root
 count)`) is still baseline math, so a frozen row shows its count at freeze
 time — a late-synced in-window event changes the cell's completion (kernel)

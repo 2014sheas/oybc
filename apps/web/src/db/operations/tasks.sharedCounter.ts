@@ -6,22 +6,122 @@ import {
   BoardStatus,
   SyncOperationType,
   TaskType,
+  isFrozenDerivedRow,
   propagateIncrement,
   selectLastIncrementEntry,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { runBoardCascadeForTask } from './orchestration';
+import { runBoardCascadeForTasks } from './orchestration';
 import { insertIncrementEventRaw } from './taskEvents';
 import { refreshDerivedBaselines } from './derivedCounters';
+
+/** Resolved board reference returned by the shared-counter engine. */
+export interface AffectedBoard {
+  boardId: string;
+  boardName: string;
+}
+
+/**
+ * Shared tail of increment / decrement / undo: re-derive every LIVE linked
+ * row of `sourceTaskId` from `newSourceCount`, write + enqueue each as an
+ * authored update, collect the ACTIVE boards to credit, and run ONE batched
+ * board cascade for the source plus those rows.
+ *
+ * Propagation freeze (docs/WINDOWED_COMPLETION.md §Derived-task carve-out,
+ * docs/BOARD_SOURCES.md §Plan B2 notes): a window-stamped derived row whose
+ * window has ended (`isFrozenDerivedRow`) is skipped entirely — no authored
+ * write, no enqueue, no cascade, not credited. The kernel resolves such rows
+ * from the root's in-window events, so skipping them cannot change board
+ * completion; it bounds each "+1" to the rows whose windows are still open.
+ * Hub-linked rows (no `startDate`), indefinite rows and in-window rows
+ * propagate as before.
+ *
+ * Must run inside the caller's `rw` transaction covering `tasks`,
+ * `taskEvents`, `boards`, `boardTasks`, `compoundChildren` and `syncQueue`.
+ *
+ * @param sourceTaskId   The shared-counter root whose count just changed.
+ * @param newSourceCount The root's `currentCount` after the change.
+ * @param now            The operation's ISO8601 timestamp (also the freeze clock).
+ * @returns The live ACTIVE boards placing the source or an unfrozen linked row,
+ *   read BEFORE the cascade rewrites board status.
+ */
+async function propagateToLinkedRows(
+  sourceTaskId: string,
+  newSourceCount: number,
+  now: string,
+): Promise<AffectedBoard[]> {
+  // Indexed read (the `sharedCounterId` index exists since Dexie v11), then
+  // drop tombstones and rows whose window has ended.
+  const linkedTasks = await db.tasks
+    .where('sharedCounterId')
+    .equals(sourceTaskId)
+    .filter((t) => !t.isDeleted && !isFrozenDerivedRow(t, now))
+    .toArray();
+
+  const propagationResults = propagateIncrement(
+    { currentCount: newSourceCount },
+    linkedTasks.map((t) => ({
+      id: t.id,
+      baseline: t.baseline,
+      maxCount: t.maxCount,
+      isCompleted: t.isCompleted,
+    })),
+  );
+
+  for (const result of propagationResults) {
+    const linkedTask = linkedTasks.find((t) => t.id === result.taskId);
+    if (!linkedTask) continue;
+
+    const wasCompleted = linkedTask.isCompleted;
+    const nowCompleted = result.newIsCompleted; // one-way latch applied by propagateIncrement
+
+    const linkedPatch: Partial<Task> = {
+      currentCount: result.newCurrentCount,
+      isCompleted: nowCompleted,
+      completedAt: !wasCompleted && nowCompleted ? now : linkedTask.completedAt,
+      updatedAt: now,
+      version: (linkedTask.version ?? 0) + 1,
+    };
+    await db.tasks.update(result.taskId, linkedPatch);
+    const savedLinked = await db.tasks.get(result.taskId);
+    if (savedLinked) {
+      await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
+    }
+  }
+
+  // Collect ACTIVE boards containing the source + any UNFROZEN linked task
+  // BEFORE the cascade rewrites board stats/status — the "also counted" toast set.
+  const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
+  const placements = await db.boardTasks
+    .where('taskId').anyOf(allChangedTaskIds)
+    .filter((bt) => !bt.isDeleted)
+    .toArray();
+  const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
+  const boardRows = uniqueBoardIds.length > 0
+    ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
+    : [];
+  const affectedBoards: AffectedBoard[] = boardRows
+    .filter((b) => !b.isDeleted && b.status === BoardStatus.ACTIVE)
+    .map((b) => ({ boardId: b.id, boardName: b.name }));
+
+  // ONE batched cascade: lookups + window context built once, each affected
+  // board recomputed once (it reads the rows written above, same transaction).
+  // Its per-board result map is not needed — credit comes from the pre-read above.
+  await runBoardCascadeForTasks(allChangedTaskIds);
+
+  return affectedBoards;
+}
 
 /**
  * Phase 3 — Shared Counters increment hot-path.
  *
  * Increments the source task's `currentCount` by `by` (default 1), then
- * re-derives every linked task (tasks where `sharedCounterId === sourceTaskId`
- * and `!isDeleted`) and runs the board derivation cascade for the source AND
- * every linked task — all inside one Dexie transaction.
+ * re-derives every live linked task (tasks where `sharedCounterId === sourceTaskId`,
+ * `!isDeleted`, and not a window-stamped derived row whose window has ended —
+ * see {@link propagateToLinkedRows}) and runs ONE batched board derivation
+ * cascade for the source AND those linked tasks — all inside one Dexie
+ * transaction.
  *
  * Invariants enforced:
  *   - NO HIGH-END CLAMP on the source's `currentCount`. Overshoot is intentional.
@@ -39,12 +139,6 @@ import { refreshDerivedBaselines } from './derivedCounters';
  *   is the shared accumulator.
  * @param by - Amount to increment (default 1). Must be a positive integer.
  */
-/** Resolved board reference returned by the shared-counter engine. */
-export interface AffectedBoard {
-  boardId: string;
-  boardName: string;
-}
-
 export async function incrementSharedCounter(
   sourceTaskId: string,
   by = 1,
@@ -116,67 +210,9 @@ export async function incrementSharedCounter(
       // passing one would mean adding the very read it saves.)
       await refreshDerivedBaselines(sourceTaskId);
 
-      // 3. Find all linked (derived) tasks for this source.
-      const linkedTasks = await db.tasks
-        .filter((t) => !t.isDeleted && t.sharedCounterId === sourceTaskId)
-        .toArray();
-
-      // 4. Compute propagation results using the pure shared helper.
-      const propagationResults = propagateIncrement(
-        { currentCount: newSourceCount },
-        linkedTasks.map((t) => ({
-          id: t.id,
-          baseline: t.baseline,
-          maxCount: t.maxCount,
-          isCompleted: t.isCompleted,
-        })),
-      );
-
-      // 5. Write each linked task's new state + enqueue its sync entry.
-      for (const result of propagationResults) {
-        const linkedTask = linkedTasks.find((t) => t.id === result.taskId);
-        if (!linkedTask) continue;
-
-        const wasCompleted = linkedTask.isCompleted;
-        const nowCompleted = result.newIsCompleted;
-
-        const linkedPatch: Partial<Task> = {
-          currentCount: result.newCurrentCount,
-          isCompleted: nowCompleted,
-          completedAt: !wasCompleted && nowCompleted ? now : linkedTask.completedAt,
-          updatedAt: now,
-          version: (linkedTask.version ?? 0) + 1,
-        };
-        await db.tasks.update(result.taskId, linkedPatch);
-        const savedLinked = await db.tasks.get(result.taskId);
-        if (savedLinked) {
-          await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
-        }
-      }
-
-      // 6. Collect ACTIVE boards containing the source + any linked task BEFORE the
-      //    cascade rewrites board stats/status. This is the set used for the credited
-      //    toast — the boards that "also counted" this increment.
-      const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
-      const placements = await db.boardTasks
-        .where('taskId').anyOf(allChangedTaskIds)
-        .filter((bt) => !bt.isDeleted)
-        .toArray();
-      const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
-      const boardRows = uniqueBoardIds.length > 0
-        ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
-        : [];
-      const affectedBoards: AffectedBoard[] = boardRows
-        .filter((b) => !b.isDeleted && b.status === BoardStatus.ACTIVE)
-        .map((b) => ({ boardId: b.id, boardName: b.name }));
-
-      // 7. Run the board derivation cascade for the source AND each linked task.
-      // The cascade reads from the already-updated task rows (same transaction),
-      // so board stats, bingo lines, and completion flags are all recomputed
-      // with the fresh counts in one pass.
-      for (const taskId of allChangedTaskIds) {
-        await runBoardCascadeForTask(taskId);
-      }
+      // 3–7. Propagate to the live linked rows, collect credited boards, and
+      // run ONE batched board cascade (see `propagateToLinkedRows`).
+      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now);
 
       return { affectedBoards };
     },
@@ -272,64 +308,10 @@ export async function decrementSharedCounter(
       // passing one would mean adding the very read it saves.)
       await refreshDerivedBaselines(sourceTaskId);
 
-      // 4. Find all linked (derived) tasks for this source.
-      const linkedTasks = await db.tasks
-        .filter((t) => !t.isDeleted && t.sharedCounterId === sourceTaskId)
-        .toArray();
-
-      // 5. Propagate via the same pure helper (works for both inc and dec — it
-      //    simply re-derives from the new sourceCount, and the one-way latch is
-      //    enforced by wasCompleted || derivedCompleted).
-      const propagationResults = propagateIncrement(
-        { currentCount: newSourceCount },
-        linkedTasks.map((t) => ({
-          id: t.id,
-          baseline: t.baseline,
-          maxCount: t.maxCount,
-          isCompleted: t.isCompleted,
-        })),
-      );
-
-      // 6. Write each linked task's new state + enqueue sync.
-      for (const result of propagationResults) {
-        const linkedTask = linkedTasks.find((t) => t.id === result.taskId);
-        if (!linkedTask) continue;
-
-        const wasCompleted = linkedTask.isCompleted;
-        const nowCompleted = result.newIsCompleted; // one-way latch already applied by propagateIncrement
-
-        const linkedPatch: Partial<Task> = {
-          currentCount: result.newCurrentCount,
-          isCompleted: nowCompleted,
-          completedAt: !wasCompleted && nowCompleted ? now : linkedTask.completedAt,
-          updatedAt: now,
-          version: (linkedTask.version ?? 0) + 1,
-        };
-        await db.tasks.update(result.taskId, linkedPatch);
-        const savedLinked = await db.tasks.get(result.taskId);
-        if (savedLinked) {
-          await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
-        }
-      }
-
-      // 7. Collect ACTIVE boards BEFORE the cascade.
-      const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
-      const placements = await db.boardTasks
-        .where('taskId').anyOf(allChangedTaskIds)
-        .filter((bt) => !bt.isDeleted)
-        .toArray();
-      const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
-      const boardRows = uniqueBoardIds.length > 0
-        ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
-        : [];
-      const affectedBoards: AffectedBoard[] = boardRows
-        .filter((b) => !b.isDeleted && b.status === BoardStatus.ACTIVE)
-        .map((b) => ({ boardId: b.id, boardName: b.name }));
-
-      // 8. Run the board derivation cascade.
-      for (const taskId of allChangedTaskIds) {
-        await runBoardCascadeForTask(taskId);
-      }
+      // 4–8. Propagate (same pure helper as increment — it re-derives from the
+      // new source count and ORs in the one-way latch, so decrement never
+      // un-completes), collect credited boards, run ONE batched cascade.
+      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now);
 
       return { affectedBoards, effectiveDelta: eff };
     },
@@ -377,8 +359,8 @@ export interface UndoCounterLogResult {
  *   4. ONE-WAY COMPLETION LATCH preserved, matching increment/decrement:
  *      undo does not un-complete an already-completed source. (Undo is a
  *      narrow reversal of the ledger entry, not a full re-derivation.)
- *   5. Propagate to linked tasks via `propagateIncrement` and re-run the
- *      board derivation cascade for the source + every linked task, exactly
+ *   5. Propagate to live linked tasks via `propagateIncrement` and run ONE
+ *      batched board cascade for the source + those linked tasks, exactly
  *      like increment/decrement.
  *
  * No-op (returns `{ affectedBoards: [], undoneAmount: 0 }`) when the source
@@ -470,61 +452,9 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
         events.map((e) => (e.id === entry.id ? { ...e, isDeleted: true } : e)),
       );
 
-      // 6. Find all linked (derived) tasks and propagate, exactly like
-      //    increment/decrement.
-      const linkedTasks = await db.tasks
-        .filter((t) => !t.isDeleted && t.sharedCounterId === sourceTaskId)
-        .toArray();
-
-      const propagationResults = propagateIncrement(
-        { currentCount: newSourceCount },
-        linkedTasks.map((t) => ({
-          id: t.id,
-          baseline: t.baseline,
-          maxCount: t.maxCount,
-          isCompleted: t.isCompleted,
-        })),
-      );
-
-      for (const result of propagationResults) {
-        const linkedTask = linkedTasks.find((t) => t.id === result.taskId);
-        if (!linkedTask) continue;
-
-        const wasCompleted = linkedTask.isCompleted;
-        const nowCompleted = result.newIsCompleted;
-
-        const linkedPatch: Partial<Task> = {
-          currentCount: result.newCurrentCount,
-          isCompleted: nowCompleted,
-          completedAt: !wasCompleted && nowCompleted ? now : linkedTask.completedAt,
-          updatedAt: now,
-          version: (linkedTask.version ?? 0) + 1,
-        };
-        await db.tasks.update(result.taskId, linkedPatch);
-        const savedLinked = await db.tasks.get(result.taskId);
-        if (savedLinked) {
-          await addToSyncQueue('tasks', result.taskId, SyncOperationType.UPDATE, savedLinked, 0);
-        }
-      }
-
-      // 7. Collect affected ACTIVE boards BEFORE the cascade rewrites stats.
-      const allChangedTaskIds = [sourceTaskId, ...linkedTasks.map((t) => t.id)];
-      const placements = await db.boardTasks
-        .where('taskId').anyOf(allChangedTaskIds)
-        .filter((bt) => !bt.isDeleted)
-        .toArray();
-      const uniqueBoardIds = [...new Set(placements.map((p) => p.boardId))];
-      const boardRows = uniqueBoardIds.length > 0
-        ? await db.boards.where('id').anyOf(uniqueBoardIds).toArray()
-        : [];
-      const affectedBoards: AffectedBoard[] = boardRows
-        .filter((b) => !b.isDeleted && b.status === BoardStatus.ACTIVE)
-        .map((b) => ({ boardId: b.id, boardName: b.name }));
-
-      // 8. Run the board derivation cascade for the source + every linked task.
-      for (const taskId of allChangedTaskIds) {
-        await runBoardCascadeForTask(taskId);
-      }
+      // 6–8. Propagate to the live linked rows exactly like
+      // increment/decrement, then run ONE batched board cascade.
+      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now);
 
       return { affectedBoards, undoneAmount: Math.abs(entryDelta) };
     },

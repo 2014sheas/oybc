@@ -150,10 +150,40 @@ extension AppDatabase {
         return creditBoards
     }
 
+    /// The linked rows a shared-counter increment / decrement / undo must
+    /// propagate to: every live row with `sharedCounterId == sourceTaskId`
+    /// (served by the v32 `idx_tasks_shared_counter` index) EXCEPT a
+    /// window-stamped derived row whose window has ended
+    /// (`BoardSources.isFrozenDerivedRow`) — the propagation freeze
+    /// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out,
+    /// docs/BOARD_SOURCES.md §Plan B2 notes). A frozen row gets no authored
+    /// write, no enqueue and no cascade, and is not credited; the kernel
+    /// resolves it from the root's in-window events, so skipping it cannot
+    /// change board completion. Hub-linked, indefinite and in-window rows
+    /// propagate as before. Twin of the web `propagateToLinkedRows` read.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's write-transaction database.
+    ///   - sourceTaskId: The shared-counter root.
+    ///   - now: The operation's ISO8601 timestamp (also the freeze clock).
+    /// - Returns: The linked rows to write, enqueue and cascade.
+    private static func fetchPropagatingLinkedTasks(
+        db: Database,
+        sourceTaskId: String,
+        now: String
+    ) throws -> [Task] {
+        try Task
+            .filter(Column("sharedCounterId") == sourceTaskId)
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+            .filter { !BoardSources.isFrozenDerivedRow($0, now: now) }
+    }
+
     /// Increment the shared-counter source task's `currentCount` by `by` (default 1),
-    /// then re-derive every linked task (tasks where `sharedCounterId == sourceTaskId`
-    /// and `!isDeleted`) and run the board derivation cascade for the source AND
-    /// every linked task — all inside a single GRDB write transaction.
+    /// then re-derive every live linked task (tasks where `sharedCounterId == sourceTaskId`,
+    /// `!isDeleted`, and not a window-stamped derived row whose window has ended —
+    /// see `fetchPropagatingLinkedTasks`) and run the board derivation cascade for
+    /// the source AND those linked tasks — all inside a single GRDB write transaction.
     ///
     /// Invariants enforced:
     ///   - NO HIGH-END CLAMP on the source `currentCount`. Overshoot is intentional.
@@ -260,10 +290,7 @@ extension AppDatabase {
             try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
 
             // 3. Fetch all linked (derived) tasks for this source.
-            let linkedTasks = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId)
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
+            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
 
             // 4. Re-derive each linked task via the shared propagation helper
             //    (mirrors `propagateIncrement` in sharedCounter.ts). The helper
@@ -401,10 +428,7 @@ extension AppDatabase {
             try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
 
             // 3. Fetch all linked (derived) tasks for this source.
-            let linkedTasks = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId)
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
+            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
 
             // 4. Re-derive each linked task via the shared propagation helper
             //    (same fan-out as increment; mirrors `propagateIncrement` in
@@ -600,10 +624,7 @@ extension AppDatabase {
 
             // 6. Find all linked (derived) tasks and propagate, exactly like
             //    increment/decrement.
-            let linkedTasks = try Task
-                .filter(Column("sharedCounterId") == sourceTaskId)
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
+            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
 
             let propagation = propagateIncrement(
                 sourceAfterCurrentCount: newSourceCount,
