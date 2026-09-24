@@ -52,6 +52,10 @@ enum PoolHealth {
     /// ranges, exclusions, the done-filter, Split-up expansion, counter
     /// families) plus the resolvable hand-added layer. Web twin:
     /// `PoolHealthTemplateSupply`.
+    ///
+    /// The size is resolved at READ time ("now", with the `.todo`
+    /// done-filter applied as of the read), so near a window boundary it can
+    /// differ from what the spawn itself resolves at its own window start.
     struct TemplateSupply {
         let template: RecurringBoardTemplate
         /// Distinct tasks the template's next spawn could deal from.

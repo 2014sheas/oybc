@@ -67,7 +67,10 @@ extension AppDatabase {
     /// board: the series-bound live instance via `fetchBoardSourceSupply` —
     /// with the done-filter and ranges deliberately NOT applied (a person
     /// deciding whether to edit/delete the task needs every board that could
-    /// deal it). Web twin: `fetchTemplatesReferencingTask`.
+    /// deal it) — by ruling, not omission. Split-up child tasks are NOT
+    /// listed: only the source's own supply counts, so a compound member's
+    /// parts (dealt via Split-up) don't list the board; the compound itself
+    /// does. Web twin: `fetchTemplatesReferencingTask`.
     ///
     /// This used to match `seedTaskIds`, a creation-time snapshot the
     /// template edit path leaves stale — so a task removed in an edit stayed

@@ -66,6 +66,10 @@ export interface PoolHealthResult {
  * `computeAchievablePoolSize` over every source (pool AND board kinds,
  * ranges, exclusions, the done-filter, Split-up expansion, counter
  * families) plus the resolvable hand-added layer.
+ *
+ * The size is resolved at READ time ("now", with the 'todo' done-filter
+ * applied as of the read), so near a window boundary it can differ from
+ * what the spawn itself resolves at its own window start.
  */
 export interface PoolHealthTemplateSupply {
   template: RecurringBoardTemplate;

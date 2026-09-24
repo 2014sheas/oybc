@@ -765,7 +765,10 @@ export type TemplateReferenceRecord = Pick<
  * `excludedTaskIds`). Ranges and the done-filter are deliberately ignored:
  * a `max: 3` source or a "Not done yet" board source can still deal the
  * task in some window, so the list over-includes rather than hides a
- * board that would be affected.
+ * board that would be affected. Ignoring ranges and the done-filter is a
+ * ruling, not an omission. Split-up child tasks are NOT listed: a board
+ * lists only the tasks in its sources' own supply, so a compound member's
+ * parts (dealt via Split-up) don't list the board; the compound itself does.
  *
  * The hand-added layer follows the resolvers' un-migrated rule: a record
  * with none of `sources` / `poolIds` / `manualTaskIds` / `removedTaskIds`
