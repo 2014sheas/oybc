@@ -169,7 +169,7 @@ xcodebuild … -only-testing:OYBCSnapshotTests test > /tmp/a.log 2>&1
 grep "' failed (" /tmp/a.log | sed -E "s/.*\.([A-Za-z]+ test[A-Za-z0-9_]+)\]' failed.*/\1/" | sort -u
 ```
 
-Compare sets, never counts — a matching count can still hide one new red cancelling one fixed. As of 2026-09-22 on `OS=26.3.1` the standing reds are `BoardEditCenterToggle` ×5, `CountersHub` ×2, `RisoDeleteConfirm` ×2, `RisoTasksTab` ×4 (ROADMAP A8 debt, baselines last written 2026-06 to 2026-09), plus the calendar-dependent reds below (`SyncSheet` ×4 and the `RisoEditBoard` pair).
+Compare sets, never counts — a matching count can still hide one new red cancelling one fixed. As of 2026-09-22 on `OS=26.3.1` the standing reds are `BoardEditCenterToggle` ×5, `CountersHub` ×4 (the `testHubPopulated` pair joined in #492/#494), `RisoDeleteConfirm` ×2, `RisoTasksTab` ×4 (ROADMAP A8 debt, baselines last written 2026-06 to 2026-09), plus the calendar-dependent reds below (`SyncSheet` ×4 and the `RisoEditBoard` pair).
 
 **Some reds are calendar-dependent false failures.** `SyncSheet` ×4: `Views/ProfileTab/SyncSheet.swift` formats its relative timestamps against the live `Date()` (`relativeTo: Date()`) while the tests pass a fixed date, so the rendered "… ago" text drifts with the wall clock — not A8 baseline debt. The 2026-09-23 audit cleanup PR injects `now:` and re-records them. Separately, `RisoEditBoardSnapshotTests.testFormWeeklyNone{Light,Dark}` pass a fixed `customStartDate`, but that only binds `.custom` — for `.weekly` the form derives the **current** week from `now`, so both go red at every week rollover and green again once re-recorded. The `…MonthlyFree` siblings do the same at month rollover. **The Weekly-red / Monthly-green split is the tell**: when a date-shaped pair fails asymmetrically like that, suspect the calendar before your diff. This cost a regression hunt during B3.1 — all four were green three days earlier and nothing on the branch touched `BoardSetupFormView`. See also `reference_snapshot_date_dependent`.
 
@@ -308,9 +308,7 @@ apps/web/src/                                        apps/ios/OYBC/
     ├── boards/BoardCard.tsx       ←→               Views/BoardsTab/Components/RisoBoardCard.swift
     ├── RecurringBadge.tsx         ←→               Views/BoardsTab/Components/RisoRecurringBadge.swift
     ├── BoardStatusBadge.tsx                        (no standalone iOS view)
-    ├── BoardListItem.tsx                           (no iOS counterpart; zero importers on web —
-    │                                                dead code the knip file check currently
-    │                                                misses, see §Drift guardrails)
+    │   (BoardListItem.tsx — REMOVED in #500, dead code; iOS BoardListItemView.swift also removed)
     │   (BoardCreatorPanel.tsx / BoardCreatorPanelView.swift — REMOVED on both platforms)
     ├── appShell/ (AppShell,       ←→               Views/MainTabView.swift (SwiftUI TabView — intentionally platform-idiomatic)
     │   AppTopNav, AppBottomNav,                    (web Riso shell: desktop top nav that detaches into a mobile
@@ -554,7 +552,7 @@ try AppDatabase.shared.write { db in
 
 ```typescript
 // Read
-const boards = await fetchBoards(userId);
+const board = await fetchBoard(boardId); // imperative one-off read (db/operations)
 // Reactive queries
 const boards = useBoards(userId); // useLiveQuery from dexie-react-hooks
 // Fast compound index query
@@ -653,11 +651,9 @@ Output of the 2026-08 deep-dive audit: the findings that a machine can check are
 
 | Check | Script | Baseline | Catches |
 | --- | --- | --- | --- |
-| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (its `unusedExports` entries are the known-dead exports) | new unused web exports/types; any unused file/dependency (never baselined — but see the caveat below) |
+| Dead code | `scripts/check-knip.mjs` (knip; `apps/web/knip.json`; runs in `web.yml`) | `scripts/audit/knip-baseline.json` (empty since the 2026-09 audit — keep it that way; never `import.meta.glob` a broad source glob in a test — knip reads it as importing every match and stops reporting unused files) | new unused web exports/types; any unused file/dependency (never baselined) |
 | God-file regrowth | `scripts/check-file-sizes.mjs` (in `drift-guardrails.yml`) | `scripts/audit/file-size-allowlist.json` (its entries are the frozen offenders = ROADMAP B6 roster) | any source file >1000 lines; any allowlisted file growing past its frozen count |
 | Sync-contract ↔ rules | `scripts/check-sync-contract-rules.mjs` (in `drift-guardrails.yml`) | none (must be exactly equal) | `SYNC_COLLECTIONS`/`USER_SCOPED_SYNC_COLLECTIONS` (shared) diverging from `isKnownCollection()`/`requiresUserIdField()` (`firestore.rules`) |
-
-**Caveat — knip's unused-FILE detection is currently defeated.** `apps/web/src/db/operations/__tests__/dbBoundary.test.ts` loads every source file via `import.meta.glob('/src/**/*.{ts,tsx}', { query: '?raw', … })`; knip ignores the `query` option and treats that glob as a real import of every file, so no web file can ever look unused (e.g. `components/BoardListItem.tsx` has zero importers and the check stays green). A fix is tracked in the 2026-09-23 audit; until it lands, don't assume a dead file fails the check.
 
 Rule for all three: **shrink the baseline as you clean up (the scripts emit a note when an entry is stale); never grow it to dodge a fix.** Bumping a file-size cap or adding a knip-baseline entry is a deliberate, reviewed act.
 

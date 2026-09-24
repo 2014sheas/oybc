@@ -27,6 +27,11 @@ concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege GITHUB_TOKEN (2026-09 audit T1): every job only reads the
+# repo. Widen per job, never here, and only where a step needs more.
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     # macos-15 runners ship multiple Xcodes; we pin to 26.3 (year-based

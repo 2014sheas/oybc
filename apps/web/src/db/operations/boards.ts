@@ -251,17 +251,6 @@ export async function updateBoardAndCascade(
 }
 
 /**
- * Fetch all boards for a user (excluding deleted)
- */
-export async function fetchBoards(userId: string): Promise<Board[]> {
-  const boards = await db.boards
-    .filter((b) => b.userId === userId && !b.isDeleted)
-    .reverse()
-    .sortBy('updatedAt');
-  return healBoardNames(boards);
-}
-
-/**
  * Fetch a single board by ID
  */
 export async function fetchBoard(id: string): Promise<Board | undefined> {
@@ -424,7 +413,7 @@ export async function archiveBoard(id: string): Promise<void> {
  *
  * Increments `version` so LWW conflict resolution treats the deletion
  * as a later-wins operation against any concurrent update on another
- * device. See `deleteTask` for the same rationale.
+ * device (the same rationale as `deleteTaskWithCascade`'s task tombstone).
  *
  * Board Sources §Member rules (B2, RB5) — the board's window-stamped derived
  * rows go with it, once nothing else holds them: a derived counter/compound
@@ -541,50 +530,4 @@ export async function activateBoard(boardId: string): Promise<void> {
   // transition wouldn't reach other devices until an unrelated update.
   const activated = await db.boards.get(boardId);
   if (activated) await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, activated);
-}
-
-/**
- * Fetch boards by timeframe (for achievement tracking)
- */
-export async function fetchBoardsByTimeframe(
-  userId: string,
-  timeframe: string
-): Promise<Board[]> {
-  const boards = await db.boards
-    .where('[userId+timeframe+status]')
-    // Dexie's `.equals()` signature takes `IndexableType` and doesn't
-    // model compound-index tuples; `any` is the project convention for
-    // this specific library-typing quirk.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .equals([userId, timeframe, BoardStatus.COMPLETED] as any)
-    .toArray();
-  return healBoardNames(boards);
-}
-
-/**
- * Count boards with bingos by timeframe
- */
-export async function countBingos(
-  userId: string,
-  timeframe: string
-): Promise<number> {
-  return db.boards
-    .where('[userId+timeframe+linesCompleted]')
-    .between(
-      [userId, timeframe, 1] as readonly unknown[],
-      [userId, timeframe, Infinity] as readonly unknown[]
-    )
-    .count();
-}
-
-/**
- * Count completed boards by timeframe
- */
-export async function countCompletedBoards(
-  userId: string,
-  timeframe: string
-): Promise<number> {
-  return db.boards
-    .filter((b) => b.userId === userId && !b.isDeleted && b.timeframe === timeframe && b.status === 'completed')
-    .count();
 }

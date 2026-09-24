@@ -56,7 +56,7 @@ export interface TaskRowProps {
  *   3. Trailing ✕ button (optional): quick-action delete, opens the
  *      `TaskConfirmDeleteDialog` over the list.
  *
- * Mirrors the `BoardListItem` pattern from PR #58: nested `<button>`s
+ * Same row pattern the (since-removed) board list row used, from PR #58: nested `<button>`s
  * are invalid HTML, so the row is an outer `<div>` and each button is
  * a sibling. The web doesn't have iOS-style swipe gestures, so persistent
  * trailing icons are the affordance.

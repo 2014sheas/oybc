@@ -126,8 +126,7 @@ enum MigrationV25Helpers {
     }
 
     /// Step 2: each `RecurringBoardTemplate` whose `poolIds` column IS
-    /// NULL (the "genuinely un-migrated" half of
-    /// `PoolMix.isLegacyShapedRecord`'s two cases) has its `seedTaskIds`
+    /// NULL (the "genuinely un-migrated" legacy shape) has its `seedTaskIds`
     /// extracted into a `Pool` named "<template name> pool"; the template
     /// is stamped with `poolIds: [newPool.id]`, `manualTaskIds: []`,
     /// `removedTaskIds: []`. `seedTaskIds` itself is left VERBATIM

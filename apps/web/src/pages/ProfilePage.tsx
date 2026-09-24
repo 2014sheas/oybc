@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
-import { updateDisplayName } from '../firebase/authService';
+import { updateDisplayName, SIGN_OUT_QUEUE_CLEAR_FAILED_MESSAGE } from '../firebase/authService';
 import { deleteAccount, friendlyError } from '../firebase/accountSecurity';
 import { fetchUser } from '../db/operations';
 import { usePreferences } from '../hooks';
@@ -27,6 +27,7 @@ export function ProfilePage(): React.ReactElement {
   const { user, signOut, isAnonymous } = useAuth();
   const [prefs, updatePrefs] = usePreferences();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [discardBusy, setDiscardBusy] = useState(false);
@@ -52,6 +53,22 @@ export function ProfilePage(): React.ReactElement {
       setDiscardBusy(false);
     }
   }, []);
+
+  // Sign-out failures (incl. an aborted sync-queue clear — see
+  // authService.signOut) stay on the confirm modal so the user sees them.
+  // Success is silent: the auth-state listener nils the session.
+  const handleSignOut = useCallback(async () => {
+    setSignOutError(null);
+    try {
+      await signOut();
+    } catch (err) {
+      setSignOutError(
+        err instanceof Error && err.message === SIGN_OUT_QUEUE_CLEAR_FAILED_MESSAGE
+          ? err.message
+          : friendlyError(err)
+      );
+    }
+  }, [signOut]);
 
   const saveName = useCallback(async (value: string) => {
     setNameError(null);
@@ -277,7 +294,10 @@ export function ProfilePage(): React.ReactElement {
         <button
           type="button"
           className={styles.signOutButton}
-          onClick={() => setShowSignOutConfirm(true)}
+          onClick={() => {
+            setSignOutError(null);
+            setShowSignOutConfirm(true);
+          }}
         >
           Sign Out
         </button>
@@ -310,6 +330,7 @@ export function ProfilePage(): React.ReactElement {
             <p className={styles.confirmBody}>
               Are you sure you want to sign out?
             </p>
+            {signOutError && <p className={styles.nameError}>{signOutError}</p>}
             <div className={styles.confirmActions}>
               <button
                 type="button"
@@ -322,7 +343,7 @@ export function ProfilePage(): React.ReactElement {
               <button
                 type="button"
                 className={styles.confirmDestructive}
-                onClick={() => void signOut()}
+                onClick={() => void handleSignOut()}
               >
                 Sign Out
               </button>

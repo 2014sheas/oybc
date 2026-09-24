@@ -18,10 +18,7 @@ import Foundation
 ///
 /// **Removals semantics** (flat `[String]`, no per-pool attribution): a
 /// removal entry suppresses that task from the pool union regardless of
-/// which pool(s) supply it. Untoggling a pool (`clearRemovalsForUntoggle`)
-/// clears exactly the removal entries whose task is no longer supplied by
-/// any REMAINING pulled pool — removals for still-supplied tasks persist.
-/// Removal entries for tasks not supplied by any pulled pool are
+/// which pool(s) supply it. Removal entries for tasks not supplied by any pulled pool are
 /// stale-inert: harmless, never an error, cleaned opportunistically on save.
 ///
 /// Canonical design: docs/POOLS_RECURRING.md §Changed: the spawn record
@@ -47,9 +44,8 @@ enum PoolMix {
     ///
     /// Returns the pool's resolvable supply minus anything currently
     /// suppressed by `removedTaskIds` — a removal persists across a fresh
-    /// pull (the worked example's "re-pull clears the removal" only happens
-    /// via `clearRemovalsForUntoggle` at UNTOGGLE time, never at pull time;
-    /// see the type doc's worked example).
+    /// pull (clearing a removal is an untoggle-time concern, never a
+    /// pull-time one).
     ///
     /// TS twin: `poolMix.ts`'s `resolvePoolPullAdditions` — keep in sync.
     ///
@@ -68,49 +64,6 @@ enum PoolMix {
         guard let pool = poolsById[poolId], !pool.isDeleted else { return [] }
         let removedSet = Set(removedTaskIds)
         return resolvablePoolSupply(pool, tasksById: tasksById).filter { !removedSet.contains($0) }
-    }
-
-    /// Wizard "untoggle a pool" action (P3) — computes the taskIds to
-    /// REMOVE from the wizard's flat `selectedTaskIds` when the user
-    /// toggles a pool OFF. Per docs/POOLS_RECURRING.md §Data model "Union
-    /// rule": untoggling removes ONLY that pool's non-manual tasks that
-    /// aren't ALSO supplied by another currently-pulled pool. The manual
-    /// layer is NEVER touched by a pool toggle.
-    ///
-    /// Supply is checked STRUCTURALLY (raw `taskIds` membership, not
-    /// filtered for task-deletion) for the "still supplied elsewhere"
-    /// check — matching `clearRemovalsForUntoggle`'s "remaining supply"
-    /// semantics — so a soft-deleted remaining pool contributes no supply
-    /// either.
-    ///
-    /// TS twin: `poolMix.ts`'s `resolvePoolUntoggleRemovals` — keep in sync.
-    ///
-    /// - Parameters:
-    ///   - poolId: The pool being untoggled (pulled out).
-    ///   - remainingPoolIds: `pulledPoolIds` with `poolId` already excluded.
-    ///   - manualTaskIds: The wizard's current manual-layer bookkeeping —
-    ///     a manual task is never removed by a pool toggle.
-    ///   - poolsById: Lookup for `poolId` and `remainingPoolIds`.
-    ///   - tasksById: Lookup used to filter `poolId`'s own `taskIds` to
-    ///     resolvable tasks (the candidate removal set).
-    /// - Returns: Task ids to remove from the selection.
-    static func resolvePoolUntoggleRemovals(
-        _ poolId: String,
-        remainingPoolIds: [String],
-        manualTaskIds: [String],
-        poolsById: [String: Pool],
-        tasksById: [String: Task]
-    ) -> [String] {
-        guard let pool = poolsById[poolId], !pool.isDeleted else { return [] }
-        let manualSet = Set(manualTaskIds)
-        var remainingSupply = Set<String>()
-        for otherId in remainingPoolIds {
-            guard let other = poolsById[otherId], !other.isDeleted else { continue }
-            for taskId in other.taskIds { remainingSupply.insert(taskId) }
-        }
-        return resolvablePoolSupply(pool, tasksById: tasksById).filter {
-            !manualSet.contains($0) && !remainingSupply.contains($0)
-        }
     }
 
     /// Resolves a spawn record's `poolIds` / `manualTaskIds` /
@@ -178,111 +131,6 @@ enum PoolMix {
         return ResolveMixResult(taskIds: taskIds, suppliedByPool: suppliedByPool)
     }
 
-    /// Computes the surviving `removedTaskIds` after the user untoggles
-    /// (pulls out) one pool. Clears exactly the removal entries whose task
-    /// is no longer supplied by any of the REMAINING pulled pools;
-    /// removals for still-supplied tasks persist untouched.
-    ///
-    /// Supply here is checked structurally — a remaining pool's raw
-    /// `taskIds` membership (not filtered by task-deletion) — since this
-    /// is a removal-bookkeeping concern, distinct from mix *resolution*
-    /// (`resolveMix`, which additionally filters deleted tasks for the
-    /// actual spawn mix). A soft-deleted remaining pool contributes no
-    /// supply here either, matching derived detachment.
-    ///
-    /// - Parameters:
-    ///   - record: Only `poolIds` and `removedTaskIds` are read.
-    ///   - untoggledPoolId: The pool id the user just pulled out.
-    ///   - poolsById: Lookup for the remaining pools' `taskIds`.
-    /// - Returns: The new `removedTaskIds` array (a subset of the input).
-    static func clearRemovalsForUntoggle(
-        _ record: PoolMixSource,
-        untoggledPoolId: String,
-        poolsById: [String: Pool]
-    ) -> [String] {
-        let remainingPoolIds = (record.poolIds ?? []).filter { $0 != untoggledPoolId }
-        var remainingSupply = Set<String>()
-        for poolId in remainingPoolIds {
-            guard let pool = poolsById[poolId], !pool.isDeleted else { continue }
-            for taskId in pool.taskIds { remainingSupply.insert(taskId) }
-        }
-        return (record.removedTaskIds ?? []).filter { remainingSupply.contains($0) }
-    }
-
-    /// True when a spawn record is "legacy shaped" — at most one pool, no
-    /// manual additions, no removals. Covers BOTH:
-    ///
-    ///   - A genuinely un-migrated record (`poolIds`/`manualTaskIds`/
-    ///     `removedTaskIds` all absent, `seedTaskIds` still authoritative).
-    ///   - A migration- or legacy-create-minted record (`poolIds.count == 1`,
-    ///     `manualTaskIds: []`, `removedTaskIds: []`).
-    ///
-    /// This is the ONLY shape the legacy template editor's write-through
-    /// may mutate the linked Pool's `taskIds` for
-    /// (docs/POOLS_RECURRING.md §Migration — "seedTaskIds end state"). A
-    /// richer shape (2+ pools, any manual additions, or any removals) is
-    /// NOT legacy-shaped — the defensive write-through fallback flattens
-    /// to `manualTaskIds` and clears `poolIds`/`removedTaskIds` instead of
-    /// touching a shared Pool.
-    static func isLegacyShapedRecord(_ record: PoolMixSource) -> Bool {
-        let poolCount = record.poolIds?.count ?? 0
-        let manualCount = record.manualTaskIds?.count ?? 0
-        let removedCount = record.removedTaskIds?.count ?? 0
-        return poolCount <= 1 && manualCount == 0 && removedCount == 0
-    }
-
-    /// Preserve-merge for the legacy template editor's Pool write-through
-    /// (docs/POOLS_RECURRING.md §Migration — "seedTaskIds end state"). Swift
-    /// twin of `poolMix.ts`'s `mergeLegacyPoolTaskIds` — keep in sync.
-    ///
-    /// The legacy wizard hydrates its selection from `resolveMix`, whose
-    /// `resolvablePoolSupply` filters out soft-deleted tasks — so writing
-    /// that resolved selection STRAIGHT to `Pool.taskIds` would prune
-    /// soft-deleted-but-deliberately-preserved refs, breaking `Pool.taskIds`'s
-    /// contract (soft-deleted tasks are NOT auto-removed; consumers filter at
-    /// read time — a write must never prune). This computes the write set
-    /// that preserves them:
-    ///
-    ///   - An existing pool ref is KEPT when it is still in the selection
-    ///     (user kept it) OR is currently UNRESOLVABLE (soft-deleted /
-    ///     missing — it was never shown to the user, so it can't have been
-    ///     explicitly removed).
-    ///   - A resolvable ref the user dropped from the selection IS removed.
-    ///   - Newly-selected ids are appended in selection order.
-    ///
-    /// Existing pool order is preserved (dedup, existing first, additions
-    /// last). Mirrors the Pool-edit sheet's raw-list preservation semantics.
-    ///
-    /// - Parameters:
-    ///   - existingTaskIds: The linked Pool's current raw `taskIds` (may
-    ///     include soft-deleted / unresolvable refs).
-    ///   - selectedTaskIds: The wizard's post-edit resolved selection.
-    ///   - tasksById: Lookup used to classify each existing ref as resolvable
-    ///     (present + not soft-deleted) or not.
-    /// - Returns: The merged `taskIds` to write — deduped, existing order
-    ///   first, then any new additions in selection order.
-    static func mergeLegacyPoolTaskIds(
-        _ existingTaskIds: [String],
-        selectedTaskIds: [String],
-        tasksById: [String: Task]
-    ) -> [String] {
-        let selectedSet = Set(selectedTaskIds)
-        var result: [String] = []
-        var seen = Set<String>()
-        for taskId in existingTaskIds where !seen.contains(taskId) {
-            let resolvable = tasksById[taskId].map { !$0.isDeleted } ?? false
-            if selectedSet.contains(taskId) || !resolvable {
-                result.append(taskId)
-                seen.insert(taskId)
-            }
-        }
-        for taskId in selectedTaskIds where !seen.contains(taskId) {
-            result.append(taskId)
-            seen.insert(taskId)
-        }
-        return result
-    }
-
     /// `PoolSchema.name` is bounded to 120 chars (`z.string().min(1).max(120)`,
     /// `schemas.ts`) — mirrored by the write-helper layer here. Every site
     /// that MINTS a Pool by appending a fixed suffix word to a source name
@@ -331,7 +179,7 @@ struct SpawnProvenanceSummary {
     /// Cells actually dealt onto the board (excludes the FREE-center cell,
     /// which is never a Task placement).
     let dealt: Int
-    /// The resolved mix size the deal was drawn from — may exceed `dealt`
+    /// The achievable pool size the deal was drawn from — may exceed `dealt`
     /// (loose-fit: extras shuffle in per window, per docs/POOLS_RECURRING.md
     /// §Behavior invariants).
     let mixSize: Int
@@ -343,39 +191,21 @@ struct SpawnProvenanceSummary {
 }
 
 extension PoolMix {
-    /// Computes the provenance breakdown for a freshly-spawned board.
+    /// Sources-native spawn-provenance summary (loose-ends sweep
+    /// 2026-09-09) for records that may carry board-kind sources or
+    /// ranges: `mixSize` is the honest achievable pool size (caps, cap
+    /// overlap, counter-family rule). (The legacy pool-trio overload was
+    /// deleted in the 2026-09 audit — it had no production caller.) TS
+    /// twin: `summarizeSpawnProvenanceFromSupplies`.
     ///
     /// - Parameters:
-    ///   - spawnSource: The spawn record (`poolIds`/`manualTaskIds`/
-    ///     `removedTaskIds`) the board was dealt from.
-    ///   - poolsById: Lookup for `spawnSource.poolIds`.
-    ///   - tasksById: Lookup used to resolve pool supply.
-    ///   - dealtTaskIds: The task ids actually placed on the board (from its
-    ///     live, non-deleted `BoardTask` rows) — NOT the full resolved mix,
-    ///     which may be larger under loose-fit overfill.
+    ///   - supplies: The record's resolved source supplies (the SAME
+    ///     platform resolution the spawn used — pool + board kinds).
+    ///   - manualTaskIds: The record's hand-added layer.
+    ///   - counterFamilyByTaskId: `BoardSources.buildCounterFamilyMap` over
+    ///     the task universe (so `mixSize` counts a counter family once).
+    ///   - dealtTaskIds: Task ids actually placed on the spawned board.
     /// - Returns: The dealt/mix counts split by pool-sourced vs manual-sourced.
-    static func summarizeSpawnProvenance(
-        spawnSource: PoolMixSource,
-        poolsById: [String: Pool],
-        tasksById: [String: Task],
-        dealtTaskIds: [String]
-    ) -> SpawnProvenanceSummary {
-        let mix = resolveMix(spawnSource, poolsById: poolsById, tasksById: tasksById)
-        let manualSet = Set(spawnSource.manualTaskIds ?? [])
-        let manualSourcedCount = dealtTaskIds.filter { manualSet.contains($0) }.count
-        return SpawnProvenanceSummary(
-            dealt: dealtTaskIds.count,
-            mixSize: mix.taskIds.count,
-            poolSourcedCount: dealtTaskIds.count - manualSourcedCount,
-            manualSourcedCount: manualSourcedCount
-        )
-    }
-
-    /// Sources-native spawn-provenance summary (loose-ends sweep
-    /// 2026-09-09) — supersedes the legacy-trio overload for records that
-    /// may carry board-kind sources or ranges: `mixSize` is the honest
-    /// achievable pool size (caps, cap overlap, counter-family rule). TS
-    /// twin: `summarizeSpawnProvenanceFromSupplies`.
     static func summarizeSpawnProvenance(
         supplies: [BoardSources.Supply],
         manualTaskIds: [String],
@@ -417,12 +247,11 @@ extension PoolMix {
     }
 }
 
-/// The subset of a spawn record's fields `PoolMix.resolveMix` /
-/// `clearRemovalsForUntoggle` / `isLegacyShapedRecord` need. Matches
-/// `RecurringBoardTemplate`'s additive P1 fields directly (all optional, so
-/// a `RecurringBoardTemplate` — migrated or not — can be passed as-is).
-/// Missing fields default to empty per-array, per the "legacy shape"
-/// definition above. Mirrors the TS `PoolMixSource` interface.
+/// The subset of a spawn record's fields `PoolMix.resolveMix` needs.
+/// Matches `RecurringBoardTemplate`'s additive P1 fields directly (all
+/// optional, so a `RecurringBoardTemplate` — migrated or not — can be
+/// passed as-is). Missing fields default to empty per-array. Mirrors the TS
+/// `PoolMixSource` interface.
 protocol PoolMixSource {
     var poolIds: [String]? { get }
     var manualTaskIds: [String]? { get }
@@ -444,7 +273,6 @@ struct ResolveMixResult {
     /// Keyed by pool id; a pulled pool that is missing from `poolsById` or
     /// soft-deleted has NO entry (not an empty-array entry) — it
     /// contributed nothing, matching derived detachment. Powers
-    /// provenance UI ("from Morning Kickstart") and
-    /// `clearRemovalsForUntoggle`'s sibling logic.
+    /// provenance UI ("from Morning Kickstart").
     let suppliedByPool: [String: [String]]
 }

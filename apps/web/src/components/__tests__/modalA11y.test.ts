@@ -58,7 +58,7 @@ import { CoreWindowPickerPopover } from '../../pages/core-board-browser/CoreWind
  * `e2e/member-rules.spec.ts` + `e2e/modal-focus.spec.ts`, and the
  * wrap decision itself by `hooks/__tests__/useModalA11y.test.ts`.
  *
- * Dialogs that only open from internal state (BoardCard / BoardListItem
+ * Dialogs that only open from internal state (BoardCard
  * confirms, Library / Source picker sheets, the Profile confirms, the
  * Account-security sheet, the pool-delete inline confirm, the repeating-
  * board wizard overlay) can't be opened in a string render; the source

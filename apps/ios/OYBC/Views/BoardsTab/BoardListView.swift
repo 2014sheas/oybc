@@ -672,12 +672,19 @@ struct BoardListView: View {
                 // their backstop deadline seal on Boards-tab open, never
                 // background-scheduled. Off-main DB write, then reload.
                 await _Concurrency.Task.detached(priority: .utility) {
-                    _ = try? AppDatabase.shared.runBackstopAutoSeal(userId: userId)
+                    // Each pass is independent and idempotent (re-runs on the
+                    // next tab open), so a failure is logged, not fatal, and
+                    // never blocks the other pass.
+                    attemptLoggedWrite("BoardListView backstop auto-seal") {
+                        _ = try AppDatabase.shared.runBackstopAutoSeal(userId: userId)
+                    }
                     // Windowed-bingo self-heal: rewrite any stale
                     // `completedLineIds` left by the pre-fix edit/structure
                     // cascades (lifetime-cache phantom bingos). Idempotent,
                     // lazy/app-open only — same posture as the backstop above.
-                    _ = try? AppDatabase.shared.reDeriveActiveBoards(userId: userId)
+                    attemptLoggedWrite("BoardListView active-board re-derivation") {
+                        _ = try AppDatabase.shared.reDeriveActiveBoards(userId: userId)
+                    }
                 }.value
                 await MainActor.run {
                     loadBoards()

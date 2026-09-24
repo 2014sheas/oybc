@@ -7,20 +7,17 @@ import GRDB
 /// TypeScript `DefaultPool` in `@oybc/shared`.
 ///
 /// Unlike `RecurringBoardTemplate` (Phase 6.2), DefaultPool does NOT
-/// auto-spawn. It's a pure pool definition consumed by:
-///   - The recurring-banner wizard prefill path
-///     (`BoardWizardViewModel` hydrates `selectedTaskIds` from
-///     `pool.taskIds` when banner-launched).
-///   - The pre-spawn flow (future Phase B), pulling tasks for a
-///     user-picked future window.
+/// auto-spawn. Historically it was a pure pool definition read by the
+/// recurring-banner wizard prefill; that reader was retired by the pools
+/// rework (see below), so nothing in production reads it now.
 ///
 /// `taskIds` is stored as a JSON-string TEXT column (same pattern as
 /// `RecurringBoardTemplate.seedTaskIds` and `Board.completedLineIds`).
 ///
 /// One pool per `(userId, timeframe)` — uniqueness enforced at the
-/// application layer (no DB constraint); `AppDatabase` exposes
-/// `upsertDefaultPool` which queries by `(userId, timeframe)` and
-/// creates-or-updates accordingly.
+/// application layer (no DB constraint). Superseded by `Pool` +
+/// `CoreBoardDefault`; the row type survives for the v25 migration and
+/// sync decode (test seeding lives in `OYBCTests/AppDatabase+DefaultPoolsTestSupport.swift`).
 struct DefaultPool: Codable, FetchableRecord, PersistableRecord {
     // Identity
     var id: String

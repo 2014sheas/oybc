@@ -1,4 +1,4 @@
-/* Board status badge (Riso). Shared by BoardListItem, BoardPlaySurface (play
+/* Board status badge (Riso). Shared by BoardPlaySurface (play
    rail), TaskConfirmDeleteDialog — one file → all consumers on-palette. */
 .badge {
   display: inline-flex;

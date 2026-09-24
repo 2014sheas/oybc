@@ -2,9 +2,7 @@
  * Shared date-display helpers for production views.
  *
  * Uses the user's locale so dates read naturally on whichever device
- * the app is running on. The playground still has its own `formatDate`
- * helper in `components/playground/playgroundUtils.ts`; collapsing
- * those into these helpers is a future cleanup.
+ * the app is running on.
  */
 
 /**

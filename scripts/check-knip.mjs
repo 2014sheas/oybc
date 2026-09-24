@@ -15,6 +15,9 @@
  * philosophy as scripts/audit/file-size-allowlist.json). Do NOT add new entries
  * to green a PR — delete the dead export instead.
  *
+ * Scope: apps/web only. Dead code in packages/shared and apps/ios is NOT
+ * checked here — it is only caught by the periodic /audit sweep.
+ *
  * Node >= 20. Run from repo root: `node scripts/check-knip.mjs`
  * (spawns knip in apps/web via its local install).
  */

@@ -150,7 +150,7 @@ struct CounterDetailView: View {
         let id = counterId
         let unit = group.unit ?? ""
         _Concurrency.Task.detached(priority: .userInitiated) {
-            do {
+            let ok = attemptLoggedWrite("CounterDetailView.handleLog(\(id))") {
                 switch direction {
                 case .add:
                     _ = try AppDatabase.shared.incrementSharedCounter(sourceTaskId: id, by: amount)
@@ -160,18 +160,17 @@ struct CounterDetailView: View {
                 }
                 // The amount just used becomes the new default (no-op if unchanged).
                 try AppDatabase.shared.setCounterDefaultLogAmount(sourceTaskId: id, amount: amount)
-                await MainActor.run {
-                    isLogging = false
+            }
+            await MainActor.run {
+                isLogging = false
+                if ok {
                     toast = DetailToastState(
                         amount: amount, unit: unit,
                         verb: direction == .add ? .logged : .removed,
                         toastKey: UUID().uuidString
                     )
                     loadData()
-                }
-            } catch {
-                await MainActor.run {
-                    isLogging = false
+                } else {
                     logError = "Failed to log. Try again."
                 }
             }
@@ -181,10 +180,10 @@ struct CounterDetailView: View {
     private func handleUndo() {
         let id = counterId
         _Concurrency.Task.detached(priority: .userInitiated) {
-            _ = try? AppDatabase.shared.undoLastCounterLog(sourceTaskId: id)
+            let ok = attemptLoggedWrite("CounterDetailView.handleUndo(\(id))") { _ = try AppDatabase.shared.undoLastCounterLog(sourceTaskId: id) }
             await MainActor.run {
                 toast = nil
-                loadData()
+                if ok { loadData() } else { logError = "Failed to undo. Try again." }
             }
         }
     }

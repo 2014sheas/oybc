@@ -43,6 +43,11 @@ concurrency:
   # finding on #396). Successive dev pushes queue instead.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Least-privilege GITHUB_TOKEN (2026-09 audit T1): every job only reads the
+# repo. Widen per job, never here, and only where a step needs more.
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest

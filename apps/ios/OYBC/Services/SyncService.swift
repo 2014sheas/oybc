@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 @preconcurrency import GRDB
 
@@ -167,41 +168,6 @@ private func validateRemotePullDocument(
     return nil
 }
 
-/// Summary of a push sync operation.
-public struct PushResult {
-    /// Number of documents successfully pushed to Firestore.
-    public var pushed: Int = 0
-    /// Number of conflicts resolved in favour of the remote document.
-    public var conflicts: Int = 0
-    /// Number of items that failed to push.
-    public var failed: Int = 0
-    /// Human-readable log lines for each processed item.
-    public var details: [String] = []
-}
-
-/// Summary of a pull sync operation.
-public struct PullResult {
-    /// Number of documents pulled from Firestore into local DB.
-    public var pulled: Int = 0
-    /// Number of conflicts resolved in favour of the local document.
-    public var conflicts: Int = 0
-    /// Human-readable log lines for each processed item.
-    public var details: [String] = []
-}
-
-/// Combined result of a full push + pull sync cycle.
-public struct SyncResult {
-    public let push: PushResult
-    public let pull: PullResult
-}
-
-/// A single event in the sync log, displayed in the playground dashboard.
-public struct SyncEvent: Identifiable {
-    public let id: UUID = UUID()
-    public let timestamp: Date
-    public let message: String
-}
-
 // MARK: - Conflict Resolution
 
 /// Resolves a conflict between local and remote Firestore document dictionaries
@@ -343,17 +309,30 @@ final class SyncService: ObservableObject {
     /// precedent; both `SyncService()` call sites keep working via the default.
     private let database: AppDatabase
 
-    /// - Parameter database: Local DB the pull path writes into. Defaults to
-    ///   `.shared`; overridden only in tests.
+    /// - Parameters:
+    ///   - database: Local DB the pull path writes into. Defaults to
+    ///     `.shared`; overridden only in tests.
+    ///   - currentAuthUid: Returns the signed-in Firebase uid (or nil). Read
+    ///     by the push-path uid guard; defaults to `Auth.auth()`, overridden
+    ///     only in tests.
     ///
     /// SCOPE CAVEAT (E3): only `applyRemoteSubdoc` (and everything inside
     /// its transaction) reads this handle — push/fullSync/safety-net still
     /// use `AppDatabase.shared` directly. A test injecting
     /// `makeTestInstance()` may exercise the pull-apply seam ONLY; widening
     /// the injection is a deliberate future step, not an oversight.
-    init(database: AppDatabase = .shared) {
+    init(
+        database: AppDatabase = .shared,
+        currentAuthUid: @escaping () -> String? = { Auth.auth().currentUser?.uid }
+    ) {
         self.database = database
+        self.currentAuthUid = currentAuthUid
     }
+
+    /// Reads the signed-in Firebase uid at call time. Injected (defaulting to
+    /// `Auth.auth()`) so tests can drive the push-path uid guard without a
+    /// Firebase session.
+    private let currentAuthUid: () -> String?
 
     /// Safety-net interval for the periodic full sync. With push-on-enqueue
     /// + snapshot listeners doing the real-time work, this only needs to
@@ -471,6 +450,17 @@ final class SyncService: ObservableObject {
     /// flag — both `pushSync` and `fullSync` do.
     private func pushSyncCore(userId: String) async -> PushResult {
         var result = PushResult()
+
+        // Defense-in-depth: never push for a uid other than the signed-in
+        // one (a loop outliving an account switch, or a stale debounced
+        // push). Skips before touching the queue or Firestore. Web twin: the
+        // `assertSyncUserMatches` guard at the top of `pushSync`/`pullSync`.
+        guard currentAuthUid() == userId else {
+            let msg = "Push skipped — sync userId does not match authenticated user"
+            log(msg)
+            result.details.append(msg)
+            return result
+        }
 
         // Reset stale IN_PROGRESS items (e.g. force-quit mid-push) and
         // promote FAILED items whose backoff window has elapsed back to

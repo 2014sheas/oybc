@@ -18,14 +18,6 @@ import { appendCompletionEvent, tombstoneLatestCompletion } from './taskEvents';
  */
 
 /**
- * Fetch all tasks for a user (excluding deleted)
- */
-export async function fetchTasks(userId: string): Promise<Task[]> {
-  return db.tasks
-    .filter((t) => t.userId === userId && !t.isDeleted)
-    .sortBy('title');
-}
-/**
  * Fetch a single task by ID
  */
 export async function fetchTask(id: string): Promise<Task | undefined> {
@@ -35,9 +27,8 @@ export async function fetchTask(id: string): Promise<Task | undefined> {
 /**
  * Fetch every non-deleted task for a user, unsorted.
  *
- * Distinct from `fetchTasks`, which sorts by title. Library surfaces that
- * partition the result by type in memory (and don't rely on title order)
- * use this so the DB read stays a plain scan.
+ * Library surfaces that partition the result by type in memory (and don't
+ * rely on title order) use this so the DB read stays a plain scan.
  *
  * @param userId - Owning user.
  * @returns The user's non-deleted Task rows (unsorted).

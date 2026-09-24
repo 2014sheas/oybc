@@ -7,12 +7,6 @@ import styles from './CellSwapModal.module.css';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * 'swap' — exclude the current task (M3 behavior).
- * 'add'  — show all eligible tasks with no exclusion (M4 add-to-empty-cell).
- */
-export type CellSwapMode = 'swap' | 'add';
-
-/**
  * Pure candidate predicate (loose-ends sweep 2026-09-09) — exported for
  * unit tests. A task is pickable when it is:
  *   - an eligible non-center type, not deleted;

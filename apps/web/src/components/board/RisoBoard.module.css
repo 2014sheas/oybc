@@ -159,7 +159,7 @@
 
 /* FREE / center */
 .free {
-  background: var(--riso-ink);
+  background: var(--riso-ink-static);
   color: var(--riso-gold);
 }
 .freeStar {

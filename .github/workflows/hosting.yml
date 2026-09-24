@@ -45,18 +45,24 @@ on:
       - '.github/workflows/hosting.yml'
   workflow_dispatch:
 
-# Serialize deploys rather than racing them, but never cancel one that's
-# already in flight — a killed mid-upload deploy can leave Hosting in a
-# half-updated state. This is the one deliberate divergence from
-# firestore-rules.yml's deploy concurrency (which doesn't need a group at
-# all, since it's gated behind a `needs: test` job per push).
+# Least-privilege GITHUB_TOKEN (2026-09 audit T1): the deploy job only reads
+# the repo. Widen per job, never here — `preview` declares its own block
+# (pull-requests: write) because it comments the channel URL on the PR.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Serialize real deploys (moved from workflow level so PR previews get
-    # their own per-PR group below instead of queuing behind deploys).
+    # Serialize deploys rather than racing them, but never cancel one that's
+    # already in flight — a killed mid-upload deploy can leave Hosting in a
+    # half-updated state. This is the one deliberate divergence from
+    # firestore-rules.yml's deploy concurrency (which doesn't need a group at
+    # all, since it's gated behind a `needs: test` job per push). Job-level
+    # (moved from workflow level) so PR previews get their own per-PR group
+    # below instead of queuing behind deploys.
     concurrency:
       group: hosting-deploy
       cancel-in-progress: false

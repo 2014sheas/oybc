@@ -688,3 +688,85 @@ test.describe('Counters hub — expired derived counters', () => {
     await expect(page).toHaveURL(/showExpired=1/);
   });
 });
+
+test.describe('Counters hub — the + Log pill from the keyboard', () => {
+  // 2026-09 audit (T1 Task 2): "+ Log" used to sit INSIDE the card's
+  // `role="button"` div, whose keydown handler cancelled Enter and opened
+  // Detail instead — so a keyboard user could never log in place.
+  const KB_BOARD_ID = '70000000-0000-0000-0000-000000000060';
+  const KB_ROOT_ID = '70000000-0000-0000-0000-000000000061';
+  const KB_MEMBER_ID = '70000000-0000-0000-0000-000000000062';
+
+  test('Enter on "+ Log" logs in place and stays on the hub; Enter on the card opens Detail', async ({
+    page,
+  }) => {
+    await seedBoard(page, {
+      id: KB_BOARD_ID,
+      name: 'Keyboard Counter Board',
+      boardSize: 3,
+      timeframe: 'daily',
+      status: 'active',
+      startDate: HOUR_AGO_ISO,
+      endDate: MONTH_OUT_ISO,
+      centerSquareType: 'none',
+    });
+    await seedTask(page, {
+      id: KB_ROOT_ID,
+      title: 'Swim laps',
+      type: 'counting',
+      action: 'Swim',
+      unit: 'laps',
+      currentCount: 7,
+      isCounter: true,
+    });
+    await seedTask(page, {
+      id: KB_MEMBER_ID,
+      title: 'Swim 10 laps',
+      type: 'counting',
+      action: 'Swim',
+      unit: 'laps',
+      maxCount: 10,
+      sharedCounterId: KB_ROOT_ID,
+      createdInWizard: true,
+      timeframe: 'daily',
+      startDate: HOUR_AGO_ISO,
+      endDate: MONTH_OUT_ISO,
+    });
+    await seedBoardTask(page, {
+      id: `${KB_BOARD_ID}-bt-0`,
+      boardId: KB_BOARD_ID,
+      taskId: KB_MEMBER_ID,
+      row: 0,
+      col: 0,
+    });
+
+    await page.goto('/profile/counters');
+    await expect(page.getByLabel('7 all-time laps')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Log 1 laps for Swim laps' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('8 all-time laps')).toBeVisible();
+    await expect(page).toHaveURL(/\/profile\/counters$/);
+
+    // A pointer tap on the pill also logs in place (it is raised above the
+    // card's stretched open-target, so Playwright's hit check lands on it).
+    await page.getByRole('button', { name: 'Log 1 laps for Swim laps' }).click();
+    await expect(page.getByLabel('9 all-time laps')).toBeVisible();
+    await expect(page).toHaveURL(/\/profile\/counters$/);
+
+    // The card's own open control still answers the keyboard...
+    await page.getByRole('button', { name: 'Open Swim laps counter detail' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/profile/counters/${KB_ROOT_ID}$`));
+
+    // ...and a pointer tap anywhere on the card body (here: its title
+    // text, which the stretched target covers) still opens Detail.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/profile\/counters$/);
+    const title = page.getByText('Swim laps', { exact: true });
+    const box = await title.boundingBox();
+    if (!box) throw new Error('counter title has no layout box');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(page).toHaveURL(new RegExp(`/profile/counters/${KB_ROOT_ID}$`));
+  });
+});

@@ -4,8 +4,10 @@ import GRDB
 extension AppDatabase {
     // MARK: - Pools (Task Pools + Recurring Boards Rework, P1)
     //
-    // CRUD modeled on `AppDatabase+DefaultPools.swift`; the only structural
-    // difference is that a Pool is user-named (many per user, no
+    // CRUD modeled on the retired per-timeframe DefaultPool API (its
+    // test-only helpers now live in
+    // `OYBCTests/AppDatabase+DefaultPoolsTestSupport.swift`); the only
+    // structural difference is that a Pool is user-named (many per user, no
     // `(userId, timeframe)` uniqueness) rather than one-per-timeframe.
 
     /// Fetch all non-deleted pools for a user. Used by the Tasks-tab Pools
@@ -134,7 +136,8 @@ extension AppDatabase {
     // MARK: - CoreBoardDefaults (Task Pools + Recurring Boards Rework, P1)
     //
     // Replaces `DefaultPool`. One row per `(userId, timeframe)`. CRUD
-    // modeled on `AppDatabase+DefaultPools.swift`'s upsert pattern.
+    // modeled on the retired DefaultPool upsert pattern (see
+    // `OYBCTests/AppDatabase+DefaultPoolsTestSupport.swift`).
 
     /// Fetch all non-deleted CoreBoardDefault rows for a user. Used by the
     /// P7 Board-settings page's per-timeframe summary.
