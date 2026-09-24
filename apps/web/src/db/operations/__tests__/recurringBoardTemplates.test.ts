@@ -3,17 +3,22 @@ import {
   BoardStatus,
   CenterSquareType,
   SyncOperationType,
+  TaskType,
   Timeframe,
   type Board,
+  type BoardSource,
+  type Task,
 } from '@oybc/shared';
 import { db } from '../../internal';
 import {
   createRecurringBoardTemplate,
   fetchRecurringBoardTemplate,
+  fetchTemplatesReferencingTask,
   removeMissingBoardSources,
   softDeleteRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../recurringBoardTemplates';
+import { fetchBoardSourceSupply } from '../boardSources';
 
 /**
  * RecurringBoardTemplate CRUD (Phase 6.2) — previously untested at the
@@ -221,3 +226,127 @@ describe('removeMissingBoardSources (the deleted-source ask)', () => {
   });
 });
 
+
+// ─── 2026-09 audit T2 — "used in repeating boards" from sources ────────────
+
+describe('fetchTemplatesReferencingTask (sources model, not the seedTaskIds snapshot)', () => {
+  afterEach(async () => {
+    await db.tasks.clear();
+    await db.pools.clear();
+    await db.boardTasks.clear();
+  });
+
+  function makeTask(id: string, overrides: Partial<Task> = {}): Task {
+    return {
+      id,
+      userId: 'user-1',
+      title: `Task ${id}`,
+      type: TaskType.NORMAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+      ...overrides,
+    } as Task;
+  }
+
+  function source(sourceId: string, kind: 'pool' | 'board', over: Partial<BoardSource> = {}): BoardSource {
+    return { sourceId, kind, min: 0, max: null, excludedTaskIds: [], filter: 'all', ...over };
+  }
+
+  const ids = async (taskId: string) =>
+    (await fetchTemplatesReferencingTask(taskId)).map((t) => t.id);
+
+  it('an edit that swaps A for B moves the reference — the stale seedTaskIds snapshot said the opposite', async () => {
+    await db.tasks.bulkAdd([makeTask('task-a'), makeTask('task-b')]);
+    // Created with A (the wizard create path writes the snapshot AND the
+    // hand-added layer) …
+    const template = await createRecurringBoardTemplate('user-1', {
+      ...baseInput(),
+      seedTaskIds: ['task-a'],
+      manualTaskIds: ['task-a'],
+      sources: [],
+    });
+    // … then edited to drop A and add B. The edit path never rewrites
+    // `seedTaskIds` (wizardPersist's edit branch omits it).
+    await updateRecurringBoardTemplate(template.id, { manualTaskIds: ['task-b'] });
+    const stored = await fetchRecurringBoardTemplate(template.id);
+    expect(stored?.seedTaskIds).toEqual(['task-a']);
+
+    expect(await ids('task-a')).toEqual([]);
+    expect(await ids('task-b')).toEqual([template.id]);
+  });
+
+  it('a pool source references its members minus that source\'s excludes, whatever the range', async () => {
+    await db.tasks.bulkAdd([makeTask('p1'), makeTask('p2'), makeTask('p3')]);
+    await db.pools.add({
+      id: 'pool-1',
+      userId: 'user-1',
+      name: 'Pool',
+      taskIds: ['p1', 'p2', 'p3'],
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+    const template = await createRecurringBoardTemplate('user-1', {
+      ...baseInput(),
+      manualTaskIds: [],
+      sources: [source('pool-1', 'pool', { max: 1, excludedTaskIds: ['p2'] })],
+    });
+
+    expect(await ids('p1')).toEqual([template.id]);
+    expect(await ids('p3')).toEqual([template.id]);
+    expect(await ids('p2')).toEqual([]);
+  });
+
+  it('a board source references its live placements even when the "Not done yet" filter would skip a done one', async () => {
+    // A compound reads the lifetime isCompleted cache on a source board, so
+    // this one is DONE there without any event plumbing.
+    await db.tasks.bulkAdd([
+      makeTask('b-open'),
+      makeTask('b-done', { type: TaskType.COMPOUND, isCompleted: true }),
+    ]);
+    await db.boards.add(makeBoard('board-src'));
+    await db.boardTasks.bulkAdd(
+      ['b-open', 'b-done'].map((taskId, col) => ({
+        id: `bt-${taskId}`,
+        boardId: 'board-src',
+        taskId,
+        row: 0,
+        col,
+        isCenter: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      })),
+    );
+    const template = await createRecurringBoardTemplate('user-1', {
+      ...baseInput(),
+      manualTaskIds: [],
+      sources: [source('board-src', 'board', { filter: 'todo' })],
+    });
+    // Precondition: the filter WOULD drop b-done from a spawn's supply.
+    const info = await fetchBoardSourceSupply('board-src');
+    expect(info?.doneTaskIds.has('b-done')).toBe(true);
+
+    expect(await ids('b-open')).toEqual([template.id]);
+    expect(await ids('b-done')).toEqual([template.id]);
+  });
+
+  it('a soft-deleted template is never listed', async () => {
+    await db.tasks.add(makeTask('task-a'));
+    const template = await createRecurringBoardTemplate('user-1', {
+      ...baseInput(),
+      manualTaskIds: ['task-a'],
+      sources: [],
+    });
+    expect(await ids('task-a')).toEqual([template.id]);
+    await softDeleteRecurringBoardTemplate(template.id);
+    expect(await ids('task-a')).toEqual([]);
+  });
+});

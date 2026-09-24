@@ -97,87 +97,9 @@ final class RecurringBoardTemplatesViewModel {
             let liveTasks = try database.fetchTasks(userId: userId)
             let tasksById = Dictionary(liveTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
-            let perTemplateSources = result.map { t in
-                (template: t, sources: BoardSources.sourcesForRecord(
-                    sources: t.sources, poolIds: t.poolIds, removedTaskIds: t.removedTaskIds
-                ))
-            }
-            let allPoolIds = Set(perTemplateSources.flatMap { entry in
-                entry.sources.filter { $0.kind == .pool }.map { $0.sourceId }
-            })
-            let pools = try database.fetchPools(ids: Array(allPoolIds))
-            let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
-
-            var resolutionByTemplateId: [String: TemplateSupplyResolution] = [:]
-            for entry in perTemplateSources {
-                var supplies: [BoardSources.Supply] = []
-                var deadBoardSourceIds: [String] = []
-                for source in entry.sources {
-                    if source.kind == .pool {
-                        supplies.append(BoardSources.Supply(
-                            source: source,
-                            supplyTaskIds: BoardSources.poolSourceSupplyById(
-                                source.sourceId, poolsById: poolsById, tasksById: tasksById
-                            )
-                        ))
-                        continue
-                    }
-                    // Series binding — `fetchBoardSourceSupply` hops a
-                    // stored series instance to the live window; nil means
-                    // nothing live resolves (the spawn's ask, statically).
-                    let info = (try? database.fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil
-                    guard let info else {
-                        deadBoardSourceIds.append(source.sourceId)
-                        supplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
-                        continue
-                    }
-                    let raw = BoardSources.availableSupplyIds(
-                        source: source,
-                        supplyTaskIds: info.supplyTaskIds,
-                        doneTaskIds: info.doneTaskIds
-                    )
-                    supplies.append(BoardSources.Supply(source: source, supplyTaskIds: raw))
-                }
-                let t = entry.template
-                let isUnmigrated = t.sources == nil && t.poolIds == nil
-                    && t.manualTaskIds == nil && t.removedTaskIds == nil
-                resolutionByTemplateId[t.id] = TemplateSupplyResolution(
-                    supplies: supplies,
-                    deadBoardSourceIds: deadBoardSourceIds,
-                    manualTaskIds: isUnmigrated ? t.seedTaskIds : (t.manualTaskIds ?? []),
-                    childrenByCompoundId: [:]
-                )
-            }
-
-            // B2 (§Member rules step 1) — the Split-up expansion needs each
-            // COMPOUND member's children. One batched links read for the whole
-            // roster, after `tasksById` exists: which member ids are compounds
-            // is not knowable before it. (Unlike web, the parts themselves need
-            // no extra tasks fetch — `tasksById` already holds every live task
-            // of this user, children included.)
-            var compoundIds = Set<String>()
-            for resolution in resolutionByTemplateId.values {
-                for supply in resolution.supplies {
-                    for id in supply.supplyTaskIds where tasksById[id]?.type == .compound {
-                        compoundIds.insert(id)
-                    }
-                }
-            }
-            if !compoundIds.isEmpty {
-                let childrenByCompoundId = try database.read { db in
-                    try AppDatabase.fetchCompoundChildren(
-                        db: db, compoundTaskIds: Array(compoundIds)
-                    )
-                }
-                for (templateId, resolution) in resolutionByTemplateId {
-                    for supply in resolution.supplies {
-                        for id in supply.supplyTaskIds {
-                            guard let links = childrenByCompoundId[id] else { continue }
-                            resolutionByTemplateId[templateId]?.childrenByCompoundId[id] = links
-                        }
-                    }
-                }
-            }
+            let resolutionByTemplateId = try database.fetchTemplateSupplyResolution(
+                templates: result, tasksById: tasksById
+            )
 
             let (mixByTemplateId, attention) = Self.computeRosterHealth(
                 templates: result,
@@ -209,18 +131,34 @@ final class RecurringBoardTemplatesViewModel {
         }
     }
 
-    /// Per-template sources resolution input for `computeRosterHealth`
-    /// (loose-ends sweep 2026-09-09). Web twin: `TemplateSupplyResolution`
-    /// (`db/operations/boardSources.ts`).
-    struct TemplateSupplyResolution {
-        let supplies: [BoardSources.Supply]
-        let deadBoardSourceIds: [String]
-        let manualTaskIds: [String]
-        /// B2 (§Member rules — *Resolution pipeline* step 1): live
-        /// `compound_children` rows for every COMPOUND member of `supplies`,
-        /// so a reader can run `applyMemberRules` (the Split-up expansion)
-        /// before counting. Empty when the supplies carry no compound.
-        var childrenByCompoundId: [String: [CompoundChild]] = [:]
+    /// Per-template sources resolution input for `computeRosterHealth` —
+    /// resolved by `AppDatabase.fetchTemplateSupplyResolution` (kept as a
+    /// nested name so existing call sites and tests read unchanged).
+    typealias TemplateSupplyResolution = AppDatabase.TemplateSupplyResolution
+
+    /// The achievable pick per template — the same `mixByTemplateId` the
+    /// roster renders, resolved on demand for surfaces that don't own a
+    /// roster VM (the Tasks-tab Pools segment's pool-health warning; 2026-09
+    /// audit T2). Web twin: `useTemplateRosterHealth(...).mixByTemplateId`.
+    /// Runs DB reads — call off-main.
+    ///
+    /// - Parameters:
+    ///   - templates: The roster.
+    ///   - tasksById: Every live task of the user.
+    ///   - database: The database to resolve against.
+    /// - Returns: template id → the task ids its next spawn could deal from.
+    /// - Throws: A GRDB error from the supply resolution.
+    static func resolveAchievableTaskIds(
+        templates: [RecurringBoardTemplate],
+        tasksById: [String: Task],
+        database: AppDatabase
+    ) throws -> [String: [String]] {
+        let resolution = try database.fetchTemplateSupplyResolution(
+            templates: templates, tasksById: tasksById
+        )
+        return computeRosterHealth(
+            templates: templates, resolutionByTemplateId: resolution, tasksById: tasksById
+        ).mixByTemplateId
     }
 
     /// Sources-native roster health — the spawn pass's static twin

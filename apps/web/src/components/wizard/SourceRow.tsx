@@ -1,4 +1,5 @@
 import {
+  availableSupplyIds,
   memberRuleFor,
   type BoardSource,
   type BoardWindow,
@@ -241,7 +242,7 @@ function buildSubtitle(
     ).length;
     if (excludedCount > 0) parts.push(`${excludedCount} excluded`);
   } else if (source.filter === 'todo') {
-    const notDone = supply.rawSupplyTaskIds.filter((id) => !supply.doneTaskIds.has(id)).length;
+    const notDone = availableSupplyIds(source, supply.rawSupplyTaskIds, supply.doneTaskIds).length;
     parts.push(`${notDone} not done`);
   } else {
     const total = supply.rawSupplyTaskIds.length;

@@ -29,6 +29,10 @@ export interface CoreDefaultsSheetProps {
   pools: Pool[];
   /** Active repeating boards — the pool picker's health-note input. */
   templates: RecurringBoardTemplate[];
+  /** The roster's achievable pick per template (the page's
+   *  `useTemplateRosterHealth`), or `undefined` while it loads — threaded
+   *  to the pool picker's sources-native health note. */
+  achievableTaskIdsByTemplateId: Record<string, string[]> | undefined;
   /** The user's full non-deleted task library — resolves ids to chips. */
   allTasks: Task[];
   /** Draft-filtered subset of `allTasks` — the library-reuse picker's
@@ -63,6 +67,7 @@ export function CoreDefaultsSheet({
   existingDefault,
   pools,
   templates,
+  achievableTaskIdsByTemplateId,
   allTasks,
   browsableTasks,
   onClose,
@@ -314,6 +319,7 @@ export function CoreDefaultsSheet({
             userId={userId}
             pools={pools}
             templates={templates}
+            achievableTaskIdsByTemplateId={achievableTaskIdsByTemplateId}
             tasksById={tasksById}
             browsableTasks={browsableTasks}
             selectedPoolIds={corePoolIds}

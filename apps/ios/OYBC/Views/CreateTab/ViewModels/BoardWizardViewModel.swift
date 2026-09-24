@@ -523,41 +523,6 @@ final class BoardWizardViewModel {
     }
 
 
-    /// Resolves a draft blob's legacy pool-mix trio (`poolIds` /
-    /// `manualTaskIds` / `removedTaskIds`) into an ordered selection via
-    /// `PoolMix.resolveMix`. Callers: the Create hub's draft count
-    /// (`CreateHubViewModel`) and `resolveDraftInitialStep`. Note it reads
-    /// only the legacy trio, not `mix.sources` — the wizard itself
-    /// hydrates a resumed draft through `hydrateSourcesState`. Any lookup
-    /// failure yields an empty selection rather than blocking.
-    static func resolvePoolMixHydration(
-        poolIds: [String],
-        manualTaskIds: [String],
-        removedTaskIds: [String],
-        database: AppDatabase
-    ) -> (selectedTaskIds: Set<String>, poolOrder: [String]) {
-        guard let pools = try? database.fetchPools(ids: poolIds) else {
-            return (Set(), [])
-        }
-        let poolsById = Dictionary(uniqueKeysWithValues: pools.map { ($0.id, $0) })
-
-        var referencedIds = Set<String>()
-        for pool in pools { referencedIds.formUnion(pool.taskIds) }
-        referencedIds.formUnion(manualTaskIds)
-
-        guard let tasks = try? database.fetchTasks(ids: Array(referencedIds)) else {
-            return (Set(), [])
-        }
-        let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
-
-        let result = PoolMix.resolveMix(
-            WizardPoolMixRecord(poolIds: poolIds, manualTaskIds: manualTaskIds, removedTaskIds: removedTaskIds),
-            poolsById: poolsById,
-            tasksById: tasksById
-        )
-        return (Set(result.taskIds), result.taskIds)
-    }
-
     /// Board Creation Split (PR B) — computes which step a resumed draft
     /// should open on: Setup (1) when nothing has been selected yet,
     /// Tasks/Pool (2) when the selection is below the board's
@@ -572,12 +537,13 @@ final class BoardWizardViewModel {
     /// `(board, boardTasks)` tuple, not a live VM, at the point it decides
     /// which step to open.
     ///
-    /// A recurring draft's true selection count comes from
-    /// `recurringDraftMix` (resolved via `resolvePoolMixHydration`), never
-    /// `boardTasks.count` — the placed rows are a possibly-truncated grid
-    /// subset of an intentionally overfilled pool (see
-    /// `Board.recurringDraftMix`'s doc), so counting them would send an
-    /// already-fillable recurring draft back to the Pool step.
+    /// A draft with a mix blob counts from its SOURCES via
+    /// `resolveDraftCapacity` — the capacity the reopened wizard's Step-2
+    /// gate compares, so a board-only draft no longer reopens on Setup
+    /// (2026-09 audit T2). Never `boardTasks.count` for such a draft: the
+    /// placed rows are a possibly-truncated grid subset of an intentionally
+    /// overfilled pool (see `Board.recurringDraftMix`'s doc), so counting
+    /// them would send an already-fillable draft back to the Tasks step.
     static func resolveDraftInitialStep(
         board: Board,
         boardTasks: [BoardTask],
@@ -588,13 +554,7 @@ final class BoardWizardViewModel {
         // Board Sources P1 — one-off drafts saved post-P1 carry the blob
         // too; count from it whenever present (same truncation rationale).
         if board.isRecurringDraft || board.recurringDraftMix != nil {
-            let mix = RecurringDraftMixPayload.decoded(from: board.recurringDraftMix)
-            selectedCount = Self.resolvePoolMixHydration(
-                poolIds: mix.poolIds,
-                manualTaskIds: mix.manualTaskIds,
-                removedTaskIds: mix.removedTaskIds,
-                database: database
-            ).selectedTaskIds.count
+            selectedCount = Self.resolveDraftCapacity(board: board, database: database)
         } else {
             selectedCount = boardTasks.count
         }
