@@ -127,6 +127,7 @@ final class CreateHubViewModel {
                 }
                 DispatchQueue.main.async { self.drafts = rows }
             } catch {
+                dlog("⚠️ CreateHubViewModel.reloadDrafts failed: \(error)")
                 DispatchQueue.main.async { self.drafts = [] }
             }
         }

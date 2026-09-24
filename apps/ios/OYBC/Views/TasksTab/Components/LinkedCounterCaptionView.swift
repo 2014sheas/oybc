@@ -50,6 +50,7 @@ struct LinkedCounterCaptionView: View {
                     loading = false
                 }
             } catch {
+                dlog("⚠️ LinkedCounterCaptionView: source fetch failed for \(sharedCounterId): \(error)")
                 await MainActor.run { loading = false }
             }
         }
