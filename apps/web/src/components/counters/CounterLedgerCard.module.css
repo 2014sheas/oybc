@@ -2,11 +2,14 @@
    Mirrors the `cn-led` styles from the shared-counters design handoff,
    translated to Riso web tokens. See docs/RISO_WEB.md dark-mode contract. */
 
-/* Whole card is the tap target → Detail (except the "+ Log" pill, which
-   stops propagation). `role="button"` on a <div> (not a real <button>) so it
-   can validly contain the nested "+ Log" <button> — mirrors the
-   outer-div-plus-inner-buttons split used by BoardListItem. */
+/* Whole card is the tap target → Detail (except the "+ Log" pill). The card
+   is a plain, non-interactive <div>; the target is `.openButton`, a
+   transparent <button> stretched over it, and the pill is a SIBLING raised
+   above that — never a control nested inside a `role="button"` (2026-09
+   audit). Hover/press still style the card itself: `:hover` and `:active`
+   match the ancestors of the hovered/pressed overlay. */
 .card {
+  position: relative;
   background: var(--riso-paper-2);
   border: 2px solid var(--riso-ink);
   border-radius: var(--riso-r-card);
@@ -27,7 +30,25 @@
   box-shadow: 1px 1px 0 var(--riso-shadow-ink);
 }
 
-.card:focus-visible {
+/* The overlay covers the card's padding box and paints above its in-flow
+   content, so any tap on the card (outside the pill) lands on it. */
+.openButton {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.openButton:focus {
+  outline: none;
+}
+
+/* The focus ring stays on the CARD (its border + radius), exactly where the
+   old focusable card drew it. */
+.card:has(.openButton:focus-visible) {
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
 }
@@ -197,9 +218,11 @@
 }
 
 /* "+ Log" pill — blue fill, on-color text (dark-mode contract: colored
-   fill → static content), 2px static border + 2px offset shadow. Stops
-   click-propagation to the card's own onClick (see CounterLedgerCard.tsx). */
+   fill → static content), 2px static border + 2px offset shadow. Raised
+   above the card's `.openButton` overlay so it receives its own taps. */
 .logPill {
+  position: relative;
+  z-index: 1;
   flex-shrink: 0;
   font-family: var(--riso-font-head);
   font-size: 12px;

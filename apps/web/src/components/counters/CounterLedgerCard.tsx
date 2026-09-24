@@ -37,9 +37,15 @@ interface CounterLedgerCardProps {
  *   Footer:   dashed divider · "N tasks · N boards" · "+ Log" pill (blue) · muted "›" chevron
  *
  * The WHOLE card is tappable → Detail (`/profile/counters/:counterId`), except
- * the "+ Log" pill, which stops propagation and logs the counter's current
- * default amount (`group.defaultLogAmount ?? 1`) in place via
- * `incrementSharedCounter` — one tap, no chip picker (that lives on Detail).
+ * the "+ Log" pill, which logs the counter's current default amount
+ * (`group.defaultLogAmount ?? 1`) in place via `incrementSharedCounter` — one
+ * tap, no chip picker (that lives on Detail).
+ *
+ * The card itself is NOT interactive: the tap target is a transparent
+ * `<button>` stretched over the whole card, and "+ Log" is a SIBLING control
+ * raised above it. Never nest the pill inside a `role="button"` card — the
+ * card's Enter/Space handler would cancel the pill's activation and open
+ * Detail instead (2026-09 audit).
  */
 export function CounterLedgerCard({
   group,
@@ -58,8 +64,7 @@ export function CounterLedgerCard({
     navigate(`/profile/counters/${group.counterId}${showExpired ? '?showExpired=1' : ''}`);
   }
 
-  async function handleLog(e: React.MouseEvent): Promise<void> {
-    e.stopPropagation();
+  async function handleLog(): Promise<void> {
     if (isLogging) return;
     setIsLogging(true);
     try {
@@ -71,19 +76,16 @@ export function CounterLedgerCard({
   }
 
   return (
-    <div
-      className={styles.card}
-      role="button"
-      tabIndex={0}
-      onClick={openDetail}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          openDetail();
-        }
-      }}
-      aria-label={`Open ${group.name} counter detail`}
-    >
+    <div className={styles.card}>
+      {/* The card's tap target: stretched over the whole card, first in tab
+          order (as the card itself used to be). */}
+      <button
+        type="button"
+        className={styles.openButton}
+        onClick={openDetail}
+        aria-label={`Open ${group.name} counter detail`}
+      />
+
       {/* Top row: name + lifetime */}
       <div className={styles.top}>
         <span className={styles.name}>{group.name}</span>
@@ -112,7 +114,7 @@ export function CounterLedgerCard({
         <button
           type="button"
           className={styles.logPill}
-          onClick={(e) => void handleLog(e)}
+          onClick={() => void handleLog()}
           disabled={isLogging}
           aria-label={`Log ${logAmount} ${group.unit ?? ''} for ${group.name}`}
         >
