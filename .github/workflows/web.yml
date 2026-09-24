@@ -76,14 +76,20 @@ jobs:
         # can never mask (or stand in for) a real test result.
         run: pnpm -w test
 
+      - name: Shared coverage (gated)
+        # BLOCKING: Jest `coverageThreshold` in packages/shared/jest.config.js
+        # (80% global on statements/branches/functions/lines; barrel index.ts
+        # files excluded from measurement). Separate from Test so a threshold
+        # miss is distinguishable from a failing test.
+        run: pnpm --filter @oybc/shared test:coverage
+
       - name: Web coverage (reported, not gated)
         id: web-coverage
         # Re-runs the web Vitest suite under v8 coverage. `text-summary` prints
         # the four totals into this log; `json-summary` is uploaded below.
         # REPORTED ONLY: no thresholds in apps/web/vitest.config.ts and
-        # `continue-on-error` here, so it never fails the job. Shared's Jest
-        # `coverageThreshold` is NOT run in CI yet — it currently fails on
-        # functions (barrel re-export getters); see CLAUDE.md §Testing Standards.
+        # `continue-on-error` here, so it never fails the job. (Shared IS gated
+        # — see the step above and CLAUDE.md §Testing Standards.)
         continue-on-error: true
         run: pnpm --filter @oybc/web test:coverage
 

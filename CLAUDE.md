@@ -114,8 +114,8 @@ Invariants not to regress:
 ## Testing Standards
 
 - All new features and bug fixes must include unit tests covering core logic.
-- **Coverage — what is actually enforced, reported, and unmeasured** (no package has a CI-enforced coverage gate today):
-  - **`packages/shared` — threshold configured, NOT enforced in CI.** `jest.config.js` sets an 80% global `coverageThreshold` (statements / branches / functions / lines), applied only by `pnpm --filter @oybc/shared test:coverage`, which no workflow runs (CI runs plain `jest`). That run currently **fails on functions** (71.26% vs 80% on 2026-09-23; statements 97.70 / branches 90.42 / lines 98.61 pass): the shortfall is the barrel files (`src/algorithms/index.ts` 10.37%, `src/constants/index.ts` 0% functions), whose `export *` re-export getters count as uncovered functions. Excluding the barrels measures functions at 98.36%, but that scope change is an open decision, not done. Do not lower the threshold to make it pass.
+- **Coverage — what is actually enforced, reported, and unmeasured:**
+  - **`packages/shared` — enforced in CI.** `jest.config.js` sets an 80% global `coverageThreshold` (statements / branches / functions / lines); `web.yml` runs `pnpm --filter @oybc/shared test:coverage` as a blocking step, separate from the plain Test step. Barrel `index.ts` files (`src/index.ts` and `src/**/index.ts`) are excluded from the measurement — their `export *` re-export getters are counted as uncovered functions but are not code. Do not lower the thresholds to make a run pass.
   - **`apps/web` — reported, not gated.** `pnpm --filter @oybc/web test:coverage` (Vitest + `@vitest/coverage-v8`, no `thresholds`) runs in `web.yml` as a separate `continue-on-error` step after the real Test step, prints a `text-summary` to the job log, and uploads `coverage/coverage-summary.json` as the `web-coverage-summary` artifact. Baseline on 2026-09-23: statements 67.64 / branches 59.84 / functions 62.10 / lines 69.62 over all of `src/`.
   - **iOS and `functions/` — not measured.**
 - Use Jest for TypeScript tests and XCTest for Swift tests.
