@@ -291,9 +291,11 @@ export async function deleteAccount(): Promise<void> {
   const user = auth.currentUser;
   if (!user) throw new Error('No signed-in user');
 
-  // 1. Stop the sync loop BEFORE deleting (mirrors iOS `syncService.stop()`):
-  //    a push racing the server-side purge would resurrect just-deleted
-  //    Firestore data, and the ID token stays valid until it expires. If the
+  // 1. Stop the sync loop BEFORE deleting: a push racing the server-side
+  //    purge would resurrect just-deleted Firestore data, and the ID token
+  //    stays valid until it expires. (iOS orders it differently — it calls
+  //    `syncService.stop()` AFTER `user.delete()`, and its `pushSyncCore` uid
+  //    guard skips any push once `currentUser` is nil.) If the
   //    delete fails (e.g. requires-recent-login) the account is intact, so
   //    restart the loop it stopped rather than leave a signed-in user without sync.
   const stoppedLoopFor = stopSyncLoop();
