@@ -125,10 +125,16 @@ service cloud.firestore {
       allow update: if validEntityWrite()
                     && request.resource.data.version >= resource.data.version;
 
-      // Deletes: auth + collection only (no resource validation needed)
-      allow delete: if request.auth != null
-                    && request.auth.uid == userId
-                    && isKnownCollection();
+      // Entity docs are NEVER client-hard-deleted (2026-09 security audit).
+      // Deletion is a soft delete: the client pushes a tombstone
+      // (`isDeleted: true`, version bumped) through `setDoc(..., { merge: true })`,
+      // which the `update` rule above gates on version monotonicity. Neither
+      // client calls Firestore `deleteDoc` (web: no `deleteDoc` in the sync
+      // layer; iOS: only `FieldValue.delete()` on individual fields), so a
+      // hard delete can only come from a buggy or hostile client — and it
+      // would erase the tombstone other devices need to converge. Server-side
+      // account purges use the Admin SDK, which bypasses these rules.
+      allow delete: if false;
     }
 
     // Monetization entitlement (docs/MONETIZATION.md) - SERVER-AUTHORITATIVE.

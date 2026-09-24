@@ -162,13 +162,45 @@ describe("users/{userId} parent doc (firestore.rules:6-19)", () => {
 });
 
 describe("users/{userId}/{collection}/{docId} subcollections (firestore.rules:21-74)", () => {
-  it("allows the owner to write, read, and delete a known-collection doc with a valid payload", async () => {
+  it("allows the owner to write and read a known-collection doc with a valid payload, but never hard-delete it (allow delete: if false)", async () => {
     const uid = "alice";
     const db = testEnv.authenticatedContext(uid).firestore();
     const ref = doc(db, `users/${uid}/boards/board1`);
     await assertSucceeds(setDoc(ref, boardPayload(uid, "board1")));
     await assertSucceeds(getDoc(ref));
-    await assertSucceeds(deleteDoc(ref));
+    await assertFails(deleteDoc(ref));
+  });
+
+  it("denies the owner hard-deleting a child-entity doc too (boardTasks, no userId field)", async () => {
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/boardTasks/bt1`);
+    await assertSucceeds(setDoc(ref, childPayload("bt1")));
+    await assertFails(deleteDoc(ref));
+  });
+
+  it("still allows the owner's soft delete: a tombstone update (isDeleted: true, version + 1)", async () => {
+    // The app's real delete transport — `setDoc(ref, tombstone, { merge: true })`
+    // on an existing doc is an `update`, gated by version monotonicity, not by
+    // the (now always-false) delete rule.
+    const uid = "alice";
+    const db = testEnv.authenticatedContext(uid).firestore();
+    const ref = doc(db, `users/${uid}/boards/board1`);
+    await assertSucceeds(setDoc(ref, boardPayload(uid, "board1", { version: 3 })));
+    await assertSucceeds(
+      setDoc(
+        ref,
+        boardPayload(uid, "board1", {
+          version: 4,
+          isDeleted: true,
+          deletedAt: "2026-09-23T12:00:00.000Z",
+        }),
+        { merge: true },
+      ),
+    );
+    await assertSucceeds(
+      updateDoc(ref, { version: 5, isDeleted: true, deletedAt: "2026-09-23T12:00:01.000Z" }),
+    );
   });
 
   it("allows a child-entity collection without a userId field, per requiresUserIdField() (lines 37-42)", async () => {
@@ -411,7 +443,7 @@ describe("taskEvents subcollection — Windowed Completion (docs/WINDOWED_COMPLE
     };
   }
 
-  it("allows the owner to create, read, update, and delete their own taskEvent", async () => {
+  it("allows the owner to create, read, and soft-delete (tombstone update) their own taskEvent, but never hard-delete it", async () => {
     const uid = "alice";
     const db = testEnv.authenticatedContext(uid).firestore();
     const ref = doc(db, `users/${uid}/taskEvents/ev1`);
@@ -420,7 +452,7 @@ describe("taskEvents subcollection — Windowed Completion (docs/WINDOWED_COMPLE
     await assertSucceeds(
       updateDoc(ref, taskEventPayload(uid, "ev1", { isDeleted: true })),
     );
-    await assertSucceeds(deleteDoc(ref));
+    await assertFails(deleteDoc(ref));
   });
 
   it("denies a different authenticated user from reading another user's taskEvent", async () => {
