@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import styles from './RowContextMenu.module.css';
 
 /**
@@ -45,6 +45,25 @@ export function RowContextMenu({
   items,
   onClose,
 }: RowContextMenuProps): React.ReactElement {
+  // The element focused when the menu opened (the task row, usually inside
+  // an open sheet). Captured on the first render — before any item can take
+  // focus — and handed focus back on close IF focus was lost with the menu
+  // (a clicked item unmounts, dropping focus to <body>). Without this the
+  // sheet behind the menu stops hearing Escape and Tab walks the page.
+  const [restoreTo] = useState<HTMLElement | null>(() =>
+    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+  useEffect(
+    () => () => {
+      const active = document.activeElement;
+      const focusLost = active === null || active === document.body || !active.isConnected;
+      if (focusLost && restoreTo?.isConnected) restoreTo.focus();
+    },
+    [restoreTo],
+  );
+
   useEffect(() => {
     const onDocClick = (): void => onClose();
     const onKey = (e: KeyboardEvent): void => {

@@ -82,6 +82,21 @@ function currentlyFocused(): HTMLElement | null {
   return document.activeElement instanceof HTMLElement ? document.activeElement : null;
 }
 
+/**
+ * The last (topmost) open modal in the document other than `closing` — the
+ * fallback focus target when a closing modal's opener is gone and it has no
+ * modal ancestor. Typical case: a dialog opened from a floating menu item
+ * (the menu unmounts on click) that is a DOM SIBLING of a still-open sheet.
+ * Without this, focus lands on `<body>` and the sheet's Escape/Tab handling
+ * stops working.
+ */
+function topmostOpenModal(closing: HTMLElement | null): HTMLElement | null {
+  const open = Array.from(
+    document.querySelectorAll<HTMLElement>('[aria-modal="true"]'),
+  ).filter((el) => el !== closing && el.isConnected);
+  return open[open.length - 1] ?? null;
+}
+
 function focusableIn(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
 }
@@ -144,6 +159,17 @@ export function useModalA11y<T extends HTMLElement = HTMLDivElement>({
     // its Escape/Tab handling keeps working.
     const outerModal =
       root?.parentElement?.closest<HTMLElement>('[aria-modal="true"]') ?? null;
+    // If the render-time opener is already gone (a menu item that unmounted
+    // in this same commit), whatever holds focus NOW — before we move it —
+    // is the better hand-back target: e.g. the row a closing context menu
+    // just restored focus to.
+    const active = currentlyFocused();
+    const restoreTarget =
+      opener && opener.isConnected
+        ? opener
+        : active && active !== document.body && !root?.contains(active)
+          ? active
+          : opener;
     if (root && !root.contains(document.activeElement)) {
       const cancel =
         initialFocus === 'cancel'
@@ -153,8 +179,9 @@ export function useModalA11y<T extends HTMLElement = HTMLDivElement>({
       target.focus();
     }
     return () => {
-      if (opener && opener.isConnected) opener.focus();
+      if (restoreTarget && restoreTarget.isConnected) restoreTarget.focus();
       else if (outerModal && outerModal.isConnected) outerModal.focus();
+      else topmostOpenModal(root)?.focus();
     };
   }, [open, initialFocus, opener]);
 
