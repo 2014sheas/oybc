@@ -11,13 +11,17 @@ import GRDB
 /// Cycle fixture: achievement X (watching board A) sits on board B, so B → A.
 /// Achievement T sits on board A. Re-targeting T at B closes A → B → A; at C
 /// it doesn't. Board ids are UUID-shaped so the name-mapping assertion can
-/// prove the ids are NOT in the rendered message.
+/// prove the ids are NOT in the rendered message. Board B is a daily core
+/// board whose stored name is the frozen legacy "Today" (pre-#482), so the
+/// cycle path must show its HEALED display name, "Mar 15, 2026".
 final class AppDatabaseTaskEditTests: XCTestCase {
 
     private let boardA = "aaaaaaaa-0000-4000-8000-000000000001"
     private let boardB = "bbbbbbbb-0000-4000-8000-000000000002"
     private let boardC = "cccccccc-0000-4000-8000-000000000003"
     private let now = "2026-09-23T12:00:00.000"
+    /// `Board.displayName` of board B (core, daily, stored as "Today").
+    private let healedB = "Mar 15, 2026"
 
     // MARK: - Fixtures
 
@@ -32,11 +36,18 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         return db
     }
 
-    private func makeBoard(id: String, name: String) -> Board {
+    private func makeBoard(
+        id: String,
+        name: String,
+        timeframe: Timeframe = .monthly,
+        startDate: String = "2026-06-01T00:00:00.000",
+        endDate: String = "2026-06-30T23:59:59.999",
+        isCore: Bool = false
+    ) -> Board {
         let dict: [String: Any] = [
             "id": id, "userId": "u1", "name": name, "status": BoardStatus.active.rawValue,
-            "boardSize": 3, "timeframe": Timeframe.monthly.rawValue,
-            "startDate": "2026-06-01T00:00:00.000", "endDate": "2026-06-30T23:59:59.999",
+            "boardSize": 3, "timeframe": timeframe.rawValue, "isCore": isCore,
+            "startDate": startDate, "endDate": endDate,
             "centerSquareType": CenterSquareType.free.rawValue, "isRandomized": false,
             "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
             "createdAt": "2026-06-01T00:00:00.000", "updatedAt": "2026-06-01T00:00:00.000",
@@ -75,7 +86,11 @@ final class AppDatabaseTaskEditTests: XCTestCase {
     private func seedCycleFixture(_ db: AppDatabase) throws {
         try db.write { conn in
             try makeBoard(id: boardA, name: "Alpha Monthly").insert(conn)
-            try makeBoard(id: boardB, name: "Bravo Weekly").insert(conn)
+            try makeBoard(
+                id: boardB, name: "Today", timeframe: .daily,
+                startDate: "2026-03-15T00:00:00.000", endDate: "2026-03-15T23:59:59.999",
+                isCore: true
+            ).insert(conn)
             try makeBoard(id: boardC, name: "Charlie Daily").insert(conn)
             try makeTask("x", type: .achievement, referencedBoardId: boardA).insert(conn)
             try makeTask("t", type: .achievement, referencedBoardId: boardC).insert(conn)
@@ -162,11 +177,13 @@ final class AppDatabaseTaskEditTests: XCTestCase {
                 return XCTFail("expected .cycle, got \(error)")
             }
             XCTAssertTrue(names.contains("Alpha Monthly"), "\(names)")
-            XCTAssertTrue(names.contains("Bravo Weekly"), "\(names)")
+            XCTAssertTrue(names.contains(self.healedB), "\(names)")
+            XCTAssertFalse(names.contains("Today"), "raw frozen name leaked: \(names)")
             let message = AppDatabase.taskEditErrorMessage(error)
             XCTAssertTrue(message.hasPrefix("This reference would create a cycle: "), message)
             XCTAssertTrue(message.contains("Alpha Monthly"), message)
-            XCTAssertTrue(message.contains("Bravo Weekly"), message)
+            XCTAssertTrue(message.contains(self.healedB), message)
+            XCTAssertFalse(message.contains("Today"), message)
             XCTAssertFalse(message.contains(self.boardA), message)
             XCTAssertFalse(message.contains(self.boardB), message)
         }
@@ -203,6 +220,24 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         }
     }
 
+    func test_apply_softDeletedTask_throwsTaskNotFound() throws {
+        let db = try makeDb()
+        var deleted = makeTask("d1")
+        deleted.isDeleted = true
+        deleted.deletedAt = "2026-06-02T00:00:00.000"
+        try db.write { try deleted.insert($0) }
+
+        XCTAssertThrowsError(try db.applyTaskEditPatch(taskId: "d1", patch: patch(title: "Revived"), now: now)) { error in
+            XCTAssertEqual(error as? AppDatabase.TaskEditError, .taskNotFound)
+        }
+
+        let stored = try XCTUnwrap(try db.fetchTask(id: "d1"))
+        XCTAssertEqual(stored.version, 1)
+        XCTAssertTrue(stored.isDeleted)
+        XCTAssertEqual(stored.title, "Task d1")
+        XCTAssertTrue(try db.fetchPendingSyncItems().filter { $0.entityId == "d1" }.isEmpty)
+    }
+
     // MARK: - checkAchievementRetargetCycle
 
     func test_check_cyclingRetarget_returnsCycleWithNamesNotIds() throws {
@@ -216,7 +251,8 @@ final class AppDatabaseTaskEditTests: XCTestCase {
 
         guard case .cycle(let names) = result else { return XCTFail("expected .cycle, got \(result)") }
         XCTAssertEqual(names.first, "Alpha Monthly")
-        XCTAssertTrue(names.contains("Bravo Weekly"), "\(names)")
+        XCTAssertTrue(names.contains(healedB), "\(names)")
+        XCTAssertFalse(names.contains("Today"), "raw frozen name leaked: \(names)")
         let joined = names.joined(separator: " → ")
         XCTAssertFalse(joined.contains(boardA), joined)
         XCTAssertFalse(joined.contains(boardB), joined)

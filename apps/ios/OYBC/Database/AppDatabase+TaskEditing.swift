@@ -11,14 +11,15 @@ import GRDB
 //
 // iOS twin of web `checkAchievementRetargetCycle` + the edit-apply path in
 // `apps/web/src/db/operations/tasks.crud.ts` — the cycle path is mapped to
-// board NAMES (falling back to the id when a board can't be resolved),
-// exactly as web does.
+// healed board display names (`Board.displayName` ↔ web `boardDisplayName`,
+// so a frozen "Today" core board reads as its window), falling back to the
+// id when a board can't be resolved, exactly as web does.
 
 extension AppDatabase {
 
     /// Outcome of an Achievement re-target cycle check. `pathNames` is the
-    /// cycle path with each board id replaced by that board's `name` (the
-    /// id itself when the board can't be resolved).
+    /// cycle path with each board id replaced by that board's healed
+    /// `displayName` (the id itself when the board can't be resolved).
     enum TaskEditCycleCheck: Equatable {
         case ok
         case cycle(pathNames: [String])
@@ -151,7 +152,7 @@ extension AppDatabase {
     }
 
     /// `db`-scoped cycle check: builds the workspace context and runs
-    /// `CycleDetection.hasCycle`, mapping the cycle path's board ids to names.
+    /// `CycleDetection.hasCycle`, mapping the cycle path's board ids to healed display names.
     ///
     /// - Parameters:
     ///   - db: An open database connection.
@@ -187,7 +188,7 @@ extension AppDatabase {
         case .ok:
             return .ok
         case .cycle(let path):
-            let nameById = Dictionary(allBoards.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+            let nameById = Dictionary(allBoards.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
             return .cycle(pathNames: path.map { nameById[$0] ?? $0 })
         }
     }
