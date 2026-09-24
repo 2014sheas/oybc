@@ -7,6 +7,7 @@ import {
   isEligibleSourceBoard,
   isEventOwningTask,
   isSourceSupplyTask,
+  pickSeriesInstance,
   poolSourceSupplyById,
   resolveTaskWindowState,
   sourcesForRecord,
@@ -203,14 +204,12 @@ export async function resolveSourceBoard(
   const containing = instances.filter(
     (b) => b.startDate <= reference && (b.endDate === undefined || reference <= b.endDate),
   );
-  if (containing.length > 0) {
-    containing.sort((a, b) => b.startDate.localeCompare(a.startDate));
-    return containing[0];
-  }
+  // `pickSeriesInstance`: latest startDate, lowest id on a tie — two
+  // offline devices can each spawn the same window, and the id key keeps
+  // web and iOS pulling from the same instance.
+  if (containing.length > 0) return pickSeriesInstance(containing);
   const started = instances.filter((b) => b.startDate <= reference);
-  const pool = started.length > 0 ? started : instances;
-  pool.sort((a, b) => b.startDate.localeCompare(a.startDate));
-  return pool[0];
+  return pickSeriesInstance(started.length > 0 ? started : instances);
 }
 
 /**

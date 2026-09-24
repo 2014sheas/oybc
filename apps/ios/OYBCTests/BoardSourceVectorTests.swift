@@ -144,12 +144,24 @@ final class BoardSourceVectorTests: XCTestCase {
         let expected: String?
     }
 
+    private struct RawSeriesCandidate: Decodable, SeriesInstanceCandidate {
+        let id: String
+        let startDate: String
+    }
+
+    private struct SeriesInstanceVector: Decodable {
+        let name: String
+        let candidates: [RawSeriesCandidate]
+        let expectedId: String
+    }
+
     private struct Fixture: Decodable {
         let capacityVectors: [CapacityVector]
         let selectionVectors: [SelectionVector]
         let conversionVectors: [ConversionVector]
         let configurationVectors: [ConfigurationVector]
         let lossSentenceVectors: [LossSentenceVector]
+        let seriesInstanceVectors: [SeriesInstanceVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -208,6 +220,23 @@ final class BoardSourceVectorTests: XCTestCase {
                 XCTAssertEqual(shortBy, v.expected.shortBy, v.name)
             }
         }
+    }
+
+    /// Series-binding tie-break: latest startDate, lowest id on a tie. Run
+    /// in both the fixture order and reversed — input order must never
+    /// decide which instance supplies.
+    func testSeriesInstanceVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.seriesInstanceVectors.isEmpty)
+        for v in fixture.seriesInstanceVectors {
+            XCTAssertEqual(BoardSources.pickSeriesInstance(v.candidates)?.id, v.expectedId, v.name)
+            XCTAssertEqual(
+                BoardSources.pickSeriesInstance(Array(v.candidates.reversed()))?.id,
+                v.expectedId,
+                "\(v.name) (reversed)"
+            )
+        }
+        XCTAssertNil(BoardSources.pickSeriesInstance([RawSeriesCandidate]()))
     }
 
     func testConversionVectors() throws {

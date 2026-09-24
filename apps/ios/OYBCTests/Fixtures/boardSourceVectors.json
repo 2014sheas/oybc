@@ -1586,5 +1586,43 @@
       },
       "expected": "You'll lose 2 exclusions, 1 member rule, the narrowed range and the \"All squares\" filter."
     }
+  ],
+  "seriesInstanceVectors": [
+    {
+      "name": "seriesInstance_distinctStartDates_picksLatest",
+      "candidates": [
+        {
+          "id": "board-a",
+          "startDate": "2026-09-01T00:00:00.000"
+        },
+        {
+          "id": "board-c",
+          "startDate": "2026-09-15T00:00:00.000"
+        },
+        {
+          "id": "board-b",
+          "startDate": "2026-09-08T00:00:00.000"
+        }
+      ],
+      "expectedId": "board-c"
+    },
+    {
+      "name": "seriesInstance_equalStartDates_picksLowestId",
+      "candidates": [
+        {
+          "id": "board-old",
+          "startDate": "2026-09-01T00:00:00.000"
+        },
+        {
+          "id": "board-zzz",
+          "startDate": "2026-09-15T00:00:00.000"
+        },
+        {
+          "id": "board-aaa",
+          "startDate": "2026-09-15T00:00:00.000"
+        }
+      ],
+      "expectedId": "board-aaa"
+    }
   ]
 }
