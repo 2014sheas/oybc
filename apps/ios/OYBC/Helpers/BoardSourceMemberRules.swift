@@ -833,15 +833,10 @@ extension BoardSources {
     /// `frozenDerivedRow` section of `memberRuleVectors.json`.
     ///
     /// Increment / decrement / undo skip a frozen row's authored write and
-    /// sync enqueue — bounding each "+1" to the rows whose windows are still
-    /// open. Completion does not read the propagated latch: the kernel
-    /// resolves window-stamped rows from the ROOT's events inside
-    /// `[startDate, endDate]`. An increment / decrement stamps its new event
-    /// `now` (after every frozen window), so it cannot change a frozen row's
-    /// completion and skips its cascade too. An UNDO can — it tombstones an
-    /// earlier event that may lie inside a frozen window — so undo still
-    /// cascades (never writes) the rows ``isFrozenRowReachedByEvent(_:occurredAt:now:)``
-    /// names. (`refreshDerivedBaselines` is non-authored and NOT gated by this.)
+    /// enqueue; completion reads the ROOT's in-window events, not the latch.
+    /// Increment / decrement (event stamped `now`) skip its cascade too; undo
+    /// cascades — never writes — the rows `isFrozenRowReachedByEvent` names
+    /// (TaskEvents.swift). `refreshDerivedBaselines` is NOT gated by this.
     ///
     /// "Ended" uses the kernel's inclusive window convention
     /// (`DateFormatting.isWithinTimeframe`): frozen only once `now` is
@@ -860,27 +855,6 @@ extension BoardSources {
               let end = DateFormatting.parseISO(endDate),
               let nowDate = DateFormatting.parseISO(now) else { return false }
         return nowDate > end
-    }
-
-    /// Undo across the window end: is `task` a FROZEN window-stamped derived
-    /// row (``isFrozenDerivedRow(_:now:)``) whose own `[startDate, endDate]`
-    /// contains `occurredAt` — the instant of the event an undo just
-    /// tombstoned? The kernel counts that event toward the row, so the undo
-    /// can flip its completion: its boards must be re-derived (cascade only —
-    /// the freeze still forbids an authored write / enqueue). Window
-    /// membership is the kernel's own `DateFormatting.isWithinTimeframe`.
-    ///
-    /// Mirrors the TS `isFrozenRowReachedByEvent`; pinned by
-    /// `memberRuleVectors.json#frozenRowReachedByEvent`.
-    ///
-    /// - Parameters:
-    ///   - task: The linked task row to test.
-    ///   - occurredAt: The undone event's `occurredAt`.
-    ///   - now: The undo's timestamp (the freeze clock).
-    /// - Returns: True when the undo must cascade (never write) this row.
-    static func isFrozenRowReachedByEvent(_ task: Task, occurredAt: String, now: String) -> Bool {
-        guard isFrozenDerivedRow(task, now: now), let startDate = task.startDate else { return false }
-        return DateFormatting.isWithinTimeframe(occurredAt, startDate: startDate, endDate: task.endDate)
     }
 
     /// Output of ``buildDerivedRows(drafts:userId:now:rootsById:compoundsById:)``

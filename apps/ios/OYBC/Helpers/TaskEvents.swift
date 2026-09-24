@@ -489,3 +489,28 @@ func buildBackfillTaskEvent(task: Task) -> TaskEvent? {
         deletedAt: nil
     )
 }
+
+// MARK: - Undo across the window end (derived-counter freeze)
+
+extension BoardSources {
+    /// Undo across the window end: is `task` a FROZEN window-stamped derived
+    /// row (`isFrozenDerivedRow(_:now:)`) whose own `[startDate, endDate]`
+    /// contains `occurredAt` — the instant of the event an undo just
+    /// tombstoned? The kernel counts that event toward the row, so the undo
+    /// can flip its completion: its boards must be re-derived (cascade only —
+    /// the freeze still forbids an authored write / enqueue). Window
+    /// membership is the kernel's own `DateFormatting.isWithinTimeframe`.
+    ///
+    /// Mirrors the TS `isFrozenRowReachedByEvent`; pinned by
+    /// `memberRuleVectors.json#frozenRowReachedByEvent`.
+    ///
+    /// - Parameters:
+    ///   - task: The linked task row to test.
+    ///   - occurredAt: The undone event's `occurredAt`.
+    ///   - now: The undo's timestamp (the freeze clock).
+    /// - Returns: True when the undo must cascade (never write) this row.
+    static func isFrozenRowReachedByEvent(_ task: Task, occurredAt: String, now: String) -> Bool {
+        guard isFrozenDerivedRow(task, now: now), let startDate = task.startDate else { return false }
+        return DateFormatting.isWithinTimeframe(occurredAt, startDate: startDate, endDate: task.endDate)
+    }
+}
