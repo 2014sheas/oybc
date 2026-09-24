@@ -827,6 +827,37 @@ extension BoardSources {
             && task.createdInWizard
     }
 
+    /// Is this STORED row a window-stamped derived counter whose window has
+    /// ENDED, so shared-counter propagation must skip it (the propagation
+    /// freeze)? Twin of the TS `isFrozenDerivedRow`, pinned by the
+    /// `frozenDerivedRow` section of `memberRuleVectors.json`.
+    ///
+    /// Increment / decrement / undo skip a frozen row entirely — no authored
+    /// write, no sync enqueue, no board cascade — bounding each "+1" to the
+    /// rows whose windows are still open. Freezing cannot change board
+    /// completion: the kernel resolves window-stamped rows from the ROOT's
+    /// events inside `[startDate, endDate]`, never from the propagated latch.
+    /// (`refreshDerivedBaselines` is non-authored and NOT gated by this.)
+    ///
+    /// "Ended" uses the kernel's inclusive window convention
+    /// (`DateFormatting.isWithinTimeframe`): frozen only once `now` is
+    /// strictly after the `endDate` instant. Rows with no `endDate` and
+    /// hub-linked rows (no `startDate`) are never frozen. An unparseable
+    /// `endDate` or `now` is treated as not frozen.
+    ///
+    /// - Parameters:
+    ///   - task: The linked task row to test.
+    ///   - now: The current instant as an ISO8601 string (a parameter, never
+    ///     read from the clock here, so the predicate stays pure).
+    /// - Returns: True when propagation must skip the row.
+    static func isFrozenDerivedRow(_ task: Task, now: String) -> Bool {
+        guard isWindowStampedDerived(task),
+              let endDate = task.endDate,
+              let end = DateFormatting.parseISO(endDate),
+              let nowDate = DateFormatting.parseISO(now) else { return false }
+        return nowDate > end
+    }
+
     /// Output of ``buildDerivedRows(drafts:userId:now:rootsById:compoundsById:)``
     /// — complete, writable rows. (Swift twin of the TS `DerivedRows`
     /// interface; a named struct rather than a bare tuple so the two write

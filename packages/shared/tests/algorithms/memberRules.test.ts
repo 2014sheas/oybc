@@ -22,6 +22,7 @@ import {
   derivedLinkId,
   computeWindowBaseline,
   isWindowStampedDerived,
+  isFrozenDerivedRow,
   buildDerivedRows,
 } from '../../src/algorithms/memberRules';
 import type { BaselineEvent } from '../../src/algorithms/memberRules';
@@ -291,6 +292,21 @@ describe('isWindowStampedDerived', () => {
     // The shape a Swift `Bool` (non-optional, defaulting to false) actually
     // hits — distinct from the absent case above, same answer.
     expect(isWindowStampedDerived({ ...full, createdInWizard: false })).toBe(false);
+  });
+});
+
+describe('isFrozenDerivedRow', () => {
+  it('fixture carries vectors (no silent skip)', () => {
+    expect((V.frozenDerivedRow as any[]).length).toBeGreaterThanOrEqual(4);
+  });
+  it.each(V.frozenDerivedRow as any[])('$name', (v: any) => {
+    const task = {
+      sharedCounterId: v.task.sharedCounterId,
+      startDate: v.task.startDate ?? undefined,
+      endDate: v.task.endDate ?? undefined,
+      createdInWizard: v.task.createdInWizard,
+    };
+    expect(isFrozenDerivedRow(task, v.now)).toBe(v.expected);
   });
 });
 

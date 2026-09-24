@@ -35,6 +35,7 @@ import type { CompoundChild } from '../types/compoundChild';
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import type { BoardSourceSupply } from './boardSources';
+import { isTimeframeExpired } from './calendarBoundaries';
 import { deriveDisplayedCount } from './sharedCounter';
 import { generateCounterTaskTitle } from './taskTitle';
 import { uuidv5 } from './uuidv5';
@@ -741,6 +742,39 @@ export function isWindowStampedDerived(
   t: Pick<Task, 'sharedCounterId' | 'startDate' | 'createdInWizard'>
 ): boolean {
   return !!t.sharedCounterId && !!t.startDate && t.createdInWizard === true;
+}
+
+/**
+ * Is this STORED row a window-stamped derived counter whose window has ENDED,
+ * so shared-counter propagation must skip it (the propagation freeze)?
+ *
+ * Shared-counter increment / decrement / undo skip a frozen row entirely — no
+ * authored write, no sync enqueue, no board cascade — which bounds each "+1"
+ * to the rows whose windows are still open instead of one row per board per
+ * window forever. Freezing cannot change board completion: the kernel resolves
+ * window-stamped rows from the ROOT's events inside `[startDate, endDate]`
+ * (`resolveDerivedCounterWindowState`), never from the propagated latch.
+ * (`refreshDerivedBaselines` is non-authored and is NOT gated by this.)
+ *
+ * "Ended" uses the kernel's window convention (`isWithinTimeframe`, inclusive
+ * of `endDate`): the row is frozen only once `now` is strictly after its
+ * `endDate` instant — a row whose `endDate` is today stays live until then.
+ * Rows with no `endDate` (indefinite) and hub-linked rows (no `startDate`,
+ * so not {@link isWindowStampedDerived}) are never frozen; they propagate as
+ * before. An unparseable `endDate` or `now` is treated as not frozen (the
+ * pre-freeze behaviour).
+ *
+ * @param t   - The linked task row to test.
+ * @param now - The current instant as an ISO8601 string (a parameter, never
+ *              read from the clock here, so the predicate stays pure).
+ * @returns True when propagation must skip the row.
+ */
+export function isFrozenDerivedRow(
+  t: Pick<Task, 'sharedCounterId' | 'startDate' | 'createdInWizard' | 'endDate'>,
+  now: string,
+): boolean {
+  if (!isWindowStampedDerived(t) || t.endDate == null) return false;
+  return isTimeframeExpired(t.endDate, new Date(now));
 }
 
 /**

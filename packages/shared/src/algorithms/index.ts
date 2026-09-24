@@ -282,6 +282,7 @@ export {
   planDerivedTasks,
   computeWindowBaseline,
   isWindowStampedDerived,
+  isFrozenDerivedRow,
   buildDerivedRows,
 } from './memberRules';
 
