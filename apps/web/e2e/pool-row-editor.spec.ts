@@ -131,10 +131,16 @@ test.describe('Wizard Tasks step — inline PoolRowEditor (Inline Task Editing P
     await page.screenshot({ path: '.playwright-mcp/pool-row-editor-03-compound-light.png' });
 
     // The compound editor's sub-task quick-add row (the wizard's own row).
-    await compoundEditor.getByLabel('New normal task title').fill('Cold rinse');
-    await compoundEditor.getByLabel('New normal task title').press('Enter');
+    // ⌘↵ with text only appends the sub-task — it must not also save the
+    // editor (that save would stage the pre-append draft and lose it).
+    const subtaskRow = compoundEditor.getByLabel('New normal task title');
+    await subtaskRow.fill('Cold rinse');
+    await subtaskRow.press('ControlOrMeta+Enter');
     await expect(compoundEditor.getByLabel(/Sub-task 3 title/)).toHaveValue('Cold rinse');
-    await compoundEditor.getByRole('button', { name: 'Save task' }).click();
+    await expect(compoundEditor).toBeVisible();
+    await expect(subtaskRow).toHaveValue('');
+    // A second ⌘↵ on the now-empty row reaches the editor and saves.
+    await subtaskRow.press('ControlOrMeta+Enter');
 
     const updatedCompoundRow = page.getByRole('listitem').filter({ hasText: 'Morning routine' });
     await expect(updatedCompoundRow).toContainText('3 sub-tasks');

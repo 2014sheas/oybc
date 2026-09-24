@@ -238,6 +238,11 @@ export function WizardQuickAddRow({
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'Enter') {
       e.preventDefault();
+      // Draft-only hosts (compound editors) sit inside an editor whose
+      // ⌘↵ saves: an Enter that appends a sub-task must not also reach it,
+      // or the save runs on the pre-append draft. An empty row still lets
+      // ⌘↵ through to save. The wizard never passes `onSubmitText`.
+      if (onSubmitText !== undefined && canSubmit) e.stopPropagation();
       void handleSubmit();
     }
   }

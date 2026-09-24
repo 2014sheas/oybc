@@ -240,7 +240,7 @@ struct RisoCompoundEditFieldsView: View {
                     .font(.risoBody(11.5, .semibold))
                     .foregroundStyle(Color.risoMuted)
             case .failed:
-                Text("Couldn't load your tasks to link. New sub-tasks still work — close and reopen to try again.")
+                Text("Couldn't load your tasks to link. New sub-tasks still work — close and reopen the editor to try again.")
                     .font(.risoBody(11.5, .semibold))
                     .foregroundStyle(Color.risoRed)
                     .fixedSize(horizontal: false, vertical: true)
