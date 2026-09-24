@@ -5,6 +5,9 @@ import { RisoButton } from '../riso';
 import { TypeBadge } from '../TypeBadge';
 import styles from './ExistingTaskPicker.module.css';
 
+/** Whether the caller's candidate list has arrived (Task Detail loads it). */
+export type PickerInputsState = 'loading' | 'loaded' | 'failed';
+
 export interface ExistingTaskPickerProps {
   /**
    * The ELIGIBLE candidates, already filtered by the caller
@@ -15,6 +18,8 @@ export interface ExistingTaskPickerProps {
   onPick: (task: Task) => void;
   /** Backdrop click / Escape / Cancel. */
   onCancel: () => void;
+  /** Candidate-list load state; the list shows only once `loaded`. Default `loaded`. */
+  status?: PickerInputsState;
 }
 
 /**
@@ -28,7 +33,12 @@ export interface ExistingTaskPickerProps {
  * enclosing sheet / row editor stays open, and clicks stop here so the
  * outer backdrop never sees them. iOS twin: `RisoExistingTaskPickerSheet`.
  */
-export function ExistingTaskPicker({ tasks, onPick, onCancel }: ExistingTaskPickerProps): React.ReactElement {
+export function ExistingTaskPicker({
+  tasks,
+  onPick,
+  onCancel,
+  status = 'loaded',
+}: ExistingTaskPickerProps): React.ReactElement {
   const { ref: modalRef, props: modalProps } = useModalA11y<HTMLDivElement>({
     open: true,
     onCancel,
@@ -62,7 +72,13 @@ export function ExistingTaskPicker({ tasks, onPick, onCancel }: ExistingTaskPick
           placeholder="Search your tasks"
           aria-label="Search tasks"
         />
-        {visible.length === 0 ? (
+        {status === 'loading' ? (
+          <p className={styles.empty}>Loading your tasks…</p>
+        ) : status === 'failed' ? (
+          <p className={styles.empty} role="alert">
+            Couldn&apos;t load your tasks. Close and reopen the editor to try again.
+          </p>
+        ) : visible.length === 0 ? (
           <p className={styles.empty}>
             {tasks.length === 0 ? 'No tasks can be added to this compound.' : 'No matching tasks.'}
           </p>

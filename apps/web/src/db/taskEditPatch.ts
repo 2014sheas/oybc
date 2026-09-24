@@ -47,6 +47,11 @@ export interface ChildPatch {
   /** A counting sub-task is a Counting child (Action/Goal/Unit);
    *  otherwise a Normal sub-task. A sub-task's type is fixed once added. */
   isCounting: boolean;
+  /** The sub-task's task type, for its card badge. NORMAL / COUNTING for a
+   *  sub-task minted in the editor; the linked task's own type (which may
+   *  be COMPOUND — a nested compound, title-only) for an existing one.
+   *  `isCounting` stays the switch for the Action/Goal/Unit fields. */
+  childType: TaskType;
   action: string;
   goal: string;
   unit: string;
@@ -67,6 +72,7 @@ export function newChildPatch(isCounting: boolean): ChildPatch {
     childTaskId: null,
     title: '',
     isCounting,
+    childType: isCounting ? TaskType.COUNTING : TaskType.NORMAL,
     action: '',
     goal: '',
     unit: '',
@@ -83,6 +89,7 @@ export function childPatchFromTask(child: Task): ChildPatch {
     childTaskId: child.id,
     title: child.title,
     isCounting: child.type === TaskType.COUNTING,
+    childType: child.type,
     action: child.action ?? '',
     goal: child.maxCount !== undefined ? String(child.maxCount) : '',
     unit: child.unit ?? '',

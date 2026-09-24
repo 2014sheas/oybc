@@ -3,6 +3,7 @@ import { RisoButton, RisoIcon, RisoSectionLabel } from '../riso';
 import { countingPreview, validatePatch, type TaskEditPatch } from '../../db/taskEditPatch';
 import { CompoundFields } from './CompoundFields';
 import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
+import { isNestedDialogKey } from './nestedDialogKey';
 import styles from './PoolRowEditor.module.css';
 
 const HEADER_LABEL: Record<TaskType, string> = {
@@ -67,11 +68,7 @@ export function PoolRowEditor({
   const isBlocked = validationMessage !== null;
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
-    // Keys pressed inside a dialog nested in the editor (the "+ Existing
-    // task…" picker) belong to that dialog: its Escape must not discard the
-    // whole edit, and ⌘↵ in its search must not save.
-    const nestedModal = (e.target as HTMLElement).closest?.('[aria-modal="true"]');
-    if (e.defaultPrevented || (nestedModal && e.currentTarget.contains(nestedModal))) return;
+    if (isNestedDialogKey(e)) return;
     if (e.key === 'Escape') {
       e.stopPropagation();
       onDiscard();

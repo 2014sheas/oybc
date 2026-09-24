@@ -30,6 +30,7 @@ import {
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
 import { CompoundFields } from '../../components/wizard/CompoundFields';
+import type { PickerInputsState } from '../../components/wizard/ExistingTaskPicker';
 import { compoundStructureChanged, compoundSubmitFor } from './compoundEditGate';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
@@ -139,6 +140,7 @@ export function TaskEditSheet({
   // link (loaded once with the sub-tasks).
   const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
   const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
+  const [pickerInputsState, setPickerInputsState] = useState<PickerInputsState>('loading');
 
   useEffect(() => {
     if (task.type !== TaskType.COMPOUND) return;
@@ -157,10 +159,7 @@ export function TaskEditSheet({
             .filter((t): t is Task => !!t && !t.isDeleted)
             .map(childPatchFromTask),
         };
-        const picker = await loadPickerInputs(task.userId);
         if (!cancelled) {
-          setLibraryTasks(picker.libraryTasks);
-          setAllLinks(picker.allLinks);
           setCompoundBaseline(seeded);
           setCompoundDraft(seeded);
         }
@@ -168,7 +167,23 @@ export function TaskEditSheet({
         if (!cancelled) setCompoundLoadError(`Couldn't load sub-tasks: ${(e as Error).message}`);
       }
     };
+    // The picker's inputs load on their own: a failure there leaves the
+    // sub-task editor usable (only "+ Existing task…" is affected).
+    const loadPicker = async () => {
+      try {
+        const picker = await loadPickerInputs(task.userId);
+        if (!cancelled) {
+          setLibraryTasks(picker.libraryTasks);
+          setAllLinks(picker.allLinks);
+          setPickerInputsState('loaded');
+        }
+      } catch (e) {
+        console.error('[TaskEditSheet] loading existing-task picker inputs failed', e);
+        if (!cancelled) setPickerInputsState('failed');
+      }
+    };
     void load();
+    void loadPicker();
     return () => {
       cancelled = true;
     };
@@ -475,6 +490,7 @@ export function TaskEditSheet({
                 parentId={task.id}
                 libraryTasks={libraryTasks}
                 allLinks={allLinks}
+                pickerInputsState={pickerInputsState}
               />
             ) : compoundLoadError !== null ? (
               <p className={styles.compoundStatus} role="alert">

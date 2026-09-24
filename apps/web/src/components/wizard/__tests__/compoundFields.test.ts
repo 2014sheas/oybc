@@ -36,6 +36,7 @@ function child(id: string, title: string, over: Partial<ChildPatch> = {}): Child
     unit: '',
     markedDeleted: false,
     ...over,
+    childType: over.childType ?? (over.isCounting ? TaskType.COUNTING : TaskType.NORMAL),
   };
 }
 
@@ -72,6 +73,20 @@ describe('CompoundFields', () => {
     expect(html).toContain('+ Existing task…');
     // The picker is closed until the button is pressed.
     expect(html).not.toContain('role="dialog"');
+  });
+
+  it('badges each card by its own type — N / # / C — with a matching accessible name', () => {
+    const html = render({
+      ...TWO_CHILD_AND,
+      children: [...TWO_CHILD_AND.children, child('c-3', 'Evening routine', { childType: TaskType.COMPOUND })],
+    });
+    expect(html).toMatch(/role="img" aria-label="Normal sub-task"[^>]*>N</);
+    expect(html).toMatch(/role="img" aria-label="Counting sub-task"[^>]*>#</);
+    expect(html).toMatch(/role="img" aria-label="Compound sub-task"[^>]*>C</);
+    // A nested compound edits only its title (plus ✕ unlink): no counting fields.
+    expect(html).toContain('aria-label="Sub-task 3 title"');
+    expect(html).not.toContain('aria-label="Sub-task 3 action"');
+    expect(html).not.toContain('aria-label="Sub-task 3 goal"');
   });
 
   it('shows no threshold stepper for All of', () => {
@@ -166,6 +181,16 @@ describe('ExistingTaskPicker', () => {
     // Counting without a unit ("Read 10") and without a goal ("Swim") are hidden.
     expect(html).not.toContain('Read 10');
     expect(html).not.toContain('Swim');
+  });
+
+  it('shows loading / failed states instead of the list until the inputs arrive', () => {
+    const props = { tasks: library, onPick: () => {}, onCancel: () => {} };
+    const loading = renderToStaticMarkup(React.createElement(ExistingTaskPicker, { ...props, status: 'loading' }));
+    expect(loading).toContain('Loading your tasks…');
+    expect(loading).not.toContain('Tasks you can add');
+    const failed = renderToStaticMarkup(React.createElement(ExistingTaskPicker, { ...props, status: 'failed' }));
+    expect(failed).toContain('role="alert"');
+    expect(failed).not.toContain('Tasks you can add');
   });
 
   it('says so when nothing can be added', () => {

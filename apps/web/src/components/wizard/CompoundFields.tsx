@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   OperatorType,
+  TaskType,
   compoundChildPickerCandidates,
   type CompoundChild,
   type Task,
@@ -18,8 +19,8 @@ import {
   type ChildPatch,
   type TaskEditPatch,
 } from '../../db/taskEditPatch';
-import { MiniTypeBadge } from './MiniTypeBadge';
-import { ExistingTaskPicker } from './ExistingTaskPicker';
+import { MiniTypeBadge, type MiniBadgeType } from './MiniTypeBadge';
+import { ExistingTaskPicker, type PickerInputsState } from './ExistingTaskPicker';
 import styles from './PoolRowEditor.module.css';
 
 export interface CompoundFieldsProps {
@@ -37,6 +38,9 @@ export interface CompoundFieldsProps {
   libraryTasks: Task[];
   /** Live compound links across ALL compounds (for the loop check). */
   allLinks: CompoundChild[];
+  /** Whether `libraryTasks` / `allLinks` have loaded (Task Detail loads them
+   *  on open; the wizard already holds them). Default `loaded`. */
+  pickerInputsState?: PickerInputsState;
 }
 
 /**
@@ -58,6 +62,7 @@ export function CompoundFields({
   parentId,
   libraryTasks,
   allLinks,
+  pickerInputsState = 'loaded',
 }: CompoundFieldsProps): React.ReactElement {
   const [pickerOpen, setPickerOpen] = useState(false);
   const subCount = liveChildren(draft).length;
@@ -141,6 +146,7 @@ export function CompoundFields({
           tasks={compoundChildPickerCandidates(parentId, libraryTasks, allLinks, keptChildTaskIds(draft))}
           onPick={pickExisting}
           onCancel={() => setPickerOpen(false)}
+          status={pickerInputsState}
         />
       )}
     </div>
@@ -155,6 +161,7 @@ interface SubtaskCardRowProps {
 }
 
 function SubtaskCardRow({ index, child, onUpdate, onRemove }: SubtaskCardRowProps): React.ReactElement {
+  const subBadge = subtaskBadge(child);
   return (
     <div className={styles.subtaskCard}>
       <div className={styles.subtaskCardRow}>
@@ -166,7 +173,7 @@ function SubtaskCardRow({ index, child, onUpdate, onRemove }: SubtaskCardRowProp
           placeholder="Sub-task title"
           aria-label={`Sub-task ${index} title`}
         />
-        <MiniTypeBadge type={child.isCounting ? 'counting' : 'normal'} size="sub" />
+        <MiniTypeBadge type={subBadge.type} size="sub" label={subBadge.label} />
         <button type="button" className={styles.subtaskRemove} onClick={onRemove} aria-label="Delete sub-task">
           ✕
         </button>
@@ -206,4 +213,15 @@ function SubtaskCardRow({ index, child, onUpdate, onRemove }: SubtaskCardRowProp
       )}
     </div>
   );
+}
+
+/**
+ * The card badge for a sub-task: its own type (a picked nested compound
+ * badges "C"; it edits only its title — no counting fields — and ✕ unlinks
+ * it) with a matching accessible name.
+ */
+function subtaskBadge(child: ChildPatch): { type: MiniBadgeType; label: string } {
+  if (child.childType === TaskType.COMPOUND) return { type: 'compound', label: 'Compound sub-task' };
+  if (child.isCounting) return { type: 'counting', label: 'Counting sub-task' };
+  return { type: 'normal', label: 'Normal sub-task' };
 }

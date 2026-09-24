@@ -450,7 +450,7 @@ function emptyTaskLibrary(allTasks: Task[] = []): TaskLibrary {
 }
 
 function simpleChild(over: Partial<ChildPatch>): ChildPatch {
-  return { id: 'x', childTaskId: null, title: '', isCounting: false, action: '', goal: '', unit: '', markedDeleted: false, ...over };
+  return { id: 'x', childTaskId: null, title: '', isCounting: false, action: '', goal: '', unit: '', markedDeleted: false, ...over, childType: over.childType ?? (over.isCounting ? TaskType.COUNTING : TaskType.NORMAL) };
 }
 
 describe('buildWizardPlacement — staged-edit overlay (Inline Task Editing PR-2)', () => {

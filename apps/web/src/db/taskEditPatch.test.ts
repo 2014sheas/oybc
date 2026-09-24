@@ -51,11 +51,11 @@ function countingPatch(
 }
 
 function simpleStep(title: string, id = 'c1'): ChildPatch {
-  return { id, childTaskId: id, title, isCounting: false, action: '', goal: '', unit: '', markedDeleted: false };
+  return { id, childTaskId: id, title, isCounting: false, childType: TaskType.NORMAL, action: '', goal: '', unit: '', markedDeleted: false };
 }
 
 function progressStep(title: string, id = 'p1', goal = '3', unit = 'km'): ChildPatch {
-  return { id, childTaskId: id, title, isCounting: true, action: title, goal, unit, markedDeleted: false };
+  return { id, childTaskId: id, title, isCounting: true, childType: TaskType.COUNTING, action: title, goal, unit, markedDeleted: false };
 }
 
 function compoundPatch(children: ChildPatch[], title = 'Routine'): TaskEditPatch {
