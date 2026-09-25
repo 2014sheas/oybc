@@ -28,7 +28,7 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { resolveBoardSourceSupply, resolveSourceBoardForWindow } from './boardSources';
+import { resolveBoardSourceSupply, resolveOpenSourceBoard } from './boardSources';
 import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 
 /**
@@ -77,9 +77,9 @@ export type SpawnResult =
  *
  * @param spawn - From `findTemplatesPendingSpawn`. Carries the template +
  *                window boundaries.
- * @param options.now - The instant a board source's "has this board ended"
- *   is judged against (owner ruling 2026-09-24: ended boards are never
- *   sources). Defaults to the wall clock; tests inject it.
+ * @param options.now - The instant a board source's "is it open" is judged
+ *   against (owner ruling 2026-09-24: sources are open boards). Defaults to
+ *   the wall clock; tests inject it.
  * @returns The new board, or the structured skip reason.
  */
 export async function spawnTemplateBoard(
@@ -121,7 +121,7 @@ export async function spawnTemplateBoard(
       // the legacy trio derived on the fly (`sourcesForRecord` — no data
       // backfill required; rows written by old clients keep working). Pool
       // sources supply their resolvable taskIds; board sources resolve
-      // through `resolveSourceBoardForWindow` below. An EMPTY source contributes
+      // through `resolveOpenSourceBoard` below. An EMPTY source contributes
       // nothing and never blocks (the design's empty-source rule).
       //
       // Single full-table reads (tasks, pools): the supply resolvers need
@@ -136,11 +136,10 @@ export async function spawnTemplateBoard(
       const sources = sourcesForRecord(template);
 
       // Board Sources P3 + series binding, under the owner ruling of
-      // 2026-09-24 (ENDED BOARDS ARE NEVER SOURCES): each pulled board
-      // resolves through `resolveSourceBoardForWindow` against THIS spawn's
-      // window start — the one reference the wizard's live supply, Preview,
-      // capacity and persist also use. A series binds to its open instance
-      // CONTAINING the window start; none (or an ended/sealed one-off) is
+      // 2026-09-24 (SOURCES ARE OPEN BOARDS): each pulled board resolves
+      // through `resolveOpenSourceBoard` — the one-off itself while open, or
+      // the series' instance open NOW (the same clock the wizard's live
+      // supply, Preview, capacity and persist use). No open board is
       // `noWindow`: that source deals nothing and the provenance note says
       // "No board for this window yet" — the window still spawns. Only a
       // `dead` source (the stored row gone / deleted / archived, or a series
@@ -151,7 +150,7 @@ export async function spawnTemplateBoard(
       const sourceBoardById = new Map<string, Board>();
       const noBoardForWindowSourceIds: string[] = [];
       for (const id of boardSourceIds) {
-        const resolution = await resolveSourceBoardForWindow(id, spawn.windowStart, sourceClock);
+        const resolution = await resolveOpenSourceBoard(id, sourceClock);
         if (resolution.kind === 'dead') {
           return {
             ok: false,

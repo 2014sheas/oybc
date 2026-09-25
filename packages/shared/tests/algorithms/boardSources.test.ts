@@ -34,7 +34,8 @@ import {
   removeSourceLossSentence,
   pickSeriesInstance,
   isEligibleSourceBoard,
-  resolveSeriesInstanceForWindow,
+  pickOpenSeriesInstance,
+  type OpenSeriesCandidate,
   type SourceBoardCandidate,
   templateReferencesTask,
   type TemplateReferenceRecord,
@@ -113,10 +114,10 @@ interface Fixture {
     now: string;
     expected: boolean;
   }>;
-  seriesForWindowVectors: Array<{
+  openSeriesInstanceVectors: Array<{
     name: string;
-    candidates: Array<{ id: string; startDate: string; endDate?: string }>;
-    reference: string;
+    candidates: OpenSeriesCandidate[];
+    now: string;
     expectedId: string | null;
   }>;
   referenceVectors: Array<{
@@ -150,7 +151,7 @@ describe('boardSourceVectors fixture', () => {
     expect(fixture.referenceVectors.length).toBeGreaterThan(0);
     expect(fixture.doneFilterVectors.length).toBeGreaterThan(0);
     expect(fixture.eligibilityVectors.length).toBeGreaterThan(0);
-    expect(fixture.seriesForWindowVectors.length).toBeGreaterThan(0);
+    expect(fixture.openSeriesInstanceVectors.length).toBeGreaterThan(0);
   });
 
   test.each(fixture.referenceVectors.map((v) => [v.name, v] as const))(
@@ -192,16 +193,15 @@ describe('boardSourceVectors fixture', () => {
     },
   );
 
-  test.each(fixture.seriesForWindowVectors.map((v) => [v.name, v] as const))(
-    'series for window: %s',
+  test.each(fixture.openSeriesInstanceVectors.map((v) => [v.name, v] as const))(
+    'open series instance: %s',
     (_name, v) => {
-      expect(resolveSeriesInstanceForWindow(v.candidates, v.reference)?.id ?? null).toBe(
+      const now = new Date(v.now);
+      expect(pickOpenSeriesInstance(v.candidates, now)?.id ?? null).toBe(v.expectedId);
+      // Input order must not matter (the tie-break is total).
+      expect(pickOpenSeriesInstance([...v.candidates].reverse(), now)?.id ?? null).toBe(
         v.expectedId,
       );
-      // Input order must not matter (the tie-break is total).
-      expect(
-        resolveSeriesInstanceForWindow([...v.candidates].reverse(), v.reference)?.id ?? null,
-      ).toBe(v.expectedId);
     },
   );
 

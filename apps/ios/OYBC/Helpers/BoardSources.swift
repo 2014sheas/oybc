@@ -526,38 +526,33 @@ enum BoardSources {
         return best
     }
 
-    /// Series binding for a window (owner ruling 2026-09-24): the instance
-    /// of a recurring series that supplies a board being built for the
-    /// window starting at `referenceIso` — the instance whose
-    /// `[startDate, endDate]` CONTAINS the reference (inclusive at both
-    /// ends; a nil `endDate` is an open window). Two containing instances
-    /// tie-break through ``pickSeriesInstance(_:)`` (latest `startDate`,
-    /// then lowest `id`).
+    /// Series binding (owner ruling 2026-09-24, amended): the instance of a
+    /// recurring series that supplies a pulled source is the one OPEN NOW —
+    /// exactly what the "Add from a pool or board" sheet shows. Open =
+    /// eligible (``isEligibleSourceBoard(_:now:)``: not deleted/draft/
+    /// archived, not sealed, window not ended) AND its window has STARTED
+    /// (`startDate <= now`; an unparseable `startDate` fails open). Several
+    /// open → the ``pickSeriesInstance(_:)`` tie-break (latest `startDate`,
+    /// then lowest `id`). None → nil: callers map it to "No board for this
+    /// window yet" (no supply, capacity 0) — never a fallback to an ended or
+    /// future instance.
     ///
-    /// Returns nil when no instance contains the reference — there is NO
-    /// fallback to the newest started or newest instance any more: an ended
-    /// or future instance never supplies another window. Callers map nil to
-    /// "No board for this window yet" (no supply, capacity 0).
+    /// Deliberately NO containment check against the new board's window: a
+    /// monthly board built mid-month from a weekly series pulls the CURRENT
+    /// week, not the ended week that contains the 1st.
     ///
-    /// Callers pre-filter `candidates` to live, open instances
-    /// (``isEligibleSourceBoard(_:now:)``); this helper only decides
-    /// containment. Board dates and the reference are fixed-format LOCAL-ISO
-    /// strings, compared with `String` `<=` exactly like the TS twin's
-    /// code-unit comparison.
-    ///
-    /// TS twin: `resolveSeriesInstanceForWindow` — keep in lockstep (pinned
-    /// by `seriesForWindowVectors` in `boardSourceVectors.json`).
+    /// TS twin: `pickOpenSeriesInstance` — keep in lockstep (pinned by
+    /// `openSeriesInstanceVectors` in `boardSourceVectors.json`).
     ///
     /// - Parameters:
-    ///   - candidates: The series' live instances (any order).
-    ///   - referenceIso: The new board's window `startDate` (local ISO).
-    /// - Returns: The containing instance, or nil when none contains it.
-    static func resolveSeriesInstanceForWindow<T: SeriesWindowCandidate>(
-        _ candidates: [T],
-        referenceIso: String
-    ) -> T? {
+    ///   - candidates: The series' instances (any order, any state).
+    ///   - now: The instant "open" is judged against.
+    /// - Returns: The open instance, or nil when none is open.
+    static func pickOpenSeriesInstance<T: OpenSeriesCandidate>(_ candidates: [T], now: Date) -> T? {
         pickSeriesInstance(candidates.filter { c in
-            c.startDate <= referenceIso && (c.endDate.map { referenceIso <= $0 } ?? true)
+            guard isEligibleSourceBoard(c, now: now) else { return false }
+            guard let startsAt = parseISO8601Date(c.startDate) else { return true } // fail open
+            return startsAt <= now
         })
     }
 
@@ -733,13 +728,6 @@ protocol SeriesInstanceCandidate {
 
 extension Board: SeriesInstanceCandidate {}
 
-/// The fields `BoardSources.resolveSeriesInstanceForWindow` reads — TS twin
-/// `SeriesWindowCandidate` (`Pick<Board, 'id' | 'startDate' | 'endDate'>`).
-protocol SeriesWindowCandidate: SeriesInstanceCandidate {
-    var endDate: String? { get }
-}
-
-extension Board: SeriesWindowCandidate {}
 
 /// The fields `BoardSources.isEligibleSourceBoard` reads — TS twin
 /// `SourceBoardCandidate` (`Pick<Board, 'status' | 'endDate' | 'sealedAt' | 'isDeleted'>`).
@@ -751,6 +739,13 @@ protocol SourceBoardCandidate {
 }
 
 extension Board: SourceBoardCandidate {}
+
+/// The fields `BoardSources.pickOpenSeriesInstance` reads — TS twin
+/// `OpenSeriesCandidate` (`Pick<Board, 'id' | 'startDate' | 'endDate' |
+/// 'status' | 'sealedAt' | 'isDeleted'>`).
+protocol OpenSeriesCandidate: SeriesInstanceCandidate, SourceBoardCandidate {}
+
+extension Board: OpenSeriesCandidate {}
 
 extension BoardSources {
     /// Can this repeating board pull `taskId`? Task Detail's "used in

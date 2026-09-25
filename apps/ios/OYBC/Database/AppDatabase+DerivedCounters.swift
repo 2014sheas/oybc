@@ -354,16 +354,11 @@ extension AppDatabase {
                     )
                 ))
             case .board:
-                // `reference` MUST be LOCAL wall-clock ISO — `resolveSourceBoard`
-                // compares series windows lexicographically against board dates
-                // in that shape, and a UTC `currentTimestamp()` mis-sorts near
-                // local midnight in any non-UTC zone. `window.startDate` is
-                // already local; the INDEFINITE fallback must be too (web passes
-                // `undefined` and defaults to `toLocalISO(new Date())`).
+                // The board open now (owner ruling 2026-09-24: sources are
+                // open boards) — the same clock the wizard's live supply used.
                 guard let board = try Self.resolveSourceBoard(
                     db: db,
-                    storedBoardId: source.sourceId,
-                    reference: window.startDate ?? wizardLocalISOString(Date())
+                    storedBoardId: source.sourceId
                 ) else {
                     rawSupplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
                     continue

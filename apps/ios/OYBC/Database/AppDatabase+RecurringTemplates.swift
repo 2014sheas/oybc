@@ -103,15 +103,9 @@ extension AppDatabase {
             // window yet, owner ruling 2026-09-24 — is KEPT: it supplies
             // nothing now but is not gone, and removing it would silently
             // drop a series binding the next window needs.
-            // Reference in LOCAL wall-clock format (board-date format) —
-            // `now` is the UTC sync timestamp and mis-sorts near local
-            // midnight (review-caught Critical, 2026-09-09).
-            let reference = wizardLocalISOString(Date())
             var liveByStoredId: [String: Bool] = [:]
             for id in boardIds {
-                if case .dead = try Self.resolveSourceBoardForWindow(
-                    db: db, storedBoardId: id, reference: reference
-                ) {
+                if case .dead = try Self.resolveOpenSourceBoard(db: db, storedBoardId: id) {
                     liveByStoredId[id] = false
                 } else {
                     liveByStoredId[id] = true
@@ -198,9 +192,9 @@ extension AppDatabase {
     ///   - spawn: The pending-spawn descriptor (template + resolved window).
     ///   - boardId: The client-generated id for the new board.
     ///   - now: ISO8601 timestamp stamped on every row written here.
-    ///   - sourceClock: The instant a board source's "has this board ended"
-    ///     is judged against (owner ruling 2026-09-24: ended boards are never
-    ///     sources). Defaults to the wall clock; tests inject it.
+    ///   - sourceClock: The instant a board source's "is it open" is judged
+    ///     against (owner ruling 2026-09-24: sources are open boards).
+    ///     Defaults to `AppDatabase.sourceClock`; tests inject it.
     /// - Returns: `.spawned(...)` on success or `.skipped(...)` with a reason.
     func spawnRecurringBoard(
         _ spawn: PendingTemplateSpawn,
@@ -246,23 +240,22 @@ extension AppDatabase {
                 )
 
                 // Board Sources P3 + series binding, under the owner ruling
-                // of 2026-09-24 (ENDED BOARDS ARE NEVER SOURCES): each pulled
-                // board resolves through `resolveSourceBoardForWindow`
-                // against THIS spawn's window start — the one reference the
-                // wizard's live supply, Preview, capacity and persist also
-                // use. A series binds to its open instance CONTAINING the
-                // window start; none (or an ended/sealed one-off) is
-                // `.noWindow`: that source deals nothing and the provenance
-                // note says "No board for this window yet" — the window still
-                // spawns. Only a `.dead` source (the stored row gone /
-                // deleted / archived, or a series with no instance at all)
-                // blocks the window with the ask. Distinct from an EMPTY
-                // source, which contributes nothing silently.
+                // of 2026-09-24 (SOURCES ARE OPEN BOARDS): each pulled board
+                // resolves through `resolveOpenSourceBoard` — the one-off
+                // itself while open, or the series' instance open NOW (the
+                // same clock the wizard's live supply, Preview, capacity and
+                // persist use). No open board is `.noWindow`: that source
+                // deals nothing and the provenance note says "No board for
+                // this window yet" — the window still spawns. Only a `.dead`
+                // source (the stored row gone / deleted / archived, or a
+                // series with no instance at all) blocks the window with the
+                // ask. Distinct from an EMPTY source, which contributes
+                // nothing silently.
                 let boardSourceIds = sources.filter { $0.kind == .board }.map { $0.sourceId }
                 var sourceBoardById: [String: Board] = [:]
                 for id in boardSourceIds {
-                    switch try Self.resolveSourceBoardForWindow(
-                        db: db, storedBoardId: id, reference: spawn.windowStart, now: sourceClock
+                    switch try Self.resolveOpenSourceBoard(
+                        db: db, storedBoardId: id, now: sourceClock
                     ) {
                     case .dead:
                         outcome = .skipped(templateId: template.id, reason: .sourceBoardMissing)

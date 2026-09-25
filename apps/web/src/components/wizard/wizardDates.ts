@@ -10,12 +10,6 @@
 import { Timeframe, getTimeframeBoundaries, toLocalISO } from '@oybc/shared';
 import type { BoardWizardController } from '../../pages/createHub/useBoardWizard';
 
-/** The controller fields {@link resolveWizardDates} reads. */
-export type WizardDateFields = Pick<
-  BoardWizardController,
-  'timeframe' | 'customStartDate' | 'customEndDate' | 'weekStartDay'
->;
-
 /** Resolved `startDate` / `endDate` ISO strings, or an error to surface.
  *  `endDate` is undefined for INDEFINITE (ongoing) boards. */
 export type ResolvedDates =
@@ -34,7 +28,7 @@ export type ResolvedDates =
  *   instead of always landing on today's window.
  */
 export function resolveWizardDates(
-  controller: WizardDateFields,
+  controller: BoardWizardController,
   now: Date = new Date(),
 ): ResolvedDates {
   // Indefinite (ongoing) boards have no deadline. Honor the chosen Start date
@@ -72,24 +66,4 @@ export function resolveWizardDates(
     return { error: 'End date must be on or after the start date.' };
   }
   return { startDate: toLocalISO(start), endDate: toLocalISO(end) };
-}
-
-/**
- * The new board's window `startDate` — the ONE reference every board source
- * resolves against (owner ruling 2026-09-24: live supply, Preview, capacity,
- * persist and the recurring spawn all bind a series to the instance whose
- * window CONTAINS this instant). Same resolution as {@link resolveWizardDates}.
- *
- * @param fields - The wizard's timeframe / custom dates / week start.
- * @param now - Reference date for non-CUSTOM windows (the core-board
- *   browser's `targetWindowDate`, else today).
- * @returns The local-ISO start, or `undefined` while the dates don't
- *   resolve (e.g. a CUSTOM range with no dates picked yet).
- */
-export function wizardSourceReference(
-  fields: WizardDateFields,
-  now: Date = new Date(),
-): string | undefined {
-  const dates = resolveWizardDates(fields, now);
-  return 'startDate' in dates ? dates.startDate : undefined;
 }

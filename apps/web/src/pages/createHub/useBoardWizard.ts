@@ -22,7 +22,6 @@ import { useWizardSources } from './useWizardSources';
 import { useWizardCompoundChildren, useWizardMemberRules } from './useWizardMemberRules';
 import { useWizardDerived } from './useWizardDerived';
 import { resolveInitialWizardTimeframe } from './wizardTimeframeSeed';
-import { wizardSourceReference } from '../../components/wizard/wizardDates';
 
 /** Stable empty fallback so a caller that omits `tasksById` doesn't cause
  *  a new object identity (and downstream memo churn) every render. */
@@ -405,17 +404,6 @@ export function useBoardWizard({
     [timeframe, customStartDate, customEndDate],
   );
 
-  // Owner ruling 2026-09-24 — every board source resolves against the NEW
-  // board's window start (see `wizardSourceReference`).
-  const sourceReference = useMemo(
-    () =>
-      wizardSourceReference(
-        { timeframe, customStartDate, customEndDate, weekStartDay },
-        targetWindowDate ?? undefined,
-      ),
-    [timeframe, customStartDate, customEndDate, weekStartDay, targetWindowDate],
-  );
-
   // Board Sources P4 — the sources layer (state + async supply resolution +
   // the nine source actions) lives in its own hook; see `useWizardSources`.
   const {
@@ -456,7 +444,6 @@ export function useBoardWizard({
     // window instead.
     prefillRemainingTargetsOnResolve: !isRecurring,
     targetWindow: prefillTargetWindow,
-    sourceReference,
     selectedTaskIds,
     purgeDroppedIds,
     markUserTouched,

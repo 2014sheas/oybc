@@ -196,6 +196,25 @@ final class BoardWizardMemberRulesTests: XCTestCase {
         XCTAssertNil(try rule(vm, "C").target, "a compound member is never targeted")
     }
 
+    /// Owner ruling 2026-09-24 — a board pulled while it has no board open
+    /// (`.noWindow`) resolves empty; it must still get its remaining-target
+    /// prefill once it resolves live, not be silently skipped. Web twin: the
+    /// "left UNSETTLED" case in `useWizardMemberRules.test.ts`.
+    func test_pullBoard_whileNoBoardOpen_prefillsOnceItResolvesLive() throws {
+        let database = try seedSourceBoard(try makeDb())
+        let vm = makeVM(database)
+        // The 2026-09-18 source has ended by 09-19 → no board open.
+        AppDatabase.sourceClock = { parseISO8601Date("2026-09-19T09:00:00.000Z")! }
+        vm.pullBoard(boardId: sourceBoardId)
+        XCTAssertEqual(vm.supplyInfoBySourceId[sourceBoardId]?.noBoardForWindow, true)
+        XCTAssertNil(try rule(vm, "cnt").target, "nothing to seed yet")
+
+        // It resolves live again (the clock is back inside its window).
+        AppDatabase.sourceClock = { parseISO8601Date(self.now)! }
+        vm.refreshSourceSupplies(poolsById: [:], tasksById: [:])
+        XCTAssertEqual(try rule(vm, "cnt").target, 7, "the owed prefill runs on the first live resolve")
+    }
+
     /// Seeds a MONTHLY source board carrying an untouched goal-30 counter —
     /// the owner's reported case ("Run 30 Miles a Month").
     private func seedMonthlySourceBoard(_ database: AppDatabase) throws {

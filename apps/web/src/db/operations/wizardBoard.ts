@@ -383,7 +383,7 @@ async function mintWizardDerivedRows(
       });
       continue;
     }
-    const board = await resolveSourceBoard(source.sourceId, window.startDate ?? undefined);
+    const board = await resolveSourceBoard(source.sourceId);
     if (board === null) {
       rawSupplies.push({ source, supplyTaskIds: [] });
       continue;

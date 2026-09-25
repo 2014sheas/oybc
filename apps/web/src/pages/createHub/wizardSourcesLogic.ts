@@ -347,7 +347,7 @@ export function boardSupplyEntry(info: BoardSourceSupplyInfo | null): WizardSour
  * `noBoardForWindow` (the row's "No board for this window yet" subtitle —
  * owner ruling 2026-09-24). iOS twin: `WizardSourceSupply.init(resolution:)`.
  *
- * @param resolution - From `fetchBoardSourceSupplyForWindow`.
+ * @param resolution - From `fetchOpenBoardSourceSupply`.
  * @returns The cache entry to store for that board source.
  */
 export function boardSupplyEntryForResolution(

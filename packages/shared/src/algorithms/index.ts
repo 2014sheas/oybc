@@ -345,11 +345,11 @@ export {
   isEligibleSourceBoard,
   NO_BOARD_FOR_WINDOW_NOTE,
   pickSeriesInstance,
-  resolveSeriesInstanceForWindow,
+  pickOpenSeriesInstance,
 } from './boardSources';
 export type {
   SourceBoardCandidate,
   SeriesInstanceCandidate,
-  SeriesWindowCandidate,
+  OpenSeriesCandidate,
 } from './boardSources';
 export type { BoardNameFields } from './boardDisplayName';

@@ -44,14 +44,14 @@ struct BoardSourceSupplyInfo: Equatable {
 }
 
 extension AppDatabase {
-    /// How a STORED board-source id resolves for one window. Web twin:
+    /// How a STORED board-source id resolves now. Web twin:
     /// `SourceBoardResolution` (`db/operations/boardSources.ts`).
     enum SourceBoardResolution {
         /// `board` supplies squares.
         case live(Board)
-        /// The source still exists but has no open board for this window (a
-        /// series with no instance containing the reference, or a one-off
-        /// board that has ended or been sealed). Supplies nothing; the UI
+        /// The source still exists but has no board open now (a series with
+        /// no open instance, or a one-off board that has ended or been
+        /// sealed). Supplies nothing; the UI
         /// shows "No board for this window yet". Carries the stored board's
         /// display name for the row title.
         case noWindow(displayName: String)
@@ -93,34 +93,34 @@ extension AppDatabase {
     }
 
     /// Series binding (docs/BOARD_SOURCES.md §Boards as sources) under the
-    /// owner ruling of 2026-09-24 — ENDED BOARDS ARE NEVER SOURCES: resolve a
-    /// STORED board-source id to the board that supplies squares to a board
-    /// whose window starts at `reference`.
+    /// owner ruling of 2026-09-24 (amended) — SOURCES ARE OPEN BOARDS: resolve
+    /// a STORED board-source id to the board that supplies squares now —
+    /// exactly what the "Add from a pool or board" sheet would show.
     ///
     /// - A one-off board (no `spawnedFromTemplateId`) resolves to itself
     ///   while it is OPEN (`isEligibleSourceBoard` at `now`: not sealed,
     ///   window not ended); an ended/sealed one-off is `.noWindow`, a
     ///   deleted/archived one `.dead`.
-    /// - A board in a recurring series binds to the SERIES: among its open
-    ///   instances, the one whose window CONTAINS `reference`
-    ///   (`resolveSeriesInstanceForWindow`). None → `.noWindow` (never a
-    ///   fallback to an ended or future instance); no existing instance at
-    ///   all → `.dead`.
+    /// - A board in a recurring series binds to the SERIES: its instance OPEN
+    ///   NOW (`pickOpenSeriesInstance` — started, not ended, not sealed;
+    ///   latest start, then lowest id). None → `.noWindow` (never a fallback
+    ///   to an ended or future instance); no existing instance → `.dead`. No
+    ///   containment check against the new board's window: a monthly built
+    ///   mid-month from a weekly series pulls the CURRENT week.
     ///
-    /// Web twin: `resolveSourceBoardForWindow` (`db/operations/boardSources.ts`).
+    /// The wizard's live supply, Preview, drafts-list capacity, persist and
+    /// the recurring spawn all resolve through here with the same clock.
+    /// Web twin: `resolveOpenSourceBoard` (`db/operations/boardSources.ts`).
     ///
     /// - Parameters:
     ///   - db: An open GRDB connection.
     ///   - storedBoardId: The id the source row stored at pull time.
-    ///   - reference: The NEW board's window `startDate`, in the LOCAL
-    ///     wall-clock ISO format board dates use (`wizardLocalISOString`).
-    ///   - now: The instant "has this board ended" is judged against.
+    ///   - now: The instant "open" is judged against.
     /// - Returns: The resolution.
     /// - Throws: A GRDB read error.
-    static func resolveSourceBoardForWindow(
+    static func resolveOpenSourceBoard(
         db: Database,
         storedBoardId: String,
-        reference: String,
         now: Date = AppDatabase.sourceClock()
     ) throws -> SourceBoardResolution {
         guard let stored = try Board.fetchOne(db, key: storedBoardId) else { return .dead }
@@ -135,66 +135,50 @@ extension AppDatabase {
             .fetchAll(db)
             .filter(isExistingSourceBoard)
         guard !instances.isEmpty else { return .dead }
-        // `resolveSeriesInstanceForWindow`: containment + the
-        // `pickSeriesInstance` tie-break (latest startDate, lowest id) — two
-        // offline devices can each spawn the same window, and the id key
-        // keeps iOS and web pulling from the same instance.
-        let open = instances.filter { BoardSources.isEligibleSourceBoard($0, now: now) }
-        if let hit = BoardSources.resolveSeriesInstanceForWindow(open, referenceIso: reference) {
+        if let hit = BoardSources.pickOpenSeriesInstance(instances, now: now) {
             return .live(hit)
         }
         return .noWindow(displayName: stored.displayName)
     }
 
-    /// The board that supplies a stored source for the window starting at
-    /// `reference`, or nil when it resolves `.noWindow` or `.dead` — see
-    /// ``resolveSourceBoardForWindow(db:storedBoardId:reference:now:)``,
-    /// which callers that must tell the two apart use instead.
-    ///
-    /// Web twin: `resolveSourceBoard`.
+    /// The board that supplies a stored source now, or nil when it resolves
+    /// `.noWindow` or `.dead` — see
+    /// ``resolveOpenSourceBoard(db:storedBoardId:now:)``, which callers that
+    /// must tell the two apart use instead. Web twin: `resolveSourceBoard`.
     ///
     /// - Parameters:
     ///   - db: An open GRDB connection.
     ///   - storedBoardId: The id the source row stored at pull time.
-    ///   - reference: The new board's window `startDate` (local ISO).
-    ///   - now: The instant "has this board ended" is judged against.
+    ///   - now: The instant "open" is judged against.
     /// - Returns: The live source board, or nil.
     /// - Throws: A GRDB read error.
     static func resolveSourceBoard(
         db: Database,
         storedBoardId: String,
-        reference: String,
         now: Date = AppDatabase.sourceClock()
     ) throws -> Board? {
-        if case .live(let board) = try resolveSourceBoardForWindow(
-            db: db, storedBoardId: storedBoardId, reference: reference, now: now
+        if case .live(let board) = try resolveOpenSourceBoard(
+            db: db, storedBoardId: storedBoardId, now: now
         ) {
             return board
         }
         return nil
     }
 
-    /// Resolve one board source's supply for the window starting at
-    /// `reference`, keeping the `.noWindow` / `.dead` distinction.
-    /// Web twin: `fetchBoardSourceSupplyForWindow`.
+    /// Resolve one board source's supply now, keeping the `.noWindow` /
+    /// `.dead` distinction. Web twin: `fetchOpenBoardSourceSupply`.
     ///
     /// - Parameters:
     ///   - boardId: The stored source id.
-    ///   - reference: The new board's window `startDate` (local ISO). MUST
-    ///     be local wall-clock ISO (`wizardLocalISOString`) — a UTC
-    ///     `currentTimestamp()` mis-sorts near local midnight.
-    ///   - now: The instant "has this board ended" is judged against.
+    ///   - now: The instant "open" is judged against.
     /// - Returns: The supply, or why there is none.
     /// - Throws: A GRDB read error.
-    func fetchBoardSourceSupplyForWindow(
+    func fetchOpenBoardSourceSupply(
         boardId: String,
-        reference: String = wizardLocalISOString(Date()),
         now: Date = AppDatabase.sourceClock()
     ) throws -> BoardSourceSupplyResolution {
         try read { db in
-            switch try Self.resolveSourceBoardForWindow(
-                db: db, storedBoardId: boardId, reference: reference, now: now
-            ) {
+            switch try Self.resolveOpenSourceBoard(db: db, storedBoardId: boardId, now: now) {
             case .live(let board): return .live(try Self.resolveSupply(db: db, board: board))
             case .noWindow(let name): return .noWindow(displayName: name)
             case .dead: return .dead
@@ -202,25 +186,20 @@ extension AppDatabase {
         }
     }
 
-    /// Resolve one board's source supply. Series-binding aware (see
-    /// ``resolveSourceBoardForWindow(db:storedBoardId:reference:now:)``).
-    /// Returns nil when nothing open resolves (an unresolvable source
-    /// supplies nothing — the caller renders/contributes an empty supply,
-    /// never blocks).
+    /// Resolve one board's source supply now. Returns nil when nothing open
+    /// resolves (an unresolvable source supplies nothing — the caller
+    /// renders/contributes an empty supply, never blocks).
     ///
     /// - Parameters:
     ///   - boardId: The stored source id.
-    ///   - reference: The new board's window `startDate` (local ISO);
-    ///     defaults to the current local instant.
-    ///   - now: The instant "has this board ended" is judged against.
+    ///   - now: The instant "open" is judged against.
     /// - Returns: The supply, or nil.
     /// - Throws: A GRDB read error.
     func fetchBoardSourceSupply(
         boardId: String,
-        reference: String = wizardLocalISOString(Date()),
         now: Date = AppDatabase.sourceClock()
     ) throws -> BoardSourceSupplyInfo? {
-        try fetchBoardSourceSupplyForWindow(boardId: boardId, reference: reference, now: now).info
+        try fetchOpenBoardSourceSupply(boardId: boardId, now: now).info
     }
 
     /// Rows for the "Add from a pool or board" sheet's BOARDS section: the
@@ -423,12 +402,12 @@ extension AppDatabase {
                     ))
                     continue
                 }
-                // Series binding for the CURRENT window (a read-time health
-                // preview). Only a `.dead` source is "missing" (the spawn's
+                // Series binding — the instance open now. Only a `.dead`
+                // source is "missing" (the spawn's
                 // ask, statically); a `.noWindow` one — no open board for this
                 // window yet, owner ruling 2026-09-24 — supplies nothing but
                 // is not dead.
-                let resolution = (try? fetchBoardSourceSupplyForWindow(boardId: source.sourceId))
+                let resolution = (try? fetchOpenBoardSourceSupply(boardId: source.sourceId))
                     ?? .dead
                 guard case .live(let info) = resolution else {
                     if resolution == .dead { deadBoardSourceIds.append(source.sourceId) }
@@ -491,9 +470,8 @@ extension AppDatabase {
     /// board (loose-ends sweep 2026-09-09) — sources-native: board-kind
     /// supplies resolve through the series-binding-aware reader with the
     /// record's 'todo' filter, and "of M" is the honest achievable pool
-    /// size. Board sources resolve against the SPAWNED board's window start
-    /// (owner ruling 2026-09-24 — the same reference the spawn used); a
-    /// source with no board for that window appends
+    /// size. Board sources resolve to their board open NOW (owner ruling
+    /// 2026-09-24, the spawn's own rule); a source with no open board appends
     /// "· No board for this window yet". Runs DB reads — call off-main.
     ///
     /// Web twin: `useSpawnNoteSupplies` + `formatSpawnProvenanceNote`.
@@ -503,14 +481,12 @@ extension AppDatabase {
     ///   - poolsById: Live pools.
     ///   - tasksById: Live tasks.
     ///   - dealtTaskIds: Task ids placed on the spawned board.
-    ///   - windowStart: The spawned board's `startDate` (local ISO).
     /// - Returns: The note copy.
     func spawnProvenanceNote(
         template: RecurringBoardTemplate,
         poolsById: [String: Pool],
         tasksById: [String: Task],
-        dealtTaskIds: [String],
-        windowStart: String
+        dealtTaskIds: [String]
     ) -> String {
         let sources = BoardSources.sourcesForRecord(
             sources: template.sources,
@@ -529,9 +505,7 @@ extension AppDatabase {
                     )
                 ))
             case .board:
-                let resolution = (try? fetchBoardSourceSupplyForWindow(
-                    boardId: source.sourceId, reference: windowStart
-                )) ?? .dead
+                let resolution = (try? fetchOpenBoardSourceSupply(boardId: source.sourceId)) ?? .dead
                 if case .noWindow = resolution { noBoardForWindowCount += 1 }
                 let info = resolution.info
                 let raw = BoardSources.availableSupplyIds(

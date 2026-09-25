@@ -555,46 +555,49 @@ export function pickSeriesInstance<T extends SeriesInstanceCandidate>(
   return best;
 }
 
-/** The board fields {@link resolveSeriesInstanceForWindow} reads. */
-export type SeriesWindowCandidate = Pick<Board, 'id' | 'startDate' | 'endDate'>;
+/** The board fields {@link pickOpenSeriesInstance} reads. */
+export type OpenSeriesCandidate = Pick<
+  Board,
+  'id' | 'startDate' | 'endDate' | 'status' | 'sealedAt' | 'isDeleted'
+>;
 
 /**
- * Series binding for a window (owner ruling 2026-09-24): the instance of a
- * recurring series that supplies a board being built for the window
- * starting at `referenceIso` — the instance whose `[startDate, endDate]`
- * CONTAINS the reference (inclusive at both ends; a missing `endDate` is
- * an open window). Two containing instances tie-break through
- * {@link pickSeriesInstance} (latest `startDate`, then lowest `id`).
+ * Series binding (owner ruling 2026-09-24, amended): the instance of a
+ * recurring series that supplies a pulled source is the one OPEN NOW —
+ * exactly what the "Add from a pool or board" sheet shows. Open = eligible
+ * ({@link isEligibleSourceBoard}: not deleted/draft/archived, not sealed,
+ * window not ended) AND its window has STARTED (`startDate <= now`; an
+ * unparseable `startDate` fails open). Several open → the
+ * {@link pickSeriesInstance} tie-break (latest `startDate`, then lowest
+ * `id`). None → `null`: the caller maps it to "No board for this window
+ * yet" (no supply, capacity 0) — never a fallback to an ended or future
+ * instance.
  *
- * Returns `null` when no instance contains the reference — there is NO
- * fallback to the newest started or newest instance any more: an ended
- * or future instance never supplies another window. The caller maps
- * `null` to "No board for this window yet" (no supply, capacity 0).
+ * There is deliberately NO containment check against the new board's
+ * window: a monthly board built mid-month from a weekly series pulls the
+ * CURRENT week, not the ended week that contains the 1st.
  *
- * Callers pre-filter `candidates` to live, open instances
- * ({@link isEligibleSourceBoard}); this helper only decides containment.
- * Board dates and the reference are fixed-format LOCAL-ISO strings, so
- * containment compares them lexicographically by code unit — never
- * against a UTC `toISOString()` instant.
+ * Dates are compared as parsed instants against `now`, never as strings
+ * against a UTC `toISOString()`.
  *
- * Mirrors the iOS `BoardSources.resolveSeriesInstanceForWindow` in
+ * Mirrors the iOS `BoardSources.pickOpenSeriesInstance` in
  * `Helpers/BoardSources.swift` — keep in lockstep (pinned by
- * `seriesForWindowVectors` in `tests/fixtures/boardSourceVectors.json`).
+ * `openSeriesInstanceVectors` in `tests/fixtures/boardSourceVectors.json`).
  *
- * @param candidates - the series' live instances (any order)
- * @param referenceIso - the new board's window `startDate` (local ISO)
- * @returns the containing instance, or `null` when none contains it
+ * @param candidates - the series' instances (any order, any state)
+ * @param now - the instant "open" is judged against
+ * @returns the open instance, or `null` when none is open
  */
-export function resolveSeriesInstanceForWindow<T extends SeriesWindowCandidate>(
+export function pickOpenSeriesInstance<T extends OpenSeriesCandidate>(
   candidates: readonly T[],
-  referenceIso: string,
+  now: Date,
 ): T | null {
   return pickSeriesInstance(
-    candidates.filter(
-      (c) =>
-        c.startDate <= referenceIso &&
-        (c.endDate === undefined || c.endDate === null || referenceIso <= c.endDate),
-    ),
+    candidates.filter((c) => {
+      if (!isEligibleSourceBoard(c, now)) return false;
+      const startsAt = Date.parse(c.startDate);
+      return Number.isNaN(startsAt) || startsAt <= now.getTime();
+    }),
   );
 }
 

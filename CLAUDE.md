@@ -386,11 +386,12 @@ Notes that keep these straight:
   member-rule request.
 - Board eligibility is the shared `isEligibleSourceBoard` (shared TS + Swift
   twin), consumed by `fetchSourceSheetBoardEntries` AND by stored-source
-  resolution (`resolveSourceBoardForWindow`) on both platforms. If you
-  change eligibility, change it there. Owner ruling 2026-09-24: **ended
-  boards are never sources** (open window + unsealed only; no lookback), and
-  every surface resolves a source against the NEW board's window
-  `startDate` — see `docs/BOARD_SOURCES.md` §Boards as sources.
+  resolution (`resolveOpenSourceBoard`) on both platforms. If you
+  change eligibility, change it there. Owner ruling 2026-09-24: **sources
+  are open boards** (open window + unsealed only; no lookback), and a series
+  source binds to its instance **open now** (`pickOpenSeriesInstance` — no
+  containment check against the new board's window), with one clock on
+  every surface — see `docs/BOARD_SOURCES.md` §Boards as sources.
 - Rows AND search filters read `board.name`, so the fetcher applies
   `boardDisplayName` healing. Historical trap: when a second board-fetching
   path existed (`fetchEligibleSourceBoards`, retired with the grid picker),

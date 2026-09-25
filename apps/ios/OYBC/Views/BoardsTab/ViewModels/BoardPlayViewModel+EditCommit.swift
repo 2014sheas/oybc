@@ -119,15 +119,13 @@ extension BoardPlayViewModel {
         let poolsById = Dictionary(uniqueKeysWithValues: allPoolsInWorkspace.map { ($0.id, $0) })
         let tasksById = taskMap
         let dealt = boardTasks.map { $0.taskId }
-        let windowStart = b.startDate
         let database = self.database
         _Concurrency.Task.detached(priority: .utility) { [weak self] in
             let text = database.spawnProvenanceNote(
                 template: template,
                 poolsById: poolsById,
                 tasksById: tasksById,
-                dealtTaskIds: dealt,
-                windowStart: windowStart
+                dealtTaskIds: dealt
             )
             await MainActor.run { self?.editSpawnNoteText = text }
         }

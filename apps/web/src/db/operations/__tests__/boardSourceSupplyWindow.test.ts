@@ -197,11 +197,7 @@ describe('fetchBoardSourceSupply — the wizard’s read path carries both', () 
 
     // The source must be OPEN to supply (owner ruling 2026-09-24) — judge
     // "ended" from inside its window, not the wall clock.
-    const info = await fetchBoardSourceSupply(
-      'board-1',
-      undefined,
-      new Date('2026-09-16T12:00:00.000'),
-    );
+    const info = await fetchBoardSourceSupply('board-1', new Date('2026-09-16T12:00:00.000'));
 
     expect(info).not.toBeNull();
     expect(info?.windowCountByTaskId).toEqual({ c1: 6 });

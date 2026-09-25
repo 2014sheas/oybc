@@ -163,16 +163,19 @@ final class BoardSourceVectorTests: XCTestCase {
         let expected: Bool
     }
 
-    private struct RawWindowCandidate: Decodable, SeriesWindowCandidate {
+    private struct RawOpenSeriesCandidate: Decodable, OpenSeriesCandidate {
         let id: String
         let startDate: String
         let endDate: String?
+        let status: BoardStatus
+        let sealedAt: String?
+        let isDeleted: Bool
     }
 
-    private struct SeriesForWindowVector: Decodable {
+    private struct OpenSeriesInstanceVector: Decodable {
         let name: String
-        let candidates: [RawWindowCandidate]
-        let reference: String
+        let candidates: [RawOpenSeriesCandidate]
+        let now: String
         let expectedId: String?
     }
 
@@ -240,7 +243,7 @@ final class BoardSourceVectorTests: XCTestCase {
         let referenceVectors: [ReferenceVector]
         let doneFilterVectors: [DoneFilterVector]
         let eligibilityVectors: [EligibilityVector]
-        let seriesForWindowVectors: [SeriesForWindowVector]
+        let openSeriesInstanceVectors: [OpenSeriesInstanceVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -328,21 +331,16 @@ final class BoardSourceVectorTests: XCTestCase {
         }
     }
 
-    /// Series binding for a window: the containing instance, else nil — in
-    /// both orders (the tie-break is total).
-    func testSeriesForWindowVectors() throws {
+    /// Series binding: the instance OPEN NOW (owner ruling 2026-09-24,
+    /// amended), else nil — in both orders (the tie-break is total).
+    func testOpenSeriesInstanceVectors() throws {
         let fixture = try loadFixture()
-        XCTAssertFalse(fixture.seriesForWindowVectors.isEmpty)
-        for v in fixture.seriesForWindowVectors {
+        XCTAssertFalse(fixture.openSeriesInstanceVectors.isEmpty)
+        for v in fixture.openSeriesInstanceVectors {
+            let now = try XCTUnwrap(parseISO8601Date(v.now), v.name)
+            XCTAssertEqual(BoardSources.pickOpenSeriesInstance(v.candidates, now: now)?.id, v.expectedId, v.name)
             XCTAssertEqual(
-                BoardSources.resolveSeriesInstanceForWindow(v.candidates, referenceIso: v.reference)?.id,
-                v.expectedId,
-                v.name
-            )
-            XCTAssertEqual(
-                BoardSources.resolveSeriesInstanceForWindow(
-                    Array(v.candidates.reversed()), referenceIso: v.reference
-                )?.id,
+                BoardSources.pickOpenSeriesInstance(Array(v.candidates.reversed()), now: now)?.id,
                 v.expectedId,
                 "\(v.name) (reversed)"
             )

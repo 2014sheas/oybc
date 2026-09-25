@@ -8,7 +8,7 @@ import {
   type RecurringBoardTemplate,
   type Task,
 } from '@oybc/shared';
-import { fetchBoardSourceSupplyForWindow } from '../db/operations/boardSources';
+import { fetchOpenBoardSourceSupply } from '../db/operations/boardSources';
 
 /** What {@link useSpawnNoteSupplies} resolves for the provenance note. */
 export interface SpawnNoteSupplies {
@@ -29,21 +29,19 @@ export interface SpawnNoteSupplies {
  * resolve. Extracted from `BoardPlaySurface` (file-size posture — a
  * self-contained async concern, not grid logic).
  *
- * Board sources resolve against the SPAWNED board's window start (owner
- * ruling 2026-09-24 — the same reference the spawn used), so a source that
- * had no board for that window reads as such here too.
+ * Board sources resolve to their board open NOW (owner ruling 2026-09-24,
+ * the spawn's own rule), so a source with no open board reads as such here
+ * too — the note ends "· No board for this window yet".
  *
  * @param template - The record the board spawned from (undefined hides the note).
  * @param poolsById - Live pools.
  * @param taskMap - Live tasks.
- * @param windowStart - The spawned board's `startDate` (local ISO).
  * @returns The resolved supplies + windowless count, or `null` until resolved.
  */
 export function useSpawnNoteSupplies(
   template: RecurringBoardTemplate | undefined,
   poolsById: Record<string, Pool>,
   taskMap: Record<string, Task>,
-  windowStart: string,
 ): SpawnNoteSupplies | null {
   const [supplies, setSupplies] = useState<SpawnNoteSupplies | null>(null);
   useEffect(() => {
@@ -64,7 +62,7 @@ export function useSpawnNoteSupplies(
           });
           continue;
         }
-        const resolution = await fetchBoardSourceSupplyForWindow(source.sourceId, windowStart);
+        const resolution = await fetchOpenBoardSourceSupply(source.sourceId);
         if (resolution.kind === 'noWindow') noBoardForWindowCount += 1;
         const info = resolution.kind === 'live' ? resolution.info : null;
         resolved.push({
@@ -77,6 +75,6 @@ export function useSpawnNoteSupplies(
     return () => {
       cancelled = true;
     };
-  }, [template, poolsById, taskMap, windowStart]);
+  }, [template, poolsById, taskMap]);
   return supplies;
 }

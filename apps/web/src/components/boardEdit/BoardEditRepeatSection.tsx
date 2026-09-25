@@ -171,12 +171,7 @@ export function BoardEditRepeatSection({
     board.spawnedFromTemplateId != null && sourceTemplate && isFreshlyDealtBoard(board)
       ? sourceTemplate
       : undefined;
-  const spawnNoteSupplies = useSpawnNoteSupplies(
-    noteTemplate,
-    poolsById,
-    taskMap,
-    board.startDate,
-  );
+  const spawnNoteSupplies = useSpawnNoteSupplies(noteTemplate, poolsById, taskMap);
 
   if (board.spawnedFromTemplateId != null) {
     // A soft-deleted / unresolved source record hides the section entirely

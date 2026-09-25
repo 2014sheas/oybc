@@ -269,44 +269,46 @@ the pool-generation surface, both platforms:
   instance; tightened by the owner ruling of 2026-09-24, below)*. Pulling a
   board that belongs to a recurring series (`spawnedFromTemplateId` set)
   binds to the series: every resolution (wizard, roster, spawn, the
-  play-screen note) hops the stored id to the series' instance whose window
-  **contains the reference** — the pure `resolveSeriesInstanceForWindow`
-  (TS + Swift, pinned by `seriesForWindowVectors`), via
-  `resolveSourceBoardForWindow` (web `db/operations/boardSources.ts` / iOS
-  `AppDatabase+BoardSources`). An archived old window never kills the pull.
-  Pulling a plain one-off board binds to that board itself. Two supporting
-  rules: the spawn pass runs **parents first** (yearly → monthly → weekly →
-  daily, stable within a tier — `findTemplatesPendingSpawn`'s tail sort) so
-  a child board pulling a parent series sees the parent's fresh window in
-  the same pass; and `removeMissingBoardSources` treats a source as missing
-  only when the resolver finds it **dead** (never when it merely has no
-  board for this window).
-- **Ended boards are never sources** *(owner ruling 2026-09-24 — "There is
-  no REAL use case for ended boards as sources"; supersedes #482's 30-day
-  lookback, `SOURCE_BOARD_LOOKBACK_DAYS` is gone)*. Eligibility
-  (`isEligibleSourceBoard`, pinned by `eligibilityVectors`): not deleted,
-  not a draft/archived, **not sealed**, and the window is open — no
-  `endDate`, an unparseable one (fail open), or `endDate >= now`. It gates
-  the Sources sheet (`fetchSourceSheetBoardEntries`) AND supply: a stored
-  source resolves to one of
+  play-screen note) hops the stored id to the series' instance that is
+  **open now** — the pure `pickOpenSeriesInstance` (TS + Swift, pinned by
+  `openSeriesInstanceVectors`: started, not ended, not sealed; latest
+  `startDate`, then lowest id), via `resolveOpenSourceBoard` (web
+  `db/operations/boardSources.ts` / iOS `AppDatabase+BoardSources`). There
+  is **no containment check** against the new board's window: a monthly
+  built mid-month from a weekly series pulls the CURRENT week — exactly the
+  board the Sources sheet shows. An archived old window never kills the
+  pull. Pulling a plain one-off board binds to that board itself. Two
+  supporting rules: the spawn pass runs **parents first** (yearly → monthly
+  → weekly → daily, stable within a tier — `findTemplatesPendingSpawn`'s
+  tail sort) so a child board pulling a parent series sees the parent's
+  fresh window in the same pass; and `removeMissingBoardSources` treats a
+  source as missing only when the resolver finds it **dead** (never when it
+  merely has no board open).
+- **Sources are open boards** *(owner ruling 2026-09-24, amended the same
+  day — "There is no REAL use case for ended boards as sources"; supersedes
+  #482's 30-day lookback, `SOURCE_BOARD_LOOKBACK_DAYS` is gone)*.
+  Eligibility (`isEligibleSourceBoard`, pinned by `eligibilityVectors`):
+  not deleted, not a draft/archived, **not sealed**, and the window is open
+  — no `endDate`, an unparseable one (fail open), or `endDate >= now`. It
+  gates the Sources sheet (`fetchSourceSheetBoardEntries`) AND supply: a
+  stored source resolves to one of
   - `live` — an open board supplies it;
-  - `noWindow` — the source exists but has no open board for the window (an
-    ended/sealed one-off; a series with no open instance containing the
-    reference — there is **no fallback** to the newest or an ended
-    instance). It supplies nothing (capacity 0 from it); the source row's
-    subtitle reads **"No board for this window yet"**, and the spawn still
-    deals (from the other sources) and records the source in the
-    spawn-provenance note ("… · No board for this window yet");
+  - `noWindow` — the source exists but has no board open now (an
+    ended/sealed one-off; a series with no open instance — there is **no
+    fallback** to the newest, an ended or a future instance). It supplies
+    nothing (capacity 0 from it); the source row's subtitle reads **"No
+    board for this window yet"**, and the spawn still deals (from the other
+    sources) and records the source in the spawn-provenance note ("… · No
+    board for this window yet"). A one-off wizard owes such a source its
+    remaining-target prefill until it resolves live;
   - `dead` — the stored row is gone/deleted/archived, or the series has no
     existing instance: the spawn ask below.
-- **One reference everywhere.** Every surface resolves against the **new
-  board's window `startDate`** — the wizard's live supply (web
-  `wizardSourceReference` / iOS `sourceWindowReference`), Preview (reads the
-  wizard's supply), the drafts-list capacity (the draft's own `startDate`),
-  persist (`window.startDate`), and the recurring spawn (its window start) —
-  so capacity == Preview == the persisted deal. "Ended" is judged against
-  the wall clock (injectable: web `now` params / iOS
-  `AppDatabase.sourceClock`, a test seam).
+- **One clock everywhere.** The wizard's live supply, Preview (reads the
+  wizard's supply), the drafts-list capacity, persist and the recurring
+  spawn all resolve "open" against the same wall clock (injectable: web
+  `now` params / iOS `AppDatabase.sourceClock`, a test seam), so capacity ==
+  Preview == the persisted deal. (The derived-counter window stamping still
+  uses the NEW board's own window — a separate concern.)
 - **Flatten one level:** a pulled board contributes its concrete `BoardTask`
   rows — never a recursive walk into that board's own sources.
 - **Completion is just windowed completion.** A pulled square is the same

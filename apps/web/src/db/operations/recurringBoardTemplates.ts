@@ -13,7 +13,7 @@ import {
   sourcesForRecord,
   templateReferencesTask,
 } from '@oybc/shared';
-import { fetchBoardSourceSupply, resolveSourceBoardForWindow } from './boardSources';
+import { fetchBoardSourceSupply, resolveOpenSourceBoard } from './boardSources';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 
@@ -167,13 +167,13 @@ export async function removeMissingBoardSources(templateId: string): Promise<boo
       // Series binding — "missing" means the resolver finds the source
       // DEAD: the stored row gone, or a series with no existing instance (a
       // stored archived window with a live series sibling is NOT missing).
-      // A `noWindow` source — no open board for this window yet, owner
-      // ruling 2026-09-24 — is KEPT: it supplies nothing now but is not
+      // A `noWindow` source — no open board yet, owner ruling 2026-09-24 —
+      // is KEPT: it supplies nothing now but is not
       // gone, and removing it would silently drop a series binding the
       // next window needs.
       const liveByStoredId = new Map<string, boolean>();
       for (const id of boardIds) {
-        liveByStoredId.set(id, (await resolveSourceBoardForWindow(id)).kind !== 'dead');
+        liveByStoredId.set(id, (await resolveOpenSourceBoard(id)).kind !== 'dead');
       }
       const kept = sources.filter((source) => {
         if (source.kind !== 'board') return true;

@@ -18,7 +18,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../../../db/internal';
-import { fetchBoardSourceSupplyForWindow } from '../../../db/operations/boardSources';
+import { fetchOpenBoardSourceSupply } from '../../../db/operations/boardSources';
 import { spawnTemplateBoard } from '../../../db/operations/recurringBoardSpawn';
 import { resolveDraftCapacity } from '../resolveDraftCapacity';
 import { buildSupplyInfoMap, sourceCapacity } from '../wizardSources';
@@ -217,12 +217,12 @@ describe('resolveResumableDraft — the resume step', () => {
 });
 
 /**
- * Owner ruling 2026-09-24 — ENDED BOARDS ARE NEVER SOURCES, and every
- * surface resolves a board source against the NEW board's window start. A
- * repeating board pulling a weekly series whose only instance is LAST week
- * must count 0 from that source identically in the drafts-list capacity,
- * the wizard's live supply (what Preview reads), and the spawned deal.
- * iOS twin: `SourceBoardForWindowTests.swift` (the capacity == preview == deal test).
+ * Owner ruling 2026-09-24 — SOURCES ARE OPEN BOARDS, resolved with one
+ * clock everywhere. A repeating board pulling a weekly series whose only
+ * instance is LAST week (none open now) must count 0 from that source
+ * identically in the drafts-list capacity, the wizard's live supply (what
+ * Preview reads), and the spawned deal.
+ * iOS twin: `SourceBoardOpenNowTests.swift` (the capacity == preview == deal test).
  */
 describe('ended source — capacity == preview == persisted deal', () => {
   const WINDOW_START = '2026-09-16T00:00:00.000';
@@ -279,7 +279,7 @@ describe('ended source — capacity == preview == persisted deal', () => {
     const capacity = await resolveDraftCapacity(draft, CLOCK);
 
     // 2. The wizard's live supply (useWizardSources → Preview reads it).
-    const resolution = await fetchBoardSourceSupplyForWindow('wk-last', WINDOW_START, CLOCK);
+    const resolution = await fetchOpenBoardSourceSupply('wk-last', CLOCK);
     const entry = boardSupplyEntryForResolution(resolution);
     expect(entry.noBoardForWindow).toBe(true);
     const tasksById = Object.fromEntries((await db.tasks.toArray()).map((t) => [t.id, t]));

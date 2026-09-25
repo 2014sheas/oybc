@@ -11,29 +11,29 @@ import {
 } from '@oybc/shared';
 import { db } from '../../internal';
 import {
-  fetchBoardSourceSupplyForWindow,
+  fetchOpenBoardSourceSupply,
   fetchTemplateSupplyResolution,
-  resolveSourceBoardForWindow,
+  resolveOpenSourceBoard,
 } from '../boardSources';
+import { spawnTemplateBoard } from '../recurringBoardSpawn';
 import { removeMissingBoardSources } from '../recurringBoardTemplates';
 
 /**
- * Owner ruling 2026-09-24 — ENDED BOARDS ARE NEVER SOURCES. A stored board
- * source resolves, for the window starting at `reference`, to:
- *   - `live`     — an open board supplies it;
- *   - `noWindow` — the source exists but has no open board for the window
- *                  (ended/sealed one-off; a series with no instance
- *                  containing the reference) → no supply, "No board for
- *                  this window yet";
+ * Owner ruling 2026-09-24 (amended) — SOURCES ARE OPEN BOARDS. A stored
+ * board source resolves NOW to:
+ *   - `live`     — an open board supplies it (a series: its instance open
+ *                  now — no containment check against the new board);
+ *   - `noWindow` — the source exists but has no board open now
+ *                  (ended/sealed one-off; a series with no open instance)
+ *                  → no supply, "No board for this window yet";
  *   - `dead`     — the stored row is gone / deleted / archived, or the
  *                  series has no existing instance → the spawn's ask.
- * iOS twin: `SourceBoardForWindowTests.swift`.
+ * iOS twin: `SourceBoardOpenNowTests.swift`.
  */
 
 const USER = 'user-1';
 // Local-ISO board dates (the web convention). "Now" = Wed 2026-09-16 noon.
 const NOW = new Date('2026-09-16T12:00:00.000');
-const REF_THIS_WEEK = '2026-09-14T00:00:00.000';
 
 function board(over: Partial<Board> & { id: string }): Board {
   return {
@@ -99,76 +99,76 @@ afterEach(async () => {
   await db.syncQueue.clear();
 });
 
-describe('resolveSourceBoardForWindow — one-off boards', () => {
+describe('resolveOpenSourceBoard — one-off boards', () => {
   it('an open one-off resolves live', async () => {
     await seed(board({ id: 'open' }));
-    const r = await resolveSourceBoardForWindow('open', REF_THIS_WEEK, NOW);
+    const r = await resolveOpenSourceBoard('open', NOW);
     expect(r.kind).toBe('live');
   });
 
   it('an ENDED one-off resolves to no board for the window — null supply', async () => {
     await seed(board({ id: 'ended', name: 'Last week', ...LAST_WEEK }));
-    const r = await resolveSourceBoardForWindow('ended', REF_THIS_WEEK, NOW);
+    const r = await resolveOpenSourceBoard('ended', NOW);
     expect(r).toEqual({ kind: 'noWindow', displayName: 'Last week' });
-    const supply = await fetchBoardSourceSupplyForWindow('ended', REF_THIS_WEEK, NOW);
+    const supply = await fetchOpenBoardSourceSupply('ended', NOW);
     expect(supply.kind).toBe('noWindow');
   });
 
   it('a SEALED one-off resolves to no board for the window', async () => {
     await seed(board({ id: 'sealed', sealedAt: '2026-09-15T00:00:00.000Z' }));
-    const r = await resolveSourceBoardForWindow('sealed', REF_THIS_WEEK, NOW);
+    const r = await resolveOpenSourceBoard('sealed', NOW);
     expect(r.kind).toBe('noWindow');
   });
 
   it('a deleted, archived or missing one-off is dead', async () => {
     await seed(board({ id: 'deleted', isDeleted: true }));
     await seed(board({ id: 'archived', status: BoardStatus.ARCHIVED }));
-    expect((await resolveSourceBoardForWindow('deleted', REF_THIS_WEEK, NOW)).kind).toBe('dead');
-    expect((await resolveSourceBoardForWindow('archived', REF_THIS_WEEK, NOW)).kind).toBe('dead');
-    expect((await resolveSourceBoardForWindow('nope', REF_THIS_WEEK, NOW)).kind).toBe('dead');
+    expect((await resolveOpenSourceBoard('deleted', NOW)).kind).toBe('dead');
+    expect((await resolveOpenSourceBoard('archived', NOW)).kind).toBe('dead');
+    expect((await resolveOpenSourceBoard('nope', NOW)).kind).toBe('dead');
   });
 });
 
-describe('resolveSourceBoardForWindow — series binding', () => {
+describe('resolveOpenSourceBoard — series binding', () => {
   const inSeries = (id: string, dates: { startDate: string; endDate: string }) =>
     board({ id, spawnedFromTemplateId: 'series-1', ...dates });
 
-  it("binds a stale stored id to the instance CONTAINING the new board's window start", async () => {
+  it('binds a stale stored id to the instance OPEN NOW', async () => {
     await seed(inSeries('wk-last', LAST_WEEK));
     await seed(inSeries('wk-this', {
       startDate: '2026-09-14T00:00:00.000',
       endDate: '2026-09-20T23:59:59.999',
     }));
-    const r = await resolveSourceBoardForWindow('wk-last', REF_THIS_WEEK, NOW);
+    const r = await resolveOpenSourceBoard('wk-last', NOW);
     expect(r.kind === 'live' && r.board.id).toBe('wk-this');
   });
 
-  it('no instance contains the reference → no board for this window (NOT the ended one)', async () => {
+  it('no instance open now → no board for this window (NOT the ended one)', async () => {
     // Only last week exists — the old fallback returned it ("newest started").
     await seed(inSeries('wk-last', LAST_WEEK));
-    const r = await resolveSourceBoardForWindow('wk-last', REF_THIS_WEEK, NOW);
+    const r = await resolveOpenSourceBoard('wk-last', NOW);
     expect(r.kind).toBe('noWindow');
   });
 
   it('never binds to a FUTURE instance either', async () => {
     await seed(inSeries('wk-next', NEXT_WEEK));
-    const r = await resolveSourceBoardForWindow('wk-next', REF_THIS_WEEK, NOW);
+    const r = await resolveOpenSourceBoard('wk-next', NOW);
     expect(r.kind).toBe('noWindow');
   });
 
-  it('a containing instance that is sealed is not a source', async () => {
+  it('an in-window instance that is sealed is not a source', async () => {
     await seed(board({
       id: 'wk-this-sealed',
       spawnedFromTemplateId: 'series-1',
       sealedAt: '2026-09-15T00:00:00.000Z',
     }));
-    const r = await resolveSourceBoardForWindow('wk-this-sealed', REF_THIS_WEEK, NOW);
+    const r = await resolveOpenSourceBoard('wk-this-sealed', NOW);
     expect(r.kind).toBe('noWindow');
   });
 
   it('a series whose every instance is archived is dead (the ask)', async () => {
     await seed(board({ id: 'a1', spawnedFromTemplateId: 'series-x', status: BoardStatus.ARCHIVED }));
-    expect((await resolveSourceBoardForWindow('a1', REF_THIS_WEEK, NOW)).kind).toBe('dead');
+    expect((await resolveOpenSourceBoard('a1', NOW)).kind).toBe('dead');
   });
 });
 
@@ -216,5 +216,97 @@ describe('roster + ask: no board for this window is NOT a missing source', () =>
     const { byTemplateId } = await fetchTemplateSupplyResolution([template]);
     expect(byTemplateId['tmpl-1'].deadBoardSourceIds).toEqual([]);
     expect(byTemplateId['tmpl-1'].supplies[0].supplyTaskIds).toEqual([]);
+  });
+});
+
+/**
+ * The amended ruling's headline case: a MONTHLY repeating board pulling a
+ * WEEKLY series, dealt mid-month. The week containing the 1st has ended —
+ * the board pulls the CURRENT week (what the Sources sheet shows), not
+ * nothing. Containment against the new board's start would bind the ended
+ * first week and deal 0 from it.
+ */
+describe('a monthly built mid-month from a weekly series', () => {
+  it('pulls the CURRENT week', async () => {
+    const firstWeek = Array.from({ length: 9 }, (_, i) => `f${i}`);
+    const currentWeek = Array.from({ length: 9 }, (_, i) => `c${i}`);
+    const inSeries = (id: string, dates: { startDate: string; endDate: string }) =>
+      board({ id, spawnedFromTemplateId: 'series-weekly', ...dates });
+    const seedMany = async (b: Board, ids: string[]) => {
+      await db.boards.add(b);
+      for (const [i, taskId] of ids.entries()) {
+        await db.tasks.put({
+          id: taskId,
+          userId: USER,
+          title: taskId,
+          type: TaskType.NORMAL,
+          isCompleted: false,
+          totalCompletions: 0,
+          totalInstances: 0,
+          createdAt: b.createdAt,
+          updatedAt: b.createdAt,
+          version: 1,
+          isDeleted: false,
+        });
+        await db.boardTasks.add({
+          id: `bt-${b.id}-${i}`,
+          boardId: b.id,
+          taskId,
+          row: Math.floor(i / 3),
+          col: i % 3,
+          isCenter: false,
+          createdAt: b.createdAt,
+          updatedAt: b.createdAt,
+          version: 1,
+          isDeleted: false,
+        });
+      }
+    };
+    await seedMany(
+      inSeries('wk-first', { startDate: '2026-08-31T00:00:00.000', endDate: '2026-09-06T23:59:59.999' }),
+      firstWeek,
+    );
+    await seedMany(
+      inSeries('wk-current', { startDate: '2026-09-14T00:00:00.000', endDate: '2026-09-20T23:59:59.999' }),
+      currentWeek,
+    );
+    const monthly: RecurringBoardTemplate = {
+      id: 'tmpl-monthly',
+      userId: USER,
+      name: 'September',
+      timeframe: Timeframe.MONTHLY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      seedTaskIds: [],
+      manualTaskIds: [],
+      sources: [
+        { sourceId: 'wk-first', kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'all' },
+      ],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(monthly);
+
+    const result = await spawnTemplateBoard(
+      {
+        template: monthly,
+        windowStart: '2026-09-01T00:00:00.000',
+        windowEnd: '2026-09-30T23:59:59.999',
+        suggestedName: 'September',
+      },
+      { now: NOW }, // 2026-09-16 — mid-month
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.noBoardForWindowSourceIds).toEqual([]);
+    const dealt = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
+      (bt) => bt.taskId,
+    );
+    expect(new Set(dealt)).toEqual(new Set(currentWeek));
   });
 });
