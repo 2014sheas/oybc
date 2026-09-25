@@ -17,7 +17,7 @@
 > immunity, timeframe-scaled backstop, backfill timestamp/id fixes, batched pull
 > recompute, honest upgrade-visibility section, sealed × Board-Edit gating.
 >
-> **Amended 2026-09-24 (root-square end bound — PR #TBD, `fix/root-window-end-bound`):**
+> **Amended 2026-09-24 (root-square end bound — PR #507, `fix/root-window-end-bound`):**
 > Decision 1 now bounds a live board at BOTH ends. A board's root squares
 > (event-owning NORMAL / plain COUNTING tasks, and compound children resolved
 > through the board's context) count only events inside the board's own window
