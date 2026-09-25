@@ -367,6 +367,61 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         XCTAssertEqual(e.occurredAt, e.createdAt, "an open board's window contains now")
     }
 
+    // MARK: - Final-review F5 / F6 (twins of web lateLogWindowEnd.test.ts)
+
+    /// Yesterday's daily board (ended, unsealed unless `sealedAt` is given), placing the root.
+    private func seedYesterday(_ database: AppDatabase, sealedAt: String? = nil) throws -> String {
+        let y = today.addingTimeInterval(-86_400)
+        var b = try board(
+            id: "yesterday", timeframe: .daily,
+            start: wizardLocalISOString(y), end: wizardLocalISOString(y.addingTimeInterval(86_400 - 0.001))
+        )
+        b.sealedAt = sealedAt
+        try database.write { db in
+            try b.save(db)
+            try self.placement(boardId: "yesterday", taskId: self.rootId).save(db)
+        }
+        return "yesterday"
+    }
+
+    func test_F5_sharedCounterLog_withSealedBoard_isNoOp() throws {
+        let database = try makeDb()
+        try seedRoot(database, goal: 20, history: 3)
+        let sealedId = try seedYesterday(database, sealedAt: dayStart)
+
+        let inc = try database.incrementSharedCounter(sourceTaskId: rootId, by: 2, boardId: sealedId)
+        let dec = try database.decrementSharedCounter(sourceTaskId: rootId, by: 1, boardId: sealedId)
+
+        XCTAssertTrue(inc.affectedBoards.isEmpty)
+        XCTAssertEqual(dec.effectiveDelta, 0)
+        XCTAssertEqual(try rootEvents(database).map(\.delta), [3], "a sealed board authors no event")
+        XCTAssertEqual(try database.fetchTask(id: rootId)?.currentCount, 3)
+    }
+
+    func test_F6_decrement_withEndedBoard_clampsToWindowCount_notLifetime() throws {
+        let database = try makeDb()
+        try seedRoot(database, goal: 20, history: 5) // lifetime 5, all two weeks ago
+        let endedId = try seedYesterday(database) // window count 0
+
+        let dec = try database.decrementSharedCounter(sourceTaskId: rootId, by: 1, boardId: endedId)
+
+        XCTAssertEqual(dec.effectiveDelta, 0)
+        XCTAssertFalse(try rootEvents(database).contains { ($0.delta ?? 0) < 0 })
+        XCTAssertEqual(try database.fetchTask(id: rootId)?.currentCount, 5)
+    }
+
+    func test_F6_decrement_withEndedBoard_capsAtWindowCount() throws {
+        let database = try makeDb()
+        try seedRoot(database, goal: 20, history: 5)
+        let endedId = try seedYesterday(database)
+        _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 2, boardId: endedId) // window 2, lifetime 7
+
+        let dec = try database.decrementSharedCounter(sourceTaskId: rootId, by: 4, boardId: endedId)
+
+        XCTAssertEqual(dec.effectiveDelta, 2)
+        XCTAssertEqual(try database.fetchTask(id: rootId)?.currentCount, 5)
+    }
+
     /// A late log stamped at the ended weekly's `endDate` falls inside its
     /// FROZEN window-stamped derived row: the row is never written, but the
     /// weekly's stored stats must re-derive (cascade only).

@@ -71,7 +71,7 @@ evaluation ("spawns within *this placement's* window").
 | 6 | Derived shared counters | **Unchanged in v1** — baseline-based display everywhere; derived tasks are fully carved out of events/backfill/recompute (see [§Derived-task carve-out](#derived-task-carve-out)) |
 | 7 | Doc home | This file; pointers from ARCHITECTURE.md + CLAUDE.md when implementation starts |
 | 8 | Seal snapshots are re-derivable | Sealed board snapshots are **locally re-derived pure functions of the converged in-window event union** — never LWW-raced between devices (review finding C2) |
-| 9 | Undo is window-scoped | Un-complete tombstones **all in-window** events for the viewed context; events inside a sealed board's window are **immune to tombstoning** (review findings M4 + C2 interaction) |
+| 9 | Undo is window-scoped | Un-complete tombstones **all in-window** events for the viewed context; events inside a sealed board's window `[startDate, min(endDate, sealedAt)]` are **immune to tombstoning** (review findings M4 + C2 interaction; end bound amended 2026-09-24) |
 
 ## Goals / non-goals
 
@@ -313,7 +313,8 @@ Kept, still synced, stamped transactionally on every event write — but demoted
 ### Write paths (single choke points, as today)
 
 - **Complete** (board square, compound child sheet, library): append `completion`
-  event (`occurredAt = now`, `boardId` = context board if any) → stamp caches →
+  event (`occurredAt = min(now, endDate)` from a board context — see the late-log
+  bullet below — else `now`; `boardId` = context board if any) → stamp caches →
   derivation pass over affected live boards. Completing an already-lifetime-complete
   task from a *new* window appends a new event — this is the "re-complete"
   gesture, and it increments `totalCompletions`.
@@ -331,7 +332,8 @@ Kept, still synced, stamped transactionally on every event write — but demoted
   Counters hub / counter detail — carry no board and stamp `now`; they are not
   attributed to an ended board. A **sealed** board authors nothing:
   `handleTaskCompletion` / `completeTaskOrchestrated` no-op (no event appended,
-  board untouched), as does the compound-child fallback.
+  board untouched), as do the compound-child fallback and the shared-counter
+  `incrementSharedCounter` / `decrementSharedCounter` given a sealed `boardId`.
 - **Compound-child fallback** (child not placed on the host board): writes only
   for an **event-owning** child (NORMAL / plain COUNTING — event append with the
   late-log stamp above). For a non-event-owning child — window-stamped derived
@@ -344,19 +346,29 @@ Kept, still synced, stamped transactionally on every event write — but demoted
   context window → restamp caches → derivation.
   - Board context: the viewed board's `[startDate, endDate]` (amended
     2026-09-24 — events after an ended board's `endDate` belong to later
-    windows and are never tombstoned from it).
+    windows and are never tombstoned from it). An unparseable `endDate` fails
+    open (treated as open-ended) on both platforms.
   - Library context: the toggle acts on the latest event; if that event is
     **sealed-immune** (see below) the toggle is disabled with an explanatory
     affordance ("completed in a sealed window") instead of silently failing.
   - **Sealed-window immunity**: an event is immune iff some non-deleted *sealed*
-    board places its task and `sealedBoard.startDate <= occurredAt <= sealedAt`.
+    board places its task and
+    `sealedBoard.startDate <= occurredAt <= min(sealedBoard.endDate, sealedAt)`
+    — exactly the events the sealed record counted (amended 2026-09-24 with the
+    Decision 1 end bound; `buildSealImmuneWindows`). An event in the overtime
+    gap `(endDate, sealedAt]` belongs to the next window's board and stays
+    tombstonable there. A missing / unparseable `endDate` leaves the bound at
+    `sealedAt`.
     Immune events can never be tombstoned by any gesture — history stays history.
     If tombstoning the non-immune events doesn't flip the square (an immune event
     keeps it green), the UI says why rather than appearing broken.
 - **Increment**: append a positive-delta event → stamp caches → derivation.
 - **Decrement needs window intent** (review finding M3):
-  - **Board context**: append a negative-delta event (`occurredAt = now`), gated
-    by windowed count > 0 so the window sum can't go negative from local gestures.
+  - **Board context**: append a negative-delta event
+    (`occurredAt = min(now, endDate)`, the late-log stamp), clamped to the
+    board's **window** count (`[startDate, endDate]`) so the window sum can't go
+    negative from local gestures — for shared counters too
+    (`decrementSharedCounter` with a `boardId`), never just the lifetime count.
   - **Library / Counters Hub context**: tombstone the **latest non-immune
     increment event** instead of appending a negative delta — a lifetime
     correction removes the occurrence being corrected rather than poisoning the

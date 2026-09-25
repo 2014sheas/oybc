@@ -6,9 +6,11 @@ import {
   BoardStatus,
   SyncOperationType,
   TaskType,
+  boardWindowEnd,
   isFrozenDerivedRow,
   isFrozenRowReachedByEvent,
   propagateIncrement,
+  resolveTaskWindowState,
   selectLastIncrementEntry,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
@@ -160,7 +162,8 @@ async function propagateToLinkedRows(
  * @param boardId - The board whose OWN play surface made the log, if any. When
  *   that board's window has ended, the event is stamped at its `endDate`
  *   (see `lateLogStampForBoard`); omitted (hub / counter detail /
- *   library) → stamped `now`.
+ *   library) → stamped `now`. A SEALED board is a full no-op (no event, no
+ *   write) — a sealed board authors no event.
  */
 export async function incrementSharedCounter(
   sourceTaskId: string,
@@ -189,6 +192,11 @@ export async function incrementSharedCounter(
           `incrementSharedCounter: task ${sourceTaskId} is a linked derived counter; pass the source (template) task id instead`,
         );
       }
+
+      // Final-review F5: a SEALED board authors no event (play is locked; its
+      // record is permanent). Mirrors `handleTaskCompletion`'s sealed no-op.
+      const logBoard = boardId !== undefined ? await db.boards.get(boardId) : undefined;
+      if (logBoard?.sealedAt) return { affectedBoards: [] };
 
       // 2. Compute new source count — NO high-end clamp (overshoot is intentional).
       // A goal-less source (P5 hub-born counter, `maxCount == null`) never
@@ -247,7 +255,9 @@ export async function incrementSharedCounter(
  * Decrement the shared-counter accumulator for a given source task id.
  *
  * Mirrors `incrementSharedCounter` with the following differences:
- *   - `eff = min(by, source.currentCount)` — cannot go below 0.
+ *   - `eff = min(by, source.currentCount)` — cannot go below 0. With a
+ *     `boardId`, `eff` is further clamped to that board's WINDOW count
+ *     (`[startDate, endDate]`) — the count its cell shows.
  *   - If `eff === 0` → no-op, returns `{ affectedBoards: [], effectiveDelta: 0 }`.
  *   - ONE-WAY COMPLETION LATCH is preserved: decrement does NOT un-complete any
  *     task — once `isCompleted` is true it stays true. This is consistent with the
@@ -262,7 +272,8 @@ export async function incrementSharedCounter(
  *   is the shared accumulator.
  * @param by - Amount to decrement (default 1). Must be a positive integer.
  * @param boardId - The board whose OWN play surface made the log, if any — the
- *   same late-log stamp as {@link incrementSharedCounter}.
+ *   same late-log stamp and sealed no-op as {@link incrementSharedCounter},
+ *   plus the window-count clamp above.
  */
 export async function decrementSharedCounter(
   sourceTaskId: string,
@@ -291,9 +302,30 @@ export async function decrementSharedCounter(
         );
       }
 
+      // Final-review F5: a SEALED board authors no event (play is locked; its
+      // record is permanent). Mirrors `handleTaskCompletion`'s sealed no-op.
+      const logBoard = boardId !== undefined ? await db.boards.get(boardId) : undefined;
+      if (logBoard?.sealedAt) return { affectedBoards: [], effectiveDelta: 0 };
+
       // 2. Compute effective delta — clamp to what the source actually holds.
+      // Final-review F6: from a board, the clamp is that board's WINDOW count
+      // (`[startDate, endDate]`, what its cell shows) — the negative event is
+      // stamped inside that window, so taking more than the window holds would
+      // bleed into overlapping windows (e.g. the monthly containing that day).
+      // Still capped by the lifetime count so the lifetime sum stays >= 0.
       const currentCount = source.currentCount ?? 0;
-      const eff = Math.min(by, currentCount);
+      let available = currentCount;
+      if (logBoard) {
+        const events = await db.taskEvents.where('taskId').equals(sourceTaskId).toArray();
+        const { count: windowCount } = resolveTaskWindowState(
+          source,
+          events.filter((e) => !e.isDeleted),
+          logBoard.startDate,
+          boardWindowEnd(logBoard),
+        );
+        available = Math.min(currentCount, Math.max(0, windowCount));
+      }
+      const eff = Math.min(by, available);
       if (eff === 0) return { affectedBoards: [], effectiveDelta: 0 };
 
       // A goal-less source (P5 hub-born counter, `maxCount == null`) never
@@ -320,8 +352,8 @@ export async function decrementSharedCounter(
 
       // Windowed Completion (docs §Write paths — board-context decrement
       // "append a negative-delta event … gated by windowed count > 0"). `eff`
-      // is already clamped to the source's lifetime count above, so the
-      // lifetime event sum can't go negative. Raw append on the SOURCE only
+      // is already clamped above (window count from a board, and always the
+      // lifetime count), so neither sum can go negative. Raw append on the SOURCE only
       // (derived tasks are carved out); the source cache is written
       // authoritatively above.
       const occurredAt = await lateLogStampForBoard(boardId, now);

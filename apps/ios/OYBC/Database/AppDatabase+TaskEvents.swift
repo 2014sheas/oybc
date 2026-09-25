@@ -144,8 +144,9 @@ extension AppDatabase {
     /// non-deleted SEALED boards that place it — directly or via a placed
     /// compound (the same reachability the pull-path re-derivation uses). An
     /// event whose `occurredAt` falls inside one of these `[startDate,
-    /// sealedAt]` windows can NEVER be tombstoned by any un-complete /
-    /// decrement gesture — history stays history.
+    /// min(endDate, sealedAt)]` windows (the set that built the sealed record)
+    /// can NEVER be tombstoned by any un-complete / decrement gesture —
+    /// history stays history.
     ///
     /// MUST be called inside the ambient tombstone transaction (covers
     /// boards / boardTasks / compoundChildren). Returns `[]` (a fast no-op)
@@ -175,7 +176,7 @@ extension AppDatabase {
         return buildSealImmuneWindows(
             sealedBoards: placing.compactMap { b in
                 guard let sealedAt = b.sealedAt else { return nil }
-                return (startDate: b.startDate, sealedAt: sealedAt)
+                return (startDate: b.startDate, endDate: b.endDate, sealedAt: sealedAt)
             }
         )
     }
@@ -257,7 +258,8 @@ extension AppDatabase {
     ///   - now: Write time for the tombstones.
     ///   - windowEnd: The viewed board's inclusive upper bound
     ///     (`boardWindowEnd(board)`), or `nil` for an open-ended window.
-    ///     Required so every caller decides its bound.
+    ///     Required so every caller decides its bound. An unparseable value
+    ///     fails open (treated as `nil`).
     static func tombstoneWindowCompletions(
         db: Database,
         taskId: String,
@@ -275,10 +277,10 @@ extension AppDatabase {
             // windowStart provided but unparseable → tombstone nothing (defensive).
             guard let lower = lowerDate, let occurred = DateFormatting.parseISO(e.occurredAt) else { continue }
             if occurred < lower { continue }
-            if windowEnd != nil {
-                // windowEnd provided but unparseable → tombstone nothing (defensive).
-                guard let upper = upperDate, occurred <= upper else { continue }
-            }
+            // Final-review F11: an unparseable `windowEnd` FAILS OPEN
+            // (open-ended, like nil) — the same rule as source eligibility;
+            // web matches.
+            if let upper = upperDate, occurred > upper { continue } // a later window's completion
             if isOccurredAtSealImmune(e.occurredAt, windows: immuneWindows) { continue } // sealed history is immutable
             e.isDeleted = true
             e.deletedAt = now

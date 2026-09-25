@@ -279,6 +279,47 @@ describe('shared-counter logs take an optional boardId for the late-log clamp (C
     expect(dec.occurredAt).toBe(A_END_STAMP);
   });
 
+  it('F5: increment/decrement with a SEALED board author no event (play locked — no-op)', async () => {
+    await seedRoot();
+    await seedBoard(A, A_START, A_END, { sealedAt: '2026-09-23T06:00:00.000' });
+    await place(A, ROOT);
+    await incrementSharedCounter(ROOT, 3); // a hub log so a decrement has something to take
+
+    const inc = await incrementSharedCounter(ROOT, 2, A);
+    const dec = await decrementSharedCounter(ROOT, 1, A);
+
+    expect(inc.affectedBoards).toEqual([]);
+    expect(dec.effectiveDelta).toBe(0);
+    expect((await liveEvents(ROOT)).map((e) => e.delta)).toEqual([3]);
+    expect((await db.tasks.get(ROOT))!.currentCount).toBe(3);
+  });
+
+  it('F6: a decrement with an ENDED board clamps to that board\'s WINDOW count, not the lifetime count', async () => {
+    await seedRoot();
+    await seedBoard(A, A_START, A_END);
+    await place(A, ROOT);
+    await incrementSharedCounter(ROOT, 5); // today (hub): lifetime 5, A's window 0
+
+    const dec = await decrementSharedCounter(ROOT, 1, A);
+
+    expect(dec.effectiveDelta).toBe(0);
+    expect((await liveEvents(ROOT)).some((e) => (e.delta ?? 0) < 0)).toBe(false);
+    expect((await db.tasks.get(ROOT))!.currentCount).toBe(5);
+  });
+
+  it('F6: the window clamp caps a decrement larger than the window count', async () => {
+    await seedRoot();
+    await seedBoard(A, A_START, A_END);
+    await incrementSharedCounter(ROOT, 2, A); // A's window: 2
+    await incrementSharedCounter(ROOT, 3); // today: lifetime 5
+
+    const dec = await decrementSharedCounter(ROOT, 4, A);
+
+    expect(dec.effectiveDelta).toBe(2);
+    expect(await displayedCount(A, ROOT)).toBe(0);
+    expect((await db.tasks.get(ROOT))!.currentCount).toBe(3);
+  });
+
   it('a late log re-derives the ended board through its FROZEN window-stamped row (cascade reach)', async () => {
     await seedRoot();
     await seedBoard(A, A_START, A_END);

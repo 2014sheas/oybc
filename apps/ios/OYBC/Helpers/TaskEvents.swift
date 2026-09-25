@@ -417,38 +417,48 @@ func boundWindowContextAtSeal(
 struct SealImmuneWindow: Equatable {
     /// Sealed board's `startDate` as epoch ms (inclusive lower bound).
     let startMs: Double
-    /// Sealed board's `sealedAt` as epoch ms (inclusive upper bound).
-    let sealedAtMs: Double
+    /// Inclusive upper bound as epoch ms: `min(endDate, sealedAt)` — the same
+    /// bound that built the sealed record (Decision 1 end bound + Decision 9).
+    /// An absent/unparseable `endDate` is open-ended, so the bound is `sealedAt`.
+    let endMs: Double
 }
 
 /// Build the immune windows for a task from the sealed boards that place it
 /// (docs Decision 9 + §Write paths). The caller resolves *which* non-deleted
 /// sealed boards place the task (directly or via a placed compound — the same
 /// reachability the pull-path re-derivation uses) and passes their
-/// `startDate`/`sealedAt`; this turns them into epoch-ms bounds.
+/// `startDate`/`endDate`/`sealedAt`; this turns them into epoch-ms bounds.
+///
+/// The immune window is `[startDate, min(endDate, sealedAt)]` — exactly the
+/// set of events the sealed record counted. An event in the overtime gap
+/// `(endDate, sealedAt]` belongs to the NEXT window's board, never counted on
+/// the sealed board, and so stays tombstonable there.
 ///
 /// Mirrors the TS `buildSealImmuneWindows`.
 ///
-/// - Parameter sealedBoards: Sealed boards placing the task (each with a set `sealedAt`).
-/// - Returns: One immune window per sealed board. Unparseable dates map to
-///   `0` (matching the TS `new Date(...).getTime()` → `NaN` degrade, which
-///   fails every comparison — a defensive no-op, not a live window).
+/// - Parameter sealedBoards: Sealed boards placing the task (each with a set
+///   `sealedAt`; `endDate` nil/unparseable = open-ended).
+/// - Returns: One immune window per sealed board. Unparseable start/sealedAt
+///   map to `NaN` (matching the TS `new Date(...).getTime()` → `NaN` degrade,
+///   which fails every comparison — a defensive no-op, not a live window).
 func buildSealImmuneWindows(
-    sealedBoards: [(startDate: String, sealedAt: String)]
+    sealedBoards: [(startDate: String, endDate: String?, sealedAt: String)]
 ) -> [SealImmuneWindow] {
     sealedBoards.map { b in
         let startMs = DateFormatting.parseISO(b.startDate).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
         let sealedAtMs = DateFormatting.parseISO(b.sealedAt).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
-        return SealImmuneWindow(startMs: startMs, sealedAtMs: sealedAtMs)
+        let endDateMs = b.endDate.flatMap(DateFormatting.parseISO).map { $0.timeIntervalSince1970 * 1000 }
+        let endMs = endDateMs.map { min($0, sealedAtMs) } ?? sealedAtMs
+        return SealImmuneWindow(startMs: startMs, endMs: sealedAtMs.isNaN ? Double.nan : endMs)
     }
 }
 
 /// Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
-/// it falls inside `[startDate, sealedAt]` of some sealed board that places the
-/// task. Immune events can never be tombstoned by any un-complete/decrement
-/// gesture — history stays history. Bounds are inclusive on both ends (the
-/// boundary instants belong to the frozen record). Mirrors the TS
-/// `isOccurredAtSealImmune`.
+/// it falls inside `[startDate, min(endDate, sealedAt)]` of some sealed board
+/// that places the task. Immune events can never be tombstoned by any
+/// un-complete/decrement gesture — history stays history. Bounds are
+/// inclusive on both ends (the boundary instants belong to the frozen record).
+/// Mirrors the TS `isOccurredAtSealImmune`.
 ///
 /// - Parameters:
 ///   - occurredAt: The event's semantic timestamp (ISO8601).
@@ -458,7 +468,7 @@ func isOccurredAtSealImmune(_ occurredAt: String, windows: [SealImmuneWindow]) -
     guard !windows.isEmpty else { return false }
     guard let occurred = DateFormatting.parseISO(occurredAt) else { return false }
     let t = occurred.timeIntervalSince1970 * 1000
-    return windows.contains { $0.startMs <= t && t <= $0.sealedAtMs }
+    return windows.contains { $0.startMs <= t && t <= $0.endMs }
 }
 
 // MARK: - Backstop formula

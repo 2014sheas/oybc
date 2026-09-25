@@ -140,8 +140,8 @@ export async function recomputeTaskCachesFromPull(taskId: string): Promise<void>
  * Decision 9). Build the immune windows for a task from the non-deleted SEALED
  * boards that place it — directly or via a placed compound (the same
  * reachability the pull-path re-derivation uses). An event whose `occurredAt`
- * falls inside one of these `[startDate, sealedAt]` windows can NEVER be
- * tombstoned by any un-complete / decrement gesture — history stays history.
+ * falls inside one of these `[startDate, min(endDate, sealedAt)]` windows (the
+ * set that built the sealed record) can NEVER be tombstoned by any un-complete / decrement gesture — history stays history.
  *
  * MUST be called inside the ambient tombstone transaction (covers boards /
  * boardTasks / compoundChildren). Returns `[]` (a fast no-op) when the user has
@@ -160,7 +160,7 @@ async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWi
   const affected = findAffectedBoardIds(taskId, parents, boardTasks);
   const placing = sealedBoards.filter((b) => affected.has(b.id));
   return buildSealImmuneWindows(
-    placing.map((b) => ({ startDate: b.startDate, sealedAt: b.sealedAt as string })),
+    placing.map((b) => ({ startDate: b.startDate, endDate: b.endDate, sealedAt: b.sealedAt as string })),
   );
 }
 
@@ -245,7 +245,8 @@ export async function appendCompletionEvent(
  * @param windowStart The context window lower bound (board `startDate`).
  * @param now         The write timestamp.
  * @param windowEnd   The context window inclusive upper bound (board
- *   `endDate`), or `null` for an open-ended (indefinite) board.
+ *   `endDate`), or `null` for an open-ended (indefinite) board. An
+ *   unparseable value fails open (treated as `null`).
  */
 export async function tombstoneWindowCompletions(
   taskId: string,
@@ -254,7 +255,10 @@ export async function tombstoneWindowCompletions(
   windowEnd: string | null,
 ): Promise<void> {
   const lowerMs = new Date(windowStart).getTime();
-  const upperMs = windowEnd === null ? null : new Date(windowEnd).getTime();
+  // Final-review F11: an unparseable `windowEnd` FAILS OPEN (open-ended, like
+  // `null`) — the same rule as source eligibility; iOS matches.
+  const parsedUpperMs = windowEnd === null ? NaN : new Date(windowEnd).getTime();
+  const upperMs = Number.isNaN(parsedUpperMs) ? null : parsedUpperMs;
   const immuneWindows = await getSealImmuneWindowsForTask(taskId);
   const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
   for (const e of events) {

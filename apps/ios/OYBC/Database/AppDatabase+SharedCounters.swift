@@ -231,7 +231,8 @@ extension AppDatabase {
     ///     (`lateLogStampForBoard` — its `endDate` once its window has ended,
     ///     2026-09-24 amendment); omitted (hub / counter detail) → `now`. Only
     ///     `BoardPlayViewModel` passes it. Event provenance `boardId` stays
-    ///     `nil`, as before — only `occurredAt` is clamped.
+    ///     `nil`, as before — only `occurredAt` is clamped. A SEALED board is
+    ///     a full no-op (no event, no write) — a sealed board authors no event.
     /// - Returns: `SharedCounterCreditResult` with the ACTIVE boards holding
     ///   any member task, for use in the P2 "credited" toast.
     func incrementSharedCounter(
@@ -273,6 +274,12 @@ extension AppDatabase {
                         "incrementSharedCounter: task \(sourceTaskId) is a linked derived counter; pass the source (template) task id instead"]
                 )
             }
+
+            // Final-review F5: a SEALED board authors no event (play is
+            // locked; its record is permanent). Mirrors the sealed no-op in
+            // `completeTaskOrchestrated`. Web twin: `incrementSharedCounter`.
+            let logBoard = try boardId.flatMap { try Board.fetchOne(db, key: $0) }
+            if logBoard?.sealedAt != nil { return SharedCounterCreditResult(affectedBoards: []) }
 
             // 2. Compute new source count — NO high-end clamp.
             // P5: `maxCount` may be nil for a goal-less (hub-born) source —
@@ -395,7 +402,9 @@ extension AppDatabase {
     ///   - by: Amount to decrement. Must be >= 1.
     ///   - boardId: The board whose OWN play surface made the log, if any —
     ///     the event is stamped with its late-log stamp (see
-    ///     `incrementSharedCounter`); omitted → `now`.
+    ///     `incrementSharedCounter`); omitted → `now`. A SEALED board is a
+    ///     full no-op; otherwise `eff` is clamped to that board's WINDOW count
+    ///     (`[startDate, endDate]`), not just the lifetime count.
     /// - Returns: `SharedCounterDecrementResult` with affected boards and the
     ///   actual delta applied (0 on no-op).
     func decrementSharedCounter(
@@ -439,9 +448,36 @@ extension AppDatabase {
                 )
             }
 
-            // 2. Clamp: eff = min(by, source.currentCount). No-op if 0.
+            // Final-review F5: a SEALED board authors no event (play is
+            // locked; its record is permanent). Web twin: `decrementSharedCounter`.
+            let logBoard = try boardId.flatMap { try Board.fetchOne(db, key: $0) }
+            if logBoard?.sealedAt != nil {
+                return SharedCounterDecrementResult(affectedBoards: [], effectiveDelta: 0)
+            }
+
+            // 2. Clamp: eff = min(by, available). No-op if 0.
+            // Final-review F6: from a board, `available` is that board's
+            // WINDOW count (`[startDate, endDate]`, what its cell shows) — the
+            // negative event is stamped inside that window, so taking more
+            // than the window holds would bleed into overlapping windows (e.g.
+            // the monthly containing that day). Still capped by the lifetime
+            // count so the lifetime sum stays >= 0.
             let sourceCurrentCount = source.currentCount ?? 0
-            let eff = min(by, sourceCurrentCount)
+            var available = sourceCurrentCount
+            if let logBoard {
+                let events = try TaskEvent
+                    .filter(Column("taskId") == sourceTaskId)
+                    .fetchAll(db)
+                    .filter { !$0.isDeleted }
+                let windowCount = resolveTaskWindowState(
+                    task: source,
+                    events: events,
+                    windowStart: logBoard.startDate,
+                    windowEnd: boardWindowEnd(logBoard)
+                ).count
+                available = min(sourceCurrentCount, max(0, windowCount))
+            }
+            let eff = min(by, available)
             guard eff > 0 else {
                 return SharedCounterDecrementResult(affectedBoards: [], effectiveDelta: 0)
             }
@@ -463,8 +499,7 @@ extension AppDatabase {
 
             // Windowed Completion — append a -eff increment event on the SOURCE
             // only (board-context decrement: a signed negative delta, gated by
-            // the `eff = min(by, currentCount)` clamp above so the lifetime sum
-            // can't go negative). RAW: no cache restamp — the engine wrote
+            // the window/lifetime clamp above so neither sum can go negative). RAW: no cache restamp — the engine wrote
             // `source.currentCount` authoritatively. Mirrors
             // `insertIncrementEventRaw(sourceTaskId, -eff, undefined, now)`.
             let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)

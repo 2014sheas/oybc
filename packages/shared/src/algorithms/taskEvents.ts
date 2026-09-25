@@ -406,8 +406,12 @@ export function boundWindowContextAtSeal(
 export interface SealImmuneWindow {
   /** Sealed board's `startDate` as epoch ms (inclusive lower bound). */
   startMs: number;
-  /** Sealed board's `sealedAt` as epoch ms (inclusive upper bound). */
-  sealedAtMs: number;
+  /**
+   * Inclusive upper bound as epoch ms: `min(endDate, sealedAt)` — the same
+   * bound that built the sealed record (Decision 1 end bound + Decision 9).
+   * An absent/unparseable `endDate` is open-ended, so the bound is `sealedAt`.
+   */
+  endMs: number;
 }
 
 /**
@@ -415,26 +419,36 @@ export interface SealImmuneWindow {
  * (docs Decision 9 + §Write paths). The caller resolves *which* non-deleted
  * sealed boards place the task (directly or via a placed compound — the same
  * reachability the pull-path re-derivation uses) and passes their
- * `startDate`/`sealedAt`; this turns them into epoch-ms bounds.
+ * `startDate`/`endDate`/`sealedAt`; this turns them into epoch-ms bounds.
  *
- * @param sealedBoards Sealed boards placing the task (each with a set `sealedAt`).
+ * The immune window is `[startDate, min(endDate, sealedAt)]` — exactly the set
+ * of events the sealed record counted. An event in the overtime gap
+ * `(endDate, sealedAt]` belongs to the NEXT window's board, never counted on
+ * the sealed board, and so stays tombstonable there.
+ *
+ * @param sealedBoards Sealed boards placing the task (each with a set `sealedAt`;
+ *                     `endDate` null/absent/unparseable = open-ended).
  * @returns One immune window per sealed board.
  */
 export function buildSealImmuneWindows(
-  sealedBoards: ReadonlyArray<{ startDate: string; sealedAt: string }>,
+  sealedBoards: ReadonlyArray<{ startDate: string; endDate?: string | null; sealedAt: string }>,
 ): SealImmuneWindow[] {
-  return sealedBoards.map((b) => ({
-    startMs: new Date(b.startDate).getTime(),
-    sealedAtMs: new Date(b.sealedAt).getTime(),
-  }));
+  return sealedBoards.map((b) => {
+    const sealedAtMs = new Date(b.sealedAt).getTime();
+    const endDateMs = b.endDate != null ? new Date(b.endDate).getTime() : NaN;
+    return {
+      startMs: new Date(b.startDate).getTime(),
+      endMs: Number.isNaN(endDateMs) ? sealedAtMs : Math.min(endDateMs, sealedAtMs),
+    };
+  });
 }
 
 /**
  * Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
- * it falls inside `[startDate, sealedAt]` of some sealed board that places the
- * task. Immune events can never be tombstoned by any un-complete/decrement
- * gesture — history stays history. Bounds are inclusive on both ends (the
- * boundary instants belong to the frozen record).
+ * it falls inside `[startDate, min(endDate, sealedAt)]` of some sealed board
+ * that places the task. Immune events can never be tombstoned by any
+ * un-complete/decrement gesture — history stays history. Bounds are inclusive
+ * on both ends (the boundary instants belong to the frozen record).
  *
  * @param occurredAt The event's semantic timestamp (ISO8601).
  * @param windows    The task's immune windows (from {@link buildSealImmuneWindows}).
@@ -446,7 +460,7 @@ export function isOccurredAtSealImmune(
 ): boolean {
   if (windows.length === 0) return false;
   const t = new Date(occurredAt).getTime();
-  return windows.some((w) => w.startMs <= t && t <= w.sealedAtMs);
+  return windows.some((w) => w.startMs <= t && t <= w.endMs);
 }
 
 /**

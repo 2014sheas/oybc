@@ -109,6 +109,7 @@ extension BoardPlayViewModel {
     ///   - nested compound → `CompoundEvaluation` in this board's window;
     ///   - linked counter → `resolveLinkedCounterDisplay` (window-stamped: its
     ///     root's in-window sum; hub-linked: the latch);
+    ///   - any other non-event-owning child (a legacy achievement) → its latch;
     ///   - otherwise → `windowedState(of:)`, bounded at both ends.
     ///
     /// - Parameter child: The child task.
@@ -126,6 +127,9 @@ extension BoardPlayViewModel {
         if child.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(task: child, eventsByTaskId: windowEventsByTaskId).isCompleted
         }
+        // Final-review F12: a non-event-owning child owns no events, so it
+        // reads its latch (web `resolveCompoundChildCompleted` parity).
+        guard isEventOwningTask(child) else { return child.isCompleted }
         return windowedState(of: child).isCompleted
     }
 }

@@ -639,6 +639,18 @@ final class BoardPlayViewModelTests: XCTestCase {
         try db.saveTask(makeCountingTask("c-lnk", maxCount: 20, currentCount: 3, sharedCounterId: "c-src"))
         try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
         try db.saveBoardTask(makeBoardTask(id: "bt-lnk", boardId: "b2", taskId: "c-lnk", row: 0, col: 0))
+        // The event behind the lifetime cache of 3, inside b1's window: a
+        // board-context decrement clamps to the board's WINDOW count
+        // (final-review F6), so the fixture must carry the occurrence, not
+        // just the cache.
+        try db.write { database in
+            try TaskEvent(
+                id: "src-3", userId: "u1", taskId: "c-src", kind: .increment, delta: 3,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(database)
+        }
 
         let vm = loadedVM(db, boardId: "b1")
         let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
@@ -739,6 +751,16 @@ final class BoardPlayViewModelTests: XCTestCase {
         // Zero-link, seeded above 0 so the decrement has something to remove.
         try db.saveTask(makeCountingTask("c-solo", maxCount: 5, currentCount: 2, isCounter: true))
         try db.saveBoardTask(makeBoardTask(id: "bt-solo", boardId: "b1", taskId: "c-solo", row: 0, col: 0))
+        // The event behind the lifetime cache of 2, inside b1's window — a
+        // board-context decrement clamps to the WINDOW count (final-review F6).
+        try db.write { database in
+            try TaskEvent(
+                id: "solo-seed", userId: "u1", taskId: "c-solo", kind: .increment, delta: 2,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(database)
+        }
 
         let vm = loadedVM(db, boardId: "b1")
         let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-solo" })
@@ -752,7 +774,7 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "shared-counter decrement never dropped the zero-link isCounter source, or threw")
         XCTAssertEqual(try XCTUnwrap(dbTask(db, "c-solo")).currentCount, 1)
 
-        let events = try db.fetchNonDeletedTaskEvents(userId: "u1").filter { $0.taskId == "c-solo" }
+        let events = try db.fetchNonDeletedTaskEvents(userId: "u1").filter { $0.taskId == "c-solo" && $0.id != "solo-seed" }
         XCTAssertEqual(events.count, 1, "exactly one lifetime decrement event should have been appended")
         XCTAssertNil(events.first?.boardId,
                      "shared-counter engine appends a lifetime event (boardId nil); a non-nil boardId would mean this fell through to the legacy windowed path")
@@ -2171,5 +2193,27 @@ final class BoardPlayViewModelTests: XCTestCase {
         let end = try XCTUnwrap(board.endDate)
         XCTAssertEqual(appended.occurredAt, DateFormatting.utcISOString(DateFormatting.parseISO(end)!))
         XCTAssertEqual(try db.fetchBoard(id: "b1")?.completedTasks, 1, "the compound completes in its window")
+    }
+
+    /// Final-review F12: a non-compound, non-linked, NON-event-owning child
+    /// (a legacy achievement child) owns no events, so it reads its latch —
+    /// exactly as web `resolveCompoundChildCompleted` does.
+    func test_F12_compoundChildIsCompleted_nonEventOwningChild_readsLatch() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeOneCellBoard(id: "b1"))
+        try db.saveTask(makeCompoundTask("cmp"))
+        var child = makeTask("ach1")
+        child.type = .achievement
+        child.isCompleted = true
+        try db.saveTask(child)
+        try db.saveBoardTask(makeBoardTask(id: "bt-cmp", boardId: "b1", taskId: "cmp", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            try makeCompoundChild(parent: "cmp", child: "ach1", idx: 0).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let loaded = try XCTUnwrap(vm.taskMap["ach1"])
+        XCTAssertTrue(vm.compoundChildIsCompleted(loaded), "no events to window — the latch is the state")
     }
 }
