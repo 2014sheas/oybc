@@ -333,7 +333,8 @@ export function BoardWizardPreviewStep({
     [controller.timeframe, controller.customStartDate, controller.customEndDate, controller.targetWindowDate],
   );
   const windowStart = 'startDate' in resolvedDates ? resolvedDates.startDate : new Date().toISOString();
-  const windowContext = useSquareWindowContext({ startDate: windowStart });
+  const windowEnd = 'startDate' in resolvedDates ? resolvedDates.endDate : undefined;
+  const windowContext = useSquareWindowContext({ startDate: windowStart, endDate: windowEnd });
 
   // Build the ArrangeSlot[] from the current (possibly user-reordered) placement.
   const arrangeSlots = useMemo(

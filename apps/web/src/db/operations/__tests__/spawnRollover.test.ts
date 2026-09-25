@@ -149,7 +149,7 @@ describe('Windowed Completion — respawn bleed regression', () => {
     const events = (await db.taskEvents.toArray()).filter((e) => !e.isDeleted);
     const eventsByTaskId: Record<string, TaskEvent[]> = {};
     for (const e of events) (eventsByTaskId[e.taskId] ??= []).push(e);
-    const windowContext = { windowStart: NEW_WINDOW_START, eventsByTaskId };
+    const windowContext = { windowStart: NEW_WINDOW_START, windowEnd: null, eventsByTaskId };
 
     for (const id of seedTaskIds) {
       const task = await db.tasks.get(id);

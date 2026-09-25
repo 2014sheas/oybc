@@ -7,7 +7,7 @@ import type {
   CycleCheckCandidate,
   CycleCheckContext,
 } from '@oybc/shared';
-import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, hasCycle, isEventOwningTask, isGoalLessCounter } from '@oybc/shared';
+import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDisplayName, hasCycle, isEventOwningTask, isGoalLessCounter, lateLogOccurredAt } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
@@ -536,12 +536,20 @@ export async function updateTaskAndCascade(
  * No-op (no writes at all) if the Task doesn't exist.
  *
  * @param taskId - The Task whose `isCompleted` flag should be toggled.
+ * @param boardId - The board whose OWN play surface made the toggle (the
+ *   compound-child fallback in `useBoardPlay`), if any. A completion made there
+ *   on an ended-but-unsealed board is stamped at that board's `endDate`
+ *   (`lateLogOccurredAt` — 2026-09-24 amendment of WC Decision 1, decision C2)
+ *   so its parent compound on that board sees it. Omitted (library / Task
+ *   Detail) → stamped `now`.
  */
-export async function toggleTaskCompletionAndCascade(taskId: string): Promise<void> {
+export async function toggleTaskCompletionAndCascade(taskId: string, boardId?: string): Promise<void> {
   const task = await db.tasks.get(taskId);
   if (!task) return;
 
   const now = currentTimestamp();
+  const board = boardId === undefined ? undefined : await db.boards.get(boardId);
+  const occurredAt = board ? lateLogOccurredAt(board, now) : now;
   await db.transaction(
     'rw',
     [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
@@ -557,7 +565,7 @@ export async function toggleTaskCompletionAndCascade(taskId: string): Promise<vo
         if (task.isCompleted) {
           await tombstoneLatestCompletion(taskId, now);
         } else {
-          await appendCompletionEvent(taskId, undefined, now);
+          await appendCompletionEvent(taskId, undefined, now, occurredAt);
         }
       } else {
         await db.tasks.update(taskId, {

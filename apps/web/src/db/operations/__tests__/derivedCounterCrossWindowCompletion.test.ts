@@ -301,12 +301,11 @@ describe('REPRO derived counter: completing the daily must not complete the week
  *    `[startDate, endDate]` (bounded at `sealedAt` on a sealed re-derive), and
  *    propagation freezes at the window end, so a post-window log neither
  *    greens the cell nor rewrites the frozen record.
- *  - The ROOT-square variant stays `it.fails` ON PURPOSE. It is an OPEN OWNER
- *    DECISION, not a bug this branch fixes: WC Decision 1 — a plain (root)
- *    square's window is `[startDate, ∞)` until the board is sealed (the END is
- *    enforced by sealing only). Changing that is a spec reversal (options A/B/C
- *    in the SDD ledger), so the expected-failure pin documents the current
- *    designed behavior and will flip loudly if the decision lands.
+ *  - The ROOT-square variant was an `it.fails` pin while WC Decision 1 was
+ *    open (root windows `[startDate, ∞)` until sealed). The owner decided
+ *    2026-09-24 (option C): a root square evaluates `[startDate, endDate]`, and
+ *    a late log from an ended board's own surface is stamped at its `endDate`.
+ *    It is now a GREEN regression pin (fix/root-window-end-bound).
  */
 describe('REPRO (bug): daily log completes a PAST-window, unsealed weekly board it pulled from', () => {
   const PAST_WEEK_START = '2026-09-14T00:00:00.000';
@@ -399,13 +398,15 @@ describe('REPRO (bug): daily log completes a PAST-window, unsealed weekly board 
     return dailyId;
   }
 
-  // EXPECTED FAILURE — open owner decision (WC Decision 1: root windows are
-  // `[startDate, ∞)` until sealed). Not fixed by this branch; see the block doc.
-  it.fails('weekly square = hand-added ROOT (goal 20): stays incomplete after a post-window daily log', async () => {
+  // Decided 2026-09-24 (WC Decision 1 amendment, option C): a root square's
+  // window is `[startDate, endDate]`, so today's daily log no longer reaches
+  // last week's board. Was an `it.fails` pin while the decision was open.
+  it('weekly square = hand-added ROOT (goal 20): stays incomplete after a post-window daily log', async () => {
     const { weeklyId, weeklyTaskId } = await buildPastWeekly('root');
     await logTodayOnDaily(weeklyId, (await db.tasks.get(ROOT))!);
     const w = await weeklyCellState(weeklyId);
-    // FAILS on dev: 17 (in-window) + 3 (today) summed over [startDate, ∞) = 20 >= 20.
+    // Failed before the amendment: 17 (in-window) + 3 (today) summed over
+    // [startDate, ∞) = 20 >= 20. Now the end bound keeps the sum at 17.
     expect(w.cells.find((c) => c.taskId === weeklyTaskId)!.isCompleted).toBe(false);
     expect(w.board.completedTasks).toBe(0);
   });

@@ -130,7 +130,7 @@ describe('tombstoneWindowCompletions — sealed-window immunity', () => {
     await db.taskEvents.add(completionEvent('e-immune', IN_SEALED_WINDOW));
 
     // Un-complete over the whole lifetime window (windowStart = START).
-    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z');
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', null);
 
     const ev = await db.taskEvents.get('e-immune');
     expect(ev?.isDeleted).toBe(false); // immune — history stays
@@ -145,7 +145,7 @@ describe('tombstoneWindowCompletions — sealed-window immunity', () => {
     await db.taskEvents.add(completionEvent('e-immune', IN_SEALED_WINDOW));
     await db.taskEvents.add(completionEvent('e-open', POST_SEAL)); // outside the sealed window
 
-    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z');
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', null);
 
     expect((await db.taskEvents.get('e-immune'))?.isDeleted).toBe(false);
     expect((await db.taskEvents.get('e-open'))?.isDeleted).toBe(true);
@@ -157,7 +157,7 @@ describe('tombstoneWindowCompletions — sealed-window immunity', () => {
     await placeTask(LIVE_BOARD, TASK_A);
     await db.taskEvents.add(completionEvent('e1', IN_SEALED_WINDOW));
 
-    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z');
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', null);
 
     expect((await db.taskEvents.get('e1'))?.isDeleted).toBe(true);
     expect((await db.tasks.get(TASK_A))?.isCompleted).toBe(false);

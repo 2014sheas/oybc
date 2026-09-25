@@ -47,7 +47,7 @@ function makeEvent(taskId: string, kind: 'completion' | 'increment', occurredAt:
 }
 
 function ctx(events: TaskEvent[]) {
-  return buildSquareWindowContext(events, WINDOW_START);
+  return buildSquareWindowContext(events, WINDOW_START, null);
 }
 
 describe('wizard preview — windowed completion', () => {

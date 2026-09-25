@@ -8,6 +8,7 @@ import {
   TaskType,
   isFrozenDerivedRow,
   isFrozenRowReachedByEvent,
+  lateLogOccurredAt,
   propagateIncrement,
   selectLastIncrementEntry,
 } from '@oybc/shared';
@@ -24,6 +25,26 @@ export interface AffectedBoard {
 }
 
 /**
+ * The `occurredAt` for a shared-counter log (2026-09-24 amendment of WC
+ * Decision 1, decision C3): a log made from a board's OWN play surface is
+ * stamped via `lateLogOccurredAt` — `min(now, board.endDate)` — so a log on an
+ * ended-but-unsealed board counts inside that board's `[startDate, endDate]`
+ * window and in no later one. No board (hub, counter detail, library) or a
+ * missing board row → `now`.
+ *
+ * Must run inside the caller's transaction (reads `boards`).
+ *
+ * @param boardId - The board the log was made from, or `undefined`.
+ * @param now     - The operation's ISO8601 timestamp.
+ * @returns The ISO timestamp to store as the event's `occurredAt`.
+ */
+async function counterLogOccurredAt(boardId: string | undefined, now: string): Promise<string> {
+  if (boardId === undefined) return now;
+  const board = await db.boards.get(boardId);
+  return board ? lateLogOccurredAt(board, now) : now;
+}
+
+/**
  * Shared tail of increment / decrement / undo: re-derive every LIVE linked
  * row of `sourceTaskId` from `newSourceCount`, write + enqueue each as an
  * authored update, collect the ACTIVE boards to credit, and run ONE batched
@@ -33,14 +54,16 @@ export interface AffectedBoard {
  * docs/BOARD_SOURCES.md §Plan B2 notes): a window-stamped derived row whose
  * window has ended (`isFrozenDerivedRow`) gets no authored write, no enqueue
  * and no credit. The kernel resolves such rows from the root's in-window
- * events, not the latch; an increment / decrement stamps its event `now`
- * (after every frozen window), so it cannot change a frozen row's completion
- * and the row is left out of the cascade too — each "+1" is bounded to the
- * rows whose windows are still open. An UNDO tombstones an EARLIER event
- * (`undoneOccurredAt`) that may sit inside a frozen row's window, which DOES
- * change that row's kernel sum: those rows (`isFrozenRowReachedByEvent`) join
- * the cascade set — cascade only, still no write / enqueue — so their boards'
- * stored stats revert with the undo. Hub-linked rows (no `startDate`),
+ * events, not the latch; an increment / decrement normally stamps its event
+ * `now` (after every frozen window), so it cannot change a frozen row's
+ * completion and the row is left out of the cascade too — each "+1" is
+ * bounded to the rows whose windows are still open. Two events CAN land
+ * inside a frozen row's window (`reachOccurredAt`): an UNDO tombstones an
+ * EARLIER event, and a LATE LOG from an ended board's own surface is stamped
+ * at that board's `endDate` (`lateLogOccurredAt`, 2026-09-24 amendment of WC
+ * Decision 1). Either DOES change that row's kernel sum: those rows
+ * (`isFrozenRowReachedByEvent`) join the cascade set — cascade only, still no
+ * write / enqueue — so their boards' stored stats follow the event. Hub-linked rows (no `startDate`),
  * indefinite rows and in-window rows propagate as before.
  *
  * Must run inside the caller's `rw` transaction covering `tasks`,
@@ -49,7 +72,8 @@ export interface AffectedBoard {
  * @param sourceTaskId     The shared-counter root whose count just changed.
  * @param newSourceCount   The root's `currentCount` after the change.
  * @param now              The operation's ISO8601 timestamp (also the freeze clock).
- * @param undoneOccurredAt UNDO only — the tombstoned event's `occurredAt`.
+ * @param reachOccurredAt  The `occurredAt` of the event this operation wrote or
+ *   tombstoned (a `now` stamp reaches no frozen row, so passing it is inert).
  * @returns The live ACTIVE boards placing the source or an unfrozen linked row,
  *   read BEFORE the cascade rewrites board status.
  */
@@ -57,7 +81,7 @@ async function propagateToLinkedRows(
   sourceTaskId: string,
   newSourceCount: number,
   now: string,
-  undoneOccurredAt?: string,
+  reachOccurredAt?: string,
 ): Promise<AffectedBoard[]> {
   // Indexed read (the `sharedCounterId` index exists since Dexie v11), then
   // drop tombstones; split off the rows whose window has ended.
@@ -67,12 +91,12 @@ async function propagateToLinkedRows(
     .filter((t) => !t.isDeleted)
     .toArray();
   const linkedTasks = linkedRows.filter((t) => !isFrozenDerivedRow(t, now));
-  // Undo across the window end — cascade-only reach into frozen rows whose
-  // window holds the undone event.
+  // Undo across the window end / late log into an ended window — cascade-only
+  // reach into frozen rows whose window holds the event.
   const reachedFrozenIds =
-    undoneOccurredAt === undefined
+    reachOccurredAt === undefined
       ? []
-      : linkedRows.filter((t) => isFrozenRowReachedByEvent(t, undoneOccurredAt, now)).map((t) => t.id);
+      : linkedRows.filter((t) => isFrozenRowReachedByEvent(t, reachOccurredAt, now)).map((t) => t.id);
 
   const propagationResults = propagateIncrement(
     { currentCount: newSourceCount },
@@ -153,10 +177,15 @@ async function propagateToLinkedRows(
  * @param sourceTaskId - The id of the source (template) task whose `currentCount`
  *   is the shared accumulator.
  * @param by - Amount to increment (default 1). Must be a positive integer.
+ * @param boardId - The board whose OWN play surface made the log, if any. When
+ *   that board's window has ended, the event is stamped at its `endDate`
+ *   (see {@link counterLogOccurredAt}); omitted (hub / counter detail /
+ *   library) → stamped `now`.
  */
 export async function incrementSharedCounter(
   sourceTaskId: string,
   by = 1,
+  boardId?: string,
 ): Promise<{ affectedBoards: AffectedBoard[] }> {
   if (by <= 0 || !Number.isInteger(by)) throw new Error('incrementSharedCounter: `by` must be a positive integer');
 
@@ -213,7 +242,8 @@ export async function incrementSharedCounter(
       // carved out — they never own events). Raw append, no cache restamp: the
       // source's lifetime `currentCount` is already written authoritatively
       // above and equals the lifetime event sum.
-      await insertIncrementEventRaw(sourceTaskId, by, undefined, now);
+      const occurredAt = await counterLogOccurredAt(boardId, now);
+      await insertIncrementEventRaw(sourceTaskId, by, undefined, now, occurredAt);
 
       // Board Sources §Member rules (B2) — the root's event log just moved, so
       // every window-stamped derived counter hanging off it may need a new
@@ -227,7 +257,7 @@ export async function incrementSharedCounter(
 
       // 3–7. Propagate to the live linked rows, collect credited boards, and
       // run ONE batched board cascade (see `propagateToLinkedRows`).
-      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now);
+      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now, occurredAt);
 
       return { affectedBoards };
     },
@@ -251,10 +281,13 @@ export async function incrementSharedCounter(
  * @param sourceTaskId - The id of the source (template) task whose `currentCount`
  *   is the shared accumulator.
  * @param by - Amount to decrement (default 1). Must be a positive integer.
+ * @param boardId - The board whose OWN play surface made the log, if any — the
+ *   same late-log stamp as {@link incrementSharedCounter}.
  */
 export async function decrementSharedCounter(
   sourceTaskId: string,
   by = 1,
+  boardId?: string,
 ): Promise<{ affectedBoards: AffectedBoard[]; effectiveDelta: number }> {
   if (by <= 0 || !Number.isInteger(by)) throw new Error('decrementSharedCounter: `by` must be a positive integer');
 
@@ -311,7 +344,8 @@ export async function decrementSharedCounter(
       // lifetime event sum can't go negative. Raw append on the SOURCE only
       // (derived tasks are carved out); the source cache is written
       // authoritatively above.
-      await insertIncrementEventRaw(sourceTaskId, -eff, undefined, now);
+      const occurredAt = await counterLogOccurredAt(boardId, now);
+      await insertIncrementEventRaw(sourceTaskId, -eff, undefined, now, occurredAt);
 
       // Board Sources §Member rules (B2) — the root's event log just moved, so
       // every window-stamped derived counter hanging off it may need a new
@@ -326,7 +360,7 @@ export async function decrementSharedCounter(
       // 4–8. Propagate (same pure helper as increment — it re-derives from the
       // new source count and ORs in the one-way latch, so decrement never
       // un-completes), collect credited boards, run ONE batched cascade.
-      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now);
+      const affectedBoards = await propagateToLinkedRows(sourceTaskId, newSourceCount, now, occurredAt);
 
       return { affectedBoards, effectiveDelta: eff };
     },

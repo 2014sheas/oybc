@@ -3,6 +3,7 @@ import { healBoardNames } from './boardNames';
 import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
 import {
   boardDisplayName,
+  boardWindowEnd,
   BoardStatus,
   isEligibleSourceBoard,
   isEventOwningTask,
@@ -126,7 +127,12 @@ export function resolveBoardSourceSupply(
     if (derived) {
       isDone = derived.isCompleted;
     } else if (isEventOwningTask(task)) {
-      const state = resolveTaskWindowState(task, eventsByTaskId[task.id] ?? [], board.startDate);
+      const state = resolveTaskWindowState(
+        task,
+        eventsByTaskId[task.id] ?? [],
+        board.startDate,
+        boardWindowEnd(board),
+      );
       isDone = state.isCompleted;
       // §Member rules (B3, RC4) — the same windowed resolution that decides
       // "done" also yields the count the remaining-target prefill needs; a

@@ -52,10 +52,10 @@ export interface CompoundWindowContext {
    * Window INCLUSIVE upper bound (`board.endDate`, via {@link boardWindowEnd}),
    * or `null` / absent for an open-ended window (indefinite boards, lifetime).
    * 2026-09-24 amendment: a board's root squares evaluate `[startDate, endDate]`.
-   * Optional so construction sites that predate the amendment keep compiling
-   * (absent ≡ `null` ≡ the historical `[windowStart, ∞)` behaviour).
+   * Required so every construction site states the bound explicitly (`null`
+   * is the open-ended `[windowStart, ∞)` window).
    */
-  windowEnd?: string | null;
+  windowEnd: string | null;
   /** This workspace's non-deleted TaskEvents grouped by `taskId`. */
   eventsByTaskId: Record<string, TaskEvent[]>;
 }

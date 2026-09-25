@@ -79,7 +79,7 @@ function resolvePrimitiveChildState(
     child,
     events,
     windowContext.windowStart,
-    windowContext.windowEnd ?? null,
+    windowContext.windowEnd,
   ).isCompleted;
 }
 

@@ -729,7 +729,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       try {
         // Capture the pre-increment board stats for flash comparison.
         const boardBefore = await db.boards.get(boardId);
-        const { affectedBoards } = await incrementSharedCounter(sourceTaskId, amount);
+        const { affectedBoards } = await incrementSharedCounter(sourceTaskId, amount, boardId);
         if (persistAsDefault) {
           await setCounterDefaultLogAmount(sourceTaskId, amount);
         }
@@ -800,7 +800,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       try {
         // Capture the pre-decrement board stats for the board-transition flash.
         const boardBefore = await db.boards.get(boardId);
-        const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId, amount);
+        const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId, amount, boardId);
         // No-op: nothing changed (count was already 0).
         if (effectiveDelta === 0) return;
         if (persistAsDefault) {
@@ -926,14 +926,15 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         // task update and the cascade would leave the Task flipped but board
         // stats stale forever.
         try {
-          await toggleTaskCompletionAndCascade(childTaskId);
+          // `boardId`: a late toggle on an ended board is stamped at its endDate.
+          await toggleTaskCompletionAndCascade(childTaskId, boardId);
         } catch (err) {
           console.error('Compound child toggle failed:', err);
           onFlash('Something went wrong', 'bingo');
         }
       }
     },
-    [playLocked, taskMap, boardTasks, handleComplete, onFlash]
+    [playLocked, taskMap, boardTasks, handleComplete, onFlash, boardId]
   );
 
   // ── Play-mode board-task write methods ─────────────────────────────────

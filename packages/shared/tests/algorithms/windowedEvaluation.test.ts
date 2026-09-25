@@ -85,6 +85,7 @@ describe('evaluateCompound — windowed', () => {
     const taskById = { p: parent, a, b };
     const ctx: CompoundWindowContext = {
       windowStart: WINDOW_START,
+      windowEnd: null,
       eventsByTaskId: {
         a: [completion('a', IN_WINDOW)],
         b: [completion('b', IN_WINDOW)],
@@ -101,6 +102,7 @@ describe('evaluateCompound — windowed', () => {
     const taskById = { p: parent, a, b };
     const ctx: CompoundWindowContext = {
       windowStart: WINDOW_START,
+      windowEnd: null,
       eventsByTaskId: {
         a: [completion('a', IN_WINDOW)],
         b: [completion('b', PRE_WINDOW)], // …but this window is empty for b
@@ -124,6 +126,7 @@ describe('evaluateCompound — windowed', () => {
     // Only b has an in-window completion → OR satisfied → parent AND satisfied.
     const ctxSat: CompoundWindowContext = {
       windowStart: WINDOW_START,
+      windowEnd: null,
       eventsByTaskId: { a: [completion('a', PRE_WINDOW)], b: [completion('b', IN_WINDOW)] },
     };
     expect(evaluateCompound(parent, children, taskById, ctxSat)).toBe(true);
@@ -131,6 +134,7 @@ describe('evaluateCompound — windowed', () => {
     // Both only pre-window → inner OR empty in-window → parent incomplete.
     const ctxUnsat: CompoundWindowContext = {
       windowStart: WINDOW_START,
+      windowEnd: null,
       eventsByTaskId: { a: [completion('a', PRE_WINDOW)], b: [completion('b', PRE_WINDOW)] },
     };
     expect(evaluateCompound(parent, children, taskById, ctxUnsat)).toBe(false);
@@ -149,7 +153,7 @@ describe('evaluateCompound — windowed', () => {
     const children = { p: [link('p', 'd', 0)] };
     const taskById = { p: parent, d: derived };
     // No events for the derived task — windowed mode still honors the cache.
-    const ctx: CompoundWindowContext = { windowStart: WINDOW_START, eventsByTaskId: {} };
+    const ctx: CompoundWindowContext = { windowStart: WINDOW_START, windowEnd: null, eventsByTaskId: {} };
     expect(evaluateCompound(parent, children, taskById, ctx)).toBe(true);
 
     derived.isCompleted = false;

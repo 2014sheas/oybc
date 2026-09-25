@@ -87,6 +87,7 @@ export function buildArrivalSquares(input: BuildArrivalSquaresInput): ArrivalSqu
             task,
             windowContext.eventsByTaskId[task.id] ?? [],
             windowContext.windowStart,
+            windowContext.windowEnd,
           ).count;
 
     squares.push({

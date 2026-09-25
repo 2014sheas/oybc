@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { Board, TaskEvent } from '@oybc/shared';
+import { boardWindowEnd, type Board, type TaskEvent } from '@oybc/shared';
 import { db } from '../db/internal';
 import { buildSquareWindowContext, type SquareWindowContext } from '../db/adapters';
 
@@ -22,17 +22,22 @@ const EMPTY_TASK_EVENTS = Object.freeze([]) as unknown as TaskEvent[];
  * new board-square surface gets windowed reads by construction instead of by
  * remembering to wire it up ad hoc.
  *
- * @param board - The board whose window (`[board.startDate, ∞)`) squares
- *   resolve against. Only `startDate` is read, so a prospective (not yet
- *   persisted) board — e.g. the wizard preview's resolved dates — can pass
- *   `{ startDate }` directly.
+ * @param board - The board whose window (`[board.startDate, board.endDate]`,
+ *   inclusive; open-ended when `endDate` is absent — 2026-09-24 amendment of
+ *   WC Decision 1) squares resolve against. Only `startDate` / `endDate` are
+ *   read, so a prospective (not yet persisted) board — e.g. the wizard
+ *   preview's resolved dates — can pass `{ startDate, endDate }` directly.
+ * @returns The board's square window context (memoized on events + bounds).
  */
-export function useSquareWindowContext(board: Pick<Board, 'startDate'>): SquareWindowContext {
+export function useSquareWindowContext(
+  board: Pick<Board, 'startDate' | 'endDate'>,
+): SquareWindowContext {
+  const windowEnd = boardWindowEnd(board);
   const allTaskEvents: TaskEvent[] =
     useLiveQuery(() => db.taskEvents.toArray(), []) ?? EMPTY_TASK_EVENTS;
 
   return useMemo(
-    () => buildSquareWindowContext(allTaskEvents, board.startDate),
-    [allTaskEvents, board.startDate],
+    () => buildSquareWindowContext(allTaskEvents, board.startDate, windowEnd),
+    [allTaskEvents, board.startDate, windowEnd],
   );
 }

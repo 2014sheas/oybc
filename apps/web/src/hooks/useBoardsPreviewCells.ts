@@ -52,10 +52,10 @@ export function useBoardsPreviewCells(
   // "rail"), but an achievement Task can watch a board outside that subset.
   const allWorkspaceBoards: Board[] = useBoards(userId) ?? EMPTY_BOARDS;
 
-  // windowStart is irrelevant here — buildBoardPreviewCells reads each
-  // board's OWN startDate internally; only the taskId grouping is reused.
+  // The window bounds are irrelevant here — buildBoardPreviewCells reads each
+  // board's OWN startDate / endDate internally; only the taskId grouping is reused.
   const eventsByTaskId = useMemo(
-    () => buildSquareWindowContext(allTaskEvents, '').eventsByTaskId,
+    () => buildSquareWindowContext(allTaskEvents, '', null).eventsByTaskId,
     [allTaskEvents],
   );
 

@@ -175,14 +175,19 @@ async function enqueueEventSync(eventId: string, op: SyncOperationType): Promise
  * new window appends a new event (the "re-complete" gesture). No-op if the task
  * is missing / not event-owning.
  *
- * @param taskId  The event-owning (normal) task.
- * @param boardId Provenance board (where logged), or undefined for library.
- * @param now     Occurrence + write timestamp.
+ * @param taskId     The event-owning (normal) task.
+ * @param boardId    Provenance board (where logged), or undefined for library.
+ * @param now        Write timestamp (and the default occurrence timestamp).
+ * @param occurredAt Optional override for the event's `occurredAt` (defaults
+ *   to `now`). Board play surfaces pass `lateLogOccurredAt(board, now)` so a
+ *   log made on an ended-but-unsealed board is stamped at its `endDate`
+ *   (2026-09-24 amendment of WC Decision 1, decision C2).
  */
 export async function appendCompletionEvent(
   taskId: string,
   boardId: string | undefined,
   now: string,
+  occurredAt: string = now,
 ): Promise<void> {
   const task = await db.tasks.get(taskId);
   if (!task || !isEventOwningTask(task)) return;
@@ -191,7 +196,7 @@ export async function appendCompletionEvent(
     userId: task.userId,
     taskId,
     kind: 'completion',
-    occurredAt: now,
+    occurredAt,
     boardId,
     createdAt: now,
     updatedAt: now,
@@ -205,8 +210,11 @@ export async function appendCompletionEvent(
 
 /**
  * Window-scoped un-complete (docs §Write paths — "Un-complete is window-scoped"):
- * tombstone ALL non-deleted completion events with `occurredAt >= windowStart`
- * for the viewed context, then restamp caches. Sealed-window-immune events
+ * tombstone ALL non-deleted completion events inside `[windowStart, windowEnd]`
+ * (inclusive both ends; `windowEnd = null` → open-ended) for the viewed
+ * context, then restamp caches. The upper bound (2026-09-24 amendment of WC
+ * Decision 1, decision C4) keeps an undo on an ended board from erasing a
+ * later window's completions, which that board no longer counts. Sealed-window-immune events
  * (docs Decision 9) are skipped — an event inside a sealed board's frozen window
  * can never be tombstoned, so a live-board un-complete whose window overlaps a
  * sealed window leaves the immune event (and its green) intact.
@@ -214,19 +222,25 @@ export async function appendCompletionEvent(
  * @param taskId      The event-owning task.
  * @param windowStart The context window lower bound (board `startDate`).
  * @param now         The write timestamp.
+ * @param windowEnd   The context window inclusive upper bound (board
+ *   `endDate`), or `null` for an open-ended (indefinite) board.
  */
 export async function tombstoneWindowCompletions(
   taskId: string,
   windowStart: string,
   now: string,
+  windowEnd: string | null,
 ): Promise<void> {
   const lowerMs = new Date(windowStart).getTime();
+  const upperMs = windowEnd === null ? null : new Date(windowEnd).getTime();
   const immuneWindows = await getSealImmuneWindowsForTask(taskId);
   const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
   for (const e of events) {
     if (e.isDeleted) continue;
     if (e.kind !== 'completion') continue;
-    if (new Date(e.occurredAt).getTime() < lowerMs) continue;
+    const occurredMs = new Date(e.occurredAt).getTime();
+    if (occurredMs < lowerMs) continue;
+    if (upperMs !== null && occurredMs > upperMs) continue; // a later window's completion
     if (isOccurredAtSealImmune(e.occurredAt, immuneWindows)) continue; // sealed history is immutable
     await db.taskEvents.update(e.id, {
       isDeleted: true,
@@ -302,18 +316,21 @@ export async function isUncompleteBlockedBySeal(taskId: string): Promise<boolean
  * board-context Decrement), then restamp caches. Skips a zero delta. No-op if
  * the task is missing / not event-owning.
  *
- * @param taskId  The event-owning (counting source/plain) task.
- * @param delta   Signed non-zero integer.
- * @param boardId Provenance board, or undefined.
- * @param now     Occurrence + write timestamp.
+ * @param taskId     The event-owning (counting source/plain) task.
+ * @param delta      Signed non-zero integer.
+ * @param boardId    Provenance board, or undefined.
+ * @param now        Write timestamp (and the default occurrence timestamp).
+ * @param occurredAt Optional override for the event's `occurredAt` (defaults
+ *   to `now`) — the late-log stamp, as for {@link appendCompletionEvent}.
  */
 export async function appendIncrementEvent(
   taskId: string,
   delta: number,
   boardId: string | undefined,
   now: string,
+  occurredAt: string = now,
 ): Promise<void> {
-  const appended = await insertIncrementEventRaw(taskId, delta, boardId, now);
+  const appended = await insertIncrementEventRaw(taskId, delta, boardId, now, occurredAt);
   if (appended) await stampTaskCachesAuthored(taskId, now);
 }
 
@@ -327,7 +344,8 @@ export async function appendIncrementEvent(
  *
  * @param occurredAt Optional override for the event's `occurredAt` (defaults
  *   to `now`). Used by seed/backfill paths that need to anchor an event at a
- *   sentinel timestamp distinct from the write-time `createdAt`/`updatedAt`.
+ *   sentinel timestamp distinct from the write-time `createdAt`/`updatedAt`,
+ *   and by board play surfaces for the late-log stamp (`lateLogOccurredAt`).
  * @returns `true` if an event row was written; `false` on a zero delta / a
  *          missing or non-event-owning task.
  */
