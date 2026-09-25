@@ -33,6 +33,10 @@ import {
   sourceHasConfiguration,
   removeSourceLossSentence,
   pickSeriesInstance,
+  isEligibleSourceBoard,
+  pickOpenSeriesInstance,
+  type OpenSeriesCandidate,
+  type SourceBoardCandidate,
   templateReferencesTask,
   type TemplateReferenceRecord,
   type BoardSourceFilter,
@@ -104,6 +108,18 @@ interface Fixture {
     candidates: Array<{ id: string; startDate: string }>;
     expectedId: string;
   }>;
+  eligibilityVectors: Array<{
+    name: string;
+    board: SourceBoardCandidate;
+    now: string;
+    expected: boolean;
+  }>;
+  openSeriesInstanceVectors: Array<{
+    name: string;
+    candidates: OpenSeriesCandidate[];
+    now: string;
+    expectedId: string | null;
+  }>;
   referenceVectors: Array<{
     name: string;
     template: TemplateReferenceRecord;
@@ -134,6 +150,8 @@ describe('boardSourceVectors fixture', () => {
     expect(fixture.seriesInstanceVectors.length).toBeGreaterThan(0);
     expect(fixture.referenceVectors.length).toBeGreaterThan(0);
     expect(fixture.doneFilterVectors.length).toBeGreaterThan(0);
+    expect(fixture.eligibilityVectors.length).toBeGreaterThan(0);
+    expect(fixture.openSeriesInstanceVectors.length).toBeGreaterThan(0);
   });
 
   test.each(fixture.referenceVectors.map((v) => [v.name, v] as const))(
@@ -165,6 +183,25 @@ describe('boardSourceVectors fixture', () => {
       // Input order must not matter — the id tie-break is what makes
       // two devices with differently-ordered rows agree.
       expect(pickSeriesInstance([...v.candidates].reverse())?.id).toBe(v.expectedId);
+    },
+  );
+
+  test.each(fixture.eligibilityVectors.map((v) => [v.name, v] as const))(
+    'eligibility: %s',
+    (_name, v) => {
+      expect(isEligibleSourceBoard(v.board, new Date(v.now))).toBe(v.expected);
+    },
+  );
+
+  test.each(fixture.openSeriesInstanceVectors.map((v) => [v.name, v] as const))(
+    'open series instance: %s',
+    (_name, v) => {
+      const now = new Date(v.now);
+      expect(pickOpenSeriesInstance(v.candidates, now)?.id ?? null).toBe(v.expectedId);
+      // Input order must not matter (the tie-break is total).
+      expect(pickOpenSeriesInstance([...v.candidates].reverse(), now)?.id ?? null).toBe(
+        v.expectedId,
+      );
     },
   );
 

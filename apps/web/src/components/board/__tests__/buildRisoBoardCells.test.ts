@@ -98,7 +98,7 @@ const placements = [place('t0', 0, 0), place('t1', 0, 1), place('t2', 1, 0), pla
 function ctx(events: TaskEvent[]): SquareWindowContext {
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
   for (const e of events) (eventsByTaskId[e.taskId] ??= []).push(e);
-  return { windowStart: WINDOW_START, eventsByTaskId };
+  return { windowStart: WINDOW_START, windowEnd: null, eventsByTaskId };
 }
 
 describe('buildRisoBoardCells — sealed vs live (issue #376)', () => {

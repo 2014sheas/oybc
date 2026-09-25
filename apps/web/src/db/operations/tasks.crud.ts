@@ -11,7 +11,12 @@ import { AchievementTrigger, SyncOperationType, TaskType, OperatorType, boardDis
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTask } from './orchestration';
-import { appendCompletionEvent, tombstoneLatestCompletion } from './taskEvents';
+import {
+  appendCompletionEvent,
+  lateLogStampForBoard,
+  tombstoneLatestCompletion,
+  tombstoneWindowCompletions,
+} from './taskEvents';
 
 /**
  * Task CRUD Operations
@@ -535,6 +540,10 @@ export async function updateTaskAndCascade(
  *
  * No-op (no writes at all) if the Task doesn't exist.
  *
+ * Library context only (no board window): a board surface uses
+ * {@link toggleCompoundChildFallback}, which toggles against that board's
+ * window instead of the lifetime latch.
+ *
  * @param taskId - The Task whose `isCompleted` flag should be toggled.
  */
 export async function toggleTaskCompletionAndCascade(taskId: string): Promise<void> {
@@ -547,7 +556,8 @@ export async function toggleTaskCompletionAndCascade(taskId: string): Promise<vo
     [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
     async () => {
       // Windowed Completion (docs §Write paths). This is the library-context
-      // completion toggle for an unplaced compound child (no board window):
+      // completion toggle (no board window — board surfaces use
+      // `toggleCompoundChildFallback`):
       // toggling off the lifetime state tombstones the latest completion
       // event; toggling on appends a fresh one. Both restamp the lifetime
       // caches + enqueue the Task sync entry inside this transaction. A
@@ -575,6 +585,66 @@ export async function toggleTaskCompletionAndCascade(taskId: string): Promise<vo
     },
   );
 }
+
+/**
+ * Board-context compound-child toggle for a child NOT placed on the host board
+ * (`useBoardPlay`'s fallback; iOS twin `toggleCompoundChildFallback`). Unlike
+ * the library toggle it acts on the HOST BOARD'S WINDOW, not the lifetime
+ * latch: the caller passes the state the detail sheet should move to
+ * (`compoundChildToggleDesired`), a completion is stamped via
+ * `lateLogStampForBoard` (at the host board's `endDate` once its window has
+ * ended — 2026-09-24 amendment of WC Decision 1, decision C2), and an
+ * un-complete tombstones only completions inside `[windowStart, windowEnd]`,
+ * so another window's completion is never deleted from this board's sheet.
+ * Then the cross-board cascade runs — all in ONE transaction.
+ *
+ * ONE rule on both platforms (iOS twin in `AppDatabase+BoardCompletion.swift`):
+ * the fallback WRITES only for an event-owning child (NORMAL / plain
+ * COUNTING — events + the late-log stamp). A NON-event-owning child is a
+ * no-op: early return — no latch write, no event, no sync enqueue, and no
+ * cascade (nothing changed, so there is nothing to re-derive). Its state is never
+ * authored from here — a hub-linked derived counter's latch is propagation
+ * output from its ROOT, a window-stamped derived row is never authored (its
+ * state resolves from the root's in-window events; once its window ends it is
+ * frozen), and a nested compound is derived from its own children.
+ *
+ * Also a no-op if the child is missing or the host board is sealed (a sealed board's
+ * record is permanent; its surface is play-locked anyway).
+ *
+ * @param childTaskId - The child being toggled.
+ * @param desiredCompleted - The windowed state to move to.
+ * @param windowStart - The host board's `startDate`.
+ * @param windowEnd - The host board's `endDate`, or `null` (indefinite).
+ * @param boardId - The host board (event provenance + late-log stamp).
+ */
+export async function toggleCompoundChildFallback(
+  childTaskId: string,
+  desiredCompleted: boolean,
+  windowStart: string,
+  windowEnd: string | null,
+  boardId: string,
+): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.tasks, db.taskEvents, db.boards, db.boardTasks, db.compoundChildren, db.syncQueue],
+    async () => {
+      const task = await db.tasks.get(childTaskId);
+      const board = await db.boards.get(boardId);
+      if (!task || board?.sealedAt) return;
+      // Non-event-owning child: nothing is authored (see the rule above).
+      if (!isEventOwningTask(task)) return;
+      const now = currentTimestamp();
+      if (desiredCompleted) {
+        const occurredAt = await lateLogStampForBoard(boardId, now);
+        await appendCompletionEvent(childTaskId, boardId, now, occurredAt);
+      } else {
+        await tombstoneWindowCompletions(childTaskId, windowStart, now, windowEnd);
+      }
+      await runBoardCascadeForTask(childTaskId);
+    },
+  );
+}
+
 /**
  * For Achievement re-target: build the cycle-check context from current
  * workspace state and run `hasCycle` from @oybc/shared. Returns `null` if

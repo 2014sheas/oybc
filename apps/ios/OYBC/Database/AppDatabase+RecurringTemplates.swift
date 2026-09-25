@@ -96,18 +96,20 @@ extension AppDatabase {
             )
             let boardIds = sources.filter { $0.kind == .board }.map { $0.sourceId }
             guard !boardIds.isEmpty else { return false }
-            // Series binding — "missing" means the resolver finds NO live
-            // instance (a stored archived window with a live series
-            // sibling is NOT missing; the supply hops to the sibling).
-            // Reference in LOCAL wall-clock format (board-date format) —
-            // `now` is the UTC sync timestamp and mis-sorts near local
-            // midnight (review-caught Critical, 2026-09-09).
-            let reference = wizardLocalISOString(Date())
+            // Series binding — "missing" means the resolver finds the source
+            // DEAD: the stored row gone, or a series with no existing
+            // instance (a stored archived window with a live series sibling
+            // is NOT missing). A `.noWindow` source — no open board for this
+            // window yet, owner ruling 2026-09-24 — is KEPT: it supplies
+            // nothing now but is not gone, and removing it would silently
+            // drop a series binding the next window needs.
             var liveByStoredId: [String: Bool] = [:]
             for id in boardIds {
-                liveByStoredId[id] = try Self.resolveSourceBoard(
-                    db: db, storedBoardId: id, reference: reference
-                ) != nil
+                if case .dead = try Self.resolveOpenSourceBoard(db: db, storedBoardId: id) {
+                    liveByStoredId[id] = false
+                } else {
+                    liveByStoredId[id] = true
+                }
             }
             let kept = sources.filter { source in
                 guard source.kind == .board else { return true }
@@ -190,11 +192,15 @@ extension AppDatabase {
     ///   - spawn: The pending-spawn descriptor (template + resolved window).
     ///   - boardId: The client-generated id for the new board.
     ///   - now: ISO8601 timestamp stamped on every row written here.
+    ///   - sourceClock: The instant a board source's "is it open" is judged
+    ///     against (owner ruling 2026-09-24: sources are open boards).
+    ///     Defaults to `AppDatabase.sourceClock`; tests inject it.
     /// - Returns: `.spawned(...)` on success or `.skipped(...)` with a reason.
     func spawnRecurringBoard(
         _ spawn: PendingTemplateSpawn,
         boardId: String,
-        now: String
+        now: String,
+        sourceClock: Date = AppDatabase.sourceClock()
     ) throws -> RecurringSpawnOutcome {
         let template = spawn.template
         let size = template.boardSize
@@ -206,6 +212,7 @@ extension AppDatabase {
         // and an early-exit outcome must NOT trigger the write either, so we
         // set the outcome, `throw` to abort the txn cleanly, then catch.
         var outcome: RecurringSpawnOutcome?
+        var noBoardForWindowSourceIds: [String] = []
         do {
             try write { db in
                 // Board Sources P1 (docs/BOARD_SOURCES.md) — the task
@@ -232,28 +239,32 @@ extension AppDatabase {
                     removedTaskIds: template.removedTaskIds
                 )
 
-                // Board Sources P3 — a pulled board that is DELETED or
-                // ARCHIVED blocks the window with an ask (the Boards-tab
-                // prompt), per docs/BOARD_SOURCES.md §Boards as sources.
-                // Distinct from an EMPTY source, which contributes nothing
-                // silently and never blocks.
-                // Series binding (loose-ends sweep 2026-09-09) — each
-                // pulled board resolves through `resolveSourceBoard`: a
-                // stored instance of a recurring series HOPS to the
-                // series' live window (an archived old window never kills
-                // the pull), evaluated against THIS spawn's window start.
-                // Only a series with no live instance — or a gone one-off
-                // source — blocks the window with the ask.
+                // Board Sources P3 + series binding, under the owner ruling
+                // of 2026-09-24 (SOURCES ARE OPEN BOARDS): each pulled board
+                // resolves through `resolveOpenSourceBoard` — the one-off
+                // itself while open, or the series' instance open NOW (the
+                // same clock the wizard's live supply, Preview, capacity and
+                // persist use). No open board is `.noWindow`: that source
+                // deals nothing and the provenance note says "No board for
+                // this window yet" — the window still spawns. Only a `.dead`
+                // source (the stored row gone / deleted / archived, or a
+                // series with no instance at all) blocks the window with the
+                // ask. Distinct from an EMPTY source, which contributes
+                // nothing silently.
                 let boardSourceIds = sources.filter { $0.kind == .board }.map { $0.sourceId }
                 var sourceBoardById: [String: Board] = [:]
                 for id in boardSourceIds {
-                    guard let live = try Self.resolveSourceBoard(
-                        db: db, storedBoardId: id, reference: spawn.windowStart
-                    ) else {
+                    switch try Self.resolveOpenSourceBoard(
+                        db: db, storedBoardId: id, now: sourceClock
+                    ) {
+                    case .dead:
                         outcome = .skipped(templateId: template.id, reason: .sourceBoardMissing)
                         throw RecurringSpawnAbort.skip
+                    case .noWindow:
+                        noBoardForWindowSourceIds.append(id)
+                    case .live(let board):
+                        sourceBoardById[id] = board
                     }
-                    sourceBoardById[id] = live
                 }
 
                 let poolSourceIds = sources.filter { $0.kind == .pool }.map { $0.sourceId }
@@ -296,8 +307,8 @@ extension AppDatabase {
                         ))
                     case .board:
                         guard let sourceBoard = sourceBoardById[source.sourceId] else {
-                            // Unreachable after the gone-check above;
-                            // defensively contributes nothing.
+                            // `.noWindow` (no open board for this window):
+                            // contributes nothing.
                             supplies.append(BoardSources.Supply(source: source, supplyTaskIds: []))
                             continue
                         }
@@ -635,7 +646,8 @@ extension AppDatabase {
                 outcome = .spawned(
                     boardId: boardId,
                     templateId: template.id,
-                    windowStart: spawn.windowStart
+                    windowStart: spawn.windowStart,
+                    noBoardForWindowSourceIds: noBoardForWindowSourceIds
                 )
             }
         } catch RecurringSpawnAbort.skip {

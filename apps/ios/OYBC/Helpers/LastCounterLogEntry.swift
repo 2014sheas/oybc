@@ -12,15 +12,23 @@ import Foundation
 // (tombstone the event, subtract its `delta` from the source task's
 // `currentCount`, re-run the cross-board cascade). This module only picks
 // the entry — it never mutates anything.
+//
+// "Most recent" means the entry the user most recently MADE — ordered by
+// `createdAt` (write time), not `occurredAt`. Since the 2026-09-24 amendment
+// of WC Decision 1, a late log on an ended board is stamped at that board's
+// `endDate` (`lateLogOccurredAt`), in the past, so `occurredAt` no longer
+// tracks the order the user logged in: ordering by it would make Undo reverse
+// an earlier-made entry instead of the late log just made.
 
 /// Selects the most-recent non-deleted `.increment` event for a counter's
 /// source task — the entry a fresh "Undo" tap reverses.
 ///
 /// Excludes the seed/backfill sentinel (`TaskEvents.seedEventOccurredAt`): a
-/// starting-count seed is not a "log" a user can undo. Ties (identical
-/// `occurredAt`, which can happen for rapid-fire logs sharing a millisecond)
-/// break on `createdAt`, so the selector is deterministic even when two
-/// events share the same semantic timestamp.
+/// starting-count seed is not a "log" a user can undo. Ordered by `createdAt`
+/// (the entry the user most recently made — a late log's `occurredAt` is
+/// clamped into the past, see the file header); ties (identical `createdAt`,
+/// which can happen for rapid-fire logs sharing a millisecond) break on
+/// `occurredAt`, so the selector is deterministic.
 ///
 /// - Parameters:
 ///   - events: Candidate events (typically the source task's full event set
@@ -48,15 +56,16 @@ func selectLastIncrementEntry(events: [TaskEvent], sourceTaskId: String) -> Task
     return best
 }
 
-/// `true` iff `candidate` is more recent than `current` (occurredAt, then
-/// createdAt tie-break). Unparseable timestamps degrade to `.distantPast`,
-/// mirroring the TS twin's `NaN`-comparison-always-false degrade.
+/// `true` iff `candidate` is more recent than `current`: `createdAt` (write
+/// time) first, then `occurredAt` as the tie-break. Unparseable timestamps
+/// degrade to `.distantPast`, mirroring the TS twin's
+/// `NaN`-comparison-always-false degrade.
 private func isMoreRecent(_ candidate: TaskEvent, than current: TaskEvent) -> Bool {
-    let candidateOccurred = DateFormatting.parseISO(candidate.occurredAt) ?? .distantPast
-    let currentOccurred = DateFormatting.parseISO(current.occurredAt) ?? .distantPast
-    if candidateOccurred != currentOccurred { return candidateOccurred > currentOccurred }
-
     let candidateCreated = DateFormatting.parseISO(candidate.createdAt) ?? .distantPast
     let currentCreated = DateFormatting.parseISO(current.createdAt) ?? .distantPast
-    return candidateCreated > currentCreated
+    if candidateCreated != currentCreated { return candidateCreated > currentCreated }
+
+    let candidateOccurred = DateFormatting.parseISO(candidate.occurredAt) ?? .distantPast
+    let currentOccurred = DateFormatting.parseISO(current.occurredAt) ?? .distantPast
+    return candidateOccurred > currentOccurred
 }

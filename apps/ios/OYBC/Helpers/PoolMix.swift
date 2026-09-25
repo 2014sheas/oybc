@@ -188,6 +188,11 @@ struct SpawnProvenanceSummary {
     let poolSourcedCount: Int
     /// Of the dealt cells, how many came from the manual layer.
     let manualSourcedCount: Int
+    /// Board-kind sources that resolved to NO board for the spawned window
+    /// (owner ruling 2026-09-24 — a series with no instance for the window,
+    /// or an ended/sealed one-off) and so dealt nothing. TS twin: the
+    /// optional `noBoardForWindowCount` (present there only when > 0).
+    var noBoardForWindowCount: Int = 0
 }
 
 extension PoolMix {
@@ -205,12 +210,15 @@ extension PoolMix {
     ///   - counterFamilyByTaskId: `BoardSources.buildCounterFamilyMap` over
     ///     the task universe (so `mixSize` counts a counter family once).
     ///   - dealtTaskIds: Task ids actually placed on the spawned board.
+    ///   - noBoardForWindowCount: How many board-kind sources resolved to no
+    ///     board for the spawned board's window (they supplied nothing).
     /// - Returns: The dealt/mix counts split by pool-sourced vs manual-sourced.
     static func summarizeSpawnProvenance(
         supplies: [BoardSources.Supply],
         manualTaskIds: [String],
         counterFamilyByTaskId: [String: String],
-        dealtTaskIds: [String]
+        dealtTaskIds: [String],
+        noBoardForWindowCount: Int = 0
     ) -> SpawnProvenanceSummary {
         let manualSet = Set(manualTaskIds)
         let manualSourcedCount = dealtTaskIds.filter { manualSet.contains($0) }.count
@@ -222,7 +230,8 @@ extension PoolMix {
                 counterFamilyByTaskId: counterFamilyByTaskId
             ).size,
             poolSourcedCount: dealtTaskIds.count - manualSourcedCount,
-            manualSourcedCount: manualSourcedCount
+            manualSourcedCount: manualSourcedCount,
+            noBoardForWindowCount: noBoardForWindowCount
         )
     }
 
@@ -236,6 +245,14 @@ extension PoolMix {
     /// board" spawn (100% manual, no pool involved), so it always says
     /// "from the pool" for pool-sourced cells. "added today" is verbatim
     /// per the copy rules ("from" never "deals from").
+    ///
+    /// When any board source had no board for the spawned window
+    /// (`noBoardForWindowCount > 0`), the note ends with
+    /// `" · No board for this window yet"` (`BoardSources.noBoardForWindowNote`).
+    /// TS twin: `formatSpawnProvenanceNote`.
+    ///
+    /// - Parameter summary: From `summarizeSpawnProvenance`.
+    /// - Returns: The note copy.
     static func formatSpawnProvenanceNote(_ summary: SpawnProvenanceSummary) -> String {
         var parts: [String] = []
         // "pulled in" (not "from the pool") — squares can come from pulled
@@ -243,7 +260,10 @@ extension PoolMix {
         if summary.poolSourcedCount > 0 { parts.append("\(summary.poolSourcedCount) pulled in") }
         if summary.manualSourcedCount > 0 { parts.append("\(summary.manualSourcedCount) added today") }
         let breakdown = parts.isEmpty ? "" : " — " + parts.joined(separator: ", ")
-        return "Picked \(summary.dealt) of \(summary.mixSize)\(breakdown)"
+        let windowless = summary.noBoardForWindowCount > 0
+            ? " · \(BoardSources.noBoardForWindowNote)"
+            : ""
+        return "Picked \(summary.dealt) of \(summary.mixSize)\(breakdown)\(windowless)"
     }
 }
 

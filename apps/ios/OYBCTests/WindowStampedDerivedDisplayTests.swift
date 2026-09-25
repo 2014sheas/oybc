@@ -134,7 +134,7 @@ final class WindowStampedDerivedDisplayTests: XCTestCase {
         func done(_ t: Task) -> Bool {
             wizardPreviewIsCompleted(
                 task: t, taskById: taskMap, childrenByCompound: [:],
-                eventsByTaskId: eventsByTaskId, windowStart: ws
+                eventsByTaskId: eventsByTaskId, windowStart: ws, windowEnd: nil
             )
         }
         XCTAssertFalse(done(latched))

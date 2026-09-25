@@ -1,5 +1,5 @@
 {
-  "_note": "Hand-authored cross-platform vectors for packages/shared/src/algorithms/taskEvents.ts's resolveTaskWindowState (Windowed Completion PR A, docs/WINDOWED_COMPLETION.md §Semantics per task type). packages/shared/tests/algorithms/taskEvents.test.ts runs these through the shared TS function; apps/ios/OYBCTests/TaskEventVectorTests.swift runs the SAME vectors through the Swift mirror. Minimal shapes: task={type,maxCount(nullable)}; event={kind,delta(nullable),occurredAt,isDeleted}; windowStart is nullable (null = lifetime). expected={isCompleted,count}. Covers normal/counting x in-window / pre-window / tombstoned / negative-sum clamp / overshoot-preserved / boundary-inclusive / lifetime.",
+  "_note": "Hand-authored cross-platform vectors for packages/shared/src/algorithms/taskEvents.ts's resolveTaskWindowState (Windowed Completion PR A, docs/WINDOWED_COMPLETION.md §Semantics per task type). packages/shared/tests/algorithms/taskEvents.test.ts runs these through the shared TS function; apps/ios/OYBCTests/TaskEventVectorTests.swift runs the SAME vectors through the Swift mirror. Minimal shapes: task={type,maxCount(nullable)}; event={kind,delta(nullable),occurredAt,isDeleted}; windowStart is nullable (null = lifetime). windowEnd is OPTIONAL and nullable (absent/null = no upper bound, [windowStart, inf)); when present the upper bound is INCLUSIVE (occurredAt <= windowEnd, parsed-ms compare) — the 2026-09-24 amendment: a board's root squares evaluate [startDate, endDate]. expected={isCompleted,count}. Covers normal/counting x in-window / pre-window / tombstoned / negative-sum clamp / overshoot-preserved / boundary-inclusive / lifetime / end-bound (end-bound-* cases). The lateLogOccurredAt group pins the late-log stamp helper: {name, board:{endDate(nullable), sealedAt(nullable)}, nowIso, expected: \"now\" | \"endDate\"} — \"now\" means the result is nowIso verbatim; \"endDate\" means the result is a canonical UTC toISOString() string (YYYY-MM-DDTHH:mm:ss.sssZ) naming the SAME instant as board.endDate (local-ISO endDates are parsed in the device zone, so the test compares instants, never strings).",
   "vectors": [
     {
       "name": "normal-in-window-complete",
@@ -138,6 +138,71 @@
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [],
       "expected": { "isCompleted": false, "count": 0 }
+    },
+    {
+      "name": "end-bound-counting-increment-one-ms-after-windowEnd-excluded",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "windowEnd": "2026-07-07T23:59:59.999Z",
+      "events": [
+        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-08T00:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 3 }
+    },
+    {
+      "name": "end-bound-counting-increment-exactly-at-windowEnd-counts-inclusive",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "windowEnd": "2026-07-07T23:59:59.999Z",
+      "events": [
+        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-07T23:59:59.999Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 5 }
+    },
+    {
+      "name": "end-bound-normal-completion-after-windowEnd-incomplete",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "windowEnd": "2026-07-07T23:59:59.999Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-08T00:04:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 0 }
+    },
+    {
+      "name": "end-bound-normal-completion-exactly-at-windowEnd-included",
+      "task": { "type": "normal", "maxCount": null },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "windowEnd": "2026-07-07T23:59:59.999Z",
+      "events": [
+        { "kind": "completion", "delta": null, "occurredAt": "2026-07-07T23:59:59.999Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 1 }
+    },
+    {
+      "name": "end-bound-windowEnd-null-open-ended-unchanged",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "windowEnd": null,
+      "events": [
+        { "kind": "increment", "delta": 3, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-20T09:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": true, "count": 5 }
+    },
+    {
+      "name": "end-bound-pre-windowStart-still-excluded-with-both-bounds",
+      "task": { "type": "counting", "maxCount": 5 },
+      "windowStart": "2026-07-01T00:00:00.000Z",
+      "windowEnd": "2026-07-07T23:59:59.999Z",
+      "events": [
+        { "kind": "increment", "delta": 4, "occurredAt": "2026-06-30T23:59:59.999Z", "isDeleted": false },
+        { "kind": "increment", "delta": 2, "occurredAt": "2026-07-03T12:00:00.000Z", "isDeleted": false },
+        { "kind": "increment", "delta": 1, "occurredAt": "2026-07-08T00:00:00.000Z", "isDeleted": false }
+      ],
+      "expected": { "isCompleted": false, "count": 2 }
     }
   ],
   "_linkedCounterDisplayNote": "resolveLinkedCounterDisplay (taskEvents.ts) <-> Swift resolveLinkedCounterDisplay (Helpers/TaskEvents.swift): what a LINKED counting square/row shows. Window-stamped rows (sharedCounterId + startDate + createdInWizard, COUNTING) with an event map = the ROOT's in-window increment sum ([startDate, endDate] inclusive, optional sealedAt bound) for BOTH count and completion; hub-linked rows or no event map = currentCount - baseline (low-clamped) + the latch. eventsByTaskId null = no map. Consumed by packages/shared/tests/algorithms/taskEvents.test.ts and apps/ios/OYBCTests/TaskEventVectorTests.swift.",
@@ -221,6 +286,50 @@
       "eventsByTaskId": null,
       "sealedAt": null,
       "expected": { "displayed": 7, "isCompleted": true }
+    }
+  ],
+  "lateLogOccurredAt": [
+    {
+      "name": "open-window-stamps-now",
+      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": null },
+      "nowIso": "2026-09-18T10:00:00.000Z",
+      "expected": "now"
+    },
+    {
+      "name": "no-endDate-indefinite-stamps-now",
+      "board": { "endDate": null, "sealedAt": null },
+      "nowIso": "2026-09-18T10:00:00.000Z",
+      "expected": "now"
+    },
+    {
+      "name": "now-exactly-at-endDate-stamps-now",
+      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": null },
+      "nowIso": "2026-09-20T23:59:59.999Z",
+      "expected": "now"
+    },
+    {
+      "name": "ended-unsealed-clamps-to-endDate",
+      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": null },
+      "nowIso": "2026-09-21T00:04:00.000Z",
+      "expected": "endDate"
+    },
+    {
+      "name": "ended-unsealed-local-iso-endDate-clamps-to-same-instant-utc-encoded",
+      "board": { "endDate": "2026-09-20T23:59:59.999", "sealedAt": null },
+      "nowIso": "2026-10-05T00:00:00.000Z",
+      "expected": "endDate"
+    },
+    {
+      "name": "ended-sealed-still-clamps-to-endDate-sealedAt-ignored",
+      "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": "2026-09-22T09:00:00.000Z" },
+      "nowIso": "2026-09-23T00:00:00.000Z",
+      "expected": "endDate"
+    },
+    {
+      "name": "unparseable-endDate-fails-open-stamps-now",
+      "board": { "endDate": "not-a-date", "sealedAt": null },
+      "nowIso": "2026-09-21T00:04:00.000Z",
+      "expected": "now"
     }
   ]
 }

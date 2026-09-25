@@ -76,7 +76,7 @@ const ARRANGE_MODE_OPTIONS: ReadonlyArray<RisoSegmentedOption<ArrangeMode>> = [
  *
  * Progress (done) and count values are informational only (the wizard doesn't
  * write them) — but they must be WINDOWED against the prospective board's
- * window (`[resolveWizardDates(...).startDate, ∞)`), not the task's lifetime
+ * window (`resolveWizardDates(...)`'s `[startDate, endDate]`), not the task's lifetime
  * cache: a shared library task completed in a PREVIOUS window must preview
  * grey on the new board, exactly as it will render after Save. Resolution
  * goes through `taskToSquareState` — the same branch order the play surfaces
@@ -333,7 +333,8 @@ export function BoardWizardPreviewStep({
     [controller.timeframe, controller.customStartDate, controller.customEndDate, controller.targetWindowDate],
   );
   const windowStart = 'startDate' in resolvedDates ? resolvedDates.startDate : new Date().toISOString();
-  const windowContext = useSquareWindowContext({ startDate: windowStart });
+  const windowEnd = 'startDate' in resolvedDates ? resolvedDates.endDate : undefined;
+  const windowContext = useSquareWindowContext({ startDate: windowStart, endDate: windowEnd });
 
   // Build the ArrangeSlot[] from the current (possibly user-reordered) placement.
   const arrangeSlots = useMemo(

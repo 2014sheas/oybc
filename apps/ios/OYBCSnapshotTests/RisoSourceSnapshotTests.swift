@@ -33,7 +33,8 @@ final class RisoSourceSnapshotTests: XCTestCase {
         supply: [String] = ["t1", "t2", "t3", "t4"],
         done: Set<String> = [],
         expanded: Bool,
-        counterClashByTaskId: [String: String] = [:]
+        counterClashByTaskId: [String: String] = [:],
+        noBoardForWindow: Bool = false
     ) -> some View {
         var source = BoardSource(sourceId: "s1", kind: kind)
         source.min = min
@@ -45,7 +46,8 @@ final class RisoSourceSnapshotTests: XCTestCase {
             supply: WizardSourceSupply(
                 displayName: kind == .pool ? "Morning Kickstart" : "Weekday Core",
                 rawSupplyTaskIds: supply,
-                doneTaskIds: done
+                doneTaskIds: done,
+                noBoardForWindow: noBoardForWindow
             ),
             availableCount: BoardSources.availableSupplyIds(
                 source: source, supplyTaskIds: supply, doneTaskIds: done
@@ -92,6 +94,28 @@ final class RisoSourceSnapshotTests: XCTestCase {
     func testBoardRowCollapsedDark() {
         assertSnapshot(
             of: sourceRow(kind: .board, done: ["t1", "t2"], expanded: false),
+            as: .image(
+                layout: .fixed(width: 393, height: 100),
+                traits: .init(userInterfaceStyle: .dark)
+            ),
+            record: recordMode
+        )
+    }
+
+    /// Owner ruling 2026-09-24 — a board source with no board for the
+    /// window being built (a series with no current instance, an ended
+    /// one-off) shows "No board for this window yet" in its subtitle slot.
+    func testBoardRowNoBoardForWindowLight() {
+        assertSnapshot(
+            of: sourceRow(kind: .board, filter: .todo, supply: [], expanded: false, noBoardForWindow: true),
+            as: .image(layout: .fixed(width: 393, height: 100)),
+            record: recordMode
+        )
+    }
+
+    func testBoardRowNoBoardForWindowDark() {
+        assertSnapshot(
+            of: sourceRow(kind: .board, filter: .todo, supply: [], expanded: false, noBoardForWindow: true),
             as: .image(
                 layout: .fixed(width: 393, height: 100),
                 traits: .init(userInterfaceStyle: .dark)

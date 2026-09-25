@@ -3,19 +3,19 @@ import { healBoardNames } from './boardNames';
 import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
 import {
   boardDisplayName,
+  boardWindowEnd,
   BoardStatus,
   isEligibleSourceBoard,
   isEventOwningTask,
   isSourceSupplyTask,
   isWindowStampedDerived,
-  pickSeriesInstance,
   poolSourceSupplyById,
+  pickOpenSeriesInstance,
   availableSupplyIds,
   resolveDerivedCounterWindowState,
   resolveTaskWindowState,
   sourcesForRecord,
   TaskType,
-  toLocalISO,
   type Board,
   type BoardSourceSupply,
   type BoardWindow,
@@ -126,7 +126,12 @@ export function resolveBoardSourceSupply(
     if (derived) {
       isDone = derived.isCompleted;
     } else if (isEventOwningTask(task)) {
-      const state = resolveTaskWindowState(task, eventsByTaskId[task.id] ?? [], board.startDate);
+      const state = resolveTaskWindowState(
+        task,
+        eventsByTaskId[task.id] ?? [],
+        board.startDate,
+        boardWindowEnd(board),
+      );
       isDone = state.isCompleted;
       // §Member rules (B3, RC4) — the same windowed resolution that decides
       // "done" also yields the count the remaining-target prefill needs; a
@@ -189,95 +194,168 @@ async function resolveFromDb(board: Board): Promise<BoardSourceSupplyInfo> {
   return resolveBoardSourceSupply(board, liveRows, tasksById, eventsByTaskId);
 }
 
-/** True when a board row can serve as a live source instance. */
-function isLiveSourceBoard(board: Board): boolean {
+/**
+ * True when a stored board row still EXISTS as a source — not deleted, not
+ * archived. Existence only: whether it can SUPPLY a given window is the
+ * separate open-window rule ({@link isEligibleSourceBoard}). The two are
+ * split so an ended-but-existing source reads as "no board for this window
+ * yet" (no supply) rather than as a dead source (the spawn's
+ * `source_board_missing` ask, the roster's missing badge).
+ */
+function isExistingSourceBoard(board: Board): boolean {
   return !board.isDeleted && board.status !== BoardStatus.ARCHIVED;
 }
 
 /**
- * Series binding (loose-ends sweep 2026-09-09 — docs/BOARD_SOURCES.md
- * §Boards as sources, now implemented as designed): resolve a STORED
- * board-source id to the board that should supply squares right now.
+ * How a STORED board-source id resolves now. iOS twin:
+ * `AppDatabase.SourceBoardResolution`.
+ *
+ * - `live` — `board` supplies squares.
+ * - `noWindow` — the source still exists but has no board open now (a
+ *   series with no open instance, or a one-off board that has ended or
+ *   been sealed). Supplies nothing; the UI
+ *   shows "No board for this window yet". `displayName` is the stored
+ *   board's (healed) name, for the row title.
+ * - `dead` — the stored row is gone (missing, deleted, archived), or the
+ *   series has no existing instance at all. Supplies nothing and maps to
+ *   the spawn's `source_board_missing` ask.
+ */
+export type SourceBoardResolution =
+  | { kind: 'live'; board: Board }
+  | { kind: 'noWindow'; displayName: string }
+  | { kind: 'dead' };
+
+/**
+ * Series binding (docs/BOARD_SOURCES.md §Boards as sources) under the owner
+ * ruling of 2026-09-24 (amended) — SOURCES ARE OPEN BOARDS: resolve a
+ * STORED board-source id to the board that supplies squares now — exactly
+ * what the "Add from a pool or board" sheet would show.
  *
  * - A one-off board (no `spawnedFromTemplateId`) resolves to itself while
- *   it is live, else `null`.
- * - A board that belongs to a recurring series binds to the SERIES: the
- *   pull hops to the series' live instance — the one whose window
- *   contains `reference` when it exists, else the newest live instance
- *   whose window has started, else the newest live instance. Old
- *   archived windows therefore never kill the pull; only a series with
- *   NO live instance (or a stored one-off that is gone) resolves `null`
- *   — which the spawn maps to the `source_board_missing` ask.
+ *   it is OPEN ({@link isEligibleSourceBoard} at `now`: not sealed, window
+ *   not ended); an ended/sealed one-off is `noWindow`, a deleted/archived
+ *   one `dead`.
+ * - A board in a recurring series binds to the SERIES: its instance OPEN
+ *   NOW ({@link pickOpenSeriesInstance} — started, not ended, not sealed;
+ *   latest start, then lowest id). No open instance → `noWindow` (never a
+ *   fallback to an ended or future instance); no existing instance at all →
+ *   `dead`. There is no containment check against the new board's window:
+ *   a monthly built mid-month from a weekly series pulls the CURRENT week.
+ *
+ * The wizard's live supply, Preview, drafts-list capacity, persist and the
+ * recurring spawn all resolve through here with the same clock.
  *
  * @param storedBoardId - The id the source row stored at pull time.
- * @param reference - ISO instant to resolve "the live window" against —
- *   the spawn passes its window start; wizard/roster callers default to
- *   now. MUST be in the same LOCAL-wall-clock ISO format board
- *   `startDate`/`endDate` use (`toLocalISO` — no Z suffix): the
- *   comparisons are lexicographic, and a UTC `toISOString()` instant
- *   mis-sorts against local boundaries near local midnight in any
- *   non-UTC zone (review-caught Critical, 2026-09-09).
+ * @param now - The instant "open" is judged against (the wall clock unless
+ *   a caller — a test — injects one).
+ * @returns The resolution.
  */
-export async function resolveSourceBoard(
+export async function resolveOpenSourceBoard(
   storedBoardId: string,
-  reference: string = toLocalISO(new Date()),
-): Promise<Board | null> {
+  now: Date = new Date(),
+): Promise<SourceBoardResolution> {
   const stored = await db.boards.get(storedBoardId);
-  if (stored === undefined) return null;
+  if (stored === undefined) return { kind: 'dead' };
+  const noWindow = (): SourceBoardResolution => ({
+    kind: 'noWindow',
+    displayName: boardDisplayName(stored),
+  });
   const seriesId = stored.spawnedFromTemplateId;
   if (!seriesId) {
-    return isLiveSourceBoard(stored) ? stored : null;
+    if (!isExistingSourceBoard(stored)) return { kind: 'dead' };
+    return isEligibleSourceBoard(stored, now) ? { kind: 'live', board: stored } : noWindow();
   }
   const instances = (
     await db.boards.filter((b) => b.spawnedFromTemplateId === seriesId).toArray()
-  ).filter(isLiveSourceBoard);
-  if (instances.length === 0) return null;
-  const containing = instances.filter(
-    (b) => b.startDate <= reference && (b.endDate === undefined || reference <= b.endDate),
-  );
-  // `pickSeriesInstance`: latest startDate, lowest id on a tie — two
-  // offline devices can each spawn the same window, and the id key keeps
-  // web and iOS pulling from the same instance.
-  if (containing.length > 0) return pickSeriesInstance(containing);
-  const started = instances.filter((b) => b.startDate <= reference);
-  return pickSeriesInstance(started.length > 0 ? started : instances);
+  ).filter(isExistingSourceBoard);
+  if (instances.length === 0) return { kind: 'dead' };
+  const hit = pickOpenSeriesInstance(instances, now);
+  return hit === null ? noWindow() : { kind: 'live', board: hit };
 }
 
 /**
- * Resolve one board's source supply for the wizard. Series-binding aware:
- * the stored id hops to the series' live instance (see
- * `resolveSourceBoard`). `null` when nothing live resolves (an
- * unresolvable source supplies nothing — the caller renders/contributes
+ * The board that supplies a stored source now, or `null` when it resolves
+ * `noWindow` or `dead` — see {@link resolveOpenSourceBoard}, which callers
+ * that must tell the two apart use instead.
+ *
+ * @param storedBoardId - The id the source row stored at pull time.
+ * @param now - The instant "open" is judged against.
+ * @returns The live source board, or `null`.
+ */
+export async function resolveSourceBoard(
+  storedBoardId: string,
+  now?: Date,
+): Promise<Board | null> {
+  const r = await resolveOpenSourceBoard(storedBoardId, now);
+  return r.kind === 'live' ? r.board : null;
+}
+
+/**
+ * One board source's supply now, keeping the `noWindow` / `dead`
+ * distinction the wizard row and the spawn note need. iOS twin:
+ * `AppDatabase.BoardSourceSupplyResolution`.
+ */
+export type BoardSourceSupplyResolution =
+  | { kind: 'live'; info: BoardSourceSupplyInfo }
+  | { kind: 'noWindow'; displayName: string }
+  | { kind: 'dead' };
+
+/**
+ * Resolve one board source's supply now (series-binding aware —
+ * {@link resolveOpenSourceBoard}).
+ *
+ * @param boardId - The stored source id.
+ * @param now - The instant "open" is judged against.
+ * @returns The supply, or why there is none.
+ */
+export async function fetchOpenBoardSourceSupply(
+  boardId: string,
+  now?: Date,
+): Promise<BoardSourceSupplyResolution> {
+  const r = await resolveOpenSourceBoard(boardId, now);
+  if (r.kind !== 'live') return r;
+  return { kind: 'live', info: await resolveFromDb(r.board) };
+}
+
+/**
+ * Resolve one board's source supply now. `null` when nothing open resolves
+ * (an unresolvable source supplies nothing — the caller renders/contributes
  * an empty supply, never blocks).
+ *
+ * @param boardId - The stored source id.
+ * @param now - The instant "open" is judged against.
+ * @returns The supply, or `null`.
  */
 export async function fetchBoardSourceSupply(
   boardId: string,
-  reference?: string,
+  now?: Date,
 ): Promise<BoardSourceSupplyInfo | null> {
-  const board = await resolveSourceBoard(boardId, reference);
-  if (board === null) return null;
-  return resolveFromDb(board);
+  const r = await fetchOpenBoardSourceSupply(boardId, now);
+  return r.kind === 'live' ? r.info : null;
 }
 
 /**
- * BOARDS rows for the "Add from a pool or board" sheet: ACTIVE, non-deleted
- * boards with squares/done counts from the same predicate the member
- * rows use. Matches iOS eligibility exactly (ACTIVE only).
+ * BOARDS rows for the "Add from a pool or board" sheet: the user's boards
+ * that pass {@link isEligibleSourceBoard} (open window, unsealed, not a
+ * draft/archived/deleted — owner ruling 2026-09-24: ended boards are never
+ * sources), with squares/done counts from the same predicate the member
+ * rows use. iOS twin: `AppDatabase.fetchSourceSheetBoardEntries`.
+ *
+ * @param userId - The owner whose boards to list.
+ * @param now - The instant "has this board ended" is judged against.
+ * @returns The rows, most recently updated first.
  */
 export async function fetchSourceSheetBoardEntries(
   userId: string,
+  now: Date = new Date(),
 ): Promise<SourceSheetBoardEntry[]> {
   // No bare `userId` index on boards — a `.filter` scan is fine at local
   // data sizes.
   //
-  // Eligibility is the `isEligibleSourceBoard` rule, shared with
-  // the Swift twin. This sheet previously filtered on
-  // `status === ACTIVE` alone: a board whose window closes unfinished
-  // stays ACTIVE forever, so every stale core board stayed on offer.
-  // Names are healed because a legacy daily core board is stored as the
-  // literal "Today" — the rows here and the SEARCH that filters them both
-  // read `board.name`.
-  const now = new Date();
+  // Eligibility is the `isEligibleSourceBoard` rule, shared with the Swift
+  // twin: only open-window, unsealed boards. Names are healed because a
+  // legacy daily core board is stored as the literal "Today" — the rows
+  // here and the SEARCH that filters them both read `board.name`.
   const boards = healBoardNames(
     await db.boards.filter((b) => b.userId === userId && !b.isDeleted).toArray(),
   ).filter((b) => isEligibleSourceBoard(b, now));
@@ -357,13 +435,16 @@ export async function fetchTemplateSupplyResolution(
   const poolsById = Object.fromEntries(pools.map((p) => [p.id, p]));
 
   // Series binding — each stored board id resolves through
-  // `resolveSourceBoard` (hop to the series' live instance; null = dead).
-  const resolvedByStoredId = new Map<string, Board | null>();
+  // `resolveOpenSourceBoard` (the instance open now). Only a `dead` source is "missing"; a `noWindow` one
+  // (no open board for this window yet) supplies nothing but is not dead.
+  const resolvedByStoredId = new Map<string, SourceBoardResolution>();
   const supplyByStoredId = new Map<string, BoardSourceSupplyInfo>();
   for (const storedId of allBoardIds) {
-    const live = await resolveSourceBoard(storedId);
-    resolvedByStoredId.set(storedId, live);
-    if (live !== null) supplyByStoredId.set(storedId, await resolveFromDb(live));
+    const resolution = await resolveOpenSourceBoard(storedId);
+    resolvedByStoredId.set(storedId, resolution);
+    if (resolution.kind === 'live') {
+      supplyByStoredId.set(storedId, await resolveFromDb(resolution.board));
+    }
   }
 
   // Combined task universe: pool members + manual + board members.
@@ -393,9 +474,9 @@ export async function fetchTemplateSupplyResolution(
         });
         continue;
       }
-      const board = resolvedByStoredId.get(source.sourceId) ?? null;
-      if (board === null) {
-        deadBoardSourceIds.push(source.sourceId);
+      const resolution = resolvedByStoredId.get(source.sourceId);
+      if (resolution === undefined || resolution.kind !== 'live') {
+        if (resolution?.kind !== 'noWindow') deadBoardSourceIds.push(source.sourceId);
         supplies.push({ source, supplyTaskIds: [] });
         continue;
       }

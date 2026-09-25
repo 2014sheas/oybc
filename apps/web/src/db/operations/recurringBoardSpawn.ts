@@ -28,7 +28,7 @@ import {
 } from '@oybc/shared';
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
-import { resolveBoardSourceSupply, resolveSourceBoard } from './boardSources';
+import { resolveBoardSourceSupply, resolveOpenSourceBoard } from './boardSources';
 import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 
 /**
@@ -49,7 +49,19 @@ import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
  */
 
 export type SpawnResult =
-  | { ok: true; boardId: string; templateId: string; windowStart: string }
+  | {
+      ok: true;
+      boardId: string;
+      templateId: string;
+      windowStart: string;
+      /**
+       * Board-kind source ids that resolved to NO board for this window
+       * (owner ruling 2026-09-24 — a series with no instance open now, or an
+       * ended/sealed one-off). They dealt nothing; the
+       * board's spawn-provenance note says "No board for this window yet".
+       */
+      noBoardForWindowSourceIds: string[];
+    }
   | {
       ok: false;
       templateId: string;
@@ -65,10 +77,16 @@ export type SpawnResult =
  *
  * @param spawn - From `findTemplatesPendingSpawn`. Carries the template +
  *                window boundaries.
+ * @param options.now - The instant a board source's "is it open" is judged
+ *   against (owner ruling 2026-09-24: sources are open boards). Defaults to
+ *   the wall clock; tests inject it.
+ * @returns The new board, or the structured skip reason.
  */
 export async function spawnTemplateBoard(
   spawn: PendingTemplateSpawn,
+  options: { now?: Date } = {},
 ): Promise<SpawnResult> {
+  const sourceClock = options.now ?? new Date();
   const { template, windowStart, windowEnd, suggestedName } = spawn;
 
   const boardId = generateUUID();
@@ -103,7 +121,7 @@ export async function spawnTemplateBoard(
       // the legacy trio derived on the fly (`sourcesForRecord` — no data
       // backfill required; rows written by old clients keep working). Pool
       // sources supply their resolvable taskIds; board sources resolve
-      // through `resolveSourceBoard` below. An EMPTY source contributes
+      // through `resolveOpenSourceBoard` below. An EMPTY source contributes
       // nothing and never blocks (the design's empty-source rule).
       //
       // Single full-table reads (tasks, pools): the supply resolvers need
@@ -117,28 +135,34 @@ export async function spawnTemplateBoard(
 
       const sources = sourcesForRecord(template);
 
-      // Board Sources P3 + series binding (loose-ends sweep 2026-09-09) —
-      // each pulled board resolves through `resolveSourceBoard`: a stored
-      // instance of a recurring series HOPS to the series' live window
-      // (an archived old window never kills the pull), evaluated against
-      // THIS spawn's window start. Only a series with no live instance —
-      // or a one-off source that is deleted/archived — blocks the window
-      // with the ask. Distinct from an EMPTY source, which contributes
-      // nothing silently and never blocks.
+      // Board Sources P3 + series binding, under the owner ruling of
+      // 2026-09-24 (SOURCES ARE OPEN BOARDS): each pulled board resolves
+      // through `resolveOpenSourceBoard` — the one-off itself while open, or
+      // the series' instance open NOW (the same clock the wizard's live
+      // supply, Preview, capacity and persist use). No open board is
+      // `noWindow`: that source deals nothing and the provenance note says
+      // "No board for this window yet" — the window still spawns. Only a
+      // `dead` source (the stored row gone / deleted / archived, or a series
+      // with no instance at all) blocks the window with the ask.
       const boardSourceIds = sources
         .filter((s) => s.kind === 'board')
         .map((s) => s.sourceId);
       const sourceBoardById = new Map<string, Board>();
+      const noBoardForWindowSourceIds: string[] = [];
       for (const id of boardSourceIds) {
-        const live = await resolveSourceBoard(id, spawn.windowStart);
-        if (live === null) {
+        const resolution = await resolveOpenSourceBoard(id, sourceClock);
+        if (resolution.kind === 'dead') {
           return {
             ok: false,
             templateId: template.id,
             reason: 'source_board_missing',
           };
         }
-        sourceBoardById.set(id, live);
+        if (resolution.kind === 'noWindow') {
+          noBoardForWindowSourceIds.push(id);
+          continue;
+        }
+        sourceBoardById.set(id, resolution.board);
       }
 
       const poolSourceIds = sources
@@ -486,7 +510,13 @@ export async function spawnTemplateBoard(
         updatedTemplate,
       );
 
-      return { ok: true, boardId, templateId: template.id, windowStart };
+      return {
+        ok: true,
+        boardId,
+        templateId: template.id,
+        windowStart,
+        noBoardForWindowSourceIds,
+      };
     },
   );
 }

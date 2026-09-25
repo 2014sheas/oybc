@@ -165,7 +165,7 @@ extension AppDatabase {
             // ── One derivation pass per affected board ──
 
             // Windowed Completion: resolve each board against its own
-            // `[startDate, ∞)` window from the event log, not the lifetime
+            // `[startDate, endDate]` window from the event log, not the lifetime
             // `Task.isCompleted` cache (which would count out-of-window cells
             // into bingo lines → phantom bingos).
             let windowContext = try Self.buildWindowContext(db: db)

@@ -15,11 +15,11 @@ import GRDB
 //     board's frozen snapshot. Local-only (no version bump / enqueue).
 //
 // The frozen snapshot is a pure function of the events in `[startDate,
-// sealedAt]`. We bound the upper end explicitly (events with `occurredAt >
-// sealedAt` belong to the NEXT window's board and must never leak into a sealed
-// record — the exact cross-window bleed this design prevents). Since
-// `resolveTaskWindowState` has only a start bound, the upper bound is applied by
-// pre-filtering events.
+// min(endDate, sealedAt)]`. Events with `occurredAt > sealedAt` are
+// pre-filtered out here (they must never leak into a sealed record — the exact
+// cross-window bleed this design prevents); `resolveTaskWindowState` then
+// applies the board's own `endDate` bound (2026-09-24 amendment), so the
+// effective upper bound is the earlier of the two.
 
 extension AppDatabase {
 
@@ -486,8 +486,9 @@ extension AppDatabase {
     /// lifetime `Task.isCompleted` cache instead of the board window — a cell
     /// holding a lifetime-complete-but-out-of-window task could be counted into
     /// a bingo line while rendering un-green (phantom bingo). This pass
-    /// recomputes each live board's stats against its own `[startDate, ∞)`
-    /// window and rewrites only the boards whose stats actually changed.
+    /// recomputes each live board's stats against its own `[startDate, endDate]`
+    /// window (open-ended when `endDate` is nil) and rewrites only the boards
+    /// whose stats actually changed.
     ///
     /// Idempotent (a converged board is a no-op) and lazy/app-open only — same
     /// posture as `runBackstopAutoSeal`: no background scheduling, one

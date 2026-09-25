@@ -11,7 +11,12 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../db/internal';
-import { taskToSquareData, taskToSquareState, type SquareWindowContext } from '../db/adapters';
+import {
+  compoundChildToggleDesired,
+  taskToSquareData,
+  taskToSquareState,
+  type SquareWindowContext,
+} from '../db/adapters';
 import { handleTaskCompletion } from '../db/operations/orchestration';
 import {
   decrementSharedCounter,
@@ -25,7 +30,7 @@ import {
   addBoardTaskToBoard,
   reorderBoardTasks,
 } from '../db/operations/boardTasks';
-import { updateTaskAndCascade, toggleTaskCompletionAndCascade, undoLastCounterLog, type UpdateTaskPatch } from '../db/operations/tasks';
+import { updateTaskAndCascade, toggleCompoundChildFallback, undoLastCounterLog, type UpdateTaskPatch } from '../db/operations/tasks';
 import { updateBoardAndCascade, type UpdateActiveBoardPatch } from '../db/operations/boards';
 import { deriveFlashOutcome } from '../components/boardPlayFlash';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
@@ -729,7 +734,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       try {
         // Capture the pre-increment board stats for flash comparison.
         const boardBefore = await db.boards.get(boardId);
-        const { affectedBoards } = await incrementSharedCounter(sourceTaskId, amount);
+        const { affectedBoards } = await incrementSharedCounter(sourceTaskId, amount, boardId);
         if (persistAsDefault) {
           await setCounterDefaultLogAmount(sourceTaskId, amount);
         }
@@ -800,7 +805,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       try {
         // Capture the pre-decrement board stats for the board-transition flash.
         const boardBefore = await db.boards.get(boardId);
-        const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId, amount);
+        const { affectedBoards, effectiveDelta } = await decrementSharedCounter(sourceTaskId, amount, boardId);
         // No-op: nothing changed (count was already 0).
         if (effectiveDelta === 0) return;
         if (persistAsDefault) {
@@ -895,10 +900,12 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
    * Only a placement on the CURRENT board can go through `handleComplete`, whose
    * orchestration (`handleTaskCompletion`) hard-guards `targetBt.boardId ===
    * boardId` and throws otherwise. A child placed only on ANOTHER board — or not
-   * placed at all — routes through the board-agnostic
-   * `toggleTaskCompletionAndCascade`, which updates the global Task + re-runs the
-   * cross-board cascade so the parent compound (on THIS board, since the user is
-   * opening its detail sheet) re-derives its completion + the board stats.
+   * placed at all — routes through `toggleCompoundChildFallback`, which writes
+   * against THIS board's window + re-runs the cross-board cascade so the parent
+   * compound (on this board) re-derives its completion + the board stats.
+   * Either way the direction is the inverse of the WINDOWED state the sheet
+   * paints (`compoundChildToggleDesired`), never the lifetime latch — on an
+   * ended board a later window's completion sets the latch but not this sheet.
    *
    * (F2 — web↔iOS parity: iOS already falls through to the board-agnostic
    * cascade for an other-board child; previously web misrouted the other-board
@@ -912,28 +919,27 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
 
       // Only the CURRENT-board placement is eligible for handleComplete.
       const currentBt = boardTasks.find((bt) => bt.taskId === childTaskId);
+      const desired =
+        compoundChildToggleDesired(childTask, taskMap, compoundChildrenByCompound, squareWindowContext);
 
       if (currentBt) {
-        await handleComplete(currentBt.id, { isCompleted: !childTask.isCompleted });
+        await handleComplete(currentBt.id, { isCompleted: desired });
       } else {
         // Child is not on the current board (placed elsewhere, or not at all),
-        // but the parent compound still derives through it — so run the
-        // board-agnostic cascade to recompute bingo state + denormalised board
-        // stats. `toggleTaskCompletionAndCascade` (issue #270, B2-W2 — relocated
-        // from an inline `db.transaction` here) wraps the Task update + sync
-        // enqueue + cascade in a single Dexie transaction so a downstream
-        // failure rolls back the partial writes; previously a crash between the
-        // task update and the cascade would leave the Task flipped but board
-        // stats stale forever.
+        // but the parent compound still derives through it. One Dexie
+        // transaction (event write + sync enqueue + cascade), so a downstream
+        // failure rolls back the partial writes (issue #270, B2-W2).
         try {
-          await toggleTaskCompletionAndCascade(childTaskId);
+          const { windowStart, windowEnd } = squareWindowContext;
+          await toggleCompoundChildFallback(childTaskId, desired, windowStart, windowEnd, boardId);
         } catch (err) {
           console.error('Compound child toggle failed:', err);
           onFlash('Something went wrong', 'bingo');
         }
       }
     },
-    [playLocked, taskMap, boardTasks, handleComplete, onFlash]
+    [playLocked, taskMap, boardTasks, handleComplete, onFlash, boardId,
+      compoundChildrenByCompound, squareWindowContext]
   );
 
   // ── Play-mode board-task write methods ─────────────────────────────────

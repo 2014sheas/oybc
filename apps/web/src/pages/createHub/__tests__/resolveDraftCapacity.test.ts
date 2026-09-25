@@ -14,10 +14,15 @@ import {
   type BoardSource,
   type BoardTask,
   type Pool,
+  type RecurringBoardTemplate,
   type Task,
 } from '@oybc/shared';
 import { db } from '../../../db/internal';
+import { fetchOpenBoardSourceSupply } from '../../../db/operations/boardSources';
+import { spawnTemplateBoard } from '../../../db/operations/recurringBoardSpawn';
 import { resolveDraftCapacity } from '../resolveDraftCapacity';
+import { buildSupplyInfoMap, sourceCapacity } from '../wizardSources';
+import { boardSupplyEntryForResolution } from '../wizardSourcesLogic';
 import { resolveResumableDraft } from '../useResumableDraft';
 
 /**
@@ -138,6 +143,9 @@ afterEach(async () => {
   await db.boards.clear();
   await db.boardTasks.clear();
   await db.compoundChildren.clear();
+  await db.recurringBoardTemplates.clear();
+  await db.taskEvents.clear();
+  await db.syncQueue.clear();
 });
 
 describe('resolveDraftCapacity — the drafts-list count', () => {
@@ -205,5 +213,118 @@ describe('resolveResumableDraft — the resume step', () => {
     const draft = draftBoard(blob([source({ sourceId: 'src-board', kind: 'board' })]));
 
     expect((await resolveResumableDraft(draft)).initialStep).toBe(3);
+  });
+});
+
+/**
+ * Owner ruling 2026-09-24 — SOURCES ARE OPEN BOARDS, resolved with one
+ * clock everywhere. A repeating board pulling a weekly series whose only
+ * instance is LAST week (none open now) must count 0 from that source
+ * identically in the drafts-list capacity, the wizard's live supply (what
+ * Preview reads), and the spawned deal.
+ * iOS twin: `SourceBoardOpenNowTests.swift` (the capacity == preview == deal test).
+ */
+describe('ended source — capacity == preview == persisted deal', () => {
+  const WINDOW_START = '2026-09-16T00:00:00.000';
+  const WINDOW_END = '2026-09-16T23:59:59.999';
+  const CLOCK = new Date('2026-09-16T12:00:00.000');
+  const POOL_IDS = Array.from({ length: 8 }, (_, i) => `p${i}`);
+  const SERIES_IDS = ['s1', 's2', 's3'];
+  const SOURCES = [
+    source({ sourceId: 'pool-1', kind: 'pool' }),
+    source({ sourceId: 'wk-last', kind: 'board' }),
+  ];
+
+  async function seedFixture(): Promise<void> {
+    await db.tasks.bulkAdd([...POOL_IDS, ...SERIES_IDS].map((id) => makeTask(id)));
+    await db.pools.add(makePool('pool-1', POOL_IDS));
+    await db.boards.add(
+      makeBoard({
+        id: 'wk-last',
+        timeframe: Timeframe.WEEKLY,
+        startDate: '2026-09-07T00:00:00.000',
+        endDate: '2026-09-13T23:59:59.999',
+        spawnedFromTemplateId: 'series-weekly',
+      }),
+    );
+    await db.boardTasks.bulkAdd(
+      SERIES_IDS.map((taskId, i): BoardTask => ({
+        id: `wk-last-bt-${i}`,
+        boardId: 'wk-last',
+        taskId,
+        row: 0,
+        col: i,
+        isCenter: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+        version: 1,
+        isDeleted: false,
+      })),
+    );
+  }
+
+  it('counts 0 from the windowless series on every surface', async () => {
+    await seedFixture();
+    const draft = makeBoard({
+      id: 'draft-1',
+      status: BoardStatus.DRAFT,
+      timeframe: Timeframe.DAILY,
+      startDate: WINDOW_START,
+      endDate: WINDOW_END,
+      isRecurringDraft: true,
+      recurringDraftMix: blob(SOURCES),
+    });
+
+    // 1. Drafts-list capacity.
+    const capacity = await resolveDraftCapacity(draft, CLOCK);
+
+    // 2. The wizard's live supply (useWizardSources → Preview reads it).
+    const resolution = await fetchOpenBoardSourceSupply('wk-last', CLOCK);
+    const entry = boardSupplyEntryForResolution(resolution);
+    expect(entry.noBoardForWindow).toBe(true);
+    const tasksById = Object.fromEntries((await db.tasks.toArray()).map((t) => [t.id, t]));
+    const poolsById = { 'pool-1': makePool('pool-1', POOL_IDS) };
+    const preview = sourceCapacity(
+      SOURCES,
+      buildSupplyInfoMap(SOURCES, poolsById, true, tasksById, { 'wk-last': entry }),
+      new Set(),
+      {},
+    );
+
+    // 3. The spawned deal for the same window.
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-daily',
+      userId: USER,
+      name: 'Daily',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.FREE,
+      isRandomized: true,
+      seedTaskIds: [],
+      manualTaskIds: [],
+      sources: SOURCES,
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+    const spawned = await spawnTemplateBoard(
+      { template, windowStart: WINDOW_START, windowEnd: WINDOW_END, suggestedName: 'Daily' },
+      { now: CLOCK },
+    );
+    expect(spawned.ok).toBe(true);
+    if (!spawned.ok) return;
+    const dealt = (await db.boardTasks.where('boardId').equals(spawned.boardId).toArray()).map(
+      (bt) => bt.taskId,
+    );
+
+    expect(capacity).toBe(8);
+    expect(preview).toBe(capacity);
+    expect(dealt).toHaveLength(capacity);
+    for (const id of SERIES_IDS) expect(dealt).not.toContain(id);
+    expect(spawned.noBoardForWindowSourceIds).toEqual(['wk-last']);
   });
 });

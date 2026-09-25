@@ -1890,5 +1890,427 @@
         "t5"
       ]
     }
+  ],
+  "eligibilityVectors": [
+    {
+      "name": "eligibility_openWindow_eligible",
+      "_why": "endDate after now — the window is still open",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_endsExactlyNow_eligible",
+      "_why": "endDate >= now is inclusive",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-16T12:00:00.000Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_indefinite_eligible",
+      "_why": "no endDate = an unbounded window, never ends",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_endedYesterday_ineligible",
+      "_why": "owner ruling 2026-09-24: an ended board is never a source — no lookback",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-15T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_sealed_ineligible",
+      "_why": "a sealed board is a permanent record, never a source (even with an open-looking window)",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "sealedAt": "2026-09-16T00:00:00.000Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_unparseableEndDate_eligible",
+      "_why": "unparseable endDate fails OPEN",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "not-a-date",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_completedOpenWindow_eligible",
+      "_why": "a greenlogged board whose window is still open stays a source",
+      "board": {
+        "status": "completed",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_completedEnded_ineligible",
+      "_why": "the retired completedAt lookback no longer rescues an ended board",
+      "board": {
+        "status": "completed",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-10T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_archived_ineligible",
+      "board": {
+        "status": "archived",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_draft_ineligible",
+      "board": {
+        "status": "draft",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_deleted_ineligible",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": true
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_localIsoEndsTonight_eligible",
+      "_why": "LOCAL-ISO board dates (no Z — the shape resolveWizardDates / BoardWizardPersist store): a daily board ending tonight at local 23:59:59.999 is open at local noon; both sides parse as local wall-clock, so the result is zone-independent",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-16T23:59:59.999",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000",
+      "expected": true
+    },
+    {
+      "name": "eligibility_localIsoEndedLastNight_ineligible",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-01T00:00:00.000Z",
+        "endDate": "2026-09-15T23:59:59.999",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000",
+      "expected": false
+    },
+    {
+      "name": "eligibility_startsTomorrow_ineligible",
+      "_why": "final-review F7: a FUTURE board (startDate > now) is not open — the Sources sheet must equal series binding",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-17T00:00:00.000Z",
+        "endDate": "2026-09-17T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_startsExactlyNow_eligible",
+      "_why": "startDate <= now is inclusive",
+      "board": {
+        "status": "active",
+        "startDate": "2026-09-16T12:00:00.000Z",
+        "endDate": "2026-09-16T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_unparseableStartDate_eligible",
+      "_why": "unparseable startDate fails OPEN (like endDate)",
+      "board": {
+        "status": "active",
+        "startDate": "not-a-date",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    }
+  ],
+  "openSeriesInstanceVectors": [
+    {
+      "name": "openSeries_currentInstance_picked",
+      "_why": "the instance open NOW supplies — owner ruling 2026-09-24 (amended): sources = open boards",
+      "candidates": [
+        {
+          "id": "wk-2",
+          "startDate": "2026-09-07T00:00:00.000Z",
+          "endDate": "2026-09-13T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-3",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": "wk-3"
+    },
+    {
+      "name": "openSeries_endedInstanceContainingMonthStart_neverPicked",
+      "_why": "a monthly built mid-month binds to the CURRENT week, not the ended week containing the 1st",
+      "candidates": [
+        {
+          "id": "wk-first",
+          "startDate": "2026-08-31T00:00:00.000Z",
+          "endDate": "2026-09-06T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-current",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": "wk-current"
+    },
+    {
+      "name": "openSeries_noneOpen_null",
+      "_why": "every instance has ended — no board for this window yet (never a fallback to the newest)",
+      "candidates": [
+        {
+          "id": "wk-first",
+          "startDate": "2026-08-31T00:00:00.000Z",
+          "endDate": "2026-09-06T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-2",
+          "startDate": "2026-09-07T00:00:00.000Z",
+          "endDate": "2026-09-13T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": null
+    },
+    {
+      "name": "openSeries_futureInstance_notPicked",
+      "_why": "a window that hasn't started is not open now",
+      "candidates": [
+        {
+          "id": "wk-next",
+          "startDate": "2026-09-21T00:00:00.000Z",
+          "endDate": "2026-09-27T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": null
+    },
+    {
+      "name": "openSeries_futureAndCurrent_currentPicked",
+      "_why": "latest startDate would pick the future one — it is filtered out first",
+      "candidates": [
+        {
+          "id": "wk-3",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-next",
+          "startDate": "2026-09-21T00:00:00.000Z",
+          "endDate": "2026-09-27T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": "wk-3"
+    },
+    {
+      "name": "openSeries_overlap_latestStartDate",
+      "candidates": [
+        {
+          "id": "mo-early",
+          "startDate": "2026-09-01T00:00:00.000Z",
+          "endDate": "2026-09-30T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "mo-late",
+          "startDate": "2026-09-10T00:00:00.000Z",
+          "endDate": "2026-09-30T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": "mo-late"
+    },
+    {
+      "name": "openSeries_overlapEqualStart_lowestId",
+      "_why": "two offline devices spawned the same window",
+      "candidates": [
+        {
+          "id": "zzz",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "aaa",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": "aaa"
+    },
+    {
+      "name": "openSeries_indefiniteStarted_picked",
+      "candidates": [
+        {
+          "id": "ongoing",
+          "startDate": "2026-09-01T00:00:00.000Z",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": "ongoing"
+    },
+    {
+      "name": "openSeries_sealedOpenWindow_notPicked",
+      "candidates": [
+        {
+          "id": "wk-3",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "active",
+          "sealedAt": "2026-09-15T00:00:00.000Z",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": null
+    },
+    {
+      "name": "openSeries_archivedOrDeleted_notPicked",
+      "candidates": [
+        {
+          "id": "a",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "archived",
+          "isDeleted": false
+        },
+        {
+          "id": "b",
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "status": "active",
+          "isDeleted": true
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": null
+    },
+    {
+      "name": "openSeries_empty_null",
+      "candidates": [],
+      "now": "2026-09-16T12:00:00.000Z",
+      "expectedId": null
+    },
+    {
+      "name": "openSeries_localIsoDates_currentPicked",
+      "_why": "LOCAL-ISO instance dates + local now (the stored shape): last week ended, this week open, next week not started",
+      "candidates": [
+        {
+          "id": "wk-last",
+          "startDate": "2026-09-07T00:00:00.000",
+          "endDate": "2026-09-13T23:59:59.999",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-this",
+          "startDate": "2026-09-14T00:00:00.000",
+          "endDate": "2026-09-20T23:59:59.999",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-next",
+          "startDate": "2026-09-21T00:00:00.000",
+          "endDate": "2026-09-27T23:59:59.999",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000",
+      "expectedId": "wk-this"
+    }
   ]
 }

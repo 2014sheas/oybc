@@ -195,10 +195,11 @@ export function BoardEditRepeatSection({
           <p className={styles.repeatNote}>
             {formatSpawnProvenanceNote(
               summarizeSpawnProvenanceFromSupplies(
-                spawnNoteSupplies,
+                spawnNoteSupplies.supplies,
                 noteTemplate.manualTaskIds ?? [],
                 counterFamilyByTaskId,
                 dealtTaskIds,
+                spawnNoteSupplies.noBoardForWindowCount,
               ),
             )}
           </p>

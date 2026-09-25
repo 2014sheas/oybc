@@ -242,7 +242,7 @@ describe('computeSealedCompletedCells (fixture-driven, tests/fixtures/sealReDeri
     });
   }
 
-  it('Task-4 breadth: compound, 4x4 bingo, and the three sealedAt-bound vectors are all present', () => {
+  it('Task-4 breadth: compound, 4x4 bingo, and the sealedAt / endDate-bound vectors are all present', () => {
     // Guards against a fixture edit silently dropping a breadth case: the
     // loop above iterates every vector, this pins that the named ones exist.
     const names = new Set(fixture.vectors.map((v) => v.name));
@@ -250,7 +250,8 @@ describe('computeSealedCompletedCells (fixture-driven, tests/fixtures/sealReDeri
       [
         'compound-children-complete-in-window-green-and-pre-window-child-keeps-sibling-compound-grey',
         'bingo-4x4-row-and-main-diagonal-recorded-in-sealed-lines-with-near-misses',
-        'normal-completion-after-endDate-before-sealedAt-counts-and-completes-the-row',
+        'normal-completion-after-endDate-before-sealedAt-excluded-by-endDate',
+        'normal-completion-stamped-exactly-at-endDate-counts',
         'normal-completion-one-ms-after-sealedAt-excluded-even-though-lifetime-cache-says-done',
         'normal-completion-exactly-at-sealedAt-counts-inclusive-upper-bound',
       ].filter((n) => !names.has(n)),

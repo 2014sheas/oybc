@@ -38,11 +38,12 @@ import { fetchAllBoardTasks } from './boardTasks';
  *     `version` bump, no sync enqueue — the input converges, so every device
  *     converges independently (docs §Seal snapshots re-derive).
  *
- * The frozen snapshot is a pure function of the events in `[startDate, sealedAt]`.
- * We bound the upper end explicitly (events with `occurredAt > sealedAt` belong
- * to the NEXT window's board and must never leak into a sealed record — the
- * exact cross-window bleed this whole design prevents). `resolveTaskWindowState`
- * has only a start bound, so the upper bound is applied by pre-filtering events.
+ * The frozen snapshot is a pure function of the events in
+ * `[startDate, min(endDate, sealedAt)]`. Events with `occurredAt > sealedAt` are
+ * pre-filtered out here (they must never leak into a sealed record — the exact
+ * cross-window bleed this whole design prevents); the kernel's
+ * `resolveTaskWindowState` then applies the board's own `endDate` bound
+ * (2026-09-24 amendment), so the effective upper bound is the earlier of the two.
  */
 
 /** The lookups the shared derivation kernel needs, loaded once. */
@@ -250,7 +251,7 @@ function sameStringSet(a: string[], b: string[]): boolean {
  * board-task) recomputed `completedLineIds`/`linesCompleted`/`completedTasks`
  * from the LIFETIME `Task.isCompleted` cache instead of the board's window, so a
  * cell holding a task that is lifetime-complete but NOT complete in THIS board's
- * `[startDate, ∞)` window could be counted into a bingo line while rendering
+ * `[startDate, endDate]` window could be counted into a bingo line while rendering
  * un-green (a phantom bingo). Boards edited under the old code carry that stale
  * state on disk. This pass recomputes each live board's stats WINDOWED and, when
  * anything changed, writes the corrected row (version bump + sync enqueue).
@@ -294,8 +295,9 @@ export async function reDeriveActiveBoards(
 
   // Build the derivation lookups + full non-deleted event map ONCE, before the
   // rw transaction (so `db.taskEvents` need not be in the transaction scope —
-  // matches the live-cascade pattern). Active boards have no seal upper bound;
-  // the window is `[startDate, ∞)`, so the unbounded event map is the context.
+  // matches the live-cascade pattern). Active boards have no seal upper bound,
+  // so the unbounded event map is the context; the kernel applies each board's
+  // own `[startDate, endDate]` window (2026-09-24 WC Decision 1 amendment).
   const lookups = await loadDerivationLookups();
   const windowContext: WindowEvaluationContext = { eventsByTaskId: lookups.eventsByTaskId };
 

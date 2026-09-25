@@ -1,6 +1,7 @@
 import {
   availableSupplyIds,
   memberRuleFor,
+  NO_BOARD_FOR_WINDOW_NOTE,
   type BoardSource,
   type BoardWindow,
   type CompoundChild,
@@ -223,13 +224,18 @@ export function SourceRow({
 
 /** docs/BOARD_SOURCES.md §Surfaces "Subtitles": pool — "8 tasks" (+ " · 1
  *  excluded", + " · 3–5 on the board" only when range ≠ default); board —
- *  "6 squares · 4 done" / "2 not done". Mirrors iOS `subtitle`. */
+ *  "6 squares · 4 done" / "2 not done"; a board source with no board for
+ *  the window being built — "No board for this window yet" (owner ruling
+ *  2026-09-24). Mirrors iOS `subtitle`. */
 function buildSubtitle(
   source: BoardSource,
   supply: WizardSourceSupply,
   isDefaultRange: boolean,
   rangeText: string,
 ): string {
+  if (source.kind === 'board' && supply.noBoardForWindow === true) {
+    return NO_BOARD_FOR_WINDOW_NOTE;
+  }
   const parts: string[] = [];
   if (source.kind === 'pool') {
     const total = supply.rawSupplyTaskIds.length;

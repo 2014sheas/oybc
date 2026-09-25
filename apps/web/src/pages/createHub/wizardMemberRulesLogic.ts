@@ -319,7 +319,10 @@ export interface PrefillRemainingTargetsResult {
  *
  * Never overwrites an existing `target` (a rule the person authored, or one
  * a previous resolve already seeded), skips non-counting and goal-less
- * members, and returns the SAME array identity when nothing changed.
+ * members, and returns the SAME array identity when nothing changed. A
+ * supply with no board open (`noBoardForWindow`) is left UNSETTLED so the
+ * source is seeded when it later resolves live. iOS twin: the
+ * `pendingPrefillSourceIds` retry in `refreshSourceSupplies`.
  *
  * @param sources - The current source rows.
  * @param sourceId - The board source whose supply just resolved.
@@ -339,6 +342,10 @@ export function prefillRemainingTargets(
   const index = sources.findIndex((s) => s.sourceId === sourceId);
   // A source that isn't pulled has nothing to decide — settled, not retried.
   if (index === -1) return { sources, settled: true };
+  // No board open for it yet (owner ruling 2026-09-24): there are no members
+  // to seed, and the decision is NOT final — when the source later resolves
+  // live, its counting members still get their remaining targets.
+  if (supply.noBoardForWindow === true) return { sources, settled: false };
   let source = sources[index];
   const before = source;
   let settled = true;

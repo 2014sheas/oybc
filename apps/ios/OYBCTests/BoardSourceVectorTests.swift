@@ -149,6 +149,37 @@ final class BoardSourceVectorTests: XCTestCase {
         let startDate: String
     }
 
+    private struct RawEligibilityBoard: Decodable, SourceBoardCandidate {
+        let status: BoardStatus
+        let startDate: String
+        let endDate: String?
+        let sealedAt: String?
+        let isDeleted: Bool
+    }
+
+    private struct EligibilityVector: Decodable {
+        let name: String
+        let board: RawEligibilityBoard
+        let now: String
+        let expected: Bool
+    }
+
+    private struct RawOpenSeriesCandidate: Decodable, OpenSeriesCandidate {
+        let id: String
+        let startDate: String
+        let endDate: String?
+        let status: BoardStatus
+        let sealedAt: String?
+        let isDeleted: Bool
+    }
+
+    private struct OpenSeriesInstanceVector: Decodable {
+        let name: String
+        let candidates: [RawOpenSeriesCandidate]
+        let now: String
+        let expectedId: String?
+    }
+
     private struct SeriesInstanceVector: Decodable {
         let name: String
         let candidates: [RawSeriesCandidate]
@@ -212,6 +243,8 @@ final class BoardSourceVectorTests: XCTestCase {
         let seriesInstanceVectors: [SeriesInstanceVector]
         let referenceVectors: [ReferenceVector]
         let doneFilterVectors: [DoneFilterVector]
+        let eligibilityVectors: [EligibilityVector]
+        let openSeriesInstanceVectors: [OpenSeriesInstanceVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -287,6 +320,32 @@ final class BoardSourceVectorTests: XCTestCase {
             )
         }
         XCTAssertNil(BoardSources.pickSeriesInstance([RawSeriesCandidate]()))
+    }
+
+    /// Owner ruling 2026-09-24 — ended boards are never sources.
+    func testEligibilityVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.eligibilityVectors.isEmpty)
+        for v in fixture.eligibilityVectors {
+            let now = try XCTUnwrap(parseISO8601Date(v.now), v.name)
+            XCTAssertEqual(BoardSources.isEligibleSourceBoard(v.board, now: now), v.expected, v.name)
+        }
+    }
+
+    /// Series binding: the instance OPEN NOW (owner ruling 2026-09-24,
+    /// amended), else nil — in both orders (the tie-break is total).
+    func testOpenSeriesInstanceVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.openSeriesInstanceVectors.isEmpty)
+        for v in fixture.openSeriesInstanceVectors {
+            let now = try XCTUnwrap(parseISO8601Date(v.now), v.name)
+            XCTAssertEqual(BoardSources.pickOpenSeriesInstance(v.candidates, now: now)?.id, v.expectedId, v.name)
+            XCTAssertEqual(
+                BoardSources.pickOpenSeriesInstance(Array(v.candidates.reversed()), now: now)?.id,
+                v.expectedId,
+                "\(v.name) (reversed)"
+            )
+        }
     }
 
     func testConversionVectors() throws {

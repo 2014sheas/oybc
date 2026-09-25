@@ -121,6 +121,12 @@ final class BoardWizardViewModel {
     /// Expanded/collapsed row state — UI-only, never persisted (spec:
     /// `expanded` is not part of `BoardSource`).
     var expandedSourceIds: Set<String> = []
+    /// Board sources pulled THIS session while they had no board open
+    /// (`.noWindow`, owner ruling 2026-09-24): their RC4 remaining-target
+    /// prefill is still owed, and `refreshSourceSupplies` runs it once the
+    /// source resolves live. Web twin: `prefillRemainingTargets` leaving a
+    /// `noBoardForWindow` supply unsettled.
+    var pendingPrefillSourceIds: Set<String> = []
 
     /// Legacy mirror — pool-kind source ids in row order. Persisted as the
     /// record's decode-compat `poolIds` (P1 dual-write).

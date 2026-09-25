@@ -29,12 +29,32 @@ struct TaskWindowState: Equatable {
 /// `resolveTaskWindowState`; window-stamped derived counters resolve from
 /// their root's events (`resolveDerivedCounterWindowState`); hub-linked
 /// derived-counting children fall back to their lifetime cache (the carve-out); nested compounds inherit the SAME
-/// `windowStart` (host-window inheritance). Mirrors the TS `CompoundWindowContext`.
+/// `windowStart` / `windowEnd` (host-window inheritance). Mirrors the TS `CompoundWindowContext`.
 struct CompoundWindowContext {
     /// Window lower bound (`board.startDate`), or `nil` for lifetime.
     let windowStart: String?
+    /// Window INCLUSIVE upper bound (`board.endDate`, via `boardWindowEnd(_:)`),
+    /// or `nil` for an open-ended window (indefinite boards, lifetime).
+    /// 2026-09-24 amendment: a board's root squares evaluate `[startDate, endDate]`.
+    let windowEnd: String?
     /// This workspace's non-deleted TaskEvents grouped by `taskId`.
     let eventsByTaskId: [String: [TaskEvent]]
+
+    /// Memberwise init. `windowEnd` is REQUIRED (no default) so every
+    /// construction site must decide its upper bound: a board passes
+    /// `boardWindowEnd(board)`; only a genuinely open-ended context (an
+    /// indefinite board, lifetime) passes `nil`. Mirrors the TS type, where
+    /// `windowEnd: string | null` is required.
+    ///
+    /// - Parameters:
+    ///   - windowStart: Window lower bound, or `nil` for lifetime.
+    ///   - windowEnd: Window inclusive upper bound, or `nil` for none.
+    ///   - eventsByTaskId: Non-deleted TaskEvents grouped by `taskId`.
+    init(windowStart: String?, windowEnd: String?, eventsByTaskId: [String: [TaskEvent]]) {
+        self.windowStart = windowStart
+        self.windowEnd = windowEnd
+        self.eventsByTaskId = eventsByTaskId
+    }
 }
 
 /// Context passed to `computeBoardStatsUpdate` / `computeSealedCompletedCells`
@@ -82,36 +102,49 @@ func isEventOwningTask(_ task: Task) -> Bool {
 /// so a tombstoned vector resolves the same whether or not the caller
 /// pre-filtered.
 ///
-/// Window semantics have a **start bound only** (`[windowStart, ∞)`); the upper
-/// bound is enforced by sealing, not filtering. `windowStart == nil` means
-/// lifetime (library surfaces, indefinite semantics) — every event counts.
-/// Comparison is a parsed timestamp compare (`occurredAt >= windowStart`),
-/// never string equality, to stay robust to local-ISO vs UTC-`Z` encodings —
-/// mirrors the TS `new Date(...).getTime()` compare (an unparseable timestamp
-/// resolves to "not in window", matching JS `NaN >= x === false`).
+/// Window semantics are `[windowStart, windowEnd]`, **inclusive at both ends**
+/// (2026-09-24 amendment of WC Decision 1 — previously start-bound only, with
+/// the upper bound left to sealing). `windowStart == nil` means no lower bound
+/// (lifetime: library surfaces); `windowEnd == nil` (the default) means no
+/// upper bound (indefinite boards, lifetime). A sealed board's snapshot is
+/// narrowed further by `sealedAt` upstream (`boundWindowContextAtSeal`), so its
+/// effective upper bound is `min(windowEnd, sealedAt)`.
+/// Comparison is a parsed timestamp compare (`occurredAt >= windowStart`,
+/// `occurredAt <= windowEnd`), never string equality — board dates are
+/// LOCAL-ISO while event timestamps are UTC-`Z`. Mirrors the TS
+/// `new Date(...).getTime()` compare: an unparseable bound or timestamp
+/// resolves to "not in window", matching JS `NaN >= x === false`.
 ///
 /// - Parameters:
 ///   - task: The event-owning task (normal or plain/source counting).
 ///   - events: This task's events (deleted rows ignored internally).
 ///   - windowStart: Window lower bound, or `nil` for lifetime.
+///   - windowEnd: Window inclusive upper bound, or `nil` (default) for none.
 /// - Returns: `{ isCompleted, count }`. For counting, `count` is the
 ///   low-clamped window sum (overshoot preserved — never high-clamped). For
 ///   normal, `count` is the number of in-window completion events.
 func resolveTaskWindowState(
     task: Task,
     events: [TaskEvent],
-    windowStart: String?
+    windowStart: String?,
+    windowEnd: String? = nil
 ) -> TaskWindowState {
-    let hasWindow = windowStart != nil
     let lowerDate: Date? = windowStart.flatMap { DateFormatting.parseISO($0) }
+    let upperDate: Date? = windowEnd.flatMap { DateFormatting.parseISO($0) }
 
     func inWindow(_ e: TaskEvent) -> Bool {
         if e.isDeleted { return false }
-        if !hasWindow { return true } // lifetime — every event counts
-        // windowStart provided but unparseable → nothing counts (mirrors NaN).
-        guard let lower = lowerDate else { return false }
+        if windowStart == nil && windowEnd == nil { return true } // lifetime — every event counts
         guard let occurred = DateFormatting.parseISO(e.occurredAt) else { return false }
-        return occurred >= lower
+        if windowStart != nil {
+            // windowStart provided but unparseable → nothing counts (mirrors NaN).
+            guard let lower = lowerDate, occurred >= lower else { return false }
+        }
+        if windowEnd != nil {
+            // windowEnd provided but unparseable → nothing counts (mirrors NaN).
+            guard let upper = upperDate, occurred <= upper else { return false }
+        }
+        return true
     }
 
     if task.type == .counting {
@@ -134,6 +167,51 @@ func resolveTaskWindowState(
         completions += 1
     }
     return TaskWindowState(isCompleted: completions > 0, count: completions)
+}
+
+// MARK: - Board window end + late-log stamp (2026-09-24 amendment)
+
+/// The inclusive upper bound a board's LIVE windowed evaluation uses for its
+/// root squares (and compound children, by host-window inheritance): the
+/// board's own `endDate`, or `nil` for an indefinite board (2026-09-24
+/// amendment of WC Decision 1 — `[startDate, endDate]`, not `[startDate, ∞)`).
+/// Mirrors the TS `boardWindowEnd`.
+///
+/// - Parameter board: The board being evaluated (only `endDate` is read).
+/// - Returns: `board.endDate`, or `nil` when the board has none.
+func boardWindowEnd(_ board: Board) -> String? {
+    board.endDate
+}
+
+/// The `occurredAt` to stamp on a log made from `board`'s OWN play surface at
+/// `nowIso` (2026-09-24 amendment, decision C2 — "late logs"). Mirrors the TS
+/// `lateLogOccurredAt`.
+///
+///   - Window still open (`now <= endDate`), or the board has no `endDate` →
+///     `nowIso`, verbatim.
+///   - Window ended (`now > endDate`) → the board's `endDate` instant
+///     re-encoded as a UTC event timestamp (`DateFormatting.utcISOString`, the
+///     JS `toISOString()` shape), so the overtime log still counts for this
+///     board and for no later window.
+///
+/// The rule is plain `min(now, endDate)`, independent of `sealedAt`: a sealed
+/// board never logs (play is locked), and if one ever did, clamping into its
+/// own window is the safe direction.
+///
+/// Comparison is by parsed instant, never by string — board dates are
+/// LOCAL-ISO, event timestamps are UTC ISO. An unparseable `endDate` or
+/// `nowIso` fails open (returns `nowIso`).
+///
+/// - Parameters:
+///   - board: The board the log is made from (only `endDate` is read).
+///   - nowIso: The current instant as an ISO timestamp (the caller's clock).
+/// - Returns: The ISO timestamp to store as the event's `occurredAt`.
+func lateLogOccurredAt(board: Board, nowIso: String) -> String {
+    guard let endDate = board.endDate else { return nowIso }
+    guard let end = DateFormatting.parseISO(endDate),
+          let now = DateFormatting.parseISO(nowIso) else { return nowIso }
+    if now <= end { return nowIso }
+    return DateFormatting.utcISOString(end)
 }
 
 // MARK: - Window-stamped derived counters (amended carve-out, 2026-09-23)
@@ -339,38 +417,48 @@ func boundWindowContextAtSeal(
 struct SealImmuneWindow: Equatable {
     /// Sealed board's `startDate` as epoch ms (inclusive lower bound).
     let startMs: Double
-    /// Sealed board's `sealedAt` as epoch ms (inclusive upper bound).
-    let sealedAtMs: Double
+    /// Inclusive upper bound as epoch ms: `min(endDate, sealedAt)` — the same
+    /// bound that built the sealed record (Decision 1 end bound + Decision 9).
+    /// An absent/unparseable `endDate` is open-ended, so the bound is `sealedAt`.
+    let endMs: Double
 }
 
 /// Build the immune windows for a task from the sealed boards that place it
 /// (docs Decision 9 + §Write paths). The caller resolves *which* non-deleted
 /// sealed boards place the task (directly or via a placed compound — the same
 /// reachability the pull-path re-derivation uses) and passes their
-/// `startDate`/`sealedAt`; this turns them into epoch-ms bounds.
+/// `startDate`/`endDate`/`sealedAt`; this turns them into epoch-ms bounds.
+///
+/// The immune window is `[startDate, min(endDate, sealedAt)]` — exactly the
+/// set of events the sealed record counted. An event in the overtime gap
+/// `(endDate, sealedAt]` belongs to the NEXT window's board, never counted on
+/// the sealed board, and so stays tombstonable there.
 ///
 /// Mirrors the TS `buildSealImmuneWindows`.
 ///
-/// - Parameter sealedBoards: Sealed boards placing the task (each with a set `sealedAt`).
-/// - Returns: One immune window per sealed board. Unparseable dates map to
-///   `0` (matching the TS `new Date(...).getTime()` → `NaN` degrade, which
-///   fails every comparison — a defensive no-op, not a live window).
+/// - Parameter sealedBoards: Sealed boards placing the task (each with a set
+///   `sealedAt`; `endDate` nil/unparseable = open-ended).
+/// - Returns: One immune window per sealed board. Unparseable start/sealedAt
+///   map to `NaN` (matching the TS `new Date(...).getTime()` → `NaN` degrade,
+///   which fails every comparison — a defensive no-op, not a live window).
 func buildSealImmuneWindows(
-    sealedBoards: [(startDate: String, sealedAt: String)]
+    sealedBoards: [(startDate: String, endDate: String?, sealedAt: String)]
 ) -> [SealImmuneWindow] {
     sealedBoards.map { b in
         let startMs = DateFormatting.parseISO(b.startDate).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
         let sealedAtMs = DateFormatting.parseISO(b.sealedAt).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
-        return SealImmuneWindow(startMs: startMs, sealedAtMs: sealedAtMs)
+        let endDateMs = b.endDate.flatMap(DateFormatting.parseISO).map { $0.timeIntervalSince1970 * 1000 }
+        let endMs = endDateMs.map { min($0, sealedAtMs) } ?? sealedAtMs
+        return SealImmuneWindow(startMs: startMs, endMs: sealedAtMs.isNaN ? Double.nan : endMs)
     }
 }
 
 /// Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
-/// it falls inside `[startDate, sealedAt]` of some sealed board that places the
-/// task. Immune events can never be tombstoned by any un-complete/decrement
-/// gesture — history stays history. Bounds are inclusive on both ends (the
-/// boundary instants belong to the frozen record). Mirrors the TS
-/// `isOccurredAtSealImmune`.
+/// it falls inside `[startDate, min(endDate, sealedAt)]` of some sealed board
+/// that places the task. Immune events can never be tombstoned by any
+/// un-complete/decrement gesture — history stays history. Bounds are
+/// inclusive on both ends (the boundary instants belong to the frozen record).
+/// Mirrors the TS `isOccurredAtSealImmune`.
 ///
 /// - Parameters:
 ///   - occurredAt: The event's semantic timestamp (ISO8601).
@@ -380,7 +468,7 @@ func isOccurredAtSealImmune(_ occurredAt: String, windows: [SealImmuneWindow]) -
     guard !windows.isEmpty else { return false }
     guard let occurred = DateFormatting.parseISO(occurredAt) else { return false }
     let t = occurred.timeIntervalSince1970 * 1000
-    return windows.contains { $0.startMs <= t && t <= $0.sealedAtMs }
+    return windows.contains { $0.startMs <= t && t <= $0.endMs }
 }
 
 // MARK: - Backstop formula

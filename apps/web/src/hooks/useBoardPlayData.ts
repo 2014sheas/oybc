@@ -77,7 +77,7 @@ export interface BoardPlayData {
   /**
    * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the window
    * context to thread into `taskToSquareState` so each square resolves against
-   * THIS board's window (`[startDate, ∞)`) via events instead of the lifetime
+   * THIS board's window (`[startDate, endDate]`) via events instead of the lifetime
    * cache. This is what stops a task completed in a previous window bleeding
    * green onto a freshly-spawned board.
    */

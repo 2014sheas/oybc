@@ -1,3 +1,4 @@
+import type { Board } from '../types/board';
 import type { Task } from '../types/task';
 import type { TaskEvent } from '../types/taskEvent';
 import { TaskType } from '../constants/enums';
@@ -41,11 +42,20 @@ export interface TaskWindowState {
  * window-stamped derived counters resolve from their root's events in their own
  * window ({@link resolveDerivedCounterWindowState}); hub-linked derived-counting
  * children fall back to their lifetime cache (the carve-out);
- * nested compounds inherit the SAME `windowStart` (host-window inheritance).
+ * nested compounds inherit the SAME `windowStart` / `windowEnd` (host-window
+ * inheritance).
  */
 export interface CompoundWindowContext {
   /** Window lower bound (`board.startDate`), or `null` for lifetime. */
   windowStart: string | null;
+  /**
+   * Window INCLUSIVE upper bound (`board.endDate`, via {@link boardWindowEnd}),
+   * or `null` / absent for an open-ended window (indefinite boards, lifetime).
+   * 2026-09-24 amendment: a board's root squares evaluate `[startDate, endDate]`.
+   * Required so every construction site states the bound explicitly (`null`
+   * is the open-ended `[windowStart, ∞)` window).
+   */
+  windowEnd: string | null;
   /** This workspace's non-deleted TaskEvents grouped by `taskId`. */
   eventsByTaskId: Record<string, TaskEvent[]>;
 }
@@ -93,15 +103,22 @@ export function isEventOwningTask(
  * filtered to non-deleted defensively (a tombstoned event never counts), so a
  * `tombstoned` vector resolves the same whether or not the caller pre-filtered.
  *
- * Window semantics have a **start bound only** (`[windowStart, ∞)`); the upper
- * bound is enforced by sealing, not filtering. `windowStart = null` means
- * lifetime (library surfaces, indefinite semantics) — every event counts.
- * Comparison is a parsed timestamp compare (`occurredAt >= windowStart`), never
- * string equality, to stay robust to local-ISO vs UTC-`Z` encodings.
+ * Window semantics are `[windowStart, windowEnd]`, **inclusive at both ends**
+ * (2026-09-24 amendment of WC Decision 1 — previously start-bound only, with
+ * the upper bound left to sealing). `windowStart = null` means no lower bound
+ * (lifetime: library surfaces); `windowEnd = null` (the default) means no upper
+ * bound (indefinite boards, lifetime). A sealed board's snapshot is narrowed
+ * further by `sealedAt` upstream ({@link boundWindowContextAtSeal}), so its
+ * effective upper bound is `min(windowEnd, sealedAt)`.
+ * Comparison is a parsed timestamp compare (`occurredAt >= windowStart`,
+ * `occurredAt <= windowEnd`), never string equality — board dates are
+ * LOCAL-ISO while event timestamps are UTC-`Z`. An unparseable bound admits
+ * nothing (`NaN` compares false), matching the historical lower-bound rule.
  *
  * @param task        The event-owning task (normal or plain/source counting).
  * @param events      This task's events (deleted rows ignored internally).
  * @param windowStart Window lower bound, or `null` for lifetime.
+ * @param windowEnd   Window inclusive upper bound, or `null` (default) for none.
  * @returns `{ isCompleted, count }`. For counting, `count` is the low-clamped
  *          window sum (overshoot preserved — never high-clamped). For normal,
  *          `count` is the number of in-window completion events.
@@ -110,12 +127,17 @@ export function resolveTaskWindowState(
   task: Task,
   events: TaskEvent[],
   windowStart: string | null,
+  windowEnd: string | null = null,
 ): TaskWindowState {
   const lowerMs = windowStart == null ? null : new Date(windowStart).getTime();
+  const upperMs = windowEnd == null ? null : new Date(windowEnd).getTime();
   const inWindow = (e: TaskEvent): boolean => {
     if (e.isDeleted) return false;
-    if (lowerMs === null) return true;
-    return new Date(e.occurredAt).getTime() >= lowerMs;
+    if (lowerMs === null && upperMs === null) return true;
+    const t = new Date(e.occurredAt).getTime();
+    if (lowerMs !== null && !(t >= lowerMs)) return false;
+    if (upperMs !== null && !(t <= upperMs)) return false;
+    return true;
   };
 
   if (task.type === TaskType.COUNTING) {
@@ -140,6 +162,55 @@ export function resolveTaskWindowState(
     completions += 1;
   }
   return { isCompleted: completions > 0, count: completions };
+}
+
+/**
+ * The inclusive upper bound a board's LIVE windowed evaluation uses for its
+ * root squares (and compound children, by host-window inheritance): the
+ * board's own `endDate`, or `null` for an indefinite board (2026-09-24
+ * amendment of WC Decision 1 — `[startDate, endDate]`, not `[startDate, ∞)`).
+ *
+ * @param board The board being evaluated (only `endDate` is read).
+ * @returns `board.endDate`, or `null` when the board has none.
+ */
+export function boardWindowEnd(board: Pick<Board, 'endDate'>): string | null {
+  return board.endDate ?? null;
+}
+
+/**
+ * The `occurredAt` to stamp on a log made from `board`'s OWN play surface at
+ * `nowIso` (2026-09-24 amendment, decision C2 — "late logs").
+ *
+ *   - Window still open (`now <= endDate`), or the board has no `endDate` →
+ *     `nowIso`, verbatim.
+ *   - Window ended (`now > endDate`) → the board's `endDate` instant,
+ *     re-encoded as a UTC event timestamp (`new Date(endDate).toISOString()`),
+ *     so the overtime log still counts for this board (whose inclusive upper
+ *     bound is `endDate`) and for no later window.
+ *
+ * The rule is plain `min(now, endDate)`, independent of `sealedAt`: a sealed
+ * board never logs (play is locked), and if one ever did, clamping into its
+ * own window is the safe direction.
+ *
+ * Comparison is by parsed ms, never by string — board dates are LOCAL-ISO,
+ * event timestamps are UTC ISO. An unparseable `endDate` or `nowIso` fails
+ * open (returns `nowIso`) rather than throwing.
+ *
+ * @param board  The board the log is made from (only `endDate` is read;
+ *               `sealedAt` is accepted for call-site convenience and ignored).
+ * @param nowIso The current instant as an ISO timestamp (the caller's clock).
+ * @returns The ISO timestamp to store as the event's `occurredAt`.
+ */
+export function lateLogOccurredAt(
+  board: Pick<Board, 'endDate' | 'sealedAt'>,
+  nowIso: string,
+): string {
+  if (board.endDate == null) return nowIso;
+  const endMs = new Date(board.endDate).getTime();
+  const nowMs = new Date(nowIso).getTime();
+  if (Number.isNaN(endMs) || Number.isNaN(nowMs)) return nowIso;
+  if (nowMs <= endMs) return nowIso;
+  return new Date(endMs).toISOString();
 }
 
 /**
@@ -335,8 +406,12 @@ export function boundWindowContextAtSeal(
 export interface SealImmuneWindow {
   /** Sealed board's `startDate` as epoch ms (inclusive lower bound). */
   startMs: number;
-  /** Sealed board's `sealedAt` as epoch ms (inclusive upper bound). */
-  sealedAtMs: number;
+  /**
+   * Inclusive upper bound as epoch ms: `min(endDate, sealedAt)` — the same
+   * bound that built the sealed record (Decision 1 end bound + Decision 9).
+   * An absent/unparseable `endDate` is open-ended, so the bound is `sealedAt`.
+   */
+  endMs: number;
 }
 
 /**
@@ -344,26 +419,36 @@ export interface SealImmuneWindow {
  * (docs Decision 9 + §Write paths). The caller resolves *which* non-deleted
  * sealed boards place the task (directly or via a placed compound — the same
  * reachability the pull-path re-derivation uses) and passes their
- * `startDate`/`sealedAt`; this turns them into epoch-ms bounds.
+ * `startDate`/`endDate`/`sealedAt`; this turns them into epoch-ms bounds.
  *
- * @param sealedBoards Sealed boards placing the task (each with a set `sealedAt`).
+ * The immune window is `[startDate, min(endDate, sealedAt)]` — exactly the set
+ * of events the sealed record counted. An event in the overtime gap
+ * `(endDate, sealedAt]` belongs to the NEXT window's board, never counted on
+ * the sealed board, and so stays tombstonable there.
+ *
+ * @param sealedBoards Sealed boards placing the task (each with a set `sealedAt`;
+ *                     `endDate` null/absent/unparseable = open-ended).
  * @returns One immune window per sealed board.
  */
 export function buildSealImmuneWindows(
-  sealedBoards: ReadonlyArray<{ startDate: string; sealedAt: string }>,
+  sealedBoards: ReadonlyArray<{ startDate: string; endDate?: string | null; sealedAt: string }>,
 ): SealImmuneWindow[] {
-  return sealedBoards.map((b) => ({
-    startMs: new Date(b.startDate).getTime(),
-    sealedAtMs: new Date(b.sealedAt).getTime(),
-  }));
+  return sealedBoards.map((b) => {
+    const sealedAtMs = new Date(b.sealedAt).getTime();
+    const endDateMs = b.endDate != null ? new Date(b.endDate).getTime() : NaN;
+    return {
+      startMs: new Date(b.startDate).getTime(),
+      endMs: Number.isNaN(endDateMs) ? sealedAtMs : Math.min(endDateMs, sealedAtMs),
+    };
+  });
 }
 
 /**
  * Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
- * it falls inside `[startDate, sealedAt]` of some sealed board that places the
- * task. Immune events can never be tombstoned by any un-complete/decrement
- * gesture — history stays history. Bounds are inclusive on both ends (the
- * boundary instants belong to the frozen record).
+ * it falls inside `[startDate, min(endDate, sealedAt)]` of some sealed board
+ * that places the task. Immune events can never be tombstoned by any
+ * un-complete/decrement gesture — history stays history. Bounds are inclusive
+ * on both ends (the boundary instants belong to the frozen record).
  *
  * @param occurredAt The event's semantic timestamp (ISO8601).
  * @param windows    The task's immune windows (from {@link buildSealImmuneWindows}).
@@ -375,7 +460,7 @@ export function isOccurredAtSealImmune(
 ): boolean {
   if (windows.length === 0) return false;
   const t = new Date(occurredAt).getTime();
-  return windows.some((w) => w.startMs <= t && t <= w.sealedAtMs);
+  return windows.some((w) => w.startMs <= t && t <= w.endMs);
 }
 
 /**

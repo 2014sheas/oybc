@@ -369,7 +369,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         let board = try XCTUnwrap(try db.fetchBoard(id: "b1"))
         let results = try db.toggleCompoundChildFallback(
             childTaskId: "ch", desiredCompleted: true,
-            windowStart: board.startDate, boardId: "b1", now: now
+            windowStart: board.startDate, windowEnd: boardWindowEnd(board), boardId: "b1", now: now
         )
 
         let chAfter = try XCTUnwrap(try db.fetchTask(id: "ch"))
@@ -1001,7 +1001,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         let boardId = AppDatabase.generateUUID()
         let outcome = try db.spawnRecurringBoard(spawn, boardId: boardId, now: now)
 
-        guard case .spawned(let bid, let tid, _) = outcome else {
+        guard case .spawned(let bid, let tid, _, _) = outcome else {
             return XCTFail("expected .spawned, got \(outcome)")
         }
         XCTAssertEqual(bid, boardId)

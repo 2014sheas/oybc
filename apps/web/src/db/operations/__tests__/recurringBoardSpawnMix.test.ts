@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BoardStatus,
   CenterSquareType,
@@ -45,7 +45,16 @@ async function seedTask(id: string): Promise<Task> {
   return task;
 }
 
+// Owner ruling 2026-09-24 — an ENDED board is never a source, judged
+// against the wall clock. These fixtures live in July 2026, so the clock is
+// pinned inside the spawned window (the spawn runs while its sources are open).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-19T12:00:00.000'));
+});
+
 afterEach(async () => {
+  vi.useRealTimers();
   await db.tasks.clear();
   await db.pools.clear();
   await db.recurringBoardTemplates.clear();
@@ -966,6 +975,63 @@ describe('spawnTemplateBoard — series binding (loose-ends sweep 2026-09-09)', 
     );
     expect(placed).toEqual(new Set(newIds));
     for (const id of oldIds) expect(placed.has(id)).toBe(false);
+  });
+
+  it('a series with no instance OPEN NOW deals nothing from it and records the note', async () => {
+    // Owner ruling 2026-09-24: the only instance is LAST week's (ended) —
+    // the old fallback ("newest started") pulled from it. Now that source
+    // supplies nothing, the window still spawns from the manual layer, and
+    // the result records the windowless source for the provenance note.
+    const manual = Array.from({ length: 9 }, (_, i) => `m${i}`);
+    const stale = ['stale-1', 'stale-2'];
+    for (const id of [...manual, ...stale]) await seedTask(id);
+    await seedSeriesInstance('inst-last-week', 'series-2', stale, {
+      startDate: '2026-07-06T00:00:00.000Z',
+      endDate: '2026-07-12T23:59:59.999Z',
+    });
+    const template: RecurringBoardTemplate = {
+      id: 'tmpl-windowless',
+      userId: 'user-1',
+      name: 'Windowless Board',
+      timeframe: Timeframe.DAILY,
+      boardSize: 3,
+      centerSquareType: CenterSquareType.NONE,
+      isRandomized: true,
+      seedTaskIds: [],
+      manualTaskIds: manual,
+      sources: [
+        {
+          sourceId: 'inst-last-week',
+          kind: 'board',
+          min: 0,
+          max: null,
+          excludedTaskIds: [],
+          filter: 'all',
+        },
+      ],
+      lastSpawnedWindowKey: null,
+      isActive: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    };
+    await db.recurringBoardTemplates.add(template);
+
+    const result = await spawnTemplateBoard({
+      template,
+      windowStart: WINDOW_START,
+      windowEnd: WINDOW_END,
+      suggestedName: 'Windowless — July 19',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.noBoardForWindowSourceIds).toEqual(['inst-last-week']);
+    const placed = (await db.boardTasks.where('boardId').equals(result.boardId).toArray()).map(
+      (bt) => bt.taskId,
+    );
+    expect(new Set(placed)).toEqual(new Set(manual));
+    for (const id of stale) expect(placed).not.toContain(id);
   });
 
   it('a series with NO live instance still triggers the source_board_missing ask', async () => {

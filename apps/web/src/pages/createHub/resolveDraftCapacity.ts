@@ -7,13 +7,13 @@ import {
   type Pool,
   type Task,
 } from '@oybc/shared';
-import { fetchBoardSourceSupply } from '../../db/operations/boardSources';
+import { fetchOpenBoardSourceSupply } from '../../db/operations/boardSources';
 import { fetchCompoundChildrenByCompoundIds } from '../../db/operations/compoundChildren';
 import { fetchPoolsByIds } from '../../db/operations/pools';
 import { fetchTasksByIds } from '../../db/operations/tasks';
 import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
 import { buildSupplyInfoMap, sourceCapacity, type SupplyInfoMap } from './wizardSources';
-import { boardSupplyEntry } from './wizardSourcesLogic';
+import { boardSupplyEntryForResolution } from './wizardSourcesLogic';
 
 /**
  * The saved draft's honest pool size — the SAME number the wizard's
@@ -28,8 +28,8 @@ import { boardSupplyEntry } from './wizardSourcesLogic';
  * needed here.
  *
  * Supplies resolve through the wizard's own resolvers: pools via
- * `buildSupplyInfoMap`, boards via `fetchBoardSourceSupply` (series-binding
- * aware) → `boardSupplyEntry`; the count is `sourceCapacity` — the
+ * `buildSupplyInfoMap`, boards via `fetchOpenBoardSourceSupply` (series-binding
+ * aware — the board open now) → `boardSupplyEntryForResolution`; the count is `sourceCapacity` — the
  * `computeAchievablePoolSize` dry-run with excludes, the `'todo'` filter,
  * Split-up expansion, counter-family exclusivity and the chosen center
  * pinned, exactly as `useWizardDerived.capacity` computes it.
@@ -40,10 +40,12 @@ import { boardSupplyEntry } from './wizardSourcesLogic';
  * iOS twin: `BoardWizardViewModel.resolveDraftCapacity`.
  *
  * @param board - The draft board; only its blob and center fields are read.
+ * @param now - The instant a source board's "is it open" is judged against.
  * @returns The achievable pool size (0 for an empty/malformed blob).
  */
 export async function resolveDraftCapacity(
   board: Pick<Board, 'recurringDraftMix' | 'centerSquareType' | 'centerTaskId'>,
+  now: Date = new Date(),
 ): Promise<number> {
   const mix = decodeRecurringDraftMix(board.recurringDraftMix);
   const sources = mix.sources;
@@ -56,8 +58,11 @@ export async function resolveDraftCapacity(
   const boardSupplyById: SupplyInfoMap = {};
   for (const source of sources) {
     if (source.kind !== 'board') continue;
-    boardSupplyById[source.sourceId] = boardSupplyEntry(
-      await fetchBoardSourceSupply(source.sourceId),
+    // Owner ruling 2026-09-24 — a source supplies from its board open NOW
+    // (the reopened wizard, its Preview and persist use the same clock), so
+    // an ended source supplies nothing here too.
+    boardSupplyById[source.sourceId] = boardSupplyEntryForResolution(
+      await fetchOpenBoardSourceSupply(source.sourceId, now),
     );
   }
 

@@ -31,7 +31,7 @@ const WINDOW_START = '2026-01-01T00:00:00.000Z';
 /** Window read-model: SOURCE counters resolve their count from in-window
  *  increment events (issue #377), exactly like the grid cell. */
 function ctx(eventsByTaskId: Record<string, TaskEvent[]> = {}): SquareWindowContext {
-  return { windowStart: WINDOW_START, eventsByTaskId };
+  return { windowStart: WINDOW_START, windowEnd: null, eventsByTaskId };
 }
 
 function increment(taskId: string, delta: number, occurredAt = '2026-01-10T00:00:00.000Z'): TaskEvent {

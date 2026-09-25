@@ -100,9 +100,15 @@ func recurringTemplateFillableCellCount(
 ///   - **Idempotency belt**: there is no existing non-deleted Board with
 ///     matching `spawnedFromTemplateId + startDate`.
 ///
+/// Output ordering is the SPAWN order the caller must iterate: parents first
+/// (yearly → monthly → weekly → daily, stable within a tier), then
+/// dependency-ordered so a template spawns after every pending template whose
+/// series it pulls from (cycles fall back to parents-first).
+///
 /// - Parameters:
 ///   - templates: All non-deleted templates for the active user.
-///   - boards: All boards for the active user (for the idempotency belt).
+///   - boards: All boards for the active user (the idempotency belt, and
+///     resolving board sources to their series for the dependency order).
 ///   - weekStartDay: Controls weekly window boundaries (`"monday"` / `"sunday"`).
 ///   - now: Reference date for window computation.
 func findTemplatesPendingSpawn(
@@ -146,10 +152,12 @@ func findTemplatesPendingSpawn(
     }
 
     // Series binding (loose-ends sweep 2026-09-09) — PARENTS SPAWN FIRST
-    // (yearly → monthly → weekly → daily; stable within a tier): a child
-    // board pulling from a parent series must see the parent's FRESH
-    // window's instance in the same pass. TS twin:
-    // `findTemplatesPendingSpawn`'s tail sort.
+    // (yearly → monthly → weekly → daily; stable within a tier) as the BASE
+    // order, then DEPENDENCY-ORDERED (final-review F3): a template spawns
+    // after every pending template whose series it pulls from, so its board
+    // source binds to the series' instance open NOW — the one this pass just
+    // spawned — instead of resolving `.noWindow`. TS twin:
+    // `findTemplatesPendingSpawn`'s tail sort + `orderBySourceDependency`.
     func tier(_ timeframe: Timeframe) -> Int {
         switch timeframe {
         case .yearly: return 0
@@ -159,12 +167,64 @@ func findTemplatesPendingSpawn(
         default: return 4
         }
     }
-    return pending.enumerated().sorted { a, b in
+    let parentsFirst = pending.enumerated().sorted { a, b in
         let ta = tier(a.element.template.timeframe)
         let tb = tier(b.element.template.timeframe)
         if ta != tb { return ta < tb }
         return a.offset < b.offset
     }.map { $0.element }
+    return orderBySourceDependency(parentsFirst, boards: boards)
+}
+
+/// Stable topological order over board-source → series edges between the
+/// pending spawns (final-review F3). An edge `S → T` exists when pending
+/// template `T` has a `.board` source whose stored board belongs to pending
+/// template `S`'s series (`spawnedFromTemplateId == S.id`). A self-edge (a
+/// template pulling its own series) is ignored; a one-off source (no
+/// `spawnedFromTemplateId`) or a series not pending in this pass adds no edge.
+///
+/// Kahn-style and stable: each step emits the FIRST entry in `base` order
+/// whose dependencies are all emitted. When none is ready (a cycle), the
+/// first remaining entry in `base` order is emitted — the cycle falls back to
+/// the parents-first order, never traps. Mirrors the TS
+/// `orderBySourceDependency`.
+///
+/// - Parameters:
+///   - base: Pending spawns in parents-first order.
+///   - boards: The user's boards (resolve a stored source id to its series).
+/// - Returns: The same entries, dependency-ordered.
+private func orderBySourceDependency(
+    _ base: [PendingTemplateSpawn],
+    boards: [Board]
+) -> [PendingTemplateSpawn] {
+    let pendingIds = Set(base.map { $0.template.id })
+    var seriesByBoardId: [String: String] = [:]
+    for b in boards {
+        if let series = b.spawnedFromTemplateId, !series.isEmpty { seriesByBoardId[b.id] = series }
+    }
+    var deps: [String: Set<String>] = [:]
+    for p in base {
+        var own = Set<String>()
+        for source in p.template.sources ?? [] where source.kind == .board {
+            if let series = seriesByBoardId[source.sourceId],
+               series != p.template.id, pendingIds.contains(series) {
+                own.insert(series)
+            }
+        }
+        deps[p.template.id] = own
+    }
+    var remaining = base
+    var emitted = Set<String>()
+    var ordered: [PendingTemplateSpawn] = []
+    while !remaining.isEmpty {
+        let pick = remaining.firstIndex { p in
+            (deps[p.template.id] ?? []).allSatisfy { emitted.contains($0) }
+        } ?? 0 // cycle → parents-first fallback
+        let next = remaining.remove(at: pick)
+        emitted.insert(next.template.id)
+        ordered.append(next)
+    }
+    return ordered
 }
 
 /// "<template name> — <window label>" helper.

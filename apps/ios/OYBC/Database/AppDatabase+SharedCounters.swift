@@ -43,8 +43,10 @@ extension AppDatabase {
     ///   - allChangedTaskIds: All task ids that were written in this transaction
     ///     (`[sourceTaskId] + linkedTasks.map { $0.id }`).
     ///   - cascadeOnlyTaskIds: Extra ids whose boards are re-derived but which
-    ///     were NOT written and are NOT credited — undo's frozen rows whose
-    ///     window holds the undone event (`BoardSources.isFrozenRowReachedByEvent`).
+    ///     were NOT written and are NOT credited — frozen rows whose window
+    ///     holds the event this operation wrote (a late log stamped at an
+    ///     ended board's `endDate`) or tombstoned (undo)
+    ///     (`BoardSources.isFrozenRowReachedByEvent`).
     ///   - now: The current ISO8601 timestamp (passed through for consistency).
     /// - Returns: ACTIVE `AffectedBoard` entries for the credit toast.
     private func runSharedCounterCascade(
@@ -163,35 +165,48 @@ extension AppDatabase {
     /// (docs/WINDOWED_COMPLETION.md §Derived-task carve-out,
     /// docs/BOARD_SOURCES.md §Plan B2 notes). A frozen row gets no authored
     /// write, no enqueue and is not credited; the kernel resolves it from the
-    /// root's in-window events, not the latch. An increment / decrement stamps
-    /// its event `now` (after every frozen window), so it cannot change a
-    /// frozen row's completion and the row is not cascaded either; an UNDO
-    /// can (it tombstones an earlier event), so `undoLastCounterLog` still
-    /// cascades — never writes — the frozen rows whose window holds the undone
-    /// event. Hub-linked, indefinite and in-window rows propagate as before.
-    /// Twin of the web `propagateToLinkedRows` read.
+    /// root's in-window events, not the latch.
+    ///
+    /// A frozen row IS still cascaded (never written) when the event this
+    /// operation wrote falls inside its window
+    /// (`BoardSources.isFrozenRowReachedByEvent`): a LATE log made on an
+    /// ended-but-unsealed board is stamped at that board's `endDate`
+    /// (2026-09-24 amendment, `lateLogStampForBoard`), inside the frozen rows
+    /// minted for that board, so their boards' stored stats must re-derive. A
+    /// `now` stamp (hub / counter detail / an open board) reaches no frozen
+    /// row, so this is inert on the normal path. `undoLastCounterLog` applies
+    /// the same reach to the event it tombstones. Hub-linked, indefinite and
+    /// in-window rows propagate as before. Twin of the web
+    /// `propagateToLinkedRows` read.
     ///
     /// - Parameters:
     ///   - db: The caller's write-transaction database.
     ///   - sourceTaskId: The shared-counter root.
+    ///   - reachOccurredAt: The `occurredAt` of the event this operation wrote.
     ///   - now: The operation's ISO8601 timestamp (also the freeze clock).
-    /// - Returns: The linked rows to write, enqueue and cascade.
-    private static func fetchPropagatingLinkedTasks(
+    /// - Returns: `propagating` — the linked rows to write, enqueue and
+    ///   cascade; `reachedFrozenIds` — frozen rows to cascade only.
+    private static func fetchLinkedTasksForLog(
         db: Database,
         sourceTaskId: String,
+        reachOccurredAt: String,
         now: String
-    ) throws -> [Task] {
-        try Task
+    ) throws -> (propagating: [Task], reachedFrozenIds: [String]) {
+        let all = try Task
             .filter(Column("sharedCounterId") == sourceTaskId)
             .filter(Column("isDeleted") == false)
             .fetchAll(db)
-            .filter { !BoardSources.isFrozenDerivedRow($0, now: now) }
+        let propagating = all.filter { !BoardSources.isFrozenDerivedRow($0, now: now) }
+        let reached = all
+            .filter { BoardSources.isFrozenRowReachedByEvent($0, occurredAt: reachOccurredAt, now: now) }
+            .map { $0.id }
+        return (propagating, reached)
     }
 
     /// Increment the shared-counter source task's `currentCount` by `by` (default 1),
     /// then re-derive every live linked task (tasks where `sharedCounterId == sourceTaskId`,
     /// `!isDeleted`, and not a window-stamped derived row whose window has ended —
-    /// see `fetchPropagatingLinkedTasks`) and run the board derivation cascade for
+    /// see `fetchLinkedTasksForLog`) and run the board derivation cascade for
     /// the source AND those linked tasks — all inside a single GRDB write transaction.
     ///
     /// Invariants enforced:
@@ -211,9 +226,20 @@ extension AppDatabase {
     /// - Parameters:
     ///   - sourceTaskId: The id of the source (template) counting task.
     ///   - by: Amount to increment. Must be >= 1.
+    ///   - boardId: The board whose OWN play surface made the log, if any.
+    ///     When given, the event is stamped with that board's late-log stamp
+    ///     (`lateLogStampForBoard` — its `endDate` once its window has ended,
+    ///     2026-09-24 amendment); omitted (hub / counter detail) → `now`. Only
+    ///     `BoardPlayViewModel` passes it. Event provenance `boardId` stays
+    ///     `nil`, as before — only `occurredAt` is clamped. A SEALED board is
+    ///     a full no-op (no event, no write) — a sealed board authors no event.
     /// - Returns: `SharedCounterCreditResult` with the ACTIVE boards holding
     ///   any member task, for use in the P2 "credited" toast.
-    func incrementSharedCounter(sourceTaskId: String, by: Int = 1) throws -> SharedCounterCreditResult {
+    func incrementSharedCounter(
+        sourceTaskId: String,
+        by: Int = 1,
+        boardId: String? = nil
+    ) throws -> SharedCounterCreditResult {
         guard by >= 1 else {
             throw NSError(
                 domain: "AppDatabase.incrementSharedCounter",
@@ -248,6 +274,12 @@ extension AppDatabase {
                         "incrementSharedCounter: task \(sourceTaskId) is a linked derived counter; pass the source (template) task id instead"]
                 )
             }
+
+            // Final-review F5: a SEALED board authors no event (play is
+            // locked; its record is permanent). Mirrors the sealed no-op in
+            // `completeTaskOrchestrated`. Web twin: `incrementSharedCounter`.
+            let logBoard = try boardId.flatMap { try Board.fetchOne(db, key: $0) }
+            if logBoard?.sealedAt != nil { return SharedCounterCreditResult(affectedBoards: []) }
 
             // 2. Compute new source count — NO high-end clamp.
             // P5: `maxCount` may be nil for a goal-less (hub-born) source —
@@ -284,8 +316,12 @@ extension AppDatabase {
             // `source.currentCount` authoritatively above (provably == lifetime
             // event sum), so a restamp would double-bump the version. The event
             // is what makes windowed board reads of the source square correct.
-            // Mirrors `insertIncrementEventRaw(sourceTaskId, by, undefined, now)`.
-            try Self.insertIncrementEventRaw(db: db, taskId: sourceTaskId, delta: by, boardId: nil, now: now)
+            // Stamped `lateLogStampForBoard(boardId, now)` (2026-09-24 amendment).
+            // Mirrors `insertIncrementEventRaw(sourceTaskId, by, undefined, now, occurredAt)`.
+            let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
+            try Self.insertIncrementEventRaw(
+                db: db, taskId: sourceTaskId, delta: by, boardId: nil, now: now, occurredAt: occurredAt
+            )
 
             // Board Sources §Member rules (B2) — the root's event log just
             // moved, so every window-stamped derived counter hanging off it may
@@ -299,7 +335,9 @@ extension AppDatabase {
             try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
 
             // 3. Fetch all linked (derived) tasks for this source.
-            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
+            let (linkedTasks, reachedFrozenIds) = try Self.fetchLinkedTasksForLog(
+                db: db, sourceTaskId: sourceTaskId, reachOccurredAt: occurredAt, now: now
+            )
 
             // 4. Re-derive each linked task via the shared propagation helper
             //    (mirrors `propagateIncrement` in sharedCounter.ts). The helper
@@ -341,6 +379,7 @@ extension AppDatabase {
             let creditBoards = try runSharedCounterCascade(
                 db: db,
                 allChangedTaskIds: allChangedTaskIds,
+                cascadeOnlyTaskIds: reachedFrozenIds,
                 now: now
             )
             return SharedCounterCreditResult(affectedBoards: creditBoards)
@@ -361,9 +400,18 @@ extension AppDatabase {
     /// - Parameters:
     ///   - sourceTaskId: The id of the source (template) counting task.
     ///   - by: Amount to decrement. Must be >= 1.
+    ///   - boardId: The board whose OWN play surface made the log, if any —
+    ///     the event is stamped with its late-log stamp (see
+    ///     `incrementSharedCounter`); omitted → `now`. A SEALED board is a
+    ///     full no-op; otherwise `eff` is clamped to that board's WINDOW count
+    ///     (`[startDate, endDate]`), not just the lifetime count.
     /// - Returns: `SharedCounterDecrementResult` with affected boards and the
     ///   actual delta applied (0 on no-op).
-    func decrementSharedCounter(sourceTaskId: String, by: Int = 1) throws -> SharedCounterDecrementResult {
+    func decrementSharedCounter(
+        sourceTaskId: String,
+        by: Int = 1,
+        boardId: String? = nil
+    ) throws -> SharedCounterDecrementResult {
         guard by >= 1 else {
             throw NSError(
                 domain: "AppDatabase.decrementSharedCounter",
@@ -400,9 +448,36 @@ extension AppDatabase {
                 )
             }
 
-            // 2. Clamp: eff = min(by, source.currentCount). No-op if 0.
+            // Final-review F5: a SEALED board authors no event (play is
+            // locked; its record is permanent). Web twin: `decrementSharedCounter`.
+            let logBoard = try boardId.flatMap { try Board.fetchOne(db, key: $0) }
+            if logBoard?.sealedAt != nil {
+                return SharedCounterDecrementResult(affectedBoards: [], effectiveDelta: 0)
+            }
+
+            // 2. Clamp: eff = min(by, available). No-op if 0.
+            // Final-review F6: from a board, `available` is that board's
+            // WINDOW count (`[startDate, endDate]`, what its cell shows) — the
+            // negative event is stamped inside that window, so taking more
+            // than the window holds would bleed into overlapping windows (e.g.
+            // the monthly containing that day). Still capped by the lifetime
+            // count so the lifetime sum stays >= 0.
             let sourceCurrentCount = source.currentCount ?? 0
-            let eff = min(by, sourceCurrentCount)
+            var available = sourceCurrentCount
+            if let logBoard {
+                let events = try TaskEvent
+                    .filter(Column("taskId") == sourceTaskId)
+                    .fetchAll(db)
+                    .filter { !$0.isDeleted }
+                let windowCount = resolveTaskWindowState(
+                    task: source,
+                    events: events,
+                    windowStart: logBoard.startDate,
+                    windowEnd: boardWindowEnd(logBoard)
+                ).count
+                available = min(sourceCurrentCount, max(0, windowCount))
+            }
+            let eff = min(by, available)
             guard eff > 0 else {
                 return SharedCounterDecrementResult(affectedBoards: [], effectiveDelta: 0)
             }
@@ -424,11 +499,13 @@ extension AppDatabase {
 
             // Windowed Completion — append a -eff increment event on the SOURCE
             // only (board-context decrement: a signed negative delta, gated by
-            // the `eff = min(by, currentCount)` clamp above so the lifetime sum
-            // can't go negative). RAW: no cache restamp — the engine wrote
+            // the window/lifetime clamp above so neither sum can go negative). RAW: no cache restamp — the engine wrote
             // `source.currentCount` authoritatively. Mirrors
             // `insertIncrementEventRaw(sourceTaskId, -eff, undefined, now)`.
-            try Self.insertIncrementEventRaw(db: db, taskId: sourceTaskId, delta: -eff, boardId: nil, now: now)
+            let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
+            try Self.insertIncrementEventRaw(
+                db: db, taskId: sourceTaskId, delta: -eff, boardId: nil, now: now, occurredAt: occurredAt
+            )
 
             // Board Sources §Member rules (B2) — same non-authored baseline
             // refresh as `incrementSharedCounter`, and for the same reason:
@@ -437,7 +514,9 @@ extension AppDatabase {
             try Self.refreshDerivedBaselines(db: db, rootTaskId: sourceTaskId)
 
             // 3. Fetch all linked (derived) tasks for this source.
-            let linkedTasks = try Self.fetchPropagatingLinkedTasks(db: db, sourceTaskId: sourceTaskId, now: now)
+            let (linkedTasks, reachedFrozenIds) = try Self.fetchLinkedTasksForLog(
+                db: db, sourceTaskId: sourceTaskId, reachOccurredAt: occurredAt, now: now
+            )
 
             // 4. Re-derive each linked task via the shared propagation helper
             //    (same fan-out as increment; mirrors `propagateIncrement` in
@@ -482,6 +561,7 @@ extension AppDatabase {
             let creditBoards = try runSharedCounterCascade(
                 db: db,
                 allChangedTaskIds: allChangedTaskIds,
+                cascadeOnlyTaskIds: reachedFrozenIds,
                 now: now
             )
             return SharedCounterDecrementResult(affectedBoards: creditBoards, effectiveDelta: eff)
@@ -636,7 +716,7 @@ extension AppDatabase {
 
             // 6. Find all linked (derived) tasks and propagate, exactly like
             //    increment/decrement. One fetch serves both step 6 (the
-            //    propagating subset, `fetchPropagatingLinkedTasks`' filter)
+            //    propagating subset, `fetchLinkedTasksForLog`' filter)
             //    and step 7 (the frozen rows the undo reached — never in the
             //    propagating subset, so never written below).
             let allLinkedTasks = try Task

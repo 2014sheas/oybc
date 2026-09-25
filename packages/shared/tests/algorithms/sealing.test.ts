@@ -136,8 +136,9 @@ import {
 
 describe('sealed-window tombstone immunity', () => {
   const sealedBoards = [
+    // endDate absent → open-ended → the bound is sealedAt.
     { startDate: '2026-07-01T00:00:00.000Z', sealedAt: '2026-07-02T06:00:00.000Z' },
-    { startDate: '2026-07-05T00:00:00.000Z', sealedAt: '2026-07-06T06:00:00.000Z' },
+    { startDate: '2026-07-05T00:00:00.000Z', endDate: null, sealedAt: '2026-07-06T06:00:00.000Z' },
   ];
   const windows = buildSealImmuneWindows(sealedBoards);
 
@@ -145,11 +146,11 @@ describe('sealed-window tombstone immunity', () => {
     expect(windows).toEqual([
       {
         startMs: new Date('2026-07-01T00:00:00.000Z').getTime(),
-        sealedAtMs: new Date('2026-07-02T06:00:00.000Z').getTime(),
+        endMs: new Date('2026-07-02T06:00:00.000Z').getTime(),
       },
       {
         startMs: new Date('2026-07-05T00:00:00.000Z').getTime(),
-        sealedAtMs: new Date('2026-07-06T06:00:00.000Z').getTime(),
+        endMs: new Date('2026-07-06T06:00:00.000Z').getTime(),
       },
     ]);
   });
@@ -168,6 +169,49 @@ describe('sealed-window tombstone immunity', () => {
     expect(isOccurredAtSealImmune('2026-06-30T23:59:59.999Z', windows)).toBe(false); // pre-window
     expect(isOccurredAtSealImmune('2026-07-02T06:00:00.001Z', windows)).toBe(false); // post-seal overtime
     expect(isOccurredAtSealImmune('2026-07-04T12:00:00.000Z', windows)).toBe(false); // between windows
+  });
+
+  describe('F1: bound = min(endDate, sealedAt) — the set that built the sealed record', () => {
+    const ended = buildSealImmuneWindows([
+      {
+        startDate: '2026-09-23T00:00:00.000Z',
+        endDate: '2026-09-23T23:59:59.999Z',
+        sealedAt: '2026-09-24T07:00:00.000Z',
+      },
+    ]);
+
+    it('clamps the upper bound to endDate when the seal lands later', () => {
+      expect(ended).toEqual([
+        {
+          startMs: new Date('2026-09-23T00:00:00.000Z').getTime(),
+          endMs: new Date('2026-09-23T23:59:59.999Z').getTime(),
+        },
+      ]);
+    });
+
+    it('an overtime-gap event (endDate < t <= sealedAt) is NOT immune', () => {
+      expect(isOccurredAtSealImmune('2026-09-24T01:00:00.000Z', ended)).toBe(false);
+      expect(isOccurredAtSealImmune('2026-09-24T07:00:00.000Z', ended)).toBe(false); // == sealedAt
+    });
+
+    it('an event at t <= endDate stays immune', () => {
+      expect(isOccurredAtSealImmune('2026-09-23T23:59:59.999Z', ended)).toBe(true); // == endDate
+      expect(isOccurredAtSealImmune('2026-09-23T12:00:00.000Z', ended)).toBe(true);
+    });
+
+    it('a seal before endDate keeps sealedAt as the bound', () => {
+      const early = buildSealImmuneWindows([
+        { startDate: '2026-09-23T00:00:00.000Z', endDate: '2026-09-23T23:59:59.999Z', sealedAt: '2026-09-23T18:00:00.000Z' },
+      ]);
+      expect(early[0].endMs).toBe(new Date('2026-09-23T18:00:00.000Z').getTime());
+    });
+
+    it('an unparseable endDate is open-ended (bound = sealedAt)', () => {
+      const bad = buildSealImmuneWindows([
+        { startDate: '2026-09-23T00:00:00.000Z', endDate: 'not-a-date', sealedAt: '2026-09-24T07:00:00.000Z' },
+      ]);
+      expect(bad[0].endMs).toBe(new Date('2026-09-24T07:00:00.000Z').getTime());
+    });
   });
 
   it('no sealed boards → nothing is immune', () => {

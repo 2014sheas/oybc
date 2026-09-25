@@ -353,6 +353,30 @@ describe('prefillRemainingTargets (RC4 — one-off remaining prefill)', () => {
     expect(settled).toBe(true);
   });
 
+  // Owner ruling 2026-09-24 — a source with no board open resolves empty; it
+  // must NOT be marked seeded, so it still prefills once it resolves live.
+  it('a no-board-for-window supply is left UNSETTLED, then seeds when it resolves live', () => {
+    const sources = [makeSource({ sourceId: 'b1' })];
+    const pending = prefillRemainingTargets(
+      sources,
+      'b1',
+      {
+        displayName: 'Weekly',
+        rawSupplyTaskIds: [],
+        doneTaskIds: new Set(),
+        noBoardForWindow: true,
+      },
+      tasksById,
+      weeklyTarget,
+    );
+    expect(pending.settled).toBe(false);
+    expect(pending.sources).toBe(sources);
+
+    const live = prefillRemainingTargets(pending.sources, 'b1', supply(), tasksById, weeklyTarget);
+    expect(live.settled).toBe(true);
+    expect(memberRuleFor(live.sources[0], 'c10').target).toBe(7);
+  });
+
   it('pro-rates onto a SHORTER window (owner ruling 2026-09-21) — the reported bug', () => {
     // "Run 30 Miles a Month" pulled from a monthly board onto a ONE-OFF daily
     // board: remaining 30, then ceil(30 × 1 / 30) = 1. Before the ruling this

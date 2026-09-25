@@ -462,67 +462,63 @@ export function isSourceSupplyTask(task: Pick<Task, 'type'>): boolean {
   return task.type !== TaskType.ACHIEVEMENT;
 }
 
-/** Days a finished board stays offerable as a wizard source. */
-export const SOURCE_BOARD_LOOKBACK_DAYS = 30;
+/**
+ * The copy a board-kind source shows when it resolves to no board for the
+ * window being built (a series whose instance for that window doesn't
+ * exist yet, or a one-off board that has ended or been sealed) — the
+ * wizard's source-row subtitle and the spawn-provenance note both read it.
+ * Swift twin: `BoardSources.noBoardForWindowNote`.
+ */
+export const NO_BOARD_FOR_WINDOW_NOTE = 'No board for this window yet';
 
 /** The board fields {@link isEligibleSourceBoard} reads. */
 export type SourceBoardCandidate = Pick<
   Board,
-  'status' | 'endDate' | 'completedAt' | 'isDeleted'
+  'status' | 'startDate' | 'endDate' | 'sealedAt' | 'isDeleted'
 >;
 
 /**
- * True when a board may be offered as a source in the board wizard.
+ * True when a board may be offered as a source in the board wizard (the
+ * "Add from a pool or board" Sources sheet) and may SUPPLY squares to a
+ * stored source.
  *
- * Sources exist so a new board can be built from what you were just
- * doing — "build October's from September's". That makes recency, not
- * status, the thing that matters: a board finished last week is a useful
- * source; one from eight months ago is clutter.
+ * Owner ruling 2026-09-24 (supersedes #482's 30-day lookback): "There is
+ * no REAL use case for ended boards as sources." A board is eligible only
+ * while its window is OPEN:
  *
- * Previously only COMPLETED boards were recency-bounded and ACTIVE boards
- * were admitted unconditionally. But a board whose window closes without
- * every square filled STAYS `ACTIVE` (it only gains `sealedAt`), so every
- * unfinished core board a user ever had remained on offer forever. Both
- * statuses are now bounded by the same window.
+ * - not deleted, not a draft, not archived (ACTIVE or COMPLETED);
+ * - not sealed — a sealed board is a permanent record;
+ * - STARTED: `startDate <= now` (final-review F7 — a future board is not
+ *   open, so the Sources sheet equals series binding); an unparseable
+ *   `startDate` fails open;
+ * - no `endDate` (an INDEFINITE board never ends), an unparseable
+ *   `endDate` (fail open — never hide a board over a malformed row), or
+ *   `endDate >= now`.
  *
- * Drafts and archived boards are never sources.
+ * `startDate`/`endDate` are LOCAL-wall-clock ISO strings; they are compared
+ * by parsed milliseconds against `now`, never as strings against a UTC
+ * `toISOString()`.
  *
  * Mirrors the iOS `BoardSources.isEligibleSourceBoard` in
- * `Helpers/BoardSources.swift` — keep in lockstep.
+ * `Helpers/BoardSources.swift` — keep in lockstep (pinned by
+ * `eligibilityVectors` in `tests/fixtures/boardSourceVectors.json`).
  *
  * @param board - the candidate board
- * @param now - the instant to judge recency against
- * @param lookbackDays - how long a finished board stays offerable
- * @returns whether the board may be offered as a source
+ * @param now - the instant to judge "has the window started / ended" against
+ * @returns whether the board may be offered as / supply a source
  */
-export function isEligibleSourceBoard(
-  board: SourceBoardCandidate,
-  now: Date,
-  lookbackDays: number = SOURCE_BOARD_LOOKBACK_DAYS,
-): boolean {
+export function isEligibleSourceBoard(board: SourceBoardCandidate, now: Date): boolean {
   if (board.isDeleted) return false;
-
-  const cutoff = now.getTime() - lookbackDays * 24 * 60 * 60 * 1000;
-
-  if (board.status === BoardStatus.COMPLETED) {
-    if (!board.completedAt) return false;
-    const ts = Date.parse(board.completedAt);
-    return !Number.isNaN(ts) && ts >= cutoff;
+  if (board.status !== BoardStatus.ACTIVE && board.status !== BoardStatus.COMPLETED) {
+    return false;
   }
-
-  if (board.status !== BoardStatus.ACTIVE) return false;
-
-  // An ACTIVE board with no end date is INDEFINITE — its window never
-  // closes, so it is always a live source.
+  if (board.sealedAt) return false;
+  const startsAt = Date.parse(board.startDate);
+  if (!Number.isNaN(startsAt) && startsAt > now.getTime()) return false; // future: not open
   if (!board.endDate) return true;
-
   const endsAt = Date.parse(board.endDate);
-  if (Number.isNaN(endsAt)) return true; // unparseable: fail open, stay offerable
-  if (endsAt >= now.getTime()) return true; // window still open
-
-  // Window closed without the board being marked complete — offer it for
-  // the same lookback a completed board gets, then let it go.
-  return endsAt >= cutoff;
+  if (Number.isNaN(endsAt)) return true; // unparseable: fail open
+  return endsAt >= now.getTime();
 }
 
 /** The board fields {@link pickSeriesInstance} reads. */
@@ -562,6 +558,46 @@ export function pickSeriesInstance<T extends SeriesInstanceCandidate>(
     }
   }
   return best;
+}
+
+/** The board fields {@link pickOpenSeriesInstance} reads. */
+export type OpenSeriesCandidate = Pick<
+  Board,
+  'id' | 'startDate' | 'endDate' | 'status' | 'sealedAt' | 'isDeleted'
+>;
+
+/**
+ * Series binding (owner ruling 2026-09-24, amended): the instance of a
+ * recurring series that supplies a pulled source is the one OPEN NOW —
+ * exactly what the "Add from a pool or board" sheet shows. Open = eligible
+ * ({@link isEligibleSourceBoard}: not deleted/draft/archived, not sealed,
+ * window STARTED — `startDate <= now`, an unparseable `startDate` fails
+ * open — and not ended). Several open → the
+ * {@link pickSeriesInstance} tie-break (latest `startDate`, then lowest
+ * `id`). None → `null`: the caller maps it to "No board for this window
+ * yet" (no supply, capacity 0) — never a fallback to an ended or future
+ * instance.
+ *
+ * There is deliberately NO containment check against the new board's
+ * window: a monthly board built mid-month from a weekly series pulls the
+ * CURRENT week, not the ended week that contains the 1st.
+ *
+ * Dates are compared as parsed instants against `now`, never as strings
+ * against a UTC `toISOString()`.
+ *
+ * Mirrors the iOS `BoardSources.pickOpenSeriesInstance` in
+ * `Helpers/BoardSources.swift` — keep in lockstep (pinned by
+ * `openSeriesInstanceVectors` in `tests/fixtures/boardSourceVectors.json`).
+ *
+ * @param candidates - the series' instances (any order, any state)
+ * @param now - the instant "open" is judged against
+ * @returns the open instance, or `null` when none is open
+ */
+export function pickOpenSeriesInstance<T extends OpenSeriesCandidate>(
+  candidates: readonly T[],
+  now: Date,
+): T | null {
+  return pickSeriesInstance(candidates.filter((c) => isEligibleSourceBoard(c, now)));
 }
 
 /**

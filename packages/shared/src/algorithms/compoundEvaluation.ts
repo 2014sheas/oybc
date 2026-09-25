@@ -75,7 +75,12 @@ function resolvePrimitiveChildState(
   // propagation-stamped lifetime cache — they don't own events.
   if (!isEventOwningTask(child)) return child.isCompleted;
   const events = windowContext.eventsByTaskId[child.id] ?? [];
-  return resolveTaskWindowState(child, events, windowContext.windowStart).isCompleted;
+  return resolveTaskWindowState(
+    child,
+    events,
+    windowContext.windowStart,
+    windowContext.windowEnd,
+  ).isCompleted;
 }
 
 function evaluateCompoundInner(

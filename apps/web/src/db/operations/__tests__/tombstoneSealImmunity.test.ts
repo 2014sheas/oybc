@@ -23,8 +23,8 @@ import {
  * (docs/WINDOWED_COMPLETION.md §Write paths → "Sealed-window immunity" /
  * Decision 9) + the closing-out prompt eligibility + edit-gating predicate.
  *
- * An event whose `occurredAt` falls inside `[startDate, sealedAt]` of a sealed
- * board that places the task can NEVER be tombstoned — history stays history.
+ * An event whose `occurredAt` falls inside `[startDate, min(endDate, sealedAt)]`
+ * of a sealed board that places the task can NEVER be tombstoned — history stays history.
  * The library un-complete affordance reads `isUncompleteBlockedBySeal` to
  * disable-with-explanation when a task is green only via such an event.
  */
@@ -35,6 +35,7 @@ const END = '2026-07-02T00:00:00.000Z';
 const SEALED_AT = '2026-07-02T06:00:00.000Z';
 const IN_SEALED_WINDOW = '2026-07-01T12:00:00.000Z'; // inside [START, SEALED_AT]
 const POST_SEAL = '2026-07-02T12:00:00.000Z'; // after SEALED_AT (overtime → tombstonable)
+const OVERTIME_GAP = '2026-07-02T01:00:00.000Z'; // END < t <= SEALED_AT → next window's, not immune (F1)
 
 const TASK_A = '10000000-0000-4000-8000-000000000001';
 const SEALED_BOARD = '20000000-0000-4000-8000-000000000001';
@@ -130,7 +131,7 @@ describe('tombstoneWindowCompletions — sealed-window immunity', () => {
     await db.taskEvents.add(completionEvent('e-immune', IN_SEALED_WINDOW));
 
     // Un-complete over the whole lifetime window (windowStart = START).
-    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z');
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', null);
 
     const ev = await db.taskEvents.get('e-immune');
     expect(ev?.isDeleted).toBe(false); // immune — history stays
@@ -145,10 +146,50 @@ describe('tombstoneWindowCompletions — sealed-window immunity', () => {
     await db.taskEvents.add(completionEvent('e-immune', IN_SEALED_WINDOW));
     await db.taskEvents.add(completionEvent('e-open', POST_SEAL)); // outside the sealed window
 
-    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z');
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', null);
 
     expect((await db.taskEvents.get('e-immune'))?.isDeleted).toBe(false);
     expect((await db.taskEvents.get('e-open'))?.isDeleted).toBe(true);
+  });
+
+  it('F1: an overtime-gap event (endDate < t <= sealedAt) is NOT immune — it belongs to the next window', async () => {
+    // The sealed record is [startDate, min(endDate, sealedAt)], so the event at
+    // 01:00 on the next day (after END, before SEALED_AT) never counted on the
+    // sealed board. Un-completing it on the NEXT board must tombstone it.
+    await seedNormalTask(TASK_A);
+    await seedBoard(SEALED_BOARD, { sealedAt: SEALED_AT });
+    await placeTask(SEALED_BOARD, TASK_A);
+    await seedBoard(LIVE_BOARD, { startDate: END, endDate: '2026-07-02T23:59:59.999Z' });
+    await placeTask(LIVE_BOARD, TASK_A);
+    await db.taskEvents.add(completionEvent('e-gap', OVERTIME_GAP));
+
+    await tombstoneWindowCompletions(TASK_A, END, '2026-07-02T08:00:00.000Z', '2026-07-02T23:59:59.999Z');
+
+    expect((await db.taskEvents.get('e-gap'))?.isDeleted).toBe(true);
+  });
+
+  it('F1: an event exactly at endDate stays immune (inclusive upper bound)', async () => {
+    await seedNormalTask(TASK_A);
+    await seedBoard(SEALED_BOARD, { sealedAt: SEALED_AT });
+    await placeTask(SEALED_BOARD, TASK_A);
+    await db.taskEvents.add(completionEvent('e-end', END));
+
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', null);
+
+    expect((await db.taskEvents.get('e-end'))?.isDeleted).toBe(false);
+  });
+
+  it('F11: an unparseable windowEnd fails open — tombstones everything from windowStart on (iOS parity)', async () => {
+    await seedNormalTask(TASK_A);
+    await seedBoard(LIVE_BOARD);
+    await placeTask(LIVE_BOARD, TASK_A);
+    await db.taskEvents.add(completionEvent('e-in', IN_SEALED_WINDOW));
+    await db.taskEvents.add(completionEvent('e-later', POST_SEAL));
+
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', 'not-a-date');
+
+    expect((await db.taskEvents.get('e-in'))?.isDeleted).toBe(true);
+    expect((await db.taskEvents.get('e-later'))?.isDeleted).toBe(true);
   });
 
   it('tombstones normally when the task is on no sealed board', async () => {
@@ -157,7 +198,7 @@ describe('tombstoneWindowCompletions — sealed-window immunity', () => {
     await placeTask(LIVE_BOARD, TASK_A);
     await db.taskEvents.add(completionEvent('e1', IN_SEALED_WINDOW));
 
-    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z');
+    await tombstoneWindowCompletions(TASK_A, START, '2026-07-03T00:00:00.000Z', null);
 
     expect((await db.taskEvents.get('e1'))?.isDeleted).toBe(true);
     expect((await db.tasks.get(TASK_A))?.isCompleted).toBe(false);

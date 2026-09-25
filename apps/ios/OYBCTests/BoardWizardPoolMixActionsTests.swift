@@ -11,6 +11,19 @@ import XCTest
 /// resurrection), which several tests here pin end-to-end.
 final class BoardWizardPoolMixActionsTests: XCTestCase {
 
+    /// An ENDED board is never a source (owner ruling 2026-09-24), judged
+    /// against the wall clock by default. These fixtures live on fixed dates,
+    /// so the source clock is pinned inside the 2026-01-01 source board' window.
+    override func setUp() {
+        super.setUp()
+        AppDatabase.sourceClock = { parseISO8601Date("2026-01-01T00:00:00.000Z")! }
+    }
+
+    override func tearDown() {
+        AppDatabase.sourceClock = { Date() }
+        super.tearDown()
+    }
+
     // MARK: - Fixtures
 
     private func makeVM() -> BoardWizardViewModel {

@@ -1,5 +1,6 @@
 import {
   CenterSquareType,
+  boardWindowEnd,
   computeBoardGrid,
   resolvePlacements,
   type Board,
@@ -80,7 +81,11 @@ export function buildBoardPreviewCells(
   const size = board.boardSize;
   const isSealed = board.sealedAt != null;
   const sealedCellSet = new Set<number>(isSealed ? (board.sealedCompletedCells ?? []) : []);
-  const windowContext: SquareWindowContext = { windowStart: board.startDate, eventsByTaskId };
+  const windowContext: SquareWindowContext = {
+    windowStart: board.startDate,
+    windowEnd: boardWindowEnd(board),
+    eventsByTaskId,
+  };
 
   const btByPosition: Record<string, BoardTask> = {};
   // Resolve through the PR-2 winner rule (matches the iOS twin + every other

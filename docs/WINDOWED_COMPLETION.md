@@ -16,6 +16,21 @@
 > carve-out, locally re-derived seal snapshots, window-scoped undo with sealed-window
 > immunity, timeframe-scaled backstop, backfill timestamp/id fixes, batched pull
 > recompute, honest upgrade-visibility section, sealed × Board-Edit gating.
+>
+> **Amended 2026-09-24 (root-square end bound — PR #507, `fix/root-window-end-bound`):**
+> Decision 1 now bounds a live board at BOTH ends. A board's root squares
+> (event-owning NORMAL / plain COUNTING tasks, and compound children resolved
+> through the board's context) count only events inside the board's own window
+> `[startDate, endDate]` — both bounds inclusive, compared by parsed instant;
+> `endDate == null` = open-ended; sealing narrows the upper bound further to
+> `min(endDate, sealedAt)`. A log made from an ended-but-unsealed board's own
+> play surface is stamped `occurredAt = min(now, endDate)`, so it counts for
+> that board and **not** for the next window's board. The pre-amendment
+> "overtime counts for both windows" accepted edge is gone — see
+> [§Overtime attribution](#overtime-attribution-amended-2026-09-24). The
+> original start-bound-only text is kept below only where marked as history.
+> Companion ruling (same train): ended boards are never Board Sources
+> (`BOARD_SOURCES.md` §Boards as sources).
 
 ## Problem
 
@@ -48,7 +63,7 @@ evaluation ("spawns within *this placement's* window").
 
 | # | Decision | Choice |
 | - | -------- | ------ |
-| 1 | Past windows freeze | **Yes — boards seal after their window ends**, with a close-out prompt (not a hard cutoff at `endDate`) |
+| 1 | Past windows freeze | **Yes — boards seal after their window ends**, with a close-out prompt (not a hard cutoff on *logging* at `endDate`). **Amended 2026-09-24:** the live evaluation bound is the board's own `[startDate, endDate]` (inclusive both ends); sealing narrows it further to `min(endDate, sealedAt)`; a log made from an ended-but-unsealed board's own surface is stamped at `endDate` (`min(now, endDate)`) so it lands in that board's window |
 | 2 | Architecture | **Full event log** (`task_events` collection), not latest-timestamp-only, not per-spawn task clones |
 | 3 | v1 scope | **Normal AND counting tasks** both event-sourced in v1 (compound derives from children; achievement derives from board state — neither needs events) |
 | 4 | Event mutation model | **Soft-deletable rows synced with existing per-row LWW** (like `compound_children`) — NOT pure append-only with compensating events. Union by id, tombstone = undo, zero new sync machinery |
@@ -56,7 +71,7 @@ evaluation ("spawns within *this placement's* window").
 | 6 | Derived shared counters | **Unchanged in v1** — baseline-based display everywhere; derived tasks are fully carved out of events/backfill/recompute (see [§Derived-task carve-out](#derived-task-carve-out)) |
 | 7 | Doc home | This file; pointers from ARCHITECTURE.md + CLAUDE.md when implementation starts |
 | 8 | Seal snapshots are re-derivable | Sealed board snapshots are **locally re-derived pure functions of the converged in-window event union** — never LWW-raced between devices (review finding C2) |
-| 9 | Undo is window-scoped | Un-complete tombstones **all in-window** events for the viewed context; events inside a sealed board's window are **immune to tombstoning** (review findings M4 + C2 interaction) |
+| 9 | Undo is window-scoped | Un-complete tombstones **all in-window** events for the viewed context; events inside a sealed board's window `[startDate, min(endDate, sealedAt)]` are **immune to tombstoning** (review findings M4 + C2 interaction; end bound amended 2026-09-24) |
 
 ## Goals / non-goals
 
@@ -124,23 +139,28 @@ tasks are rejected at the schema boundary — their state is derived elsewhere.
 
 ### Semantics per task type
 
-Evaluation windows have **a start bound only**. A live board counts events in
-`[board.startDate, ∞)`; the upper bound is enforced by *sealing*, not by
-filtering. (This deliberately sidesteps `endDate` comparisons — and their
-local-ISO vs UTC-`Z` encoding hazards — in the evaluation hot path entirely.)
-**Exception (2026-09-23):** a *window-stamped derived counter* is resolved
-against its own `[startDate, endDate]` in the kernel (see
-[§Derived-task carve-out](#derived-task-carve-out)), so that one branch does
-compare `endDate`; row dates are local-ISO and parse in the evaluating
-device's time zone — the same caveat the `startDate` lower bound already
-carries everywhere.
+Evaluation windows are **bounded at both ends** (amended 2026-09-24). A live
+board counts events in its own window `[board.startDate, board.endDate]` —
+both bounds inclusive, compared by **parsed instant** (board dates are
+local-ISO and parse in the evaluating device's time zone; event timestamps are
+UTC ISO; never a string compare). `endDate == null` (an indefinite board) is
+open-ended. A sealed board's upper bound narrows further to
+`min(endDate, sealedAt)` (see [§Seal snapshots](#seal-snapshots-re-derive-from-the-event-union-review-finding-c2)).
+*History:* until 2026-09-24 windows had a start bound only (`[startDate, ∞)`,
+the upper bound enforced by sealing), which let a log made in one board's
+post-`endDate` overtime also complete the NEXT window's square, and let an
+ended board's root square pick up activity logged after it ended (the
+root-square counter bug). A *window-stamped derived counter* was already
+resolved against its own `[startDate, endDate]` (2026-09-23, see
+[§Derived-task carve-out](#derived-task-carve-out)); root squares now follow
+the same inclusive-both-ends convention.
 
 | Type | State for board B (live) | Notes |
 | ---- | ------------------------ | ----- |
-| Normal | complete iff a non-deleted `completion` event exists with `occurredAt >= B.startDate` | |
-| Counting (plain / source) | `windowCount = max(0, Σ delta of non-deleted increments with occurredAt >= B.startDate)`; complete iff `windowCount >= maxCount` | Low-end clamp only — **overshoot invariant preserved**, sums are never high-clamped |
+| Normal | complete iff a non-deleted `completion` event exists with `occurredAt` in `[B.startDate, B.endDate]` | `B.endDate == null` → no upper bound |
+| Counting (plain / source) | `windowCount = max(0, Σ delta of non-deleted increments with occurredAt in [B.startDate, B.endDate])`; complete iff `windowCount >= maxCount` | Low-end clamp only — **overshoot invariant preserved**, sums are never high-clamped |
 | Counting (**derived**, `sharedCounterId` set) | hub-linked (no `startDate`): **unchanged from today** — the propagation-stamped cache, NOT windowed, NOT event-owning. **Window-stamped** (`startDate` set, wizard-born): complete iff `max(0, Σ delta of the ROOT's non-deleted increments with occurredAt in [row.startDate, row.endDate]) >= maxCount` | See [§Derived-task carve-out](#derived-task-carve-out) (rule 4, amended 2026-09-23) |
-| Compound | derived from children as today, but child state is resolved **against the host board's window** | `evaluateCompound` gains a window-context parameter; nested compounds inherit the same host window; derived-counting children resolve via the carve-out row above |
+| Compound | derived from children as today, but child state is resolved **against the host board's window** `[startDate, endDate]` | `evaluateCompound` takes a `CompoundWindowContext { windowStart, windowEnd, eventsByTaskId }` (`windowEnd` required, `null` = open-ended); nested compounds inherit the same host window; derived-counting children resolve via the carve-out row above |
 | Achievement | unchanged (reads referenced board / spawn-set state) | Sealing makes watched historical state *more* stable |
 
 The same task on two live boards can legitimately show different states: "Drink 8
@@ -155,13 +175,19 @@ resolveTaskWindowState(
   task: Task,                   // must be an event-owning task (see Zod rule); callers
                                 // branch derived/compound/achievement BEFORE calling
   events: TaskEvent[],          // this task's non-deleted events (caller pre-groups)
-  windowStart: string | null,   // null = lifetime (library surfaces, indefinite semantics)
+  windowStart: string | null,   // null = lifetime (library surfaces)
+  windowEnd: string | null,     // inclusive upper bound; null = open-ended
 ): { isCompleted: boolean; count: number }
+
+boardWindowEnd(board): string | null          // = board.endDate ?? null
+lateLogOccurredAt(board, nowIso): string      // = min(now, endDate) — see §Write paths
 ```
 
-`isBoardIndefinite()` boards use `windowStart = board.startDate` like any other
-board (their window is `[startDate, ∞)` and they never seal — behavior is
-continuous with today's).
+Board surfaces pass `windowStart = board.startDate, windowEnd = boardWindowEnd(board)`
+(the derivation pass, compound contexts and every render adapter). Library
+surfaces pass `null, null` (lifetime). `isBoardIndefinite()` boards have no
+`endDate`, so their window is `[startDate, ∞)` and they never seal — the only
+boards still open-ended.
 
 ### Derived-task carve-out
 
@@ -209,9 +235,10 @@ sealed board re-derived differently on each device (audit 2026-09-23 finding
 the converged in-window root-event union like every other sealed cell, and a
 late in-window root event re-derives every sealed board placing a derived row
 linked to that root (`reDeriveSealedBoardsForTasks` ↔ `reDeriveSealedBoards`
-expand a changed root id to its window-stamped rows). Unlike a plain counting
-square, a derived cell ignores root events logged in its board's
-post-`endDate` overtime — its window is the row's own stamped window. Context
+expand a changed root id to its window-stamped rows). A derived cell ignores
+root events logged after its row's `endDate` — its window is the row's own
+stamped window (since the 2026-09-24 amendment a plain counting root square
+is end-bound the same way, at its board's `endDate`). Context
 builders must therefore keep the workspace-wide event map: the root is
 usually not placed. A context-less (lifetime) resolution is the only place the
 latch still decides.
@@ -229,8 +256,15 @@ window has ended is frozen — `isFrozenDerivedRow(row, now)` (shared
 with `now` strictly after its `endDate` (inclusive, `isWithinTimeframe`
 convention) gets no authored write, no enqueue and no credit on increment /
 decrement / undo. The precise completion statement: an increment or decrement
-stamps its new event `now`, after every frozen window, so it cannot change a
-frozen row's kernel sum and the row is also left out of the cascade. An
+made off-board (Counters hub, counter detail, library) stamps its new event
+`now`, after every frozen window, so it cannot change a frozen row's kernel
+sum and the row is also left out of the cascade. One made from an
+ended-but-unsealed board's own surface (`incrementSharedCounter` /
+`decrementSharedCounter` with that `boardId`) is stamped at the board's
+`endDate` (2026-09-24 late-log rule), which CAN fall inside that board's
+frozen rows' windows — so those rows are reached cascade-only (no write, no
+enqueue), exactly like the undo case below (`propagateToLinkedRows`'s
+`reachOccurredAt` ↔ the iOS twin). An
 **undo** can — it tombstones an EARLIER event whose `occurredAt` may lie
 inside a frozen row's window (log at 23:59:58, undo at 00:00:02) — so undo
 additionally cascades, cascade-only (still no write / enqueue / credit), the
@@ -279,26 +313,62 @@ Kept, still synced, stamped transactionally on every event write — but demoted
 ### Write paths (single choke points, as today)
 
 - **Complete** (board square, compound child sheet, library): append `completion`
-  event (`occurredAt = now`, `boardId` = context board if any) → stamp caches →
+  event (`occurredAt = min(now, endDate)` from a board context — see the late-log
+  bullet below — else `now`; `boardId` = context board if any) → stamp caches →
   derivation pass over affected live boards. Completing an already-lifetime-complete
   task from a *new* window appends a new event — this is the "re-complete"
   gesture, and it increments `totalCompletions`.
+- **Late logs are stamped into the board they were made on** (amended
+  2026-09-24). A log made from an **ended-but-unsealed** board's OWN play
+  surface — normal tap, counting tap, shared-counter increment / decrement
+  passed that `boardId`, compound-child fallback — is stamped
+  `occurredAt = min(now, endDate)` via the shared pure `lateLogOccurredAt(board, nowIso)`
+  (`taskEvents.ts` ↔ `Helpers/TaskEvents.swift`) and the DB helper
+  `lateLogStampForBoard(boardId, now)` (web `db/operations/taskEvents.ts` ↔
+  iOS `AppDatabase+TaskEvents.swift`). It therefore counts for that board and
+  NOT for the next window's board. Comparison is by parsed instant; the stamp
+  is re-encoded as a UTC ISO event timestamp; an unparseable `endDate` fails
+  open to `now`. Logs made **elsewhere** — the library, Task Detail, the
+  Counters hub / counter detail — carry no board and stamp `now`; they are not
+  attributed to an ended board. A **sealed** board authors nothing:
+  `handleTaskCompletion` / `completeTaskOrchestrated` no-op (no event appended,
+  board untouched), as do the compound-child fallback and the shared-counter
+  `incrementSharedCounter` / `decrementSharedCounter` given a sealed `boardId`.
+- **Compound-child fallback** (child not placed on the host board): writes only
+  for an **event-owning** child (NORMAL / plain COUNTING — event append with the
+  late-log stamp above). For a non-event-owning child — window-stamped derived
+  counter, hub-linked derived counter, nested compound — it is a **full no-op**
+  (no latch write, no cascade, no enqueue): a hub-linked latch is propagation
+  output from its root, a window-stamped row is never authored (and frozen
+  after its window), a nested compound is derived.
 - **Un-complete is window-scoped** (review finding M4): tombstone **all**
-  non-deleted, non-sealed-immune completion events with
-  `occurredAt >= context window start` → restamp caches → derivation.
-  - Board context: the viewed board's `startDate`.
+  non-deleted, non-sealed-immune completion events with `occurredAt` inside the
+  context window → restamp caches → derivation.
+  - Board context: the viewed board's `[startDate, endDate]` (amended
+    2026-09-24 — events after an ended board's `endDate` belong to later
+    windows and are never tombstoned from it). An unparseable `endDate` fails
+    open (treated as open-ended) on both platforms.
   - Library context: the toggle acts on the latest event; if that event is
     **sealed-immune** (see below) the toggle is disabled with an explanatory
     affordance ("completed in a sealed window") instead of silently failing.
   - **Sealed-window immunity**: an event is immune iff some non-deleted *sealed*
-    board places its task and `sealedBoard.startDate <= occurredAt <= sealedAt`.
+    board places its task and
+    `sealedBoard.startDate <= occurredAt <= min(sealedBoard.endDate, sealedAt)`
+    — exactly the events the sealed record counted (amended 2026-09-24 with the
+    Decision 1 end bound; `buildSealImmuneWindows`). An event in the overtime
+    gap `(endDate, sealedAt]` belongs to the next window's board and stays
+    tombstonable there. A missing / unparseable `endDate` leaves the bound at
+    `sealedAt`.
     Immune events can never be tombstoned by any gesture — history stays history.
     If tombstoning the non-immune events doesn't flip the square (an immune event
     keeps it green), the UI says why rather than appearing broken.
 - **Increment**: append a positive-delta event → stamp caches → derivation.
 - **Decrement needs window intent** (review finding M3):
-  - **Board context**: append a negative-delta event (`occurredAt = now`), gated
-    by windowed count > 0 so the window sum can't go negative from local gestures.
+  - **Board context**: append a negative-delta event
+    (`occurredAt = min(now, endDate)`, the late-log stamp), clamped to the
+    board's **window** count (`[startDate, endDate]`) so the window sum can't go
+    negative from local gestures — for shared counters too
+    (`decrementSharedCounter` with a `boardId`), never just the lifetime count.
   - **Library / Counters Hub context**: tombstone the **latest non-immune
     increment event** instead of appending a negative delta — a lifetime
     correction removes the occurrence being corrected rather than poisoning the
@@ -313,7 +383,13 @@ Kept, still synced, stamped transactionally on every event write — but demoted
 - **`incrementSharedCounter(sourceId)`**: unchanged contract; internally becomes
   append-event-on-source + propagation-stamp of derived tasks + derivation. Still
   the single logging path for every member task's square and the counter detail
-  screen.
+  screen. Takes an optional `boardId` (2026-09-24): a board-surface call passes
+  it and gets the late-log stamp; hub / detail calls omit it and stamp `now`.
+- **Counter Undo toast** reverses the entry most recently **made**:
+  `selectLastIncrementEntry` (shared ↔ `Helpers/LastCounterLogEntry.swift`)
+  orders by `createdAt` first, `occurredAt` as the tie-break — a late log
+  carries an old `occurredAt` (its board's `endDate`) but is still the newest
+  entry.
 
 ## Sealing
 
@@ -340,8 +416,11 @@ is a UI question, listed under [§Open questions](#open-questions).)
    ‹window label› — anything left to log?"* with **Log** (opens the board, still
    fully live) and **Seal** actions. This is deliberately the recurring-banner
    pattern: recurrence is observed on app-open; so is closure. While unsealed,
-   the board keeps evaluating events in `[startDate, ∞)` — the
-   11:58pm-workout-logged-at-12:04am counts for the closing daily.
+   the board stays playable, but it evaluates only events in its own
+   `[startDate, endDate]`: the 11:58pm workout logged at 12:04am **from the
+   closing daily's own surface** is stamped at its `endDate` and counts for
+   the closing daily (amended 2026-09-24 — previously the board evaluated
+   `[startDate, ∞)` and that log also counted for the new daily).
 3. **Seal (user action)** — in one transaction: run the derivation pass one final
    time, write `sealedAt = now` + `sealedCompletedCells` (the green cell indexes
    from that final grid), bump `version`/`updatedAt`, enqueue Board sync.
@@ -377,9 +456,15 @@ log but never reach the frozen record. Instead:
   `completedLineIds` / greenlog status) are defined as a **pure function of the
   converged in-window event union**: whenever a pulled `taskEvent` (or tombstone)
   for a placed task — or for the ROOT of a placed window-stamped derived row —
-  lands with `occurredAt` in `[startDate, sealedAt]` of a sealed board, that
-  board's snapshot is **re-derived locally** inside the pull transaction. A
-  derived row's propagated latch is never an input (amended 2026-09-23).
+  lands with `occurredAt` in `[startDate, min(endDate, sealedAt)]` of a sealed
+  board, that board's snapshot is **re-derived locally** inside the pull
+  transaction. A derived row's propagated latch is never an input (amended
+  2026-09-23). The effective upper bound is `min(endDate, sealedAt)` (amended
+  2026-09-24): the context is pre-filtered at `sealedAt`
+  (`boundWindowContextAtSeal`) and the kernel then applies the board's
+  `endDate`, so a completion stamped after `endDate` (even before `sealedAt`)
+  is excluded, one stamped exactly at `endDate` counts, and a `sealedAt`
+  earlier than `endDate` narrows further — pinned by `sealReDerivationVectors`.
 - Re-derivation is **local-only**: no `version` bump, no sync enqueue. Every
   device converges independently because the input (the event union) converges.
   There is no snapshot LWW fight, and no unbounded mutability — the recompute
@@ -409,15 +494,27 @@ log but never reach the frozen record. Instead:
   re-derivation convergence.
 - Sealed boards remain visible everywhere they are today (pager, browser, lists).
 
-### Accepted boundary edge
+### Overtime attribution (amended 2026-09-24)
 
 An event logged during a board's post-`endDate` unsealed overtime (e.g. 12:04am)
-counts for the closing board **and** for the new window's board (its
-`occurredAt` is inside the new window too). With the timeframe-scaled backstop
-the overtime is at most 25% of the window (6h for a daily), so double credit is
-confined to the boundary hours rather than spanning whole windows. Rare,
-self-inflicted, user-favorable; attribution rules would buy complexity for no
-real integrity gain. Recorded as intentional.
+is **attributed to the board it was made on**, and counts for exactly one
+window:
+
+- Logged from the **closing board's own surface** → stamped at that board's
+  `endDate` (`lateLogOccurredAt`), so it counts for the closing board and not
+  for the new window's board.
+- Logged **anywhere else** (the new board, the library, Task Detail, the
+  Counters hub) → stamped `now`, so it counts for the window containing `now`
+  and not for the ended board (whose root squares stop at `endDate`).
+
+The overtime itself is still bounded by the timeframe-scaled backstop (at most
+25% of the window, 6h for a daily), after which the board seals and locks.
+
+*History:* before this amendment the section was titled "Accepted boundary
+edge" and recorded the opposite: with start-bound-only windows an overtime
+event counted for the closing board **and** the new board, accepted as
+user-favorable double credit. That edge caused the root-square counter bug
+(an ended weekly's root square completed by a later daily's log) and is gone.
 
 ## Shared counters interaction
 
@@ -655,27 +752,33 @@ can merge immediately.
 | Unit (web, Vitest + fake-indexeddb) | Event write paths (complete / window-scoped un-complete incl. sealed-immunity + multi-event windows / increment / context-split decrement) stamp caches + fire derivation; seal transaction; backstop keyed off `max(endDate, activatedAt)`; migration backfill (derived tasks skipped) + expired-board sealing; **batched** pull-path recompute; events-before-task ordering skip; spawned board starts empty across a window rollover (regression test for the original bug); derived-task pull leaves propagation-stamped caches + latch intact (regression for C1) |
 | Unit (iOS, XCTest) | Twins of the above against `makeTestInstance()` |
 | Snapshot (iOS) | Closing-out banner (0/1/3 boards); sealed board grid (read-only rendering); disabled-with-explanation un-complete affordance |
-| Cross-platform vectors | Shared JSON test vectors for `resolveTaskWindowState`, backfill ids/timestamps, and seal re-derivation (same pattern as the counter-arrival vectors in PR #304) |
+| Cross-platform vectors | Shared JSON test vectors for `resolveTaskWindowState`, backfill ids/timestamps, and seal re-derivation (same pattern as the counter-arrival vectors in PR #304). 2026-09-24 end bound: `taskWindowStateVectors` (windowEnd cases + `lateLogOccurredAt`), `sealReDerivationVectors` (post-`endDate` completion excluded; exactly-at-`endDate` counts; `sealedAt` narrows further), `derivationPassVectors` (end-bound root squares); repro pins `derivedCounterCrossWindowCompletion.test.ts` ↔ `DerivedCounterCrossWindowCompletionTests.swift` are real passes |
 | Manual | Two-device: offline increments on both → union (no loss); complete on A, un-complete on B → converges; **seal divergence: A offline past backstop logs work, B auto-seals grey → after A syncs, both re-derive green**; template respawn across a real date rollover; upgrade a device with live bleed-greens → note shown, squares grey |
 
 ## Edge cases (decided)
 
-- **Event during unsealed overtime** counts for both the closing and the new
-  window — accepted, user-favorable, bounded by the scaled backstop (see
-  [§Sealing](#sealing)).
+- **Event during unsealed overtime** is attributed to the board it was made
+  on (amended 2026-09-24): from the closing board's own surface it is stamped
+  at that board's `endDate` and counts only there; from anywhere else it is
+  stamped `now` and counts only for the window containing `now`. No longer
+  counts for both (see [§Overtime attribution](#overtime-attribution-amended-2026-09-24)).
+- **Undo on an ended board** is bounded to that board's `[startDate, endDate]`:
+  it never tombstones a completion logged after `endDate` (which belongs to a
+  later window).
 - **Un-complete vs sealed history**: sealed-window events are tombstone-immune;
   lifetime un-complete stops at the seal boundary and the UI explains a
   still-green state instead of silently eating taps. Sealed pixels change only
   via deterministic re-derivation from late-arriving pre-seal activity.
 - **Offline seal divergence**: converges via snapshot re-derivation — no data
   loss, no LWW coin-flip (see the manual test above).
-- **Timezone travel**: evaluation uses only `occurredAt >= startDate` (parsed
-  compare) — no string equality, no endDate math in the hot path; sealing keys
-  off parsed deadlines. Window *identity* hazards remain in detection/matching
-  and are the separate `windowKey` change.
+- **Timezone travel**: evaluation compares `occurredAt` against `startDate`
+  and `endDate` by parsed instant — no string equality. Board dates are
+  local-ISO and parse in the evaluating device's zone (the same caveat on both
+  bounds); sealing keys off parsed deadlines. Window *identity* hazards remain
+  in detection/matching and are the separate `windowKey` change.
 - **Compound on indefinite board vs daily board**: same compound legitimately
-  differs — indefinite window is `[startDate, ∞)`, daily is `[today, ∞)`-until-
-  sealed. No special casing.
+  differs — indefinite window is `[startDate, ∞)`, daily is
+  `[today 00:00, today 23:59:59.999]`. No special casing.
 - **Draft boards** never seal while drafts; a draft activated after its window
   expired gets one prompt cycle before any backstop (deadline keys off
   `max(endDate, activatedAt)`). Archived boards seal normally.
@@ -722,7 +825,7 @@ can merge immediately.
    REPLACES expiry as the interaction lock.** Both platforms previously disabled
    all play interactions once `endDate` passed; but §Lifecycle step 2 defines
    **Log** as opening the closing board "still fully live", and the
-   Accepted-boundary-edge section (the 11:58pm workout logged at 12:04am) only
+   overtime-attribution section (the 11:58pm workout logged at 12:04am) only
    works if logging during unsealed overtime is possible. Every
    expired-and-playable board is by construction in the closing-out set, so the
    old expiry lock and the new seal lock cover the same boards — the seal lock

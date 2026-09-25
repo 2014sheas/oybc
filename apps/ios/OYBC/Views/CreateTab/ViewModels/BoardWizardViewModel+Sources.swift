@@ -16,6 +16,47 @@ struct WizardSourceSupply: Equatable {
     /// §Member rules (B3, RC5) — board sources only: the source board's own
     /// window, for pro-rating an auto target against the board being built.
     var sourceWindow: BoardSources.BoardWindow? = nil
+    /// Board sources only — the source still exists but resolved to NO
+    /// board for the window being built (owner ruling 2026-09-24: a series
+    /// with no instance open now, or an ended/sealed one-off). It supplies nothing (capacity 0 from it) and its row
+    /// subtitle reads "No board for this window yet". Distinct from a dead
+    /// source ("Deleted board"), which leaves this false. Web twin:
+    /// `WizardSourceSupply.noBoardForWindow`.
+    var noBoardForWindow: Bool = false
+}
+
+extension WizardSourceSupply {
+    /// Map a window-aware board-supply resolution into the wizard's cache
+    /// entry: `.live` → the resolved supply; `.dead` → "Deleted board" (or
+    /// the last-known name when the caller has one); `.noWindow` → the
+    /// stored board's name, an empty supply and `noBoardForWindow`. Web twin:
+    /// `boardSupplyEntryForResolution`.
+    ///
+    /// - Parameters:
+    ///   - resolution: From `AppDatabase.fetchOpenBoardSourceSupply`.
+    ///   - keptName: A previously shown name to keep for a dead source.
+    init(resolution: AppDatabase.BoardSourceSupplyResolution, keptName: String? = nil) {
+        switch resolution {
+        case .live(let info):
+            self.init(
+                displayName: info.displayName,
+                rawSupplyTaskIds: info.supplyTaskIds,
+                doneTaskIds: info.doneTaskIds,
+                windowCountByTaskId: info.windowCountByTaskId,
+                sourceWindow: info.sourceWindow
+            )
+        case .noWindow(let name):
+            self.init(
+                displayName: name, rawSupplyTaskIds: [], doneTaskIds: [], noBoardForWindow: true
+            )
+        case .dead:
+            self.init(
+                displayName: (keptName?.isEmpty == false) ? keptName! : "Deleted board",
+                rawSupplyTaskIds: [],
+                doneTaskIds: []
+            )
+        }
+    }
 }
 
 /// Board Sources P2 — the sources-native wizard actions + derived reads.
@@ -217,16 +258,14 @@ extension BoardWizardViewModel {
     /// re-clamps as before.
     func pullBoard(boardId: String) {
         guard !sources.contains(where: { $0.sourceId == boardId }) else { return }
-        guard let info = try? database.fetchBoardSourceSupply(boardId: boardId) else {
+        // Owner ruling 2026-09-24 — sources are open boards. A `.noWindow`
+        // source (no board open right now) is still pulled — its row reads
+        // "No board for this window yet"; only a dead one isn't.
+        guard let resolution = try? database.fetchOpenBoardSourceSupply(boardId: boardId),
+              resolution != .dead else {
             return
         }
-        supplyInfoBySourceId[boardId] = WizardSourceSupply(
-            displayName: info.displayName,
-            rawSupplyTaskIds: info.supplyTaskIds,
-            doneTaskIds: info.doneTaskIds,
-            windowCountByTaskId: info.windowCountByTaskId,
-            sourceWindow: info.sourceWindow
-        )
+        supplyInfoBySourceId[boardId] = WizardSourceSupply(resolution: resolution)
         sources.append(BoardSource(sourceId: boardId, kind: .board, filter: Self.newSourceFilter(for: .board)))
         // §Member rules (B3, RC4) — a board pulled in THIS session seeds its
         // counting members' REMAINING target on a one-off board. iOS resolves
@@ -234,7 +273,13 @@ extension BoardWizardViewModel {
         // time; a source HYDRATED from a resumed draft / edited record never
         // passes through `pullBoard`, which is what keeps its saved rules
         // (the person's own state) from being silently rewritten.
-        prefillRemainingTargets(sourceId: boardId, info: info)
+        if let info = resolution.info {
+            prefillRemainingTargets(sourceId: boardId, info: info)
+        } else {
+            // No board open yet — the prefill is owed until it resolves live
+            // (`refreshSourceSupplies`).
+            pendingPrefillSourceIds.insert(boardId)
+        }
         refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
@@ -245,6 +290,7 @@ extension BoardWizardViewModel {
         sources.removeAll { $0.sourceId == sourceId }
         supplyInfoBySourceId.removeValue(forKey: sourceId)
         expandedSourceIds.remove(sourceId)
+        pendingPrefillSourceIds.remove(sourceId)
         refreshCompoundChildren()
         recomputeSelectionFromSources()
     }
@@ -444,27 +490,25 @@ extension BoardWizardViewModel {
                     doneTaskIds: []
                 )
             case .board:
-                if let info = (try? database.fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil {
-                    supplyInfoBySourceId[source.sourceId] = WizardSourceSupply(
-                        displayName: info.displayName,
-                        rawSupplyTaskIds: info.supplyTaskIds,
-                        doneTaskIds: info.doneTaskIds,
-                        windowCountByTaskId: info.windowCountByTaskId,
-                        sourceWindow: info.sourceWindow
-                    )
-                } else {
-                    let kept = supplyInfoBySourceId[source.sourceId]?.displayName
-                    supplyInfoBySourceId[source.sourceId] = WizardSourceSupply(
-                        displayName: (kept?.isEmpty == false) ? kept! : "Deleted board",
-                        rawSupplyTaskIds: [],
-                        doneTaskIds: []
-                    )
+                let resolution = (try? database.fetchOpenBoardSourceSupply(
+                    boardId: source.sourceId
+                )) ?? .dead
+                supplyInfoBySourceId[source.sourceId] = WizardSourceSupply(
+                    resolution: resolution,
+                    keptName: supplyInfoBySourceId[source.sourceId]?.displayName
+                )
+                // A source pulled while it had no board open still owes its
+                // RC4 prefill — run it the first time it resolves live.
+                if let info = resolution.info,
+                   pendingPrefillSourceIds.remove(source.sourceId) != nil {
+                    prefillRemainingTargets(sourceId: source.sourceId, info: info)
                 }
             }
         }
         // §Member rules (B3, RC7) — the Split-up expansion reads the live
         // links; reload them alongside the supplies they belong to. NOTE: a
-        // refresh never prefills (RC4) — only a pull does.
+        // refresh never prefills (RC4) — only a pull does, or a pull that is
+        // still owed its prefill (`pendingPrefillSourceIds`, above).
         refreshCompoundChildren()
         for i in sources.indices { clampSourceMin(at: i) }
         recomputeSelectionFromSources()
@@ -483,7 +527,8 @@ extension BoardWizardViewModel {
     static func hydrateSourcesState(
         sources rawSources: [BoardSource],
         manualTaskIds: [String],
-        database: AppDatabase
+        database: AppDatabase,
+        now: Date = AppDatabase.sourceClock()
     ) -> (
         sources: [BoardSource],
         supplyInfo: [String: WizardSourceSupply],
@@ -511,28 +556,19 @@ extension BoardWizardViewModel {
                     doneTaskIds: []
                 )
             case .board:
-                if let info = (try? database.fetchBoardSourceSupply(boardId: source.sourceId)) ?? nil {
-                    // §Member rules (B3) — the RC4/RC5 fields ride along HERE
-                    // too, not just on `pullBoard`/`refreshSourceSupplies`: a
-                    // resumed draft or an edited record takes ONLY this path
-                    // on open, and a rule row rendered against a nil
-                    // `sourceWindow` would show the bare goal and then
-                    // silently change to the pro-rated number once the view's
-                    // first refresh landed. (The RC4 PREFILL is still not run
-                    // here — a hydrated source's saved rules are the person's
-                    // own state; only `pullBoard` seeds.)
-                    supplyInfo[source.sourceId] = WizardSourceSupply(
-                        displayName: info.displayName,
-                        rawSupplyTaskIds: info.supplyTaskIds,
-                        doneTaskIds: info.doneTaskIds,
-                        windowCountByTaskId: info.windowCountByTaskId,
-                        sourceWindow: info.sourceWindow
-                    )
-                } else {
-                    supplyInfo[source.sourceId] = WizardSourceSupply(
-                        displayName: "Deleted board", rawSupplyTaskIds: [], doneTaskIds: []
-                    )
-                }
+                // §Member rules (B3) — the RC4/RC5 fields ride along HERE
+                // too, not just on `pullBoard`/`refreshSourceSupplies`: a
+                // resumed draft or an edited record takes ONLY this path on
+                // open, and a rule row rendered against a nil `sourceWindow`
+                // would show the bare goal and then silently change to the
+                // pro-rated number once the view's first refresh landed. (The
+                // RC4 PREFILL is still not run here — a hydrated source's
+                // saved rules are the person's own state; only `pullBoard`
+                // seeds.) The board open now (owner ruling 2026-09-24).
+                let resolution = (try? database.fetchOpenBoardSourceSupply(
+                    boardId: source.sourceId, now: now
+                )) ?? .dead
+                supplyInfo[source.sourceId] = WizardSourceSupply(resolution: resolution)
             }
         }
 
@@ -563,7 +599,7 @@ extension BoardWizardViewModel {
     /// reopened (2026-09 audit T2, docs/BOARD_SOURCES.md §Selection step 3).
     ///
     /// Reads the blob's canonical `sources` (+ `manualTaskIds`) through
-    /// ``hydrateSourcesState(sources:manualTaskIds:database:)`` — the exact
+    /// ``hydrateSourcesState(sources:manualTaskIds:database:now:)`` — the exact
     /// hydration the wizard runs on open — never the retired pool-mix
     /// mirror (`poolIds`/`removedTaskIds`), which drops board-kind sources
     /// and every min/max range. A v1 blob with no `sources` is already
@@ -582,13 +618,18 @@ extension BoardWizardViewModel {
     /// - Parameters:
     ///   - board: The draft board; only its blob and center fields are read.
     ///   - database: The database to resolve supplies against.
+    ///   - now: The instant a source board's "is it open" is judged against.
     /// - Returns: The achievable pool size.
-    static func resolveDraftCapacity(board: Board, database: AppDatabase) -> Int {
+    static func resolveDraftCapacity(board: Board, database: AppDatabase, now: Date = AppDatabase.sourceClock()) -> Int {
         let mix = RecurringDraftMixPayload.decoded(from: board.recurringDraftMix)
+        // Owner ruling 2026-09-24 — a source supplies from its board open
+        // NOW (the reopened wizard, its Preview and persist use the same
+        // clock), so an ended source supplies nothing here too.
         let hydrated = hydrateSourcesState(
             sources: mix.sources ?? [],
             manualTaskIds: mix.manualTaskIds,
-            database: database
+            database: database,
+            now: now
         )
         var supplied: [String] = []
         var seen = Set<String>()

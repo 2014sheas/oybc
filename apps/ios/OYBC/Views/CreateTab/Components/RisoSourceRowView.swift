@@ -140,8 +140,13 @@ struct RisoSourceRowView: View {
 
     /// docs/BOARD_SOURCES.md §Surfaces "Subtitles": pool — "8 tasks"
     /// (+ " · 1 excluded", + " · 3–5 on the board" only when range ≠
-    /// default); board — "6 squares · 4 done" / "2 not done".
+    /// default); board — "6 squares · 4 done" / "2 not done"; a board
+    /// source with no board for the window being built — "No board for this
+    /// window yet" (owner ruling 2026-09-24). Web twin: `buildSubtitle`.
     private var subtitle: String {
+        if source.kind == .board && supply.noBoardForWindow {
+            return BoardSources.noBoardForWindowNote
+        }
         switch source.kind {
         case .pool:
             let total = supply.rawSupplyTaskIds.count

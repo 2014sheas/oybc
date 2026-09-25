@@ -70,7 +70,8 @@ enum ResolvedWizardDates {
 }
 
 /// Windowed "done" for a wizard-preview cell, resolved against the
-/// PROSPECTIVE board's window (`[resolveWizardDates(...).start, ∞)`) — never
+/// PROSPECTIVE board's window (`[resolveWizardDates(...).start, .end]`,
+/// inclusive; an indefinite board has no end — 2026-09-24 amendment) — never
 /// the task's lifetime cache. A shared library task completed in a PREVIOUS
 /// window must preview grey on the new board, exactly as it will render after
 /// Save (the "green squares from previous windows" bug).
@@ -81,12 +82,22 @@ enum ResolvedWizardDates {
 /// hub-linked: the latch); event-owning primitives → windowed events.
 /// Achievements aren't placeable via the wizard, so no kernel cell-state is
 /// needed here. Pinned by `WizardPreviewCompletionTests`.
+///
+/// - Parameters:
+///   - task: The previewed cell's task.
+///   - taskById: Task lookup (children of compounds included).
+///   - childrenByCompound: Compound → children links.
+///   - eventsByTaskId: Non-deleted TaskEvents grouped by task id.
+///   - windowStart: The prospective board's `startDate`.
+///   - windowEnd: The prospective board's `endDate`, or `nil` (indefinite).
+/// - Returns: Whether the cell previews as complete.
 func wizardPreviewIsCompleted(
     task: Task,
     taskById: [String: Task],
     childrenByCompound: [String: [CompoundChild]],
     eventsByTaskId: [String: [TaskEvent]],
-    windowStart: String
+    windowStart: String,
+    windowEnd: String?
 ) -> Bool {
     if task.type == .compound {
         return CompoundEvaluation.evaluate(
@@ -95,6 +106,7 @@ func wizardPreviewIsCompleted(
             taskById: taskById,
             windowContext: CompoundWindowContext(
                 windowStart: windowStart,
+                windowEnd: windowEnd,
                 eventsByTaskId: eventsByTaskId
             )
         )
@@ -106,7 +118,8 @@ func wizardPreviewIsCompleted(
     return resolveTaskWindowState(
         task: task,
         events: eventsByTaskId[task.id] ?? [],
-        windowStart: windowStart
+        windowStart: windowStart,
+        windowEnd: windowEnd
     ).isCompleted
 }
 
@@ -907,7 +920,7 @@ func persistRecurringTemplate(
             let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn, database: database)
             retireResumedDraftIfNeeded()
             switch outcome {
-            case .spawned(let boardId, _, _):
+            case .spawned(let boardId, _, _, _):
                 DispatchQueue.main.async {
                     onSuccess(.createdAndSpawned(templateId: template.id, boardId: boardId))
                 }

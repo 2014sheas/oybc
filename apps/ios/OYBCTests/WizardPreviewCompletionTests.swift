@@ -57,7 +57,8 @@ final class WizardPreviewCompletionTests: XCTestCase {
             taskById: [task.id: task],
             childrenByCompound: [:],
             eventsByTaskId: [task.id: [makeEvent(taskId: task.id, kind: .completion, occurredAt: beforeWindow)]],
-            windowStart: windowStart
+            windowStart: windowStart,
+            windowEnd: nil
         )
         XCTAssertFalse(done, "a lifetime-completed task with only pre-window events must preview grey")
     }
@@ -69,7 +70,8 @@ final class WizardPreviewCompletionTests: XCTestCase {
             taskById: [task.id: task],
             childrenByCompound: [:],
             eventsByTaskId: [task.id: [makeEvent(taskId: task.id, kind: .completion, occurredAt: inWindow)]],
-            windowStart: windowStart
+            windowStart: windowStart,
+            windowEnd: nil
         )
         XCTAssertTrue(done)
     }
@@ -85,7 +87,8 @@ final class WizardPreviewCompletionTests: XCTestCase {
             taskById: [task.id: task],
             childrenByCompound: [:],
             eventsByTaskId: [task.id: events],
-            windowStart: windowStart
+            windowStart: windowStart,
+            windowEnd: nil
         )
         XCTAssertFalse(done, "only the in-window sum (2 of 5) counts toward the goal")
     }
@@ -100,7 +103,8 @@ final class WizardPreviewCompletionTests: XCTestCase {
             taskById: [task.id: task],
             childrenByCompound: [:],
             eventsByTaskId: [:],
-            windowStart: windowStart
+            windowStart: windowStart,
+            windowEnd: nil
         )
         XCTAssertTrue(done, "derived counters read their propagation-stamped lifetime cache")
     }
@@ -121,7 +125,8 @@ final class WizardPreviewCompletionTests: XCTestCase {
             taskById: taskById,
             childrenByCompound: children,
             eventsByTaskId: [child.id: [makeEvent(taskId: child.id, kind: .completion, occurredAt: beforeWindow)]],
-            windowStart: windowStart
+            windowStart: windowStart,
+            windowEnd: nil
         )
         XCTAssertFalse(stale, "a compound whose child completed in a previous window must preview grey")
 
@@ -130,7 +135,8 @@ final class WizardPreviewCompletionTests: XCTestCase {
             taskById: taskById,
             childrenByCompound: children,
             eventsByTaskId: [child.id: [makeEvent(taskId: child.id, kind: .completion, occurredAt: inWindow)]],
-            windowStart: windowStart
+            windowStart: windowStart,
+            windowEnd: nil
         )
         XCTAssertTrue(fresh)
     }

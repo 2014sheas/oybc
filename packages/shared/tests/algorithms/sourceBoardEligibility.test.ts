@@ -1,19 +1,15 @@
-import {
-  isEligibleSourceBoard,
-  SOURCE_BOARD_LOOKBACK_DAYS,
-  type SourceBoardCandidate,
-} from '../../src/algorithms/boardSources';
+import { isEligibleSourceBoard, type SourceBoardCandidate } from '../../src/algorithms/boardSources';
 import { BoardStatus } from '../../src/constants/enums';
 
 const NOW = new Date('2026-09-16T12:00:00.000');
 const DAY = 24 * 60 * 60 * 1000;
 
-/** A board candidate; defaults to an ACTIVE board whose window is open. */
+/** A board candidate; defaults to an ACTIVE, unsealed board whose window is open. */
 function candidate(over: Partial<SourceBoardCandidate> = {}): SourceBoardCandidate {
   return {
     status: BoardStatus.ACTIVE,
     endDate: new Date(NOW.getTime() + 5 * DAY).toISOString(),
-    completedAt: undefined,
+    sealedAt: undefined,
     isDeleted: false,
     ...over,
   } as SourceBoardCandidate;
@@ -24,27 +20,32 @@ function daysAgo(days: number): string {
   return new Date(NOW.getTime() - days * DAY).toISOString();
 }
 
+/**
+ * Owner ruling 2026-09-24 (supersedes #482's 30-day lookback): "There is
+ * no REAL use case for ended boards as sources." Eligible = not deleted,
+ * not a draft/archived, not sealed, and the window is open (no endDate,
+ * an unparseable endDate — fail open — or endDate >= now). The cross-
+ * platform pin is `eligibilityVectors` in boardSourceVectors.json; these
+ * are the readable unit cases. Swift twin: SourceBoardEligibilityTests.
+ */
 describe('isEligibleSourceBoard', () => {
-  describe('the defect being fixed: unbounded ACTIVE boards', () => {
-    it('EXCLUDES an active board whose window closed long ago', () => {
-      // The actual bug — a core board whose window passed without every
-      // square filled stays ACTIVE forever and was offered indefinitely.
-      const stale = candidate({ endDate: daysAgo(240) });
-      expect(isEligibleSourceBoard(stale, NOW)).toBe(false);
+  describe('ended boards are never sources', () => {
+    it('EXCLUDES a board whose window ended yesterday', () => {
+      expect(isEligibleSourceBoard(candidate({ endDate: daysAgo(1) }), NOW)).toBe(false);
     });
 
-    it('still offers an active board whose window closed RECENTLY', () => {
-      // "Build October's board from September's" must keep working even
-      // though September's board was never marked complete.
-      const lastMonth = candidate({ endDate: daysAgo(10) });
-      expect(isEligibleSourceBoard(lastMonth, NOW)).toBe(true);
+    it('EXCLUDES a board whose window ended a second ago (no lookback)', () => {
+      const justEnded = new Date(NOW.getTime() - 1000).toISOString();
+      expect(isEligibleSourceBoard(candidate({ endDate: justEnded }), NOW)).toBe(false);
     });
 
-    it('draws the line exactly at the lookback window', () => {
-      const justInside = candidate({ endDate: daysAgo(SOURCE_BOARD_LOOKBACK_DAYS - 1) });
-      const justOutside = candidate({ endDate: daysAgo(SOURCE_BOARD_LOOKBACK_DAYS + 1) });
-      expect(isEligibleSourceBoard(justInside, NOW)).toBe(true);
-      expect(isEligibleSourceBoard(justOutside, NOW)).toBe(false);
+    it('EXCLUDES an ended COMPLETED board (the completedAt branch is retired)', () => {
+      const b = candidate({ status: BoardStatus.COMPLETED, endDate: daysAgo(3) });
+      expect(isEligibleSourceBoard(b, NOW)).toBe(false);
+    });
+
+    it('EXCLUDES a sealed board even when its window looks open', () => {
+      expect(isEligibleSourceBoard(candidate({ sealedAt: daysAgo(0) }), NOW)).toBe(false);
     });
   });
 
@@ -53,45 +54,20 @@ describe('isEligibleSourceBoard', () => {
       expect(isEligibleSourceBoard(candidate(), NOW)).toBe(true);
     });
 
-    it('offers an INDEFINITE active board (no end date) forever', () => {
-      // Its window never closes, so recency cannot apply.
+    it('offers a board whose window ends exactly now (inclusive)', () => {
+      expect(isEligibleSourceBoard(candidate({ endDate: NOW.toISOString() }), NOW)).toBe(true);
+    });
+
+    it('offers a completed board whose window is still open', () => {
+      expect(isEligibleSourceBoard(candidate({ status: BoardStatus.COMPLETED }), NOW)).toBe(true);
+    });
+
+    it('offers an INDEFINITE board (no end date) forever', () => {
       expect(isEligibleSourceBoard(candidate({ endDate: undefined }), NOW)).toBe(true);
     });
 
     it('fails open on an unparseable end date rather than hiding the board', () => {
       expect(isEligibleSourceBoard(candidate({ endDate: 'not-a-date' }), NOW)).toBe(true);
-    });
-  });
-
-  describe('completed boards keep their existing rule', () => {
-    it('offers one completed inside the window', () => {
-      const b = candidate({ status: BoardStatus.COMPLETED, completedAt: daysAgo(3) });
-      expect(isEligibleSourceBoard(b, NOW)).toBe(true);
-    });
-
-    it('drops one completed outside the window', () => {
-      const b = candidate({ status: BoardStatus.COMPLETED, completedAt: daysAgo(90) });
-      expect(isEligibleSourceBoard(b, NOW)).toBe(false);
-    });
-
-    it('drops one with a missing or unparseable completedAt', () => {
-      expect(isEligibleSourceBoard(
-        candidate({ status: BoardStatus.COMPLETED, completedAt: undefined }), NOW,
-      )).toBe(false);
-      expect(isEligibleSourceBoard(
-        candidate({ status: BoardStatus.COMPLETED, completedAt: 'nope' }), NOW,
-      )).toBe(false);
-    });
-
-    it('ignores endDate for a completed board — completedAt is what counts', () => {
-      // A board completed yesterday whose window ended months ago is
-      // still a fine source.
-      const b = candidate({
-        status: BoardStatus.COMPLETED,
-        completedAt: daysAgo(1),
-        endDate: daysAgo(200),
-      });
-      expect(isEligibleSourceBoard(b, NOW)).toBe(true);
     });
   });
 
@@ -110,9 +86,8 @@ describe('isEligibleSourceBoard', () => {
   });
 
   it('honours an explicit `now` rather than the wall clock', () => {
-    // A board that ended 10 days before NOW is eligible at NOW, but not
-    // when judged from a year later. If `now` were ignored, both agree.
-    const b = candidate({ endDate: daysAgo(10) });
+    // Open at NOW, ended a year later. If `now` were ignored, both agree.
+    const b = candidate();
     const muchLater = new Date(NOW.getTime() + 365 * DAY);
     expect(isEligibleSourceBoard(b, NOW)).toBe(true);
     expect(isEligibleSourceBoard(b, muchLater)).toBe(false);

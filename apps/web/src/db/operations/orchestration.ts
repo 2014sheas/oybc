@@ -6,6 +6,8 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   computeBoardStatsUpdate,
+  boardWindowEnd,
+  lateLogOccurredAt,
   resolveTaskWindowState,
   resolvePlacements,
   type Board,
@@ -349,6 +351,11 @@ export async function handleTaskCompletion(
       // 1. Fetch + auto-activate the primary board.
       let primaryBoard = await db.boards.get(boardId);
       if (!primaryBoard) throw new Error(`Board ${boardId} not found`);
+      // A sealed board is a permanent record (play is locked on its surface).
+      // No-op defensively: an event appended here would be stamped at the
+      // board's endDate — inside the sealed window, seal-immune forever — and
+      // a pull-path re-derive elsewhere would rewrite the sealed record.
+      if (primaryBoard.sealedAt) return;
 
       if (primaryBoard.status === BoardStatus.DRAFT) {
         await db.boards.update(boardId, {
@@ -410,26 +417,36 @@ export async function handleTaskCompletion(
       //    below zero from a local gesture. `updates.isCompleted` toggles a
       //    normal square: complete → append a completion event; un-complete →
       //    window-scoped tombstone of this board's in-window completions.
+      //
+      //    2026-09-24 amendment of WC Decision 1: the window is
+      //    `[startDate, endDate]` (inclusive). The windowed count, the undo
+      //    tombstone and the new event's `occurredAt` all respect that end:
+      //    a log made on an ended-but-unsealed board is stamped at its
+      //    `endDate` (`lateLogOccurredAt`, decision C2) so it counts on THIS
+      //    board and on no later window's board.
       const windowStart = primaryBoard.startDate;
+      const windowEnd = boardWindowEnd(primaryBoard);
+      const occurredAt = lateLogOccurredAt(primaryBoard, now);
       if (updates.currentCount !== undefined) {
         const events = await db.taskEvents.where('taskId').equals(targetTask.id).toArray();
         const { count: windowedCount } = resolveTaskWindowState(
           targetTask,
           events.filter((e) => !e.isDeleted),
           windowStart,
+          windowEnd,
         );
         let delta = updates.currentCount - windowedCount;
         // Gate a decrement so the window sum stays ≥ 0 (belt against a local
         // gesture poisoning the window with a dangling negative).
         if (delta < 0) delta = Math.max(delta, -windowedCount);
         if (delta !== 0) {
-          await appendIncrementEvent(targetTask.id, delta, boardId, now);
+          await appendIncrementEvent(targetTask.id, delta, boardId, now, occurredAt);
         }
       } else if (updates.isCompleted !== undefined) {
         if (updates.isCompleted) {
-          await appendCompletionEvent(targetTask.id, boardId, now);
+          await appendCompletionEvent(targetTask.id, boardId, now, occurredAt);
         } else {
-          await tombstoneWindowCompletions(targetTask.id, windowStart, now);
+          await tombstoneWindowCompletions(targetTask.id, windowStart, now, windowEnd);
         }
       }
 

@@ -60,7 +60,7 @@ describe('buildSquareWindowContext', () => {
       { ...makePriorCompletionEvent('task-b'), isDeleted: true },
     ];
 
-    const ctx = buildSquareWindowContext(events, WINDOW_START);
+    const ctx = buildSquareWindowContext(events, WINDOW_START, null);
 
     expect(ctx.windowStart).toBe(WINDOW_START);
     expect(ctx.eventsByTaskId['task-a']).toHaveLength(2);
@@ -68,7 +68,7 @@ describe('buildSquareWindowContext', () => {
   });
 
   it('returns an empty grouping for an empty event list', () => {
-    const ctx = buildSquareWindowContext([], WINDOW_START);
+    const ctx = buildSquareWindowContext([], WINDOW_START, null);
     expect(ctx.eventsByTaskId).toEqual({});
   });
 });
@@ -77,7 +77,7 @@ describe('mini-poster data path (RisoBoard + rearrange-preview regression)', () 
   it('a lifetime-complete task with only a pre-window completion event resolves windowed-grey', () => {
     const task = makeLifetimeCompleteTask('task-a');
     const events = [makePriorCompletionEvent('task-a')];
-    const windowContext = buildSquareWindowContext(events, WINDOW_START);
+    const windowContext = buildSquareWindowContext(events, WINDOW_START, null);
 
     // Sanity: the lifetime cache itself is still (correctly) complete —
     // library/Tasks-tab surfaces should keep showing this green.
@@ -101,7 +101,7 @@ describe('mini-poster data path (RisoBoard + rearrange-preview regression)', () 
         occurredAt: '2026-05-06T09:00:00.000Z', // inside the new window
       },
     ];
-    const windowContext = buildSquareWindowContext(events, WINDOW_START);
+    const windowContext = buildSquareWindowContext(events, WINDOW_START, null);
 
     const squareState = taskToSquareState(task, undefined, { [task.id]: task }, {}, windowContext);
 

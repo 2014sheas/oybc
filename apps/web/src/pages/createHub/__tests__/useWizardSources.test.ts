@@ -3,6 +3,7 @@ import { TaskType, Timeframe, type BoardSource, type Task } from '@oybc/shared';
 import {
   appendSource,
   boardSupplyEntry,
+  boardSupplyEntryForResolution,
   droppedSelectionIds,
   removeSourceById,
   seededTargetsForRemoval,
@@ -227,6 +228,41 @@ describe('boardSupplyEntry (the async board-supply effect mapping)', () => {
     expect(entry.rawSupplyTaskIds).toEqual([]);
     expect(entry.isPending).toBeUndefined();
     expect(entry.sourceWindow).toBeUndefined();
+  });
+});
+
+// Owner ruling 2026-09-24 — a board source with no board for the window
+// being built keeps its name and says so; a dead one stays "Deleted board".
+describe('boardSupplyEntryForResolution', () => {
+  it('noWindow → the stored name, an empty supply, and the no-board flag', () => {
+    const entry = boardSupplyEntryForResolution({ kind: 'noWindow', displayName: 'Week of Sep 7' });
+    expect(entry).toEqual({
+      displayName: 'Week of Sep 7',
+      rawSupplyTaskIds: [],
+      doneTaskIds: new Set(),
+      noBoardForWindow: true,
+    });
+  });
+
+  it('dead → "Deleted board", no no-board flag', () => {
+    const entry = boardSupplyEntryForResolution({ kind: 'dead' });
+    expect(entry.displayName).toBe('Deleted board');
+    expect(entry.noBoardForWindow).toBeUndefined();
+  });
+
+  it('live → the resolved supply, no no-board flag', () => {
+    const entry = boardSupplyEntryForResolution({
+      kind: 'live',
+      info: {
+        displayName: 'This week',
+        supplyTaskIds: ['a'],
+        doneTaskIds: new Set(),
+        windowCountByTaskId: {},
+        sourceWindow: { timeframe: Timeframe.WEEKLY, startDate: '2026-09-14', endDate: null },
+      },
+    });
+    expect(entry.rawSupplyTaskIds).toEqual(['a']);
+    expect(entry.noBoardForWindow).toBeUndefined();
   });
 });
 

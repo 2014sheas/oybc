@@ -35,6 +35,7 @@ import type { Task } from '../types/task';
 import {
   computeAchievablePoolSize,
   isSourceSupplyTask,
+  NO_BOARD_FOR_WINDOW_NOTE,
   type BoardSourceSupply,
 } from './boardSources';
 
@@ -196,6 +197,12 @@ export interface SpawnProvenanceSummary {
   poolSourcedCount: number;
   /** Of the dealt cells, how many came from the manual layer. */
   manualSourcedCount: number;
+  /**
+   * Board-kind sources that resolved to NO board for the spawned window
+   * (owner ruling 2026-09-24 — a series with no instance for the window, or
+   * an ended/sealed one-off) and so dealt nothing. Present only when > 0.
+   */
+  noBoardForWindowCount?: number;
 }
 
 /**
@@ -212,16 +219,21 @@ export interface SpawnProvenanceSummary {
  * @param counterFamilyByTaskId - `buildCounterFamilyMap` over the task
  *   universe (so `mixSize` counts a shared-counter family once).
  * @param dealtTaskIds - Task ids actually placed on the spawned board.
+ * @param noBoardForWindowCount - How many board-kind sources resolved to no
+ *   board for the spawned board's window (they supplied nothing). Defaults
+ *   to 0, which leaves the summary shape unchanged.
+ * @returns The provenance counts behind {@link formatSpawnProvenanceNote}.
  */
 export function summarizeSpawnProvenanceFromSupplies(
   supplies: BoardSourceSupply[],
   manualTaskIds: string[],
   counterFamilyByTaskId: Record<string, string>,
   dealtTaskIds: string[],
+  noBoardForWindowCount = 0,
 ): SpawnProvenanceSummary {
   const manualSet = new Set(manualTaskIds);
   const manualSourcedCount = dealtTaskIds.filter((id) => manualSet.has(id)).length;
-  return {
+  const summary: SpawnProvenanceSummary = {
     dealt: dealtTaskIds.length,
     mixSize: computeAchievablePoolSize({
       supplies,
@@ -231,6 +243,8 @@ export function summarizeSpawnProvenanceFromSupplies(
     poolSourcedCount: dealtTaskIds.length - manualSourcedCount,
     manualSourcedCount,
   };
+  if (noBoardForWindowCount > 0) summary.noBoardForWindowCount = noBoardForWindowCount;
+  return summary;
 }
 
 /**
@@ -245,7 +259,13 @@ export function summarizeSpawnProvenanceFromSupplies(
  * generic "from the pool" wording instead. "added today" is kept verbatim
  * (that phrasing is accurate generically).
  *
+ * When any board source had no board for the spawned window
+ * (`noBoardForWindowCount > 0`), the note ends with
+ * `" · No board for this window yet"` ({@link NO_BOARD_FOR_WINDOW_NOTE}).
+ * Swift twin: `PoolMix.formatSpawnProvenanceNote`.
+ *
  * @param summary - From `summarizeSpawnProvenanceFromSupplies`.
+ * @returns The note copy.
  */
 export function formatSpawnProvenanceNote(summary: SpawnProvenanceSummary): string {
   const parts: string[] = [];
@@ -254,7 +274,9 @@ export function formatSpawnProvenanceNote(summary: SpawnProvenanceSummary): stri
   if (summary.poolSourcedCount > 0) parts.push(`${summary.poolSourcedCount} pulled in`);
   if (summary.manualSourcedCount > 0) parts.push(`${summary.manualSourcedCount} added today`);
   const breakdown = parts.length > 0 ? ` — ${parts.join(', ')}` : '';
-  return `Picked ${summary.dealt} of ${summary.mixSize}${breakdown}`;
+  const windowless =
+    (summary.noBoardForWindowCount ?? 0) > 0 ? ` · ${NO_BOARD_FOR_WINDOW_NOTE}` : '';
+  return `Picked ${summary.dealt} of ${summary.mixSize}${breakdown}${windowless}`;
 }
 
 /**

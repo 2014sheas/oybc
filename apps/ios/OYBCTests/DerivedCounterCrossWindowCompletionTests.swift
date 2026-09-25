@@ -194,25 +194,25 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
 
     // MARK: - THE REPRODUCTION — the pulled weekly's window has ENDED
 
-    /// The daily pulls a weekly whose window ENDED but which is still ACTIVE
-    /// and unsealed — a designed flow (`isEligibleSourceBoard` offers a
-    /// closed-window ACTIVE board for the lookback; the backstop seal is 42h
-    /// after a weekly's end, applied lazily on app-open). 17 of 20 were logged
-    /// inside the weekly's own window (goal NOT met); today's daily log of 3
-    /// completes it, because the weekly has no window END: a ROOT square sums
-    /// events over `[startDate, ∞)`, a window-stamped DERIVED square latches
-    /// from `currentCount − baseline` in `propagateIncrement`.
+    /// Today's daily pulls a weekly, and today's log lands after the weekly's
+    /// window ENDED while it is still ACTIVE and unsealed (the backstop seal is
+    /// applied lazily on app-open). Since the owner ruling of 2026-09-24 an
+    /// ended board is never a source, so the pull itself is made in the
+    /// weekly's last hour (planning ahead). 17 of 20
+    /// were logged inside the weekly's own window (goal NOT met); today's
+    /// daily log of 3 does NOT complete it: a ROOT square sums events over
+    /// `[startDate, endDate]` (2026-09-24 amendment of WC Decision 1), and a
+    /// window-stamped DERIVED square resolves from its root's events inside
+    /// its own `[startDate, endDate]` — both end before today.
     ///
-    /// Status on fix/derived-counter-window-freeze (Task 3 item 5):
-    /// - The DERIVED-square variant is a GREEN regression pin: the kernel
-    ///   resolves a window-stamped row from its root's events inside
-    ///   `[startDate, endDate]`, and propagation freezes at the window end.
-    /// - The ROOT-square variant stays wrapped in `XCTExpectFailure` ON
-    ///   PURPOSE — an OPEN OWNER DECISION, not a bug this branch fixes: WC
-    ///   Decision 1 says a plain (root) square's window is `[startDate, ∞)`
-    ///   until the board is sealed (the end is enforced by sealing only).
-    ///   Reversing that is a spec change; the strict expected-failure flips
-    ///   loudly if it lands.
+    /// Both variants are GREEN regression pins:
+    /// - DERIVED square: the kernel resolves a window-stamped row from its
+    ///   root's events inside `[startDate, endDate]`, and propagation freezes
+    ///   at the window end.
+    /// - ROOT square: the 2026-09-24 amendment of WC Decision 1 (owner chose
+    ///   option C) end-bounds a board's root squares at `[startDate,
+    ///   endDate]`, so today's daily log no longer completes the ended weekly.
+    ///   (Was `XCTExpectFailure` while the decision was open.)
     private func pastWeekly(_ database: AppDatabase, derived: Bool) throws -> (weeklyId: String, weeklyTaskId: String) {
         let start = today.addingTimeInterval(-9 * 86_400)
         let pastStart = wizardLocalISOString(start)
@@ -262,8 +262,18 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         return ("weekly", weeklyTaskId)
     }
 
+    /// Plans today's daily from the weekly WHILE THE WEEKLY WAS STILL OPEN
+    /// (its last hour) — since the owner ruling of 2026-09-24 an ended board
+    /// is never a source, so the pull can no longer be made after the weekly
+    /// ends — then logs on it today, after the weekly has ended.
     private func logTodayOnDaily(_ database: AppDatabase, weeklyId: String, memberId: String) throws {
+        let weeklyEnd = try XCTUnwrap(
+            try database.fetchBoard(id: weeklyId)?.endDate.flatMap(parseISO8601Date)
+        )
+        AppDatabase.sourceClock = { weeklyEnd.addingTimeInterval(-3_600) }
+        defer { AppDatabase.sourceClock = { Date() } }
         let dailyId = try createDailyPulling(database, weeklyId: weeklyId, memberId: memberId)
+        AppDatabase.sourceClock = { Date() }
         let dId = BoardSources.derivedTaskId(boardId: dailyId, rootTaskId: rootId)
         let d = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: dId) })
         XCTAssertEqual(d.maxCount, 3, "a distinct, pro-rated daily row")
@@ -271,17 +281,13 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         XCTAssertEqual(try database.read { try Task.fetchOne($0, key: dId) }?.isCompleted, true)
     }
 
-    func test_BUG_pastWeeklyRootSquare_completedByPostWindowDailyLog() throws {
+    func test_pastWeeklyRootSquare_staysIncompleteAfterPostWindowDailyLog() throws {
         let database = try makeDb()
         let (weeklyId, weeklyTaskId) = try pastWeekly(database, derived: false)
         try logTodayOnDaily(database, weeklyId: weeklyId, memberId: weeklyTaskId)
         let w = try weeklyCell(database, weeklyId: weeklyId)
-        // EXPECTED FAILURE — open owner decision (WC Decision 1: root windows
-        // are `[startDate, ∞)` until sealed). Not fixed by this branch.
-        XCTExpectFailure("OPEN DECISION (WC Decision 1): a ROOT square sums [startDate, ∞) until sealed") {
-            XCTAssertEqual(w.cell?.isCompleted, false)
-            XCTAssertEqual(w.board.completedTasks, 0)
-        }
+        XCTAssertEqual(w.cell?.isCompleted, false)
+        XCTAssertEqual(w.board.completedTasks, 0)
     }
 
     /// Was `XCTExpectFailure` on dev (propagateIncrement latched every linked
@@ -305,6 +311,133 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         XCTAssertEqual(stale.placedTask?.isCompleted, true, "precondition: the stale latch is set")
         XCTAssertEqual(stale.cell?.isCompleted, false)
         XCTAssertEqual(stale.completedTasks, 0)
+    }
+
+    // MARK: - Late shared-counter logs (2026-09-24 amendment, decision C2)
+    //
+    // Twins of the web `lateLogWindowEnd.test.ts` shared-counter cases. The
+    // play surface passes its board id; a log made on an ended-but-unsealed
+    // board is stamped at that board's `endDate`. Real clock — the ops stamp
+    // `currentTimestamp()`.
+
+    private func rootEvents(_ database: AppDatabase) throws -> [TaskEvent] {
+        try database.read { db in
+            try TaskEvent.filter(Column("taskId") == self.rootId && Column("isDeleted") == false).fetchAll(db)
+        }
+    }
+
+    private func utcStamp(_ localIso: String) -> String {
+        DateFormatting.utcISOString(DateFormatting.parseISO(localIso)!)
+    }
+
+    func test_sharedCounterLog_withEndedBoardId_stampsAtEndDate_withoutBoardId_stampsNow() throws {
+        let database = try makeDb()
+        let (weeklyId, _) = try pastWeekly(database, derived: false)
+        let weeklyEnd = try XCTUnwrap(try database.fetchBoard(id: weeklyId)?.endDate)
+
+        _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 3, boardId: weeklyId)
+        let late = try XCTUnwrap(try rootEvents(database).first { $0.delta == 3 })
+        XCTAssertEqual(late.occurredAt, utcStamp(weeklyEnd), "late log lands at the ended board's endDate")
+        XCTAssertNil(late.boardId, "provenance unchanged — only occurredAt is clamped")
+        let w = try weeklyCell(database, weeklyId: weeklyId)
+        XCTAssertEqual(w.cell?.isCompleted, true, "17 + 3 inside the weekly's own window")
+        XCTAssertEqual(w.board.completedTasks, 1)
+
+        _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 1)
+        let plain = try XCTUnwrap(try rootEvents(database).first { $0.delta == 1 })
+        XCTAssertEqual(plain.occurredAt, plain.createdAt, "no board → stamped now")
+
+        _ = try database.decrementSharedCounter(sourceTaskId: rootId, by: 2, boardId: weeklyId)
+        let dec = try XCTUnwrap(try rootEvents(database).first { $0.delta == -2 })
+        XCTAssertEqual(dec.occurredAt, utcStamp(weeklyEnd), "decrement is clamped the same way")
+    }
+
+    func test_sharedCounterLog_withOpenBoardId_stampsNow() throws {
+        let database = try makeDb()
+        try seedRoot(database, goal: 20, history: 0)
+        let daily = try board(id: "open-daily", timeframe: .daily, start: dayStart, end: dayEnd)
+        try database.write { db in
+            try daily.save(db)
+            try self.placement(boardId: "open-daily", taskId: self.rootId).save(db)
+        }
+
+        _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 2, boardId: "open-daily")
+
+        let e = try XCTUnwrap(try rootEvents(database).first)
+        XCTAssertEqual(e.occurredAt, e.createdAt, "an open board's window contains now")
+    }
+
+    // MARK: - Final-review F5 / F6 (twins of web lateLogWindowEnd.test.ts)
+
+    /// Yesterday's daily board (ended, unsealed unless `sealedAt` is given), placing the root.
+    private func seedYesterday(_ database: AppDatabase, sealedAt: String? = nil) throws -> String {
+        let y = today.addingTimeInterval(-86_400)
+        var b = try board(
+            id: "yesterday", timeframe: .daily,
+            start: wizardLocalISOString(y), end: wizardLocalISOString(y.addingTimeInterval(86_400 - 0.001))
+        )
+        b.sealedAt = sealedAt
+        try database.write { db in
+            try b.save(db)
+            try self.placement(boardId: "yesterday", taskId: self.rootId).save(db)
+        }
+        return "yesterday"
+    }
+
+    func test_F5_sharedCounterLog_withSealedBoard_isNoOp() throws {
+        let database = try makeDb()
+        try seedRoot(database, goal: 20, history: 3)
+        let sealedId = try seedYesterday(database, sealedAt: dayStart)
+
+        let inc = try database.incrementSharedCounter(sourceTaskId: rootId, by: 2, boardId: sealedId)
+        let dec = try database.decrementSharedCounter(sourceTaskId: rootId, by: 1, boardId: sealedId)
+
+        XCTAssertTrue(inc.affectedBoards.isEmpty)
+        XCTAssertEqual(dec.effectiveDelta, 0)
+        XCTAssertEqual(try rootEvents(database).map(\.delta), [3], "a sealed board authors no event")
+        XCTAssertEqual(try database.fetchTask(id: rootId)?.currentCount, 3)
+    }
+
+    func test_F6_decrement_withEndedBoard_clampsToWindowCount_notLifetime() throws {
+        let database = try makeDb()
+        try seedRoot(database, goal: 20, history: 5) // lifetime 5, all two weeks ago
+        let endedId = try seedYesterday(database) // window count 0
+
+        let dec = try database.decrementSharedCounter(sourceTaskId: rootId, by: 1, boardId: endedId)
+
+        XCTAssertEqual(dec.effectiveDelta, 0)
+        XCTAssertFalse(try rootEvents(database).contains { ($0.delta ?? 0) < 0 })
+        XCTAssertEqual(try database.fetchTask(id: rootId)?.currentCount, 5)
+    }
+
+    func test_F6_decrement_withEndedBoard_capsAtWindowCount() throws {
+        let database = try makeDb()
+        try seedRoot(database, goal: 20, history: 5)
+        let endedId = try seedYesterday(database)
+        _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 2, boardId: endedId) // window 2, lifetime 7
+
+        let dec = try database.decrementSharedCounter(sourceTaskId: rootId, by: 4, boardId: endedId)
+
+        XCTAssertEqual(dec.effectiveDelta, 2)
+        XCTAssertEqual(try database.fetchTask(id: rootId)?.currentCount, 5)
+    }
+
+    /// A late log stamped at the ended weekly's `endDate` falls inside its
+    /// FROZEN window-stamped derived row: the row is never written, but the
+    /// weekly's stored stats must re-derive (cascade only).
+    func test_lateSharedCounterLog_reachesFrozenDerivedRow_cascadeOnly() throws {
+        let database = try makeDb()
+        let (weeklyId, weeklyTaskId) = try pastWeekly(database, derived: true)
+        let rowBefore = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: weeklyTaskId) })
+
+        _ = try database.incrementSharedCounter(sourceTaskId: rootId, by: 3, boardId: weeklyId)
+
+        let rowAfter = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: weeklyTaskId) })
+        XCTAssertEqual(rowAfter.version, rowBefore.version, "frozen row is never written")
+        XCTAssertFalse(rowAfter.isCompleted, "no latch write on a frozen row")
+        let w = try weeklyCell(database, weeklyId: weeklyId)
+        XCTAssertEqual(w.cell?.isCompleted, true, "kernel: 17 + 3 in the row's window")
+        XCTAssertEqual(try database.fetchBoard(id: weeklyId)?.completedTasks, 1, "stored stats re-derived")
     }
 }
 

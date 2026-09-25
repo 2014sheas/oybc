@@ -44,6 +44,19 @@ enum DateFormatting {
         return nil
     }
 
+    /// Encodes `date` as a canonical UTC event timestamp with millisecond
+    /// precision (`yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`) — the exact shape JS
+    /// `Date.prototype.toISOString()` emits. Reuses the cached fractional
+    /// internet-date-time formatter above (UTC is `ISO8601DateFormatter`'s
+    /// default time zone), so a round-trip through `parseISO(_:)` is lossless
+    /// at millisecond precision.
+    ///
+    /// - Parameter date: The instant to encode.
+    /// - Returns: The UTC ISO8601 string with fractional seconds.
+    static func utcISOString(_ date: Date) -> String {
+        isoParserWithFractional.string(from: date)
+    }
+
     /// Parses an ISO8601 string and returns an abbreviated localised date
     /// (e.g. `"Apr 12, 2026"`). Returns `"—"` on parse failure.
     ///

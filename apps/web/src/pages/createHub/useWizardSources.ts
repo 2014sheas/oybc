@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { BoardSource, BoardWindow, CompoundChild, Pool, Task } from '@oybc/shared';
-import { fetchBoardSourceSupply } from '../../db/operations/boardSources';
+import { fetchOpenBoardSourceSupply } from '../../db/operations/boardSources';
 import {
   buildSupplyInfoMap,
   selectionUnion,
@@ -32,7 +32,7 @@ import {
 } from './wizardSources';
 import {
   appendSource,
-  boardSupplyEntry,
+  boardSupplyEntryForResolution,
   droppedSelectionIds,
   removeSourceById,
   toggleIdInSet,
@@ -235,7 +235,9 @@ export function useWizardSources({
     void (async () => {
       const next: SupplyInfoMap = {};
       for (const boardId of ids) {
-        next[boardId] = boardSupplyEntry(await fetchBoardSourceSupply(boardId));
+        next[boardId] = boardSupplyEntryForResolution(
+          await fetchOpenBoardSourceSupply(boardId),
+        );
       }
       if (cancelled) return;
       setBoardSupplyById((prev) => ({ ...prev, ...next }));

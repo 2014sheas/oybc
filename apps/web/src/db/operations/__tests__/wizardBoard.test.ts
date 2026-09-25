@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BoardStatus,
   CenterSquareType,
@@ -568,6 +568,17 @@ describe('applyStagedTaskEditsForWizardPersist — standalone (recurring-templat
  * replaced member keeps its cell (the centre pin is the load-bearing case).
  */
 describe('persistWizardBoardRows — member-rule mint', () => {
+  // The source board's window is 2026-06-22..28; an ENDED board supplies
+  // nothing (owner ruling 2026-09-24), so the persist runs while it is
+  // still open — planning July's board during that week.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-25T12:00:00.000'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const ROOT = uuid(90);
   const FILLER = uuid(91);
   const SOURCE_BOARD = uuid(92);

@@ -20,7 +20,7 @@ import { updateBoardAndCascade, type UpdateActiveBoardPatch } from '../boards';
  * Bug: Board-Edit Save rewrote `startDate` on EVERY save (indefinite boards
  * re-anchored to today; core-timeframe boards recomputed from today's
  * window). Under Windowed Completion, `startDate` is the completion
- * window's lower bound (`[startDate, ∞)`) — rewriting it on a metadata-only
+ * window's lower bound (`[startDate, endDate]`) — rewriting it on a metadata-only
  * edit (e.g. renaming the board) silently re-windows the board and makes
  * every completion event that predates the new start invisible, wiping the
  * user's progress even though nothing about the task's completion changed.

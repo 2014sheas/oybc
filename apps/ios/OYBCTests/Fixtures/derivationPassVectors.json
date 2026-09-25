@@ -4493,6 +4493,268 @@
           "isCompleted": true
         }
       ]
+    },
+    {
+      "name": "end-bound-root-counting-post-endDate-increments-unsealed-incomplete-despite-latch",
+      "_why": "2026-09-24 amendment: a board's ROOT square evaluates [startDate, endDate] inclusive. K1 goal 5: +3 in-window, +2 at 2026-05-01T00:04 (after endDate 04-30T23:59:59, board ended but unsealed). Windowed count 3 < 5 => incomplete, though the lifetime latch/currentCount say done.",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "k1",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "k1": {
+          "id": "k1",
+          "type": "counting",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 5,
+          "currentCount": 5,
+          "sharedCounterId": null
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "k1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 3
+            },
+            {
+              "kind": "increment",
+              "occurredAt": "2026-05-01T00:04:00.000Z",
+              "delta": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 0,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-k1",
+          "taskId": "k1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false
+        }
+      ]
+    },
+    {
+      "name": "end-bound-root-counting-increment-exactly-at-endDate-counts-complete",
+      "_why": "C1 inclusive upper bound: the same K1 with the +2 stamped at EXACTLY endDate (2026-04-30T23:59:59.000Z — the late-log clamp target) counts => 3+2 = 5 >= 5 => complete.",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "k1",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {},
+      "taskById": {
+        "k1": {
+          "id": "k1",
+          "type": "counting",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null,
+          "maxCount": 5,
+          "currentCount": 5,
+          "sharedCounterId": null
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "k1": [
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-10T12:00:00.000Z",
+              "delta": 3
+            },
+            {
+              "kind": "increment",
+              "occurredAt": "2026-04-30T23:59:59.000Z",
+              "delta": 2
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 1,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-k1",
+          "taskId": "k1",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": true
+        }
+      ]
+    },
+    {
+      "name": "end-bound-compound-child-completed-after-endDate-parent-incomplete",
+      "_why": "Compound children inherit the host board's [startDate, endDate] (host-window inheritance incl. the 2026-09-24 end bound). comp=AND(n1,n2): n1 completed in-window, n2 completed at 2026-05-01T00:04 (after endDate, unsealed) => n2 false => comp incomplete (both children's lifetime caches say true).",
+      "board": {
+        "id": "b1",
+        "boardSize": 3,
+        "centerSquareType": "none",
+        "startDate": "2026-04-01T00:00:00.000Z",
+        "endDate": "2026-04-30T23:59:59.000Z",
+        "status": "active",
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "isDeleted": false,
+        "spawnedFromTemplateId": null
+      },
+      "boardTasksOnBoard": [
+        {
+          "taskId": "comp",
+          "row": 0,
+          "col": 0
+        }
+      ],
+      "childrenByCompound": {
+        "comp": [
+          {
+            "compoundTaskId": "comp",
+            "childTaskId": "n1",
+            "isDeleted": false
+          },
+          {
+            "compoundTaskId": "comp",
+            "childTaskId": "n2",
+            "isDeleted": false
+          }
+        ]
+      },
+      "taskById": {
+        "comp": {
+          "id": "comp",
+          "type": "compound",
+          "isCompleted": false,
+          "isDeleted": false,
+          "operator": "AND",
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null
+        },
+        "n1": {
+          "id": "n1",
+          "type": "normal",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null
+        },
+        "n2": {
+          "id": "n2",
+          "type": "normal",
+          "isCompleted": true,
+          "isDeleted": false,
+          "operator": null,
+          "threshold": null,
+          "referencedBoardId": null,
+          "referencedTemplateId": null,
+          "achievementTrigger": null,
+          "requiredCount": null
+        }
+      },
+      "allBoards": [],
+      "windowContext": {
+        "eventsByTaskId": {
+          "n1": [
+            {
+              "kind": "completion",
+              "occurredAt": "2026-04-10T12:00:00.000Z"
+            }
+          ],
+          "n2": [
+            {
+              "kind": "completion",
+              "occurredAt": "2026-05-01T00:04:00.000Z"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "boardId": "b1",
+        "completedTasks": 0,
+        "linesCompleted": 0,
+        "completedLineIds": [],
+        "newBingos": [],
+        "lostBingos": []
+      },
+      "expectedCells": [
+        {
+          "boardTaskId": "b1-comp",
+          "taskId": "comp",
+          "row": 0,
+          "col": 0,
+          "idx": 0,
+          "isCompleted": false
+        }
+      ]
     }
   ],
   "expandToWindowStampedDerived": [

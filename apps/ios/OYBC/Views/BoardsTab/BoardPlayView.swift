@@ -139,7 +139,6 @@ struct BoardPlayView: View {
     private var board: Board? { viewModel.board }
     private var boardTasks: [BoardTask] { viewModel.boardTasks }
     private var allTasks: [Task] { viewModel.allTasks }
-    private var allCompoundChildren: [CompoundChild] { viewModel.allCompoundChildren }
     // Phase 6.3 — workspace-wide boards + templates feed both the
     // achievement-square config sheet (for the pickers) and the per-
     // cell badge data computation. Refreshed alongside the task data
@@ -296,20 +295,14 @@ struct BoardPlayView: View {
 
     // MARK: - Windowed reads (Windowed Completion)
 
-    /// The current board's window lower bound (`board.startDate`). Every
-    /// event-owning square resolves against `[windowStart, ∞)`.
-    private var windowStart: String? { viewModel.windowStart }
-
     /// The workspace's non-deleted TaskEvents grouped by taskId (from the VM).
     private var windowEventsByTaskId: [String: [TaskEvent]] { viewModel.windowEventsByTaskId }
 
-    /// The compound window context for the current board — passed into
-    /// `CompoundEvaluation.evaluate` so compound squares resolve their primitive
-    /// children windowed (docs §Semantics). Derived-counting children are carved
-    /// out inside the kernel.
-    private var boardWindowContext: CompoundWindowContext {
-        CompoundWindowContext(windowStart: windowStart, eventsByTaskId: windowEventsByTaskId)
-    }
+    /// The compound window context for the current board, `[startDate,
+    /// endDate]` (VM-owned) — passed into `CompoundEvaluation.evaluate` so
+    /// compound squares resolve their primitive children windowed (docs
+    /// §Semantics). Derived-counting children are carved out inside the kernel.
+    private var boardWindowContext: CompoundWindowContext { viewModel.compoundWindowContext }
 
     /// Windowed completed state of a primitive square. A linked counter reads
     /// `resolveLinkedCounterDisplay` — a window-stamped row's root sum in its
@@ -320,9 +313,7 @@ struct BoardPlayView: View {
         if task.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).isCompleted
         }
-        return resolveTaskWindowState(
-            task: task, events: windowEventsByTaskId[task.id] ?? [], windowStart: windowStart
-        ).isCompleted
+        return viewModel.windowedState(of: task).isCompleted
     }
 
     /// Windowed count of a counting square: event-owning (source / plain) via
@@ -332,9 +323,7 @@ struct BoardPlayView: View {
         if task.sharedCounterId != nil {
             return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).displayed
         }
-        return resolveTaskWindowState(
-            task: task, events: windowEventsByTaskId[task.id] ?? [], windowStart: windowStart
-        ).count
+        return viewModel.windowedState(of: task).count
     }
 
     // MARK: - Edit-mode squares draft (Phase 2)
@@ -361,16 +350,7 @@ struct BoardPlayView: View {
     }
 
     /// Compound children grouped by parent compound task ID, sorted by childIndex.
-    private var compoundChildrenByCompound: [String: [CompoundChild]] {
-        var grouped: [String: [CompoundChild]] = [:]
-        for c in allCompoundChildren {
-            grouped[c.compoundTaskId, default: []].append(c)
-        }
-        for id in grouped.keys {
-            grouped[id]?.sort { $0.childIndex < $1.childIndex }
-        }
-        return grouped
-    }
+    private var compoundChildrenByCompound: [String: [CompoundChild]] { viewModel.compoundChildrenByCompound }
 
     /// Board-integrity PR-3 — kernel-derived per-cell state for THIS board,
     /// keyed by `boardTaskId`. `DerivationPass.computeBoardGrid` is now the
@@ -2059,19 +2039,8 @@ struct BoardPlayView: View {
                 } else {
                     ForEach(links, id: \.id) { link in
                         let childTask = taskMap[link.childTaskId]
-                        let isDone: Bool = {
-                            guard let ct = childTask, !ct.isDeleted else { return false }
-                            if ct.type == .compound {
-                                return CompoundEvaluation.evaluate(
-                                    compound: ct,
-                                    childrenByCompound: compoundChildrenByCompound,
-                                    taskById: taskMap,
-                                    windowContext: boardWindowContext
-                                )
-                            }
-                            // Windowed child state (linked children via the helper).
-                            return windowedIsCompleted(ct)
-                        }()
+                        // The windowed child state `handleCompoundChildToggle` inverts.
+                        let isDone = childTask.map { viewModel.compoundChildIsCompleted($0) } ?? false
                         // Windowed Completion (docs Decision 9) — a child whose
                         // only live completion(s) are sealed-window-immune
                         // can't be un-completed from here; disable + explain.

@@ -133,6 +133,90 @@ final class RecurringBoardTemplatesTests: XCTestCase {
 
     // MARK: - findTemplatesPendingSpawn
 
+    // MARK: - F3: dependency-ordered spawn (twin of the shared TS describe)
+
+    private func pullingTemplate(_ id: String, _ timeframe: Timeframe, from boardIds: [String] = []) -> RecurringBoardTemplate {
+        var t = makeTemplate(id: id, timeframe: timeframe)
+        if !boardIds.isEmpty {
+            t.sources = boardIds.map { BoardSource(sourceId: $0, kind: .board) }
+        }
+        return t
+    }
+
+    /// A previous (ended) instance of `templateId`'s series — the id a source row stored.
+    private func prevInstance(_ id: String, series templateId: String?) -> Board {
+        var dict: [String: Any] = [
+            "id": id, "userId": "u1", "name": id, "status": "active",
+            "boardSize": 3, "timeframe": "daily",
+            "startDate": "2026-08-01T00:00:00.000", "endDate": "2026-08-01T23:59:59.999",
+            "centerSquareType": "free", "isRandomized": false,
+            "totalTasks": 8, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": "2026-08-01T00:00:00.000", "updatedAt": "2026-08-01T00:00:00.000",
+            "version": 1, "isDeleted": false,
+        ]
+        if let templateId { dict["spawnedFromTemplateId"] = templateId }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
+    func testF3_MonthlyPullingWeeklySeries_SpawnsAfterWeekly() {
+        let pending = findTemplatesPendingSpawn(
+            templates: [pullingTemplate("M", .monthly, from: ["w-prev"]), pullingTemplate("W", .weekly)],
+            boards: [prevInstance("w-prev", series: "W")],
+            weekStartDay: "monday",
+            now: now(2026, 9, 1)
+        )
+        XCTAssertEqual(pending.map { $0.template.id }, ["W", "M"])
+    }
+
+    func testF3_SameTierLaterIndexSource_SpawnsFirst() {
+        let pending = findTemplatesPendingSpawn(
+            templates: [pullingTemplate("A", .daily, from: ["b-prev"]), pullingTemplate("B", .daily)],
+            boards: [prevInstance("b-prev", series: "B")],
+            weekStartDay: "monday",
+            now: now(2026, 9, 7)
+        )
+        XCTAssertEqual(pending.map { $0.template.id }, ["B", "A"])
+    }
+
+    func testF3_UnrelatedAndOneOffSource_KeepParentsFirst() {
+        let pending = findTemplatesPendingSpawn(
+            templates: [
+                pullingTemplate("d1", .daily, from: ["one-off"]),
+                pullingTemplate("w1", .weekly),
+                pullingTemplate("m1", .monthly),
+            ],
+            boards: [prevInstance("one-off", series: nil)],
+            weekStartDay: "monday",
+            now: now(2026, 9, 7)
+        )
+        XCTAssertEqual(pending.map { $0.template.id }, ["m1", "w1", "d1"])
+    }
+
+    func testF3_Cycle_FallsBackToParentsFirst() {
+        let pending = findTemplatesPendingSpawn(
+            templates: [
+                pullingTemplate("A", .daily, from: ["b-prev"]),
+                pullingTemplate("B", .daily, from: ["a-prev"]),
+                pullingTemplate("M", .monthly),
+            ],
+            boards: [prevInstance("a-prev", series: "A"), prevInstance("b-prev", series: "B")],
+            weekStartDay: "monday",
+            now: now(2026, 9, 7)
+        )
+        XCTAssertEqual(pending.map { $0.template.id }, ["M", "A", "B"])
+    }
+
+    func testF3_SelfReferencingSource_IsNotABlockingEdge() {
+        let pending = findTemplatesPendingSpawn(
+            templates: [pullingTemplate("W", .weekly, from: ["w-prev"]), pullingTemplate("D", .daily)],
+            boards: [prevInstance("w-prev", series: "W")],
+            weekStartDay: "monday",
+            now: now(2026, 9, 7)
+        )
+        XCTAssertEqual(pending.map { $0.template.id }, ["W", "D"])
+    }
+
     func testFindPendingSpawn_FreshTemplate_Pending() {
         let tpl = makeTemplate()
         let pending = findTemplatesPendingSpawn(

@@ -44,13 +44,19 @@ function makeTask(id: string, title: string, over: Partial<Task> = {}): Task {
   };
 }
 
-function render(source: BoardSource, tasks: Task[], isExpanded = true): string {
+function render(
+  source: BoardSource,
+  tasks: Task[],
+  isExpanded = true,
+  supplyOver: Partial<WizardSourceSupply> = {},
+): string {
   const taskById: Record<string, Task> = {};
   for (const t of tasks) taskById[t.id] = t;
   const supply: WizardSourceSupply = {
     displayName: 'Morning Kickstart',
     rawSupplyTaskIds: tasks.map((t) => t.id),
     doneTaskIds: new Set<string>(),
+    ...supplyOver,
   };
   return renderToStaticMarkup(
     React.createElement(SourceRow, {
@@ -133,5 +139,34 @@ describe('SourceRow', () => {
     expect(html).toContain('aria-label="Remove Morning Kickstart"');
     expect(html).toMatch(/<button[^>]*aria-expanded="(true|false)"[^>]*aria-label="Morning Kickstart, /);
     expect(findNestedInteractives(html)).toEqual([]);
+  });
+
+  // Owner ruling 2026-09-24 — ended boards are never sources: a board source
+  // with no board for the window being built says so in its subtitle slot.
+  describe('no board for this window', () => {
+    const BOARD_SOURCE: BoardSource = {
+      sourceId: 'board-1',
+      kind: 'board',
+      min: 0,
+      max: null,
+      excludedTaskIds: [],
+      filter: 'todo',
+    };
+
+    it('shows "No board for this window yet" when the supply resolved to no board', () => {
+      const html = render(BOARD_SOURCE, [], false, {
+        displayName: 'Week of Sep 14 – 20, 2026',
+        noBoardForWindow: true,
+      });
+      expect(html).toContain('Week of Sep 14 – 20, 2026');
+      expect(html).toContain('No board for this window yet');
+      expect(html).not.toContain('not done');
+    });
+
+    it('keeps the normal subtitle for an empty board that DOES exist for the window', () => {
+      const html = render(BOARD_SOURCE, [], false, { displayName: 'Empty board' });
+      expect(html).toContain('0 not done');
+      expect(html).not.toContain('No board for this window yet');
+    });
   });
 });

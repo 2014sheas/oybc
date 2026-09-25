@@ -415,4 +415,28 @@ final class PoolMixTests: XCTestCase {
         XCTAssertEqual(summary.manualSourcedCount, 2)
         XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Picked 7 of 8 — 5 pulled in, 2 added today")
     }
+
+    /// Owner ruling 2026-09-24 — a board source with no board for the
+    /// spawned window dealt nothing; the note says so. Twin of
+    /// poolMix.test.ts's windowless cases.
+    func testSpawnProvenanceNote_NoBoardForWindow_AppendsTheNote() {
+        let summary = PoolMix.summarizeSpawnProvenance(
+            supplies: [poolSupply("pool-a", ["p1", "p2"])],
+            manualTaskIds: ["m1"], counterFamilyByTaskId: [:], dealtTaskIds: ["p1", "p2", "m1"],
+            noBoardForWindowCount: 1
+        )
+        XCTAssertEqual(summary.noBoardForWindowCount, 1)
+        XCTAssertEqual(
+            PoolMix.formatSpawnProvenanceNote(summary),
+            "Picked 3 of 3 — 2 pulled in, 1 added today · No board for this window yet"
+        )
+    }
+
+    func testSpawnProvenanceNote_ZeroWindowless_IsUnchanged() {
+        let summary = PoolMix.summarizeSpawnProvenance(
+            supplies: [], manualTaskIds: ["m1"], counterFamilyByTaskId: [:], dealtTaskIds: ["m1"],
+            noBoardForWindowCount: 0
+        )
+        XCTAssertEqual(PoolMix.formatSpawnProvenanceNote(summary), "Picked 1 of 1 — 1 added today")
+    }
 }

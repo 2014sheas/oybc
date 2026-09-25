@@ -24,10 +24,20 @@ import type { TaskSquareData, SquareState } from '../components/interactiveTaskS
  * counters stay on their cache (the carve-out). When absent, behavior is
  * byte-identical to the pre-Windowed-Completion lifetime read (library
  * surfaces, tests).
+ *
+ * The window is `[windowStart, windowEnd]`, inclusive at both ends (2026-09-24
+ * amendment of WC Decision 1): an ended board's squares ignore events logged
+ * after its `endDate`, so a later window's logs never raise its counts.
  */
 export interface SquareWindowContext {
   /** Window lower bound (`board.startDate`). */
   windowStart: string;
+  /**
+   * Window INCLUSIVE upper bound (`board.endDate`, via `boardWindowEnd`), or
+   * `null` for an open-ended window (indefinite boards). Required so every
+   * construction site states the bound explicitly.
+   */
+  windowEnd: string | null;
   /** This workspace's non-deleted TaskEvents grouped by `taskId`. */
   eventsByTaskId: Record<string, TaskEvent[]>;
 }
@@ -44,17 +54,88 @@ export interface SquareWindowContext {
  *
  * @param events - All TaskEvents in scope (a live-query snapshot is fine; deleted rows are filtered here).
  * @param windowStart - The board's window lower bound (`board.startDate`).
+ * @param windowEnd - The board's inclusive window upper bound (`board.endDate`),
+ *   or `null` for an open-ended (indefinite) board.
+ * @returns The grouped events plus the window bounds.
  */
 export function buildSquareWindowContext(
   events: TaskEvent[],
   windowStart: string,
+  windowEnd: string | null,
 ): SquareWindowContext {
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
   for (const e of events) {
     if (e.isDeleted) continue;
     (eventsByTaskId[e.taskId] ??= []).push(e);
   }
-  return { windowStart, eventsByTaskId };
+  return { windowStart, windowEnd, eventsByTaskId };
+}
+
+/**
+ * Whether a compound's CHILD reads complete on a board — exactly the checkmark
+ * the compound detail sheet paints (and the kernel's `resolvePrimitiveChildState`
+ * order): nested compounds evaluate against the host window; window-stamped
+ * derived counters resolve from their root's events in their own window;
+ * event-owning children resolve against the host board's
+ * `[windowStart, windowEnd]`; hub-linked derived children (and every child when
+ * no window context is given) read their lifetime cache.
+ *
+ * @param childTask - The child task to resolve.
+ * @param taskMap - id → Task lookup (nested compound children resolve through it).
+ * @param childrenByCompound - Full compound → children map for nested evaluation.
+ * @param windowContext - The host board's window context, if any.
+ * @returns `true` iff the child is complete in the host board's window.
+ */
+export function resolveCompoundChildCompleted(
+  childTask: Task,
+  taskMap: Record<string, Task>,
+  childrenByCompound: Record<string, CompoundChild[]>,
+  windowContext?: SquareWindowContext,
+): boolean {
+  if (childTask.type === TaskType.COMPOUND) {
+    const compoundCtx = windowContext
+      ? {
+          windowStart: windowContext.windowStart,
+          windowEnd: windowContext.windowEnd,
+          eventsByTaskId: windowContext.eventsByTaskId,
+        }
+      : undefined;
+    return evaluateCompound(childTask, childrenByCompound, taskMap, compoundCtx);
+  }
+  const derived = windowContext
+    ? resolveDerivedCounterWindowState(childTask, windowContext.eventsByTaskId)
+    : null;
+  if (derived) return derived.isCompleted;
+  if (windowContext && isEventOwningTask(childTask)) {
+    const evts = windowContext.eventsByTaskId[childTask.id] ?? [];
+    return resolveTaskWindowState(childTask, evts, windowContext.windowStart, windowContext.windowEnd)
+      .isCompleted;
+  }
+  return childTask.isCompleted;
+}
+
+/**
+ * The desired completed state for a tap on a compound child in a board's
+ * detail sheet: the inverse of what the sheet shows
+ * ({@link resolveCompoundChildCompleted}), never the lifetime latch. On an
+ * ended board the two differ (a completion logged today on the next window's
+ * board sets the latch but is outside this board's window), and toggling off
+ * the latch would un-complete a child the sheet shows incomplete — or delete
+ * another window's completion.
+ *
+ * @param childTask - The tapped child.
+ * @param taskMap - id → Task lookup.
+ * @param childrenByCompound - Full compound → children map.
+ * @param windowContext - The host board's window context.
+ * @returns The state the tap should set.
+ */
+export function compoundChildToggleDesired(
+  childTask: Task,
+  taskMap: Record<string, Task>,
+  childrenByCompound: Record<string, CompoundChild[]>,
+  windowContext: SquareWindowContext,
+): boolean {
+  return !resolveCompoundChildCompleted(childTask, taskMap, childrenByCompound, windowContext);
 }
 
 /**
@@ -104,23 +185,8 @@ export function taskToSquareData(
     // grid square. Window-stamped derived children resolve from their root's
     // events in their own window — the kernel's `resolvePrimitiveChildState`
     // order — and only hub-linked derived children stay on their cache.
-    const compoundCtx = windowContext
-      ? { windowStart: windowContext.windowStart, eventsByTaskId: windowContext.eventsByTaskId }
-      : undefined;
-    const resolveChild = (childTask: Task): boolean => {
-      if (childTask.type === TaskType.COMPOUND) {
-        return evaluateCompound(childTask, cbMap, map, compoundCtx);
-      }
-      const derived = windowContext
-        ? resolveDerivedCounterWindowState(childTask, windowContext.eventsByTaskId)
-        : null;
-      if (derived) return derived.isCompleted;
-      if (windowContext && isEventOwningTask(childTask)) {
-        const evts = windowContext.eventsByTaskId[childTask.id] ?? [];
-        return resolveTaskWindowState(childTask, evts, windowContext.windowStart).isCompleted;
-      }
-      return childTask.isCompleted;
-    };
+    const resolveChild = (childTask: Task): boolean =>
+      resolveCompoundChildCompleted(childTask, map, cbMap, windowContext);
     const children = links.map((link) => {
       const childTask = map[link.childTaskId];
       if (!childTask) return { taskId: link.childTaskId, title: '<missing>', isCompleted: false };
@@ -212,7 +278,11 @@ export function taskToSquareState(
     // Windowed Completion: thread the host board's window so primitive
     // children resolve against events (nested compounds inherit it).
     const compoundCtx = windowContext
-      ? { windowStart: windowContext.windowStart, eventsByTaskId: windowContext.eventsByTaskId }
+      ? {
+          windowStart: windowContext.windowStart,
+          windowEnd: windowContext.windowEnd,
+          eventsByTaskId: windowContext.eventsByTaskId,
+        }
       : undefined;
     return {
       isCompleted: evaluateCompound(task, cbMap, map, compoundCtx),
@@ -249,7 +319,12 @@ export function taskToSquareState(
   // supplied (library surfaces / legacy callers).
   if (windowContext && isEventOwningTask(task)) {
     const events = windowContext.eventsByTaskId[task.id] ?? [];
-    const { isCompleted, count } = resolveTaskWindowState(task, events, windowContext.windowStart);
+    const { isCompleted, count } = resolveTaskWindowState(
+      task,
+      events,
+      windowContext.windowStart,
+      windowContext.windowEnd,
+    );
     return {
       isCompleted,
       currentCount: count,

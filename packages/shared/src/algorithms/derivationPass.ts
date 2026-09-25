@@ -7,6 +7,7 @@ import {
   resolveTaskWindowState,
   resolveDerivedCounterWindowState,
   isEventOwningTask,
+  boardWindowEnd,
   type CompoundWindowContext,
   type WindowEvaluationContext,
 } from './taskEvents';
@@ -289,10 +290,14 @@ export function computeBoardGrid(
   let completedTasks = 0;
   const cells: CellState[] = [];
 
-  // Window context for compound + primitive resolution. `board.startDate` is
-  // the window lower bound `[startDate, ∞)`; indefinite boards use it too.
+  // Window context for compound + primitive resolution. The board's own
+  // window `[startDate, endDate]` (inclusive; indefinite boards have no upper
+  // bound) — 2026-09-24 amendment. A sealed snapshot's context is already
+  // pre-bounded at `sealedAt` by the caller (`boundWindowContextAtSeal`), so
+  // its effective upper bound is `min(endDate, sealedAt)`.
+  const windowEnd = boardWindowEnd(board);
   const compoundCtx: CompoundWindowContext | undefined = windowContext
-    ? { windowStart: board.startDate, eventsByTaskId: windowContext.eventsByTaskId }
+    ? { windowStart: board.startDate, windowEnd, eventsByTaskId: windowContext.eventsByTaskId }
     : undefined;
 
   /** Resolve a primitive (normal / counting) square, windowed or lifetime. */
@@ -310,7 +315,7 @@ export function computeBoardGrid(
     // set, no `startDate`) keep their propagation-stamped lifetime cache.
     if (!isEventOwningTask(t)) return t.isCompleted;
     const events = windowContext.eventsByTaskId[t.id] ?? [];
-    return resolveTaskWindowState(t, events, board.startDate).isCompleted;
+    return resolveTaskWindowState(t, events, board.startDate, windowEnd).isCompleted;
   };
 
   // Phase 6.3: index all non-deleted boards by id (specific-board mode)

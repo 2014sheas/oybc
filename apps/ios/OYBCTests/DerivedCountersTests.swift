@@ -27,6 +27,19 @@ import GRDB
 ///      board's stored `centerTaskId` follows it).
 final class DerivedCountersTests: XCTestCase {
 
+    /// An ENDED board is never a source (owner ruling 2026-09-24), judged
+    /// against the wall clock by default. These fixtures live on fixed dates,
+    /// so the source clock is pinned inside the 2026-09-18 / week-of-09-14 source boards' window.
+    override func setUp() {
+        super.setUp()
+        AppDatabase.sourceClock = { parseISO8601Date("2026-09-18T09:00:00.000Z")! }
+    }
+
+    override func tearDown() {
+        AppDatabase.sourceClock = { Date() }
+        super.tearDown()
+    }
+
     // MARK: - Fixtures
 
     private let userId = "u1"
@@ -697,8 +710,10 @@ final class DerivedCountersTests: XCTestCase {
             ).save(db)
         }
         try seedSpawnSourceBoard(
+            // Open at the pinned source clock (2026-09-18 09:00Z) — an ENDED
+            // board is never a source (owner ruling 2026-09-24).
             database, id: "src-daily", timeframe: .daily,
-            startDate: "2026-09-17T00:00:00.000Z", endDate: "2026-09-17T23:59:59.999Z",
+            startDate: "2026-09-18T00:00:00.000Z", endDate: "2026-09-18T23:59:59.999Z",
             taskIds: [compoundId]
         )
         let template = try seedTemplate(

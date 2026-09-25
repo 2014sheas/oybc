@@ -46,9 +46,12 @@ final class BoardPlayViewModelTests: XCTestCase {
         try db.saveUser(user)
     }
 
-    /// Build a Board via JSON (the same path production uses).
-    private func makeBoard(id: String, userId: String = "u1") -> Board {
-        let dict: [String: Any] = [
+    /// Build a Board via JSON (the same path production uses). `endDate: nil`
+    /// makes an open-ended board (its window contains the real clock's now).
+    private func makeBoard(
+        id: String, userId: String = "u1", endDate: String? = "2026-06-30T23:59:59.999"
+    ) -> Board {
+        var dict: [String: Any] = [
             "id": id,
             "userId": userId,
             "name": "Board \(id)",
@@ -56,7 +59,6 @@ final class BoardPlayViewModelTests: XCTestCase {
             "boardSize": 3,
             "timeframe": Timeframe.monthly.rawValue,
             "startDate": "2026-06-21T00:00:00.000",
-            "endDate": "2026-06-30T23:59:59.999",
             "centerSquareType": CenterSquareType.free.rawValue,
             "isRandomized": false,
             "totalTasks": 9,
@@ -67,6 +69,7 @@ final class BoardPlayViewModelTests: XCTestCase {
             "version": 1,
             "isDeleted": false,
         ]
+        if let endDate { dict["endDate"] = endDate }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -636,6 +639,18 @@ final class BoardPlayViewModelTests: XCTestCase {
         try db.saveTask(makeCountingTask("c-lnk", maxCount: 20, currentCount: 3, sharedCounterId: "c-src"))
         try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
         try db.saveBoardTask(makeBoardTask(id: "bt-lnk", boardId: "b2", taskId: "c-lnk", row: 0, col: 0))
+        // The event behind the lifetime cache of 3, inside b1's window: a
+        // board-context decrement clamps to the board's WINDOW count
+        // (final-review F6), so the fixture must carry the occurrence, not
+        // just the cache.
+        try db.write { database in
+            try TaskEvent(
+                id: "src-3", userId: "u1", taskId: "c-src", kind: .increment, delta: 3,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(database)
+        }
 
         let vm = loadedVM(db, boardId: "b1")
         let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-src" })
@@ -736,6 +751,16 @@ final class BoardPlayViewModelTests: XCTestCase {
         // Zero-link, seeded above 0 so the decrement has something to remove.
         try db.saveTask(makeCountingTask("c-solo", maxCount: 5, currentCount: 2, isCounter: true))
         try db.saveBoardTask(makeBoardTask(id: "bt-solo", boardId: "b1", taskId: "c-solo", row: 0, col: 0))
+        // The event behind the lifetime cache of 2, inside b1's window — a
+        // board-context decrement clamps to the WINDOW count (final-review F6).
+        try db.write { database in
+            try TaskEvent(
+                id: "solo-seed", userId: "u1", taskId: "c-solo", kind: .increment, delta: 2,
+                occurredAt: "2026-06-25T00:00:00.000", boardId: nil,
+                createdAt: "2026-06-25T00:00:00.000", updatedAt: "2026-06-25T00:00:00.000",
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).save(database)
+        }
 
         let vm = loadedVM(db, boardId: "b1")
         let bt = try XCTUnwrap(vm.boardTasks.first { $0.taskId == "c-solo" })
@@ -749,7 +774,7 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "shared-counter decrement never dropped the zero-link isCounter source, or threw")
         XCTAssertEqual(try XCTUnwrap(dbTask(db, "c-solo")).currentCount, 1)
 
-        let events = try db.fetchNonDeletedTaskEvents(userId: "u1").filter { $0.taskId == "c-solo" }
+        let events = try db.fetchNonDeletedTaskEvents(userId: "u1").filter { $0.taskId == "c-solo" && $0.id != "solo-seed" }
         XCTAssertEqual(events.count, 1, "exactly one lifetime decrement event should have been appended")
         XCTAssertNil(events.first?.boardId,
                      "shared-counter engine appends a lifetime event (boardId nil); a non-nil boardId would mean this fell through to the legacy windowed path")
@@ -1152,11 +1177,14 @@ final class BoardPlayViewModelTests: XCTestCase {
 
     /// Seed: user u1, b1 (holds the SOURCE counter c-src) + b2 (holds a linked
     /// derived counter c-lnk → c-src), so c-src is a shared-counter source whose
-    /// square on b1 participates in arrival detection.
-    private func seedSharedCounterBoard(_ db: AppDatabase) throws {
+    /// square on b1 participates in arrival detection. Both boards are
+    /// OPEN-ENDED: the elsewhere log is stamped at the real clock's now, and
+    /// since the 2026-09-24 amendment an ENDED board's window no longer counts
+    /// it (pinned separately by `test_arrivalDetection_endedBoard_…`).
+    private func seedSharedCounterBoard(_ db: AppDatabase, boardEndDate: String? = nil) throws {
         try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))
-        try db.saveBoard(makeBoard(id: "b2"))
+        try db.saveBoard(makeBoard(id: "b1", endDate: boardEndDate))
+        try db.saveBoard(makeBoard(id: "b2", endDate: boardEndDate))
         try db.saveTask(makeCountingTask("c-src", maxCount: 5, currentCount: 0))
         try db.saveTask(makeCountingTask("c-lnk", maxCount: 5, currentCount: 0, sharedCounterId: "c-src"))
         try db.saveBoardTask(makeBoardTask(id: "bt-src", boardId: "b1", taskId: "c-src", row: 0, col: 0))
@@ -1199,6 +1227,24 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(ev.arrivedCounters.first?.counterId, "c-src")
     }
 
+    /// 2026-09-24 amendment: a log made elsewhere TODAY is outside an ENDED
+    /// board's `[startDate, endDate]` window, so it must not arrive there.
+    func test_arrivalDetection_endedBoard_elsewhereLogTodayDoesNotArrive() throws {
+        let db = try makeDb()
+        try seedSharedCounterBoard(db, boardEndDate: "2026-06-30T23:59:59.999")
+        let vm = BoardPlayViewModel(boardId: "b1", userId: "u1", database: db, arrivalStore: makeIsolatedStore())
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "b1" && !vm.allTasks.isEmpty })
+
+        try bumpSourceCount(db, by: 3)
+        vm.markArrivalDetectionPending()
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.windowEventsByTaskId["c-src"]?.count == 1 }, "reload picked up the log")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertNil(vm.arrivalEvent, "today's log is not this ended board's")
+    }
+
     func test_arrivalDetection_reSnapshotAfterShown_suppressesSecondEvent() throws {
         let db = try makeDb()
         try seedSharedCounterBoard(db)
@@ -1235,7 +1281,7 @@ final class BoardPlayViewModelTests: XCTestCase {
     func test_arrivalDetection_promotedZeroLinkCounter_stillDetectsArrival() throws {
         let db = try makeDb()
         try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveBoard(makeBoard(id: "b1", endDate: nil)) // open: the log is stamped now
         try db.saveTask(makeCountingTask("c-solo", maxCount: 5, currentCount: 0, isCounter: true))
         try db.saveBoardTask(makeBoardTask(id: "bt-solo", boardId: "b1", taskId: "c-solo", row: 0, col: 0))
 
@@ -2078,5 +2124,96 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(squares.count, 1)
         XCTAssertEqual(squares.first?.displayed, 5,
                        "source arrival baseline must be the in-window sum (5), not the lifetime cache (12)")
+    }
+
+    // MARK: - Ended-board end bound (2026-09-24 amendment of WC Decision 1)
+
+    /// The play CELL read (`windowedState(of:)` — the view's
+    /// `windowedIsCompleted` / `windowedCount` resolve through it) on an
+    /// ENDED board ignores increments logged after its `endDate` (e.g. today,
+    /// on the next window's board). Twin of web `adaptersWindowEnd.test.ts`.
+    func test_playCellRead_onEndedBoard_ignoresIncrementsAfterEndDate() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeOneCellBoard(id: "b1")) // 2026-06-21 … 2026-06-30 — ended
+        try db.saveTask(makeCountingTask("c1", maxCount: 5, currentCount: 5))
+        try db.saveBoardTask(makeBoardTask(id: "bt-c1", boardId: "b1", taskId: "c1", row: 0, col: 0))
+        try db.write { db in
+            for (id, delta, at) in [("in", 3, "2026-06-25T00:00:00.000"), ("after", 2, "2026-07-05T00:00:00.000")] {
+                try TaskEvent(
+                    id: id, userId: "u1", taskId: "c1", kind: .increment, delta: delta,
+                    occurredAt: at, boardId: nil, createdAt: at, updatedAt: at,
+                    lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+                ).save(db)
+            }
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let task = try XCTUnwrap(vm.taskMap["c1"])
+        let state = vm.windowedState(of: task)
+        XCTAssertEqual(state.count, 3, "the +2 after endDate is not this board's")
+        XCTAssertFalse(state.isCompleted)
+        XCTAssertEqual(vm.windowedState(forTaskId: "c1").count, 3)
+        XCTAssertEqual(vm.kernelCellStates["bt-c1"]?.isCompleted, false, "cell and kernel agree")
+    }
+
+    /// The compound detail sheet's child row and the toggle direction come
+    /// from the WINDOWED state bounded at both ends, never the lifetime latch:
+    /// a child completed today (latch set) reads incomplete on an ended board,
+    /// so a tap COMPLETES it there — stamped at the board's `endDate` — and
+    /// keeps today's completion.
+    func test_compoundChildToggle_onEndedBoard_followsWindowedState_stampsAtEndDate() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let board = makeOneCellBoard(id: "b1") // ended
+        try db.saveBoard(board)
+        try db.saveTask(makeCompoundTask("cmp"))
+        var child = makeTask("child1")
+        child.isCompleted = true
+        child.completedAt = AppDatabase.currentTimestamp()
+        try db.saveTask(child)
+        try db.saveBoardTask(makeBoardTask(id: "bt-cmp", boardId: "b1", taskId: "cmp", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            try makeCompoundChild(parent: "cmp", child: "child1", idx: 0).insert(database)
+            try makeCompletionEvent("today", taskId: "child1", occurredAt: AppDatabase.currentTimestamp()).save(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let loadedChild = try XCTUnwrap(vm.taskMap["child1"])
+        XCTAssertTrue(loadedChild.isCompleted, "precondition: the lifetime latch is set")
+        XCTAssertFalse(vm.compoundChildIsCompleted(loadedChild), "today's completion is outside the ended window")
+
+        vm.handleCompoundChildToggle(childTask: loadedChild)
+
+        let liveEvents: () -> [TaskEvent] = {
+            (try? db.read { try TaskEvent.filter(Column("taskId") == "child1" && Column("isDeleted") == false).fetchAll($0) }) ?? []
+        }
+        XCTAssertTrue(waitUntil { liveEvents().count == 2 && !vm.isProcessing }, "the tap must COMPLETE, not un-complete")
+        let appended = try XCTUnwrap(liveEvents().first { $0.id != "today" })
+        let end = try XCTUnwrap(board.endDate)
+        XCTAssertEqual(appended.occurredAt, DateFormatting.utcISOString(DateFormatting.parseISO(end)!))
+        XCTAssertEqual(try db.fetchBoard(id: "b1")?.completedTasks, 1, "the compound completes in its window")
+    }
+
+    /// Final-review F12: a non-compound, non-linked, NON-event-owning child
+    /// (a legacy achievement child) owns no events, so it reads its latch —
+    /// exactly as web `resolveCompoundChildCompleted` does.
+    func test_F12_compoundChildIsCompleted_nonEventOwningChild_readsLatch() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeOneCellBoard(id: "b1"))
+        try db.saveTask(makeCompoundTask("cmp"))
+        var child = makeTask("ach1")
+        child.type = .achievement
+        child.isCompleted = true
+        try db.saveTask(child)
+        try db.saveBoardTask(makeBoardTask(id: "bt-cmp", boardId: "b1", taskId: "cmp", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            try makeCompoundChild(parent: "cmp", child: "ach1", idx: 0).insert(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        let loaded = try XCTUnwrap(vm.taskMap["ach1"])
+        XCTAssertTrue(vm.compoundChildIsCompleted(loaded), "no events to window — the latch is the state")
     }
 }

@@ -6,8 +6,8 @@ import GRDB
 /// (docs/WINDOWED_COMPLETION.md §Write paths → "Sealed-window immunity" /
 /// Decision 9). Twin of web's `tombstoneSealImmunity.test.ts`.
 ///
-/// An event whose `occurredAt` falls inside `[startDate, sealedAt]` of a
-/// sealed board that places the task can NEVER be tombstoned — history stays
+/// An event whose `occurredAt` falls inside `[startDate, min(endDate,
+/// sealedAt)]` of a sealed board that places the task can NEVER be tombstoned — history stays
 /// history. The library un-complete affordance reads
 /// `isUncompleteBlockedBySeal` to disable-with-explanation when a task is
 /// green only via such an event.
@@ -20,6 +20,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
     private let sealedAt = "2026-07-02T06:00:00.000Z"
     private let inSealedWindow = "2026-07-01T12:00:00.000Z" // inside [start, sealedAt]
     private let postSeal = "2026-07-02T12:00:00.000Z" // after sealedAt → tombstonable overtime
+    private let overtimeGap = "2026-07-02T01:00:00.000Z" // end < t <= sealedAt → next window's, not immune (F1)
 
     private let taskA = "10000000-0000-4000-8000-000000000001"
     private let sealedBoardId = "20000000-0000-4000-8000-000000000001"
@@ -50,11 +51,11 @@ final class TombstoneSealImmunityTests: XCTestCase {
         ))
     }
 
-    private func makeBoard(id: String, sealedAt: String? = nil) -> Board {
+    private func makeBoard(id: String, sealedAt: String? = nil, startDate: String? = nil, endDate: String? = nil) -> Board {
         var dict: [String: Any] = [
             "id": id, "userId": userId, "name": "B", "status": "active",
             "boardSize": 3, "timeframe": "daily",
-            "startDate": start, "endDate": end,
+            "startDate": startDate ?? start, "endDate": endDate ?? end,
             "centerSquareType": "none", "isRandomized": false,
             "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
             "createdAt": start, "updatedAt": start, "version": 1, "isDeleted": false,
@@ -80,6 +81,72 @@ final class TombstoneSealImmunityTests: XCTestCase {
         )
     }
 
+    // MARK: - F1: immune window = [startDate, min(endDate, sealedAt)]
+
+    /// An event in the overtime gap (endDate < t <= sealedAt) never counted on
+    /// the sealed board — it belongs to the NEXT window — so un-completing it
+    /// on the next board must tombstone it.
+    func test_F1_overtimeGapEventIsNotImmune() throws {
+        let db = try makeDb(); try seedUser(db)
+        try seedNormalTask(db)
+        try db.saveBoard(makeBoard(id: sealedBoardId, sealedAt: sealedAt))
+        try placeTask(db, boardId: sealedBoardId)
+        try db.saveBoard(makeBoard(id: liveBoardId, startDate: end, endDate: "2026-07-02T23:59:59.999Z"))
+        try placeTask(db, boardId: liveBoardId)
+        try db.write { try self.completionEvent("e-gap", occurredAt: self.overtimeGap).save($0) }
+
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.end, now: "2026-07-02T08:00:00.000Z", windowEnd: "2026-07-02T23:59:59.999Z") }
+
+        let ev = try db.read { try TaskEvent.fetchOne($0, key: "e-gap") }
+        XCTAssertEqual(ev?.isDeleted, true)
+    }
+
+    /// An event exactly at endDate stays immune (inclusive upper bound).
+    func test_F1_eventAtEndDateStaysImmune() throws {
+        let db = try makeDb(); try seedUser(db)
+        try seedNormalTask(db)
+        try db.saveBoard(makeBoard(id: sealedBoardId, sealedAt: sealedAt))
+        try placeTask(db, boardId: sealedBoardId)
+        try db.write { try self.completionEvent("e-end", occurredAt: self.end).save($0) }
+
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: nil) }
+
+        let ev = try db.read { try TaskEvent.fetchOne($0, key: "e-end") }
+        XCTAssertEqual(ev?.isDeleted, false)
+    }
+
+    /// Pure helper: the bound clamps to endDate; nil/unparseable endDate = sealedAt.
+    func test_F1_buildSealImmuneWindowsClampsToEndDate() {
+        let w = buildSealImmuneWindows(sealedBoards: [
+            (startDate: start, endDate: end, sealedAt: sealedAt),
+            (startDate: start, endDate: nil, sealedAt: sealedAt),
+            (startDate: start, endDate: "not-a-date", sealedAt: sealedAt),
+        ])
+        let endMs = DateFormatting.parseISO(end)!.timeIntervalSince1970 * 1000
+        let sealedMs = DateFormatting.parseISO(sealedAt)!.timeIntervalSince1970 * 1000
+        XCTAssertEqual(w.map(\.endMs), [endMs, sealedMs, sealedMs])
+        XCTAssertFalse(isOccurredAtSealImmune(overtimeGap, windows: [w[0]]))
+        XCTAssertTrue(isOccurredAtSealImmune(end, windows: [w[0]]))
+    }
+
+    // MARK: - F11: unparseable windowEnd fails open (web parity)
+
+    func test_F11_unparseableWindowEnd_failsOpen_tombstonesFromStartOn() throws {
+        let db = try makeDb(); try seedUser(db)
+        try seedNormalTask(db)
+        try db.saveBoard(makeBoard(id: liveBoardId))
+        try placeTask(db, boardId: liveBoardId)
+        try db.write { db in
+            try self.completionEvent("e-in", occurredAt: self.inSealedWindow).save(db)
+            try self.completionEvent("e-later", occurredAt: self.postSeal).save(db)
+        }
+
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: "not-a-date") }
+
+        let evs = try db.read { try TaskEvent.fetchAll($0) }
+        XCTAssertEqual(evs.filter(\.isDeleted).map(\.id).sorted(), ["e-in", "e-later"])
+    }
+
     // MARK: - tombstoneWindowCompletions — sealed-window immunity
 
     func test_tombstoneWindowCompletions_doesNotTombstoneImmuneEvent() throws {
@@ -89,7 +156,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
         try placeTask(db, boardId: sealedBoardId)
         try db.write { try self.completionEvent("e-immune", occurredAt: self.inSealedWindow).save($0) }
 
-        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z") }
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: nil) }
 
         let ev = try db.read { try TaskEvent.fetchOne($0, key: "e-immune") }
         XCTAssertEqual(ev?.isDeleted, false) // immune — history stays
@@ -107,7 +174,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
             try self.completionEvent("e-open", occurredAt: self.postSeal).save(db)
         }
 
-        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z") }
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: nil) }
 
         XCTAssertEqual(try db.read { try TaskEvent.fetchOne($0, key: "e-immune") }?.isDeleted, false)
         XCTAssertEqual(try db.read { try TaskEvent.fetchOne($0, key: "e-open") }?.isDeleted, true)
@@ -120,7 +187,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
         try placeTask(db, boardId: liveBoardId)
         try db.write { try self.completionEvent("e1", occurredAt: self.inSealedWindow).save($0) }
 
-        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z") }
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: nil) }
 
         XCTAssertEqual(try db.read { try TaskEvent.fetchOne($0, key: "e1") }?.isDeleted, true)
         XCTAssertEqual(try db.fetchTask(id: taskA)?.isCompleted, false)

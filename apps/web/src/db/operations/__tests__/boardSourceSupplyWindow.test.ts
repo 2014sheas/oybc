@@ -195,7 +195,9 @@ describe('fetchBoardSourceSupply — the wizard’s read path carries both', () 
     await db.taskEvents.add(increment('e1', 'c1', '2026-09-15T09:00:00.000', 6));
     await db.taskEvents.add(increment('e0', 'c1', '2026-09-01T09:00:00.000', 99));
 
-    const info = await fetchBoardSourceSupply('board-1');
+    // The source must be OPEN to supply (owner ruling 2026-09-24) — judge
+    // "ended" from inside its window, not the wall clock.
+    const info = await fetchBoardSourceSupply('board-1', new Date('2026-09-16T12:00:00.000'));
 
     expect(info).not.toBeNull();
     expect(info?.windowCountByTaskId).toEqual({ c1: 6 });

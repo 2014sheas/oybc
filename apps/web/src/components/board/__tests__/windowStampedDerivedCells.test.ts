@@ -126,7 +126,7 @@ function place(taskId: string, row: number, col: number): BoardTask {
 function ctx(events: TaskEvent[]): SquareWindowContext {
   const eventsByTaskId: Record<string, TaskEvent[]> = {};
   for (const e of events) (eventsByTaskId[e.taskId] ??= []).push(e);
-  return { windowStart: WS, eventsByTaskId };
+  return { windowStart: WS, windowEnd: null, eventsByTaskId };
 }
 
 // +3 inside the window, +17 three days after it ended (the repro's daily log).

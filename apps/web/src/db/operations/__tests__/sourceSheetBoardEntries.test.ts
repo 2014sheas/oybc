@@ -104,14 +104,21 @@ describe('fetchSourceSheetBoardEntries', () => {
     expect(await fetchSourceSheetBoardEntries(USER)).toHaveLength(0);
   });
 
-  it('keeps an active board whose window closed recently', async () => {
+  // Owner ruling 2026-09-24 (supersedes #482's 30-day lookback): "There is
+  // no REAL use case for ended boards as sources."
+  it('EXCLUDES an active board whose window closed yesterday (no lookback)', async () => {
     await seedBoard({
-      id: 'last-month', name: 'Last month', timeframe: Timeframe.MONTHLY,
-      startDate: daysAgo(40), endDate: daysAgo(10),
+      id: 'last-week', name: 'Last week', timeframe: Timeframe.WEEKLY,
+      startDate: daysAgo(8), endDate: daysAgo(1),
     });
 
-    const entries = await fetchSourceSheetBoardEntries(USER);
-    expect(entries.map((e) => e.board.id)).toEqual(['last-month']);
+    expect(await fetchSourceSheetBoardEntries(USER)).toHaveLength(0);
+  });
+
+  it('EXCLUDES a sealed board', async () => {
+    await seedBoard({ id: 'sealed', name: 'Sealed', sealedAt: daysAgo(0) });
+
+    expect(await fetchSourceSheetBoardEntries(USER)).toHaveLength(0);
   });
 
   it('keeps an active board whose window is still open', async () => {
@@ -120,17 +127,30 @@ describe('fetchSourceSheetBoardEntries', () => {
     expect(entries.map((e) => e.board.id)).toEqual(['live']);
   });
 
-  it('now admits a recently COMPLETED board (it did not before)', async () => {
-    // Deliberate behaviour change: the sheet uses the shared
-    // eligibility rule, so "build October's from September's" works here
-    // too. Pinned so the change is intentional, not accidental drift.
+  it('keeps an indefinite board (no end date)', async () => {
+    await seedBoard({ id: 'ongoing', name: 'Ongoing', endDate: undefined });
+    const entries = await fetchSourceSheetBoardEntries(USER);
+    expect(entries.map((e) => e.board.id)).toEqual(['ongoing']);
+  });
+
+  it('admits a COMPLETED board only while its window is open', async () => {
     await seedBoard({
-      id: 'done', name: 'Finished', status: BoardStatus.COMPLETED,
-      completedAt: daysAgo(3), endDate: daysAgo(4),
+      id: 'done-open', name: 'Finished, still open', status: BoardStatus.COMPLETED,
+      completedAt: daysAgo(0),
+    });
+    await seedBoard({
+      id: 'done-ended', name: 'Finished, ended', status: BoardStatus.COMPLETED,
+      completedAt: daysAgo(3), endDate: daysAgo(2),
     });
 
     const entries = await fetchSourceSheetBoardEntries(USER);
-    expect(entries.map((e) => e.board.id)).toEqual(['done']);
+    expect(entries.map((e) => e.board.id)).toEqual(['done-open']);
+  });
+
+  it('judges "ended" against the injected now', async () => {
+    await seedBoard({ id: 'live', name: 'Live' }); // ends in 5 days
+    const later = new Date(Date.now() + 6 * DAY);
+    expect(await fetchSourceSheetBoardEntries(USER, later)).toHaveLength(0);
   });
 
   it('still excludes drafts and archived boards', async () => {

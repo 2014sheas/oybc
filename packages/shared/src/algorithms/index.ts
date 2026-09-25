@@ -31,6 +31,8 @@ export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './deriva
 export {
   isEventOwningTask,
   resolveTaskWindowState,
+  boardWindowEnd,
+  lateLogOccurredAt,
   resolveWindowStampedDerivedState,
   resolveDerivedCounterWindowState,
   resolveLinkedCounterDisplay,
@@ -341,8 +343,13 @@ export { makeSeededRng } from './seededRng';
 export { boardDisplayName } from './boardDisplayName';
 export {
   isEligibleSourceBoard,
+  NO_BOARD_FOR_WINDOW_NOTE,
   pickSeriesInstance,
-  SOURCE_BOARD_LOOKBACK_DAYS,
+  pickOpenSeriesInstance,
 } from './boardSources';
-export type { SourceBoardCandidate, SeriesInstanceCandidate } from './boardSources';
+export type {
+  SourceBoardCandidate,
+  SeriesInstanceCandidate,
+  OpenSeriesCandidate,
+} from './boardSources';
 export type { BoardNameFields } from './boardDisplayName';
