@@ -43,7 +43,25 @@ describe('selectLastIncrementEntry', () => {
     expect(selectLastIncrementEntry(events, SOURCE)?.id).toBe('newer');
   });
 
-  it('tie-breaks equal occurredAt by max createdAt', () => {
+  it('late log: picks the most recently WRITTEN entry (max createdAt) even when its occurredAt is older', () => {
+    // A late log on an ended board is stamped at that board's endDate (in the
+    // past), so it has the OLDER occurredAt but was the entry the user made last.
+    const events = [
+      ev({ id: 'today-log', occurredAt: '2026-07-20T09:00:00.000', createdAt: '2026-07-20T09:00:00.000' }),
+      ev({ id: 'late-log', occurredAt: '2026-07-19T23:59:59.999', createdAt: '2026-07-20T10:00:00.000' }),
+    ];
+    expect(selectLastIncrementEntry(events, SOURCE)?.id).toBe('late-log');
+  });
+
+  it('tie-breaks equal createdAt by max occurredAt', () => {
+    const events = [
+      ev({ id: 'earlier-occurred', occurredAt: '2026-07-19T09:00:00.000', createdAt: '2026-07-20T09:00:00.000' }),
+      ev({ id: 'later-occurred', occurredAt: '2026-07-20T08:00:00.000', createdAt: '2026-07-20T09:00:00.000' }),
+    ];
+    expect(selectLastIncrementEntry(events, SOURCE)?.id).toBe('later-occurred');
+  });
+
+  it('equal occurredAt: picks the max createdAt', () => {
     const events = [
       ev({ id: 'first-written', occurredAt: '2026-07-20T09:00:00.000', createdAt: '2026-07-20T09:00:00.000' }),
       ev({ id: 'second-written', occurredAt: '2026-07-20T09:00:00.000', createdAt: '2026-07-20T09:00:05.000' }),
