@@ -920,7 +920,7 @@ func persistRecurringTemplate(
             let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn, database: database)
             retireResumedDraftIfNeeded()
             switch outcome {
-            case .spawned(let boardId, _, _):
+            case .spawned(let boardId, _, _, _):
                 DispatchQueue.main.async {
                     onSuccess(.createdAndSpawned(templateId: template.id, boardId: boardId))
                 }

@@ -14,6 +14,19 @@ import XCTest
 /// database, so a pull is a real read of real rows.
 final class BoardWizardMemberRulesTests: XCTestCase {
 
+    /// An ENDED board is never a source (owner ruling 2026-09-24), judged
+    /// against the wall clock by default. These fixtures live on fixed dates,
+    /// so the source clock is pinned inside the 2026-09-18 source boards' window.
+    override func setUp() {
+        super.setUp()
+        AppDatabase.sourceClock = { parseISO8601Date("2026-09-18T09:00:00.000Z")! }
+    }
+
+    override func tearDown() {
+        AppDatabase.sourceClock = { Date() }
+        super.tearDown()
+    }
+
     // MARK: - Fixtures
 
     private let userId = "u1"

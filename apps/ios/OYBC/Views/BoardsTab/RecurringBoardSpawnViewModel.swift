@@ -96,7 +96,7 @@ final class RecurringBoardSpawnViewModel {
                 do {
                     let outcome = try RecurringBoardSpawn.spawnTemplateBoard(spawn, database: database)
                     switch outcome {
-                    case .spawned(_, let templateId, _):
+                    case .spawned(_, let templateId, _, _):
                         succeeded.append(templateId)
                     case .skipped(let templateId, let reason):
                         attention[templateId] = reason

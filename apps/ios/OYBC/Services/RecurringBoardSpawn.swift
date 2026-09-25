@@ -17,7 +17,18 @@ import GRDB
 /// (`noPoolTasksResolved`, `spawnFailed`) that are not part of the
 /// pure-validation `SpawnPoolFailureReason` contract.
 enum RecurringSpawnOutcome {
-    case spawned(boardId: String, templateId: String, windowStart: String)
+    /// `noBoardForWindowSourceIds`: board-kind sources that resolved to NO
+    /// board for this window (owner ruling 2026-09-24 — a series with no
+    /// instance containing the window start, or an ended/sealed one-off).
+    /// They dealt nothing; the board's spawn-provenance note says
+    /// "No board for this window yet". Web twin: the same field on
+    /// `SpawnResult`.
+    case spawned(
+        boardId: String,
+        templateId: String,
+        windowStart: String,
+        noBoardForWindowSourceIds: [String] = []
+    )
     case skipped(templateId: String, reason: SpawnAttentionReason)
 }
 
@@ -36,14 +47,20 @@ enum RecurringBoardSpawn {
     /// the read inside that write block closes the soft-delete race. This
     /// service only mints the `boardId` / `now` and delegates.
     ///
-    /// - Parameter database: the database to spawn into (defaults to
-    ///   `.shared`; the wizard persist path passes its injected database).
+    /// - Parameters:
+    ///   - database: the database to spawn into (defaults to `.shared`; the
+    ///     wizard persist path passes its injected database).
+    ///   - sourceClock: the instant a board source's "has this board ended"
+    ///     is judged against (owner ruling 2026-09-24). Defaults to now.
     static func spawnTemplateBoard(
         _ spawn: PendingTemplateSpawn,
-        database: AppDatabase = .shared
+        database: AppDatabase = .shared,
+        sourceClock: Date = AppDatabase.sourceClock()
     ) throws -> RecurringSpawnOutcome {
         let boardId = AppDatabase.generateUUID()
         let now = AppDatabase.currentTimestamp()
-        return try database.spawnRecurringBoard(spawn, boardId: boardId, now: now)
+        return try database.spawnRecurringBoard(
+            spawn, boardId: boardId, now: now, sourceClock: sourceClock
+        )
     }
 }

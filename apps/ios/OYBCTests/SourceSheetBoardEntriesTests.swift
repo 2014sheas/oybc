@@ -52,6 +52,7 @@ final class SourceSheetBoardEntriesTests: XCTestCase {
         startDate: String? = nil,
         endDate: String? = nil,
         completedAt: String? = nil,
+        sealedAt: String? = nil,
         isCore: Bool = false,
         userId: String? = nil
     ) throws -> Board {
@@ -66,6 +67,7 @@ final class SourceSheetBoardEntriesTests: XCTestCase {
             "version": 1, "isDeleted": false,
         ]
         if let completedAt { dict["completedAt"] = completedAt }
+        if let sealedAt { dict["sealedAt"] = sealedAt }
         let board = try JSONDecoder().decode(
             Board.self, from: JSONSerialization.data(withJSONObject: dict)
         )
@@ -115,15 +117,21 @@ final class SourceSheetBoardEntriesTests: XCTestCase {
         XCTAssertTrue(try db.fetchSourceSheetBoardEntries(userId: userId).isEmpty)
     }
 
-    func test_keepsAnActiveBoardWhoseWindowClosedRecently() throws {
+    // Owner ruling 2026-09-24 (supersedes #482's 30-day lookback): "There is
+    // no REAL use case for ended boards as sources."
+    func test_excludesAnActiveBoardWhoseWindowClosedYesterday_noLookback() throws {
         let db = try makeDb()
-        try seedBoard(db, id: "last-month", name: "Last month", timeframe: "monthly",
-                      startDate: daysAgo(40), endDate: daysAgo(10))
+        try seedBoard(db, id: "last-week", name: "Last week", timeframe: "weekly",
+                      startDate: daysAgo(8), endDate: daysAgo(1))
 
-        XCTAssertEqual(
-            try db.fetchSourceSheetBoardEntries(userId: userId).map { $0.board.id },
-            ["last-month"]
-        )
+        XCTAssertTrue(try db.fetchSourceSheetBoardEntries(userId: userId).isEmpty)
+    }
+
+    func test_excludesASealedBoard() throws {
+        let db = try makeDb()
+        try seedBoard(db, id: "sealed", name: "Sealed", sealedAt: daysAgo(0))
+
+        XCTAssertTrue(try db.fetchSourceSheetBoardEntries(userId: userId).isEmpty)
     }
 
     func test_keepsAnActiveBoardWhoseWindowIsStillOpen() throws {
@@ -136,18 +144,24 @@ final class SourceSheetBoardEntriesTests: XCTestCase {
         )
     }
 
-    func test_nowAdmitsARecentlyCompletedBoard() throws {
-        // Deliberate behaviour change: the sheet shares the "From a board"
-        // eligibility rule, so "build October's from September's" works here
-        // too. Pinned so the change is intentional, not accidental drift.
+    func test_admitsACompletedBoardOnlyWhileItsWindowIsOpen() throws {
         let db = try makeDb()
-        try seedBoard(db, id: "done", name: "Finished", status: "completed",
-                      endDate: daysAgo(4), completedAt: daysAgo(3))
+        try seedBoard(db, id: "done-open", name: "Finished, still open", status: "completed",
+                      completedAt: daysAgo(0))
+        try seedBoard(db, id: "done-ended", name: "Finished, ended", status: "completed",
+                      endDate: daysAgo(2), completedAt: daysAgo(3))
 
         XCTAssertEqual(
             try db.fetchSourceSheetBoardEntries(userId: userId).map { $0.board.id },
-            ["done"]
+            ["done-open"]
         )
+    }
+
+    func test_judgesEndedAgainstTheInjectedNow() throws {
+        let db = try makeDb()
+        try seedBoard(db, id: "live", name: "Live") // ends in 5 days
+        let later = Date().addingTimeInterval(6 * day)
+        XCTAssertTrue(try db.fetchSourceSheetBoardEntries(userId: userId, now: later).isEmpty)
     }
 
     // MARK: - Never a source

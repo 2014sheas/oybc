@@ -119,7 +119,10 @@ final class BoardSourceSpawnAskTests: XCTestCase {
                 suggestedName: "Ask Board — Sep 4"
             ),
             boardId: "spawned-1",
-            now: now
+            now: now,
+            // An ended board is never a source (owner ruling 2026-09-24) —
+            // judge "ended" at the fixture's own instant, not the wall clock.
+            sourceClock: parseISO8601Date(now)!
         )
     }
 
@@ -176,7 +179,7 @@ final class BoardSourceSpawnAskTests: XCTestCase {
             manualTaskIds: []
         )
         let outcome = try spawn(db, template)
-        guard case .spawned(let boardId, _, _) = outcome else {
+        guard case .spawned(let boardId, _, _, _) = outcome else {
             return XCTFail("Expected a spawn, got \(outcome)")
         }
         let rows = try db.read { grdb in
@@ -245,7 +248,7 @@ final class BoardSourceSpawnAskTests: XCTestCase {
             manualTaskIds: ["m1", "m2", "m3", "m4"]
         )
         let outcome = try spawn(db, template)
-        guard case .spawned(let boardId, _, _) = outcome else {
+        guard case .spawned(let boardId, _, _, _) = outcome else {
             return XCTFail("Expected a spawn, got \(outcome)")
         }
         let rows = try db.read { grdb in
@@ -290,7 +293,7 @@ final class BoardSourceSpawnAskTests: XCTestCase {
             manualTaskIds: ["fam-root", "fam-derived", "f1", "f2", "f3"]
         )
         let outcome = try spawn(db, template)
-        guard case .spawned(let boardId, _, _) = outcome else {
+        guard case .spawned(let boardId, _, _, _) = outcome else {
             return XCTFail("Expected a spawn, got \(outcome)")
         }
         let placedIds = try db.read { grdb in
@@ -355,7 +358,7 @@ final class BoardSourceSpawnAskTests: XCTestCase {
             manualTaskIds: []
         )
         let outcome = try spawn(db, template)
-        guard case .spawned(let boardId, _, _) = outcome else {
+        guard case .spawned(let boardId, _, _, _) = outcome else {
             return XCTFail("Expected a spawn, got \(outcome)")
         }
         let placed = Set(try db.read { grdb in
@@ -390,7 +393,7 @@ final class BoardSourceSpawnAskTests: XCTestCase {
             manualTaskIds: []
         )
         let outcome = try spawn(db, template)
-        guard case .spawned(let boardId, _, _) = outcome else {
+        guard case .spawned(let boardId, _, _, _) = outcome else {
             return XCTFail("Expected a spawn, got \(outcome)")
         }
         let placed = Set(try db.read { grdb in

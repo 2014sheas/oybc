@@ -149,6 +149,33 @@ final class BoardSourceVectorTests: XCTestCase {
         let startDate: String
     }
 
+    private struct RawEligibilityBoard: Decodable, SourceBoardCandidate {
+        let status: BoardStatus
+        let endDate: String?
+        let sealedAt: String?
+        let isDeleted: Bool
+    }
+
+    private struct EligibilityVector: Decodable {
+        let name: String
+        let board: RawEligibilityBoard
+        let now: String
+        let expected: Bool
+    }
+
+    private struct RawWindowCandidate: Decodable, SeriesWindowCandidate {
+        let id: String
+        let startDate: String
+        let endDate: String?
+    }
+
+    private struct SeriesForWindowVector: Decodable {
+        let name: String
+        let candidates: [RawWindowCandidate]
+        let reference: String
+        let expectedId: String?
+    }
+
     private struct SeriesInstanceVector: Decodable {
         let name: String
         let candidates: [RawSeriesCandidate]
@@ -212,6 +239,8 @@ final class BoardSourceVectorTests: XCTestCase {
         let seriesInstanceVectors: [SeriesInstanceVector]
         let referenceVectors: [ReferenceVector]
         let doneFilterVectors: [DoneFilterVector]
+        let eligibilityVectors: [EligibilityVector]
+        let seriesForWindowVectors: [SeriesForWindowVector]
     }
 
     private func loadFixture() throws -> Fixture {
@@ -287,6 +316,37 @@ final class BoardSourceVectorTests: XCTestCase {
             )
         }
         XCTAssertNil(BoardSources.pickSeriesInstance([RawSeriesCandidate]()))
+    }
+
+    /// Owner ruling 2026-09-24 — ended boards are never sources.
+    func testEligibilityVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.eligibilityVectors.isEmpty)
+        for v in fixture.eligibilityVectors {
+            let now = try XCTUnwrap(parseISO8601Date(v.now), v.name)
+            XCTAssertEqual(BoardSources.isEligibleSourceBoard(v.board, now: now), v.expected, v.name)
+        }
+    }
+
+    /// Series binding for a window: the containing instance, else nil — in
+    /// both orders (the tie-break is total).
+    func testSeriesForWindowVectors() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.seriesForWindowVectors.isEmpty)
+        for v in fixture.seriesForWindowVectors {
+            XCTAssertEqual(
+                BoardSources.resolveSeriesInstanceForWindow(v.candidates, referenceIso: v.reference)?.id,
+                v.expectedId,
+                v.name
+            )
+            XCTAssertEqual(
+                BoardSources.resolveSeriesInstanceForWindow(
+                    Array(v.candidates.reversed()), referenceIso: v.reference
+                )?.id,
+                v.expectedId,
+                "\(v.name) (reversed)"
+            )
+        }
     }
 
     func testConversionVectors() throws {

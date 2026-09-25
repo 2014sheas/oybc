@@ -297,9 +297,12 @@ final class BoardWizardViewModel {
                 // provenance instead of collapsing every row to "added by
                 // hand".
                 let mix = RecurringDraftMixPayload.decoded(from: d.board.recurringDraftMix)
+                // Owner ruling 2026-09-24 — board sources resolve against the
+                // draft's own window start (what persist writes).
                 let hydrated = Self.hydrateSourcesState(
                     sources: mix.sources ?? [],
                     manualTaskIds: mix.manualTaskIds,
+                    reference: d.board.startDate,
                     database: database
                 )
                 self.sources = hydrated.sources
@@ -352,9 +355,18 @@ final class BoardWizardViewModel {
                 : BoardSources.sourcesForRecord(
                     sources: t.sources, poolIds: t.poolIds, removedTaskIds: t.removedTaskIds
                 )
+            // Owner ruling 2026-09-24 — board sources resolve against the
+            // start of the window this record would build now (the same
+            // `computedBoundaries` start `resolveWizardDates` persists).
+            let templateWindowStart = computeTimeframeBoundaries(
+                timeframe: t.timeframe,
+                referenceDate: targetWindowDate ?? Date(),
+                weekStartDay: preferences.weekStartDay.rawValue
+            ).map { wizardLocalISOString($0.start) } ?? wizardLocalISOString(Date())
             let hydrated = Self.hydrateSourcesState(
                 sources: recordSources,
                 manualTaskIds: recordManualIds,
+                reference: templateWindowStart,
                 database: database
             )
             self.sources = hydrated.sources
@@ -436,6 +448,8 @@ final class BoardWizardViewModel {
                             BoardSource(sourceId: $0, kind: .pool, filter: Self.newSourceFilter(for: .pool))
                         },
                         manualTaskIds: coreDefaultTaskIds,
+                        // Pool sources only — no board reference is read.
+                        reference: wizardLocalISOString(Date()),
                         database: database
                     )
                     self.sources = hydrated.sources

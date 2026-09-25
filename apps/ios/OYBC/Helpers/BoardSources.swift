@@ -454,57 +454,43 @@ enum BoardSources {
         sources ?? sourcesFromMixFields(poolIds: poolIds, removedTaskIds: removedTaskIds)
     }
 
-    /// Days a finished board stays offerable as a wizard source.
-    static let sourceBoardLookbackDays = 30
+    /// The copy a board-kind source shows when it resolves to no board for
+    /// the window being built (a series whose instance for that window
+    /// doesn't exist yet, or a one-off board that has ended or been sealed)
+    /// — the wizard's source-row subtitle and the spawn-provenance note both
+    /// read it. TS twin: `NO_BOARD_FOR_WINDOW_NOTE`.
+    static let noBoardForWindowNote = "No board for this window yet"
 
-    /// True when a board may be offered as a source in the board wizard.
+    /// True when a board may be offered as a source in the board wizard
+    /// (the "Add from a pool or board" Sources sheet) and may SUPPLY squares
+    /// to a stored source.
     ///
-    /// Sources exist so a new board can be built from what you were just
-    /// doing — "build October's from September's". That makes recency, not
-    /// status, the thing that matters: a board finished last week is a
-    /// useful source; one from eight months ago is clutter.
+    /// Owner ruling 2026-09-24 (supersedes #482's 30-day lookback): "There
+    /// is no REAL use case for ended boards as sources." A board is eligible
+    /// only while its window is OPEN:
     ///
-    /// Previously only completed boards were recency-bounded and active
-    /// boards were admitted unconditionally. But a board whose window
-    /// closes without every square filled STAYS `.active` (it only gains
-    /// `sealedAt`), so every unfinished core board a user ever had remained
-    /// on offer forever. Both statuses are now bounded by the same window.
+    /// - not deleted, not a draft, not archived (active or completed);
+    /// - not sealed — a sealed board is a permanent record;
+    /// - no `endDate` (an INDEFINITE board never ends), an unparseable
+    ///   `endDate` (fail open), or `endDate >= now`.
     ///
-    /// Drafts and archived boards are never sources.
+    /// `endDate` is a LOCAL-wall-clock ISO string; it is compared as a parsed
+    /// `Date` against `now`, never as a string against a UTC timestamp.
     ///
-    /// TS twin: `isEligibleSourceBoard` — keep in lockstep.
+    /// TS twin: `isEligibleSourceBoard` — keep in lockstep (pinned by
+    /// `eligibilityVectors` in `boardSourceVectors.json`).
     ///
     /// - Parameters:
     ///   - board: The candidate board.
-    ///   - now: The instant to judge recency against.
-    ///   - lookbackDays: How long a finished board stays offerable.
-    /// - Returns: Whether the board may be offered as a source.
-    static func isEligibleSourceBoard(
-        _ board: Board,
-        now: Date,
-        lookbackDays: Int = sourceBoardLookbackDays
-    ) -> Bool {
+    ///   - now: The instant to judge "has the window ended" against.
+    /// - Returns: Whether the board may be offered as / supply a source.
+    static func isEligibleSourceBoard<B: SourceBoardCandidate>(_ board: B, now: Date) -> Bool {
         if board.isDeleted { return false }
-
-        let cutoff = now.addingTimeInterval(-Double(lookbackDays) * 24 * 60 * 60)
-
-        if board.status == .completed {
-            guard let completedAt = board.completedAt,
-                  let ts = parseISO8601Date(completedAt) else { return false }
-            return ts >= cutoff
-        }
-
-        guard board.status == .active else { return false }
-
-        // An active board with no end date is INDEFINITE — its window never
-        // closes, so it is always a live source.
+        guard board.status == .active || board.status == .completed else { return false }
+        if board.sealedAt != nil { return false }
         guard let endDate = board.endDate else { return true }
         guard let endsAt = parseISO8601Date(endDate) else { return true } // fail open
-        if endsAt >= now { return true } // window still open
-
-        // Window closed without the board being marked complete — offer it
-        // for the same lookback a completed board gets, then let it go.
-        return endsAt >= cutoff
+        return endsAt >= now
     }
 
     // MARK: - Series binding tie-break
@@ -538,6 +524,41 @@ enum BoardSources {
             }
         }
         return best
+    }
+
+    /// Series binding for a window (owner ruling 2026-09-24): the instance
+    /// of a recurring series that supplies a board being built for the
+    /// window starting at `referenceIso` — the instance whose
+    /// `[startDate, endDate]` CONTAINS the reference (inclusive at both
+    /// ends; a nil `endDate` is an open window). Two containing instances
+    /// tie-break through ``pickSeriesInstance(_:)`` (latest `startDate`,
+    /// then lowest `id`).
+    ///
+    /// Returns nil when no instance contains the reference — there is NO
+    /// fallback to the newest started or newest instance any more: an ended
+    /// or future instance never supplies another window. Callers map nil to
+    /// "No board for this window yet" (no supply, capacity 0).
+    ///
+    /// Callers pre-filter `candidates` to live, open instances
+    /// (``isEligibleSourceBoard(_:now:)``); this helper only decides
+    /// containment. Board dates and the reference are fixed-format LOCAL-ISO
+    /// strings, compared with `String` `<=` exactly like the TS twin's
+    /// code-unit comparison.
+    ///
+    /// TS twin: `resolveSeriesInstanceForWindow` — keep in lockstep (pinned
+    /// by `seriesForWindowVectors` in `boardSourceVectors.json`).
+    ///
+    /// - Parameters:
+    ///   - candidates: The series' live instances (any order).
+    ///   - referenceIso: The new board's window `startDate` (local ISO).
+    /// - Returns: The containing instance, or nil when none contains it.
+    static func resolveSeriesInstanceForWindow<T: SeriesWindowCandidate>(
+        _ candidates: [T],
+        referenceIso: String
+    ) -> T? {
+        pickSeriesInstance(candidates.filter { c in
+            c.startDate <= referenceIso && (c.endDate.map { referenceIso <= $0 } ?? true)
+        })
     }
 
     // MARK: - Remove-confirm (owner ruling 2026-09-19, amended 2026-09-23)
@@ -711,6 +732,25 @@ protocol SeriesInstanceCandidate {
 }
 
 extension Board: SeriesInstanceCandidate {}
+
+/// The fields `BoardSources.resolveSeriesInstanceForWindow` reads — TS twin
+/// `SeriesWindowCandidate` (`Pick<Board, 'id' | 'startDate' | 'endDate'>`).
+protocol SeriesWindowCandidate: SeriesInstanceCandidate {
+    var endDate: String? { get }
+}
+
+extension Board: SeriesWindowCandidate {}
+
+/// The fields `BoardSources.isEligibleSourceBoard` reads — TS twin
+/// `SourceBoardCandidate` (`Pick<Board, 'status' | 'endDate' | 'sealedAt' | 'isDeleted'>`).
+protocol SourceBoardCandidate {
+    var status: BoardStatus { get }
+    var endDate: String? { get }
+    var sealedAt: String? { get }
+    var isDeleted: Bool { get }
+}
+
+extension Board: SourceBoardCandidate {}
 
 extension BoardSources {
     /// Can this repeating board pull `taskId`? Task Detail's "used in

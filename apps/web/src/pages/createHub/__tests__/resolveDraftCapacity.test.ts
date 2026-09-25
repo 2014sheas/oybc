@@ -222,7 +222,7 @@ describe('resolveResumableDraft — the resume step', () => {
  * repeating board pulling a weekly series whose only instance is LAST week
  * must count 0 from that source identically in the drafts-list capacity,
  * the wizard's live supply (what Preview reads), and the spawned deal.
- * iOS twin: `EndedSourceParityTests.swift`.
+ * iOS twin: `SourceBoardForWindowTests.swift` (the capacity == preview == deal test).
  */
 describe('ended source — capacity == preview == persisted deal', () => {
   const WINDOW_START = '2026-09-16T00:00:00.000';

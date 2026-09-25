@@ -194,8 +194,11 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
 
     // MARK: - THE REPRODUCTION — the pulled weekly's window has ENDED
 
-    /// The daily pulls a weekly whose window ENDED but which is still ACTIVE
-    /// and unsealed (the backstop seal is applied lazily on app-open). 17 of 20
+    /// Today's daily pulls a weekly, and today's log lands after the weekly's
+    /// window ENDED while it is still ACTIVE and unsealed (the backstop seal is
+    /// applied lazily on app-open). Since the owner ruling of 2026-09-24 an
+    /// ended board is never a source, so the pull itself is made in the
+    /// weekly's last hour (planning ahead). 17 of 20
     /// were logged inside the weekly's own window (goal NOT met); today's
     /// daily log of 3 does NOT complete it: a ROOT square sums events over
     /// `[startDate, endDate]` (2026-09-24 amendment of WC Decision 1), and a
@@ -259,8 +262,18 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
         return ("weekly", weeklyTaskId)
     }
 
+    /// Plans today's daily from the weekly WHILE THE WEEKLY WAS STILL OPEN
+    /// (its last hour) — since the owner ruling of 2026-09-24 an ended board
+    /// is never a source, so the pull can no longer be made after the weekly
+    /// ends — then logs on it today, after the weekly has ended.
     private func logTodayOnDaily(_ database: AppDatabase, weeklyId: String, memberId: String) throws {
+        let weeklyEnd = try XCTUnwrap(
+            try database.fetchBoard(id: weeklyId)?.endDate.flatMap(parseISO8601Date)
+        )
+        AppDatabase.sourceClock = { weeklyEnd.addingTimeInterval(-3_600) }
+        defer { AppDatabase.sourceClock = { Date() } }
         let dailyId = try createDailyPulling(database, weeklyId: weeklyId, memberId: memberId)
+        AppDatabase.sourceClock = { Date() }
         let dId = BoardSources.derivedTaskId(boardId: dailyId, rootTaskId: rootId)
         let d = try XCTUnwrap(try database.read { try Task.fetchOne($0, key: dId) })
         XCTAssertEqual(d.maxCount, 3, "a distinct, pro-rated daily row")
