@@ -15,8 +15,9 @@
  * the write choke points call to enforce this before appending an event.
  *
  * `occurredAt` is the semantic timestamp — evaluation windows key on it
- * (`occurredAt >= board.startDate`, parsed compare, upper bound enforced by
- * sealing rather than filtering). `boardId` is provenance only (where the
+ * (`board.startDate <= occurredAt <= board.endDate`, parsed compare, open-ended
+ * when `endDate` is null; a sealed board narrows the upper bound to
+ * `min(endDate, sealedAt)` — 2026-09-24 amendment). `boardId` is provenance only (where the
  * event was logged) and is NEVER read during evaluation.
  */
 export type TaskEventKind = 'completion' | 'increment';

@@ -288,12 +288,12 @@ describe('REPRO derived counter: completing the daily must not complete the week
  * last day (planning ahead) — the post-window LOG is what these pins cover.
  *
  * The weekly logged 17 of 20 inside its own window (NOT met). Today the owner
- * logs 3 on the daily's pro-rated derived square. The weekly square then
- * completes: the weekly board has no window END — for a ROOT square
- * `resolveTaskWindowState` sums `[startDate, ∞)`, and for a window-stamped
- * derived square `propagateIncrement` latches from `currentCount - baseline`
- * with no end bound either — so today's logs (made after the weekly ended)
- * count toward last week's goal.
+ * logs 3 on the daily's pro-rated derived square. Before the fixes the weekly
+ * square then completed: the weekly board had no window END — for a ROOT
+ * square `resolveTaskWindowState` summed `[startDate, ∞)`, and for a
+ * window-stamped derived square `propagateIncrement` latched from
+ * `currentCount - baseline` with no end bound either — so today's logs (made
+ * after the weekly ended) counted toward last week's goal.
  *
  * Status on fix/derived-counter-window-freeze (Task 3 item 5):
  *  - DERIVED square + SEALED variants are GREEN regression pins: the kernel

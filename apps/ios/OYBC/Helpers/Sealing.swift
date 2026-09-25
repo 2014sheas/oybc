@@ -63,7 +63,8 @@ func isBoardPastBackstop(_ board: Board, nowMs: Double) -> Bool {
 /// old expiry-based interaction lock: per docs §Sealing → Lifecycle, an
 /// expired-but-unsealed board is "still fully live" (the closing-out
 /// banner's **Log** action depends on this — the 11:58pm workout logged at
-/// 12:04am counts for the closing daily), and the timeframe-scaled backstop
+/// 12:04am from the closing daily's own surface is stamped at its `endDate`
+/// and counts for the closing daily), and the timeframe-scaled backstop
 /// bounds the overtime, after which the board auto-seals and locks. A sealed
 /// board can never be interacted with again (no unseal gesture in v1).
 ///

@@ -348,7 +348,11 @@ disclose the amount, and plain tap logs the default without persisting it.
 
 **Undo race (accepted, all surfaces)**: Undo reverses the counter's *latest*
 live entry at tap time via `selectLastIncrementEntry` — not an entry id
-captured by the toast. A log arriving from another surface/device inside the
+captured by the toast. "Latest" means most recently **made**: ordered by
+`createdAt` first, `occurredAt` as the tie-break (2026-09-24 — a late log made
+from an ended board is stamped at that board's `endDate`, so its `occurredAt`
+is old while its `createdAt` is the newest; see `WINDOWED_COMPLETION.md`
+§Write paths). A log arriving from another surface/device inside the
 toast window is reversed instead of the displayed one. Accepted for a
 single-user product (same-surface re-logs replace the toast); threading the
 entry id through the toast payload is the exact-fix if this ever matters.

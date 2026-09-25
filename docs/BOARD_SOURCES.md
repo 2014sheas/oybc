@@ -270,9 +270,11 @@ the pool-generation surface, both platforms:
   board that belongs to a recurring series (`spawnedFromTemplateId` set)
   binds to the series: every resolution (wizard, roster, spawn, the
   play-screen note) hops the stored id to the series' instance that is
-  **open now** — the pure `pickOpenSeriesInstance` (TS + Swift, pinned by
-  `openSeriesInstanceVectors`: started, not ended, not sealed; latest
-  `startDate`, then lowest id), via `resolveOpenSourceBoard` (web
+  **open now** — the pure `pickOpenSeriesInstance(candidates, nowIso)` (TS +
+  Swift, pinned by `openSeriesInstanceVectors`, local-ISO shapes included):
+  an instance is open iff it is eligible (below) and has started
+  (`startDate <= now`) — a FUTURE instance is not open; several open →
+  latest `startDate`, then lowest id; none open → `null`. Resolved via `resolveOpenSourceBoard` (web
   `db/operations/boardSources.ts` / iOS `AppDatabase+BoardSources`). There
   is **no containment check** against the new board's window: a monthly
   built mid-month from a weekly series pulls the CURRENT week — exactly the
@@ -287,9 +289,12 @@ the pool-generation surface, both platforms:
 - **Sources are open boards** *(owner ruling 2026-09-24, amended the same
   day — "There is no REAL use case for ended boards as sources"; supersedes
   #482's 30-day lookback, `SOURCE_BOARD_LOOKBACK_DAYS` is gone)*.
-  Eligibility (`isEligibleSourceBoard`, pinned by `eligibilityVectors`):
-  not deleted, not a draft/archived, **not sealed**, and the window is open
-  — no `endDate`, an unparseable one (fail open), or `endDate >= now`. It
+  Eligibility (`isEligibleSourceBoard(board, now)`, pinned by
+  `eligibilityVectors`, local-ISO shapes included): not deleted, not a
+  draft/archived, **not sealed**, and the window is open now — no
+  `endDate`, an unparseable one (fail open), or `endDate >= now` by parsed
+  instant. The old completed-board branch is deleted too: a COMPLETED board
+  is a source only while its window is still open. It
   gates the Sources sheet (`fetchSourceSheetBoardEntries`) AND supply: a
   stored source resolves to one of
   - `live` — an open board supplies it;
@@ -303,6 +308,12 @@ the pool-generation surface, both platforms:
     remaining-target prefill until it resolves live;
   - `dead` — the stored row is gone/deleted/archived, or the series has no
     existing instance: the spawn ask below.
+
+  Only WHICH board supplies tasks changed: derived-counter (member-rule)
+  windows are still stamped from the new board's own window, and a pulled
+  square's completion still follows windowed completion (end-bound at its
+  board's `endDate` since the same-day WC Decision 1 amendment —
+  `WINDOWED_COMPLETION.md`).
 - **One clock everywhere.** The wizard's live supply, Preview (reads the
   wizard's supply), the drafts-list capacity, persist and the recurring
   spawn all resolve "open" against the same wall clock (injectable: web
