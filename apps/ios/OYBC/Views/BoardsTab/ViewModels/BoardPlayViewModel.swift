@@ -231,49 +231,8 @@ final class BoardPlayViewModel: ObservableObject {
         Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
     }
 
-    // MARK: - Windowed read helpers (Windowed Completion)
-
-    /// The current board's window lower bound (`board.startDate`), or nil when
-    /// no board is loaded. Every event-owning square resolves against
-    /// `[windowStart, ∞)`.
-    var windowStart: String? { board?.startDate }
-
-    /// Resolve an event-owning primitive task's windowed state for the current
-    /// board window (docs §Semantics). Callers must branch derived / compound /
-    /// achievement BEFORE calling — this delegates to the shared
-    /// `resolveTaskWindowState`.
-    func windowedState(forTaskId taskId: String) -> TaskWindowState {
-        guard let task = taskMap[taskId] else { return TaskWindowState(isCompleted: false, count: 0) }
-        let events = windowEventsByTaskId[taskId] ?? []
-        return resolveTaskWindowState(task: task, events: events, windowStart: windowStart)
-    }
-
-    /// Windowed-Completion-aware "is this square complete" read for the
-    /// Board-Edit draft preview surfaces (`RearrangeGrid` + the edit-tasks
-    /// static grid). iOS parity fix for the same class of bug the web fix in
-    /// d16ff21 patched: these preview surfaces used to read the lifetime
-    /// `Task.isCompleted` cache directly, so a lifetime-complete task bled
-    /// green into a freshly-spawned/reused board's window even though the
-    /// live play grid correctly reads windowed
-    /// (docs/WINDOWED_COMPLETION.md §Task caches).
-    ///
-    /// Event-owning primitives (normal / plain-source counting) resolve
-    /// against the board's window via `windowedState(forTaskId:)`; linked
-    /// counters via `resolveLinkedCounterDisplay` (a window-stamped row's root
-    /// sum in its own window — the kernel's rule; a hub-linked row's latch).
-    /// Compound and achievement tasks keep reading the lifetime cache — these
-    /// preview surfaces have no compound/achievement evaluation context.
-    ///
-    /// - Parameter task: The task to resolve. Title/type may carry staged
-    ///   `editTaskOverrides`, but `id`/`isCompleted` always reflect the real
-    ///   database values, so the windowed lookup is always against the true task.
-    func windowedIsCompleted(for task: Task) -> Bool {
-        if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).isCompleted
-        }
-        guard isEventOwningTask(task) else { return task.isCompleted }
-        return windowedState(forTaskId: task.id).isCompleted
-    }
+    // Windowed read helpers (`windowStart` / `windowEnd` / `windowedState` /
+    // `compoundChildIsCompleted` …) live in `BoardPlayViewModel+Window.swift`.
 
     /// Grid column count from the board's `boardSize`, defaulting to 3. Mirrors
     /// the view's `gridSize`; used by the moved edit-draft computed helpers.
@@ -726,7 +685,9 @@ final class BoardPlayViewModel: ObservableObject {
                     try? database.read { db in try Board.fetchOne(db, key: id) }
                 }
 
-                let creditResult = try database.incrementSharedCounter(sourceTaskId: sourceTaskId, by: amount)
+                let creditResult = try database.incrementSharedCounter(
+                    sourceTaskId: sourceTaskId, by: amount, boardId: currentBoardId
+                )
 
                 // R3 — the amount just used becomes the new default ONLY for an
                 // explicit custom "#" entry (Global Constraints: one-tap chips
@@ -832,7 +793,9 @@ final class BoardPlayViewModel: ObservableObject {
                     try? database.read { db in try Board.fetchOne(db, key: id) }
                 }
 
-                let decrementResult = try database.decrementSharedCounter(sourceTaskId: sourceTaskId, by: amount)
+                let decrementResult = try database.decrementSharedCounter(
+                    sourceTaskId: sourceTaskId, by: amount, boardId: currentBoardId
+                )
                 guard decrementResult.effectiveDelta > 0 else {
                     // No-op — source was already at 0; nothing to show.
                     await MainActor.run { self.isProcessing = false }
@@ -1014,10 +977,11 @@ final class BoardPlayViewModel: ObservableObject {
         guard !isProcessing else { return }
         let now = AppDatabase.currentTimestamp()
         // Windowed Completion — the child's completion is scoped to the host
-        // board's window. Toggle the WINDOWED state (a child completed in a
-        // prior window reads incomplete this window).
-        let childWindowed = windowedState(forTaskId: childTask.id)
-        let desiredCompleted = !childWindowed.isCompleted
+        // board's window `[startDate, endDate]`. Toggle the inverse of what the
+        // detail sheet PAINTS (`compoundChildIsCompleted`), never the lifetime
+        // latch: on an ended board a child completed today on the next
+        // window's board reads incomplete here.
+        let desiredCompleted = !compoundChildIsCompleted(childTask)
 
         // If the child has a BoardTask on the current board, use the full
         // orchestration pipeline so bingo detection stays consistent.
@@ -1036,6 +1000,7 @@ final class BoardPlayViewModel: ObservableObject {
         // state and propagate the change to UI on this board (its compound square
         // derives via CompoundEvaluation against the host window).
         let windowStart = board?.startDate ?? childTask.startDate ?? now
+        let windowEnd = self.windowEnd
         isProcessing = true
         let currentBoardId = board?.id
         let database = self.database
@@ -1051,6 +1016,7 @@ final class BoardPlayViewModel: ObservableObject {
                     childTaskId: childTask.id,
                     desiredCompleted: desiredCompleted,
                     windowStart: windowStart,
+                    windowEnd: windowEnd,
                     boardId: currentBoardId,
                     now: now
                 )
@@ -1435,18 +1401,11 @@ final class BoardPlayViewModel: ObservableObject {
     /// before calling it, so every board/data change funnels through here.
     private func rebuildKernelCellStates() {
         guard let board else { kernelCellStates = [:]; return }
-        var childrenByCompound: [String: [CompoundChild]] = [:]
-        for c in allCompoundChildren {
-            childrenByCompound[c.compoundTaskId, default: []].append(c)
-        }
-        for id in childrenByCompound.keys {
-            childrenByCompound[id]?.sort { $0.childIndex < $1.childIndex }
-        }
         let resolved = PlacementIntegrity.resolvePlacements(boardTasks, boardSize: board.boardSize)
         let built = DerivationPass.computeBoardGrid(
             board: board,
             boardTasksOnBoard: resolved,
-            childrenByCompound: childrenByCompound,
+            childrenByCompound: compoundChildrenByCompound,
             taskById: taskMap,
             allBoards: allBoardsInWorkspace,
             windowContext: WindowEvaluationContext(eventsByTaskId: windowEventsByTaskId)

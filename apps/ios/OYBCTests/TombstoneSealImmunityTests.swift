@@ -89,7 +89,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
         try placeTask(db, boardId: sealedBoardId)
         try db.write { try self.completionEvent("e-immune", occurredAt: self.inSealedWindow).save($0) }
 
-        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z") }
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: nil) }
 
         let ev = try db.read { try TaskEvent.fetchOne($0, key: "e-immune") }
         XCTAssertEqual(ev?.isDeleted, false) // immune — history stays
@@ -107,7 +107,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
             try self.completionEvent("e-open", occurredAt: self.postSeal).save(db)
         }
 
-        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z") }
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: nil) }
 
         XCTAssertEqual(try db.read { try TaskEvent.fetchOne($0, key: "e-immune") }?.isDeleted, false)
         XCTAssertEqual(try db.read { try TaskEvent.fetchOne($0, key: "e-open") }?.isDeleted, true)
@@ -120,7 +120,7 @@ final class TombstoneSealImmunityTests: XCTestCase {
         try placeTask(db, boardId: liveBoardId)
         try db.write { try self.completionEvent("e1", occurredAt: self.inSealedWindow).save($0) }
 
-        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z") }
+        try db.write { try AppDatabase.tombstoneWindowCompletions(db: $0, taskId: self.taskA, windowStart: self.start, now: "2026-07-03T00:00:00.000Z", windowEnd: nil) }
 
         XCTAssertEqual(try db.read { try TaskEvent.fetchOne($0, key: "e1") }?.isDeleted, true)
         XCTAssertEqual(try db.fetchTask(id: taskA)?.isCompleted, false)

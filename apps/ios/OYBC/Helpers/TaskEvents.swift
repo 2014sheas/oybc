@@ -40,15 +40,17 @@ struct CompoundWindowContext {
     /// This workspace's non-deleted TaskEvents grouped by `taskId`.
     let eventsByTaskId: [String: [TaskEvent]]
 
-    /// Memberwise init. `windowEnd` defaults to `nil` so construction sites
-    /// that predate the 2026-09-24 amendment keep their historical
-    /// `[windowStart, ∞)` behaviour until they thread the board's end bound.
+    /// Memberwise init. `windowEnd` is REQUIRED (no default) so every
+    /// construction site must decide its upper bound: a board passes
+    /// `boardWindowEnd(board)`; only a genuinely open-ended context (an
+    /// indefinite board, lifetime) passes `nil`. Mirrors the TS type, where
+    /// `windowEnd: string | null` is required.
     ///
     /// - Parameters:
     ///   - windowStart: Window lower bound, or `nil` for lifetime.
     ///   - windowEnd: Window inclusive upper bound, or `nil` for none.
     ///   - eventsByTaskId: Non-deleted TaskEvents grouped by `taskId`.
-    init(windowStart: String?, windowEnd: String? = nil, eventsByTaskId: [String: [TaskEvent]]) {
+    init(windowStart: String?, windowEnd: String?, eventsByTaskId: [String: [TaskEvent]]) {
         self.windowStart = windowStart
         self.windowEnd = windowEnd
         self.eventsByTaskId = eventsByTaskId

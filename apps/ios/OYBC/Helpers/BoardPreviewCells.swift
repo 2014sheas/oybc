@@ -63,7 +63,11 @@ enum BoardPreviewCells {
         let size = board.boardSize
         let isSealed = board.sealedAt != nil
         let sealedCellSet = Set(isSealed ? (board.sealedCompletedCells ?? []) : [])
-        let windowContext = CompoundWindowContext(windowStart: board.startDate, eventsByTaskId: eventsByTaskId)
+        let windowContext = CompoundWindowContext(
+            windowStart: board.startDate,
+            windowEnd: boardWindowEnd(board),
+            eventsByTaskId: eventsByTaskId
+        )
 
         // Board-integrity PR-2 (Part 2): resolve through
         // `PlacementIntegrity.resolvePlacements` first — a raw duplicate
@@ -151,7 +155,8 @@ enum BoardPreviewCells {
                     completed = resolveTaskWindowState(
                         task: task,
                         events: eventsByTaskId[task.id] ?? [],
-                        windowStart: board.startDate
+                        windowStart: board.startDate,
+                        windowEnd: boardWindowEnd(board)
                     ).isCompleted
                 }
                 cells.append(.task(completed: completed))

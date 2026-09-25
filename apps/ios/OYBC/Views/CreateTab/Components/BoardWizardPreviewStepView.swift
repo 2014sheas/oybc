@@ -272,12 +272,12 @@ struct BoardWizardPreviewStepView: View {
         return map
     }
 
-    /// The prospective board's window lower bound — the SAME resolution the
+    /// The prospective board's window `[start, end]` (end nil = indefinite) — the SAME resolution the
     /// Save handler persists, so the preview's windowed completion matches
     /// the board the user actually gets. nil while dates are invalid (the
     /// Save button surfaces the error; the grid falls back to lifetime).
-    private var previewWindowStart: String? {
-        if case .ok(let start, _) = resolveWizardDates(controller: controller) { return start }
+    private var previewWindow: (start: String, end: String?)? {
+        if case .ok(let start, let end) = resolveWizardDates(controller: controller) { return (start, end) }
         return nil
     }
 
@@ -344,13 +344,14 @@ struct BoardWizardPreviewStepView: View {
     /// Windowed completion for a preview cell (the "green squares from
     /// previous windows" bug — see `wizardPreviewIsCompleted`).
     private func previewIsCompleted(_ task: Task) -> Bool {
-        guard let windowStart = previewWindowStart else { return task.isCompleted }
+        guard let window = previewWindow else { return task.isCompleted }
         return wizardPreviewIsCompleted(
             task: task,
             taskById: previewTaskById,
             childrenByCompound: previewChildrenByCompound,
             eventsByTaskId: eventsByTaskId,
-            windowStart: windowStart
+            windowStart: window.start,
+            windowEnd: window.end
         )
     }
 

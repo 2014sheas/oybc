@@ -369,7 +369,7 @@ final class AppDatabaseSyncEnqueueTests: XCTestCase {
         let board = try XCTUnwrap(try db.fetchBoard(id: "b1"))
         let results = try db.toggleCompoundChildFallback(
             childTaskId: "ch", desiredCompleted: true,
-            windowStart: board.startDate, boardId: "b1", now: now
+            windowStart: board.startDate, windowEnd: boardWindowEnd(board), boardId: "b1", now: now
         )
 
         let chAfter = try XCTUnwrap(try db.fetchTask(id: "ch"))

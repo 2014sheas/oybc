@@ -198,7 +198,24 @@ extension AppDatabase {
     /// No-op if the task is missing / not event-owning.
     ///
     /// Mirrors `appendCompletionEvent` in taskEvents.ts.
-    static func appendCompletionEvent(db: Database, taskId: String, boardId: String?, now: String) throws {
+    ///
+    /// - Parameters:
+    ///   - db: The caller's write transaction.
+    ///   - taskId: The event-owning (normal) task.
+    ///   - boardId: Provenance board, or `nil` (library / hub).
+    ///   - now: Write time (`createdAt` / `updatedAt`, cache stamp).
+    ///   - occurredAt: The event's `occurredAt`, defaulting to `now`. A log
+    ///     made on a board's own play surface passes that board's late-log
+    ///     stamp (`lateLogOccurredAt` / `lateLogStampForBoard`, 2026-09-24
+    ///     amendment) so a log on an ended-but-unsealed board lands at its
+    ///     `endDate`.
+    static func appendCompletionEvent(
+        db: Database,
+        taskId: String,
+        boardId: String?,
+        now: String,
+        occurredAt: String? = nil
+    ) throws {
         guard let task = try Task.fetchOne(db, key: taskId), isEventOwningTask(task) else { return }
         let event = TaskEvent(
             id: generateUUID(),
@@ -206,7 +223,7 @@ extension AppDatabase {
             taskId: taskId,
             kind: .completion,
             delta: nil,
-            occurredAt: now,
+            occurredAt: occurredAt ?? now,
             boardId: boardId,
             createdAt: now,
             updatedAt: now,
@@ -222,15 +239,34 @@ extension AppDatabase {
 
     /// Window-scoped un-complete (docs §Write paths — "Un-complete is
     /// window-scoped"): tombstone ALL non-deleted completion events with
-    /// `occurredAt >= windowStart` for the viewed context, then restamp caches.
+    /// `windowStart <= occurredAt <= windowEnd` for the viewed context, then
+    /// restamp caches. The upper bound (2026-09-24 amendment) keeps an
+    /// un-complete on an ended board from deleting a completion that belongs
+    /// to a LATER window (e.g. the next window's board, completed today).
     /// Sealed-window-immune events (docs Decision 9) are skipped — an event
     /// inside a sealed board's frozen window can never be tombstoned, so a
     /// live-board un-complete whose window overlaps a sealed window leaves the
     /// immune event (and its green) intact.
     ///
     /// Mirrors `tombstoneWindowCompletions` in taskEvents.ts.
-    static func tombstoneWindowCompletions(db: Database, taskId: String, windowStart: String, now: String) throws {
+    ///
+    /// - Parameters:
+    ///   - db: The caller's write transaction.
+    ///   - taskId: The event-owning task being un-completed.
+    ///   - windowStart: The viewed board's `startDate` (inclusive lower bound).
+    ///   - now: Write time for the tombstones.
+    ///   - windowEnd: The viewed board's inclusive upper bound
+    ///     (`boardWindowEnd(board)`), or `nil` for an open-ended window.
+    ///     Required so every caller decides its bound.
+    static func tombstoneWindowCompletions(
+        db: Database,
+        taskId: String,
+        windowStart: String,
+        now: String,
+        windowEnd: String?
+    ) throws {
         let lowerDate = DateFormatting.parseISO(windowStart)
+        let upperDate = windowEnd.flatMap { DateFormatting.parseISO($0) }
         let immuneWindows = try sealImmuneWindows(db: db, taskId: taskId)
         let events = try TaskEvent.filter(Column("taskId") == taskId).fetchAll(db)
         for var e in events {
@@ -239,6 +275,10 @@ extension AppDatabase {
             // windowStart provided but unparseable → tombstone nothing (defensive).
             guard let lower = lowerDate, let occurred = DateFormatting.parseISO(e.occurredAt) else { continue }
             if occurred < lower { continue }
+            if windowEnd != nil {
+                // windowEnd provided but unparseable → tombstone nothing (defensive).
+                guard let upper = upperDate, occurred <= upper else { continue }
+            }
             if isOccurredAtSealImmune(e.occurredAt, windows: immuneWindows) { continue } // sealed history is immutable
             e.isDeleted = true
             e.deletedAt = now
@@ -325,8 +365,26 @@ extension AppDatabase {
     /// if the task is missing / not event-owning.
     ///
     /// Mirrors `appendIncrementEvent` in taskEvents.ts.
-    static func appendIncrementEvent(db: Database, taskId: String, delta: Int, boardId: String?, now: String) throws {
-        let appended = try insertIncrementEventRaw(db: db, taskId: taskId, delta: delta, boardId: boardId, now: now)
+    ///
+    /// - Parameters:
+    ///   - db: The caller's write transaction.
+    ///   - taskId: The event-owning counting task.
+    ///   - delta: Signed delta (zero is skipped).
+    ///   - boardId: Provenance board, or `nil`.
+    ///   - now: Write time.
+    ///   - occurredAt: The event's `occurredAt`, defaulting to `now` (a board
+    ///     play-surface log passes the board's late-log stamp).
+    static func appendIncrementEvent(
+        db: Database,
+        taskId: String,
+        delta: Int,
+        boardId: String?,
+        now: String,
+        occurredAt: String? = nil
+    ) throws {
+        let appended = try insertIncrementEventRaw(
+            db: db, taskId: taskId, delta: delta, boardId: boardId, now: now, occurredAt: occurredAt
+        )
         if appended { try stampTaskCachesAuthored(db: db, taskId: taskId, now: now) }
     }
 
@@ -427,15 +485,50 @@ extension AppDatabase {
     }
 
     /// Resolve a single event-owning task's windowed state for `taskId` in the
-    /// given board window. Convenience used by write choke points that need the
-    /// current windowed count before computing a delta.
-    static func windowedState(db: Database, taskId: String, windowStart: String?) throws -> TaskWindowState {
+    /// given board window `[windowStart, windowEnd]` (inclusive). Convenience
+    /// used by write choke points that need the current windowed count before
+    /// computing a delta.
+    ///
+    /// - Parameters:
+    ///   - db: An open transaction.
+    ///   - taskId: The event-owning task.
+    ///   - windowStart: Window lower bound, or `nil` for lifetime.
+    ///   - windowEnd: Window inclusive upper bound (`boardWindowEnd(board)`),
+    ///     or `nil` for open-ended. Required so callers decide the bound.
+    /// - Returns: The windowed `{ isCompleted, count }`.
+    static func windowedState(
+        db: Database,
+        taskId: String,
+        windowStart: String?,
+        windowEnd: String?
+    ) throws -> TaskWindowState {
         guard let task = try Task.fetchOne(db, key: taskId) else {
             return TaskWindowState(isCompleted: false, count: 0)
         }
         let events = try TaskEvent
             .filter(Column("taskId") == taskId && Column("isDeleted") == false)
             .fetchAll(db)
-        return resolveTaskWindowState(task: task, events: events, windowStart: windowStart)
+        return resolveTaskWindowState(task: task, events: events, windowStart: windowStart, windowEnd: windowEnd)
+    }
+
+    /// The `occurredAt` for a log made from a board's OWN play surface, looked
+    /// up by id (2026-09-24 amendment of WC Decision 1, decisions C2/C3): the
+    /// board's `lateLogOccurredAt` — `min(now, board.endDate)` — so a log on an
+    /// ended-but-unsealed board counts inside that board's
+    /// `[startDate, endDate]` window and in no later one. No board (hub,
+    /// counter detail, library) or a missing board row → `now`. Callers that
+    /// already hold the board row call `lateLogOccurredAt` directly.
+    ///
+    /// Reads `boards` inside the caller's transaction. Mirrors the web
+    /// `lateLogStampForBoard` in `db/operations/taskEvents.ts`.
+    ///
+    /// - Parameters:
+    ///   - db: The caller's open transaction.
+    ///   - boardId: The board the log was made from, or `nil`.
+    ///   - now: The operation's ISO8601 timestamp.
+    /// - Returns: The ISO timestamp to store as the event's `occurredAt`.
+    static func lateLogStampForBoard(db: Database, boardId: String?, now: String) throws -> String {
+        guard let boardId, let board = try Board.fetchOne(db, key: boardId) else { return now }
+        return lateLogOccurredAt(board: board, nowIso: now)
     }
 }

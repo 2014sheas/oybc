@@ -622,14 +622,226 @@ final class WindowedCompletionTests: XCTestCase {
         XCTAssertEqual(ev?.isDeleted, true, "tombstone survives — undone state not resurrected")
         XCTAssertEqual(ev?.version, 5)
     }
+
+    // MARK: - Late logs on an ended-but-unsealed board (2026-09-24 amendment)
+    //
+    // Twins of web `lateLogWindowEnd.test.ts`. Board A = June (ended at
+    // `lateNow`, unsealed); board B = July (the next window, open). A log made
+    // on A's own play surface is stamped at A's `endDate` so it counts on A
+    // and never on B; undo on A tombstones only A's window.
+
+    private let lateNow = "2026-07-02T12:00:00.000Z"
+    private let julyStart = "2026-07-01T00:00:00.000"
+    private let julyEnd = "2026-07-31T23:59:59.999"
+
+    /// The UTC event stamp `lateLogOccurredAt` produces for a LOCAL-ISO board date.
+    private func utcStamp(_ localIso: String) -> String {
+        DateFormatting.utcISOString(DateFormatting.parseISO(localIso)!)
+    }
+
+    private func makeEvent(_ id: String, taskId: String, kind: TaskEventKind, delta: Int? = nil,
+                           occurredAt: String, boardId: String?) -> TaskEvent {
+        var e = makeEvent(id, taskId: taskId, kind: kind, delta: delta, occurredAt: occurredAt)
+        e.boardId = boardId
+        return e
+    }
+
+    /// Seeds A (June, ended) + B (July) and places `taskId` on both (1×1 each).
+    private func seedEndedAndNext(_ db: AppDatabase, taskId: String) throws -> (a: Board, btA: BoardTask) {
+        let a = makeBoard(id: "bA")
+        try db.saveBoard(a)
+        try db.saveBoard(makeBoard(id: "bB", startDate: julyStart, endDate: julyEnd))
+        let btA = makeBoardTask(id: "btA", boardId: "bA", taskId: taskId)
+        try db.saveBoardTask(btA)
+        try db.saveBoardTask(makeBoardTask(id: "btB", boardId: "bB", taskId: taskId))
+        return (a, btA)
+    }
+
+    func test_lateCompletion_onEndedUnsealedBoard_stampsAtEndDate_countsThereNotOnNextWindow() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        let (a, btA) = try seedEndedAndNext(db, taskId: "t1")
+
+        _ = try db.completeTaskOrchestrated(
+            board: a, taskId: "t1", intent: .setCompleted(true), boardTask: btA, now: lateNow
+        )
+
+        let events = try liveEvents(db, taskId: "t1")
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.occurredAt, utcStamp(a.endDate!), "stamped at A's endDate, not now")
+        XCTAssertEqual(events.first?.boardId, "bA")
+        XCTAssertEqual(try db.fetchBoard(id: "bA")?.completedTasks, 1, "counts on the ended board")
+        XCTAssertEqual(try db.fetchBoard(id: "bB")?.completedTasks, 0, "never on the next window's board")
+    }
+
+    func test_lateCompletion_onOpenBoard_stampsNow() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        _ = try seedEndedAndNext(db, taskId: "t1")
+        let b = try XCTUnwrap(try db.fetchBoard(id: "bB"))
+        let btB = try XCTUnwrap(try db.read { try BoardTask.fetchOne($0, key: "btB") })
+
+        _ = try db.completeTaskOrchestrated(
+            board: b, taskId: "t1", intent: .setCompleted(true), boardTask: btB, now: lateNow
+        )
+
+        XCTAssertEqual(try liveEvents(db, taskId: "t1").first?.occurredAt, lateNow)
+    }
+
+    func test_lateCountingTap_onEndedBoard_deltaFromBoundedWindow_stampedAtEndDate() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("c1", type: .counting, maxCount: 5))
+        let (a, btA) = try seedEndedAndNext(db, taskId: "c1")
+        try db.write { db in
+            try self.makeEvent("in-a", taskId: "c1", kind: .increment, delta: 3,
+                               occurredAt: "2026-06-10T00:00:00.000", boardId: "bA").save(db)
+            try self.makeEvent("in-b", taskId: "c1", kind: .increment, delta: 2,
+                               occurredAt: "2026-07-01T09:00:00.000", boardId: "bB").save(db)
+        }
+
+        // A shows 3 (the +2 after endDate is B's); the tap asks for 4 → +1.
+        _ = try db.completeTaskOrchestrated(
+            board: a, taskId: "c1", intent: .setWindowedCount(4), boardTask: btA, now: lateNow
+        )
+
+        let appended = try liveEvents(db, taskId: "c1").filter { $0.id != "in-a" && $0.id != "in-b" }
+        XCTAssertEqual(appended.count, 1)
+        XCTAssertEqual(appended.first?.delta, 1, "delta from the END-BOUNDED window count (3), not 5")
+        XCTAssertEqual(appended.first?.occurredAt, utcStamp(a.endDate!))
+        XCTAssertEqual(try db.windowedState(db_taskId: "c1", windowStart: a.startDate, windowEnd: a.endDate).count, 4)
+        XCTAssertEqual(try db.windowedState(db_taskId: "c1", windowStart: julyStart, windowEnd: julyEnd).count, 2)
+    }
+
+    func test_completeTaskOrchestrated_onSealedBoard_isNoOp_noEventAppended() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        var a = makeBoard(id: "bA")
+        a.sealedAt = "2026-07-01T06:00:00.000Z"
+        try db.saveBoard(a)
+        let btA = makeBoardTask(id: "btA", boardId: "bA", taskId: "t1")
+        try db.saveBoardTask(btA)
+
+        let results = try db.completeTaskOrchestrated(
+            board: a, taskId: "t1", intent: .setCompleted(true), boardTask: btA, now: lateNow
+        )
+
+        XCTAssertTrue(results.isEmpty)
+        XCTAssertEqual(try db.read { try TaskEvent.fetchCount($0) }, 0, "no event appended on a sealed board")
+        XCTAssertEqual(try db.fetchBoard(id: "bA")?.version, 1, "sealed record untouched")
+        XCTAssertEqual(try db.read { try BoardTask.fetchOne($0, key: "btA") }?.version, 1)
+    }
+
+    func test_lateUndo_onEndedBoard_tombstonesOnlyItsWindow() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveTask(makeTask("t1"))
+        let (a, btA) = try seedEndedAndNext(db, taskId: "t1")
+        try db.write { db in
+            try self.makeEvent("e-a", taskId: "t1", kind: .completion,
+                               occurredAt: "2026-06-20T00:00:00.000", boardId: "bA").save(db)
+            try self.makeEvent("e-b", taskId: "t1", kind: .completion,
+                               occurredAt: "2026-07-01T09:00:00.000", boardId: "bB").save(db)
+        }
+
+        _ = try db.completeTaskOrchestrated(
+            board: a, taskId: "t1", intent: .setCompleted(false), boardTask: btA, now: lateNow
+        )
+
+        XCTAssertEqual(try liveEvents(db, taskId: "t1").map(\.id), ["e-b"], "B's completion survives")
+        XCTAssertEqual(try db.fetchBoard(id: "bA")?.completedTasks, 0)
+        XCTAssertEqual(try db.fetchBoard(id: "bB")?.completedTasks, 1, "B stays green")
+    }
+
+    // MARK: Compound-child fallback on an ended board
+
+    /// Compound P = AND(c) placed on ended A; c placed only on B.
+    private func seedCompoundOnEndedBoard(_ db: AppDatabase) throws -> Board {
+        var p = makeTask("p", type: .compound)
+        p.operatorType = .and
+        try db.saveTask(p)
+        try db.saveTask(makeTask("c"))
+        let a = makeBoard(id: "bA")
+        try db.saveBoard(a)
+        try db.saveBoard(makeBoard(id: "bB", startDate: julyStart, endDate: julyEnd))
+        try db.saveBoardTask(makeBoardTask(id: "btA", boardId: "bA", taskId: "p"))
+        try db.saveBoardTask(makeBoardTask(id: "btB", boardId: "bB", taskId: "c"))
+        try db.write { db in
+            try CompoundChild(
+                id: "p-c", compoundTaskId: "p", childTaskId: "c", childIndex: 0,
+                createdAt: "2026-06-01T00:00:00.000", updatedAt: "2026-06-01T00:00:00.000",
+                version: 1, isDeleted: false
+            ).save(db)
+        }
+        return a
+    }
+
+    func test_compoundChildFallback_onEndedBoard_appendsAtEndDate_keepsNextWindowsCompletion() throws {
+        let db = try makeDb(); try seedUser(db)
+        let a = try seedCompoundOnEndedBoard(db)
+        // c completed TODAY on B.
+        try db.write { db in
+            try self.makeEvent("e-b", taskId: "c", kind: .completion,
+                               occurredAt: "2026-07-02T08:00:00.000Z", boardId: "bB").save(db)
+        }
+
+        _ = try db.toggleCompoundChildFallback(
+            childTaskId: "c", desiredCompleted: true,
+            windowStart: a.startDate, windowEnd: boardWindowEnd(a), boardId: "bA", now: lateNow
+        )
+
+        let live = try liveEvents(db, taskId: "c")
+        XCTAssertEqual(live.count, 2, "B's completion is kept; one new event appended")
+        let appended = try XCTUnwrap(live.first { $0.id != "e-b" })
+        XCTAssertEqual(appended.occurredAt, utcStamp(a.endDate!), "stamped at A's endDate")
+        XCTAssertEqual(appended.boardId, "bA")
+        XCTAssertEqual(try db.fetchBoard(id: "bA")?.completedTasks, 1, "P completes in A's window")
+        XCTAssertEqual(try db.fetchBoard(id: "bB")?.completedTasks, 1, "c stays green on B")
+    }
+
+    func test_compoundChildFallback_uncompleteOnEndedBoard_doesNotTombstoneNextWindowsCompletion() throws {
+        let db = try makeDb(); try seedUser(db)
+        let a = try seedCompoundOnEndedBoard(db)
+        try db.write { db in
+            try self.makeEvent("e-a", taskId: "c", kind: .completion,
+                               occurredAt: "2026-06-20T00:00:00.000", boardId: "bA").save(db)
+            try self.makeEvent("e-b", taskId: "c", kind: .completion,
+                               occurredAt: "2026-07-02T08:00:00.000Z", boardId: "bB").save(db)
+        }
+
+        _ = try db.toggleCompoundChildFallback(
+            childTaskId: "c", desiredCompleted: false,
+            windowStart: a.startDate, windowEnd: boardWindowEnd(a), boardId: "bA", now: lateNow
+        )
+
+        XCTAssertEqual(try liveEvents(db, taskId: "c").map(\.id), ["e-b"])
+        XCTAssertEqual(try db.fetchBoard(id: "bB")?.completedTasks, 1)
+    }
+
+    func test_compoundChildFallback_onSealedBoard_isNoOp() throws {
+        let db = try makeDb(); try seedUser(db)
+        var a = try seedCompoundOnEndedBoard(db)
+        a.sealedAt = "2026-07-01T06:00:00.000Z"
+        try db.saveBoard(a)
+
+        let results = try db.toggleCompoundChildFallback(
+            childTaskId: "c", desiredCompleted: true,
+            windowStart: a.startDate, windowEnd: boardWindowEnd(a), boardId: "bA", now: lateNow
+        )
+
+        XCTAssertTrue(results.isEmpty)
+        XCTAssertEqual(try db.read { try TaskEvent.fetchCount($0) }, 0)
+    }
 }
 
 // Test-only convenience to resolve windowed state through the DB read path.
 private extension AppDatabase {
-    func windowedState(db_taskId taskId: String, windowStart: String?) throws -> TaskWindowState {
-        try read { db in try Self.windowedStateForTest(db: db, taskId: taskId, windowStart: windowStart) }
+    func windowedState(db_taskId taskId: String, windowStart: String?, windowEnd: String? = nil) throws -> TaskWindowState {
+        try read { db in
+            try Self.windowedStateForTest(db: db, taskId: taskId, windowStart: windowStart, windowEnd: windowEnd)
+        }
     }
-    static func windowedStateForTest(db: Database, taskId: String, windowStart: String?) throws -> TaskWindowState {
-        try windowedState(db: db, taskId: taskId, windowStart: windowStart)
+    static func windowedStateForTest(
+        db: Database, taskId: String, windowStart: String?, windowEnd: String?
+    ) throws -> TaskWindowState {
+        try windowedState(db: db, taskId: taskId, windowStart: windowStart, windowEnd: windowEnd)
     }
 }

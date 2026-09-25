@@ -201,7 +201,8 @@ extension AppDatabase {
                 let state = resolveTaskWindowState(
                     task: task,
                     events: eventsByTaskId[id] ?? [],
-                    windowStart: board.startDate
+                    windowStart: board.startDate,
+                    windowEnd: boardWindowEnd(board)
                 )
                 isDone = state.isCompleted
                 // §Member rules (B3, RC4) — the same windowed resolution that
