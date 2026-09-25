@@ -3,6 +3,8 @@ import * as path from 'path';
 import {
   resolveTaskWindowState,
   resolveLinkedCounterDisplay,
+  lateLogOccurredAt,
+  boardWindowEnd,
   isEventOwningTask,
   backstopWindowMs,
   computeBackstopDeadlineMs,
@@ -67,8 +69,16 @@ interface Vector {
   name: string;
   task: { type: string; maxCount: number | null };
   windowStart: string | null;
+  /** Optional inclusive upper bound (2026-09-24 amendment); absent = none. */
+  windowEnd?: string | null;
   events: VectorEvent[];
   expected: { isCompleted: boolean; count: number };
+}
+interface LateLogVector {
+  name: string;
+  board: { endDate: string | null; sealedAt: string | null };
+  nowIso: string;
+  expected: 'now' | 'endDate';
 }
 interface LinkedDisplayVector {
   name: string;
@@ -87,9 +97,50 @@ interface LinkedDisplayVector {
   sealedAt: string | null;
   expected: { displayed: number; isCompleted: boolean };
 }
-const fixture: { vectors: Vector[]; linkedCounterDisplay: LinkedDisplayVector[] } = JSON.parse(
+const fixture: {
+  vectors: Vector[];
+  linkedCounterDisplay: LinkedDisplayVector[];
+  lateLogOccurredAt: LateLogVector[];
+} = JSON.parse(
   fs.readFileSync(path.join(__dirname, '../fixtures/taskWindowStateVectors.json'), 'utf8'),
 );
+
+// ─── lateLogOccurredAt + boardWindowEnd (fixture-driven) ────────────────────
+
+/** Canonical `Date.prototype.toISOString()` shape (UTC, millisecond precision). */
+const CANONICAL_UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+describe('lateLogOccurredAt (fixture-driven, taskWindowStateVectors.json#lateLogOccurredAt)', () => {
+  it('fixture group is non-empty and covers both outcomes', () => {
+    const outcomes = new Set(fixture.lateLogOccurredAt.map((v) => v.expected));
+    expect(outcomes).toEqual(new Set(['now', 'endDate']));
+  });
+
+  for (const v of fixture.lateLogOccurredAt) {
+    it(v.name, () => {
+      const board = { endDate: v.board.endDate ?? undefined, sealedAt: v.board.sealedAt ?? undefined };
+      const result = lateLogOccurredAt(board, v.nowIso);
+      if (v.expected === 'now') {
+        expect(result).toBe(v.nowIso);
+      } else {
+        // Same INSTANT as the board's endDate, re-encoded as a UTC event
+        // timestamp — compared by ms (a local-ISO endDate never string-equals).
+        expect(result).toMatch(CANONICAL_UTC_ISO);
+        expect(new Date(result).getTime()).toBe(new Date(v.board.endDate as string).getTime());
+        expect(result).not.toBe(v.nowIso);
+      }
+    });
+  }
+});
+
+describe('boardWindowEnd', () => {
+  it('returns the board endDate verbatim', () => {
+    expect(boardWindowEnd({ endDate: '2026-09-20T23:59:59.999' })).toBe('2026-09-20T23:59:59.999');
+  });
+  it('returns null for an indefinite board (no endDate)', () => {
+    expect(boardWindowEnd({ endDate: undefined })).toBeNull();
+  });
+});
 
 describe('resolveTaskWindowState (fixture-driven, tests/fixtures/taskWindowStateVectors.json)', () => {
   it('fixture is non-empty', () => {
@@ -110,7 +161,7 @@ describe('resolveTaskWindowState (fixture-driven, tests/fixtures/taskWindowState
           isDeleted: e.isDeleted,
         }),
       );
-      const result = resolveTaskWindowState(task, events, v.windowStart);
+      const result = resolveTaskWindowState(task, events, v.windowStart, v.windowEnd ?? null);
       expect(result).toEqual(v.expected);
     });
   }

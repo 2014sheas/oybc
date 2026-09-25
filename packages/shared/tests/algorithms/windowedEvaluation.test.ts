@@ -166,9 +166,11 @@ function makeBoard(overrides: Partial<Board>): Board {
     name: 'B',
     status: BoardStatus.ACTIVE,
     boardSize: 3,
-    timeframe: Timeframe.DAILY,
+    // A MONTHLY window so IN_WINDOW (07-05) sits inside [startDate, endDate]
+    // — since the 2026-09-24 amendment root squares are end-bounded too.
+    timeframe: Timeframe.MONTHLY,
     startDate: WINDOW_START,
-    endDate: '2026-07-01T23:59:59.999Z',
+    endDate: '2026-07-31T23:59:59.999Z',
     centerSquareType: CenterSquareType.NONE,
     isRandomized: false,
     totalTasks: 9,

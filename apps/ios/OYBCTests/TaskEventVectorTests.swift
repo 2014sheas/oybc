@@ -51,11 +51,26 @@ final class TaskEventVectorTests: XCTestCase {
         let name: String
         let task: MiniTask
         let windowStart: String?
+        /// Optional inclusive upper bound (2026-09-24 amendment); absent = none.
+        let windowEnd: String?
         let events: [WindowEvent]
         let expected: Expected
     }
 
     private struct WindowFixture: Decodable { let vectors: [WindowVector] }
+
+    /// One `lateLogOccurredAt` vector: `expected` is `"now"` (result is
+    /// `nowIso` verbatim) or `"endDate"` (result is a canonical UTC
+    /// millisecond ISO string naming the same instant as `board.endDate`).
+    private struct LateLogVector: Decodable {
+        struct MiniBoard: Decodable { let endDate: String?; let sealedAt: String? }
+        let name: String
+        let board: MiniBoard
+        let nowIso: String
+        let expected: String
+    }
+
+    private struct LateLogFixture: Decodable { let lateLogOccurredAt: [LateLogVector] }
 
     /// Build a minimal event-owning Task (type + maxCount) for windowed resolution.
     private func makeTask(type: String, maxCount: Int?, sharedCounterId: String? = nil) -> Task {
@@ -86,10 +101,64 @@ final class TaskEventVectorTests: XCTestCase {
         for v in fixture.vectors {
             let task = makeTask(type: v.task.type, maxCount: v.task.maxCount)
             let events = v.events.map { makeEvent($0) }
-            let result = resolveTaskWindowState(task: task, events: events, windowStart: v.windowStart)
+            let result = resolveTaskWindowState(
+                task: task, events: events, windowStart: v.windowStart, windowEnd: v.windowEnd
+            )
             XCTAssertEqual(result.isCompleted, v.expected.isCompleted, "Vector '\(v.name)' isCompleted")
             XCTAssertEqual(result.count, v.expected.count, "Vector '\(v.name)' count")
         }
+    }
+
+    // MARK: - lateLogOccurredAt + boardWindowEnd vectors (2026-09-24 amendment)
+
+    /// Build a minimal Board carrying only the window fields the helpers read.
+    private func makeWindowBoard(endDate: String?, sealedAt: String?) -> Board {
+        var dict: [String: Any] = [
+            "id": "b", "userId": "u", "name": "b",
+            "status": "active", "boardSize": 3,
+            "timeframe": "weekly", "startDate": "2026-09-14T00:00:00.000",
+            "centerSquareType": "none", "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": ts, "updatedAt": ts, "version": 1, "isDeleted": false,
+        ]
+        if let endDate { dict["endDate"] = endDate }
+        if let sealedAt { dict["sealedAt"] = sealedAt }
+        let data = try! JSONSerialization.data(withJSONObject: dict)
+        return try! JSONDecoder().decode(Board.self, from: data)
+    }
+
+    func testLateLogOccurredAtVectors() throws {
+        let fixture = try loadFixture("taskWindowStateVectors", as: LateLogFixture.self)
+        XCTAssertEqual(Set(fixture.lateLogOccurredAt.map(\.expected)), ["now", "endDate"])
+        let canonical = try NSRegularExpression(
+            pattern: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"#
+        )
+        for v in fixture.lateLogOccurredAt {
+            let board = makeWindowBoard(endDate: v.board.endDate, sealedAt: v.board.sealedAt)
+            let result = lateLogOccurredAt(board: board, nowIso: v.nowIso)
+            if v.expected == "now" {
+                XCTAssertEqual(result, v.nowIso, "Vector '\(v.name)'")
+                continue
+            }
+            let range = NSRange(result.startIndex..., in: result)
+            XCTAssertNotNil(canonical.firstMatch(in: result, range: range), "Vector '\(v.name)' shape: \(result)")
+            let endDate = try XCTUnwrap(v.board.endDate.flatMap { DateFormatting.parseISO($0) }, "Vector '\(v.name)'")
+            let got = try XCTUnwrap(DateFormatting.parseISO(result), "Vector '\(v.name)' parse")
+            XCTAssertEqual(
+                (got.timeIntervalSince1970 * 1000).rounded(),
+                (endDate.timeIntervalSince1970 * 1000).rounded(),
+                "Vector '\(v.name)' instant"
+            )
+            XCTAssertNotEqual(result, v.nowIso, "Vector '\(v.name)'")
+        }
+    }
+
+    func testBoardWindowEnd() {
+        XCTAssertEqual(
+            boardWindowEnd(makeWindowBoard(endDate: "2026-09-20T23:59:59.999", sealedAt: nil)),
+            "2026-09-20T23:59:59.999"
+        )
+        XCTAssertNil(boardWindowEnd(makeWindowBoard(endDate: nil, sealedAt: nil)))
     }
 
     // MARK: - resolveLinkedCounterDisplay vectors (Task 3 item 6)
@@ -452,7 +521,8 @@ final class TaskEventVectorTests: XCTestCase {
         let required = [
             "compound-children-complete-in-window-green-and-pre-window-child-keeps-sibling-compound-grey",
             "bingo-4x4-row-and-main-diagonal-recorded-in-sealed-lines-with-near-misses",
-            "normal-completion-after-endDate-before-sealedAt-counts-and-completes-the-row",
+            "normal-completion-after-endDate-before-sealedAt-excluded-by-endDate",
+            "normal-completion-stamped-exactly-at-endDate-counts",
             "normal-completion-one-ms-after-sealedAt-excluded-even-though-lifetime-cache-says-done",
             "normal-completion-exactly-at-sealedAt-counts-inclusive-upper-bound",
         ]

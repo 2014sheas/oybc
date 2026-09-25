@@ -305,11 +305,19 @@ enum DerivationPass {
         var cells: [CellState] = []
         cells.reserveCapacity(boardTasksOnBoard.count)
 
-        // Window context for compound + primitive resolution. `board.startDate`
-        // is the window lower bound `[startDate, ∞)`; indefinite boards use it
-        // too. Nil when no windowContext (lifetime = today's behavior).
+        // Window context for compound + primitive resolution. The board's own
+        // window `[startDate, endDate]` (inclusive; indefinite boards have no
+        // upper bound) — 2026-09-24 amendment. A sealed snapshot's context is
+        // already pre-bounded at `sealedAt` by the caller
+        // (`boundWindowContextAtSeal`), so its effective upper bound is
+        // `min(endDate, sealedAt)`. Nil when no windowContext (lifetime).
+        let windowEnd = boardWindowEnd(board)
         let compoundCtx: CompoundWindowContext? = windowContext.map {
-            CompoundWindowContext(windowStart: board.startDate, eventsByTaskId: $0.eventsByTaskId)
+            CompoundWindowContext(
+                windowStart: board.startDate,
+                windowEnd: windowEnd,
+                eventsByTaskId: $0.eventsByTaskId
+            )
         }
 
         /// Resolve a primitive (normal / counting) square, windowed or lifetime.
@@ -331,7 +339,9 @@ enum DerivationPass {
             // propagation-stamped lifetime cache.
             if !isEventOwningTask(t) { return t.isCompleted }
             let events = windowContext.eventsByTaskId[t.id] ?? []
-            return resolveTaskWindowState(task: t, events: events, windowStart: board.startDate).isCompleted
+            return resolveTaskWindowState(
+                task: t, events: events, windowStart: board.startDate, windowEnd: windowEnd
+            ).isCompleted
         }
 
         // Phase 6.3: index all non-deleted boards by id (specific-board

@@ -83,7 +83,8 @@ enum CompoundEvaluation {
         return resolveTaskWindowState(
             task: child,
             events: events,
-            windowStart: windowContext.windowStart
+            windowStart: windowContext.windowStart,
+            windowEnd: windowContext.windowEnd
         ).isCompleted
     }
 

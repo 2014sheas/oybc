@@ -31,6 +31,8 @@ export type { BoardStatsUpdate, CellState, AchievementCellBadge } from './deriva
 export {
   isEventOwningTask,
   resolveTaskWindowState,
+  boardWindowEnd,
+  lateLogOccurredAt,
   resolveWindowStampedDerivedState,
   resolveDerivedCounterWindowState,
   resolveLinkedCounterDisplay,
