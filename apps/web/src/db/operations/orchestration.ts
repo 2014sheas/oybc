@@ -351,6 +351,11 @@ export async function handleTaskCompletion(
       // 1. Fetch + auto-activate the primary board.
       let primaryBoard = await db.boards.get(boardId);
       if (!primaryBoard) throw new Error(`Board ${boardId} not found`);
+      // A sealed board is a permanent record (play is locked on its surface).
+      // No-op defensively: an event appended here would be stamped at the
+      // board's endDate — inside the sealed window, seal-immune forever — and
+      // a pull-path re-derive elsewhere would rewrite the sealed record.
+      if (primaryBoard.sealedAt) return;
 
       if (primaryBoard.status === BoardStatus.DRAFT) {
         await db.boards.update(boardId, {

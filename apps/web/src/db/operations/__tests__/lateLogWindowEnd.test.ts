@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BoardStatus,
   CenterSquareType,
+  OperatorType,
   TaskType,
   Timeframe,
   computeBoardGrid,
@@ -13,9 +14,9 @@ import {
 import { db } from '../../internal';
 import { handleTaskCompletion } from '../orchestration';
 import { decrementSharedCounter, incrementSharedCounter } from '../tasks.sharedCounter';
-import { toggleTaskCompletionAndCascade } from '../tasks.crud';
+import { toggleCompoundChildFallback } from '../tasks.crud';
 import { buildWindowContext } from '../windowContext';
-import { buildSquareWindowContext, taskToSquareState } from '../../adapters';
+import { buildSquareWindowContext, compoundChildToggleDesired, taskToSquareState } from '../../adapters';
 
 /**
  * 2026-09-24 amendment of WC Decision 1 (root-square end bound) — web wiring.
@@ -208,11 +209,13 @@ describe('late log on an ended-but-unsealed board (C2)', () => {
 });
 
 describe('sealed board (play locked)', () => {
-  it('the board surface never reaches the op (playLocked guards); if reached, the sealed record is untouched', async () => {
+  it('handleTaskCompletion on a sealed board is a no-op: no event appended, record untouched', async () => {
     await seedTask('t');
     await seedBoard(A, A_START, A_END, { sealedAt: new Date('2026-09-23T06:00:00.000').toISOString(), sealedCompletedCells: [] });
     const btA = await place(A, 't');
     await handleTaskCompletion(A, btA.id, { isCompleted: true });
+    // No event lands in the sealed window (it would be seal-immune forever).
+    expect(await db.taskEvents.count()).toBe(0);
     const sealed = (await db.boards.get(A))!;
     expect(sealed.sealedCompletedCells).toEqual([]);
     expect(sealed.completedTasks).toBe(0);
@@ -301,16 +304,69 @@ describe('shared-counter logs take an optional boardId for the late-log clamp (C
   });
 });
 
-describe('board-context compound-child fallback (toggleTaskCompletionAndCascade)', () => {
-  it('with the ended board stamps the completion at its endDate; without a board stamps now', async () => {
-    await seedTask('c1');
-    await seedTask('c2');
+describe('board-context compound-child toggle (fallback: child not placed on the board)', () => {
+  /** Board A hosts compound P = AND(c); `c` is NOT placed on A. Returns the ctx A's sheet paints with. */
+  async function seedCompoundOnA() {
+    await seedTask('c');
+    await seedTask('p', { type: TaskType.COMPOUND, operator: OperatorType.AND });
+    await db.compoundChildren.add({
+      id: 'link-c',
+      compoundTaskId: 'p',
+      childTaskId: 'c',
+      childIndex: 0,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    });
     await seedBoard(A, A_START, A_END);
+    await seedBoard(B, B_START, B_END);
+    await place(A, 'p');
+    await place(B, 'c');
+  }
 
-    await toggleTaskCompletionAndCascade('c1', A);
-    await toggleTaskCompletionAndCascade('c2');
+  async function desiredOnA(): Promise<boolean> {
+    const taskMap: Record<string, Task> = {};
+    for (const t of await db.tasks.toArray()) taskMap[t.id] = t;
+    const cb = { p: await db.compoundChildren.toArray() };
+    const ctx = buildSquareWindowContext(await db.taskEvents.toArray(), A_START, A_END);
+    return compoundChildToggleDesired(taskMap['c'], taskMap, cb, ctx);
+  }
 
-    expect((await liveEvents('c1'))[0].occurredAt).toBe(A_END_STAMP);
-    expect((await liveEvents('c2'))[0].occurredAt).toBe(NOW_STAMP);
+  it('child completed today on B shows incomplete on A → the tap completes it at A.endDate and keeps B\'s completion', async () => {
+    await seedCompoundOnA();
+    await seedEvent('today-b', 'c', new Date('2026-09-23T08:00:00.000').toISOString(), { boardId: B });
+    await db.tasks.update('c', { isCompleted: true }); // lifetime latch (from B)
+
+    const desired = await desiredOnA();
+    expect(desired).toBe(true); // the sheet paints it incomplete on A
+    await toggleCompoundChildFallback('c', desired, A_START, A_END, A);
+
+    expect((await db.taskEvents.get('today-b'))!.isDeleted).toBe(false);
+    const appended = (await liveEvents('c')).filter((e) => e.id !== 'today-b');
+    expect(appended).toHaveLength(1);
+    expect(appended[0].occurredAt).toBe(A_END_STAMP);
+    expect((await cellFor(A, 'p')).isCompleted).toBe(true);
+    expect((await cellFor(B, 'c')).isCompleted).toBe(true);
+  });
+
+  it('un-complete from A tombstones only A\'s window', async () => {
+    await seedCompoundOnA();
+    await seedEvent('in-a', 'c', new Date('2026-09-22T09:00:00.000').toISOString(), { boardId: A });
+    await seedEvent('today-b', 'c', new Date('2026-09-23T08:00:00.000').toISOString(), { boardId: B });
+
+    const desired = await desiredOnA();
+    expect(desired).toBe(false);
+    await toggleCompoundChildFallback('c', desired, A_START, A_END, A);
+
+    expect((await db.taskEvents.get('in-a'))!.isDeleted).toBe(true);
+    expect((await db.taskEvents.get('today-b'))!.isDeleted).toBe(false);
+  });
+
+  it('is a no-op on a sealed board', async () => {
+    await seedCompoundOnA();
+    await db.boards.update(A, { sealedAt: new Date('2026-09-23T06:00:00.000').toISOString() });
+    await toggleCompoundChildFallback('c', true, A_START, A_END, A);
+    expect(await db.taskEvents.count()).toBe(0);
   });
 });

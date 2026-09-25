@@ -4,6 +4,7 @@ import {
   SyncOperationType,
   TaskType,
   isEventOwningTask,
+  lateLogOccurredAt,
   resolveTaskWindowState,
   findTransitiveParentCompounds,
   findAffectedBoardIds,
@@ -167,6 +168,27 @@ async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWi
 async function enqueueEventSync(eventId: string, op: SyncOperationType): Promise<void> {
   const row = await db.taskEvents.get(eventId);
   if (row) await addToSyncQueue('taskEvents', eventId, op, row);
+}
+
+/**
+ * The `occurredAt` for a log made from a board's OWN play surface, looked up
+ * by id (2026-09-24 amendment of WC Decision 1, decisions C2/C3): the board's
+ * `lateLogOccurredAt` — `min(now, board.endDate)` — so a log on an
+ * ended-but-unsealed board counts inside that board's `[startDate, endDate]`
+ * window and in no later one. No board (hub, counter detail, library) or a
+ * missing board row → `now`. Callers that already hold the board row call
+ * `lateLogOccurredAt` directly.
+ *
+ * Must run inside the caller's transaction (reads `boards`).
+ *
+ * @param boardId - The board the log was made from, or `undefined`.
+ * @param now     - The operation's ISO8601 timestamp.
+ * @returns The ISO timestamp to store as the event's `occurredAt`.
+ */
+export async function lateLogStampForBoard(boardId: string | undefined, now: string): Promise<string> {
+  if (boardId === undefined) return now;
+  const board = await db.boards.get(boardId);
+  return board ? lateLogOccurredAt(board, now) : now;
 }
 
 /**

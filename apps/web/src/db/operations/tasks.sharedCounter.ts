@@ -8,40 +8,19 @@ import {
   TaskType,
   isFrozenDerivedRow,
   isFrozenRowReachedByEvent,
-  lateLogOccurredAt,
   propagateIncrement,
   selectLastIncrementEntry,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
-import { insertIncrementEventRaw } from './taskEvents';
+import { insertIncrementEventRaw, lateLogStampForBoard } from './taskEvents';
 import { refreshDerivedBaselines } from './derivedCounters';
 
 /** Resolved board reference returned by the shared-counter engine. */
 export interface AffectedBoard {
   boardId: string;
   boardName: string;
-}
-
-/**
- * The `occurredAt` for a shared-counter log (2026-09-24 amendment of WC
- * Decision 1, decision C3): a log made from a board's OWN play surface is
- * stamped via `lateLogOccurredAt` — `min(now, board.endDate)` — so a log on an
- * ended-but-unsealed board counts inside that board's `[startDate, endDate]`
- * window and in no later one. No board (hub, counter detail, library) or a
- * missing board row → `now`.
- *
- * Must run inside the caller's transaction (reads `boards`).
- *
- * @param boardId - The board the log was made from, or `undefined`.
- * @param now     - The operation's ISO8601 timestamp.
- * @returns The ISO timestamp to store as the event's `occurredAt`.
- */
-async function counterLogOccurredAt(boardId: string | undefined, now: string): Promise<string> {
-  if (boardId === undefined) return now;
-  const board = await db.boards.get(boardId);
-  return board ? lateLogOccurredAt(board, now) : now;
 }
 
 /**
@@ -63,8 +42,9 @@ async function counterLogOccurredAt(boardId: string | undefined, now: string): P
  * at that board's `endDate` (`lateLogOccurredAt`, 2026-09-24 amendment of WC
  * Decision 1). Either DOES change that row's kernel sum: those rows
  * (`isFrozenRowReachedByEvent`) join the cascade set — cascade only, still no
- * write / enqueue — so their boards' stored stats follow the event. Hub-linked rows (no `startDate`),
- * indefinite rows and in-window rows propagate as before.
+ * write / enqueue — so their boards' stored stats follow the event.
+ * Hub-linked rows (no `startDate`), indefinite rows and in-window rows
+ * propagate as before.
  *
  * Must run inside the caller's `rw` transaction covering `tasks`,
  * `taskEvents`, `boards`, `boardTasks`, `compoundChildren` and `syncQueue`.
@@ -179,7 +159,7 @@ async function propagateToLinkedRows(
  * @param by - Amount to increment (default 1). Must be a positive integer.
  * @param boardId - The board whose OWN play surface made the log, if any. When
  *   that board's window has ended, the event is stamped at its `endDate`
- *   (see {@link counterLogOccurredAt}); omitted (hub / counter detail /
+ *   (see `lateLogStampForBoard`); omitted (hub / counter detail /
  *   library) → stamped `now`.
  */
 export async function incrementSharedCounter(
@@ -242,7 +222,7 @@ export async function incrementSharedCounter(
       // carved out — they never own events). Raw append, no cache restamp: the
       // source's lifetime `currentCount` is already written authoritatively
       // above and equals the lifetime event sum.
-      const occurredAt = await counterLogOccurredAt(boardId, now);
+      const occurredAt = await lateLogStampForBoard(boardId, now);
       await insertIncrementEventRaw(sourceTaskId, by, undefined, now, occurredAt);
 
       // Board Sources §Member rules (B2) — the root's event log just moved, so
@@ -344,7 +324,7 @@ export async function decrementSharedCounter(
       // lifetime event sum can't go negative. Raw append on the SOURCE only
       // (derived tasks are carved out); the source cache is written
       // authoritatively above.
-      const occurredAt = await counterLogOccurredAt(boardId, now);
+      const occurredAt = await lateLogStampForBoard(boardId, now);
       await insertIncrementEventRaw(sourceTaskId, -eff, undefined, now, occurredAt);
 
       // Board Sources §Member rules (B2) — the root's event log just moved, so
