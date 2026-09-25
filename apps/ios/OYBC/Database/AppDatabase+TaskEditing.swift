@@ -74,6 +74,19 @@ extension AppDatabase {
     /// Achievement, a missing board / template selection or a non-positive
     /// required count is rejected first, then the re-target is cycle-checked.
     ///
+    /// Compound structure: when `patch.compound` is non-nil and the task is a
+    /// Compound, every newly linked existing task is checked through
+    /// `compoundLinkProblem`, then the structure (operator / threshold /
+    /// sub-tasks) is validated; either is refused with
+    /// `TaskEditError.invalid(message:)` BEFORE any write. On success the
+    /// structure's title wins over the basic title, the basic description
+    /// rides along, the parent gets ONE version bump + ONE
+    /// sync enqueue, sub-task CRUD runs through the wizard's
+    /// `applyStagedCompoundChildEdits`, then the parent cascades — the same
+    /// order as the web twin `editCompoundStructure`. The task is read inside
+    /// this `write`, so there is no stale-read window. A nil `compound` keeps
+    /// the basic-fields-only behaviour.
+    ///
     /// - Parameters:
     ///   - taskId: The task being edited.
     ///   - patch: The edit sheet's submitted values.
@@ -92,6 +105,26 @@ extension AppDatabase {
                 throw TaskEditError.taskNotFound
             }
             Self.applyBasicFields(of: patch, to: &task)
+
+            if task.type == .compound, let structure = patch.compound {
+                // Link eligibility first: a library task picked as a new
+                // sub-task that can never be one (self / duplicate /
+                // achievement / deleted / goal-less counter / loop) gets its
+                // specific reason, not validate's generic "needs a goal".
+                if let problem = try Self.compoundLinkProblem(db: db, parentId: task.id, patch: structure) {
+                    throw TaskEditError.invalid(message: problem)
+                }
+                if let problem = structure.validate(type: .compound) {
+                    throw TaskEditError.invalid(message: problem)
+                }
+                // title, operatorType, clamped threshold (nil unless M-of-N)
+                task = structure.applied(to: task)
+                task.updatedAt = now
+                task.version += 1
+                try Self.applyStagedCompoundChildEdits(db: db, parent: task, patch: structure, now: now)
+                try Self.saveTaskAndCascade(db: db, task: task)
+                return task
+            }
 
             if task.type == .achievement {
                 task.achievementTrigger = patch.trigger
@@ -115,7 +148,6 @@ extension AppDatabase {
                 task.requiredCount = retarget.requiredCount
             }
 
-            Self.applyTimebox(of: patch, to: &task)
             task.updatedAt = now
             task.version += 1
             try Self.saveTaskAndCascade(db: db, task: task)
@@ -204,19 +236,6 @@ extension AppDatabase {
             if !patch.action.isEmpty { task.action = patch.action }
             if !patch.unit.isEmpty { task.unit = patch.unit }
             if let max = Int(patch.maxCountStr), max > 0 { task.maxCount = max }
-        }
-    }
-
-    /// Timeboxed window: set when a timeframe is given, cleared on request.
-    private static func applyTimebox(of patch: EditTaskSheet.Patch, to task: inout Task) {
-        if let timeframe = patch.timeframe {
-            task.timeframe = timeframe
-            task.startDate = patch.startDate
-            task.endDate = patch.endDate
-        } else if patch.clearTimeboxed {
-            task.timeframe = nil
-            task.startDate = nil
-            task.endDate = nil
         }
     }
 

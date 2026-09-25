@@ -10,16 +10,18 @@ import SnapshotTesting
 /// capture the actual production view — not a hand-mirrored copy.
 ///
 /// Variants (light + dark each):
-///   1. Normal task — Details + Time-window cards only.
-///   2. Counting task — Details + Counting (action/goal/unit) + Time-window.
+///   1. Normal task — Details card only.
+///   2. Counting task — Details + Counting (action/goal/unit).
 ///   3. Achievement watching a specific board — trigger + board picker seeded.
 ///   4. Achievement watching a recurring template — template picker + required count.
-///   5. Compound task — Details + compound hint + Time-window.
+///   5. Compound task — Details + Sub-tasks & rule editor (rule picker + two
+///      seeded sub-task cards + the sub-task quick-add row and "New sub:"
+///      chips).
 ///
-/// Determinism: all fixture tasks have `timeframe = nil` so the Date-pickers
-/// remain hidden and no `Date()` value leaks into the snapshot. Achievement
-/// variants also omit a timeframe. This sidesteps the calendar-rollover
-/// flakiness documented in `reference_snapshot_date_dependent.md`.
+/// Determinism: the sheet has no time-window section (a task's own window
+/// fields aren't user-editable), so no `Date()` value can leak into the
+/// snapshot; fixture tasks also keep `timeframe = nil`. This sidesteps the
+/// calendar-rollover flakiness documented in `reference_snapshot_date_dependent.md`.
 final class RisoEditTaskSheetSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
@@ -141,20 +143,20 @@ final class RisoEditTaskSheetSnapshotTests: XCTestCase {
     // MARK: - 5. Compound task
 
     func testCompoundLight() {
-        let view = makeSheet(task: compoundTask())
+        let view = makeSheet(task: compoundTask(), compoundChildren: compoundChildren())
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 620)),
+            as: .image(layout: .fixed(width: 393, height: 900)),
             record: recordMode
         )
     }
 
     func testCompoundDark() {
-        let view = makeSheet(task: compoundTask())
+        let view = makeSheet(task: compoundTask(), compoundChildren: compoundChildren())
         assertSnapshot(
             of: view,
             as: .image(
-                layout: .fixed(width: 393, height: 620),
+                layout: .fixed(width: 393, height: 900),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
@@ -169,12 +171,16 @@ final class RisoEditTaskSheetSnapshotTests: XCTestCase {
     private func makeSheet(
         task: Task,
         boards: [Board] = [],
-        templates: [RecurringBoardTemplate] = []
+        templates: [RecurringBoardTemplate] = [],
+        compoundChildren: [Task]? = nil
     ) -> some View {
+        // Compound children are seeded synchronously — the production
+        // on-appear DB load would not finish inside a static snapshot render.
         EditTaskSheet(
             task: task,
             availableBoards: boards,
             availableTemplates: templates,
+            seededCompoundChildren: compoundChildren,
             onSubmit: { _ in },
             onCancel: {}
         )
@@ -247,7 +253,7 @@ final class RisoEditTaskSheetSnapshotTests: XCTestCase {
         )
     }
 
-    /// Compound task — shows the hint card explaining subtasks are wizard-edited.
+    /// Compound task — "All of" rule; its two sub-tasks are `compoundChildren()`.
     private func compoundTask() -> Task {
         SnapshotFixtures.makeTask(
             id: "et-compound",
@@ -255,5 +261,21 @@ final class RisoEditTaskSheetSnapshotTests: XCTestCase {
             type: .compound,
             operatorType: .and
         )
+    }
+
+    /// The compound's sub-tasks in `childIndex` order: one normal, one counting
+    /// (so the counting Action/Goal/Unit row + "Reads as" preview render).
+    private func compoundChildren() -> [Task] {
+        [
+            SnapshotFixtures.makeTask(id: "et-compound-c1", title: "Meditate", type: .normal),
+            SnapshotFixtures.makeTask(
+                id: "et-compound-c2",
+                title: "Walk 5000 steps",
+                type: .counting,
+                action: "Walk",
+                unit: "steps",
+                maxCount: 5000
+            ),
+        ]
     }
 }

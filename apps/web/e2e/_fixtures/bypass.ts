@@ -444,6 +444,8 @@ export interface SeedCompoundChild {
   compoundTaskId: string;
   childTaskId: string;
   childIndex: number;
+  /** Seed a soft-deleted (tombstoned) link. Defaults to false. */
+  isDeleted?: boolean;
 }
 
 /**

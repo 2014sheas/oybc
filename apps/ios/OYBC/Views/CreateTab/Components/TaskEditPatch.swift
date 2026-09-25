@@ -22,6 +22,12 @@ struct ChildPatch: Identifiable, Equatable {
     /// A counting sub-task is a Counting child (Action/Goal/Unit); otherwise
     /// a Normal sub-task. A sub-task's type is fixed once added.
     var isCounting: Bool
+    /// The sub-task's task type, for its card badge: `.normal` / `.counting`
+    /// for a sub-task minted in the editor; the linked task's own type (which
+    /// may be `.compound` — a nested compound, title-only) for an existing
+    /// one. `isCounting` stays the switch for the Action/Goal/Unit fields.
+    /// Twin of web `ChildPatch.childType`.
+    var childType: TaskType
     var action: String = ""
     var goal: String = ""
     var unit: String = ""
@@ -29,12 +35,14 @@ struct ChildPatch: Identifiable, Equatable {
 
     var isNew: Bool { childTaskId == nil }
 
-    init(id: String, childTaskId: String?, title: String, isCounting: Bool,
+    /// - Parameter childType: Defaults to `.counting` / `.normal` per `isCounting`.
+    init(id: String, childTaskId: String?, title: String, isCounting: Bool, childType: TaskType? = nil,
          action: String = "", goal: String = "", unit: String = "", markedDeleted: Bool = false) {
         self.id = id
         self.childTaskId = childTaskId
         self.title = title
         self.isCounting = isCounting
+        self.childType = childType ?? (isCounting ? .counting : .normal)
         self.action = action
         self.goal = goal
         self.unit = unit
@@ -49,6 +57,7 @@ struct ChildPatch: Identifiable, Equatable {
         self.childTaskId = child.id
         self.title = child.title
         self.isCounting = child.type == .counting
+        self.childType = child.type
         self.action = child.action ?? ""
         self.goal = child.maxCount.map(String.init) ?? ""
         self.unit = child.unit ?? ""
@@ -106,6 +115,13 @@ struct TaskEditPatch: Equatable {
         }
     }
 
+    /// The editor's current kept children for the compound link guard: the
+    /// task id of every existing or picked sub-task not marked deleted (new
+    /// drafts have no id yet). Twin of web `keptChildTaskIds`.
+    var keptChildTaskIds: Set<String> {
+        Set(children.compactMap { $0.markedDeleted ? nil : $0.childTaskId })
+    }
+
     /// Live "Reads as: Action — Goal — Unit" preview for counting editors.
     /// nil when all three fields are blank.
     var countingPreview: String? {
@@ -129,7 +145,7 @@ struct TaskEditPatch: Equatable {
         case .compound:
             if trimmedTitle.isEmpty { return "A title is required." }
             let kept = liveChildren
-            if kept.count < 2 { return "Add at least 2 sub-tasks." }
+            if kept.count < 2 { return "A compound task needs at least two sub-tasks." }
             for child in kept where child.isCounting {
                 let g = Int(child.goal.trimmingCharacters(in: .whitespaces)) ?? 0
                 let u = child.unit.trimmingCharacters(in: .whitespaces)

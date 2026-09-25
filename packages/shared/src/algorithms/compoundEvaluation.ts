@@ -159,3 +159,34 @@ export function clampCompoundThreshold(threshold: number, childCount: number): n
   const maxN = Math.max(1, childCount);
   return Math.min(Math.max(1, Math.trunc(threshold)), maxN);
 }
+
+/**
+ * The one-line completion-rule label shown on a compound's Task Detail
+ * page, directly under its "Subtasks (N)" heading. Cross-platform: the Swift
+ * twin `CompoundEvaluation.compoundRuleLabel(_:threshold:childCount:)` must
+ * return identical strings.
+ *
+ * - `AND` (or no operator — the stored default) → `All of N`
+ * - `OR` → `Any of N`
+ * - `M_OF_N` → `M of N`, where M is `clampCompoundThreshold(threshold ?? 1, N)`
+ *
+ * @param operator - The compound's stored operator (`undefined` ⇒ AND).
+ * @param threshold - The stored "at least M" threshold (M_OF_N only).
+ * @param childCount - How many sub-tasks the compound resolves to.
+ * @returns The label, e.g. `All of 3`, `Any of 3`, `2 of 3`.
+ */
+export function compoundRuleLabel(
+  operator: OperatorType | undefined,
+  threshold: number | undefined,
+  childCount: number,
+): string {
+  switch (operator) {
+    case OperatorType.OR:
+      return `Any of ${childCount}`;
+    case OperatorType.M_OF_N:
+      return `${clampCompoundThreshold(threshold ?? 1, childCount)} of ${childCount}`;
+    case OperatorType.AND:
+    default:
+      return `All of ${childCount}`;
+  }
+}

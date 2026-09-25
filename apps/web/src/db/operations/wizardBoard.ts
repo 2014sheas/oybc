@@ -20,23 +20,20 @@ import {
   type VaryLevel,
 } from '@oybc/shared';
 import { db } from '../internal';
-import { currentTimestamp, generateUUID } from '../utils';
-import {
-  type TaskEditPatch,
-  applyPatchToTask,
-  applyStepToChildTask,
-  buildNewChildTask,
-  isNewChild,
-  validatePatch,
-} from '../taskEditPatch';
+import { currentTimestamp } from '../utils';
+import { type TaskEditPatch, applyPatchToTask, validatePatch } from '../taskEditPatch';
 import { activateBoard, createBoard, updateBoard } from './boards';
 import { resolveBoardSourceSupply, resolveSourceBoard, supplyEventTaskIds } from './boardSources';
 import { fetchCompoundChildrenByCompoundIds } from './compoundChildren';
 import { candidateRootIds, planAndMintDerivedRows } from './derivedCounters';
 import { buildWindowContext } from './windowContext';
 import { createBoardTask, deleteBoardTasksForBoard } from './boardTasks';
-import { runBoardCascadeForTask, runBoardCascadeForTasks } from './orchestration';
+import { runBoardCascadeForTask } from './orchestration';
 import { addToSyncQueue } from './syncQueue';
+import {
+  applyCompoundStructureEditInTransaction,
+  compoundLinkProblemForPatch,
+} from './compoundStructureEdit';
 
 /**
  * One not-yet-persisted task created inside the wizard's New Task sheet
@@ -254,107 +251,6 @@ export async function persistWizardPendingTasksAndStagedEdits(
 }
 
 /**
- * Applies a staged compound patch's child edits to its `compound_children`
- * links + child Task rows. Called by {@link applyStagedTaskEditsForWizardPersist}
- * for a staged compound edit (library or already-written pending compound).
- * The parent Task itself is saved by the caller AFTER this returns. Web
- * port of iOS `AppDatabase.applyStagedCompoundChildEdits`.
- *
- * Semantics: a kept new sub-task mints a child Task + link; a kept existing
- * sub-task edits its child Task GLOBALLY (reindexing its link to display
- * order); a removed sub-task (deleted or blank-titled) soft-deletes the
- * LINK only — the child Task survives (orphans acceptable). Sub-tasks
- * persist in `patch.children` order.
- *
- * Must run inside an active Dexie transaction covering `tasks` and
- * `compoundChildren` (plus `syncQueue` for the enqueues below).
- *
- * @returns The ids of existing child Tasks whose fields actually changed —
- *   the caller batches these into ONE cascade pass alongside the parent id
- *   (mirrors `orchestration.ts`'s "recompute each affected task's caches
- *   once" guidance) rather than cascading per-child inline.
- */
-async function applyStagedCompoundChildEdits(
-  parentId: string,
-  parentUserId: string,
-  patch: TaskEditPatch,
-  now: string,
-): Promise<string[]> {
-  const existingLinks = (
-    await db.compoundChildren.where('compoundTaskId').equals(parentId).toArray()
-  ).filter((c) => !c.isDeleted);
-  const linkByChildId = new Map(existingLinks.map((l) => [l.childTaskId, l]));
-
-  const keptChildIds = new Set<string>();
-  const touchedChildIds: string[] = [];
-  let displayIndex = 0;
-
-  for (const step of patch.children) {
-    const title = step.title.trim();
-    // Removed = explicitly deleted OR blank-titled ("dropped on save").
-    if (step.markedDeleted || title.length === 0) continue;
-    const index = displayIndex++;
-
-    if (isNewChild(step)) {
-      const childId = generateUUID();
-      const child = buildNewChildTask(childId, step, title, parentUserId, now);
-      await db.tasks.add(child);
-      await addToSyncQueue('tasks', childId, SyncOperationType.CREATE, child);
-      const link: CompoundChild = {
-        id: generateUUID(),
-        compoundTaskId: parentId,
-        childTaskId: childId,
-        childIndex: index,
-        createdAt: now,
-        updatedAt: now,
-        version: 1,
-        isDeleted: false,
-      };
-      await db.compoundChildren.add(link);
-      await addToSyncQueue('compoundChildren', link.id, SyncOperationType.CREATE, link);
-      keptChildIds.add(childId);
-    } else if (step.childTaskId) {
-      const childId = step.childTaskId;
-      keptChildIds.add(childId);
-      // Global child edit (rename / goal / unit).
-      const existingChild = await db.tasks.get(childId);
-      if (existingChild) {
-        const updated = applyStepToChildTask(existingChild, step, title);
-        const changed =
-          updated.title !== existingChild.title ||
-          updated.action !== existingChild.action ||
-          updated.unit !== existingChild.unit ||
-          updated.maxCount !== existingChild.maxCount;
-        if (changed) {
-          const saved: Task = { ...updated, version: (existingChild.version ?? 1) + 1, updatedAt: now };
-          await db.tasks.update(childId, saved);
-          await addToSyncQueue('tasks', childId, SyncOperationType.UPDATE, saved);
-          touchedChildIds.push(childId);
-        }
-      }
-      // Reindex the link to display order if it moved.
-      const link = linkByChildId.get(childId);
-      if (link && link.childIndex !== index) {
-        const updatedLink: CompoundChild = { ...link, childIndex: index, version: link.version + 1, updatedAt: now };
-        await db.compoundChildren.update(link.id, updatedLink);
-        await addToSyncQueue('compoundChildren', link.id, SyncOperationType.UPDATE, updatedLink);
-      }
-    }
-  }
-
-  // Soft-delete links whose child is no longer kept (link only — the child
-  // Task stays in the library; orphans are acceptable per product decision).
-  for (const link of existingLinks) {
-    if (keptChildIds.has(link.childTaskId)) continue;
-    const updatedLink: CompoundChild = { ...link, isDeleted: true, deletedAt: now, version: link.version + 1, updatedAt: now };
-    await db.compoundChildren.update(link.id, updatedLink);
-    await addToSyncQueue('compoundChildren', link.id, SyncOperationType.UPDATE, updatedLink);
-  }
-
-  return touchedChildIds;
-}
-
-/**
  * Applies every staged inline task edit (Inline Task Editing, web PR-2) in
  * the SAME transaction as the wizard's pending-task drain — mirroring iOS
  * `AppDatabase.saveWizardBoard`'s staged-edits block / `writeWizardPendingTasksAndEnqueue`.
@@ -366,7 +262,9 @@ async function applyStagedCompoundChildEdits(
  * Per-type handling:
  *   - **compound** (library OR pending) — the compound branch owns the full
  *     apply: parent fields (`applyPatchToTask`) + child/link CRUD
- *     (`applyStagedCompoundChildEdits`), then ONE batched cascade covering
+ *     (`applyStagedCompoundChildEdits`, via the shared
+ *     `applyCompoundStructureEditInTransaction` in `compoundStructureEdit.ts`),
+ *     then ONE batched cascade covering
  *     the parent + every child Task whose fields actually changed. Applies
  *     regardless of `skipIfPendingIds` — a pending compound's rows already
  *     exist by the time this runs (the pending-task drain loop runs
@@ -403,12 +301,10 @@ export async function applyStagedTaskEditsForWizardPersist(
     if (validatePatch(patch, task.type) !== null) continue;
 
     if (task.type === TaskType.COMPOUND) {
-      const updated = applyPatchToTask(patch, task);
-      const touchedChildIds = await applyStagedCompoundChildEdits(taskId, task.userId, patch, now);
-      const saved: Task = { ...updated, version: (task.version ?? 1) + 1, updatedAt: now };
-      await db.tasks.update(taskId, saved);
-      await addToSyncQueue('tasks', taskId, SyncOperationType.UPDATE, saved);
-      await runBoardCascadeForTasks([taskId, ...touchedChildIds]);
+      // An ineligible newly linked existing task skips the whole edit
+      // (never half-applied), exactly like an invalid patch.
+      if ((await compoundLinkProblemForPatch(taskId, patch)) !== null) continue;
+      await applyCompoundStructureEditInTransaction(task, patch, {}, now);
     } else {
       if (skipIfPendingIds.has(taskId)) continue;
       const updated = applyPatchToTask(patch, task);

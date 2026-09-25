@@ -75,6 +75,9 @@ struct RisoTaskDetailContentView: View {
                 task: task,
                 availableBoards: allBoardsForPicker,
                 availableTemplates: allTemplatesForPicker,
+                database: database,
+                // Same ordered fetch the detail already made — no re-fetch.
+                seededCompoundChildren: compoundChildren,
                 onSubmit: { patch in
                     showEditSheet = false
                     onEditSubmit(patch)
@@ -179,6 +182,16 @@ struct RisoTaskDetailContentView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("SUBTASKS (\(compoundChildren.count))")
                 .risoSectionLabel()
+            // The completion rule ("All of 3" / "Any of 3" / "2 of 3") — the
+            // shared-twin label, so the rule edited in `EditTaskSheet` reads
+            // back here exactly as it does on web.
+            Text(CompoundEvaluation.compoundRuleLabel(
+                task.operatorType,
+                threshold: task.threshold,
+                childCount: compoundChildren.count
+            ))
+            .font(.risoBody(12, .semibold))
+            .foregroundStyle(Color.risoMuted)
             VStack(spacing: 5) {
                 ForEach(compoundChildren, id: \.id) { child in
                     Button {
@@ -346,19 +359,9 @@ struct RisoTaskDetailContentView: View {
         case .compound:
             let n = compoundChildren.count
             guard n > 0 else { return nil }
-            let ruleLabel: String
-            if let op = task.operatorType {
-                switch op {
-                case .or: ruleLabel = "any of \(n)"
-                case .and: ruleLabel = "all of \(n)"
-                case .mOfN:
-                    let threshold = task.threshold ?? n
-                    ruleLabel = "≥\(threshold) of \(n)"
-                }
-            } else {
-                ruleLabel = "all of \(n)"
-            }
-            return "\(n) sub-task\(n == 1 ? "" : "s") · \(ruleLabel)"
+            // The rule itself reads under the SUBTASKS heading
+            // (`CompoundEvaluation.compoundRuleLabel`) — not repeated here.
+            return "\(n) sub-task\(n == 1 ? "" : "s")"
         case .achievement:
             let trigger = task.achievementTrigger ?? .greenlog
             let trig = trigger == .bingo ? "First Bingo" : "GREENLOG"

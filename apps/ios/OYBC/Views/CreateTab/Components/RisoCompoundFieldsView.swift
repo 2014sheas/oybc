@@ -395,9 +395,9 @@ struct RisoCompoundFieldsView: View {
                 }
             }
 
-            // "Add at least 2 sub-tasks." warning
+            // "A compound task needs at least two sub-tasks." warning (same copy as TaskEditPatch validation)
             if compoundSubs.count < 2 {
-                Text("Add at least 2 sub-tasks.")
+                Text("A compound task needs at least two sub-tasks.")
                     .font(.risoBody(11, .semibold))
                     .foregroundStyle(Color.risoRed)
             }

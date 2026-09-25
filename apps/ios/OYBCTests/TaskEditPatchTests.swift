@@ -144,6 +144,78 @@ final class TaskEditPatchTests: XCTestCase {
         XCTAssertEqual(cp.title, "Stretch")
     }
 
+    func test_childPatch_carries_the_linked_task_type_including_compound() {
+        XCTAssertEqual(ChildPatch(from: makeTask(id: "cc", type: .counting, title: "Run", action: "Run", unit: "km", maxCount: 3)).childType, .counting)
+        XCTAssertEqual(ChildPatch(from: makeTask(id: "cn", type: .normal, title: "Stretch")).childType, .normal)
+        // A picked nested compound badges C but stays a title-only card:
+        // not counting, so no Action/Goal/Unit fields.
+        let nested = ChildPatch(from: makeTask(id: "k", type: .compound, title: "Evening routine"))
+        XCTAssertEqual(nested.childType, .compound)
+        XCTAssertFalse(nested.isCounting)
+    }
+
+    func test_new_childPatch_defaults_childType_from_isCounting() {
+        XCTAssertEqual(ChildPatch(id: "a", childTaskId: nil, title: "", isCounting: true).childType, .counting)
+        XCTAssertEqual(ChildPatch(id: "b", childTaskId: nil, title: "", isCounting: false).childType, .normal)
+    }
+
+    func test_subtask_badge_accessibility_labels() {
+        XCTAssertEqual(RisoCompoundEditFieldsView.subtaskTypeLabel(.normal), "Normal sub-task")
+        XCTAssertEqual(RisoCompoundEditFieldsView.subtaskTypeLabel(.counting), "Counting sub-task")
+        XCTAssertEqual(RisoCompoundEditFieldsView.subtaskTypeLabel(.compound), "Compound sub-task")
+    }
+
+    // MARK: - Quick-add append paths (RisoCompoundEditFieldsView)
+
+    func test_appendPicked_links_the_existing_task_with_its_own_type() {
+        var d = TaskEditPatch(title: "P")
+        d.children = [ChildPatch(id: "a", childTaskId: "a", title: "A", isCounting: false)]
+        let run = makeTask(id: "r", type: .counting, title: "Run 5 km", action: "Run", unit: "km", maxCount: 5)
+        RisoCompoundEditFieldsView.appendPicked(run, to: &d)
+        XCTAssertEqual(d.children.count, 2)
+        let added = d.children[1]
+        XCTAssertEqual(added.id, "r")
+        XCTAssertEqual(added.childTaskId, "r")
+        XCTAssertFalse(added.isNew)
+        XCTAssertEqual(added.title, "Run 5 km")
+        XCTAssertTrue(added.isCounting)
+        XCTAssertEqual(added.childType, .counting)
+        XCTAssertEqual(added.goal, "5")
+        XCTAssertEqual(added.unit, "km")
+        XCTAssertEqual(d.keptChildTaskIds, ["a", "r"])
+    }
+
+    func test_appendTyped_normal_appends_a_new_titled_subtask() {
+        var d = TaskEditPatch(title: "P")
+        RisoCompoundEditFieldsView.appendTyped("Third", isCounting: false, to: &d)
+        XCTAssertEqual(d.children.count, 1)
+        let added = d.children[0]
+        XCTAssertTrue(added.isNew)
+        XCTAssertEqual(added.title, "Third")
+        XCTAssertFalse(added.isCounting)
+        XCTAssertEqual(added.childType, .normal)
+        XCTAssertEqual(added.action, "")
+        XCTAssertEqual(d.liveChildren.count, 1)
+    }
+
+    func test_appendTyped_counting_takes_the_text_as_its_action() {
+        var d = TaskEditPatch(title: "P")
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, to: &d)
+        RisoCompoundEditFieldsView.appendTyped("Swim", isCounting: true, to: &d)
+        let added = d.children[0]
+        XCTAssertTrue(added.isNew)
+        XCTAssertEqual(added.title, "Swim")
+        XCTAssertEqual(added.action, "Swim")
+        XCTAssertTrue(added.isCounting)
+        XCTAssertEqual(added.childType, .counting)
+        XCTAssertEqual(added.goal, "")
+        XCTAssertEqual(added.unit, "")
+        // Each typed entry is its own new sub-task (fresh ids).
+        XCTAssertNotEqual(d.children[0].id, d.children[1].id)
+        // Live, so validation then asks for its Goal / Unit on the card.
+        XCTAssertEqual(d.liveChildren.count, 2)
+    }
+
     func test_compound_empty_title_blocks() {
         var p = compoundPatch([simpleStep("A", id: "a"), simpleStep("B", id: "b")]); p.title = "  "
         XCTAssertEqual(p.validate(type: .compound), "A title is required.")
@@ -151,18 +223,18 @@ final class TaskEditPatchTests: XCTestCase {
 
     func test_compound_needs_two_steps() {
         let p = compoundPatch([simpleStep("only", id: "a")])
-        XCTAssertEqual(p.validate(type: .compound), "Add at least 2 sub-tasks.")
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
     }
 
     func test_compound_blank_titled_steps_dont_count() {
         let p = compoundPatch([simpleStep("A", id: "a"), simpleStep("   ", id: "b"), simpleStep("", id: "c")])
-        XCTAssertEqual(p.validate(type: .compound), "Add at least 2 sub-tasks.")
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
     }
 
     func test_compound_deleted_steps_dont_count() {
         var deleted = simpleStep("B", id: "b"); deleted.markedDeleted = true
         let p = compoundPatch([simpleStep("A", id: "a"), deleted])
-        XCTAssertEqual(p.validate(type: .compound), "Add at least 2 sub-tasks.")
+        XCTAssertEqual(p.validate(type: .compound), "A compound task needs at least two sub-tasks.")
     }
 
     func test_compound_two_simple_steps_valid() {

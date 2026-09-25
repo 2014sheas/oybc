@@ -14,6 +14,7 @@ export { formatCounterName } from './counterName';
 export {
   evaluateCompound,
   clampCompoundThreshold,
+  compoundRuleLabel,
 } from './compoundEvaluation';
 
 export {
@@ -70,6 +71,15 @@ export {
 } from './migrationHelpers';
 
 export { hasCycle } from './cycleDetection';
+
+export {
+  compoundChildLinkProblem,
+  compoundChildPickerCandidates,
+  isIncompleteCountingChild,
+  COMPOUND_CHILD_LINK_MESSAGES,
+} from './compoundChildEligibility';
+
+export type { CompoundChildCandidate } from './compoundChildEligibility';
 
 export type {
   CycleCheckCandidate,

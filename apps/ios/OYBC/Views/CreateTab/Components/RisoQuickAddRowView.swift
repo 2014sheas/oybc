@@ -44,6 +44,14 @@ struct RisoQuickAddRowView: View {
     /// the EXISTING task's id (reuse, no create). `nil` (default) disables
     /// polling entirely, matching today's create-only hosts.
     var onExistingTaskPicked: ((OYBC.Task) -> Void)? = nil
+    /// Draft-only submit. When set, Return / Add hands the trimmed text to
+    /// this closure (then clears the field) INSTEAD of creating a task — no
+    /// `handleCreateAndAddToPool`, and `onTaskCreated` / `onPendingCreated`
+    /// never fire. Used by the compound sub-task editor, which appends a
+    /// draft sub-task written only when the edit is saved. `nil` (default)
+    /// keeps every existing host's create path. Web twin:
+    /// `WizardQuickAddRow.onSubmitText`.
+    var onSubmitText: ((String) -> Void)? = nil
 
     @State private var text: String = ""
     @State private var form = CreateFormViewModel()
@@ -100,6 +108,7 @@ struct RisoQuickAddRowView: View {
         libraryTasks: [OYBC.Task] = [],
         selectedIds: Set<String> = [],
         onExistingTaskPicked: ((OYBC.Task) -> Void)? = nil,
+        onSubmitText: ((String) -> Void)? = nil,
         seedText: String = ""
     ) {
         self.userId = userId
@@ -112,6 +121,7 @@ struct RisoQuickAddRowView: View {
         self.libraryTasks = libraryTasks
         self.selectedIds = selectedIds
         self.onExistingTaskPicked = onExistingTaskPicked
+        self.onSubmitText = onSubmitText
         _text = State(initialValue: seedText)
     }
 
@@ -197,6 +207,15 @@ struct RisoQuickAddRowView: View {
     private func submit() {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+
+        // Draft-only host: hand over the text, reset exactly like a create.
+        if let onSubmitText {
+            onSubmitText(trimmed)
+            text = ""
+            placeholderIndex += 1
+            focused = true
+            return
+        }
 
         // Configure the form for a Normal task
         form.taskType = .normal

@@ -196,4 +196,41 @@ extension AppDatabase {
         }
     }
 
+    /// Inputs for the compound editor's sub-task quick-add row, read in one
+    /// snapshot: the user's browsable library (`BrowsableTasks.computeBrowsableTasks`
+    /// — hides wizard drafts, goal-less hub counters and shared-counter
+    /// members, exactly like the Tasks tab) and every live link under one of
+    /// the user's compounds (the loop check's graph; scoped so another
+    /// account's rows on this device never leak in). Twin of web
+    /// `TaskEditSheet`'s `loadPickerInputs`.
+    ///
+    /// - Parameter userId: The signed-in user.
+    /// - Returns: The browsable library tasks and live links.
+    /// - Throws: A GRDB error if the read fails.
+    func fetchCompoundPickerInputs(userId: String) throws -> (libraryTasks: [Task], allLinks: [CompoundChild]) {
+        try read { db in
+            let tasks = try Task
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .fetchAll(db)
+            let compoundIds = Set(tasks.filter { $0.type == .compound }.map(\.id))
+            let links = try CompoundChild
+                .filter(Column("isDeleted") == false)
+                .fetchAll(db)
+                .filter { compoundIds.contains($0.compoundTaskId) }
+            let boardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
+            let boards = try Board
+                .filter(Column("userId") == userId && Column("isDeleted") == false)
+                .fetchAll(db)
+            let boardStatusById = Dictionary(boards.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
+            var childToParents: [String: [String]] = [:]
+            for l in links { childToParents[l.childTaskId, default: []].append(l.compoundTaskId) }
+            let browsable = BrowsableTasks.computeBrowsableTasks(
+                tasks: tasks,
+                boardTasks: boardTasks,
+                boardStatusById: boardStatusById,
+                childToParents: childToParents
+            )
+            return (browsable, links)
+        }
+    }
 }

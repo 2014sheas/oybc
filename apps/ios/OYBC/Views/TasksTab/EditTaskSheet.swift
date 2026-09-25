@@ -5,20 +5,27 @@ import SwiftUI
 /// `TaskDetailSheetView` (sheet-over-board) can present it without
 /// duplication.
 ///
+/// A task's own window (`timeframe` / `startDate` / `endDate`) is NOT
+/// editable here: it is set only at creation and by member-rules stamping
+/// (where it is a window-stamped derived row's completion window), so no
+/// `Patch` field carries it.
+///
 /// M1 additions:
-///   - Timeboxed fields: timeframe / startDate / endDate (all task types).
 ///   - Achievement re-target: mode toggle (specific board vs recurring
 ///     template) + picker. Cycle detection runs in the caller's save handler
 ///     before the DB write.
 ///
-/// Compound subtasks are still edited from the board-creation wizard.
+/// Compound sub-tasks and the completion rule are edited here (Sub-tasks &
+/// rule section) and saved through AppDatabase.applyTaskEditPatch. The
+/// structure is attached to the `Patch` only when it was actually edited, so
+/// a compound whose stored structure is already invalid can still be renamed.
 ///
 /// Visual design: Riso vocabulary — ScrollView over `Color.risoPaper`,
 /// NavigationStack toolbar with a gold pill Save button and a muted Cancel.
 /// Each section is a `.risoCard(fill: .risoPaper2)` block with a
 /// `.risoSectionLabel()` heading. Text fields use the kit's
 /// `RisoTextField` / `RisoNumberField`; pickers use `RisoSegmented`
-/// (2-option rows) or a Riso-styled `Menu` (6-option timeframe row).
+/// (2-option rows) or a Riso-styled `Menu`.
 struct EditTaskSheet: View {
     let task: Task
     let onSubmit: (Patch) -> Void
@@ -27,6 +34,10 @@ struct EditTaskSheet: View {
     // Available boards / templates loaded by the parent for the Achievement picker.
     var availableBoards: [Board] = []
     var availableTemplates: [RecurringBoardTemplate] = []
+
+    /// Database the compound's sub-tasks are loaded from (DB-injection seam;
+    /// defaulted so production call sites are unchanged).
+    var database: AppDatabase = .shared
 
     // MARK: - Patch
 
@@ -38,12 +49,6 @@ struct EditTaskSheet: View {
         var action: String
         var unit: String
         var maxCountStr: String
-        // Timeboxed (all types) — nil means "no change"; clearTimeboxed=true
-        // signals the user explicitly cleared the window.
-        var timeframe: Timeframe?
-        var startDate: String?
-        var endDate: String?
-        var clearTimeboxed: Bool
         // Achievement
         var trigger: AchievementTrigger
         var requiredCountStr: String
@@ -51,6 +56,10 @@ struct EditTaskSheet: View {
         var refMode: RefMode
         var selectedBoardId: String
         var selectedTemplateId: String
+        /// Compound structure (operator / threshold / sub-tasks) — nil for
+        /// non-compound tasks and for callers that only edit basic fields.
+        /// Defaulted so every existing memberwise `Patch(...)` call compiles.
+        var compound: TaskEditPatch? = nil
 
         enum RefMode {
             case board, template
@@ -64,16 +73,24 @@ struct EditTaskSheet: View {
     @State private var action: String
     @State private var unit: String
     @State private var maxCountStr: String
-    // Timeboxed
-    @State private var timeframe: Timeframe?
-    @State private var startDate: Date?
-    @State private var endDate: Date?
     // Achievement
     @State private var trigger: AchievementTrigger
     @State private var requiredCountStr: String
     @State private var refMode: Patch.RefMode
     @State private var selectedBoardId: String
     @State private var selectedTemplateId: String
+    // Compound structure (rule + sub-tasks). nil until the current sub-tasks
+    // have loaded; the draft's own `title` is ignored — the Title field above
+    // is the single source (merged in on validate + submit).
+    @State private var compoundDraft: TaskEditPatch?
+    /// What the editor opened with — only an edited structure is submitted.
+    @State private var compoundBaseline: TaskEditPatch?
+    @State private var compoundLoadError: String?
+    /// Sub-task quick-add inputs — the browsable library (its matches) and
+    /// every live link (the loop check), loaded with the sub-tasks.
+    @State private var pickerLibraryTasks: [Task] = []
+    @State private var pickerLinks: [CompoundChild] = []
+    @State private var libraryInputsState: RisoCompoundEditFieldsView.LibraryInputsState = .loading
 
     // MARK: - Init
 
@@ -81,12 +98,15 @@ struct EditTaskSheet: View {
         task: Task,
         availableBoards: [Board] = [],
         availableTemplates: [RecurringBoardTemplate] = [],
+        database: AppDatabase = .shared,
+        seededCompoundChildren: [Task]? = nil,
         onSubmit: @escaping (Patch) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.task = task
         self.availableBoards = availableBoards
         self.availableTemplates = availableTemplates
+        self.database = database
         self.onSubmit = onSubmit
         self.onCancel = onCancel
         _title = State(initialValue: task.title)
@@ -94,24 +114,19 @@ struct EditTaskSheet: View {
         _action = State(initialValue: task.action ?? "")
         _unit = State(initialValue: task.unit ?? "")
         _maxCountStr = State(initialValue: task.maxCount.map { String($0) } ?? "")
-        // Timeboxed
-        _timeframe = State(initialValue: task.timeframe)
-        _startDate = State(initialValue: task.startDate.flatMap { iso in
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return fmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        })
-        _endDate = State(initialValue: task.endDate.flatMap { iso in
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return fmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        })
         // Achievement
         _trigger = State(initialValue: task.achievementTrigger ?? .greenlog)
         _requiredCountStr = State(initialValue: task.requiredCount.map { String($0) } ?? "")
         _refMode = State(initialValue: task.referencedTemplateId != nil ? .template : .board)
         _selectedBoardId = State(initialValue: task.referencedBoardId ?? "")
         _selectedTemplateId = State(initialValue: task.referencedTemplateId ?? "")
+        // Compound: a caller already holding the ordered children (snapshot
+        // fixtures) seeds synchronously; otherwise they load on appear.
+        if task.type == .compound, let kids = seededCompoundChildren {
+            let seeded = Self.seedCompoundDraft(task: task, children: kids)
+            _compoundDraft = State(initialValue: seeded)
+            _compoundBaseline = State(initialValue: seeded)
+        }
     }
 
     // MARK: - Body
@@ -136,17 +151,15 @@ struct EditTaskSheet: View {
                         achievementSection
                     }
 
-                    // ── Compound hint ───────────────────────────────────────
+                    // ── Compound sub-tasks & rule ───────────────────────────
                     if task.type == .compound {
-                        compoundHintSection
+                        compoundSection
                     }
-
-                    // ── Time window ─────────────────────────────────────────
-                    timeWindowSection
                 }
                 .padding(16)
             }
             .background(Color.risoPaper.ignoresSafeArea())
+            .task(id: task.id) { await loadCompoundChildrenIfNeeded() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -156,7 +169,7 @@ struct EditTaskSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     RisoToolbarPill(title: "Save") { submit() }
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(isSaveBlocked)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onCancel() }
@@ -275,111 +288,102 @@ struct EditTaskSheet: View {
         }
     }
 
-    /// Compound hint card — shown when the task type is compound.
-    private var compoundHintSection: some View {
-        risoSection(label: "Compound") {
-            Text("Compound subtasks are edited from the board-creation wizard. The title and description can still be changed here.")
-                .font(.risoBody(13, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// Time window card — shown for all task types.
-    private var timeWindowSection: some View {
-        risoSection(label: "Time window (optional)") {
-            VStack(alignment: .leading, spacing: 11) {
-                // Timeframe — 6 options; use a Riso-styled Menu row so all
-                // options fit cleanly at 393pt without a cramped segmented bar.
-                fieldRow(label: "Timeframe") {
-                    risoTimeframeMenu
-                }
-
-                if timeframe != nil {
-                    // Start date
-                    HStack {
-                        Text("Start date")
-                            .font(.risoBody(14, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                        Spacer()
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { startDate ?? Date() },
-                                set: { startDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                        .tint(Color.risoBlue)
+    /// Compound structure card — the shared `RisoCompoundEditFieldsView`
+    /// (rule picker + sub-task cards + the quick-add row), a load/validation line.
+    private var compoundSection: some View {
+        risoSection(label: "Sub-tasks & rule") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let draft = compoundDraft {
+                    RisoCompoundEditFieldsView(
+                        draft: Binding(
+                            get: { compoundDraft ?? draft },
+                            set: { compoundDraft = $0 }
+                        ),
+                        parentId: task.id,
+                        libraryTasks: pickerLibraryTasks,
+                        allLinks: pickerLinks,
+                        libraryInputsState: libraryInputsState
+                    )
+                    if let problem = compoundValidation {
+                        Text(problem)
+                            .font(.risoBody(11.5, .extraBold))
+                            .foregroundStyle(Color.risoRed)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    // End date
-                    HStack {
-                        Text("End date")
-                            .font(.risoBody(14, .semibold))
-                            .foregroundStyle(Color.risoInk)
-                        Spacer()
-                        DatePicker(
-                            "",
-                            selection: Binding(
-                                get: { endDate ?? Date() },
-                                set: { endDate = $0 }
-                            ),
-                            displayedComponents: .date
-                        )
-                        .labelsHidden()
-                        .tint(Color.risoBlue)
-                    }
+                } else if let error = compoundLoadError {
+                    Text(error)
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoRed)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Loading sub-tasks…")
+                        .font(.risoBody(12, .semibold))
+                        .foregroundStyle(Color.risoMuted)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    // MARK: - Timeframe Menu
+    // MARK: - Compound state
 
-    /// Riso-styled Menu row for the 6-option timeframe picker. Ink keyline,
-    /// chevron trailing, selected label shown inline.
-    private var risoTimeframeMenu: some View {
-        Menu {
-            Button("None") { timeframe = nil }
-            Divider()
-            Button("Daily")   { timeframe = .daily }
-            Button("Weekly")  { timeframe = .weekly }
-            Button("Monthly") { timeframe = .monthly }
-            Button("Yearly")  { timeframe = .yearly }
-            Button("Custom")  { timeframe = .custom }
-        } label: {
-            HStack {
-                Text(timeframeLabel)
-                    .font(.risoHead(14, .bold))
-                    .foregroundStyle(Color.risoInk)
-                    .lineLimit(1)
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.risoMuted)
+    /// Validation of the edited structure titled from the Title field, or nil.
+    private var compoundValidation: String? {
+        guard task.type == .compound, var draft = compoundDraft else { return nil }
+        draft.title = title
+        return draft.validate(type: .compound)
+    }
+
+    /// Save is blocked on an empty title; for a compound, also while the
+    /// sub-tasks are loading, and — only when the structure was edited — on
+    /// structure validation (an unedited, already-invalid stored structure
+    /// still saves through the basic route).
+    private var isSaveBlocked: Bool {
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        guard task.type == .compound else { return false }
+        guard compoundDraft != nil else { return true }
+        return Self.compoundStructureChanged(baseline: compoundBaseline, draft: compoundDraft)
+            && compoundValidation != nil
+    }
+
+    /// Load the compound's live sub-tasks (childIndex order) and the
+    /// sub-task quick-add row's library inputs off the main actor. The sub-tasks
+    /// seed the draft + baseline unless a caller already seeded them (Task
+    /// Detail passes the children it holds); the library inputs always load,
+    /// in their own `do` so a failure there never blocks the sub-task editor
+    /// (it surfaces as `libraryInputsState == .failed`). No-op for
+    /// non-compounds.
+    private func loadCompoundChildrenIfNeeded() async {
+        guard task.type == .compound else { return }
+        let db = database
+        let parentId = task.id
+        let userId = task.userId
+        if compoundDraft == nil {
+            do {
+                let kids = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                    try db.fetchCompoundChildrenTasks(parentTaskId: parentId)
+                }.value
+                if compoundDraft == nil {
+                    let seeded = Self.seedCompoundDraft(task: task, children: kids)
+                    compoundBaseline = seeded
+                    compoundDraft = seeded
+                }
+            } catch {
+                compoundLoadError = "Couldn't load sub-tasks: \(error.localizedDescription)"
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 10)
-            .background(Color.risoPaper)
-            .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Riso.cardRadius)
-                    .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-            )
         }
-    }
-
-    /// Human-readable label for the currently selected timeframe.
-    private var timeframeLabel: String {
-        switch timeframe {
-        case .none:    return "None"
-        case .daily:   return "Daily"
-        case .weekly:  return "Weekly"
-        case .monthly: return "Monthly"
-        case .yearly:  return "Yearly"
-        case .custom:  return "Custom"
-        case .indefinite: return "Ongoing"
+        do {
+            let library = try await _Concurrency.Task.detached(priority: .userInitiated) {
+                try db.fetchCompoundPickerInputs(userId: userId)
+            }.value
+            pickerLibraryTasks = library.libraryTasks
+            pickerLinks = library.allLinks
+            libraryInputsState = .loaded
+        } catch {
+            #if DEBUG
+            print("[EditTaskSheet] loading sub-task library inputs failed: \(error)")
+            #endif
+            libraryInputsState = .failed
         }
     }
 
@@ -466,25 +470,6 @@ struct EditTaskSheet: View {
     // MARK: - Submit
 
     private func submit() {
-        let hadTimeboxed = task.timeframe != nil
-        let nowHasTimeboxed = timeframe != nil
-        let clearTimeboxed = hadTimeboxed && !nowHasTimeboxed
-
-        // Snap to local start-of-day / end-of-day and serialize via
-        // `wizardLocalISOString` so the calendar window matches the
-        // wizard's storage convention (no timezone suffix, full-day
-        // coverage). Earlier `ISO8601DateFormatter` path stored UTC
-        // strings with `Z` suffix, which shifted the day in non-UTC
-        // zones and didn't sit on day boundaries.
-        let cal = Calendar.current
-        func snapStart(_ d: Date) -> String {
-            wizardLocalISOString(cal.startOfDay(for: d))
-        }
-        func snapEnd(_ d: Date) -> String {
-            let startNext = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: d))!
-            return wizardLocalISOString(startNext.addingTimeInterval(-0.001))
-        }
-
         onSubmit(
             Patch(
                 title: title,
@@ -492,17 +477,65 @@ struct EditTaskSheet: View {
                 action: action,
                 unit: unit,
                 maxCountStr: maxCountStr,
-                timeframe: timeframe,
-                startDate: startDate.map { snapStart($0) },
-                endDate: endDate.map { snapEnd($0) },
-                clearTimeboxed: clearTimeboxed,
                 trigger: trigger,
                 requiredCountStr: requiredCountStr,
                 refMode: refMode,
                 selectedBoardId: selectedBoardId,
                 selectedTemplateId: selectedTemplateId,
+                compound: task.type == .compound
+                    ? Self.compoundSubmission(baseline: compoundBaseline, draft: compoundDraft, title: title)
+                    : nil
             )
         )
+    }
+}
+
+// MARK: - Compound edit gate (pure — twin of web `pages/tasks/compoundEditGate.ts`)
+
+extension EditTaskSheet {
+    /// The editor seed for a compound: its rule + the given children
+    /// (already in `childIndex` order) as `ChildPatch` rows.
+    ///
+    /// - Parameters:
+    ///   - task: The compound being edited.
+    ///   - children: Its live child tasks, ordered by `childIndex`.
+    /// - Returns: The seeded structure draft.
+    static func seedCompoundDraft(task: Task, children: [Task]) -> TaskEditPatch {
+        var draft = TaskEditPatch.seededForEditor(from: task)
+        draft.children = children.map { ChildPatch(from: $0) }
+        return draft
+    }
+
+    /// Whether the compound's rule / sub-tasks differ from what the sheet
+    /// opened with. The title is ignored — the Title field owns it and it
+    /// saves through either route. `false` while either side is nil.
+    ///
+    /// - Parameters:
+    ///   - baseline: The structure seeded on open (nil until loaded).
+    ///   - draft: The current edited structure (nil until loaded).
+    /// - Returns: `true` only when the structure itself was edited.
+    static func compoundStructureChanged(baseline: TaskEditPatch?, draft: TaskEditPatch?) -> Bool {
+        guard var b = baseline, var d = draft else { return false }
+        b.title = ""
+        d.title = ""
+        return b != d
+    }
+
+    /// The compound structure to submit, or nil to save through the basic
+    /// route. Only an edited structure is submitted, so a compound whose
+    /// STORED structure already fails validation (one sub-task left, a stale
+    /// threshold, zero sub-tasks) can still be renamed / re-described
+    /// exactly as before.
+    ///
+    /// - Parameters:
+    ///   - baseline: The structure seeded on open (nil until loaded).
+    ///   - draft: The current edited structure (nil until loaded).
+    ///   - title: The sheet's Title field (trimmed into the structure).
+    /// - Returns: The structure patch titled from the sheet, or nil.
+    static func compoundSubmission(baseline: TaskEditPatch?, draft: TaskEditPatch?, title: String) -> TaskEditPatch? {
+        guard var d = draft, compoundStructureChanged(baseline: baseline, draft: d) else { return nil }
+        d.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return d
     }
 }
 

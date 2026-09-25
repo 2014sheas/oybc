@@ -1,28 +1,67 @@
 import { useEffect, useState } from 'react';
-import { AchievementTrigger, TaskType, Timeframe, toLocalISO, type Task } from '@oybc/shared';
-import type { Board, RecurringBoardTemplate } from '@oybc/shared';
-import { fetchAllBoardsSortedByName } from '../../db/operations';
-import { fetchAllTemplatesSortedByName } from '../../db/operations/recurringBoardTemplates';
 import {
-  checkAchievementRetargetCycle,
-  type UpdateTaskPatch,
-} from '../../db/operations/tasks';
+  AchievementTrigger,
+  TaskType,
+  computeBrowsableTasks,
+  type BoardStatus,
+  type CompoundChild,
+  type Task,
+} from '@oybc/shared';
+import type { Board, RecurringBoardTemplate } from '@oybc/shared';
+import {
+  CompoundEditValidationError,
+  fetchAllBoards,
+  fetchAllBoardTasks,
+  fetchAllBoardsSortedByName,
+  fetchAllCompoundChildren,
+  fetchCompoundChildren,
+  fetchTasksByIds,
+  fetchTasksForUser,
+  type TaskEditSubmit,
+} from '../../db/operations';
+import { fetchAllTemplatesSortedByName } from '../../db/operations/recurringBoardTemplates';
+import { checkAchievementRetargetCycle } from '../../db/operations/tasks';
+import {
+  childPatchFromTask,
+  seedPatchForEditor,
+  validatePatch,
+  type TaskEditPatch,
+} from '../../db/taskEditPatch';
+import { CompoundFields, type LibraryInputsState } from '../../components/wizard/CompoundFields';
+import { compoundStructureChanged, compoundSubmitFor } from './compoundEditGate';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import styles from './TaskDetailContent.module.css';
 
 export interface TaskEditSheetProps {
   task: Task;
-  onSubmit: (patch: UpdateTaskPatch) => Promise<void>;
+  /**
+   * Persists the edit (callers route it through `saveTaskEdit`). For a
+   * compound the submit carries `compound` — the edited rule + sub-tasks,
+   * whose `title` is the sheet's Title field. A rejection with
+   * `CompoundEditValidationError` is shown inline in the sheet.
+   */
+  onSubmit: (submit: TaskEditSubmit) => Promise<void>;
   onCancel: () => void;
 }
 
 /**
  * TaskEditSheet — modal sheet for editing a task's editable fields.
  *
+ * A task's own window (`timeframe` / `startDate` / `endDate`) is NOT
+ * editable here: it is set only at creation and by member-rules stamping
+ * (where it is a window-stamped derived row's completion window).
+ *
  * M1 additions:
- *   - Timeboxed fields: timeframe / startDate / endDate (all task types).
  *   - Achievement re-target: mode toggle (specific board vs recurring template)
  *     + picker. Cycle detection runs before submit.
+ *
+ * Compound tasks: the rule (All of / Any of / At least N) and sub-tasks are
+ * edited in place via the shared `CompoundFields` editor. The current
+ * sub-tasks load once on open (an effect, so a static render never touches
+ * Dexie); Save stays disabled until they have loaded. The structure is
+ * submitted (and must validate) only when it was edited — an unedited
+ * compound saves through the basic route, so one whose stored structure is
+ * already invalid can still be renamed.
  *
  * Shares CSS module with `TaskDetailContent` to avoid styling drift.
  */
@@ -44,15 +83,6 @@ export function TaskEditSheet({
   const [unit, setUnit] = useState(task.unit ?? '');
   const [maxCountStr, setMaxCountStr] = useState(
     task.maxCount !== undefined ? String(task.maxCount) : '',
-  );
-
-  // Timeboxed fields (all types)
-  const [timeframe, setTimeframe] = useState<Timeframe | ''>(task.timeframe ?? '');
-  const [startDate, setStartDate] = useState(
-    task.startDate ? task.startDate.slice(0, 10) : '',
-  );
-  const [endDate, setEndDate] = useState(
-    task.endDate ? task.endDate.slice(0, 10) : '',
   );
 
   // Achievement fields
@@ -89,6 +119,79 @@ export function TaskEditSheet({
     void load();
   }, [task.type]);
 
+  // Compound structure (rule + sub-tasks). `null` until the current
+  // sub-tasks have loaded; the draft's own `title` is ignored — the sheet's
+  // Title field is the single source (merged in at render + submit).
+  const isCompound = task.type === TaskType.COMPOUND;
+  const [compoundDraft, setCompoundDraft] = useState<TaskEditPatch | null>(null);
+  // What the editor opened with — only an edited structure is submitted.
+  const [compoundBaseline, setCompoundBaseline] = useState<TaskEditPatch | null>(null);
+  const [compoundLoadError, setCompoundLoadError] = useState<string | null>(null);
+  // Sub-task quick-add inputs: the browsable library (its matches) and every
+  // live link (the loop check), loaded once with the sub-tasks.
+  const [libraryTasks, setLibraryTasks] = useState<Task[]>([]);
+  const [allLinks, setAllLinks] = useState<CompoundChild[]>([]);
+  const [libraryInputsState, setLibraryInputsState] = useState<LibraryInputsState>('loading');
+
+  useEffect(() => {
+    if (task.type !== TaskType.COMPOUND) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const links = (await fetchCompoundChildren(task.id))
+          .filter((l) => !l.isDeleted)
+          .sort((a, b) => a.childIndex - b.childIndex);
+        const kids = await fetchTasksByIds(links.map((l) => l.childTaskId));
+        const byId = new Map(kids.map((t) => [t.id, t]));
+        const seeded: TaskEditPatch = {
+          ...seedPatchForEditor(task),
+          children: links
+            .map((l) => byId.get(l.childTaskId))
+            .filter((t): t is Task => !!t && !t.isDeleted)
+            .map(childPatchFromTask),
+        };
+        if (!cancelled) {
+          setCompoundBaseline(seeded);
+          setCompoundDraft(seeded);
+        }
+      } catch (e) {
+        if (!cancelled) setCompoundLoadError(`Couldn't load sub-tasks: ${(e as Error).message}`);
+      }
+    };
+    // The library inputs load on their own: a failure there leaves the
+    // sub-task editor usable (only linking an existing task is affected).
+    const loadLibrary = async () => {
+      try {
+        const library = await loadLibraryInputs(task.userId);
+        if (!cancelled) {
+          setLibraryTasks(library.libraryTasks);
+          setAllLinks(library.allLinks);
+          setLibraryInputsState('loaded');
+        }
+      } catch (e) {
+        console.error('[TaskEditSheet] loading sub-task library inputs failed', e);
+        if (!cancelled) setLibraryInputsState('failed');
+      }
+    };
+    void load();
+    void loadLibrary();
+    return () => {
+      cancelled = true;
+    };
+    // Seed once per task identity — later edits to `task` (e.g. a live
+    // query refresh while the sheet is open) must not clobber the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task.id, task.type]);
+
+  const compoundValidation =
+    compoundDraft !== null ? validatePatch({ ...compoundDraft, title }, TaskType.COMPOUND) : null;
+  // Save is gated on the structure only when it was edited: a compound whose
+  // STORED structure is already invalid can still take a rename /
+  // description edit through the basic route.
+  const structureChanged = compoundStructureChanged(compoundBaseline, compoundDraft);
+  const compoundBlocked =
+    isCompound && (compoundDraft === null || (structureChanged && compoundValidation !== null));
+
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -102,7 +205,7 @@ export function TaskEditSheet({
 
   const handleSubmit = async () => {
     setValidationError(null);
-    const patch: UpdateTaskPatch = {
+    const patch: TaskEditSubmit = {
       title: title.trim(),
       description: description.trim() || undefined,
     };
@@ -118,41 +221,6 @@ export function TaskEditSheet({
       if (result !== 'empty') {
         patch.maxCount = result;
       }
-    }
-
-    // Timeboxed fields — all task types.
-    // Dates come from <input type="date"> as YYYY-MM-DD strings. Snap
-    // start to local 00:00:00.000 and end to local 23:59:59.999 so the
-    // calendar window covers the whole day, and serialize via
-    // `toLocalISO` (no timezone suffix) to match the convention used by
-    // the wizard and by `calendarBoundaries`. The earlier
-    // `new Date(s + 'T12:00:00').toISOString()` path produced a UTC
-    // mid-day string that could shift the date in non-UTC zones and
-    // didn't sit at day boundaries.
-    function snapStart(ymd: string): string {
-      const [y, m, d] = ymd.split('-').map(Number);
-      return toLocalISO(new Date(y, m - 1, d, 0, 0, 0, 0));
-    }
-    function snapEnd(ymd: string): string {
-      const [y, m, d] = ymd.split('-').map(Number);
-      return toLocalISO(new Date(y, m - 1, d, 23, 59, 59, 999));
-    }
-    if (timeframe) {
-      patch.timeframe = timeframe as Timeframe;
-      // Validate ordering — matches the wizard's "End date must be on or
-      // after the start date" check so live edits can't produce inverted
-      // windows.
-      if (startDate && endDate && endDate < startDate) {
-        setValidationError('End date must be on or after the start date.');
-        return;
-      }
-      patch.startDate = startDate ? snapStart(startDate) : null;
-      patch.endDate = endDate ? snapEnd(endDate) : null;
-    } else if (task.timeframe !== undefined) {
-      // Cleared by the user — send null sentinels to wipe the fields.
-      patch.timeframe = null;
-      patch.startDate = null;
-      patch.endDate = null;
     }
 
     if (task.type === TaskType.ACHIEVEMENT) {
@@ -202,9 +270,26 @@ export function TaskEditSheet({
       }
     }
 
+    if (isCompound) {
+      if (compoundDraft === null) return;
+      const compound = compoundSubmitFor(compoundBaseline, compoundDraft, title);
+      if (compound) patch.compound = compound;
+    }
+
     setSubmitting(true);
-    await onSubmit(patch);
-    setSubmitting(false);
+    try {
+      await onSubmit(patch);
+    } catch (e) {
+      // Call sites surface other failures themselves; a structure
+      // validation failure belongs next to the editor.
+      if (e instanceof CompoundEditValidationError) {
+        setValidationError(e.message);
+      } else {
+        throw e;
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -351,54 +436,30 @@ export function TaskEditSheet({
           </>
         )}
 
-        {task.type === TaskType.COMPOUND && (
-          <p className={styles.compoundHint}>
-            Compound subtasks are edited from the board-creation wizard. The
-            title and description can still be changed here.
-          </p>
+        {isCompound && (
+          <fieldset className={styles.fieldset}>
+            <legend className={styles.fieldsetLegend}>Sub-tasks &amp; rule</legend>
+            {compoundDraft !== null ? (
+              <CompoundFields
+                draft={{ ...compoundDraft, title }}
+                onDraftChange={(next) => setCompoundDraft(next)}
+                parentId={task.id}
+                libraryTasks={libraryTasks}
+                allLinks={allLinks}
+                libraryInputsState={libraryInputsState}
+              />
+            ) : compoundLoadError !== null ? (
+              <p className={styles.compoundStatus} role="alert">
+                {compoundLoadError}
+              </p>
+            ) : (
+              <p className={styles.compoundStatus}>Loading sub-tasks…</p>
+            )}
+            {compoundValidation !== null && (
+              <p className={styles.compoundValidation}>{compoundValidation}</p>
+            )}
+          </fieldset>
         )}
-
-        {/* Timeboxed fields — shown for all task types */}
-        <fieldset className={styles.fieldset}>
-          <legend className={styles.fieldsetLegend}>Time window (optional)</legend>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Timeframe</span>
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value as Timeframe | '')}
-              className={styles.fieldInput}
-            >
-              <option value="">— none —</option>
-              <option value={Timeframe.DAILY}>Daily</option>
-              <option value={Timeframe.WEEKLY}>Weekly</option>
-              <option value={Timeframe.MONTHLY}>Monthly</option>
-              <option value={Timeframe.YEARLY}>Yearly</option>
-              <option value={Timeframe.CUSTOM}>Custom</option>
-            </select>
-          </label>
-          {timeframe && (
-            <>
-              <label className={styles.field}>
-                <span className={styles.fieldLabel}>Start date</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className={styles.fieldInput}
-                />
-              </label>
-              <label className={styles.field}>
-                <span className={styles.fieldLabel}>End date</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className={styles.fieldInput}
-                />
-              </label>
-            </>
-          )}
-        </fieldset>
 
         {validationError !== null && (
           <p className={styles.error} role="alert">
@@ -419,7 +480,7 @@ export function TaskEditSheet({
             type="button"
             className={styles.saveButton}
             onClick={handleSubmit}
-            disabled={submitting || !title.trim()}
+            disabled={submitting || !title.trim() || compoundBlocked}
           >
             {submitting ? 'Saving…' : 'Save changes'}
           </button>
@@ -427,4 +488,36 @@ export function TaskEditSheet({
       </div>
     </div>
   );
+}
+
+/**
+ * Loads the sub-task quick-add row's inputs for `userId`: the browsable
+ * library (`computeBrowsableTasks` — hides wizard drafts, goal-less hub
+ * counters and deleted rows, exactly like the Tasks tab) and every live
+ * compound link under one of the user's compounds (the loop check's graph;
+ * scoped like `useTaskLibrary` so another account's rows on this device
+ * never leak in).
+ *
+ * @param userId - The signed-in user.
+ * @returns The library tasks and live links.
+ */
+async function loadLibraryInputs(
+  userId: string,
+): Promise<{ libraryTasks: Task[]; allLinks: CompoundChild[] }> {
+  const [tasks, links, boards, boardTasks] = await Promise.all([
+    fetchTasksForUser(userId),
+    fetchAllCompoundChildren(),
+    fetchAllBoards(),
+    fetchAllBoardTasks(),
+  ]);
+  const compoundIds = new Set(tasks.filter((t) => t.type === TaskType.COMPOUND).map((t) => t.id));
+  const allLinks = links.filter((l) => compoundIds.has(l.compoundTaskId));
+  const boardStatusById: Record<string, BoardStatus> = {};
+  for (const b of boards) boardStatusById[b.id] = b.status;
+  const childToParents: Record<string, string[]> = {};
+  for (const l of allLinks) (childToParents[l.childTaskId] ??= []).push(l.compoundTaskId);
+  return {
+    libraryTasks: computeBrowsableTasks(tasks, boardTasks, boardStatusById, childToParents),
+    allLinks,
+  };
 }

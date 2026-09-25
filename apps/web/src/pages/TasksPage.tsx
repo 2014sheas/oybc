@@ -7,9 +7,9 @@ import { PoolsBrowse } from '../components/pools/PoolsBrowse';
 import {
   computeTaskDeletionImpact,
   deleteTaskWithCascade,
-  updateTaskAndCascade,
   type TaskDeletionImpact,
 } from '../db/operations/tasks';
+import { CompoundEditValidationError, saveTaskEdit } from '../db/operations';
 import { usePools } from '../hooks';
 import { useTaskLibrary } from './createPage/useTaskLibrary';
 import { TasksFilterControls } from './tasks/TasksFilterControls';
@@ -284,9 +284,11 @@ export function TasksPage({ userId }: TasksPageProps): React.ReactElement {
           task={editingTask}
           onSubmit={async (patch) => {
             try {
-              await updateTaskAndCascade(editingTask.id, patch);
+              await saveTaskEdit(editingTask.id, patch);
               setEditingTask(null);
             } catch (e) {
+              // Structure validation is shown inline by the sheet.
+              if (e instanceof CompoundEditValidationError) throw e;
               setEditError(`Failed to save: ${(e as Error).message}`);
             }
           }}

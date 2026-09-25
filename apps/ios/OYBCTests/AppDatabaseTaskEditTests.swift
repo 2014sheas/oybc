@@ -42,13 +42,14 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         timeframe: Timeframe = .monthly,
         startDate: String = "2026-06-01T00:00:00.000",
         endDate: String = "2026-06-30T23:59:59.999",
-        isCore: Bool = false
+        isCore: Bool = false,
+        centerSquareType: CenterSquareType = .free
     ) -> Board {
         let dict: [String: Any] = [
             "id": id, "userId": "u1", "name": name, "status": BoardStatus.active.rawValue,
             "boardSize": 3, "timeframe": timeframe.rawValue, "isCore": isCore,
             "startDate": startDate, "endDate": endDate,
-            "centerSquareType": CenterSquareType.free.rawValue, "isRandomized": false,
+            "centerSquareType": centerSquareType.rawValue, "isRandomized": false,
             "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
             "createdAt": "2026-06-01T00:00:00.000", "updatedAt": "2026-06-01T00:00:00.000",
             "version": 1, "isDeleted": false,
@@ -111,7 +112,6 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         EditTaskSheet.Patch(
             title: title, description: description,
             action: "", unit: "", maxCountStr: "",
-            timeframe: nil, startDate: nil, endDate: nil, clearTimeboxed: false,
             trigger: trigger, requiredCountStr: requiredCountStr,
             refMode: refMode, selectedBoardId: selectedBoardId, selectedTemplateId: selectedTemplateId
         )
@@ -143,6 +143,25 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         XCTAssertEqual(stored.title, "Renamed")
         XCTAssertEqual(stored.version, 2)
         XCTAssertEqual(try taskUpdateRows(db, "n1").count, 1)
+    }
+
+    /// No edit path writes a task's own window: it may be a window-stamped
+    /// derived row's completion window, so a basic edit must leave it as stored.
+    func test_apply_basicEdit_leavesStoredWindowUntouched() throws {
+        let db = try makeDb()
+        var task = makeTask("w1")
+        task.timeframe = .weekly
+        task.startDate = "2026-07-06T00:00:00.000"
+        task.endDate = "2026-07-12T23:59:59.999"
+        try db.write { try task.insert($0) }
+
+        let saved = try db.applyTaskEditPatch(taskId: "w1", patch: patch(title: "Renamed"), now: now)
+
+        XCTAssertEqual(saved.title, "Renamed")
+        let stored = try XCTUnwrap(try db.fetchTask(id: "w1"))
+        XCTAssertEqual(stored.timeframe, .weekly)
+        XCTAssertEqual(stored.startDate, "2026-07-06T00:00:00.000")
+        XCTAssertEqual(stored.endDate, "2026-07-12T23:59:59.999")
     }
 
     func test_apply_nonCyclingRetarget_savesNewReference() throws {
@@ -281,5 +300,426 @@ final class AppDatabaseTaskEditTests: XCTestCase {
         )
 
         XCTAssertEqual(result, .cycle(pathNames: ["Alpha Monthly", "Alpha Monthly"]))
+    }
+
+    // MARK: - Compound structure (Task Detail save)
+
+    /// P = AND of A, B (links index 0/1). Board X (active, no center, window
+    /// from 2026-06-01) holds P at (0,0). A has an in-window completion event,
+    /// so OR makes P green on X and AND does not.
+    private func compoundFixture(
+        _ db: AppDatabase
+    ) throws -> (p: Task, a: Task, b: Task, x: Board) {
+        var p = makeTask("p", type: .compound)
+        p.title = "P"
+        p.operatorType = .and
+        let a = makeTask("a"), b = makeTask("b")
+        let x = makeBoard(id: "board-x", name: "X", centerSquareType: .none)
+        try db.write { conn in
+            try p.insert(conn); try a.insert(conn); try b.insert(conn)
+            try makeLink(id: "l-a", parent: "p", child: "a", index: 0).insert(conn)
+            try makeLink(id: "l-b", parent: "p", child: "b", index: 1).insert(conn)
+            try x.insert(conn)
+            try placement(x.id, "p").insert(conn)
+            try completionEvent("ev-a", taskId: "a", occurredAt: "2026-06-15T00:00:00.000").insert(conn)
+        }
+        return (p, a, b, x)
+    }
+
+    /// Copied from `AppDatabaseSyncEnqueueTests.makeLink`.
+    private func makeLink(id: String, parent: String, child: String, index: Int) -> CompoundChild {
+        CompoundChild(
+            id: id, compoundTaskId: parent, childTaskId: child, childIndex: index,
+            createdAt: "2026-06-01T00:00:00.000", updatedAt: "2026-06-01T00:00:00.000",
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    /// Smallest completion-event row (after `TombstoneSealImmunityTests`).
+    private func completionEvent(_ id: String, taskId: String, occurredAt: String) -> TaskEvent {
+        TaskEvent(
+            id: id, userId: "u1", taskId: taskId, kind: .completion, delta: nil,
+            occurredAt: occurredAt, boardId: nil, createdAt: occurredAt, updatedAt: occurredAt,
+            lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+        )
+    }
+
+    private func structure(
+        _ p: Task, operator op: OperatorType, threshold: Int? = nil, children: [ChildPatch]
+    ) -> TaskEditPatch {
+        var s = TaskEditPatch(from: p)
+        s.operatorType = op
+        s.threshold = threshold
+        s.children = children
+        return s
+    }
+
+    private func basicPatch(
+        title: String, description: String = "", compound: TaskEditPatch?
+    ) -> EditTaskSheet.Patch {
+        EditTaskSheet.Patch(
+            title: title, description: description, action: "", unit: "", maxCountStr: "",
+            trigger: .bingo, requiredCountStr: "", refMode: .board,
+            selectedBoardId: "", selectedTemplateId: "", compound: compound
+        )
+    }
+
+    private func liveLinks(_ db: AppDatabase, parent: String) throws -> [CompoundChild] {
+        try db.read {
+            try CompoundChild
+                .filter(Column("compoundTaskId") == parent && Column("isDeleted") == false)
+                .order(Column("childIndex"))
+                .fetchAll($0)
+        }
+    }
+
+    func test_editCompound_changeRule_reDerivesPlacedBoard() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let kids = [ChildPatch(from: f.a), ChildPatch(from: f.b)]
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(f.p, operator: .or, children: kids)),
+            now: now
+        )
+        let afterOr = try db.read { try Task.fetchOne($0, key: f.p.id) }
+        XCTAssertEqual(afterOr?.operatorType, .or)
+        XCTAssertEqual(afterOr?.version, 2, "one version bump per save")
+        XCTAssertEqual(try taskUpdateRows(db, f.p.id).count, 1, "one parent enqueue per save")
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 1)
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(f.p, operator: .and, children: kids)),
+            now: now
+        )
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 0)
+    }
+
+    func test_editCompound_structureTitleWins_descriptionRidesAlong() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var s = structure(f.p, operator: .and, children: [ChildPatch(from: f.a), ChildPatch(from: f.b)])
+        s.title = "  Structure title  "
+
+        let saved = try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "Basic title", description: "Why this matters", compound: s),
+            now: now
+        )
+        XCTAssertEqual(saved.title, "Structure title")
+        XCTAssertEqual(saved.description, "Why this matters")
+        XCTAssertEqual(try db.read { try Task.fetchOne($0, key: f.p.id) }?.title, "Structure title")
+    }
+
+    func test_editCompound_renameChild_isGlobalAndEnqueued() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var renamed = ChildPatch(from: f.a); renamed.title = "A renamed"
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .and, children: [renamed, ChildPatch(from: f.b)])),
+            now: now
+        )
+        let a = try db.read { try Task.fetchOne($0, key: f.a.id) }
+        XCTAssertEqual(a?.title, "A renamed")
+        XCTAssertEqual(a?.version, 2)
+        XCTAssertEqual(try taskUpdateRows(db, f.a.id).count, 1)
+        XCTAssertTrue(try taskUpdateRows(db, f.b.id).isEmpty, "an unchanged child is not re-enqueued")
+    }
+
+    func test_editCompound_removeChild_unlinksOnly_childPlacementSurvives() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let y = makeBoard(id: "board-y", name: "Y", centerSquareType: .none)
+        try db.write { conn in
+            try y.insert(conn)
+            try placement(y.id, f.a.id).insert(conn)
+        }
+        let newC = ChildPatch(id: "draft-c", childTaskId: nil, title: "C", isCounting: false)
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .and, children: [ChildPatch(from: f.b), newC])),
+            now: now
+        )
+
+        let oldLink = try db.read { try CompoundChild.fetchOne($0, key: "l-a") }
+        XCTAssertEqual(oldLink?.isDeleted, true)
+        let a = try db.read { try Task.fetchOne($0, key: f.a.id) }
+        XCTAssertEqual(a?.isDeleted, false, "removing a sub-task unlinks it, never deletes the Task")
+        let aOnY = try db.read { try BoardTask.fetchOne($0, key: "bt-\(y.id)-\(f.a.id)") }
+        XCTAssertEqual(aOnY?.isDeleted, false)
+
+        let live = try liveLinks(db, parent: f.p.id)
+        XCTAssertEqual(live.count, 2)
+        XCTAssertEqual(live.first?.childTaskId, f.b.id)
+        let c = try db.read {
+            try Task.filter(Column("title") == "C" && Column("isDeleted") == false).fetchOne($0)
+        }
+        XCTAssertNotNil(c)
+        XCTAssertEqual(live.last?.childTaskId, c?.id)
+
+        let rows = try db.fetchPendingSyncItems()
+        XCTAssertEqual(rows.filter { $0.entityType == "compoundChildren" && $0.operationType == .delete }.count, 1)
+        XCTAssertEqual(rows.filter { $0.entityType == "compoundChildren" && $0.operationType == .create }.count, 1)
+        XCTAssertEqual(rows.filter { $0.entityType == "tasks" && $0.operationType == .create }.count, 1)
+    }
+
+    func test_editCompound_refusesFewerThanTwo_writesNothing() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let before = try db.read { (try Task.fetchOne($0, key: f.p.id), try SyncQueueItem.fetchCount($0)) }
+
+        XCTAssertThrowsError(try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "Renamed", compound: structure(
+                f.p, operator: .or, children: [ChildPatch(from: f.a)])),
+            now: now
+        )) { err in
+            XCTAssertEqual(err as? AppDatabase.TaskEditError, .invalid(message: "A compound task needs at least two sub-tasks."))
+        }
+
+        let after = try db.read { (try Task.fetchOne($0, key: f.p.id), try SyncQueueItem.fetchCount($0)) }
+        XCTAssertEqual(before.0?.version, after.0?.version)
+        XCTAssertEqual(after.0?.title, "P")
+        XCTAssertEqual(after.0?.operatorType, .and)
+        XCTAssertEqual(before.1, after.1)
+        XCTAssertEqual(try liveLinks(db, parent: f.p.id).count, 2)
+    }
+
+    func test_editCompound_sealedBoardUntouched() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var sealed = makeBoard(id: "board-s", name: "S", centerSquareType: .none)
+        sealed.sealedAt = "2026-06-30T23:59:59.999"
+        sealed.sealedCompletedCells = [4]
+        try db.write { conn in
+            try sealed.insert(conn)
+            try placement(sealed.id, f.p.id).insert(conn)
+        }
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .or, children: [ChildPatch(from: f.a), ChildPatch(from: f.b)])),
+            now: now
+        )
+
+        let s = try db.read { try Board.fetchOne($0, key: sealed.id) }
+        XCTAssertEqual(s?.sealedCompletedCells, [4])
+        XCTAssertEqual(s?.version, 1)
+        XCTAssertEqual(s?.completedTasks, 0)
+        // Control: the live board X in the same save DID re-derive.
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 1)
+    }
+
+    func test_editCompound_thresholdStored_overCountRefused_clearedForAnd() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let c = makeTask("c")
+        try db.write { conn in
+            try c.insert(conn)
+            try makeLink(id: "l-c", parent: "p", child: "c", index: 2).insert(conn)
+        }
+        let kids = [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: c)]
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(f.p, operator: .mOfN, threshold: 2, children: kids)),
+            now: now
+        )
+        XCTAssertEqual(try db.read { try Task.fetchOne($0, key: f.p.id) }?.threshold, 2)
+
+        // 5 of 3 is refused before any write (the clamp in `applied(to:)` is
+        // a backstop behind validation, never reached here).
+        XCTAssertThrowsError(try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(f.p, operator: .mOfN, threshold: 5, children: kids)),
+            now: now
+        )) { err in
+            XCTAssertEqual(err as? AppDatabase.TaskEditError, .invalid(message: "Choose how many sub-tasks must complete."))
+        }
+        XCTAssertEqual(try db.read { try Task.fetchOne($0, key: f.p.id) }?.threshold, 2)
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(f.p, operator: .and, threshold: 2, children: kids)),
+            now: now
+        )
+        let p = try db.read { try Task.fetchOne($0, key: f.p.id) }
+        XCTAssertEqual(p?.operatorType, .and)
+        XCTAssertNil(p?.threshold)
+    }
+
+    func test_applyTaskEditPatch_compoundWithoutStructure_editsBasicFieldsOnly() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+
+        let saved = try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P2", description: "New notes", compound: nil),
+            now: now
+        )
+        XCTAssertEqual(saved.title, "P2")
+        XCTAssertEqual(saved.description, "New notes")
+        XCTAssertEqual(saved.operatorType, .and)
+        XCTAssertEqual(saved.version, 2)
+        let live = try liveLinks(db, parent: f.p.id)
+        XCTAssertEqual(live.map(\.childTaskId), [f.a.id, f.b.id])
+        XCTAssertTrue(try db.fetchPendingSyncItems().filter { $0.entityType == "compoundChildren" }.isEmpty)
+    }
+
+    // MARK: - Linking an EXISTING library task as a sub-task (Task 6)
+
+    /// Library task L with an in-window completion (P's fixture window).
+    private func seedLibraryTask(_ db: AppDatabase, id: String = "l") throws -> Task {
+        let l = makeTask(id)
+        try db.write { conn in
+            try l.insert(conn)
+            try completionEvent("ev-\(id)", taskId: id, occurredAt: "2026-06-15T00:00:00.000").insert(conn)
+        }
+        return l
+    }
+
+    /// (Task / Board aren't Equatable — compare the fields a write would move.)
+    private typealias DbState = (tasks: [String], links: [CompoundChild], boards: [String], queue: Int)
+
+    private func dbState(_ db: AppDatabase) throws -> DbState {
+        try db.read {
+            (try Task.order(Column("id")).fetchAll($0).map {
+                "\($0.id)|\($0.version)|\($0.updatedAt)|\($0.title)|\($0.isDeleted)|\(String(describing: $0.operatorType))"
+             },
+             try CompoundChild.order(Column("id")).fetchAll($0),
+             try Board.order(Column("id")).fetchAll($0).map { "\($0.id)|\($0.version)|\($0.completedTasks)" },
+             try SyncQueueItem.fetchCount($0))
+        }
+    }
+
+    private func assertUnchanged(
+        _ db: AppDatabase, _ before: DbState,
+        file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let after = try dbState(db)
+        XCTAssertEqual(after.tasks, before.tasks, file: file, line: line)
+        XCTAssertEqual(after.links, before.links, file: file, line: line)
+        XCTAssertEqual(after.boards, before.boards, file: file, line: line)
+        XCTAssertEqual(after.queue, before.queue, file: file, line: line)
+    }
+
+    func test_editCompound_linksExistingTask_enqueuesLinkCreate_taskUntouched_reDerivesBoard() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let l = try seedLibraryTask(db)
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 0)
+
+        // OR(B, L): B undone, L done → P complete ONLY if the L link exists.
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .or, children: [ChildPatch(from: f.b), ChildPatch(from: l)])),
+            now: now
+        )
+
+        let live = try liveLinks(db, parent: f.p.id)
+        XCTAssertEqual(live.map(\.childTaskId), [f.b.id, l.id])
+        XCTAssertEqual(live.map(\.childIndex), [0, 1])
+        let lLink = try XCTUnwrap(live.last)
+        XCTAssertEqual(lLink.version, 1)
+        let rows = try db.fetchPendingSyncItems()
+        XCTAssertEqual(rows.filter {
+            $0.entityType == "compoundChildren" && $0.entityId == lLink.id && $0.operationType == .create
+        }.count, 1)
+        let storedL = try db.read { try Task.fetchOne($0, key: l.id) }
+        XCTAssertEqual(storedL?.version, l.version, "the picked task row is untouched")
+        XCTAssertEqual(storedL?.updatedAt, l.updatedAt)
+        XCTAssertEqual(storedL?.title, l.title)
+        XCTAssertTrue(rows.filter { $0.entityType == "tasks" && $0.entityId == l.id }.isEmpty)
+        XCTAssertEqual(try db.read { try Board.fetchOne($0, key: f.x.id) }?.completedTasks, 1)
+    }
+
+    func test_editCompound_linkingCountingTaskWithNilAction_leavesRowUntouched() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var c = makeTask("cnt", type: .counting)
+        c.title = "Read 10 pages"; c.maxCount = 10; c.unit = "pages"; c.action = nil
+        try db.write { conn in try c.insert(conn) }
+
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .and, children: [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: c)])),
+            now: now
+        )
+        let stored = try db.read { try Task.fetchOne($0, key: c.id) }
+        XCTAssertEqual(stored?.version, 1, "nil action vs the editor's \"\" is not a change")
+        XCTAssertEqual(stored?.updatedAt, c.updatedAt)
+        XCTAssertNil(stored?.action)
+        XCTAssertTrue(try db.fetchPendingSyncItems().filter { $0.entityType == "tasks" && $0.entityId == c.id }.isEmpty)
+        XCTAssertEqual(try liveLinks(db, parent: f.p.id).map(\.childTaskId), [f.a.id, f.b.id, c.id])
+    }
+
+    func test_editCompound_linksNestedCompoundWithoutLoop() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        var n = makeTask("n", type: .compound); n.operatorType = .and
+        let q = makeTask("q")
+        try db.write { conn in
+            try n.insert(conn); try q.insert(conn)
+            try makeLink(id: "l-nq", parent: "n", child: "q", index: 0).insert(conn)
+        }
+        try db.applyTaskEditPatch(
+            taskId: f.p.id,
+            patch: basicPatch(title: "P", compound: structure(
+                f.p, operator: .and, children: [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: n)])),
+            now: now
+        )
+        XCTAssertEqual(try liveLinks(db, parent: f.p.id).map(\.childTaskId), [f.a.id, f.b.id, n.id])
+    }
+
+    func test_editCompound_refusesIneligibleLinks_beforeAnyWrite() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let l = try seedLibraryTask(db)
+        let w = makeTask("w", type: .achievement)
+        var d = makeTask("d"); d.isDeleted = true
+        var loopy = makeTask("loopy", type: .compound); loopy.operatorType = .and
+        var goalLess = makeTask("gl", type: .counting); goalLess.isCounter = true
+        try db.write { conn in
+            try w.insert(conn); try d.insert(conn); try loopy.insert(conn); try goalLess.insert(conn)
+            try makeLink(id: "l-loop", parent: "loopy", child: "p", index: 0).insert(conn)
+        }
+        var dupRow = ChildPatch(from: l); dupRow.id = "dup-row"
+        let cases: [(String, [ChildPatch], String)] = [
+            ("self", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: f.p)],
+             "A compound can’t contain itself."),
+            ("duplicate", [ChildPatch(from: f.a), ChildPatch(from: l), dupRow],
+             "That task is already a sub-task here."),
+            ("achievement", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: w)],
+             "Achievements can’t be sub-tasks."),
+            ("deleted", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: d)],
+             "That task was deleted."),
+            ("goal-less counter", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: goalLess)],
+             "Counters without a goal can’t be sub-tasks."),
+            ("loop", [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: loopy)],
+             "That would create a loop — it already contains this compound."),
+        ]
+        for (name, kids, message) in cases {
+            let before = try dbState(db)
+            XCTAssertThrowsError(try db.applyTaskEditPatch(
+                taskId: f.p.id,
+                patch: basicPatch(title: "P2", compound: structure(f.p, operator: .or, children: kids)),
+                now: now
+            ), name) { err in
+                XCTAssertEqual(err as? AppDatabase.TaskEditError, .invalid(message: message), name)
+            }
+            try assertUnchanged(db, before)
+        }
+    }
+
+    func test_wizardStagedPath_ineligibleLinkSkipsWholeEdit_eligibleLinkApplies() throws {
+        let db = try makeDb(); let f = try compoundFixture(db)
+        let l = try seedLibraryTask(db)
+        var bad = structure(f.p, operator: .or, children: [ChildPatch(from: f.a), ChildPatch(from: f.b), ChildPatch(from: f.p)])
+        bad.title = "P2"
+        let before = try dbState(db)
+        try db.writeWizardPendingTasksAndEnqueue([], stagedEdits: [f.p.id: bad], now: now)
+        try assertUnchanged(db, before)
+
+        let good = structure(f.p, operator: .or, children: [ChildPatch(from: f.b), ChildPatch(from: l)])
+        try db.writeWizardPendingTasksAndEnqueue([], stagedEdits: [f.p.id: good], now: now)
+        XCTAssertEqual(try liveLinks(db, parent: f.p.id).map(\.childTaskId), [f.b.id, l.id])
     }
 }

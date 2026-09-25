@@ -1,4 +1,12 @@
-import { OperatorType, TaskType, generateCounterTaskTitle, clampCompoundThreshold, type CompoundChild, type Task } from '@oybc/shared';
+import {
+  OperatorType,
+  TaskType,
+  generateCounterTaskTitle,
+  clampCompoundThreshold,
+  compoundChildPickerCandidates,
+  type CompoundChild,
+  type Task,
+} from '@oybc/shared';
 import { generateUUID, currentTimestamp } from './utils';
 
 /**
@@ -47,6 +55,11 @@ export interface ChildPatch {
   /** A counting sub-task is a Counting child (Action/Goal/Unit);
    *  otherwise a Normal sub-task. A sub-task's type is fixed once added. */
   isCounting: boolean;
+  /** The sub-task's task type, for its card badge. NORMAL / COUNTING for a
+   *  sub-task minted in the editor; the linked task's own type (which may
+   *  be COMPOUND — a nested compound, title-only) for an existing one.
+   *  `isCounting` stays the switch for the Action/Goal/Unit fields. */
+  childType: TaskType;
   action: string;
   goal: string;
   unit: string;
@@ -59,14 +72,16 @@ export function isNewChild(child: ChildPatch): boolean {
   return child.childTaskId === null;
 }
 
-/** Builds a fresh sub-task row for the "+ Normal/Counting sub-task"
- *  buttons. Mirrors iOS `addSubtaskButton`'s construction. */
+/** Builds a fresh, blank sub-task row (the quick-add append path fills
+ *  its title / action — see `appendTypedChild`). Mirrors iOS
+ *  `RisoCompoundEditFieldsView.appendTyped`'s construction. */
 export function newChildPatch(isCounting: boolean): ChildPatch {
   return {
     id: generateUUID(),
     childTaskId: null,
     title: '',
     isCounting,
+    childType: isCounting ? TaskType.COUNTING : TaskType.NORMAL,
     action: '',
     goal: '',
     unit: '',
@@ -83,6 +98,7 @@ export function childPatchFromTask(child: Task): ChildPatch {
     childTaskId: child.id,
     title: child.title,
     isCounting: child.type === TaskType.COUNTING,
+    childType: child.type,
     action: child.action ?? '',
     goal: child.maxCount !== undefined ? String(child.maxCount) : '',
     unit: child.unit ?? '',
@@ -147,6 +163,72 @@ export function seedPatchForEditor(task: Task): TaskEditPatch {
     }
   }
   return patch;
+}
+
+/**
+ * The editor's current kept children for the link guard: the task id of
+ * every existing or picked sub-task not marked deleted (new drafts have no
+ * id yet).
+ *
+ * @param draft - The compound draft.
+ * @returns The kept children's task ids.
+ */
+export function keptChildTaskIds(draft: TaskEditPatch): Set<string> {
+  const ids = new Set<string>();
+  for (const c of draft.children) {
+    if (!c.markedDeleted && c.childTaskId) ids.add(c.childTaskId);
+  }
+  return ids;
+}
+
+/**
+ * The quick-add row's match source for a compound: the browsable library
+ * narrowed to the tasks that can be linked as a sub-task of `parentId`
+ * (`compoundChildPickerCandidates` — no self, no current sub-task, no loop,
+ * no achievement, no incomplete counter).
+ *
+ * @param parentId - The compound being edited.
+ * @param libraryTasks - The browsable library.
+ * @param allLinks - Live compound links across all compounds.
+ * @param draft - The structure being edited (its kept sub-tasks are excluded).
+ * @returns The eligible tasks, in the shared helper's order.
+ */
+export function subtaskQuickAddCandidates(
+  parentId: string,
+  libraryTasks: Task[],
+  allLinks: CompoundChild[],
+  draft: TaskEditPatch,
+): Task[] {
+  return compoundChildPickerCandidates(parentId, libraryTasks, allLinks, keptChildTaskIds(draft));
+}
+
+/**
+ * Appends a library task picked from the quick-add row's matches as a
+ * LINKED sub-task (the save links the existing task; nothing is created).
+ *
+ * @param draft - The compound structure being edited.
+ * @param task - The picked (eligible) library task.
+ * @returns The next draft.
+ */
+export function appendPickedChild(draft: TaskEditPatch, task: Task): TaskEditPatch {
+  return { ...draft, children: [...draft.children, childPatchFromTask(task)] };
+}
+
+/**
+ * Appends a NEW sub-task typed into the quick-add row (Enter / Add). A
+ * Normal sub-task takes the text as its title; a Counting one also takes
+ * it as its action (Goal / Unit are then filled on its card).
+ *
+ * @param draft - The compound structure being edited.
+ * @param text - The trimmed text from the row.
+ * @param isCounting - Whether the "Counting" chip is on.
+ * @returns The next draft.
+ */
+export function appendTypedChild(draft: TaskEditPatch, text: string, isCounting: boolean): TaskEditPatch {
+  const child: ChildPatch = isCounting
+    ? { ...newChildPatch(true), title: text, action: text }
+    : { ...newChildPatch(false), title: text };
+  return { ...draft, children: [...draft.children, child] };
 }
 
 /** Kept sub-tasks — excludes deleted and blank-titled entries (dropped on
@@ -220,8 +302,9 @@ export function validatePatch(patch: TaskEditPatch, type: TaskType): string | nu
  * Applies the patch's title/counting/compound-rule fields to a base task.
  * Assumes `validatePatch` already passed. Does NOT bump `version`/
  * `updatedAt` — the persist caller owns that. Compound child Task/link CRUD
- * is applied by the persist layer (`applyStagedCompoundChildEdits` in
- * `db/operations/wizardBoard.ts`), not here. Mirrors iOS
+ * is applied by the persist layer (`applyStagedCompoundChildEdits`, reached via
+ * `applyCompoundStructureEditInTransaction` in
+ * `db/operations/compoundStructureEdit.ts`), not here. Mirrors iOS
  * `TaskEditPatch.applied(to:)`.
  */
 export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
@@ -254,7 +337,8 @@ export function applyPatchToTask(patch: TaskEditPatch, base: Task): Task {
 
 /**
  * Builds a fresh child Task row for a newly-added compound sub-task
- * (`isNewChild(step)`). Pure — the caller (`db/operations/wizardBoard.ts`)
+ * (`isNewChild(step)`). Pure — the caller
+ * (`applyStagedCompoundChildEdits` in `db/operations/compoundStructureEdit.ts`)
  * owns the actual `db.tasks.add` + sync-enqueue. Mirrors iOS
  * `AppDatabase.makeStagedChildTask`.
  */

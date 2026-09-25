@@ -168,4 +168,29 @@ enum CompoundEvaluation {
         let maxN = max(1, childCount)
         return min(max(1, threshold), maxN)
     }
+
+    /// Human-readable completion rule for a compound, shown under the Task
+    /// Detail "Subtasks" heading.
+    ///
+    /// Swift twin of `@oybc/shared`'s `compoundRuleLabel` — both platforms
+    /// must return identical strings (pinned by mirrored unit tests):
+    /// - `.and` (or no operator — the stored default) → `All of N`
+    /// - `.or` → `Any of N`
+    /// - `.mOfN` → `M of N`, where M is `clampCompoundThreshold(threshold ?? 1, childCount:)`
+    ///
+    /// - Parameters:
+    ///   - operator: The compound's stored operator (`nil` ⇒ AND).
+    ///   - threshold: The stored "at least M" threshold (M_OF_N only).
+    ///   - childCount: How many sub-tasks the compound resolves to.
+    /// - Returns: The label, e.g. `All of 3`, `Any of 3`, `2 of 3`.
+    static func compoundRuleLabel(_ operator: OperatorType?, threshold: Int?, childCount: Int) -> String {
+        switch `operator` {
+        case .or:
+            return "Any of \(childCount)"
+        case .mOfN:
+            return "\(clampCompoundThreshold(threshold ?? 1, childCount: childCount)) of \(childCount)"
+        case .and, .none:
+            return "All of \(childCount)"
+        }
+    }
 }

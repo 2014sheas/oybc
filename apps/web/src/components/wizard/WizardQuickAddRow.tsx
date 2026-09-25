@@ -61,6 +61,16 @@ export interface WizardQuickAddRowProps {
    * input afterward, same as a create.
    */
   onExistingTaskPicked?: (task: Task) => void;
+  /**
+   * Draft-only submit — OPTIONAL. When provided, Enter / Add hands the
+   * trimmed text to this callback (then clears the field) INSTEAD of
+   * creating a task: no `createTask`, no pending payload, and
+   * `onTaskCreated` / `onPendingCreated` never fire. Used by the compound
+   * sub-task editors, which append a draft sub-task that is only written
+   * when the edit is saved. Omitted by the wizard / Tasks-tab callers,
+   * which keep the create path. iOS twin: `RisoQuickAddRowView.onSubmitText`.
+   */
+  onSubmitText?: (text: string) => void;
 }
 
 /** Stable empty-Set identity for the `selectedIds` default — avoids a new
@@ -117,6 +127,7 @@ export function WizardQuickAddRow({
   libraryTasks,
   selectedIds,
   onExistingTaskPicked,
+  onSubmitText,
 }: WizardQuickAddRowProps): React.ReactElement {
   const [text, setText] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
@@ -153,6 +164,14 @@ export function WizardQuickAddRow({
 
   async function handleSubmit(): Promise<void> {
     if (!canSubmit) return;
+    if (onSubmitText !== undefined) {
+      // Draft-only host: hand over the text, reset exactly like a create.
+      onSubmitText(trimmed);
+      setText('');
+      setPlaceholderIndex((i) => i + 1);
+      inputRef.current?.focus();
+      return;
+    }
     setIsSubmitting(true);
     try {
       let newTask: Task;
@@ -219,6 +238,11 @@ export function WizardQuickAddRow({
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'Enter') {
       e.preventDefault();
+      // Draft-only hosts (compound editors) sit inside an editor whose
+      // ⌘↵ saves: an Enter that appends a sub-task must not also reach it,
+      // or the save runs on the pre-append draft. An empty row still lets
+      // ⌘↵ through to save. The wizard never passes `onSubmitText`.
+      if (onSubmitText !== undefined && canSubmit) e.stopPropagation();
       void handleSubmit();
     }
   }

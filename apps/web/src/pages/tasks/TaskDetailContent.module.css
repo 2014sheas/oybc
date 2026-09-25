@@ -280,16 +280,6 @@
   text-decoration: line-through;
   color: var(--riso-muted);
 }
-.subtaskHint {
-  margin: 8px 0 0;
-  padding: 10px 12px;
-  background: var(--riso-paper);
-  border: 2px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--riso-muted);
-}
 
 /* ── Error / loading ── */
 .error {
@@ -412,15 +402,18 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 1px;
 }
-.compoundHint {
+.compoundStatus {
   margin: 0;
-  padding: 10px 12px;
-  background: var(--riso-paper);
-  border: 2px dashed var(--riso-ink);
-  border-radius: var(--riso-r-card);
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--riso-muted);
+}
+.compoundValidation {
+  margin: 12px 0 0;
+  font-family: var(--riso-font-body);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--riso-red);
 }
 .fieldset {
   border: 2px solid var(--riso-ink);

@@ -30,8 +30,8 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
     func testCountingEditorLight() {
         let view = host(
             RisoPoolRowEditorView(
-                taskType: .counting, draft: .constant(countingDraft()),
-                onSave: {}, onDiscard: {}
+                taskId: "t", taskType: .counting, draft: .constant(countingDraft()),
+                libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {}
             )
         )
         // +40 vs. the pre-rework baseline: the new "Title: {derived}" live
@@ -42,8 +42,8 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
     func testCountingEditorDark() {
         let view = host(
             RisoPoolRowEditorView(
-                taskType: .counting, draft: .constant(countingDraft()),
-                onSave: {}, onDiscard: {}
+                taskId: "t", taskType: .counting, draft: .constant(countingDraft()),
+                libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {}
             ),
             dark: true
         )
@@ -56,8 +56,8 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         var d = countingDraft(); d.unit = ""
         let view = host(
             RisoPoolRowEditorView(
-                taskType: .counting, draft: .constant(d),
-                onSave: {}, onDiscard: {}
+                taskId: "t", taskType: .counting, draft: .constant(d),
+                libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {}
             )
         )
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 420)), record: recordMode)
@@ -78,21 +78,23 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
 
     func testCompoundEditorLight() {
         let view = host(
-            RisoPoolRowEditorView(taskType: .compound, draft: .constant(compoundDraft()),
-                                  onSave: {}, onDiscard: {})
+            RisoPoolRowEditorView(taskId: "t", taskType: .compound, draft: .constant(compoundDraft()),
+                                  libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {})
         )
         // +80 vs. the pre-rework baseline: the new shared `RisoCompoundRulePicker`
-        // (rule chips row) above the sub-tasks list.
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 640)), record: recordMode)
+        // (rule chips row) above the sub-tasks list. +40 more for the
+        // sub-task quick-add row + "New sub:" chips (compound editing Task 9;
+        // they replaced Task 7's add / "+ Existing task…" buttons).
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 680)), record: recordMode)
     }
 
     func testCompoundEditorDark() {
         let view = host(
-            RisoPoolRowEditorView(taskType: .compound, draft: .constant(compoundDraft()),
-                                  onSave: {}, onDiscard: {}),
+            RisoPoolRowEditorView(taskId: "t", taskType: .compound, draft: .constant(compoundDraft()),
+                                  libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {}),
             dark: true
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 640)), record: recordMode)
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 680)), record: recordMode)
     }
 
     /// Rule = At least N — proves the shared picker's conditional threshold
@@ -103,10 +105,10 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         d.operatorType = .mOfN
         d.threshold = 2
         let view = host(
-            RisoPoolRowEditorView(taskType: .compound, draft: .constant(d),
-                                  onSave: {}, onDiscard: {})
+            RisoPoolRowEditorView(taskId: "t", taskType: .compound, draft: .constant(d),
+                                  libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {})
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 680)), record: recordMode)
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 720)), record: recordMode)
     }
 
     func testCompoundEditorAtLeastNDark() {
@@ -114,11 +116,11 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
         d.operatorType = .mOfN
         d.threshold = 2
         let view = host(
-            RisoPoolRowEditorView(taskType: .compound, draft: .constant(d),
-                                  onSave: {}, onDiscard: {}),
+            RisoPoolRowEditorView(taskId: "t", taskType: .compound, draft: .constant(d),
+                                  libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {}),
             dark: true
         )
-        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 680)), record: recordMode)
+        assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 720)), record: recordMode)
     }
 
     // MARK: - Simple (normal) editor
@@ -126,8 +128,8 @@ final class PoolRowEditorSnapshotTests: XCTestCase {
     func testNormalEditorLight() {
         let view = host(
             RisoPoolRowEditorView(
-                taskType: .normal, draft: .constant(TaskEditPatch(title: "Stretch")),
-                onSave: {}, onDiscard: {}
+                taskId: "t", taskType: .normal, draft: .constant(TaskEditPatch(title: "Stretch")),
+                libraryTasks: [], allLinks: [], onSave: {}, onDiscard: {}
             )
         )
         assertSnapshot(of: view, as: .image(layout: .fixed(width: 393, height: 260)), record: recordMode)

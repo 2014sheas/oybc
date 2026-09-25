@@ -9,4 +9,5 @@ export * from './boardTasks';
 export * from './syncQueue';
 export * from './users';
 export * from './wizardBoard';
+export * from './compoundStructureEdit';
 export * from './maintenance';

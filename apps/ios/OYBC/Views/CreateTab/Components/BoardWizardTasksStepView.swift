@@ -332,6 +332,14 @@ struct BoardWizardTasksStepView: View {
         )
     }
 
+    /// Compound sub-task quick-add match source: the DB-backed browsable tasks (a pick
+    /// must exist when the staged edit applies — pending tasks are left out)
+    /// with staged edits overlaid. Twin of web `pickerLibraryTasks`.
+    private var pickerLibraryTasks: [OYBC.Task] {
+        let byId = effectiveTaskById
+        return library.browsableTasks.map { byId[$0.id] ?? $0 }
+    }
+
     /// Bug #85 — Per-id task lookup including pending parent + child tasks.
     private var effectiveTaskById: [String: OYBC.Task] {
         var by: [String: OYBC.Task] = Dictionary(uniqueKeysWithValues: library.libraryTasks.map { ($0.id, $0) })
@@ -481,8 +489,11 @@ struct BoardWizardTasksStepView: View {
                     editor: { task in
                         AnyView(
                             RisoPoolRowEditorView(
+                                taskId: task.id,
                                 taskType: task.type,
                                 draft: $editDraft,
+                                libraryTasks: pickerLibraryTasks,
+                                allLinks: effectiveChildrenByCompound.values.flatMap { $0 },
                                 onSave: { saveEdit(task) },
                                 onDiscard: { discardEdit(task) }
                             )
