@@ -356,4 +356,74 @@ final class SourceBoardOpenNowTests: XCTestCase {
         }
         XCTAssertEqual(Set(dealt), Set(currentWeek))
     }
+
+    // MARK: - Final-review F3, end to end (web twin: the F3 describe in sourceBoardOpenNow.test.ts)
+
+    /// At a window boundary where NEITHER series has this window's board yet,
+    /// a monthly template M pulling from a WEEKLY series W must spawn AFTER W
+    /// (the pending order the spawn pass iterates), so M's board source binds
+    /// W's fresh instance LIVE in the same pass. Under plain parents-first
+    /// order M spawns first, W's series has only last week's (ended) instance,
+    /// and M's source resolves `.noWindow`.
+    func testF3_spawnPass_weeklySeriesSpawnsBeforeMonthlyConsumer_sourceBindsLive() throws {
+        let db = try makeDb()
+        // Tue 2026-09-01 noon: September and the week of Mon 08-31 are both open.
+        let boundary = try XCTUnwrap(parseISO8601Date("2026-09-01T12:00:00.000"))
+        let weeklyTasks = (0..<9).map { "w\($0)" }
+        try insertTasks(db, weeklyTasks)
+        // W's previous (ended) instance — the id M's source row stored.
+        try seedBoard(db, id: "w-prev",
+                      window: ("2026-08-24T00:00:00.000", "2026-08-30T23:59:59.999"),
+                      taskIds: ["prev-0"], series: "W")
+        func makeTemplate(_ id: String, _ timeframe: Timeframe, manual: [String], sources: [BoardSource]?) -> RecurringBoardTemplate {
+            RecurringBoardTemplate(
+                id: id, userId: userId, name: id,
+                timeframe: timeframe, boardSize: 3, centerSquareType: .none,
+                isRandomized: true, seedTaskIds: manual,
+                manualTaskIds: manual, sources: sources,
+                lastSpawnedWindowKey: nil, isActive: true,
+                createdAt: stamp, updatedAt: stamp,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            )
+        }
+        let w = makeTemplate("W", .weekly, manual: weeklyTasks, sources: nil)
+        let m = makeTemplate("M", .monthly, manual: [], sources: [BoardSource(sourceId: "w-prev", kind: .board)])
+        try db.write { grdb in
+            try m.insert(grdb)
+            try w.insert(grdb)
+        }
+
+        let pending = findTemplatesPendingSpawn(
+            templates: [m, w],
+            boards: try db.fetchBoards(userId: userId),
+            weekStartDay: "monday",
+            now: boundary
+        )
+        var spawnedOrder: [String] = []
+        var outcomes: [String: RecurringSpawnOutcome] = [:]
+        for p in pending {
+            outcomes[p.template.id] = try db.spawnRecurringBoard(
+                p, boardId: "spawned-\(p.template.id)", now: stamp, sourceClock: boundary
+            )
+            spawnedOrder.append(p.template.id)
+        }
+
+        guard case .spawned(let wBoardId, _, _, _) = outcomes["W"] else {
+            return XCTFail("W should spawn, got \(String(describing: outcomes["W"]))")
+        }
+        guard case .spawned(let mBoardId, _, _, let windowless) = outcomes["M"] else {
+            return XCTFail("M should spawn (its source live), got \(String(describing: outcomes["M"]))")
+        }
+        // The outcome first (what the user sees), then the order that caused it.
+        XCTAssertEqual(windowless, [])
+        XCTAssertEqual(spawnedOrder, ["W", "M"])
+        let (onW, dealtOnM) = try db.read { grdb in
+            (
+                Set(try BoardTask.filter(Column("boardId") == wBoardId).fetchAll(grdb).map { $0.taskId }),
+                try BoardTask.filter(Column("boardId") == mBoardId).fetchAll(grdb).map { $0.taskId }
+            )
+        }
+        XCTAssertFalse(dealtOnM.isEmpty, "M deals from W's fresh instance")
+        XCTAssertTrue(dealtOnM.allSatisfy { onW.contains($0) })
+    }
 }

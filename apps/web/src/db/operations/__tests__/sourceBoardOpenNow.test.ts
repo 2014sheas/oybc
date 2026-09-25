@@ -8,6 +8,7 @@ import {
   type Board,
   type BoardSource,
   type RecurringBoardTemplate,
+  findTemplatesPendingSpawn,
 } from '@oybc/shared';
 import { db } from '../../internal';
 import {
@@ -308,5 +309,92 @@ describe('a monthly built mid-month from a weekly series', () => {
       (bt) => bt.taskId,
     );
     expect(new Set(dealt)).toEqual(new Set(currentWeek));
+  });
+});
+
+/**
+ * Final-review F3, end to end: at a window boundary where NEITHER series has
+ * this window's board yet, a monthly template M pulling from a WEEKLY series W
+ * must spawn AFTER W (the pending order the spawn hook iterates), so M's
+ * board source binds to W's fresh instance LIVE in the same pass. Under plain
+ * parents-first order M spawns first, W's series has only last week's (ended)
+ * instance, and M's source resolves `noWindow`. iOS twin:
+ * `SourceBoardOpenNowTests.testF3_*`.
+ */
+describe('F3: dependency-ordered spawn pass (weekly series → monthly consumer)', () => {
+  // Tue 2026-09-01 noon: the September window and the week of Mon 08-31 are
+  // both open, and neither template has spawned them.
+  const BOUNDARY = new Date('2026-09-01T12:00:00.000');
+  const weeklyTasks = Array.from({ length: 9 }, (_, i) => `w${i}`);
+
+  const tmpl = (over: Partial<RecurringBoardTemplate> & { id: string }): RecurringBoardTemplate => ({
+    userId: USER,
+    name: over.id,
+    timeframe: Timeframe.WEEKLY,
+    boardSize: 3,
+    centerSquareType: CenterSquareType.NONE,
+    isRandomized: true,
+    seedTaskIds: [],
+    manualTaskIds: [],
+    lastSpawnedWindowKey: null,
+    isActive: true,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    version: 1,
+    isDeleted: false,
+    ...over,
+  });
+
+  it('spawns W first, then M binds W\'s new instance live (no noWindow, non-zero supply)', async () => {
+    for (const id of weeklyTasks) {
+      await db.tasks.put({
+        id,
+        userId: USER,
+        title: id,
+        type: TaskType.NORMAL,
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: '2026-08-01T00:00:00.000Z',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+        version: 1,
+        isDeleted: false,
+      });
+    }
+    // W's previous (ended) instance — the id M's source row stored.
+    await seed(
+      board({
+        id: 'w-prev',
+        spawnedFromTemplateId: 'W',
+        startDate: '2026-08-24T00:00:00.000',
+        endDate: '2026-08-30T23:59:59.999',
+      }),
+    );
+    const W = tmpl({ id: 'W', seedTaskIds: weeklyTasks, manualTaskIds: weeklyTasks });
+    const M = tmpl({
+      id: 'M',
+      timeframe: Timeframe.MONTHLY,
+      sources: [{ sourceId: 'w-prev', kind: 'board', min: 0, max: null, excludedTaskIds: [], filter: 'all' }],
+    });
+    await db.recurringBoardTemplates.bulkAdd([M, W]);
+
+    const pending = findTemplatesPendingSpawn([M, W], await db.boards.toArray(), 'monday', BOUNDARY);
+    const spawnedOrder: string[] = [];
+    const byTemplate: Record<string, Awaited<ReturnType<typeof spawnTemplateBoard>>> = {};
+    for (const p of pending) {
+      byTemplate[p.template.id] = await spawnTemplateBoard(p, { now: BOUNDARY });
+      spawnedOrder.push(p.template.id);
+    }
+    const w = byTemplate.W;
+    const m = byTemplate.M;
+    expect(w.ok && m.ok).toBe(true);
+    if (!w.ok || !m.ok) return;
+    // The outcome first (what the user sees), then the order that caused it.
+    expect(m.noBoardForWindowSourceIds).toEqual([]);
+    expect(spawnedOrder).toEqual(['W', 'M']);
+    const dealtOnM = (await db.boardTasks.where('boardId').equals(m.boardId).toArray()).map((bt) => bt.taskId);
+    expect(dealtOnM.length).toBeGreaterThan(0);
+    const onW = new Set((await db.boardTasks.where('boardId').equals(w.boardId).toArray()).map((bt) => bt.taskId));
+    expect(dealtOnM.every((id) => onW.has(id))).toBe(true);
   });
 });
