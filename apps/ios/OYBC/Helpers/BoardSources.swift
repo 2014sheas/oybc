@@ -471,23 +471,28 @@ enum BoardSources {
     ///
     /// - not deleted, not a draft, not archived (active or completed);
     /// - not sealed — a sealed board is a permanent record;
+    /// - STARTED: `startDate <= now` (final-review F7 — a future board is not
+    ///   open, so the Sources sheet equals series binding); an unparseable
+    ///   `startDate` fails open;
     /// - no `endDate` (an INDEFINITE board never ends), an unparseable
     ///   `endDate` (fail open), or `endDate >= now`.
     ///
-    /// `endDate` is a LOCAL-wall-clock ISO string; it is compared as a parsed
-    /// `Date` against `now`, never as a string against a UTC timestamp.
+    /// `startDate`/`endDate` are LOCAL-wall-clock ISO strings; they are
+    /// compared as parsed `Date`s against `now`, never as strings against a
+    /// UTC timestamp.
     ///
     /// TS twin: `isEligibleSourceBoard` — keep in lockstep (pinned by
     /// `eligibilityVectors` in `boardSourceVectors.json`).
     ///
     /// - Parameters:
     ///   - board: The candidate board.
-    ///   - now: The instant to judge "has the window ended" against.
+    ///   - now: The instant to judge "has the window started / ended" against.
     /// - Returns: Whether the board may be offered as / supply a source.
     static func isEligibleSourceBoard<B: SourceBoardCandidate>(_ board: B, now: Date) -> Bool {
         if board.isDeleted { return false }
         guard board.status == .active || board.status == .completed else { return false }
         if board.sealedAt != nil { return false }
+        if let startsAt = parseISO8601Date(board.startDate), startsAt > now { return false } // future: not open
         guard let endDate = board.endDate else { return true }
         guard let endsAt = parseISO8601Date(endDate) else { return true } // fail open
         return endsAt >= now
@@ -530,8 +535,8 @@ enum BoardSources {
     /// recurring series that supplies a pulled source is the one OPEN NOW —
     /// exactly what the "Add from a pool or board" sheet shows. Open =
     /// eligible (``isEligibleSourceBoard(_:now:)``: not deleted/draft/
-    /// archived, not sealed, window not ended) AND its window has STARTED
-    /// (`startDate <= now`; an unparseable `startDate` fails open). Several
+    /// archived, not sealed, window STARTED — `startDate <= now`, an
+    /// unparseable `startDate` fails open — and not ended). Several
     /// open → the ``pickSeriesInstance(_:)`` tie-break (latest `startDate`,
     /// then lowest `id`). None → nil: callers map it to "No board for this
     /// window yet" (no supply, capacity 0) — never a fallback to an ended or
@@ -549,11 +554,7 @@ enum BoardSources {
     ///   - now: The instant "open" is judged against.
     /// - Returns: The open instance, or nil when none is open.
     static func pickOpenSeriesInstance<T: OpenSeriesCandidate>(_ candidates: [T], now: Date) -> T? {
-        pickSeriesInstance(candidates.filter { c in
-            guard isEligibleSourceBoard(c, now: now) else { return false }
-            guard let startsAt = parseISO8601Date(c.startDate) else { return true } // fail open
-            return startsAt <= now
-        })
+        pickSeriesInstance(candidates.filter { isEligibleSourceBoard($0, now: now) })
     }
 
     // MARK: - Remove-confirm (owner ruling 2026-09-19, amended 2026-09-23)
@@ -730,9 +731,10 @@ extension Board: SeriesInstanceCandidate {}
 
 
 /// The fields `BoardSources.isEligibleSourceBoard` reads — TS twin
-/// `SourceBoardCandidate` (`Pick<Board, 'status' | 'endDate' | 'sealedAt' | 'isDeleted'>`).
+/// `SourceBoardCandidate` (`Pick<Board, 'status' | 'startDate' | 'endDate' | 'sealedAt' | 'isDeleted'>`).
 protocol SourceBoardCandidate {
     var status: BoardStatus { get }
+    var startDate: String { get }
     var endDate: String? { get }
     var sealedAt: String? { get }
     var isDeleted: Bool { get }

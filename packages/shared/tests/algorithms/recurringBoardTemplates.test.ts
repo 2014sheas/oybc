@@ -773,3 +773,106 @@ describe('findTemplatesPendingSpawn — parents spawn first (series binding, 202
     expect(pending.map((entry) => entry.template.id)).toEqual(['m1', 'w1', 'd1', 'd2']);
   });
 });
+
+describe('findTemplatesPendingSpawn — dependency-ordered (F3: a consumer spawns after its source series)', () => {
+  const now = new Date('2026-09-07T12:00:00'); // a Monday: daily/weekly windows open today
+  const mk = (
+    id: string,
+    timeframe: Timeframe,
+    pullsFromBoardIds: string[] = [],
+  ): RecurringBoardTemplate => ({
+    id,
+    userId: 'u1',
+    name: id,
+    timeframe,
+    boardSize: 3,
+    centerSquareType: CenterSquareType.FREE,
+    isRandomized: true,
+    seedTaskIds: ['a'],
+    lastSpawnedWindowKey: null,
+    isActive: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    version: 1,
+    isDeleted: false,
+    ...(pullsFromBoardIds.length > 0
+      ? {
+          sources: pullsFromBoardIds.map((sourceId) => ({
+            sourceId,
+            kind: 'board' as const,
+            min: 0,
+            max: null,
+            excludedTaskIds: [],
+            filter: 'all' as const,
+          })),
+        }
+      : {}),
+  });
+  /** A previous (ended) instance of `templateId`'s series — the id a source row stored. */
+  const prevInstance = (id: string, templateId: string): Board =>
+    ({
+      id,
+      userId: 'u1',
+      name: id,
+      isDeleted: false,
+      spawnedFromTemplateId: templateId,
+      startDate: '2026-08-01T00:00:00.000',
+    }) as unknown as Board;
+
+  it('a monthly pulling from a weekly series spawns AFTER the weekly (smaller-tier source)', () => {
+    const pending = findTemplatesPendingSpawn(
+      [mk('M', Timeframe.MONTHLY, ['w-prev']), mk('W', Timeframe.WEEKLY)],
+      [prevInstance('w-prev', 'W')],
+      'monday',
+      new Date('2026-09-01T12:00:00'), // monthly + weekly windows both open
+    );
+    expect(pending.map((p) => p.template.id)).toEqual(['W', 'M']);
+  });
+
+  it('a daily pulling from a later-index daily series spawns after it (same-tier source)', () => {
+    const pending = findTemplatesPendingSpawn(
+      [mk('A', Timeframe.DAILY, ['b-prev']), mk('B', Timeframe.DAILY)],
+      [prevInstance('b-prev', 'B')],
+      'monday',
+      now,
+    );
+    expect(pending.map((p) => p.template.id)).toEqual(['B', 'A']);
+  });
+
+  it('unrelated templates keep parents-first order; a one-off source adds no edge', () => {
+    const oneOff = { ...prevInstance('one-off', 'x'), spawnedFromTemplateId: undefined } as Board;
+    const pending = findTemplatesPendingSpawn(
+      [mk('d1', Timeframe.DAILY, ['one-off']), mk('w1', Timeframe.WEEKLY), mk('m1', Timeframe.MONTHLY)],
+      [oneOff],
+      'monday',
+      now,
+    );
+    expect(pending.map((p) => p.template.id)).toEqual(['m1', 'w1', 'd1']);
+  });
+
+  it('a cycle falls back to parents-first order without throwing', () => {
+    const run = () =>
+      findTemplatesPendingSpawn(
+        [
+          mk('A', Timeframe.DAILY, ['b-prev']),
+          mk('B', Timeframe.DAILY, ['a-prev']),
+          mk('M', Timeframe.MONTHLY),
+        ],
+        [prevInstance('a-prev', 'A'), prevInstance('b-prev', 'B')],
+        'monday',
+        now,
+      );
+    expect(run).not.toThrow();
+    expect(run().map((p) => p.template.id)).toEqual(['M', 'A', 'B']);
+  });
+
+  it('a self-referencing template (pulls its own series) is not a blocking edge', () => {
+    const pending = findTemplatesPendingSpawn(
+      [mk('W', Timeframe.WEEKLY, ['w-prev']), mk('D', Timeframe.DAILY)],
+      [prevInstance('w-prev', 'W')],
+      'monday',
+      now,
+    );
+    expect(pending.map((p) => p.template.id)).toEqual(['W', 'D']);
+  });
+});

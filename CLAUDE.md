@@ -390,7 +390,8 @@ Notes that keep these straight:
   change eligibility, change it there. Owner ruling 2026-09-24: **ended
   boards are never sources** — `isEligibleSourceBoard(board, now)` admits
   only boards that are not deleted/archived/sealed and whose window is open
-  now (`endDate` absent, unparseable, or `>= now`; no lookback), and a series
+  now (started — `startDate <= now` — and `endDate` absent, unparseable, or
+  `>= now`; no lookback), and a series
   source binds to its instance **open now** (`pickOpenSeriesInstance` — no
   containment check against the new board's window), with one clock on
   every surface — see `docs/BOARD_SOURCES.md` §Boards as sources.

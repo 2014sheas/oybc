@@ -89,11 +89,16 @@ export type SpawnPoolFailureReason =
  *     back). With both checks, single-device idempotency is structurally
  *     guaranteed; the multi-device race remains an accepted MVP limitation.
  *
- * Output ordering is the input order — the caller may sort however it wants
- * (typically by `template.updatedAt desc` for UI display).
+ * Output ordering is the SPAWN order the caller must iterate: parents first
+ * (yearly → monthly → weekly → daily, stable within a tier), then
+ * dependency-ordered so a template spawns after every pending template whose
+ * series it pulls from (cycles fall back to parents-first). The spawn pass
+ * runs sequentially in this order; a UI may re-sort its own copy for display.
  *
  * @param templates - All non-deleted templates for the active user.
- * @param boards - All boards for the active user (used for the idempotency belt).
+ * @param boards - All boards for the active user (the idempotency belt, and
+ *                 resolving board sources to their series for the
+ *                 dependency order).
  * @param weekStartDay - Controls weekly window boundaries.
  * @param now - Reference date for window computation (typically `new Date()`).
  */
@@ -136,13 +141,14 @@ export function findTemplatesPendingSpawn(
   }
 
   // Series binding (loose-ends sweep 2026-09-09) — PARENTS SPAWN FIRST
-  // (yearly → monthly → weekly → daily; stable within a tier): a child
-  // board pulling from a parent series must see the parent's FRESH
-  // window's instance in the same pass (Monday's daily pulls this
-  // week's weekly, not last week's). Stable sort keeps the historic
-  // template order within each timeframe.
+  // (yearly → monthly → weekly → daily; stable within a tier) as the BASE
+  // order, then DEPENDENCY-ORDERED (final-review F3): a template spawns
+  // after every pending template whose series it pulls from, so its board
+  // source binds to the series' instance open NOW — the one this pass just
+  // spawned — instead of resolving `noWindow` in the gap between the old
+  // instance ending and the new one existing.
   const tier: Record<string, number> = { yearly: 0, monthly: 1, weekly: 2, daily: 3 };
-  return pending
+  const parentsFirst = pending
     .map((entry, index) => ({ entry, index }))
     .sort((a, b) => {
       const ta = tier[a.entry.template.timeframe] ?? 4;
@@ -151,6 +157,59 @@ export function findTemplatesPendingSpawn(
       return a.index - b.index;
     })
     .map(({ entry }) => entry);
+  return orderBySourceDependency(parentsFirst, boards);
+}
+
+/**
+ * Stable topological order over board-source → series edges between the
+ * pending spawns (final-review F3). An edge `S → T` exists when pending
+ * template `T` has a `kind: 'board'` source whose stored board belongs to
+ * pending template `S`'s series (`spawnedFromTemplateId === S.id`). A
+ * self-edge (a template pulling its own series) is ignored; a one-off
+ * source (no `spawnedFromTemplateId`) or a series that is not pending in
+ * this pass adds no edge.
+ *
+ * Kahn-style and stable: each step emits the FIRST entry in `base` order
+ * whose dependencies are all emitted. When none is ready (a cycle), the
+ * first remaining entry in `base` order is emitted — the cycle falls back
+ * to the parents-first order, never throws.
+ *
+ * @param base - Pending spawns in parents-first order.
+ * @param boards - The user's boards (resolve a stored source id to its series).
+ * @returns The same entries, dependency-ordered.
+ */
+function orderBySourceDependency(
+  base: PendingTemplateSpawn[],
+  boards: Board[],
+): PendingTemplateSpawn[] {
+  const pendingIds = new Set(base.map((p) => p.template.id));
+  const seriesByBoardId = new Map<string, string>();
+  for (const b of boards) {
+    if (b.spawnedFromTemplateId) seriesByBoardId.set(b.id, b.spawnedFromTemplateId);
+  }
+  const deps = new Map<string, Set<string>>();
+  for (const p of base) {
+    const own = new Set<string>();
+    for (const source of p.template.sources ?? []) {
+      if (source.kind !== 'board') continue;
+      const series = seriesByBoardId.get(source.sourceId);
+      if (series && series !== p.template.id && pendingIds.has(series)) own.add(series);
+    }
+    deps.set(p.template.id, own);
+  }
+  const remaining = [...base];
+  const emitted = new Set<string>();
+  const ordered: PendingTemplateSpawn[] = [];
+  while (remaining.length > 0) {
+    let pick = remaining.findIndex((p) =>
+      [...(deps.get(p.template.id) ?? [])].every((d) => emitted.has(d)),
+    );
+    if (pick === -1) pick = 0; // cycle → parents-first fallback
+    const [next] = remaining.splice(pick, 1);
+    emitted.add(next.template.id);
+    ordered.push(next);
+  }
+  return ordered;
 }
 
 /**

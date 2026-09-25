@@ -151,6 +151,7 @@ final class BoardSourceVectorTests: XCTestCase {
 
     private struct RawEligibilityBoard: Decodable, SourceBoardCandidate {
         let status: BoardStatus
+        let startDate: String
         let endDate: String?
         let sealedAt: String?
         let isDeleted: Bool

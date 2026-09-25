@@ -474,7 +474,7 @@ export const NO_BOARD_FOR_WINDOW_NOTE = 'No board for this window yet';
 /** The board fields {@link isEligibleSourceBoard} reads. */
 export type SourceBoardCandidate = Pick<
   Board,
-  'status' | 'endDate' | 'sealedAt' | 'isDeleted'
+  'status' | 'startDate' | 'endDate' | 'sealedAt' | 'isDeleted'
 >;
 
 /**
@@ -488,12 +488,15 @@ export type SourceBoardCandidate = Pick<
  *
  * - not deleted, not a draft, not archived (ACTIVE or COMPLETED);
  * - not sealed — a sealed board is a permanent record;
+ * - STARTED: `startDate <= now` (final-review F7 — a future board is not
+ *   open, so the Sources sheet equals series binding); an unparseable
+ *   `startDate` fails open;
  * - no `endDate` (an INDEFINITE board never ends), an unparseable
  *   `endDate` (fail open — never hide a board over a malformed row), or
  *   `endDate >= now`.
  *
- * `endDate` is a LOCAL-wall-clock ISO string; it is compared by parsed
- * milliseconds against `now`, never as a string against a UTC
+ * `startDate`/`endDate` are LOCAL-wall-clock ISO strings; they are compared
+ * by parsed milliseconds against `now`, never as strings against a UTC
  * `toISOString()`.
  *
  * Mirrors the iOS `BoardSources.isEligibleSourceBoard` in
@@ -501,7 +504,7 @@ export type SourceBoardCandidate = Pick<
  * `eligibilityVectors` in `tests/fixtures/boardSourceVectors.json`).
  *
  * @param board - the candidate board
- * @param now - the instant to judge "has the window ended" against
+ * @param now - the instant to judge "has the window started / ended" against
  * @returns whether the board may be offered as / supply a source
  */
 export function isEligibleSourceBoard(board: SourceBoardCandidate, now: Date): boolean {
@@ -510,6 +513,8 @@ export function isEligibleSourceBoard(board: SourceBoardCandidate, now: Date): b
     return false;
   }
   if (board.sealedAt) return false;
+  const startsAt = Date.parse(board.startDate);
+  if (!Number.isNaN(startsAt) && startsAt > now.getTime()) return false; // future: not open
   if (!board.endDate) return true;
   const endsAt = Date.parse(board.endDate);
   if (Number.isNaN(endsAt)) return true; // unparseable: fail open
@@ -566,8 +571,8 @@ export type OpenSeriesCandidate = Pick<
  * recurring series that supplies a pulled source is the one OPEN NOW —
  * exactly what the "Add from a pool or board" sheet shows. Open = eligible
  * ({@link isEligibleSourceBoard}: not deleted/draft/archived, not sealed,
- * window not ended) AND its window has STARTED (`startDate <= now`; an
- * unparseable `startDate` fails open). Several open → the
+ * window STARTED — `startDate <= now`, an unparseable `startDate` fails
+ * open — and not ended). Several open → the
  * {@link pickSeriesInstance} tie-break (latest `startDate`, then lowest
  * `id`). None → `null`: the caller maps it to "No board for this window
  * yet" (no supply, capacity 0) — never a fallback to an ended or future
@@ -592,13 +597,7 @@ export function pickOpenSeriesInstance<T extends OpenSeriesCandidate>(
   candidates: readonly T[],
   now: Date,
 ): T | null {
-  return pickSeriesInstance(
-    candidates.filter((c) => {
-      if (!isEligibleSourceBoard(c, now)) return false;
-      const startsAt = Date.parse(c.startDate);
-      return Number.isNaN(startsAt) || startsAt <= now.getTime();
-    }),
-  );
+  return pickSeriesInstance(candidates.filter((c) => isEligibleSourceBoard(c, now)));
 }
 
 /**

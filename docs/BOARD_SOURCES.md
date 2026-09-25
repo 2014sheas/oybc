@@ -270,20 +270,25 @@ the pool-generation surface, both platforms:
   board that belongs to a recurring series (`spawnedFromTemplateId` set)
   binds to the series: every resolution (wizard, roster, spawn, the
   play-screen note) hops the stored id to the series' instance that is
-  **open now** — the pure `pickOpenSeriesInstance(candidates, nowIso)` (TS +
-  Swift, pinned by `openSeriesInstanceVectors`, local-ISO shapes included):
-  an instance is open iff it is eligible (below) and has started
-  (`startDate <= now`) — a FUTURE instance is not open; several open →
+  **open now** — the pure `pickOpenSeriesInstance(candidates, now: Date)`
+  (TS `pickOpenSeriesInstance(candidates, now)` ↔ Swift
+  `BoardSources.pickOpenSeriesInstance(_:now:)`, both taking a `Date`; pinned
+  by `openSeriesInstanceVectors`, local-ISO shapes included): an instance is
+  open iff it is eligible (below — which includes having started,
+  `startDate <= now`) — a FUTURE instance is not open; several open →
   latest `startDate`, then lowest id; none open → `null`. Resolved via `resolveOpenSourceBoard` (web
   `db/operations/boardSources.ts` / iOS `AppDatabase+BoardSources`). There
   is **no containment check** against the new board's window: a monthly
   built mid-month from a weekly series pulls the CURRENT week — exactly the
   board the Sources sheet shows. An archived old window never kills the
   pull. Pulling a plain one-off board binds to that board itself. Two
-  supporting rules: the spawn pass runs **parents first** (yearly → monthly
-  → weekly → daily, stable within a tier — `findTemplatesPendingSpawn`'s
-  tail sort) so a child board pulling a parent series sees the parent's
-  fresh window in the same pass; and `removeMissingBoardSources` treats a
+  supporting rules: the spawn pass is **dependency-ordered** — base order
+  parents first (yearly → monthly → weekly → daily, stable within a tier),
+  then a stable topological sort so a template spawns AFTER every pending
+  template whose series it pulls from (`findTemplatesPendingSpawn`'s tail
+  sort + `orderBySourceDependency`; a cycle falls back to parents-first) —
+  so a consumer pulling ANY series (larger, smaller or same tier) sees that
+  series' fresh window in the same pass instead of `noWindow`; and `removeMissingBoardSources` treats a
   source as missing only when the resolver finds it **dead** (never when it
   merely has no board open).
 - **Sources are open boards** *(owner ruling 2026-09-24, amended the same
@@ -291,9 +296,11 @@ the pool-generation surface, both platforms:
   #482's 30-day lookback, `SOURCE_BOARD_LOOKBACK_DAYS` is gone)*.
   Eligibility (`isEligibleSourceBoard(board, now)`, pinned by
   `eligibilityVectors`, local-ISO shapes included): not deleted, not a
-  draft/archived, **not sealed**, and the window is open now — no
+  draft/archived, **not sealed**, and the window is open now — STARTED
+  (`startDate <= now` by parsed instant, unparseable fails open; a future
+  board is not open, so the sheet equals series binding) and not ended (no
   `endDate`, an unparseable one (fail open), or `endDate >= now` by parsed
-  instant. The old completed-board branch is deleted too: a COMPLETED board
+  instant). The old completed-board branch is deleted too: a COMPLETED board
   is a source only while its window is still open. It
   gates the Sources sheet (`fetchSourceSheetBoardEntries`) AND supply: a
   stored source resolves to one of
