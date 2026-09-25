@@ -183,19 +183,21 @@ export function boardWindowEnd(board: Pick<Board, 'endDate'>): string | null {
  *
  *   - Window still open (`now <= endDate`), or the board has no `endDate` →
  *     `nowIso`, verbatim.
- *   - Window ended (`now > endDate`) and the board is UNSEALED → the board's
- *     `endDate` instant, re-encoded as a UTC event timestamp
- *     (`new Date(endDate).toISOString()`), so the overtime log still counts
- *     for this board (whose inclusive upper bound is `endDate`) and for no
- *     later window.
- *   - Sealed boards never log (play is locked), so there is no clamp branch
- *     for them: a sealed board returns `nowIso`.
+ *   - Window ended (`now > endDate`) → the board's `endDate` instant,
+ *     re-encoded as a UTC event timestamp (`new Date(endDate).toISOString()`),
+ *     so the overtime log still counts for this board (whose inclusive upper
+ *     bound is `endDate`) and for no later window.
+ *
+ * The rule is plain `min(now, endDate)`, independent of `sealedAt`: a sealed
+ * board never logs (play is locked), and if one ever did, clamping into its
+ * own window is the safe direction.
  *
  * Comparison is by parsed ms, never by string — board dates are LOCAL-ISO,
  * event timestamps are UTC ISO. An unparseable `endDate` or `nowIso` fails
  * open (returns `nowIso`) rather than throwing.
  *
- * @param board  The board the log is made from (`endDate` + `sealedAt` read).
+ * @param board  The board the log is made from (only `endDate` is read;
+ *               `sealedAt` is accepted for call-site convenience and ignored).
  * @param nowIso The current instant as an ISO timestamp (the caller's clock).
  * @returns The ISO timestamp to store as the event's `occurredAt`.
  */
@@ -203,7 +205,7 @@ export function lateLogOccurredAt(
   board: Pick<Board, 'endDate' | 'sealedAt'>,
   nowIso: string,
 ): string {
-  if (board.endDate == null || board.sealedAt != null) return nowIso;
+  if (board.endDate == null) return nowIso;
   const endMs = new Date(board.endDate).getTime();
   const nowMs = new Date(nowIso).getTime();
   if (Number.isNaN(endMs) || Number.isNaN(nowMs)) return nowIso;

@@ -138,8 +138,7 @@
       "windowStart": "2026-07-01T00:00:00.000Z",
       "events": [],
       "expected": { "isCompleted": false, "count": 0 }
-    }
-,
+    },
     {
       "name": "end-bound-counting-increment-one-ms-after-windowEnd-excluded",
       "task": { "type": "counting", "maxCount": 5 },
@@ -321,10 +320,10 @@
       "expected": "endDate"
     },
     {
-      "name": "ended-sealed-stamps-now-no-clamp-branch",
+      "name": "ended-sealed-still-clamps-to-endDate-sealedAt-ignored",
       "board": { "endDate": "2026-09-20T23:59:59.999Z", "sealedAt": "2026-09-22T09:00:00.000Z" },
       "nowIso": "2026-09-23T00:00:00.000Z",
-      "expected": "now"
+      "expected": "endDate"
     },
     {
       "name": "unparseable-endDate-fails-open-stamps-now",

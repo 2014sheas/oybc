@@ -415,13 +415,13 @@
     },
     {
       "name": "normal-completion-one-ms-after-sealedAt-excluded-even-though-lifetime-cache-says-done",
-      "_why": "N's completion at 2026-07-02T06:00:00.001Z is 1ms after sealedAt => belongs to the next window, must NOT count; N's lifetime isCompleted cache is true and must not leak in either. The board is INDEFINITE (endDate null, 2026-09-24 re-pin) so sealedAt is the sole active upper bound and this case keeps pinning the sealedAt bound itself. Cells [1,2,4]; completedTasks 3; row_0 broken at 0 => no lines.",
+      "_why": "N's completion at 2026-07-02T06:00:00.001Z is 1ms after sealedAt => belongs to the next window, must NOT count; N's lifetime isCompleted cache is true and must not leak in either. The board's endDate (2026-07-02T23:59:59.999Z, 2026-09-24 re-pin) is LATER than sealedAt, so sealedAt is the binding upper bound (sealedAt narrows further than endDate) and this case keeps pinning the sealedAt bound itself. Cells [1,2,4]; completedTasks 3; row_0 broken at 0 => no lines.",
       "board": {
         "id": "b4000000-0000-0000-0000-000000000003",
         "boardSize": 3,
         "centerSquareType": "free",
         "startDate": "2026-07-01T00:00:00.000Z",
-        "endDate": null,
+        "endDate": "2026-07-02T23:59:59.999Z",
         "status": "active",
         "linesCompleted": 0,
         "completedLineIds": null,
@@ -451,13 +451,13 @@
     },
     {
       "name": "normal-completion-exactly-at-sealedAt-counts-inclusive-upper-bound",
-      "_why": "N's completion at exactly sealedAt (2026-07-02T06:00:00.000Z) counts: the upper bound is inclusive (occurredAt <= sealedAt; matches the [startDate, sealedAt] immunity window in taskEvents.ts). The board is INDEFINITE (endDate null, 2026-09-24 re-pin: with a dated board the completion would fall after endDate and be excluded by the end bound, so the sealedAt bound would no longer be what this case exercises). Cells [0,1,2,4]; completedTasks 4; [row_0].",
+      "_why": "N's completion at exactly sealedAt (2026-07-02T06:00:00.000Z) counts: the upper bound is inclusive (occurredAt <= sealedAt; matches the [startDate, sealedAt] immunity window in taskEvents.ts). The board's endDate (2026-07-02T23:59:59.999Z, 2026-09-24 re-pin) is LATER than sealedAt, so the completion is inside [startDate, endDate] and sealedAt is the binding bound this case exercises (with the original 07-01 endDate the end bound would exclude it). Cells [0,1,2,4]; completedTasks 4; [row_0].",
       "board": {
         "id": "b4000000-0000-0000-0000-000000000003",
         "boardSize": 3,
         "centerSquareType": "free",
         "startDate": "2026-07-01T00:00:00.000Z",
-        "endDate": null,
+        "endDate": "2026-07-02T23:59:59.999Z",
         "status": "active",
         "linesCompleted": 0,
         "completedLineIds": null,

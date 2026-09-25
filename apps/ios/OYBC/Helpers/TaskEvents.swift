@@ -187,23 +187,25 @@ func boardWindowEnd(_ board: Board) -> String? {
 ///
 ///   - Window still open (`now <= endDate`), or the board has no `endDate` →
 ///     `nowIso`, verbatim.
-///   - Window ended (`now > endDate`) and the board is UNSEALED → the board's
-///     `endDate` instant re-encoded as a UTC event timestamp
-///     (`DateFormatting.utcISOString`, the JS `toISOString()` shape), so the
-///     overtime log still counts for this board and for no later window.
-///   - Sealed boards never log (play is locked), so there is no clamp branch
-///     for them: a sealed board returns `nowIso`.
+///   - Window ended (`now > endDate`) → the board's `endDate` instant
+///     re-encoded as a UTC event timestamp (`DateFormatting.utcISOString`, the
+///     JS `toISOString()` shape), so the overtime log still counts for this
+///     board and for no later window.
+///
+/// The rule is plain `min(now, endDate)`, independent of `sealedAt`: a sealed
+/// board never logs (play is locked), and if one ever did, clamping into its
+/// own window is the safe direction.
 ///
 /// Comparison is by parsed instant, never by string — board dates are
 /// LOCAL-ISO, event timestamps are UTC ISO. An unparseable `endDate` or
 /// `nowIso` fails open (returns `nowIso`).
 ///
 /// - Parameters:
-///   - board: The board the log is made from (`endDate` + `sealedAt` read).
+///   - board: The board the log is made from (only `endDate` is read).
 ///   - nowIso: The current instant as an ISO timestamp (the caller's clock).
 /// - Returns: The ISO timestamp to store as the event's `occurredAt`.
 func lateLogOccurredAt(board: Board, nowIso: String) -> String {
-    guard let endDate = board.endDate, board.sealedAt == nil else { return nowIso }
+    guard let endDate = board.endDate else { return nowIso }
     guard let end = DateFormatting.parseISO(endDate),
           let now = DateFormatting.parseISO(nowIso) else { return nowIso }
     if now <= end { return nowIso }
