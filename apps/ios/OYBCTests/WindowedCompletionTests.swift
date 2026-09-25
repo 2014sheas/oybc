@@ -816,6 +816,75 @@ final class WindowedCompletionTests: XCTestCase {
         XCTAssertEqual(try db.fetchBoard(id: "bB")?.completedTasks, 1)
     }
 
+    /// One rule on both platforms (twin of web `lateLogWindowEnd.test.ts`): the
+    /// fallback authors nothing for a NON-event-owning child — no latch write,
+    /// no event, no sync enqueue, no cascade write.
+    private func assertFallbackAuthorsNothing(
+        _ db: AppDatabase, childId: String, board: Board, file: StaticString = #filePath, line: UInt = #line
+    ) throws {
+        let before = try fetchTask(db, childId)
+        let boardsBefore = try db.read { try Board.fetchAll($0) }.map { "\($0.id):\($0.version):\($0.completedTasks)" }
+        let queueBefore = try db.read { try SyncQueueItem.fetchCount($0) }
+        for desired in [true, false] {
+            let results = try db.toggleCompoundChildFallback(
+                childTaskId: childId, desiredCompleted: desired,
+                windowStart: board.startDate, windowEnd: boardWindowEnd(board), boardId: board.id, now: lateNow
+            )
+            XCTAssertTrue(results.isEmpty, file: file, line: line)
+        }
+        let after = try fetchTask(db, childId)
+        XCTAssertEqual(after.version, before.version, "child row never written", file: file, line: line)
+        XCTAssertEqual(after.isCompleted, before.isCompleted, file: file, line: line)
+        XCTAssertEqual(after.updatedAt, before.updatedAt, file: file, line: line)
+        XCTAssertEqual(try db.read { try TaskEvent.fetchCount($0) }, 0, "no event", file: file, line: line)
+        XCTAssertEqual(try db.read { try SyncQueueItem.fetchCount($0) }, queueBefore, "no enqueue", file: file, line: line)
+        XCTAssertEqual(
+            try db.read { try Board.fetchAll($0) }.map { "\($0.id):\($0.version):\($0.completedTasks)" },
+            boardsBefore, "no cascade write", file: file, line: line
+        )
+    }
+
+    /// Compound P = AND(d) where `d` is a derived counter off root `r`; P on A and B.
+    private func seedCompoundWithDerivedChild(_ db: AppDatabase, windowStamped: Bool) throws -> Board {
+        try db.saveTask(makeTask("r", type: .counting, maxCount: 10, currentCount: 0))
+        var d = makeTask("d", type: .counting, maxCount: 3, sharedCounterId: "r", baseline: 0)
+        if windowStamped {
+            d.startDate = "2026-06-01T00:00:00.000"
+            d.endDate = "2026-06-30T23:59:59.999"
+            d.createdInWizard = true
+        }
+        try db.saveTask(d)
+        var p = makeTask("p", type: .compound)
+        p.operatorType = .and
+        try db.saveTask(p)
+        let a = makeBoard(id: "bA")
+        try db.saveBoard(a)
+        try db.saveBoard(makeBoard(id: "bB", startDate: julyStart, endDate: julyEnd))
+        try db.saveBoardTask(makeBoardTask(id: "btA", boardId: "bA", taskId: "p"))
+        try db.saveBoardTask(makeBoardTask(id: "btB", boardId: "bB", taskId: "p"))
+        try db.write { db in
+            try CompoundChild(
+                id: "p-d", compoundTaskId: "p", childTaskId: "d", childIndex: 0,
+                createdAt: "2026-06-01T00:00:00.000", updatedAt: "2026-06-01T00:00:00.000",
+                version: 1, isDeleted: false
+            ).save(db)
+        }
+        return a
+    }
+
+    func test_compoundChildFallback_hubLinkedDerivedChild_isNoOp() throws {
+        let db = try makeDb(); try seedUser(db)
+        _ = try seedCompoundWithDerivedChild(db, windowStamped: false)
+        let b = try XCTUnwrap(try db.fetchBoard(id: "bB"))
+        try assertFallbackAuthorsNothing(db, childId: "d", board: b)
+    }
+
+    func test_compoundChildFallback_windowStampedDerivedChildOnEndedBoard_isNoOp() throws {
+        let db = try makeDb(); try seedUser(db)
+        let a = try seedCompoundWithDerivedChild(db, windowStamped: true)
+        try assertFallbackAuthorsNothing(db, childId: "d", board: a)
+    }
+
     func test_compoundChildFallback_onSealedBoard_isNoOp() throws {
         let db = try makeDb(); try seedUser(db)
         var a = try seedCompoundOnEndedBoard(db)

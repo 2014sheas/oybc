@@ -596,10 +596,19 @@ export async function toggleTaskCompletionAndCascade(taskId: string): Promise<vo
  * ended — 2026-09-24 amendment of WC Decision 1, decision C2), and an
  * un-complete tombstones only completions inside `[windowStart, windowEnd]`,
  * so another window's completion is never deleted from this board's sheet.
- * A non-event-owning child (defensive) falls back to a direct latch write.
  * Then the cross-board cascade runs — all in ONE transaction.
  *
- * No-op if the child is missing or the host board is sealed (a sealed board's
+ * ONE rule on both platforms (iOS twin in `AppDatabase+BoardCompletion.swift`):
+ * the fallback WRITES only for an event-owning child (NORMAL / plain
+ * COUNTING — events + the late-log stamp). A NON-event-owning child is a
+ * no-op: early return — no latch write, no event, no sync enqueue, and no
+ * cascade (nothing changed, so there is nothing to re-derive). Its state is never
+ * authored from here — a hub-linked derived counter's latch is propagation
+ * output from its ROOT, a window-stamped derived row is never authored (its
+ * state resolves from the root's in-window events; once its window ends it is
+ * frozen), and a nested compound is derived from its own children.
+ *
+ * Also a no-op if the child is missing or the host board is sealed (a sealed board's
  * record is permanent; its surface is play-locked anyway).
  *
  * @param childTaskId - The child being toggled.
@@ -622,25 +631,14 @@ export async function toggleCompoundChildFallback(
       const task = await db.tasks.get(childTaskId);
       const board = await db.boards.get(boardId);
       if (!task || board?.sealedAt) return;
+      // Non-event-owning child: nothing is authored (see the rule above).
+      if (!isEventOwningTask(task)) return;
       const now = currentTimestamp();
-      if (isEventOwningTask(task)) {
-        if (desiredCompleted) {
-          const occurredAt = await lateLogStampForBoard(boardId, now);
-          await appendCompletionEvent(childTaskId, boardId, now, occurredAt);
-        } else {
-          await tombstoneWindowCompletions(childTaskId, windowStart, now, windowEnd);
-        }
+      if (desiredCompleted) {
+        const occurredAt = await lateLogStampForBoard(boardId, now);
+        await appendCompletionEvent(childTaskId, boardId, now, occurredAt);
       } else {
-        await db.tasks.update(childTaskId, {
-          isCompleted: desiredCompleted,
-          completedAt: desiredCompleted ? now : undefined,
-          updatedAt: now,
-          version: task.version + 1,
-        });
-        const updated = await db.tasks.get(childTaskId);
-        if (updated) {
-          await addToSyncQueue('tasks', childTaskId, SyncOperationType.UPDATE, updated);
-        }
+        await tombstoneWindowCompletions(childTaskId, windowStart, now, windowEnd);
       }
       await runBoardCascadeForTask(childTaskId);
     },

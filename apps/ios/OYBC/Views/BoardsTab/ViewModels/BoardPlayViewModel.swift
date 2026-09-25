@@ -967,10 +967,10 @@ final class BoardPlayViewModel: ObservableObject {
         )
     }
 
-    /// Toggles a compound child's `Task.isCompleted` state.
+    /// Toggles a compound child's WINDOWED completion on this board.
     ///
-    /// If the child is placed on the current board, orchestrates via the full bingo pipeline.
-    /// If the child is not on any board, falls back to a direct Task update + sync enqueue.
+    /// Placed on this board → the full bingo pipeline; otherwise `toggleCompoundChildFallback`:
+    /// event-based (late-stamped) for an event-owning child, a no-op for a derived/nested one.
     ///
     /// - Parameter childTask: The child `Task` to toggle.
     func handleCompoundChildToggle(childTask: Task) {

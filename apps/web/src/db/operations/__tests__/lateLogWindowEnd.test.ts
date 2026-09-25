@@ -369,4 +369,49 @@ describe('board-context compound-child toggle (fallback: child not placed on the
     await toggleCompoundChildFallback('c', true, A_START, A_END, A);
     expect(await db.taskEvents.count()).toBe(0);
   });
+  /**
+   * One rule on both platforms: the fallback authors nothing for a
+   * NON-event-owning child (hub-linked derived counter, window-stamped derived
+   * row, nested compound) — no latch write, no event, no sync enqueue.
+   */
+  async function expectNothingAuthoredFor(childId: string, boardId: string, start: string, end: string) {
+    const before = await db.tasks.get(childId);
+    const boardsBefore = await db.boards.toArray();
+    await toggleCompoundChildFallback(childId, true, start, end, boardId);
+    await toggleCompoundChildFallback(childId, false, start, end, boardId);
+    expect(await db.tasks.get(childId)).toEqual(before); // byte-identical, version unchanged
+    expect(await db.taskEvents.count()).toBe(0);
+    expect(await db.syncQueue.count()).toBe(0);
+    expect(await db.boards.toArray()).toEqual(boardsBefore); // no cascade write either
+  }
+
+  async function seedCompoundWithChild(child: Partial<Task>) {
+    await seedTask('root', { type: TaskType.COUNTING, maxCount: 10, currentCount: 0 });
+    await seedTask('d', { type: TaskType.COUNTING, maxCount: 3, sharedCounterId: 'root', ...child });
+    await seedTask('p', { type: TaskType.COMPOUND, operator: OperatorType.AND });
+    await db.compoundChildren.add({
+      id: 'link-d',
+      compoundTaskId: 'p',
+      childTaskId: 'd',
+      childIndex: 0,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+      version: 1,
+      isDeleted: false,
+    });
+    await seedBoard(A, A_START, A_END);
+    await seedBoard(B, B_START, B_END);
+    await place(A, 'p');
+    await place(B, 'p');
+  }
+
+  it('a hub-linked derived-counter child is a no-op: no latch write, no event, no enqueue', async () => {
+    await seedCompoundWithChild({ isCompleted: false });
+    await expectNothingAuthoredFor('d', B, B_START, B_END);
+  });
+
+  it('a window-stamped derived child on an ended board is a no-op (the frozen row is never written)', async () => {
+    await seedCompoundWithChild({ startDate: A_START, endDate: A_END, createdInWizard: true, baseline: 0 });
+    await expectNothingAuthoredFor('d', A, A_START, A_END);
+  });
 });

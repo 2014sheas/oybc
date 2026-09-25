@@ -67,9 +67,11 @@ extension AppDatabase {
             let current = try Board.fetchOne(db, key: board.id) ?? board
             if current.sealedAt != nil { return [:] }
 
-            // 1. Auto-activate DRAFT boards on first interaction.
-            if board.status == .draft {
-                var activated = board
+            // 1. Auto-activate DRAFT boards on first interaction. Copies the
+            //    row read inside THIS transaction (`current`), never the
+            //    caller's possibly-stale `board`, so no newer field is clobbered.
+            if current.status == .draft {
+                var activated = current
                 activated.status = .active
                 // Windowed Completion — stamp the activation instant (only if
                 // not already set) so the auto-seal backstop keys off
@@ -155,6 +157,16 @@ extension AppDatabase {
     /// lifetime latch. A sealed host board is a no-op (empty result). Mirrors
     /// the web `toggleCompoundChildFallback` (`tasks.crud.ts`).
     ///
+    /// ONE rule on both platforms: the fallback WRITES only for an
+    /// event-owning child (NORMAL / plain COUNTING — events + the late-log
+    /// stamp). A NON-event-owning child is a no-op — early return, empty
+    /// result: no latch write, no event, no sync enqueue, and no cascade
+    /// (nothing changed). Its state is never authored from here: a hub-linked
+    /// derived counter's latch is propagation output from its ROOT, a
+    /// window-stamped derived row is never authored (it resolves from the
+    /// root's in-window events and freezes once its window ends), and a nested
+    /// compound is derived from its own children.
+    ///
     /// - Parameters:
     ///   - childTaskId: The event-owning child Task being toggled.
     ///   - desiredCompleted: The desired windowed completed state.
@@ -164,7 +176,7 @@ extension AppDatabase {
     ///   - boardId: The host board id (event provenance + late-log stamp).
     ///   - now: ISO8601 timestamp stamped on every row written here.
     /// - Returns: A `[boardId: CascadeBoardResult]` map for flash derivation
-    ///   (empty for a sealed host board).
+    ///   (empty for a sealed host board or a non-event-owning / missing child).
     func toggleCompoundChildFallback(
         childTaskId: String,
         desiredCompleted: Bool,
@@ -175,6 +187,8 @@ extension AppDatabase {
     ) throws -> [String: CascadeBoardResult] {
         try write { db in
             if let boardId, try Board.fetchOne(db, key: boardId)?.sealedAt != nil { return [:] }
+            // Non-event-owning (or missing) child: nothing is authored (see the rule above).
+            guard let child = try Task.fetchOne(db, key: childTaskId), isEventOwningTask(child) else { return [:] }
             if desiredCompleted {
                 let occurredAt = try Self.lateLogStampForBoard(db: db, boardId: boardId, now: now)
                 try Self.appendCompletionEvent(

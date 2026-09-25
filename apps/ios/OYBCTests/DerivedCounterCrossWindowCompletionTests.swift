@@ -195,13 +195,12 @@ final class DerivedCounterCrossWindowCompletionTests: XCTestCase {
     // MARK: - THE REPRODUCTION — the pulled weekly's window has ENDED
 
     /// The daily pulls a weekly whose window ENDED but which is still ACTIVE
-    /// and unsealed — a designed flow (`isEligibleSourceBoard` offers a
-    /// closed-window ACTIVE board for the lookback; the backstop seal is 42h
-    /// after a weekly's end, applied lazily on app-open). 17 of 20 were logged
-    /// inside the weekly's own window (goal NOT met); today's daily log of 3
-    /// completes it, because the weekly has no window END: a ROOT square sums
-    /// events over `[startDate, ∞)`, a window-stamped DERIVED square latches
-    /// from `currentCount − baseline` in `propagateIncrement`.
+    /// and unsealed (the backstop seal is applied lazily on app-open). 17 of 20
+    /// were logged inside the weekly's own window (goal NOT met); today's
+    /// daily log of 3 does NOT complete it: a ROOT square sums events over
+    /// `[startDate, endDate]` (2026-09-24 amendment of WC Decision 1), and a
+    /// window-stamped DERIVED square resolves from its root's events inside
+    /// its own `[startDate, endDate]` — both end before today.
     ///
     /// Both variants are GREEN regression pins:
     /// - DERIVED square: the kernel resolves a window-stamped row from its

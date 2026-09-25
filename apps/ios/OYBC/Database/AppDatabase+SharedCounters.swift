@@ -206,7 +206,7 @@ extension AppDatabase {
     /// Increment the shared-counter source task's `currentCount` by `by` (default 1),
     /// then re-derive every live linked task (tasks where `sharedCounterId == sourceTaskId`,
     /// `!isDeleted`, and not a window-stamped derived row whose window has ended —
-    /// see `fetchPropagatingLinkedTasks`) and run the board derivation cascade for
+    /// see `fetchLinkedTasksForLog`) and run the board derivation cascade for
     /// the source AND those linked tasks — all inside a single GRDB write transaction.
     ///
     /// Invariants enforced:
