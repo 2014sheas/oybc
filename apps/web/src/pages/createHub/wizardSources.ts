@@ -73,7 +73,7 @@ export interface WizardSourceSupply {
   /**
    * Board sources only — the source still exists but resolved to NO board
    * for the window being built (owner ruling 2026-09-24: a series with no
-   * instance containing the new board's start, or an ended/sealed one-off).
+   * instance open now, or an ended/sealed one-off).
    * It supplies nothing (capacity 0 from it) and its row subtitle reads
    * "No board for this window yet". Distinct from a dead source ("Deleted
    * board"), which leaves this unset. iOS twin: `WizardSourceSupply.noBoardForWindow`.

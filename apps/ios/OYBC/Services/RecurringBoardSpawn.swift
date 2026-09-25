@@ -19,7 +19,7 @@ import GRDB
 enum RecurringSpawnOutcome {
     /// `noBoardForWindowSourceIds`: board-kind sources that resolved to NO
     /// board for this window (owner ruling 2026-09-24 — a series with no
-    /// instance containing the window start, or an ended/sealed one-off).
+    /// instance open now, or an ended/sealed one-off).
     /// They dealt nothing; the board's spawn-provenance note says
     /// "No board for this window yet". Web twin: the same field on
     /// `SpawnResult`.

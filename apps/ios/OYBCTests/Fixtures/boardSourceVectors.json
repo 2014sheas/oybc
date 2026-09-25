@@ -2009,6 +2009,27 @@
       },
       "now": "2026-09-16T12:00:00.000Z",
       "expected": false
+    },
+    {
+      "name": "eligibility_localIsoEndsTonight_eligible",
+      "_why": "LOCAL-ISO board dates (no Z — the shape resolveWizardDates / BoardWizardPersist store): a daily board ending tonight at local 23:59:59.999 is open at local noon; both sides parse as local wall-clock, so the result is zone-independent",
+      "board": {
+        "status": "active",
+        "endDate": "2026-09-16T23:59:59.999",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000",
+      "expected": true
+    },
+    {
+      "name": "eligibility_localIsoEndedLastNight_ineligible",
+      "board": {
+        "status": "active",
+        "endDate": "2026-09-15T23:59:59.999",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000",
+      "expected": false
     }
   ],
   "openSeriesInstanceVectors": [
@@ -2212,6 +2233,35 @@
       "candidates": [],
       "now": "2026-09-16T12:00:00.000Z",
       "expectedId": null
+    },
+    {
+      "name": "openSeries_localIsoDates_currentPicked",
+      "_why": "LOCAL-ISO instance dates + local now (the stored shape): last week ended, this week open, next week not started",
+      "candidates": [
+        {
+          "id": "wk-last",
+          "startDate": "2026-09-07T00:00:00.000",
+          "endDate": "2026-09-13T23:59:59.999",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-this",
+          "startDate": "2026-09-14T00:00:00.000",
+          "endDate": "2026-09-20T23:59:59.999",
+          "status": "active",
+          "isDeleted": false
+        },
+        {
+          "id": "wk-next",
+          "startDate": "2026-09-21T00:00:00.000",
+          "endDate": "2026-09-27T23:59:59.999",
+          "status": "active",
+          "isDeleted": false
+        }
+      ],
+      "now": "2026-09-16T12:00:00.000",
+      "expectedId": "wk-this"
     }
   ]
 }

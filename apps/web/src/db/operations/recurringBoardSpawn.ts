@@ -56,8 +56,8 @@ export type SpawnResult =
       windowStart: string;
       /**
        * Board-kind source ids that resolved to NO board for this window
-       * (owner ruling 2026-09-24 — a series with no instance containing the
-       * window start, or an ended/sealed one-off). They dealt nothing; the
+       * (owner ruling 2026-09-24 — a series with no instance open now, or an
+       * ended/sealed one-off). They dealt nothing; the
        * board's spawn-provenance note says "No board for this window yet".
        */
       noBoardForWindowSourceIds: string[];

@@ -977,7 +977,7 @@ describe('spawnTemplateBoard — series binding (loose-ends sweep 2026-09-09)', 
     for (const id of oldIds) expect(placed.has(id)).toBe(false);
   });
 
-  it('a series with no instance CONTAINING the window deals nothing from it and records the note', async () => {
+  it('a series with no instance OPEN NOW deals nothing from it and records the note', async () => {
     // Owner ruling 2026-09-24: the only instance is LAST week's (ended) —
     // the old fallback ("newest started") pulled from it. Now that source
     // supplies nothing, the window still spawns from the manual layer, and
