@@ -1890,5 +1890,251 @@
         "t5"
       ]
     }
+  ],
+  "eligibilityVectors": [
+    {
+      "name": "eligibility_openWindow_eligible",
+      "_why": "endDate after now — the window is still open",
+      "board": {
+        "status": "active",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_endsExactlyNow_eligible",
+      "_why": "endDate >= now is inclusive",
+      "board": {
+        "status": "active",
+        "endDate": "2026-09-16T12:00:00.000Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_indefinite_eligible",
+      "_why": "no endDate = an unbounded window, never ends",
+      "board": {
+        "status": "active",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_endedYesterday_ineligible",
+      "_why": "owner ruling 2026-09-24: an ended board is never a source — no lookback",
+      "board": {
+        "status": "active",
+        "endDate": "2026-09-15T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_sealed_ineligible",
+      "_why": "a sealed board is a permanent record, never a source (even with an open-looking window)",
+      "board": {
+        "status": "active",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "sealedAt": "2026-09-16T00:00:00.000Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_unparseableEndDate_eligible",
+      "_why": "unparseable endDate fails OPEN",
+      "board": {
+        "status": "active",
+        "endDate": "not-a-date",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_completedOpenWindow_eligible",
+      "_why": "a greenlogged board whose window is still open stays a source",
+      "board": {
+        "status": "completed",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": true
+    },
+    {
+      "name": "eligibility_completedEnded_ineligible",
+      "_why": "the retired completedAt lookback no longer rescues an ended board",
+      "board": {
+        "status": "completed",
+        "endDate": "2026-09-10T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_archived_ineligible",
+      "board": {
+        "status": "archived",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_draft_ineligible",
+      "board": {
+        "status": "draft",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": false
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    },
+    {
+      "name": "eligibility_deleted_ineligible",
+      "board": {
+        "status": "active",
+        "endDate": "2026-09-20T23:59:59.999Z",
+        "isDeleted": true
+      },
+      "now": "2026-09-16T12:00:00.000Z",
+      "expected": false
+    }
+  ],
+  "seriesForWindowVectors": [
+    {
+      "name": "seriesForWindow_containingInstance_picked",
+      "_why": "the instance whose [startDate, endDate] contains the reference",
+      "candidates": [
+        {
+          "id": "wk-1",
+          "startDate": "2026-09-07T00:00:00.000",
+          "endDate": "2026-09-13T23:59:59.999"
+        },
+        {
+          "id": "wk-2",
+          "startDate": "2026-09-14T00:00:00.000",
+          "endDate": "2026-09-20T23:59:59.999"
+        },
+        {
+          "id": "wk-3",
+          "startDate": "2026-09-21T00:00:00.000",
+          "endDate": "2026-09-27T23:59:59.999"
+        }
+      ],
+      "reference": "2026-09-15T00:00:00.000",
+      "expectedId": "wk-2"
+    },
+    {
+      "name": "seriesForWindow_referenceOnStartBoundary_inclusive",
+      "candidates": [
+        {
+          "id": "wk-1",
+          "startDate": "2026-09-07T00:00:00.000",
+          "endDate": "2026-09-13T23:59:59.999"
+        },
+        {
+          "id": "wk-2",
+          "startDate": "2026-09-14T00:00:00.000",
+          "endDate": "2026-09-20T23:59:59.999"
+        }
+      ],
+      "reference": "2026-09-14T00:00:00.000",
+      "expectedId": "wk-2"
+    },
+    {
+      "name": "seriesForWindow_referenceOnEndBoundary_inclusive",
+      "candidates": [
+        {
+          "id": "wk-1",
+          "startDate": "2026-09-07T00:00:00.000",
+          "endDate": "2026-09-13T23:59:59.999"
+        }
+      ],
+      "reference": "2026-09-13T23:59:59.999",
+      "expectedId": "wk-1"
+    },
+    {
+      "name": "seriesForWindow_indefiniteInstance_contains",
+      "_why": "a null endDate is an open window",
+      "candidates": [
+        {
+          "id": "ongoing",
+          "startDate": "2026-09-01T00:00:00.000"
+        }
+      ],
+      "reference": "2026-12-01T00:00:00.000",
+      "expectedId": "ongoing"
+    },
+    {
+      "name": "seriesForWindow_noneContains_null",
+      "_why": "owner ruling 2026-09-24: never fall back to an ended or future instance — no board for this window yet",
+      "candidates": [
+        {
+          "id": "wk-1",
+          "startDate": "2026-09-07T00:00:00.000",
+          "endDate": "2026-09-13T23:59:59.999"
+        },
+        {
+          "id": "wk-3",
+          "startDate": "2026-09-21T00:00:00.000",
+          "endDate": "2026-09-27T23:59:59.999"
+        }
+      ],
+      "reference": "2026-09-15T00:00:00.000",
+      "expectedId": null
+    },
+    {
+      "name": "seriesForWindow_empty_null",
+      "candidates": [],
+      "reference": "2026-09-15T00:00:00.000",
+      "expectedId": null
+    },
+    {
+      "name": "seriesForWindow_overlap_latestStartDate",
+      "_why": "two instances contain the reference — latest startDate wins",
+      "candidates": [
+        {
+          "id": "mo-early",
+          "startDate": "2026-09-01T00:00:00.000",
+          "endDate": "2026-09-30T23:59:59.999"
+        },
+        {
+          "id": "mo-late",
+          "startDate": "2026-09-10T00:00:00.000",
+          "endDate": "2026-09-30T23:59:59.999"
+        }
+      ],
+      "reference": "2026-09-15T00:00:00.000",
+      "expectedId": "mo-late"
+    },
+    {
+      "name": "seriesForWindow_overlapEqualStart_lowestId",
+      "_why": "two offline devices spawned the same window — lowest id wins",
+      "candidates": [
+        {
+          "id": "zzz",
+          "startDate": "2026-09-14T00:00:00.000",
+          "endDate": "2026-09-20T23:59:59.999"
+        },
+        {
+          "id": "aaa",
+          "startDate": "2026-09-14T00:00:00.000",
+          "endDate": "2026-09-20T23:59:59.999"
+        }
+      ],
+      "reference": "2026-09-15T00:00:00.000",
+      "expectedId": "aaa"
+    }
   ]
 }

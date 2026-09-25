@@ -280,12 +280,12 @@ describe('REPRO derived counter: completing the daily must not complete the week
 });
 
 /**
- * THE REPRODUCTION. The daily pulls a weekly board whose window has ENDED but
- * which is still ACTIVE and not yet sealed — a designed flow:
- * `isEligibleSourceBoard` explicitly offers a closed-window ACTIVE board for
- * the lookback period ("Window closed without the board being marked complete
- * — offer it"), and the backstop seal only lands min(48h, window/4) = 42h
- * after a weekly's end, lazily on app-open.
+ * THE REPRODUCTION. Today's daily pulls a weekly board, and the log lands
+ * after the weekly's window has ENDED while it is still ACTIVE and not yet
+ * sealed (the backstop seal only lands min(48h, window/4) = 42h after a
+ * weekly's end, lazily on app-open). Since the owner ruling of 2026-09-24 an
+ * ended board is never a source, so the pull itself is made on the weekly's
+ * last day (planning ahead) — the post-window LOG is what these pins cover.
  *
  * The weekly logged 17 of 20 inside its own window (NOT met). Today the owner
  * logs 3 on the daily's pro-rated derived square. The weekly square then
@@ -386,9 +386,22 @@ describe('REPRO (bug): daily log completes a PAST-window, unsealed weekly board 
     return { weeklyId, weeklyTaskId };
   }
 
-  async function logTodayOnDaily(weeklyId: string, member: Task) {
-    vi.setSystemTime(NOW); // 2026-09-23 — three days after the weekly ended
+  /**
+   * Plans today's daily from the weekly WHILE THE WEEKLY IS STILL OPEN
+   * (2026-09-20, its last day) — since the owner ruling of 2026-09-24 an
+   * ended board is never a source, so the pull can no longer be made after
+   * the weekly ends — then logs on it today (2026-09-23, three days after
+   * the weekly ended). `betweenPullAndLog` runs in the gap (the seal).
+   */
+  async function logTodayOnDaily(
+    weeklyId: string,
+    member: Task,
+    betweenPullAndLog: () => Promise<void> = async () => {},
+  ) {
+    vi.setSystemTime(new Date('2026-09-20T12:00:00.000'));
     const dailyId = await createDailyPulling(weeklyId, member);
+    await betweenPullAndLog();
+    vi.setSystemTime(NOW); // 2026-09-23 — three days after the weekly ended
     const dId = derivedTaskId(dailyId, ROOT);
     const d = (await db.tasks.get(dId))!;
     expect(d.maxCount).toBeLessThan(20); // a distinct, pro-rated daily row
@@ -431,10 +444,11 @@ describe('REPRO (bug): daily log completes a PAST-window, unsealed weekly board 
 
   it('SEALED weekly with a DERIVED square: a pull-path re-derive after the daily log keeps the frozen record (audit finding #1)', async () => {
     const { weeklyId, weeklyTaskId } = await buildPastWeekly('derived');
-    vi.setSystemTime(new Date('2026-09-22T19:00:00.000')); // past the 42h backstop
-    expect(await sealBoard(weeklyId)).toBe(true);
-    expect((await db.boards.get(weeklyId))!.sealedCompletedCells ?? []).toEqual([]);
-    await logTodayOnDaily(weeklyId, (await db.tasks.get(weeklyTaskId))!);
+    await logTodayOnDaily(weeklyId, (await db.tasks.get(weeklyTaskId))!, async () => {
+      vi.setSystemTime(new Date('2026-09-22T19:00:00.000')); // past the 42h backstop
+      expect(await sealBoard(weeklyId)).toBe(true);
+      expect((await db.boards.get(weeklyId))!.sealedCompletedCells ?? []).toEqual([]);
+    });
     // On dev the weekly row latched from this post-seal log. Now the ended row
     // is frozen (propagation skips it), so the latch is never written — and
     // even if it were, the re-derive below would not read it.

@@ -25,7 +25,10 @@ import {
   type BoardWindow,
   type Task,
 } from '@oybc/shared';
-import type { BoardSourceSupplyInfo } from '../../db/operations/boardSources';
+import type {
+  BoardSourceSupplyInfo,
+  BoardSourceSupplyResolution,
+} from '../../db/operations/boardSources';
 import {
   availableCountForSource,
   clampAllSourceRanges,
@@ -334,5 +337,28 @@ export function boardSupplyEntry(info: BoardSourceSupplyInfo | null): WizardSour
     // preview both read them off the supply cache, never a second board read.
     windowCountByTaskId: info.windowCountByTaskId,
     sourceWindow: info.sourceWindow,
+  };
+}
+
+/**
+ * Map a window-aware board-supply resolution into the wizard's supply-cache
+ * entry: `live` → {@link boardSupplyEntry}; `dead` → the "Deleted board"
+ * miss; `noWindow` → the stored board's name, an empty supply and
+ * `noBoardForWindow` (the row's "No board for this window yet" subtitle —
+ * owner ruling 2026-09-24). iOS twin: `WizardSourceSupply.init(resolution:)`.
+ *
+ * @param resolution - From `fetchBoardSourceSupplyForWindow`.
+ * @returns The cache entry to store for that board source.
+ */
+export function boardSupplyEntryForResolution(
+  resolution: BoardSourceSupplyResolution,
+): WizardSourceSupply {
+  if (resolution.kind === 'live') return boardSupplyEntry(resolution.info);
+  if (resolution.kind === 'dead') return boardSupplyEntry(null);
+  return {
+    displayName: resolution.displayName,
+    rawSupplyTaskIds: [],
+    doneTaskIds: new Set(),
+    noBoardForWindow: true,
   };
 }

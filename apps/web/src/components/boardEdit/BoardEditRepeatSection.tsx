@@ -171,7 +171,12 @@ export function BoardEditRepeatSection({
     board.spawnedFromTemplateId != null && sourceTemplate && isFreshlyDealtBoard(board)
       ? sourceTemplate
       : undefined;
-  const spawnNoteSupplies = useSpawnNoteSupplies(noteTemplate, poolsById, taskMap);
+  const spawnNoteSupplies = useSpawnNoteSupplies(
+    noteTemplate,
+    poolsById,
+    taskMap,
+    board.startDate,
+  );
 
   if (board.spawnedFromTemplateId != null) {
     // A soft-deleted / unresolved source record hides the section entirely
@@ -195,10 +200,11 @@ export function BoardEditRepeatSection({
           <p className={styles.repeatNote}>
             {formatSpawnProvenanceNote(
               summarizeSpawnProvenanceFromSupplies(
-                spawnNoteSupplies,
+                spawnNoteSupplies.supplies,
                 noteTemplate.manualTaskIds ?? [],
                 counterFamilyByTaskId,
                 dealtTaskIds,
+                spawnNoteSupplies.noBoardForWindowCount,
               ),
             )}
           </p>

@@ -5,7 +5,10 @@ import {
   summarizeSpawnProvenanceFromSupplies,
   formatSpawnProvenanceNote,
 } from '../../src/algorithms/poolMix';
-import type { BoardSourceSupply } from '../../src/algorithms/boardSources';
+import {
+  NO_BOARD_FOR_WINDOW_NOTE,
+  type BoardSourceSupply,
+} from '../../src/algorithms/boardSources';
 import type { BoardSource } from '../../src/types/boardSource';
 import { TaskType } from '../../src/constants/enums';
 import type { Task } from '../../src/types/task';
@@ -456,5 +459,34 @@ describe('summarizeSpawnProvenanceFromSupplies + formatSpawnProvenanceNote', () 
     const summary = summarizeSpawnProvenanceFromSupplies([], [], {}, []);
     expect(summary).toEqual({ dealt: 0, mixSize: 0, poolSourcedCount: 0, manualSourcedCount: 0 });
     expect(formatSpawnProvenanceNote(summary)).toBe('Picked 0 of 0');
+  });
+
+  // Owner ruling 2026-09-24 — a board source with no board for the spawned
+  // window (a series whose instance doesn't exist yet, an ended one-off)
+  // deals nothing; the provenance note says so.
+  it('a board source with no board for this window appends the note', () => {
+    const summary = summarizeSpawnProvenanceFromSupplies(
+      [poolSupply('pool-a', ['p1', 'p2'])],
+      ['m1'],
+      {},
+      ['p1', 'p2', 'm1'],
+      1,
+    );
+    expect(summary).toEqual({
+      dealt: 3,
+      mixSize: 3,
+      poolSourcedCount: 2,
+      manualSourcedCount: 1,
+      noBoardForWindowCount: 1,
+    });
+    expect(formatSpawnProvenanceNote(summary)).toBe(
+      `Picked 3 of 3 — 2 pulled in, 1 added today · ${NO_BOARD_FOR_WINDOW_NOTE}`,
+    );
+  });
+
+  it('a zero windowless count leaves the summary and the note unchanged', () => {
+    const summary = summarizeSpawnProvenanceFromSupplies([], ['m1'], {}, ['m1'], 0);
+    expect(summary).toEqual({ dealt: 1, mixSize: 1, poolSourcedCount: 0, manualSourcedCount: 1 });
+    expect(formatSpawnProvenanceNote(summary)).toBe('Picked 1 of 1 — 1 added today');
   });
 });

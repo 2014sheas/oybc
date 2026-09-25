@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { BoardSource, BoardWindow, CompoundChild, Pool, Task } from '@oybc/shared';
-import { fetchBoardSourceSupply } from '../../db/operations/boardSources';
+import { fetchBoardSourceSupplyForWindow } from '../../db/operations/boardSources';
 import {
   buildSupplyInfoMap,
   selectionUnion,
@@ -32,7 +32,7 @@ import {
 } from './wizardSources';
 import {
   appendSource,
-  boardSupplyEntry,
+  boardSupplyEntryForResolution,
   droppedSelectionIds,
   removeSourceById,
   toggleIdInSet,
@@ -82,6 +82,15 @@ export interface UseWizardSourcesArgs {
    * the wizard's timeframe never re-runs the prefill effect.
    */
   targetWindow: BoardWindow;
+  /**
+   * The NEW board's window `startDate` (local ISO — `resolveWizardDates`),
+   * the one reference every board source resolves against (owner ruling
+   * 2026-09-24): live supply here, then Preview, capacity, persist and the
+   * recurring spawn all bind a series to its instance CONTAINING this
+   * instant. Undefined (dates not resolvable yet) falls back to now.
+   * Changing it re-resolves every board supply.
+   */
+  sourceReference: string | undefined;
   /** The wizard's current selection — the diff base for purges. */
   selectedTaskIds: Set<string>;
   /** Purge center/pending/staged state for ids a transition drops. */
@@ -136,6 +145,7 @@ export function useWizardSources({
   childrenByCompoundId,
   prefillRemainingTargetsOnResolve,
   targetWindow,
+  sourceReference,
   selectedTaskIds,
   purgeDroppedIds,
   markUserTouched,
@@ -235,7 +245,9 @@ export function useWizardSources({
     void (async () => {
       const next: SupplyInfoMap = {};
       for (const boardId of ids) {
-        next[boardId] = boardSupplyEntry(await fetchBoardSourceSupply(boardId));
+        next[boardId] = boardSupplyEntryForResolution(
+          await fetchBoardSourceSupplyForWindow(boardId, sourceReference),
+        );
       }
       if (cancelled) return;
       setBoardSupplyById((prev) => ({ ...prev, ...next }));
@@ -265,7 +277,7 @@ export function useWizardSources({
     return () => {
       cancelled = true;
     };
-  }, [boardSourceIdsKey, prefillRemainingTargetsOnResolve, hydratedBoardSourceIds]);
+  }, [boardSourceIdsKey, sourceReference, prefillRemainingTargetsOnResolve, hydratedBoardSourceIds]);
 
   /**
    * Board Sources P4 — apply a sources transition: compute which selected

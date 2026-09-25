@@ -33,6 +33,9 @@ import {
   sourceHasConfiguration,
   removeSourceLossSentence,
   pickSeriesInstance,
+  isEligibleSourceBoard,
+  resolveSeriesInstanceForWindow,
+  type SourceBoardCandidate,
   templateReferencesTask,
   type TemplateReferenceRecord,
   type BoardSourceFilter,
@@ -104,6 +107,18 @@ interface Fixture {
     candidates: Array<{ id: string; startDate: string }>;
     expectedId: string;
   }>;
+  eligibilityVectors: Array<{
+    name: string;
+    board: SourceBoardCandidate;
+    now: string;
+    expected: boolean;
+  }>;
+  seriesForWindowVectors: Array<{
+    name: string;
+    candidates: Array<{ id: string; startDate: string; endDate?: string }>;
+    reference: string;
+    expectedId: string | null;
+  }>;
   referenceVectors: Array<{
     name: string;
     template: TemplateReferenceRecord;
@@ -134,6 +149,8 @@ describe('boardSourceVectors fixture', () => {
     expect(fixture.seriesInstanceVectors.length).toBeGreaterThan(0);
     expect(fixture.referenceVectors.length).toBeGreaterThan(0);
     expect(fixture.doneFilterVectors.length).toBeGreaterThan(0);
+    expect(fixture.eligibilityVectors.length).toBeGreaterThan(0);
+    expect(fixture.seriesForWindowVectors.length).toBeGreaterThan(0);
   });
 
   test.each(fixture.referenceVectors.map((v) => [v.name, v] as const))(
@@ -165,6 +182,26 @@ describe('boardSourceVectors fixture', () => {
       // Input order must not matter — the id tie-break is what makes
       // two devices with differently-ordered rows agree.
       expect(pickSeriesInstance([...v.candidates].reverse())?.id).toBe(v.expectedId);
+    },
+  );
+
+  test.each(fixture.eligibilityVectors.map((v) => [v.name, v] as const))(
+    'eligibility: %s',
+    (_name, v) => {
+      expect(isEligibleSourceBoard(v.board, new Date(v.now))).toBe(v.expected);
+    },
+  );
+
+  test.each(fixture.seriesForWindowVectors.map((v) => [v.name, v] as const))(
+    'series for window: %s',
+    (_name, v) => {
+      expect(resolveSeriesInstanceForWindow(v.candidates, v.reference)?.id ?? null).toBe(
+        v.expectedId,
+      );
+      // Input order must not matter (the tie-break is total).
+      expect(
+        resolveSeriesInstanceForWindow([...v.candidates].reverse(), v.reference)?.id ?? null,
+      ).toBe(v.expectedId);
     },
   );
 

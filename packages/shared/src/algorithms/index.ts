@@ -343,8 +343,13 @@ export { makeSeededRng } from './seededRng';
 export { boardDisplayName } from './boardDisplayName';
 export {
   isEligibleSourceBoard,
+  NO_BOARD_FOR_WINDOW_NOTE,
   pickSeriesInstance,
-  SOURCE_BOARD_LOOKBACK_DAYS,
+  resolveSeriesInstanceForWindow,
 } from './boardSources';
-export type { SourceBoardCandidate, SeriesInstanceCandidate } from './boardSources';
+export type {
+  SourceBoardCandidate,
+  SeriesInstanceCandidate,
+  SeriesWindowCandidate,
+} from './boardSources';
 export type { BoardNameFields } from './boardDisplayName';
