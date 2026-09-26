@@ -222,6 +222,45 @@ func uncreatedCoreBoardSlots(_ slots: [CoreBoardSlot]) -> [CoreBoardSlot] {
     slots.filter { $0.currentBoard == nil }
 }
 
+/// The per-window core-board pager route (`CoreWindowRoute`) that would
+/// display `board`, so that navigating to a core board from ANY entry
+/// point (task-detail Usage jump, counter member card, closing-out
+/// banner, notification deep-link, post-create landing) opens the
+/// swipe-to-browse pager rather than the plain `BoardPlayView` — the same
+/// surface the Core Boards grid opens.
+///
+/// Returns nil unless the board is exactly what the pager would find for
+/// its window: a non-deleted `isCore` board on a daily / weekly / monthly /
+/// yearly timeframe whose `startDate` equals the window start recomputed
+/// from that date under the caller's `weekStartDay`. The last check is the
+/// pager's own lookup key (`CoreBoardWindowViewModel` matches on
+/// string-equal `startDate`), so a board this returns nil for would render
+/// as an EMPTY window in the pager — e.g. a weekly core board stamped under
+/// a since-changed week-start preference — and must stay on the plain
+/// route where it still opens.
+///
+/// TS twin: `coreWindowRouteForBoard` in
+/// `packages/shared/src/algorithms/recurringBoards.ts`.
+///
+/// - Parameters:
+///   - board: Any board.
+///   - weekStartDay: The user's week-start preference raw value (weekly only).
+/// - Returns: The pager route, or nil when the plain route must be used.
+func coreWindowRoute(for board: Board, weekStartDay: String) -> CoreWindowRoute? {
+    guard board.isCore, !board.isDeleted else { return nil }
+    guard recurringTimeframesByWindowAsc.contains(board.timeframe) else { return nil }
+    guard let seed = parseISO8601Date(board.startDate),
+          let window = computeTimeframeBoundaries(
+              timeframe: board.timeframe,
+              referenceDate: seed,
+              weekStartDay: weekStartDay
+          )
+    else { return nil }
+    let startISO = wizardLocalISOString(window.start)
+    guard startISO == board.startDate else { return nil }
+    return CoreWindowRoute(timeframe: board.timeframe, windowStart: startISO)
+}
+
 /// Whether a board is still "freshly dealt" — i.e. the user hasn't logged
 /// any real progress on it yet. Gates the Board-screen spawn-provenance
 /// note (Task Pools + Recurring Boards Rework, P6) and, in the future, the

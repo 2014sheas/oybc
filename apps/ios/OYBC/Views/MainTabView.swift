@@ -120,8 +120,33 @@ struct MainTabView: View {
 
     private func openBoard(_ boardId: String) {
         boardsPath = NavigationPath()
-        boardsPath.append(boardId)
+        pushBoard(boardId)
         selectedTab = 0
+    }
+
+    /// Pushes a board onto the Boards stack — as the per-window core-board
+    /// pager (`CoreWindowRoute`) when it's a core board, so navigating to a
+    /// core board from ANYWHERE (task-detail Usage jump, counter member
+    /// card, closing-out banner, notification deep-link, post-create
+    /// landing) gets the same swipe-to-browse chrome the Core Boards grid
+    /// opens; as the plain `BoardPlayView` (`String` destination) otherwise.
+    /// Every `boardsPath` board push goes through here. Web twin: the
+    /// `/boards/:id` redirect in `BoardPlayPage`.
+    ///
+    /// One primary-key row read at navigation time (a local read, well under
+    /// the 10 ms budget); an unreadable id falls back to the plain push,
+    /// whose not-found state already handles it.
+    private func pushBoard(_ boardId: String) {
+        let board = try? AppDatabase.shared.fetchBoard(id: boardId)
+        if let board,
+           let route = coreWindowRoute(
+               for: board,
+               weekStartDay: authService.userPreferences.weekStartDay.rawValue
+           ) {
+            boardsPath.append(route)
+        } else {
+            boardsPath.append(boardId)
+        }
     }
 
     /// Cross-tab: resume a draft board in the Create-tab wizard. Stashes the
@@ -204,7 +229,7 @@ struct MainTabView: View {
                         // action: push the still-live board onto this SAME
                         // stack (we're already on the Boards tab), matching
                         // the Core Boards grid's onOpenCoreWindow pattern.
-                        boardsPath.append(boardId)
+                        pushBoard(boardId)
                     }
                 )
                 .navigationDestination(for: TutorialRoute.self) { _ in
@@ -232,9 +257,7 @@ struct MainTabView: View {
                             pendingTargetWindowDate = date
                             selectedTab = 2
                         },
-                        onOpenBoard: { boardId in
-                            boardsPath.append(boardId)
-                        },
+                        onOpenBoard: { boardId in pushBoard(boardId) },
                         onResumeDraft: { boardId in openDraftInWizard(boardId) }
                     )
                 }
@@ -294,10 +317,9 @@ struct MainTabView: View {
                                 // the user lands on the board they just
                                 // created. Reset the Boards stack first
                                 // so the new board is the only thing on
-                                // top of the list.
-                                boardsPath = NavigationPath()
-                                boardsPath.append(boardId)
-                                selectedTab = 0
+                                // top of the list (a core board lands in
+                                // its pager window).
+                                openBoard(boardId)
                             },
                             onTemplateCompleted: { _ in
                                 // Phase 6.2: recurring-template completions
@@ -316,7 +338,8 @@ struct MainTabView: View {
 
             NavigationStack(path: $profilePath) {
                 ProfileView(
-                    onOpenTutorial: { openTutorial() }
+                    onOpenTutorial: { openTutorial() },
+                    onOpenBoard: { boardId in openBoard(boardId) }
                 )
                 // Tutorial deep-links (and any future direct nav) push these
                 // Profile sub-pages onto the bound stack.

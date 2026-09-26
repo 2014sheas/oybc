@@ -283,6 +283,9 @@ export interface SeedBoard {
   linesCompleted?: number;
   completedLineIds?: string[];
   spawnedFromTemplateId?: string;
+  /** Phase 6.1 core-board marker — a core board opened by id redirects
+   *  into the per-window pager (`core-board-pager-redirect.spec.ts`). */
+  isCore?: boolean;
 }
 
 export async function seedBoard(page: Page, board: SeedBoard): Promise<void> {

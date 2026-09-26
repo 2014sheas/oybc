@@ -31,6 +31,9 @@ struct CounterDetailView: View {
     /// hub on push (web carries it as `?showExpired=1`). Defaults to the hub's
     /// own default, so other entry points need not pass it.
     var showExpired: Bool = false
+    /// Member-card tap → the host opens that board (cross-tab via
+    /// `MainTabView.openBoard`, so a core board lands in its pager window).
+    let onOpenBoard: (String) -> Void
 
     @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
@@ -66,7 +69,8 @@ struct CounterDetailView: View {
                     logError: logError,
                     deleteError: deleteError,
                     onLog: { amount, direction in handleLog(amount: amount, direction: direction) },
-                    onDeleteTap: handleDeleteTap
+                    onDeleteTap: handleDeleteTap,
+                    onOpenBoard: onOpenBoard
                 )
             } else if isLoaded {
                 notFoundState
@@ -293,6 +297,8 @@ struct CounterDetailContent: View {
     /// footer's red text link — the container computes the deletion impact
     /// and shows the confirm sheet.
     var onDeleteTap: () -> Void
+    /// Member-card tap → open that board (host-routed; core → pager).
+    var onOpenBoard: (String) -> Void
 
     @State private var selectedAmount: Int
     @State private var isCustomActive = false
@@ -311,7 +317,8 @@ struct CounterDetailContent: View {
         /// a real tap sequence. Production call sites never pass this.
         initialCustomActive: Bool = false,
         onLog: @escaping (Int, CounterLogDirection) -> Void = { _, _ in },
-        onDeleteTap: @escaping () -> Void = {}
+        onDeleteTap: @escaping () -> Void = {},
+        onOpenBoard: @escaping (String) -> Void = { _ in }
     ) {
         self.group = group
         self.dailyTotals = dailyTotals
@@ -320,6 +327,7 @@ struct CounterDetailContent: View {
         self.deleteError = deleteError
         self.onLog = onLog
         self.onDeleteTap = onDeleteTap
+        self.onOpenBoard = onOpenBoard
         _selectedAmount = State(initialValue: initialSelectedAmount ?? CounterLogAmount.initialChip(group.defaultLogAmount))
         _isCustomActive = State(initialValue: initialCustomActive)
     }
@@ -745,10 +753,8 @@ struct CounterDetailContent: View {
             return min(1.0, Double(member.logged) / Double(member.goal))
         }()
 
-        return NavigationLink {
-            if let boardId = member.boardId {
-                BoardPlayView(boardId: boardId)
-            }
+        return Button {
+            if let boardId = member.boardId { onOpenBoard(boardId) }
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {

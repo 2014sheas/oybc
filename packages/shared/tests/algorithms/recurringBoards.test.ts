@@ -1,5 +1,6 @@
 import {
   PARENT_TIMEFRAMES,
+  coreWindowRouteForBoard,
   findPendingRecurringBoards,
   getCoreBoardSlots,
   uncreatedCoreBoardSlots,
@@ -659,5 +660,63 @@ describe('uncreatedCoreBoardSlots', () => {
     const manualDaily = boardForWindow(Timeframe.DAILY, NOW, { id: 'manual', isCore: false });
     const slots = getCoreBoardSlots([manualDaily], PREFS_ALL_ENABLED, NOW);
     expect(uncreatedCoreBoardSlots(slots).map((s) => s.timeframe)).toContain(Timeframe.DAILY);
+  });
+});
+
+// ─── coreWindowRouteForBoard ──────────────────────────────────────────────────
+
+describe('coreWindowRouteForBoard', () => {
+  const ref = new Date(2026, 8, 16, 12); // Wed Sep 16 2026, local noon
+
+  it('routes a core board on each recurring timeframe to its own window', () => {
+    for (const tf of [Timeframe.DAILY, Timeframe.WEEKLY, Timeframe.MONTHLY, Timeframe.YEARLY]) {
+      const board = boardForWindow(tf, ref, { isCore: true });
+      expect(coreWindowRouteForBoard(board, 'monday')).toEqual({
+        timeframe: tf,
+        windowStart: board.startDate,
+      });
+    }
+  });
+
+  it('returns null for an ad-hoc (non-core) board on a recurring timeframe', () => {
+    const board = boardForWindow(Timeframe.WEEKLY, ref, { isCore: false });
+    expect(coreWindowRouteForBoard(board, 'monday')).toBeNull();
+  });
+
+  it('returns null for a deleted core board', () => {
+    const board = boardForWindow(Timeframe.DAILY, ref, { isCore: true, isDeleted: true });
+    expect(coreWindowRouteForBoard(board, 'monday')).toBeNull();
+  });
+
+  it('returns null for custom and indefinite timeframes even when flagged core', () => {
+    const base = boardForWindow(Timeframe.DAILY, ref, { isCore: true });
+    for (const tf of [Timeframe.CUSTOM, Timeframe.INDEFINITE]) {
+      expect(coreWindowRouteForBoard({ ...base, timeframe: tf }, 'monday')).toBeNull();
+    }
+  });
+
+  it('routes every non-draft status alike (the pager shows sealed / completed windows too)', () => {
+    for (const status of [BoardStatus.ACTIVE, BoardStatus.COMPLETED, BoardStatus.ARCHIVED, BoardStatus.DRAFT]) {
+      const board = boardForWindow(Timeframe.MONTHLY, ref, { isCore: true, status });
+      expect(coreWindowRouteForBoard(board, 'monday')).not.toBeNull();
+    }
+  });
+
+  it('returns null when the stored startDate is not the window start the pager would look up', () => {
+    // A weekly core board stamped under a Monday week start, read back
+    // under a Sunday preference: the recomputed window start differs, so
+    // the pager would show an empty window — stay on the plain route.
+    const mondayBoard = boardForWindow(Timeframe.WEEKLY, ref, { isCore: true });
+    expect(coreWindowRouteForBoard(mondayBoard, 'sunday')).toBeNull();
+    expect(coreWindowRouteForBoard(mondayBoard, 'monday')).not.toBeNull();
+
+    // A mid-window startDate (not a boundary) never matches either.
+    const offBoundary = { ...mondayBoard, startDate: '2026-09-16T12:00:00.000' };
+    expect(coreWindowRouteForBoard(offBoundary, 'monday')).toBeNull();
+  });
+
+  it('returns null for an unparseable startDate', () => {
+    const board = boardForWindow(Timeframe.DAILY, ref, { isCore: true, startDate: 'not-a-date' });
+    expect(coreWindowRouteForBoard(board, 'monday')).toBeNull();
   });
 });

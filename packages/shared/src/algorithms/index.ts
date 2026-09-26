@@ -113,6 +113,7 @@ export type {
 
 export {
   PARENT_TIMEFRAMES,
+  coreWindowRouteForBoard,
   findPendingRecurringBoards,
   getCoreBoardSlots,
   getParentBoards,
@@ -120,7 +121,11 @@ export {
   uncreatedCoreBoardSlots,
 } from './recurringBoards';
 
-export type { CoreBoardSlot, PendingRecurringBoard } from './recurringBoards';
+export type {
+  CoreBoardSlot,
+  CoreWindowRouteTarget,
+  PendingRecurringBoard,
+} from './recurringBoards';
 
 export {
   STREAK_TIMEFRAMES,
