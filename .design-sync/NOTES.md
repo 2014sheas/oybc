@@ -71,6 +71,29 @@ node .ds-sync/package-validate.mjs ./ds-bundle
 - **Remote fonts** — `riso-webfonts.css` pins gstatic URLs; if Google rotates the
   woff2 hashes the old URLs 404 (fonts fall back). Re-fetch if previews go serif.
 
+## 2026-09-26 re-sync (11 components)
+
+- Pinned the three kit components added since July — `DiceButton`,
+  `RisoMiniBoardArt`, `RisoTypeBadge` — in `componentSrcMap` + `dtsPropsFor`,
+  authored `previews/<Name>.tsx` for each. `RisoIcon` gained the `lock` glyph and
+  `RisoSegmented` a `size: 'default' | 'compact'` prop; both `dtsPropsFor` bodies
+  were updated by hand (the re-sync risk above bit exactly as predicted).
+- `cfg.overrides.DiceButton` / `.RisoTypeBadge` = `{"cardMode": "column"}` —
+  their row-composition stories render wider than a grid cell (`[GRID_OVERFLOW]`).
+- `RisoTypeBadge` imports `TaskType` from `@oybc/shared` — the shared package
+  must be BUILT (`pnpm --filter @oybc/shared build`) before the converter bundles
+  from the barrel, or esbuild can't resolve it.
+- Converter deps this run: `playwright@1.62.0` (matches the repo's pin and the
+  cached `chromium-1234` build) + esbuild, ts-morph, @types/react, installed with
+  `npm i --cache <scratch>` (the `~/.npm` permission issue is still present).
+- `conventions.md` intro now says eleven primitives and names the three new
+  ones; every token/class it enumerates re-verified against
+  `ds-bundle/tokens/riso.css` (note: tokens land in `tokens/riso.css`, not
+  `_ds_bundle.css` — validate the header against that file).
+- The project also carries a hand-authored `templates/lock-a-square/` (the
+  per-square lock spec for Board Edit). It is NOT produced by this sync and must
+  never be listed in a plan's `deletes`.
+
 ## Known render warns
 
 None — validate exits clean with 0 warnings. Any warn on a future run is new.

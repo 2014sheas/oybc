@@ -2,9 +2,11 @@
 
 The web component kit for **OYBC (On Your Bingo Card)** — a risograph-print poster
 aesthetic (hard offset shadows, paper fills, bold grotesque type, a light/dark
-"day press / night press" contract). Eight primitives: `RisoButton`, `RisoCard`,
+"day press / night press" contract). Eleven primitives: `RisoButton`, `RisoCard`,
 `RisoChip`, `RisoSegmented`, `RisoSectionLabel`, `RisoIcon`, `RisoBrandMark`,
-`RisoBadge`. Compose screens from these + the tokens below — do not hand-roll
+`RisoBadge`, `RisoTypeBadge` (N/C/K/A task-type marker), `DiceButton` (the
+vary-level die on wizard member rows), `RisoMiniBoardArt` (the empty-state 3×3
+motif). Compose screens from these + the tokens below — do not hand-roll
 buttons/cards/badges.
 
 ## Setup — no provider, just tokens + a themed root
