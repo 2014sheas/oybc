@@ -17,6 +17,10 @@ import SwiftUI
 /// `CounterDetailView`, tapping its "+ Log" pill logs in place.
 struct CountersHubView: View {
 
+    /// Threaded into Counter detail on push — a member card opens its board
+    /// through the host's cross-tab navigation (core → its pager window).
+    let onOpenBoard: (String) -> Void
+
     @EnvironmentObject var authService: AuthService
 
     // MARK: - Private state
@@ -93,7 +97,7 @@ struct CountersHubView: View {
             }
         }
         .navigationDestination(item: $navigateToCounterId) { counterId in
-            CounterDetailView(counterId: counterId, showExpired: showExpired)
+            CounterDetailView(counterId: counterId, showExpired: showExpired, onOpenBoard: onOpenBoard)
         }
         .alert(
             "Counter not updated",

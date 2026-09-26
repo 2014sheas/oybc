@@ -258,6 +258,14 @@ struct BoardPlayView: View {
     /// correctly.
     @State private var pendingOpenBoardId: String?
 
+    /// Sheet `onDismiss` drain for `pendingOpenBoardId` (task-detail,
+    /// nested child-detail, and counter arrival sheets all use it).
+    private func drainPendingOpenBoard() {
+        guard let target = pendingOpenBoardId else { return }
+        pendingOpenBoardId = nil
+        onOpenBoard(target)
+    }
+
     // MARK: - Init
 
     /// Constructs the view and its data-loading `BoardPlayViewModel`.
@@ -1019,10 +1027,7 @@ struct BoardPlayView: View {
             // sheet (see `compoundChildDetailTaskId`): child dismiss closes
             // this sheet, then navigation lands here post-unmount — same
             // clean-transaction pattern as the library sheet below.
-            if let target = pendingOpenBoardId {
-                pendingOpenBoardId = nil
-                onOpenBoard(target)
-            }
+            drainPendingOpenBoard()
             // Board-integrity PR-5 (Item 5): this sheet's content (`detailSheet`)
             // can complete/edit the task, and its NESTED child-detail sheet edits/
             // deletes a compound child's `Task` itself — neither write goes through
@@ -1047,10 +1052,7 @@ struct BoardPlayView: View {
         .sheet(
             item: $taskDetailSheetTaskId,
             onDismiss: {
-                if let target = pendingOpenBoardId {
-                    pendingOpenBoardId = nil
-                    onOpenBoard(target)
-                }
+                drainPendingOpenBoard()
                 // Board-integrity PR-5 (Item 5): this sheet edits/deletes its task
                 // itself (bypasses this VM) — refresh so the grid reflects an edited
                 // title/type or a cascade-deleted placement.
@@ -1085,16 +1087,20 @@ struct BoardPlayView: View {
         }
         // P3 — arrival banner tap → Counter Detail (single counter) / Counters
         // Hub (multiple). Presented as a sheet (wrapped in its own
-        // NavigationStack so the destinations' member→board NavigationLinks work)
-        // to match how this view presents every other secondary surface — and to
-        // avoid a nav-push conflicting with the embedded pager's own chrome.
-        .sheet(item: $arrivalNavTarget) { target in
+        // NavigationStack for the hub → detail push) to match how this view
+        // presents every other secondary surface — and to avoid a nav-push
+        // conflicting with the embedded pager's own chrome. A member→board
+        // tap closes the sheet and routes via `onOpenBoard` on dismiss (same
+        // clean-transaction pattern as the task-detail sheets above), so a
+        // core board lands in its pager window.
+        .sheet(item: $arrivalNavTarget, onDismiss: drainPendingOpenBoard) { target in
+            let openBoard: (String) -> Void = { pendingOpenBoardId = $0; arrivalNavTarget = nil }
             NavigationStack {
                 switch target {
                 case .counter(let counterId):
-                    CounterDetailView(counterId: counterId)
+                    CounterDetailView(counterId: counterId, onOpenBoard: openBoard)
                 case .hub:
-                    CountersHubView()
+                    CountersHubView(onOpenBoard: openBoard)
                 }
             }
         }

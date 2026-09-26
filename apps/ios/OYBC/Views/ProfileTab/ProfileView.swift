@@ -25,6 +25,11 @@ struct ProfileView: View {
     /// Opens the Getting Started tutorial board (cross-tab to Boards).
     /// Optional so #Preview / tests can mount ProfileView standalone.
     var onOpenTutorial: (() -> Void)? = nil
+    /// Cross-tab: open a board from a Profile sub-page (Counters hub → Counter
+    /// detail → member card). Routed by `MainTabView.openBoard`, so a core
+    /// board lands in its pager window. Optional like `onOpenTutorial` (previews
+    /// / snapshots compose the view bare); MainTabView always wires it.
+    var onOpenBoard: ((String) -> Void)? = nil
 
     // MARK: - Private state
 
@@ -319,7 +324,7 @@ struct ProfileView: View {
 
             // Shared counters (Shared Counters P1)
             NavigationLink {
-                CountersHubView()
+                CountersHubView(onOpenBoard: onOpenBoard ?? { _ in })
             } label: {
                 RisoProfileRow(
                     icon: "arrow.triangle.2.circlepath",

@@ -22,6 +22,7 @@ import {
   formatWindowLabel,
   getTimeframeBoundaries,
   isWithinTimeframe,
+  type WeekStartDay,
 } from './calendarBoundaries';
 import { BoardStatus, CenterSquareType, Timeframe } from '../constants/enums';
 import type { BoardSize } from '@oybc/bingo-core';
@@ -265,6 +266,57 @@ export function getCoreBoardSlots(
  */
 export function uncreatedCoreBoardSlots(slots: CoreBoardSlot[]): CoreBoardSlot[] {
   return slots.filter((slot) => slot.currentBoard === null);
+}
+
+/**
+ * The per-window core-board pager route that would display `board`
+ * (`/boards/core/:timeframe/:date` on web, `CoreWindowRoute` on iOS).
+ */
+export interface CoreWindowRouteTarget {
+  timeframe: Timeframe;
+  /** Local ISO8601 window start — string-equal to `Board.startDate`. */
+  windowStart: string;
+}
+
+/**
+ * Resolves the pager route for a board, so that navigating to a core
+ * board from ANY entry point (board card, task-detail Usage jump,
+ * counter member card, closing-out banner, notification deep-link,
+ * post-create landing) opens the swipe-to-browse pager rather than the
+ * plain single-board page — the same surface the Core Boards strip
+ * opens.
+ *
+ * Returns `null` unless the board is exactly what the pager would find
+ * for its window: a non-deleted `isCore` board on a daily / weekly /
+ * monthly / yearly timeframe whose `startDate` equals the window start
+ * recomputed from that date under the caller's `weekStartDay`. The last
+ * check is the pager's own lookup key (`getCoreBoardSlots` /
+ * `useCoreBoardsByStart` match on string-equal `startDate`), so a board
+ * this returns `null` for would render as an EMPTY window in the pager
+ * — e.g. a weekly core board stamped under a since-changed week-start
+ * preference — and must stay on the plain route where it still opens.
+ *
+ * Pure. iOS twin: `coreWindowRoute(for:weekStartDay:)` in
+ * `Services/RecurringBoards.swift`.
+ *
+ * @param board - Any board (a partial with the four fields is enough).
+ * @param weekStartDay - The user's week-start preference (weekly only).
+ * @returns The pager target, or `null` when the plain route must be used.
+ */
+export function coreWindowRouteForBoard(
+  board: Pick<Board, 'isCore' | 'isDeleted' | 'timeframe' | 'startDate'>,
+  weekStartDay: WeekStartDay,
+): CoreWindowRouteTarget | null {
+  if (board.isCore !== true || board.isDeleted) return null;
+  if (!RECURRING_TIMEFRAMES_BY_WINDOW_ASC.includes(board.timeframe)) return null;
+  // `Board.startDate` is a timezone-less local ISO string (`toLocalISO`),
+  // which `new Date(...)` parses as local time — the same clock the
+  // boundary helper computes in.
+  const seed = new Date(board.startDate);
+  if (Number.isNaN(seed.getTime())) return null;
+  const { startDate } = getTimeframeBoundaries(board.timeframe, seed, weekStartDay);
+  if (startDate !== board.startDate) return null;
+  return { timeframe: board.timeframe, windowStart: startDate };
 }
 
 /**

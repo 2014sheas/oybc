@@ -1,7 +1,7 @@
-import { useParams, Link } from 'react-router-dom';
-import { BoardStatus } from '@oybc/shared';
+import { useParams, Link, Navigate } from 'react-router-dom';
+import { BoardStatus, coreWindowRouteForBoard } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
-import { useBoard } from '../hooks';
+import { useBoard, usePreferences } from '../hooks';
 import { BoardPlaySurface } from '../components/BoardPlaySurface';
 import { DraftResumePrompt } from '../components/boards/DraftResumePrompt';
 import styles from './BoardPlayPage.module.css';
@@ -9,14 +9,25 @@ import styles from './BoardPlayPage.module.css';
 /**
  * BoardPlayPage — `/boards/:id`. Resolves the id to a board, handles
  * loading / not-found, and renders `BoardPlaySurface` with a back link.
+ *
+ * A **core** board never renders here: it redirects (replace) into the
+ * per-window pager (`/boards/core/:timeframe/:date`), so every entry
+ * point that only knows a board id — board cards, the closing-out
+ * banner, task-detail Usage jumps, counter member cards, the
+ * post-create landing — gets the same swipe-to-browse chrome the Core
+ * Boards strip opens. iOS twin: `MainTabView.pushBoard(_:)`.
  */
 export function BoardPlayPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  // The pager keys weekly windows by the week-start preference, so wait
+  // for the live value: redirecting on the default would send a Sunday-
+  // start weekly board to an empty Monday-start window.
+  const [preferences, , preferencesReady] = usePreferences();
   const boardQuery = useBoard(id);
   const board = boardQuery === undefined ? undefined : (boardQuery ?? null);
 
-  if (board === undefined) {
+  if (board === undefined || !preferencesReady) {
     return (
       <div className={styles.container}>
         <p className={styles.emptyState}>Loading…</p>
@@ -29,6 +40,16 @@ export function BoardPlayPage(): React.ReactElement {
         <Link to="/boards" className={styles.backLink}>&larr; Back to boards</Link>
         <div className={styles.notFound}><p>Board not found</p></div>
       </div>
+    );
+  }
+
+  const coreRoute = coreWindowRouteForBoard(board, preferences.weekStartDay);
+  if (coreRoute) {
+    return (
+      <Navigate
+        to={`/boards/core/${coreRoute.timeframe}/${coreRoute.windowStart.slice(0, 10)}`}
+        replace
+      />
     );
   }
 

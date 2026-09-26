@@ -453,7 +453,7 @@ struct TasksTabView: View {
         .navigationDestination(for: TasksTabRoute.self) { route in
             switch route {
             case .counter(let counterId):
-                CounterDetailView(counterId: counterId)
+                CounterDetailView(counterId: counterId, onOpenBoard: onOpenBoard)
             }
         }
         .navigationDestination(for: String.self) { taskId in
