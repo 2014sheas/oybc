@@ -2,7 +2,7 @@ import { RisoIcon } from '@oybc/web';
 
 const NAMES = [
   'boards', 'home', 'tasks', 'you', 'plus', 'back', 'check', 'sun', 'moon', 'share', 'sync',
-  'sliders', 'repeat', 'grid', 'flame', 'shield', 'bell', 'logout', 'chevron', 'edit', 'trash', 'dots',
+  'sliders', 'repeat', 'grid', 'flame', 'shield', 'bell', 'logout', 'chevron', 'edit', 'trash', 'dots', 'lock',
 ];
 
 export function Gallery() {
