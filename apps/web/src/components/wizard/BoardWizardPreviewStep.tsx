@@ -16,6 +16,7 @@ import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
 import { ArrangeGrid } from '../boardEdit/ArrangeGrid';
 import type { ArrangeSlot } from '../boardEdit/ArrangeGrid';
 import type { BoardCellModel } from '../board/RisoBoardCell';
+import { freeCellModel, toBoardCellModel } from '../board/cellModel';
 import type { DeckFloor } from '../pools/poolDeckPreview';
 import { RisoSegmented } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
@@ -93,23 +94,14 @@ export function taskToModel(
   windowContext: SquareWindowContext,
 ): BoardCellModel {
   const state = taskToSquareState(task, undefined, taskMap, childrenByCompound, windowContext);
-  return {
+  // Board Edit redesign slice 1 — the shared mapper (label falls back to the
+  // generated counter name, so an untitled counter no longer previews blank).
+  return toBoardCellModel({
     key: task.id,
-    label: task.title,
-    type:
-      task.type === TaskType.COUNTING
-        ? 'counting'
-        : task.type === TaskType.COMPOUND
-          ? 'compound'
-          : 'normal',
+    task,
     done: state.isCompleted,
-    count:
-      task.type === TaskType.COUNTING && task.maxCount != null
-        ? { cur: state.currentCount, max: task.maxCount }
-        : undefined,
-    isFree: false,
-    isLine: false,
-  };
+    currentCount: task.type === TaskType.COUNTING ? state.currentCount : undefined,
+  });
 }
 
 /**
@@ -142,20 +134,7 @@ function buildArrangeSlots(
     if (isPinnedCenter) {
       if (task === null) {
         // FREE center: star cell, pinned, not a real task.
-        const label = 'FREE';
-        return {
-          cid: 'center',
-          isCenter: true,
-          isEmpty: false,
-          model: {
-            key: 'center',
-            label,
-            type: 'normal',
-            done: false,
-            isFree: true,
-            isLine: false,
-          } as BoardCellModel,
-        };
+        return { cid: 'center', isCenter: true, isEmpty: false, model: freeCellModel('center') };
       }
       // CHOSEN center: real task pinned at the center.
       return {

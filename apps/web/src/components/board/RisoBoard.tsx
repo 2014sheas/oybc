@@ -7,7 +7,7 @@ import { useSquareWindowContext } from '../../hooks/useSquareWindowContext';
 import { useTaskLibrary } from '../../pages/createPage/useTaskLibrary';
 import { buildRisoBoardCells } from './risoBoardCells';
 import { RisoBoardCell, type BoardCellModel } from './RisoBoardCell';
-import styles from './RisoBoard.module.css';
+import { RisoBoardGrid } from './RisoBoardGrid';
 
 /** Stable empty array so the cell `useMemo` isn't invalidated every render. */
 const EMPTY_BOARD_TASKS: BoardTask[] = [];
@@ -50,19 +50,10 @@ export function RisoBoard({ board, cellSize, gap = 8 }: RisoBoardProps): React.R
   );
 
   return (
-    <div
-      className={styles.board}
-      style={{
-        gridTemplateColumns: `repeat(${size}, ${cellSize}px)`,
-        gap,
-        // Cell text scales with cell size (fixes name overflow on the small
-        // Home poster, ~58px) instead of a fixed 14px regardless of cellSize.
-        ['--cell-size' as string]: `${cellSize}px`,
-      }}
-    >
+    <RisoBoardGrid size={size} cellSize={cellSize} gap={gap}>
       {cells.map((cell) => (
         <RisoBoardCell key={cell.key} cell={cell} />
       ))}
-    </div>
+    </RisoBoardGrid>
   );
 }

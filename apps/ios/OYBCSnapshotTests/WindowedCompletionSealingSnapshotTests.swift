@@ -11,7 +11,7 @@ import SnapshotTesting
 ///
 /// `BoardPlayView` self-loads from `AppDatabase.shared`, so (per CLAUDE.md's
 /// snapshot conventions) the sealed-grid coverage composes the pure leaf
-/// `RisoBoardPlayCell` with `isLocked: true` — exactly the props a sealed
+/// `RisoBoardPlayCell` with `isInteractionLocked: true` — exactly the props a sealed
 /// board's grid renders — rather than instantiating the DB-backed container.
 /// The frozen-snapshot READ logic itself (`sealedCompletedCells` membership,
 /// counting max/max-vs-0/max) is covered at the DB layer by `SealingTests`.
@@ -22,7 +22,7 @@ final class WindowedCompletionSealingSnapshotTests: XCTestCase {
     // MARK: - Sealed board grid (read-only rendering)
 
     /// A sealed board's header (name + `RisoSealedBadge` in place of the live
-    /// status badge) above a grid where every cell is `isLocked: true` — no
+    /// status badge) above a grid where every cell is `isInteractionLocked: true` — no
     /// tap/context-menu affordance, `done` read from the frozen snapshot.
     /// Mixes normal (done/not-done) and counting (max/max vs 0/max — sealed
     /// boards only snapshot completion, never partial progress) cells.
@@ -47,15 +47,15 @@ final class WindowedCompletionSealingSnapshotTests: XCTestCase {
                     spacing: Riso.cellGap
                 ) {
                     // Row 1 — normal cells: one frozen green, one frozen grey.
-                    RisoBoardPlayCell(title: "Meditate", taskType: .normal, isCompleted: true, isLocked: true)
-                    RisoBoardPlayCell(title: "Journal", taskType: .normal, isCompleted: false, isLocked: true)
+                    RisoBoardPlayCell(title: "Meditate", taskType: .normal, isCompleted: true, isInteractionLocked: true)
+                    RisoBoardPlayCell(title: "Journal", taskType: .normal, isCompleted: false, isInteractionLocked: true)
                     // Counting, frozen green → honest max/max read (only
                     // completion was snapshotted, never partial progress).
-                    RisoBoardPlayCell(title: "Pushups", taskType: .counting, isCompleted: true, isLocked: true, currentCount: 3, maxCount: 3)
+                    RisoBoardPlayCell(title: "Pushups", taskType: .counting, isCompleted: true, isInteractionLocked: true, currentCount: 3, maxCount: 3)
                     // Counting, frozen grey → honest 0/max read.
-                    RisoBoardPlayCell(title: "Drink water", taskType: .counting, isCompleted: false, isLocked: true, currentCount: 0, maxCount: 8)
-                    RisoBoardPlayCell(title: "Read", taskType: .compound, isCompleted: true, isLocked: true, compoundDoneCount: 2, compoundChildCount: 2)
-                    RisoBoardPlayCell(title: "Walk", taskType: .normal, isCompleted: false, isLocked: true)
+                    RisoBoardPlayCell(title: "Drink water", taskType: .counting, isCompleted: false, isInteractionLocked: true, currentCount: 0, maxCount: 8)
+                    RisoBoardPlayCell(title: "Read", taskType: .compound, isCompleted: true, isInteractionLocked: true, compoundDoneCount: 2, compoundChildCount: 2)
+                    RisoBoardPlayCell(title: "Walk", taskType: .normal, isCompleted: false, isInteractionLocked: true)
                 }
             }
             .padding(Riso.gutter)

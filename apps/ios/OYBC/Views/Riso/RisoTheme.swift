@@ -34,6 +34,18 @@ enum Riso {
     }
 
     // Spacing
+    /// Corner status chip on a board square (lock / staged-edit), per the
+    /// design-system "Lock a Square" template: a small keylined tile notched
+    /// onto the top-trailing corner, overhanging the cell edge so it never
+    /// covers the label.
+    enum CornerChip {
+        static let size: CGFloat = 20
+        static let radius: CGFloat = 6
+        /// How far the chip hangs past the cell's edge on both axes.
+        static let overhang: CGFloat = 6
+        static let spacing: CGFloat = 3
+    }
+
     static let gutter: CGFloat = 20
     static let cardPadding: CGFloat = 14
     static let cellGap: CGFloat = 7

@@ -9,6 +9,8 @@
 
 .board {
   display: grid;
+  width: fit-content;
+  max-width: 100%;
   border: 2.5px solid var(--riso-ink);
   border-radius: 14px;
   background: var(--riso-paper);
@@ -241,4 +243,41 @@
   outline: 3px solid var(--riso-blue);
   outline-offset: 2px;
   z-index: 4;
+}
+
+/* ── Board Edit redesign slice 1 — corner chips ──────────────────────────
+   Lock (red, on-color glyph) / dirty (gold, ink-static glyph), notched into
+   the top-right corner INSIDE the cell bounds (.cell clips overflow for the
+   halftone overprint), 2px keyline + 2px hard shadow per the DS template
+   "Lock a Square". Sits above the type tag (top-left) so both can show. */
+.chip {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--riso-ink);
+  border-radius: 6px;
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+}
+.chipLock {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+.chipDirty {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.chip svg {
+  display: block;
+}
+/* A done square that also carries a chip: the chip owns the top-right
+   corner, the gold check drops to the bottom-right so neither covers the
+   other. */
+.hasChip .check {
+  top: auto;
+  bottom: 7px;
 }

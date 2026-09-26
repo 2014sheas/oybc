@@ -66,5 +66,19 @@ extension AppDatabase {
         migrator.registerMigration("v33") { db in
             try db.execute(sql: "ALTER TABLE sync_queue ADD COLUMN ownerUid TEXT")
         }
+
+        // v34: Board Edit redesign slice 1 (docs/BOARD_EDIT_REDESIGN.md) —
+        // per-square lock on the placement record. A locked placement never
+        // changes position: Shuffle and every move skip it and it is not a
+        // drop target; it stays completable. `NOT NULL DEFAULT 0` backfills
+        // every existing row as unlocked, and `BoardTask.init(from:)` decodes
+        // an absent key as `false` (mirrors the v27 `isDeleted` posture) so a
+        // pre-feature peer payload or a fixture without the field still
+        // decodes. Synced as part of the `boardTasks` collection under the
+        // existing per-row LWW — no rules change (`firestore.rules` validates
+        // no per-field shape for boardTasks).
+        migrator.registerMigration("v34") { db in
+            try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN isLocked INTEGER NOT NULL DEFAULT 0")
+        }
     }
 }

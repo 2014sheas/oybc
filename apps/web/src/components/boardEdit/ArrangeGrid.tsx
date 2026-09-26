@@ -21,8 +21,19 @@ import styles from './ArrangeGrid.module.css';
 export interface ArrangeSlot {
   cid: string;
   isCenter: boolean;
+  /**
+   * Board Edit redesign slice 1 — a locked square (`BoardTask.isLocked`).
+   * Pinned exactly like the center: never lifts, never a drop target, the
+   * cascade flows around it. Rendered with the red lock chip via `model`.
+   */
+  isPinned?: boolean;
   isEmpty: boolean;
   model: BoardCellModel | null;
+}
+
+/** A slot that holds position: the pinned center or a locked square. */
+function isFixed(slot: ArrangeSlot | undefined): boolean {
+  return !!slot && (slot.isCenter || slot.isPinned === true);
 }
 
 export interface ArrangeGridProps {
@@ -59,11 +70,11 @@ function reorderToSlot(
   dragCid: string,
   slotIndex: number,
 ): ArrangeSlot[] {
-  // Center never accepts drops.
-  if (slots[slotIndex]?.isCenter) return slots;
+  // Center / locked squares never accept drops.
+  if (isFixed(slots[slotIndex])) return slots;
 
-  // Movable indices: all non-center slots (includes empties).
-  const movableIndices = slots.map((_, i) => i).filter((i) => !slots[i].isCenter);
+  // Movable indices: all non-fixed slots (includes empties).
+  const movableIndices = slots.map((_, i) => i).filter((i) => !isFixed(slots[i]));
 
   const toK = movableIndices.indexOf(slotIndex);
   if (toK < 0) return slots; // target is a center slot (shouldn't reach here given the guard)
@@ -233,7 +244,7 @@ export function ArrangeGrid({
 
     // First tap: pick up (must be non-center, non-empty).
     if (moveSrc === null) {
-      if (!slot || slot.isCenter || slot.isEmpty) return;
+      if (!slot || isFixed(slot) || slot.isEmpty) return;
       setMoveSrc(i);
       return;
     }
@@ -244,8 +255,8 @@ export function ArrangeGrid({
       return;
     }
 
-    // Second tap on the center → cancel (can't drop on center).
-    if (slot?.isCenter) {
+    // Second tap on the center / a locked square → cancel (can't drop there).
+    if (isFixed(slot)) {
       setMoveSrc(null);
       return;
     }
@@ -268,7 +279,7 @@ export function ArrangeGrid({
     if (!rearrange) return;
     const displayedSlot = displayed[i];
     // Only real, non-center, non-empty tiles can be dragged.
-    if (!displayedSlot || displayedSlot.isCenter || displayedSlot.isEmpty) return;
+    if (!displayedSlot || isFixed(displayedSlot) || displayedSlot.isEmpty) return;
 
     const myCid = displayedSlot.cid;
     const start = { x: e.clientX, y: e.clientY, moved: false };
@@ -370,14 +381,14 @@ export function ArrangeGrid({
             rearrange &&
             isPicked &&
             !isDragging &&
-            !slot.isCenter &&
+            !isFixed(slot) &&
             moveSrc !== i;
 
           // Jiggle: all non-locked, non-hole cells in rearrange mode,
           // suspended during drag (sorting) and when the cell itself is selected.
           const shouldJiggle =
             rearrange &&
-            !slot.isCenter &&
+            !isFixed(slot) &&
             !slot.isEmpty &&
             !isDragging &&
             !isSelected;
@@ -413,7 +424,7 @@ export function ArrangeGrid({
                     <div className={styles.emptyCell} />
                   ) : null}
                   {/* Grip handle: visible on non-locked cells in rearrange mode */}
-                  {rearrange && !slot.isCenter && !slot.isEmpty && (
+                  {rearrange && !isFixed(slot) && !slot.isEmpty && (
                     <span className={styles.grip} aria-hidden="true">
                       {/* 2×3 dot grid rendered as an inline grid of <i> elements */}
                       <i /><i /><i /><i /><i /><i />

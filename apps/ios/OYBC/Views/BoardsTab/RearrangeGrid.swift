@@ -23,6 +23,14 @@ struct RearrangeCellData: Identifiable, Equatable {
     /// Original DB `(row, col)` — used to compute position moves at Save time.
     let originalRow: Int
     let originalCol: Int
+    /// Board Edit redesign slice 1 — per-square lock (`BoardTask.isLocked`,
+    /// with any staged override applied). A locked cell is pinned exactly
+    /// like the center: it never lifts, never jiggles, is not a drop target,
+    /// and the cascade routes around it.
+    var isLocked: Bool = false
+
+    /// Pinned = fixed in place for every rearrange gesture and the cascade.
+    var isPinned: Bool { isCenter || isLocked }
 }
 
 // MARK: - RearrangeGrid
@@ -41,9 +49,15 @@ struct RearrangeCellData: Identifiable, Equatable {
 ///   while a drag or tap-pick is in progress.
 ///
 /// ### Pinning
-/// Cells with `isCenter == true` never lift, never accept drops, and never jiggle. Empty slots
-/// are also inert (they do shift position during cascades if movable cells slide past them, but
-/// they themselves cannot be dragged). The cascade algorithm skips all fixed slots.
+/// Cells with `isPinned` (the center, or a per-square lock — slice 1) never lift, never accept
+/// drops, and never jiggle. Empty slots are also inert (they do shift position during cascades if
+/// movable cells slide past them, but they themselves cannot be dragged). The cascade algorithm
+/// skips all fixed slots.
+///
+/// ### Cell face
+/// Every non-hole slot renders `RisoBoardPlayCell` — the same square the board itself draws —
+/// with the lock chip for locked cells and the gold pencil chip for cells that moved from their
+/// original slot or are listed in `dirtyCellIds` (slice 1: one renderer everywhere).
 ///
 /// ### Animation
 /// Uses a `ZStack` with manually computed offsets (not `LazyVGrid`) so that array reorders
@@ -100,6 +114,11 @@ struct RearrangeGrid: View {
     /// surface.
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
 
+    /// Cell ids (boardTaskIds) with a staged, unsaved edit other than a move
+    /// (replace / task override / lock change) — drawn with the pencil chip.
+    /// Position moves are derived here from slot vs original.
+    var dirtyCellIds: Set<String> = []
+
     // MARK: - Internal state
 
     /// Current display order — optimistically updated during drag preview;
@@ -137,7 +156,7 @@ struct RearrangeGrid: View {
         // GeometryReader.proxy.size.width can reflect the pre-padding or screen width
         // instead of the inset width when nested inside .padding() modifier chains —
         // a known SwiftUI quirk that caused cells to be sized and positioned incorrectly.
-        let cellSize = (sideLength - CGFloat(gridSize - 1) * Riso.cellGap) / CGFloat(gridSize)
+        let cellSize = RisoBoardGrid<EmptyView>.cellSide(forSideLength: sideLength, gridSize: gridSize)
         let stride = cellSize + Riso.cellGap
 
         ZStack(alignment: .topLeading) {
@@ -163,16 +182,18 @@ struct RearrangeGrid: View {
                 // Dim when: dragging anything (except the dragged cell itself and center),
                 // or a tap-pick is active (except the picked cell and center/empty).
                 let isDimmed: Bool = {
-                    if cell.isCenter { return false }
+                    if cell.isPinned { return false }
                     if dragActive && cell.id != draggingId { return true }
                     if let picked = tapPickedId, cell.id != picked, !cell.isEmpty { return true }
                     return false
                 }()
                 let showJiggle = rearrange
-                    && !cell.isCenter
+                    && !cell.isPinned
                     && !cell.isEmpty
                     && !dragActive
                     && tapPickedId == nil
+                let isMoved = !cell.isPinned && !cell.isEmpty
+                    && (row != cell.originalRow || col != cell.originalCol)
 
                 rearrangeCellView(
                     cell: cell,
@@ -180,6 +201,7 @@ struct RearrangeGrid: View {
                     isHole: isHole,
                     isSelected: isSelected,
                     isDimmed: isDimmed,
+                    isDirty: isMoved || dirtyCellIds.contains(cell.id),
                     jiggleActive: showJiggle
                 )
                 .frame(width: cellSize, height: cellSize)
@@ -189,7 +211,7 @@ struct RearrangeGrid: View {
                     .spring(response: 0.22, dampingFraction: 0.82),
                     value: slotIdx
                 )
-                .gesture(rearrange && !cell.isCenter && !cell.isEmpty
+                .gesture(rearrange && !cell.isPinned && !cell.isEmpty
                     ? makeDragGesture(for: cell, cellSize: cellSize, stride: stride)
                     : nil)
                 .onTapGesture { handleTap(cell: cell) }
@@ -250,6 +272,12 @@ struct RearrangeGrid: View {
 
     // MARK: - Cell rendering
 
+    /// One slot's face: `RisoBoardPlayCell` for every real cell (the board's
+    /// own renderer — FREE center, task cells, chips), a dashed hole for the
+    /// lifted tile, and a quiet paper tile for an empty slot (the drop
+    /// target). Selection (tap-to-swap) is a gold ring around the cell;
+    /// dimming is opacity — both applied outside the shared face so the
+    /// face stays byte-identical to the board's.
     @ViewBuilder
     private func rearrangeCellView(
         cell: RearrangeCellData,
@@ -257,86 +285,36 @@ struct RearrangeGrid: View {
         isHole: Bool,
         isSelected: Bool,
         isDimmed: Bool,
+        isDirty: Bool,
         jiggleActive: Bool
     ) -> some View {
         let task = cell.taskId.flatMap { taskMap[$0] }
-        // Windowed Completion parity (docs/WINDOWED_COMPLETION.md §Task caches):
-        // resolve via the injected closure rather than the raw lifetime cache,
-        // so a lifetime-complete task on a fresh board window previews grey
-        // like the live grid, not stale green.
-        let isTaskCompleted = task.map(windowedIsCompleted) ?? false
 
-        // ── Label ──
-        let label: String = {
-            if cell.isCenter {
-                switch centerSquareType {
-                case .free:   return "FREE"
-                case .chosen: return task?.title ?? "FREE"
-                case .none:   return ""
-                }
-            }
-            if cell.isEmpty { return "" }
-            return task?.title ?? ""
-        }()
-
-        // ── Fill ──
-        let fill: Color = {
-            if isHole     { return .clear }
-            if cell.isCenter || isSelected { return .risoGold }
-            if isDimmed   { return .risoPaper }
-            return isTaskCompleted ? .risoGreen : .risoPaper2
-        }()
-
-        // ── Text color ──
-        let textColor: Color = {
-            if cell.isCenter || isSelected { return .risoInkStatic }
-            if isTaskCompleted             { return .risoPaper }
-            return isDimmed ? .risoMuted : .risoInk
-        }()
-
-        // ── Border ──
-        let borderColor: Color = {
-            if isHole      { return .risoMuted.opacity(0.4) }
-            if cell.isCenter || isSelected { return .risoInkStatic.opacity(isSelected ? 0.5 : 0.3) }
-            return isDimmed ? .risoMuted.opacity(0.25) : .risoInk
-        }()
-        let borderStyle: StrokeStyle = isHole
-            ? StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-            : StrokeStyle(lineWidth: isSelected ? Riso.Keyline.container : Riso.Keyline.dense)
-
-        ZStack(alignment: .topTrailing) {
-            // Background + border
-            RoundedRectangle(cornerRadius: Riso.cellRadius)
-                .fill(fill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cellRadius)
-                        .strokeBorder(borderColor, style: borderStyle)
-                )
-
-            if !isHole {
-                // Center star icon for pure-FREE center
-                if cell.isCenter && centerSquareType == .free {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: cellSize * 0.28, weight: .bold))
-                        .foregroundStyle(Color.risoInkStatic.opacity(0.6))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if !label.isEmpty {
-                    // Cell label
-                    Text(label)
-                        .font(.risoBody(max(7, min(10, cellSize * 0.19)), .semibold))
-                        .foregroundStyle(textColor)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .padding(4)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                }
-
-                // Task-type letter badge (top-trailing) — only on non-center task cells
-                if !cell.isCenter, !cell.isEmpty, let task = task {
-                    RisoTypeBadge(kind: task.type.rearrangeKind, style: .letterSquare)
-                        .scaleEffect(0.75)
-                        .padding(2)
-                }
+        ZStack {
+            if isHole {
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                    .strokeBorder(
+                        Color.risoMuted.opacity(0.4),
+                        style: StrokeStyle(lineWidth: Riso.Keyline.dense, dash: [6, 4])
+                    )
+            } else if cell.isEmpty {
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                    .fill(Color.risoPaper)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Riso.cellRadius)
+                            .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                    )
+            } else {
+                faceCell(for: cell, task: task, isDirty: isDirty)
+                    .overlay(
+                        Group {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                                    .stroke(Color.risoGold, lineWidth: 3)
+                                    .padding(-3)
+                            }
+                        }
+                    )
             }
         }
         .opacity(isDimmed ? 0.45 : 1.0)
@@ -354,40 +332,54 @@ struct RearrangeGrid: View {
         )
     }
 
+    /// The shared board square for a real cell (center or task). Windowed
+    /// Completion parity: completion resolves via the injected closure, never
+    /// the raw lifetime cache (docs/WINDOWED_COMPLETION.md §Task caches).
+    private func faceCell(for cell: RearrangeCellData, task: Task?, isDirty: Bool) -> RisoBoardPlayCell {
+        let isTaskCompleted = task.map(windowedIsCompleted) ?? false
+        if cell.isCenter {
+            // FREE → the gold star + "FREE"; CHOSEN → the star + the task's
+            // title, exactly as the board renders its center.
+            return RisoBoardPlayCell(
+                title: centerSquareType == .chosen ? (task?.title ?? "FREE") : "FREE",
+                taskType: .normal,
+                isCompleted: false,
+                isCenter: true,
+                showsLockChip: cell.isLocked,
+                showsDirtyChip: isDirty
+            )
+        }
+        return RisoBoardPlayCell(
+            title: task?.title ?? "",
+            taskType: task.map { CellTaskType(task: $0) } ?? .normal,
+            isCompleted: isTaskCompleted,
+            showsLockChip: cell.isLocked,
+            showsDirtyChip: isDirty,
+            currentCount: task?.currentCount ?? 0,
+            maxCount: task?.maxCount ?? 0
+        )
+    }
+
     // MARK: - Ghost tile
 
     @ViewBuilder
     private func ghostView(for cell: RearrangeCellData, cellSize: CGFloat) -> some View {
         let task = cell.taskId.flatMap { taskMap[$0] }
-        let label = task?.title ?? ""
 
-        ZStack {
-            RoundedRectangle(cornerRadius: Riso.cellRadius)
-                .fill(Color.risoPaper2)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cellRadius)
-                        .strokeBorder(Color.risoGold, lineWidth: Riso.Keyline.container)
-                )
-                // Hard shadow beneath the lifted tile
-                .background(
-                    RoundedRectangle(cornerRadius: Riso.cellRadius)
-                        .fill(Color.risoInk.opacity(0.18))
-                        .offset(x: 3, y: 4)
-                )
-
-            if !label.isEmpty {
-                Text(label)
-                    .font(.risoBody(max(7, min(10, cellSize * 0.19)), .semibold))
-                    .foregroundStyle(Color.risoInk)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(4)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            }
-        }
-        // Tilt + slight scale to convey "lifted" state
-        .rotationEffect(.degrees(4))
-        .scaleEffect(1.06)
+        // The lifted tile is the same square, ringed gold, over a hard shadow.
+        faceCell(for: cell, task: task, isDirty: false)
+            .overlay(
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                    .strokeBorder(Color.risoGold, lineWidth: Riso.Keyline.container)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                    .fill(Color.risoInk.opacity(0.18))
+                    .offset(x: Riso.Shadow.button, y: Riso.Shadow.card)
+            )
+            // Tilt + slight scale to convey "lifted" state
+            .rotationEffect(.degrees(4))
+            .scaleEffect(1.06)
     }
 
     // MARK: - Drag gesture
@@ -446,7 +438,7 @@ struct RearrangeGrid: View {
     // MARK: - Tap-to-swap
 
     private func handleTap(cell: RearrangeCellData) {
-        guard rearrange, !cell.isCenter, !cell.isEmpty, !dragActive else { return }
+        guard rearrange, !cell.isPinned, !cell.isEmpty, !dragActive else { return }
 
         if let picked = tapPickedId {
             if picked == cell.id {
@@ -480,8 +472,9 @@ struct RearrangeGrid: View {
 
     /// Translates the dragged cell to `targetIndex` (row-major slot), cascading
     /// other movable cells around it in row-major order. Returns the new array,
-    /// or `nil` if the order is unchanged. Fixed slots (center + empty) remain
-    /// in their positions; only task cells move.
+    /// or `nil` if the order is unchanged. Fixed slots (pinned — center or
+    /// locked — and empty) remain in their positions; only movable task cells
+    /// move.
     ///
     /// Mirrors the prototype's `reorderToSlot` from `arrange-board-ios.jsx`.
     private func reorderToSlot(
@@ -491,8 +484,8 @@ struct RearrangeGrid: View {
     ) -> [RearrangeCellData]? {
         guard targetIndex < cells.count else { return nil }
         let target = cells[targetIndex]
-        // The center is never a drop target.
-        guard !target.isCenter else { return nil }
+        // A pinned slot (center, locked square) is never a drop target.
+        guard !target.isPinned else { return nil }
 
         // Empty target: drop the tile straight into the empty slot (swap their
         // array positions). The vacated slot becomes empty; index-based position
@@ -510,7 +503,7 @@ struct RearrangeGrid: View {
 
         // Build the list of movable slot indices (non-fixed, in row-major order).
         let movableIndices = cells.indices.filter {
-            !cells[$0].isCenter && !cells[$0].isEmpty
+            !cells[$0].isPinned && !cells[$0].isEmpty
         }
         // Find which position in the movable list corresponds to targetIndex.
         guard let toK = movableIndices.firstIndex(of: targetIndex) else { return nil }
@@ -529,18 +522,5 @@ struct RearrangeGrid: View {
         // Return nil if the order is unchanged (avoids a redundant animation).
         let changed = !zip(result, cells).allSatisfy { $0.id == $1.id }
         return changed ? result : nil
-    }
-}
-
-// MARK: - TaskType → RisoTaskKind (file-private)
-
-private extension TaskType {
-    var rearrangeKind: RisoTaskKind {
-        switch self {
-        case .normal:      return .normal
-        case .counting:    return .counting
-        case .compound:    return .compound
-        case .achievement: return .achievement
-        }
     }
 }

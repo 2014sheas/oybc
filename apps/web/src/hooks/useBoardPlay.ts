@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BoardStatus,
   CenterSquareType,
-  TaskType,
-  generateCounterTaskTitle,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -29,6 +27,7 @@ import {
   removeBoardTaskFromBoard,
   addBoardTaskToBoard,
   reorderBoardTasks,
+  setBoardTaskLocked,
 } from '../db/operations/boardTasks';
 import { updateTaskAndCascade, toggleCompoundChildFallback, undoLastCounterLog, type UpdateTaskPatch } from '../db/operations/tasks';
 import { updateBoardAndCascade, type UpdateActiveBoardPatch } from '../db/operations/boards';
@@ -37,6 +36,8 @@ import type { ContextMenuState } from '../components/interactiveTaskSquareUtils'
 import { type SubMode } from '../components/boardEdit/BoardEditPanel';
 import { type ArrangeSlot } from '../components/boardEdit/ArrangeGrid';
 import { type BoardCellModel } from '../components/board/RisoBoardCell';
+import { freeCellModel, toBoardCellModel } from '../components/board/cellModel';
+import { deriveSquareEditCount, isDraftCellDirty } from './squareEditCount';
 
 /**
  * Per-cell staged entry for the squares draft (Phase 2 — staged edit model).
@@ -59,6 +60,10 @@ export interface SquareDraftCell {
   originalRow: number;
   /** The col at the time edit mode was entered. Never changes (Phase 3). */
   originalCol: number;
+  /** Current staged lock — Board Edit redesign slice 1 (`BoardTask.isLocked`). */
+  isLocked: boolean;
+  /** The lock state at the time edit mode was entered. Never changes. */
+  originalLocked: boolean;
 }
 
 /** What `onFlash` is called with. `greenlog` routes to the overlay and a
@@ -141,6 +146,8 @@ export interface UseBoardPlayResult {
     x: number;
     y: number;
     isCenterTask: boolean;
+    /** Board Edit redesign slice 1 — the tapped square's staged lock state. */
+    isLocked: boolean;
   } | null;
   setSquareTapMenu: React.Dispatch<
     React.SetStateAction<{
@@ -149,6 +156,7 @@ export interface UseBoardPlayResult {
       x: number;
       y: number;
       isCenterTask: boolean;
+      isLocked: boolean;
     } | null>
   >;
   freeCenterTapMenu: { x: number; y: number } | null;
@@ -165,6 +173,8 @@ export interface UseBoardPlayResult {
   handleEditReplace: (boardTaskId: string, newTaskId: string) => void;
   /** Stage a removal for the given boardTaskId (empties the cell; committed on Save). */
   handleEditRemove: (boardTaskId: string) => void;
+  /** Board Edit redesign slice 1 — stage a lock / unlock for the given placement. */
+  handleEditToggleLock: (boardTaskId: string) => void;
   handleEditTaskDone: (taskId: string, patch: UpdateTaskPatch) => void;
   handleRearrangeReorder: (newSlots: ArrangeSlot[]) => void;
   /**
@@ -289,6 +299,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     x: number;
     y: number;
     isCenterTask: boolean;
+    isLocked: boolean;
   } | null>(null);
 
   // The boardTaskId whose cell is being replaced in edit mode (opens CellSwapModal).
@@ -297,33 +308,12 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   // The taskId being edited in edit mode (opens BoardEditTaskSheet).
   const [editTaskSheetId, setEditTaskSheetId] = useState<string | null>(null);
 
-  // Count of staged square edits — DERIVED from draft state (not an action
-  // counter) so reverting a cell to its original task un-counts it (no phantom
-  // edits / no "Board saved" for a net-zero session). Mirrors iOS.
-  // Phase 3: also counts cells whose position differs from the original
-  // (drag-to-insert / tap-to-swap), so a net-zero rearrange contributes 0.
-  // Phase 2b: the rearrange-move count excludes only truly pinned centers
-  // (CHOSEN / FREE). A NONE center is a regular movable cell.
-  // Staged removals: pre-edit placements (still live in `boardTasks` during
-  // staging) absent from the current draft. Gated on `editMode` + `draftSeeded`
-  // (NOT `squaresDraft.length > 0`) so the un-seeded first render doesn't briefly
-  // count every placement as removed, while a legitimately empty draft (user
-  // removed every square) is still counted. Mirrors iOS `editSquaresEditCount`.
-  const draftBoardTaskIds = new Set(squaresDraft.map((c) => c.boardTaskId));
-  const stagedRemovalCount =
-    editMode && draftSeeded
-      ? boardTasks.filter((bt) => !draftBoardTaskIds.has(bt.id)).length
-      : 0;
-
-  const squareEditCount =
-    squaresDraft.filter((c) => c.taskId !== c.originalTaskId).length +
-    taskOverrides.size +
-    squaresDraft.filter(
-      (c) =>
-        !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
-        (c.row !== c.originalRow || c.col !== c.originalCol),
-    ).length +
-    stagedRemovalCount;
+  // Count of staged square edits — derived, see `deriveSquareEditCount`
+  // (Board Edit redesign slice 1 moved the derivation out so it is testable
+  // and so the lock-toggle term lives beside the others).
+  const squareEditCount = deriveSquareEditCount({
+    squaresDraft, taskOverrides, draftCenterType, boardTasks, editMode, draftSeeded,
+  });
 
   // Seed the squares draft when entering edit mode; reset all draft state when
   // exiting. boardTasks is intentionally NOT in the dep array — we seed once
@@ -360,6 +350,10 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         // Phase 3: original positions for derived rearrange-edit count.
         originalRow: bt.row,
         originalCol: bt.col,
+        // Board Edit redesign slice 1 — per-square lock (absent ⇒ unlocked
+        // for rows predating the field).
+        isLocked: bt.isLocked === true,
+        originalLocked: bt.isLocked === true,
       })),
     );
     setDraftSeeded(true);
@@ -402,6 +396,19 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   const handleEditRemove = useCallback((boardTaskId: string) => {
     setSquaresDraft((prev) => prev.filter((c) => c.boardTaskId !== boardTaskId));
     // squareEditCount is derived from squaresDraft vs boardTasks — no manual increment.
+  }, []);
+
+  /**
+   * Board Edit redesign slice 1 — stage a lock toggle for the given placement.
+   * NO DB write happens here — committed in commitSquareEdits at Save time via
+   * `setBoardTaskLocked`. Toggling back to the seeded state un-counts it.
+   */
+  const handleEditToggleLock = useCallback((boardTaskId: string) => {
+    setSquaresDraft((prev) =>
+      prev.map((cell) =>
+        cell.boardTaskId === boardTaskId ? { ...cell, isLocked: !cell.isLocked } : cell,
+      ),
+    );
   }, []);
 
   /**
@@ -487,14 +494,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
             cid: `center-${r}-${c}`,
             isCenter: true,
             isEmpty: false,
-            model: {
-              key: `center-${r}-${c}`,
-              label: 'FREE',
-              type: 'normal',
-              done: false,
-              isFree: true,
-              isLine: false,
-            },
+            model: freeCellModel(`center-${r}-${c}`),
           });
         } else if (draftCell) {
           // Real tile (including CHOSEN centre).
@@ -512,37 +512,22 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
             const squareState = taskToSquareState(
               task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
             );
-            const displayLabel =
-              task.title && task.title.trim()
-                ? task.title
-                : task.type === TaskType.COUNTING
-                  ? generateCounterTaskTitle(
-                      task.action ?? '',
-                      task.maxCount ?? 0,
-                      task.unit ?? '',
-                    )
-                  : '';
-            model = {
+            model = toBoardCellModel({
               key: draftCell.boardTaskId,
-              label: displayLabel,
-              type:
-                squareData.type === 'counting'
-                  ? 'counting'
-                  : squareData.type === 'compound'
-                    ? 'compound'
-                    : 'normal',
+              task,
               done: squareState.isCompleted,
-              count:
-                squareData.type === 'counting'
-                  ? { cur: squareState.currentCount, max: task.maxCount ?? 0 }
-                  : undefined,
-              isFree: false,
-              isLine: false, // suppressed during rearrange
-            };
+              currentCount: squareData.type === 'counting' ? squareState.currentCount : undefined,
+              // isLine suppressed during rearrange — the post-save derivation re-rings.
+              locked: draftCell.isLocked,
+              dirty: isDraftCellDirty(draftCell, taskOverrides),
+            });
           }
           slots.push({
             cid: draftCell.boardTaskId,
             isCenter,
+            // Board Edit redesign slice 1 — a locked square is pinned like the
+            // center: never lifts, never a drop target.
+            isPinned: draftCell.isLocked,
             isEmpty: false,
             model,
           });
@@ -632,6 +617,14 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
             .map((c) => ({ boardTaskId: c.boardTaskId, row: c.row, col: c.col }));
           if (moves.length > 0) {
             await reorderBoardTasks(boardId, moves);
+          }
+          // 3b. Lock toggles (Board Edit redesign slice 1) — AFTER the
+          //     reorders so a square moved then locked in the same session
+          //     passes `reorderBoardTasks`' locked-row guard.
+          for (const cell of squaresDraft) {
+            if (cell.isLocked !== cell.originalLocked) {
+              await setBoardTaskLocked(cell.boardTaskId, cell.isLocked);
+            }
           }
           // 4. Staged removals: pre-edit placements (still un-mutated in the DB during
           //    staging) that are absent from the draft. `removeBoardTaskFromBoard`
@@ -982,6 +975,7 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
     arrangeSlots,
     handleEditReplace,
     handleEditRemove,
+    handleEditToggleLock,
     handleEditTaskDone,
     handleRearrangeReorder,
     commitSquareEdits,

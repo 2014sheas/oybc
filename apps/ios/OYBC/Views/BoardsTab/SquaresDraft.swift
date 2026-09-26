@@ -92,12 +92,15 @@ struct EditModeTaskTarget: Identifiable {
 ///   - positionDraft: Optional override: maps boardTaskId → staged (row, col). When
 ///     non-nil, cells are placed at their STAGED positions rather than their draft
 ///     `row`/`col`. Used to preserve a previously staged reorder across sub-mode switches.
+///   - lockedBoardTaskIds: Slice 1 — boardTaskIds whose square is locked (DB flag with
+///     staged overrides applied). Locked cells are pinned like the center.
 /// - Returns: Row-major ordered array with every slot filled (task cell, center, or empty).
 func buildRearrangeCells(
     squaresDraft: [String: SquaresDraftCell],
     gridSize: Int,
     centerSquareType: CenterSquareType,
-    positionDraft: [String: (row: Int, col: Int)]? = nil
+    positionDraft: [String: (row: Int, col: Int)]? = nil,
+    lockedBoardTaskIds: Set<String> = []
 ) -> [RearrangeCellData] {
     let mid = gridSize / 2
     // A cell is pinned (immovable, excluded from drag/swap) when it is the
@@ -129,16 +132,15 @@ func buildRearrangeCells(
             if isPinnedSlot {
                 // For .chosen, pass the task ID so the rearrange grid can render
                 // the task's label inside the pinned center cell.
-                let chosenTaskId: String? = centerSquareType == .chosen
-                    ? byPosition["\(mid)-\(mid)"]?.stagedTaskId
-                    : nil
+                let chosenCell = centerSquareType == .chosen ? byPosition["\(mid)-\(mid)"] : nil
                 result.append(RearrangeCellData(
                     id: "center",
-                    taskId: chosenTaskId,
+                    taskId: chosenCell?.stagedTaskId,
                     isCenter: true,
                     isEmpty: false,
                     originalRow: row,
-                    originalCol: col
+                    originalCol: col,
+                    isLocked: chosenCell.map { lockedBoardTaskIds.contains($0.boardTaskId) } ?? false
                 ))
             } else if let cell = byPosition["\(row)-\(col)"] {
                 result.append(RearrangeCellData(
@@ -147,7 +149,8 @@ func buildRearrangeCells(
                     isCenter: false,
                     isEmpty: false,
                     originalRow: cell.row,
-                    originalCol: cell.col
+                    originalCol: cell.col,
+                    isLocked: lockedBoardTaskIds.contains(cell.boardTaskId)
                 ))
             } else {
                 result.append(RearrangeCellData(

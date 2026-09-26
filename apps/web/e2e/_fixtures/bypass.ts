@@ -409,6 +409,8 @@ export interface SeedBoardTask {
   row: number;
   col: number;
   isCenter?: boolean;
+  /** Board Edit redesign slice 1 — per-square lock. */
+  isLocked?: boolean;
   // Phase 6.3 — `BoardTask` is now a pure placement record. The
   // achievement-square config moved to `Task` (`type='achievement'`
   // + `referencedBoardId` / `referencedTemplateId` / `achievementTrigger`
