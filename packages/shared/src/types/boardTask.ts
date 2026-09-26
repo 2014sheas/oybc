@@ -26,6 +26,14 @@ export interface BoardTask {
   row: number;                   // Row index (0-based)
   col: number;                   // Column index (0-based)
   isCenter: boolean;             // True if center square (for odd-sized boards)
+  /**
+   * Board Edit redesign slice 1 (docs/BOARD_EDIT_REDESIGN.md) — a locked
+   * placement never changes position: Shuffle and every move skip it and
+   * it is not a drop target. Still completable. Optional + absent ⇒ false
+   * (forward-compat decode like `Board.isCore`: pre-feature rows and peer
+   * payloads carry no field).
+   */
+  isLocked?: boolean;
 
   // Timestamps
   createdAt: string;             // ISO8601

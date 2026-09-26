@@ -601,6 +601,9 @@ export const BoardTaskSchema = z.object({
   row: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   col: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   isCenter: z.boolean(),
+  // Board Edit redesign slice 1 — per-square lock. Default-false forward
+  // compat like `isDeleted` below: pre-feature docs decode on pull.
+  isLocked: z.boolean().default(false),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
