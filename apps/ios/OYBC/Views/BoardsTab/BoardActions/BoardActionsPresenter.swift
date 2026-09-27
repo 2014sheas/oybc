@@ -22,6 +22,34 @@ enum BoardAction: Equatable {
     /// that, on Discard, re-routes to `then` (`.close`'s own no-confirm path
     /// or `.confirmReopen`'s own confirm).
     case confirmDiscard(then: BoardMenuItem)
+
+    /// The action a tapped BOARD-section row presents (the one routing table
+    /// shared by `BoardPlayView.handleBoardItem` and the post-Discard
+    /// re-route below).
+    ///
+    /// - Parameter item: The tapped row.
+    /// - Returns: The matching presenter action.
+    static func routed(from item: BoardMenuItem) -> BoardAction {
+        switch item {
+        case .close: return .close
+        case .reopen: return .confirmReopen
+        case .details: return .details
+        case .repeatBoard: return .repeatBoard
+        case .coreDefaults: return .coreDefaults
+        case .archive: return .confirmArchive
+        case .delete: return .confirmDelete
+        }
+    }
+
+    /// The row a `.confirmDiscard` is gating, or `nil` for every other case.
+    /// Fed to the "Discard changes?" alert's `presenting:` so the Discard
+    /// button captures its target at presentation time instead of re-reading
+    /// `activeAction` (which the alert's own dismissal may already have
+    /// cleared through its binding).
+    var discardTarget: BoardMenuItem? {
+        if case .confirmDiscard(let then) = self { return then }
+        return nil
+    }
 }
 
 /// Attaches the three BOARD-section sheets (Board details / Repeat this
@@ -177,10 +205,14 @@ struct BoardActionsPresenter: ViewModifier {
             // via the D3 race: squares were editable at Edit entry, the
             // board ended/sealed mid-session, and the user then tapped the
             // now-offered Close/Reopen row with a dirty draft.
-            .alert("Discard changes?", isPresented: discardBinding) {
+            .alert(
+                "Discard changes?",
+                isPresented: discardBinding,
+                presenting: activeAction?.discardTarget
+            ) { target in
                 Button("Keep editing", role: .cancel) { activeAction = nil }
-                Button("Discard", role: .destructive) { runDiscardThenRoute() }
-            } message: {
+                Button("Discard", role: .destructive) { routeAfterDiscard(target) }
+            } message: { _ in
                 Text("Your unsaved changes will be lost.")
             }
             // Board Edit consolidation — Close/Reopen/Archive/Delete failure
@@ -237,12 +269,19 @@ struct BoardActionsPresenter: ViewModifier {
         )
     }
 
-    /// D8, discardFirst — Discard proceeds to `then`'s own path: `.close`
+    /// D8, discardFirst — Discard proceeds to `target`'s own path: `.close`
     /// fires immediately (no confirm, via the `.onChange` above), `.reopen`
-    /// re-enters its own "Reopen this board?" confirm.
-    private func runDiscardThenRoute() {
-        guard case .confirmDiscard(let then) = activeAction else { return }
-        activeAction = (then == .close) ? .close : .confirmReopen
+    /// re-enters its own "Reopen this board?" confirm. The re-route waits for
+    /// the Discard alert to finish dismissing — setting the next action
+    /// synchronously races the alert's own `isPresented = false` write
+    /// (which nils `activeAction`), and a second alert presented mid-dismiss
+    /// is dropped.
+    private func routeAfterDiscard(_ target: BoardMenuItem) {
+        activeAction = nil
+        _Concurrency.Task { @MainActor in
+            try? await _Concurrency.Task.sleep(nanoseconds: 350_000_000)
+            activeAction = BoardAction.routed(from: target)
+        }
     }
 
     // MARK: - Archive / Delete

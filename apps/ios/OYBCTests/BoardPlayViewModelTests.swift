@@ -1295,6 +1295,12 @@ final class BoardPlayViewModelTests: XCTestCase {
         let versionBeforeDetails = board.version
         vm.seedEditDraft(from: board)
 
+        // 0. A square replacement is staged BEFORE the Board details sheet
+        //    opens — the D8 `keep` claim is that the details save (and the
+        //    `reload()` it triggers) leaves this draft alone.
+        vm.handleEditReplace(cellKey: "0-0", taskId: "t2")
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+
         // 1. "Board details" sheet save (D8 `keep` — independent of the
         //    squares draft, which is untouched by this write).
         let detailsExpectation = expectation(description: "saveBoardDetails")
@@ -1313,10 +1319,11 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(afterDetails.startDate, "2026-05-01T00:00:00.000")
         XCTAssertGreaterThan(afterDetails.version, versionBeforeDetails, "details save bumps version")
 
-        // Still in Edit with the draft intact (D8 `keep`) — stage a square
-        // replacement now, exactly as if the user never left the screen.
-        vm.handleEditReplace(cellKey: "0-0", taskId: "t2")
+        // Still in Edit with the draft intact (D8 `keep`): the replacement
+        // staged before the details save is still pending.
         XCTAssertEqual(vm.editSquaresEditCount, 1, "the details save left the squares draft untouched")
+        let bt0 = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
+        XCTAssertEqual(bt0.taskId, "t1", "the staged replacement is not written by the details save")
 
         // 2. Squares Save.
         XCTAssertTrue(vm.handleEditSave(), "squares save should dispatch")

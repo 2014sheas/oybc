@@ -277,4 +277,29 @@ final class BoardMenuItemsTests: XCTestCase {
             XCTAssertFalse(kinds.contains(.reopen), "canEditSquares true but Reopen offered: \(board)")
         }
     }
+
+    // MARK: - BoardAction routing (Edit consolidation D8 `discardFirst`)
+
+    /// Every BOARD-section row maps to exactly one presenter action — the
+    /// same table `handleBoardItem` and the post-Discard re-route share.
+    func test_boardAction_routedFromEveryRow() {
+        XCTAssertEqual(BoardAction.routed(from: .close), .close)
+        XCTAssertEqual(BoardAction.routed(from: .reopen), .confirmReopen)
+        XCTAssertEqual(BoardAction.routed(from: .details), .details)
+        XCTAssertEqual(BoardAction.routed(from: .repeatBoard), .repeatBoard)
+        XCTAssertEqual(BoardAction.routed(from: .coreDefaults), .coreDefaults)
+        XCTAssertEqual(BoardAction.routed(from: .archive), .confirmArchive)
+        XCTAssertEqual(BoardAction.routed(from: .delete), .confirmDelete)
+    }
+
+    /// The "Discard changes?" confirm's target is read from the action
+    /// itself (captured when the alert presents), so Discard never depends on
+    /// `activeAction` still holding `.confirmDiscard` when the button fires —
+    /// SwiftUI may already have cleared it through the alert's binding.
+    func test_boardAction_discardTarget() {
+        XCTAssertEqual(BoardAction.confirmDiscard(then: .close).discardTarget, .close)
+        XCTAssertEqual(BoardAction.confirmDiscard(then: .reopen).discardTarget, .reopen)
+        XCTAssertNil(BoardAction.close.discardTarget)
+        XCTAssertNil(BoardAction.confirmReopen.discardTarget)
+    }
 }

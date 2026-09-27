@@ -22,15 +22,7 @@ extension BoardPlayView {
             boardAction = .confirmDiscard(then: item)
             return
         }
-        switch item {
-        case .close: boardAction = .close
-        case .reopen: boardAction = .confirmReopen
-        case .details: boardAction = .details
-        case .repeatBoard: boardAction = .repeatBoard
-        case .coreDefaults: boardAction = .coreDefaults
-        case .archive: boardAction = .confirmArchive
-        case .delete: boardAction = .confirmDelete
-        }
+        boardAction = BoardAction.routed(from: item)
     }
 
     /// The BOARD-section sheets/confirms + Close/Reopen/Archive/Delete
