@@ -11,7 +11,7 @@ import {
 } from '@oybc/shared';
 import { RisoButton, RisoIcon } from '../riso';
 import { archiveBoard, deleteBoard } from '../../db/operations/boards';
-import { closeBoard, reopenBoard, BoardLifecycleError } from '../../db/operations/boardLifecycle';
+import { closeBoard, reopenBoard } from '../../db/operations/boardLifecycle';
 import { buildBoardMenuItems, type BoardMenuItemKind } from './boardMenu';
 import { BoardActionsMenu } from './BoardActionsMenu';
 import { BoardDetailsSheet } from './BoardDetailsSheet';
@@ -123,20 +123,21 @@ export function BoardTitleActions({
     }
   };
 
+  // Close / Reopen give no toast — the CLOSED / ENDED pill flipping IS the
+  // feedback (iOS parity: `BoardActionsPresenter` shows nothing on success).
+  // "Board saved" is edit-save copy and would be wrong here.
   const handleClose = async (): Promise<void> => {
     setBusy(true);
     try {
       await closeBoard(board.id);
       setBusy(false);
-      onDetailsSaved();
     } catch (err) {
       console.error('BoardTitleActions: close failed', err);
       setBusy(false);
-      if (err instanceof BoardLifecycleError && err.kind === 'notFound') {
-        setNotice(BOARD_CLOSED_NOTICE);
-      } else {
-        setNotice({ title: 'Close failed', body: 'Close failed — please try again.' });
-      }
+      // One generic failure for every error (iOS parity). BOARD_CLOSED_NOTICE
+      // ("…your changes weren't saved") is for a board sealed under an open
+      // edit sheet — wrong for a Close that failed because the board vanished.
+      setNotice({ title: 'Close failed', body: 'Close failed — please try again.' });
     }
   };
 
@@ -146,7 +147,6 @@ export function BoardTitleActions({
       await reopenBoard(board.id);
       setAction(null);
       setBusy(false);
-      onDetailsSaved();
     } catch (err) {
       console.error('BoardTitleActions: reopen failed', err);
       setBusy(false);
