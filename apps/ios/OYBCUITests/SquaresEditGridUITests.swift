@@ -9,8 +9,10 @@ import XCTest
 ///     Delta   FREE    Epsilon
 ///     Zeta    Eta     Theta(locked)
 ///
-/// and deep-links straight to it. Each test enters "Edit squares" and drives
-/// the grid by its slot-positional ids (`squaresEditCell.<slot>`).
+/// and deep-links straight to it. Each test enters Edit (the title-row
+/// "Edit" button — Board Edit consolidation retired the separate "Edit
+/// squares" label) and drives the grid by its slot-positional ids
+/// (`squaresEditCell.<slot>`).
 ///
 /// Automated xcodebuild runs only — explicitly authorized by the owner as a
 /// narrow exception to CLAUDE.md's no-sim-driving rule (see §iOS testing).
@@ -29,7 +31,7 @@ final class SquaresEditGridUITests: XCTestCase {
         ]
         app.launch()
 
-        let edit = app.buttons["Edit squares"]
+        let edit = app.buttons["Edit board"]
         XCTAssertTrue(edit.waitForExistence(timeout: 20), "seeded board never opened")
         edit.tap()
         XCTAssertTrue(cell(0).waitForExistence(timeout: 10), "squares editor never appeared")

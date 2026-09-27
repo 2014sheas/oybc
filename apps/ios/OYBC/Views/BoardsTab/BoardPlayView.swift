@@ -125,14 +125,15 @@ struct BoardPlayView: View {
     /// while editing. Nil for the standalone destination.
     var onEditModeChange: ((Bool) -> Void)? = nil
     /// Board Edit redesign slice 2 (D8) — fired after a successful Archive
-    /// or Delete from the "…" menu on a CORE board (the pager stays put;
+    /// or Delete from the BOARD section on a CORE board (the pager stays put;
     /// its window falls back to the lazy setup prompt). A standalone
     /// (non-core) board just `dismiss()`s instead — see
     /// `BoardActionsPresenter`'s `onRemoved` wiring below. Nil for the
     /// standalone destination, where it's never called.
     var onBoardRemoved: (() -> Void)? = nil
     @EnvironmentObject var authService: AuthService
-    @Environment(\.dismiss) private var dismiss
+    // internal for the +BoardActions extension split (Board Edit consolidation)
+    @Environment(\.dismiss) var dismiss
 
     // MARK: - State
 
@@ -232,7 +233,10 @@ struct BoardPlayView: View {
     /// True while the in-place `BoardEditPanel` is overlaid on `BoardPlayView`.
     // internal for the +Header extension split
     @State var editMode: Bool = false
-    /// Board Edit redesign slice 2 (T2) — which "…" menu sheet/alert is
+    /// D3 — SQUARES-section-editable, frozen at Edit entry (`onEdit` in `+Header`).
+    // internal for the +Header extension split
+    @State var editSquaresEditable: Bool = false
+    /// Board Edit redesign slice 2 (T2) — which BOARD-section sheet/alert is
     /// active. Owned here (not the VM) since it's pure presentation state;
     /// `BoardActionsPresenter` reads/writes it via a binding.
     // internal for the +Header extension split
@@ -617,7 +621,7 @@ struct BoardPlayView: View {
                         removal: .move(edge: .top).combined(with: .opacity)
                     )
                 )
-                .zIndex(11)
+                .zIndex(31) // D10 — above the edit overlay (30); was 11.
             }
 
             // ── In-place SQUARES editor (Board Edit redesign slice 3, T5) ──
@@ -652,7 +656,17 @@ struct BoardPlayView: View {
                     },
                     onCancelConfirmed: {
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                    }
+                    },
+                    // D3/D4/D6 — squares gate + locked reason + BOARD rows (live `now`).
+                    squaresEditable: editSquaresEditable,
+                    squaresLockedReason: BoardMenuItems.squaresLockedReason(
+                        board: b, now: Date().timeIntervalSince1970 * 1000
+                    ),
+                    boardItems: BoardMenuItems.items(
+                        board: b, sourceTemplate: viewModel.editSourceTemplate,
+                        now: Date().timeIntervalSince1970 * 1000
+                    ),
+                    onBoardItem: handleBoardItem
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.risoPaper.ignoresSafeArea())
@@ -672,26 +686,10 @@ struct BoardPlayView: View {
         .onChange(of: editMode) { _, editing in
             onEditModeChange?(editing)
         }
-        // Board Edit redesign slice 2 (T2) — the "…" menu's three sheets +
-        // two confirm alerts, keyed off `boardAction`.
-        .modifier(
-            BoardActionsPresenter(
-                activeAction: $boardAction,
-                board: board,
-                sourceTemplate: viewModel.editSourceTemplate,
-                weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
-                userId: authService.currentUser?.id ?? "",
-                viewModel: viewModel,
-                onDetailsSaved: { triggerBoardSavedToast() },
-                onRemoved: {
-                    if board?.isCore == true {
-                        onBoardRemoved?()
-                    } else {
-                        dismiss()
-                    }
-                }
-            )
-        )
+        // Board Edit consolidation — the BOARD section's sheets + confirm
+        // alerts, keyed off `boardAction`. Construction moved to
+        // `+BoardActions.swift` (file-size split).
+        .modifier(boardActionsPresenter)
         // Board Edit redesign slice 3 (T5) — the square tap-menu, the picker
         // sheet, the Edit-task sheet, and the Save-failure / Board-closed
         // alerts, keyed off `editSquareMenuTarget` / `editPickerTarget`.
@@ -938,11 +936,10 @@ struct BoardPlayView: View {
         }
     }
 
-    // `risoPlayHeader` + `handleMenuSelect` + `risoBackButton` +
-    // `risoEndedText` + `risoExpiryText` moved to
-    // `BoardPlayView+Header.swift` (Board Edit redesign slice 2 — file-size
-    // guardrail; this file was already at its frozen cap before slice 2's
-    // menu/header additions).
+    // `risoPlayHeader` + `risoBackButton` + `risoEndedText` + `risoExpiryText`
+    // moved to `BoardPlayView+Header.swift`; `handleBoardItem` +
+    // `boardActionsPresenter` moved to `BoardPlayView+BoardActions.swift`
+    // (file-size guardrail).
 
     // Repeat-in-edit rework: the recurring management section
     // (`recurringManagementSection` + `RisoRecurringManageRow` /
@@ -1957,7 +1954,8 @@ struct BoardPlayView: View {
 
     /// Flashes the "Board saved" success toast for 2.4 s, then hides it.
     /// Safe to call multiple times — the latest invocation wins.
-    private func triggerBoardSavedToast() {
+    // internal for the +BoardActions extension split
+    func triggerBoardSavedToast() {
         withAnimation(.easeOut(duration: 0.2)) { showEditSavedToast = true }
         _Concurrency.Task { @MainActor in
             try? await _Concurrency.Task.sleep(nanoseconds: 2_400_000_000)

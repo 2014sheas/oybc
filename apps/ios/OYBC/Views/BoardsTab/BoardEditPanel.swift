@@ -2,10 +2,10 @@ import SwiftUI
 
 // MARK: - BoardEditPanel
 
-/// Leaf in-place SQUARES editor for an ACTIVE board (Board Edit redesign
-/// slice 3, T5 — docs/BOARD_EDIT_REDESIGN.md). Takes all state as plain
-/// props and callbacks — no database access — so it is directly
-/// snapshot-testable.
+/// Leaf full-screen Edit overlay (Board Edit redesign slice 3, T5, expanded
+/// by the Edit consolidation to host every board option —
+/// docs/BOARD_EDIT_REDESIGN.md). Takes all state as plain props and
+/// callbacks — no database access — so it is directly snapshot-testable.
 ///
 /// Slice 3 (D7) retires the Edit-tasks ⇄ Rearrange sub-modes: there is ONE
 /// grid now. Tap routes to the square menu / picker (owned by
@@ -16,11 +16,19 @@ import SwiftUI
 /// ("Make it a free space" / "Make it a task square"), exactly like any
 /// other square.
 ///
+/// Edit consolidation (D3/D4/D6): `squaresEditable` (frozen by the caller at
+/// Edit entry) gates the SQUARES section — when true it's the grid exactly
+/// as before; when false the grid is replaced by one muted
+/// `squaresLockedReason` line, the top-left control reads "Done" instead of
+/// "Cancel", and the save bar doesn't render (nothing can be dirty). Either
+/// way, a `BoardOptionsSectionView` (D6's BOARD section) renders below.
+///
 /// Layout (vertical scroll):
-///   top bar  (Cancel · "Editing squares" gold pill)
-///   → SQUARES section header + hint
-///   → the unified squares-edit grid
-///   sticky bottom: edit counter · Shuffle · "Save changes" pill
+///   top bar  (Cancel/Done · "Editing" gold pill)
+///   → SQUARES section header + hint + grid, OR the locked-reason line
+///   → BOARD section (`BoardOptionsSectionView`)
+///   sticky bottom (only when `squaresEditable`): edit counter · Shuffle ·
+///     "Save changes" pill
 ///
 /// Confirm alert (inline / system): Cancel-if-dirty ("Discard changes?").
 /// Handled here; the outcome callback routes to the parent (`BoardPlayView`),
@@ -71,6 +79,22 @@ struct BoardEditPanel: View {
     /// Parent exits edit mode.
     var onCancelConfirmed: () -> Void
 
+    // MARK: - Board Edit consolidation (D3/D4/D6)
+
+    /// Whether the SQUARES section is editable — frozen by the caller at
+    /// Edit entry (`BoardMenuItems.canEditSquares`). `true` preserves every
+    /// pre-consolidation behavior; `false` swaps the grid for
+    /// `squaresLockedReason`, drops the save bar, and reads "Done" instead
+    /// of "Cancel".
+    var squaresEditable: Bool = true
+    /// D4 — the muted line shown in place of the grid when
+    /// `!squaresEditable` (`BoardMenuItems.squaresLockedReason`).
+    var squaresLockedReason: String? = nil
+    /// D6 — the BOARD section's rows, in display order.
+    var boardItems: [BoardMenuItem] = []
+    /// Called with a tapped BOARD-section row.
+    var onBoardItem: (BoardMenuItem) -> Void = { _ in }
+
     // MARK: - Local confirm-dialog state
 
     @State private var showCancelConfirm = false
@@ -91,7 +115,9 @@ struct BoardEditPanel: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             scrollContent
-            saveBar
+            if squaresEditable {
+                saveBar
+            }
         }
         .alert("Discard changes?", isPresented: $showCancelConfirm) {
             Button("Keep editing", role: .cancel) {}
@@ -107,10 +133,17 @@ struct BoardEditPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 topBar
-                squaresSection
-                // Bottom clearance for the sticky save bar so the last row
-                // is always visible above the bar when the scroll view bottoms out.
-                Spacer().frame(height: 76)
+                if squaresEditable {
+                    squaresSection
+                } else {
+                    lockedReasonLine
+                }
+                BoardOptionsSectionView(items: boardItems, onSelect: onBoardItem)
+                if squaresEditable {
+                    // Bottom clearance for the sticky save bar so the last row
+                    // is always visible above the bar when the scroll view bottoms out.
+                    Spacer().frame(height: 76)
+                }
             }
             .padding(.horizontal, Riso.gutter)
             .padding(.vertical, 16)
@@ -123,13 +156,18 @@ struct BoardEditPanel: View {
 
     private var topBar: some View {
         HStack(spacing: 0) {
-            Button("Cancel") {
-                if isDirty {
-                    showCancelConfirm = true
+            Button(squaresEditable ? "Cancel" : "Done") {
+                if squaresEditable {
+                    if isDirty {
+                        showCancelConfirm = true
+                    } else {
+                        onCancelConfirmed()
+                    }
                 } else {
                     onCancelConfirmed()
                 }
             }
+            .accessibilityLabel(squaresEditable ? "Cancel" : "Done editing")
             .font(.risoBody(15, .semibold))
             .foregroundStyle(Color.risoMuted)
 
@@ -139,7 +177,8 @@ struct BoardEditPanel: View {
         }
     }
 
-    /// Gold "Editing squares" pill with a red recording dot.
+    /// Gold "Editing" pill with a red recording dot (D5 — copy shortened
+    /// from "Editing squares" now that Edit hosts more than the grid).
     ///
     /// Content on gold uses `risoInkStatic` so it reads correctly in dark mode
     /// (plain `risoInk` inverts to cream on the always-bright gold fill).
@@ -148,7 +187,7 @@ struct BoardEditPanel: View {
             Circle()
                 .fill(Color.risoRed)
                 .frame(width: 7, height: 7)
-            Text("Editing squares")
+            Text("Editing")
                 .font(.risoBody(13, .bold))
                 .foregroundStyle(Color.risoInkStatic)
         }
@@ -188,6 +227,14 @@ struct BoardEditPanel: View {
                 windowedIsCompleted: windowedIsCompleted
             )
         }
+    }
+
+    /// D4 — replaces `squaresSection` when `!squaresEditable`.
+    private var lockedReasonLine: some View {
+        Text(squaresLockedReason ?? "")
+            .font(.risoBody(12, .regular))
+            .foregroundStyle(Color.risoMuted)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Sticky save bar

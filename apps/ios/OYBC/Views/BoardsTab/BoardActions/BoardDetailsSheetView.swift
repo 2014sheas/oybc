@@ -2,7 +2,7 @@ import SwiftUI
 
 /// "Board details" sheet (Board Edit redesign slice 2, D4/D5 —
 /// docs/BOARD_EDIT_REDESIGN.md, handoff frame i12). Opened from the board
-/// title row's "…" menu for an ad-hoc, editable board — commits
+/// Edit screen's BOARD section for an ad-hoc, editable board — commits
 /// independently of the squares editor via `BoardDetailsDraft` +
 /// `AppDatabase.saveBoardDetails`.
 ///

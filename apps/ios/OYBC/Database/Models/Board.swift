@@ -68,7 +68,8 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     // via the shared `CLEARABLE_BOARD_FIELDS` list. A non-nil `sealedAt` makes
     // the board a permanent record: it drops out of the live derivation
     // fan-out, renders from `sealedCompletedCells`, accepts only direct late
-    // logs, and is ineligible for Edit squares. `status` is untouched —
+    // logs, and is ineligible for the Edit screen's SQUARES section
+    // (`BoardMenuItems.canEditSquares`). `status` is untouched —
     // sealing is orthogonal to draft/active/completed/archived.
     var sealedAt: String? // ISO8601
 

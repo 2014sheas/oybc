@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Data-loading host for `CoreDefaultsEditSheetView` when opened from the
-/// board title row's "…" menu (Board Edit redesign slice 2, D9 —
+/// the Edit screen's BOARD section (Board Edit redesign slice 2, D9 —
 /// docs/BOARD_EDIT_REDESIGN.md). `CoreDefaultsEditSheetView` takes pools /
 /// tasks / templates / roster mix / library as props — today only loaded by
 /// `BoardSettingsView`. This host mounts the SAME set of loads (mirroring

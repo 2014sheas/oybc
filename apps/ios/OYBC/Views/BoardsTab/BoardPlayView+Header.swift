@@ -28,12 +28,14 @@ extension BoardPlayView {
     // MARK: - Riso Play Header
 
     /// In-content header (masthead layout): back button (non-embedded
-    /// only) + the extracted `BoardPlayHeaderView` leaf (kicker · name
-    /// + inline streak chip · badge row · Edit squares / Read-only slot +
-    /// the "…" board menu). The Edit gate is ONE rule on both platforms:
-    /// `status == .active && sealedAt == nil && !editMode` (the edit
-    /// panel replaces this chrome while open). The "…" menu is hidden
-    /// while `editMode` too (Board Edit redesign slice 2, D2).
+    /// only) + the extracted `BoardPlayHeaderView` leaf (kicker · name +
+    /// inline streak chip · badge row · a single `Edit` slot — Board Edit
+    /// consolidation, D1/D2). The Edit gate is
+    /// `BoardMenuItems.showsEditButton(board:) && !editMode` (any non-draft
+    /// board, not already editing) on both platforms — the edit overlay
+    /// (SQUARES + BOARD section) replaces this chrome while open, and
+    /// decides internally whether its SQUARES section is itself editable
+    /// (`BoardMenuItems.canEditSquares`, D3).
     @ViewBuilder
     var risoPlayHeader: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -54,44 +56,23 @@ extension BoardPlayView {
                 isSealed: isSealed,
                 isEnded: isEnded,
                 showRecurringBadge: board.map { RisoRecurringBadge.shouldShow(for: $0) } ?? false,
-                // Board Edit redesign slice 4 (D13): Edit squares also gates
-                // on `!isEnded` now — an ended-but-unsealed board still
-                // logs, but no longer edits its squares.
-                canEdit: board?.status == .active && !isSealed && !isEnded && !editMode,
+                canEdit: board.map(BoardMenuItems.showsEditButton) == true && !editMode,
                 onEdit: {
                     guard let b = board else { return }
+                    // Board Edit consolidation (D3) — frozen once, at entry;
+                    // does not flip mid-session even if the board ends/seals
+                    // while the user edits (the Save-time "Board closed"
+                    // guard owns that race).
+                    editSquaresEditable = BoardMenuItems.canEditSquares(
+                        board: b, now: Date().timeIntervalSince1970 * 1000
+                    )
                     viewModel.seedEditDraft(from: b)
                     // `seedEditDraft` used to reset `editSaving` inline;
                     // it stays view-side, so reset it here.
                     editSaving = false
                     withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
-                },
-                // Board Edit redesign slice 2 (D2/D3) — hidden entirely
-                // while `editMode` (edits must go through Save/Cancel
-                // first); otherwise the pure builder's ordered list.
-                menuItems: editMode ? [] : (board.map {
-                    BoardMenuItems.items(
-                        board: $0, sourceTemplate: viewModel.editSourceTemplate,
-                        now: Date().timeIntervalSince1970 * 1000
-                    )
-                } ?? []),
-                onMenuSelect: { handleMenuSelect($0) }
+                }
             )
-        }
-    }
-
-    /// Board Edit redesign slice 2 (+ slice 4's Close/Reopen) — routes a
-    /// tapped "…" menu item to the matching `BoardAction`, which
-    /// `BoardActionsPresenter` presents.
-    func handleMenuSelect(_ item: BoardMenuItem) {
-        switch item {
-        case .close: boardAction = .close
-        case .reopen: boardAction = .confirmReopen
-        case .details: boardAction = .details
-        case .repeatBoard: boardAction = .repeatBoard
-        case .coreDefaults: boardAction = .coreDefaults
-        case .archive: boardAction = .confirmArchive
-        case .delete: boardAction = .confirmDelete
         }
     }
 

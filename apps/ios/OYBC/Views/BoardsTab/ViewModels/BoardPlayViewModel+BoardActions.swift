@@ -3,7 +3,7 @@ import GRDB
 
 // MARK: - BoardPlayViewModel + Board actions (Board Edit redesign slice 2)
 
-/// The title-row "…" menu's write paths — Board details / Repeat / Archive /
+/// The Edit screen's BOARD-section write paths — Board details / Repeat / Archive /
 /// Delete — plus the small async read the Repeat sheet needs
 /// (`loadSpawnNote`). Split out of
 /// `BoardPlayViewModel.swift` (which is at its frozen size cap) alongside
