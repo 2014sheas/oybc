@@ -1,4 +1,4 @@
-# Board Edit redesign (2026-09 — in progress)
+# Board Edit redesign (2026-09 — train complete)
 
 Owner-decided model for editing an EXISTING board, replacing the Phase 1–4
 Board Edit described in [`BOARD_EDIT.md`](BOARD_EDIT.md) (kept as history of
@@ -51,7 +51,12 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
   `completedLineIds` re-derive, streaks and achievement watchers recompute)
   AND **Reopen board** (clears `sealedAt` + the snapshot; completion
   re-derives from events; `.alert` confirm). A manually reopened board never
-  auto-closes again — it stays open until Close. This RELAXES
+  auto-closes again — it stays open until Close. Only a late log is undoable
+  ("Undo late log" / the counting sheet's undo — identified by `boardId` +
+  `createdAt > sealedAt`); every other event inside the closed window stays
+  tombstone-immune. *(The handoff README's decision 3 floated a "grace to end
+  of day" for a reopened board; the owner ruling is "never auto-closes" —
+  slice 4 D1.)* This RELAXES
   [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md)'s "a sealed board authors
   no event" — that doc changes in the same PR as slice 4.
 - **Auto-close** moves from `min(48h, window/4)` to *when the next window of
@@ -65,8 +70,8 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 | --- | --- | --- |
 | 1 | Per-square locks (`BoardTask.isLocked`, synced) honored by rearrange; Lock/Unlock in the existing edit tap menu; one cell renderer with lock + dirty chips across play / edit / arrange / wizard preview on both platforms; web Playground demo + iOS snapshots | shipped (#510) |
 | 2 | Title-row "…" menu; Board details sheet; core-board gating (no name / timeframe / repeats / archive on `isCore`); Archive / Delete / Repeat move out of the panel | shipped (#511) |
-| 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired; remove the center selector from Board details; retire the Edit tasks ⇄ Rearrange toggle | in progress — see §Slice 3 below |
-| 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | planned |
+| 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired; remove the center selector from Board details; retire the Edit tasks ⇄ Rearrange toggle | shipped (#512) — see §Slice 3 below |
+| 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | shipped (this PR, `feature/board-edit-slice4-close`) — see §Slice 4 below |
 
 Independent of the train (bugfix PRs any time): iOS Board Edit rewrites an
 achievement task's type (P0). ~~zero-placement boards show "Loading…" forever
@@ -153,7 +158,9 @@ iOS together (rule 6).
   - Sealed (closed) boards: `Core defaults…` (core only) · `Delete` only.
     Repeat and Archive both write to the sealed board row (back-stamp /
     status), so they're deferred to slice 4 alongside Reopen and the
-    relaxed closed-board rules.
+    relaxed closed-board rules. *(Superseded by slice 4 D12 — see §Slice 4:
+    ended and closed boards now get Close / Reopen first, and ad-hoc closed
+    boards get Repeat and Archive back.)*
   - Draft boards: no menu (the draft-resume prompt replaces the header).
 - **Board details** is a new sheet with its own Cancel · "Board details" ·
   Save, committed independently via `saveBoardDetails` (a metadata-only
@@ -291,3 +298,74 @@ together (rule 6).
   they remain the board-creation wizard's Preview ⇄ Rearrange grid.
   `SquaresEditGrid` (web ↔ iOS) is the board-edit fork. `CellSwapModal.tsx` /
   `CellSwapSheet.swift` are deleted.
+
+## Slice 4 — detailed scope
+
+Plan: `.superpowers/sdd/2026-09-27-board-edit-slice4/plan.md` (Decisions
+D1–D18; owner rulings R1–R5 in `owner-rulings.md`, binding; branch
+`feature/board-edit-slice4-close`). One PR, web + iOS together (rule 6). This
+slice amends [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) in the same PR
+(§Closed boards, §Lifecycle steps 3–5, the immunity predicate).
+
+- **Ended vs closed.** Ended = past `endDate`, not sealed, not archived
+  (`isBoardEnded`); closed = sealed and ACTIVE / COMPLETED (`isBoardClosed`).
+  Both are shared pure predicates with Swift twins.
+- **`Board.reopenedAt` (D1)** — ISO8601, stamped by every Reopen, never
+  cleared. Zod optional; Dexie field only (no store version); GRDB **v35**
+  `ALTER TABLE boards ADD COLUMN reopenedAt TEXT`. No `firestore.rules` or
+  sync-contract collection change.
+- **Clearable board fields (D2)** — `CLEARABLE_BOARD_FIELDS = ['endDate',
+  'completedAt', 'sealedAt', 'sealedCompletedCells']` in the shared sync
+  contract (+ `syncContract.json` for Swift). Push sends a field delete for
+  each absent one; the iOS pull NULLs each one a winning remote row lacks.
+  Without it a Reopen never reaches the other device. See
+  `SYNC_STRATEGY.md`.
+- **Close (D3)** = the existing seal transaction (`closeBoard` → `sealBoard` /
+  `sealBoardTx`) + achievement-watcher refresh. No confirm. The Boards-tab
+  closing-out banner's "Close out" routes through `closeBoard` too.
+- **Auto-close (D4, D5, R5)** — `computeAutoCloseDeadlineMs` replaces
+  `min(48h, window/4)`: the end of the NEXT window of the board's timeframe
+  (daily +1 day, weekly +7 days, monthly end of next month, yearly end of next
+  year, custom + its length in whole local days clamped to [1, 31], indefinite
+  never), local wall-clock, pinned by `autoCloseDeadlineVectors.json`.
+  Reopened boards never auto-close. The pass waits for the session's first
+  pull (10 s / offline fallback). Boards sealed under the old rule stay sealed.
+- **Reopen (D6)** — `.alert` "Reopen this board?" / "It accepts logs again
+  until you close it. Streaks and achievements that watch it will
+  recompute." · Cancel · Reopen. One transaction: clear `sealedAt` +
+  `sealedCompletedCells`, stamp `reopenedAt`, version + enqueue, live
+  re-derivation of the board, watcher refresh. Spawns nothing; hidden from the
+  closing-out banner; no expiry notification (its `endDate` is past). iOS
+  reconciles notifications after Close / Reopen.
+- **Direct late log (D7–D11, R1–R4)** — one DB choke point per platform
+  (`lateLog.ts` ↔ `AppDatabase+LateLog.swift`); see WC §Closed boards for
+  the event, re-derivation, undo and recovery rules.
+- **Menus (D12)**, one pure builder per platform (`buildBoardMenuItems` ↔
+  `BoardMenuItems.items(…, now:)`):
+  - Ad-hoc ended: `Close board` · `Board details…` · `Repeat this board…` ·
+    `Archive` · `Delete`.
+  - Ad-hoc closed: `Reopen board` · `Repeat this board…` · `Archive` ·
+    `Delete`.
+  - Core ended: `Close board` · `Core defaults…` · `Delete`.
+  - Core closed: `Reopen board` · `Core defaults…` · `Delete`.
+  - Archived: unchanged (no Close / Reopen).
+  Archive and Repeat use `assertBoardMetadataWritable` (sealed allowed,
+  deleted throws); squares / details saves keep `assertBoardEditable`.
+- **Ended = no edit (D13)** — Edit squares gates on `status == ACTIVE &&
+  !sealedAt && !ended && !editMode`.
+- **Chrome (D14)** — header pill ENDED (gold) / CLOSED (paper); **no
+  "Read-only" label anywhere**; ended banner "Board ended on {date}. Still
+  logging until you close it."; stat card LEFT / Ended / {date} · still
+  logging (ended) vs ENDED / {date} / permanent record (closed).
+- **Late-log sheets (D15, D16)** — tapping a closed board's square opens a
+  sheet headed by the window label, task name and a Closed pill: normal →
+  "Mark done on board" (or "Undo late log" when the green came from a late
+  log); counting → the sealed-bounded window count with +1 / +2 / +5 /
+  Custom… (web stages then "Log"; iOS writes per chip) and "Undo late log";
+  compound → the parts list, "Mark done on board" enabled once the rule is
+  met; achievement and hub-linked derived squares are not tappable. Closed
+  counting cells show the sealed-bounded window count.
+- **Mixed-version hazard (D18)** — accepted flag-day, as WC.
+
+With slice 4 the Board Edit redesign train (slices 1–4: #510, #511, #512,
+this PR) is complete.

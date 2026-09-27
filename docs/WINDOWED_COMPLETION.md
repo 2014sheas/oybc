@@ -31,6 +31,22 @@
 > original start-bound-only text is kept below only where marked as history.
 > Companion ruling (same train): ended boards are never Board Sources
 > (`BOARD_SOURCES.md` §Boards as sources).
+>
+> **Amended 2026-09-27 (Board Edit redesign slice 4 — Close / Reopen,
+> `feature/board-edit-slice4-close`; owner rulings R1–R5):** "sealed" is the
+> user-facing **Closed** state and is no longer write-once. (1) A closed board
+> accepts a **direct late log** from its own play surface through one choke
+> point per platform (`lateLog.ts` ↔ `AppDatabase+LateLog.swift`), stamped at
+> its `endDate`; the write re-derives every sealed board placing the task,
+> live-cascades the open ones, and refreshes achievement watchers in one
+> transaction. (2) A late log is **undoable** (only that event, identified by
+> `boardId` + `createdAt > sealedAt`); every other sealed-window event stays
+> tombstone-immune. (3) **Reopen** clears `sealedAt` + the snapshot and stamps
+> `reopenedAt`; a reopened board never auto-closes. (4) The auto-seal backstop
+> `min(48h, windowLength/4)` is replaced by **next-window auto-close** (a board
+> closes when the next window of its timeframe ends). The text these supersede
+> is kept below where marked as history. See
+> [§Closed boards](#closed-boards-late-log-undo-reopen-amended-2026-09-27).
 
 ## Problem
 
@@ -67,11 +83,11 @@ evaluation ("spawns within *this placement's* window").
 | 2 | Architecture | **Full event log** (`task_events` collection), not latest-timestamp-only, not per-spawn task clones |
 | 3 | v1 scope | **Normal AND counting tasks** both event-sourced in v1 (compound derives from children; achievement derives from board state — neither needs events) |
 | 4 | Event mutation model | **Soft-deletable rows synced with existing per-row LWW** (like `compound_children`) — NOT pure append-only with compensating events. Union by id, tombstone = undo, zero new sync machinery |
-| 5 | Seal trigger | **Prompt-to-seal on next app-open** after a window closes (lazy, user-driven — same philosophy as the recurring banner), with a **timeframe-scaled auto-seal backstop** (`min(48h, windowLength/4)`) |
+| 5 | Seal trigger | **Prompt-to-seal on next app-open** after a window closes (lazy, user-driven — same philosophy as the recurring banner), with a **timeframe-scaled auto-seal backstop** (`min(48h, windowLength/4)`). **Amended 2026-09-27 (slice 4, R5):** the user action is **Close board** (menu) or **Close out** (banner); the backstop is now **next-window auto-close** — a board auto-closes when the *next* window of its timeframe ends (`computeAutoCloseDeadlineMs`), never if it was manually reopened (`reopenedAt != null`) |
 | 6 | Derived shared counters | **Unchanged in v1** — baseline-based display everywhere; derived tasks are fully carved out of events/backfill/recompute (see [§Derived-task carve-out](#derived-task-carve-out)) |
 | 7 | Doc home | This file; pointers from ARCHITECTURE.md + CLAUDE.md when implementation starts |
 | 8 | Seal snapshots are re-derivable | Sealed board snapshots are **locally re-derived pure functions of the converged in-window event union** — never LWW-raced between devices (review finding C2) |
-| 9 | Undo is window-scoped | Un-complete tombstones **all in-window** events for the viewed context; events inside a sealed board's window `[startDate, min(endDate, sealedAt)]` are **immune to tombstoning** (review findings M4 + C2 interaction; end bound amended 2026-09-24) |
+| 9 | Undo is window-scoped | Un-complete tombstones **all in-window** events for the viewed context; events inside a sealed board's window `[startDate, min(endDate, sealedAt)]` are **immune to tombstoning** (review findings M4 + C2 interaction; end bound amended 2026-09-24). **Amended 2026-09-27 (slice 4, R2):** except a closed-board late log (`boardId` set and `createdAt > sealedAt` of that window's board), which stays undoable until some containing board seals after it (`isEventSealImmune`) |
 
 ## Goals / non-goals
 
@@ -96,8 +112,11 @@ evaluation ("spawns within *this placement's* window").
 - No event compaction (fold ancient events into rollups). Growth math says YAGNI
   (see [§Performance](#performance)).
 - No editing of historical events. Tombstoning exists only as in-window undo, and
-  never reaches inside sealed windows.
-- No unseal gesture. A sealed board cannot be edited or have its window extended.
+  never reaches inside sealed windows — *except* the undo of a closed-board late
+  log (amended 2026-09-27, slice 4).
+- ~~No unseal gesture.~~ *(Superseded 2026-09-27: **Reopen board** clears the
+  seal — slice 4.)* A sealed board still cannot have its squares edited or its
+  window extended.
 - No change to achievement semantics, board identity/detection (`windowKey` is a
   separate change), or the lazy no-background-write invariants.
 
@@ -286,7 +305,10 @@ the same root-event window sum the kernel uses (hub rows also bounded at the
 board's `sealedAt`), so a cell never paints green or reads N/N while board
 stats count it incomplete, and a late-synced in-window event moves both. Only
 hub-linked rows and context-less (lifetime) readers still show
-`currentCount − baseline`. Sealed play cells keep their max/0 snapshot display.
+`currentCount − baseline`. Sealed play cells keep their max/0 snapshot display
+*(amended 2026-09-27, slice 4 D16: a closed board's counting cell now shows the
+sealed-bounded window count so a partial late log is visible; green still comes
+from `sealedCompletedCells`)*.
 This supersedes the earlier `linkedAt` idea: the board window is the anchor,
 and it already lives on the derived task.
 
@@ -330,10 +352,18 @@ Kept, still synced, stamped transactionally on every event write — but demoted
   is re-encoded as a UTC ISO event timestamp; an unparseable `endDate` fails
   open to `now`. Logs made **elsewhere** — the library, Task Detail, the
   Counters hub / counter detail — carry no board and stamp `now`; they are not
-  attributed to an ended board. A **sealed** board authors nothing:
+  attributed to an ended board. A **sealed** (closed) board authors nothing
+  **except through the closed-board late-log path** (amended 2026-09-27, slice
+  4 — see [§Closed boards](#closed-boards-late-log-undo-reopen-amended-2026-09-27)):
   `handleTaskCompletion` / `completeTaskOrchestrated` no-op (no event appended,
   board untouched), as do the compound-child fallback and the shared-counter
   `incrementSharedCounter` / `decrementSharedCounter` given a sealed `boardId`.
+  A user tap on a closed board's square goes to `lateLog.ts` ↔
+  `AppDatabase+LateLog.swift` instead, which appends one event stamped at the
+  board's `endDate` (`lateLogOccurredAt`), then re-derives every sealed board
+  placing the task, cascades the live boards, and refreshes achievement
+  watchers, all in one transaction. Every other entry point keeps its sealed
+  no-op.
 - **Compound-child fallback** (child not placed on the host board): writes only
   for an **event-owning** child (NORMAL / plain COUNTING — event append with the
   late-log stamp above). For a non-event-owning child — window-stamped derived
@@ -359,6 +389,13 @@ Kept, still synced, stamped transactionally on every event write — but demoted
     gap `(endDate, sealedAt]` belongs to the next window's board and stays
     tombstonable there. A missing / unparseable `endDate` leaves the bound at
     `sealedAt`.
+    **Late-log carve-out (amended 2026-09-27, slice 4, R2):** the predicate is
+    now `isEventSealImmune(event, windows)` — the event is immune iff some
+    window holds its `occurredAt` **and** it is not a late log made after that
+    window's board closed (`event.boardId != null && event.createdAt >
+    sealedAt`). Heal / backfill mints carry no `boardId`, so they stay immune.
+    A late log re-freezes once any containing board seals *after* it was
+    created (including a re-Close after Reopen).
     Immune events can never be tombstoned by any gesture — history stays history.
     If tombstoning the non-immune events doesn't flip the square (an immune event
     keeps it green), the UI says why rather than appearing broken.
@@ -398,10 +435,17 @@ Kept, still synced, stamped transactionally on every event write — but demoted
 ```ts
 interface Board {
   // ...existing fields...
-  sealedAt?: string;              // ISO8601; set once, never cleared
+  sealedAt?: string;              // ISO8601; set by Close / auto-close, cleared by Reopen
   sealedCompletedCells?: number[] // cell indexes (row*size+col) green per the event union
+  reopenedAt?: string;            // ISO8601; stamped by every Reopen, never cleared (slice 4)
 }
 ```
+
+*(History: until 2026-09-27 `sealedAt` was "set once, never cleared". Reopen
+clears `sealedAt` + `sealedCompletedCells`; both are in the shared
+`CLEARABLE_BOARD_FIELDS`, so the clear syncs — `deleteField()` /
+`FieldValue.delete()` on push, NULL-out on the iOS pull — see
+`docs/SYNC_STRATEGY.md`.)*
 
 `status` is untouched — sealing is orthogonal to draft/active/completed/archived.
 (Whether sealed-but-never-greenlogged boards deserve a distinct visual treatment
@@ -421,12 +465,40 @@ is a UI question, listed under [§Open questions](#open-questions).)
    closing daily's own surface** is stamped at its `endDate` and counts for
    the closing daily (amended 2026-09-24 — previously the board evaluated
    `[startDate, ∞)` and that log also counted for the new daily).
-3. **Seal (user action)** — in one transaction: run the derivation pass one final
-   time, write `sealedAt = now` + `sealedCompletedCells` (the green cell indexes
-   from that final grid), bump `version`/`updatedAt`, enqueue Board sync.
-4. **Backstop (auto-seal)** — on app-open, boards past their backstop deadline
-   seal silently via the same transaction, no prompt. The deadline is
-   **timeframe-scaled** (review finding M2 — a flat 48h gave daily boards a
+3. **Seal (user action)** — **Close board** (the board's "…" menu, no confirm)
+   or **Close out** (the Boards-tab banner); both call `closeBoard` (web
+   `boardLifecycle.ts` ↔ iOS `AppDatabase+BoardLifecycle.swift`), which in one
+   transaction runs the derivation pass one final
+   time, writes `sealedAt = now` + `sealedCompletedCells` (the green cell indexes
+   from that final grid), bumps `version`/`updatedAt`, enqueues Board sync, and
+   refreshes achievement watchers of the board.
+4. **Auto-close (amended 2026-09-27, slice 4 R5)** — boards past their
+   auto-close deadline seal silently via the same transaction, no prompt. The
+   deadline is **the end of the next window of the board's timeframe**
+   (`computeAutoCloseDeadlineMs`, `packages/shared/src/algorithms/sealing.ts` ↔
+   `Helpers/Sealing.swift`, pinned by `autoCloseDeadlineVectors.json`), computed
+   in local wall-clock on `endDate`'s components (DST-safe):
+
+   | Timeframe | Auto-close deadline |
+   | --------- | ------------------- |
+   | Daily     | `endDate` + 1 day (yesterday's daily closes at the end of today) |
+   | Weekly    | `endDate` + 7 days |
+   | Monthly   | last day of the month after `endDate`'s month, same wall time |
+   | Yearly    | Dec 31 of the following year, same wall time |
+   | Custom    | `endDate` + the window length in whole local days, clamped to [1, 31] |
+   | Indefinite / no `endDate` | never |
+
+   A **manually reopened** board (`reopenedAt != null`) never auto-closes. The
+   `max(endDate, activatedAt)` draft shift is kept. The pass runs **after the
+   session's first pull** (web `useBackstopAutoSeal`; iOS `BoardListView` via
+   `SyncService.hasCompletedFirstPull`), falling back to offline / a 10s timeout,
+   so a Reopen pulled from another device is seen before this device decides.
+   Boards already sealed under the old rule stay sealed (no retro-unseal); the
+   user can Reopen. The historical pre-WC migrations (web `migrationV14`, iOS
+   v22) gate on the new formula, which seals fewer boards.
+
+   *History (2026-07-09 → 2026-09-27):* the backstop was timeframe-scaled
+   `min(48h, windowLength/4)` (review finding M2 — a flat 48h gave daily boards a
    three-day scoring window, letting one workout green three consecutive dailies):
 
    | Timeframe | Backstop = `min(48h, windowLength/4)` |
@@ -444,6 +516,17 @@ is a UI question, listed under [§Open questions](#open-questions).)
    (next section). Rationale for the gesture-less write stands as before: an
    ignored prompt must not leave history mutable indefinitely. Flagged for
    Gate-1 sign-off.
+5. **Reopen (slice 4)** — "…" → **Reopen board** (`.alert`: "Reopen this
+   board?" / "It accepts logs again until you close it. Streaks and
+   achievements that watch it will recompute."). `reopenBoard` in one
+   transaction clears `sealedAt` + `sealedCompletedCells`, stamps `reopenedAt =
+   now`, bumps `version`, enqueues, re-runs the **live** derivation for the
+   board (stats / lines / status from events in `[startDate, endDate]`), and
+   refreshes watchers. A reopened board is "Ended, not closed": it plays and
+   late-logs through the ordinary ended-board path, is excluded from the
+   closing-out banner, never auto-closes, and writes no template / spawn row.
+   Window-stamped derived counters have nothing to unfreeze (`isFrozenDerivedRow`
+   keys on `now > row.endDate`, not `sealedAt`).
 
 ### Seal snapshots re-derive from the event union (review finding C2)
 
@@ -465,6 +548,11 @@ log but never reach the frozen record. Instead:
   `endDate`, so a completion stamped after `endDate` (even before `sealedAt`)
   is excluded, one stamped exactly at `endDate` counts, and a `sealedAt`
   earlier than `endDate` narrows further — pinned by `sealReDerivationVectors`.
+- Re-derivation runs on the pull path **and on the closed-board late-log /
+  late-log-undo / counter-undo local path** (amended 2026-09-27, slice 4 R3 —
+  the same `reDeriveSealedBoardsForTasks` ↔ `reDeriveSealedBoards` function, in
+  the writer's transaction, so a peer computes the identical snapshot when the
+  event pulls in).
 - Re-derivation is **local-only**: no `version` bump, no sync enqueue. Every
   device converges independently because the input (the event union) converges.
   There is no snapshot LWW fight, and no unbounded mutability — the recompute
@@ -484,15 +572,74 @@ log but never reach the frozen record. Instead:
   platform orchestration around it) skips sealed boards. Greenlog can no longer
   revert on them from live activity; re-derivation (above) is the only sanctioned
   mutation and is deterministic.
-- **Grid renders from `sealedCompletedCells`** (read-only squares), not from live
-  event queries.
-- **Not editable** (review finding M6): the Board Edit entry point
-  (docs/BOARD_EDIT.md) gates on `!sealedAt` on both platforms — rearranging
+- **Grid renders from `sealedCompletedCells`**, not from live event queries;
+  squares accept a direct late log (amended 2026-09-27 — see
+  [§Closed boards](#closed-boards-late-log-undo-reopen-amended-2026-09-27)).
+  Counting cells show the sealed-bounded window count (e.g. "3/5"), not a
+  max/0 snapshot display; green still comes from `sealedCompletedCells`.
+- **Not editable** (review finding M6): the Edit squares entry point gates on
+  `!sealedAt && !ended` on both platforms (amended 2026-09-27; an ended but
+  unclosed board has no edit either) — rearranging
   squares under a positional snapshot, swapping tasks, or extending the window
-  would all desync the frozen record. No unseal gesture in v1.
+  would all desync the frozen record. ~~No unseal gesture in v1.~~ **Reopen**
+  (slice 4) is the unseal gesture; Archive and Repeat are allowed on a closed
+  board (`assertBoardMetadataWritable`), squares / details saves are not
+  (`assertBoardEditable`).
 - **Streaks / achievements / stats read the frozen row** — final modulo
   re-derivation convergence.
 - Sealed boards remain visible everywhere they are today (pager, browser, lists).
+
+### Closed boards: late log, undo, Reopen (amended 2026-09-27)
+
+Board Edit redesign slice 4, owner rulings R1–R5 (2026-09-26). Scenario: ran
+Tuesday, forgot 5 mi, logs it Friday from the Tuesday board.
+
+- **Late log (R1, R3).** One DB choke point per platform (web
+  `db/operations/lateLog.ts` ↔ iOS `AppDatabase+LateLog.swift`):
+  `lateLogCompletion` / `lateLogIncrement` / `lateLogCompoundParts` /
+  `undoLateLog`. Each guards "board non-deleted and closed", stamps
+  `occurredAt = lateLogOccurredAt(board, now)` (= the `endDate` instant),
+  sets `boardId` to the closed board, and — in ONE transaction — appends the
+  event, restamps lifetime caches, live-cascades the unsealed boards placing
+  the task (a still-open weekly / monthly containing Tuesday), re-derives every
+  sealed board placing it (the Tuesday daily, plus an already-closed weekly /
+  monthly whose window holds `endDate`, including window-stamped derived
+  counters), and refreshes achievement watchers of every board whose stats
+  changed. Friday's daily does not count it (its window starts after
+  `endDate`). Per task type: NORMAL → one completion (no-op if already
+  complete in the sealed window); plain COUNTING → one increment, partial and
+  overshoot allowed; window-stamped derived → the increment lands on the ROOT
+  (frozen rows are reached cascade-only via `isFrozenRowReachedByEvent`);
+  hub-linked derived and ACHIEVEMENT → not tappable; COMPOUND → staged parts
+  (NORMAL child → completion, plain COUNTING child → +1), committed only when
+  the compound's rule is met under the staged state — enforced in the DB op
+  on both platforms, with the sheet's button pre-checked by the same planner
+  (`previewLateLogCompoundRule` ↔ `AppDatabase.planCompoundLateLog`).
+- **Undo (R2).** Only a late log is undoable: `selectClosedBoardLateLogs`
+  picks the task's live events with `boardId == board.id`, `occurredAt ==
+  endDate`, `createdAt > sealedAt`, newest `createdAt` first; `undoLateLog`
+  tombstones exactly one (an authored tombstone: version bump + enqueue) after
+  re-checking `isEventSealImmune` against **every** window, then runs the
+  same re-derivation. Every other sealed-window event stays immune.
+  `undoLastCounterLog` (the Counters hub Undo toast) also refuses a
+  seal-immune entry and runs the sealed re-derive + watcher refresh. Immune
+  windows for a shared-counter ROOT include the sealed boards placing its
+  window-stamped derived rows (`getSealImmuneWindowsForTask` ↔
+  `sealImmuneWindows`), since the root itself is never placed.
+- **Recovery (R4).** A log already stamped on the wrong day (e.g. made from the
+  Counters hub on Friday): undo it where it was made, then late-log it on the
+  Tuesday board.
+- **Reopen / auto-close (R5).** See [§Lifecycle](#lifecycle) steps 4–5.
+- **Watcher refresh.** `findWatcherTaskIds` (shared ↔ `Helpers/AchievementWatchers.swift`,
+  pinned by `achievementWatcherVectors.json`) finds ACHIEVEMENT tasks watching a
+  changed board (specific board, or the board's `spawnedFromTemplateId`);
+  `refreshWatchersForBoards` re-derives the boards placing them (sealed →
+  local-only re-derive; live → the ordinary cascade) to a fixpoint, bounded
+  by a visited set. Runs on Close, Reopen, and every late-log / undo commit.
+- **Mixed-version hazard (accepted, flag-day).** A pre-slice-4 client ignores
+  `reopenedAt` and may re-seal a reopened board under the old rule, and an old
+  iOS client never clears a pulled `sealedAt`. The owner's devices update
+  together via TestFlight; the user can Reopen again.
 
 ### Overtime attribution (amended 2026-09-24)
 
@@ -507,8 +654,12 @@ window:
   Counters hub) → stamped `now`, so it counts for the window containing `now`
   and not for the ended board (whose root squares stop at `endDate`).
 
-The overtime itself is still bounded by the timeframe-scaled backstop (at most
-25% of the window, 6h for a daily), after which the board seals and locks.
+The overtime itself is bounded by next-window auto-close (amended 2026-09-27:
+a daily stays open until the end of the following day), after which the board
+closes; a closed board still accepts a direct late log from its own surface,
+stamped at its `endDate`. *(History: previously the timeframe-scaled backstop —
+at most 25% of the window, 6h for a daily — after which the board sealed and
+locked.)*
 
 *History:* before this amendment the section was titled "Accepted boundary
 edge" and recorded the opposite: with start-bound-only windows an overtime
@@ -569,7 +720,10 @@ user-favorable double credit. That edge caused the root-square counter bug
   the snapshot content self-heals via local re-derivation (see
   [§Seal snapshots re-derive](#seal-snapshots-re-derive-from-the-event-union-review-finding-c2)),
   so a stale pulled snapshot is corrected by the next event application on any
-  device.
+  device. Close, Reopen and the `reopenedAt` stamp are authored Board writes
+  (version bump + enqueue); a Reopen's clear of `sealedAt` /
+  `sealedCompletedCells` propagates via `CLEARABLE_BOARD_FIELDS` (amended
+  2026-09-27, slice 4).
 - **Mixed-version hazard (accepted, pre-launch):** an old client toggles
   `Task.isCompleted` directly (no event); a new client's pull recompute then
   reverts it. Both platforms must ship the event-writing version in the same PR
@@ -768,7 +922,9 @@ can merge immediately.
 - **Un-complete vs sealed history**: sealed-window events are tombstone-immune;
   lifetime un-complete stops at the seal boundary and the UI explains a
   still-green state instead of silently eating taps. Sealed pixels change only
-  via deterministic re-derivation from late-arriving pre-seal activity.
+  via deterministic re-derivation from late-arriving pre-seal activity — or
+  from a closed-board late log / its undo, the one tombstonable exception
+  (amended 2026-09-27).
 - **Offline seal divergence**: converges via snapshot re-derivation — no data
   loss, no LWW coin-flip (see the manual test above).
 - **Timezone travel**: evaluation compares `occurredAt` against `startDate`
@@ -781,7 +937,8 @@ can merge immediately.
   `[today 00:00, today 23:59:59.999]`. No special casing.
 - **Draft boards** never seal while drafts; a draft activated after its window
   expired gets one prompt cycle before any backstop (deadline keys off
-  `max(endDate, activatedAt)`). Archived boards seal normally.
+  `max(endDate, activatedAt)`). Archived boards seal normally (but are offered
+  neither Close nor Reopen in the menu — slice 4 OQ5).
 - **Achievement tasks** placed on sealed boards: the sealed board's stats are
   frozen modulo deterministic re-derivation — a watched board that seals stops
   reacting to live activity, which is exactly what a watcher wants.
@@ -805,6 +962,8 @@ can merge immediately.
    third overlapping visual state for no integrity gain.
 2. Is `windowLength/4` (capped at 48h) the right backstop shape, or should the
    divisor differ per timeframe? Tunable constant; revisit with real usage.
+   **Resolved 2026-09-27 (slice 4, R5): replaced by next-window auto-close**
+   (see [§Lifecycle](#lifecycle) step 4).
 3. Should the closing-out prompt batch (one row per board) or collapse ("3 boards
    closed — review")? UI call at C-PR time.
    **Resolved (C-PR, slice 2/2): One banner row per closing board.** Mirrors the
@@ -833,6 +992,8 @@ can merge immediately.
    of `endDate`. Play surfaces on both platforms now lock on `sealedAt != null`
    only (web `BoardPlaySurface`/`useBoardPlay` `playLocked`; iOS
    `isBoardPlayLocked`); expiry remains a display-only signal (badges, banner).
+   **Amended 2026-09-27 (slice 4):** sealing no longer locks taps — it routes
+   them to the closed-board late-log sheet.
 
 ## Cross-platform file map (indicative, PR-B/C scope)
 
