@@ -39,6 +39,8 @@ async function readBoardTask(page: Page, id: string): Promise<Record<string, unk
  *       Save → the board row is `none`.
  *   (i) keyboard Alt+Arrow move.
  *   (j) the play mode has no "+" on empty squares.
+ *   (k) remove EVERY square → Save → the board renders (empty squares, not
+ *       "Loading…" forever) → Edit squares → add via tap-empty → Save.
  */
 
 const now = new Date();
@@ -379,5 +381,48 @@ test.describe('Squares editor (j) — no play-mode "+" on empty squares', () => 
     await expect(page.getByText('Editor board J').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add task to this cell' })).toHaveCount(0);
     await expect(page.getByText('+', { exact: true })).toHaveCount(0);
+  });
+});
+
+test.describe('Squares editor (k) — a board with zero squares still renders', () => {
+  const BOARD_ID = 'cccccccc-sqed-0011-0000-000000000000';
+  const TASK_A = 'cccccccc-sqed-0011-task-000000000001';
+  const TASK_B = 'cccccccc-sqed-0011-task-000000000002'; // library, unplaced
+
+  test.beforeEach(async ({ page }) => {
+    await seedBoard(page, {
+      id: BOARD_ID, name: 'Editor board K', boardSize: 3, timeframe: 'monthly', status: 'active',
+      startDate: START, endDate: END, centerSquareType: 'free',
+    });
+    await seedTask(page, { id: TASK_A, title: 'The only square', type: 'normal' });
+    await seedTask(page, { id: TASK_B, title: 'Refill from library', type: 'normal' });
+    await seedBoardTask(page, { id: 'cccccccc-sqed-0011-bt-000000000001', boardId: BOARD_ID, taskId: TASK_A, row: 0, col: 0 });
+  });
+
+  test('remove every square → Save → empty board renders → add via tap-empty → Save', async ({ page }) => {
+    await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: /^The only square$/ }).click();
+    await page.getByRole('button', { name: 'Remove from board' }).click();
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Board saved')).toBeVisible();
+
+    // Zero placements — the board renders its empty grid, never "Loading…".
+    await page.reload();
+    await expect(page.getByText('Editor board K').first()).toBeVisible();
+    await expect(page.getByText(/Loading/)).toHaveCount(0);
+    await expect(page.getByText('The only square')).toHaveCount(0);
+
+    // …and it is still editable: Edit squares → tap an empty square → add.
+    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: /^Empty square, row 1, column 1$/ }).click();
+    await expect(page.getByRole('dialog', { name: /Add square/ })).toBeVisible();
+    await page.getByLabel('New normal task title').fill('Refill');
+    await page.getByRole('button', { name: /Refill from library/ }).click();
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByText('Board saved')).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText('Refill from library')).toBeVisible();
   });
 });

@@ -4,7 +4,6 @@ import {
   BoardStatus,
   computeBoardGrid,
   detectBingos,
-  resolvePlacements,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -15,7 +14,8 @@ import {
 } from '@oybc/shared';
 import { db } from '../db/internal';
 import type { SquareWindowContext } from '../db/adapters';
-import { useBoardTasks } from './useBoardTasks';
+import { useBoardTasksQuery } from './useBoardTasks';
+import { resolveBoardPlacementsQuery } from './boardPlacementsQuery';
 import { useBoards } from './useBoards';
 import { useRecurringBoardTemplatesQuery } from './useRecurringBoardTemplates';
 import { useSquareWindowContext } from './useSquareWindowContext';
@@ -96,6 +96,9 @@ export interface BoardPlayData {
   /** False while the templates query is unresolved — `sourceTemplate`
    *  being undefined then means "unknown", not "one-off board". */
   templatesLoaded: boolean;
+  /** False while the placements query is unresolved. True for a board with
+   *  ZERO placements — gate "Loading…" on this, never on an empty list. */
+  boardTasksLoaded: boolean;
 }
 
 /**
@@ -119,9 +122,12 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
   // which row occupies a cell — even before the repair pass (Part 1) has
   // caught up. `resolvePlacements` also drops out-of-bounds rows and
   // filters tombstones (defense-in-depth on top of the query's own filter).
-  const rawBoardTasks = useBoardTasks(boardId) ?? EMPTY_BOARD_TASKS;
-  const boardTasks =
-    rawBoardTasks.length === 0 ? rawBoardTasks : resolvePlacements(rawBoardTasks, gridSize);
+  // `boardTasksLoaded` keeps "query unresolved" apart from "loaded, zero
+  // placements" — an emptied board must render, not show Loading forever.
+  const { boardTasks, loaded: boardTasksLoaded } = resolveBoardPlacementsQuery(
+    useBoardTasksQuery(boardId),
+    gridSize,
+  );
   // Compound resolution data (all BoardTasks workspace-wide for child lookup).
   const { taskMap, compoundChildrenByCompound } = useTaskLibrary(userId);
 
@@ -355,5 +361,6 @@ export function useBoardPlayData(board: Board, userId: string | undefined): Boar
     squareWindowContext,
     sourceTemplate,
     templatesLoaded,
+    boardTasksLoaded,
   };
 }

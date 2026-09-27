@@ -69,8 +69,12 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 | 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | planned |
 
 Independent of the train (bugfix PRs any time): iOS Board Edit rewrites an
-achievement task's type (P0); zero-placement boards show "Loading…" forever
-(web). ~~start-date edits on ongoing boards are counted but never saved
+achievement task's type (P0). ~~zero-placement boards show "Loading…" forever
+(web)~~ — **fixed in slice 3**: `BoardPlaySurface` gated its grid on
+`sortedBoardTasks.length === 0`, conflating "query unresolved" with "loaded,
+no squares"; it now gates on `boardTasksLoaded` from `useBoardPlayData`
+(tri-state `useBoardTasksQuery` → `resolveBoardPlacementsQuery`). iOS was
+never affected (it gates on `board != nil`). ~~start-date edits on ongoing boards are counted but never saved
 (both)~~ — **fixed in slice 2** (D12/B1: `buildBoardDetailsPatch` /
 `BoardDetailsDraft.patch()`). ~~"Board saved" reported for a board sealed
 mid-session (both)~~ — **fixed in slice 2** (D11/B2: `assertBoardEditable`

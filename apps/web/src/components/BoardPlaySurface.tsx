@@ -146,7 +146,7 @@ export function BoardPlaySurface({
     isExpired,
     squareWindowContext,
     sourceTemplate,
-    templatesLoaded,
+    templatesLoaded, boardTasksLoaded,
   } = useBoardPlayData(board, userId);
 
   // Windowed Completion — sealed boards are a frozen, read-only historical
@@ -640,7 +640,7 @@ export function BoardPlaySurface({
       {/* Board column */}
       <div className={play.boardWrap}>
       {/* Interactive grid */}
-      {sortedBoardTasks.length === 0 ? (
+      {!boardTasksLoaded ? (
         <p className={styles.emptyState}>Loading board tasks…</p>
       ) : editMode ? (
         <>
