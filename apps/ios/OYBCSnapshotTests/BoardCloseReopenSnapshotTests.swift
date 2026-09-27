@@ -120,6 +120,8 @@ final class BoardCloseReopenSnapshotTests: XCTestCase {
         )
     }
 
+    /// D2 — an ended-but-unsealed board still offers Edit (any non-draft
+    /// board); its BOARD section leads with Close instead of Delete-only.
     private func header() -> some View {
         BoardPlayHeaderView(
             kicker: "MONTHLY BOARD",
@@ -129,10 +131,8 @@ final class BoardCloseReopenSnapshotTests: XCTestCase {
             isSealed: false,
             isEnded: true,
             showRecurringBadge: false,
-            canEdit: false,
-            onEdit: {},
-            menuItems: [.close, .details, .repeatBoard, .archive, .delete],
-            onMenuSelect: { _ in }
+            canEdit: true,
+            onEdit: {}
         )
         .padding(.horizontal, Riso.gutter)
         .padding(.top, 12)

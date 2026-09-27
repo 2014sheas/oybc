@@ -24,7 +24,7 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     func testPanelMonthlyCleanLight() {
         assertSnapshot(
             of: makePanel(),
-            as: .image(layout: .fixed(width: 393, height: 1000)),
+            as: .image(layout: .fixed(width: 393, height: 1300)),
             record: recordMode
         )
     }
@@ -33,7 +33,7 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
         assertSnapshot(
             of: makePanel(),
             as: .image(
-                layout: .fixed(width: 393, height: 1000),
+                layout: .fixed(width: 393, height: 1300),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
@@ -45,7 +45,7 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     func testPanelDirtyLight() {
         assertSnapshot(
             of: makePanel(editCount: 1, replaceFirstCell: true),
-            as: .image(layout: .fixed(width: 393, height: 1000)),
+            as: .image(layout: .fixed(width: 393, height: 1300)),
             record: recordMode
         )
     }
@@ -54,7 +54,7 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     func testPanelSavingLight() {
         assertSnapshot(
             of: makePanel(editCount: 1, replaceFirstCell: true, isSaving: true),
-            as: .image(layout: .fixed(width: 393, height: 1000)),
+            as: .image(layout: .fixed(width: 393, height: 1300)),
             record: recordMode
         )
     }
@@ -117,7 +117,11 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
             canShuffle: true,
             isSaving: isSaving,
             onSave: {},
-            onCancelConfirmed: {}
+            onCancelConfirmed: {},
+            // Board Edit consolidation (D6) — the BOARD section so it's in
+            // frame below the grid.
+            boardItems: [.details, .repeatBoard, .archive, .delete],
+            onBoardItem: { _ in }
         )
     }
 }

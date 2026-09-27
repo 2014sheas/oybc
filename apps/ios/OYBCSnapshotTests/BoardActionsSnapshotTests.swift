@@ -19,11 +19,11 @@ final class BoardActionsSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // MARK: - Header + menu
+    // MARK: - Header (Board Edit consolidation, D1/D2 — single Edit button)
 
     func testHeaderAdhocActiveLight() {
         assertSnapshot(
-            of: header(menuItems: [.details, .repeatBoard, .archive, .delete]),
+            of: header(),
             as: .image(layout: .fixed(width: 393, height: 140)),
             record: recordMode
         )
@@ -31,7 +31,7 @@ final class BoardActionsSnapshotTests: XCTestCase {
 
     func testHeaderAdhocActiveDark() {
         assertSnapshot(
-            of: header(menuItems: [.details, .repeatBoard, .archive, .delete]),
+            of: header(),
             as: .image(
                 layout: .fixed(width: 393, height: 140),
                 traits: .init(userInterfaceStyle: .dark)
@@ -42,20 +42,17 @@ final class BoardActionsSnapshotTests: XCTestCase {
 
     func testHeaderCoreActive() {
         assertSnapshot(
-            of: header(kicker: "MONTHLY BOARD", menuItems: [.coreDefaults, .delete]),
+            of: header(kicker: "MONTHLY BOARD"),
             as: .image(layout: .fixed(width: 393, height: 140)),
             record: recordMode
         )
     }
 
+    /// D2 — Edit still shows on a sealed/completed board (any non-draft
+    /// board); only the isSealed CLOSED badge changes here.
     func testHeaderSealed() {
         assertSnapshot(
-            of: header(
-                status: .completed,
-                isSealed: true,
-                canEdit: false,
-                menuItems: [.delete]
-            ),
+            of: header(status: .completed, isSealed: true),
             as: .image(layout: .fixed(width: 393, height: 140)),
             record: recordMode
         )
@@ -166,8 +163,7 @@ final class BoardActionsSnapshotTests: XCTestCase {
         kicker: String = "MONTHLY BOARD",
         status: BoardStatus = .active,
         isSealed: Bool = false,
-        canEdit: Bool = true,
-        menuItems: [BoardMenuItem]
+        canEdit: Bool = true
     ) -> some View {
         BoardPlayHeaderView(
             kicker: kicker,
@@ -177,9 +173,7 @@ final class BoardActionsSnapshotTests: XCTestCase {
             isSealed: isSealed,
             showRecurringBadge: false,
             canEdit: canEdit,
-            onEdit: {},
-            menuItems: menuItems,
-            onMenuSelect: { _ in }
+            onEdit: {}
         )
         .padding(.horizontal, Riso.gutter)
         .padding(.top, 12)
