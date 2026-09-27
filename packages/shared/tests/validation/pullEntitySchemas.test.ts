@@ -227,4 +227,23 @@ describe('BoardTaskSchema pull validation', () => {
   it('rejects a pulled board task with a row past the sane upper bound (25)', () => {
     expect(BoardTaskSchema.safeParse({ ...validBoardTask(), row: 25 }).success).toBe(false);
   });
+
+  // Board Edit redesign slice 1 — `isLocked` is forward-compatible: a
+  // pre-feature payload (no field) decodes as unlocked, and an explicit
+  // value round-trips.
+  it('defaults isLocked to false when the pulled payload omits it', () => {
+    const parsed = BoardTaskSchema.safeParse(validBoardTask());
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.isLocked).toBe(false);
+  });
+
+  it('keeps an explicit isLocked: true', () => {
+    const parsed = BoardTaskSchema.safeParse({ ...validBoardTask(), isLocked: true });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.isLocked).toBe(true);
+  });
+
+  it('rejects a non-boolean isLocked', () => {
+    expect(BoardTaskSchema.safeParse({ ...validBoardTask(), isLocked: 'yes' }).success).toBe(false);
+  });
 });

@@ -20,7 +20,18 @@ struct RisoBoardPlayCell: View {
     let isCompleted: Bool
     var isBingoLine: Bool = false
     var isCenter: Bool = false
-    var isLocked: Bool = false
+    /// Tap-gate for a read-only surface (a closed board, an in-flight write):
+    /// the cell renders normally but ignores taps and drops its button trait.
+    /// NOT the per-square lock — that is `showsLockChip`.
+    var isInteractionLocked: Bool = false
+
+    // Corner status chips (Board Edit redesign slice 1, docs/BOARD_EDIT_REDESIGN.md)
+    /// Per-square lock (`BoardTask.isLocked`): red corner chip, top-trailing,
+    /// shown whenever the board is drawn — editing or not.
+    var showsLockChip: Bool = false
+    /// A staged, unsaved edit on this square: gold pencil chip beside the
+    /// lock chip (edit mode only).
+    var showsDirtyChip: Bool = false
 
     // Counting cells
     var currentCount: Int = 0
@@ -111,10 +122,13 @@ struct RisoBoardPlayCell: View {
                 }
             }
         )
-        .zIndex(isBingoLine ? 3 : isCompleted ? 1 : 0)
+        // Corner chips overhang the cell edge, so a chipped cell sits above
+        // its neighbours (below a bingo ring, which overhangs further).
+        .overlay(alignment: .topTrailing) { cornerChips }
+        .zIndex(isBingoLine ? 3 : (showsLockChip || showsDirtyChip) ? 2 : isCompleted ? 1 : 0)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isLocked, !isCenter else { return }
+            guard !isInteractionLocked, !isCenter else { return }
             onTap?()
         }
         // Accessibility: collapse the cell's text/badges into one element with
@@ -123,12 +137,20 @@ struct RisoBoardPlayCell: View {
         // actionable element).
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits((isCenter || isLocked) ? [] : .isButton)
+        .accessibilityAddTraits((isCenter || isInteractionLocked) ? [] : .isButton)
         .accessibilityAddTraits(isCompleted ? .isSelected : [])
     }
 
-    /// VoiceOver label: task name + type-appropriate progress/state.
+    /// VoiceOver label: task name + type-appropriate progress/state, plus the
+    /// corner-chip states (locked / unsaved edit) when shown.
     private var accessibilityLabel: String {
+        var suffix = ""
+        if showsLockChip { suffix += ", locked in place" }
+        if showsDirtyChip { suffix += ", unsaved edit" }
+        return baseAccessibilityLabel + suffix
+    }
+
+    private var baseAccessibilityLabel: String {
         if isCenter { return title.isEmpty ? "Free space" : "\(title), free space" }
         switch taskType {
         case .counting:
@@ -147,6 +169,42 @@ struct RisoBoardPlayCell: View {
     }
 
     // MARK: - Subviews
+
+    /// The top-trailing corner chips: lock (red, `lock.fill`) and staged-edit
+    /// (gold, `pencil`), per the design-system "Lock a Square" template. Both
+    /// use static foregrounds (dark contract: text on a coloured fill never
+    /// flips) and overhang the cell edge so the label stays uncovered.
+    @ViewBuilder
+    private var cornerChips: some View {
+        if showsLockChip || showsDirtyChip {
+            HStack(spacing: Riso.CornerChip.spacing) {
+                if showsDirtyChip {
+                    cornerChip(systemImage: "pencil", fill: Color.risoGold, glyph: Color.risoInkStatic)
+                }
+                if showsLockChip {
+                    cornerChip(systemImage: "lock.fill", fill: Color.risoRed, glyph: Color.risoOnColor)
+                }
+            }
+            .offset(x: Riso.CornerChip.overhang, y: -Riso.CornerChip.overhang)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private func cornerChip(systemImage: String, fill: Color, glyph: Color) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Riso.CornerChip.radius)
+                .fill(Color.risoInk)
+                .offset(x: Riso.Shadow.small, y: Riso.Shadow.small)
+            RoundedRectangle(cornerRadius: Riso.CornerChip.radius)
+                .fill(fill)
+            RoundedRectangle(cornerRadius: Riso.CornerChip.radius)
+                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
+            Image(systemName: systemImage)
+                .font(.risoHead(10, .extraBold))
+                .foregroundStyle(glyph)
+        }
+        .frame(width: Riso.CornerChip.size, height: Riso.CornerChip.size)
+    }
 
     @ViewBuilder
     private var centerCellContent: some View {
@@ -224,7 +282,10 @@ struct RisoBoardPlayCell: View {
                     .padding(.leading, 4)
             }
 
-            // Gold check circle — top-right, done cells only
+            // Gold check circle — top-trailing on done cells; drops to the
+            // bottom-trailing corner whenever a corner chip (lock / staged
+            // edit) occupies the top-trailing slot, so the two never overlap
+            // (parity with the web twin's RisoBoardCell).
             if isCompleted {
                 ZStack {
                     Circle()
@@ -239,9 +300,10 @@ struct RisoBoardPlayCell: View {
                         .font(.system(size: 7, weight: .black))
                         .foregroundStyle(Color.risoInkStatic)
                 }
-                .padding(.top, 3)
+                .padding(hasCornerChip ? .bottom : .top, 3)
                 .padding(.trailing, 3)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: hasCornerChip ? .bottomTrailing : .topTrailing)
             }
 
             // ↔ Shared-counter marker — top-right, not-done shared counting cells only.
@@ -351,6 +413,9 @@ struct RisoBoardPlayCell: View {
         isCompleted && !isCenter ? -1 : 0
     }
 
+    /// A lock or staged-edit chip sits on the top-trailing corner.
+    private var hasCornerChip: Bool { showsLockChip || showsDirtyChip }
+
     private var hasTopTag: Bool {
         taskType == .counting || taskType == .compound
     }
@@ -390,6 +455,16 @@ enum CellTaskType {
     case counting
     case compound
     case achievement // renders like normal (read-only)
+
+    /// The cell kind for a `Task` (one mapping, shared by every grid).
+    init(task: Task) {
+        switch task.type {
+        case .normal:      self = .normal
+        case .counting:    self = .counting
+        case .compound:    self = .compound
+        case .achievement: self = .achievement
+        }
+    }
 }
 
 // MARK: - Star shape helper
@@ -435,6 +510,9 @@ struct StarShape: Shape {
             // P2: shared-counter marker
             RisoBoardPlayCell(title: "Push-ups", taskType: .counting, isCompleted: false, currentCount: 20, maxCount: 30, isSharedCounter: true)
             RisoBoardPlayCell(title: "Push-ups", taskType: .counting, isCompleted: true, currentCount: 30, maxCount: 30, isSharedCounter: true)
+            // Slice 1: corner chips
+            RisoBoardPlayCell(title: "Lights out", taskType: .normal, isCompleted: false, showsLockChip: true)
+            RisoBoardPlayCell(title: "No sugar", taskType: .normal, isCompleted: false, showsLockChip: true, showsDirtyChip: true)
         }
         .padding(Riso.gutter)
     }

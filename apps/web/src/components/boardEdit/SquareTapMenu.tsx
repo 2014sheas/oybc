@@ -1,4 +1,5 @@
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { RisoIcon } from '../riso';
 import styles from './SquareTapMenu.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -23,6 +24,13 @@ interface SquareTapMenuProps {
    * removal (empties the cell; persisted on Save). Omit to hide the item.
    */
   onRemove?: () => void;
+  /**
+   * Board Edit redesign slice 1 — "Lock in place" / "Unlock" (per-square
+   * lock, staged like every other edit). Omit to hide the item.
+   */
+  onToggleLock?: () => void;
+  /** Whether the tapped square is currently (staged-)locked — picks the label. */
+  isLocked?: boolean;
   /**
    * Phase 2b — shown when the center cell holds a task (NONE center type)
    * and the user can convert it back to a free space. Omit to hide the item.
@@ -68,6 +76,8 @@ export function SquareTapMenu({
   onReplace,
   onEdit,
   onRemove,
+  onToggleLock,
+  isLocked = false,
   onMakeFree,
   onMakeTask,
   onClose,
@@ -76,7 +86,7 @@ export function SquareTapMenu({
   // Center the menu horizontally around the click point, clamped to viewport.
   // Place below click by default; flip above if near the bottom edge.
   // Compute height dynamically based on how many items are visible.
-  const itemCount = [onReplace, onEdit, onRemove, onMakeFree, onMakeTask].filter(Boolean).length;
+  const itemCount = [onReplace, onEdit, onToggleLock, onRemove, onMakeFree, onMakeTask].filter(Boolean).length;
   const menuH = MENU_HEADER_H + itemCount * MENU_ITEM_H;
 
   let x = clickX - MENU_W / 2;
@@ -165,6 +175,22 @@ export function SquareTapMenu({
               />
             </svg>
             Edit task
+          </button>
+        )}
+
+        {/* Lock in place / Unlock — Board Edit redesign slice 1. Staged; a
+            locked square holds its position through Shuffle and moves. */}
+        {onToggleLock && (
+          <button
+            type="button"
+            className={styles.menuItem}
+            onClick={() => {
+              onToggleLock();
+              onClose();
+            }}
+          >
+            <RisoIcon name="lock" />
+            {isLocked ? 'Unlock' : 'Lock in place'}
           </button>
         )}
 

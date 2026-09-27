@@ -4,7 +4,6 @@ import {
   BoardStatus,
   CenterSquareType,
   TaskType,
-  generateCounterTaskTitle,
   buildCounterFamilyMap,
   type Board,
   type Task,
@@ -43,7 +42,10 @@ import { compactStreakLabel, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
 import { gatedStreak } from '../utils/gatedStreak';
 import { RisoButton, RisoIcon } from './riso';
-import { RisoBoardCell, type BoardCellModel } from './board/RisoBoardCell';
+import { RisoBoardCell } from './board/RisoBoardCell';
+import { RisoBoardGrid } from './board/RisoBoardGrid';
+import { freeCellModel, taskCellLabel, toBoardCellModel } from './board/cellModel';
+import { isDraftCellDirty } from '../hooks/squareEditCount';
 import { RisoBingoToast } from './play/RisoBingoToast';
 import { RisoGreenlog } from './play/RisoGreenlog';
 import { CounterLogToast } from './counters/CounterLogToast';
@@ -323,6 +325,7 @@ export function BoardPlaySurface({
     arrangeSlots,
     handleEditReplace,
     handleEditRemove,
+    handleEditToggleLock,
     handleEditTaskDone,
     handleRearrangeReorder,
     commitSquareEdits,
@@ -383,11 +386,7 @@ export function BoardPlaySurface({
     if (!arrival || arrival.totalArrivedSquares !== 1) return null;
     const taskId = [...arrival.arrivedTaskIds][0];
     const t = taskId ? taskMap[taskId] : undefined;
-    const taskName = t
-      ? t.title && t.title.trim()
-        ? t.title
-        : generateCounterTaskTitle(t.action ?? '', t.maxCount, t.unit ?? '')
-      : '';
+    const taskName = t ? taskCellLabel(t) : '';
     const counterName = arrival.arrivedCounters[0]?.counterName ?? '';
     return { taskName, counterName };
   })();
@@ -663,10 +662,7 @@ export function BoardPlaySurface({
           onReorder={handleRearrangeReorder}
         />
       ) : (
-        <div
-          className={`${styles.playGrid}${isSealed ? ` ${play.sealedGrid}` : ''}`}
-          style={{ gridTemplateColumns: `repeat(${gridSize}, 90px)` }}
-        >
+        <RisoBoardGrid size={gridSize} cellSize={90} className={isSealed ? play.sealedGrid : undefined}>
           {(() => {
             const cells: React.ReactElement[] = [];
             // Gold-ring the cells in completed bingo lines. Board-integrity
@@ -718,35 +714,28 @@ export function BoardPlaySurface({
                   const isFreeCenter =
                     isCenter && centerTypeForDisplay === CenterSquareType.FREE;
 
-                  if (isFreeCenter && !editMode) {
-                    // Play mode: static FREE label.
-                    cells.push(
-                      <div key={`center-${row}-${col}`} className={styles.freeSquare}>
-                        FREE
-                      </div>
-                    );
-                  } else if (isFreeCenter && editMode && subMode === 'editTasks') {
+                  if (isFreeCenter && editMode && subMode === 'editTasks') {
                     // Phase 2b — Edit mode, editTasks sub-mode: FREE center is
                     // tappable so the user can toggle it to a task square.
+                    // Board Edit redesign slice 1: same FREE cell as everywhere
+                    // else (the shared renderer), wrapped in the tap target.
                     cells.push(
                       <button
                         key={`center-${row}-${col}`}
                         type="button"
-                        className={`${styles.freeSquare} ${styles.editableFreeSquare}`}
+                        className={styles.editCellBtn}
                         aria-label="Free space — tap to convert to a task square"
                         onClick={(e) => {
                           setFreeCenterTapMenu({ x: e.clientX, y: e.clientY });
                         }}
                       >
-                        FREE
+                        <RisoBoardCell cell={freeCellModel(`center-${row}-${col}`)} />
                       </button>
                     );
-                  } else if (isFreeCenter && editMode) {
-                    // Rearrange sub-mode: FREE center is not tappable (pinned display).
+                  } else if (isFreeCenter) {
+                    // The FREE center — pinned, not tappable outside editTasks.
                     cells.push(
-                      <div key={`center-${row}-${col}`} className={styles.freeSquare}>
-                        FREE
-                      </div>
+                      <RisoBoardCell key={`center-${row}-${col}`} cell={freeCellModel(`center-${row}-${col}`)} />
                     );
                   } else {
                     // Empty cell (non-center, or NONE center with no task in edit mode,
@@ -821,14 +810,9 @@ export function BoardPlaySurface({
                   ? (taskIsCompleted ? (task.maxCount ?? 0) : 0)
                   : squareState.currentCount;
 
-                // Resolve the display label:
-                // - If the task has a title, use it.
-                // - For COUNTING tasks without a title, generate from action+maxCount+unit.
-                const displayLabel = task.title && task.title.trim()
-                  ? task.title
-                  : (task.type === TaskType.COUNTING
-                      ? generateCounterTaskTitle(task.action ?? '', task.maxCount, task.unit ?? '')
-                      : '');
+                // Display label — the shared rule (title, else the generated
+                // counter name). Board Edit redesign slice 1.
+                const displayLabel = taskCellLabel(task);
 
                 // Phase 2 — Shared Counters: mark the cell as shared when
                 // it is a source OR a linked derived counter, so the
@@ -838,27 +822,22 @@ export function BoardPlaySurface({
                   !taskIsCompleted &&
                   (task.sharedCounterId != null || sharedCounterSourceIds.has(task.id));
 
-                const cellModel: BoardCellModel = {
+                // Board Edit redesign slice 1 — one mapper for every surface;
+                // the lock chip reads the staged draft while editing and the
+                // stored row otherwise, the dirty chip only while editing.
+                const cellModel = toBoardCellModel({
                   key: boardTaskId,
-                  label: displayLabel,
-                  type:
-                    squareData.type === 'counting'
-                      ? 'counting'
-                      : squareData.type === 'compound'
-                        ? 'compound'
-                        : 'normal',
+                  task,
                   done: taskIsCompleted,
-                  count:
-                    squareData.type === 'counting'
-                      ? { cur: taskCurrentCount, max: task.maxCount ?? 0 }
-                      : undefined,
-                  isFree: false,
+                  currentCount: squareData.type === 'counting' ? taskCurrentCount : undefined,
                   isLine: highlightedSquares.has(row * gridSize + col),
-                  isShared: isSharedCountingTask || undefined,
+                  isShared: isSharedCountingTask,
                   // Phase 3 — pulse squares that just filled in from an
-                  // elsewhere log (play mode only; suppressed while editing).
-                  isArrived: (!editMode && resolvedTaskId != null && arrivedTaskIds.has(resolvedTaskId)) || undefined,
-                };
+                  // elsewhere log (suppressed while editing).
+                  isArrived: !editMode && resolvedTaskId != null && arrivedTaskIds.has(resolvedTaskId),
+                  locked: editMode ? draftCell?.isLocked === true : bt?.isLocked === true,
+                  dirty: editMode && draftCell ? isDraftCellDirty(draftCell, taskOverrides) : false,
+                });
 
                 // ── Click handler (play mode) ────────────────────────────
                 // Edit mode taps are handled by a wrapper div below (we need
@@ -959,6 +938,7 @@ export function BoardPlaySurface({
                           x: e.clientX,
                           y: e.clientY,
                           isCenterTask, // Phase 2b
+                          isLocked: draftCell?.isLocked === true,
                         });
                       }}
                     >
@@ -971,7 +951,7 @@ export function BoardPlaySurface({
 
             return cells;
           })()}
-        </div>
+        </RisoBoardGrid>
       )}
 
       {/* Host-supplied footer (the pager's position caption). */}
@@ -992,16 +972,11 @@ export function BoardPlaySurface({
           : undefined;
         // Mirror the square's displayLabel: counting tasks with a blank title
         // show their auto-generated "Action N unit" name, not "(untitled)".
-        const menuTitle =
-          menuTask && menuTask.title && menuTask.title.trim()
-            ? menuTask.title
-            : menuTask?.type === TaskType.COUNTING
-              ? generateCounterTaskTitle(
-                  menuTask.action ?? '',
-                  menuTask.maxCount ?? 0,
-                  menuTask.unit ?? '',
-                )
-              : '(untitled)';
+        const menuTitle = menuTask ? (taskCellLabel(menuTask) || '(untitled)') : '(untitled)';
+        // Read the CURRENT staged lock (the menu may outlive the tap's snapshot).
+        const menuLocked =
+          squaresDraft.find((c) => c.boardTaskId === squareTapMenu.boardTaskId)?.isLocked ??
+          squareTapMenu.isLocked;
         return (
           <SquareTapMenu
             taskTitle={menuTitle}
@@ -1016,6 +991,11 @@ export function BoardPlaySurface({
             // Staged removal — empties the cell (persisted on Save). A pinned
             // center never opens this menu, so every square that reaches here
             // is removable (a NONE-center task included).
+            // Board Edit redesign slice 1 — per-square lock, staged.
+            onToggleLock={() => {
+              handleEditToggleLock(squareTapMenu.boardTaskId);
+            }}
+            isLocked={menuLocked}
             onRemove={() => {
               handleEditRemove(squareTapMenu.boardTaskId);
               setSquareTapMenu(null);

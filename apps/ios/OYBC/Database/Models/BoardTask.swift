@@ -33,6 +33,11 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     var row: Int
     var col: Int
     var isCenter: Bool
+    /// Board Edit redesign slice 1 (docs/BOARD_EDIT_REDESIGN.md) — a locked
+    /// placement never changes position (Shuffle and every move skip it; it
+    /// is not a drop target) but stays completable. Absent in pre-feature
+    /// rows / peer payloads ⇒ `false` (GRDB migration v34 backfills 0).
+    var isLocked: Bool = false
 
     // Timestamps
     var createdAt: String // ISO8601
@@ -63,6 +68,7 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         row: Int,
         col: Int,
         isCenter: Bool,
+        isLocked: Bool = false,
         createdAt: String,
         updatedAt: String,
         lastSyncedAt: String? = nil,
@@ -76,6 +82,7 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         self.row = row
         self.col = col
         self.isCenter = isCenter
+        self.isLocked = isLocked
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastSyncedAt = lastSyncedAt
@@ -87,7 +94,7 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
     // MARK: - Codable
 
     enum CodingKeys: String, CodingKey {
-        case id, boardId, taskId, row, col, isCenter
+        case id, boardId, taskId, row, col, isCenter, isLocked
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
     }
@@ -112,6 +119,9 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         row = try container.decode(Int.self, forKey: .row)
         col = try container.decode(Int.self, forKey: .col)
         isCenter = try container.decode(Bool.self, forKey: .isCenter)
+        // Slice 1 lock — same forward-compat posture as `isDeleted` below
+        // (v34 adds the column; pre-feature payloads carry no key).
+        isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
         lastSyncedAt = try container.decodeIfPresent(String.self, forKey: .lastSyncedAt)
@@ -128,6 +138,7 @@ struct BoardTask: Codable, FetchableRecord, PersistableRecord {
         try container.encode(row, forKey: .row)
         try container.encode(col, forKey: .col)
         try container.encode(isCenter, forKey: .isCenter)
+        try container.encode(isLocked, forKey: .isLocked)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)

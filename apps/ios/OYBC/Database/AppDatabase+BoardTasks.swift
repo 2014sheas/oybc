@@ -276,6 +276,55 @@ extension AppDatabase {
         }
     }
 
+    /// Board Edit redesign slice 1 (docs/BOARD_EDIT_REDESIGN.md) — sets a
+    /// placement's per-square lock. A locked placement never changes
+    /// position (`updateBoardTaskPositions` rejects a move set that relocates
+    /// one) but stays completable.
+    ///
+    /// Sync: one `boardTasks` UPDATE (version bump) is enqueued; no board
+    /// stats are re-derived — a lock never affects completion or bingo lines.
+    /// Silent no-op (matching the sibling placement writes) when the row is
+    /// deleted, the owning board is deleted or sealed, or the value is
+    /// unchanged.
+    ///
+    /// - Parameters:
+    ///   - boardTaskId: The `BoardTask.id` placement record to lock / unlock.
+    ///   - locked: The new lock state.
+    /// - Throws: GRDB write errors.
+    func setBoardTaskLocked(boardTaskId: String, locked: Bool) throws {
+        try write { db in
+            try Self.setBoardTaskLocked(db: db, boardTaskId: boardTaskId, locked: locked)
+        }
+    }
+
+    /// `db`-scoped core of `setBoardTaskLocked` — lets
+    /// `BoardPlayViewModel.handleEditSave` compose it into the ONE outer
+    /// `database.write { db in }` Save transaction (GRDB's `write` is not
+    /// reentrant). Identical body to the instance method.
+    ///
+    /// Must be called inside an active write transaction covering `boardTasks`,
+    /// `boards`, and `syncQueue`.
+    static func setBoardTaskLocked(db: Database, boardTaskId: String, locked: Bool) throws {
+        guard var boardTask = try BoardTask.fetchOne(db, key: boardTaskId),
+              !boardTask.isDeleted else { return }
+        guard let owningBoard = try Board.fetchOne(db, key: boardTask.boardId),
+              !owningBoard.isDeleted, owningBoard.sealedAt == nil else { return }
+        guard boardTask.isLocked != locked else { return }
+
+        let now = Self.currentTimestamp()
+        boardTask.isLocked = locked
+        boardTask.updatedAt = now
+        boardTask.version += 1
+        try boardTask.save(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "boardTasks",
+            entityId: boardTaskId,
+            operationType: .update,
+            payload: boardTask,
+            now: now
+        ).enqueue(db)
+    }
+
     /// `db`-scoped core of `updateBoardTaskPositions` — Board-integrity PR-4
     /// (Item 3, docs/BOARD_INTEGRITY.md): lets `BoardPlayViewModel.handleEditSave`
     /// compose this cascade with the other Save sub-ops into ONE outer
@@ -293,6 +342,21 @@ extension AppDatabase {
         moves: [BoardTaskPositionMove]
     ) throws {
         guard !moves.isEmpty else { return }
+
+        // Board Edit redesign slice 1 (docs/BOARD_EDIT_REDESIGN.md): a LOCKED
+        // placement never changes position. The whole move set is rejected
+        // BEFORE any row is written — nothing partial — so a stale draft
+        // that would relocate a locked square (locked on another device
+        // mid-edit, or a UI that failed to pin it) can't land half a
+        // rearrange. The Rearrange grid treats locked cells like the pinned
+        // center, so this is the DB-level backstop for that UI rule.
+        for move in moves {
+            guard let locked = try BoardTask.fetchOne(db, key: move.boardTaskId),
+                  locked.isLocked, !locked.isDeleted else { continue }
+            if locked.row != move.row || locked.col != move.col {
+                throw AppDatabaseError.invalidPlacement("Locked squares can't be moved.")
+            }
+        }
 
         let now = Self.currentTimestamp()
 

@@ -1,5 +1,4 @@
 import {
-  TaskType,
   computeBoardGrid,
   detectBingos,
   getHighlightedSquares,
@@ -14,13 +13,8 @@ import {
   type Task,
 } from '@oybc/shared';
 import { taskToSquareState, type SquareWindowContext } from '../../db/adapters';
-import type { BoardCellModel, CellType } from './RisoBoardCell';
-
-function cellType(t: TaskType): CellType {
-  if (t === TaskType.COUNTING) return 'counting';
-  if (t === TaskType.COMPOUND) return 'compound';
-  return 'normal';
-}
+import type { BoardCellModel } from './RisoBoardCell';
+import { cellTypeOf, freeCellModel, toBoardCellModel } from './cellModel';
 
 /**
  * Pure cell derivation for the `RisoBoard` poster — firebase-free (imports
@@ -79,15 +73,7 @@ export function buildRisoBoardCells(
   // First pass: resolve done + view-model (without bingo lines).
   const draft = Array.from({ length: size * size }, (_, i): BoardCellModel & { _done: boolean } => {
     if (i === centerIndex && freeCenter) {
-      return {
-        key: `free-${i}`,
-        label: getCenterDisplayText(board.centerSquareType) || 'FREE',
-        type: 'normal',
-        done: true,
-        isFree: true,
-        isLine: false,
-        _done: true,
-      };
+      return { ...freeCellModel(`free-${i}`, getCenterDisplayText(board.centerSquareType) || 'FREE'), _done: true };
     }
     const bt = byPos.get(i);
     const task = bt ? taskMap[bt.taskId] : undefined;
@@ -98,7 +84,7 @@ export function buildRisoBoardCells(
       task, undefined, taskMap, compoundChildrenByCompound, squareWindowContext,
       cellStateByBoardTaskId[bt.id],
     );
-    const type = cellType(task.type);
+    const type = cellTypeOf(task.type);
     // Sealed: `done` comes from the frozen snapshot, not live derivation —
     // and the counting display freezes too (post-seal increments on a shared
     // task must not animate a frozen poster). Mirrors BoardPlaySurface's
@@ -106,13 +92,13 @@ export function buildRisoBoardCells(
     const done = isSealed ? sealedCellSet.has(i) : ss.isCompleted;
     const cur = isSealed ? (done ? (task.maxCount ?? 0) : 0) : ss.currentCount;
     return {
-      key: bt.id,
-      label: task.title ?? '',
-      type,
-      done,
-      count: type === 'counting' ? { cur, max: task.maxCount ?? 0 } : undefined,
-      isFree: false,
-      isLine: false,
+      ...toBoardCellModel({
+        key: bt.id,
+        task,
+        done,
+        currentCount: type === 'counting' ? cur : undefined,
+        locked: bt.isLocked === true,
+      }),
       _done: done,
     };
   });

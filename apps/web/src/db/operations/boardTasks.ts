@@ -608,6 +608,21 @@ export async function reorderBoardTasks(
     }
   }
 
+  // Board Edit redesign slice 1 (docs/BOARD_EDIT_REDESIGN.md) — a LOCKED
+  // placement never changes position. Validated for the whole batch before
+  // any write (same all-or-nothing posture as the bounds check above): the
+  // edit surfaces never offer a locked square as a drag source or drop
+  // target, so reaching this throw means a stale draft or a caller bug — and
+  // it must be loud, not a silently half-applied rearrange.
+  for (const move of moves) {
+    const row = await db.boardTasks.get(move.boardTaskId);
+    if (row && !row.isDeleted && row.isLocked === true && (row.row !== move.row || row.col !== move.col)) {
+      throw new Error(
+        `reorderBoardTasks: placement ${move.boardTaskId} is locked in place and cannot move`,
+      );
+    }
+  }
+
   // Windowed Completion — build the event map BEFORE the rw transaction so the
   // cascade resolves each board against its own window (not the lifetime cache),
   // and `db.taskEvents` need not be in the transaction scope.
@@ -712,6 +727,41 @@ export async function reorderBoardTasks(
  * @param boardTaskId - The `BoardTask.id` placement record to update.
  * @param newTaskId - The new `Task.id` to write into `BoardTask.taskId`.
  */
+/**
+ * Board Edit redesign slice 1 (docs/BOARD_EDIT_REDESIGN.md) — set or clear a
+ * placement's per-square lock. A locked square never changes position
+ * (`reorderBoardTasks` refuses to move it; Shuffle and the arrange surfaces
+ * skip it) but stays completable, so no completion cascade is needed: the
+ * row is patched, version-bumped and enqueued for sync like every other
+ * placement write. Idempotent (same value ⇒ no write). Silent no-op on a
+ * missing / deleted row or a sealed / deleted owning board, matching its
+ * siblings. Safe inside the Board-Edit Save's outer transaction (Dexie
+ * joins the ambient transaction when the scope is a subset).
+ *
+ * @param boardTaskId - The placement to lock or unlock.
+ * @param locked - Desired lock state.
+ */
+export async function setBoardTaskLocked(boardTaskId: string, locked: boolean): Promise<void> {
+  const existing = await db.boardTasks.get(boardTaskId);
+  if (!existing || existing.isDeleted) return;
+  if ((existing.isLocked === true) === locked) return;
+  const now = currentTimestamp();
+  await db.transaction('rw', [db.boardTasks, db.boards, db.syncQueue], async () => {
+    // Sealed-board guard — re-fetched inside the write txn (see
+    // removeBoardTaskFromBoard for the rationale).
+    const owningBoard = await db.boards.get(existing.boardId);
+    if (!owningBoard || owningBoard.isDeleted || owningBoard.sealedAt) return;
+    const patched: BoardTask = {
+      ...existing,
+      isLocked: locked,
+      updatedAt: now,
+      version: (existing.version ?? 0) + 1,
+    };
+    await db.boardTasks.put(patched);
+    await addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.UPDATE, patched, 0);
+  });
+}
+
 export async function updateBoardTaskAndCascade(
   boardTaskId: string,
   newTaskId: string,

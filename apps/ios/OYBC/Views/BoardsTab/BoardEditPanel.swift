@@ -114,6 +114,12 @@ struct BoardEditPanel: View {
     /// `isDirty` so the panel counter and Save pill react to cell-level changes.
     var squareEditCount: Int = 0
 
+    /// Slice 1 — "row-col" keys of squares with a staged, unsaved edit
+    /// (replace / task override / lock change); drawn with the gold pencil
+    /// chip. Lock state itself is read from each row's `isLocked`, which the
+    /// VM's draft already has the staged overrides applied to.
+    var dirtyCellKeys: Set<String> = []
+
     /// Called when the user taps a non-center square in the `.editTasks`
     /// sub-mode. `BoardPlayView` handles routing to the Replace / Edit menu.
     /// nil in Phase 1 (grid was display-only); provided by the parent in Phase 2+.
@@ -465,20 +471,73 @@ struct BoardEditPanel: View {
                     rearrange: true,
                     sideLength: UIScreen.main.bounds.width - 2 * Riso.gutter,
                     onReorder: { onReorder?($0) },
-                    windowedIsCompleted: windowedIsCompleted
+                    windowedIsCompleted: windowedIsCompleted,
+                    dirtyCellIds: Set(boardTasks.filter { dirtyCellKeys.contains("\(($0.row))-\(($0.col))") }.map { $0.id })
                 )
             } else {
-                // Edit-tasks sub-mode (Phase 2) or rearrange cells not yet seeded —
-                // show the static grid with optional tap affordances.
-                BoardEditStaticGrid(
-                    boardSize: board.boardSize,
-                    boardTasks: boardTasks,
-                    taskMap: taskMap,
-                    centerSquareType: centerType,
-                    onCellTap: subMode == .editTasks ? onCellTap : nil,
-                    onCenterTap: subMode == .editTasks ? onCenterTap : nil,
-                    windowedIsCompleted: windowedIsCompleted
-                )
+                // Edit-tasks sub-mode (or rearrange cells not yet seeded): the
+                // board's own grid + cell renderer (slice 1 — one square
+                // everywhere), with the tap affordances layered on top.
+                editSquaresGrid
+            }
+        }
+    }
+
+    /// The shared board grid in edit-tasks mode. Every occupied square and
+    /// the FREE center are tappable (routed to `onCellTap` / `onCenterTap`);
+    /// the lock chip reads the row's (draft-applied) `isLocked`, the pencil
+    /// chip marks cells listed in `dirtyCellKeys`.
+    private var editSquaresGrid: some View {
+        let byPosition = Dictionary(boardTasks.map { ("\(($0.row))-\(($0.col))", $0) }, uniquingKeysWith: { a, _ in a })
+        let size = board.boardSize
+        let mid = size / 2
+        return RisoBoardGrid(gridSize: size) { row, col, _ in
+            let key = "\(row)-\(col)"
+            let bt = byPosition[key]
+            let task = bt.flatMap { taskMap[$0.taskId] }
+            // Phase-2b predicate: the center is pinned (gold FREE, inert to
+            // normal cell taps) only when centerSquareType != .none.
+            let isPositionalCenter = size % 2 == 1 && row == mid && col == mid
+            let isPinnedCenter = isPositionalCenter && centerType != .none
+            let centerTapEnabled = isPositionalCenter && centerType == .free
+                && subMode == .editTasks && onCenterTap != nil
+            let taskTapEnabled = subMode == .editTasks && onCellTap != nil
+                && !isPinnedCenter && bt != nil
+
+            Group {
+                if isPinnedCenter {
+                    RisoBoardPlayCell(
+                        title: centerType == .chosen ? (task?.title ?? "FREE") : "FREE",
+                        taskType: .normal,
+                        isCompleted: false,
+                        isCenter: true,
+                        showsLockChip: bt?.isLocked ?? false,
+                        showsDirtyChip: dirtyCellKeys.contains(key)
+                    )
+                } else if let task {
+                    RisoBoardPlayCell(
+                        title: task.title,
+                        taskType: CellTaskType(task: task),
+                        isCompleted: windowedIsCompleted(task),
+                        showsLockChip: bt?.isLocked ?? false,
+                        showsDirtyChip: dirtyCellKeys.contains(key),
+                        currentCount: task.currentCount ?? 0,
+                        maxCount: task.maxCount ?? 0
+                    )
+                } else {
+                    RoundedRectangle(cornerRadius: Riso.cellRadius)
+                        .fill(Color.risoPaper)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Riso.cellRadius)
+                                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense)
+                        )
+                        .aspectRatio(1, contentMode: .fit)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if centerTapEnabled { onCenterTap?() }
+                else if taskTapEnabled { onCellTap?(row, col) }
             }
         }
     }
@@ -535,180 +594,6 @@ struct BoardEditPanel: View {
             .padding(.bottom, 16)
         }
         .background(Color.risoPaper.ignoresSafeArea(edges: .bottom))
-    }
-}
-
-// MARK: - BoardEditStaticGrid
-
-/// Board grid for edit mode.
-///
-/// Renders placements with optional tap-gesture support. When `onCellTap` is
-/// provided (Phase 2 Edit-tasks sub-mode), tapping a non-center occupied cell
-/// triggers the Replace / Edit context menu via the parent.
-///
-/// The "pinned center" predicate is Phase-2b–correct:
-///   `isPinnedCenter = (positional center) && centerSquareType != .none`
-///
-/// A `.none`-center middle cell is treated as a normal cell — tappable when
-/// it holds a task, and not given the gold FREE label. When `onCenterTap` is
-/// provided and the center is `.free`, the center cell becomes
-/// interactive (shows a pencil badge and calls `onCenterTap` on tap) so the
-/// user can trigger "Make it a task square."
-///
-/// Rearrange (Phase 3) and Phase 1 pass nil for both callbacks.
-private struct BoardEditStaticGrid: View {
-    let boardSize: Int
-    let boardTasks: [BoardTask]
-    let taskMap: [String: Task]
-    let centerSquareType: CenterSquareType
-    /// Phase 2: callback for non-center occupied cell taps. nil = display-only.
-    var onCellTap: ((Int, Int) -> Void)? = nil
-    /// Phase 2b: callback for tapping the FREE center cell.
-    /// nil = center inert. Set only in edit-tasks sub-mode.
-    var onCenterTap: (() -> Void)? = nil
-    /// Windowed-Completion-aware completion read, forwarded from
-    /// `BoardEditPanel`. Defaults to the lifetime `Task.isCompleted` cache.
-    var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
-
-    private var btByPosition: [String: BoardTask] {
-        var map: [String: BoardTask] = [:]
-        for bt in boardTasks { map["\(bt.row)-\(bt.col)"] = bt }
-        return map
-    }
-
-    var body: some View {
-        let columns = Array(
-            repeating: GridItem(.flexible(), spacing: Riso.cellGap),
-            count: max(boardSize, 1)
-        )
-        LazyVGrid(columns: columns, spacing: Riso.cellGap) {
-            ForEach(0..<boardSize * boardSize, id: \.self) { idx in
-                let row = idx / boardSize
-                let col = idx % boardSize
-                let bt = btByPosition["\(row)-\(col)"]
-
-                // Phase-2b predicate: the center is pinned (gold FREE, inert to
-                // normal cell taps) only when centerSquareType != .none. A .none
-                // center is a regular cell regardless of its positional index.
-                let isPositionalCenter = boardSize % 2 == 1
-                    && row == boardSize / 2
-                    && col == boardSize / 2
-                let isCenter = isPositionalCenter && centerSquareType != .none
-
-                // Free-center tap: center is .free, onCenterTap provided.
-                let isFreeCenter = isPositionalCenter && centerSquareType == .free
-                let centerTapEnabled = isFreeCenter && onCenterTap != nil
-
-                // Normal task-cell tap: occupied, not a pinned center.
-                let taskTapEnabled = onCellTap != nil && !isCenter && bt != nil
-
-                BoardEditStaticCell(
-                    task: bt.flatMap { taskMap[$0.taskId] },
-                    isCenter: isCenter,
-                    centerSquareType: centerSquareType,
-                    isInteractive: taskTapEnabled || centerTapEnabled,
-                    onTap: centerTapEnabled
-                        ? { onCenterTap?() }
-                        : (taskTapEnabled ? { onCellTap?(row, col) } : nil),
-                    windowedIsCompleted: windowedIsCompleted
-                )
-            }
-        }
-    }
-}
-
-// MARK: - BoardEditStaticCell
-
-/// A single cell in the edit-mode grid.
-///
-/// When `isInteractive` is true the cell renders with a pencil badge and a
-/// tap gesture that calls `onTap`. Two cases:
-/// - Non-center occupied cell (Phase 2): Replace / Edit task flow.
-/// - FREE center cell (Phase 2b): "Make it a task square" action.
-private struct BoardEditStaticCell: View {
-    let task: Task?
-    let isCenter: Bool
-    let centerSquareType: CenterSquareType
-    /// Phase 2: when true the cell shows an edit-affordance and fires `onTap`.
-    var isInteractive: Bool = false
-    var onTap: (() -> Void)? = nil
-    /// Windowed-Completion-aware completion read, forwarded from
-    /// `BoardEditPanel`/`BoardEditStaticGrid`. Defaults to the lifetime
-    /// `Task.isCompleted` cache (docs/WINDOWED_COMPLETION.md §Task caches).
-    var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
-
-    private var isTaskCompleted: Bool {
-        task.map(windowedIsCompleted) ?? false
-    }
-
-    private var label: String {
-        if isCenter {
-            switch centerSquareType {
-            case .free:
-                return "FREE"
-            case .chosen:
-                return task?.title ?? "FREE"
-            case .none:
-                return ""
-            }
-        }
-        return task?.title ?? ""
-    }
-
-    private var fill: Color {
-        if isCenter { return .risoGold }
-        if isTaskCompleted { return .risoGreen }
-        return task != nil ? .risoPaper2 : .risoPaper
-    }
-
-    private var textColor: Color {
-        if isCenter { return .risoInkStatic }
-        if isTaskCompleted { return .risoPaper }
-        return .risoInk
-    }
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Cell background + keyline
-            RoundedRectangle(cornerRadius: Riso.cellRadius)
-                .fill(fill)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cellRadius)
-                        .strokeBorder(
-                            isCenter ? Color.risoInkStatic.opacity(0.3)
-                                     : (isInteractive ? Color.risoBlue : Color.risoInk),
-                            lineWidth: isInteractive ? Riso.Keyline.container : Riso.Keyline.dense
-                        )
-                )
-
-            // Cell label
-            if !label.isEmpty {
-                Text(label)
-                    .font(.risoBody(8, .semibold))
-                    .foregroundStyle(textColor)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .padding(4)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-
-            // Pencil affordance — small icon in the top-trailing corner for
-            // interactive cells, signalling "tap to edit". Inset slightly so
-            // it doesn't overlap the cell keyline.
-            // Color rule: gold fill (center cells) requires risoInkStatic so
-            // the icon reads correctly in dark mode; non-center cells use risoBlue.
-            if isInteractive {
-                Image(systemName: "pencil")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(isCenter ? Color.risoInkStatic : Color.risoBlue)
-                    .padding(3)
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isInteractive { onTap?() }
-        }
     }
 }
 

@@ -677,6 +677,7 @@ struct BoardPlayView: View {
                     hasCandidateTasks: viewModel.editHasCandidateTasks,
                     subMode: $viewModel.editSubMode,
                     squareEditCount: viewModel.editSquaresEditCount,
+                    dirtyCellKeys: viewModel.editDirtyCellKeys,
                     onCellTap: { row, col in handleEditCellTap(row: row, col: col) },
                     // Phase 2b — center toggle (free center → task square).
                     onCenterTap: handleFreeCenterTap,
@@ -739,22 +740,8 @@ struct BoardPlayView: View {
                 // them with the correct type on the next sub-mode switch. Same
                 // onChange-vs-didSet rationale as above.
                 .onChange(of: viewModel.editCenterType) { _, newType in
-                    guard let current = viewModel.editRearrangeCells else { return }
-                    // Preserve any staged rearrange order: map each non-center,
-                    // non-empty cell's CURRENT slot index back to (row, col) and pass
-                    // it as the positionDraft, so changing the center type doesn't
-                    // discard the user's in-progress rearrange.
-                    let size = b.boardSize
-                    var positions: [String: (row: Int, col: Int)] = [:]
-                    for (i, cell) in current.enumerated() where !cell.isCenter && !cell.isEmpty {
-                        positions[cell.id] = (row: i / size, col: i % size)
-                    }
-                    viewModel.editRearrangeCells = buildRearrangeCells(
-                        squaresDraft: viewModel.editSquaresDraft,
-                        gridSize: size,
-                        centerSquareType: newType,
-                        positionDraft: positions
-                    )
+                    // Preserves any in-progress reorder (VM-owned since slice 1).
+                    viewModel.rebuildRearrangeCells(centerType: newType)
                 }
             }
 
@@ -798,6 +785,13 @@ struct BoardPlayView: View {
                         if let task = map[draft.stagedTaskId] {
                             editModeTaskTarget = EditModeTaskTarget(id: cellKey, task: task)
                         }
+                    }
+                }
+                // Slice 1 — per-square lock (staged; committed on Save). Not
+                // offered for a pinned CHOSEN center (it never moves anyway).
+                if !(editCellMenuIsCenter && viewModel.editCenterType == .chosen) {
+                    Button(viewModel.isEditCellLocked(cellKey: cellKey) ? "Unlock" : "Lock in place") {
+                        viewModel.handleEditToggleLock(cellKey: cellKey)
                     }
                 }
                 // Staged removal — empties the cell in the draft; the placement
@@ -1453,60 +1447,56 @@ struct BoardPlayView: View {
 
     @ViewBuilder
     private var risoGridSection: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: Riso.cellGap), count: gridSize)
         let highlighted = highlightedSquareIndices
 
-        LazyVGrid(columns: cols, spacing: Riso.cellGap) {
-            ForEach(0..<(gridSize * gridSize), id: \.self) { index in
-                let row = index / gridSize
-                let col = index % gridSize
-                let isCenter = gridSize % 2 == 1
-                    && row == gridSize / 2
-                    && col == gridSize / 2
+        // Slice 1 — the shared grid layout (same as the edit panel's grid).
+        RisoBoardGrid(gridSize: gridSize) { row, col, index in
+            let isCenter = gridSize % 2 == 1
+                && row == gridSize / 2
+                && col == gridSize / 2
 
-                if let bt = btByPosition["\(row)-\(col)"] {
-                    risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
-                } else if isCenter,
-                          let b = board,
-                          b.centerSquareType == .free {
-                    // FREE center cell — gold label, not interactive in play mode.
-                    // Deliberately NOT getCenterDisplayText, which returns
-                    // "FREE SPACE" — this cell matches the wizard preview
-                    // (RearrangeGrid), which uses the shorter "FREE".
-                    RisoBoardPlayCell(
-                        title: "FREE",
-                        taskType: .normal,
-                        isCompleted: false,
-                        isBingoLine: highlighted.contains(index),
-                        isCenter: true
-                    )
-                } else if let b = board,
-                          // Phase-2b: a .none center is a normal cell, so show the
-                          // "+" affordance for the positional center too when empty.
-                          (!isCenter || b.centerSquareType == .none),
-                          b.status == .active,
-                          !isBoardLocked {
-                    // M4 — Empty non-center cell (or .none center) on an ACTIVE board: dashed "+" affordance.
-                    ZStack {
-                        RoundedRectangle(cornerRadius: Riso.cellRadius)
-                            .strokeBorder(
-                                Color.risoInk.opacity(0.35),
-                                style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-                            )
-                        Button {
-                            addCellPos = (row: row, col: col)
-                        } label: {
-                            Image(systemName: "plus.circle")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(Color.risoMuted)
-                        }
-                        .buttonStyle(.plain)
+            if let bt = btByPosition["\(row)-\(col)"] {
+                risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
+            } else if isCenter,
+                      let b = board,
+                      b.centerSquareType == .free {
+                // FREE center cell — gold label, not interactive in play mode.
+                // Deliberately NOT getCenterDisplayText, which returns
+                // "FREE SPACE" — this cell matches the wizard preview
+                // (RearrangeGrid), which uses the shorter "FREE".
+                RisoBoardPlayCell(
+                    title: "FREE",
+                    taskType: .normal,
+                    isCompleted: false,
+                    isBingoLine: highlighted.contains(index),
+                    isCenter: true
+                )
+            } else if let b = board,
+                      // Phase-2b: a .none center is a normal cell, so show the
+                      // "+" affordance for the positional center too when empty.
+                      (!isCenter || b.centerSquareType == .none),
+                      b.status == .active,
+                      !isBoardLocked {
+                // M4 — Empty non-center cell (or .none center) on an ACTIVE board: dashed "+" affordance.
+                ZStack {
+                    RoundedRectangle(cornerRadius: Riso.cellRadius)
+                        .strokeBorder(
+                            Color.risoInk.opacity(0.35),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                        )
+                    Button {
+                        addCellPos = (row: row, col: col)
+                    } label: {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(Color.risoMuted)
                     }
-                    .aspectRatio(1, contentMode: .fit)
-                } else {
-                    // Empty placeholder
-                    Color.clear.aspectRatio(1, contentMode: .fit)
+                    .buttonStyle(.plain)
                 }
+                .aspectRatio(1, contentMode: .fit)
+            } else {
+                // Empty placeholder
+                Color.clear.aspectRatio(1, contentMode: .fit)
             }
         }
         .padding(.bottom, 8)
@@ -1640,7 +1630,9 @@ struct BoardPlayView: View {
             isCompleted: isCompleted,
             isBingoLine: highlighted.contains(index),
             isCenter: renderAsCenter,
-            isLocked: isBoardLocked,
+            isInteractionLocked: isBoardLocked,
+            // Slice 1 — the per-square lock shows whenever the board is drawn.
+            showsLockChip: boardTask.isLocked,
             currentCount: current,
             maxCount: maxVal,
             isSharedCounter: isSharedCounterCell,

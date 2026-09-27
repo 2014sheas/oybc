@@ -81,6 +81,8 @@ extension BoardPlayViewModel {
             )
         }
         editTaskOverrides = [:]
+        // Slice 1 — staged lock changes are per-session too.
+        editLockOverrides = [:]
         // Phase 3 — reset rearrange cells so they're rebuilt fresh on next entry.
         editRearrangeCells = nil
 
@@ -138,7 +140,8 @@ extension BoardPlayViewModel {
         editRearrangeCells = buildRearrangeCells(
             squaresDraft: editSquaresDraft,
             gridSize: b.boardSize,
-            centerSquareType: editCenterType
+            centerSquareType: editCenterType,
+            lockedBoardTaskIds: editEffectiveLockedIds
         )
     }
 
@@ -366,6 +369,9 @@ extension BoardPlayViewModel {
                 .filter { !draftIds.contains($0.id) }.map { $0.id }
         }()
 
+        // Slice 1 — staged lock changes (value pairs; see `editLockChanges`).
+        let lockChanges = editLockChanges
+
         // Repeat-in-edit — snapshot the staged repeat intent on the main
         // actor before detaching (mirrors the value-type snapshots above).
         // nil = the REPEATS draft is a no-op and Save is board-only.
@@ -483,6 +489,18 @@ extension BoardPlayViewModel {
                     //    as everything above.
                     for removedId in cellRemovals {
                         try AppDatabase.removeBoardTaskFromBoard(db: db, boardTaskId: removedId)
+                    }
+
+                    // 6. Slice 1 — staged lock changes, in the SAME transaction.
+                    //    Runs after the moves so a square locked in this
+                    //    session can still have been moved in it (the lock
+                    //    applies from Save on).
+                    for change in lockChanges {
+                        try AppDatabase.setBoardTaskLocked(
+                            db: db,
+                            boardTaskId: change.boardTaskId,
+                            locked: change.locked
+                        )
                     }
                 }
 

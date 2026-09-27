@@ -165,6 +165,12 @@ final class BoardPlayViewModel: ObservableObject {
     /// squares that reference the same task). Applied to `editDraftTaskMap` for
     /// rendering and committed via `saveTaskAndCascade` in `handleEditSave`.
     @Published var editTaskOverrides: [String: StagedTaskOverride] = [:]
+    /// Slice 1 — staged per-square lock changes keyed by "row-col"
+    /// (`true` = lock, `false` = unlock). Applied to `editDraftBoardTasks`
+    /// for rendering and committed via `setBoardTaskLocked` in
+    /// `handleEditSave`. An override equal to the row's stored value is
+    /// dropped by `handleEditToggleLock`, so every entry is a real change.
+    @Published var editLockOverrides: [String: Bool] = [:]
     /// Phase 3 — Rearrange sub-mode staged state. Ordered `[RearrangeCellData]`
     /// shown by `RearrangeGrid`. nil until the user first enters Rearrange
     /// sub-mode (built lazily by `seedRearrangeCells`).
@@ -238,104 +244,12 @@ final class BoardPlayViewModel: ObservableObject {
     /// the view's `gridSize`; used by the moved edit-draft computed helpers.
     var gridSize: Int { board?.boardSize ?? 3 } // internal for the +EditCommit extension split (2026-09-15)
 
-    // MARK: - Edit-mode draft derived helpers (B2-I3)
+    // MARK: - Edit-mode draft derived helpers
     //
-    // Moved from `BoardPlayView` as computed vars. The pre-move versions each
-    // opened with `guard editMode, …` — but `editMode` stays view-side, and the
-    // guard is redundant at the sole render site (the `if editMode` panel
-    // overlay) because the draft-state guards below already return the base
-    // value right after `seedEditDraft` (staged == original ⇒ no overlay,
-    // empty overrides ⇒ base map, nil rearrange ⇒ zero moves). Dropping
-    // `editMode` therefore leaves the *rendered* result byte-identical while
-    // making these unit-testable (a test can seed a draft and read the count
-    // without a live view). See the B2-I3 report for the full analysis.
-
-    /// Live `BoardTask` rows with staged task-ID replacements applied. Used as
-    /// `boardTasks:` in `BoardEditPanel` so the draft grid shows the staged
-    /// tasks without touching the database.
-    var editDraftBoardTasks: [BoardTask] {
-        // Sole consumer is BoardEditPanel (edit mode only), and `seedEditDraft`
-        // populates the draft synchronously before the view flips `editMode`, so
-        // a MISSING key here always means the cell was removed via
-        // `handleEditRemove` — drop it (compactMap → nil) so the grid renders the
-        // hole. An all-removed session correctly yields []. (Mirrors the way
-        // `editSquaresEditCount` treats an absent draft entry as a removal.)
-        //
-        // Board-integrity PR-2 (Part 2): resolve `boardTasks` first — a raw
-        // duplicate row sharing a cell with `editSquaresDraft`'s winner
-        // would otherwise ALSO match that draft key here (the draft is
-        // keyed by "row-col", not boardTaskId) and get its taskId
-        // overwritten to the staged value too, rendering two BoardTasks for
-        // one cell in `BoardEditStaticGrid`.
-        return PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize).compactMap { bt in
-            let key = "\(bt.row)-\(bt.col)"
-            guard let draft = editSquaresDraft[key] else { return nil }
-            guard draft.stagedTaskId != bt.taskId else { return bt }
-            var copy = bt
-            copy.taskId = draft.stagedTaskId
-            return copy
-        }
-    }
-
-    /// `taskMap` with staged task-field overrides applied. Used as `taskMap:` in
-    /// `BoardEditPanel` so cell labels show the staged title/type without a
-    /// database write.
-    var editDraftTaskMap: [String: Task] {
-        guard !editTaskOverrides.isEmpty else { return taskMap }
-        var map = taskMap
-        for (taskId, override) in editTaskOverrides {
-            guard var t = map[taskId] else { continue }
-            t.title = override.title
-            if override.type != .compound && t.type != .compound { t.type = override.type } // never into/out of Compound (as the commit)
-            if t.type == .counting {
-                t.action   = override.action
-                t.unit     = override.unit
-                t.maxCount = override.maxCount
-            }
-            map[taskId] = t
-        }
-        return map
-    }
-
-    /// Number of staged square edits: cell replacements + task-field overrides +
-    /// position moves (from Rearrange sub-mode). Forwarded to
-    /// `BoardEditPanel.squareEditCount` so the counter + Save pill react to
-    /// square-level changes, not just metadata changes.
-    ///
-    /// Position moves are DERIVED: a drag that returns a cell to its original
-    /// slot is net-zero and does not inflate the counter.
-    var editSquaresEditCount: Int {
-        let replacements = editSquaresDraft.values
-            .filter { $0.stagedTaskId != $0.originalTaskId }.count
-        let overrides = editTaskOverrides.count
-        let positionMoves = countPositionMoves(in: editRearrangeCells, gridSize: gridSize)
-        // Staged removals — boardTaskIds seeded from the pre-edit placements but
-        // no longer present in the draft (removed via `handleEditRemove`).
-        // Diff against the RESOLVED set (matches `seedEditDraft`'s seed
-        // source + web's centralized resolution): a pre-repair collision
-        // loser is invisible to the edit UI and must not inflate the count
-        // as a change the user didn't make (PR-2 review).
-        let draftIds = Set(editSquaresDraft.values.map { $0.boardTaskId })
-        let removals = PlacementIntegrity.resolvePlacements(boardTasks, boardSize: gridSize)
-            .filter { !draftIds.contains($0.id) }.count
-        return replacements + overrides + positionMoves + removals
-    }
-
-    /// Returns the number of task cells that are in a different grid slot from
-    /// their `originalRow`/`originalCol`. Center and empty slots are excluded.
-    func countPositionMoves(in cells: [RearrangeCellData]?, gridSize: Int) -> Int {
-        guard let cells, gridSize > 0 else { return 0 }
-        var count = 0
-        for (slotIdx, cell) in cells.enumerated() {
-            guard !cell.isCenter, !cell.isEmpty else { continue }
-            let stagedRow = slotIdx / gridSize
-            let stagedCol = slotIdx % gridSize
-            if stagedRow != cell.originalRow || stagedCol != cell.originalCol {
-                count += 1
-            }
-        }
-        return count
-    }
+    // `editDraftBoardTasks` / `editDraftTaskMap` / `editSquaresEditCount` /
+    // `countPositionMoves` and the slice-1 lock helpers live in
+    // `BoardPlayViewModel+EditDraft.swift` (computed over the stored draft
+    // above) — split out so this file stays under its frozen size cap.
 
     // MARK: - Config
 

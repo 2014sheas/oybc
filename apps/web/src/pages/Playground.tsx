@@ -7,6 +7,7 @@ import { CreateHubPlayground } from '../components/playground/CreateHubPlaygroun
 import { SharedCounterPlayground } from '../components/playground/SharedCounterPlayground';
 import { SyncSimulationPlayground } from '../components/playground/SyncSimulationPlayground';
 import { RisoKitPlayground } from '../components/playground/RisoKitPlayground';
+import { BoardGridPlayground } from '../components/playground/BoardGridPlayground';
 import styles from './Playground.module.css';
 
 /**
@@ -34,6 +35,11 @@ export function Playground() {
 
   // Features under test - new features will be added here (newest first)
   const features: Feature[] = [
+    {
+      id: 'board-grid',
+      title: 'Board Edit redesign — shared grid + locks (slice 1)',
+      content: <BoardGridPlayground />,
+    },
     {
       id: 'riso-kit',
       title: 'Riso Foundation — primitive kit (Phase 0)',

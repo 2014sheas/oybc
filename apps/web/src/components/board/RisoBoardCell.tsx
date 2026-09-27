@@ -30,6 +30,18 @@ export interface BoardCellModel {
    * (Shared Counters P3). Purely a transient highlight; clears on auto-dismiss.
    */
   isArrived?: boolean;
+  /**
+   * Board Edit redesign slice 1 — per-square lock (`BoardTask.isLocked`).
+   * Draws the red corner lock chip whenever the board is drawn, editing or
+   * not: a locked square never moves (Shuffle and drags skip it) but stays
+   * completable.
+   */
+  locked?: boolean;
+  /**
+   * Staged, unsaved edit on this square (edit mode only) — the gold pencil
+   * chip. Lock beats dirty when both apply.
+   */
+  dirty?: boolean;
 }
 
 export interface RisoBoardCellProps {
@@ -57,19 +69,34 @@ export function RisoBoardCell({ cell, onClick, onContextMenu, badge }: RisoBoard
     cell.done && !cell.isFree ? styles.done : '',
     cell.isLine ? styles.line : '',
     cell.isArrived ? styles.arrived : '',
+    cell.locked || cell.dirty ? styles.hasChip : '',
     onClick ? styles.interactive : '',
   ]
     .filter(Boolean)
     .join(' ');
 
+  // Corner chip: lock (red) wins over dirty (gold) — a locked square that
+  // is also staged reads as locked; the edit counter carries the change.
+  const chip = cell.locked ? (
+    <span className={`${styles.chip} ${styles.chipLock}`} aria-label="Locked in place" role="img">
+      <RisoIcon name="lock" size={12} />
+    </span>
+  ) : cell.dirty ? (
+    <span className={`${styles.chip} ${styles.chipDirty}`} aria-label="Unsaved edit" role="img">
+      <RisoIcon name="edit" size={12} />
+    </span>
+  ) : null;
+
   const inner = cell.isFree ? (
     <>
       <span className={styles.freeStar} aria-hidden="true" />
       <span className={styles.freeLabel}>{cell.label}</span>
+      {chip}
     </>
   ) : (
     <>
       {badge}
+      {chip}
       {cell.type === 'counting' && !cell.done && cell.isShared && (
         <span className={styles.sharedMarker} aria-hidden="true">
           <i /><i />
