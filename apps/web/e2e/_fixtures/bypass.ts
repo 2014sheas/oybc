@@ -135,6 +135,23 @@ export async function startRecurringWizard(page: Page): Promise<void> {
   await page.getByRole('button', { name: /start a recurring board/i }).click();
 }
 
+/**
+ * Edit consolidation (docs/BOARD_EDIT_REDESIGN.md slice 5) — click the
+ * title-row `Edit` button, then a row inside the Edit screen's BOARD
+ * section (`role="group" aria-label="Board options"`) by its exact label
+ * (e.g. `Board details…`, `Repeat this board…`, `Archive`, `Delete`,
+ * `Close board`, `Reopen board`, `Core defaults…`). Replaces the retired
+ * `Board menu` "..." trigger + `menuitem` rows every earlier spec used.
+ * Callers must already be on the board's play surface.
+ */
+export async function openBoardOption(page: Page, label: string): Promise<void> {
+  await page.getByRole('button', { name: 'Edit board' }).click();
+  await page
+    .getByRole('group', { name: 'Board options' })
+    .getByRole('button', { name: label, exact: true })
+    .click();
+}
+
 /** The bypass user's id — exported so tests that seed user-scoped
  *  rows (templates, boards, tasks) can reference it without
  *  duplicating the literal. Mirror of `BYPASS_USER_ID` in

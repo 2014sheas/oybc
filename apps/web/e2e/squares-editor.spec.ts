@@ -40,7 +40,7 @@ async function readBoardTask(page: Page, id: string): Promise<Record<string, unk
  *   (i) keyboard Alt+Arrow move.
  *   (j) the play mode has no "+" on empty squares.
  *   (k) remove EVERY square → Save → the board renders (empty squares, not
- *       "Loading…" forever) → Edit squares → add via tap-empty → Save.
+ *       "Loading…" forever) → Edit board → add via tap-empty → Save.
  */
 
 const now = new Date();
@@ -66,7 +66,7 @@ test.describe('Squares editor (a) — tap an empty square opens the picker', () 
 
   test('type → inline match → pick → pencil chip → Save → reload → placed', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     // (2,1) is empty — tap it to open the Add picker directly (D13).
     await page.getByRole('button', { name: /^Empty square, row 3, column 2$/ }).click();
@@ -105,7 +105,7 @@ test.describe('Squares editor (b) — a quick-added task is discarded on Cancel'
 
   test('Add a brand-new task → Cancel → Discard → the task does not exist in /tasks', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
     await page.getByRole('button', { name: /^Empty square, row 3, column 2$/ }).click();
 
     await page.getByLabel('New normal task title').fill('Brand new discarded task');
@@ -118,7 +118,7 @@ test.describe('Squares editor (b) — a quick-added task is discarded on Cancel'
     // Cancel → Discard.
     await page.getByRole('button', { name: 'Cancel editing' }).click();
     await page.getByRole('button', { name: 'Discard', exact: true }).click();
-    await expect(page.getByRole('button', { name: /^edit squares/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit board' })).toBeVisible();
 
     // The task was never written.
     await page.goto('/tasks');
@@ -147,7 +147,7 @@ test.describe('Squares editor (c)/(d) — replace and remove', () => {
 
   test('Replace via the picker, then Save', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     await page.getByRole('button', { name: /^Outgoing task$/ }).click();
     await page.getByRole('button', { name: 'Replace task' }).click();
@@ -167,7 +167,7 @@ test.describe('Squares editor (c)/(d) — replace and remove', () => {
 
   test('Remove leaves a dashed empty square with no chip, then Save', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     await page.getByRole('button', { name: /^Task to remove$/ }).click();
     await page.getByRole('button', { name: 'Remove from board' }).click();
@@ -203,7 +203,7 @@ test.describe('Squares editor (e) — hold-drag moves a square; a locked square 
 
   test('a hold-drag commits a new position; a locked square never lifts', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     const moving = page.locator(`[data-cid="${ids(0).bt}"]`);
     const box = (await moving.boundingBox())!;
@@ -250,7 +250,7 @@ test.describe('Squares editor (f) — Shuffle', () => {
 
   test('Shuffle counts as 1 edit; Save leaves locked squares in place', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     await page.getByRole('button', { name: 'Shuffle' }).click();
     await expect(page.getByText(/^1$/).first()).toBeVisible();
@@ -282,7 +282,7 @@ test.describe('Squares editor (g) — center Free ⇄ task square', () => {
 
   test('Make it a task square → empty center → add → Save', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     await page.getByRole('button', { name: 'Free space' }).click();
     await page.getByRole('button', { name: 'Make it a task square' }).click();
@@ -321,7 +321,7 @@ test.describe('Squares editor (h) — legacy CHOSEN center normalizes on Save', 
 
   test('opens with a locked center; Unlock → Save → the board row is `none`', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     // The legacy CHOSEN center reads as a normal, effectively-locked cell.
     await expect(page.getByRole('img', { name: 'Locked in place' })).toHaveCount(1);
@@ -353,7 +353,7 @@ test.describe('Squares editor (i) — keyboard Alt+Arrow move', () => {
 
   test('Alt+ArrowRight swaps into the empty neighbor and announces the move', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
 
     await page.getByRole('button', { name: /^Keyboard task$/ }).focus();
     await page.keyboard.press('Alt+ArrowRight');
@@ -401,7 +401,7 @@ test.describe('Squares editor (k) — a board with zero squares still renders', 
 
   test('remove every square → Save → empty board renders → add via tap-empty → Save', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    await page.getByRole('button', { name: 'Edit board' }).click();
     await page.getByRole('button', { name: /^The only square$/ }).click();
     await page.getByRole('button', { name: 'Remove from board' }).click();
     await page.getByRole('button', { name: 'Save changes' }).click();
@@ -413,8 +413,8 @@ test.describe('Squares editor (k) — a board with zero squares still renders', 
     await expect(page.getByText(/Loading/)).toHaveCount(0);
     await expect(page.getByText('The only square')).toHaveCount(0);
 
-    // …and it is still editable: Edit squares → tap an empty square → add.
-    await page.getByRole('button', { name: /^edit squares/i }).click();
+    // …and it is still editable: Edit board → tap an empty square → add.
+    await page.getByRole('button', { name: 'Edit board' }).click();
     await page.getByRole('button', { name: /^Empty square, row 1, column 1$/ }).click();
     await expect(page.getByRole('dialog', { name: /Add square/ })).toBeVisible();
     await page.getByLabel('New normal task title').fill('Refill');
