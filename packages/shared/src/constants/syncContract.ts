@@ -109,3 +109,33 @@ export const USER_SCOPED_SYNC_COLLECTIONS = [
 export const LEGACY_PULL_SKIP_COLLECTIONS = [
   'defaultPools',
 ] as const satisfies readonly SyncCollection[];
+
+/**
+ * Board fields whose **absence** on a pushed/pulled row means "cleared", so
+ * the sync layer must propagate the clear explicitly (Board Edit redesign
+ * slice 4 — D2). Firestore writes are `merge: true` (an absent key keeps the
+ * remote value) and the iOS pull upserts present keys only (an absent key
+ * keeps the local value), so without an explicit delete a cleared field
+ * silently comes back.
+ *
+ *  - `endDate` — a board edited to indefinite drops its end.
+ *  - `completedAt` — a board un-greenlogged drops its completion stamp.
+ *  - `sealedAt` / `sealedCompletedCells` — **Reopen** clears the seal and its
+ *    frozen snapshot.
+ *
+ * Consumers: web push (`syncService.ts` — `deleteField()` for each absent
+ * field on a `boards` row); iOS push (`FieldValue.delete()`) and iOS pull
+ * (NULL-out each field absent from a winning remote row). iOS asserts its
+ * list against `syncContract.json` (`clearableBoardFields`).
+ *
+ * Not a collection list — `scripts/check-sync-contract-rules.mjs` ignores it.
+ */
+export const CLEARABLE_BOARD_FIELDS = [
+  'endDate',
+  'completedAt',
+  'sealedAt',
+  'sealedCompletedCells',
+] as const;
+
+/** Union of the literal field names in `CLEARABLE_BOARD_FIELDS`. */
+export type ClearableBoardField = (typeof CLEARABLE_BOARD_FIELDS)[number];

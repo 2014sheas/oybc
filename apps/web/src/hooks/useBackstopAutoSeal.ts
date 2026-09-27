@@ -1,6 +1,46 @@
 import { useEffect, useRef } from 'react';
 import { runBackstopAutoSeal, reDeriveActiveBoards } from '../db/operations/sealing';
 import { repairPlacementIntegrity } from '../db/operations/placementIntegrity';
+import { getSyncStatus, subscribeSyncStatus } from '../firebase/syncStatus';
+
+/**
+ * Board Edit redesign slice 4 (D5) — resolves once the session's first full
+ * `pullSync` pass has finished (`firstPullCompleted` — every collection,
+ * boards included, not merely the first applied doc), or after `timeoutMs`
+ * (offline / a slow first sync), whichever comes first. Offline (per
+ * `navigator.onLine`) resolves immediately — mirrors today's on-mount
+ * posture when there is nothing to wait for.
+ *
+ * Why: with `reopenedAt`, a device that hasn't yet pulled a peer's Reopen
+ * would re-seal that board under the auto-close rule with a version bump
+ * that can win LWW (WC §Lifecycle step 4 already names post-first-pull as
+ * preferred for exactly this reason).
+ */
+function waitForFirstPullOrTimeout(timeoutMs = 10_000): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      resolve();
+      return;
+    }
+    if (getSyncStatus().firstPullCompleted) {
+      resolve();
+      return;
+    }
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      unsubscribe();
+      clearTimeout(timer);
+      resolve();
+    };
+    const unsubscribe = subscribeSyncStatus(() => {
+      if (getSyncStatus().firstPullCompleted) finish();
+    });
+    timer = setTimeout(finish, timeoutMs);
+  });
+}
 
 /**
  * Windowed Completion — lazy auto-seal backstop hook
@@ -8,7 +48,9 @@ import { repairPlacementIntegrity } from '../db/operations/placementIntegrity';
  *
  * Mounted by `BoardsPage`; runs once per user on mount. Mirrors the
  * recurring-spawn lazy-detection posture (`useRecurringBoardSpawn`): boards
- * past their timeframe-scaled backstop deadline are sealed when the user opens
+ * past their auto-close deadline (the end of the NEXT window of their
+ * timeframe — `computeAutoCloseDeadlineMs`; never for a reopened board) are
+ * sealed when the user opens
  * the Boards tab — never background-scheduled, never a DB write without a user
  * having opened the app (the house lazy-detection invariant).
  *
@@ -33,6 +75,7 @@ export function useBackstopAutoSeal(userId: string | undefined): void {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       try {
+        await waitForFirstPullOrTimeout();
         if (cancelled) return;
         await runBackstopAutoSeal(userId);
         if (cancelled) return;

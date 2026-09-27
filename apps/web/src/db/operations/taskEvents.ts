@@ -9,7 +9,8 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   buildSealImmuneWindows,
-  isOccurredAtSealImmune,
+  isEventSealImmune,
+  expandToWindowStampedDerived,
 } from '@oybc/shared';
 import { generateUUID } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -149,15 +150,23 @@ export async function recomputeTaskCachesFromPull(taskId: string): Promise<void>
  *
  * @param taskId The event-owning task whose immune windows to resolve.
  */
-async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWindow[]> {
+export async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWindow[]> {
   const sealedBoards = (await db.boards.toArray()).filter((b) => !b.isDeleted && b.sealedAt != null);
   if (sealedBoards.length === 0) return [];
   // Live placements only — a tombstoned BoardTask no longer places the task
   // on this board (docs/BOARD_INTEGRITY.md).
   const boardTasks = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const children = (await db.compoundChildren.toArray()).filter((c) => !c.isDeleted);
-  const parents = findTransitiveParentCompounds(taskId, children);
-  const affected = findAffectedBoardIds(taskId, parents, boardTasks);
+  // A shared-counter ROOT is never placed itself — its window-stamped derived
+  // rows are, and they resolve from the root's events (slice 4 D10). Reach
+  // the sealed boards placing those rows too, exactly like the sealed
+  // re-derivation's reachability (`reDeriveSealedBoardsForTasks`).
+  const linked = await db.tasks.where('sharedCounterId').equals(taskId).toArray();
+  const affected = new Set<string>();
+  for (const id of expandToWindowStampedDerived([taskId], linked)) {
+    const parents = findTransitiveParentCompounds(id, children);
+    for (const b of findAffectedBoardIds(id, parents, boardTasks)) affected.add(b);
+  }
   const placing = sealedBoards.filter((b) => affected.has(b.id));
   return buildSealImmuneWindows(
     placing.map((b) => ({ startDate: b.startDate, endDate: b.endDate, sealedAt: b.sealedAt as string })),
@@ -267,7 +276,7 @@ export async function tombstoneWindowCompletions(
     const occurredMs = new Date(e.occurredAt).getTime();
     if (occurredMs < lowerMs) continue;
     if (upperMs !== null && occurredMs > upperMs) continue; // a later window's completion
-    if (isOccurredAtSealImmune(e.occurredAt, immuneWindows)) continue; // sealed history is immutable
+    if (isEventSealImmune(e, immuneWindows)) continue; // sealed history is immutable (unless a late log — D10)
     await db.taskEvents.update(e.id, {
       isDeleted: true,
       deletedAt: now,
@@ -294,7 +303,7 @@ export async function tombstoneWindowCompletions(
 export async function tombstoneLatestCompletion(taskId: string, now: string): Promise<void> {
   const immuneWindows = await getSealImmuneWindowsForTask(taskId);
   const events = (await db.taskEvents.where('taskId').equals(taskId).toArray()).filter(
-    (e) => !e.isDeleted && e.kind === 'completion' && !isOccurredAtSealImmune(e.occurredAt, immuneWindows),
+    (e) => !e.isDeleted && e.kind === 'completion' && !isEventSealImmune(e, immuneWindows),
   );
   if (events.length === 0) {
     // Still restamp — a stale lifetime cache (e.g. legacy isCompleted with no
@@ -334,7 +343,7 @@ export async function isUncompleteBlockedBySeal(taskId: string): Promise<boolean
     (e) => !e.isDeleted && e.kind === 'completion',
   );
   if (live.length === 0) return false;
-  return live.every((e) => isOccurredAtSealImmune(e.occurredAt, immuneWindows));
+  return live.every((e) => isEventSealImmune(e, immuneWindows));
 }
 
 /**

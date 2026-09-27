@@ -115,6 +115,9 @@ export const BoardSchema = z.object({
   sealedAt: FlexibleDateTime.optional(),
   sealedCompletedCells: z.array(z.number().int().min(0)).optional(),
   activatedAt: FlexibleDateTime.optional(),
+  // Board Edit redesign slice 4 — stamped on every Reopen, never cleared.
+  // Additive + optional so pre-slice-4 peers' rows decode unchanged.
+  reopenedAt: FlexibleDateTime.optional(),
   // Board Creation Split (PR B) — recurring drafts. Additive + optional,
   // mirrors `isCore`'s default-false forward-compat posture: pre-PR-B
   // rows/peers without these fields decode as a plain one-off draft.

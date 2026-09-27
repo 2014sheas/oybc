@@ -9,6 +9,12 @@ enum BoardAction: Equatable {
     case coreDefaults
     case confirmArchive
     case confirmDelete
+    /// Board Edit redesign slice 4 (D3, OQ7): Close has no confirm — Reopen
+    /// reverses it.
+    case close
+    /// Board Edit redesign slice 4 (D6): Reopen confirms via `.alert`
+    /// (verbatim copy in the presenter body below).
+    case confirmReopen
 }
 
 /// Attaches the three "…" menu sheets (Board details / Repeat this board /
@@ -41,6 +47,10 @@ struct BoardActionsPresenter: ViewModifier {
     let weekStartDay: String
     let userId: String
     @ObservedObject var viewModel: BoardPlayViewModel
+    /// Board Edit redesign slice 4: Close/Reopen reconcile local notifications
+    /// afterward (a closed board's expiry reminder should stop firing; a
+    /// reopened one shouldn't re-add one either, since it's past `endDate`).
+    @EnvironmentObject var notificationService: NotificationService
     /// Fired after a successful Board details or Repeat save (drives the
     /// "Board saved" toast — the same one the squares editor's Save uses;
     /// web's `BoardTitleActions` fires its toast for both too).
@@ -130,6 +140,17 @@ struct BoardActionsPresenter: ViewModifier {
             } message: {
                 Text(boardClosedMessage ?? "")
             }
+            // Board Edit redesign slice 4, D3/OQ7: Close has no confirm
+            // (Reopen reverses it) — fire the moment the menu routes here.
+            .onChange(of: activeAction) { _, action in
+                if action == .close { runClose() }
+            }
+            .alert("Reopen this board?", isPresented: reopenBinding) {
+                Button("Cancel", role: .cancel) { activeAction = nil }
+                Button("Reopen") { runReopen() }
+            } message: {
+                Text("It accepts logs again until you close it. Streaks and achievements that watch it will recompute.")
+            }
     }
 
     // MARK: - Per-case bindings
@@ -148,6 +169,9 @@ struct BoardActionsPresenter: ViewModifier {
     }
     private var deleteBinding: Binding<Bool> {
         Binding(get: { activeAction == .confirmDelete }, set: { if !$0 { activeAction = nil } })
+    }
+    private var reopenBinding: Binding<Bool> {
+        Binding(get: { activeAction == .confirmReopen }, set: { if !$0 { activeAction = nil } })
     }
 
     // MARK: - Archive / Delete
@@ -176,5 +200,40 @@ struct BoardActionsPresenter: ViewModifier {
                 viewModel.bingoMessage = "Delete failed — please try again."
             }
         }
+    }
+
+    // MARK: - Close / Reopen (Board Edit redesign slice 4)
+
+    private func runClose() {
+        _Concurrency.Task { @MainActor in
+            do {
+                try await viewModel.closeBoard()
+                await reconcileNotifications()
+            } catch {
+                viewModel.bingoMessage = "Close failed — please try again."
+            }
+            activeAction = nil
+        }
+    }
+
+    private func runReopen() {
+        _Concurrency.Task { @MainActor in
+            do {
+                try await viewModel.reopenBoard()
+                await reconcileNotifications()
+            } catch {
+                viewModel.bingoMessage = "Reopen failed — please try again."
+            }
+            activeAction = nil
+        }
+    }
+
+    /// Both Close and Reopen change a board's `endDate`/`sealedAt`-derived
+    /// notification eligibility (an expiry reminder should stop once closed;
+    /// a reopened board is already past its `endDate` so the planner emits
+    /// none either way) — reconcile so the OS-scheduled set stays honest.
+    private func reconcileNotifications() async {
+        guard let uid = userId.isEmpty ? nil : userId else { return }
+        await notificationService.reconcile(userId: uid)
     }
 }

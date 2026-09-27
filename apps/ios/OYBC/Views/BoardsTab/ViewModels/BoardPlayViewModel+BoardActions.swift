@@ -61,6 +61,35 @@ extension BoardPlayViewModel {
         reload()
     }
 
+    /// Closes the current board (Board Edit redesign slice 4, D3 — the
+    /// "Close board" menu row / closing-out banner's "Close out"). Reloads
+    /// on success; a board that raced to already-closed (`false` return) is
+    /// treated the same as success (idempotent no-op).
+    ///
+    /// - Throws: `BoardLifecycleError.notClosable` if the board is no longer
+    ///   eligible (deleted / draft / indefinite / not yet ended).
+    func closeBoard() async throws {
+        let bid = boardId
+        let db = database
+        try await _Concurrency.Task.detached(priority: .userInitiated) {
+            _ = try db.closeBoard(boardId: bid)
+        }.value
+        reload()
+    }
+
+    /// Reopens the current CLOSED board (Board Edit redesign slice 4, D6).
+    ///
+    /// - Throws: `BoardLifecycleError.notReopenable` if the board is
+    ///   missing, deleted, or not currently sealed.
+    func reopenBoard() async throws {
+        let bid = boardId
+        let db = database
+        try await _Concurrency.Task.detached(priority: .userInitiated) {
+            _ = try db.reopenBoard(boardId: bid)
+        }.value
+        reload()
+    }
+
     /// Archives the current board (`status = .archived`).
     func archiveBoard() async throws {
         let bid = boardId

@@ -25,6 +25,7 @@ final class SyncContractTests: XCTestCase {
         let syncCollections: [String]
         let userScopedSyncCollections: [String]
         let legacyPullSkipCollections: [String]
+        let clearableBoardFields: [String]
     }
 
     private func loadFixture() throws -> SyncContractFixture {
@@ -88,5 +89,19 @@ final class SyncContractTests: XCTestCase {
         XCTAssertFalse(fixture.syncCollections.isEmpty)
         XCTAssertFalse(fixture.userScopedSyncCollections.isEmpty)
         XCTAssertFalse(fixture.legacyPullSkipCollections.isEmpty)
+        XCTAssertFalse(fixture.clearableBoardFields.isEmpty)
+    }
+
+    /// Board Edit redesign slice 4 (D2) — iOS `clearableBoardFields`
+    /// (`SyncService+ClearableFields.swift`) must set-match @oybc/shared's
+    /// `CLEARABLE_BOARD_FIELDS`, the same drift guardrail as the three
+    /// collection lists above.
+    func testClearableBoardFieldsSetMatchesFixture() throws {
+        let fixture = try loadFixture()
+        XCTAssertEqual(
+            Set(clearableBoardFields),
+            Set(fixture.clearableBoardFields),
+            "iOS clearableBoardFields must set-match @oybc/shared's CLEARABLE_BOARD_FIELDS."
+        )
     }
 }

@@ -69,3 +69,64 @@ private func isMoreRecent(_ candidate: TaskEvent, than current: TaskEvent) -> Bo
     let currentOccurred = DateFormatting.parseISO(current.occurredAt) ?? .distantPast
     return candidateOccurred > currentOccurred
 }
+
+// MARK: - Closed-board late logs (Board Edit redesign slice 4, D10 / R2)
+
+/// Selects the late logs a user made directly on a CLOSED board for one task,
+/// newest first — the only sealed-window events that stay undoable (owner
+/// ruling R2). Identified by provenance + timestamps, never a marker field:
+/// non-deleted, `taskId` matches, `boardId == boardId`, `occurredAt` is the
+/// board's `endDate` INSTANT (parsed compare — the late-log path re-encodes the
+/// local-ISO `endDate` as UTC), `createdAt` strictly after `sealedAt`; any
+/// kind. Ordered by `createdAt` descending, ties by `id` descending. An
+/// unsealed board, or one with no parseable `endDate` / `sealedAt`, has none.
+/// Mirrors the TS `selectClosedBoardLateLogs`.
+///
+/// - Parameters:
+///   - events: Candidate events (may be unfiltered).
+///   - boardId: The closed board's id.
+///   - endDate: The board's window end (ISO8601), nil for indefinite.
+///   - sealedAt: When the board closed (ISO8601), nil if unsealed.
+///   - taskId: The task whose late logs to select (for a window-stamped derived
+///     square, the ROOT counter — derived rows own no events).
+/// - Returns: The qualifying events, newest `createdAt` first.
+func selectClosedBoardLateLogs(
+    events: [TaskEvent],
+    boardId: String,
+    endDate: String?,
+    sealedAt: String?,
+    taskId: String
+) -> [TaskEvent] {
+    guard let end = endDate.flatMap(DateFormatting.parseISO),
+          let sealed = sealedAt.flatMap(DateFormatting.parseISO) else { return [] }
+    let endMs = (end.timeIntervalSince1970 * 1000).rounded()
+    let sealedMs = sealed.timeIntervalSince1970 * 1000
+
+    func ms(_ iso: String) -> Double? {
+        DateFormatting.parseISO(iso).map { ($0.timeIntervalSince1970 * 1000).rounded() }
+    }
+
+    let lateLogs = events.filter { e in
+        guard !e.isDeleted, e.taskId == taskId, e.boardId == boardId else { return false }
+        guard let occurred = ms(e.occurredAt), occurred == endMs else { return false }
+        guard let created = DateFormatting.parseISO(e.createdAt) else { return false }
+        return created.timeIntervalSince1970 * 1000 > sealedMs
+    }
+    return lateLogs.sorted { a, b in
+        let ca = ms(a.createdAt) ?? 0
+        let cb = ms(b.createdAt) ?? 0
+        if ca != cb { return ca > cb }
+        return a.id > b.id
+    }
+}
+
+/// Convenience overload of `selectClosedBoardLateLogs` for a `Board` row.
+func selectClosedBoardLateLogs(events: [TaskEvent], board: Board, taskId: String) -> [TaskEvent] {
+    selectClosedBoardLateLogs(
+        events: events,
+        boardId: board.id,
+        endDate: board.endDate,
+        sealedAt: board.sealedAt,
+        taskId: taskId
+    )
+}

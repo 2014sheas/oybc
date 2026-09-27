@@ -2,9 +2,11 @@ import {
   TaskType,
   evaluateCompound,
   isEventOwningTask,
+  isWindowStampedDerived,
   resolveDerivedCounterWindowState,
   resolveLinkedCounterDisplay,
   resolveTaskWindowState,
+  resolveWindowStampedDerivedState,
   type Task,
   type TaskEvent,
   type CompoundChild,
@@ -338,4 +340,47 @@ export function taskToSquareState(
     // Per-board step completion is not tracked under the unified model.
     completedStepIds: new Set<string>(),
   };
+}
+
+/**
+ * Board Edit redesign slice 4 (D16) — what a COUNTING square SHOWS on a
+ * CLOSED board: the sealed-bounded windowed count (`[startDate, min(endDate,
+ * sealedAt)]`), not the old max/0 snapshot display and not the lifetime
+ * cache, so a partial late log is visible ("3/5", not just green/grey).
+ * Mirrors the sealing data layer's `boundWindowContextAtSeal` +
+ * `resolveTaskWindowState` / `resolveWindowStampedDerivedState` pattern —
+ * same bound, so the count and the frozen `sealedCompletedCells` green can
+ * never disagree — but synchronous, built from an already-loaded event map
+ * (`SquareWindowContext.eventsByTaskId`) for render-time use.
+ *
+ * A hub-linked derived counter (no `startDate`) has no windowed display —
+ * callers must not tap-route to this square (OQ2); this falls back to its
+ * lifetime read defensively.
+ *
+ * @param task           The COUNTING task (or window-stamped derived row).
+ * @param eventsByTaskId The workspace's non-deleted events grouped by taskId.
+ * @param board          Only `startDate` / `endDate` / `sealedAt` are read.
+ */
+export function resolveClosedBoardCounterDisplay(
+  task: Task,
+  eventsByTaskId: Record<string, TaskEvent[]>,
+  board: { startDate: string; endDate?: string | null; sealedAt?: string | null },
+): { displayed: number; isCompleted: boolean } {
+  if (task.sharedCounterId != null && !isWindowStampedDerived(task)) {
+    return { displayed: task.currentCount ?? 0, isCompleted: task.isCompleted };
+  }
+
+  const rootId = task.sharedCounterId ?? task.id;
+  const rootEvents = (eventsByTaskId[rootId] ?? []).filter((e) => !e.isDeleted);
+  const sealedMs = board.sealedAt ? new Date(board.sealedAt).getTime() : NaN;
+  const bounded = Number.isNaN(sealedMs)
+    ? rootEvents
+    : rootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedMs);
+
+  if (isWindowStampedDerived(task)) {
+    const state = resolveWindowStampedDerivedState(task, bounded);
+    return { displayed: state.count, isCompleted: state.isCompleted };
+  }
+  const { count, isCompleted } = resolveTaskWindowState(task, bounded, board.startDate, board.endDate ?? null);
+  return { displayed: count, isCompleted };
 }

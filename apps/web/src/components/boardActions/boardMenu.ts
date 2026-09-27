@@ -1,5 +1,7 @@
 import {
   BoardStatus,
+  isBoardClosed,
+  isBoardEnded,
   type Board,
   type RecurringBoardTemplate,
 } from '@oybc/shared';
@@ -7,15 +9,23 @@ import type { RisoIconName } from '../riso/RisoIcon';
 
 /**
  * Board Edit redesign slice 2 — the title-row "…" board menu, as a pure
- * builder (docs/BOARD_EDIT_REDESIGN.md; plan D3 / D6). The iOS twin is
- * `BoardMenuItems.items(board:sourceTemplate:)` in
+ * builder (docs/BOARD_EDIT_REDESIGN.md; plan D3 / D6). Slice 4 (D12) adds
+ * the `close` / `reopen` rows. The iOS twin is
+ * `BoardMenuItems.items(board:sourceTemplate:now:)` in
  * `Views/BoardsTab/BoardActions/BoardMenuItems.swift` — same rules, same
  * order, pinned by mirrored case tables (`boardMenu.test.ts` ↔
  * `BoardMenuItemsTests`).
  */
 
 /** What a board-menu row does when chosen. */
-export type BoardMenuItemKind = 'details' | 'coreDefaults' | 'repeat' | 'archive' | 'delete';
+export type BoardMenuItemKind =
+  | 'details'
+  | 'coreDefaults'
+  | 'repeat'
+  | 'archive'
+  | 'delete'
+  | 'close'
+  | 'reopen';
 
 /** One row of the board menu. */
 export interface BoardMenuItem {
@@ -34,6 +44,8 @@ const ITEMS: Record<BoardMenuItemKind, BoardMenuItem> = {
   repeat: { kind: 'repeat', label: 'Repeat this board…', icon: 'repeat', danger: false },
   archive: { kind: 'archive', label: 'Archive', icon: 'boards', danger: false },
   delete: { kind: 'delete', label: 'Delete', icon: 'trash', danger: true },
+  close: { kind: 'close', label: 'Close board', icon: 'lock', danger: false },
+  reopen: { kind: 'reopen', label: 'Reopen board', icon: 'sync', danger: false },
 };
 
 /**
@@ -64,35 +76,66 @@ export function isRepeatEligible(
 }
 
 /**
- * Build the board menu's rows, in display order (plan D3):
+ * Build the board menu's rows, in display order (plan D3, extended by slice
+ * 4's D12):
  *   - draft → no menu (the draft-resume prompt replaces the header);
- *   - core → Core defaults… · Delete (name, timeframe, repeats and archive
- *     are not fields on a core board);
- *   - ad-hoc → Board details… · Repeat this board… · Archive (each only
- *     while editable: active and unsealed; Repeat also needs
- *     `isRepeatEligible`) · Delete (always).
- * Sealed boards therefore get Delete (+ Core defaults… on core) only —
- * Repeat and Archive write the sealed row and wait for slice 4.
+ *   - archived → Delete only (+ Core defaults… on core) — no Close/Reopen
+ *     on an archived board (OQ5);
+ *   - core, ended → Close board · Core defaults… · Delete;
+ *   - core, closed → Reopen board · Core defaults… · Delete;
+ *   - core, otherwise → Core defaults… · Delete;
+ *   - ad-hoc, ended → Close board · Board details… · Repeat this board…
+ *     (`isRepeatEligible`) · Archive · Delete;
+ *   - ad-hoc, closed → Reopen board · Repeat this board… · Archive · Delete
+ *     (no Board details — handoff `MENU_CLOSED`);
+ *   - ad-hoc, otherwise (active/completed, unsealed, not yet ended) →
+ *     Board details… · Repeat this board… · Archive (only while editable:
+ *     `status === ACTIVE`) · Delete (always).
+ * Repeat and Archive are offered on a closed board (D12: both are relaxed
+ * to `assertBoardMetadataWritable`, which allows a sealed board).
  *
  * @param args.board - The board the menu is for.
  * @param args.sourceTemplate - See `isRepeatEligible`.
  * @param args.templatesLoaded - See `isRepeatEligible`.
+ * @param args.now - Current time as epoch ms (drives the ended/closed state).
  * @returns The rows to render; empty means "render no menu".
  */
 export function buildBoardMenuItems(args: {
   board: Board;
   sourceTemplate: RecurringBoardTemplate | null | undefined;
   templatesLoaded: boolean;
+  now: number;
 }): BoardMenuItem[] {
-  const { board, sourceTemplate, templatesLoaded } = args;
+  const { board, sourceTemplate, templatesLoaded, now } = args;
   if (board.status === BoardStatus.DRAFT) return [];
-  if (board.isCore) return [ITEMS.coreDefaults, ITEMS.delete];
+  if (board.status === BoardStatus.ARCHIVED) {
+    return board.isCore ? [ITEMS.coreDefaults, ITEMS.delete] : [ITEMS.delete];
+  }
 
-  const editable = board.status === BoardStatus.ACTIVE && board.sealedAt == null;
+  const ended = isBoardEnded(board, now);
+  const closed = isBoardClosed(board);
+  const repeatEligible = isRepeatEligible(board, sourceTemplate, templatesLoaded);
+
+  if (board.isCore) {
+    const items: BoardMenuItem[] = [];
+    if (closed) items.push(ITEMS.reopen);
+    else if (ended) items.push(ITEMS.close);
+    items.push(ITEMS.coreDefaults, ITEMS.delete);
+    return items;
+  }
+
   const items: BoardMenuItem[] = [];
-  if (editable) {
+  if (closed) {
+    items.push(ITEMS.reopen);
+    if (repeatEligible) items.push(ITEMS.repeat);
+    items.push(ITEMS.archive);
+  } else if (ended) {
+    items.push(ITEMS.close, ITEMS.details);
+    if (repeatEligible) items.push(ITEMS.repeat);
+    items.push(ITEMS.archive);
+  } else if (board.status === BoardStatus.ACTIVE) {
     items.push(ITEMS.details);
-    if (isRepeatEligible(board, sourceTemplate, templatesLoaded)) items.push(ITEMS.repeat);
+    if (repeatEligible) items.push(ITEMS.repeat);
     items.push(ITEMS.archive);
   }
   items.push(ITEMS.delete);

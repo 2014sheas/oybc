@@ -66,12 +66,6 @@ struct WindowEvaluationContext {
     let eventsByTaskId: [String: [TaskEvent]]
 }
 
-// MARK: - Constants
-
-/// 48h cap on the auto-seal backstop, in milliseconds (docs §Sealing → backstop
-/// table). Mirrors the TS `BACKSTOP_MAX_MS`.
-let BACKSTOP_MAX_MS: Double = 48 * 60 * 60 * 1000
-
 // MARK: - Predicates
 
 /// Whether a Task **owns its completion state** as events (docs §New entity +
@@ -421,6 +415,10 @@ struct SealImmuneWindow: Equatable {
     /// bound that built the sealed record (Decision 1 end bound + Decision 9).
     /// An absent/unparseable `endDate` is open-ended, so the bound is `sealedAt`.
     let endMs: Double
+    /// The sealed board's `sealedAt` as epoch ms (Board Edit redesign slice 4,
+    /// D10): a board-authored event CREATED after this instant is a late log
+    /// made on the closed board, and stays undoable (`isEventSealImmune`).
+    let sealedAtMs: Double
 }
 
 /// Build the immune windows for a task from the sealed boards that place it
@@ -449,75 +447,54 @@ func buildSealImmuneWindows(
         let sealedAtMs = DateFormatting.parseISO(b.sealedAt).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
         let endDateMs = b.endDate.flatMap(DateFormatting.parseISO).map { $0.timeIntervalSince1970 * 1000 }
         let endMs = endDateMs.map { min($0, sealedAtMs) } ?? sealedAtMs
-        return SealImmuneWindow(startMs: startMs, endMs: sealedAtMs.isNaN ? Double.nan : endMs)
+        return SealImmuneWindow(
+            startMs: startMs,
+            endMs: sealedAtMs.isNaN ? Double.nan : endMs,
+            sealedAtMs: sealedAtMs
+        )
     }
 }
 
-/// Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
-/// it falls inside `[startDate, min(endDate, sealedAt)]` of some sealed board
-/// that places the task. Immune events can never be tombstoned by any
-/// un-complete/decrement gesture — history stays history. Bounds are
-/// inclusive on both ends (the boundary instants belong to the frozen record).
-/// Mirrors the TS `isOccurredAtSealImmune`.
+/// Whether an EVENT is sealed-window immune (docs Decision 9 as amended by the
+/// Board Edit redesign slice 4, D10 / owner ruling R2). Immune iff some sealed
+/// board S placing its task has `occurredAt ∈ [S.startDate, min(S.endDate,
+/// S.sealedAt)]` AND the event is NOT a late log made on a closed board —
+/// NOT (`boardId != nil` AND `createdAt > S.sealedAt`). The `boardId` conjunct
+/// keeps heal-on-pull / backfill mints (no `boardId`) immune; a late log
+/// re-freezes once any containing board seals after it was created. Mirrors
+/// the TS `isEventSealImmune`.
 ///
 /// - Parameters:
 ///   - occurredAt: The event's semantic timestamp (ISO8601).
+///   - createdAt: The event's write time (ISO8601).
+///   - boardId: The event's board provenance, if any.
 ///   - windows: The task's immune windows (from `buildSealImmuneWindows`).
-/// - Returns: `true` iff the event is immune to tombstoning.
-func isOccurredAtSealImmune(_ occurredAt: String, windows: [SealImmuneWindow]) -> Bool {
+/// - Returns: `true` iff the event can never be tombstoned.
+func isEventSealImmune(
+    occurredAt: String,
+    createdAt: String,
+    boardId: String?,
+    windows: [SealImmuneWindow]
+) -> Bool {
     guard !windows.isEmpty else { return false }
     guard let occurred = DateFormatting.parseISO(occurredAt) else { return false }
     let t = occurred.timeIntervalSince1970 * 1000
-    return windows.contains { $0.startMs <= t && t <= $0.endMs }
+    // An unparseable createdAt compares false against every seal (TS NaN degrade).
+    let createdMs = DateFormatting.parseISO(createdAt).map { $0.timeIntervalSince1970 * 1000 } ?? Double.nan
+    let boardAuthored = boardId != nil
+    return windows.contains { w in
+        w.startMs <= t && t <= w.endMs && !(boardAuthored && createdMs > w.sealedAtMs)
+    }
 }
 
-// MARK: - Backstop formula
-
-/// The auto-seal backstop **duration** for a board's window (docs §Sealing):
-/// `min(48h, windowLength/4)`. Timeframe-scaling falls out of the window length
-/// itself — daily → 6h, weekly → 42h, monthly/yearly/custom≥8d → 48h — so one
-/// formula owns every timeframe. Mirrors the TS `backstopWindowMs`.
-///
-/// - Parameters:
-///   - startDate: Board window start (ISO8601).
-///   - endDate: Board window end (ISO8601).
-/// - Returns: Backstop duration in ms, capped at 48h and floored at 0. Returns
-///   0 if either bound is unparseable (defensive; valid data never hits this).
-func backstopWindowMs(startDate: String, endDate: String) -> Double {
-    guard
-        let s = DateFormatting.parseISO(startDate),
-        let e = DateFormatting.parseISO(endDate)
-    else { return 0 }
-    let lengthMs = (e.timeIntervalSince1970 - s.timeIntervalSince1970) * 1000
-    return min(BACKSTOP_MAX_MS, max(0, lengthMs) / 4)
-}
-
-/// The absolute auto-seal deadline for a board, as epoch ms (docs §Sealing →
-/// "deadline keys off `max(endDate, activatedAt)`"). Returning ms — rather than
-/// an ISO string — sidesteps the local-ISO vs UTC encoding decision; callers
-/// compare `nowMs > deadline`. Mirrors the TS `computeBackstopDeadlineMs`.
-///
-/// A draft activated AFTER its window already expired keys off `activatedAt`,
-/// so it still gets one full prompt cycle instead of an instant silent seal.
-/// Indefinite boards (no `endDate`) never seal → `nil`.
-///
-/// - Parameters:
-///   - startDate: Board window start (ISO8601).
-///   - endDate: Board window end (ISO8601), or nil for indefinite.
-///   - activatedAt: When the board was activated (ISO8601), if known.
-/// - Returns: Epoch-ms deadline, or `nil` when the board never seals.
-func computeBackstopDeadlineMs(
-    startDate: String,
-    endDate: String?,
-    activatedAt: String? = nil
-) -> Double? {
-    guard let endDate else { return nil }
-    guard let endDate_ = DateFormatting.parseISO(endDate) else { return nil }
-    let endMs = endDate_.timeIntervalSince1970 * 1000
-    let activatedMs = activatedAt.flatMap { DateFormatting.parseISO($0) }
-        .map { $0.timeIntervalSince1970 * 1000 } ?? endMs
-    let anchor = max(endMs, activatedMs)
-    return anchor + backstopWindowMs(startDate: startDate, endDate: endDate)
+/// Convenience overload of `isEventSealImmune` for a `TaskEvent` row.
+func isEventSealImmune(_ event: TaskEvent, windows: [SealImmuneWindow]) -> Bool {
+    isEventSealImmune(
+        occurredAt: event.occurredAt,
+        createdAt: event.createdAt,
+        boardId: event.boardId,
+        windows: windows
+    )
 }
 
 // MARK: - Backfill helpers (Swift port of migrationHelpers.ts §TaskEvent backfill)

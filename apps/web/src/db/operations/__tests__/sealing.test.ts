@@ -27,7 +27,8 @@ import { runMigrationV14 } from '../migrationV14';
 const USER = 'user-1';
 const H = 60 * 60 * 1000;
 
-// A daily window: start 07-01, end 07-02 → backstop 6h → deadline 07-02T06:00.
+// A daily window: start 07-01, end 07-02. PAST_BACKSTOP is a post-window seal
+// instant (the pre-slice-4 6h backstop deadline); auto-close itself is END + 1 day.
 const START = '2026-07-01T00:00:00.000Z';
 const END = '2026-07-02T00:00:00.000Z';
 const IN_WINDOW = '2026-07-01T12:00:00.000Z';
@@ -389,39 +390,54 @@ describe('sealed board status (deterministic completion from the event union)', 
 // ─── backstop auto-seal ─────────────────────────────────────────────────────────
 
 describe('runBackstopAutoSeal', () => {
-  it('seals boards past their backstop deadline and leaves in-window boards alone', async () => {
-    await seedBoard(BOARD_SEALED, { endDate: END }); // deadline 07-02T06:00
+  // Next-window auto-close (Board Edit redesign slice 4, D4): the daily ending
+  // 07-02T00:00Z closes when the NEXT day ends — END + 1 local day (24h in
+  // July; no DST change in any zone this suite runs in).
+  const PAST_AUTO_CLOSE = '2026-07-03T01:00:00.000Z'; // > END + 1 day
+
+  it('seals boards past their auto-close deadline and leaves the rest alone', async () => {
+    await seedBoard(BOARD_SEALED, { endDate: END }); // deadline 07-03T00:00Z
     await seedBoard(BOARD_LIVE, {
       startDate: '2026-07-02T00:00:00.000Z',
-      endDate: '2026-07-03T00:00:00.000Z', // deadline 07-03T06:00 — still future
+      endDate: '2026-07-03T00:00:00.000Z', // deadline 07-04T00:00Z — still future
     });
 
-    const ids = await runBackstopAutoSeal(USER, PAST_BACKSTOP);
+    // The old 6h backstop would already have sealed at 07-02T07:00; the
+    // next-window rule keeps yesterday's daily open all of today.
+    expect(await runBackstopAutoSeal(USER, PAST_BACKSTOP)).toEqual([]);
+
+    const ids = await runBackstopAutoSeal(USER, PAST_AUTO_CLOSE);
     expect(ids).toEqual([BOARD_SEALED]);
 
-    expect((await db.boards.get(BOARD_SEALED))?.sealedAt).toBe(PAST_BACKSTOP);
+    expect((await db.boards.get(BOARD_SEALED))?.sealedAt).toBe(PAST_AUTO_CLOSE);
     expect((await db.boards.get(BOARD_LIVE))?.sealedAt).toBeUndefined();
   });
 
-  it('respects the draft-grace rule — activatedAt after window expiry defers the backstop', async () => {
+  it('respects the draft-grace rule — activatedAt after window expiry defers the auto-close', async () => {
     // Window ended 07-02, but the draft was only activated 07-04.
     const activatedAt = '2026-07-04T00:00:00.000Z';
     await seedBoard(BOARD_SEALED, { endDate: END, activatedAt });
 
-    // At 07-02T07:00 (past endDate+6h) the grace cycle keeps it unsealed.
-    const early = await runBackstopAutoSeal(USER, PAST_BACKSTOP);
+    // Past END + 1 day, the grace cycle keyed off activatedAt keeps it open.
+    const early = await runBackstopAutoSeal(USER, PAST_AUTO_CLOSE);
     expect(early).toEqual([]);
     expect((await db.boards.get(BOARD_SEALED))?.sealedAt).toBeUndefined();
 
-    // Only past activatedAt + 6h does it auto-seal.
-    const late = await runBackstopAutoSeal(USER, '2026-07-04T07:00:00.000Z');
+    // Only past activatedAt + 1 day does it auto-close.
+    const late = await runBackstopAutoSeal(USER, '2026-07-05T01:00:00.000Z');
     expect(late).toEqual([BOARD_SEALED]);
-    expect((await db.boards.get(BOARD_SEALED))?.sealedAt).toBe('2026-07-04T07:00:00.000Z');
+    expect((await db.boards.get(BOARD_SEALED))?.sealedAt).toBe('2026-07-05T01:00:00.000Z');
+  });
+
+  it('never seals a reopened board (D1 — reopenedAt set)', async () => {
+    await seedBoard(BOARD_SEALED, { endDate: END, reopenedAt: '2026-07-02T12:00:00.000Z' });
+    expect(await runBackstopAutoSeal(USER, '2027-01-01T00:00:00.000Z')).toEqual([]);
+    expect((await db.boards.get(BOARD_SEALED))?.sealedAt).toBeUndefined();
   });
 
   it('never seals a draft board', async () => {
     await seedBoard(BOARD_SEALED, { status: BoardStatus.DRAFT, endDate: END });
-    const ids = await runBackstopAutoSeal(USER, PAST_BACKSTOP);
+    const ids = await runBackstopAutoSeal(USER, PAST_AUTO_CLOSE);
     expect(ids).toEqual([]);
   });
 });

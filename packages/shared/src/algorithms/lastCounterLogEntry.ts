@@ -76,3 +76,63 @@ function isMoreRecent(candidate: TaskEvent, current: TaskEvent): boolean {
   const currentOccurred = new Date(current.occurredAt).getTime();
   return candidateOccurred > currentOccurred;
 }
+
+/**
+ * The closed board a late log was made on — the fields
+ * {@link selectClosedBoardLateLogs} reads.
+ */
+export interface ClosedBoardLateLogBoard {
+  /** The board's id (a late log's `boardId` provenance). */
+  id: string;
+  /** Window end; a late log is stamped exactly at this instant. */
+  endDate?: string | null;
+  /** When the board closed; a late log is CREATED after this instant. */
+  sealedAt?: string | null;
+}
+
+/**
+ * Selects the late logs a user made directly on a CLOSED board for one task,
+ * newest first (Board Edit redesign slice 4, D10 / owner ruling R2 — a late
+ * log is undoable, and only a late log).
+ *
+ * A late log is identified by provenance + timestamps, never a marker field:
+ * non-deleted, `taskId` matches, `boardId === board.id`, `occurredAt` is the
+ * board's `endDate` INSTANT (parsed compare — the late-log path re-encodes the
+ * local-ISO `endDate` as UTC), and `createdAt` is strictly after `sealedAt`.
+ * Any kind (`completion` or `increment`). Ordered by `createdAt` descending
+ * (the entry the user most recently made — the one "Undo late log" reverses),
+ * ties broken by `id` descending so the pick is deterministic.
+ *
+ * An unsealed board, or one with no parseable `endDate` / `sealedAt`, has no
+ * late logs (`[]`).
+ *
+ * @param events Candidate events (may be unfiltered — filtering is internal).
+ * @param board  The closed board (`id`, `endDate`, `sealedAt`).
+ * @param taskId The task whose late logs to select (for a window-stamped
+ *   derived square, the ROOT counter — derived rows own no events).
+ * @returns The qualifying events, newest `createdAt` first.
+ */
+export function selectClosedBoardLateLogs(
+  events: ReadonlyArray<TaskEvent>,
+  board: ClosedBoardLateLogBoard,
+  taskId: string,
+): TaskEvent[] {
+  if (board.sealedAt == null || board.endDate == null) return [];
+  const endMs = new Date(board.endDate).getTime();
+  const sealedMs = new Date(board.sealedAt).getTime();
+  if (Number.isNaN(endMs) || Number.isNaN(sealedMs)) return [];
+
+  const lateLogs = events.filter(
+    (e) =>
+      !e.isDeleted &&
+      e.taskId === taskId &&
+      e.boardId === board.id &&
+      new Date(e.occurredAt).getTime() === endMs &&
+      new Date(e.createdAt).getTime() > sealedMs,
+  );
+  return lateLogs.sort((a, b) => {
+    const byCreated = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (byCreated !== 0) return byCreated;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  });
+}

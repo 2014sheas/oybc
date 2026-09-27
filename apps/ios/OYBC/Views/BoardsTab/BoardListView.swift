@@ -62,6 +62,11 @@ struct BoardListView: View {
 
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var tutorialStore: TutorialProgressStore
+    /// Board Edit redesign slice 4 (D5) — the backstop auto-close pass waits
+    /// on this session's first pull (with a timeout / offline fallback)
+    /// before sealing, so it doesn't race a peer's pulled Reopen.
+    @EnvironmentObject var syncService: SyncService
+    @EnvironmentObject var networkMonitor: NetworkMonitor
 
     // MARK: - State
 
@@ -648,6 +653,24 @@ struct BoardListView: View {
 
     // MARK: - Data loading
 
+    /// Board Edit redesign slice 4 (D5): waits for this session's first sync
+    /// pull to land, so the lazy backstop auto-close pass never races a
+    /// peer's pulled Reopen (which would otherwise re-seal a board the user
+    /// just reopened elsewhere, under this device's stale local snapshot).
+    /// Returns immediately when offline (mirrors the existing on-mount
+    /// posture) or once `SyncService.hasCompletedFirstPull` flips, whichever
+    /// is first; a 10s timeout is the fallback if neither happens.
+    private func waitForFirstPullOrTimeout() async {
+        let isOnline = await MainActor.run { networkMonitor.isConnected }
+        guard isOnline else { return }
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            let done = await MainActor.run { syncService.hasCompletedFirstPull }
+            if done { return }
+            try? await _Concurrency.Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
     private func onAppearLoad() {
         // Re-pin the screen's instant on every entry (see `now`).
         now = Date()
@@ -667,6 +690,11 @@ struct BoardListView: View {
                    let askTemplate = (try? AppDatabase.shared.fetchRecurringBoardTemplate(id: askId)) ?? nil {
                     await MainActor.run { missingSourceAsk = askTemplate }
                 }
+                // Board Edit redesign slice 4 (D5): wait for this session's
+                // first pull (or a timeout / offline fallback) before the
+                // backstop runs, so it doesn't race a peer's pulled Reopen —
+                // see `waitForFirstPullOrTimeout`.
+                await waitForFirstPullOrTimeout()
                 // Windowed Completion — lazy auto-seal backstop (docs §Sealing).
                 // Same lazy-detection posture as recurring spawn: boards past
                 // their backstop deadline seal on Boards-tab open, never
@@ -779,5 +807,7 @@ struct BoardListView: View {
     NavigationStack {
         BoardListView()
             .environmentObject(AuthService())
+            .environmentObject(SyncService())
+            .environmentObject(NetworkMonitor())
     }
 }

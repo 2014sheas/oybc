@@ -78,18 +78,8 @@
   margin-left: auto;
   display: inline-flex;
 }
-/* Sealed boards: lock glyph + "Read-only" in the Edit slot. */
-.readOnly {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--riso-font-body);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--riso-muted);
-  white-space: nowrap;
-}
+/* Board Edit redesign slice 4 (D14) — "Read-only" retired: the ENDED/CLOSED
+   pill and banner already say so. */
 /* Gold flame streak chip, inline in the badge row. Ink-static content —
    it sits on gold (see docs/RISO_WEB.md dark contract). */
 .streakChip {

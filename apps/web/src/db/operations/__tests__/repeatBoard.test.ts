@@ -13,7 +13,8 @@ import {
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { repeatBoardAsRecurring } from '../repeatBoard';
-import { BoardNotEditableError, deleteBoard } from '../boards';
+import { deleteBoard } from '../boards';
+import { BoardLifecycleError } from '../boardLifecycle';
 
 /**
  * P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
@@ -155,29 +156,27 @@ describe('repeatBoardAsRecurring', () => {
     expect(updatedBoard?.version).toBe(6); // live 5 + 1, not snapshot 1 + 1
   });
 
-  it('a board sealed since the caller read it throws BoardNotEditableError — nothing minted or back-stamped (slice 2, D11)', async () => {
+  it('a sealed (closed) board is now repeat-eligible — Board Edit redesign slice 4, D12', async () => {
     const board = buildOneOffBoard();
     await db.boards.add({ ...board, sealedAt: '2026-05-07T00:00:00.000Z' });
     await seedTask('t0');
     await seedBoardTask(board.id, 't0', 0, 0);
 
-    await expect(
-      repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday'),
-    ).rejects.toBeInstanceOf(BoardNotEditableError);
+    const template = await repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday');
 
-    expect(await db.recurringBoardTemplates.count()).toBe(0);
+    expect(await db.recurringBoardTemplates.count()).toBe(1);
     const stored = await db.boards.get(board.id);
-    expect(stored?.spawnedFromTemplateId).toBeUndefined();
-    expect(stored?.version).toBe(1);
-    expect(await db.syncQueue.count()).toBe(0);
+    expect(stored?.spawnedFromTemplateId).toBe(template.id);
+    expect(stored?.sealedAt).toBe('2026-05-07T00:00:00.000Z'); // untouched — only provenance changed
+    expect(stored?.version).toBe(2);
   });
 
-  it('a deleted board throws BoardNotEditableError', async () => {
+  it('a deleted board throws BoardLifecycleError — nothing minted or back-stamped (D12)', async () => {
     const board = buildOneOffBoard();
     await db.boards.add({ ...board, isDeleted: true, deletedAt: NOW });
     await expect(
       repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday'),
-    ).rejects.toBeInstanceOf(BoardNotEditableError);
+    ).rejects.toBeInstanceOf(BoardLifecycleError);
     expect(await db.recurringBoardTemplates.count()).toBe(0);
   });
 

@@ -698,13 +698,15 @@ extension AppDatabase {
     ) throws -> RecurringBoardTemplate? {
         var result: RecurringBoardTemplate?
         try write { db in
-            // Board Edit slice 2 (D3/D11): the back-stamp below writes the
-            // board row, so a board sealed or deleted since the caller read
-            // it must not be repeated — throw before minting anything. A
-            // missing row keeps the old behaviour (template, no back-stamp).
-            if let live = try Board.fetchOne(db, key: board.id),
-               live.isDeleted || live.sealedAt != nil {
-                throw BoardEditError.boardNotEditable
+            // Board Edit slice 2 (D3/D11), relaxed by slice 4 (D12): the
+            // back-stamp below writes the board row, so a DELETED board must
+            // not be repeated — throw before minting anything. A sealed
+            // (closed) board is fine (Repeat is one of the two metadata
+            // writes D12 allows on a closed board), so this uses the relaxed
+            // `assertBoardMetadataWritable` rather than `assertBoardEditable`.
+            // A missing row keeps the old behaviour (template, no back-stamp).
+            if try Board.fetchOne(db, key: board.id) != nil {
+                try Self.assertBoardMetadataWritable(db: db, boardId: board.id)
             }
 
             // Fresh in-txn read of the board's live placements — never the

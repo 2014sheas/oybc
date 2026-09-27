@@ -7,6 +7,7 @@ import {
   SyncOperationType,
   TaskType,
   boardWindowEnd,
+  isEventSealImmune,
   isFrozenDerivedRow,
   isFrozenRowReachedByEvent,
   propagateIncrement,
@@ -16,8 +17,10 @@ import {
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { runBoardCascadeForTasks } from './orchestration';
-import { insertIncrementEventRaw, lateLogStampForBoard } from './taskEvents';
+import { insertIncrementEventRaw, lateLogStampForBoard, getSealImmuneWindowsForTask } from './taskEvents';
 import { refreshDerivedBaselines } from './derivedCounters';
+import { reDeriveSealedBoardsForTasks } from './sealing';
+import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
 
 /** Resolved board reference returned by the shared-counter engine. */
 export interface AffectedBoard {
@@ -59,7 +62,7 @@ export interface AffectedBoard {
  * @returns The live ACTIVE boards placing the source or an unfrozen linked row,
  *   read BEFORE the cascade rewrites board status.
  */
-async function propagateToLinkedRows(
+export async function propagateToLinkedRows(
   sourceTaskId: string,
   newSourceCount: number,
   now: string,
@@ -461,6 +464,15 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
       const entry = selectLastIncrementEntry(events, sourceTaskId);
       if (!entry) return { affectedBoards: [], undoneAmount: 0 };
 
+      // Board Edit redesign slice 4 (D9/D10) — refuse to tombstone a
+      // seal-immune entry: once a containing board has sealed AFTER this
+      // entry was created, it is frozen history (unless it is itself a late
+      // log on a closed board, which `isEventSealImmune` already excludes).
+      const immuneWindows = await getSealImmuneWindowsForTask(sourceTaskId);
+      if (isEventSealImmune(entry, immuneWindows)) {
+        return { affectedBoards: [], undoneAmount: 0 };
+      }
+
       // 3. Tombstone it.
       const tombstonedVersion = (entry.version ?? 1) + 1;
       await db.taskEvents.update(entry.id, {
@@ -525,6 +537,15 @@ export async function undoLastCounterLog(sourceTaskId: string): Promise<UndoCoun
         now,
         entry.occurredAt,
       );
+
+      // Board Edit redesign slice 4 (D9) — the undone entry may also fall
+      // inside a SEALED containing board's frozen window (e.g. undoing a
+      // Tuesday log that a sealed weekly also counted): re-derive every
+      // sealed board placing the source or a linked row, then refresh any
+      // achievement watcher of whatever just changed.
+      await reDeriveSealedBoardsForTasks([sourceTaskId]);
+      const watcherSeedIds = await resolveAffectedBoardIds([sourceTaskId]);
+      if (watcherSeedIds.size > 0) await refreshWatchersForBoards(watcherSeedIds);
 
       return { affectedBoards, undoneAmount: Math.abs(entryDelta) };
     },

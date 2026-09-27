@@ -32,6 +32,14 @@ export interface SyncStatus {
    * with a Retry affordance. `0` means nothing is stuck.
    */
   exhaustedCount: number;
+  /**
+   * Board Edit redesign slice 4 (D5): `true` once this session's first
+   * `pullSync` pass has run to the end (mirrors iOS
+   * `SyncService.hasCompletedFirstPull`). The lazy auto-close pass waits on it
+   * so a Reopen made on another device is pulled before this device decides
+   * to re-close the board. Reset with everything else on sign-out.
+   */
+  firstPullCompleted: boolean;
 }
 
 export type SyncEventKind = 'pushed' | 'pulled' | 'conflict' | 'failed';
@@ -44,6 +52,7 @@ const initialState: SyncStatus = {
   lastEventAt: null,
   lastError: null,
   exhaustedCount: 0,
+  firstPullCompleted: false,
 };
 
 let state: SyncStatus = { ...initialState };
@@ -113,6 +122,13 @@ export function recordSyncError(message: string, at: Date = new Date()): void {
 export function setExhaustedCount(count: number): void {
   if (state.exhaustedCount === count) return;
   state = { ...state, exhaustedCount: count };
+  notify();
+}
+
+/** Mark this session's first full `pullSync` pass as finished (idempotent). */
+export function markFirstPullCompleted(): void {
+  if (state.firstPullCompleted) return;
+  state = { ...state, firstPullCompleted: true };
   notify();
 }
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { TaskType, type CellState, type Task, type TaskEvent } from '@oybc/shared';
-import { buildSquareWindowContext, taskToSquareData, taskToSquareState } from '../adapters';
+import {
+  buildSquareWindowContext,
+  resolveClosedBoardCounterDisplay,
+  taskToSquareData,
+  taskToSquareState,
+} from '../adapters';
 
 /**
  * Windowed Completion (docs/WINDOWED_COMPLETION.md §Task caches) — review
@@ -197,5 +202,95 @@ describe('ACHIEVEMENT branch (board-integrity PR-3, issue #360)', () => {
     const squareState = taskToSquareState(task, undefined, { [task.id]: task }, {}, undefined, cellState);
     expect(squareState.currentCount).toBe(0);
     expect(squareState.completedStepIds.size).toBe(0);
+  });
+});
+
+describe('resolveClosedBoardCounterDisplay (Board Edit redesign slice 4, D16)', () => {
+  const BOARD = {
+    startDate: '2026-07-01T00:00:00.000Z',
+    endDate: '2026-07-01T23:59:59.999Z',
+    sealedAt: '2026-07-02T00:00:01.000Z',
+  };
+
+  function counter(id: string, maxCount: number, over: Partial<Task> = {}): Task {
+    return {
+      id,
+      userId: 'user-1',
+      title: 'C',
+      type: TaskType.COUNTING,
+      maxCount,
+      action: 'Run',
+      unit: 'mi',
+      isCompleted: false,
+      currentCount: 0,
+      totalCompletions: 0,
+      totalInstances: 1,
+      createdAt: BOARD.startDate,
+      updatedAt: BOARD.startDate,
+      version: 1,
+      isDeleted: false,
+      ...over,
+    };
+  }
+
+  function inc(id: string, taskId: string, delta: number, occurredAt: string): TaskEvent {
+    return {
+      id,
+      userId: 'user-1',
+      taskId,
+      kind: 'increment',
+      delta,
+      occurredAt,
+      createdAt: occurredAt,
+      updatedAt: occurredAt,
+      version: 1,
+      isDeleted: false,
+    };
+  }
+
+  it('shows the sealed-bounded windowed count for a plain counter — never the max/0 snapshot', () => {
+    const task = counter('c1', 5, { currentCount: 99 }); // stale lifetime cache — must NOT leak
+    const events = {
+      c1: [inc('e1', 'c1', 2, '2026-07-01T10:00:00.000Z'), inc('e2', 'c1', 1, '2026-07-01T11:00:00.000Z')],
+    };
+    expect(resolveClosedBoardCounterDisplay(task, events, BOARD)).toEqual({ displayed: 3, isCompleted: false });
+  });
+
+  it('excludes a post-sealedAt increment (belongs to the next window)', () => {
+    const task = counter('c1', 5);
+    const events = {
+      c1: [inc('e1', 'c1', 5, '2026-07-01T10:00:00.000Z'), inc('e2', 'c1', 5, '2026-07-03T00:00:00.000Z')],
+    };
+    expect(resolveClosedBoardCounterDisplay(task, events, BOARD)).toEqual({ displayed: 5, isCompleted: true });
+  });
+
+  it('resolves a window-stamped derived counter from the ROOT, never its own (absent) events', () => {
+    const derived = counter('derived', 5, {
+      sharedCounterId: 'root',
+      startDate: BOARD.startDate,
+      endDate: BOARD.endDate,
+      createdInWizard: true,
+      baseline: 0,
+    });
+    const events = { root: [inc('e1', 'root', 3, '2026-07-01T10:00:00.000Z')] };
+    expect(resolveClosedBoardCounterDisplay(derived, events, BOARD)).toEqual({ displayed: 3, isCompleted: false });
+  });
+
+  it('a hub-linked derived counter (no startDate) falls back to its lifetime read (not tappable — OQ2)', () => {
+    const hubLinked = counter('linked', 5, { sharedCounterId: 'root', currentCount: 7, isCompleted: true });
+    expect(resolveClosedBoardCounterDisplay(hubLinked, {}, BOARD)).toEqual({ displayed: 7, isCompleted: true });
+  });
+
+  it('agrees with the sealed snapshot bound: an event exactly at sealedAt counts (when sealedAt is the binding bound), one ms after does not', () => {
+    // endDate LATER than sealedAt so sealedAt (not endDate) is the binding
+    // upper bound — isolates the sealedAt-bound behavior, same pattern as
+    // the shared sealReDerivationVectors.json fixture.
+    const board = { ...BOARD, endDate: '2026-07-02T23:59:59.999Z' };
+    const task = counter('c1', 1);
+    const atSeal = { c1: [inc('e1', 'c1', 1, board.sealedAt)] };
+    expect(resolveClosedBoardCounterDisplay(task, atSeal, board).isCompleted).toBe(true);
+
+    const afterSeal = { c1: [inc('e1', 'c1', 1, '2026-07-02T00:00:01.001Z')] };
+    expect(resolveClosedBoardCounterDisplay(task, afterSeal, board).displayed).toBe(0);
   });
 });

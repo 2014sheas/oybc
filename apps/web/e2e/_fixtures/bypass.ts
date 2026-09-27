@@ -289,6 +289,12 @@ export interface SeedBoard {
   /** Seal instant — re-seeding with it simulates the backstop sealing a
    *  board while an edit sheet is open (board-actions-menu D11 spec). */
   sealedAt?: string;
+  /** Board Edit redesign slice 4 (D3) — the frozen green-cell snapshot a
+   *  seal (or a seed simulating one) stamps alongside `sealedAt`. */
+  sealedCompletedCells?: number[];
+  /** Board Edit redesign slice 4 (D1/D6) — set on every Reopen; never
+   *  cleared. Seeding it directly simulates a previously-reopened board. */
+  reopenedAt?: string;
 }
 
 export async function seedBoard(page: Page, board: SeedBoard): Promise<void> {

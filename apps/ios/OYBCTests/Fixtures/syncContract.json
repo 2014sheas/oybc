@@ -22,5 +22,11 @@
   ],
   "legacyPullSkipCollections": [
     "defaultPools"
+  ],
+  "clearableBoardFields": [
+    "endDate",
+    "completedAt",
+    "sealedAt",
+    "sealedCompletedCells"
   ]
 }

@@ -157,6 +157,30 @@ describe('BoardSchema pull validation', () => {
   });
 });
 
+describe('BoardSchema reopenedAt (Board Edit redesign slice 4, D1)', () => {
+  it('accepts a UTC ISO reopenedAt', () => {
+    const result = BoardSchema.safeParse(validBoard({ reopenedAt: '2026-09-18T08:00:00.000Z' }));
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.reopenedAt).toBe('2026-09-18T08:00:00.000Z');
+  });
+
+  it('accepts a local-ISO reopenedAt (same posture as sealedAt)', () => {
+    expect(
+      BoardSchema.safeParse(validBoard({ reopenedAt: '2026-09-18T08:00:00.000' })).success,
+    ).toBe(true);
+  });
+
+  it('rejects a garbage reopenedAt', () => {
+    expect(BoardSchema.safeParse(validBoard({ reopenedAt: 'yesterday' })).success).toBe(false);
+  });
+
+  it('absent reopenedAt decodes unchanged (pre-slice-4 peers)', () => {
+    const result = BoardSchema.safeParse(validBoard());
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.reopenedAt).toBeUndefined();
+  });
+});
+
 describe('TaskSchema pull validation', () => {
   it('accepts a well-formed task', () => {
     expect(TaskSchema.safeParse(validTask()).success).toBe(true);

@@ -18,6 +18,11 @@ struct RisoStatBar: View {
     /// When non-nil (a sealed board), the LEFT card becomes the
     /// permanent-record card: "ENDED / <date> / permanent record".
     var endedText: String? = nil
+    /// Board Edit redesign slice 4 (D14): when non-nil (a board whose window
+    /// ended but ISN'T sealed yet — "Ended, not closed"), the LEFT card
+    /// shows "LEFT / Ended / <date> · still logging". Ignored when
+    /// `endedText` is set (closed wins).
+    var endedStillLoggingDate: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -67,17 +72,34 @@ struct RisoStatBar: View {
         )
     }
 
+    /// Card label — "ENDED" only for the CLOSED (permanent-record) state;
+    /// "LEFT" otherwise, including "Ended, not closed" (D14: the label
+    /// stays LEFT there, only the value/subtitle change).
+    private var leftCardLabel: String { endedText != nil ? "ENDED" : "LEFT" }
+
+    private var leftCardValue: String {
+        if let endedText { return endedText }
+        if endedStillLoggingDate != nil { return "Ended" }
+        return expiryText
+    }
+
+    private var leftCardSubtitle: String {
+        if endedText != nil { return "permanent record" }
+        if let date = endedStillLoggingDate { return "\(date) · still logging" }
+        return "to fill it"
+    }
+
     private var leftCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(endedText != nil ? "ENDED" : "LEFT")
+            Text(leftCardLabel)
                 .risoSectionLabel()
 
-            Text(endedText ?? expiryText)
+            Text(leftCardValue)
                 .font(.risoHead(19, .extraBold))
                 .foregroundStyle(Color.risoInk)
                 .monospacedDigit()
 
-            Text(endedText != nil ? "permanent record" : "to fill it")
+            Text(leftCardSubtitle)
                 .font(.risoBody(10, .bold))
                 .foregroundStyle(Color.risoMuted)
         }

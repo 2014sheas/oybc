@@ -170,8 +170,15 @@ extension AppDatabase {
         // (decode defaults false; pre-v27 rows are all live).
         let boardTasks = try BoardTask.fetchAll(db).filter { !$0.isDeleted }
         let children = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-        let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: taskId, children: children)
-        let affected = DerivationPass.findAffectedBoardIds(changedTaskId: taskId, parentCompounds: parents, boardTasks: boardTasks)
+        // A shared-counter ROOT is never placed itself — its window-stamped
+        // derived rows are, and they resolve from the root's events (Board
+        // Edit redesign slice 4, D10). Reach the sealed boards placing those
+        // rows too, like the sealed re-derivation's reachability.
+        var affected = Set<String>()
+        for id in try Self.withWindowStampedDerived(db: db, taskIds: [taskId]) {
+            let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: id, children: children)
+            affected.formUnion(DerivationPass.findAffectedBoardIds(changedTaskId: id, parentCompounds: parents, boardTasks: boardTasks))
+        }
         let placing = sealedBoards.filter { affected.contains($0.id) }
         return buildSealImmuneWindows(
             sealedBoards: placing.compactMap { b in
@@ -281,7 +288,7 @@ extension AppDatabase {
             // (open-ended, like nil) — the same rule as source eligibility;
             // web matches.
             if let upper = upperDate, occurred > upper { continue } // a later window's completion
-            if isOccurredAtSealImmune(e.occurredAt, windows: immuneWindows) { continue } // sealed history is immutable
+            if isEventSealImmune(e, windows: immuneWindows) { continue } // sealed history is immutable (D10: except a closed-board late log)
             e.isDeleted = true
             e.deletedAt = now
             e.updatedAt = now
@@ -308,7 +315,7 @@ extension AppDatabase {
         let live = try TaskEvent
             .filter(Column("taskId") == taskId)
             .fetchAll(db)
-            .filter { !$0.isDeleted && $0.kind == .completion && !isOccurredAtSealImmune($0.occurredAt, windows: immuneWindows) }
+            .filter { !$0.isDeleted && $0.kind == .completion && !isEventSealImmune($0, windows: immuneWindows) }
         guard var latest = live.first else {
             try stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
             return
@@ -350,7 +357,7 @@ extension AppDatabase {
             .fetchAll(db)
             .filter { !$0.isDeleted && $0.kind == .completion }
         guard !live.isEmpty else { return false }
-        return live.allSatisfy { isOccurredAtSealImmune($0.occurredAt, windows: immuneWindows) }
+        return live.allSatisfy { isEventSealImmune($0, windows: immuneWindows) }
     }
 
     /// Convenience read-path wrapper of `isUncompleteBlockedBySeal(db:taskId:)`

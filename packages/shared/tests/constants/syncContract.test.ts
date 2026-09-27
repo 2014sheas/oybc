@@ -4,6 +4,7 @@ import {
   SYNC_COLLECTIONS,
   USER_SCOPED_SYNC_COLLECTIONS,
   LEGACY_PULL_SKIP_COLLECTIONS,
+  CLEARABLE_BOARD_FIELDS,
 } from '../../src/constants';
 
 /**
@@ -43,6 +44,7 @@ describe('syncContract fixture', () => {
     syncCollections?: string[];
     userScopedSyncCollections?: string[];
     legacyPullSkipCollections?: string[];
+    clearableBoardFields?: string[];
   };
 
   it(`syncCollections matches SYNC_COLLECTIONS (${REGENERATE_HINT})`, () => {
@@ -55,6 +57,19 @@ describe('syncContract fixture', () => {
 
   it(`legacyPullSkipCollections matches LEGACY_PULL_SKIP_COLLECTIONS (${REGENERATE_HINT})`, () => {
     expect(fixture.legacyPullSkipCollections).toEqual([...LEGACY_PULL_SKIP_COLLECTIONS]);
+  });
+
+  it(`clearableBoardFields matches CLEARABLE_BOARD_FIELDS (${REGENERATE_HINT})`, () => {
+    expect(fixture.clearableBoardFields).toEqual([...CLEARABLE_BOARD_FIELDS]);
+  });
+
+  it('CLEARABLE_BOARD_FIELDS keeps the two pre-slice-4 fields and adds the seal pair (D2)', () => {
+    expect([...CLEARABLE_BOARD_FIELDS]).toEqual([
+      'endDate',
+      'completedAt',
+      'sealedAt',
+      'sealedCompletedCells',
+    ]);
   });
 });
 

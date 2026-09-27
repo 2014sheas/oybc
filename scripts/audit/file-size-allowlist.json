@@ -1,10 +1,10 @@
 {
   "_comment": "Drift guardrail — see scripts/check-file-sizes.mjs. Each entry freezes a known-oversized source file at its current line count: the file may SHRINK freely but may not GROW past the recorded number. New source files must stay under the 1000-line ceiling. This list IS the target roster for ROADMAP Track B6 (god-file splits); as B6 lands, shrink or delete entries. Bumping a number up is a deliberate, reviewed act — don't do it to dodge a split.",
   "limits": {
-    "apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift": 2027,
-    "apps/ios/OYBC/Services/SyncService.swift": 2378,
+    "apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift": 2017,
+    "apps/ios/OYBC/Services/SyncService.swift": 2357,
     "apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift": 1519,
-    "apps/web/src/components/BoardPlaySurface.tsx": 1243,
+    "apps/web/src/components/BoardPlaySurface.tsx": 1242,
     "apps/ios/OYBC/Views/ProfileTab/CounterDetailView.swift": 1009,
     "apps/ios/OYBC/Database/AppDatabase.swift": 1005
   }

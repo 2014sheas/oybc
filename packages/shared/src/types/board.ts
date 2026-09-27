@@ -75,13 +75,15 @@ export interface Board {
   // ── Windowed Completion — board sealing (docs/WINDOWED_COMPLETION.md
   //    §Sealing → Board schema delta) ────────────────────────────────
   //
-  // `sealedAt` — set ONCE when the board's window is closed out (user Seal
-  // action OR the auto-seal backstop OR migration of an already-expired
-  // board). Never cleared; there is no unseal gesture. A non-null `sealedAt`
-  // makes the board a permanent historical record: it drops out of the live
-  // derivation fan-out, renders read-only from `sealedCompletedCells`, and is
-  // ineligible for Board Edit. `status` is untouched — sealing is orthogonal
-  // to draft/active/completed/archived.
+  // `sealedAt` — set when the board's window is closed out (the user's Close
+  // board / "Close out" action, the next-window auto-close, or migration of an
+  // already-expired board). Cleared by **Reopen** (Board Edit redesign slice 4),
+  // which also drops `sealedCompletedCells` and stamps `reopenedAt`; the sync
+  // push/pull propagate the clear via `CLEARABLE_BOARD_FIELDS`. A non-null
+  // `sealedAt` makes the board a permanent historical record: it drops out of
+  // the live derivation fan-out, renders from `sealedCompletedCells`, accepts
+  // only direct late logs, and is ineligible for Edit squares. `status` is
+  // untouched — sealing is orthogonal to draft/active/completed/archived.
   sealedAt?: string;             // ISO8601
 
   // `sealedCompletedCells` — the green cell indexes (`row*size+col`) frozen at
@@ -99,6 +101,14 @@ export interface Board {
   // seal (docs §Sealing → backstop, §Edge cases). Never mutated after the
   // activation that sets it.
   activatedAt?: string;          // ISO8601
+
+  // `reopenedAt` — Board Edit redesign slice 4: stamped on EVERY Reopen (which
+  // clears `sealedAt` + `sealedCompletedCells`), never cleared. Non-null means
+  // "manually reopened → never auto-closes" (`isBoardPastBackstop` returns
+  // false). A later Close seals the board again without touching this field; a
+  // second Reopen just overwrites it. Set-once-and-overwrite, so it never needs
+  // the clearable-field sync path. Absent on boards never reopened.
+  reopenedAt?: string;           // ISO8601
 
   // ── Board Creation Split (PR B) — recurring drafts ──────────────────
   //

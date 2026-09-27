@@ -285,6 +285,14 @@ final class SyncService: ObservableObject {
     /// `SyncStatus.exhaustedCount`.
     @Published var exhaustedCount: Int = 0
 
+    /// Board Edit redesign slice 4 (D5): true once this session's FIRST
+    /// `pullSync` call has returned (success or partial — see `pullSync`'s
+    /// own doc comment). The lazy backstop auto-close pass
+    /// (`BoardListView.onAppearLoad`) waits on this (with a timeout fallback)
+    /// before sealing, so a device that hasn't yet pulled a peer's Reopen
+    /// doesn't race it and re-seal the board under the OLD local snapshot.
+    @Published var hasCompletedFirstPull: Bool = false
+
     /// `lastError` payload — message + timestamp as a value type so it
     /// stays SwiftUI-friendly.
     struct SyncErrorRecord: Equatable {
@@ -582,6 +590,7 @@ final class SyncService: ObservableObject {
             postSyncDidApplyChanges()
         }
 
+        hasCompletedFirstPull = true
         return result
     }
 
@@ -1170,27 +1179,15 @@ final class SyncService: ObservableObject {
         var cleaned = SyncWirePayload.expandJSONStrings(data)
         cleaned["_syncedAt"] = FieldValue.serverTimestamp()
 
-        // Indefinite boards carry no `endDate`. Because we write with
-        // `merge: true`, simply omitting the field would PRESERVE a stale
-        // deadline on Firestore from before a convert-to-indefinite edit —
-        // which a second device would then pull, silently un-converting the
-        // board. Explicitly delete the field so the remote doc matches the
-        // local source of truth. (Harmless no-op on a fresh doc / a board
-        // that never had an endDate.)
-        if collection == "boards", cleaned["endDate"] == nil {
-            cleaned["endDate"] = FieldValue.delete()
-        }
-
-        // Same carve-out for `completedAt`: a COMPLETED → ACTIVE revert clears
-        // the board's completedAt locally, but under `merge: true` simply
-        // omitting the field would leave the stale completion timestamp on
-        // Firestore — which a second device would then pull, resurrecting a
-        // completedAt on an active board. Explicitly delete it so the remote
-        // doc matches the local source of truth. (Harmless no-op on boards
-        // that never completed.)
-        if collection == "boards", cleaned["completedAt"] == nil {
-            cleaned["completedAt"] = FieldValue.delete()
-        }
+        // Board Edit redesign slice 4 (D2): `endDate` / `completedAt` /
+        // `sealedAt` / `sealedCompletedCells` must all propagate their
+        // ABSENCE, not just their presence — under `merge: true`, simply
+        // omitting an absent field would PRESERVE a stale remote value (e.g.
+        // a Reopen's cleared `sealedAt` never reaching Firestore, silently
+        // re-closing the board on every other device). See
+        // `SyncService+ClearableFields.swift`. Harmless no-op when the field
+        // was never set.
+        Self.applyClearableBoardFieldDeletes(collection: collection, cleaned: &cleaned)
 
         try await docStore.write(path: path, data: cleaned)
     }
@@ -1336,34 +1333,15 @@ final class SyncService: ObservableObject {
 
         try db.execute(sql: sql, arguments: StatementArguments(values))
 
-        // Pull is a full-entity replace: the remote doc is the source of truth.
-        // The upsert above only SETs columns PRESENT in the remote doc, so an
-        // indefinite board (whose endDate field was deleted on Firestore) would
-        // leave a STALE endDate on an existing local row — making it
-        // `timeframe = indefinite` yet still carrying a deadline. Explicitly
-        // clear it so the local row matches the remote. Mirrors the push-side
-        // FieldValue.delete(); harmless when the row already had no endDate.
-        if grdbTable == "boards", cleaned["endDate"] == nil,
-           let boardId = cleaned["id"] as? String {
-            try db.execute(
-                sql: "UPDATE \"boards\" SET endDate = NULL WHERE id = ?",
-                arguments: [boardId]
-            )
-        }
-
-        // Same replace semantics for `completedAt`: a remote boards doc whose
-        // completedAt was FieldValue.delete()-ed (COMPLETED → ACTIVE revert on
-        // the authoring device) must clear the stale local timestamp too —
-        // otherwise the row reads `status = active` yet still carries a
-        // completedAt. Mirrors the push-side carve-out above; harmless when
-        // the local row never had one.
-        if grdbTable == "boards", cleaned["completedAt"] == nil,
-           let boardId = cleaned["id"] as? String {
-            try db.execute(
-                sql: "UPDATE \"boards\" SET completedAt = NULL WHERE id = ?",
-                arguments: [boardId]
-            )
-        }
+        // Pull is a full-entity replace: the remote doc is the source of
+        // truth. The upsert above only SETs columns PRESENT in the remote
+        // doc, so a field FieldValue.delete()-ed on the authoring device
+        // (e.g. an indefinite board's `endDate`, or a Reopen's cleared
+        // `sealedAt` / `sealedCompletedCells`) would leave a STALE local
+        // value. Board Edit redesign slice 4 (D2): NULL every clearable
+        // field absent from this doc. See `SyncService+ClearableFields.swift`;
+        // harmless when the local row never had the field set.
+        try Self.applyClearableBoardFieldNulls(db: db, grdbTable: grdbTable, cleaned: cleaned)
     }
 
     /// Cached per-table column names. Populated lazily on first lookup
@@ -1532,6 +1510,7 @@ extension SyncService {
         lastEventAt = nil
         lastError = nil
         exhaustedCount = 0
+        hasCompletedFirstPull = false
     }
 
     // MARK: - Observability helpers

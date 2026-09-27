@@ -82,6 +82,7 @@ function main() {
     SYNC_COLLECTIONS,
     USER_SCOPED_SYNC_COLLECTIONS,
     LEGACY_PULL_SKIP_COLLECTIONS,
+    CLEARABLE_BOARD_FIELDS,
   } = loadConstants();
 
   if (!Array.isArray(SYNC_COLLECTIONS) || SYNC_COLLECTIONS.length === 0) {
@@ -96,6 +97,7 @@ function main() {
     syncCollections: SYNC_COLLECTIONS,
     userScopedSyncCollections: USER_SCOPED_SYNC_COLLECTIONS,
     legacyPullSkipCollections: LEGACY_PULL_SKIP_COLLECTIONS,
+    clearableBoardFields: CLEARABLE_BOARD_FIELDS,
   };
 
   const json = JSON.stringify(fixture, null, 2) + '\n';

@@ -5,6 +5,8 @@ import Foundation
 /// `apps/web/src/components/boardActions/boardMenu.ts`; the raw values are the
 /// web `kind` strings so the two case tables read line-for-line.
 enum BoardMenuItem: String, Identifiable, Equatable {
+    case close
+    case reopen
     case details
     case coreDefaults
     case repeatBoard = "repeat"
@@ -16,6 +18,8 @@ enum BoardMenuItem: String, Identifiable, Equatable {
     /// Menu row label — copy verbatim from the design handoff.
     var label: String {
         switch self {
+        case .close: return "Close board"
+        case .reopen: return "Reopen board"
         case .details: return "Board details…"
         case .coreDefaults: return "Core defaults…"
         case .repeatBoard: return "Repeat this board…"
@@ -27,6 +31,8 @@ enum BoardMenuItem: String, Identifiable, Equatable {
     /// SF Symbol for the menu row.
     var systemImage: String {
         switch self {
+        case .close: return "lock"
+        case .reopen: return "lock.open"
         case .details, .coreDefaults: return "slider.horizontal.3"
         case .repeatBoard: return "repeat"
         case .archive: return "archivebox"
@@ -42,24 +48,47 @@ enum BoardMenuItem: String, Identifiable, Equatable {
 /// state — the caller passes the board and its resolved source record.
 enum BoardMenuItems {
 
-    /// The menu rows for `board`, in display order.
+    /// The menu rows for `board`, in display order (Board Edit redesign
+    /// slice 4, D12 — extends slice 2's table with Ended/Closed rows).
     ///
     /// - Draft boards: no menu (the draft-resume prompt replaces the header).
-    /// - Core boards: `Core defaults… · Delete` — name, timeframe, repeats and
-    ///   archive are not fields on a core board.
-    /// - Ad-hoc, editable (`active` + not sealed): `Board details… ·
+    /// - Archived boards: unchanged from slice 2 (`Core defaults…, Delete` /
+    ///   `Delete`) — no Close/Reopen on an archived board (OQ5).
+    /// - **Ended** (window over, not sealed yet): ad-hoc → `Close board ·
+    ///   Board details… · Repeat this board… (if eligible) · Archive ·
+    ///   Delete`; core → `Close board · Core defaults… · Delete`.
+    /// - **Closed** (sealed): ad-hoc → `Reopen board · Repeat this board…
+    ///   (if eligible) · Archive · Delete` (no Board details); core →
+    ///   `Reopen board · Core defaults… · Delete`.
+    /// - Core, live: `Core defaults… · Delete`.
+    /// - Ad-hoc, live (`active` + not sealed + not ended): `Board details… ·
     ///   Repeat this board… (if eligible) · Archive · Delete`.
-    /// - Ad-hoc, not editable (sealed / ended / archived): `Delete` only —
-    ///   Repeat back-stamps and Archive rewrites the row, both writes to a
-    ///   closed record, so they wait for slice 4's closed-board rules.
     ///
     /// - Parameters:
     ///   - board: The board the menu is for.
     ///   - sourceTemplate: The board's resolved repeat record, or nil when it
     ///     has none or it hasn't resolved (yet).
+    ///   - now: Current time (epoch ms) — decides Ended vs Closed vs live.
     /// - Returns: The ordered menu items; empty means "show no menu".
-    static func items(board: Board, sourceTemplate: RecurringBoardTemplate?) -> [BoardMenuItem] {
+    static func items(board: Board, sourceTemplate: RecurringBoardTemplate?, now: Double) -> [BoardMenuItem] {
         if board.status == .draft { return [] }
+
+        if isBoardClosed(board) {
+            if board.isCore { return [.reopen, .coreDefaults, .delete] }
+            var items: [BoardMenuItem] = [.reopen]
+            if isRepeatEligible(board: board, sourceTemplate: sourceTemplate) { items.append(.repeatBoard) }
+            items.append(contentsOf: [.archive, .delete])
+            return items
+        }
+
+        if isBoardEnded(board, nowMs: now) {
+            if board.isCore { return [.close, .coreDefaults, .delete] }
+            var items: [BoardMenuItem] = [.close, .details]
+            if isRepeatEligible(board: board, sourceTemplate: sourceTemplate) { items.append(.repeatBoard) }
+            items.append(contentsOf: [.archive, .delete])
+            return items
+        }
+
         if board.isCore { return [.coreDefaults, .delete] }
         let editable = board.status == .active && board.sealedAt == nil
         guard editable else { return [.delete] }
