@@ -132,11 +132,27 @@
   font-weight: 800;
 }
 
-/* ---- Save row (edit counter + Save button) ---- */
+/* ---- Save row (edit counter + Shuffle + Save button, D18) ---- */
 .saveRow {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* D18 — responsive save-bar hint: desktop explains Shuffle's mechanics,
+   phone keeps the tap/hold gesture line. Breakpoint matches AppTopNav's
+   760px mobile collapse (RISO_WEB.md). */
+.hintPhone {
+  display: none;
+}
+@media (max-width: 760px) {
+  .hintDesktop {
+    display: none;
+  }
+  .hintPhone {
+    display: block;
+  }
 }
 .editCounter {
   flex: 0 0 auto;

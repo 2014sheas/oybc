@@ -98,8 +98,15 @@ export interface BoardSetupFormProps {
   customEndDate: string;
   onCustomEndDateChange: (d: string) => void;
 
-  centerType: CenterSquareType;
-  onCenterTypeChange: (t: CenterSquareType) => void;
+  /**
+   * Optional in `edit-active` mode (Board Edit redesign slice 3, D6): the
+   * center selector never renders there (the center changes only in the
+   * squares editor), so callers editing an active board's details need not
+   * supply a real value. `create` mode (the wizard, "Choose" included)
+   * always passes both.
+   */
+  centerType?: CenterSquareType;
+  onCenterTypeChange?: (t: CenterSquareType) => void;
 
   /**
    * Board Creation Split (web PR C) — whether this wizard session is the
@@ -168,8 +175,8 @@ export function BoardSetupForm({
   onCustomStartDateChange,
   customEndDate,
   onCustomEndDateChange,
-  centerType,
-  onCenterTypeChange,
+  centerType = CenterSquareType.FREE,
+  onCenterTypeChange = () => { /* no-op — edit-active never renders the selector */ },
   isRecurring,
   isCore,
   weekStartDay,

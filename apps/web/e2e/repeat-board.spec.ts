@@ -18,9 +18,10 @@ import {
  *    source name + inline Pause/Resume), and the toggle round-trips
  *    through Dexie.
  *  - Board screen: a one-off board shows the "Repeat this board…" CTA
- *    (gated off for a CHOSEN-center board); picking a cadence writes a
- *    new spawn record, back-stamps the board, and swaps the CTA for the
- *    manage row + the spawn-provenance note.
+ *    (also offered for a legacy CHOSEN-center board — Board Edit slice 3,
+ *    D5, flipped from the earlier "hidden" expectation); picking a cadence
+ *    writes a new spawn record, back-stamps the board, and swaps the CTA
+ *    for the manage row + the spawn-provenance note.
  *
  * The underlying write correctness (window-key alignment, mix
  * resolution, provenance-note counting) is exhaustively unit-tested in
@@ -192,11 +193,11 @@ test.describe('P6 — "Repeat this board…" menu item', () => {
     });
   });
 
-  test('is hidden for a CHOSEN-center board', async ({ page }) => {
+  test('now appears for a legacy CHOSEN-center board too (Board Edit slice 3, D5)', async ({ page }) => {
     await page.goto(`/boards/${CHOSEN_CENTER_BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByText('Chosen Center Board')).toBeVisible();
     await page.getByRole('button', { name: 'Board menu' }).click();
-    await expect(page.getByRole('menuitem', { name: 'Repeat this board…' })).not.toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Repeat this board…' })).toBeVisible();
   });
 
   test('appears for a one-off board; picking a cadence writes the spawn record and swaps in Repeating/Paused + provenance note', async ({ page }) => {

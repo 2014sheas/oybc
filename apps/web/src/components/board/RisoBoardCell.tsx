@@ -75,15 +75,22 @@ export function RisoBoardCell({ cell, onClick, onContextMenu, badge }: RisoBoard
     .filter(Boolean)
     .join(' ');
 
-  // Corner chip: lock (red) wins over dirty (gold) — a locked square that
-  // is also staged reads as locked; the edit counter carries the change.
-  const chip = cell.locked ? (
-    <span className={`${styles.chip} ${styles.chipLock}`} aria-label="Locked in place" role="img">
-      <RisoIcon name="lock" size={12} />
-    </span>
-  ) : cell.dirty ? (
-    <span className={`${styles.chip} ${styles.chipDirty}`} aria-label="Unsaved edit" role="img">
-      <RisoIcon name="edit" size={12} />
+  // Corner chips: lock (red) + dirty (gold), SIDE BY SIDE when both apply
+  // (Board Edit redesign slice 3, D12 — adopts iOS's HStack; a replaced
+  // locked square must show BOTH "this is locked" and "this is unsaved").
+  // Pencil renders first, then lock (matches iOS `RisoBoardPlayCell.swift`).
+  const chip = (cell.locked || cell.dirty) ? (
+    <span className={styles.chipRow}>
+      {cell.dirty && (
+        <span className={`${styles.chip} ${styles.chipDirty}`} aria-label="Unsaved edit" role="img">
+          <RisoIcon name="edit" size={12} />
+        </span>
+      )}
+      {cell.locked && (
+        <span className={`${styles.chip} ${styles.chipLock}`} aria-label="Locked in place" role="img">
+          <RisoIcon name="lock" size={12} />
+        </span>
+      )}
     </span>
   ) : null;
 

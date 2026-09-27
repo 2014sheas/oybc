@@ -99,35 +99,6 @@
   color: var(--riso-muted);
 }
 
-/* M4 — "+" affordance inside an empty cell (ACTIVE boards only) */
-.addTaskButton {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--riso-ink);
-  border-radius: 50%;
-  background: var(--riso-paper);
-  font-family: var(--riso-font-head);
-  font-size: 1.25rem;
-  font-weight: 800;
-  color: var(--riso-ink);
-  cursor: pointer;
-  transition: transform 0.09s, box-shadow 0.09s;
-}
-.addTaskButton:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
-  background: var(--riso-gold);
-  /* gold fill → static ink (adaptive --riso-ink flips light in dark mode) */
-  color: var(--riso-ink-static);
-}
-.addTaskButton:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-
 /* ─── Empty / loading / not found states ────────────────────────────────────── */
 
 .emptyState {
@@ -146,26 +117,18 @@
   font-size: 15px;
 }
 
-/* ─── Phase 2 edit-mode: tap wrapper for grid cells ─────────────────────────── */
+/* ─── Board Edit redesign slice 3 — above-grid hint (D7) ────────────────────── */
 
-/*
- * In editTasks sub-mode, non-center cells are wrapped in a button so we can
- * capture the click event's coordinates (needed for SquareTapMenu positioning).
- * The button is a zero-chrome wrapper: no padding, no border, no background —
- * visual styling all comes from the inner RisoBoardCell.
- */
-.editCellBtn {
-  display: contents; /* transparently passes grid placement to the child */
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
+.editHint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  line-height: 1.45;
+  margin: 0 0 10px;
 }
-/* display:contents has no box to paint a focus ring on — route it onto the
-   child cell so keyboard focus is visible in the editable grid. */
-.editCellBtn:focus-visible > * {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
+.editHint b {
+  font-family: var(--riso-font-head);
+  color: var(--riso-ink);
+  font-weight: 800;
 }
 

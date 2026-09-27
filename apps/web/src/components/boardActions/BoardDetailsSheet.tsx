@@ -152,10 +152,9 @@ export function BoardDetailsSheet({
               onCustomEndDateChange={(customEndDate) =>
                 setDraft((d) => ({ ...d, customEndDate }))
               }
-              // edit-active hides the center selector (slice 3, D6); these
-              // only satisfy the shared form's props until T3 slims them.
-              centerType={board.centerSquareType}
-              onCenterTypeChange={() => { /* no-op — no center selector in edit-active */ }}
+              // edit-active hides the center selector entirely (slice 3, D6)
+              // — centerType/onCenterTypeChange are optional there, so
+              // nothing is passed.
               isRecurring={false}
               isCore={false}
               weekStartDay={weekStartDay}

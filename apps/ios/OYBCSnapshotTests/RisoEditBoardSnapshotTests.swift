@@ -32,7 +32,7 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
     // MARK: - Form: monthly timeframe, free center (light)
 
     func testFormMonthlyFreeLight() {
-        let view = makeForm(timeframe: .monthly, centerType: .free)
+        let view = makeForm(timeframe: .monthly)
         assertSnapshot(
             of: view,
             as: .image(layout: .fixed(width: 393, height: 620)),
@@ -43,7 +43,7 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
     // MARK: - Form: monthly timeframe, free center (dark)
 
     func testFormMonthlyFreeDark() {
-        let view = makeForm(timeframe: .monthly, centerType: .free)
+        let view = makeForm(timeframe: .monthly)
         assertSnapshot(
             of: view,
             as: .image(
@@ -57,7 +57,7 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
     // MARK: - Form: weekly timeframe, none center (light)
 
     func testFormWeeklyNoneLight() {
-        let view = makeForm(timeframe: .weekly, centerType: .none)
+        let view = makeForm(timeframe: .weekly)
         assertSnapshot(
             of: view,
             as: .image(layout: .fixed(width: 393, height: 620)),
@@ -68,7 +68,7 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
     // MARK: - Form: weekly timeframe, none center (dark)
 
     func testFormWeeklyNoneDark() {
-        let view = makeForm(timeframe: .weekly, centerType: .none)
+        let view = makeForm(timeframe: .weekly)
         assertSnapshot(
             of: view,
             as: .image(
@@ -83,11 +83,15 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
 
     /// Builds the edit-only `BoardSetupFormView` wrapped in a
     /// paper-background `ScrollView` so sections render outside a `Form`.
+    ///
+    /// Board Edit redesign slice 3 (D6): the center selector is GONE from
+    /// this form (the center now changes only in the squares editor), so
+    /// `centerType` / `chosenCenterDisabled` are no longer parameters here —
+    /// the test names keep their historical "Free"/"None" suffixes (the
+    /// real axis under test is `timeframe`).
     private func makeForm(
         name: String = "Spring Goals",
-        timeframe: Timeframe = .monthly,
-        centerType: CenterSquareType = .free,
-        chosenCenterDisabled: Bool = false
+        timeframe: Timeframe = .monthly
     ) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -96,9 +100,7 @@ final class RisoEditBoardSnapshotTests: XCTestCase {
                     timeframe: .constant(timeframe),
                     customStartDate: .constant(Self.fixedStart),
                     customEndDate: .constant(Self.fixedEnd),
-                    centerType: .constant(centerType),
-                    weekStartDay: "monday",
-                    chosenCenterDisabled: chosenCenterDisabled
+                    weekStartDay: "monday"
                 )
             }
             .padding(16)

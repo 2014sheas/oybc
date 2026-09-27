@@ -66,10 +66,16 @@ struct RearrangeCellData: Identifiable, Equatable {
 /// provides the "lifted" visual.
 ///
 /// ### Callers
-/// Used by Board Edit (`BoardEditPanel`) and the wizard's Preview step
-/// (`BoardWizardPreviewStepView`, whose cells' `originalRow/Col` reflect the wizard's placement
-/// array). The view is self-contained; the caller only needs to supply `cells`, `gridSize`,
-/// `taskMap`, `centerSquareType`, `sideLength`, and handle `onReorder`.
+/// Board Edit redesign slice 3 (D7) retired this view's board-EDIT caller —
+/// `BoardEditPanel` now renders `SquaresEditGrid` (a sibling view forked from
+/// this one: press-and-hold instead of jiggle/tap-to-swap, no sub-mode,
+/// dashed empty squares are tappable). The ONE remaining caller is the
+/// wizard's Preview step (`BoardWizardPreviewStepView`, whose cells'
+/// `originalRow/Col` reflect the wizard's placement array) — the wizard's
+/// authoring-time rearrange is out of scope for the board-edit rework. The
+/// view is self-contained; the caller only needs to supply `cells`,
+/// `gridSize`, `taskMap`, `centerSquareType`, `sideLength`, and handle
+/// `onReorder`.
 ///
 /// - Parameters:
 ///   - cells: Ordered (row-major) array of all grid slots — task cells, center, empties.

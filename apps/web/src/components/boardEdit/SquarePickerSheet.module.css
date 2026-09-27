@@ -1,0 +1,83 @@
+/* Square picker sheet (Board Edit redesign slice 3, D13) — the ONE
+   add/replace surface: quick-add row + the special-task panel. Bottom sheet
+   on phone, a centered 460px modal on desktop (B Sheets `showPicker`). */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.sheet {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 16px;
+  padding: 20px;
+  width: 460px;
+  max-width: 92vw;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .backdrop {
+    align-items: flex-end;
+  }
+  .sheet {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    border-bottom: none;
+    max-height: 88vh;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kicker {
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--riso-red);
+}
+.title {
+  font-family: var(--riso-font-head);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+.closeButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: var(--riso-muted);
+  padding: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.closeButton:hover {
+  color: var(--riso-ink);
+}
+.closeButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
