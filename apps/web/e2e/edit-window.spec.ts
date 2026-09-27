@@ -147,17 +147,18 @@ test.describe('Board-Edit preserves the board window (bugfix/edit-preserves-boar
 
     await page.screenshot({ path: '.playwright-mcp/edit-window-01.png' });
 
-    // ── 2. Enter Edit mode, change ONLY the name, Save. ──
-    await page.getByRole('button', { name: 'Edit board' }).click();
+    // ── 2. "…" → Board details… → change ONLY the name → Save. ──
+    await page.getByRole('button', { name: 'Board menu' }).click();
+    await page.getByRole('menuitem', { name: 'Board details…' }).click();
     const nameInput = page.locator('#bw-board-name');
     await expect(nameInput).toHaveValue(BOARD_NAME);
     await nameInput.fill(RENAMED_BOARD_NAME);
 
-    const saveButton = page.getByRole('button', { name: 'Save changes' });
+    const saveButton = page.getByRole('dialog', { name: 'Board details' }).getByRole('button', { name: 'Save' });
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
 
-    // Edit mode exits back to the normal play rail on a successful save.
+    // The sheet closes back to the normal play rail on a successful save.
     await expect(page.getByRole('heading', { name: RENAMED_BOARD_NAME })).toBeVisible();
 
     // ── 3. THE BUG: the square must still be green — the window (and the ──

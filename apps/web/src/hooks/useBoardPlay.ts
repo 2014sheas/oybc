@@ -30,7 +30,11 @@ import {
   setBoardTaskLocked,
 } from '../db/operations/boardTasks';
 import { updateTaskAndCascade, toggleCompoundChildFallback, undoLastCounterLog, type UpdateTaskPatch } from '../db/operations/tasks';
-import { updateBoardAndCascade, type UpdateActiveBoardPatch } from '../db/operations/boards';
+import {
+  assertBoardEditable,
+  updateBoardAndCascade,
+  type UpdateActiveBoardPatch,
+} from '../db/operations/boards';
 import { deriveFlashOutcome } from '../components/boardPlayFlash';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
 import { type SubMode } from '../components/boardEdit/BoardEditPanel';
@@ -596,6 +600,12 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
         'rw',
         [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
         async () => {
+          // 0. Editable guard (Board Edit redesign slice 2, D11) — a board
+          //    sealed or deleted mid-session throws `BoardNotEditableError`
+          //    here, before any write, so the whole Save (task overrides
+          //    included) rolls back and the panel can say so instead of
+          //    reporting "Board saved".
+          await assertBoardEditable(boardId);
           // 1. Cell replacements: cells whose staged taskId differs from the original.
           for (const cell of squaresDraft) {
             if (cell.taskId !== cell.originalTaskId) {

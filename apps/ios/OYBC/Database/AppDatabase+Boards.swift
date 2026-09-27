@@ -1,6 +1,18 @@
 import Foundation
 import GRDB
 
+/// Board Edit redesign slice 2 (D11 — docs/BOARD_EDIT_REDESIGN.md): typed
+/// failure for an edit that reached a board which can no longer be edited
+/// (sealed or deleted since the editor opened, e.g. by the seal backstop or a
+/// sync pull). Thrown INSIDE the edit transaction so the whole save rolls
+/// back — never reported as "Board saved". Twin of web `BoardNotEditableError`.
+enum BoardEditError: Error, Equatable {
+    case boardNotEditable
+
+    /// User-facing copy for `boardNotEditable` (alert title "Board closed").
+    static let boardClosedMessage = "This board has been closed, so your changes weren’t saved."
+}
+
 extension AppDatabase {
     // MARK: - Boards
 
@@ -196,7 +208,7 @@ extension AppDatabase {
     /// underlying `BoardTask` row; the board.centerTaskId column is cleared
     /// so the cell renders as FREE on top, but the placement is retained in
     /// case the user switches back. Do not treat this as a bug.
-    struct UpdateActiveBoardPatch {
+    struct UpdateActiveBoardPatch: Equatable {
         var name: String?
         var timeframe: Timeframe?
         /// Local-ISO8601 snap to 00:00:00.000 start-of-day (via `wizardLocalISOString`).
@@ -258,6 +270,39 @@ extension AppDatabase {
     ///   - patch: Editable fields for ACTIVE boards.
     func updateBoardAndCascade(boardId: String, patch: UpdateActiveBoardPatch) throws {
         try write { db in
+            try Self.updateBoardAndCascade(db: db, boardId: boardId, patch: patch)
+        }
+    }
+
+    /// Throws `BoardEditError.boardNotEditable` unless `boardId` names a live,
+    /// unsealed board. Call it FIRST inside an edit transaction (squares save,
+    /// Board details save, repeat start) so a board sealed or deleted since
+    /// the editor opened rolls the whole write back instead of letting the
+    /// silent guard in `updateBoardAndCascade` no-op while the rest commits.
+    ///
+    /// - Parameters:
+    ///   - db: The open write transaction.
+    ///   - boardId: The board being edited.
+    /// - Throws: `BoardEditError.boardNotEditable` if the row is missing,
+    ///   deleted, or sealed; any GRDB read error.
+    static func assertBoardEditable(db: Database, boardId: String) throws {
+        guard let board = try Board.fetchOne(db, key: boardId),
+              !board.isDeleted, board.sealedAt == nil
+        else { throw BoardEditError.boardNotEditable }
+    }
+
+    /// Board details Save (slice 2, D4): commits the metadata patch from the
+    /// "Board details" sheet in ONE transaction — the editable guard, then
+    /// `updateBoardAndCascade`. Independent of the squares draft.
+    ///
+    /// - Parameters:
+    ///   - boardId: Board to update.
+    ///   - patch: The sheet's patch (`BoardDetailsDraft.patch()`).
+    /// - Throws: `BoardEditError.boardNotEditable` for a sealed / deleted /
+    ///   missing board (nothing written); any GRDB error.
+    func saveBoardDetails(boardId: String, patch: UpdateActiveBoardPatch) throws {
+        try write { db in
+            try Self.assertBoardEditable(db: db, boardId: boardId)
             try Self.updateBoardAndCascade(db: db, boardId: boardId, patch: patch)
         }
     }

@@ -13,7 +13,7 @@ import {
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { repeatBoardAsRecurring } from '../repeatBoard';
-import { deleteBoard } from '../boards';
+import { BoardNotEditableError, deleteBoard } from '../boards';
 
 /**
  * P6 (Task Pools + Recurring Boards Rework, docs/POOLS_RECURRING.md
@@ -153,6 +153,32 @@ describe('repeatBoardAsRecurring', () => {
 
     const updatedBoard = await db.boards.get(board.id);
     expect(updatedBoard?.version).toBe(6); // live 5 + 1, not snapshot 1 + 1
+  });
+
+  it('a board sealed since the caller read it throws BoardNotEditableError — nothing minted or back-stamped (slice 2, D11)', async () => {
+    const board = buildOneOffBoard();
+    await db.boards.add({ ...board, sealedAt: '2026-05-07T00:00:00.000Z' });
+    await seedTask('t0');
+    await seedBoardTask(board.id, 't0', 0, 0);
+
+    await expect(
+      repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday'),
+    ).rejects.toBeInstanceOf(BoardNotEditableError);
+
+    expect(await db.recurringBoardTemplates.count()).toBe(0);
+    const stored = await db.boards.get(board.id);
+    expect(stored?.spawnedFromTemplateId).toBeUndefined();
+    expect(stored?.version).toBe(1);
+    expect(await db.syncQueue.count()).toBe(0);
+  });
+
+  it('a deleted board throws BoardNotEditableError', async () => {
+    const board = buildOneOffBoard();
+    await db.boards.add({ ...board, isDeleted: true, deletedAt: NOW });
+    await expect(
+      repeatBoardAsRecurring(board, Timeframe.DAILY, USER_ID, 'monday'),
+    ).rejects.toBeInstanceOf(BoardNotEditableError);
+    expect(await db.recurringBoardTemplates.count()).toBe(0);
   });
 
   it('lastSpawnedWindowKey is keyed off the CHOSEN cadence, not board.timeframe (critical window-alignment vector)', async () => {

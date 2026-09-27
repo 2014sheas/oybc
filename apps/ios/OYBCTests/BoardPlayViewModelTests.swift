@@ -934,8 +934,6 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         vm.seedEditDraft(from: board)
 
-        XCTAssertEqual(vm.editName, "Board b1")
-        XCTAssertEqual(vm.editTimeframe, .monthly)
         XCTAssertEqual(vm.editCenterType, .free)
         XCTAssertEqual(vm.editSubMode, .editTasks)
         // One squares-draft entry per live placement, seeded staged == original.
@@ -1021,7 +1019,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         vm.handleEditRemove(cellKey: "0-1")
         XCTAssertEqual(vm.editSquaresEditCount, 1)
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"), "save should dispatch")
+        XCTAssertTrue(vm.handleEditSave(), "save should dispatch")
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
                       "handleEditSave never emitted .saved")
 
@@ -1053,7 +1051,11 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertNil(vm.editRearrangeCells)
     }
 
-    func test_handleEditSave_commitsRename_replacement_andPosition_thenEmitsSaved() throws {
+    /// Board Edit redesign slice 2 (T3) — name is no longer part of the
+    /// squares-editor commit (it moved to `BoardDetailsSheetView`), so the
+    /// metadata half of this atomicity check is now the center toggle, the
+    /// ONE metadata field the squares panel still owns.
+    func test_handleEditSave_commitsCenterToggle_replacement_andPosition_thenEmitsSaved() throws {
         let db = try makeDb()
         try seedUser(db)
         try db.saveBoard(makeBoard(id: "b1"))     // 3×3, FREE center, monthly, "Board b1"
@@ -1066,8 +1068,8 @@ final class BoardPlayViewModelTests: XCTestCase {
         let board = try XCTUnwrap(vm.board)
         vm.seedEditDraft(from: board)
 
-        // 1. Rename.
-        vm.editName = "Renamed b1"
+        // 1. Center toggle: FREE → NONE.
+        vm.editCenterType = .none
         // 2. Replace t1 → t2 in cell (0,0).
         vm.handleEditCellReplace(cellKey: "0-0", newTaskId: "t2")
         // 3. Position move: seed rearrange cells, then move bt1 (slot 0) into the
@@ -1079,15 +1081,15 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.editSquaresEditCount, 2, "one replacement + one position move")
 
-        let started = vm.handleEditSave(weekStartDay: "monday")
-        XCTAssertTrue(started, "save should dispatch when validation passes")
+        let started = vm.handleEditSave()
+        XCTAssertTrue(started, "save should dispatch")
 
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
                       "handleEditSave never emitted .saved")
 
-        // Board renamed.
+        // Board's center toggled.
         let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
-        XCTAssertEqual(saved.name, "Renamed b1")
+        XCTAssertEqual(saved.centerSquareType, .none)
         // Placement repointed t1 → t2 AND moved to (0,1).
         let bt = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
         XCTAssertEqual(bt.taskId, "t2", "cell replacement committed")
@@ -1126,7 +1128,7 @@ final class BoardPlayViewModelTests: XCTestCase {
             patch: .init(title: "Renamed normal", type: .compound, action: "", unit: "", maxCount: nil)
         )
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"), "save should dispatch")
+        XCTAssertTrue(vm.handleEditSave(), "save should dispatch")
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
                       "handleEditSave never emitted .saved")
 
@@ -1141,30 +1143,16 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(normal.title, "Renamed normal", "the title still commits")
     }
 
-    func test_handleEditSave_blankName_doesNotStart() throws {
-        let db = try makeDb()
-        try seedWorkspace(db)
-        let vm = loadedVM(db, boardId: "b1")
-        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
-        vm.editName = "   "   // whitespace-only ⇒ invalid
+    // `test_handleEditSave_blankName_doesNotStart` removed (Board Edit
+    // redesign slice 2, T3) — name validation lives in
+    // `BoardDetailsDraft.validationError` / `BoardDetailsSheetView` now;
+    // `handleEditSave` no longer reads a name at all.
 
-        XCTAssertFalse(vm.handleEditSave(weekStartDay: "monday"),
-                       "a blank name must not dispatch a commit")
-    }
-
-    func test_handleEditArchive_setsBoardArchived_thenEmitsArchived() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))
-        let vm = loadedVM(db, boardId: "b1")
-
-        vm.handleEditArchive()
-
-        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .archived },
-                      "handleEditArchive never emitted .archived")
-        let b = try XCTUnwrap(db.fetchBoard(id: "b1"))
-        XCTAssertEqual(b.status, .archived)
-    }
+    // `test_handleEditArchive_setsBoardArchived_thenEmitsArchived` migrated to
+    // `BoardPlayViewModelBoardActionsTests.test_archiveBoard_setsStatusArchived`
+    // (Board Edit redesign slice 2, T2) — Archive is now the plain `async
+    // throws` `archiveBoard()`; `handleEditArchive` + its one-shot `.archived`
+    // event were removed from `+EditCommit.swift`.
 
     // MARK: - 12. Shared Counters P3 — passive-completion arrival detection
 
@@ -1464,16 +1452,16 @@ final class BoardPlayViewModelTests: XCTestCase {
             )
         }
 
-        // Stage: rename (step 1 — short-circuits at the empty-taskIds guard,
-        // since b1 has no placements) + a task-field override for the REAL
-        // task (step 3 — where the poisoned row's decode failure fires).
-        vm.editName = "Renamed b1"
+        // Stage: center toggle (step 1 — short-circuits at the empty-taskIds
+        // guard, since b1 has no placements) + a task-field override for the
+        // REAL task (step 3 — where the poisoned row's decode failure fires).
+        vm.editCenterType = .none
         vm.handleEditTaskOverride(
             taskId: "t-real",
             patch: .init(title: "Overridden", type: .normal, action: "", unit: "", maxCount: nil)
         )
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"), "save should dispatch")
+        XCTAssertTrue(vm.handleEditSave(), "save should dispatch")
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome != nil }, "handleEditSave never emitted an outcome")
 
         guard case .saveFailed = try XCTUnwrap(vm.editEvent?.outcome) else {
@@ -1481,10 +1469,11 @@ final class BoardPlayViewModelTests: XCTestCase {
             return
         }
 
-        // The WHOLE transaction rolled back — the metadata rename that step 1
+        // The WHOLE transaction rolled back — the metadata patch step 1
         // already applied inside the transaction did NOT stick.
         let boardAfter = try XCTUnwrap(db.fetchBoard(id: "b1"))
-        XCTAssertEqual(boardAfter.name, boardBefore.name, "board must be UNCHANGED — the rename must not have stuck")
+        XCTAssertEqual(boardAfter.centerSquareType, boardBefore.centerSquareType,
+                       "board must be UNCHANGED — the center toggle must not have stuck")
         XCTAssertEqual(boardAfter.version, boardBefore.version, "version must not have bumped either")
 
         // The task override was rolled back too.
@@ -1492,13 +1481,62 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(taskAfter.title, "Task t-real", "override must not have persisted")
     }
 
+    /// Board Edit slice 2 (D11 / bugfix B2): a board sealed between entering
+    /// edit mode and Save must NOT report "Board saved" — the save throws
+    /// `boardNotEditable` inside the transaction, rolling back EVERY sub-op
+    /// (the staged global task override included), and the VM emits
+    /// `.boardClosed`. Pre-fix the metadata guard silently no-oped, the task
+    /// override still committed, and `.saved` fired.
+    func test_handleEditSave_boardSealedMidSession_emitsBoardClosed_andRollsBack() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeCustomBoard(
+            id: "b-seal", timeframe: .monthly, startDate: offsetDaysISO(-5),
+            endDate: offsetDaysISO(25), boardSize: 1
+        ))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-seal", taskId: "t1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b-seal")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        vm.editCenterType = .free
+        vm.handleEditTaskOverride(
+            taskId: "t1",
+            patch: .init(title: "Overridden", type: .normal, action: "", unit: "", maxCount: nil)
+        )
+
+        // Sealed elsewhere (backstop / sync pull) while the editor is open.
+        var sealed = try XCTUnwrap(db.fetchBoard(id: "b-seal"))
+        sealed.sealedAt = AppDatabase.currentTimestamp()
+        try db.saveBoard(sealed)
+        let before = try XCTUnwrap(db.fetchBoard(id: "b-seal"))
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome != nil })
+        XCTAssertEqual(vm.editEvent?.outcome, .boardClosed(BoardEditError.boardClosedMessage))
+
+        let after = try XCTUnwrap(db.fetchBoard(id: "b-seal"))
+        XCTAssertEqual(after.centerSquareType, before.centerSquareType)
+        XCTAssertEqual(after.version, before.version)
+        XCTAssertEqual(try XCTUnwrap(db.fetchTask(id: "t1")).title, "Task t1",
+                       "the staged task override must roll back with the rest")
+    }
+
+    // `test_handleEditSave_ongoingStartEdit_isSaved` removed (Board Edit
+    // redesign slice 2, T3) — dates no longer route through
+    // `handleEditSave`/`editCustomStartDate` (retired). Equivalent coverage
+    // now lives in `BoardDetailsSaveTests.
+    // test_ongoingStartEdit_keepsInWindowCompletionGreen` via
+    // `AppDatabase.saveBoardDetails` + `BoardDetailsDraft`.
+
     /// Happy-path atomicity companion (no injected failure): reuses the
-    /// existing `test_handleEditSave_commitsRename_replacement_andPosition_
-    /// thenEmitsSaved` composition (rename + replacement + position move) as
-    /// the txn-boundary observation the spec calls for when a failure can't
-    /// be forced into a specific step — that test already asserts every
-    /// sub-op's write landed together after ONE `handleEditSave` call, which
-    /// is only possible if they share one transaction (a per-step-transaction
+    /// existing `test_handleEditSave_commitsCenterToggle_replacement_and
+    /// Position_thenEmitsSaved` composition (center toggle + replacement +
+    /// position move) as the txn-boundary observation the spec calls for
+    /// when a failure can't be forced into a specific step — that test
+    /// already asserts every sub-op's write landed together after ONE
+    /// `handleEditSave` call, which is only possible if they share one
+    /// transaction (a per-step-transaction
     /// design could exhibit the exact same final state by all steps merely
     /// happening to succeed, so this is a companion, not a substitute, for
     /// the forced-failure test above).
@@ -1587,9 +1625,9 @@ final class BoardPlayViewModelTests: XCTestCase {
         try seedWorkspace(db)
         let vm = loadedVM(db, boardId: "b1")
         vm.seedEditDraft(from: try XCTUnwrap(vm.board))
-        vm.editName = "Renamed via save"
+        vm.editCenterType = .none
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(vm.handleEditSave())
         // Fire the notification immediately after dispatching the save —
         // `editSaveInFlight` is set synchronously before the detached task
         // starts, so this reliably lands while the guard is up.
@@ -1597,7 +1635,7 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
                       "the Save must still complete normally despite the concurrent notification")
-        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).name, "Renamed via save")
+        XCTAssertEqual(try XCTUnwrap(db.fetchBoard(id: "b1")).centerSquareType, .none)
     }
 
     // MARK: - 14. bugfix/edit-preserves-board-window
@@ -1699,13 +1737,18 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(liveBoard.timeframe, .indefinite)
         vm.seedEditDraft(from: liveBoard)
 
-        // ONLY a rename is staged — no timeframe/date change.
-        vm.editName = "Renamed Indefinite"
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        // ONLY a center toggle is staged — no timeframe/date change (name is
+        // no longer part of this commit path since Board Edit redesign
+        // slice 2 T3; the equivalent "a metadata-only save on an ongoing
+        // board preserves the window" case for a NAME edit now lives in
+        // `BoardDetailsSaveTests`/`BoardDetailsDraftTests` via
+        // `AppDatabase.saveBoardDetails`).
+        vm.editCenterType = .free
+        XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
         let saved = try XCTUnwrap(db.fetchBoard(id: "b-indef"))
-        XCTAssertEqual(saved.name, "Renamed Indefinite")
+        XCTAssertEqual(saved.centerSquareType, .free)
         XCTAssertEqual(saved.startDate, start,
                        "a metadata-only Save on an INDEFINITE board must not re-anchor startDate to today")
         XCTAssertEqual(saved.completedTasks, 1,
@@ -1734,7 +1777,7 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         // Metadata-only Save: center type change, timeframe/dates untouched.
         vm.editCenterType = .free
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
         let saved = try XCTUnwrap(db.fetchBoard(id: "b-core"))
@@ -1745,40 +1788,13 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(saved.completedTasks, 1, "in-window completion must survive the save")
     }
 
-    func test_handleEditSave_timeframeChange_deliberatelyRewindows_dropsOutOfWindowCompletion() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        let start = offsetDaysISO(-10)
-        let end = offsetDaysISO(20)
-        try db.saveBoard(makeCustomBoard(id: "b-tf", timeframe: .weekly, startDate: start, endDate: end, boardSize: 1))
-        try db.saveTask(makeTask("t1"))
-        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-tf", taskId: "t1", row: 0, col: 0))
-        // Completion event 2 days ago — inside the OLD (10-days-ago-start) window,
-        // but guaranteed OUTSIDE a re-windowed DAILY board (which only covers today).
-        try db.dbQueue.write { database in
-            try self.makeCompletionEvent("evt1", taskId: "t1", occurredAt: self.offsetDaysInstantISO(-2)).insert(database)
-        }
-
-        let vm = loadedVM(db, boardId: "b-tf")
-        let liveBoard = try XCTUnwrap(vm.board)
-        vm.seedEditDraft(from: liveBoard)
-        XCTAssertEqual(vm.editTimeframe, .weekly)
-
-        // Deliberate timeframe conversion: weekly → daily.
-        vm.editTimeframe = .daily
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
-        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
-
-        let saved = try XCTUnwrap(db.fetchBoard(id: "b-tf"))
-        XCTAssertEqual(saved.timeframe, .daily)
-        XCTAssertNotEqual(saved.startDate, start,
-                          "a deliberate timeframe conversion DOES re-window the board — pinned as intentional")
-        let expected = try XCTUnwrap(computeTimeframeBoundaries(timeframe: .daily, referenceDate: Date(), weekStartDay: "monday"))
-        XCTAssertEqual(String(saved.startDate.prefix(10)), String(wizardLocalISOString(expected.start).prefix(10)),
-                       "re-windowed startDate matches today's daily boundary")
-        XCTAssertEqual(saved.completedTasks, 0,
-                       "the pre-existing completion predates the new daily window — deliberately dropped by the conversion")
-    }
+    // `test_handleEditSave_timeframeChange_deliberatelyRewindows_
+    // dropsOutOfWindowCompletion` removed (Board Edit redesign slice 2, T3)
+    // — the calendar-timeframe re-window branch was deleted from
+    // `handleEditSave` along with `editTimeframe`; a timeframe never
+    // switches after creation any more except Custom ⇄ Ongoing, which is
+    // `BoardDetailsDraft`'s domain (see `BoardDetailsDraftTests`), not the
+    // squares editor's.
 
     // MARK: 14b. Edit × completion × bingo matrix
 
@@ -1810,7 +1826,14 @@ final class BoardPlayViewModelTests: XCTestCase {
         let liveBoard = try XCTUnwrap(vm.board)
         vm.seedEditDraft(from: liveBoard)
 
-        vm.editName = "Composed Edit"                                   // rename
+        // Board Edit redesign slice 2 (T3): the metadata half of this
+        // atomicity check (name, pre-slice-2) is now the center toggle,
+        // covered by its OWN dedicated test
+        // (`test_handleEditSave_commitsCenterToggle_replacement_and
+        // Position_thenEmitsSaved`) — combining it here would pin cell
+        // (1,1) as the center BEFORE `seedRearrangeCells` runs, which is
+        // exactly the cell this test rearranges, so this composition stays
+        // squares-only: replace + remove + rearrange.
         vm.handleEditCellReplace(cellKey: "0-1", newTaskId: "t2b")      // replace t2 → t2b
         vm.handleEditRemove(cellKey: "1-0")                             // remove t4's cell
         vm.seedRearrangeCells(for: liveBoard)                           // rearrange: move t5 (1,1) → (2,2)
@@ -1821,11 +1844,10 @@ final class BoardPlayViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.editSquaresEditCount, 3, "one replace + one removal + one position move")
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
         let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
-        XCTAssertEqual(saved.name, "Composed Edit")
         XCTAssertEqual(saved.startDate, start,
                        "a composed structural Save (replace+remove+rearrange, no timeframe change) must not re-window")
 
@@ -1886,7 +1908,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         cells.swapAt(idxOf(0, 2), idxOf(2, 2))
         vm.handleRearrange(newCells: cells)
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
         let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
@@ -1930,7 +1952,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         let liveBoard = try XCTUnwrap(vm.board)
         vm.seedEditDraft(from: liveBoard)
         vm.handleEditRemove(cellKey: "0-0")   // removes t1's placement on bA ONLY
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
         let placementsA = try db.fetchBoardTasks(boardId: "bA")
@@ -1954,61 +1976,17 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "t1 stays windowed-complete on bB — completion is global per Task, untouched by bA's removal")
     }
 
-    func test_handleEditSave_customDatesChanged_appliesNewWindow() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        let start = offsetDaysISO(-30)
-        let end = offsetDaysISO(-1)
-        try db.saveBoard(makeCustomBoard(id: "b-custom", timeframe: .custom, startDate: start, endDate: end, boardSize: 1))
-        try db.saveTask(makeTask("t1"))
-        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-custom", taskId: "t1", row: 0, col: 0))
-
-        // Completion event inside the OLD custom window but before the NEW
-        // window the user is about to pick.
-        let oldInstant = offsetDaysInstantISO(-20)
-        try db.dbQueue.write { database in
-            try self.makeCompletionEvent("evt1", taskId: "t1", occurredAt: oldInstant).insert(database)
-        }
-
-        let vm = loadedVM(db, boardId: "b-custom")
-        let liveBoard = try XCTUnwrap(vm.board)
-        vm.seedEditDraft(from: liveBoard)
-        XCTAssertEqual(vm.editTimeframe, .custom)
-
-        let cal = Calendar.current
-        vm.editCustomStartDate = cal.date(byAdding: .day, value: -5, to: Date())!
-        vm.editCustomEndDate = cal.date(byAdding: .day, value: 25, to: Date())!
-
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
-        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
-
-        let saved = try XCTUnwrap(db.fetchBoard(id: "b-custom"))
-        XCTAssertNotEqual(saved.startDate, start, "changing the custom dates DOES apply the new window — deliberate")
-        XCTAssertEqual(saved.completedTasks, 0, "the old completion predates the newly-picked custom window")
-    }
-
-    func test_handleEditSave_customDatesChanged_endBeforeStart_rejectsSaveWithNoMutation() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        let start = offsetDaysISO(-30)
-        let end = offsetDaysISO(-1)
-        try db.saveBoard(makeCustomBoard(id: "b-custom2", timeframe: .custom, startDate: start, endDate: end, boardSize: 1))
-
-        let vm = loadedVM(db, boardId: "b-custom2")
-        let liveBoard = try XCTUnwrap(vm.board)
-        vm.seedEditDraft(from: liveBoard)
-
-        let cal = Calendar.current
-        vm.editCustomStartDate = Date()
-        vm.editCustomEndDate = cal.date(byAdding: .day, value: -3, to: Date())!   // end < start
-
-        XCTAssertFalse(vm.handleEditSave(weekStartDay: "monday"),
-                       "end < start must reject the save before any DB write (carried-over EditBoardSheet guard)")
-
-        let unchanged = try XCTUnwrap(db.fetchBoard(id: "b-custom2"))
-        XCTAssertEqual(unchanged.startDate, start, "a rejected save must not mutate the board at all")
-        XCTAssertEqual(unchanged.version, 1)
-    }
+    // `test_handleEditSave_customDatesChanged_appliesNewWindow` migrated to
+    // `BoardDetailsSaveTests.
+    // test_customDatesChanged_appliesNewWindow_dropsOutOfWindowCompletion`
+    // (Board Edit redesign slice 2, T3 — dates route through
+    // `AppDatabase.saveBoardDetails` now, not `handleEditSave`).
+    //
+    // `test_handleEditSave_customDatesChanged_endBeforeStart_
+    // rejectsSaveWithNoMutation` removed — the end-before-start guard now
+    // lives in `BoardDetailsDraft.validationError`
+    // (`BoardDetailsDraftTests.test_validation_customEndBeforeStart`), gating
+    // `BoardDetailsSheetView`'s Save before `saveBoardDetails` is ever called.
 
     // MARK: 14c. Cross-interface sweep — kernel / preview / self-heal agree
 
@@ -2034,10 +2012,9 @@ final class BoardPlayViewModelTests: XCTestCase {
         let vm = loadedVM(db, boardId: "b1")
         let liveBoard = try XCTUnwrap(vm.board)
         vm.seedEditDraft(from: liveBoard)
-        vm.editName = "Swept"
         vm.handleEditCellReplace(cellKey: "0-1", newTaskId: "t4")   // t2 → t4 @ (0,1)
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
 
         let vm2 = loadedVM(db, boardId: "b1")

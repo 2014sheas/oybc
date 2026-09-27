@@ -104,3 +104,19 @@ describe('BoardSetupForm — mode-locked schedule field (Board Creation Split, w
     expect(html).not.toContain('Repeats every');
   });
 });
+
+describe('BoardSetupForm — edit-active calendar window (Board Edit slice 2 self-review)', () => {
+  // A monthly board from a PAST month (fixed dates, never "this month") so
+  // the assertion can't pass by coincidence on any run date.
+  const storedWindow = { startDate: '2020-02-01T00:00:00.000', endDate: '2020-02-29T23:59:59.999' };
+
+  it("shows the board's OWN stored window, not the window containing today", () => {
+    const html = render({ mode: 'edit-active', timeframe: Timeframe.MONTHLY, storedWindow });
+    expect(html).toContain('2020-02-01 to 2020-02-29');
+  });
+
+  it('create mode ignores storedWindow (a new board is windowed from today)', () => {
+    const html = render({ mode: 'create', timeframe: Timeframe.MONTHLY, storedWindow });
+    expect(html).not.toContain('2020-02-01');
+  });
+});

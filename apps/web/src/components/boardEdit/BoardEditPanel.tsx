@@ -1,30 +1,11 @@
 import { useEffect, useState } from 'react';
-import {
-  CenterSquareType,
-  Timeframe,
-  toLocalISO,
-  getTimeframeBoundaries,
-  type WeekStartDay,
-  type Board,
-  type RecurringBoardTemplate,
-  type Task,
-} from '@oybc/shared';
-import { BoardSetupForm } from '../wizard/BoardSetupForm';
+import { createPortal } from 'react-dom';
+import { CenterSquareType, type Board } from '@oybc/shared';
 import { RisoButton, RisoSegmented, RisoSectionLabel } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
-import {
-  archiveBoard,
-  fetchBoard,
-  type UpdateActiveBoardPatch,
-} from '../../db/operations/boards';
-import { countBoardTasksForBoard } from '../../db/operations';
-import { repeatBoardAsRecurring } from '../../db/operations/repeatBoard';
-import { updateRecurringBoardTemplate } from '../../db/operations/recurringBoardTemplates';
-import {
-  BoardEditRepeatSection,
-  buildRepeatSavePlan,
-  type RepeatCadenceChoice,
-} from './BoardEditRepeatSection';
+import { BoardNotEditableError, type UpdateActiveBoardPatch } from '../../db/operations/boards';
+import { BOARD_CLOSED_MESSAGE } from '../boardActions/boardDetailsPatch';
+import { BoardActionConfirmDialog } from '../boardActions/BoardActionConfirmDialog';
 import styles from './BoardEditPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,8 +20,6 @@ const SUB_MODE_OPTIONS: ReadonlyArray<RisoSegmentedOption<SubMode>> = [
 export interface BoardEditPanelProps {
   /** The ACTIVE board being edited. */
   board: Board;
-  /** Week-start preference for timeframe boundary computation. */
-  weekStartDay: WeekStartDay;
   /**
    * Current square-editing sub-mode — lifted to BoardPlaySurface so the
    * grid can gate tap interactions. The panel renders the toggle but
@@ -51,282 +30,101 @@ export interface BoardEditPanelProps {
   onSubModeChange: (mode: SubMode) => void;
   /**
    * Number of staged square edits (Replace + Edit-task Done actions) from
-   * BoardPlaySurface. Added to the metadata edit count for the combined
-   * display and dirty/canSave checks.
+   * BoardPlaySurface. Added to the center-toggle edit (if any) for the
+   * combined display and dirty/canSave checks.
    */
   squareEditCount: number;
   /**
    * Commits the WHOLE Save: staged square edits (BoardTask replacements +
-   * global Task field patches + reorders + removals) AND the board-metadata
-   * patch, all in one atomic Dexie transaction (board-integrity PR-4, item 3,
-   * docs/BOARD_INTEGRITY.md). Must throw on error (the panel's catch block
-   * surfaces the failure to the user) — a throw rolls back every write in
-   * the transaction, so a failed Save can never leave the board half-edited.
+   * global Task field patches + reorders + removals) AND, when the center
+   * type changed, a `{ centerSquareType }` metadata patch — all in one
+   * atomic Dexie transaction (board-integrity PR-4, item 3,
+   * docs/BOARD_INTEGRITY.md). `undefined` when the center is unchanged (no
+   * metadata write). Must throw on error (the panel's catch block surfaces
+   * the failure to the user) — a throw rolls back every write in the
+   * transaction, so a failed Save can never leave the board half-edited.
    */
-  onExtraCommit: (metadataPatch: UpdateActiveBoardPatch) => Promise<void>;
+  onExtraCommit: (metadataPatch: UpdateActiveBoardPatch | undefined) => Promise<void>;
   /**
    * Called when the user cancels with no unsaved changes, or after
-   * the inline "Discard changes?" confirm. The parent exits edit mode.
+   * the inline "Discard changes?" confirm — and also on the OK of the "Board closed" notice after a Save that
+   * finds the board sealed or deleted mid-session (D11: the closed-board
+   * copy is shown first, then the panel exits edit mode).
    */
   onCancel: () => void;
   /**
-   * Called after a successful save (both square commits and metadata patch).
-   * The parent exits edit mode and shows the "Board saved" green toast.
+   * Called after a successful save (both square commits and any center
+   * metadata patch). The parent exits edit mode and shows the "Board
+   * saved" green toast.
    */
   onSaved: () => void;
   /**
-   * Called after the board is successfully archived. The parent
-   * should navigate away (e.g., to /boards).
-   */
-  onArchived: () => void;
-  /**
-   * Phase 2b — controlled draft centerSquareType. Lifted to BoardPlaySurface
-   * so the grid can compute `isPinnedCenter` for the predicate fix, and so
-   * the center toggle (grid tap) and the BoardSetupForm center-selector both
-   * update the same draft value.
+   * Phase 2b — controlled draft centerSquareType, READ-ONLY here (only used
+   * to compute the edit count against `board.centerSquareType`). Lifted to
+   * BoardPlaySurface, which owns the value and updates it directly from the
+   * grid's Free⇄Task tap toggle (`SquareTapMenu`'s onMakeFree/onMakeTask) —
+   * NOT through this panel. (The `BoardSetupForm` center selector moved to
+   * the Board details sheet, Board Edit redesign slice 2; the grid tap is
+   * the only way to change the center from inside the squares editor.)
    */
   centerType: CenterSquareType;
-  /**
-   * Phase 2b — called whenever the draft centerSquareType changes (via
-   * BoardSetupForm selection or the grid center toggle). The parent
-   * (`BoardPlaySurface`) holds the state and flows it back as `centerType`.
-   */
-  onCenterTypeChange: (type: CenterSquareType) => void;
-  /**
-   * Repeat-in-edit rework — the staged REPEATS section's data inputs.
-   * `sourceTemplate` is the board's resolved source repeating record
-   * (`undefined` while loading, `null` for a one-off board), same value the
-   * surface already resolves for the RecurringBadge.
-   */
-  sourceTemplate: RecurringBoardTemplate | null | undefined;
-  /** Active user id — owns a repeat record minted on Save. */
-  userId: string | undefined;
-  /** Library tasks — feeds the spawn-provenance note's supply resolution. */
-  taskMap: Record<string, Task>;
-  /** Task ids currently dealt onto the board (grid order). */
-  dealtTaskIds: string[];
-  /** `buildCounterFamilyMap` over the library (the surface computes it). */
-  counterFamilyByTaskId: Record<string, string>;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Extract YYYY-MM-DD from an ISO date string (safe for local-ISO). */
-function toYMD(isoString: string | null | undefined): string {
-  if (!isoString) return '';
-  return isoString.slice(0, 10);
-}
-
-/** Snap a YYYY-MM-DD string to local start-of-day ISO. */
-function snapStart(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return toLocalISO(new Date(y, m - 1, d, 0, 0, 0, 0));
-}
-
-/** Snap a YYYY-MM-DD string to local end-of-day ISO. */
-function snapEnd(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return toLocalISO(new Date(y, m - 1, d, 23, 59, 59, 999));
-}
-
-/**
- * Pure decision core for the Save patch's date fields — EXPORTED FOR TESTS.
- *
- * A metadata-only Save must PRESERVE the board's stored window (returns
- * `{}` — omit both fields): under Windowed Completion, `startDate` is the
- * completion window's lower bound, and rewriting it wipes the windowed
- * progress of every task whose events predate the new start. Dates are
- * returned ONLY for a deliberate re-window: the timeframe changed, or the
- * (unchanged-CUSTOM) dates were edited.
- *
- * Kept pure so the branch-selection logic — the exact booleans that decide
- * preserve-vs-rewindow — is directly unit-testable (review: this decision
- * had zero direct coverage as inline component code).
- */
-export function buildEditDatesPatch(args: {
-  boardTimeframe: Timeframe;
-  formTimeframe: Timeframe;
-  origStart: string;
-  origEnd: string;
-  customStartDate: string;
-  customEndDate: string;
-  computedBoundaries: { startDate: string; endDate: string } | null;
-  /** Injected "today" for determinism in tests; defaults to now. */
-  now?: Date;
-}): { startDate?: string; endDate?: string | null } {
-  const {
-    boardTimeframe, formTimeframe, origStart, origEnd,
-    customStartDate, customEndDate, computedBoundaries,
-  } = args;
-  const timeframeChanged = formTimeframe !== boardTimeframe;
-  const customDatesChanged =
-    formTimeframe === Timeframe.CUSTOM &&
-    (customStartDate !== origStart || customEndDate !== origEnd);
-
-  if (timeframeChanged) {
-    // A deliberate re-window: converting the board recomputes its dates.
-    if (formTimeframe === Timeframe.INDEFINITE) {
-      // Ongoing board — anchor startDate to today, clear the deadline.
-      const dayStart = args.now ? new Date(args.now) : new Date();
-      dayStart.setHours(0, 0, 0, 0);
-      return { startDate: toLocalISO(dayStart), endDate: null };
-    }
-    if (formTimeframe === Timeframe.CUSTOM) {
-      return { startDate: snapStart(customStartDate), endDate: snapEnd(customEndDate) };
-    }
-    if (computedBoundaries) {
-      return { startDate: computedBoundaries.startDate, endDate: computedBoundaries.endDate };
-    }
-    return {};
-  }
-  if (customDatesChanged) {
-    // Same CUSTOM timeframe, user picked new dates.
-    return { startDate: snapStart(customStartDate), endDate: snapEnd(customEndDate) };
-  }
-  // Window untouched — omit startDate/endDate so the stored window (and
-  // every in-window completion event) survives the save.
-  return {};
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
  * BoardEditPanel — left-rail edit chrome shown in place of the play stats rail
- * when the board is in edit mode (Phase 1).
- *
- * Carries all form state previously held by EditBoardSheet, with the same
- * validation as before. The metadata write itself (`updateBoardAndCascade`)
- * now happens INSIDE `onExtraCommit` (board-integrity PR-4, item 3,
- * docs/BOARD_INTEGRITY.md) — this component builds the patch and hands it
- * to `onExtraCommit`, which commits it atomically alongside the staged
- * square edits, rather than calling it here as a second, separate write.
- * Phase 1 scope:
- *   - Cancel (confirms if dirty) + "Editing" gold pill with red dot.
- *   - Board metadata fields via `BoardSetupForm` (name, timeframe, dates, center).
- *   - Immutable board-size chip (active boards cannot be resized).
- *   - Edit-tasks ⇄ Rearrange sub-mode toggle — switches hint text only; neither
- *     sub-mode is interactive until Phases 2–3.
- *   - Save row: live edit counter (count of changed metadata fields) + Save button.
- *   - Archive this board ghost button + inline confirm cards for Cancel/Archive.
+ * when the board is in edit mode. Board Edit redesign slice 2 slimmed this to
+ * the SQUARES EDITOR ONLY — name / dates / Repeats / Archive moved out to the
+ * title-row "…" menu's own sheets (`components/boardActions/`:
+ * `BoardDetailsSheet`, `BoardRepeatSheet`; Archive is a menu confirm dialog).
+ * This panel keeps only what's still staged behind ONE Save:
+ *   - Cancel (confirms if dirty) + "Editing squares" gold pill with red dot.
+ *   - Edit-tasks ⇄ Rearrange sub-mode toggle.
+ *   - The center-square Free⇄Task toggle (the grid tap; see `centerType`).
+ *   - Save row: live edit counter (square edits + a center change) + Save.
  *
  * @param board - The ACTIVE board to edit. Must be non-null.
- * @param weekStartDay - Drives timeframe boundary computation.
- * @param onCancel - Called on clean cancel or after Discard confirm.
- * @param onSaved - Called after a successful save (square edits + metadata, one transaction).
- * @param onArchived - Called after a successful `archiveBoard` write.
+ * @param onCancel - Called on clean cancel, after Discard confirm, or after
+ *   a save that finds the board sealed/deleted (D11).
+ * @param onSaved - Called after a successful save (square edits + any
+ *   center metadata patch, one transaction).
  */
 export function BoardEditPanel({
   board,
-  weekStartDay,
   subMode,
   onSubModeChange,
   squareEditCount,
   onExtraCommit,
   onCancel,
   onSaved,
-  onArchived,
   centerType,
-  onCenterTypeChange,
-  sourceTemplate,
-  userId,
-  taskMap,
-  dealtTaskIds,
-  counterFamilyByTaskId,
 }: BoardEditPanelProps): React.ReactElement {
-  // ── Controlled form state ────────────────────────────────────────────────
-
-  const [name, setName] = useState('');
-  const [timeframe, setTimeframe] = useState<Timeframe>(Timeframe.MONTHLY);
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
-  // centerType is now a controlled prop (Phase 2b — lifted to BoardPlaySurface).
-
-  // subMode is now a prop (lifted to BoardPlaySurface so the grid can gate taps).
-  const [confirm, setConfirm] = useState<'cancel' | 'archive' | null>(null);
+  const [confirm, setConfirm] = useState<'cancel' | null>(null);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  // D11 — the Save found the board sealed / deleted mid-session. Shown as a
+  // "Board closed" notice; its OK exits edit mode (iOS twin: BoardPlayView's
+  // "Board closed" alert). Held HERE, not after `onCancel()`, because exiting
+  // edit mode unmounts this panel and would drop any message with it.
+  const [boardClosed, setBoardClosed] = useState(false);
 
-  // CHOSEN guard: only available when the board already has a centerTaskId
-  // AND at least one placed BoardTask exists (same rule as EditBoardSheet).
-  const [hasCandidateTasks, setHasCandidateTasks] = useState(false);
-
-  // ── Staged REPEATS draft (repeat-in-edit rework) ─────────────────────────
-  // Both values are STAGED like every other edit field — nothing writes
-  // until Save (docs/BOARD_EDIT.md staged-draft contract); Cancel discards.
-  /** One-off variant: staged cadence ('off' = leave the board one-off). */
-  const [repeatCadence, setRepeatCadence] = useState<RepeatCadenceChoice>('off');
-  /** Repeating variant: staged Active value; null = toggle never touched. */
-  const [repeatActiveDraft, setRepeatActiveDraft] = useState<boolean | null>(null);
-
-  // Board size is immutable on active boards — read directly from the prop.
-  const size = board.boardSize as 3 | 4 | 5;
-
-  // ── Seed state from the board ─────────────────────────────────────────────
+  // ── Reset transient UI state on (re-)entry ───────────────────────────────
 
   useEffect(() => {
-    setName(board.name);
-    setTimeframe(board.timeframe as Timeframe);
-    setCustomStartDate(toYMD(board.startDate));
-    setCustomEndDate(toYMD(board.endDate));
-    // centerType is a controlled prop seeded by BoardPlaySurface on edit-mode
-    // entry — do NOT re-seed here, or a grid center-toggle would be overwritten.
     setValidationError(null);
     setSaving(false);
     setConfirm(null);
-    // Repeat-in-edit — reset the staged REPEATS draft on (re-)entry.
-    setRepeatCadence('off');
-    setRepeatActiveDraft(null);
-
-    void countBoardTasksForBoard(board.id).then((count) =>
-      setHasCandidateTasks(count > 0),
-    );
-  // Re-seed only when the board's id changes, not on every reactive update
-  // (mirrors EditBoardSheet's seeding strategy to avoid disrupting edits).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Re-seed only when the board's id changes, not on every reactive update.
   }, [board.id]);
-
-  // ── Computed boundaries for non-custom timeframes ────────────────────────
-
-  // Custom + Indefinite have no computed window (getTimeframeBoundaries throws).
-  const computedBoundaries =
-    timeframe !== Timeframe.CUSTOM && timeframe !== Timeframe.INDEFINITE
-      ? getTimeframeBoundaries(timeframe, new Date(), weekStartDay)
-      : null;
 
   // ── Edit counter + dirty detection ───────────────────────────────────────
 
-  // Count the number of metadata field-groups that differ from the stored board.
-  // Each group counts as 1 edit so the counter reflects meaningful changes,
-  // not raw keystrokes.
-  const origStart = toYMD(board.startDate);
-  const origEnd = toYMD(board.endDate);
-
-  let metaEditCount = 0;
-  if (name !== board.name) metaEditCount++;
-  if (timeframe !== (board.timeframe as Timeframe)) metaEditCount++;
-  // Dates: count as one group (start + end together reflect one timeframe window).
-  if (customStartDate !== origStart || customEndDate !== origEnd) metaEditCount++;
-  // Center: one group.
-  if (centerType !== (board.centerSquareType as CenterSquareType)) metaEditCount++;
-
-  // Repeat-in-edit — the staged REPEATS draft counts as one group iff it
-  // would actually mutate on Save (buildRepeatSavePlan is the single source
-  // of truth for that, shared with handleSave's two-phase commit below).
-  const repeatSavePlan = buildRepeatSavePlan({
-    spawnedFromTemplateId: board.spawnedFromTemplateId,
-    sourceTemplateIsActive: sourceTemplate?.isActive,
-    stagedCadence: repeatCadence,
-    stagedActive: repeatActiveDraft,
-    centerType,
-    hasUserId: userId != null,
-  });
-  if (repeatSavePlan) metaEditCount++;
-
-  // Combined edit count: metadata changes + square edits from BoardPlaySurface.
-  const editCount = metaEditCount + squareEditCount;
+  const centerChanged = centerType !== (board.centerSquareType as CenterSquareType);
+  const editCount = squareEditCount + (centerChanged ? 1 : 0);
 
   const dirty = editCount > 0;
-  const canSave = dirty && name.trim().length > 0 && !saving;
+  const canSave = dirty && !saving && !boardClosed;
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -341,98 +139,19 @@ export function BoardEditPanel({
   const handleSave = async () => {
     setValidationError(null);
 
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setValidationError('Board name is required.');
-      return;
-    }
-
-    if (timeframe === Timeframe.CUSTOM) {
-      if (!customStartDate || !customEndDate) {
-        setValidationError('Both start and end dates are required for a custom timeframe.');
-        return;
-      }
-      if (customEndDate < customStartDate) {
-        setValidationError('End date must be on or after the start date.');
-        return;
-      }
-    }
-
-    if (
-      centerType === CenterSquareType.CHOSEN &&
-      (board.centerTaskId == null || !hasCandidateTasks)
-    ) {
-      setValidationError(
-        'CHOSEN is unavailable — this board has no existing center task to restore.',
-      );
-      return;
-    }
-
-    const patch: UpdateActiveBoardPatch = { name: trimmedName, centerSquareType: centerType };
-
-    // Timeframe + dates — ONLY when the user actually changed the window.
-    //
-    // A metadata-only Save must PRESERVE the board's stored window: under
-    // Windowed Completion, `startDate` is the completion window's lower bound
-    // — rewriting it silently re-windows the board and wipes the progress of
-    // every task whose completion events predate the new start. The old code
-    // did exactly that on EVERY save (indefinite → re-anchored to today; core
-    // → recomputed from today's window), which reset all progress except
-    // tasks completed on the edit day.
-    patch.timeframe = timeframe;
-    const dates = buildEditDatesPatch({
-      boardTimeframe: board.timeframe as Timeframe,
-      formTimeframe: timeframe,
-      origStart,
-      origEnd,
-      customStartDate,
-      customEndDate,
-      computedBoundaries,
-    });
-    if (dates.startDate !== undefined) patch.startDate = dates.startDate;
-    if (dates.endDate !== undefined) patch.endDate = dates.endDate;
-
     setSaving(true);
     try {
-      // Commit EVERYTHING (square edits — replacements / task-field patches /
-      // reorders / removals — THEN the metadata patch) as one atomic Dexie
-      // transaction (board-integrity PR-4, item 3). onExtraCommit throws on
-      // any failure; the catch block surfaces it, and the whole transaction
-      // rolls back — no more partial-Save state.
-      await onExtraCommit(patch);
+      await onExtraCommit(centerChanged ? { centerSquareType: centerType } : undefined);
     } catch (err) {
+      if (err instanceof BoardNotEditableError) {
+        setSaving(false);
+        setBoardClosed(true);
+        return;
+      }
       console.error('BoardEditPanel: save failed', err);
       setValidationError('Save failed — please try again.');
       setSaving(false);
       return;
-    }
-
-    // Repeat-in-edit — TWO-PHASE SAVE, phase 2: the staged repeat mutation
-    // runs AFTER the board save commits (it isn't part of the atomic board
-    // transaction — `repeatBoardAsRecurring` / the active-toggle write are
-    // their own transactions). If this phase fails, the board changes from
-    // phase 1 STAY SAVED; the panel stays open with the error so the user
-    // can retry (retrying re-runs a now-clean phase 1 plus this phase).
-    if (repeatSavePlan) {
-      try {
-        if (repeatSavePlan.kind === 'startRepeating' && userId) {
-          // Re-read the board so the minted repeat record reflects the
-          // just-saved metadata (name) and back-stamps the fresh version.
-          const freshBoard = (await fetchBoard(board.id)) ?? board;
-          await repeatBoardAsRecurring(freshBoard, repeatSavePlan.cadence, userId, weekStartDay);
-        } else if (repeatSavePlan.kind === 'setActive' && sourceTemplate) {
-          await updateRecurringBoardTemplate(sourceTemplate.id, {
-            isActive: repeatSavePlan.isActive,
-          });
-        }
-      } catch (err) {
-        console.error('BoardEditPanel: repeat save failed', err);
-        setValidationError(
-          "Your board was saved, but the repeat setting couldn't be applied — please try again.",
-        );
-        setSaving(false);
-        return;
-      }
     }
 
     onSaved();
@@ -441,31 +160,31 @@ export function BoardEditPanel({
     // in React 18+ but would generate a console warning; omitting it is cleaner.
   };
 
-  const handleArchive = async () => {
-    setSaving(true);
-    try {
-      await archiveBoard(board.id);
-      onArchived();
-      // Same as handleSave: onArchived() navigates away, unmounting the panel.
-    } catch (err) {
-      console.error('BoardEditPanel: archive failed', err);
-      setValidationError('Archive failed — please try again.');
-      setConfirm(null);
-      setSaving(false);
-    }
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className={styles.panel}>
-      {/* Header: Cancel + "Editing" gold pill with red dot */}
+      {/* Portaled: the panel sits in the sticky rail, whose stacking context
+          would trap a fixed backdrop behind the grid (see BoardTitleActions). */}
+      {boardClosed &&
+        createPortal(
+          <BoardActionConfirmDialog
+            title="Board closed"
+            body={BOARD_CLOSED_MESSAGE}
+            cancelLabel={null}
+            confirmLabel="OK"
+            onCancel={onCancel}
+            onConfirm={onCancel}
+          />,
+          document.body,
+        )}
+      {/* Header: Cancel + "Editing squares" gold pill with red dot */}
       <div className={styles.editbar}>
         <button
           type="button"
           className={styles.cancelBtn}
           onClick={requestCancel}
-          disabled={saving}
+          disabled={saving || boardClosed}
           aria-label="Cancel editing"
           /* move focus into the panel on entry — the Edit button that had focus
              just unmounted, so without this keyboard focus drops to <body>. */
@@ -474,15 +193,8 @@ export function BoardEditPanel({
           ← Cancel
         </button>
         <span className={styles.editingPill} aria-label="Board is in edit mode">
-          Editing
+          Editing squares
         </span>
-      </div>
-
-      {/* Read-only board-size chip (immutable on active boards) */}
-      <div className={styles.sizeChip}>
-        <span className={styles.sizeLabel}>Board size</span>
-        <span className={styles.sizeValue}>{board.boardSize}×{board.boardSize}</span>
-        <span className={styles.sizeNote}>(immutable on active boards)</span>
       </div>
 
       {/* Validation error banner */}
@@ -492,49 +204,7 @@ export function BoardEditPanel({
         </p>
       )}
 
-      {/* Metadata fields: name, timeframe, custom dates, center type.
-          BoardSetupForm in edit-active mode hides the size segmented (sizeBlock
-          returns null) — the read-only sizeChip above replaces it. */}
-      <BoardSetupForm
-        mode="edit-active"
-        name={name}
-        onNameChange={setName}
-        size={size}
-        onSizeChange={() => { /* no-op — size is immutable on active boards */ }}
-        timeframe={timeframe}
-        onTimeframeChange={setTimeframe}
-        customStartDate={customStartDate}
-        onCustomStartDateChange={setCustomStartDate}
-        customEndDate={customEndDate}
-        onCustomEndDateChange={setCustomEndDate}
-        centerType={centerType}
-        onCenterTypeChange={onCenterTypeChange}
-        isRecurring={false}
-        isCore={false}
-        weekStartDay={weekStartDay}
-        chosenCenterDisabled={board.centerTaskId == null || !hasCandidateTasks}
-      />
-
-      {/* Repeats — staged repeat controls (repeat-in-edit rework; moved off
-          the play surface). One-off: cadence segmented; repeating board:
-          Repeating/Paused toggle + spawn-provenance note. */}
-      <BoardEditRepeatSection
-        board={board}
-        sourceTemplate={sourceTemplate}
-        userId={userId}
-        centerType={centerType}
-        stagedCadence={repeatCadence}
-        onStagedCadenceChange={setRepeatCadence}
-        stagedActive={repeatActiveDraft ?? sourceTemplate?.isActive ?? true}
-        onStagedActiveChange={setRepeatActiveDraft}
-        taskMap={taskMap}
-        dealtTaskIds={dealtTaskIds}
-        counterFamilyByTaskId={counterFamilyByTaskId}
-      />
-
-      {/* Squares sub-mode: Edit tasks ⇄ Rearrange.
-          Phase 2: "Edit tasks" is interactive (tap → menu → Replace/Edit).
-          "Rearrange" is still display-only until Phase 3. */}
+      {/* Squares sub-mode: Edit tasks ⇄ Rearrange. */}
       <div className={styles.squaresSection}>
         <RisoSectionLabel>Squares</RisoSectionLabel>
         <div className={styles.modeSeg}>
@@ -555,7 +225,7 @@ export function BoardEditPanel({
         </p>
       </div>
 
-      {/* Inline confirm cards or Save row + Archive button */}
+      {/* Inline confirm card or Save row */}
       {confirm === 'cancel' ? (
         <div className={styles.confirmCard} role="group" aria-label="Discard changes?">
           <div className={styles.confirmTitle}>Discard changes?</div>
@@ -571,63 +241,22 @@ export function BoardEditPanel({
             </RisoButton>
           </div>
         </div>
-      ) : confirm === 'archive' ? (
-        <div
-          className={styles.confirmCard}
-          role="group"
-          aria-label="Archive this board?"
-        >
-          <div className={styles.confirmTitle}>Archive this board?</div>
-          <p className={styles.confirmBody}>
-            It moves to Archived. Your streak and history are kept — restore it anytime.
-          </p>
-          <div className={styles.confirmBtns}>
-            <RisoButton
-              size="small"
-              autoFocus
-              onClick={() => setConfirm(null)}
-              disabled={saving}
-            >
-              Keep editing
-            </RisoButton>
-            <RisoButton
-              kind="primary"
-              size="small"
-              onClick={() => void handleArchive()}
-              disabled={saving}
-            >
-              Archive
-            </RisoButton>
-          </div>
-        </div>
       ) : (
-        <>
-          {/* Save row: N edits counter + Save button */}
-          <div className={styles.saveRow}>
-            <div className={styles.editCounter} aria-live="polite" aria-label={`${editCount} edit${editCount === 1 ? '' : 's'}`}>
-              <div className={styles.editCount}>{editCount}</div>
-              <div className={styles.editLabel}>edit{editCount === 1 ? '' : 's'}</div>
-            </div>
-            <RisoButton
-              kind="primary"
-              fullWidth
-              disabled={!canSave}
-              onClick={() => void handleSave()}
-            >
-              {saving ? 'Saving…' : 'Save changes'}
-            </RisoButton>
+        /* Save row: N edits counter + Save button */
+        <div className={styles.saveRow}>
+          <div className={styles.editCounter} aria-live="polite" aria-label={`${editCount} edit${editCount === 1 ? '' : 's'}`}>
+            <div className={styles.editCount}>{editCount}</div>
+            <div className={styles.editLabel}>edit{editCount === 1 ? '' : 's'}</div>
           </div>
-
-          {/* Archive ghost button */}
-          <button
-            type="button"
-            className={styles.archiveBtn}
-            onClick={() => setConfirm('archive')}
-            disabled={saving}
+          <RisoButton
+            kind="primary"
+            fullWidth
+            disabled={!canSave}
+            onClick={() => void handleSave()}
           >
-            Archive this board
-          </button>
-        </>
+            {saving ? 'Saving…' : 'Save changes'}
+          </RisoButton>
+        </div>
       )}
     </div>
   );

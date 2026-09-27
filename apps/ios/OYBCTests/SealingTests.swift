@@ -734,4 +734,29 @@ final class SealingTests: XCTestCase {
         XCTAssertEqual(board.completedTasks, 0, "re-derive on the clean set: the surviving winner (t2) is incomplete")
         XCTAssertEqual(changed, ["b1"])
     }
+
+    // MARK: - Board Edit slice 2 (D3/D11) — repeat on a sealed board
+
+    /// `repeatBoardAsTemplate` back-stamps the board row, so a sealed board
+    /// (a frozen record) must throw before anything — template or stamp — is
+    /// written. Same for a deleted board.
+    func test_repeatBoardAsTemplate_sealedOrDeletedBoard_throws_writesNothing() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        let sealedBoard = makeBoard(id: "b-sealed", sealedAt: pastBackstop, sealedCompletedCells: [])
+        try db.saveBoard(sealedBoard)
+        var deletedBoard = makeBoard(id: "b-deleted")
+        deletedBoard.isDeleted = true
+        try db.saveBoard(deletedBoard)
+
+        for board in [sealedBoard, deletedBoard] {
+            XCTAssertThrowsError(try db.repeatBoardAsTemplate(
+                board: board, cadence: .daily, userId: userId, weekStartDay: "monday",
+                now: AppDatabase.currentTimestamp()
+            )) { XCTAssertEqual($0 as? BoardEditError, .boardNotEditable) }
+            XCTAssertNil(try db.fetchBoard(id: board.id)?.spawnedFromTemplateId)
+        }
+        let templates = try db.dbQueue.read { try RecurringBoardTemplate.fetchAll($0) }
+        XCTAssertTrue(templates.isEmpty, "no repeat record may be minted for a closed board")
+    }
 }

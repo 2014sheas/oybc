@@ -6,6 +6,16 @@ arrange step**, ported from design handoff `OYBC Edit handoff.zip`
 built in 4 phases. Companion to [`docs/RISO_WEB.md`](RISO_WEB.md) /
 [`docs/RISO_UI_CHECKLIST.md`](RISO_UI_CHECKLIST.md) for the design system.
 
+> **Partially superseded (2026-09) by the Board Edit redesign**
+> ([`docs/BOARD_EDIT_REDESIGN.md`](BOARD_EDIT_REDESIGN.md)). Slice 2 of that
+> redesign moves the board-metadata form (name / timeframe / dates / center),
+> the staged REPEATS section, and "Archive this board" out of this in-place
+> edit panel into a title-row "…" menu (Board details sheet / Repeat sheet /
+> Archive & Delete confirms). This document still describes the panel as it
+> shipped pre-redesign; sections below that slice 2 supersedes are marked
+> inline — the squares editor itself (Edit tasks ⇄ Rearrange, tap menu, Save
+> bar) is unaffected and stays canonical here. Kept as history, not rewritten.
+
 ## What it is
 
 Replace the cramped "do-everything" **`EditBoardSheet` modal** with a deliberate
@@ -23,6 +33,13 @@ timeframe segmented, the **Edit-tasks ⇄ Rearrange** sub-mode toggle, a one-lin
 hint, the editable grid, **Save changes** + a live **edit counter**, and an
 **Archive this board** ghost action. Staged draft; Save commits; Cancel confirms
 if dirty; Archive confirms.
+
+> *(superseded by slice 2)* The name input, timeframe segmented, and
+> "Archive this board" ghost action described above moved out of this chrome
+> into the title-row "…" menu (Board details sheet / Repeat sheet / Archive
+> confirm) — see `docs/BOARD_EDIT_REDESIGN.md` §Slice 2. The pill copy is now
+> "Editing squares". The rest of this chrome (Cancel, Edit-tasks ⇄ Rearrange
+> toggle, hint, grid, Save + edit counter) is unchanged.
 
 The same drag-to-insert + tap-to-swap interaction also replaces the create
 wizard's read-only Preview with an **arrangeable** board (Preview ⇄ Rearrange +
@@ -107,6 +124,13 @@ reorder op for changed positions. Then exit + "Board saved" toast. **Cancel**
 discards the whole draft (confirm if dirty). The edit counter + `dirty`/`canSave`
 already in Phase 1 extend to these staged square edits.
 
+> *(superseded by slice 2)* The metadata patch is no longer part of this
+> commit order — it now saves independently from the separate Board details
+> sheet via `saveBoardDetails`, and only when the sheet itself is open (the
+> squares draft and the details draft never coexist). This panel's Save
+> still commits square-cell changes plus, when changed, a center-only
+> `{ centerSquareType }` patch in the same transaction.
+
 ## Phases
 
 | Phase | Scope | Key new code |
@@ -123,6 +147,13 @@ already in Phase 1 extend to these staged square edits.
 embedded** in the core-window pager) toggles **in-place edit mode** instead of
 opening the modal. Edit mode is self-contained in the play surface (it also lives
 inside the pager, so don't assume the standalone page's header/back-link).
+
+> *(corrected 2026-09)* "Hidden when embedded" no longer holds — since the
+> core-board pager rework (#508) `Edit squares` renders identically whether
+> embedded in `CoreBoardWindowPage` / `CoreBoardWindowView` or on the
+> standalone board screen; the gate is `status == active && sealedAt == nil
+> && !editMode` only (see `CLAUDE.md` and `docs/BOARD_EDIT_REDESIGN.md`
+> D2). See also the Risks section below.
 - **Web**: in edit mode the play surface becomes the two-column `.play` layout —
   left rail = the edit panel, right = the board grid. ≤880px the rail stacks above.
 - **iOS**: vertical scroll — top bar (Cancel + "Editing board") → name → timeframe
@@ -138,12 +169,27 @@ hint, but neither sub-mode is interactive yet) · one-line hint · the board gri
 AND name non-empty) · **Archive this board** (ghost) · inline confirm cards for
 Cancel-if-dirty and Archive.
 
+> *(superseded by slice 2)* Name input, timeframe segmented, custom dates,
+> center editing, the size chip, and "Archive this board" all moved to the
+> title-row "…" menu's Board details sheet (name/dates/center/size chip) and
+> Archive confirm. The center selector stays in Board details only through
+> slice 2; slice 3 removes it once CHOSEN retires. This panel keeps only the
+> Edit-tasks ⇄ Rearrange toggle, hint, grid, Save + edit counter, and
+> Cancel-if-dirty confirm.
+
 **Carry over from `EditBoardSheet` (then retire it):** name + timeframe + custom
 dates + center editing with the **same validation** (name required; custom needs
 both dates, end ≥ start; CHOSEN center only if `centerTaskId != null` &&
 candidates exist; INDEFINITE clears endDate) and the **same save path**
 (`updateBoardAndCascade` with `UpdateActiveBoardPatch`). Reuse `BoardSetupForm` /
 `BoardSetupFormView` for these fields rather than re-implementing.
+
+> *(superseded by slice 2)* These fields now live in the separate Board
+> details sheet (`BoardDetailsSheetView` / `BoardDetailsSheet.tsx`), saved
+> independently via `saveBoardDetails`/`buildBoardDetailsPatch`, not in this
+> panel. The validation rules are unchanged; only their home moved. Slice 2
+> also drops the timeframe segmented entirely — the timeframe never
+> switches after creation (`docs/BOARD_EDIT_REDESIGN.md` D5).
 
 **Edit counter (this phase).** Counts staged metadata changes (name, timeframe,
 dates, center). `dirty = any staged change`; `canSave = dirty && name.trim()`.
@@ -153,6 +199,16 @@ Square edits (phases 2–3) will add to the same counter.
 show a green **"Board saved"** toast (~2.4s). **Cancel** → if dirty, inline
 "Discard changes?" (Keep editing / Discard); else exit. **Archive** → inline
 "Archive this board?" (Keep editing / Archive) → `archiveBoard` → leave the board.
+
+> *(superseded by slice 2)* This panel's Save no longer commits a metadata
+> patch at all (only squares + an optional center-only patch); the Board
+> details sheet has its own Save → `saveBoardDetails` → "Board saved" toast.
+> Archive moved to the "…" menu's Archive confirm (`.alert`-shaped, Cancel /
+> Archive) and is no longer reachable from this panel. Also folded in here:
+> a board sealed or deleted mid-session now throws inside the save
+> transaction (`assertBoardEditable`) instead of silently no-op'ing —
+> the whole save rolls back and the UI shows "This board has been closed,
+> so your changes weren't saved." (`docs/BOARD_EDIT_REDESIGN.md` D11).
 
 **Deferred to later phases (must NOT regress, but not built in Phase 1):** the
 grid is display-only — tap-to-edit (Phase 2) and drag-rearrange (Phase 3) are
@@ -266,6 +322,12 @@ feature will retire it.
 | Library picker (Phase 2) | `components/CellSwapModal.tsx` | `Views/BoardsTab/CellSwapSheet.swift` |
 | Reorder op (Phase 3) | `db/operations/boardTasks.ts` | `AppDatabase.swift` |
 | Create arrange (Phase 4) | `components/wizard/BoardWizardPreviewStep.tsx` | `Views/CreateTab/Components/BoardWizardPreviewStepView.swift` |
+| Board menu (slice 2) | `components/boardActions/BoardActionsMenu.tsx` + `BoardTitleActions.tsx` | `Views/BoardsTab/BoardActions/BoardActionsMenuButton.swift` |
+| Board details sheet (slice 2) | `components/boardActions/BoardDetailsSheet.tsx` | `Views/BoardsTab/BoardActions/BoardDetailsSheetView.swift` |
+| Repeat sheet (slice 2) | `components/boardActions/BoardRepeatSheet.tsx` | `Views/BoardsTab/BoardActions/BoardRepeatSheetView.swift` |
+| Core defaults host (slice 2) | `components/boardActions/CoreDefaultsSheetHost.tsx` | `Views/ProfileTab/Components/CoreDefaultsSheetHost.swift` |
+| Board details save op (slice 2) | `saveBoardDetails` in `db/operations/boards.ts` | `saveBoardDetails(boardId:patch:)` in `AppDatabase+Boards.swift` |
+| Editable guard (slice 2) | `assertBoardEditable` in `db/operations/boards.ts` (throws `BoardNotEditableError`) | `assertBoardEditable(db:boardId:)` in `AppDatabase+Boards.swift` (throws `BoardEditError.boardNotEditable`) |
 
 ## Risks
 - **#1 — cells↔BoardTask mapping** (Phase 3): a rearrange must translate to
@@ -274,5 +336,9 @@ feature will retire it.
   arrange (Phase 4) is far safer (in-memory `[Task?]`, no DB until save).
 - **Pager embedding** (web): edit chrome renders inside `CoreBoardWindowPage` too
   — gate the Edit entry to non-embedded (mirrors iOS `!embedded`).
+  *(Corrected 2026-09: this never shipped that way, and shouldn't. Since the
+  core-board pager rework (#508) `Edit squares` shows in the pager exactly
+  like the standalone page — the gate is the status/sealed/editMode check
+  above, not an embedded check, on both platforms.)*
 - **iOS**: `_Concurrency.Task` clash; `xcodegen generate` after new files;
   `BoardPlayView` isn't snapshot-coverable (snapshot the new leaf chrome views).

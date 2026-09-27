@@ -24,9 +24,6 @@ final class BoardEditCenterToggleSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    private static let fixedStart = Date(timeIntervalSince1970: 1_743_508_800)  // 2025-04-01 noon UTC
-    private static let fixedEnd   = Date(timeIntervalSince1970: 1_746_100_800)  // 2025-05-01 noon UTC
-
     // MARK: - FREE center (edit-tasks sub-mode, onCenterTap active)
 
     /// Renders a 3×3 board whose center is `.free`.
@@ -156,15 +153,7 @@ final class BoardEditCenterToggleSnapshotTests: XCTestCase {
             board: board,
             boardTasks: boardTasks,
             taskMap: taskMap,
-            weekStartDay: "monday",
-            originalCustomStartDate: Self.fixedStart,
-            originalCustomEndDate: Self.fixedEnd,
-            name: .constant("Center Toggle Test"),
-            timeframe: .constant(.monthly),
-            customStartDate: .constant(Self.fixedStart),
-            customEndDate: .constant(Self.fixedEnd),
             centerType: .constant(centerType),
-            hasCandidateTasks: false,
             subMode: .constant(.editTasks),
             squareEditCount: 0,
             // Supply non-nil callbacks so the grid renders interactive affordances.
@@ -172,8 +161,7 @@ final class BoardEditCenterToggleSnapshotTests: XCTestCase {
             onCenterTap: { },
             isSaving: false,
             onSave: {},
-            onCancelConfirmed: {},
-            onArchiveConfirmed: {}
+            onCancelConfirmed: {}
         )
     }
 }

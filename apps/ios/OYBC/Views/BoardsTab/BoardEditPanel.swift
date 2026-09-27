@@ -35,73 +35,48 @@ enum BoardEditSubMode: Hashable {
     }
 }
 
-// MARK: - BoardEditRepeatInfo
-
-/// Repeat-in-edit — display data for the REPEATS section's repeating-board
-/// variant: the board's RESOLVED source repeating record. Plain value type
-/// (built by `BoardPlayView` from `viewModel.editSourceTemplate`) so the
-/// panel stays a DB-free, snapshot-testable leaf.
-struct BoardEditRepeatInfo: Equatable {
-    /// e.g. "weekly" — `formatCadenceAdverb(template.timeframe)`.
-    let cadenceAdverb: String
-    let templateName: String
-    /// The record's live `isActive` — the staged toggle's dirty baseline.
-    let originalIsActive: Bool
-}
-
 // MARK: - BoardEditPanel
 
-/// Leaf in-place edit chrome for an ACTIVE board (Phase 1 of the board-edit flow).
+/// Leaf in-place SQUARES editor for an ACTIVE board (Board Edit redesign
+/// slice 2, T3 — docs/BOARD_EDIT_REDESIGN.md). Takes all state as plain
+/// props and bindings — no database access — so it is directly
+/// snapshot-testable.
 ///
-/// Replaces the now-retired `EditBoardSheet` modal. Takes all state as plain props
-/// and bindings — no database access — so it is directly snapshot-testable.
+/// Slice 2 retired everything else this panel used to own: the board-size
+/// chip, `BoardSetupFormView` (name/timeframe/dates), the staged REPEATS
+/// section, and the Archive ghost button all moved to the "…" menu's own
+/// sheets/alerts (`BoardDetailsSheetView`, `BoardRepeatSheetView`,
+/// `BoardActionsPresenter`'s Archive confirm) — see
+/// `Views/BoardsTab/BoardActions/`. This panel is now ONLY the squares
+/// editor: the FREE⇄task center toggle (the one field slice 2 kept here,
+/// per D5 — see `BoardDetailsDraft`'s CHOSEN-exit note) plus the
+/// Edit-tasks ⇄ Rearrange grid.
 ///
 /// Layout (vertical scroll):
-///   top bar  (Cancel · "Editing board" gold pill)
-///   → immutable-size chip
-///   → `BoardSetupFormView` (name · timeframe · custom dates · center)
+///   top bar  (Cancel · "Editing squares" gold pill)
 ///   → SQUARES section header
 ///   → Edit-tasks ⇄ Rearrange sub-mode toggle (hint only in Phase 1)
 ///   → display-only board grid
-///   → Archive ghost button
 ///   sticky bottom: edit counter · "Save changes" pill
 ///
-/// Confirm alerts (inline / system): Cancel-if-dirty ("Discard changes?") and
-/// Archive ("Archive this board?"). Both handled here; outcome callbacks route
-/// to the parent (`BoardPlayView`), which owns all database writes.
+/// Confirm alert (inline / system): Cancel-if-dirty ("Discard changes?").
+/// Handled here; the outcome callback routes to the parent (`BoardPlayView`),
+/// which owns the database write.
 struct BoardEditPanel: View {
 
     // MARK: - Props
 
-    /// Original board record — used for display (size chip) and dirty comparison.
+    /// Original board record — used for display (grid size) and the
+    /// center-toggle dirty comparison.
     let board: Board
 
     /// Current placement data for the display-only grid.
     let boardTasks: [BoardTask]
     let taskMap: [String: Task]
 
-    /// Week-start day forwarded to `BoardSetupFormView`'s date-note computation.
-    let weekStartDay: String
-
-    /// Original parsed start date (seeded from `board.startDate` by `BoardPlayView`).
-    /// Used in the dirty check when `timeframe == .custom` or `.indefinite`.
-    let originalCustomStartDate: Date
-
-    /// Original parsed end date (seeded from `board.endDate` by `BoardPlayView`).
-    /// Used in the dirty check when `timeframe == .custom`.
-    let originalCustomEndDate: Date
-
     // MARK: - Draft bindings (owned by BoardPlayView)
 
-    @Binding var name: String
-    @Binding var timeframe: Timeframe
-    @Binding var customStartDate: Date
-    @Binding var customEndDate: Date
     @Binding var centerType: CenterSquareType
-
-    /// True when the board already has a center-task placement (so CHOSEN is
-    /// available). Loaded asynchronously by `BoardPlayView.seedEditDraft`.
-    var hasCandidateTasks: Bool
 
     /// Which sub-mode the segmented toggle shows. Flips the hint text only
     /// (Rearrange is inert until Phase 3).
@@ -151,27 +126,6 @@ struct BoardEditPanel: View {
     /// behavior — so existing previews/snapshot call sites are unaffected.
     var windowedIsCompleted: (Task) -> Bool = { $0.isCompleted }
 
-    // MARK: - Repeats (repeat-in-edit rework)
-
-    /// Non-nil for a board with a RESOLVED source repeating record → the
-    /// "↻ Repeats … · from …" variant with the staged Repeating/Paused
-    /// toggle. nil for a one-off board (cadence segmented instead) or an
-    /// unresolved (soft-deleted) record (section hidden entirely — same
-    /// rule as web's `BoardEditRepeatSection`).
-    var repeatInfo: BoardEditRepeatInfo? = nil
-
-    /// Staged Active value for the repeating-board variant. Plain
-    /// `Binding` var (not `@Binding`) so it can default to `.constant` for
-    /// existing preview/snapshot call sites.
-    var repeatActive: Binding<Bool> = .constant(true)
-
-    /// Staged cadence for the one-off variant (`nil` = Off, the default).
-    var repeatCadence: Binding<Timeframe?> = .constant(nil)
-
-    /// Read-only spawn-provenance note (computed off-main by the VM only
-    /// while the panel is open); nil hides the line.
-    var spawnNoteText: String? = nil
-
     // MARK: - Saving indicator
 
     /// True while the parent is writing to GRDB. Disables the Save pill.
@@ -186,78 +140,30 @@ struct BoardEditPanel: View {
     /// Parent exits edit mode.
     var onCancelConfirmed: () -> Void
 
-    /// Called when the user confirms Archive. Parent archives the board and
-    /// navigates away.
-    var onArchiveConfirmed: () -> Void
-
     // MARK: - Local confirm-dialog state
 
     @State private var showCancelConfirm = false
-    @State private var showArchiveConfirm = false
 
     // MARK: - Derived
 
-    /// Repeat-in-edit — whether the one-off REPEATS variant is shown: no
-    /// source record on the board AND a non-CHOSEN staged center (a CHOSEN
-    /// center can never validate a spawn pool — `validateSpawnPool` rejects
-    /// it as `.unsupportedCenter` — so the section is hidden for it).
-    private var showsOneOffRepeat: Bool {
-        board.spawnedFromTemplateId == nil && centerType != .chosen
-    }
+    /// True when the center toggle differs from the board's stored value.
+    private var centerChanged: Bool { centerType != board.centerSquareType }
 
-    /// Repeat-in-edit — the staged REPEATS draft's contribution to the edit
-    /// counter: 1 iff Save would actually run a repeat mutation.
-    private var repeatEditCount: Int {
-        if let info = repeatInfo {
-            return repeatActive.wrappedValue != info.originalIsActive ? 1 : 0
-        }
-        if showsOneOffRepeat, repeatCadence.wrappedValue != nil { return 1 }
-        return 0
-    }
-
-    /// True if any draft field has been changed from the original board values,
-    /// or if any square has a staged replacement or task-field edit.
+    /// True if any square has a staged replacement / task-field edit /
+    /// position move, or the center toggle changed.
     private var isDirty: Bool {
-        if squareEditCount > 0 { return true }
-        if repeatEditCount > 0 { return true }
-        if name.trimmingCharacters(in: .whitespaces) != board.name { return true }
-        if timeframe != board.timeframe { return true }
-        if centerType != board.centerSquareType { return true }
-        // Custom-date changes are only meaningful when the timeframe supports user-chosen dates.
-        if timeframe == .custom || timeframe == .indefinite {
-            if abs(customStartDate.timeIntervalSince(originalCustomStartDate)) > 60 { return true }
-        }
-        if timeframe == .custom {
-            if abs(customEndDate.timeIntervalSince(originalCustomEndDate)) > 60 { return true }
-        }
-        return false
+        squareEditCount > 0 || centerChanged
     }
 
-    /// Count of all staged changes: metadata (name / timeframe / center) +
-    /// squares (replacements + task-field overrides from `squareEditCount`).
+    /// Count of all staged changes: squares (`squareEditCount`) + the
+    /// center toggle (0 or 1).
     private var editCount: Int {
-        var n = squareEditCount
-        if name.trimmingCharacters(in: .whitespaces) != board.name { n += 1 }
-        let tfChanged = timeframe != board.timeframe
-        let dateChanged: Bool = {
-            guard timeframe == .custom || timeframe == .indefinite else { return false }
-            if abs(customStartDate.timeIntervalSince(originalCustomStartDate)) > 60 { return true }
-            if timeframe == .custom,
-               abs(customEndDate.timeIntervalSince(originalCustomEndDate)) > 60 { return true }
-            return false
-        }()
-        if tfChanged || dateChanged { n += 1 }
-        let centerChanged = centerType != board.centerSquareType
-        if centerChanged { n += 1 }
-        n += repeatEditCount
-        return n
+        squareEditCount + (centerChanged ? 1 : 0)
     }
 
-    /// True when a save is permitted (dirty + name non-empty + not currently saving).
+    /// True when a save is permitted (dirty + not currently saving).
     private var canSave: Bool {
-        isDirty
-            && !name.trimmingCharacters(in: .whitespaces).isEmpty
-            && !isSaving
+        isDirty && !isSaving
     }
 
     // MARK: - Body
@@ -273,12 +179,6 @@ struct BoardEditPanel: View {
         } message: {
             Text("Your unsaved changes will be lost.")
         }
-        .alert("Archive this board?", isPresented: $showArchiveConfirm) {
-            Button("Keep editing", role: .cancel) {}
-            Button("Archive", role: .destructive) { onArchiveConfirmed() }
-        } message: {
-            Text("The board will be archived. Completed tasks and your record stay intact.")
-        }
     }
 
     // MARK: - Scroll content
@@ -287,19 +187,7 @@ struct BoardEditPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 topBar
-                sizeChip
-                BoardSetupFormView(
-                    name: $name,
-                    timeframe: $timeframe,
-                    customStartDate: $customStartDate,
-                    customEndDate: $customEndDate,
-                    centerType: $centerType,
-                    weekStartDay: weekStartDay,
-                    chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks
-                )
-                repeatsSection
                 squaresSection
-                archiveButton
                 // Bottom clearance for the sticky save bar so the last row
                 // is always visible above the bar when the scroll view bottoms out.
                 Spacer().frame(height: 76)
@@ -330,7 +218,7 @@ struct BoardEditPanel: View {
         }
     }
 
-    /// Gold "Editing board" pill with a red recording dot.
+    /// Gold "Editing squares" pill with a red recording dot.
     ///
     /// Content on gold uses `risoInkStatic` so it reads correctly in dark mode
     /// (plain `risoInk` inverts to cream on the always-bright gold fill).
@@ -339,7 +227,7 @@ struct BoardEditPanel: View {
             Circle()
                 .fill(Color.risoRed)
                 .frame(width: 7, height: 7)
-            Text("Editing board")
+            Text("Editing squares")
                 .font(.risoBody(13, .bold))
                 .foregroundStyle(Color.risoInkStatic)
         }
@@ -352,92 +240,6 @@ struct BoardEditPanel: View {
                 lineWidth: Riso.Keyline.dense
             )
         )
-    }
-
-    // MARK: - Immutable size chip
-
-    /// Read-only board-size chip — identical to the one in the retired `EditBoardSheet`.
-    private var sizeChip: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("BOARD SIZE")
-                .risoSectionLabel()
-            HStack(spacing: 10) {
-                Text("\(board.boardSize)×\(board.boardSize)")
-                    .font(.risoHead(16, .extraBold))
-                    .foregroundStyle(Color.risoInk)
-                Spacer()
-                Text("Immutable")
-                    .font(.risoBody(11, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.risoPaper))
-                    .overlay(Capsule().strokeBorder(Color.risoMuted, lineWidth: Riso.Keyline.dense))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .risoCard(fill: .risoPaper2)
-            Text("Board size cannot be changed on an active board.")
-                .font(.risoBody(11, .semibold))
-                .foregroundStyle(Color.risoMuted)
-        }
-    }
-
-    // MARK: - Repeats section (repeat-in-edit rework)
-
-    /// Staged cadence options for the one-off variant — Off (default) plus
-    /// the four cadences from the retired play-surface "Repeat this
-    /// board…" picker (labels unchanged).
-    private static let repeatCadenceOptions: [(value: Timeframe?, label: String)] = [
-        (nil, "Off"),
-        (.daily, "Daily"),
-        (.weekly, "Weekly"),
-        (.monthly, "Monthly"),
-        (.yearly, "Yearly"),
-    ]
-
-    /// The staged REPEATS section (replaces the retired play-surface
-    /// `RisoRecurringManageRow` / `RisoRepeatBoardCTA`). Both variants are
-    /// STAGED like every other edit field — nothing writes until Save;
-    /// Cancel discards. A CHOSEN-center one-off board (and a repeating
-    /// board whose source record didn't resolve) hides the section.
-    @ViewBuilder
-    private var repeatsSection: some View {
-        if let info = repeatInfo {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("REPEATS")
-                    .risoSectionLabel()
-                Text("↻ Repeats \(info.cadenceAdverb) · from \"\(info.templateName)\"")
-                    .font(.risoBody(12.5, .semibold))
-                    .foregroundStyle(Color.risoInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                RisoSegmented(
-                    options: [(true, "Repeating"), (false, "Paused")],
-                    selection: repeatActive
-                )
-                if let spawnNoteText {
-                    Text(spawnNoteText)
-                        .font(.risoBody(11.5, .semibold))
-                        .foregroundStyle(Color.risoMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        } else if showsOneOffRepeat {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("REPEATS")
-                    .risoSectionLabel()
-                RisoSegmented(
-                    options: Self.repeatCadenceOptions,
-                    selection: repeatCadence
-                )
-                if repeatCadence.wrappedValue != nil {
-                    Text("This becomes a repeating board when you save.")
-                        .font(.risoBody(12, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
     }
 
     // MARK: - Squares section
@@ -542,30 +344,6 @@ struct BoardEditPanel: View {
         }
     }
 
-    // MARK: - Archive ghost button
-
-    private var archiveButton: some View {
-        Button {
-            showArchiveConfirm = true
-        } label: {
-            Text("Archive this board")
-                .font(.risoBody(14, .semibold))
-                .foregroundStyle(Color.risoMuted)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .strokeBorder(
-                            Color.risoMuted,
-                            style: StrokeStyle(
-                                lineWidth: Riso.Keyline.container,
-                                dash: [6, 4]
-                            )
-                        )
-                )
-        }
-    }
-
     // MARK: - Sticky save bar
 
     private var saveBar: some View {
@@ -601,10 +379,6 @@ struct BoardEditPanel: View {
 
 #Preview {
     struct PreviewWrapper: View {
-        @State var name = "Spring Goals"
-        @State var timeframe = Timeframe.monthly
-        @State var startDate = Date()
-        @State var endDate = Date().addingTimeInterval(30 * 24 * 3600)
         @State var centerType = CenterSquareType.free
         @State var subMode = BoardEditSubMode.editTasks
 
@@ -617,20 +391,11 @@ struct BoardEditPanel: View {
                 board: board,
                 boardTasks: [],
                 taskMap: [:],
-                weekStartDay: "monday",
-                originalCustomStartDate: startDate,
-                originalCustomEndDate: endDate,
-                name: $name,
-                timeframe: $timeframe,
-                customStartDate: $startDate,
-                customEndDate: $endDate,
                 centerType: $centerType,
-                hasCandidateTasks: false,
                 subMode: $subMode,
                 isSaving: false,
                 onSave: {},
-                onCancelConfirmed: {},
-                onArchiveConfirmed: {}
+                onCancelConfirmed: {}
                 // rearrangeCells + onReorder default to nil (Phase 3 not active in preview)
             )
         }

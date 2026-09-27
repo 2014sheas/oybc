@@ -3,37 +3,30 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for the Phase 1 in-place board edit chrome (`BoardEditPanel`).
+/// Snapshot coverage for the squares-only `BoardEditPanel` (Board Edit
+/// redesign slice 2, T3 — docs/BOARD_EDIT_REDESIGN.md). Slice 2 retired the
+/// size chip, `BoardSetupFormView`, the staged REPEATS section, and Archive
+/// from this panel — they moved to the "…" menu's own sheets/alerts (see
+/// `BoardActionsSnapshotTests`, which also carries the two REPEATS variants
+/// that used to be recorded here as `testPanelRepeat*`).
 ///
 /// Strategy: render the leaf view directly with constant bindings so no
 /// `AppDatabase.shared` access or `@EnvironmentObject` wiring is needed.
 /// Four scenarios are covered:
-///   - Clean/light  — all bindings match the board's stored values (Save disabled)
+///   - Clean/light  — the center-toggle binding matches the board's stored value (Save disabled)
 ///   - Clean/dark   — same in dark mode
-///   - Dirty/light  — `name` differs from board.name (edit-count and Save pill active)
+///   - Dirty/light  — `centerType` differs from `board.centerSquareType` (edit-count and Save pill active)
 ///   - Saving/light — `isSaving: true` (pill shows "Saving…", Save still disabled)
-///
-/// Determinism rules (mirrors `RisoEditBoardSnapshotTests`):
-///   - Board fixture built via `SnapshotFixtures.makeBoard` (no live DB).
-///   - Task / BoardTask fixtures for a populated 3×3 grid.
-///   - Fixed dates pinned to 2026-04-01 / 2026-04-30 UTC noon.
-///   - `weekStartDay: "monday"` throughout.
-///   - Non-custom timeframe date notes depend on wall-clock date (acceptable — see
-///     `reference_snapshot_date_dependent.md`; structural chrome is what we guard).
 final class BoardEditPanelSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
-
-    // Fixed pinned dates — 2026-04-01T12:00:00Z and 2026-04-30T12:00:00Z.
-    private static let fixedStart = Date(timeIntervalSince1970: 1_743_508_800)  // 2026-04-01 noon UTC
-    private static let fixedEnd   = Date(timeIntervalSince1970: 1_746_100_800)  // 2026-04-30 noon UTC
 
     // MARK: - Tests
 
     func testPanelMonthlyCleanLight() {
         assertSnapshot(
             of: makePanel(),
-            as: .image(layout: .fixed(width: 393, height: 1400)),
+            as: .image(layout: .fixed(width: 393, height: 1000)),
             record: recordMode
         )
     }
@@ -42,19 +35,20 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
         assertSnapshot(
             of: makePanel(),
             as: .image(
-                layout: .fixed(width: 393, height: 1400),
+                layout: .fixed(width: 393, height: 1000),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
         )
     }
 
-    /// Dirty state: `name` binding differs from `board.name`.
+    /// Dirty state: `centerType` binding differs from `board.centerSquareType`
+    /// (the panel's ONE remaining metadata field, per D5).
     /// Expect: edit counter shows "1 edit", Save pill is gold and enabled.
     func testPanelDirtyLight() {
         assertSnapshot(
-            of: makePanel(name: "Spring Goals — Updated"),
-            as: .image(layout: .fixed(width: 393, height: 1400)),
+            of: makePanel(centerType: .none),
+            as: .image(layout: .fixed(width: 393, height: 1000)),
             record: recordMode
         )
     }
@@ -62,38 +56,8 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     /// Saving state: `isSaving: true` forces pill text to "Saving…".
     func testPanelSavingLight() {
         assertSnapshot(
-            of: makePanel(name: "Spring Goals — Updated", isSaving: true),
-            as: .image(layout: .fixed(width: 393, height: 1400)),
-            record: recordMode
-        )
-    }
-
-    /// Repeat-in-edit — one-off variant with a staged cadence: the REPEATS
-    /// segmented shows Weekly selected, the "becomes a repeating board"
-    /// hint is visible, and the edit counter shows 1 edit.
-    func testPanelRepeatCadenceStagedLight() {
-        assertSnapshot(
-            of: makePanel(repeatCadence: .weekly),
-            as: .image(layout: .fixed(width: 393, height: 1400)),
-            record: recordMode
-        )
-    }
-
-    /// Repeat-in-edit — repeating-board variant: the "↻ Repeats … · from …"
-    /// line, the staged Repeating/Paused toggle (staged to Paused → 1 edit),
-    /// and the read-only spawn-provenance note.
-    func testPanelRepeatingBoardPausedStagedLight() {
-        assertSnapshot(
-            of: makePanel(
-                repeatInfo: BoardEditRepeatInfo(
-                    cadenceAdverb: "weekly",
-                    templateName: "Morning Kickstart",
-                    originalIsActive: true
-                ),
-                repeatActive: false,
-                spawnNoteText: "Picked 8 of 12 — 6 pulled in, 2 added today"
-            ),
-            as: .image(layout: .fixed(width: 393, height: 1400)),
+            of: makePanel(centerType: .none, isSaving: true),
+            as: .image(layout: .fixed(width: 393, height: 1000)),
             record: recordMode
         )
     }
@@ -104,28 +68,18 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
     /// hardcoded so the same pixel output is produced regardless of DB state.
     ///
     /// - Parameters:
-    ///   - name: Value for the draft `name` binding (defaults to board.name → clean state).
+    ///   - centerType: Value for the draft `centerType` binding (defaults to
+    ///     `board.centerSquareType` → clean state).
     ///   - isSaving: Whether to render the saving indicator state.
-    ///   - repeatInfo: Repeat-in-edit — non-nil renders the repeating-board
-    ///     REPEATS variant (and stamps `spawnedFromTemplateId` on the board
-    ///     fixture for honesty).
-    ///   - repeatActive: Staged Repeating/Paused value for that variant.
-    ///   - repeatCadence: Staged cadence for the one-off variant (nil = Off).
-    ///   - spawnNoteText: Read-only provenance note under the toggle.
     private func makePanel(
-        name: String = "Spring Goals",
-        isSaving: Bool = false,
-        repeatInfo: BoardEditRepeatInfo? = nil,
-        repeatActive: Bool = true,
-        repeatCadence: Timeframe? = nil,
-        spawnNoteText: String? = nil
+        centerType: CenterSquareType = .free,
+        isSaving: Bool = false
     ) -> some View {
-        // Board fixture — 3×3 monthly active board.
+        // Board fixture — 3×3 monthly active board, FREE center.
         let board = SnapshotFixtures.makeBoard(
             id: "ep-board-1",
             name: "Spring Goals",
-            boardSize: 3,
-            spawnedFromTemplateId: repeatInfo != nil ? "ep-template-1" : nil
+            boardSize: 3
         )
 
         // Task fixtures — 9 tasks for a fully-populated 3×3 grid.
@@ -162,24 +116,11 @@ final class BoardEditPanelSnapshotTests: XCTestCase {
             board: board,
             boardTasks: boardTasks,
             taskMap: taskMap,
-            weekStartDay: "monday",
-            originalCustomStartDate: Self.fixedStart,
-            originalCustomEndDate: Self.fixedEnd,
-            name: .constant(name),
-            timeframe: .constant(.monthly),
-            customStartDate: .constant(Self.fixedStart),
-            customEndDate: .constant(Self.fixedEnd),
-            centerType: .constant(.free),
-            hasCandidateTasks: false,
+            centerType: .constant(centerType),
             subMode: .constant(.editTasks),
-            repeatInfo: repeatInfo,
-            repeatActive: .constant(repeatActive),
-            repeatCadence: .constant(repeatCadence),
-            spawnNoteText: spawnNoteText,
             isSaving: isSaving,
             onSave: {},
-            onCancelConfirmed: {},
-            onArchiveConfirmed: {}
+            onCancelConfirmed: {}
         )
     }
 }

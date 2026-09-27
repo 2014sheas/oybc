@@ -10,7 +10,13 @@ import {
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { updateBoardTaskAndCascade, reorderBoardTasks } from '../boardTasks';
-import { updateBoardAndCascade, type UpdateActiveBoardPatch } from '../boards';
+import {
+  assertBoardEditable,
+  BoardNotEditableError,
+  updateBoardAndCascade,
+  type UpdateActiveBoardPatch,
+} from '../boards';
+import { updateTaskAndCascade, type UpdateTaskPatch } from '../tasks';
 
 /**
  * Board-integrity PR-4, item 3 (docs/BOARD_INTEGRITY.md): Board-Edit Save
@@ -103,7 +109,7 @@ async function seedPlacement(id: string, taskId: string, row: number, col: numbe
 /**
  * FIXED replica of `commitSquareEdits`' composition
  * (apps/web/src/hooks/useBoardPlay.ts) — same table scope, same op order
- * (replacements → reorders → metadata patch, a subset of the full 5-step
+ * (editable guard → replacements → task overrides → reorders → metadata patch, a subset of the full 5-step
  * sequence sufficient to exercise atomicity across three of the ops,
  * including the item-3 metadata fold-in), same reliance on Dexie's
  * nested-transaction reuse for the calls inside.
@@ -113,13 +119,19 @@ async function commitSquareEditsReplica(
   replacements: Array<{ boardTaskId: string; newTaskId: string }>,
   moves: Array<{ boardTaskId: string; row: number; col: number }>,
   metadataPatch?: UpdateActiveBoardPatch,
+  taskOverrides: Map<string, UpdateTaskPatch> = new Map(),
 ): Promise<void> {
   await db.transaction(
     'rw',
     [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
     async () => {
+      // Step 0 — the slice-2 editable guard (D11), first as in the hook.
+      await assertBoardEditable(boardId);
       for (const r of replacements) {
         await updateBoardTaskAndCascade(r.boardTaskId, r.newTaskId);
+      }
+      for (const [taskId, patch] of taskOverrides.entries()) {
+        await updateTaskAndCascade(taskId, patch);
       }
       if (moves.length > 0) {
         await reorderBoardTasks(boardId, moves);
@@ -208,5 +220,33 @@ describe('Board-Edit Save atomicity (board-integrity PR-4, item 3)', () => {
     expect(bt?.taskId).toBe('task-B');
     const board = await db.boards.get('board-1');
     expect(board?.name).toBe('Renamed board');
+  });
+
+  it('a board SEALED before commit throws BoardNotEditableError and rolls back the staged task override too (slice 2, D11)', async () => {
+    // The app-shell backstop can seal a board while an edit session is open.
+    // The Save used to resolve (the metadata guard no-oped silently) with the
+    // global task override already committed, and the panel said "Board
+    // saved". Now the guard throws first and nothing is written.
+    await seedTask('task-A', 'Task A');
+    await seedTask('task-B', 'Task B');
+    await seedBoard();
+    await seedPlacement('bt-1', 'task-A', 0, 0);
+    await db.boards.update('board-1', { sealedAt: '2026-07-31T23:59:59.999Z' });
+
+    await expect(
+      commitSquareEditsReplica(
+        'board-1',
+        [{ boardTaskId: 'bt-1', newTaskId: 'task-B' }],
+        [],
+        { name: 'Renamed board' },
+        new Map([['task-A', { title: 'Overridden title' }]]),
+      ),
+    ).rejects.toBeInstanceOf(BoardNotEditableError);
+
+    expect((await db.tasks.get('task-A'))?.title).toBe('Task A');
+    expect((await db.tasks.get('task-A'))?.version).toBe(1);
+    expect((await db.boardTasks.get('bt-1'))?.taskId).toBe('task-A');
+    expect((await db.boards.get('board-1'))?.name).toBe('Original name');
+    expect(await db.syncQueue.count()).toBe(0);
   });
 });

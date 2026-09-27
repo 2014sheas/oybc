@@ -88,41 +88,6 @@
   flex-shrink: 0;
 }
 
-/* ---- Read-only board-size chip ---- */
-.sizeChip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: var(--riso-paper);
-  border: 1.5px solid var(--riso-hair);
-  border-radius: var(--riso-r-card);
-  flex-wrap: wrap;
-}
-.sizeLabel {
-  font-family: var(--riso-font-head);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--riso-muted);
-}
-.sizeValue {
-  font-family: var(--riso-font-head);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--riso-ink);
-  background: var(--riso-paper-2);
-  border: 1.5px solid var(--riso-ink);
-  border-radius: 6px;
-  padding: 2px 8px;
-}
-.sizeNote {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--riso-muted);
-}
-
 /* ---- Validation error ---- */
 .validationError {
   margin: 0;
@@ -196,34 +161,7 @@
   margin-top: 2px;
 }
 
-/* ---- Archive ghost button ---- */
-.archiveBtn {
-  border: 2px solid var(--riso-muted);
-  border-radius: var(--riso-r-card);
-  background: transparent;
-  color: var(--riso-muted);
-  font-family: var(--riso-font-head);
-  font-weight: 700;
-  font-size: 13px;
-  padding: 11px;
-  cursor: pointer;
-  width: 100%;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
-.archiveBtn:hover:not(:disabled) {
-  background: var(--riso-muted);
-  color: var(--riso-paper);
-}
-.archiveBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.archiveBtn:focus-visible {
-  outline: 3px solid var(--riso-blue);
-  outline-offset: 2px;
-}
-
-/* ---- Inline confirm card (Cancel-if-dirty / Archive) ---- */
+/* ---- Inline confirm card (Cancel-if-dirty) ---- */
 .confirmCard {
   border: 2px solid var(--riso-ink);
   border-radius: var(--riso-r-card);

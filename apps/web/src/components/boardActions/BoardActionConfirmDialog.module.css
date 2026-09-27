@@ -1,0 +1,111 @@
+/* ============================================================
+   BoardActionConfirmDialog — generic .alert-shaped confirm for
+   Archive / Delete (Board Edit redesign slice 2, plan D7).
+   Modeled on CounterDeleteConfirmDialog.module.css.
+   ============================================================ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1100;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+}
+
+.title {
+  font-family: var(--riso-font-head);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+
+.body {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--riso-ink);
+  line-height: 1.45;
+}
+
+.btns {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.cancelBtn,
+.confirmBtn,
+.destructiveBtn {
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 11px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+
+.cancelBtn {
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+}
+
+.confirmBtn {
+  background: var(--riso-blue);
+  color: var(--riso-on-color);
+}
+
+.destructiveBtn {
+  background: var(--riso-red);
+  color: var(--riso-on-color);
+}
+
+.cancelBtn:hover:not(:disabled),
+.confirmBtn:hover:not(:disabled),
+.destructiveBtn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+
+.cancelBtn:active:not(:disabled),
+.confirmBtn:active:not(:disabled),
+.destructiveBtn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+
+.cancelBtn:disabled,
+.confirmBtn:disabled,
+.destructiveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancelBtn:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.confirmBtn:focus-visible,
+.destructiveBtn:focus-visible {
+  outline: 3px solid var(--riso-on-color);
+  outline-offset: -3px;
+}

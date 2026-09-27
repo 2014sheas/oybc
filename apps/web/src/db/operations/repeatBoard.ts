@@ -11,6 +11,7 @@ import {
 import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { isWindowStampedDerivedCompound } from './derivedCounters';
+import { assertBoardEditable } from './boards';
 
 /**
  * "Repeat this board…" (P6, docs/POOLS_RECURRING.md §Surfaces item 7) — a
@@ -44,6 +45,8 @@ import { isWindowStampedDerivedCompound } from './derivedCounters';
  * @param userId - Owner of the new template.
  * @param weekStartDay - Only relevant when `cadence === WEEKLY`.
  * @returns The newly-created `RecurringBoardTemplate`.
+ * @throws {BoardNotEditableError} When the live board row is sealed,
+ *   deleted, or missing.
  */
 export async function repeatBoardAsRecurring(
   board: Board,
@@ -58,6 +61,11 @@ export async function repeatBoardAsRecurring(
     // `tasks` is read-only here (the RB4 derived-compound check).
     [db.boards, db.boardTasks, db.tasks, db.recurringBoardTemplates, db.syncQueue],
     async (): Promise<RecurringBoardTemplate> => {
+      // Board Edit redesign slice 2 (D3 / D11) — back-stamping writes the
+      // board row, so a board sealed or deleted since the caller read it
+      // throws `BoardNotEditableError` before anything is minted.
+      await assertBoardEditable(board.id);
+
       // Read the board's live, non-deleted placements, sorted by grid
       // position, mapped to distinct taskIds (dedup preserving order —
       // a task placed on multiple cells, which shouldn't normally happen
