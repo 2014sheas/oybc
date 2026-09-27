@@ -45,8 +45,10 @@ struct RearrangeCellData: Identifiable, Equatable {
 ///   point. Release commits the new order via `onReorder`. One staged edit per drop.
 /// - **Tap-to-swap**: tap a tile to pick it up (gold ring; rest dims). Tap another to swap;
 ///   tap the same to cancel. One staged edit per swap.
-/// - **Jiggle**: autoreversing ±0.8° rotation on all non-center, non-empty tiles. Suspended
-///   while a drag or tap-pick is in progress.
+/// - **Jiggle**: a gentle ±`RearrangeJiggle.amplitudeDegrees` sway on all non-center,
+///   non-empty tiles, driven by a `TimelineView` that pauses — and snaps to exactly 0° —
+///   the moment `rearrange` goes false. Suspended while a drag or tap-pick is in progress;
+///   off entirely under Reduce Motion.
 ///
 /// ### Pinning
 /// Cells with `isPinned` (the center, or a per-square lock — slice 1) never lift, never accept
@@ -144,8 +146,7 @@ struct RearrangeGrid: View {
     /// Cell id picked for tap-to-swap (highlighted; others dimmed).
     @State private var tapPickedId: String? = nil
 
-    /// Jiggle clock — toggled once to start the autoreversing animation.
-    @State private var jigglePhase: Bool = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Body
 
@@ -242,7 +243,6 @@ struct RearrangeGrid: View {
         .coordinateSpace(name: "rearrangeGrid")
         .onAppear {
             displayCells = cells
-            if rearrange { kickJiggle() }
         }
         // Sync external changes when no interaction is in flight.
         .onChange(of: cells) { _, newCells in
@@ -250,29 +250,6 @@ struct RearrangeGrid: View {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
                 displayCells = newCells
             }
-        }
-        .onChange(of: rearrange) { _, active in
-            if active { kickJiggle() } else { stopJiggle() }
-        }
-    }
-
-    // MARK: - Jiggle
-
-    /// Starts the autoreversing jiggle by toggling `jigglePhase` with a
-    /// `repeatForever(autoreverses: true)` animation. Cells read this phase
-    /// to decide their rotation. No-ops when `rearrange` is false.
-    private func kickJiggle() {
-        withAnimation(
-            .easeInOut(duration: 0.14).repeatForever(autoreverses: true)
-        ) {
-            jigglePhase.toggle()
-        }
-    }
-
-    /// Snaps the jiggle back to 0° with a brief ease-out.
-    private func stopJiggle() {
-        withAnimation(.easeOut(duration: 0.12)) {
-            jigglePhase = false
         }
     }
 
@@ -324,18 +301,7 @@ struct RearrangeGrid: View {
             }
         }
         .opacity(isDimmed ? 0.45 : 1.0)
-        // Jiggle: autoreversing ±0.8° when the mode is active; suspended during
-        // drag and tap-pick. The `jigglePhase` boolean drives the rotation value;
-        // the `.repeatForever` animation is started by `kickJiggle()`.
-        .rotationEffect(
-            .degrees(jiggleActive ? (jigglePhase ? 0.8 : -0.8) : 0)
-        )
-        .animation(
-            jiggleActive
-                ? .easeInOut(duration: 0.14).repeatForever(autoreverses: true)
-                : .easeOut(duration: 0.1),
-            value: jigglePhase
-        )
+        .modifier(RearrangeJiggleModifier(active: jiggleActive && !reduceMotion))
     }
 
     /// The shared board square for a real cell (center or task). Windowed
@@ -528,5 +494,54 @@ struct RearrangeGrid: View {
         // Return nil if the order is unchanged (avoids a redundant animation).
         let changed = !zip(result, cells).allSatisfy { $0.id == $1.id }
         return changed ? result : nil
+    }
+}
+
+// MARK: - Jiggle
+
+/// The Rearrange-mode jiggle's values + angle curve. Shared with web
+/// `ArrangeGrid.module.css` `.jiggle` / `@keyframes wbJiggle` — keep the two
+/// in lockstep: ±0.4°, 0.28 s per half-cycle.
+///
+/// Pure time → angle, so the sway is a function of the clock rather than a
+/// running animation. The previous implementation started a
+/// `.repeatForever(autoreverses:)` transaction on a toggled `@State` phase;
+/// a repeat-forever animation can't be cancelled by later state changes, so
+/// the tiles kept shaking after leaving Rearrange. Now nothing is "running":
+/// when inactive the angle is exactly 0.
+enum RearrangeJiggle {
+    /// Peak rotation either side of 0°.
+    static let amplitudeDegrees: Double = 0.4
+    /// Seconds from one extreme to the other (one `alternate` leg on web).
+    static let halfCycleSeconds: Double = 0.28
+
+    /// Rotation in degrees at `time` (seconds). `0` whenever `active` is false.
+    /// - Parameters:
+    ///   - active: Whether this tile is jiggling (rearrange on, not dragging,
+    ///     not tap-picked, Reduce Motion off).
+    ///   - time: Any monotonic clock in seconds.
+    /// - Returns: An angle in `[-amplitudeDegrees, amplitudeDegrees]`.
+    static func angle(active: Bool, time: TimeInterval) -> Double {
+        guard active else { return 0 }
+        return amplitudeDegrees * sin(.pi * time / halfCycleSeconds)
+    }
+}
+
+/// Applies `RearrangeJiggle` to a tile. The `TimelineView` is always present
+/// (stable view identity for the tile underneath) but its schedule pauses when
+/// inactive, and the angle is then exactly 0 — so the shake stops the moment
+/// `rearrange` flips false, deterministically.
+private struct RearrangeJiggleModifier: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        TimelineView(.animation(paused: !active)) { context in
+            content.rotationEffect(.degrees(
+                RearrangeJiggle.angle(
+                    active: active,
+                    time: context.date.timeIntervalSinceReferenceDate
+                )
+            ))
+        }
     }
 }

@@ -45,7 +45,9 @@ export interface BoardWizardPreviewStepProps {
   /** Step navigation back to Tasks. */
   onBack: () => void;
   /** Called after the board record + all `BoardTask` rows have been
-   *  written. `status` reflects whether the record is ACTIVE or DRAFT.
+   *  written. The Preview step only ever activates, so it always passes
+   *  `'active'`; the type stays `CompletionStatus` because the parent
+   *  shares this callback with the Cancel dialog's draft save.
    *  In recurring mode this fires only when the spawn succeeded — the
    *  parent navigates to `/boards/${boardId}` (web) / `boardsPath.append(boardId)`
    *  (iOS), so passing a templateId here would land on a non-existent
@@ -164,8 +166,9 @@ function buildArrangeSlots(
 /**
  * BoardWizardPreviewStep — Step 3 of the wizard. Renders an arrangeable
  * board preview (Preview ⇄ Rearrange toggle + Shuffle), a compact summary
- * chip row, a full summary card with edit-jumps, and Activate / Save Draft
- * buttons.
+ * chip row, a full summary card with edit-jumps, and an Activate / Create
+ * Board button. Saving a draft is the Cancel dialog's job (there is no
+ * Preview-step "Save as Draft" button).
  *
  * Placement is lifted into state so user reorders mutate it in place.
  * `buildWizardPlacement` re-seeds the state whenever selection / size /
@@ -436,25 +439,17 @@ export function BoardWizardPreviewStep({
 
   // ── Async creation ────────────────────────────────────────────────────────
 
-  async function performCreation(status: CompletionStatus): Promise<void> {
+  async function performCreation(): Promise<void> {
     setErrorMessage(null);
 
     if (controller.isRecurring) {
-      if (status === 'draft') {
-        // Board Creation Split (web PR D) — "Save as Draft" now saves a
-        // real DRAFT `Board` (the same one-off persist path a one-off
-        // wizard uses) instead of creating — and immediately spawning — a
-        // `RecurringBoardTemplate`. Nothing runs until "Create Board".
-        await performRecurringDraftSave();
-        return;
-      }
       // Recurring create/edit branch — persist the template and (for
       // fresh creates) immediately spawn the current window's board.
       setIsCreating(true);
       try {
         const result = await persistRecurringTemplate({ controller, userId });
         if (result.spawnedBoardId !== null) {
-          onComplete(result.spawnedBoardId, status);
+          onComplete(result.spawnedBoardId, 'active');
         } else {
           onTemplateComplete?.(result.templateId);
         }
@@ -486,10 +481,10 @@ export function BoardWizardPreviewStep({
         userId,
         placement: placementRef.current,
         dates,
-        status,
+        status: 'active',
         pendingTasks: controller.pendingTasks,
       });
-      onComplete(boardId, status);
+      onComplete(boardId, 'active');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error.';
       setErrorMessage(
@@ -497,42 +492,6 @@ export function BoardWizardPreviewStep({
           ? `Failed to create board: ${msg}`
           : `Failed to update draft: ${msg}`,
       );
-    } finally {
-      setIsCreating(false);
-    }
-  }
-
-  /**
-   * Board Creation Split (web PR D) — recurring "Save as Draft". Reuses
-   * the EXACT one-off persist path (`persistWizardBoard({status: 'draft'})`);
-   * `controller.isRecurring` drives that function's own `isRecurringDraft`
-   * + `recurringDraftMix` bookkeeping (see `wizardPersist.ts`), so this
-   * call site needs no special casing beyond its own error-message
-   * wording — a recurring draft is never "updating" in the one-off sense
-   * of resurrecting a prior ACTIVE board. Mirrors iOS
-   * `BoardWizardPreviewStepView.performRecurringDraftSave`.
-   */
-  async function performRecurringDraftSave(): Promise<void> {
-    const dates = resolveWizardDates(controller, controller.targetWindowDate ?? undefined);
-    if ('error' in dates) {
-      setErrorMessage(dates.error);
-      return;
-    }
-    setIsCreating(true);
-    try {
-      const boardId = await persistWizardBoard({
-        controller,
-        library,
-        userId,
-        placement: placementRef.current,
-        dates,
-        status: 'draft',
-        pendingTasks: controller.pendingTasks,
-      });
-      onComplete(boardId, 'draft');
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error.';
-      setErrorMessage(`Failed to save draft: ${msg}`);
     } finally {
       setIsCreating(false);
     }
@@ -677,14 +636,12 @@ export function BoardWizardPreviewStep({
         <div className={styles.coreFloorWarning}>{coreFloorGate.message}</div>
       )}
 
-      {/* Footer — three button-set variants (Board Creation Split, web PR
-          C + D): one-off = Back / Save as Draft (neutral) / Activate Board
-          (RED); recurring create = Back / Save as Draft (neutral) / Create
-          Board (BLUE); recurring edit = Back / Save Changes (BLUE, no
-          draft — there's no "draft" concept for an edit, mirroring the
-          pre-PR-D footer exactly). The actual write branching lives in
-          `wizardPersist`; this component only chooses the label + accent.
-          No "template"/"spawn" in UI copy. */}
+      {/* Footer — ‹ Back (compact) + ONE primary filling the rest. One-off
+          = Activate Board (RED); recurring create = Create Board (BLUE);
+          recurring edit = Save Changes (BLUE). There is no Preview-step
+          "Save as Draft" — leaving via Cancel offers to save a draft. The
+          actual write branching lives in `wizardPersist`; this component
+          only chooses the label + accent. No "template"/"spawn" in UI copy. */}
       <div className={styles.footer}>
         <button
           type="button"
@@ -694,54 +651,29 @@ export function BoardWizardPreviewStep({
         >
           ‹ Back
         </button>
-        <div className={styles.footerActions}>
-          {!controller.isRecurring && (
-            <>
-              <button
-                type="button"
-                className={styles.draftButton}
-                onClick={() => void performCreation('draft')}
-                disabled={isCreating}
-              >
-                {isCreating ? 'Saving…' : 'Save as Draft'}
-              </button>
-              <button
-                type="button"
-                className={styles.activateButton}
-                onClick={() => void performCreation('active')}
-                disabled={isCreating || isCoreFloorBlocked}
-              >
-                {isCreating ? 'Activating…' : 'Activate Board'}
-              </button>
-            </>
-          )}
-          {controller.isRecurring && (
-            <>
-              {controller.editingTemplateId === null && (
-                <button
-                  type="button"
-                  className={styles.draftButton}
-                  onClick={() => void performCreation('draft')}
-                  disabled={isCreating}
-                >
-                  {isCreating ? 'Saving…' : 'Save as Draft'}
-                </button>
-              )}
-              <button
-                type="button"
-                className={styles.createBoardButton}
-                onClick={() => void performCreation('active')}
-                disabled={isCreating}
-              >
-                {isCreating
-                  ? 'Saving…'
-                  : controller.editingTemplateId !== null
-                    ? 'Save Changes'
-                    : 'Create Board'}
-              </button>
-            </>
-          )}
-        </div>
+        {controller.isRecurring ? (
+          <button
+            type="button"
+            className={styles.createBoardButton}
+            onClick={() => void performCreation()}
+            disabled={isCreating}
+          >
+            {isCreating
+              ? 'Saving…'
+              : controller.editingTemplateId !== null
+                ? 'Save Changes'
+                : 'Create Board'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={styles.activateButton}
+            onClick={() => void performCreation()}
+            disabled={isCreating || isCoreFloorBlocked}
+          >
+            {isCreating ? 'Activating…' : 'Activate Board'}
+          </button>
+        )}
       </div>
     </div>
   );

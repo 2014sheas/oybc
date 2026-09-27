@@ -90,17 +90,21 @@
   visibility: hidden;
 }
 
-/* ---- Jiggle: all non-locked cells in rearrange mode ---- */
+/* ---- Jiggle: all non-locked cells in rearrange mode ----
+   Shared values with iOS `RearrangeJiggle` (RearrangeGrid.swift):
+   amplitude ±0.4°, 0.28s per half-cycle (one `alternate` leg). Keep the
+   two in lockstep. The class is applied only while `rearrange` is true,
+   so leaving Rearrange drops it and the cell returns to rotate(0). */
 @keyframes wbJiggle {
-  from { transform: rotate(-0.8deg); }
-  to   { transform: rotate(0.8deg); }
+  from { transform: rotate(-0.4deg); }
+  to   { transform: rotate(0.4deg); }
 }
 .jiggle {
-  animation: wbJiggle 0.34s ease-in-out infinite alternate;
+  animation: wbJiggle 0.28s ease-in-out infinite alternate;
 }
 /* Stagger phase by child index so the grid doesn't rock in unison */
-.jiggle:nth-child(2n) { animation-delay: -0.17s; }
-.jiggle:nth-child(3n) { animation-delay: -0.09s; }
+.jiggle:nth-child(2n) { animation-delay: -0.14s; }
+.jiggle:nth-child(3n) { animation-delay: -0.07s; }
 /* Reduced-motion: no jiggle, just cursor change */
 @media (prefers-reduced-motion: reduce) {
   .jiggle { animation: none; }
