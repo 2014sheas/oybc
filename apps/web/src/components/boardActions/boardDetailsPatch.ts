@@ -16,6 +16,17 @@ import type { UpdateActiveBoardPatch } from '../../db/operations/boards';
  * case tables (`boardDetailsPatch.test.ts` ↔ `BoardDetailsDraftTests`).
  */
 
+// ─── Shared copy ──────────────────────────────────────────────────────────────
+
+/**
+ * D11 copy — shown when a save/mutation (Board details, squares Save, or
+ * starting a repeat) hits a board sealed or deleted mid-session. iOS twin:
+ * `BoardEditError.boardClosedMessage` (curly apostrophe, verbatim on both
+ * platforms).
+ */
+export const BOARD_CLOSED_MESSAGE =
+  'This board has been closed, so your changes weren’t saved.';
+
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
 /** Extract YYYY-MM-DD from an ISO date string (safe for local-ISO). */

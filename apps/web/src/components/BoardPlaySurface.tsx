@@ -36,12 +36,13 @@ import { BoardEditPanel } from './boardEdit/BoardEditPanel';
 import { ArrangeGrid } from './boardEdit/ArrangeGrid';
 import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
+import { BoardTitleActions } from './boardActions/BoardTitleActions';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
 import { compactStreakLabel, getHighlightedSquares } from '@oybc/shared';
 import { getExpiryLabel } from '../utils/boardDisplayUtils';
 import { gatedStreak } from '../utils/gatedStreak';
-import { RisoButton, RisoIcon } from './riso';
+import { RisoIcon } from './riso';
 import { RisoBoardCell } from './board/RisoBoardCell';
 import { RisoBoardGrid } from './board/RisoBoardGrid';
 import { freeCellModel, taskCellLabel, toBoardCellModel } from './board/cellModel';
@@ -298,6 +299,14 @@ export function BoardPlaySurface({
     }, FLASH_MS);
   }, []);
 
+  // "Board saved" toast, shared by BoardEditPanel's Save and
+  // BoardTitleActions' Board-details Save (Board Edit redesign slice 2).
+  const triggerBoardSavedToast = useCallback((): void => {
+    setSavedToast(true);
+    if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
+    savedToastTimerRef.current = setTimeout(() => setSavedToast(false), 2400);
+  }, []);
+
   // ── Handler + edit-draft layer ─────────────────────────────────────────
   // The staged edit-mode draft, the completion-orchestration handlers, and
   // the play-mode board-task write methods all live in `useBoardPlay`
@@ -530,28 +539,23 @@ export function BoardPlaySurface({
         <aside className={play.rail}>
           <div className={play.railTop}>
             {header}
-            {/* Edit gate — ONE rule on both platforms (core-board surface
-                rework): status == ACTIVE && sealedAt == nil && !editMode.
-                Sealed boards show the Read-only lock in the same slot. */}
-            {board.status === BoardStatus.ACTIVE && !isSealed && (
-              <span className={play.railRight}>
-                <RisoButton
-                  kind="neutral"
-                  icon={<RisoIcon name="edit" size={16} />}
-                  onClick={() => setEditMode(true)}
-                  aria-label="Edit board"
-                  title="Edit board"
-                >
-                  Edit board
-                </RisoButton>
-              </span>
-            )}
-            {isSealed && (
-              <span className={play.readOnly}>
-                <RisoIcon name="lock" size={12} />
-                Read-only
-              </span>
-            )}
+            {/* Edit gate (core-board surface rework): status == ACTIVE &&
+                sealedAt == nil && !editMode. The "…" board menu (Board
+                details / Repeat / Core defaults / Archive / Delete) is
+                `BoardTitleActions` (Board Edit redesign slice 2, D13). */}
+            <BoardTitleActions
+              board={board}
+              userId={userId}
+              sourceTemplate={sourceTemplate}
+              templatesLoaded={templatesLoaded}
+              weekStartDay={prefs.weekStartDay}
+              taskMap={taskMap}
+              dealtTaskIds={sortedBoardTasks.map((bt) => bt.taskId)}
+              counterFamilyByTaskId={counterFamilyByTaskId}
+              onEditSquares={() => setEditMode(true)}
+              onDetailsSaved={triggerBoardSavedToast}
+              onRemoved={() => board.isCore || navigate('/boards')}
+            />
           </div>
           <div>
             <div className={play.kickerRow}>

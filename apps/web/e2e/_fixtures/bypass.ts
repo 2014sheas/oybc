@@ -272,7 +272,7 @@ export interface SeedBoard {
   id: string;
   name: string;
   boardSize: 3 | 4 | 5;
-  timeframe: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+  timeframe: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'indefinite';
   status: 'active' | 'completed' | 'archived' | 'draft';
   startDate: string;
   endDate: string;

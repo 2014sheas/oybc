@@ -1,0 +1,118 @@
+/* ============================================================
+   BoardActionsMenu — the title-row "…" board menu.
+   Board Edit redesign slice 2 (docs/BOARD_EDIT_REDESIGN.md, plan D1/D3).
+   Tokens from riso.css. Dark contract: hover fill stays gold (light in
+   both schemes) with static ink text — never adaptive ink on gold.
+   ============================================================ */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* "…" trigger — 36px square, ink-filled while open (handoff decorate()). */
+.trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  box-shadow: 2px 2px 0 var(--riso-shadow-ink);
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+.trigger:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+}
+.trigger:active {
+  transform: translate(1px, 1px);
+}
+.triggerOpen,
+.triggerOpen:hover {
+  background: var(--riso-ink);
+  color: var(--riso-paper);
+  box-shadow: none;
+  transform: none;
+}
+
+/* Popover — anchored under the trigger, right-aligned. */
+.popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 216px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 12px;
+  background: var(--riso-paper-2);
+  box-shadow: 5px 6px 0 var(--riso-shadow-ink);
+  overflow: hidden;
+}
+
+.header {
+  padding: 11px 14px 9px;
+  border-bottom: 2px solid var(--riso-ink);
+  background: var(--riso-paper);
+}
+.kicker {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.name {
+  display: block;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: var(--riso-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 11px;
+  padding: 13px 14px;
+  border: none;
+  border-bottom: 1.5px solid var(--riso-hair);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.row:last-child {
+  border-bottom: none;
+}
+.row:hover,
+.row:focus-visible {
+  /* Gold is light in both schemes — text stays static ink. */
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.row.danger {
+  color: var(--riso-red);
+}
+.row.danger:hover,
+.row.danger:focus-visible {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.row:focus-visible {
+  outline: none;
+}
