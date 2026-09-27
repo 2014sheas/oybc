@@ -1,4 +1,26 @@
+import type { Page } from '@playwright/test';
 import { test, expect, seedBoard, seedTask, seedBoardTask, readBoard } from './_fixtures/bypass';
+
+/** Read a single `boardTasks` row by id via raw IndexedDB (no such helper is
+ *  exported by `_fixtures/bypass.ts` yet — mirrors its `readBoard` pattern). */
+async function readBoardTask(page: Page, id: string): Promise<Record<string, unknown> | null> {
+  return page.evaluate((btId) => {
+    return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['boardTasks'], 'readonly');
+        const req = tx.objectStore('boardTasks').get(btId);
+        req.onsuccess = () => {
+          db.close();
+          resolve((req.result as Record<string, unknown> | undefined) ?? null);
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, id);
+}
 
 /**
  * Board Edit redesign slice 3 — the ONE squares editor
@@ -195,8 +217,12 @@ test.describe('Squares editor (e) — hold-drag moves a square; a locked square 
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Board saved')).toBeVisible();
 
-    const moved = await readBoard(page, BOARD_ID);
-    void moved;
+    const moved = await readBoardTask(page, ids(0).bt);
+    expect(moved).not.toBeNull();
+    expect([moved?.row, moved?.col]).not.toEqual([0, 0]);
+    // The locked square never moved.
+    const locked = await readBoardTask(page, ids(2).bt);
+    expect([locked?.row, locked?.col]).toEqual([0, 2]);
   });
 });
 
@@ -230,8 +256,8 @@ test.describe('Squares editor (f) — Shuffle', () => {
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('Board saved')).toBeVisible();
 
-    const lockedBt = await readBoard(page, BOARD_ID); // sanity — board row exists
-    expect(lockedBt).not.toBeNull();
+    const lockedBt = await readBoardTask(page, ids(3).bt);
+    expect([lockedBt?.row, lockedBt?.col]).toEqual([2, 2]);
   });
 });
 
