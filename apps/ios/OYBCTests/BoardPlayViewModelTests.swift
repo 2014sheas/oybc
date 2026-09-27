@@ -1492,6 +1492,72 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(taskAfter.title, "Task t-real", "override must not have persisted")
     }
 
+    /// Board Edit slice 2 (D11 / bugfix B2): a board sealed between entering
+    /// edit mode and Save must NOT report "Board saved" — the save throws
+    /// `boardNotEditable` inside the transaction, rolling back EVERY sub-op
+    /// (the staged global task override included), and the VM emits
+    /// `.boardClosed`. Pre-fix the metadata guard silently no-oped, the task
+    /// override still committed, and `.saved` fired.
+    func test_handleEditSave_boardSealedMidSession_emitsBoardClosed_andRollsBack() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeCustomBoard(
+            id: "b-seal", timeframe: .monthly, startDate: offsetDaysISO(-5),
+            endDate: offsetDaysISO(25), boardSize: 1
+        ))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-seal", taskId: "t1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b-seal")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        vm.editName = "Renamed"
+        vm.handleEditTaskOverride(
+            taskId: "t1",
+            patch: .init(title: "Overridden", type: .normal, action: "", unit: "", maxCount: nil)
+        )
+
+        // Sealed elsewhere (backstop / sync pull) while the editor is open.
+        var sealed = try XCTUnwrap(db.fetchBoard(id: "b-seal"))
+        sealed.sealedAt = AppDatabase.currentTimestamp()
+        try db.saveBoard(sealed)
+        let before = try XCTUnwrap(db.fetchBoard(id: "b-seal"))
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome != nil })
+        XCTAssertEqual(vm.editEvent?.outcome, .boardClosed(BoardEditError.boardClosedMessage))
+
+        let after = try XCTUnwrap(db.fetchBoard(id: "b-seal"))
+        XCTAssertEqual(after.name, before.name)
+        XCTAssertEqual(after.version, before.version)
+        XCTAssertEqual(try XCTUnwrap(db.fetchTask(id: "t1")).title, "Task t1",
+                       "the staged task override must roll back with the rest")
+    }
+
+    /// Slice 2 (D12 / bugfix B1): an ongoing board's start-date edit, staged
+    /// through the squares panel's date picker, is now actually saved.
+    func test_handleEditSave_ongoingStartEdit_isSaved() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeCustomBoard(
+            id: "b-ongoing", timeframe: .indefinite, startDate: offsetDaysISO(-5),
+            endDate: nil, boardSize: 1
+        ))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b-ongoing", taskId: "t1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b-ongoing")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertEqual(wizardLocalISOString(vm.editCustomStartDate), offsetDaysISO(-5),
+                       "the date picker seeds from the board, not today")
+        vm.editCustomStartDate = Calendar.current.date(byAdding: .day, value: -12, to: Date())!
+
+        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b-ongoing"))
+        XCTAssertEqual(saved.startDate, offsetDaysISO(-12))
+        XCTAssertNil(saved.endDate)
+    }
+
     /// Happy-path atomicity companion (no injected failure): reuses the
     /// existing `test_handleEditSave_commitsRename_replacement_andPosition_
     /// thenEmitsSaved` composition (rename + replacement + position move) as

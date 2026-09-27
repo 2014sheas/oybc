@@ -686,6 +686,8 @@ extension AppDatabase {
     /// - Returns: The newly-created template, or `nil` if `board.startDate`
     ///   is unparseable (should never happen for a live board — the same
     ///   defensive branch as `buildRepeatBoardTemplateInput`).
+    /// - Throws: `BoardEditError.boardNotEditable` if the live board row is
+    ///   sealed or deleted (nothing written); any GRDB error.
     @discardableResult
     func repeatBoardAsTemplate(
         board: Board,
@@ -696,6 +698,15 @@ extension AppDatabase {
     ) throws -> RecurringBoardTemplate? {
         var result: RecurringBoardTemplate?
         try write { db in
+            // Board Edit slice 2 (D3/D11): the back-stamp below writes the
+            // board row, so a board sealed or deleted since the caller read
+            // it must not be repeated — throw before minting anything. A
+            // missing row keeps the old behaviour (template, no back-stamp).
+            if let live = try Board.fetchOne(db, key: board.id),
+               live.isDeleted || live.sealedAt != nil {
+                throw BoardEditError.boardNotEditable
+            }
+
             // Fresh in-txn read of the board's live placements — never the
             // caller's possibly-stale `board` snapshot (mirrors the
             // `spawnRecurringBoard` posture of resolving supply data

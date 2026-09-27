@@ -44,18 +44,14 @@ extension BoardPlayViewModel {
         editName = b.name
         editTimeframe = b.timeframe
 
-        let cal = Calendar.current
-        let fallbackStart = cal.startOfDay(for: Date())
-        let fallbackEnd = cal.date(byAdding: .day, value: 30, to: fallbackStart) ?? Date()
-        let seedStart = parseWizardCalendarDate(b.startDate) ?? fallbackStart
-        let seedEnd: Date = {
-            if let endStr = b.endDate, let parsed = parseWizardCalendarDate(endStr) { return parsed }
-            return fallbackEnd
-        }()
-        editCustomStartDate = seedStart
-        editOriginalCustomStartDate = seedStart
-        editCustomEndDate = seedEnd
-        editOriginalCustomEndDate = seedEnd
+        // Slice 2 (T1): seed the dates through `BoardDetailsDraft` — the
+        // old `parseWizardCalendarDate` seed rejected full ISO strings, so
+        // every board opened with "today" in its date pickers.
+        let details = BoardDetailsDraft(board: b)
+        editCustomStartDate = details.startDate
+        editOriginalCustomStartDate = details.originalStartDate
+        editCustomEndDate = details.endDate
+        editOriginalCustomEndDate = details.originalEndDate
         editCenterType = b.centerSquareType
         editSubMode = .editTasks
         editHasCandidateTasks = false
@@ -249,80 +245,44 @@ extension BoardPlayViewModel {
         let trimmedName = editName.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return false }
 
-        let cal = Calendar.current
+        guard let liveBoard = board else { return false }
 
-        func snapStart(_ d: Date) -> String {
-            wizardLocalISOString(cal.startOfDay(for: d))
+        // Name / Custom ⇄ Ongoing / user dates / center — the shared pure
+        // `BoardDetailsDraft` (slice 2, T1) decides what to write, with the
+        // D12 fix: an ongoing start edit is saved, and Custom → Ongoing keeps
+        // the picked start instead of re-anchoring to today. A metadata-only
+        // Save omits both dates, PRESERVING the stored window (under Windowed
+        // Completion `startDate` is the window's lower bound — rewriting it
+        // wipes the progress of every task whose events predate the new start).
+        var details = BoardDetailsDraft(board: liveBoard)
+        details.name = trimmedName
+        details.timeframe = editTimeframe
+        details.startDate = editCustomStartDate
+        details.endDate = editCustomEndDate
+        details.centerType = editCenterType
+        // Carry over EditBoardSheet's guard: the end-date picker's min can lag
+        // a start-date change, so re-validate end >= start before persisting.
+        if details.effectiveTimeframe == .custom,
+           BoardDetailsDraft.snapEnd(editCustomEndDate) < BoardDetailsDraft.snapStart(editCustomStartDate) {
+            return false
         }
-        func snapEnd(_ d: Date) -> String {
-            let nextDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: d))!
-            return wizardLocalISOString(nextDay.addingTimeInterval(-0.001))
-        }
+        var metaPatch = details.patch() ?? AppDatabase.UpdateActiveBoardPatch()
 
-        let startISO: String?
-        let endISO: String?
-        var clearEnd = false
-
-        // Dates are written ONLY when the user actually changed the window
-        // (timeframe conversion, or new custom dates). A metadata-only Save
-        // must PRESERVE the stored window: under Windowed Completion,
-        // `startDate` is the completion window's lower bound — rewriting it
-        // silently re-windows the board and wipes the progress of every task
-        // whose events predate the new start. The old code recomputed dates
-        // on EVERY save (indefinite → re-anchored to today; core → today's
-        // window), resetting all progress except tasks completed on the edit
-        // day. Nil startDate/endDate in the patch = "leave unchanged".
-        let timeframeChanged = editTimeframe != board?.timeframe
-        let customDatesChanged = editTimeframe == .custom
-            && (editCustomStartDate != editOriginalCustomStartDate
-                || editCustomEndDate != editOriginalCustomEndDate)
-
-        if timeframeChanged {
-            // Deliberate re-window: converting the board recomputes its dates.
-            if editTimeframe == .indefinite {
-                startISO = wizardLocalISOString(cal.startOfDay(for: Date()))
-                endISO = nil
-                clearEnd = true
-            } else if editTimeframe == .custom {
-                let snappedStart = snapStart(editCustomStartDate)
-                let snappedEnd = snapEnd(editCustomEndDate)
-                // Carry over EditBoardSheet's guard: the end-date picker's min can lag a
-                // start-date change, so re-validate end >= start before persisting.
-                guard snappedEnd >= snappedStart else { return false }
-                startISO = snappedStart
-                endISO = snappedEnd
-            } else if let boundaries = computeTimeframeBoundaries(
+        // Calendar-timeframe conversion — still reachable from the panel's
+        // timeframe segmented until slice 2 T2/T3 retire it. A deliberate
+        // re-window: the board takes today's window for the new timeframe.
+        if editTimeframe != liveBoard.timeframe, details.effectiveTimeframe == liveBoard.timeframe {
+            guard let boundaries = computeTimeframeBoundaries(
                 timeframe: editTimeframe,
                 referenceDate: Date(),
                 weekStartDay: weekStartDay
-            ) {
-                startISO = wizardLocalISOString(boundaries.start)
-                endISO = wizardLocalISOString(boundaries.end)
-            } else {
-                return false
-            }
-        } else if customDatesChanged {
-            // Same CUSTOM timeframe, user picked new dates.
-            let snappedStart = snapStart(editCustomStartDate)
-            let snappedEnd = snapEnd(editCustomEndDate)
-            guard snappedEnd >= snappedStart else { return false }
-            startISO = snappedStart
-            endISO = snappedEnd
-        } else {
-            // Window untouched — nil dates preserve the stored window (and
-            // every in-window completion event) across the save.
-            startISO = nil
-            endISO = nil
+            ) else { return false }
+            metaPatch.timeframe = editTimeframe
+            metaPatch.startDate = wizardLocalISOString(boundaries.start)
+            metaPatch.endDate = wizardLocalISOString(boundaries.end)
+            metaPatch.clearEndDate = false
         }
-
-        let patch = AppDatabase.UpdateActiveBoardPatch(
-            name: trimmedName,
-            timeframe: editTimeframe,
-            startDate: startISO,
-            endDate: endISO,
-            clearEndDate: clearEnd,
-            centerSquareType: editCenterType
-        )
+        let patch = metaPatch
 
         // Snapshot the staged square edits as value types before the detached
         // task (the `@Published` dictionaries are only safe on the MainActor).
@@ -418,6 +378,11 @@ extension BoardPlayViewModel {
                 // already-open transaction would trap. The op order and cascade
                 // semantics are otherwise unchanged.
                 try database.write { db in
+                    // 0. Slice 2 (D11): a board sealed or deleted since edit
+                    //    mode opened throws here, rolling back EVERYTHING
+                    //    below (task overrides included) — never "Board saved".
+                    try AppDatabase.assertBoardEditable(db: db, boardId: bid)
+
                     // 1. Metadata patch (name / timeframe / center).
                     try AppDatabase.updateBoardAndCascade(db: db, boardId: bid, patch: patch)
 
@@ -561,6 +526,13 @@ extension BoardPlayViewModel {
                     // the view's `.onChange(of: editEvent)` on `.saved`.
                     self.reload()
                     self.emitEdit(.saved)
+                }
+            } catch BoardEditError.boardNotEditable {
+                // Sealed / deleted mid-session — the transaction rolled back.
+                await MainActor.run {
+                    self.editSaveInFlight = false
+                    self.reload()
+                    self.emitEdit(.boardClosed(BoardEditError.boardClosedMessage))
                 }
             } catch {
                 dlog("⚠️ BoardPlayViewModel.handleEditSave: \(error)")

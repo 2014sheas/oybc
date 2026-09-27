@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   CenterSquareType,
   Timeframe,
-  toLocalISO,
   getTimeframeBoundaries,
   type WeekStartDay,
   type Board,
@@ -25,6 +24,7 @@ import {
   buildRepeatSavePlan,
   type RepeatCadenceChoice,
 } from './BoardEditRepeatSection';
+import { buildEditDatesPatch } from '../boardActions/boardDetailsPatch';
 import styles from './BoardEditPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -115,77 +115,6 @@ export interface BoardEditPanelProps {
 function toYMD(isoString: string | null | undefined): string {
   if (!isoString) return '';
   return isoString.slice(0, 10);
-}
-
-/** Snap a YYYY-MM-DD string to local start-of-day ISO. */
-function snapStart(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return toLocalISO(new Date(y, m - 1, d, 0, 0, 0, 0));
-}
-
-/** Snap a YYYY-MM-DD string to local end-of-day ISO. */
-function snapEnd(ymd: string): string {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return toLocalISO(new Date(y, m - 1, d, 23, 59, 59, 999));
-}
-
-/**
- * Pure decision core for the Save patch's date fields — EXPORTED FOR TESTS.
- *
- * A metadata-only Save must PRESERVE the board's stored window (returns
- * `{}` — omit both fields): under Windowed Completion, `startDate` is the
- * completion window's lower bound, and rewriting it wipes the windowed
- * progress of every task whose events predate the new start. Dates are
- * returned ONLY for a deliberate re-window: the timeframe changed, or the
- * (unchanged-CUSTOM) dates were edited.
- *
- * Kept pure so the branch-selection logic — the exact booleans that decide
- * preserve-vs-rewindow — is directly unit-testable (review: this decision
- * had zero direct coverage as inline component code).
- */
-export function buildEditDatesPatch(args: {
-  boardTimeframe: Timeframe;
-  formTimeframe: Timeframe;
-  origStart: string;
-  origEnd: string;
-  customStartDate: string;
-  customEndDate: string;
-  computedBoundaries: { startDate: string; endDate: string } | null;
-  /** Injected "today" for determinism in tests; defaults to now. */
-  now?: Date;
-}): { startDate?: string; endDate?: string | null } {
-  const {
-    boardTimeframe, formTimeframe, origStart, origEnd,
-    customStartDate, customEndDate, computedBoundaries,
-  } = args;
-  const timeframeChanged = formTimeframe !== boardTimeframe;
-  const customDatesChanged =
-    formTimeframe === Timeframe.CUSTOM &&
-    (customStartDate !== origStart || customEndDate !== origEnd);
-
-  if (timeframeChanged) {
-    // A deliberate re-window: converting the board recomputes its dates.
-    if (formTimeframe === Timeframe.INDEFINITE) {
-      // Ongoing board — anchor startDate to today, clear the deadline.
-      const dayStart = args.now ? new Date(args.now) : new Date();
-      dayStart.setHours(0, 0, 0, 0);
-      return { startDate: toLocalISO(dayStart), endDate: null };
-    }
-    if (formTimeframe === Timeframe.CUSTOM) {
-      return { startDate: snapStart(customStartDate), endDate: snapEnd(customEndDate) };
-    }
-    if (computedBoundaries) {
-      return { startDate: computedBoundaries.startDate, endDate: computedBoundaries.endDate };
-    }
-    return {};
-  }
-  if (customDatesChanged) {
-    // Same CUSTOM timeframe, user picked new dates.
-    return { startDate: snapStart(customStartDate), endDate: snapEnd(customEndDate) };
-  }
-  // Window untouched — omit startDate/endDate so the stored window (and
-  // every in-window completion event) survives the save.
-  return {};
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -959,7 +959,7 @@ struct BoardPlayView: View {
                 editSaving = false
                 withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
                 triggerBoardSavedToast()
-            case .saveFailed(let message):
+            case .saveFailed(let message), .boardClosed(let message):
                 editSaving = false
                 editSaveError = message
             case .archived:

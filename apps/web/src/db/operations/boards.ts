@@ -57,6 +57,64 @@ export interface UpdateActiveBoardPatch {
   endDate?: string | null;
 }
 
+// ─── Editable guard (Board Edit redesign slice 2, D11) ────────────────────────
+
+/**
+ * Thrown when an edit transaction finds its board sealed, deleted, or gone —
+ * e.g. the app-shell backstop sealed it while an edit session was open. The
+ * throw rolls back every write in the enclosing transaction (staged square
+ * edits and global task overrides included), so the UI can say the changes
+ * weren't saved instead of reporting "Board saved" for a silent no-op.
+ */
+export class BoardNotEditableError extends Error {
+  readonly kind = 'boardNotEditable' as const;
+
+  /** @param boardId - The board that can no longer be edited. */
+  constructor(readonly boardId: string) {
+    super(`Board ${boardId} is sealed or deleted and can no longer be edited.`);
+    this.name = 'BoardNotEditableError';
+  }
+}
+
+/**
+ * Throw `BoardNotEditableError` unless the board row exists, is not deleted,
+ * and is not sealed. Call it FIRST inside an open edit transaction so the
+ * check and the writes see the same row.
+ *
+ * @param boardId - Board about to be edited.
+ * @throws {BoardNotEditableError} When the board is missing, deleted, or sealed.
+ */
+export async function assertBoardEditable(boardId: string): Promise<void> {
+  const board = await db.boards.get(boardId);
+  if (!board || board.isDeleted || board.sealedAt) {
+    throw new BoardNotEditableError(boardId);
+  }
+}
+
+/**
+ * Board details sheet save (slice 2, D4): apply a metadata-only patch as its
+ * own atomic transaction — the editable guard, the board write, and the
+ * stats cascade commit together or not at all. Same table scope as the
+ * squares editor's `commitSquareEdits`.
+ *
+ * @param boardId - Board to update.
+ * @param patch - The fields `buildBoardDetailsPatch` produced.
+ * @throws {BoardNotEditableError} When the board was sealed or deleted.
+ */
+export async function saveBoardDetails(
+  boardId: string,
+  patch: UpdateActiveBoardPatch,
+): Promise<void> {
+  await db.transaction(
+    'rw',
+    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
+    async () => {
+      await assertBoardEditable(boardId);
+      await updateBoardAndCascade(boardId, patch);
+    },
+  );
+}
+
 // ─── updateBoardAndCascade ────────────────────────────────────────────────────
 
 /**
@@ -142,7 +200,9 @@ export async function updateBoardAndCascade(
   // never take a metadata edit — the app-shell backstop can seal a board
   // while an edit session is already open, and sealed boards never mutate
   // except via deterministic pull-path re-derivation. UI gates exist
-  // (Board Edit gates on !sealedAt) but the DB level must hold too.
+  // (Board Edit gates on !sealedAt) but the DB level must hold too. Edit
+  // SAVES run `assertBoardEditable` first so the user hears about it (D11);
+  // this silent return stays as the backstop for every other caller.
   const target = await db.boards.get(boardId);
   if (!target || target.isDeleted || target.sealedAt) return;
 
