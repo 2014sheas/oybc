@@ -238,6 +238,7 @@
 		76584D986F97D8CFDF854CAD /* PoolPickerSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A1B524639196880C1BEB8F /* PoolPickerSheetView.swift */; };
 		76AE91CBFBF9D66B2BD59568 /* RisoTasksPoolHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571C2202A6D9F03A23BDDC96 /* RisoTasksPoolHeaderView.swift */; };
 		77ECF9393AE5E2DCF988513F /* OnboardingNotifPrimingSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59D96AC280FB86015009DC4 /* OnboardingNotifPrimingSnapshotTests.swift */; };
+		78B71BCED92035C81336587C /* UITestSeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571CFB2BC66824CAE0672A16 /* UITestSeed.swift */; };
 		78D0AA7D432697BE05CBE0EC /* CalendarBoundariesVectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED866481FDA2D69E4D7003A3 /* CalendarBoundariesVectorTests.swift */; };
 		790A8C925419EF55D5704E8A /* RecurringBoardTemplatesMixTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8ECE2006B76266C5018FD05 /* RecurringBoardTemplatesMixTests.swift */; };
 		79AFC76C8AE9E5A02354E0A2 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = C75445B6764BE3BD13B11782 /* FirebaseAuth */; };
@@ -270,6 +271,7 @@
 		86CB78ABC94004EF08B59D45 /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2DE69CF0825C0657176C53E9 /* Archivo-SemiBold.ttf */; };
 		8724A7D36DC01998DE1F9D6E /* BoardPlayViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99D5417C875AF6561E4BB27D /* BoardPlayViewModelTests.swift */; };
 		87789241DB6CC5FD13647675 /* BoardWizardTemplateEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 470E19EAC2E380D0F57E5465 /* BoardWizardTemplateEditTests.swift */; };
+		880A10F1B5C929928DDE6CC2 /* SquaresEditGridUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731688D67F0B78AF3048EFC4 /* SquaresEditGridUITests.swift */; };
 		88AC024943E462F0AF5F00B8 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 63CE473C73B22D4EFDC81AED /* GoogleSignIn */; };
 		893CF9F9E6DC2EE4C3E1F946 /* RisoSourcePickerSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375A061AD0CF8DECC28D32C7 /* RisoSourcePickerSheetView.swift */; };
 		893DE653B6DD8D5826705284 /* AppleNonce.swift in Sources */ = {isa = PBXBuildFile; fileRef = 883F7DA1339B283615F3D7D3 /* AppleNonce.swift */; };
@@ -512,6 +514,13 @@
 			remoteGlobalIDString = 649ED9C362239F55CE47277B;
 			remoteInfo = OYBC;
 		};
+		C1EC414F5E5FDF1DCE06D47A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FBB7EE1A8E71828D0A20F5BF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 649ED9C362239F55CE47277B;
+			remoteInfo = OYBC;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -692,6 +701,7 @@
 		55F195718ED7274B0E34F1BD /* RisoTaskDetailContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTaskDetailContentView.swift; sourceTree = "<group>"; };
 		56F7E900ABE30003B057CD43 /* RearrangeGridSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RearrangeGridSnapshotTests.swift; sourceTree = "<group>"; };
 		571C2202A6D9F03A23BDDC96 /* RisoTasksPoolHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTasksPoolHeaderView.swift; sourceTree = "<group>"; };
+		571CFB2BC66824CAE0672A16 /* UITestSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestSeed.swift; sourceTree = "<group>"; };
 		577A9FF2077DA1361731C107 /* RecurringDraftMixPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurringDraftMixPayload.swift; sourceTree = "<group>"; };
 		57E4812F35B465F49A15FFAB /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		593980F6290AA1EFAC50F51F /* BoardWizardTasksStepView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardTasksStepView.swift; sourceTree = "<group>"; };
@@ -707,6 +717,7 @@
 		5C7F688BC351377757882831 /* CounterDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterDeleteConfirmView.swift; sourceTree = "<group>"; };
 		5CCED65D82B6CB5518D835CE /* RisoTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoTheme.swift; sourceTree = "<group>"; };
 		5D94D36F341C3AE9C3CD5880 /* boardSourceVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = boardSourceVectors.json; sourceTree = "<group>"; };
+		5D9CCE2528631FD575090E2A /* OYBCUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OYBCUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5DA8A1C3733036A8098F453B /* CounterMilestone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CounterMilestone.swift; sourceTree = "<group>"; };
 		5DD55457A8953DCE642000CC /* BoardWizardPoolOrderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWizardPoolOrderTests.swift; sourceTree = "<group>"; };
 		5E847066D6FCF791162ED436 /* BoardPlayViewModelBoardActionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardPlayViewModelBoardActionsTests.swift; sourceTree = "<group>"; };
@@ -747,6 +758,7 @@
 		71C0B6740B63F6F5E7AC456F /* backfillEventVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = backfillEventVectors.json; sourceTree = "<group>"; };
 		7254F5B6BC87E8E94EA7AF93 /* StreaksSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreaksSnapshotTests.swift; sourceTree = "<group>"; };
 		7298D1E5D6AE4E9CEA3EEF5C /* CascadeDeleteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CascadeDeleteTests.swift; sourceTree = "<group>"; };
+		731688D67F0B78AF3048EFC4 /* SquaresEditGridUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquaresEditGridUITests.swift; sourceTree = "<group>"; };
 		73E251DCBBC09D1AD007288E /* RisoSourceRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoSourceRowView.swift; sourceTree = "<group>"; };
 		73F91261A5D2B914C87A9E59 /* Board.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Board.swift; sourceTree = "<group>"; };
 		746A9CE6F3AB1AC8E31B198A /* SquaresEditGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquaresEditGrid.swift; sourceTree = "<group>"; };
@@ -1002,7 +1014,7 @@
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
 		FFB954BE701004999E12FBE9 /* CoreBoardWindowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowViewModelTests.swift; sourceTree = "<group>"; };
-		"TEMP_D919F5AB-6BD1-45F5-BBA4-2CDFC2AFF944" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_CFFF4859-49C1-486D-87C4-0C54BFFAD9E4" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1169,6 +1181,7 @@
 				4C85054E57A078D4AAEC7EB6 /* OYBC.app */,
 				616264F26C09F071893F1C55 /* OYBCSnapshotTests.xctest */,
 				16B24FB7FF9CEDD9A319B968 /* OYBCTests.xctest */,
+				5D9CCE2528631FD575090E2A /* OYBCUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -1205,6 +1218,7 @@
 				D913259141EA26D7A2815A0B /* SyncService+ClearableFields.swift */,
 				DBB367C25140CE615FD660C2 /* SyncService+QueueOwnership.swift */,
 				4726875158E06456FF4899F6 /* TutorialProgressStore.swift */,
+				571CFB2BC66824CAE0672A16 /* UITestSeed.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -1636,6 +1650,7 @@
 				3D7E5C61CCC0B0A344A57CAA /* OYBC */,
 				C4F7033B079E971620B4BFA6 /* OYBCSnapshotTests */,
 				A287D5A503950699FE53C6E9 /* OYBCTests */,
+				F7E754143D45F3A760716498 /* OYBCUITests */,
 				58CCF2A47CA60303B518F138 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -1754,10 +1769,18 @@
 			path = LateLog;
 			sourceTree = "<group>";
 		};
-		"TEMP_6797ACA4-5882-42E3-8886-617791D7F779" /* ios */ = {
+		F7E754143D45F3A760716498 /* OYBCUITests */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_D919F5AB-6BD1-45F5-BBA4-2CDFC2AFF944" /* Signing.xcconfig */,
+				731688D67F0B78AF3048EFC4 /* SquaresEditGridUITests.swift */,
+			);
+			path = OYBCUITests;
+			sourceTree = "<group>";
+		};
+		"TEMP_E052CDDA-159D-46ED-BA0F-099947CB15F6" /* ios */ = {
+			isa = PBXGroup;
+			children = (
+				"TEMP_CFFF4859-49C1-486D-87C4-0C54BFFAD9E4" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -1789,6 +1812,24 @@
 			productName = OYBC;
 			productReference = 4C85054E57A078D4AAEC7EB6 /* OYBC.app */;
 			productType = "com.apple.product-type.application";
+		};
+		71593748B0DE9208F4FCD389 /* OYBCUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 07FDF76567B737600C27CD0D /* Build configuration list for PBXNativeTarget "OYBCUITests" */;
+			buildPhases = (
+				DC2A9360CA998712E2FB31FE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				94023FA53711307AFC63656D /* PBXTargetDependency */,
+			);
+			name = OYBCUITests;
+			packageProductDependencies = (
+			);
+			productName = OYBCUITests;
+			productReference = 5D9CCE2528631FD575090E2A /* OYBCUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		9F5E8011F4A8F3E3010DEF60 /* OYBCTests */ = {
 			isa = PBXNativeTarget;
@@ -1842,6 +1883,10 @@
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
+					71593748B0DE9208F4FCD389 = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = 649ED9C362239F55CE47277B;
+					};
 					9F5E8011F4A8F3E3010DEF60 = {
 						ProvisioningStyle = Automatic;
 					};
@@ -1873,6 +1918,7 @@
 				649ED9C362239F55CE47277B /* OYBC */,
 				DB958C2FEF503FC1076D8977 /* OYBCSnapshotTests */,
 				9F5E8011F4A8F3E3010DEF60 /* OYBCTests */,
+				71593748B0DE9208F4FCD389 /* OYBCUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -2207,6 +2253,7 @@
 				AAB24E89D1278B39509C14E3 /* TutorialLessonSheet.swift in Sources */,
 				3F07B857C6A24CE8EBD19177 /* TutorialLessons.swift in Sources */,
 				24B688A1A3A1A536EA95D326 /* TutorialProgressStore.swift in Sources */,
+				78B71BCED92035C81336587C /* UITestSeed.swift in Sources */,
 				BECA1D3017CA6E0A229E6533 /* UUIDv5.swift in Sources */,
 				AE68974162C7670D2CBD065C /* UpgradeAccountSheet.swift in Sources */,
 				9C24CDBF218203559E063F7F /* User.swift in Sources */,
@@ -2420,9 +2467,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DC2A9360CA998712E2FB31FE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				880A10F1B5C929928DDE6CC2 /* SquaresEditGridUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		94023FA53711307AFC63656D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 649ED9C362239F55CE47277B /* OYBC */;
+			targetProxy = C1EC414F5E5FDF1DCE06D47A /* PBXContainerItemProxy */;
+		};
 		BD2CA67C20BD8A0E5F847640 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 649ED9C362239F55CE47277B /* OYBC */;
@@ -2438,7 +2498,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_D919F5AB-6BD1-45F5-BBA4-2CDFC2AFF944" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_CFFF4859-49C1-486D-87C4-0C54BFFAD9E4" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2535,7 +2595,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_D919F5AB-6BD1-45F5-BBA4-2CDFC2AFF944" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_CFFF4859-49C1-486D-87C4-0C54BFFAD9E4" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2581,6 +2641,24 @@
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OYBC.app/OYBC";
 			};
 			name = Release;
+		};
+		7E11CC83A0849605F22C1941 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oybc.OYBCUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OYBC;
+			};
+			name = Debug;
 		};
 		7E2172963CF577C36649F9BE /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -2635,6 +2713,24 @@
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OYBC.app/OYBC";
 			};
 			name = Debug;
+		};
+		F20D152566C1271483B6F69F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.oybc.OYBCUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OYBC;
+			};
+			name = Release;
 		};
 		FA3A2B7F481A4A2A2E1B08DF /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -2698,6 +2794,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		07FDF76567B737600C27CD0D /* Build configuration list for PBXNativeTarget "OYBCUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E11CC83A0849605F22C1941 /* Debug */,
+				F20D152566C1271483B6F69F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		7EA2820B863B586E30FF5D6C /* Build configuration list for PBXNativeTarget "OYBCTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

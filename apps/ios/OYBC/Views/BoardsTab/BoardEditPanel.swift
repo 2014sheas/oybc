@@ -75,6 +75,10 @@ struct BoardEditPanel: View {
 
     @State private var showCancelConfirm = false
 
+    /// True while a square is lifted in the grid. Locks the ScrollView so
+    /// its pan can't steal the post-hold drag (`SquaresEditGrid.onLiftChange`).
+    @State private var isSquareLifted = false
+
     // MARK: - Derived
 
     private var isDirty: Bool { editCount > 0 }
@@ -111,6 +115,7 @@ struct BoardEditPanel: View {
             .padding(.horizontal, Riso.gutter)
             .padding(.vertical, 16)
         }
+        .scrollDisabled(isSquareLifted)
         .background(Color.risoPaper.ignoresSafeArea())
     }
 
@@ -179,6 +184,7 @@ struct BoardEditPanel: View {
                 onTap: onTap,
                 onReorder: onReorder,
                 onKeyboardMove: onKeyboardMove,
+                onLiftChange: { isSquareLifted = $0 },
                 windowedIsCompleted: windowedIsCompleted
             )
         }

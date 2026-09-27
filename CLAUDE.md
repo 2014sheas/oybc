@@ -127,6 +127,7 @@ For iOS UI verification, the only two tools agents should reach for are:
 
 1. **Snapshot tests** (`OYBCSnapshotTests` target) — fast, deterministic, runnable from `xcodebuild`. The default surface for visual regression checks; see the section below.
 2. **`xcodebuild test`** for the logic-test scheme — also fine to run from any agent session.
+3. **`OYBCUITests` (XCUITest) — narrow, owner-authorized exception** for gesture behavior snapshots can't see (added for Board Edit press-and-hold-to-move, 2026-09). It is an *automated* `xcodebuild test -scheme OYBCUITests …` run (same destination/`-derivedDataPath` as the snapshot command below) — never an interactive simctl/AppleScript loop. The tests launch a DEBUG build with `-bypassAuth YES -uiTestSeedEditBoard YES`, which seeds one deterministic 3×3 board and deep-links to it (`OYBC/Services/UITestSeed.swift`, `#if DEBUG`); grid cells expose `squaresEditCell.<slot>` identifiers. ~80s for the suite. **Not in CI** (the iOS job is near its 30-min cap and the app must launch for real, which needs a working `GoogleService-Info.plist`) — run it locally when touching `SquaresEditGrid` / `BoardEditPanel` gestures. Extend it only for gesture/hit-testing behavior; everything visual stays in snapshots.
 
 For anything else (interactive flows, real-device behavior, "does this actually work end-to-end on iPhone 17 sim"), **agents must NOT** drive the simulator from the CLI:
 
