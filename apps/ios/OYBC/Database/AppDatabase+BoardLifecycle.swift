@@ -119,8 +119,17 @@ extension AppDatabase {
     /// stats without re-deriving the whole workspace. No-op for a
     /// missing / deleted / still-sealed board.
     ///
+    /// `authored` (default `true`): bump `version` + `updatedAt` and enqueue the
+    /// Board sync — the local-write contract. `authored: false` writes the SAME
+    /// derived fields (stats + greenlog status) in place with no version bump
+    /// and no enqueue — for pull-path refreshes triggered by a pulled BOARD
+    /// row (a pulled Reopen; the watcher refresh), where an authored write
+    /// would push the board back and re-trigger the refresh on the peer (a
+    /// ping-pong). Output is a deterministic function of converged local data,
+    /// so each device converges independently (the sealed re-derive contract).
+    ///
     /// MUST run inside the caller's write transaction.
-    static func reDeriveLiveBoardTx(db: Database, boardId: String, now: String) throws {
+    static func reDeriveLiveBoardTx(db: Database, boardId: String, now: String, authored: Bool = true) throws {
         guard var board = try Board.fetchOne(db, key: boardId), !board.isDeleted, board.sealedAt == nil else { return }
 
         let allBoardTasks: [BoardTask] = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
@@ -171,6 +180,7 @@ extension AppDatabase {
         board.completedLineIds = newCompletedLineIds
         board.status = newStatus
         board.completedAt = newCompletedAt
+        guard authored else { return try board.save(db) }
         board.updatedAt = now
         board.version += 1
         try board.save(db)
@@ -196,7 +206,15 @@ extension AppDatabase {
     ///   - db: The active GRDB write transaction.
     ///   - changedBoardIds: The boards whose persisted stats just changed.
     ///   - now: The write timestamp for any re-derivation this triggers.
-    static func refreshWatchersForBoards(db: Database, changedBoardIds: Set<String>, now: String) throws {
+    ///   - authored: `true` (default) for a LOCAL write (Close / Reopen / late
+    ///     log) — this device made the change, so it owns pushing the watcher
+    ///     boards' new stats. The PULL cascades pass `false` (via
+    ///     `refreshWatchersAfterPull`): the authoring peer already pushed its
+    ///     own refresh, and watcher stats are a deterministic function of
+    ///     converged data, so each receiving device re-derives in place (no
+    ///     version bump, no enqueue) and never pushes back (no ping-pong).
+    ///     Sealed watcher boards always re-derive non-authored either way.
+    static func refreshWatchersForBoards(db: Database, changedBoardIds: Set<String>, now: String, authored: Bool = true) throws {
         guard !changedBoardIds.isEmpty else { return }
         var visited = Set<String>()
         var frontier = changedBoardIds
@@ -209,8 +227,10 @@ extension AppDatabase {
             visited.formUnion(frontier)
 
             let changedBoards = try frontier.compactMap { try Board.fetchOne(db, key: $0) }
-            let allTasks = try Task.fetchAll(db)
-            let watcherIds = Set(findWatcherTaskIds(tasks: allTasks, changedBoards: changedBoards))
+            // Only ACHIEVEMENT rows can watch — fetch just those (the pull path
+            // calls this once per pulled board), not the whole table.
+            let achievementTasks = try Task.filter(Column("type") == TaskType.achievement.rawValue).fetchAll(db)
+            let watcherIds = Set(findWatcherTaskIds(tasks: achievementTasks, changedBoards: changedBoards))
             guard !watcherIds.isEmpty else { break }
 
             let allBoardTasks = try BoardTask.filter(Column("isDeleted") == false).fetchAll(db)
@@ -232,11 +252,43 @@ extension AppDatabase {
                 if b.sealedAt != nil { sealedIds.insert(id) } else { liveIds.insert(id) }
             }
 
-            for id in liveIds { try reDeriveLiveBoardTx(db: db, boardId: id, now: now) }
+            for id in liveIds { try reDeriveLiveBoardTx(db: db, boardId: id, now: now, authored: authored) }
             if !sealedIds.isEmpty { try reDeriveSealedBoardSnapshots(db: db, boardIds: sealedIds) }
 
             frontier = watcherBoardIds
         }
+    }
+
+    // MARK: - Pull-path hooks (Board Edit post-merge sweep, findings 1 + 3)
+
+    /// The achievement-watcher refresh for boards a PULL just changed —
+    /// non-authored (see `refreshWatchersForBoards`). MUST run inside the
+    /// pull's write transaction.
+    static func refreshWatchersAfterPull(db: Database, boardIds: Set<String>) throws {
+        try refreshWatchersForBoards(db: db, changedBoardIds: boardIds, now: currentTimestamp(), authored: false)
+    }
+
+    /// Side effects of an LWW-applied pulled `boards` row, inside the pull's
+    /// write transaction (both `SyncService` pull paths call this):
+    ///   - pulled SEALED → sealed-transport convergence: re-derive the frozen
+    ///     snapshot from the LOCAL event union (a sealed-offline peer may have
+    ///     derived it from a partial union) — local-only, no version / enqueue.
+    ///   - pulled a REOPEN (sealed here, unsealed in the pulled row) → the row
+    ///     carries the reopening device's live stats from ITS union, which may
+    ///     lack this device's own late logs (made while sealed here, so only a
+    ///     non-authored sealed re-derive ever counted them). Re-derive LIVE
+    ///     from the local union, non-authored; the peer converges once it
+    ///     pulls our late-log event (its taskEvents cascade is authored).
+    ///   - either way, refresh this board's achievement watchers (non-authored).
+    static func applyPulledBoardSideEffects(
+        db: Database, boardId: String, remoteData: [String: Any], localData: [String: Any]?
+    ) throws {
+        if remoteData["sealedAt"] is String {
+            try reDeriveSealedBoardSnapshots(db: db, boardIds: [boardId])
+        } else if localData?["sealedAt"] is String {
+            try reDeriveLiveBoardTx(db: db, boardId: boardId, now: currentTimestamp(), authored: false)
+        }
+        try refreshWatchersAfterPull(db: db, boardIds: [boardId])
     }
 
     // MARK: - D12 metadata-write guard (Archive / Repeat on a closed board)

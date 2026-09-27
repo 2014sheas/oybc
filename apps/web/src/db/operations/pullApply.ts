@@ -20,6 +20,7 @@ import { recordSyncEvent } from '../../firebase/syncStatus';
 import { runBoardCascadeForTask, runBoardCascadeForBoardId } from './orchestration';
 import { reDeriveSealedBoardsByIds } from './sealing';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
+import { refreshWatchersForBoards } from './boardLifecycle';
 
 /**
  * Apply a remote document from a syncable subcollection to the local Dexie
@@ -240,7 +241,22 @@ export async function applyRemoteSubdoc(
         const sealedAt = (validated as { sealedAt?: unknown }).sealedAt;
         if (typeof sealedAt === 'string' && sealedAt) {
           await reDeriveSealedBoardsByIds([validated.id]);
+        } else if ((localData as { sealedAt?: unknown } | undefined)?.sealedAt) {
+          // A pulled REOPEN (sealed here, unsealed in the pulled row): the
+          // row carries the reopening device's live stats, derived from ITS
+          // event union — which may lack this device's own late logs (made
+          // while the board was sealed here, so only a non-authored sealed
+          // re-derive ever counted them). Re-derive the LIVE stats from the
+          // local converged union, non-authored (no version bump, no
+          // enqueue — the reopening device already authored the row; pushing
+          // back would ping-pong), in this same pull transaction. The peer
+          // converges once it pulls our late-log event (its taskEvents pull
+          // cascade re-derives authored).
+          await runBoardCascadeForBoardId(validated.id, { authored: false });
         }
+        // Achievement watchers of this board (docs/BOARD_EDIT_REDESIGN.md
+        // D8) — non-authored on the pull path (see refreshWatchersForBoards).
+        await refreshWatchersForBoards([validated.id], { authored: false });
       } else if (collectionName === 'boardTasks') {
         // Board-integrity PR-1 (docs/BOARD_INTEGRITY.md) — the boardTasks-pull
         // cascade. Before this fix, a pulled placement (live OR tombstone)
@@ -264,6 +280,8 @@ export async function applyRemoteSubdoc(
           if (affectedBoard?.sealedAt) {
             await reDeriveSealedBoardsByIds([boardId]);
           }
+          // Achievement watchers of this board — non-authored on the pull path.
+          await refreshWatchersForBoards([boardId], { authored: false });
         }
       }
     },

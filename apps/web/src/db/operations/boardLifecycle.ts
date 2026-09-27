@@ -5,6 +5,7 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   findWatcherTaskIds,
+  TaskType,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -184,27 +185,45 @@ export async function resolveAffectedBoardIds(changedTaskIds: Iterable<string>):
  * MUST be called inside the caller's transaction (reads/writes `boards`,
  * `boardTasks`, `tasks`, `compoundChildren`, `taskEvents`, `syncQueue`).
  *
+ * Authored vs not: a LOCAL write (Close / Reopen / late log) refreshes
+ * watchers as an authored write (version bump + enqueue) — this device made
+ * the change, so it owns pushing the watcher boards' new stats. The PULL
+ * cascades (`pullApply.ts` boards / boardTasks branches, `taskEventPull.ts`)
+ * pass `{ authored: false }`: the peer that authored the change already
+ * pushed its own refresh, and watcher stats are a deterministic function of
+ * converged data, so each receiving device re-derives them in place (no
+ * version bump, no enqueue) — never pushing back, which would re-trigger the
+ * refresh on the peer (a ping-pong). Sealed watcher boards always re-derive
+ * non-authored (the sealed contract) either way.
+ *
  * @param changedBoardIds Boards whose persisted `status` / `linesCompleted`
- *   just changed (Close, Reopen, or any late-log / undo commit).
+ *   just changed (Close, Reopen, any late-log / undo commit, or a pull).
+ * @param opts `authored` (default `true`) — see above.
  */
-export async function refreshWatchersForBoards(changedBoardIds: Iterable<string>): Promise<void> {
+export async function refreshWatchersForBoards(
+  changedBoardIds: Iterable<string>,
+  opts: { authored?: boolean } = {},
+): Promise<void> {
   const visited = new Set<string>();
   let frontier = new Set(changedBoardIds);
 
   while (frontier.size > 0) {
     for (const id of frontier) visited.add(id);
 
-    const allTasks = await db.tasks.toArray();
+    // Only ACHIEVEMENT rows can watch (`findWatcherTaskIds` filters on type
+    // anyway) — read them via the `type` index, not the whole table, since
+    // the pull path calls this once per pulled board.
+    const achievementTasks = await db.tasks.where('type').equals(TaskType.ACHIEVEMENT).toArray();
     const frontierBoards = (await db.boards.where('id').anyOf([...frontier]).toArray()).map((b) => ({
       id: b.id,
       spawnedFromTemplateId: b.spawnedFromTemplateId,
     }));
-    const watcherTaskIds = findWatcherTaskIds(allTasks, frontierBoards);
+    const watcherTaskIds = findWatcherTaskIds(achievementTasks, frontierBoards);
     if (watcherTaskIds.length === 0) return;
 
     const watcherBoardIds = await resolveAffectedBoardIds(watcherTaskIds);
 
-    await runBoardCascadeForTasks(watcherTaskIds);
+    await runBoardCascadeForTasks(watcherTaskIds, opts);
     await reDeriveSealedBoardsForTasks(watcherTaskIds);
 
     const nextFrontier = new Set<string>();

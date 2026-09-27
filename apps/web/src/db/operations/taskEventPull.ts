@@ -13,6 +13,7 @@ import { recomputeTaskCachesFromPull } from './taskEvents';
 import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
 import { addToSyncQueue, stampTransactionSyncOwner } from './syncQueue';
 import { reDeriveSealedBoardsForTasks } from './sealing';
+import { refreshWatchersForBoards, resolveAffectedBoardIds } from './boardLifecycle';
 import { recordSyncEvent } from '../../firebase/syncStatus';
 
 /**
@@ -125,6 +126,10 @@ export async function applyTaskEventsBatch(
       //    but IS placed on the sealed board. Local-only, inside this txn.
       if (affectedTaskIds.size > 0) {
         await reDeriveSealedBoardsForTasks(affectedTaskIds);
+        // 6. Achievement watchers of every board the pulled events reach
+        //    (live AND sealed) — non-authored on the pull path (see
+        //    `refreshWatchersForBoards`), inside this same transaction.
+        await refreshWatchersForBoards(await resolveAffectedBoardIds(affectedTaskIds), { authored: false });
       }
     },
   );
