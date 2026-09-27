@@ -110,6 +110,41 @@ final class BoardDetailsSaveTests: XCTestCase {
         XCTAssertEqual(saved.completedTasks, 1, "the in-window completion stays green after the start edit")
     }
 
+    /// Migrated from `BoardPlayViewModelTests.
+    /// test_handleEditSave_customDatesChanged_appliesNewWindow` (Board Edit
+    /// redesign slice 2, T3 — dates no longer route through
+    /// `handleEditSave`). Unlike the ongoing-start-only edit above, a picked
+    /// CUSTOM date range DOES apply the new window — pinned as intentional.
+    func test_customDatesChanged_appliesNewWindow_dropsOutOfWindowCompletion() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(timeframe: .custom, startDate: dayISO(-30), endDate: dayISO(-1)))
+        try db.saveTask(makeTask("t1"))
+        let now = AppDatabase.currentTimestamp()
+        try db.saveBoardTask(BoardTask(
+            id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0, isCenter: false,
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+        // Completion inside the OLD window but before the NEW one the user
+        // is about to pick.
+        try db.dbQueue.write { d in
+            try TaskEvent(
+                id: "e1", userId: "u1", taskId: "t1", kind: .completion, delta: nil,
+                occurredAt: self.noonISO(-20), boardId: nil, createdAt: now, updatedAt: now,
+                lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
+            ).insert(d)
+        }
+
+        var draft = BoardDetailsDraft(board: try XCTUnwrap(db.fetchBoard(id: "b1")))
+        draft.startDate = Calendar.current.date(byAdding: .day, value: -5, to: Date())!
+        draft.endDate = Calendar.current.date(byAdding: .day, value: 25, to: Date())!
+        try db.saveBoardDetails(boardId: "b1", patch: try XCTUnwrap(draft.patch()))
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertNotEqual(saved.startDate, dayISO(-30), "changing the custom dates DOES apply the new window — deliberate")
+        XCTAssertEqual(saved.completedTasks, 0, "the old completion predates the newly-picked custom window")
+    }
+
     func test_saveBoardDetails_sealedBoard_throws_noWrite_noQueueRow() throws {
         let db = try AppDatabase.makeTestInstance()
         try seedUser(db)

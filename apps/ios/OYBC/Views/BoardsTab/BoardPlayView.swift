@@ -167,8 +167,9 @@ struct BoardPlayView: View {
     /// Whether to show the GREENLOG full-bleed celebration overlay.
     @State private var showGreenlogOverlay: Bool = false
     // Repeat-in-edit rework — the spawn-provenance note state/recompute
-    // moved to `BoardPlayViewModel.editSpawnNoteText` (computed only while
-    // the Board Edit panel is open); this view no longer owns it.
+    // moved to `BoardPlayViewModel.loadSpawnNote()` (Board Edit redesign
+    // slice 2, T2/T3 — resolved only while `BoardRepeatSheetView` is open);
+    // this view no longer owns it.
     /// Compact greenlog-streak value (e.g. "3d"/"2w") for the celebration overlay
     /// + share poster. Non-nil only for core boards with a streak ≥ 1; nil hides
     /// the STREAK card. Computed when the GREENLOG overlay is triggered.
@@ -219,10 +220,11 @@ struct BoardPlayView: View {
     @State private var sealBlockedTaskIds: Set<String> = []
     // MARK: Edit-mode draft state (Phase 1 board-edit chrome)
     // NOTE (B2-I3): the edit-draft *data* layer moved to `BoardPlayViewModel`.
-    // The `BoardEditPanel`'s seven two-way bindings are now `$viewModel.editName`
-    // … projections, and the staged-square dictionaries + draft-derived helpers
-    // + the seed/save/archive commit live on the view model. The view keeps only
-    // the render-level edit chrome below (`editMode` overlay gate, the Save
+    // Board Edit redesign slice 2 (T3) further retired the metadata/repeat
+    // draft — `BoardEditPanel` now binds only `$viewModel.editCenterType` +
+    // `$viewModel.editSubMode`, plus the staged-square dictionaries + the
+    // seed/save commit, all on the view model. The view keeps only the
+    // render-level edit chrome below (`editMode` overlay gate, the Save
     // spinner mirror, the alert/toast flags, and the cell-menu routing state).
     /// True while the in-place `BoardEditPanel` is overlaid on `BoardPlayView`.
     // internal for the +Header extension split
@@ -240,6 +242,10 @@ struct BoardPlayView: View {
     /// Surfaces a board-edit Save failure (the edit panel overlays the inline
     /// flash, so a system alert is used — it pierces the overlay).
     @State private var editSaveError: String?
+    /// Board Edit redesign slice 2 (T3, D11) — a board sealed/deleted mid-
+    /// session gets its OWN alert (title "Board closed"), distinct from
+    /// `editSaveError`'s generic "Couldn't save" — exiting edit mode on OK.
+    @State private var boardClosedMessage: String?
     /// Controls the "Board saved" success toast (auto-dismissed after 2.4 s).
     @State private var showEditSavedToast: Bool = false
     // MARK: Edit-mode squares draft (Phase 2 — Edit tasks)
@@ -664,27 +670,22 @@ struct BoardPlayView: View {
                 .zIndex(11)
             }
 
-            // ── In-place board edit chrome (Phase 1) ──
-            // Full-screen overlay that replaces the retired `EditBoardSheet` modal.
-            // Sits above the GREENLOG overlay (zIndex 20) so it covers celebrations
-            // triggered just before the user taps Save.
+            // ── In-place SQUARES editor (Board Edit redesign slice 2, T3) ──
+            // Full-screen overlay. Sits above the GREENLOG overlay (zIndex 20)
+            // so it covers celebrations triggered just before the user taps
+            // Save. Everything that used to live in this panel besides the
+            // squares grid + center toggle (name/timeframe/dates, REPEATS,
+            // Archive) moved to the "…" menu's own sheets/alerts — see
+            // `BoardActionsPresenter`.
             if editMode, let b = board {
                 BoardEditPanel(
                     board: b,
                     boardTasks: viewModel.editDraftBoardTasks,
                     taskMap: viewModel.editDraftTaskMap,
-                    weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
-                    originalCustomStartDate: viewModel.editOriginalCustomStartDate,
-                    originalCustomEndDate: viewModel.editOriginalCustomEndDate,
-                    // B2-I3: the seven two-way bindings are now `$viewModel.…`
-                    // projections (`@StateObject` projections are two-way, so
-                    // these behave exactly like the pre-move `@State` bindings).
-                    name: $viewModel.editName,
-                    timeframe: $viewModel.editTimeframe,
-                    customStartDate: $viewModel.editCustomStartDate,
-                    customEndDate: $viewModel.editCustomEndDate,
+                    // B2-I3: two-way `$viewModel.…` projections (`@StateObject`
+                    // projections are two-way, so these behave exactly like
+                    // the pre-move `@State` bindings).
                     centerType: $viewModel.editCenterType,
-                    hasCandidateTasks: viewModel.editHasCandidateTasks,
                     subMode: $viewModel.editSubMode,
                     squareEditCount: viewModel.editSquaresEditCount,
                     dirtyCellKeys: viewModel.editDirtyCellKeys,
@@ -698,54 +699,18 @@ struct BoardPlayView: View {
                     // finding): the edit/rearrange preview must show the
                     // WINDOWED state, not the lifetime cache.
                     windowedIsCompleted: viewModel.windowedIsCompleted,
-                    // Repeat-in-edit — staged REPEATS section (moved off the
-                    // play surface). The VM owns the staged state + the
-                    // Save-time mutations (handleEditSave phase 2).
-                    repeatInfo: viewModel.editSourceTemplate.map {
-                        BoardEditRepeatInfo(
-                            cadenceAdverb: formatCadenceAdverb($0.timeframe),
-                            templateName: $0.name,
-                            originalIsActive: $0.isActive
-                        )
-                    },
-                    repeatActive: $viewModel.editRepeatActive,
-                    repeatCadence: $viewModel.editRepeatCadence,
-                    spawnNoteText: viewModel.editSpawnNoteText,
                     isSaving: editSaving,
                     onSave: {
-                        let weekStart = authService.currentUser?.decodedPreferences
-                            .weekStartDay.rawValue ?? "monday"
                         // The VM validates + dispatches the commit; it returns
                         // true iff the save actually started, so `editSaving`
                         // (view-owned) flips synchronously in the same tick the
                         // pre-move code did — the reset runs on `.editEvent`.
-                        if viewModel.handleEditSave(weekStartDay: weekStart) {
+                        if viewModel.handleEditSave() {
                             editSaving = true
                         }
                     },
                     onCancelConfirmed: {
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                    },
-                    // Board Edit redesign slice 2 (T2) — Archive now writes
-                    // through the plain async `viewModel.archiveBoard()`
-                    // (the "…" menu's Archive item uses the same call via
-                    // `BoardActionsPresenter`); `handleEditArchive` + its
-                    // one-shot `.archived` event were removed from
-                    // `+EditCommit.swift`. The panel's own Archive ghost
-                    // button + alert are retired in slice 2 T3 — until
-                    // then this is a second, redundant entry point to the
-                    // same call.
-                    onArchiveConfirmed: {
-                        let isCore = b.isCore
-                        _Concurrency.Task { @MainActor in
-                            do {
-                                try await viewModel.archiveBoard()
-                                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                                if isCore { onBoardRemoved?() } else { dismiss() }
-                            } catch {
-                                editSaveError = "Archive failed — please try again."
-                            }
-                        }
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -907,6 +872,23 @@ struct BoardPlayView: View {
             actions: { Button("OK", role: .cancel) { editSaveError = nil } },
             message: { Text(editSaveError ?? "") }
         )
+        // Board Edit redesign slice 2 (T3, D11) — a board sealed/deleted
+        // mid-session gets its own alert; OK exits edit mode (there's
+        // nothing left to save).
+        .alert(
+            "Board closed",
+            isPresented: Binding(
+                get: { boardClosedMessage != nil },
+                set: { if !$0 { boardClosedMessage = nil } }
+            ),
+            actions: {
+                Button("OK", role: .cancel) {
+                    boardClosedMessage = nil
+                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                }
+            },
+            message: { Text(boardClosedMessage ?? "") }
+        )
         // M4 — Add task to empty cell sheet. Presented when the user taps
         // the "+" affordance on an empty cell.
         .sheet(
@@ -998,11 +980,12 @@ struct BoardPlayView: View {
             guard let event, !editMode else { return }
             triggerArrivalBanner(from: event)
         }
-        // B2-I3 — edit-commit outcome observer. The VM's `handleEditSave` /
-        // `handleEditArchive` DB commits (+ the domain `reload()`) run VM-side;
-        // this runs the residual view-owned UI mutations they still trigger
-        // (which read view `@State` / the `dismiss` environment), reproducing
-        // the pre-move MainActor tails exactly.
+        // B2-I3 — edit-commit outcome observer. The VM's `handleEditSave`
+        // DB commit (+ the domain `reload()`) runs VM-side; this runs the
+        // residual view-owned UI mutations it still triggers (which read
+        // view `@State`), reproducing the pre-move MainActor tail exactly.
+        // Archive moved to the "…" menu (`BoardActionsPresenter`) in slice
+        // 2 — it no longer emits through this event.
         .onChange(of: viewModel.editEvent) { _, event in
             guard let event else { return }
             switch event.outcome {
@@ -1010,12 +993,13 @@ struct BoardPlayView: View {
                 editSaving = false
                 withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
                 triggerBoardSavedToast()
-            case .saveFailed(let message), .boardClosed(let message):
+            case .saveFailed(let message):
                 editSaving = false
                 editSaveError = message
-            case .archived:
-                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                dismiss()
+            case .boardClosed(let message):
+                // Slice 2 (T3, D11) — its own alert; OK exits edit mode.
+                editSaving = false
+                boardClosedMessage = message
             }
         }
         // Counting stepper sheet — Riso pill stepper for counting cells.

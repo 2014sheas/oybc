@@ -126,35 +126,23 @@ final class BoardPlayViewModel: ObservableObject {
     // MARK: - Edit-mode draft state (B2-I3)
     //
     // The in-place `BoardEditPanel` draft layer, moved verbatim out of
-    // `BoardPlayView` in the B2-I3 slice. These are the fields the panel binds
-    // two-way (`$viewModel.editName`, …) plus the staged-square dictionaries the
-    // Edit-tasks / Rearrange sub-modes mutate. Nothing here is written to the DB
-    // until `handleEditSave` commits; the panel is a pure staged-draft surface.
+    // `BoardPlayView` in the B2-I3 slice. Board Edit redesign slice 2 (T3)
+    // retired the metadata/repeat draft fields that used to live here — name
+    // / timeframe / dates / REPEATS are now `BoardDetailsSheetView` /
+    // `BoardRepeatSheetView`'s own local `@State`, saved independently via
+    // `BoardPlayViewModel+BoardActions`. What remains is the squares draft
+    // (Edit-tasks / Rearrange) plus the ONE metadata field the squares panel
+    // still owns — the center toggle (D5: it's the sole CHOSEN exit until
+    // slice 3 retires CHOSEN). Nothing here is written to the DB until
+    // `handleEditSave` commits; the panel is a pure staged-draft surface.
     //
     // They are `@Published var` (NOT `private(set)`) precisely because the panel
     // writes several of them through projected bindings — `@StateObject`
-    // projections are two-way, so `$viewModel.editName` behaves exactly like the
-    // pre-move `$editName` `@State` binding did.
+    // projections are two-way, so `$viewModel.editCenterType` behaves exactly
+    // like the pre-move `$editCenterType` `@State` binding did.
 
-    /// Draft board name input.
-    @Published var editName: String = ""
-    /// Draft timeframe segmented picker value.
-    @Published var editTimeframe: Timeframe = .monthly
-    /// Draft custom start-date picker value.
-    @Published var editCustomStartDate: Date = Date()
-    /// Draft custom end-date picker value.
-    @Published var editCustomEndDate: Date = Date()
-    /// Original parsed start date seeded from `board.startDate` — used by the
-    /// `BoardEditPanel` dirty-check comparison.
-    @Published var editOriginalCustomStartDate: Date = Date()
-    /// Original parsed end date seeded from `board.endDate` — used by the
-    /// `BoardEditPanel` dirty-check comparison.
-    @Published var editOriginalCustomEndDate: Date = Date()
     /// Draft center-square type selector value.
     @Published var editCenterType: CenterSquareType = .free
-    /// True when the board already has a center-task placement (gates CHOSEN option).
-    /// Loaded asynchronously by `seedEditDraft(from:)`.
-    @Published var editHasCandidateTasks: Bool = false
     /// Which squares sub-mode (Edit tasks / Rearrange) is active.
     @Published var editSubMode: BoardEditSubMode = .editTasks
     /// Per-cell staged state keyed by "row-col". Seeded from live `BoardTask`
@@ -175,23 +163,6 @@ final class BoardPlayViewModel: ObservableObject {
     /// shown by `RearrangeGrid`. nil until the user first enters Rearrange
     /// sub-mode (built lazily by `seedRearrangeCells`).
     @Published var editRearrangeCells: [RearrangeCellData]? = nil
-
-    // MARK: Repeat-in-edit (staged REPEATS section)
-
-    /// Staged repeat cadence for a ONE-OFF board (`nil` = Off, the default).
-    /// Bound two-way by the panel's Off · Daily · Weekly · Monthly · Yearly
-    /// segmented; applied on Save via `repeatBoardAsTemplate` (phase 2 of the
-    /// two-phase Save in `handleEditSave`).
-    @Published var editRepeatCadence: Timeframe? = nil
-    /// Staged Active value for a REPEATING board's Repeating/Paused toggle.
-    /// Seeded from the source record's live `isActive` by `seedEditDraft`;
-    /// applied on Save only when it differs.
-    @Published var editRepeatActive: Bool = true
-    /// Read-only spawn-provenance note shown in the panel's REPEATS section
-    /// (moved off the play surface — repeat-in-edit rework). Computed
-    /// off-main by `recomputeEditSpawnNote` ONLY on edit-mode entry, so the
-    /// sources-native supply resolution never runs while just playing.
-    @Published var editSpawnNoteText: String? = nil // internal for the +EditCommit extension split (2026-09-15)
 
     /// The board's source repeating record, resolved from the workspace-wide
     /// templates `reload()` already loads. `nil` for a one-off board OR an
@@ -221,9 +192,10 @@ final class BoardPlayViewModel: ObservableObject {
     /// double-save guard lives here so it can't race the published UI mirror).
     var editSaveInFlight = false // internal for the +EditCommit extension split (2026-09-15)
 
-    /// Repeat-in-edit — the staged REPEATS draft's Save-time mutation
-    /// (phase 2 of `handleEditSave`'s two-phase Save). Snapshotted on the
-    /// main actor before the detached commit, like the other staged drafts.
+    /// The "Repeat this board" sheet's staged intent (Board Edit redesign
+    /// slice 2, T2/T3): `BoardRepeatSheetView` builds this on Save and
+    /// `BoardPlayViewModel+BoardActions.saveRepeat(_:weekStartDay:)` commits
+    /// it as its own independent write — no longer part of `handleEditSave`.
     enum EditRepeatIntent { // internal for the +EditCommit extension split (2026-09-15)
         /// One-off board + staged cadence ≠ Off → mint the repeat record.
         case startRepeating(cadence: Timeframe)

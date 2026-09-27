@@ -140,7 +140,7 @@ final class BoardPlayViewModelLockTests: XCTestCase {
         vm.handleEditToggleLock(cellKey: "0-1")   // unlock bt2
         XCTAssertEqual(vm.editSquaresEditCount, 2)
 
-        XCTAssertTrue(vm.handleEditSave(weekStartDay: "monday"))
+        XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved }, "never emitted .saved")
 
         let rows = try db.fetchBoardTasks(boardId: "b1")
