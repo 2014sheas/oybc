@@ -24,7 +24,7 @@ import {
   computeTaskCachesFromEvents,
   getSealImmuneWindowsForTask,
 } from './taskEvents';
-import { refreshDerivedBaselines } from './derivedCounters';
+import { refreshDerivedBaselines, withWindowStampedDerived } from './derivedCounters';
 import { propagateToLinkedRows } from './tasks.sharedCounter';
 import { reDeriveSealedBoardsForTasks } from './sealing';
 import { resolveAffectedBoardIds, refreshWatchersForBoards } from './boardLifecycle';
@@ -74,7 +74,10 @@ async function applyLateLogSideEffects(changedTaskIds: Iterable<string>): Promis
   const ids = [...new Set(changedTaskIds)];
   if (ids.length === 0) return;
   const affectedBoardIds = await resolveAffectedBoardIds(ids);
-  await runBoardCascadeForTasks(ids);
+  // A shared-counter ROOT is never placed: live-cascade from its
+  // window-stamped derived rows too (iOS `reDeriveAfterLateLogWrite` reaches
+  // the same boards via `boardIdsReachedByTasks`).
+  await runBoardCascadeForTasks(await withWindowStampedDerived(new Set(ids)));
   await reDeriveSealedBoardsForTasks(ids);
   if (affectedBoardIds.size > 0) await refreshWatchersForBoards(affectedBoardIds);
 }
@@ -513,9 +516,11 @@ export interface ClosedBoardSquareState {
    *  a window-stamped derived square), newest first — `[]` means nothing to
    *  undo. */
   lateLogs: TaskEvent[];
-  /** The id `commitCompletion`/`commitIncrement`/`undo` should be called
-   *  with from the UI — the tapped task for NORMAL/plain COUNTING, or the
-   *  ROOT for a window-stamped derived square (derived rows own no events). */
+  /** The event-owning id whose events this state was READ from — the tapped
+   *  task for NORMAL/plain COUNTING, or the ROOT for a window-stamped derived
+   *  square (derived rows own no events). Read-side only: the write/undo
+   *  entry points (`lateLogIncrement`, `undoLateLog`, …) take the TAPPED
+   *  (placed) task id and resolve the root themselves. */
   effectiveTaskId: string;
 }
 

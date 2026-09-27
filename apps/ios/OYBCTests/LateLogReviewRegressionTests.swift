@@ -285,4 +285,60 @@ final class LateLogReviewRegressionTests: XCTestCase {
         XCTAssertEqual(result.undoneAmount, 5)
         XCTAssertEqual(try fetchBoard(db, "D").sealedCompletedCells, [], "the closed board re-derives in the same transaction")
     }
+
+    // MARK: - ViewModel path: window-stamped derived late log (F1)
+
+    /// Pump the main run loop until `predicate` holds (mirrors
+    /// `BoardPlayViewModelBoardActionsTests`' house style).
+    @discardableResult
+    private func waitUntil(timeout: TimeInterval = 30, _ predicate: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !predicate() && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        return predicate()
+    }
+
+    /// Bridges a VM `async throws` call back to this synchronous test.
+    private func run(_ operation: @escaping () async throws -> Void) -> Error? {
+        var caughtError: Error?
+        var done = false
+        _Concurrency.Task { @MainActor in
+            do { try await operation() } catch { caughtError = error }
+            done = true
+        }
+        XCTAssertTrue(waitUntil { done }, "the async operation never completed")
+        return caughtError
+    }
+
+    /// F1 regression: the late-log sheet's counting branch drives the VM with
+    /// the tapped (PLACED) derived square. The VM must hand the DB the placed
+    /// id (the DB resolves the root itself) — passing the pre-resolved root
+    /// threw `taskNotPlaced` on every derived square. Undo still targets the
+    /// root's late log through the same VM.
+    func test_viewModel_lateLogIncrement_windowStampedDerived_appendsOnRoot_andUndoes() throws {
+        let db = try makeDb(); try seedUser(db)
+        try seedDerivedFixture(db)
+        let vm = BoardPlayViewModel(boardId: "D", userId: userId, database: db)
+        vm.reload()
+        XCTAssertTrue(waitUntil { vm.board?.id == "D" && vm.taskMap["Dd"] != nil })
+        let derived = try XCTUnwrap(vm.taskMap["Dd"])
+
+        let error = run { try await vm.commitLateLogIncrement(for: derived, delta: 5) }
+        XCTAssertNil(error, "a derived square's late log must not throw (was taskNotPlaced)")
+
+        let rootEvents = try events(db, taskId: "R")
+        XCTAssertEqual(rootEvents.count, 1)
+        XCTAssertEqual(rootEvents.first?.delta, 5)
+        XCTAssertEqual(rootEvents.first?.occurredAt, dailyEnd, "stamped at the closed board's endDate")
+        XCTAssertEqual(rootEvents.first?.boardId, "D")
+        XCTAssertTrue(try events(db, taskId: "Dd").isEmpty, "derived rows own no events")
+        XCTAssertEqual(try fetchBoard(db, "D").sealedCompletedCells, [0], "the sealed snapshot re-derives")
+        XCTAssertTrue(waitUntil { vm.hasClosedBoardLateLog(for: derived) }, "Undo late log is offered")
+
+        let undoError = run { try await vm.undoLateLog(for: derived) }
+        XCTAssertNil(undoError)
+        XCTAssertTrue(try events(db, taskId: "R").allSatisfy(\.isDeleted), "only that late log is tombstoned")
+        XCTAssertEqual(try fetchBoard(db, "D").sealedCompletedCells, [], "the closed daily reverts")
+    }
 }

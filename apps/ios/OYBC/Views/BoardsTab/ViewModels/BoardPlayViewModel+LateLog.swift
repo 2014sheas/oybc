@@ -66,8 +66,8 @@ extension BoardPlayViewModel {
     }
 
     /// Logs `delta` (> 0) on a closed board's COUNTING square — `taskId` is
-    /// the event-owning id from `lateLogEventOwningTaskId(for:)` (the ROOT
-    /// for a window-stamped derived square).
+    /// the PLACED square's id (the DB resolves a window-stamped derived row
+    /// to its ROOT itself). Prefer `commitLateLogIncrement(for:delta:)`.
     func commitLateLogIncrement(taskId: String, delta: Int) async throws {
         let bid = boardId
         let db = database
@@ -102,5 +102,37 @@ extension BoardPlayViewModel {
             try db.undoLateLog(boardId: bid, taskId: taskId)
         }.value
         reload()
+    }
+
+    // MARK: - Task-based entry points (what the late-log sheet calls)
+    //
+    // The sheet hands over the TAPPED square's task; these own the id
+    // mapping so it can't drift again (F1): a write goes through the DB with
+    // the PLACED id — `lateLogIncrement` checks placement and resolves a
+    // window-stamped derived row to its ROOT itself (web contract:
+    // `LateLogSheet` → `commitIncrement(task.id, …)`) — while the event READS
+    // (`hasClosedBoardLateLog`, `undoLateLog`) query the event-owning ROOT
+    // directly, since derived rows own no events.
+
+    /// Whether the tapped `task`'s square has an undoable late log on this
+    /// closed board (queries the event-owning id — the root for a derived row).
+    func hasClosedBoardLateLog(for task: Task) -> Bool {
+        guard let id = lateLogEventOwningTaskId(for: task) else { return false }
+        return hasClosedBoardLateLog(taskId: id)
+    }
+
+    /// Logs `delta` on the tapped COUNTING square. Passes the PLACED id —
+    /// never the pre-resolved root, which is not placed and would throw
+    /// `LateLogError.taskNotPlaced`. No-op for a non-routable square.
+    func commitLateLogIncrement(for task: Task, delta: Int) async throws {
+        guard lateLogEventOwningTaskId(for: task) != nil else { return }
+        try await commitLateLogIncrement(taskId: task.id, delta: delta)
+    }
+
+    /// Reverses the newest late log for the tapped square — against the
+    /// event-owning id (the ROOT for a window-stamped derived row).
+    func undoLateLog(for task: Task) async throws {
+        guard let id = lateLogEventOwningTaskId(for: task) else { return }
+        try await undoLateLog(taskId: id)
     }
 }

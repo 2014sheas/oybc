@@ -10,6 +10,7 @@ import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { sealBoard, reDeriveSealedBoardsForTasks } from './sealing';
 import { runBoardCascadeForBoardId, runBoardCascadeForTasks } from './orchestration';
+import { withWindowStampedDerived } from './derivedCounters';
 
 /**
  * Board Edit redesign slice 4 — Close / Reopen + the achievement-watcher
@@ -149,14 +150,19 @@ export async function assertBoardMetadataWritable(boardId: string): Promise<void
  * @param changedTaskIds The tasks whose event set (or derived state) changed.
  */
 export async function resolveAffectedBoardIds(changedTaskIds: Iterable<string>): Promise<Set<string>> {
-  const ids = [...new Set(changedTaskIds)];
-  if (ids.length === 0) return new Set();
+  const ids = new Set(changedTaskIds);
+  if (ids.size === 0) return new Set();
 
+  // A shared-counter ROOT is never placed itself: expand to its
+  // window-stamped derived rows (every sibling, not just the tapped one) so a
+  // watcher of ANY board placing one refreshes — the same reachability
+  // `reDeriveSealedBoardsForTasks` and iOS `boardIdsReachedByTasks` use.
+  const reachable = await withWindowStampedDerived(ids);
   const boardTasks = await db.boardTasks.filter((bt) => !bt.isDeleted).toArray();
   const children = await db.compoundChildren.filter((c) => !c.isDeleted).toArray();
 
   const affected = new Set<string>();
-  for (const taskId of ids) {
+  for (const taskId of reachable) {
     const parents = findTransitiveParentCompounds(taskId, children);
     for (const id of findAffectedBoardIds(taskId, parents, boardTasks)) affected.add(id);
   }

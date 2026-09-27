@@ -11,7 +11,7 @@ import {
 } from '@oybc/shared';
 import { db } from '../../internal';
 import { closeBoard, reopenBoard } from '../boardLifecycle';
-import { lateLogCompletion } from '../lateLog';
+import { lateLogCompletion, lateLogIncrement } from '../lateLog';
 import { sealBoard } from '../sealing';
 
 /**
@@ -239,6 +239,83 @@ describe('a closed-board late log refreshes achievement watchers', () => {
     await lateLogCompletion(WATCHED, ids[8], '2026-07-05T00:00:00.000Z');
 
     expect((await db.boards.get(WATCHED))?.status).toBe(BoardStatus.COMPLETED);
+    expect((await db.boards.get(WATCHER))?.completedTasks).toBe(1);
+  });
+});
+
+describe('a derived-counter late log refreshes watchers of SIBLING derived boards (F2)', () => {
+  const ROOT = 'root-counter';
+  const DAILY = 'closed-daily';
+  const WEEKLY = 'closed-weekly';
+  const WEEK_START = '2026-06-29T00:00:00.000Z';
+  const WEEK_END = '2026-07-05T23:59:59.999Z';
+
+  function counting(id: string, over: Partial<Task> = {}): Task {
+    return {
+      id,
+      userId: USER,
+      title: id,
+      type: TaskType.COUNTING,
+      action: 'Run',
+      unit: 'mi',
+      maxCount: 5,
+      currentCount: 0,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 1,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+      ...over,
+    };
+  }
+
+  it('late-logging the daily\'s derived row refreshes a watcher of the weekly placing a sibling row, in the same op', async () => {
+    // One root, two window-stamped derived rows: the daily's and the weekly's.
+    await db.tasks.add(counting(ROOT, { maxCount: 100 }));
+    await db.tasks.add(
+      counting('derived-daily', { sharedCounterId: ROOT, startDate: START, endDate: END, createdInWizard: true, baseline: 0 }),
+    );
+    await db.tasks.add(
+      counting('derived-weekly', {
+        sharedCounterId: ROOT,
+        startDate: WEEK_START,
+        endDate: WEEK_END,
+        createdInWizard: true,
+        baseline: 0,
+      }),
+    );
+    await seedBoard(DAILY);
+    await placeTask(DAILY, 'derived-daily', 0);
+    await seedBoard(WEEKLY, { timeframe: Timeframe.WEEKLY, startDate: WEEK_START, endDate: WEEK_END });
+    await placeTask(WEEKLY, 'derived-weekly', 0);
+    // The weekly's other 8 squares are done in-window — the derived square is
+    // the only thing between it and a greenlog.
+    for (let cell = 1; cell < 9; cell++) {
+      const id = `weekly-normal-${cell}`;
+      await seedNormalTask(id);
+      await placeTask(WEEKLY, id, cell);
+      await db.taskEvents.add(completionEvent(`ce-${id}`, id, IN_WINDOW));
+    }
+    await closeBoard(DAILY, PAST_AUTO_CLOSE);
+    await closeBoard(WEEKLY, '2026-07-06T01:00:00.000Z');
+    expect((await db.boards.get(WEEKLY))?.sealedCompletedCells).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect((await db.boards.get(WEEKLY))?.status).not.toBe(BoardStatus.COMPLETED);
+
+    // The achievement watches the WEEKLY (which the late log reaches only
+    // through its sibling derived row of the same root).
+    await db.tasks.add(specificBoardAchievement({ referencedBoardId: WEEKLY }));
+    await seedBoard(WATCHER, { boardSize: 3, totalTasks: 1 });
+    await placeTask(WATCHER, ACH, 0);
+    expect((await db.boards.get(WATCHER))?.completedTasks).toBe(0);
+
+    await lateLogIncrement(DAILY, 'derived-daily', 5, '2026-07-10T00:00:00.000Z');
+
+    // The weekly's sealed snapshot re-derives (its window holds the stamp)…
+    expect((await db.boards.get(WEEKLY))?.sealedCompletedCells).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect((await db.boards.get(WEEKLY))?.status).toBe(BoardStatus.COMPLETED);
+    // …and its watcher refreshes in the SAME late-log transaction.
     expect((await db.boards.get(WATCHER))?.completedTasks).toBe(1);
   });
 });

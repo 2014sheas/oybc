@@ -9,7 +9,10 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { lateLogCompletion, lateLogIncrement, undoLateLog } from '../lateLog';
+import { lateLogCompletion, lateLogIncrement, readClosedBoardSquareState, undoLateLog } from '../lateLog';
+// Not a stateful React hook (plain pass-throughs bound to a board id) — aliased
+// so rules-of-hooks doesn't read the test's direct call as a hook call.
+import { useLateLog as bindLateLogForBoard } from '../../../hooks/useLateLog';
 import { sealBoard } from '../sealing';
 import { tombstoneLatestCompletion } from '../taskEvents';
 
@@ -351,5 +354,41 @@ describe('R4 recovery — a log stamped on the wrong day', () => {
     await lateLogIncrement(DAILY_TUE, TASK, 5, '2026-07-05T00:00:00.000Z');
     expect((await db.tasks.get(TASK))?.currentCount).toBe(5);
     expect((await db.boards.get(DAILY_TUE))?.sealedCompletedCells).toEqual([0]);
+  });
+});
+
+describe('the sheet entry point (useLateLog) — window-stamped derived square end to end (F1 parity)', () => {
+  it('logs with the TAPPED derived id: appends on the root at endDate, re-derives, and undoes only that log', async () => {
+    const ROOT = 'root-counter';
+    const DERIVED = 'derived-row';
+    await seedCountingTask(ROOT, 100);
+    await seedCountingTask(DERIVED, 5, {
+      sharedCounterId: ROOT,
+      startDate: DAILY_START,
+      endDate: DAILY_END,
+      createdInWizard: true,
+      baseline: 0,
+    });
+    await seedBoard(DAILY);
+    await placeTask(DAILY, DERIVED, 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+    const sheet = bindLateLogForBoard(DAILY);
+
+    // Exactly what `LateLogSheet`'s counting body does: commitIncrement(task.id, …).
+    await sheet.commitIncrement(DERIVED, 5);
+
+    const rootEvents = await db.taskEvents.where('taskId').equals(ROOT).toArray();
+    expect(rootEvents).toHaveLength(1);
+    expect(rootEvents[0]).toMatchObject({ delta: 5, occurredAt: DAILY_END, boardId: DAILY, isDeleted: false });
+    expect(await db.taskEvents.where('taskId').equals(DERIVED).count()).toBe(0);
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([0]);
+    const state = await readClosedBoardSquareState(DAILY, DERIVED);
+    expect(state?.lateLogs.map((e) => e.id)).toEqual([rootEvents[0].id]);
+
+    // …and its Undo: undo(task.id).
+    expect(await sheet.undo(DERIVED)).toBe(true);
+    const after = await db.taskEvents.where('taskId').equals(ROOT).toArray();
+    expect(after.map((e) => e.isDeleted)).toEqual([true]);
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([]);
   });
 });

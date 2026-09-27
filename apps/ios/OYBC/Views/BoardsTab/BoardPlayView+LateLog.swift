@@ -98,14 +98,13 @@ extension BoardPlayView {
                 windowLabel: closedBoardWindowLabel,
                 taskTitle: task.title,
                 kind: .normal,
-                isUndoable: viewModel.hasClosedBoardLateLog(taskId: task.id),
+                isUndoable: viewModel.hasClosedBoardLateLog(for: task),
                 onMarkDone: { runLateLogCompletion(taskId: task.id) },
-                onUndo: { runLateLogUndo(taskId: task.id) },
+                onUndo: { runLateLogUndo(task: task) },
                 errorMessage: lateLogErrorMessage
             )
 
         case .counting:
-            let eventOwningId = viewModel.lateLogEventOwningTaskId(for: task)
             let current: Int = {
                 guard task.sharedCounterId != nil else { return viewModel.windowedState(of: task).count }
                 return resolveLinkedCounterDisplay(
@@ -116,15 +115,9 @@ extension BoardPlayView {
                 windowLabel: closedBoardWindowLabel,
                 taskTitle: task.title,
                 kind: .counting(current: current, max: task.maxCount ?? 0, unit: task.unit ?? ""),
-                isUndoable: eventOwningId.map { viewModel.hasClosedBoardLateLog(taskId: $0) } ?? false,
-                onUndo: {
-                    guard let id = eventOwningId else { return }
-                    runLateLogUndo(taskId: id)
-                },
-                onLogAmount: { amount in
-                    guard let id = eventOwningId else { return }
-                    runLateLogIncrement(taskId: id, delta: amount)
-                },
+                isUndoable: viewModel.hasClosedBoardLateLog(for: task),
+                onUndo: { runLateLogUndo(task: task) },
+                onLogAmount: { amount in runLateLogIncrement(task: task, delta: amount) },
                 errorMessage: lateLogErrorMessage
             )
 
@@ -178,10 +171,12 @@ extension BoardPlayView {
         }
     }
 
-    private func runLateLogIncrement(taskId: String, delta: Int) {
+    /// Passes the TAPPED (placed) task — the VM hands the DB the placed id
+    /// (F1: the pre-resolved root is never placed → `taskNotPlaced`).
+    private func runLateLogIncrement(task: Task, delta: Int) {
         _Concurrency.Task { @MainActor in
             do {
-                try await viewModel.commitLateLogIncrement(taskId: taskId, delta: delta)
+                try await viewModel.commitLateLogIncrement(for: task, delta: delta)
                 lateLogErrorMessage = nil
             } catch {
                 lateLogErrorMessage = "Couldn't log it — please try again."
@@ -202,10 +197,12 @@ extension BoardPlayView {
         }
     }
 
-    private func runLateLogUndo(taskId: String) {
+    /// Undo for a tapped square — the VM resolves the event-owning
+    /// id (the ROOT for a window-stamped derived row).
+    private func runLateLogUndo(task: Task) {
         _Concurrency.Task { @MainActor in
             do {
-                try await viewModel.undoLateLog(taskId: taskId)
+                try await viewModel.undoLateLog(for: task)
                 lateLogTarget = nil
             } catch {
                 lateLogErrorMessage = "Couldn't undo — please try again."

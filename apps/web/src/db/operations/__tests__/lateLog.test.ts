@@ -518,6 +518,51 @@ describe('lateLogCompoundParts', () => {
     expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([]);
   });
 
+  it('a staged +1 on a counting child that is a shared-counter ROOT live-cascades a LIVE board placing its window-stamped derived row', async () => {
+    const { compoundId, normalChildId, countingChildId } = await seedCompound();
+    // The counting child is also the root of a weekly derived counter placed
+    // on a still-open weekly (target 3). The root itself is never placed there.
+    await seedCountingTask('derived-weekly', 3, {
+      sharedCounterId: countingChildId,
+      startDate: WEEKLY_START,
+      endDate: WEEKLY_END,
+      createdInWizard: true,
+      baseline: 0,
+    });
+    await seedBoard(WEEKLY, { timeframe: Timeframe.WEEKLY, startDate: WEEKLY_START, endDate: WEEKLY_END });
+    await placeTask(WEEKLY, 'derived-weekly', 0);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, compoundId, 0);
+    await db.taskEvents.add({
+      id: 'in-1',
+      taskId: countingChildId,
+      userId: USER,
+      kind: 'increment',
+      delta: 2,
+      occurredAt: '2026-07-01T08:00:00.000Z',
+      createdAt: DAILY_START,
+      updatedAt: DAILY_START,
+      version: 1,
+      isDeleted: false,
+    });
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+    expect((await db.boards.get(WEEKLY))?.completedTasks).toBe(0); // 2/3 on the weekly
+
+    await lateLogCompoundParts(
+      DAILY,
+      compoundId,
+      [
+        { childTaskId: normalChildId, kind: 'completion' },
+        { childTaskId: countingChildId, kind: 'increment', delta: 1 },
+      ],
+      FRIDAY_NOW,
+    );
+
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([0]);
+    // 3/3 on the weekly — reached only through the root's derived row.
+    expect((await db.boards.get(WEEKLY))?.completedTasks).toBe(1);
+  });
+
   it('preview: a staged +1 that finishes a 2/3 counting child meets AND; a prior-window increment never counts', async () => {
     const { compoundId, normalChildId, countingChildId } = await seedCompound();
     await seedBoard(DAILY);
