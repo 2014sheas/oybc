@@ -41,7 +41,7 @@ test.describe('Lock a square (Board Edit redesign slice 1)', () => {
     // Seeded lock is drawn on the board (not only in edit mode).
     await expect(page.getByRole('img', { name: 'Locked in place' })).toHaveCount(1);
 
-    await page.getByRole('button', { name: /^edit board/i }).click();
+    await page.getByRole('button', { name: /^edit squares/i }).click();
     await page.getByRole('button', { name: 'Edit square: Morning workout' }).click();
     await page.getByRole('button', { name: 'Lock in place' }).click();
 
@@ -57,7 +57,7 @@ test.describe('Lock a square (Board Edit redesign slice 1)', () => {
     await expect(page.getByRole('img', { name: 'Locked in place' })).toHaveCount(2);
 
     // Rearrange: the locked square is pinned — no grip, no jiggle, a drag from it is a no-op.
-    await page.getByRole('button', { name: /^edit board/i }).click();
+    await page.getByRole('button', { name: /^edit squares/i }).click();
     await page.getByRole('button', { name: 'Rearrange' }).click();
     const locked = page.locator(`[data-cid="${ids(0).bt}"]`);
     await expect(locked).toBeVisible();
@@ -74,7 +74,7 @@ test.describe('Lock a square (Board Edit redesign slice 1)', () => {
 
   test('a locked square offers Unlock', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
-    await page.getByRole('button', { name: /^edit board/i }).click();
+    await page.getByRole('button', { name: /^edit squares/i }).click();
     await page.getByRole('button', { name: 'Edit square: Drink 8 glasses' }).click();
     await expect(page.getByRole('button', { name: 'Unlock' })).toBeVisible();
     await page.getByRole('button', { name: 'Unlock' }).click();

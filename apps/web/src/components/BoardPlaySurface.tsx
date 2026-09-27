@@ -503,7 +503,6 @@ export function BoardPlaySurface({
         <aside className={play.rail}>
           <BoardEditPanel
             board={board}
-            weekStartDay={prefs.weekStartDay}
             subMode={subMode}
             onSubModeChange={(mode) => {
               // Clear editTasks overlays when switching sub-modes so a
@@ -520,18 +519,9 @@ export function BoardPlaySurface({
             onCancel={() => setEditMode(false)}
             onSaved={() => {
               setEditMode(false);
-              setSavedToast(true);
-              if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
-              savedToastTimerRef.current = setTimeout(() => setSavedToast(false), 2400);
+              triggerBoardSavedToast();
             }}
-            onArchived={() => navigate('/boards')}
             centerType={draftCenterType}
-            onCenterTypeChange={setDraftCenterType}
-            sourceTemplate={sourceTemplate}
-            userId={userId}
-            taskMap={taskMap}
-            dealtTaskIds={sortedBoardTasks.map((bt) => bt.taskId)}
-            counterFamilyByTaskId={counterFamilyByTaskId}
           />
         </aside>
       ) : (

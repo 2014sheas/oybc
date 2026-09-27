@@ -92,7 +92,12 @@ test.describe('P6 — Boards tab paused badge', () => {
   });
 });
 
-test.describe('P6 — Board screen manage row', () => {
+test.describe('P6 — Repeat sheet (repeating board)', () => {
+  // Board Edit redesign slice 2 — the play-surface manage row retired
+  // (repeat-in-edit rework moved it into `BoardEditPanel`'s REPEATS
+  // section); slice 2 moved it again, off the panel and into the "…" menu's
+  // Repeat sheet (`BoardRepeatSheet`, reusing `BoardEditRepeatSection`
+  // unchanged). This describe drives the CURRENT surface.
   test.beforeEach(async ({ page }) => {
     await seedTemplate(page, {
       id: ACTIVE_TEMPLATE_ID,
@@ -117,24 +122,35 @@ test.describe('P6 — Board screen manage row', () => {
     });
   });
 
-  test('renders the manage row and Pause/Resume round-trips through Dexie', async ({ page }) => {
+  test('shows the cadence + source name; the Repeating/Paused toggle round-trips through Dexie', async ({ page }) => {
     await page.goto(`/boards/${REPEATING_BOARD_ID}?__oybc_test_bypass=1`);
+    await expect(page.getByText('This Week')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Board menu' }).click();
+    await page.getByRole('menuitem', { name: 'Repeat this board…' }).click();
     await expect(page.getByText(/Repeats weekly.*Evening Wind-down/)).toBeVisible();
 
-    const toggleBtn = page.getByRole('button', { name: 'Pause' });
-    await expect(toggleBtn).toBeVisible();
-    await toggleBtn.click();
+    const toggleGroup = page.getByRole('group', { name: 'Repeating status' });
+    await toggleGroup.getByRole('button', { name: 'Paused' }).click();
+    await page
+      .getByRole('dialog', { name: 'Repeat this board' })
+      .getByRole('button', { name: 'Save' })
+      .click();
 
-    // Button flips to "Resume" once the template's isActive write lands
-    // (live-query reactive — no reload needed, unlike the raw-IDB seeds).
-    await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible();
-
-    // Confirm the badge at the top of the play header also reflects paused.
+    // Sheet closes; the badge at the top of the play header reflects paused
+    // (live-query reactive — no reload needed).
     await expect(page.getByText('PAUSED')).toBeVisible();
+
+    // Reopen — the toggle's new value persisted in Dexie.
+    await page.getByRole('button', { name: 'Board menu' }).click();
+    await page.getByRole('menuitem', { name: 'Repeat this board…' }).click();
+    await expect(
+      page.getByRole('group', { name: 'Repeating status' }).getByRole('button', { name: 'Paused' }),
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
-test.describe('P6 — "Repeat this board…" CTA', () => {
+test.describe('P6 — "Repeat this board…" menu item', () => {
   test.beforeEach(async ({ page }) => {
     await seedBoard(page, {
       id: ONE_OFF_BOARD_ID,
@@ -179,25 +195,31 @@ test.describe('P6 — "Repeat this board…" CTA', () => {
   test('is hidden for a CHOSEN-center board', async ({ page }) => {
     await page.goto(`/boards/${CHOSEN_CENTER_BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByText('Chosen Center Board')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Repeat this board/ })).not.toBeVisible();
+    await page.getByRole('button', { name: 'Board menu' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Repeat this board…' })).not.toBeVisible();
   });
 
-  test('appears for a one-off board; picking a cadence writes the spawn record and swaps in the manage row + provenance note', async ({ page }) => {
+  test('appears for a one-off board; picking a cadence writes the spawn record and swaps in Repeating/Paused + provenance note', async ({ page }) => {
     await page.goto(`/boards/${ONE_OFF_BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByText('One-off Daily')).toBeVisible();
 
-    const cta = page.getByRole('button', { name: /Repeat this board/ });
-    await expect(cta).toBeVisible();
-    await cta.click();
+    await page.getByRole('button', { name: 'Board menu' }).click();
+    const item = page.getByRole('menuitem', { name: 'Repeat this board…' });
+    await expect(item).toBeVisible();
+    await item.click();
 
     // Cadence picker appears with the 4 options.
     await expect(page.getByRole('group', { name: 'Repeat cadence' })).toBeVisible();
     await page.getByRole('button', { name: 'Weekly', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: 'Repeat this board' })
+      .getByRole('button', { name: 'Save' })
+      .click();
 
-    // CTA is replaced by the manage row.
+    // Reopen — the menu item now opens the repeating variant + provenance note.
+    await page.getByRole('button', { name: 'Board menu' }).click();
+    await page.getByRole('menuitem', { name: 'Repeat this board…' }).click();
     await expect(page.getByText(/Repeats weekly.*One-off Daily/)).toBeVisible();
-    await expect(page.getByRole('button', { name: /Repeat this board/ })).not.toBeVisible();
-
     // Spawn-provenance note — 100% manual (no pools involved).
     await expect(page.getByText(/Picked 2 of 2 — 2 added today/)).toBeVisible();
 
