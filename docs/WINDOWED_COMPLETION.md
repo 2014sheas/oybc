@@ -465,7 +465,7 @@ is a UI question, listed under [§Open questions](#open-questions).)
    closing daily's own surface** is stamped at its `endDate` and counts for
    the closing daily (amended 2026-09-24 — previously the board evaluated
    `[startDate, ∞)` and that log also counted for the new daily).
-3. **Seal (user action)** — **Close board** (the board's "…" menu, no confirm)
+3. **Seal (user action)** — **Close board** (Edit → BOARD section, no confirm)
    or **Close out** (the Boards-tab banner); both call `closeBoard` (web
    `boardLifecycle.ts` ↔ iOS `AppDatabase+BoardLifecycle.swift`), which in one
    transaction runs the derivation pass one final
@@ -577,8 +577,9 @@ log but never reach the frozen record. Instead:
   [§Closed boards](#closed-boards-late-log-undo-reopen-amended-2026-09-27)).
   Counting cells show the sealed-bounded window count (e.g. "3/5"), not a
   max/0 snapshot display; green still comes from `sealedCompletedCells`.
-- **Not editable** (review finding M6): the Edit squares entry point gates on
-  `!sealedAt && !ended` on both platforms (amended 2026-09-27; an ended but
+- **Not editable** (review finding M6): Edit's SQUARES section
+  (`canEditSquares`) gates on `!sealedAt && !ended` on both platforms — Edit
+  itself still opens, for the BOARD section's Close / Reopen / Delete rows (amended 2026-09-27; an ended but
   unclosed board has no edit either) — rearranging
   squares under a positional snapshot, swapping tasks, or extending the window
   would all desync the frozen record. ~~No unseal gesture in v1.~~ **Reopen**

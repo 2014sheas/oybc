@@ -10,14 +10,19 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 
 ## The model (decided 2026-09-26)
 
-- **Board Edit is only the squares editor ("Edit squares").** The grid stays
-  where it is; edits are staged; a sticky bottom bar shows the count,
-  **Shuffle**, and **Save changes** (Cancel top-left). No Rearrange mode, no
-  preview step.
-- **Title row**: window chip (core boards) · **Edit squares** · a **"…"**
-  menu — *Board details…* (ad-hoc) / *Core defaults…* (core) · *Repeat this
-  board…* · *Archive* · *Delete*. Ended board: **Close board** first. Closed
-  board: **Reopen board** first.
+- **Edit hosts SQUARES (live boards) + a BOARD section of options** *(Edit
+  consolidation, 2026-09-27 — was "Board Edit is only the squares editor
+  ('Edit squares')")*. The grid stays where it is; edits are staged; a sticky
+  bottom bar shows the count, **Shuffle**, and **Save changes** (Cancel
+  top-left). No Rearrange mode, no preview step. Below the squares, a
+  **BOARD** section lists every board option as rows. See §Edit
+  consolidation.
+- **Title row**: window chip (core boards) · **Edit** — no "…" *(Edit
+  consolidation; the slice-2/4 "…" menu is retired)*. The options it held —
+  *Board details…* (ad-hoc) / *Core defaults…* (core) · *Repeat this
+  board…* · *Archive* · *Delete*; ended board **Close board** first, closed
+  board **Reopen board** first — are the BOARD section's rows, same builder,
+  same order.
 - **Board details** (renamed from "Board settings" — `/profile/board-settings`
   owns that name) = `BoardSetupForm` / `BoardSetupFormView` in edit-active
   mode + the size chip. **Core boards have no details sheet**: name, timeframe,
@@ -71,7 +76,8 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 | 1 | Per-square locks (`BoardTask.isLocked`, synced) honored by rearrange; Lock/Unlock in the existing edit tap menu; one cell renderer with lock + dirty chips across play / edit / arrange / wizard preview on both platforms; web Playground demo + iOS snapshots | shipped (#510) |
 | 2 | Title-row "…" menu; Board details sheet; core-board gating (no name / timeframe / repeats / archive on `isCore`); Archive / Delete / Repeat move out of the panel | shipped (#511) |
 | 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired; remove the center selector from Board details; retire the Edit tasks ⇄ Rearrange toggle | shipped (#512) — see §Slice 3 below |
-| 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | shipped (this PR, `feature/board-edit-slice4-close`) — see §Slice 4 below |
+| 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | shipped (#513) — see §Slice 4 below |
+| Edit consolidation | Owner request after device test: one title-row **Edit** (no "…"); every board option becomes a row in Edit's **BOARD** section; Edit on every non-draft board; squares hidden behind one muted line when they can't change | this PR (`feature/edit-consolidation`) — see §Edit consolidation below |
 
 Independent of the train (bugfix PRs any time): ~~iOS Board Edit rewrites an
 achievement task's type (P0)~~ — **fixed in #514**: `SquareEditTaskSheet`
@@ -91,7 +97,16 @@ mid-session (both)~~ — **fixed in slice 2** (D11/B2: `assertBoardEditable`
 throws inside the transaction instead of silently returning). ~~stale
 `repeat-board.spec.ts` describes~~ — **fixed in slice 2** (T5: the two
 describes that targeted the retired play-surface row now drive the "…" menu
-→ Repeat sheet).
+→ Repeat sheet). ~~iOS press-and-hold-to-move never fired (iOS)~~ — **fixed
+in #516**: `SquaresEditGrid` placed each cell with `.offset` and only THEN
+attached `.contentShape` / its gestures / its accessibility element;
+`.offset` moves rendering, not the layout frame, so every hit region (and
+VoiceOver frame) collapsed onto slot 0 and a touch on a visible square landed
+on the cell face's own `.onTapGesture` instead. Fix: interaction modifiers
+before `.offset`, face `.allowsHitTesting(false)`, lift on hold-complete, a
+`@GestureState` revert for cancelled gestures, and `BoardEditPanel` disables
+its ScrollView while a square is lifted. Proven by the new `OYBCUITests`
+target (web's grid was never affected).
 
 ## Slice 1 — detailed scope
 
@@ -147,8 +162,9 @@ Plan: `.superpowers/sdd/2026-09-26-board-edit-slice2/plan.md` (worktree
 `feature/board-edit-slice2-menu`, base `dev` 59e9ca75 / #510). One PR, web +
 iOS together (rule 6).
 
-- **Title-row "…" menu** replaces the play surface's Edit / Archive / Repeat
-  row. The trailing slot becomes `Edit squares` (renamed from "Edit" / "Edit
+- **Title-row "…" menu** *(superseded by §Edit consolidation — same
+  builder, now rows in Edit's BOARD section; the trigger is gone)* replaces
+  the play surface's Edit / Archive / Repeat row. The trailing slot becomes `Edit squares` (renamed from "Edit" / "Edit
   board") + a "…" square that opens a `Menu` (iOS) / Riso popover (web). The
   `Edit squares` gate is unchanged (`status == active && sealedAt == nil &&
   !editMode`); the "…" menu is hidden while `editMode` is true.
@@ -345,7 +361,7 @@ slice amends [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) in the same PR
 - **Direct late log (D7–D11, R1–R4)** — one DB choke point per platform
   (`lateLog.ts` ↔ `AppDatabase+LateLog.swift`); see WC §Closed boards for
   the event, re-derivation, undo and recovery rules.
-- **Menus (D12)**, one pure builder per platform (`buildBoardMenuItems` ↔
+- **Menus (D12)** *(now the BOARD section's rows — §Edit consolidation)*, one pure builder per platform (`buildBoardMenuItems` ↔
   `BoardMenuItems.items(…, now:)`):
   - Ad-hoc ended: `Close board` · `Board details…` · `Repeat this board…` ·
     `Archive` · `Delete`.
@@ -356,7 +372,9 @@ slice amends [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) in the same PR
   - Archived: unchanged (no Close / Reopen).
   Archive and Repeat use `assertBoardMetadataWritable` (sealed allowed,
   deleted throws); squares / details saves keep `assertBoardEditable`.
-- **Ended = no edit (D13)** — Edit squares gates on `status == ACTIVE &&
+- **Ended = no edit (D13)** *(superseded by §Edit consolidation: Edit now
+  shows on every non-draft board; this rule survives as `canEditSquares`,
+  the SQUARES-section gate)* — Edit squares gated on `status == ACTIVE &&
   !sealedAt && !ended && !editMode`.
 - **Chrome (D14)** — header pill ENDED (gold) / CLOSED (paper); **no
   "Read-only" label anywhere**; ended banner "Board ended on {date}. Still
@@ -374,3 +392,84 @@ slice amends [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) in the same PR
 
 With slice 4 the Board Edit redesign train (slices 1–4: #510, #511, #512,
 this PR) is complete.
+
+## Edit consolidation (2026-09-27, owner request after device test)
+
+Owner request: *"the 'edit squares' button should just be 'edit'. And all
+board editing options should be available from that screen (the three dots
+serve no real purpose and just waste space in the UI)."* **Supersedes the "…"
+menu parts of slice 2 (title-row trigger, D1/D2) and slice 4 (D12's "menus",
+D13's Edit gate).** The builder, its row table and every sheet / confirm are
+unchanged — only where they are reached from. Plan:
+`.superpowers/sdd/2026-09-27-edit-consolidation/plan.md` (D1–D12). One PR,
+web + iOS together.
+
+- **Title row (D1)**: one `Edit` button (visible label `Edit`, accessible
+  name **`Edit board`**, pencil icon). The "…" trigger is deleted (web
+  `BoardActionsMenu`, iOS `BoardActionsMenuButton`).
+- **Edit gate (D2, D7)**: `showsEditButton(board)` = any non-draft board —
+  active, ended, closed, completed, **archived** (else Delete / Core
+  defaults… would have no entry point). Drafts never reach the play surface.
+- **Squares gate (D3)**: `canEditSquares(board, now)` = `status == ACTIVE &&
+  sealedAt == nil && !isBoardEnded` (slice 4's D13 rule, now a named pure
+  helper `boardMenu.ts` ↔ `BoardMenuItems.swift`). Captured **once at Edit
+  entry** (web `editSession.squaresEditable`, iOS `@State
+  editSquaresEditable`) — a board that ends / seals mid-session keeps its
+  squares section and the Save-time "Board closed" guard owns that race.
+- **Squares hidden when not editable (D4)** — no read-only grid; one muted
+  line (`squaresLockedReason`), verbatim:
+  - ended or closed: "This board has ended, so its squares can't change."
+  - archived: "This board is archived, so its squares can't change."
+  - completed (still in window): "This board is complete, so its squares can't change."
+
+  The top-left control reads **Done** (web `← Done`, a11y "Done editing"),
+  and there is no save bar, Shuffle or squares hint.
+- **Pill (D5)**: "Editing squares" → **"Editing"**.
+- **BOARD section (D6)**: label `BOARD`, then one row per
+  `buildBoardMenuItems` ↔ `BoardMenuItems.items` item (names kept — internal),
+  same order / labels / icons / danger styling as the slice-2/4 matrix. iOS:
+  `BoardOptionsSectionView` (`RisoProfileRow`s in a `.risoCard()`), inside
+  `BoardEditPanel`'s scroll content. Web: `BoardOptionsSection` (the
+  renamed `BoardTitleActions`, `RisoCard role="group" aria-label="Board
+  options"`), rendered by `BoardEditColumn` in the board column under the
+  grid at every width.
+- **Save stays squares-only**: Board details keeps its own atomic
+  `saveBoardDetails`.
+- **Dirty squares draft × row (D8)** — `boardItemDraftPolicy` ↔
+  `BoardMenuItems.draftPolicy(for:)`:
+
+  | Rows | Policy | Behavior when the draft is dirty |
+  | --- | --- | --- |
+  | Board details… · Repeat this board… · Core defaults… | keep | Sheet opens over Edit; draft untouched (both squares commits are field-level; neither draft re-seeds on reload). Pinned by `boardEditWindowPreservation.test.ts` ↔ `test_boardDetailsSave_thenSquaresSave_bothPersist`. |
+  | Archive · Delete | discardInConfirm | The existing confirm body gets " Your unsaved square changes will be discarded." appended. |
+  | Close board · Reopen board | discardFirst | "Discard changes?" / "Your unsaved changes will be lost." / Keep editing · Discard first, then the row's own path. Only reachable via the D3 race (those rows exist only when squares aren't editable). |
+
+- **After each action (D9)**:
+
+  | Action | Result |
+  | --- | --- |
+  | Details / Repeat / Core defaults saved or cancelled | Stay in Edit ("Board saved" toast on save — iOS toast raised above the edit overlay, D10). |
+  | Close / Reopen success | Exit Edit to the play surface — the CLOSED / ENDED pill flip is the feedback. |
+  | Close / Reopen / Archive / Delete failure | Stay in Edit + a failure notice ("Close failed" … "— please try again."). iOS gained a real alert here; its old `bingoMessage` writes rendered nothing. |
+  | Archive success | Exit Edit, then leave (ad-hoc → Boards list). |
+  | Delete success | Exit Edit **and notify the pager `onEditModeChange(false)` before removal** — on a core board the surface unmounts when its window loses the board, so without the explicit call the pager's chip / paging would stay locked. Web also fires it from an unmount cleanup. |
+
+- **iOS tab bar** stays visible (D10); the non-editable variant drops the
+  76pt save-bar clearance.
+- **File sizes (D11)**: extraction, not cap bumps — web `BoardEditColumn` +
+  `BoardEditButton` out of `BoardPlaySurface.tsx`; iOS
+  `BoardPlayView+BoardActions.swift` out of `BoardPlayView.swift`. Both
+  allowlist entries lowered.
+- **No schema / sync / rules / shared-package change (D12).**
+- **Accepted divergences**: the Archive confirm body copy still differs
+  between platforms (pre-existing, OQ8 — parity follow-up). Web's BOARD rows
+  evaluate "ended" against an instant pinned at Edit entry (react-compiler
+  purity), iOS against the render-time clock — so a board whose window ends
+  *while* Edit is open offers Close board on iOS immediately and on web after
+  re-entering Edit. A seal / status change from sync updates both live.
+- **Tests**: pure-helper case tables mirrored line for line
+  (`boardMenu.test.ts` ↔ `BoardMenuItemsTests`), `board-options.spec.ts`
+  (renamed from `board-actions-menu.spec.ts`) + the touched e2e specs,
+  `BoardEditOptionsSnapshotTests`, and `BoardEditOptionsUITests` (an active
+  board's BOARD rows; a closed board's hidden squares → Reopen → exits Edit;
+  DEBUG seed `-uiTestSeedEditBoardClosed`).
