@@ -80,5 +80,16 @@ extension AppDatabase {
         migrator.registerMigration("v34") { db in
             try db.execute(sql: "ALTER TABLE board_tasks ADD COLUMN isLocked INTEGER NOT NULL DEFAULT 0")
         }
+
+        // v35: Board Edit redesign slice 4 (docs/BOARD_EDIT_REDESIGN.md, D1) —
+        // `boards.reopenedAt`, stamped on every Reopen and never cleared. A
+        // non-NULL value means "manually reopened → never auto-closes". Nullable,
+        // no backfill (no board has ever been reopened). `Board.init(from:)`
+        // decodes an absent key as nil. Rides the `boards` collection under the
+        // existing per-row LWW — no rules change (`firestore.rules` validates no
+        // per-field board shape) and no sync-contract change.
+        migrator.registerMigration("v35") { db in
+            try db.execute(sql: "ALTER TABLE boards ADD COLUMN reopenedAt TEXT")
+        }
     }
 }

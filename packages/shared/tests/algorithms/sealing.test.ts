@@ -1,20 +1,25 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   isBoardSealable,
   isBoardClosingOut,
   isBoardPastBackstop,
+  isBoardEnded,
+  isBoardClosed,
+  computeAutoCloseDeadlineMs,
 } from '../../src/algorithms/sealing';
+import { toLocalISO } from '../../src/algorithms/calendarBoundaries';
 import type { Board } from '../../src/types/board';
 import { BoardStatus, Timeframe, CenterSquareType } from '../../src/constants/enums';
 
 /**
  * sealing.test.ts — Windowed Completion PR C board-sealing detection predicates
  * (docs/WINDOWED_COMPLETION.md §Sealing → Lifecycle + Backstop, §Migration step
- * 3, §Edge cases). The timeframe-scaled backstop FORMULA itself is covered by
- * taskEvents.test.ts; here we cover the gates the seal transaction + backstop
- * check + migration all consult.
+ * 3, §Edge cases) and the Board Edit redesign slice 4 next-window auto-close
+ * rule + ended/closed predicates (fixture-driven): the gates the seal
+ * transaction + auto-close check + migration all consult.
  */
 
-const H = 60 * 60 * 1000;
 
 function makeBoard(overrides: Partial<Board>): Board {
   return {
@@ -83,55 +88,133 @@ describe('isBoardClosingOut (the prompt set)', () => {
   });
 });
 
-describe('isBoardPastBackstop', () => {
-  const start = '2026-07-01T00:00:00.000Z';
-  const end = '2026-07-02T00:00:00.000Z'; // daily → backstop 6h
-  const endMs = new Date(end).getTime();
+// ── Auto-close (Board Edit redesign slice 4, D4 / R5) — fixture-driven ─────
+//
+// autoCloseDeadlineVectors.json is the SAME file iOS runs through its Swift
+// twins (apps/ios/OYBCTests/AutoCloseDeadlineVectorTests.swift). All inputs
+// are local-ISO wall-clock strings, so expectations hold in any time zone.
 
-  it('is false at the endDate (still inside the backstop grace)', () => {
-    expect(isBoardPastBackstop(makeBoard({ startDate: start, endDate: end }), endMs)).toBe(false);
+interface VectorBoard {
+  isDeleted?: boolean;
+  status?: string;
+  timeframe: string;
+  startDate: string;
+  endDate: string | null;
+  sealedAt?: string | null;
+  activatedAt?: string | null;
+  reopenedAt?: string | null;
+}
+interface AutoCloseFixture {
+  deadlines: Array<{ name: string; board: VectorBoard; expectedDeadline: string | null }>;
+  pastBackstop: Array<{ name: string; board: VectorBoard; now: string; expected: boolean }>;
+  lifecycle: Array<{
+    name: string;
+    board: VectorBoard;
+    now: string;
+    ended: boolean;
+    closed: boolean;
+  }>;
+}
+
+const autoClose = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '../fixtures/autoCloseDeadlineVectors.json'), 'utf8'),
+) as AutoCloseFixture;
+
+/** Vector board → a full Board (nulls become absent, like a decoded row). */
+function vectorBoard(v: VectorBoard): Board {
+  return makeBoard({
+    isDeleted: v.isDeleted ?? false,
+    status: (v.status ?? 'active') as BoardStatus,
+    timeframe: v.timeframe as Timeframe,
+    startDate: v.startDate,
+    endDate: v.endDate ?? undefined,
+    sealedAt: v.sealedAt ?? undefined,
+    activatedAt: v.activatedAt ?? undefined,
+    reopenedAt: v.reopenedAt ?? undefined,
+  });
+}
+
+describe('computeAutoCloseDeadlineMs (autoCloseDeadlineVectors.json#deadlines)', () => {
+  it('fixture section is present and non-trivial', () => {
+    expect(autoClose.deadlines.length).toBeGreaterThanOrEqual(15);
   });
 
-  it('is false within the 6h daily backstop window', () => {
-    expect(isBoardPastBackstop(makeBoard({ startDate: start, endDate: end }), endMs + 5 * H)).toBe(
-      false,
+  for (const v of autoClose.deadlines) {
+    it(v.name, () => {
+      const deadline = computeAutoCloseDeadlineMs(vectorBoard(v.board));
+      if (v.expectedDeadline == null) {
+        expect(deadline).toBeNull();
+      } else {
+        expect(deadline).not.toBeNull();
+        expect(toLocalISO(new Date(deadline as number))).toBe(v.expectedDeadline);
+        expect(deadline).toBe(new Date(v.expectedDeadline).getTime());
+      }
+    });
+  }
+
+  it('an unparseable endDate never auto-closes', () => {
+    expect(
+      computeAutoCloseDeadlineMs({
+        timeframe: Timeframe.DAILY,
+        startDate: '2026-09-15T00:00:00.000',
+        endDate: 'not-a-date',
+      }),
+    ).toBeNull();
+  });
+
+  it('an unparseable activatedAt is ignored', () => {
+    const board = {
+      timeframe: Timeframe.DAILY,
+      startDate: '2026-09-15T00:00:00.000',
+      endDate: '2026-09-15T23:59:59.999',
+    };
+    expect(computeAutoCloseDeadlineMs({ ...board, activatedAt: 'garbage' })).toBe(
+      computeAutoCloseDeadlineMs(board),
     );
   });
 
-  it('is true once past endDate + 6h', () => {
-    expect(isBoardPastBackstop(makeBoard({ startDate: start, endDate: end }), endMs + 6 * H + 1)).toBe(
-      true,
-    );
+  it('an unparseable custom startDate floors the grace to 1 day', () => {
+    expect(
+      computeAutoCloseDeadlineMs({
+        timeframe: Timeframe.CUSTOM,
+        startDate: 'garbage',
+        endDate: '2026-07-10T12:00:00.000',
+      }),
+    ).toBe(new Date('2026-07-11T12:00:00.000').getTime());
+  });
+});
+
+describe('isBoardPastBackstop — next-window auto-close (autoCloseDeadlineVectors.json#pastBackstop)', () => {
+  it('fixture section is present and non-trivial', () => {
+    expect(autoClose.pastBackstop.length).toBeGreaterThanOrEqual(8);
   });
 
-  it('draft-grace: a board activated after its window expired keys off activatedAt', () => {
-    // Window ended 2026-07-02; but the draft was only activated 2026-07-05.
-    const activatedAt = '2026-07-05T00:00:00.000Z';
-    const activatedMs = new Date(activatedAt).getTime();
-    const board = makeBoard({ startDate: start, endDate: end, activatedAt });
-    // Just after the original endDate + 6h it must NOT be past backstop —
-    // the grace cycle keys off activatedAt, not endDate.
-    expect(isBoardPastBackstop(board, endMs + 6 * H + 1)).toBe(false);
-    // It only auto-seals once past activatedAt + 6h.
-    expect(isBoardPastBackstop(board, activatedMs + 6 * H - 1)).toBe(false);
-    expect(isBoardPastBackstop(board, activatedMs + 6 * H + 1)).toBe(true);
+  for (const v of autoClose.pastBackstop) {
+    it(v.name, () => {
+      expect(isBoardPastBackstop(vectorBoard(v.board), new Date(v.now).getTime())).toBe(v.expected);
+    });
+  }
+});
+
+describe('isBoardEnded / isBoardClosed (autoCloseDeadlineVectors.json#lifecycle)', () => {
+  it('fixture section is present and non-trivial', () => {
+    expect(autoClose.lifecycle.length).toBeGreaterThanOrEqual(8);
   });
 
-  it('is false for an indefinite board (deadline is null)', () => {
-    const board = makeBoard({ timeframe: Timeframe.INDEFINITE, endDate: undefined });
-    expect(isBoardPastBackstop(board, Date.now())).toBe(false);
-  });
-
-  it('is false for an already-sealed board', () => {
-    const board = makeBoard({ startDate: start, endDate: end, sealedAt: end });
-    expect(isBoardPastBackstop(board, endMs + 100 * H)).toBe(false);
-  });
+  for (const v of autoClose.lifecycle) {
+    it(v.name, () => {
+      const board = vectorBoard(v.board);
+      expect(isBoardEnded(board, new Date(v.now).getTime())).toBe(v.ended);
+      expect(isBoardClosed(board)).toBe(v.closed);
+    });
+  }
 });
 
 // ── Sealed-window tombstone immunity (docs Decision 9 + §Write paths) ─────────
 import {
   buildSealImmuneWindows,
   isOccurredAtSealImmune,
+  isEventSealImmune,
 } from '../../src/algorithms/taskEvents';
 
 describe('sealed-window tombstone immunity', () => {
@@ -147,10 +230,12 @@ describe('sealed-window tombstone immunity', () => {
       {
         startMs: new Date('2026-07-01T00:00:00.000Z').getTime(),
         endMs: new Date('2026-07-02T06:00:00.000Z').getTime(),
+        sealedAtMs: new Date('2026-07-02T06:00:00.000Z').getTime(),
       },
       {
         startMs: new Date('2026-07-05T00:00:00.000Z').getTime(),
         endMs: new Date('2026-07-06T06:00:00.000Z').getTime(),
+        sealedAtMs: new Date('2026-07-06T06:00:00.000Z').getTime(),
       },
     ]);
   });
@@ -185,6 +270,7 @@ describe('sealed-window tombstone immunity', () => {
         {
           startMs: new Date('2026-09-23T00:00:00.000Z').getTime(),
           endMs: new Date('2026-09-23T23:59:59.999Z').getTime(),
+          sealedAtMs: new Date('2026-09-24T07:00:00.000Z').getTime(),
         },
       ]);
     });
@@ -217,5 +303,56 @@ describe('sealed-window tombstone immunity', () => {
   it('no sealed boards → nothing is immune', () => {
     expect(isOccurredAtSealImmune('2026-07-01T12:00:00.000Z', [])).toBe(false);
     expect(buildSealImmuneWindows([])).toEqual([]);
+  });
+});
+
+// ── Late-log-aware immunity (Board Edit redesign slice 4, D10 / R2) ─────────
+//
+// sealReDerivationVectors.json#sealImmunity — the SAME vectors iOS runs in
+// apps/ios/OYBCTests/SealImmunityVectorTests.swift.
+
+interface SealImmunityVector {
+  name: string;
+  windows: Array<{ startDate: string; endDate: string | null; sealedAt: string }>;
+  event: { occurredAt: string; createdAt: string; boardId: string | null };
+  expectedImmune: boolean;
+}
+
+const sealImmunityVectors = (
+  JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../fixtures/sealReDerivationVectors.json'), 'utf8'),
+  ) as { sealImmunity: SealImmunityVector[] }
+).sealImmunity;
+
+describe('isEventSealImmune (sealReDerivationVectors.json#sealImmunity)', () => {
+  it('fixture section is present and non-trivial', () => {
+    expect(sealImmunityVectors.length).toBeGreaterThanOrEqual(8);
+  });
+
+  for (const v of sealImmunityVectors) {
+    it(v.name, () => {
+      const windows = buildSealImmuneWindows(v.windows);
+      const event = {
+        occurredAt: v.event.occurredAt,
+        createdAt: v.event.createdAt,
+        boardId: v.event.boardId ?? undefined,
+      };
+      expect(isEventSealImmune(event, windows)).toBe(v.expectedImmune);
+    });
+  }
+
+  it('agrees with isOccurredAtSealImmune for every event made before its seal', () => {
+    const windows = buildSealImmuneWindows([
+      { startDate: '2026-09-15T00:00:00.000Z', endDate: '2026-09-15T23:59:59.999Z', sealedAt: '2026-09-17T00:00:00.000Z' },
+    ]);
+    for (const occurredAt of [
+      '2026-09-14T23:59:59.999Z',
+      '2026-09-15T00:00:00.000Z',
+      '2026-09-15T23:59:59.999Z',
+      '2026-09-16T00:00:00.000Z',
+    ]) {
+      const event = { occurredAt, createdAt: occurredAt, boardId: 'b' };
+      expect(isEventSealImmune(event, windows)).toBe(isOccurredAtSealImmune(occurredAt, windows));
+    }
   });
 });

@@ -38,11 +38,9 @@ export {
   resolveLinkedCounterDisplay,
   expandToWindowStampedDerived,
   boundWindowContextAtSeal,
-  backstopWindowMs,
-  computeBackstopDeadlineMs,
   buildSealImmuneWindows,
   isOccurredAtSealImmune,
-  BACKSTOP_MAX_MS,
+  isEventSealImmune,
   SEED_EVENT_OCCURRED_AT,
 } from './taskEvents';
 
@@ -58,6 +56,11 @@ export {
   isBoardSealable,
   isBoardClosingOut,
   isBoardPastBackstop,
+  isBoardEnded,
+  isBoardClosed,
+  computeAutoCloseDeadlineMs,
+  CUSTOM_AUTO_CLOSE_MIN_DAYS,
+  CUSTOM_AUTO_CLOSE_MAX_DAYS,
 } from './sealing';
 
 export type { SealableBoardFields } from './sealing';
@@ -73,6 +76,10 @@ export {
 } from './migrationHelpers';
 
 export { hasCycle } from './cycleDetection';
+
+// ===== Board Edit redesign slice 4 — achievement-watcher refresh (D8) =====
+export { findWatcherTaskIds } from './achievementWatchers';
+export type { WatcherTaskFields, WatchedBoardFields } from './achievementWatchers';
 
 export {
   compoundChildLinkProblem,
@@ -241,7 +248,8 @@ export type {
   DeriveCounterDailyTotalsOptions,
 } from './counterDailyTotals';
 
-export { selectLastIncrementEntry } from './lastCounterLogEntry';
+export { selectLastIncrementEntry, selectClosedBoardLateLogs } from './lastCounterLogEntry';
+export type { ClosedBoardLateLogBoard } from './lastCounterLogEntry';
 
 // ===== Board-integrity PR-2 — deterministic placement winner rule + repair =====
 export {

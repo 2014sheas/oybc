@@ -61,12 +61,15 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     // ── Windowed Completion — board sealing (docs §Sealing → Board schema
     //    delta). Swift twin of the three additive TS Board fields ──────────
     //
-    // `sealedAt` — set ONCE when the window is closed out (user Seal / auto-seal
-    // backstop / migration of an already-expired board). Never cleared; no
-    // unseal gesture. A non-nil `sealedAt` makes the board a permanent record:
-    // it drops out of the live derivation fan-out, renders read-only from
-    // `sealedCompletedCells`, and is Board-Edit-ineligible. `status` is
-    // untouched — sealing is orthogonal to draft/active/completed/archived.
+    // `sealedAt` — set when the window is closed out (Close board / "Close out",
+    // the next-window auto-close, or migration of an already-expired board).
+    // Cleared by **Reopen** (Board Edit redesign slice 4), which also drops
+    // `sealedCompletedCells` and stamps `reopenedAt`; sync propagates the clear
+    // via the shared `CLEARABLE_BOARD_FIELDS` list. A non-nil `sealedAt` makes
+    // the board a permanent record: it drops out of the live derivation
+    // fan-out, renders from `sealedCompletedCells`, accepts only direct late
+    // logs, and is ineligible for Edit squares. `status` is untouched —
+    // sealing is orthogonal to draft/active/completed/archived.
     var sealedAt: String? // ISO8601
 
     // `sealedCompletedCells` — the green cell indexes (row*size+col) frozen at
@@ -81,6 +84,12 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
     // off `max(endDate, activatedAt)` so a DRAFT activated AFTER its window
     // already expired gets one full prompt cycle before any silent seal.
     var activatedAt: String? // ISO8601
+
+    // `reopenedAt` — Board Edit redesign slice 4 (GRDB v35): stamped on EVERY
+    // Reopen, never cleared. Non-nil means "manually reopened → never
+    // auto-closes" (`isBoardPastBackstop` returns false). A later Close
+    // re-seals without touching it; a second Reopen overwrites it.
+    var reopenedAt: String? // ISO8601
 
     // ── Board Creation Split (PR B) — recurring drafts. Additive, optional,
     //    forward-compatible — mirrors the `isCore` pattern exactly. ────────
@@ -122,7 +131,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         case lastSyncedAt, version, isDeleted, deletedAt
         case spawnedFromTemplateId
         case isCore
-        case sealedAt, sealedCompletedCells, activatedAt
+        case sealedAt, sealedCompletedCells, activatedAt, reopenedAt
         case isRecurringDraft, recurringDraftMix
     }
 
@@ -171,6 +180,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         // Windowed Completion sealing — all optional/forward-compatible.
         sealedAt = try container.decodeIfPresent(String.self, forKey: .sealedAt)
         activatedAt = try container.decodeIfPresent(String.self, forKey: .activatedAt)
+        reopenedAt = try container.decodeIfPresent(String.self, forKey: .reopenedAt)
         // sealedCompletedCells stored as a JSON string (like completedLineIds).
         if let jsonString = try container.decodeIfPresent(String.self, forKey: .sealedCompletedCells),
            let data = jsonString.data(using: .utf8) {
@@ -237,6 +247,7 @@ struct Board: Codable, FetchableRecord, PersistableRecord {
         // Windowed Completion sealing.
         try container.encodeIfPresent(sealedAt, forKey: .sealedAt)
         try container.encodeIfPresent(activatedAt, forKey: .activatedAt)
+        try container.encodeIfPresent(reopenedAt, forKey: .reopenedAt)
         // Encode sealedCompletedCells as a JSON string. Deliberately OMITTED
         // when nil (unlike completedLineIds above): nil here means "never
         // sealed" — a distinct state from "sealed with zero complete" ([]) —

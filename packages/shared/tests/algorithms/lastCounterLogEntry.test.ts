@@ -1,4 +1,10 @@
-import { selectLastIncrementEntry } from '../../src/algorithms/lastCounterLogEntry';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  selectLastIncrementEntry,
+  selectClosedBoardLateLogs,
+  type ClosedBoardLateLogBoard,
+} from '../../src/algorithms/lastCounterLogEntry';
 import { SEED_EVENT_OCCURRED_AT } from '../../src/algorithms/taskEvents';
 import type { TaskEvent } from '../../src/types/taskEvent';
 
@@ -101,5 +107,74 @@ describe('selectLastIncrementEntry', () => {
       ev({ id: 'source-entry', occurredAt: '2026-07-19T09:00:00.000' }),
     ];
     expect(selectLastIncrementEntry(events, SOURCE)?.id).toBe('source-entry');
+  });
+});
+
+// ── Closed-board late logs (Board Edit redesign slice 4, D10 / R2) ──────────
+//
+// sealReDerivationVectors.json#closedBoardLateLogs — the SAME vectors iOS runs
+// in apps/ios/OYBCTests/SealImmunityVectorTests.swift.
+
+interface ClosedBoardLateLogVector {
+  name: string;
+  board: ClosedBoardLateLogBoard;
+  taskId: string;
+  events: TaskEvent[];
+  expectedIds: string[];
+}
+
+const closedBoardLateLogVectors = (
+  JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../fixtures/sealReDerivationVectors.json'), 'utf8'),
+  ) as { closedBoardLateLogs: ClosedBoardLateLogVector[] }
+).closedBoardLateLogs;
+
+describe('selectClosedBoardLateLogs (sealReDerivationVectors.json#closedBoardLateLogs)', () => {
+  it('fixture section is present and non-trivial', () => {
+    expect(closedBoardLateLogVectors.length).toBeGreaterThanOrEqual(5);
+  });
+
+  for (const v of closedBoardLateLogVectors) {
+    it(v.name, () => {
+      const picked = selectClosedBoardLateLogs(v.events, v.board, v.taskId);
+      expect(picked.map((e) => e.id)).toEqual(v.expectedIds);
+    });
+  }
+
+  it('matches a UTC late-log stamp against a local-ISO endDate by instant', () => {
+    const endDate = '2026-09-15T23:59:59.999';
+    const board = { id: 'board-1', endDate, sealedAt: '2026-09-17T00:00:00.000Z' };
+    const late = ev({
+      id: 'late',
+      boardId: 'board-1',
+      occurredAt: new Date(endDate).toISOString(),
+      createdAt: '2026-09-18T10:00:00.000Z',
+    });
+    expect(selectClosedBoardLateLogs([late], board, SOURCE).map((e) => e.id)).toEqual(['late']);
+  });
+
+  it('an unparseable endDate or sealedAt yields no late logs', () => {
+    const late = ev({
+      id: 'late',
+      boardId: 'board-1',
+      occurredAt: '2026-09-15T23:59:59.999Z',
+      createdAt: '2026-09-18T10:00:00.000Z',
+    });
+    expect(
+      selectClosedBoardLateLogs([late], { id: 'board-1', endDate: 'x', sealedAt: '2026-09-17T00:00:00.000Z' }, SOURCE),
+    ).toEqual([]);
+    expect(
+      selectClosedBoardLateLogs([late], { id: 'board-1', endDate: '2026-09-15T23:59:59.999Z', sealedAt: 'x' }, SOURCE),
+    ).toEqual([]);
+  });
+
+  it('does not mutate the input array', () => {
+    const events = [
+      ev({ id: 'a', boardId: 'b', occurredAt: '2026-09-15T23:59:59.999Z', createdAt: '2026-09-18T10:00:00.000Z' }),
+      ev({ id: 'z', boardId: 'b', occurredAt: '2026-09-15T23:59:59.999Z', createdAt: '2026-09-19T10:00:00.000Z' }),
+    ];
+    const board = { id: 'b', endDate: '2026-09-15T23:59:59.999Z', sealedAt: '2026-09-17T00:00:00.000Z' };
+    expect(selectClosedBoardLateLogs(events, board, SOURCE).map((e) => e.id)).toEqual(['z', 'a']);
+    expect(events.map((e) => e.id)).toEqual(['a', 'z']);
   });
 });

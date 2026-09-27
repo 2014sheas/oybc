@@ -486,5 +486,446 @@
       "expectedCompletedLineIds": ["row_0"]
     }
   ],
-  "_noteBreadthVectors": "Task-4 breadth vectors (2026-09-23 audit T2, prefix b4/4\u2026): OPTIONAL per-vector fields \u2014 `sealedAt` (top-level; when present the consumer bounds the union to occurredAt <= sealedAt, the sealing data layers' boundWindowContextAtSeal pre-filter; the kernel additionally bounds root squares at the board's endDate (2026-09-24 amendment), so the effective sealed bound is [startDate, min(endDate, sealedAt)] \u2014 iOS runs AppDatabase.computeSealSnapshot itself); `compoundChildren` [{compoundTaskId, childTaskId, childIndex, isDeleted}] (absent = none); compound tasks carry `operator` + `threshold`; `expectedCompletedTasks` / `expectedLinesCompleted` / `expectedCompletedLineIds` assert the sealed snapshot's frozen stats (computeBoardStatsUpdate) when present; `_why` is the hand computation. Absent optional fields keep the original three vectors' semantics unchanged."
+  "_noteBreadthVectors": "Task-4 breadth vectors (2026-09-23 audit T2, prefix b4/4\u2026): OPTIONAL per-vector fields \u2014 `sealedAt` (top-level; when present the consumer bounds the union to occurredAt <= sealedAt, the sealing data layers' boundWindowContextAtSeal pre-filter; the kernel additionally bounds root squares at the board's endDate (2026-09-24 amendment), so the effective sealed bound is [startDate, min(endDate, sealedAt)] \u2014 iOS runs AppDatabase.computeSealSnapshot itself); `compoundChildren` [{compoundTaskId, childTaskId, childIndex, isDeleted}] (absent = none); compound tasks carry `operator` + `threshold`; `expectedCompletedTasks` / `expectedLinesCompleted` / `expectedCompletedLineIds` assert the sealed snapshot's frozen stats (computeBoardStatsUpdate) when present; `_why` is the hand computation. Absent optional fields keep the original three vectors' semantics unchanged.",
+  "_noteSealImmunity": "Board Edit redesign slice 4 (D10 / owner ruling R2) — `sealImmunity` pins isEventSealImmune: an event is immune iff some sealed window [startDate, min(endDate, sealedAt)] contains its occurredAt AND NOT (boardId != null AND createdAt > that board's sealedAt). `windows` are the sealed boards passed to buildSealImmuneWindows. `closedBoardLateLogs` pins selectClosedBoardLateLogs(events, board, taskId): non-deleted events for the task with boardId == board.id, occurredAt instant == endDate instant, createdAt > sealedAt, newest createdAt first (ties: id descending). Run by packages/shared/tests/algorithms/sealing.test.ts + lastCounterLogEntry.test.ts and apps/ios/OYBCTests/SealImmunityVectorTests.swift.",
+  "sealImmunity": [
+    {
+      "name": "in-window event created before the seal is immune",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-15T12:00:00.000Z",
+        "createdAt": "2026-09-15T12:00:00.000Z",
+        "boardId": "d0000000-0000-0000-0000-00000000000d"
+      },
+      "expectedImmune": true
+    },
+    {
+      "name": "late log created after the seal on a board is NOT immune",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-15T23:59:59.999Z",
+        "createdAt": "2026-09-18T10:00:00.000Z",
+        "boardId": "d0000000-0000-0000-0000-00000000000d"
+      },
+      "expectedImmune": false
+    },
+    {
+      "name": "heal/backfill mint (no boardId) created after the seal stays immune",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-15T12:00:00.000Z",
+        "createdAt": "2026-09-18T10:00:00.000Z",
+        "boardId": null
+      },
+      "expectedImmune": true
+    },
+    {
+      "name": "overtime gap (endDate, sealedAt] is not immune",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-16T08:00:00.000Z",
+        "createdAt": "2026-09-16T08:00:00.000Z",
+        "boardId": "d0000000-0000-0000-0000-00000000000d"
+      },
+      "expectedImmune": false
+    },
+    {
+      "name": "weekly sealed AFTER the late log re-freezes it (immune by the weekly)",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        },
+        {
+          "startDate": "2026-09-14T00:00:00.000Z",
+          "endDate": "2026-09-20T23:59:59.999Z",
+          "sealedAt": "2026-09-22T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-15T23:59:59.999Z",
+        "createdAt": "2026-09-18T10:00:00.000Z",
+        "boardId": "d0000000-0000-0000-0000-00000000000d"
+      },
+      "expectedImmune": true
+    },
+    {
+      "name": "a still-open weekly adds no window, so the late log stays undoable",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-15T23:59:59.999Z",
+        "createdAt": "2026-09-18T10:00:00.000Z",
+        "boardId": "d0000000-0000-0000-0000-00000000000d"
+      },
+      "expectedImmune": false
+    },
+    {
+      "name": "created exactly at sealedAt is not after the seal (immune)",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-15T23:59:59.999Z",
+        "createdAt": "2026-09-17T00:00:00.000Z",
+        "boardId": "d0000000-0000-0000-0000-00000000000d"
+      },
+      "expectedImmune": true
+    },
+    {
+      "name": "any board-authored event created after the seal is not immune (boardId need not match)",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-15T20:00:00.000Z",
+        "createdAt": "2026-09-19T08:00:00.000Z",
+        "boardId": "d0000000-0000-0000-0000-00000000000e"
+      },
+      "expectedImmune": false
+    },
+    {
+      "name": "before the window start is not immune",
+      "windows": [
+        {
+          "startDate": "2026-09-15T00:00:00.000Z",
+          "endDate": "2026-09-15T23:59:59.999Z",
+          "sealedAt": "2026-09-17T00:00:00.000Z"
+        }
+      ],
+      "event": {
+        "occurredAt": "2026-09-14T23:59:59.999Z",
+        "createdAt": "2026-09-14T23:59:59.999Z",
+        "boardId": null
+      },
+      "expectedImmune": false
+    },
+    {
+      "name": "no sealed windows means nothing is immune",
+      "windows": [],
+      "event": {
+        "occurredAt": "2026-09-15T12:00:00.000Z",
+        "createdAt": "2026-09-15T12:00:00.000Z",
+        "boardId": null
+      },
+      "expectedImmune": false
+    }
+  ],
+  "closedBoardLateLogs": [
+    {
+      "name": "picks late logs newest createdAt first, any kind",
+      "board": {
+        "id": "d0000000-0000-0000-0000-00000000000d",
+        "endDate": "2026-09-15T23:59:59.999Z",
+        "sealedAt": "2026-09-17T00:00:00.000Z"
+      },
+      "taskId": "10000000-0000-0000-0000-000000000001",
+      "events": [
+        {
+          "id": "e0000000-0000-0000-0000-000000000001",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000002",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "completion",
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-19T10:00:00.000Z",
+          "updatedAt": "2026-09-19T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000003",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T12:00:00.000Z",
+          "updatedAt": "2026-09-18T12:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        }
+      ],
+      "expectedIds": [
+        "e0000000-0000-0000-0000-000000000002",
+        "e0000000-0000-0000-0000-000000000003",
+        "e0000000-0000-0000-0000-000000000001"
+      ]
+    },
+    {
+      "name": "excludes pre-seal events, other boards, other tasks, deleted rows and non-endDate stamps",
+      "board": {
+        "id": "d0000000-0000-0000-0000-00000000000d",
+        "endDate": "2026-09-15T23:59:59.999Z",
+        "sealedAt": "2026-09-17T00:00:00.000Z"
+      },
+      "taskId": "10000000-0000-0000-0000-000000000001",
+      "events": [
+        {
+          "id": "e0000000-0000-0000-0000-000000000010",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T12:00:00.000Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-15T12:00:00.000Z",
+          "updatedAt": "2026-09-15T12:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000011",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-16T10:00:00.000Z",
+          "updatedAt": "2026-09-16T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000012",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000e",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000013",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000014",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000002",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000015",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": true,
+          "deletedAt": "2026-09-18T10:00:00.000Z"
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000016",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.998Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000017",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-20T09:00:00.000Z",
+          "updatedAt": "2026-09-20T09:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        }
+      ],
+      "expectedIds": [
+        "e0000000-0000-0000-0000-000000000017"
+      ]
+    },
+    {
+      "name": "createdAt ties break on id descending",
+      "board": {
+        "id": "d0000000-0000-0000-0000-00000000000d",
+        "endDate": "2026-09-15T23:59:59.999Z",
+        "sealedAt": "2026-09-17T00:00:00.000Z"
+      },
+      "taskId": "10000000-0000-0000-0000-000000000001",
+      "events": [
+        {
+          "id": "e0000000-0000-0000-0000-000000000021",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000023",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        },
+        {
+          "id": "e0000000-0000-0000-0000-000000000022",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        }
+      ],
+      "expectedIds": [
+        "e0000000-0000-0000-0000-000000000023",
+        "e0000000-0000-0000-0000-000000000022",
+        "e0000000-0000-0000-0000-000000000021"
+      ]
+    },
+    {
+      "name": "an unsealed board has no late logs",
+      "board": {
+        "id": "d0000000-0000-0000-0000-00000000000d",
+        "endDate": "2026-09-15T23:59:59.999Z",
+        "sealedAt": null
+      },
+      "taskId": "10000000-0000-0000-0000-000000000001",
+      "events": [
+        {
+          "id": "e0000000-0000-0000-0000-000000000031",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        }
+      ],
+      "expectedIds": []
+    },
+    {
+      "name": "an indefinite board has no late logs",
+      "board": {
+        "id": "d0000000-0000-0000-0000-00000000000d",
+        "endDate": null,
+        "sealedAt": "2026-09-17T00:00:00.000Z"
+      },
+      "taskId": "10000000-0000-0000-0000-000000000001",
+      "events": [
+        {
+          "id": "e0000000-0000-0000-0000-000000000041",
+          "userId": "u0000000-0000-0000-0000-000000000001",
+          "taskId": "10000000-0000-0000-0000-000000000001",
+          "kind": "increment",
+          "delta": 1,
+          "occurredAt": "2026-09-15T23:59:59.999Z",
+          "boardId": "d0000000-0000-0000-0000-00000000000d",
+          "createdAt": "2026-09-18T10:00:00.000Z",
+          "updatedAt": "2026-09-18T10:00:00.000Z",
+          "version": 1,
+          "isDeleted": false
+        }
+      ],
+      "expectedIds": []
+    }
+  ]
 }

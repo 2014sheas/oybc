@@ -1,0 +1,262 @@
+{
+  "_note": "Hand-authored cross-platform vectors for the Board Edit redesign slice 4 auto-close rule (D4, owner ruling R5: a board auto-closes when the NEXT window of its timeframe ends) and the ended/closed lifecycle predicates (D12). Run by packages/shared/tests/algorithms/sealing.test.ts through computeAutoCloseDeadlineMs / isBoardPastBackstop / isBoardEnded / isBoardClosed, and by apps/ios/OYBCTests/AutoCloseDeadlineVectorTests.swift through the Swift twins in Helpers/Sealing.swift. Every timestamp is a LOCAL-ISO wall-clock string (no offset) and the deadline arithmetic is local wall-clock on endDate's components, so the expected values hold in every time zone; consumers compare parsed epoch ms. Custom windows add their own length in whole local days, rounded, clamped to [1, 31] (OQ1 default). A draft activated after its window ended shifts the deadline by the same grace from activatedAt. `now` in `pastBackstop` / `lifecycle` is also local-ISO.",
+  "deadlines": [
+    {
+      "name": "daily mid-month closes at the end of the next day",
+      "board": { "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999" },
+      "expectedDeadline": "2026-09-16T23:59:59.999"
+    },
+    {
+      "name": "daily month-end rolls into the next month",
+      "board": { "timeframe": "daily", "startDate": "2026-09-30T00:00:00.000", "endDate": "2026-09-30T23:59:59.999" },
+      "expectedDeadline": "2026-10-01T23:59:59.999"
+    },
+    {
+      "name": "daily Dec 31 rolls into the next year",
+      "board": { "timeframe": "daily", "startDate": "2026-12-31T00:00:00.000", "endDate": "2026-12-31T23:59:59.999" },
+      "expectedDeadline": "2027-01-01T23:59:59.999"
+    },
+    {
+      "name": "daily before a DST fall-back day keeps the wall clock",
+      "board": { "timeframe": "daily", "startDate": "2026-10-31T00:00:00.000", "endDate": "2026-10-31T23:59:59.999" },
+      "expectedDeadline": "2026-11-01T23:59:59.999"
+    },
+    {
+      "name": "weekly Monday-start closes 7 days after its end",
+      "board": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00.000", "endDate": "2026-09-20T23:59:59.999" },
+      "expectedDeadline": "2026-09-27T23:59:59.999"
+    },
+    {
+      "name": "weekly Sunday-start closes 7 days after its end",
+      "board": { "timeframe": "weekly", "startDate": "2026-09-13T00:00:00.000", "endDate": "2026-09-19T23:59:59.999" },
+      "expectedDeadline": "2026-09-26T23:59:59.999"
+    },
+    {
+      "name": "weekly spanning a DST change keeps the wall clock",
+      "board": { "timeframe": "weekly", "startDate": "2026-10-19T00:00:00.000", "endDate": "2026-10-25T23:59:59.999" },
+      "expectedDeadline": "2026-11-01T23:59:59.999"
+    },
+    {
+      "name": "monthly January closes Feb 28 in a non-leap year",
+      "board": { "timeframe": "monthly", "startDate": "2026-01-01T00:00:00.000", "endDate": "2026-01-31T23:59:59.999" },
+      "expectedDeadline": "2026-02-28T23:59:59.999"
+    },
+    {
+      "name": "monthly January closes Feb 29 in a leap year",
+      "board": { "timeframe": "monthly", "startDate": "2028-01-01T00:00:00.000", "endDate": "2028-01-31T23:59:59.999" },
+      "expectedDeadline": "2028-02-29T23:59:59.999"
+    },
+    {
+      "name": "monthly February closes at the end of March",
+      "board": { "timeframe": "monthly", "startDate": "2026-02-01T00:00:00.000", "endDate": "2026-02-28T23:59:59.999" },
+      "expectedDeadline": "2026-03-31T23:59:59.999"
+    },
+    {
+      "name": "monthly November closes at the end of December",
+      "board": { "timeframe": "monthly", "startDate": "2026-11-01T00:00:00.000", "endDate": "2026-11-30T23:59:59.999" },
+      "expectedDeadline": "2026-12-31T23:59:59.999"
+    },
+    {
+      "name": "monthly December closes at the end of next January",
+      "board": { "timeframe": "monthly", "startDate": "2026-12-01T00:00:00.000", "endDate": "2026-12-31T23:59:59.999" },
+      "expectedDeadline": "2027-01-31T23:59:59.999"
+    },
+    {
+      "name": "yearly closes at the end of the next year",
+      "board": { "timeframe": "yearly", "startDate": "2026-01-01T00:00:00.000", "endDate": "2026-12-31T23:59:59.999" },
+      "expectedDeadline": "2027-12-31T23:59:59.999"
+    },
+    {
+      "name": "custom 3-day window gets 3 more days",
+      "board": { "timeframe": "custom", "startDate": "2026-07-01T00:00:00.000", "endDate": "2026-07-03T23:59:59.999" },
+      "expectedDeadline": "2026-07-06T23:59:59.999"
+    },
+    {
+      "name": "custom 0-length window floors to 1 day",
+      "board": { "timeframe": "custom", "startDate": "2026-07-10T12:00:00.000", "endDate": "2026-07-10T12:00:00.000" },
+      "expectedDeadline": "2026-07-11T12:00:00.000"
+    },
+    {
+      "name": "custom window ending before it starts floors to 1 day",
+      "board": { "timeframe": "custom", "startDate": "2026-07-12T00:00:00.000", "endDate": "2026-07-10T23:59:59.999" },
+      "expectedDeadline": "2026-07-11T23:59:59.999"
+    },
+    {
+      "name": "custom 90-day window caps at 31 days",
+      "board": { "timeframe": "custom", "startDate": "2026-04-01T00:00:00.000", "endDate": "2026-06-29T23:59:59.999" },
+      "expectedDeadline": "2026-07-30T23:59:59.999"
+    },
+    {
+      "name": "custom 10.4-day window rounds to 10 days",
+      "board": { "timeframe": "custom", "startDate": "2026-06-01T00:00:00.000", "endDate": "2026-06-11T09:36:00.000" },
+      "expectedDeadline": "2026-06-21T09:36:00.000"
+    },
+    {
+      "name": "draft activated after its window ended gets the same grace from activatedAt",
+      "board": { "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "activatedAt": "2026-09-18T10:00:00.000" },
+      "expectedDeadline": "2026-09-19T10:00:00.000"
+    },
+    {
+      "name": "activatedAt inside the window does not move the deadline",
+      "board": { "timeframe": "weekly", "startDate": "2026-09-14T00:00:00.000", "endDate": "2026-09-20T23:59:59.999", "activatedAt": "2026-09-16T08:00:00.000" },
+      "expectedDeadline": "2026-09-27T23:59:59.999"
+    },
+    {
+      "name": "indefinite board never auto-closes",
+      "board": { "timeframe": "indefinite", "startDate": "2026-09-01T00:00:00.000", "endDate": null },
+      "expectedDeadline": null
+    },
+    {
+      "name": "a non-indefinite timeframe with no endDate is treated as indefinite",
+      "board": { "timeframe": "daily", "startDate": "2026-09-01T00:00:00.000", "endDate": null },
+      "expectedDeadline": null
+    }
+  ],
+  "pastBackstop": [
+    {
+      "name": "yesterday's daily is still open at noon today",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-16T12:00:00.000",
+      "expected": false
+    },
+    {
+      "name": "the deadline instant itself is not past (strict)",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-16T23:59:59.999",
+      "expected": false
+    },
+    {
+      "name": "one ms after the next day ends the daily auto-closes",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-17T00:00:00.000",
+      "expected": true
+    },
+    {
+      "name": "a completed (greenlogged) weekly auto-closes after the next week",
+      "board": { "isDeleted": false, "status": "completed", "timeframe": "weekly", "startDate": "2026-09-07T00:00:00.000", "endDate": "2026-09-13T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-21T09:00:00.000",
+      "expected": true
+    },
+    {
+      "name": "a reopened board never auto-closes",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": "2026-09-17T08:00:00.000" },
+      "now": "2027-01-01T00:00:00.000",
+      "expected": false
+    },
+    {
+      "name": "an already-closed board is not re-sealed",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": "2026-09-16T08:00:00.000", "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-20T00:00:00.000",
+      "expected": false
+    },
+    {
+      "name": "a draft never auto-closes",
+      "board": { "isDeleted": false, "status": "draft", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-20T00:00:00.000",
+      "expected": false
+    },
+    {
+      "name": "a deleted board never auto-closes",
+      "board": { "isDeleted": true, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-20T00:00:00.000",
+      "expected": false
+    },
+    {
+      "name": "an indefinite board never auto-closes",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "indefinite", "startDate": "2026-09-01T00:00:00.000", "endDate": null, "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2030-01-01T00:00:00.000",
+      "expected": false
+    },
+    {
+      "name": "an archived board still auto-closes (archived is orthogonal to sealing)",
+      "board": { "isDeleted": false, "status": "archived", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": null, "reopenedAt": null },
+      "now": "2026-09-17T00:00:00.000",
+      "expected": true
+    },
+    {
+      "name": "a late-activated draft keys its grace off activatedAt",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "activatedAt": "2026-09-18T10:00:00.000", "reopenedAt": null },
+      "now": "2026-09-19T09:59:59.999",
+      "expected": false
+    }
+  ],
+  "lifecycle": [
+    {
+      "name": "active board past its end is ended, not closed",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "reopenedAt": null },
+      "now": "2026-09-16T08:00:00.000",
+      "ended": true,
+      "closed": false
+    },
+    {
+      "name": "active board before its end is neither",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "reopenedAt": null },
+      "now": "2026-09-15T23:59:59.999",
+      "ended": false,
+      "closed": false
+    },
+    {
+      "name": "completed board past its end is ended",
+      "board": { "isDeleted": false, "status": "completed", "timeframe": "weekly", "startDate": "2026-09-07T00:00:00.000", "endDate": "2026-09-13T23:59:59.999", "sealedAt": null, "reopenedAt": null },
+      "now": "2026-09-14T08:00:00.000",
+      "ended": true,
+      "closed": false
+    },
+    {
+      "name": "reopened board past its end is ended again",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "reopenedAt": "2026-09-18T08:00:00.000" },
+      "now": "2026-09-18T09:00:00.000",
+      "ended": true,
+      "closed": false
+    },
+    {
+      "name": "sealed active board is closed, not ended",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": "2026-09-16T08:00:00.000", "reopenedAt": null },
+      "now": "2026-09-18T08:00:00.000",
+      "ended": false,
+      "closed": true
+    },
+    {
+      "name": "sealed completed board is closed",
+      "board": { "isDeleted": false, "status": "completed", "timeframe": "monthly", "startDate": "2026-08-01T00:00:00.000", "endDate": "2026-08-31T23:59:59.999", "sealedAt": "2026-09-02T08:00:00.000", "reopenedAt": null },
+      "now": "2026-09-18T08:00:00.000",
+      "ended": false,
+      "closed": true
+    },
+    {
+      "name": "archived board past its end is neither (no Close/Reopen on archived)",
+      "board": { "isDeleted": false, "status": "archived", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "reopenedAt": null },
+      "now": "2026-09-16T08:00:00.000",
+      "ended": false,
+      "closed": false
+    },
+    {
+      "name": "sealed archived board is neither",
+      "board": { "isDeleted": false, "status": "archived", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": "2026-09-16T08:00:00.000", "reopenedAt": null },
+      "now": "2026-09-18T08:00:00.000",
+      "ended": false,
+      "closed": false
+    },
+    {
+      "name": "deleted sealed board is neither",
+      "board": { "isDeleted": true, "status": "active", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": "2026-09-16T08:00:00.000", "reopenedAt": null },
+      "now": "2026-09-18T08:00:00.000",
+      "ended": false,
+      "closed": false
+    },
+    {
+      "name": "draft past its end is neither",
+      "board": { "isDeleted": false, "status": "draft", "timeframe": "daily", "startDate": "2026-09-15T00:00:00.000", "endDate": "2026-09-15T23:59:59.999", "sealedAt": null, "reopenedAt": null },
+      "now": "2026-09-16T08:00:00.000",
+      "ended": false,
+      "closed": false
+    },
+    {
+      "name": "indefinite board is never ended",
+      "board": { "isDeleted": false, "status": "active", "timeframe": "indefinite", "startDate": "2026-09-01T00:00:00.000", "endDate": null, "sealedAt": null, "reopenedAt": null },
+      "now": "2030-01-01T00:00:00.000",
+      "ended": false,
+      "closed": false
+    }
+  ]
+}

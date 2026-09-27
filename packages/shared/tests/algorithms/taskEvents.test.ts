@@ -6,9 +6,6 @@ import {
   lateLogOccurredAt,
   boardWindowEnd,
   isEventOwningTask,
-  backstopWindowMs,
-  computeBackstopDeadlineMs,
-  BACKSTOP_MAX_MS,
   SEED_EVENT_OCCURRED_AT,
 } from '../../src/algorithms/taskEvents';
 import type { Task, TaskEvent, TaskEventKind } from '../../src/types';
@@ -20,10 +17,9 @@ import { TaskType } from '../../src/constants/enums';
  *
  * `resolveTaskWindowState` is fixture-driven from
  * `tests/fixtures/taskWindowStateVectors.json` — the SAME file run by iOS
- * `TaskEventVectorTests.swift` through the Swift mirror. `isEventOwningTask` + the backstop helpers are hand-tested here.
+ * `TaskEventVectorTests.swift` through the Swift mirror. `isEventOwningTask` is hand-tested here.
  */
 
-const H = 60 * 60 * 1000;
 
 function makeTask(overrides: Partial<Task>): Task {
   return {
@@ -240,74 +236,10 @@ describe('isEventOwningTask', () => {
   });
 });
 
-// ─── backstop formula ───────────────────────────────────────────────────────
-
-describe('backstopWindowMs (docs §Sealing — min(48h, windowLength/4))', () => {
-  it('daily window (~24h) → ~6h', () => {
-    const ms = backstopWindowMs('2026-07-01T00:00:00.000Z', '2026-07-02T00:00:00.000Z');
-    expect(ms).toBe(6 * H);
-  });
-
-  it('weekly window (7d) → 42h', () => {
-    const ms = backstopWindowMs('2026-07-01T00:00:00.000Z', '2026-07-08T00:00:00.000Z');
-    expect(ms).toBe(42 * H);
-  });
-
-  it('monthly window (31d) → capped at 48h', () => {
-    const ms = backstopWindowMs('2026-07-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
-    expect(ms).toBe(BACKSTOP_MAX_MS);
-  });
-
-  it('yearly window → capped at 48h', () => {
-    const ms = backstopWindowMs('2026-01-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z');
-    expect(ms).toBe(BACKSTOP_MAX_MS);
-  });
-
-  it('custom window of exactly 8 days → 48h (boundary of the cap)', () => {
-    const ms = backstopWindowMs('2026-07-01T00:00:00.000Z', '2026-07-09T00:00:00.000Z');
-    expect(ms).toBe(48 * H);
-  });
-
-  it('custom window of 4 days → 24h (below the cap, scales)', () => {
-    const ms = backstopWindowMs('2026-07-01T00:00:00.000Z', '2026-07-05T00:00:00.000Z');
-    expect(ms).toBe(24 * H);
-  });
-
-  it('malformed window (endDate <= startDate) floors at 0', () => {
-    const ms = backstopWindowMs('2026-07-02T00:00:00.000Z', '2026-07-01T00:00:00.000Z');
-    expect(ms).toBe(0);
-  });
-});
-
-describe('computeBackstopDeadlineMs (docs §Sealing — keyed off max(endDate, activatedAt))', () => {
-  it('returns null for an indefinite board (no endDate)', () => {
-    expect(computeBackstopDeadlineMs('2026-07-01T00:00:00.000Z', null)).toBeNull();
-    expect(computeBackstopDeadlineMs('2026-07-01T00:00:00.000Z', undefined)).toBeNull();
-  });
-
-  it('daily board with no activatedAt keys off endDate + 6h', () => {
-    const start = '2026-07-01T00:00:00.000Z';
-    const end = '2026-07-02T00:00:00.000Z';
-    const deadline = computeBackstopDeadlineMs(start, end);
-    expect(deadline).toBe(new Date(end).getTime() + 6 * H);
-  });
-
-  it('draft activated AFTER its window expired keys off activatedAt (one full prompt cycle)', () => {
-    const start = '2026-07-01T00:00:00.000Z';
-    const end = '2026-07-02T00:00:00.000Z';
-    const activatedAt = '2026-07-05T00:00:00.000Z'; // well past endDate
-    const deadline = computeBackstopDeadlineMs(start, end, activatedAt);
-    expect(deadline).toBe(new Date(activatedAt).getTime() + 6 * H);
-  });
-
-  it('activatedAt before endDate is ignored (endDate wins the max)', () => {
-    const start = '2026-07-01T00:00:00.000Z';
-    const end = '2026-07-02T00:00:00.000Z';
-    const activatedAt = '2026-07-01T06:00:00.000Z'; // before endDate
-    const deadline = computeBackstopDeadlineMs(start, end, activatedAt);
-    expect(deadline).toBe(new Date(end).getTime() + 6 * H);
-  });
-});
+// The old `min(48h, len/4)` backstop formula (backstopWindowMs /
+// computeBackstopDeadlineMs) was replaced by the next-window auto-close rule
+// (Board Edit redesign slice 4, D4) — see sealing.test.ts + the
+// autoCloseDeadlineVectors.json fixture.
 
 // ─── resolveLinkedCounterDisplay (fixture-driven) ───────────────────────────
 

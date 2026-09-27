@@ -15,9 +15,6 @@ import { deriveDisplayedCount } from './sharedCounter';
  * dependencies — the iOS twin mirrors it verbatim.
  */
 
-/** 48h cap on the auto-seal backstop (docs §Sealing → backstop table). */
-export const BACKSTOP_MAX_MS = 48 * 60 * 60 * 1000;
-
 /**
  * P5 — Hub-born counters. `occurredAt` for seed (starting-count) increment
  * events. Fixed far-past sentinel: lifetime sums include the seed, no board
@@ -412,6 +409,12 @@ export interface SealImmuneWindow {
    * An absent/unparseable `endDate` is open-ended, so the bound is `sealedAt`.
    */
   endMs: number;
+  /**
+   * The sealed board's `sealedAt` as epoch ms (Board Edit redesign slice 4,
+   * D10): a board-authored event CREATED after this instant is a late log made
+   * on the closed board, and stays undoable ({@link isEventSealImmune}).
+   */
+  sealedAtMs: number;
 }
 
 /**
@@ -439,6 +442,7 @@ export function buildSealImmuneWindows(
     return {
       startMs: new Date(b.startDate).getTime(),
       endMs: Number.isNaN(endDateMs) ? sealedAtMs : Math.min(endDateMs, sealedAtMs),
+      sealedAtMs,
     };
   });
 }
@@ -464,43 +468,32 @@ export function isOccurredAtSealImmune(
 }
 
 /**
- * The auto-seal backstop **duration** for a board's window (docs §Sealing):
- * `min(48h, windowLength/4)`. Timeframe-scaling falls out of the window length
- * itself — daily → 6h, weekly → 42h, monthly/yearly/custom≥8d → 48h — so one
- * formula owns every timeframe.
+ * Whether an EVENT is sealed-window immune (docs Decision 9 as amended by the
+ * Board Edit redesign slice 4, D10 / owner ruling R2). An event is immune iff
+ * some sealed board S placing its task has
+ * `occurredAt ∈ [S.startDate, min(S.endDate, S.sealedAt)]` AND the event is
+ * NOT a late log made on a closed board — i.e. NOT (`boardId != null` AND
+ * `createdAt > S.sealedAt`).
  *
- * @param startDate Board window start (ISO8601).
- * @param endDate   Board window end (ISO8601).
- * @returns Backstop duration in ms, capped at 48h and floored at 0.
+ * The `boardId` conjunct keeps heal-on-pull / backfill mints (no `boardId`,
+ * `createdAt` = snapshot time) immune, so the relaxation is exactly
+ * "backdated logs a user made from a board after it closed". A late log
+ * becomes immune again once any containing board seals AFTER it was created
+ * (history re-freezes) — including a re-Close after Reopen.
+ *
+ * @param event   The event's `occurredAt` / `createdAt` / `boardId`.
+ * @param windows The task's immune windows (from {@link buildSealImmuneWindows}).
+ * @returns `true` iff the event can never be tombstoned.
  */
-export function backstopWindowMs(startDate: string, endDate: string): number {
-  const lengthMs = new Date(endDate).getTime() - new Date(startDate).getTime();
-  return Math.min(BACKSTOP_MAX_MS, Math.max(0, lengthMs) / 4);
-}
-
-/**
- * The absolute auto-seal deadline for a board, as epoch ms (docs §Sealing →
- * "deadline keys off `max(endDate, activatedAt)`"). Returning ms — rather than
- * an ISO string — sidesteps the local-ISO vs UTC encoding decision; callers
- * compare `now.getTime() > deadline`.
- *
- * A draft activated AFTER its window already expired keys off `activatedAt`, so
- * it still gets one full prompt cycle instead of an instant silent seal.
- * Indefinite boards (no `endDate`) never seal → `null`.
- *
- * @param startDate   Board window start (ISO8601).
- * @param endDate     Board window end (ISO8601), or null/undefined for indefinite.
- * @param activatedAt When the board was activated (ISO8601), if known.
- * @returns Epoch-ms deadline, or `null` when the board never seals.
- */
-export function computeBackstopDeadlineMs(
-  startDate: string,
-  endDate: string | null | undefined,
-  activatedAt?: string | null,
-): number | null {
-  if (endDate == null) return null;
-  const endMs = new Date(endDate).getTime();
-  const activatedMs = activatedAt != null ? new Date(activatedAt).getTime() : endMs;
-  const anchor = Math.max(endMs, activatedMs);
-  return anchor + backstopWindowMs(startDate, endDate);
+export function isEventSealImmune(
+  event: Pick<TaskEvent, 'occurredAt' | 'createdAt' | 'boardId'>,
+  windows: ReadonlyArray<SealImmuneWindow>,
+): boolean {
+  if (windows.length === 0) return false;
+  const t = new Date(event.occurredAt).getTime();
+  const createdMs = new Date(event.createdAt).getTime();
+  const boardAuthored = event.boardId != null;
+  return windows.some(
+    (w) => w.startMs <= t && t <= w.endMs && !(boardAuthored && createdMs > w.sealedAtMs),
+  );
 }

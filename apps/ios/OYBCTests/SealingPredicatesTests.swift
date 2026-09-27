@@ -10,7 +10,7 @@ final class SealingPredicatesTests: XCTestCase {
 
     private let start = "2026-07-01T00:00:00.000Z"
     private let end = "2026-07-02T00:00:00.000Z"
-    private let pastEnd = "2026-07-02T12:00:00.000Z" // > end, well inside the 6h daily backstop grace
+    private let pastEnd = "2026-07-02T12:00:00.000Z" // > end, well inside the next-day auto-close grace
 
     private func makeBoard(
         status: BoardStatus = .active,

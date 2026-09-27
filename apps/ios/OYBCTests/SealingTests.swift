@@ -13,7 +13,9 @@ final class SealingTests: XCTestCase {
 
     private let userId = "u1"
 
-    // A daily window: 07-01 → 07-02 → backstop 6h → deadline 07-02T06:00.
+    // A daily window: 07-01 → 07-02. `pastBackstop` is a post-window seal
+    // instant (the pre-slice-4 6h backstop deadline); auto-close itself is
+    // END + 1 local day (Board Edit redesign slice 4, D4).
     private let start = "2026-07-01T00:00:00.000Z"
     private let end = "2026-07-02T00:00:00.000Z"
     private let inWindow = "2026-07-01T12:00:00.000Z"
@@ -75,7 +77,8 @@ final class SealingTests: XCTestCase {
     private func makeBoard(
         id: String, startDate: String? = nil, endDate: String? = nil,
         status: BoardStatus = .active, sealedAt: String? = nil,
-        sealedCompletedCells: [Int]? = nil, activatedAt: String? = nil, size: Int = 1
+        sealedCompletedCells: [Int]? = nil, activatedAt: String? = nil,
+        reopenedAt: String? = nil, size: Int = 1
     ) -> Board {
         var dict: [String: Any] = [
             "id": id, "userId": userId, "name": "B", "status": status.rawValue,
@@ -87,6 +90,7 @@ final class SealingTests: XCTestCase {
         ]
         if let sealedAt { dict["sealedAt"] = sealedAt }
         if let activatedAt { dict["activatedAt"] = activatedAt }
+        if let reopenedAt { dict["reopenedAt"] = reopenedAt }
         // sealedCompletedCells decodes from a JSON STRING (like completedLineIds).
         if let cells = sealedCompletedCells,
            let data = try? JSONEncoder().encode(cells),
@@ -170,6 +174,9 @@ final class SealingTests: XCTestCase {
 
     // MARK: - backstop auto-seal
 
+    /// Past END + 1 day (next-window auto-close; 24h in July in every zone).
+    private let pastAutoClose = "2026-07-03T01:00:00.000Z"
+
     func test_backstop_sealsPastDeadlineLeavesInWindow() throws {
         let db = try makeDb(); try seedUser(db)
         try db.saveBoard(makeBoard(id: "b-sealed", startDate: start, endDate: end))
@@ -177,9 +184,13 @@ final class SealingTests: XCTestCase {
                                    startDate: "2026-07-02T00:00:00.000Z",
                                    endDate: "2026-07-03T00:00:00.000Z"))
 
-        let ids = try db.runBackstopAutoSeal(userId: userId, now: pastBackstop)
+        // The old 6h backstop would already have sealed at 07-02T07:00; the
+        // next-window rule keeps yesterday's daily open all of today.
+        XCTAssertEqual(try db.runBackstopAutoSeal(userId: userId, now: pastBackstop), [])
+
+        let ids = try db.runBackstopAutoSeal(userId: userId, now: pastAutoClose)
         XCTAssertEqual(ids, ["b-sealed"])
-        XCTAssertEqual(try fetchBoard(db, "b-sealed").sealedAt, pastBackstop)
+        XCTAssertEqual(try fetchBoard(db, "b-sealed").sealedAt, pastAutoClose)
         XCTAssertNil(try fetchBoard(db, "b-live").sealedAt)
     }
 
@@ -188,20 +199,28 @@ final class SealingTests: XCTestCase {
         let activatedAt = "2026-07-04T00:00:00.000Z"
         try db.saveBoard(makeBoard(id: "b1", startDate: start, endDate: end, activatedAt: activatedAt))
 
-        // Past endDate+6h but grace keys off activatedAt → still unsealed.
-        XCTAssertEqual(try db.runBackstopAutoSeal(userId: userId, now: pastBackstop), [])
+        // Past END + 1 day but grace keys off activatedAt → still unsealed.
+        XCTAssertEqual(try db.runBackstopAutoSeal(userId: userId, now: pastAutoClose), [])
         XCTAssertNil(try fetchBoard(db, "b1").sealedAt)
 
-        // Only past activatedAt + 6h does it auto-seal.
-        let late = try db.runBackstopAutoSeal(userId: userId, now: "2026-07-04T07:00:00.000Z")
+        // Only past activatedAt + 1 day does it auto-close.
+        let late = try db.runBackstopAutoSeal(userId: userId, now: "2026-07-05T01:00:00.000Z")
         XCTAssertEqual(late, ["b1"])
-        XCTAssertEqual(try fetchBoard(db, "b1").sealedAt, "2026-07-04T07:00:00.000Z")
+        XCTAssertEqual(try fetchBoard(db, "b1").sealedAt, "2026-07-05T01:00:00.000Z")
+    }
+
+    func test_backstop_neverSealsReopenedBoard() throws {
+        let db = try makeDb(); try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1", startDate: start, endDate: end,
+                                   reopenedAt: "2026-07-02T12:00:00.000Z"))
+        XCTAssertEqual(try db.runBackstopAutoSeal(userId: userId, now: "2027-01-01T00:00:00.000Z"), [])
+        XCTAssertNil(try fetchBoard(db, "b1").sealedAt)
     }
 
     func test_backstop_neverSealsDraft() throws {
         let db = try makeDb(); try seedUser(db)
         try db.saveBoard(makeBoard(id: "b1", status: .draft))
-        XCTAssertEqual(try db.runBackstopAutoSeal(userId: userId, now: pastBackstop), [])
+        XCTAssertEqual(try db.runBackstopAutoSeal(userId: userId, now: pastAutoClose), [])
     }
 
     // MARK: - migration sealing

@@ -1,0 +1,369 @@
+{
+  "_note": "Hand-authored cross-platform vectors for findWatcherTaskIds (Board Edit redesign slice 4, D8 / owner ruling R3): the non-deleted ACHIEVEMENT tasks whose referencedBoardId is a changed board's id, or whose referencedTemplateId is a changed board's spawnedFromTemplateId; task order, de-duplicated; one hop only (the platform refreshWatchersForBoards iterates to a fixpoint). Run by packages/shared/tests/algorithms/achievementWatchers.test.ts and apps/ios/OYBCTests/AchievementWatcherVectorTests.swift.",
+  "vectors": [
+    {
+      "name": "specific-board watcher of a changed board",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000002",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": null,
+          "referencedTemplateId": "70000000-0000-0000-0000-000000000001"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000b-0000-0000-0000-00000000000b",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "type": "achievement",
+          "isDeleted": true,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "10000000-0000-0000-0000-000000000001",
+          "type": "normal",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        }
+      ],
+      "changedBoards": [
+        {
+          "id": "b000000a-0000-0000-0000-00000000000a",
+          "spawnedFromTemplateId": null
+        }
+      ],
+      "expectedTaskIds": [
+        "a0000000-0000-0000-0000-000000000001"
+      ]
+    },
+    {
+      "name": "template-mode watcher of a changed spawn",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000002",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": null,
+          "referencedTemplateId": "70000000-0000-0000-0000-000000000001"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000b-0000-0000-0000-00000000000b",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "type": "achievement",
+          "isDeleted": true,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "10000000-0000-0000-0000-000000000001",
+          "type": "normal",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        }
+      ],
+      "changedBoards": [
+        {
+          "id": "b000000c-0000-0000-0000-00000000000c",
+          "spawnedFromTemplateId": "70000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "expectedTaskIds": [
+        "a0000000-0000-0000-0000-000000000002"
+      ]
+    },
+    {
+      "name": "a spawn of another template matches nothing",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000002",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": null,
+          "referencedTemplateId": "70000000-0000-0000-0000-000000000001"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000b-0000-0000-0000-00000000000b",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "type": "achievement",
+          "isDeleted": true,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "10000000-0000-0000-0000-000000000001",
+          "type": "normal",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        }
+      ],
+      "changedBoards": [
+        {
+          "id": "b000000c-0000-0000-0000-00000000000c",
+          "spawnedFromTemplateId": "70000000-0000-0000-0000-000000000002"
+        }
+      ],
+      "expectedTaskIds": []
+    },
+    {
+      "name": "deleted watchers and non-achievement tasks are ignored",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "type": "achievement",
+          "isDeleted": true,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "10000000-0000-0000-0000-000000000001",
+          "type": "normal",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "90000000-0000-0000-0000-000000000001",
+          "type": "counting",
+          "isDeleted": false,
+          "referencedBoardId": null,
+          "referencedTemplateId": "70000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "changedBoards": [
+        {
+          "id": "b000000a-0000-0000-0000-00000000000a",
+          "spawnedFromTemplateId": "70000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "expectedTaskIds": []
+    },
+    {
+      "name": "chain of two: one hop only (the DB fixpoint walks the chain)",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000002",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": null,
+          "referencedTemplateId": "70000000-0000-0000-0000-000000000001"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000b-0000-0000-0000-00000000000b",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "type": "achievement",
+          "isDeleted": true,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "10000000-0000-0000-0000-000000000001",
+          "type": "normal",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        }
+      ],
+      "changedBoards": [
+        {
+          "id": "b000000a-0000-0000-0000-00000000000a",
+          "spawnedFromTemplateId": null
+        }
+      ],
+      "expectedTaskIds": [
+        "a0000000-0000-0000-0000-000000000001"
+      ]
+    },
+    {
+      "name": "chain of two: both hops once the second board changes too",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000002",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": null,
+          "referencedTemplateId": "70000000-0000-0000-0000-000000000001"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000b-0000-0000-0000-00000000000b",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "type": "achievement",
+          "isDeleted": true,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "10000000-0000-0000-0000-000000000001",
+          "type": "normal",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        }
+      ],
+      "changedBoards": [
+        {
+          "id": "b000000a-0000-0000-0000-00000000000a",
+          "spawnedFromTemplateId": null
+        },
+        {
+          "id": "b000000b-0000-0000-0000-00000000000b",
+          "spawnedFromTemplateId": "70000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "expectedTaskIds": [
+        "a0000000-0000-0000-0000-000000000001",
+        "a0000000-0000-0000-0000-000000000002",
+        "a0000000-0000-0000-0000-000000000003"
+      ]
+    },
+    {
+      "name": "a duplicated task row appears once, results follow task order",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000b-0000-0000-0000-00000000000b",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        }
+      ],
+      "changedBoards": [
+        {
+          "id": "b000000a-0000-0000-0000-00000000000a",
+          "spawnedFromTemplateId": null
+        },
+        {
+          "id": "b000000b-0000-0000-0000-00000000000b",
+          "spawnedFromTemplateId": null
+        }
+      ],
+      "expectedTaskIds": [
+        "a0000000-0000-0000-0000-000000000003",
+        "a0000000-0000-0000-0000-000000000001"
+      ]
+    },
+    {
+      "name": "no changed boards means no watchers",
+      "tasks": [
+        {
+          "id": "a0000000-0000-0000-0000-000000000001",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000002",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": null,
+          "referencedTemplateId": "70000000-0000-0000-0000-000000000001"
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000003",
+          "type": "achievement",
+          "isDeleted": false,
+          "referencedBoardId": "b000000b-0000-0000-0000-00000000000b",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "a0000000-0000-0000-0000-000000000004",
+          "type": "achievement",
+          "isDeleted": true,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        },
+        {
+          "id": "10000000-0000-0000-0000-000000000001",
+          "type": "normal",
+          "isDeleted": false,
+          "referencedBoardId": "b000000a-0000-0000-0000-00000000000a",
+          "referencedTemplateId": null
+        }
+      ],
+      "changedBoards": [],
+      "expectedTaskIds": []
+    }
+  ]
+}
