@@ -73,8 +73,13 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 | 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired; remove the center selector from Board details; retire the Edit tasks ⇄ Rearrange toggle | shipped (#512) — see §Slice 3 below |
 | 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | shipped (this PR, `feature/board-edit-slice4-close`) — see §Slice 4 below |
 
-Independent of the train (bugfix PRs any time): iOS Board Edit rewrites an
-achievement task's type (P0). ~~zero-placement boards show "Loading…" forever
+Independent of the train (bugfix PRs any time): ~~iOS Board Edit rewrites an
+achievement task's type (P0)~~ — **fixed in #514**: `SquareEditTaskSheet`
+seeded an achievement's type as `.normal` and `applyingOverride` only guarded
+Compound, so a plain rename saved the task as Simple; type switches are now
+Simple ⇄ Counting only (`boardEditAllowsTypeSwitch`) and the sheet edits an
+achievement's title only (web was never affected — its sheet never sends
+`type`). ~~zero-placement boards show "Loading…" forever
 (web)~~ — **fixed in slice 3**: `BoardPlaySurface` gated its grid on
 `sortedBoardTasks.length === 0`, conflating "query unresolved" with "loaded,
 no squares"; it now gates on `boardTasksLoaded` from `useBoardPlayData`
