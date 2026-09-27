@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The play board's in-content title block (masthead layout — core-board
 /// surface rework): kicker · name (+ inline gold streak chip) · badge
-/// row, with the Edit button — or the sealed "Read-only" lock — in the
-/// trailing slot.
+/// row, with "Edit squares" — or the sealed "Read-only" lock — plus the
+/// "…" board menu (Board Edit redesign slice 2, D1) in the trailing slot.
 ///
 /// Pure presentation: all state arrives as props so the view is
 /// directly snapshot-testable. The Edit gate is decided by the CALLER
@@ -33,6 +33,16 @@ struct BoardPlayHeaderView: View {
     /// one-rule gate). Ignored when `isSealed`.
     var canEdit: Bool = false
     var onEdit: () -> Void = {}
+    /// Board Edit redesign slice 2 (D1/D3) — the "…" menu's items, in
+    /// display order. Empty hides the menu entirely (draft boards). The
+    /// menu still shows for a sealed board when non-empty (D3: sealed menu
+    /// = Delete, + Core defaults… on core) — unlike `canEdit`, its
+    /// visibility does NOT depend on `isSealed`.
+    var menuItems: [BoardMenuItem] = []
+    /// Called with the tapped menu item. No-op default so existing call
+    /// sites (and snapshot fixtures) that don't pass `menuItems` compile
+    /// unchanged.
+    var onMenuSelect: (BoardMenuItem) -> Void = { _ in }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -66,27 +76,36 @@ struct BoardPlayHeaderView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Trailing slot: Edit / Read-only / nothing.
-            if canEdit && !isSealed {
-                RisoButton(
-                    title: "Edit",
-                    kind: .neutral,
-                    systemImage: "pencil",
-                    small: true,
-                    action: onEdit
-                )
-                .padding(.top, 22)
-                .accessibilityLabel("Edit board")
-            } else if isSealed {
-                HStack(spacing: 5) {
-                    Image(systemName: "lock")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("Read-only")
-                        .font(.risoBody(11, .bold))
+            // Trailing slot: Edit squares + "…" menu / Read-only (+ menu when
+            // non-empty) / nothing. Board Edit redesign slice 2 (D1): the
+            // "…" menu is a SEPARATE affordance from Edit squares — it is
+            // hidden only while `editMode` (the caller passes `canEdit`
+            // false and an empty `menuItems` together in that case) or for
+            // a draft (empty `menuItems`).
+            HStack(spacing: 8) {
+                if canEdit && !isSealed {
+                    RisoButton(
+                        title: "Edit squares",
+                        kind: .neutral,
+                        systemImage: "pencil",
+                        small: true,
+                        action: onEdit
+                    )
+                    .accessibilityLabel("Edit squares")
+                } else if isSealed {
+                    HStack(spacing: 5) {
+                        Image(systemName: "lock")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Read-only")
+                            .font(.risoBody(11, .bold))
+                    }
+                    .foregroundStyle(Color.risoMuted)
                 }
-                .foregroundStyle(Color.risoMuted)
-                .padding(.top, 24)
+                if !menuItems.isEmpty {
+                    BoardActionsMenuButton(items: menuItems, onSelect: onMenuSelect)
+                }
             }
+            .padding(.top, canEdit && !isSealed ? 22 : 24)
         }
     }
 

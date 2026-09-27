@@ -545,32 +545,10 @@ extension BoardPlayViewModel {
         return true
     }
 
-    /// Archives the board by setting `status = .archived` via the injected
-    /// `database`, then emits `editEvent(.archived)` so the view exits edit mode
-    /// and dismisses back to the Boards list. On failure it surfaces an error
-    /// through `bingoMessage` (which the VM already owns).
-    ///
-    /// The archive confirm alert in `BoardEditPanel` calls this only after the
-    /// user confirms — no further confirmation required here.
-    func handleEditArchive() {
-        let bid = boardId
-        let database = self.database
-        _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
-            do {
-                try database.archiveBoard(id: bid)
-                // Only leave the board if the archive actually committed.
-                await MainActor.run {
-                    self.emitEdit(.archived)
-                }
-            } catch {
-                dlog("⚠️ BoardPlayViewModel.handleEditArchive: \(error)")
-                await MainActor.run {
-                    self.bingoMessage = "Archive failed — please try again."
-                }
-            }
-        }
-    }
+    // `handleEditArchive` moved to `BoardPlayViewModel+BoardActions.swift`
+    // (Board Edit redesign slice 2, T2) as the plain `async throws`
+    // `archiveBoard()` — Archive is no longer part of the squares-editor
+    // commit path; it's a "…" menu action.
 
     /// Publishes a one-shot `editEvent` the view observes to run the residual
     /// edit-commit UI mutations it still owns.

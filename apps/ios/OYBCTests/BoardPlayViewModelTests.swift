@@ -1152,19 +1152,11 @@ final class BoardPlayViewModelTests: XCTestCase {
                        "a blank name must not dispatch a commit")
     }
 
-    func test_handleEditArchive_setsBoardArchived_thenEmitsArchived() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))
-        let vm = loadedVM(db, boardId: "b1")
-
-        vm.handleEditArchive()
-
-        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .archived },
-                      "handleEditArchive never emitted .archived")
-        let b = try XCTUnwrap(db.fetchBoard(id: "b1"))
-        XCTAssertEqual(b.status, .archived)
-    }
+    // `test_handleEditArchive_setsBoardArchived_thenEmitsArchived` migrated to
+    // `BoardPlayViewModelBoardActionsTests.test_archiveBoard_setsStatusArchived`
+    // (Board Edit redesign slice 2, T2) — Archive is now the plain `async
+    // throws` `archiveBoard()`; `handleEditArchive` + its one-shot `.archived`
+    // event were removed from `+EditCommit.swift`.
 
     // MARK: - 12. Shared Counters P3 — passive-completion arrival detection
 

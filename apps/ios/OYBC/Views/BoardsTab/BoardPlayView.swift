@@ -124,6 +124,13 @@ struct BoardPlayView: View {
     /// mode toggles, so it can disable window stepping / dim its chip
     /// while editing. Nil for the standalone destination.
     var onEditModeChange: ((Bool) -> Void)? = nil
+    /// Board Edit redesign slice 2 (D8) — fired after a successful Archive
+    /// or Delete from the "…" menu on a CORE board (the pager stays put;
+    /// its window falls back to the lazy setup prompt). A standalone
+    /// (non-core) board just `dismiss()`s instead — see
+    /// `BoardActionsPresenter`'s `onRemoved` wiring below. Nil for the
+    /// standalone destination, where it's never called.
+    var onBoardRemoved: (() -> Void)? = nil
     @EnvironmentObject var authService: AuthService
     @Environment(\.dismiss) private var dismiss
 
@@ -134,9 +141,11 @@ struct BoardPlayView: View {
     /// exposed here as read-only computed shims so every existing read site
     /// (`board`, `boardTasks`, …) is untouched. Constructed in `init` with
     /// the board id + user id.
-    @StateObject private var viewModel: BoardPlayViewModel
+    // internal for the +Header extension split (Board Edit redesign slice 2)
+    @StateObject var viewModel: BoardPlayViewModel
 
-    private var board: Board? { viewModel.board }
+    // internal for the +Header extension split
+    var board: Board? { viewModel.board }
     private var boardTasks: [BoardTask] { viewModel.boardTasks }
     private var allTasks: [Task] { viewModel.allTasks }
     // Phase 6.3 — workspace-wide boards + templates feed both the
@@ -163,7 +172,8 @@ struct BoardPlayView: View {
     /// Compact greenlog-streak value (e.g. "3d"/"2w") for the celebration overlay
     /// + share poster. Non-nil only for core boards with a streak ≥ 1; nil hides
     /// the STREAK card. Computed when the GREENLOG overlay is triggered.
-    @State private var greenlogStreakValue: String? = nil
+    // internal for the +Header extension split
+    @State var greenlogStreakValue: String? = nil
     /// Whether to show the Share Board sheet (opened from the GREENLOG overlay).
     @State private var showShareBoardSheet: Bool = false
     /// Whether to show the bingo toast (drops from top).
@@ -215,11 +225,18 @@ struct BoardPlayView: View {
     // the render-level edit chrome below (`editMode` overlay gate, the Save
     // spinner mirror, the alert/toast flags, and the cell-menu routing state).
     /// True while the in-place `BoardEditPanel` is overlaid on `BoardPlayView`.
-    @State private var editMode: Bool = false
+    // internal for the +Header extension split
+    @State var editMode: Bool = false
+    /// Board Edit redesign slice 2 (T2) — which "…" menu sheet/alert is
+    /// active. Owned here (not the VM) since it's pure presentation state;
+    /// `BoardActionsPresenter` reads/writes it via a binding.
+    // internal for the +Header extension split
+    @State var boardAction: BoardAction? = nil
     /// True while a `handleEditSave` commit is in flight — disables the Save
     /// pill. UI mirror driven by `viewModel.handleEditSave`'s return value +
     /// `viewModel.editEvent`; the authoritative re-entry guard is VM-side.
-    @State private var editSaving: Bool = false
+    // internal for the +Header extension split
+    @State var editSaving: Bool = false
     /// Surfaces a board-edit Save failure (the edit panel overlays the inline
     /// flash, so a system alert is used — it pierces the overlay).
     @State private var editSaveError: String?
@@ -282,7 +299,8 @@ struct BoardPlayView: View {
         embedded: Bool = false,
         pagerSwipeActive: Bool = false,
         onResumeDraft: ((String) -> Void)? = nil,
-        onEditModeChange: ((Bool) -> Void)? = nil
+        onEditModeChange: ((Bool) -> Void)? = nil,
+        onBoardRemoved: (() -> Void)? = nil
     ) {
         self.boardId = boardId
         self.onOpenBoard = onOpenBoard
@@ -290,6 +308,7 @@ struct BoardPlayView: View {
         self.pagerSwipeActive = pagerSwipeActive
         self.onResumeDraft = onResumeDraft
         self.onEditModeChange = onEditModeChange
+        self.onBoardRemoved = onBoardRemoved
         _viewModel = StateObject(
             wrappedValue: BoardPlayViewModel(boardId: boardId, userId: nil)
         )
@@ -426,7 +445,8 @@ struct BoardPlayView: View {
     /// Windowed Completion — whether the current board is sealed (docs
     /// §Effects of sealed). Sealed boards render read-only from
     /// `sealedCompletedCells` rather than live event queries.
-    private var isSealed: Bool {
+    // internal for the +Header extension split
+    var isSealed: Bool {
         board?.sealedAt != nil
     }
 
@@ -437,18 +457,8 @@ struct BoardPlayView: View {
         return BingoDetection.getHighlightedSquares(completedLines: lines, gridSize: gridSize)
     }
 
-    /// Kicker text derived from the board's timeframe (e.g. "WEEKLY BOARD").
-    private var boardKicker: String {
-        guard let b = board else { return "BOARD" }
-        switch b.timeframe {
-        case .daily:   return "DAILY BOARD"
-        case .weekly:  return "WEEKLY BOARD"
-        case .monthly: return "MONTHLY BOARD"
-        case .yearly:  return "YEARLY BOARD"
-        case .custom:  return "CUSTOM BOARD"
-        case .indefinite: return "ONGOING BOARD"
-        }
-    }
+    // `boardKicker` moved to `BoardPlayView+Header.swift` (Board Edit
+    // redesign slice 2 — file-size guardrail).
 
     // MARK: - Body
 
@@ -716,7 +726,27 @@ struct BoardPlayView: View {
                     onCancelConfirmed: {
                         withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
                     },
-                    onArchiveConfirmed: viewModel.handleEditArchive
+                    // Board Edit redesign slice 2 (T2) — Archive now writes
+                    // through the plain async `viewModel.archiveBoard()`
+                    // (the "…" menu's Archive item uses the same call via
+                    // `BoardActionsPresenter`); `handleEditArchive` + its
+                    // one-shot `.archived` event were removed from
+                    // `+EditCommit.swift`. The panel's own Archive ghost
+                    // button + alert are retired in slice 2 T3 — until
+                    // then this is a second, redundant entry point to the
+                    // same call.
+                    onArchiveConfirmed: {
+                        let isCore = b.isCore
+                        _Concurrency.Task { @MainActor in
+                            do {
+                                try await viewModel.archiveBoard()
+                                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
+                                if isCore { onBoardRemoved?() } else { dismiss() }
+                            } catch {
+                                editSaveError = "Archive failed — please try again."
+                            }
+                        }
+                    }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.risoPaper.ignoresSafeArea())
@@ -757,6 +787,26 @@ struct BoardPlayView: View {
         .onChange(of: editMode) { _, editing in
             onEditModeChange?(editing)
         }
+        // Board Edit redesign slice 2 (T2) — the "…" menu's three sheets +
+        // two confirm alerts, keyed off `boardAction`.
+        .modifier(
+            BoardActionsPresenter(
+                activeAction: $boardAction,
+                board: board,
+                sourceTemplate: viewModel.editSourceTemplate,
+                weekStartDay: authService.currentUser?.decodedPreferences.weekStartDay.rawValue ?? "monday",
+                userId: authService.currentUser?.id ?? "",
+                viewModel: viewModel,
+                onDetailsSaved: { triggerBoardSavedToast() },
+                onRemoved: {
+                    if board?.isCore == true {
+                        onBoardRemoved?()
+                    } else {
+                        dismiss()
+                    }
+                }
+            )
+        )
         // Phase 2 — Tap-menu: Replace task / Edit task (+ Phase-2b center toggle).
         // Presented when the user taps an occupied square OR the free center cell
         // while in edit mode + Edit-tasks sub-mode.
@@ -805,7 +855,8 @@ struct BoardPlayView: View {
 
             // Phase 2b — Center toggle buttons. Only shown when the tapped cell
             // is the positional center. .chosen is intentionally excluded — the
-            // BoardSetupFormView chrome is the way out of CHOSEN.
+            // Board details sheet's center selector is the way out of CHOSEN
+            // (Board Edit redesign slice 2, D5).
             if editCellMenuIsCenter {
                 if viewModel.editCenterType == .free {
                     // Free center → task square (empty; fill via the live "+" flow).
@@ -1137,45 +1188,11 @@ struct BoardPlayView: View {
         }
     }
 
-    // MARK: - Riso Play Header
-
-    /// In-content header (masthead layout): back button (non-embedded
-    /// only) + the extracted `BoardPlayHeaderView` leaf (kicker · name
-    /// + inline streak chip · badge row · Edit / Read-only slot). The
-    /// Edit gate is ONE rule on both platforms:
-    /// `status == .active && sealedAt == nil && !editMode` (the edit
-    /// panel replaces this chrome while open).
-    @ViewBuilder
-    private var risoPlayHeader: some View {
-        HStack(alignment: .top, spacing: 10) {
-            // Back button — hidden when embedded (host owns navigation chrome)
-            if !embedded {
-                // SwiftUI's NavigationStack owns the back gesture; this button
-                // is a visual affordance only. Calling dismiss via the environment
-                // is the idiomatic way to pop without a NavigationLink.
-                risoBackButton
-            }
-
-            BoardPlayHeaderView(
-                kicker: boardKicker,
-                name: board?.name ?? "",
-                nameSize: embedded ? 24 : 22,
-                streakValue: greenlogStreakValue,
-                status: board?.status,
-                isSealed: isSealed,
-                showRecurringBadge: board.map { RisoRecurringBadge.shouldShow(for: $0) } ?? false,
-                canEdit: board?.status == .active && !isSealed && !editMode,
-                onEdit: {
-                    guard let b = board else { return }
-                    viewModel.seedEditDraft(from: b)
-                    // `seedEditDraft` used to reset `editSaving` inline;
-                    // it stays view-side, so reset it here.
-                    editSaving = false
-                    withAnimation(.easeInOut(duration: 0.22)) { editMode = true }
-                }
-            )
-        }
-    }
+    // `risoPlayHeader` + `handleMenuSelect` + `risoBackButton` +
+    // `risoEndedText` + `risoExpiryText` moved to
+    // `BoardPlayView+Header.swift` (Board Edit redesign slice 2 — file-size
+    // guardrail; this file was already at its frozen cap before slice 2's
+    // menu/header additions).
 
     // Repeat-in-edit rework: the recurring management section
     // (`recurringManagementSection` + `RisoRecurringManageRow` /
@@ -1213,42 +1230,6 @@ struct BoardPlayView: View {
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder
-    private var risoBackButton: some View {
-        // In-content back square. When !embedded, BoardPlayTitleChrome hides
-        // the system nav-bar back button, so this IS the primary back
-        // affordance (the swipe-back gesture still works); when embedded the
-        // host owns the chrome. Uses the environment dismiss action.
-        BackButton()
-    }
-
-    // NOTE: the status pill moved into `BoardPlayHeaderView` (core-board
-    // surface rework header extraction).
-
-    /// Short end-date string for the sealed ENDED stat card ("Aug 31").
-    private func risoEndedText(board: Board) -> String {
-        guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "—" }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone.current
-        f.dateFormat = "MMM d"
-        return f.string(from: end)
-    }
-
-    /// Compact expiry string for the stat bar — "4d", "Expired", "Today", etc.
-    /// A custom board with an end date counts down like a timed board (it seals
-    /// at that date too); only INDEFINITE / no-endDate boards read "No end".
-    private func risoExpiryText(board: Board) -> String {
-        guard !board.isIndefinite else { return "No end" }
-        guard let endStr = board.endDate, let end = parseISO8601Date(endStr) else { return "—" }
-        let now = Date()
-        guard now <= end else { return "Expired" }
-        let secs = end.timeIntervalSince(now)
-        if secs < 86_400 { return "Today" }
-        let days = Int(ceil(secs / 86_400))
-        return "\(days)d"
     }
 
     // MARK: - Riso Notification helpers
@@ -2263,7 +2244,8 @@ struct BoardPlayView: View {
 /// 40×40 Riso back-chevron square button for the in-content play-board header.
 /// Uses the SwiftUI environment's `dismiss` action so it integrates correctly
 /// with `NavigationStack`'s internal path management.
-private struct BackButton: View {
+// internal for the +Header extension split
+struct BackButton: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         Button {

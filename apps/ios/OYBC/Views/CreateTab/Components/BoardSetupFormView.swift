@@ -4,8 +4,16 @@ import SwiftUI
 
 /// BoardSetupFormView — Riso-styled board setup form for editing an
 /// already-active board. Driven by explicit `@Binding` props from
-/// `EditBoardSheet`; board size is suppressed (rendered as a read-only chip in
-/// the enclosing sheet), and recurring/core affordances don't apply to edits.
+/// `BoardDetailsSheetView` (Board Edit redesign slice 2 — the retired
+/// `EditBoardSheet`'s successor); board size is suppressed (rendered as a
+/// read-only chip in the enclosing sheet), and recurring/core affordances
+/// don't apply to edits.
+///
+/// Slice 2 (D5): the timeframe never switches after creation — this view no
+/// longer offers the Daily/Weekly/Monthly/Yearly/Custom segmented. A
+/// calendar-timeframe board renders its read-only computed window; a
+/// custom/ongoing board renders the date pickers, where the End-date "None"
+/// choice is still the one supported Custom ⇄ Ongoing conversion (OQ6).
 ///
 /// The board-CREATION wizard uses `RisoBoardSetupForm` instead — the older
 /// pre-Riso `.create` path that once lived here was removed once the wizard
@@ -72,38 +80,11 @@ struct BoardSetupFormView: View {
             Text("TIMEFRAME")
                 .risoSectionLabel()
 
-            // Daily/Weekly/Monthly/Yearly/Custom. The "Custom" segment hosts
-            // both a dated range and the ongoing (indefinite) board — the user
-            // picks "None" in the End-date control to make it ongoing, so there
-            // is no separate "Ongoing" segment crowding the row.
-            RisoSegmented(
-                options: [
-                    (.daily,   "Daily"),
-                    (.weekly,  "Weekly"),
-                    (.monthly, "Monthly"),
-                    (.yearly,  "Yearly"),
-                    (.custom,  "Custom"),
-                ],
-                selection: Binding(
-                    get: { timeframeBinding.wrappedValue == .indefinite ? .custom : timeframeBinding.wrappedValue },
-                    set: { newValue in
-                        // "Custom" defaults to ongoing (End date = None); a date
-                        // is opt-in. Re-tapping Custom keeps the current
-                        // End-date choice; arriving from a calendar timeframe
-                        // lands on None.
-                        if newValue == .custom {
-                            if timeframeBinding.wrappedValue != .custom && timeframeBinding.wrappedValue != .indefinite {
-                                timeframeBinding.wrappedValue = .indefinite
-                            }
-                        } else {
-                            timeframeBinding.wrappedValue = newValue
-                        }
-                    }
-                )
-            )
-
-            // Date region: custom pickers (dated + ongoing via the End-date
-            // "None" option), or the computed-window note.
+            // Slice 2 (D5): no segmented — the timeframe never switches
+            // after creation. A calendar timeframe (Daily/Weekly/Monthly/
+            // Yearly) renders its read-only computed window; Custom /
+            // Ongoing render the date pickers, where the End-date "None"
+            // menu is still the one supported Custom ⇄ Ongoing conversion.
             switch timeframeBinding.wrappedValue {
             case .custom, .indefinite:
                 editCustomDateSection

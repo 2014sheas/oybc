@@ -298,7 +298,12 @@ struct CoreBoardWindowView: View {
                         withAnimation(.easeInOut(duration: 0.22)) {
                             childEditing = editing
                         }
-                    }
+                    },
+                    // Board Edit redesign slice 2 (D8) — Archive/Delete on a
+                    // CORE board leaves the pager in place; its window
+                    // falls back to the lazy setup prompt once the reload
+                    // sees the board gone/archived.
+                    onBoardRemoved: { viewModel.reload() }
                 )
                 caption(for: start)
                     .padding(.bottom, 10)
