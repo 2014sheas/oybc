@@ -48,10 +48,11 @@ struct LateLogSheetView: View {
     /// user can still undo (D15/OQ4) — swaps the primary button.
     var isUndoable: Bool = false
 
-    var onMarkDone: () -> Void = {}
-    var onUndo: () -> Void = {}
-    var onLogAmount: (Int) -> Void = { _ in }
-    var onCommitCompound: ([String]) -> Void = { _ in }
+    // Every action is `async`: the sheet awaits it under `isBusy` (below).
+    var onMarkDone: () async -> Void = {}
+    var onUndo: () async -> Void = {}
+    var onLogAmount: (Int) async -> Void = { _ in }
+    var onCommitCompound: ([String]) async -> Void = { _ in }
     /// Compound pre-check: whether the staged child ids meet the rule
     /// (`BoardPlayViewModel.wouldLateLogCompoundRuleBeMet`). Disables
     /// "Mark done on board" until it does.
@@ -61,6 +62,22 @@ struct LateLogSheetView: View {
     @State private var stagedChildIds: Set<String> = []
     @State private var customAmountDraft = ""
     @State private var customOpen = false
+    /// True while an action's write is in flight — every action button is
+    /// disabled (twin of web `LateLogSheet`'s `busy`), so a rapid double-tap
+    /// can't submit twice. Set synchronously in `perform` BEFORE the Task
+    /// starts, cleared in its `defer`. (The view model also refuses re-entry —
+    /// `BoardPlayViewModel.runLateLogWrite` — so this is belt and braces.)
+    @State private var isBusy = false
+
+    /// Runs `action` under `isBusy`; a tap while busy is dropped.
+    private func perform(_ action: @escaping () async -> Void) {
+        guard !isBusy else { return }
+        isBusy = true
+        _Concurrency.Task { @MainActor in
+            defer { isBusy = false }
+            await action()
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -130,8 +147,9 @@ struct LateLogSheetView: View {
             title: isUndoable ? "Undo late log" : "Mark done on board",
             kind: .primary,
             fullWidth: true,
-            action: isUndoable ? onUndo : onMarkDone
+            action: { perform(isUndoable ? onUndo : onMarkDone) }
         )
+        .disabled(isBusy)
     }
 
     // MARK: - Counting
@@ -146,28 +164,30 @@ struct LateLogSheetView: View {
         HStack(spacing: 8) {
             ForEach([1, 2, 5], id: \.self) { amount in
                 RisoButton(title: "+\(amount)", kind: .neutral, small: true) {
-                    onLogAmount(amount)
+                    perform { await onLogAmount(amount) }
                 }
             }
             RisoButton(title: "Custom…", kind: .neutral, small: true) {
                 customOpen = true
             }
         }
+        .disabled(isBusy)
         if customOpen {
             HStack(spacing: 8) {
                 RisoNumberField(placeholder: "Amount", text: $customAmountDraft)
                 RisoButton(title: "Log", kind: .primary, small: true) {
                     if let amount = CounterLogAmount.parseCustom(customAmountDraft) {
-                        onLogAmount(amount)
+                        perform { await onLogAmount(amount) }
                         customOpen = false
                         customAmountDraft = ""
                     }
                 }
-                .disabled(CounterLogAmount.parseCustom(customAmountDraft) == nil)
+                .disabled(isBusy || CounterLogAmount.parseCustom(customAmountDraft) == nil)
             }
         }
         if isUndoable {
-            RisoButton(title: "Undo late log", kind: .neutral, fullWidth: true, action: onUndo)
+            RisoButton(title: "Undo late log", kind: .neutral, fullWidth: true) { perform(onUndo) }
+                .disabled(isBusy)
         }
     }
 
@@ -203,9 +223,10 @@ struct LateLogSheetView: View {
                 .disabled(!part.isStageable || part.alreadyDone)
             }
         }
-        let canCommit = canCommitCompound(stagedChildIds)
+        let canCommit = canCommitCompound(stagedChildIds) && !isBusy
         RisoButton(title: "Mark done on board", kind: .primary, fullWidth: true) {
-            onCommitCompound(Array(stagedChildIds))
+            let staged = Array(stagedChildIds)
+            perform { await onCommitCompound(staged) }
         }
         .disabled(!canCommit)
         .opacity(canCommit ? 1 : 0.45)

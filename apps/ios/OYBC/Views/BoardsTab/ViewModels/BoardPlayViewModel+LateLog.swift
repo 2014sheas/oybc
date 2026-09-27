@@ -58,11 +58,7 @@ extension BoardPlayViewModel {
     /// `AppDatabase.lateLogCompletion`) if already complete in-window.
     func commitLateLogCompletion(taskId: String) async throws {
         let bid = boardId
-        let db = database
-        try await _Concurrency.Task.detached(priority: .userInitiated) {
-            try db.lateLogCompletion(boardId: bid, taskId: taskId)
-        }.value
-        reload()
+        try await runLateLogWrite { db in try db.lateLogCompletion(boardId: bid, taskId: taskId) }
     }
 
     /// Logs `delta` (> 0) on a closed board's COUNTING square — `taskId` is
@@ -70,11 +66,7 @@ extension BoardPlayViewModel {
     /// to its ROOT itself). Prefer `commitLateLogIncrement(for:delta:)`.
     func commitLateLogIncrement(taskId: String, delta: Int) async throws {
         let bid = boardId
-        let db = database
-        try await _Concurrency.Task.detached(priority: .userInitiated) {
-            try db.lateLogIncrement(boardId: bid, taskId: taskId, delta: delta)
-        }.value
-        reload()
+        try await runLateLogWrite { db in try db.lateLogIncrement(boardId: bid, taskId: taskId, delta: delta) }
     }
 
     /// Commits the staged parts for `childTaskIds` under `compoundTaskId`
@@ -85,11 +77,9 @@ extension BoardPlayViewModel {
     ///   the compound's rule yet.
     func commitLateLogCompoundParts(compoundTaskId: String, childTaskIds: [String]) async throws {
         let bid = boardId
-        let db = database
-        try await _Concurrency.Task.detached(priority: .userInitiated) {
+        try await runLateLogWrite { db in
             try db.lateLogCompoundParts(boardId: bid, compoundTaskId: compoundTaskId, childTaskIds: childTaskIds)
-        }.value
-        reload()
+        }
     }
 
     /// Reverses the newest late log on `taskId` (D10/R2). Silent no-op if
@@ -97,10 +87,23 @@ extension BoardPlayViewModel {
     /// was ever made).
     func undoLateLog(taskId: String) async throws {
         let bid = boardId
+        try await runLateLogWrite { db in try db.undoLateLog(boardId: bid, taskId: taskId) }
+    }
+
+    /// The single choke point every late-log write above runs through: an
+    /// in-flight guard (sweep finding 2) — a call made while another late-log
+    /// write is still running is a silent no-op, so a rapid double-tap can
+    /// never author two late logs, pop two undos, or double-increment a
+    /// compound's counting children. The flag is checked + set synchronously
+    /// on the main actor BEFORE the first suspension point, so two calls can't
+    /// both pass it, and cleared in `defer` (success or throw). Then the write
+    /// runs off the main thread and the view model reloads.
+    private func runLateLogWrite(_ write: @escaping @Sendable (AppDatabase) throws -> Void) async throws {
+        guard !isLateLogInFlight else { return }
+        isLateLogInFlight = true
+        defer { isLateLogInFlight = false }
         let db = database
-        try await _Concurrency.Task.detached(priority: .userInitiated) {
-            try db.undoLateLog(boardId: bid, taskId: taskId)
-        }.value
+        try await _Concurrency.Task.detached(priority: .userInitiated) { try write(db) }.value
         reload()
     }
 

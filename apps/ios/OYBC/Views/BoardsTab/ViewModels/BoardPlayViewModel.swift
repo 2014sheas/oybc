@@ -47,11 +47,8 @@ final class BoardPlayViewModel: ObservableObject {
     @Published private(set) var allBoardsInWorkspace: [Board] = []
     @Published private(set) var allTemplatesInWorkspace: [RecurringBoardTemplate] = []
     @Published private(set) var allBoardTasksInWorkspace: [BoardTask] = []
-    /// P6 (Task Pools + Recurring Boards Rework) — workspace-wide pools,
-    /// needed alongside `allTemplatesInWorkspace` to resolve the Board
-    /// screen's spawn-provenance note (`PoolMix.summarizeSpawnProvenance`
-    /// reads a template's `poolIds` through a `poolsById` lookup).
-    /// Refreshed alongside the rest of the task data.
+    /// P6 — workspace-wide pools: the spawn-provenance note resolves a template's
+    /// `poolIds` through them (`PoolMix.summarizeSpawnProvenance`). Refreshed with the task data.
     @Published private(set) var allPoolsInWorkspace: [Pool] = []
 
     /// Windowed Completion (docs/WINDOWED_COMPLETION.md §The model): the
@@ -73,10 +70,12 @@ final class BoardPlayViewModel: ObservableObject {
 
     // MARK: - Interaction state (B2-I2)
 
-    /// True while an interaction write (tap / stepper / swap / add / remove) is
-    /// in flight. The view reads this to disable controls; only the moved
-    /// interaction handlers mutate it, hence `private(set)`.
+    /// True while an interaction write (tap / stepper / swap / add / remove) is in
+    /// flight. The view reads this to disable controls; only the moved handlers mutate it.
     @Published private(set) var isProcessing = false
+    /// True while a closed-board late-log write is in flight — `+LateLog.swift`'s
+    /// writes no-op on re-entry (a double-tap never authors twice). Set only there.
+    @Published var isLateLogInFlight = false
     /// Transient flash-message string set by the interaction write tails. It is
     /// not rendered directly (the Riso visual layer owns the on-screen banner
     /// via `flashEvent`); it carries the message the view passes to
