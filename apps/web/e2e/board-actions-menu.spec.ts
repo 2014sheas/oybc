@@ -16,7 +16,9 @@ import { test, expect, seedBoard, seedTask, seedBoardTask, readBoard } from './_
  *   (f) Core board in the pager → menu shows only Core defaults… · Delete;
  *       Core defaults… opens the sheet; Delete leaves the pager on the
  *       setup prompt.
- *   (g) A CHOSEN-center one-off has no Repeat item.
+ *   (g) A legacy CHOSEN-center one-off now shows Repeat, same as any other
+ *       one-off (Board Edit slice 3, D5 — flipped from the slice-2 "hidden"
+ *       expectation now that CHOSEN reads through `effectiveCenter`).
  */
 
 const now = new Date();
@@ -193,7 +195,7 @@ test.describe('Board menu — Repeat this board…', () => {
   });
 });
 
-test.describe('Board menu — a CHOSEN-center one-off has no Repeat item', () => {
+test.describe('Board menu — a legacy CHOSEN-center one-off now shows Repeat (Board Edit slice 3, D5)', () => {
   test.beforeEach(async ({ page }) => {
     await seedBoard(page, {
       id: CHOSEN_BOARD_ID,
@@ -207,11 +209,11 @@ test.describe('Board menu — a CHOSEN-center one-off has no Repeat item', () =>
     });
   });
 
-  test('Repeat this board… is absent from the menu', async ({ page }) => {
+  test('Repeat this board… is offered, same as any other one-off', async ({ page }) => {
     await page.goto(`/boards/${CHOSEN_BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByText('Chosen Center Board').first()).toBeVisible();
     await page.getByRole('button', { name: 'Board menu' }).click();
-    await expect(page.getByRole('menuitem', { name: 'Repeat this board…' })).not.toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Repeat this board…' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Board details…' })).toBeVisible();
   });
 });

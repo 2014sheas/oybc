@@ -279,6 +279,12 @@ enum Timeframe: String, Codable, DatabaseValueConvertible {
 
 enum CenterSquareType: String, DatabaseValueConvertible {
     case free
+    /// Legacy (Board Edit slice 3): superseded by per-square locks. Keep this
+    /// case — the unknown-value fallback below would otherwise decode legacy
+    /// CHOSEN rows as `.free`. Old peers, sealed rows and wizard drafts still
+    /// carry it; live boards read it via `CenterSquare.effectiveCenter` (→ NONE
+    /// + a locked center), and slice-3+ clients never write it except on
+    /// wizard drafts.
     case chosen
     case none
 }

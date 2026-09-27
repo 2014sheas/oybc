@@ -29,3 +29,48 @@ export function fisherYatesShuffle<T>(
   }
   return result;
 }
+
+/**
+ * Shuffle every non-fixed slot of a board, leaving fixed slots untouched.
+ *
+ * The squares editor's Shuffle (Board Edit slice 3, D10): locked placements
+ * and the FREE center are `fixed`; every other slot — empties included, so an
+ * empty square moves too — is permuted with {@link fisherYatesShuffle}. The
+ * non-fixed indices are collected in ascending order, their values shuffled,
+ * and written back to those same indices.
+ *
+ * Generic over `T` so this stays primitives-only (the Play boundary).
+ * Deterministic under an injected `rng`; pinned cross-platform by
+ * `shuffleUnlockedVectors` in `tests/fixtures/placementVectors.json`.
+ * Swift twin: `Shuffle.shuffleUnlockedSlots(_:fixed:rng:)`.
+ *
+ * @param slots - Row-major slot values (`null` = empty square).
+ * @param fixed - Parallel flags; `true` = the slot must not move.
+ * @param rng - Optional uniform `[0, 1)` RNG. Defaults to `Math.random`.
+ * @returns A new array; fixed slots keep their values, the rest are permuted.
+ * @throws Error when `slots` and `fixed` differ in length.
+ */
+export function shuffleUnlockedSlots<T>(
+  slots: ReadonlyArray<T | null>,
+  fixed: ReadonlyArray<boolean>,
+  rng: () => number = Math.random,
+): (T | null)[] {
+  if (slots.length !== fixed.length) {
+    throw new Error(
+      `shuffleUnlockedSlots: slots (${slots.length}) and fixed (${fixed.length}) lengths differ`,
+    );
+  }
+  const unfixed: number[] = [];
+  for (let i = 0; i < slots.length; i++) {
+    if (!fixed[i]) unfixed.push(i);
+  }
+  const shuffled = fisherYatesShuffle(
+    unfixed.map((i) => slots[i]),
+    rng,
+  );
+  const result = [...slots];
+  unfixed.forEach((slotIndex, k) => {
+    result[slotIndex] = shuffled[k];
+  });
+  return result;
+}

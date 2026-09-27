@@ -1,4 +1,5 @@
-import { fisherYatesShuffle } from '../src/shuffle';
+import { fisherYatesShuffle, shuffleUnlockedSlots } from '../src/shuffle';
+import { makeSeededRng } from './seededRng';
 
 describe('fisherYatesShuffle', () => {
   it('returns an empty array when given an empty array', () => {
@@ -133,5 +134,74 @@ describe('fisherYatesShuffle', () => {
     const input = ['a', 'b', 'c', 'd', 'e'];
     const result = fisherYatesShuffle(input, alwaysOne);
     expect(result).toEqual(input);
+  });
+});
+
+describe('shuffleUnlockedSlots', () => {
+  const slots = ['a', 'b', null, 'd', 'FREE', 'f', 'g', null, 'i'];
+  const fixed = [true, false, false, false, true, false, false, false, false];
+
+  it('never moves a fixed slot, across many seeds', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const result = shuffleUnlockedSlots(slots, fixed, makeSeededRng(seed));
+      expect(result[0]).toBe('a');
+      expect(result[4]).toBe('FREE');
+    }
+  });
+
+  it('preserves the multiset of unfixed values (empties included)', () => {
+    const result = shuffleUnlockedSlots(slots, fixed, makeSeededRng(7));
+    const unfixed = (arr: ReadonlyArray<string | null>) =>
+      arr
+        .filter((_, i) => !fixed[i])
+        .map((v) => v ?? '<empty>')
+        .sort();
+    expect(result).toHaveLength(slots.length);
+    expect(unfixed(result)).toEqual(unfixed(slots));
+  });
+
+  it('moves empties too (an empty square can land on a different unfixed slot)', () => {
+    const moved = new Set<number>();
+    for (let seed = 1; seed <= 50; seed++) {
+      const result = shuffleUnlockedSlots(slots, fixed, makeSeededRng(seed));
+      result.forEach((v, i) => {
+        if (v === null && slots[i] !== null) moved.add(i);
+      });
+    }
+    expect(moved.size).toBeGreaterThan(0);
+  });
+
+  it('does not mutate its inputs', () => {
+    const s = [...slots];
+    const f = [...fixed];
+    shuffleUnlockedSlots(s, f, makeSeededRng(3));
+    expect(s).toEqual(slots);
+    expect(f).toEqual(fixed);
+  });
+
+  it('is the identity when every slot but one is fixed', () => {
+    const allButOne = fixed.map((_, i) => i !== 5);
+    expect(shuffleUnlockedSlots(slots, allButOne, makeSeededRng(11))).toEqual(slots);
+  });
+
+  it('equals fisherYatesShuffle over the unfixed values in ascending index order', () => {
+    const unfixedIdx = fixed.flatMap((f, i) => (f ? [] : [i]));
+    const expectedValues = fisherYatesShuffle(
+      unfixedIdx.map((i) => slots[i]),
+      makeSeededRng(42),
+    );
+    const result = shuffleUnlockedSlots(slots, fixed, makeSeededRng(42));
+    expect(unfixedIdx.map((i) => result[i])).toEqual(expectedValues);
+  });
+
+  it('uses Math.random by default and still keeps fixed slots', () => {
+    const result = shuffleUnlockedSlots(slots, fixed);
+    expect(result[0]).toBe('a');
+    expect(result[4]).toBe('FREE');
+    expect(result).toHaveLength(9);
+  });
+
+  it('throws when slots and fixed lengths differ', () => {
+    expect(() => shuffleUnlockedSlots(['a', 'b'], [false])).toThrow();
   });
 });

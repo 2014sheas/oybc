@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CenterSquareType, Timeframe } from '@oybc/shared';
+import { Timeframe } from '@oybc/shared';
 import { buildRepeatSavePlan } from '../BoardEditRepeatSection';
 
 /**
@@ -14,7 +14,6 @@ const oneOffBase = {
   sourceTemplateIsActive: undefined,
   stagedCadence: 'off' as const,
   stagedActive: null,
-  centerType: CenterSquareType.FREE,
   hasUserId: true,
 };
 
@@ -23,7 +22,6 @@ const spawnedBase = {
   sourceTemplateIsActive: true,
   stagedCadence: 'off' as const,
   stagedActive: null,
-  centerType: CenterSquareType.FREE,
   hasUserId: true,
 };
 
@@ -36,16 +34,6 @@ describe('buildRepeatSavePlan — one-off board', () => {
     expect(
       buildRepeatSavePlan({ ...oneOffBase, stagedCadence: Timeframe.WEEKLY }),
     ).toEqual({ kind: 'startRepeating', cadence: Timeframe.WEEKLY });
-  });
-
-  it('never starts repeating for a CHOSEN center (validateSpawnPool would reject it)', () => {
-    expect(
-      buildRepeatSavePlan({
-        ...oneOffBase,
-        stagedCadence: Timeframe.DAILY,
-        centerType: CenterSquareType.CHOSEN,
-      }),
-    ).toBeNull();
   });
 
   it('never starts repeating without a user id', () => {

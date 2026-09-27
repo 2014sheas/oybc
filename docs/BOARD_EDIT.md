@@ -15,6 +15,17 @@ built in 4 phases. Companion to [`docs/RISO_WEB.md`](RISO_WEB.md) /
 > shipped pre-redesign; sections below that slice 2 supersedes are marked
 > inline — the squares editor itself (Edit tasks ⇄ Rearrange, tap menu, Save
 > bar) is unaffected and stays canonical here. Kept as history, not rewritten.
+>
+> **Slice 3 supersedes the squares editor described here** (see
+> [`BOARD_EDIT_REDESIGN.md` §Slice 3](BOARD_EDIT_REDESIGN.md#slice-3--detailed-scope)):
+> the Edit tasks ⇄ Rearrange sub-modes, the jiggle, tap-to-swap, and the
+> CellSwap Replace picker are retired in favor of ONE grid (tap = menu /
+> add, press-and-hold = move, Shuffle in the save bar, the quick-add square
+> picker). CHOSEN is no longer an exit through the chrome's center selector —
+> it is read as a locked center task and converted on the next squares Save.
+> The Phase 2 / 2b / 3 sections below are history for the board-edit surface;
+> Phase 4 (the create wizard's arrange step, `ArrangeGrid` / `RearrangeGrid`)
+> is still live.
 
 ## What it is
 
@@ -308,7 +319,9 @@ Surface the toggle wherever it reads cleanly per platform (a center-cell tap men
 item / long-press action), alongside the normal Replace/Edit items when the center
 holds a task. `CHOSEN` is **not** part of the toggle and is not normalized — the
 chrome's center selector remains the way out of `CHOSEN`, and the future locking
-feature will retire it.
+feature will retire it. *(Superseded by slice 3: CHOSEN reads as a locked task
+center via `effectiveCenter` and is converted on the next squares Save; "Make
+it a free space" now also stages the center placement's removal.)*
 
 ## Cross-platform file map
 
@@ -319,7 +332,12 @@ feature will retire it.
 | Retired modal | `components/EditBoardSheet.tsx` (delete) | `Views/BoardsTab/EditBoardSheet.swift` (delete) |
 | Metadata form (reuse) | `components/wizard/BoardSetupForm.tsx` | `BoardSetupFormView` |
 | Archive op | `db/operations/boards.ts` | `AppDatabase.swift` |
-| Library picker (Phase 2) | `components/CellSwapModal.tsx` | `Views/BoardsTab/CellSwapSheet.swift` |
+| Library picker (Phase 2) | ~~`components/CellSwapModal.tsx`~~ (deleted, slice 3) | ~~`Views/BoardsTab/CellSwapSheet.swift`~~ (deleted, slice 3) |
+| Squares grid (slice 3) | `components/boardEdit/SquaresEditGrid.tsx` | `Views/BoardsTab/SquaresEditGrid.swift` |
+| Square picker (slice 3) | `components/boardEdit/SquarePickerSheet.tsx` + `squarePickerCandidates.ts` | `Views/BoardsTab/SquarePickerSheetView.swift` + `SquarePickerCandidates.swift` |
+| Squares draft (slice 3) | `hooks/useSquaresEditDraft.ts` over the pure `hooks/squaresEditReducer.ts` + `squareEditCount.ts` | `Views/BoardsTab/SquaresDraft.swift` + `BoardPlayViewModel+EditDraft/+EditShuffle.swift` |
+| Squares Save (slice 3) | `commitSquareEdits` in `db/operations/boardEditCommit.ts` | `handleEditSave` in `BoardPlayViewModel+EditCommit.swift` |
+| Edit-mode sheets/menus (slice 3) | inline in `BoardPlaySurface.tsx` (`SquareTapMenu`, `SquarePickerSheet`, `BoardEditTaskSheet`) | `Views/BoardsTab/BoardEditPresenter.swift` |
 | Reorder op (Phase 3) | `db/operations/boardTasks.ts` | `AppDatabase.swift` |
 | Create arrange (Phase 4) | `components/wizard/BoardWizardPreviewStep.tsx` | `Views/CreateTab/Components/BoardWizardPreviewStepView.swift` |
 | Board menu (slice 2) | `components/boardActions/BoardActionsMenu.tsx` + `BoardTitleActions.tsx` | `Views/BoardsTab/BoardActions/BoardActionsMenuButton.swift` |

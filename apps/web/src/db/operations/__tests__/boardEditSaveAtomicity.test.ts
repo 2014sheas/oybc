@@ -9,138 +9,74 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { updateBoardTaskAndCascade, reorderBoardTasks } from '../boardTasks';
-import {
-  assertBoardEditable,
-  BoardNotEditableError,
-  updateBoardAndCascade,
-  type UpdateActiveBoardPatch,
-} from '../boards';
-import { updateTaskAndCascade, type UpdateTaskPatch } from '../tasks';
+import { BoardNotEditableError } from '../boards';
+import { commitSquareEdits, type CommitSquareEditsInput } from '../boardEditCommit';
+import type { SquareDraftCell } from '../../../hooks/squareEditCount';
 
 /**
  * Board-integrity PR-4, item 3 (docs/BOARD_INTEGRITY.md): Board-Edit Save
- * used to run as ~5 sequential Dexie transactions (per-cell replacement,
- * per-task-override, one reorder batch, per-cell removal, then a SEPARATE
- * `updateBoardAndCascade` metadata write back in `BoardEditPanel`). A
- * mid-sequence failure left a half-applied board.
+ * runs as ONE Dexie transaction (`commitSquareEdits`, `boardEditCommit.ts`)
+ * — a mid-sequence failure must roll back every earlier write, never leave a
+ * half-applied board.
  *
- * The fix wraps the WHOLE sequence in one outer `db.transaction(...)` inside
- * `useBoardPlay.commitSquareEdits` (apps/web/src/hooks/useBoardPlay.ts) —
- * every op it calls already opens its own `db.transaction('rw', [...])`
- * internally, and Dexie transactions are reentrant (a nested
- * `db.transaction()` whose requested table scope is a SUBSET of an
- * already-open ambient transaction's scope joins that same transaction
- * rather than opening a new one — verified directly against this exact
- * repo's Dexie version during PR-4 review).
- *
- * This file is a FIXED replica of that composition (mirrors the pattern
- * already established by `duplicatePlacementDivergence.test.ts`'s "FIXED
- * replica" comments) — it can't import the React hook directly (no
- * hook-rendering harness is wired into this repo's Vitest config, see
- * `vitest.config.ts`: `environment: 'node'`, no `@testing-library/react`),
- * so it replicates `commitSquareEdits`' exact call sequence and table scope
- * against the SAME exported operations functions the hook calls, to prove
- * the atomicity property end-to-end without mocking anything.
+ * Board Edit redesign slice 3 (T2): this file used to be a FIXED REPLICA of
+ * `useBoardPlay.ts`'s `commitSquareEdits` composition (no hook-rendering
+ * harness was wired into Vitest). Slice 3 extracted the commit into a real,
+ * standalone exported op (`db/operations/boardEditCommit.ts`) with no React
+ * dependency at all, so this file now exercises THAT function directly —
+ * the replica is retired.
  */
 
 const START = '2026-07-01T00:00:00.000Z';
+const BOARD = 'board-1';
 
-async function seedTask(id: string, title: string): Promise<Task> {
-  const task: Task = {
-    id,
-    userId: 'user-1',
-    title,
-    type: TaskType.NORMAL,
-    isCompleted: false,
-    totalCompletions: 0,
-    totalInstances: 0,
-    createdAt: START,
-    updatedAt: START,
-    version: 1,
-    isDeleted: false,
+function seedTask(id: string, title: string): Task {
+  return {
+    id, userId: 'user-1', title, type: TaskType.NORMAL,
+    isCompleted: false, totalCompletions: 0, totalInstances: 0,
+    createdAt: START, updatedAt: START, version: 1, isDeleted: false,
   };
-  await db.tasks.add(task);
-  return task;
 }
 
-async function seedBoard(overrides: Partial<Board> = {}): Promise<Board> {
-  const board: Board = {
-    id: 'board-1',
-    userId: 'user-1',
-    name: 'Original name',
-    status: BoardStatus.ACTIVE,
-    boardSize: 3,
-    timeframe: Timeframe.MONTHLY,
-    startDate: START,
-    centerSquareType: CenterSquareType.NONE,
-    isRandomized: false,
-    totalTasks: 9,
-    completedTasks: 0,
-    linesCompleted: 0,
-    completedLineIds: [],
-    createdAt: START,
-    updatedAt: START,
-    version: 1,
-    isDeleted: false,
+function seedBoard(overrides: Partial<Board> = {}): Board {
+  return {
+    id: BOARD, userId: 'user-1', name: 'Original name', status: BoardStatus.ACTIVE,
+    boardSize: 3, timeframe: Timeframe.MONTHLY, startDate: START,
+    centerSquareType: CenterSquareType.NONE, isRandomized: false,
+    totalTasks: 9, completedTasks: 0, linesCompleted: 0, completedLineIds: [],
+    createdAt: START, updatedAt: START, version: 1, isDeleted: false,
     ...overrides,
   };
-  await db.boards.add(board);
-  return board;
 }
 
-async function seedPlacement(id: string, taskId: string, row: number, col: number): Promise<BoardTask> {
-  const bt: BoardTask = {
-    id,
-    boardId: 'board-1',
-    taskId,
-    row,
-    col,
-    isCenter: false,
-    createdAt: START,
-    updatedAt: START,
-    version: 1,
-    isDeleted: false,
+function seedPlacement(id: string, taskId: string, row: number, col: number): BoardTask {
+  return {
+    id, boardId: BOARD, taskId, row, col, isCenter: false,
+    createdAt: START, updatedAt: START, version: 1, isDeleted: false,
   };
-  await db.boardTasks.add(bt);
-  return bt;
 }
 
-/**
- * FIXED replica of `commitSquareEdits`' composition
- * (apps/web/src/hooks/useBoardPlay.ts) — same table scope, same op order
- * (editable guard → replacements → task overrides → reorders → metadata patch, a subset of the full 5-step
- * sequence sufficient to exercise atomicity across three of the ops,
- * including the item-3 metadata fold-in), same reliance on Dexie's
- * nested-transaction reuse for the calls inside.
- */
-async function commitSquareEditsReplica(
-  boardId: string,
-  replacements: Array<{ boardTaskId: string; newTaskId: string }>,
-  moves: Array<{ boardTaskId: string; row: number; col: number }>,
-  metadataPatch?: UpdateActiveBoardPatch,
-  taskOverrides: Map<string, UpdateTaskPatch> = new Map(),
-): Promise<void> {
-  await db.transaction(
-    'rw',
-    [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
-    async () => {
-      // Step 0 — the slice-2 editable guard (D11), first as in the hook.
-      await assertBoardEditable(boardId);
-      for (const r of replacements) {
-        await updateBoardTaskAndCascade(r.boardTaskId, r.newTaskId);
-      }
-      for (const [taskId, patch] of taskOverrides.entries()) {
-        await updateTaskAndCascade(taskId, patch);
-      }
-      if (moves.length > 0) {
-        await reorderBoardTasks(boardId, moves);
-      }
-      if (metadataPatch) {
-        await updateBoardAndCascade(boardId, metadataPatch);
-      }
-    },
-  );
+function cell(overrides: Partial<SquareDraftCell> & Pick<SquareDraftCell, 'cellId' | 'taskId' | 'row' | 'col'>): SquareDraftCell {
+  return {
+    isLocked: false,
+    originalTaskId: overrides.taskId,
+    originalRow: overrides.row,
+    originalCol: overrides.col,
+    originalLocked: false,
+    ...overrides,
+  };
+}
+
+function baseInput(partial: Partial<CommitSquareEditsInput> = {}): CommitSquareEditsInput {
+  return {
+    boardId: BOARD,
+    cells: [],
+    removedBoardTaskIds: [],
+    taskOverrides: new Map(),
+    isLegacyChosenOnDisk: false,
+    centerCellKeepLocked: false,
+    ...partial,
+  };
 }
 
 afterEach(async () => {
@@ -156,97 +92,88 @@ afterEach(async () => {
 
 describe('Board-Edit Save atomicity (board-integrity PR-4, item 3)', () => {
   it('rolls back an EARLIER step\'s write when a LATER step throws — the board is left fully UNCHANGED, not half-edited', async () => {
-    await seedTask('task-A', 'Task A');
-    await seedTask('task-B', 'Task B');
-    await seedBoard();
-    await seedPlacement('bt-1', 'task-A', 0, 0);
+    await db.tasks.add(seedTask('task-A', 'Task A'));
+    await db.tasks.add(seedTask('task-B', 'Task B'));
+    await db.boards.add(seedBoard());
+    await db.boardTasks.add(seedPlacement('bt-1', 'task-A', 0, 0));
+    // A second, locked placement whose staged move (out of bounds handling
+    // aside) instead trips the locked-row guard in `reorderBoardTasks` —
+    // simulating "a later sub-op throws".
+    await db.boardTasks.add(seedPlacement('bt-2', 'task-B', 0, 1));
+    await db.boardTasks.update('bt-2', { isLocked: true });
 
-    // Step 1 (replacement) would succeed on its own — task-A -> task-B at
-    // (0,0). Step 2 (reorder) targets an OUT-OF-BOUNDS cell, which
-    // `reorderBoardTasks` rejects by throwing (docs/BOARD_INTEGRITY.md PR-2
-    // Part 3) — simulating "the Nth sub-op throws".
     await expect(
-      commitSquareEditsReplica(
-        'board-1',
-        [{ boardTaskId: 'bt-1', newTaskId: 'task-B' }],
-        [{ boardTaskId: 'bt-1', row: 99, col: 99 }],
-        { name: 'Renamed board' },
+      commitSquareEdits(
+        baseInput({
+          centerPatch: { centerSquareType: CenterSquareType.FREE },
+          cells: [
+            cell({ cellId: 'bt-1', taskId: 'task-B', row: 0, col: 0, originalTaskId: 'task-A' }),
+            // Locked row staged to move — `reorderBoardTasks` throws.
+            cell({ cellId: 'bt-2', taskId: 'task-B', row: 1, col: 1, originalRow: 0, originalCol: 1, isLocked: true, originalLocked: true }),
+          ],
+        }),
       ),
-    ).rejects.toThrow(/out of bounds/);
+    ).rejects.toThrow(/locked in place/);
 
-    // The step-1 replacement must NOT have stuck, even though
+    // The step-3 replacement must NOT have stuck, even though
     // `updateBoardTaskAndCascade` "committed" its own internal
-    // `db.transaction(...)` before the later reorder step threw — proof
+    // `db.transaction(...)` before the later move step threw — proof
     // that it joined the SAME ambient transaction as the outer wrapper,
     // not a separate one.
     const bt = await db.boardTasks.get('bt-1');
     expect(bt?.taskId).toBe('task-A');
     expect(bt?.version).toBe(1);
 
-    // The metadata patch (step 3, never reached) is irrelevant here since
-    // the throw happens before it — but confirm the board row itself is
-    // also fully untouched (no partial version bump from the replacement's
-    // cascade either).
-    const board = await db.boards.get('board-1');
+    const board = await db.boards.get(BOARD);
     expect(board?.name).toBe('Original name');
+    expect(board?.centerSquareType).toBe(CenterSquareType.NONE);
     expect(board?.version).toBe(1);
 
-    // No sync-queue entries should have leaked out of the rolled-back txn.
-    const entries = await db.syncQueue.toArray();
-    expect(entries).toHaveLength(0);
+    expect(await db.syncQueue.count()).toBe(0);
   });
 
   it('rolls back an EARLIER step\'s write when the METADATA step (last) throws', async () => {
-    // Board-integrity PR-4 item 3's actual fold-in point: prove the
-    // metadata write and the square edits are ONE unit, not two — a failure
-    // in updateBoardAndCascade (simulated here via a board that's already
-    // sealed, which it silently no-ops rather than throws on... so instead
-    // force a real throw by making the reorder step the failure trigger,
-    // covered above; this test instead proves the HAPPY PATH commits BOTH
-    // atomically, which is the complementary half of the atomicity claim).
-    await seedTask('task-A', 'Task A');
-    await seedTask('task-B', 'Task B');
-    await seedBoard();
-    await seedPlacement('bt-1', 'task-A', 0, 0);
+    // Complementary half of the atomicity claim: the happy path commits
+    // BOTH the square edits and the metadata patch as one unit.
+    await db.tasks.add(seedTask('task-A', 'Task A'));
+    await db.tasks.add(seedTask('task-B', 'Task B'));
+    await db.boards.add(seedBoard());
+    await db.boardTasks.add(seedPlacement('bt-1', 'task-A', 0, 0));
 
-    await commitSquareEditsReplica(
-      'board-1',
-      [{ boardTaskId: 'bt-1', newTaskId: 'task-B' }],
-      [],
-      { name: 'Renamed board' },
+    await commitSquareEdits(
+      baseInput({
+        cells: [cell({ cellId: 'bt-1', taskId: 'task-B', row: 0, col: 0, originalTaskId: 'task-A' })],
+        centerPatch: { centerSquareType: CenterSquareType.FREE },
+      }),
     );
 
     const bt = await db.boardTasks.get('bt-1');
     expect(bt?.taskId).toBe('task-B');
-    const board = await db.boards.get('board-1');
-    expect(board?.name).toBe('Renamed board');
+    const board = await db.boards.get(BOARD);
+    expect(board?.centerSquareType).toBe(CenterSquareType.FREE);
   });
 
   it('a board SEALED before commit throws BoardNotEditableError and rolls back the staged task override too (slice 2, D11)', async () => {
     // The app-shell backstop can seal a board while an edit session is open.
-    // The Save used to resolve (the metadata guard no-oped silently) with the
-    // global task override already committed, and the panel said "Board
-    // saved". Now the guard throws first and nothing is written.
-    await seedTask('task-A', 'Task A');
-    await seedTask('task-B', 'Task B');
-    await seedBoard();
-    await seedPlacement('bt-1', 'task-A', 0, 0);
-    await db.boards.update('board-1', { sealedAt: '2026-07-31T23:59:59.999Z' });
+    await db.tasks.add(seedTask('task-A', 'Task A'));
+    await db.tasks.add(seedTask('task-B', 'Task B'));
+    await db.boards.add(seedBoard());
+    await db.boardTasks.add(seedPlacement('bt-1', 'task-A', 0, 0));
+    await db.boards.update(BOARD, { sealedAt: '2026-07-31T23:59:59.999Z' });
 
     await expect(
-      commitSquareEditsReplica(
-        'board-1',
-        [{ boardTaskId: 'bt-1', newTaskId: 'task-B' }],
-        [],
-        { name: 'Renamed board' },
-        new Map([['task-A', { title: 'Overridden title' }]]),
+      commitSquareEdits(
+        baseInput({
+          cells: [cell({ cellId: 'bt-1', taskId: 'task-B', row: 0, col: 0, originalTaskId: 'task-A' })],
+          taskOverrides: new Map([['task-A', { title: 'Overridden title' }]]),
+        }),
       ),
     ).rejects.toBeInstanceOf(BoardNotEditableError);
 
     expect((await db.tasks.get('task-A'))?.title).toBe('Task A');
     expect((await db.tasks.get('task-A'))?.version).toBe(1);
     expect((await db.boardTasks.get('bt-1'))?.taskId).toBe('task-A');
-    expect((await db.boards.get('board-1'))?.name).toBe('Original name');
+    expect((await db.boards.get(BOARD))?.name).toBe('Original name');
     expect(await db.syncQueue.count()).toBe(0);
   });
 });

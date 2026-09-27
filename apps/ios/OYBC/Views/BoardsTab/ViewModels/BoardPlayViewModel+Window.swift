@@ -72,8 +72,8 @@ extension BoardPlayViewModel {
     }
 
     /// Windowed-Completion-aware "is this square complete" read for the
-    /// Board-Edit draft preview surfaces (`RearrangeGrid` + the edit-tasks
-    /// static grid). iOS parity fix for the same class of bug the web fix in
+    /// Board-Edit draft preview surface (`SquaresEditGrid`). iOS parity fix
+    /// for the same class of bug the web fix in
     /// d16ff21 patched: these preview surfaces used to read the lifetime
     /// `Task.isCompleted` cache directly, so a lifetime-complete task bled
     /// green into a freshly-spawned/reused board's window even though the

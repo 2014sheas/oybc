@@ -218,14 +218,14 @@ struct BoardPlayView: View {
     /// completion is sealed-window-immune. Populated on-demand when the
     /// detail sheet opens (see `loadSealBlockedTaskIds`), not per grid render.
     @State private var sealBlockedTaskIds: Set<String> = []
-    // MARK: Edit-mode draft state (Phase 1 board-edit chrome)
-    // NOTE (B2-I3): the edit-draft *data* layer moved to `BoardPlayViewModel`.
-    // Board Edit redesign slice 2 (T3) further retired the metadata/repeat
-    // draft — `BoardEditPanel` now binds only `$viewModel.editCenterType` +
-    // `$viewModel.editSubMode`, plus the staged-square dictionaries + the
-    // seed/save commit, all on the view model. The view keeps only the
-    // render-level edit chrome below (`editMode` overlay gate, the Save
-    // spinner mirror, the alert/toast flags, and the cell-menu routing state).
+    // MARK: Edit-mode draft state (Board Edit redesign slice 3)
+    // The edit-draft *data* layer lives entirely on `BoardPlayViewModel`
+    // (`editSquaresDraft` / `editCenterType` / `editSquaresEditCells`, D20 —
+    // always rebuilt fresh). `BoardEditPresenter` (T5) owns the square
+    // tap-menu / picker / edit-task sheets and the Save-failure / Board-
+    // closed alerts. This view keeps only the overlay gate, the Save
+    // spinner mirror, the "Board saved" toast flag, and the two routing
+    // targets a grid tap sets (read by `BoardEditPresenter` via bindings).
     /// True while the in-place `BoardEditPanel` is overlaid on `BoardPlayView`.
     // internal for the +Header extension split
     @State var editMode: Bool = false
@@ -239,38 +239,13 @@ struct BoardPlayView: View {
     /// `viewModel.editEvent`; the authoritative re-entry guard is VM-side.
     // internal for the +Header extension split
     @State var editSaving: Bool = false
-    /// Surfaces a board-edit Save failure (the edit panel overlays the inline
-    /// flash, so a system alert is used — it pierces the overlay).
-    @State private var editSaveError: String?
-    /// Board Edit redesign slice 2 (T3, D11) — a board sealed/deleted mid-
-    /// session gets its OWN alert (title "Board closed"), distinct from
-    /// `editSaveError`'s generic "Couldn't save" — exiting edit mode on OK.
-    @State private var boardClosedMessage: String?
     /// Controls the "Board saved" success toast (auto-dismissed after 2.4 s).
     @State private var showEditSavedToast: Bool = false
-    // MARK: Edit-mode squares draft (Phase 2 — Edit tasks)
-    // NOTE (B2-I3): `editSquaresDraft` / `editTaskOverrides` moved to the view
-    // model (read via `viewModel.editSquaresDraft` / `.editTaskOverrides`).
-    /// Target for the "Replace task" sheet triggered from a cell tap in edit mode.
-    @State private var editModeReplaceTarget: EditModeSwapTarget? = nil
-    /// Target for the "Edit task" sheet triggered from a cell tap in edit mode.
-    @State private var editModeTaskTarget: EditModeTaskTarget? = nil
-    /// Row/col of the cell whose tap-menu is displayed. Set alongside the
-    /// `.confirmationDialog` trigger.
-    @State private var editCellMenuRow: Int = 0
-    @State private var editCellMenuCol: Int = 0
-    @State private var editCellMenuVisible: Bool = false
-    /// True when the tap-menu was opened for the positional center cell
-    /// (used to show the Phase-2b "Make it a free space" / "Make it a task
-    /// square" toggle items in `confirmationDialog`).
-    @State private var editCellMenuIsCenter: Bool = false
-    /// M4 — live-edit add to empty cell: the grid position awaiting task selection.
-    @State private var addCellPos: (row: Int, col: Int)? = nil
-    /// M4 — tracks whether the add-cell sheet was dismissed via a confirmed selection.
-    /// `onDismiss` skips the reload when true because `handleAddTaskToCell` already reloads.
-    @State private var addTaskConfirmed: Bool = false
-    // NOTE (B2-I3): `editRearrangeCells` moved to the view model (read via
-    // `viewModel.editRearrangeCells`).
+    /// Which square's tap-menu is open (`BoardEditPresenter`, D16).
+    @State private var editSquareMenuTarget: SquareMenuCellTarget? = nil
+    /// Which square the picker sheet is filling (D13) — a tap on an empty
+    /// non-center square routes straight here without the menu.
+    @State private var editPickerTarget: SquarePickerRouteTarget? = nil
 
     /// Stashed target for cross-board navigation requested from inside
     /// the task-detail sheet. We can't mutate `boardsPath` while the
@@ -359,28 +334,12 @@ struct BoardPlayView: View {
         return viewModel.windowedState(of: task).count
     }
 
-    // MARK: - Edit-mode squares draft (Phase 2)
+    // MARK: - Edit-mode squares draft (Board Edit redesign slice 3)
     //
-    // NOTE (B2-I3): `editDraftBoardTasks` / `editDraftTaskMap` /
-    // `editSquaresEditCount` / `countPositionMoves` moved to `BoardPlayViewModel`
-    // (read via `viewModel.editDraftBoardTasks` etc.). `editCellMenuTitle`
-    // stays here — it reads view-owned state (the cell-menu routing / `editMode`)
-    // alongside the VM draft state.
-
-    /// Display title for the tap-menu confirmationDialog.
-    ///
-    /// - For a free-center tap (no draft entry): returns "Center square".
-    /// - For any task cell: returns the staged task title.
-    private var editCellMenuTitle: String {
-        // Free center tap has no squaresDraft entry — give it a clear title.
-        if editCellMenuIsCenter && viewModel.editCenterType == .free {
-            return "Center square"
-        }
-        let key = "\(editCellMenuRow)-\(editCellMenuCol)"
-        guard let draft = viewModel.editSquaresDraft[key] else { return "Square" }
-        let map = viewModel.editDraftTaskMap
-        return map[draft.stagedTaskId]?.title ?? "Square"
-    }
+    // `editDraftTaskMap` / `editSquaresEditCells` / `editSquaresEditCount` /
+    // the tap-menu title all live on `BoardPlayViewModel` /
+    // `BoardEditPresenter` now — this view only routes a grid tap to
+    // `editSquareMenuTarget` / `editPickerTarget` (`handleSquareTap` below).
 
     /// Compound children grouped by parent compound task ID, sorted by childIndex.
     private var compoundChildrenByCompound: [String: [CompoundChild]] { viewModel.compoundChildrenByCompound }
@@ -670,34 +629,25 @@ struct BoardPlayView: View {
                 .zIndex(11)
             }
 
-            // ── In-place SQUARES editor (Board Edit redesign slice 2, T3) ──
+            // ── In-place SQUARES editor (Board Edit redesign slice 3, T5) ──
             // Full-screen overlay. Sits above the GREENLOG overlay (zIndex 20)
             // so it covers celebrations triggered just before the user taps
-            // Save. Everything that used to live in this panel besides the
-            // squares grid + center toggle (name/timeframe/dates, REPEATS,
-            // Archive) moved to the "…" menu's own sheets/alerts — see
-            // `BoardActionsPresenter`.
+            // Save. D7 retired the Edit-tasks ⇄ Rearrange sub-modes — ONE
+            // grid, always derived fresh from the VM's draft (D20).
             if editMode, let b = board {
                 BoardEditPanel(
                     board: b,
-                    boardTasks: viewModel.editDraftBoardTasks,
+                    cells: viewModel.editSquaresEditCells,
                     taskMap: viewModel.editDraftTaskMap,
-                    // B2-I3: two-way `$viewModel.…` projections (`@StateObject`
-                    // projections are two-way, so these behave exactly like
-                    // the pre-move `@State` bindings).
-                    centerType: $viewModel.editCenterType,
-                    subMode: $viewModel.editSubMode,
-                    squareEditCount: viewModel.editSquaresEditCount,
-                    dirtyCellKeys: viewModel.editDirtyCellKeys,
-                    onCellTap: { row, col in handleEditCellTap(row: row, col: col) },
-                    // Phase 2b — center toggle (free center → task square).
-                    onCenterTap: handleFreeCenterTap,
-                    // Phase 3 — Rearrange
-                    rearrangeCells: viewModel.editRearrangeCells,
-                    onReorder: viewModel.handleRearrange,
+                    editCount: viewModel.editSquaresEditCount,
+                    canShuffle: viewModel.canShuffle,
+                    onTap: { cellId in handleSquareTap(cellId: cellId) },
+                    onReorder: viewModel.handleEditMove,
+                    onKeyboardMove: viewModel.handleEditKeyboardMove,
+                    onShuffle: { viewModel.handleEditShuffle() },
                     // Windowed Completion parity (d16ff21, sub-slice 3 review
-                    // finding): the edit/rearrange preview must show the
-                    // WINDOWED state, not the lifetime cache.
+                    // finding): the edit preview must show the WINDOWED
+                    // state, not the lifetime cache.
                     windowedIsCompleted: viewModel.windowedIsCompleted,
                     isSaving: editSaving,
                     onSave: {
@@ -717,27 +667,6 @@ struct BoardPlayView: View {
                 .background(Color.risoPaper.ignoresSafeArea())
                 .transition(.opacity)
                 .zIndex(30)
-                // Phase 3 — seed rearrange cells lazily on sub-mode switch to
-                // Rearrange. Kept as a view `.onChange` (observing the VM's
-                // published `editSubMode`) rather than a VM `didSet`: SwiftUI's
-                // onChange fires AFTER the view update, a `didSet` fires
-                // synchronously before it — preserving the post-update timing
-                // matters here (see the B2-I3 report), so this stays an observer.
-                .onChange(of: viewModel.editSubMode) { _, newMode in
-                    if newMode == .rearrange {
-                        viewModel.seedRearrangeCells(for: b)
-                    }
-                }
-                // Phase 2b — when center type changes (via the toggle or the
-                // BoardSetupFormView picker), rebuild the staged rearrange cells
-                // so the Rearrange sub-mode immediately reflects the new pinning.
-                // If no rearrange cells exist yet, seedRearrangeCells will build
-                // them with the correct type on the next sub-mode switch. Same
-                // onChange-vs-didSet rationale as above.
-                .onChange(of: viewModel.editCenterType) { _, newType in
-                    // Preserves any in-progress reorder (VM-owned since slice 1).
-                    viewModel.rebuildRearrangeCells(centerType: newType)
-                }
             }
 
             // ── Counting stepper sheet ──
@@ -772,158 +701,21 @@ struct BoardPlayView: View {
                 }
             )
         )
-        // Phase 2 — Tap-menu: Replace task / Edit task (+ Phase-2b center toggle).
-        // Presented when the user taps an occupied square OR the free center cell
-        // while in edit mode + Edit-tasks sub-mode.
-        // Uses .confirmationDialog so it anchors natively to the bottom (iOS
-        // action-sheet idiom).
-        .confirmationDialog(
-            editCellMenuTitle,
-            isPresented: $editCellMenuVisible,
-            titleVisibility: .visible
-        ) {
-            // Replace / Edit task: shown for any occupied cell (including a .none
-            // center with a task). Not shown for a free center (no task draft entry).
-            let cellKey = "\(editCellMenuRow)-\(editCellMenuCol)"
-            if viewModel.editSquaresDraft[cellKey] != nil {
-                Button("Replace task") {
-                    if let draft = viewModel.editSquaresDraft[cellKey] {
-                        editModeReplaceTarget = EditModeSwapTarget(
-                            id: cellKey,
-                            currentTaskId: draft.stagedTaskId
-                        )
-                    }
-                }
-                Button("Edit task") {
-                    if let draft = viewModel.editSquaresDraft[cellKey] {
-                        let map = viewModel.editDraftTaskMap
-                        if let task = map[draft.stagedTaskId] {
-                            editModeTaskTarget = EditModeTaskTarget(id: cellKey, task: task)
-                        }
-                    }
-                }
-                // Slice 1 — per-square lock (staged; committed on Save). Not
-                // offered for a pinned CHOSEN center (it never moves anyway).
-                if !(editCellMenuIsCenter && viewModel.editCenterType == .chosen) {
-                    Button(viewModel.isEditCellLocked(cellKey: cellKey) ? "Unlock" : "Lock in place") {
-                        viewModel.handleEditToggleLock(cellKey: cellKey)
-                    }
-                }
-                // Staged removal — empties the cell in the draft; the placement
-                // is only deleted from the DB on Save (handleEditSave). A free
-                // center has no draft entry so this block is skipped for it,
-                // keeping a pinned center non-removable.
-                Button("Remove from board", role: .destructive) {
-                    viewModel.handleEditRemove(cellKey: cellKey)
-                }
-            }
-
-            // Phase 2b — Center toggle buttons. Only shown when the tapped cell
-            // is the positional center. .chosen is intentionally excluded — the
-            // Board details sheet's center selector is the way out of CHOSEN
-            // (Board Edit redesign slice 2, D5).
-            if editCellMenuIsCenter {
-                if viewModel.editCenterType == .free {
-                    // Free center → task square (empty; fill via the live "+" flow).
-                    // The .onChange(of: editCenterType) handler rebuilds the rearrange
-                    // cells (preserving any staged order) — no inline rebuild here.
-                    Button("Make it a task square") { viewModel.editCenterType = .none }
-                } else if viewModel.editCenterType == .none {
-                    // Task square (or empty slot) → free space.
-                    Button("Make it a free space") { viewModel.editCenterType = .free }
-                }
-            }
-
-            Button("Cancel", role: .cancel) {}
-        }
-        // Phase 2 — Replace task sheet (staged; no DB write on confirm).
-        .sheet(item: $editModeReplaceTarget) { target in
-            CellSwapSheet(
-                mode: .swap,
-                currentTaskId: target.currentTaskId,
-                candidateTasks: allTasks,
-                placedTaskIds: Set(viewModel.editDraftBoardTasks.map { $0.taskId }),
-                counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(allTasks),
-                onDismiss: { editModeReplaceTarget = nil },
-                onConfirm: { newTaskId in
-                    editModeReplaceTarget = nil
-                    viewModel.handleEditCellReplace(cellKey: target.id, newTaskId: newTaskId)
-                }
+        // Board Edit redesign slice 3 (T5) — the square tap-menu, the picker
+        // sheet, the Edit-task sheet, and the Save-failure / Board-closed
+        // alerts, keyed off `editSquareMenuTarget` / `editPickerTarget`.
+        .modifier(
+            BoardEditPresenter(
+                viewModel: viewModel,
+                userId: authService.currentUser?.id ?? "",
+                allTasks: allTasks,
+                editMode: $editMode,
+                editSaving: $editSaving,
+                squareMenuTarget: $editSquareMenuTarget,
+                pickerTarget: $editPickerTarget,
+                onSaved: { triggerBoardSavedToast() }
             )
-        }
-        // Phase 2 — Edit task sheet (staged; no DB write on Done).
-        .sheet(item: $editModeTaskTarget) { target in
-            SquareEditTaskSheet(
-                task: target.task,
-                onDone: { patch in
-                    editModeTaskTarget = nil
-                    viewModel.handleEditTaskOverride(taskId: target.task.id, patch: patch)
-                },
-                onCancel: { editModeTaskTarget = nil }
-            )
-        }
-        // Board-edit Save failure — a system alert pierces the edit overlay.
-        .alert(
-            "Couldn’t save",
-            isPresented: Binding(
-                get: { editSaveError != nil },
-                set: { if !$0 { editSaveError = nil } }
-            ),
-            actions: { Button("OK", role: .cancel) { editSaveError = nil } },
-            message: { Text(editSaveError ?? "") }
         )
-        // Board Edit redesign slice 2 (T3, D11) — a board sealed/deleted
-        // mid-session gets its own alert; OK exits edit mode (there's
-        // nothing left to save).
-        .alert(
-            "Board closed",
-            isPresented: Binding(
-                get: { boardClosedMessage != nil },
-                set: { if !$0 { boardClosedMessage = nil } }
-            ),
-            actions: {
-                Button("OK", role: .cancel) {
-                    boardClosedMessage = nil
-                    withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                }
-            },
-            message: { Text(boardClosedMessage ?? "") }
-        )
-        // M4 — Add task to empty cell sheet. Presented when the user taps
-        // the "+" affordance on an empty cell.
-        .sheet(
-            isPresented: Binding(
-                get: { addCellPos != nil },
-                set: { if !$0 { addCellPos = nil } }
-            ),
-            onDismiss: {
-                // Skip reload on confirm: `handleAddTaskToCell` already calls
-                // `loadBoardTasks` + `loadTaskData` after its DB write, so a
-                // second reload here would flash pre-insert state. Only reload
-                // on cancel (user dismissed without selecting a task).
-                if addTaskConfirmed {
-                    addTaskConfirmed = false
-                } else {
-                    viewModel.reloadBoardTasksAndTaskData()
-                }
-            }
-        ) {
-            if let pos = addCellPos {
-                CellSwapSheet(
-                    mode: .add,
-                    currentTaskId: "",
-                    candidateTasks: allTasks,
-                    placedTaskIds: Set(viewModel.boardTasks.map { $0.taskId }),
-                    counterFamilyByTaskId: BoardSources.buildCounterFamilyMap(allTasks),
-                    onDismiss: { addCellPos = nil },
-                    onConfirm: { taskId in
-                        addTaskConfirmed = true
-                        addCellPos = nil
-                        viewModel.handleAddTaskToCell(taskId: taskId, row: pos.row, col: pos.col)
-                    }
-                )
-            }
-        }
         .onAppear {
             // Supply the authenticated user id from the env (unavailable in
             // `init`) before the first load. userId is stable for the
@@ -980,28 +772,9 @@ struct BoardPlayView: View {
             guard let event, !editMode else { return }
             triggerArrivalBanner(from: event)
         }
-        // B2-I3 — edit-commit outcome observer. The VM's `handleEditSave`
-        // DB commit (+ the domain `reload()`) runs VM-side; this runs the
-        // residual view-owned UI mutations it still triggers (which read
-        // view `@State`), reproducing the pre-move MainActor tail exactly.
-        // Archive moved to the "…" menu (`BoardActionsPresenter`) in slice
-        // 2 — it no longer emits through this event.
-        .onChange(of: viewModel.editEvent) { _, event in
-            guard let event else { return }
-            switch event.outcome {
-            case .saved:
-                editSaving = false
-                withAnimation(.easeInOut(duration: 0.22)) { editMode = false }
-                triggerBoardSavedToast()
-            case .saveFailed(let message):
-                editSaving = false
-                editSaveError = message
-            case .boardClosed(let message):
-                // Slice 2 (T3, D11) — its own alert; OK exits edit mode.
-                editSaving = false
-                boardClosedMessage = message
-            }
-        }
+        // Board Edit redesign slice 3 (T5) — the `.editEvent` outcome
+        // observer (saved / saveFailed / boardClosed) moved into
+        // `BoardEditPresenter`, which owns the alerts it drives.
         // Counting stepper sheet — Riso pill stepper for counting cells.
         // Wires to handleCountingTap / handleCountingDecrement; dismiss clears state.
         .sheet(
@@ -1424,11 +1197,11 @@ struct BoardPlayView: View {
                 risoPlaySquare(boardTask: bt, index: index, highlighted: highlighted)
             } else if isCenter,
                       let b = board,
-                      b.centerSquareType == .free {
+                      CenterSquare.effectiveCenter(b.centerSquareType) == .free {
                 // FREE center cell — gold label, not interactive in play mode.
                 // Deliberately NOT getCenterDisplayText, which returns
-                // "FREE SPACE" — this cell matches the wizard preview
-                // (RearrangeGrid), which uses the shorter "FREE".
+                // "FREE SPACE" — this cell matches the edit grid's FREE
+                // face, which uses the shorter "FREE".
                 RisoBoardPlayCell(
                     title: "FREE",
                     taskType: .normal,
@@ -1436,32 +1209,17 @@ struct BoardPlayView: View {
                     isBingoLine: highlighted.contains(index),
                     isCenter: true
                 )
-            } else if let b = board,
-                      // Phase-2b: a .none center is a normal cell, so show the
-                      // "+" affordance for the positional center too when empty.
-                      (!isCenter || b.centerSquareType == .none),
-                      b.status == .active,
-                      !isBoardLocked {
-                // M4 — Empty non-center cell (or .none center) on an ACTIVE board: dashed "+" affordance.
-                ZStack {
-                    RoundedRectangle(cornerRadius: Riso.cellRadius)
-                        .strokeBorder(
-                            Color.risoInk.opacity(0.35),
-                            style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
-                        )
-                    Button {
-                        addCellPos = (row: row, col: col)
-                    } label: {
-                        Image(systemName: "plus.circle")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(Color.risoMuted)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .aspectRatio(1, contentMode: .fit)
             } else {
-                // Empty placeholder
-                Color.clear.aspectRatio(1, contentMode: .fit)
+                // Board Edit redesign slice 3 (D17) — the play-mode "+" is
+                // retired. Every empty square (center included, once its
+                // type is `.none`) renders as a plain dashed square; adding
+                // a task is staged in the squares editor now.
+                RoundedRectangle(cornerRadius: Riso.cellRadius)
+                    .strokeBorder(
+                        Color.risoInk.opacity(0.35),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                    )
+                    .aspectRatio(1, contentMode: .fit)
             }
         }
         .padding(.bottom, 8)
@@ -1577,16 +1335,19 @@ struct BoardPlayView: View {
             }
         }()
 
-        // Positional center-ness (PR-5, parity with web): never trust the
-        // row's OWN isCenter flag — a stray duplicate-center row (pre-guard
-        // corruption) would misrender a real task as the gold center cell. A
-        // placed cell renders center styling only when it actually SITS at
-        // the positional center of a CHOSEN-center board.
-        let renderAsCenter: Bool = {
-            guard let b = board, gridSize % 2 == 1 else { return false }
-            let isPositionalCenter = index / gridSize == gridSize / 2
-                && index % gridSize == gridSize / 2
-            return isPositionalCenter && b.centerSquareType == .chosen
+        // Board Edit redesign slice 3 (D1/D16) — CHOSEN is legacy: a placed
+        // cell NEVER renders the gold center styling anymore, even when it
+        // sits at the positional center of a still-CHOSEN-on-disk board. It
+        // renders as a normal cell with the lock chip — the effective lock
+        // folds in the implicit legacy-CHOSEN center lock
+        // (`CenterSquare.isLegacyChosenCenterLocked`) until the next squares
+        // Save normalizes the row (D2).
+        let effectiveLockChip: Bool = {
+            guard let b = board else { return boardTask.isLocked }
+            return boardTask.isLocked || CenterSquare.isLegacyChosenCenterLocked(
+                centerType: b.centerSquareType, row: index / gridSize, col: index % gridSize,
+                gridSize: gridSize
+            )
         }()
 
         RisoBoardPlayCell(
@@ -1594,10 +1355,9 @@ struct BoardPlayView: View {
             taskType: cellKind,
             isCompleted: isCompleted,
             isBingoLine: highlighted.contains(index),
-            isCenter: renderAsCenter,
+            isCenter: false,
             isInteractionLocked: isBoardLocked,
-            // Slice 1 — the per-square lock shows whenever the board is drawn.
-            showsLockChip: boardTask.isLocked,
+            showsLockChip: effectiveLockChip,
             currentCount: current,
             maxCount: maxVal,
             isSharedCounter: isSharedCounterCell,
@@ -2164,45 +1924,46 @@ struct BoardPlayView: View {
     // MARK: - Interaction handlers moved to BoardPlayViewModel (B2-I2)
     //
     // handleNormalTap / handleCountingTap / handleCountingDecrement /
-    // handleCompoundChildToggle /
-    // handleAddTaskToCell (plus the private runOrchestration /
+    // handleCompoundChildToggle (plus the private runOrchestration /
     // runSharedCounterIncrement / runSharedCounterDecrement they call) now
     // live on `viewModel`. The view's tap closures call `viewModel.handleX(...)`
     // and observe `viewModel.flashEvent` to fire the residual toast/overlay
     // animations (see the `.onChange(of: viewModel.flashEvent)` observer).
+    // `handleAddTaskToCell` (the play-mode "+") was retired in slice 3 (D17).
 
     // MARK: - Edit Mode
     //
-    // NOTE (B2-I3): the edit-draft data layer moved to `BoardPlayViewModel` —
-    // `seedEditDraft`, the Phase-3 rearrange seed/handle (`seedRearrangeCells` /
-    // `handleRearrange`), the staged mutators (`handleEditCellReplace` /
-    // `handleEditTaskOverride`), and the DB commits (`handleEditSave` /
-    // `handleEditArchive`). The view keeps only the cell-menu routing handlers
-    // below (they mutate view-owned `editCellMenu*` `@State`) and
-    // `triggerBoardSavedToast` (a pure view animation).
+    // The edit-draft data layer lives entirely on `BoardPlayViewModel` —
+    // `seedEditDraft`, the staged mutators (`handleEditAdd` /
+    // `handleEditReplace` / `handleEditMove` / `handleEditShuffle` /
+    // `handleEditCenterFree` / `handleEditCenterTask`), and the DB commit
+    // (`handleEditSave`). The view keeps only the tap-routing handler below
+    // (it sets the view-owned `editSquareMenuTarget` / `editPickerTarget`
+    // that `BoardEditPresenter` binds to) and `triggerBoardSavedToast` (a
+    // pure view animation).
 
-    // MARK: - Phase 2 edit-mode tap-menu handlers
+    // MARK: - Squares editor tap routing (D13/D16)
 
-    /// Called by `BoardEditPanel.onCellTap` when the user taps an occupied
-    /// cell in Edit-tasks sub-mode. Records the row/col and presents the
-    /// Replace / Edit (+ Phase-2b center toggle) confirmationDialog.
-    private func handleEditCellTap(row: Int, col: Int) {
-        editCellMenuRow = row
-        editCellMenuCol = col
-        let mid = gridSize / 2
-        editCellMenuIsCenter = gridSize % 2 == 1 && row == mid && col == mid
-        editCellMenuVisible = true
-    }
+    /// Called by `BoardEditPanel.onTap` (via `SquaresEditGrid`) when the
+    /// user taps ANY square — a non-center empty square routes straight to
+    /// the Add picker (OQ5); everything else (occupied, locked, the FREE
+    /// center, or an empty NONE center) opens the tap-menu, which
+    /// `BoardEditPresenter` branches further.
+    private func handleSquareTap(cellId: String) {
+        let cells = viewModel.editSquaresEditCells
+        let size = viewModel.gridSize
+        guard size > 0, let idx = cells.firstIndex(where: { $0.id == cellId }) else { return }
+        let cell = cells[idx]
+        let row = idx / size, col = idx % size
+        let cellKey = "\(row)-\(col)"
 
-    /// Called by `BoardEditPanel.onCenterTap` when the user taps the FREE
-    /// center cell in Edit-tasks sub-mode. Shows the center-toggle
-    /// confirmationDialog ("Make it a task square").
-    private func handleFreeCenterTap() {
-        let mid = gridSize / 2
-        editCellMenuRow = mid
-        editCellMenuCol = mid
-        editCellMenuIsCenter = true
-        editCellMenuVisible = true
+        if cell.isEmpty && !cell.isCenter {
+            editPickerTarget = SquarePickerRouteTarget(cellKey: cellKey, mode: .add)
+            return
+        }
+        editSquareMenuTarget = SquareMenuCellTarget(
+            id: cellId, cellKey: cellKey, isCenter: cell.isCenter, isEmpty: cell.isEmpty
+        )
     }
 
     /// Flashes the "Board saved" success toast for 2.4 s, then hides it.

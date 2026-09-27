@@ -123,46 +123,54 @@ final class BoardPlayViewModel: ObservableObject {
     /// Device-local last-seen snapshot store. Injected for tests.
     private let arrivalStore: CounterArrivalStore
 
-    // MARK: - Edit-mode draft state (B2-I3)
+    // MARK: - Edit-mode draft state (B2-I3; Board Edit redesign slice 3)
     //
     // The in-place `BoardEditPanel` draft layer, moved verbatim out of
     // `BoardPlayView` in the B2-I3 slice. Board Edit redesign slice 2 (T3)
     // retired the metadata/repeat draft fields that used to live here — name
     // / timeframe / dates / REPEATS are now `BoardDetailsSheetView` /
     // `BoardRepeatSheetView`'s own local `@State`, saved independently via
-    // `BoardPlayViewModel+BoardActions`. What remains is the squares draft
-    // (Edit-tasks / Rearrange) plus the ONE metadata field the squares panel
-    // still owns — the center toggle (D5: it's the sole CHOSEN exit until
-    // slice 3 retires CHOSEN). Nothing here is written to the DB until
-    // `handleEditSave` commits; the panel is a pure staged-draft surface.
+    // `BoardPlayViewModel+BoardActions`. Slice 3 (D7) retires the Edit-tasks
+    // ⇄ Rearrange sub-modes — ONE grid, always derived fresh from
+    // `editSquaresDraft` (D20; see `editSquaresEditCells` below) — so there
+    // is no more separately-seeded rearrange array or sub-mode flag to keep
+    // in sync.
     //
     // They are `@Published var` (NOT `private(set)`) precisely because the panel
     // writes several of them through projected bindings — `@StateObject`
     // projections are two-way, so `$viewModel.editCenterType` behaves exactly
     // like the pre-move `$editCenterType` `@State` binding did.
 
-    /// Draft center-square type selector value.
+    /// Draft center-square type — always the EFFECTIVE value (`.free` or
+    /// `.none`, never `.chosen`; D1). Seeded via `CenterSquare.effectiveCenter`
+    /// so a legacy-CHOSEN board opens already reading as "task square +
+    /// locked center placement".
     @Published var editCenterType: CenterSquareType = .free
-    /// Which squares sub-mode (Edit tasks / Rearrange) is active.
-    @Published var editSubMode: BoardEditSubMode = .editTasks
-    /// Per-cell staged state keyed by "row-col". Seeded from live `BoardTask`
-    /// rows when the user enters edit mode; modified by Replace / Edit-task
-    /// actions. Nothing is written to the DB until `handleEditSave` commits.
+    /// Per-square staged state keyed by its CURRENT "row-col" slot (D20 —
+    /// rebuilt fresh, never patched). Seeded from live `BoardTask` rows when
+    /// the user enters edit mode; a missing key is an empty square. Nothing
+    /// is written to the DB until `handleEditSave` commits.
     @Published var editSquaresDraft: [String: SquaresDraftCell] = [:]
     /// Staged task-field overrides keyed by taskId (global — shared by all
     /// squares that reference the same task). Applied to `editDraftTaskMap` for
     /// rendering and committed via `saveTaskAndCascade` in `handleEditSave`.
     @Published var editTaskOverrides: [String: StagedTaskOverride] = [:]
-    /// Slice 1 — staged per-square lock changes keyed by "row-col"
-    /// (`true` = lock, `false` = unlock). Applied to `editDraftBoardTasks`
-    /// for rendering and committed via `setBoardTaskLocked` in
-    /// `handleEditSave`. An override equal to the row's stored value is
-    /// dropped by `handleEditToggleLock`, so every entry is a real change.
-    @Published var editLockOverrides: [String: Bool] = [:]
-    /// Phase 3 — Rearrange sub-mode staged state. Ordered `[RearrangeCellData]`
-    /// shown by `RearrangeGrid`. nil until the user first enters Rearrange
-    /// sub-mode (built lazily by `seedRearrangeCells`).
-    @Published var editRearrangeCells: [RearrangeCellData]? = nil
+    /// True once the user has run Shuffle this session (D10/D11) — never
+    /// cleared except by `seedEditDraft` re-seeding the whole draft. Folds
+    /// every subsequent hold-move into the SAME "1 edit" until positions
+    /// return to baseline (`SquaresEditCount`).
+    @Published var editShuffled: Bool = false
+    /// Baseline `BoardTask.id`s present at seed time — the source set
+    /// `editSquaresEditCount` / `handleEditSave` diff the CURRENT draft
+    /// against to find staged removals. Not `@Published`: it only ever
+    /// changes together with `editSquaresDraft` inside `seedEditDraft`.
+    var editBaselineBoardTaskIds: Set<String> = []
+    /// The BoardTask id occupying the positional center at seed time, if the
+    /// board is legacy CHOSEN (D1/D11) — lets the center Free-toggle's
+    /// implied removal be excluded from the generic removals count (it's
+    /// already covered by the ONE `centerChanged` edit) while still being
+    /// written to disk as a real tombstone.
+    var editOriginalCenterBoardTaskId: String? = nil
 
     /// The board's source repeating record, resolved from the workspace-wide
     /// templates `reload()` already loads. `nil` for a one-off board OR an
@@ -218,8 +226,8 @@ final class BoardPlayViewModel: ObservableObject {
 
     // MARK: - Edit-mode draft derived helpers
     //
-    // `editDraftBoardTasks` / `editDraftTaskMap` / `editSquaresEditCount` /
-    // `countPositionMoves` and the slice-1 lock helpers live in
+    // `editDraftTaskMap` / `editSquaresEditCells` / `editSquaresEditCount` /
+    // `canShuffle` and the per-square lock helpers live in
     // `BoardPlayViewModel+EditDraft.swift` (computed over the stored draft
     // above) — split out so this file stays under its frozen size cap.
 
@@ -937,43 +945,11 @@ final class BoardPlayViewModel: ObservableObject {
         }
     }
 
-    /// Add a task to an empty cell on the current board.
-    ///
-    /// Delegates to `addBoardTaskToBoard`, which creates a new `BoardTask`
-    /// placement, enqueues a CREATE sync entry, and re-derives stats for every
-    /// board affected by the placed task. If the task is already globally
-    /// completed, the cascade immediately credits this cell as completed.
-    ///
-    /// - Parameters:
-    ///   - taskId: The `Task.id` to place.
-    ///   - row: 0-based grid row.
-    ///   - col: 0-based grid column.
-    func handleAddTaskToCell(taskId: String, row: Int, col: Int) {
-        guard let b = board else { return }
-        guard !isProcessing else { return }
-        isProcessing = true
-        let database = self.database
-        _Concurrency.Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self = self else { return }
-            do {
-                try database.addBoardTaskToBoard(
-                    b.id,
-                    taskId: taskId,
-                    position: (row: row, col: col)
-                )
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.reload()
-                }
-            } catch {
-                dlog("⚠️ BoardPlayView add-to-cell error: \(error)")
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.bingoMessage = "Add failed — please try again"
-                }
-            }
-        }
-    }
+    // `handleAddTaskToCell` (the play-mode "+" immediate write) was RETIRED
+    // in Board Edit redesign slice 3 (D17) — empty squares in play render as
+    // plain dashed squares; every add now goes through the staged squares
+    // editor (`handleEditAdd` in `+EditCommit.swift`, committed atomically
+    // by `handleEditSave`).
 
     /// Runs the full task-completion orchestration and surfaces the flash.
     ///

@@ -27,8 +27,14 @@ export interface Board {
   endDate?: string;              // ISO8601 (end of timeframe). Absent for INDEFINITE boards — they
                                  // never expire. Treat a missing endDate as an unbounded window
                                  // [startDate, ∞). See isBoardIndefinite().
-  centerSquareType: CenterSquareType; // free, chosen, none
-  centerTaskId?: string;             // Task ID for CHOSEN type (future use)
+  /**
+   * free | chosen | none. `chosen` is LEGACY (Board Edit slice 3): live
+   * boards read it via `effectiveCenter` (→ none + a locked center
+   * placement); slice-3+ clients never write it except on wizard drafts.
+   * It converts to `none` on the user's next squares Save.
+   */
+  centerSquareType: CenterSquareType;
+  centerTaskId?: string;             // Task ID for (legacy) CHOSEN; wizard drafts only from slice 3
   isRandomized: boolean;         // Whether tasks are randomized on grid
 
   // Denormalized stats (for instant reads, updated on task completion)

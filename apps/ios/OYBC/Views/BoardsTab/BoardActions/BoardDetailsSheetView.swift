@@ -8,15 +8,14 @@ import SwiftUI
 ///
 /// Layout: Cancel · "Board details" · Save toolbar pill, then the immutable
 /// size chip + `BoardSetupFormView` (name · timeframe read-only note or
-/// custom/ongoing dates · center). No REPEATS, no Archive — those moved to
-/// their own menu items (`BoardRepeatSheetView`, the Archive confirm).
+/// custom/ongoing dates). No REPEATS, no Archive — those moved to their own
+/// menu items (`BoardRepeatSheetView`, the Archive confirm). No center
+/// selector either (slice 3, D6) — the center changes only in the squares
+/// editor.
 struct BoardDetailsSheetView: View {
 
     let board: Board
     let weekStartDay: String
-    /// Resolves off-main whether the board has any placement that could
-    /// back a CHOSEN center (`BoardPlayViewModel.hasCenterCandidate()`).
-    var hasCandidateTasksProvider: () async -> Bool = { false }
     /// Commits the patch. Throws `BoardEditError.boardNotEditable` for a
     /// board sealed/deleted since the sheet opened (D11).
     let onSave: (AppDatabase.UpdateActiveBoardPatch) async throws -> Void
@@ -25,7 +24,6 @@ struct BoardDetailsSheetView: View {
     let onDismiss: () -> Void
 
     @State private var draft: BoardDetailsDraft
-    @State private var hasCandidateTasks = false
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var showDiscardConfirm = false
@@ -33,13 +31,11 @@ struct BoardDetailsSheetView: View {
     init(
         board: Board,
         weekStartDay: String,
-        hasCandidateTasksProvider: @escaping () async -> Bool = { false },
         onSave: @escaping (AppDatabase.UpdateActiveBoardPatch) async throws -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.board = board
         self.weekStartDay = weekStartDay
-        self.hasCandidateTasksProvider = hasCandidateTasksProvider
         self.onSave = onSave
         self.onDismiss = onDismiss
         _draft = State(initialValue: BoardDetailsDraft(board: board))
@@ -47,7 +43,7 @@ struct BoardDetailsSheetView: View {
 
     private var canSave: Bool {
         draft.isDirty
-            && draft.validationError(hasCandidateTasks: hasCandidateTasks) == nil
+            && draft.validationError() == nil
             && !isSaving
     }
 
@@ -61,9 +57,7 @@ struct BoardDetailsSheetView: View {
                         timeframe: $draft.timeframe,
                         customStartDate: $draft.startDate,
                         customEndDate: $draft.endDate,
-                        centerType: $draft.centerType,
                         weekStartDay: weekStartDay,
-                        chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks,
                         storedWindow: storedWindow
                     )
                     if let errorMessage {
@@ -100,9 +94,6 @@ struct BoardDetailsSheetView: View {
             } message: {
                 Text("Your unsaved changes will be lost.")
             }
-        }
-        .task {
-            hasCandidateTasks = await hasCandidateTasksProvider()
         }
     }
 
@@ -151,7 +142,7 @@ struct BoardDetailsSheetView: View {
     }
 
     private func save() {
-        if let err = draft.validationError(hasCandidateTasks: hasCandidateTasks) {
+        if let err = draft.validationError() {
             errorMessage = err
             return
         }

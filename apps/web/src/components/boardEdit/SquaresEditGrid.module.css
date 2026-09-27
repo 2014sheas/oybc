@@ -1,0 +1,150 @@
+/* ============================================================
+   OYBC · Riso Web — Squares Edit Grid (Board Edit redesign slice 3)
+   ONE grid for tap (menu / add) + hold-to-lift drag. Evolved from
+   ArrangeGrid.module.css (Phase 3) — the tap-to-swap / jiggle styles are
+   dropped (D7 retires both); hold-to-lift keeps the drag-to-insert cascade.
+   ============================================================ */
+
+.wrap {
+  position: relative;
+}
+
+.grid {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  width: fit-content;
+  max-width: 100%;
+  border: 2.5px solid var(--riso-ink);
+  border-radius: 14px;
+  background: var(--riso-paper);
+  box-shadow: 8px 8px 0 var(--riso-shadow-ink);
+}
+
+/* Cell wrapper — a real <button> so every square is a focusable, row-major
+   tab stop (D9). Resets browser button chrome. */
+.cellButton {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: inherit;
+  color: inherit;
+  /* Long-press context menu / callout suppression on touch (D8). */
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+.cellButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+  border-radius: var(--riso-r-cell);
+}
+
+.movable {
+  cursor: grab;
+}
+.movable:active {
+  cursor: grabbing;
+}
+
+/* ---- Dim: non-lifted cells fade while one is held ---- */
+.dim .cellButton:not(.lifted) {
+  opacity: 0.5;
+}
+
+/* ---- Lifted (mid drag): the source slot becomes a dashed hole ---- */
+.lifted > * {
+  background: transparent !important;
+  border-style: dashed !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.lifted > * > * {
+  visibility: hidden;
+}
+
+/* ---- Grip icon: small dot-grid handle in the top-right, movable cells only ---- */
+.grip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: repeat(2, 5px);
+  grid-template-rows: repeat(3, 5px);
+  gap: 2.5px;
+  opacity: 0.35;
+}
+.grip i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--riso-ink);
+  display: block;
+}
+.cellButton:has(.done) .grip i {
+  background: var(--riso-on-color);
+}
+
+.emptyCell {
+  aspect-ratio: 1;
+  border: 2px dashed var(--riso-ink);
+  border-radius: var(--riso-r-cell);
+  background: var(--riso-paper-2);
+  opacity: 0.4;
+}
+
+.ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  width: 90px;
+  height: 90px;
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-cell);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  box-shadow: 5px 7px 0 rgba(0, 0, 0, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--riso-font-body);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px;
+  transform: translate(-50%, -50%) rotate(-4deg) scale(1.04);
+  line-height: 1.25;
+  overflow: hidden;
+  word-break: break-word;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ghost {
+    transform: translate(-50%, -50%);
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 880px) {
+  .ghost {
+    width: 72px;
+    height: 72px;
+    font-size: 11px;
+  }
+}

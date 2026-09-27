@@ -261,6 +261,44 @@ describe('Board-Edit: completion + bingo matrix', () => {
     expect(board!.completedTasks).toBe(1);
   });
 
+  it('Board Edit slice 3: adding a task (with isLocked seeded) marks it locked and its completion is derived immediately', async () => {
+    await seedBoard('board-1');
+    await seedCompletedTask('task-new'); // arrives already-complete (shared task elsewhere)
+
+    const added = await addBoardTaskToBoard('board-1', 'task-new', 0, 0, { isLocked: true });
+    expect(added.isLocked).toBe(true);
+
+    const board = await db.boards.get('board-1');
+    // Shared-task semantics: already-complete task counts immediately, no clone/reset.
+    expect(board!.completedTasks).toBe(1);
+  });
+
+  it('Board Edit slice 3: Free-center with a task removes exactly that placement and adds the FREE auto-fill', async () => {
+    await seedBoard('board-1', { boardSize: 3, centerSquareType: CenterSquareType.NONE });
+    await seedCompletedTask('task-A');
+    await seedCompletedTask('task-center');
+    await seedPlacement('bt-A', 'board-1', 'task-A', 0, 0);
+    await seedPlacement('bt-center', 'board-1', 'task-center', 1, 1);
+
+    // Establish a real derivation pass first.
+    await updateBoardAndCascade('board-1', { name: 'Board board-1', timeframe: Timeframe.WEEKLY } as UpdateActiveBoardPatch);
+    let board = await db.boards.get('board-1');
+    expect(board!.completedTasks).toBe(2); // task-A + task-center
+
+    // D16: "Make it a free space" removes the center placement AND flips the type.
+    await removeBoardTaskFromBoard('bt-center');
+    await updateBoardAndCascade('board-1', {
+      name: 'Board board-1',
+      centerSquareType: CenterSquareType.FREE,
+      timeframe: Timeframe.WEEKLY,
+    } as UpdateActiveBoardPatch);
+
+    board = await db.boards.get('board-1');
+    // task-center's placement is gone; the FREE auto-fill replaces it.
+    expect(board!.completedTasks).toBe(2); // task-A + the FREE auto-fill
+    expect((await db.boardTasks.get('bt-center'))?.isDeleted).toBe(true);
+  });
+
   it('achievement cells (cross-board watchers) are unaffected by an unrelated metadata edit on their own board', async () => {
     // Board A is the WATCHED board — already greenlogged.
     await seedBoard('board-A', {

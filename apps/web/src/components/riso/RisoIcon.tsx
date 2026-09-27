@@ -29,7 +29,8 @@ export type RisoIconName =
   | 'edit'
   | 'trash'
   | 'dots'
-  | 'lock';
+  | 'lock'
+  | 'shuffle';
 
 const PATHS: Record<RisoIconName, React.ReactNode> = {
   boards: (
@@ -165,6 +166,17 @@ const PATHS: Record<RisoIconName, React.ReactNode> = {
     <>
       <rect x="5" y="11" width="14" height="9" rx="2" />
       <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  // Board Edit redesign slice 3 (D18) — the squares editor's Shuffle
+  // button. Mirrors SF Symbols' "shuffle" (crossing arrows).
+  shuffle: (
+    <>
+      <polyline points="16 3 21 3 21 8" />
+      <line x1="4" y1="20" x2="21" y2="3" />
+      <polyline points="21 16 21 21 16 21" />
+      <line x1="15" y1="15" x2="21" y2="21" />
+      <line x1="4" y1="4" x2="9" y2="9" />
     </>
   ),
 };

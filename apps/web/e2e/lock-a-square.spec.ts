@@ -1,11 +1,15 @@
 import { test, expect, seedBoard, seedTask, seedBoardTask } from './_fixtures/bypass';
 
 /**
- * Board Edit redesign slice 1 — per-square locks on web.
- *   1. Enter Edit board, tap a square, "Lock in place", Save: the row is
+ * Board Edit redesign slice 1 — per-square locks on web. Slice 3 (D7)
+ * retired the Edit tasks ⇄ Rearrange sub-mode split: there is ONE grid now
+ * (`SquaresEditGrid`), so "Rearrange pins it" is exercised on the SAME
+ * grid a hold-drag from a locked square is attempted on, not a separate
+ * toggle.
+ *   1. Enter Edit squares, tap a square, "Lock in place", Save: the row is
  *      persisted, the lock chip shows on the board after a reload.
- *   2. In Rearrange the locked square is pinned: it never lifts, so a
- *      pointer drag from it changes nothing and no jiggle is applied.
+ *   2. The locked square is pinned in the squares editor: it never lifts,
+ *      so a pointer drag from it changes nothing.
  *   3. A seeded-locked square offers "Unlock" in the tap menu.
  */
 
@@ -18,7 +22,7 @@ const now = new Date();
 const p = (n: number): string => String(n).padStart(2, '0');
 const d = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 
-test.describe('Lock a square (Board Edit redesign slice 1)', () => {
+test.describe('Lock a square (Board Edit redesign slice 1/3)', () => {
   test.beforeEach(async ({ page }) => {
     await seedBoard(page, {
       id: BOARD_ID, name: 'Lock board', boardSize: 3, timeframe: 'monthly', status: 'active',
@@ -34,7 +38,7 @@ test.describe('Lock a square (Board Edit redesign slice 1)', () => {
     }
   });
 
-  test('lock via the tap menu, save, reload → chip persists; Rearrange pins it', async ({ page }) => {
+  test('lock via the tap menu, save, reload → chip persists; the squares editor pins it', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
     await expect(page.getByText('Lock board').first()).toBeVisible();
 
@@ -42,7 +46,7 @@ test.describe('Lock a square (Board Edit redesign slice 1)', () => {
     await expect(page.getByRole('img', { name: 'Locked in place' })).toHaveCount(1);
 
     await page.getByRole('button', { name: /^edit squares/i }).click();
-    await page.getByRole('button', { name: 'Edit square: Morning workout' }).click();
+    await page.getByRole('button', { name: /Morning workout/ }).click();
     await page.getByRole('button', { name: 'Lock in place' }).click();
 
     // Staged: the lock chip is on the square, the counter reads one edit.
@@ -56,12 +60,11 @@ test.describe('Lock a square (Board Edit redesign slice 1)', () => {
     await expect(page.getByText('Lock board').first()).toBeVisible();
     await expect(page.getByRole('img', { name: 'Locked in place' })).toHaveCount(2);
 
-    // Rearrange: the locked square is pinned — no grip, no jiggle, a drag from it is a no-op.
+    // Re-enter editing: the locked square is pinned — a drag from it is a no-op.
     await page.getByRole('button', { name: /^edit squares/i }).click();
-    await page.getByRole('button', { name: 'Rearrange' }).click();
     const locked = page.locator(`[data-cid="${ids(0).bt}"]`);
     await expect(locked).toBeVisible();
-    await expect(locked.locator('span[aria-hidden="true"] > i')).toHaveCount(0);
+    await expect(locked.locator('span[aria-hidden="true"] > i')).toHaveCount(0); // no grip handle
     const box = (await locked.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
@@ -75,7 +78,7 @@ test.describe('Lock a square (Board Edit redesign slice 1)', () => {
   test('a locked square offers Unlock', async ({ page }) => {
     await page.goto(`/boards/${BOARD_ID}?__oybc_test_bypass=1`);
     await page.getByRole('button', { name: /^edit squares/i }).click();
-    await page.getByRole('button', { name: 'Edit square: Drink 8 glasses' }).click();
+    await page.getByRole('button', { name: /Drink 8 glasses/ }).click();
     await expect(page.getByRole('button', { name: 'Unlock' })).toBeVisible();
     await page.getByRole('button', { name: 'Unlock' }).click();
     await expect(page.getByRole('img', { name: 'Locked in place' })).toHaveCount(0);

@@ -90,6 +90,17 @@ open BY DESIGN (accepted, not missed).
 | PR-4 | #361 | Sync + atomicity hardening — reassert, rules monotonicity, atomic saves | Pull-path local-wins re-enqueue (a fresher local write that lost a push race re-asserts instead of diverging silently — finding 5); `firestore.rules` version-monotonicity (separate create/update rules, `allow update` requires `version >=`); single-transaction Board-Edit Save (finding 4) | **Shipped** |
 | PR-5 | #362 | Kernel pins + minors sweep | Pin the last unhardened kernels with cross-platform shared vectors (`placeBoard`/`fisherYatesShuffle`/`centerSquare`, previously only hand-copied-array-tested); clamp a TS/Swift shuffle rng-edge divergence; add the last write-time uniqueness guard (a second live `isCenter: true` row, finding 7's remaining gap); a handful of iOS reentry-guard/staleness minors; dead-code + docs sweep (this doc's closing update) | **Shipped** |
 
+Later kernel pin (Board Edit redesign slice 3): `shuffleUnlockedSlots`
+(`packages/bingo-core/src/shuffle.ts` ↔ `Services/Shuffle.swift`) — the
+squares editor's Shuffle, Fisher-Yates over the non-fixed slots only (locked
+placements + the FREE center stay put) — is pinned by the
+`shuffleUnlockedVectors` array in the shared `placementVectors.json`, synced
+byte-for-byte to the iOS fixture like the PR-5 vectors. The same slice retires
+new `isCenter: true` writes for active boards (a CHOSEN pick persists as a
+locked, non-`isCenter` center; legacy rows are cleared by
+`normalizeLegacyChosenCenter` on the next squares Save), so the write-time
+uniqueness guard now only ever sees wizard drafts carrying `isCenter`.
+
 ## The "one resolver" direction
 
 The audit's complexity map found the "is this cell complete?" computation

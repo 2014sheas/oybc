@@ -98,8 +98,15 @@ export interface BoardSetupFormProps {
   customEndDate: string;
   onCustomEndDateChange: (d: string) => void;
 
-  centerType: CenterSquareType;
-  onCenterTypeChange: (t: CenterSquareType) => void;
+  /**
+   * Optional in `edit-active` mode (Board Edit redesign slice 3, D6): the
+   * center selector never renders there (the center changes only in the
+   * squares editor), so callers editing an active board's details need not
+   * supply a real value. `create` mode (the wizard, "Choose" included)
+   * always passes both.
+   */
+  centerType?: CenterSquareType;
+  onCenterTypeChange?: (t: CenterSquareType) => void;
 
   /**
    * Board Creation Split (web PR C) — whether this wizard session is the
@@ -122,13 +129,6 @@ export interface BoardSetupFormProps {
   isCore: boolean;
 
   weekStartDay: WeekStartDay;
-
-  /**
-   * M2 — `edit-active` mode only. When true, the CHOSEN center-square
-   * option is disabled with an inline explanation (no candidate tasks on
-   * the board yet). Ignored in `create` mode.
-   */
-  chosenCenterDisabled?: boolean;
 
   /**
    * `edit-active` mode only — the board's OWN stored window (local-ISO).
@@ -175,12 +175,11 @@ export function BoardSetupForm({
   onCustomStartDateChange,
   customEndDate,
   onCustomEndDateChange,
-  centerType,
-  onCenterTypeChange,
+  centerType = CenterSquareType.FREE,
+  onCenterTypeChange = () => { /* no-op — edit-active never renders the selector */ },
   isRecurring,
   isCore,
   weekStartDay,
-  chosenCenterDisabled = false,
   storedWindow,
 }: BoardSetupFormProps): React.ReactElement {
   const isEditActive = mode === 'edit-active';
@@ -204,12 +203,13 @@ export function BoardSetupForm({
     ? formatTimeframeLabel(timeframe, computedBoundaries.startDate)
     : null;
 
-  // Reusable Center-square block — shared by all three layouts.
-  // In `edit-active` mode with `chosenCenterDisabled`, the CHOSEN option
-  // is disabled with an explanatory note (no candidate task in boardTasks).
+  // Reusable Center-square block — shared by all three layouts. Never shown
+  // in `edit-active` mode (the Board details sheet): from Board Edit slice 3
+  // (D6) a live board's center changes ONLY in the squares editor (Free ⇄
+  // task square + Lock). The wizard keeps its selector, "Choose" included.
   const centerBlock = (
     <>
-      {isOddBoard && (
+      {isOddBoard && !isEditActive && (
         <div className={styles.fieldGroup}>
           <label className={styles.label} htmlFor="bw-center-type">
             Center square
@@ -222,31 +222,15 @@ export function BoardSetupForm({
               onCenterTypeChange(e.target.value as CenterSquareType)
             }
           >
-            {visibleCenterTypeOptions.map((opt) => {
-              const isChosenDisabled =
-                isEditActive &&
-                chosenCenterDisabled &&
-                opt.value === CenterSquareType.CHOSEN;
-              return (
-                <option
-                  key={opt.value}
-                  value={opt.value}
-                  disabled={isChosenDisabled}
-                >
-                  {opt.label}
-                  {isChosenDisabled ? ' (no placed tasks)' : ''}
-                </option>
-              );
-            })}
+            {visibleCenterTypeOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </select>
-          {centerType === CenterSquareType.CHOSEN && !isEditActive && (
+          {centerType === CenterSquareType.CHOSEN && (
             <p className={styles.hint}>
               You'll pick the center in the next step.
-            </p>
-          )}
-          {centerType === CenterSquareType.CHOSEN && isEditActive && (
-            <p className={styles.hint}>
-              The existing center task is kept. Switch away to change the center type.
             </p>
           )}
         </div>

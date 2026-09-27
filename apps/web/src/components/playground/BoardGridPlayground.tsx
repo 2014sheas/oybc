@@ -2,23 +2,25 @@ import { useState } from 'react';
 import { RisoChip, RisoSectionLabel, RisoSegmented } from '../riso';
 import { RisoBoardGrid } from '../board/RisoBoardGrid';
 import { RisoBoardCell, type BoardCellModel } from '../board/RisoBoardCell';
-import { ArrangeGrid, type ArrangeSlot } from '../boardEdit/ArrangeGrid';
+import { SquaresEditGrid } from '../boardEdit/SquaresEditGrid';
+import type { EditSlot } from '../../hooks/useSquaresEditDraft';
 
 /**
- * Board Edit redesign slice 1 — the ONE board renderer (`RisoBoardGrid` +
- * `RisoBoardCell`) in its three states, from in-memory cell models: the
- * board as drawn, editing with staged (dirty) cells, and the arrange grid
- * where locked squares are pinned. Real components only; a local
- * `data-theme` wrapper drives the theme on the auth-free `/playground`.
+ * Board Edit redesign — the ONE board renderer (`RisoBoardGrid` +
+ * `RisoBoardCell`) in its states, from in-memory cell models: the board as
+ * drawn, editing with staged (dirty) cells, and the squares-editor grid
+ * (slice 3) where locked squares are pinned and every square holds-to-move.
+ * Real components only; a local `data-theme` wrapper drives the theme on
+ * the auth-free `/playground`.
  */
 
-type State = 'board' | 'editing' | 'arrange';
+type State = 'board' | 'editing' | 'holdToMove';
 type Size = 3 | 5;
 
 const STATE_OPTIONS = [
   { value: 'board', label: 'Board' },
   { value: 'editing', label: 'Editing' },
-  { value: 'arrange', label: 'Arrange' },
+  { value: 'holdToMove', label: 'Editing (hold to move)' },
 ] as const;
 const SIZE_OPTIONS = [
   { value: 3, label: '3×3' },
@@ -60,9 +62,9 @@ function sampleCells(size: Size, state: State): BoardCellModel[] {
   });
 }
 
-function toSlots(cells: BoardCellModel[]): ArrangeSlot[] {
+function toSlots(cells: BoardCellModel[]): EditSlot[] {
   return cells.map((c) => ({
-    cid: c.key,
+    cellId: c.key,
     isCenter: c.isFree,
     isPinned: c.locked === true,
     isEmpty: c.key.startsWith('empty-'),
@@ -74,10 +76,10 @@ export function BoardGridPlayground(): React.ReactElement {
   const [dark, setDark] = useState(false);
   const [state, setState] = useState<State>('editing');
   const [size, setSize] = useState<Size>(3);
-  const [slots, setSlots] = useState<ArrangeSlot[] | null>(null);
+  const [slots, setSlots] = useState<EditSlot[] | null>(null);
 
   const cells = sampleCells(size, state);
-  const arrangeSlots = slots && slots.length === cells.length ? slots : toSlots(cells);
+  const editSlots = slots && slots.length === cells.length ? slots : toSlots(cells);
   const lockedCount = cells.filter((c) => c.locked).length;
 
   return (
@@ -115,11 +117,18 @@ export function BoardGridPlayground(): React.ReactElement {
       </header>
 
       <RisoSectionLabel>
-        {state === 'board' ? 'The board — lock chips persist' : state === 'editing' ? 'Editing — gold pencil = staged edit, red lock = locked' : 'Arrange — locked squares hold while the rest move'}
+        {state === 'board' ? 'The board — lock chips persist' : state === 'editing' ? 'Editing — gold pencil = staged edit, red lock = locked' : 'Editing (hold to move) — locked squares hold while the rest move'}
       </RisoSectionLabel>
 
-      {state === 'arrange' ? (
-        <ArrangeGrid slots={arrangeSlots} gridSize={size} rearrange onReorder={setSlots} />
+      {state === 'holdToMove' ? (
+        <SquaresEditGrid
+          slots={editSlots}
+          gridSize={size}
+          onTapSlot={() => {}}
+          onCommitReorder={setSlots}
+          onKeyboardMove={() => {}}
+          announcement=""
+        />
       ) : (
         <RisoBoardGrid size={size} cellSize={90}>
           {cells.map((cell) => (

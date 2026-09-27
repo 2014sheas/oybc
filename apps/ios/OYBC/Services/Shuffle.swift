@@ -46,4 +46,40 @@ enum Shuffle {
     static func fisherYatesShuffle<T>(_ array: [T]) -> [T] {
         fisherYatesShuffle(array, rng: { Double.random(in: 0..<1) })
     }
+
+    /// Shuffle every non-fixed slot of a board, leaving fixed slots untouched.
+    ///
+    /// The squares editor's Shuffle (Board Edit slice 3, D10): locked
+    /// placements and the FREE center are `fixed`; every other slot — empties
+    /// included, so an empty square moves too — is permuted with
+    /// ``fisherYatesShuffle(_:rng:)``. The non-fixed indices are collected in
+    /// ascending order, their values shuffled, and written back to those same
+    /// indices. Twin of `@oybc/bingo-core` `shuffleUnlockedSlots`; pinned
+    /// cross-platform by `shuffleUnlockedVectors` in `placementVectors.json`.
+    ///
+    /// The TS twin throws on a length mismatch; here it is a programmer error
+    /// and traps via `precondition` (callers build both arrays from one grid).
+    ///
+    /// - Parameters:
+    ///   - slots: Row-major slot values (`nil` = empty square).
+    ///   - fixed: Parallel flags; `true` = the slot must not move.
+    ///   - rng: Uniform `[0, 1)` generator. Defaults to the system RNG.
+    /// - Returns: A new array; fixed slots keep their values, the rest are permuted.
+    static func shuffleUnlockedSlots<T>(
+        _ slots: [T?],
+        fixed: [Bool],
+        rng: () -> Double = { Double.random(in: 0..<1) }
+    ) -> [T?] {
+        precondition(
+            slots.count == fixed.count,
+            "shuffleUnlockedSlots: slots (\(slots.count)) and fixed (\(fixed.count)) lengths differ"
+        )
+        let unfixed = slots.indices.filter { !fixed[$0] }
+        let shuffled = fisherYatesShuffle(unfixed.map { slots[$0] }, rng: rng)
+        var result = slots
+        for (k, slotIndex) in unfixed.enumerated() {
+            result[slotIndex] = shuffled[k]
+        }
+        return result
+    }
 }

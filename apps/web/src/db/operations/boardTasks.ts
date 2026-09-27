@@ -7,6 +7,9 @@ import {
   computeBoardStatsUpdate,
   resolvePlacements,
   BoardStatus,
+  CenterSquareType,
+  getCenterSquareIndex,
+  isLegacyChosen,
   type Board,
   type Task,
   type CompoundChild,
@@ -16,6 +19,7 @@ import { generateUUID, currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
 import { fetchAllCompoundChildren } from './compoundChildren';
 import { buildWindowContext } from './windowContext';
+import { assertBoardEditable, updateBoard } from './boards';
 
 /**
  * BoardTask CRUD Operations
@@ -38,19 +42,6 @@ export async function fetchBoardTasks(boardId: string): Promise<BoardTask[]> {
  */
 export async function fetchBoardTasksForTask(taskId: string): Promise<BoardTask[]> {
   return db.boardTasks.where('taskId').equals(taskId).filter((bt) => !bt.isDeleted).toArray();
-}
-
-/**
- * Count the non-deleted BoardTask rows placed on a board.
- *
- * Used by the board-edit panel to know whether a board has any candidate
- * tasks without loading every row.
- *
- * @param boardId - The board id.
- * @returns The number of non-deleted BoardTask rows for that board.
- */
-export async function countBoardTasksForBoard(boardId: string): Promise<number> {
-  return db.boardTasks.where('boardId').equals(boardId).filter((bt) => !bt.isDeleted).count();
 }
 
 /**
@@ -160,6 +151,7 @@ export async function createBoardTask(
     row: input.row,
     col: input.col,
     isCenter: input.isCenter,
+    ...(input.isLocked === true ? { isLocked: true } : {}),
     createdAt: now,
     updatedAt: now,
     version: 1,
@@ -379,6 +371,10 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
  * @param taskId - The task to place.
  * @param row - Grid row (0-based).
  * @param col - Grid column (0-based).
+ * @param options - Board Edit slice 3 (D15 step 7) — `isLocked` seeds the
+ *   new placement's lock straight from the squares-editor draft, so a staged
+ *   add-then-lock in the same session writes as ONE locked row rather than
+ *   an add followed by a separate lock write.
  * @returns The newly-created BoardTask record.
  */
 export async function addBoardTaskToBoard(
@@ -386,6 +382,7 @@ export async function addBoardTaskToBoard(
   taskId: string,
   row: number,
   col: number,
+  options?: { isLocked?: boolean },
 ): Promise<BoardTask> {
   const now = currentTimestamp();
 
@@ -396,6 +393,7 @@ export async function addBoardTaskToBoard(
     row,
     col,
     isCenter: false,
+    ...(options?.isLocked === true ? { isLocked: true } : {}),
     createdAt: now,
     updatedAt: now,
     version: 1,
@@ -759,6 +757,66 @@ export async function setBoardTaskLocked(boardTaskId: string, locked: boolean): 
     };
     await db.boardTasks.put(patched);
     await addToSyncQueue('boardTasks', boardTaskId, SyncOperationType.UPDATE, patched, 0);
+  });
+}
+
+/**
+ * Board Edit slice 3 (D2) — convert an on-disk legacy `CHOSEN` board into its
+ * slice-3 shape as an AUTHORED write: `centerSquareType = NONE`, no
+ * `centerTaskId`, and the positional-center placement written with
+ * `isLocked = keepLocked, isCenter = false`. Each changed row is
+ * version-bumped and enqueued (board + center placement ⇒ 2 queue rows).
+ *
+ * Reads elsewhere already treat CHOSEN as "NONE + locked center" through
+ * `effectiveCenter` / `isLegacyChosenCenterLocked` (D1), so this changes no
+ * visible behaviour — it only retires the legacy value from disk. The squares
+ * editor's Save runs it inside its ONE outer transaction (Dexie joins the
+ * ambient transaction since this scope is a subset); a standalone call opens
+ * its own. No stats cascade: CHOSEN and NONE are both non-auto-completed.
+ *
+ * No-op unless the stored board is CHOSEN. Never touches a sealed row: the
+ * editable guard throws first.
+ *
+ * iOS twin: `AppDatabase.normalizeLegacyChosenCenter(db:boardId:keepLocked:)`.
+ *
+ * @param boardId - The board being saved.
+ * @param keepLocked - Lock state for the center placement (the draft's value).
+ * @throws {BoardNotEditableError} When the board is missing, deleted, or sealed.
+ */
+export async function normalizeLegacyChosenCenter(
+  boardId: string,
+  keepLocked: boolean,
+): Promise<void> {
+  await db.transaction('rw', [db.boards, db.boardTasks, db.syncQueue], async () => {
+    await assertBoardEditable(boardId);
+    const board = await db.boards.get(boardId);
+    if (!board || !isLegacyChosen(board.centerSquareType)) return;
+
+    await updateBoard(boardId, {
+      centerSquareType: CenterSquareType.NONE,
+      centerTaskId: undefined,
+    });
+
+    const centerIndex = getCenterSquareIndex(board.boardSize);
+    if (centerIndex < 0) return;
+    const centerRow = Math.floor(centerIndex / board.boardSize);
+    const centerCol = centerIndex % board.boardSize;
+    const center = await db.boardTasks
+      .where('boardId')
+      .equals(boardId)
+      .filter((bt) => !bt.isDeleted && bt.row === centerRow && bt.col === centerCol)
+      .first();
+    if (!center) return;
+
+    const patched: BoardTask = {
+      ...center,
+      isLocked: keepLocked,
+      isCenter: false,
+      updatedAt: currentTimestamp(),
+      version: (center.version ?? 0) + 1,
+    };
+    await db.boardTasks.put(patched);
+    await addToSyncQueue('boardTasks', center.id, SyncOperationType.UPDATE, patched, 0);
   });
 }
 

@@ -121,11 +121,10 @@ final class BoardDetailsDraftTests: XCTestCase {
         var d = BoardDetailsDraft(board: makeBoard(timeframe: .custom))
         d.name = "New"
         d.endDate = day(2026, 10, 8)
-        d.centerType = .none
-        XCTAssertEqual(d.editCount, 3)
+        XCTAssertEqual(d.editCount, 2)
         let p = d.patch()
         XCTAssertEqual(p?.name, "New")
-        XCTAssertEqual(p?.centerSquareType, CenterSquareType.none)
+        XCTAssertNil(p?.centerSquareType, "Board details never writes the center (slice 3, D6)")
         XCTAssertNotNil(p?.endDate)
 
         // Whitespace-only rename counts nothing and writes nothing.
@@ -140,26 +139,29 @@ final class BoardDetailsDraftTests: XCTestCase {
     func test_validation_nameRequired() {
         var d = BoardDetailsDraft(board: makeBoard(timeframe: .custom))
         d.name = "   "
-        XCTAssertEqual(d.validationError(hasCandidateTasks: true), "Board name is required.")
+        XCTAssertEqual(d.validationError(), "Board name is required.")
     }
 
     func test_validation_customEndBeforeStart() {
         var d = BoardDetailsDraft(board: makeBoard(timeframe: .custom))
         d.endDate = day(2026, 8, 1)
-        XCTAssertEqual(d.validationError(hasCandidateTasks: true),
+        XCTAssertEqual(d.validationError(),
                        "End date must be on or after the start date.")
         d.endDate = day(2026, 9, 1, hour: 5)   // same day is fine
-        XCTAssertNil(d.validationError(hasCandidateTasks: true))
+        XCTAssertNil(d.validationError())
     }
 
-    func test_validation_chosenNeedsCandidate() {
-        var d = BoardDetailsDraft(board: makeBoard(timeframe: .custom))
-        d.centerType = .chosen
-        XCTAssertNotNil(d.validationError(hasCandidateTasks: true), "no centerTaskId to restore")
-        var c = BoardDetailsDraft(board: makeBoard(timeframe: .custom, center: .free, centerTaskId: "t1"))
-        c.centerType = .chosen
-        XCTAssertNotNil(c.validationError(hasCandidateTasks: false))
-        XCTAssertNil(c.validationError(hasCandidateTasks: true))
+    /// Board Edit slice 3 (D6): the center group is gone — the center now
+    /// changes only in the squares editor, so a legacy CHOSEN board saves
+    /// name/date edits without any center validation and the patch never
+    /// carries a center field.
+    func test_legacyChosenBoard_detailsSaveNeverTouchesCenter() {
+        var d = BoardDetailsDraft(board: makeBoard(timeframe: .custom, center: .chosen, centerTaskId: nil))
+        XCTAssertEqual(d.editCount, 0)
+        d.name = "Renamed"
+        XCTAssertNil(d.validationError())
+        XCTAssertEqual(d.editCount, 1)
+        XCTAssertEqual(d.patch(), AppDatabase.UpdateActiveBoardPatch(name: "Renamed"))
     }
 
     // MARK: - Read-only calendar window (slice 2 self-review)

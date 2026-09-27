@@ -37,7 +37,7 @@ import { NewTaskSheet } from '../wizard/NewTaskSheet';
 import { MissingSourceDialog } from '../boards/MissingSourceDialog';
 import { BoardEditTaskSheet } from '../boardEdit/BoardEditTaskSheet';
 import { SquareTapMenu } from '../boardEdit/SquareTapMenu';
-import { CellSwapModal } from '../CellSwapModal';
+import { SquarePickerSheet } from '../boardEdit/SquarePickerSheet';
 import { DetailModal } from '../InteractiveTaskSquare';
 import { TaskDetailSheet } from '../TaskDetailSheet';
 import { PoolEditSheet } from '../pools/PoolEditSheet';
@@ -242,13 +242,14 @@ const CASES: DialogCase[] = [
       React.createElement(BoardEditTaskSheet, { task: TASK, onDone: noop, onCancel: noop }),
   },
   {
-    name: 'CellSwapModal',
+    name: 'SquarePickerSheet',
     element: () =>
-      React.createElement(CellSwapModal, {
+      React.createElement(SquarePickerSheet, {
         mode: 'add',
-        candidateTasks: [TASK],
+        userId: 'user-1',
+        libraryTasks: [TASK],
+        onPick: noop,
         onClose: noop,
-        onConfirm: noop,
       }),
   },
   {

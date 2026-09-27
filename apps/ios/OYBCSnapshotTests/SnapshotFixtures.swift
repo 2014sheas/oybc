@@ -265,6 +265,20 @@ enum SnapshotFixtures {
         )
     }
 
+    /// Board Edit redesign slice 3 — a clean (unedited) squares-edit draft
+    /// keyed by "row-col" from a set of `BoardTask` fixtures, for
+    /// `SquaresEditGrid` / `BoardEditPanel` snapshot tests. Every cell seeds
+    /// staged == original (no edits), matching `BoardPlayViewModel.seedEditDraft`.
+    static func makeSquaresDraft(from boardTasks: [BoardTask]) -> [String: SquaresDraftCell] {
+        Dictionary(uniqueKeysWithValues: boardTasks.map { bt in
+            ("\(bt.row)-\(bt.col)", SquaresDraftCell(
+                id: bt.id, isNew: false, taskId: bt.taskId, pending: nil, isLocked: bt.isLocked,
+                originalRow: bt.row, originalCol: bt.col,
+                originalTaskId: bt.taskId, originalIsLocked: bt.isLocked
+            ))
+        })
+    }
+
     /// Build a Board fixture via JSON round-trip (Board has no member-
     /// wise init because of its custom Codable decoder). Used by Phase
     /// 6.3 snapshot tests for both the achievement-square config sheet

@@ -60,6 +60,14 @@
   color: var(--riso-muted);
 }
 
+.menuNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  min-width: 0;
+}
+
 .menuName {
   font-family: var(--riso-font-head);
   font-weight: 800;
@@ -69,7 +77,21 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  min-width: 0;
+}
+
+/* Locked tag (D13/D16, B Sheets p4/d1) — a small red pill beside the name. */
+.lockedTag {
+  flex: 0 0 auto;
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--riso-on-color);
+  background: var(--riso-red);
+  border-radius: 999px;
+  padding: 2px 7px;
 }
 
 /* ─── Menu item buttons ─── */

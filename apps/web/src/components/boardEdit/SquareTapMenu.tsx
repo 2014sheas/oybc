@@ -41,6 +41,11 @@ interface SquareTapMenuProps {
    * the user can convert it to a task square. Omit to hide the item.
    */
   onMakeTask?: () => void;
+  /**
+   * Board Edit redesign slice 3 (D16) — shown for an EMPTY NONE center
+   * ("Add a task…", opens the square picker). Omit to hide the item.
+   */
+  onAdd?: () => void;
   /** Dismiss the menu (clicks scrim, Escape, or after an action fires). */
   onClose: () => void;
 }
@@ -80,13 +85,14 @@ export function SquareTapMenu({
   isLocked = false,
   onMakeFree,
   onMakeTask,
+  onAdd,
   onClose,
 }: SquareTapMenuProps): React.ReactElement {
   // ── Position computation ──────────────────────────────────────────────────
   // Center the menu horizontally around the click point, clamped to viewport.
   // Place below click by default; flip above if near the bottom edge.
   // Compute height dynamically based on how many items are visible.
-  const itemCount = [onReplace, onEdit, onToggleLock, onRemove, onMakeFree, onMakeTask].filter(Boolean).length;
+  const itemCount = [onReplace, onEdit, onToggleLock, onRemove, onMakeFree, onMakeTask, onAdd].filter(Boolean).length;
   const menuH = MENU_HEADER_H + itemCount * MENU_ITEM_H;
 
   let x = clickX - MENU_W / 2;
@@ -119,11 +125,14 @@ export function SquareTapMenu({
         {...modalProps}
         style={{ left: x, top: y }}
       >
-        {/* Header: SQUARE kicker + truncated task name */}
+        {/* Header: SQUARE kicker + truncated task name + a Locked tag (D13/D16, B Sheets p4/d1) */}
         <div className={styles.menuTask}>
           <div className={styles.menuKicker}>SQUARE</div>
-          <div className={styles.menuName} title={taskTitle}>
-            {taskTitle}
+          <div className={styles.menuNameRow}>
+            <div className={styles.menuName} title={taskTitle}>
+              {taskTitle}
+            </div>
+            {isLocked && <span className={styles.lockedTag}>Locked</span>}
           </div>
         </div>
 
@@ -146,7 +155,7 @@ export function SquareTapMenu({
                 d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"
               />
             </svg>
-            Replace task
+            Replace task…
           </button>
         )}
 
@@ -174,7 +183,7 @@ export function SquareTapMenu({
                 d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
               />
             </svg>
-            Edit task
+            Edit task…
           </button>
         )}
 
@@ -218,12 +227,33 @@ export function SquareTapMenu({
           </button>
         )}
 
+        {/* Board Edit redesign slice 3 (D16) — an EMPTY NONE center offers
+            "Add a task…" (opens the square picker) alongside "Make it a
+            free space" below. */}
+        {onAdd && (
+          <button
+            type="button"
+            className={styles.menuItem}
+            autoFocus
+            onClick={() => {
+              onAdd();
+              onClose();
+            }}
+          >
+            {/* plus icon */}
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add a task…
+          </button>
+        )}
+
         {/* Phase 2b — Make it a free space (NONE center with task → FREE) */}
         {onMakeFree && (
           <button
             type="button"
             className={styles.menuItem}
-            autoFocus={!onReplace && !onEdit && !onRemove}
+            autoFocus={!onReplace && !onEdit && !onRemove && !onAdd}
             onClick={() => {
               onMakeFree();
               onClose();

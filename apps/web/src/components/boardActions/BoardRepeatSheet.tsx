@@ -62,7 +62,6 @@ export function BoardRepeatSheet({
     sourceTemplateIsActive: sourceTemplate?.isActive,
     stagedCadence: repeatCadence,
     stagedActive: repeatActiveDraft,
-    centerType: board.centerSquareType,
     hasUserId: userId != null,
   });
   const canSave = plan != null && !saving;
@@ -114,7 +113,6 @@ export function BoardRepeatSheet({
           board={board}
           sourceTemplate={sourceTemplate}
           userId={userId}
-          centerType={board.centerSquareType}
           stagedCadence={repeatCadence}
           onStagedCadenceChange={setRepeatCadence}
           stagedActive={repeatActiveDraft ?? sourceTemplate?.isActive ?? true}

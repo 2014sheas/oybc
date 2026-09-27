@@ -851,7 +851,7 @@ interface RecurringBoardTemplate {
   name: string;
   timeframe: Timeframe; // DAILY / WEEKLY / MONTHLY / YEARLY (no CUSTOM)
   boardSize: BoardSize;
-  centerSquareType: CenterSquareType;
+  centerSquareType: CenterSquareType; // FREE | NONE (CHOSEN is legacy — see note below)
   isRandomized: boolean;
   seedTaskIds: string[]; // Pool to randomize/select from each window
   poolStrategy: "all" | "random_subset"; // How seedTaskIds map to grid cells
@@ -864,6 +864,8 @@ interface RecurringBoardTemplate {
   deletedAt?: string;
 }
 ```
+
+> **`CenterSquareType.CHOSEN` is legacy** (Board Edit redesign slice 3, [`BOARD_EDIT_REDESIGN.md` §Slice 3](BOARD_EDIT_REDESIGN.md#slice-3--detailed-scope)). It stays decodable for old peers, sealed rows and wizard drafts, but live boards read it through `effectiveCenter` (CHOSEN → NONE) + `isLegacyChosenCenterLocked` (the center placement reads as locked); no active board is written as CHOSEN any more, and a legacy row converts on its next squares Save. Templates were already FREE | NONE only.
 
 **Lazy spawn**: extends Phase 1's detection hook. When `findPendingRecurringBoards` runs on Boards-tab open, also iterate active templates → for each, compute `getTimeframeBoundaries(template.timeframe, now, weekStartDay).startDate` → if it doesn't match `template.lastSpawnedWindowKey`, spawn a board from the template (creating `BoardTask` rows from `seedTaskIds`) and update `lastSpawnedWindowKey` in the same transaction. **No banner entry** for template spawns — they appear directly in the board list. Rationale: pool boards are pre-configured; surfacing a banner would defeat the "set it and forget it" value.
 

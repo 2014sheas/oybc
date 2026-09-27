@@ -26,11 +26,7 @@ struct BoardSetupFormView: View {
     var timeframeBinding: Binding<Timeframe>
     var customStartDateBinding: Binding<Date>
     var customEndDateBinding: Binding<Date>
-    var centerTypeBinding: Binding<CenterSquareType>
     var weekStartDay: String
-    /// When true (edit-active only), the CHOSEN option in the center picker is
-    /// guarded with an explanatory note.
-    var chosenCenterDisabled: Bool
     /// The board's OWN stored window (slice 2 self-review). An existing
     /// board's dates never move, so a calendar timeframe's read-only note
     /// shows these rather than the window containing today (which would
@@ -58,8 +54,11 @@ struct BoardSetupFormView: View {
         // ── Timeframe ──
         editTimeframeSection
 
-        // ── Center square ──
-        editCenterSection
+        // Board Edit redesign slice 3 (D6) — the center selector is GONE
+        // from this form. It was kept only as the CHOSEN exit, which D1's
+        // read-path normalization makes unnecessary; the center now changes
+        // only in the squares editor (Free ⇄ task square, via the grid's
+        // own tap-menu).
     }
 
     // MARK: - Edit-active: Board name section
@@ -204,51 +203,6 @@ struct BoardSetupFormView: View {
         }
     }
 
-    // MARK: - Edit-active: Center square section
-
-    @ViewBuilder
-    private var editCenterSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("CENTER SQUARE")
-                .risoSectionLabel()
-
-            RisoSegmented(
-                options: editCenterOptions,
-                selection: Binding(
-                    get: { centerTypeBinding.wrappedValue },
-                    set: { newVal in
-                        // Revert to .free if the user selects CHOSEN when no
-                        // candidate tasks exist (same guard as the old Form path).
-                        if newVal == .chosen && chosenCenterDisabled {
-                            centerTypeBinding.wrappedValue = .free
-                        } else {
-                            centerTypeBinding.wrappedValue = newVal
-                        }
-                    }
-                )
-            )
-
-            // Contextual notes.
-            if centerTypeBinding.wrappedValue == .chosen && chosenCenterDisabled {
-                Text("No tasks are placed on this board — CHOSEN is unavailable.")
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-            } else if centerTypeBinding.wrappedValue == .chosen {
-                Text("The existing center task is kept. Switch away to change the center type.")
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-            }
-        }
-    }
-
-    private var editCenterOptions: [(value: CenterSquareType, label: String)] {
-        // Short labels so the 3 equal-width segments don't clip.
-        [
-            (.free,   "Free"),
-            (.chosen, "Choose"),
-            (.none,   "None"),
-        ]
-    }
 }
 
 // MARK: - EditBoardNameInput
@@ -301,18 +255,14 @@ extension BoardSetupFormView {
         timeframe: Binding<Timeframe>,
         customStartDate: Binding<Date>,
         customEndDate: Binding<Date>,
-        centerType: Binding<CenterSquareType>,
         weekStartDay: String,
-        chosenCenterDisabled: Bool = false,
         storedWindow: (start: Date, end: Date)? = nil
     ) {
         self.nameBinding = name
         self.timeframeBinding = timeframe
         self.customStartDateBinding = customStartDate
         self.customEndDateBinding = customEndDate
-        self.centerTypeBinding = centerType
         self.weekStartDay = weekStartDay
-        self.chosenCenterDisabled = chosenCenterDisabled
         self.storedWindow = storedWindow
     }
 

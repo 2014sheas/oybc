@@ -309,6 +309,14 @@ apps/web/src/                                        apps/ios/OYBC/
     │       useSignedOutTheme)                        counterpart; iOS launches into the
     │                                                 login form directly. See docs/RISO_WEB.md)
     ├── boards/BoardCard.tsx       ←→               Views/BoardsTab/Components/RisoBoardCard.swift
+    ├── boardEdit/SquaresEditGrid  ←→               Views/BoardsTab/SquaresEditGrid.swift
+    │   + SquarePickerSheet         ←→               Views/BoardsTab/SquarePickerSheetView.swift
+    │   (Board Edit slice 3 squares editor — docs/BOARD_EDIT_REDESIGN.md §Slice 3;
+    │    draft: hooks/useSquaresEditDraft.ts + squaresEditReducer.ts ←→ SquaresDraft.swift +
+    │    BoardPlayViewModel+Edit*.swift; Save: db/operations/boardEditCommit.ts ←→
+    │    +EditCommit.swift; iOS menus/sheets in BoardEditPresenter.swift.
+    │    CellSwapModal.tsx / CellSwapSheet.swift were DELETED; ArrangeGrid.tsx /
+    │    RearrangeGrid.swift remain as the create wizard's Preview ⇄ Rearrange grid only)
     ├── RecurringBadge.tsx         ←→               Views/BoardsTab/Components/RisoRecurringBadge.swift
     ├── BoardStatusBadge.tsx                        (no standalone iOS view)
     │   (BoardListItem.tsx — REMOVED in #500, dead code; iOS BoardListItemView.swift also removed)

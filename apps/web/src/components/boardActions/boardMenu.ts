@@ -1,6 +1,5 @@
 import {
   BoardStatus,
-  CenterSquareType,
   type Board,
   type RecurringBoardTemplate,
 } from '@oybc/shared';
@@ -43,8 +42,10 @@ const ITEMS: Record<BoardMenuItemKind, BoardMenuItem> = {
  *   - unknown while the templates query is unresolved → hidden;
  *   - a repeating board (`spawnedFromTemplateId` set) needs its source
  *     record resolved (a soft-deleted / missing record hides it);
- *   - a one-off board with a CHOSEN center can never start repeating
- *     (`validateSpawnPool` rejects it as `unsupportedCenter`).
+ *   - any one-off board is eligible. A legacy CHOSEN center reads through
+ *     `effectiveCenter` as NONE (+ a locked center square), and the template
+ *     is built with that effective center, so it no longer blocks Repeat
+ *     (Board Edit slice 3, D5; locks don't carry into templates).
  *
  * @param board - The board the menu is for.
  * @param sourceTemplate - The board's resolved source record (`undefined`
@@ -59,7 +60,7 @@ export function isRepeatEligible(
 ): boolean {
   if (!templatesLoaded) return false;
   if (board.spawnedFromTemplateId != null) return sourceTemplate != null;
-  return board.centerSquareType !== CenterSquareType.CHOSEN;
+  return true;
 }
 
 /**

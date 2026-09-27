@@ -68,7 +68,6 @@ struct BoardActionsPresenter: ViewModifier {
                     BoardDetailsSheetView(
                         board: board,
                         weekStartDay: weekStartDay,
-                        hasCandidateTasksProvider: { await viewModel.hasCenterCandidate() },
                         onSave: { patch in
                             do {
                                 try await viewModel.saveBoardDetails(patch)

@@ -58,3 +58,37 @@ describe('RisoBoardCell — dark contract on gold content', () => {
     expect(html).toContain(`class="${styles.check}"`);
   });
 });
+
+describe('RisoBoardCell — lock + dirty chips (Board Edit redesign slice 3, D12)', () => {
+  it('renders BOTH the lock and dirty chips, side by side, when a square is locked AND staged-dirty', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RisoBoardCell, { cell: makeCell({ locked: true, dirty: true }) }),
+    );
+    expect(html).toContain(`class="${styles.chipRow}"`);
+    expect(html).toContain(`class="${styles.chip} ${styles.chipLock}"`);
+    expect(html).toContain(`class="${styles.chip} ${styles.chipDirty}"`);
+  });
+
+  it('renders only the lock chip when locked and not dirty', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RisoBoardCell, { cell: makeCell({ locked: true, dirty: false }) }),
+    );
+    expect(html).toContain(`class="${styles.chip} ${styles.chipLock}"`);
+    expect(html).not.toContain(styles.chipDirty);
+  });
+
+  it('renders only the dirty chip when dirty and not locked', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RisoBoardCell, { cell: makeCell({ locked: false, dirty: true }) }),
+    );
+    expect(html).toContain(`class="${styles.chip} ${styles.chipDirty}"`);
+    expect(html).not.toContain(styles.chipLock);
+  });
+
+  it('renders no chip at all when neither locked nor dirty', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(RisoBoardCell, { cell: makeCell({ locked: false, dirty: false }) }),
+    );
+    expect(html).not.toContain(styles.chipRow);
+  });
+});

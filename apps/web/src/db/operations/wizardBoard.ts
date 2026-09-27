@@ -533,6 +533,17 @@ export async function persistWizardBoardRows({
   const centerRow = Math.floor(size / 2);
   const centerCol = Math.floor(size / 2);
 
+  // Board Edit slice 3 (D4): CHOSEN is legacy. The wizard's "Choose" centre
+  // is kept in the UI, but an ACTIVE save writes it as the slice-3 shape — a
+  // NONE board whose centre placement is LOCKED (a locked centre is exactly
+  // "this task sits in the middle"). A DRAFT keeps CHOSEN + `centerTaskId` so
+  // resume restores the pick (`resolveDraftCapacity`). iOS twin:
+  // `BoardWizardPersist.swift`.
+  const translateChosen = status === 'active' && centerType === CenterSquareType.CHOSEN;
+  const persistedFields: CreateBoardInput = translateChosen
+    ? { ...boardFields, centerSquareType: CenterSquareType.NONE, centerTaskId: undefined }
+    : boardFields;
+
   let boardId = '';
   await db.transaction(
     'rw',
@@ -580,7 +591,7 @@ export async function persistWizardBoardRows({
         // backstop keys off max(endDate, activatedAt) (docs §Sealing → backstop).
         const existingDraft = await db.boards.get(boardId);
         await updateBoard(boardId, {
-          ...boardFields,
+          ...persistedFields,
           status: status === 'active' ? BoardStatus.ACTIVE : BoardStatus.DRAFT,
           isRecurringDraft,
           ...(recurringDraftMix !== undefined ? { recurringDraftMix } : {}),
@@ -590,7 +601,7 @@ export async function persistWizardBoardRows({
         });
         await deleteBoardTasksForBoard(boardId);
       } else {
-        const board = await createBoard(userId, boardFields, {
+        const board = await createBoard(userId, persistedFields, {
           isCore,
           isRecurringDraft,
           recurringDraftMix,
@@ -644,17 +655,10 @@ export async function persistWizardBoardRows({
             )
           : [];
 
-      // A CHOSEN centre that resolved to a derived counter must have the
-      // board's stored `centerTaskId` follow it, or a resumed draft would
-      // stop recognising its own centre square.
-      const centerIndex = boardFields.centerTaskId
-        ? selectedIds.indexOf(boardFields.centerTaskId)
-        : -1;
-      const centerReplacement = centerIndex >= 0 ? placementIds[centerIndex] : undefined;
-      const centerTaskIdOverride =
-        centerReplacement !== undefined && centerReplacement !== boardFields.centerTaskId
-          ? centerReplacement
-          : undefined;
+      // (A CHOSEN centre that resolves to a derived counter used to need the
+      // board's `centerTaskId` to follow it. The mint only runs on ACTIVE
+      // saves, and an active save no longer writes CHOSEN / `centerTaskId`
+      // (slice 3 D4) — the derived id simply lands in the locked centre cell.)
 
       let placedSoFar = 0;
       // Two members sharing a shared-counter root collapse onto ONE derived
@@ -683,8 +687,10 @@ export async function persistWizardBoardRows({
           taskId,
           row,
           col,
-          // Mark centre only for CHOSEN (a real task pinned at centre).
-          isCenter: isCenterPos && centerType === CenterSquareType.CHOSEN,
+          // Mark centre only for a CHOSEN draft (a real task pinned at
+          // centre); an active CHOSEN save writes a LOCKED placement instead.
+          isCenter: isCenterPos && centerType === CenterSquareType.CHOSEN && !translateChosen,
+          ...(isCenterPos && translateChosen ? { isLocked: true } : {}),
         });
       }
 
@@ -734,11 +740,6 @@ export async function persistWizardBoardRows({
           completedTasks: stats.completedTasks,
           linesCompleted: stats.linesCompleted,
           completedLineIds: stats.completedLineIds,
-          // Folded into the same write rather than issued as its own update —
-          // one version bump, one coalesced push.
-          ...(centerTaskIdOverride !== undefined
-            ? { centerTaskId: centerTaskIdOverride }
-            : {}),
         });
       }
     },
