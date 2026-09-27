@@ -868,63 +868,14 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "cascade should have re-saved the board holding the compound")
     }
 
-    // MARK: - 10. cell add
+    // `test_handleAddTaskToCell_createsPlacement` /
+    // `test_handleAddTaskToCell_reentrantCallIsNoOp` removed (Board Edit
+    // redesign slice 3, D17) — the play-mode "+" immediate write is
+    // retired; every add now goes through the staged squares editor. See
+    // `test_handleEditSave_addsPendingNewTask_andPlacement_inOneTransaction`
+    // and the reentrancy coverage on `handleEditSave` itself.
 
-    func test_handleAddTaskToCell_createsPlacement() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))
-        try db.saveTask(makeTask("t1"))
-        // No placements yet — add t1 into an empty cell.
-
-        let vm = loadedVM(db, boardId: "b1")
-        vm.handleAddTaskToCell(taskId: "t1", row: 1, col: 2)
-
-        XCTAssertTrue(waitUntil {
-            (try? db.fetchBoardTasks(boardId: "b1"))?.contains {
-                $0.taskId == "t1" && $0.row == 1 && $0.col == 2
-            } == true
-                && vm.boardTasks.contains { $0.taskId == "t1" && $0.row == 1 && $0.col == 2 }
-                && !vm.isProcessing
-        }, "placement was never created and published")
-        XCTAssertTrue(vm.boardTasks.contains { $0.taskId == "t1" && $0.row == 1 && $0.col == 2 })
-    }
-
-    /// Board-integrity PR-5 (issue #362, Item 4): `handleAddTaskToCell` lacked
-    /// the `guard !isProcessing else { return }` reentry guard every sibling
-    /// handler has. A rapid double-tap before the first write's async tail
-    /// completes must fire the write exactly once — the second call is a
-    /// silent no-op — not enqueue a second create + a duplicate-placement
-    /// error path.
-    func test_handleAddTaskToCell_reentrantCallIsNoOp() throws {
-        let db = try makeDb()
-        try seedUser(db)
-        try db.saveBoard(makeBoard(id: "b1"))
-        try db.saveTask(makeTask("t1"))
-
-        let vm = loadedVM(db, boardId: "b1")
-        vm.handleAddTaskToCell(taskId: "t1", row: 1, col: 2)
-        XCTAssertTrue(vm.isProcessing, "first call should have set isProcessing synchronously")
-        // Fired while the first call's detached write is still in flight —
-        // the guard must make this a same-tick no-op.
-        vm.handleAddTaskToCell(taskId: "t1", row: 1, col: 2)
-
-        XCTAssertTrue(waitUntil {
-            (try? db.fetchBoardTasks(boardId: "b1"))?.contains {
-                $0.taskId == "t1" && $0.row == 1 && $0.col == 2
-            } == true
-                && !vm.isProcessing
-        }, "placement was never created and published")
-
-        let placements = try db.fetchBoardTasks(boardId: "b1").filter { $0.taskId == "t1" }
-        XCTAssertEqual(placements.count, 1, "reentrant call must not create a second placement")
-        let createSync = try db.fetchPendingSyncItems().filter {
-            $0.entityType == "boardTasks" && $0.operationType == .create
-        }
-        XCTAssertEqual(createSync.count, 1, "reentrant call must not enqueue a second create")
-    }
-
-    // MARK: - 11. B2-I3 edit-mode draft layer
+    // MARK: - 11. Board Edit redesign slice 3 — squares-edit draft layer
 
     func test_seedEditDraft_populatesDraftFieldsFromBoard() throws {
         let db = try makeDb()
@@ -935,14 +886,13 @@ final class BoardPlayViewModelTests: XCTestCase {
         vm.seedEditDraft(from: board)
 
         XCTAssertEqual(vm.editCenterType, .free)
-        XCTAssertEqual(vm.editSubMode, .editTasks)
-        // One squares-draft entry per live placement, seeded staged == original.
+        // One squares-draft entry per live placement, seeded taskId == original.
         XCTAssertEqual(vm.editSquaresDraft.count, 2)
         let d00 = try XCTUnwrap(vm.editSquaresDraft["0-0"])
         XCTAssertEqual(d00.originalTaskId, "t1")
-        XCTAssertEqual(d00.stagedTaskId, "t1")
+        XCTAssertEqual(d00.taskId, "t1")
         XCTAssertTrue(vm.editTaskOverrides.isEmpty)
-        XCTAssertNil(vm.editRearrangeCells)
+        XCTAssertFalse(vm.editShuffled)
         // No staged edits yet → dirty count is zero (Save pill stays disabled).
         XCTAssertEqual(vm.editSquaresEditCount, 0)
     }
@@ -955,10 +905,10 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(vm.editSquaresEditCount, 0, "fresh draft is clean")
 
         // Replace the task in cell (0,0): t1 → t2. Dirty count reflects it.
-        vm.handleEditCellReplace(cellKey: "0-0", newTaskId: "t2")
+        vm.handleEditReplace(cellKey: "0-0", taskId: "t2")
         XCTAssertEqual(vm.editSquaresEditCount, 1)
-        XCTAssertEqual(vm.editDraftBoardTasks.first { $0.row == 0 && $0.col == 0 }?.taskId, "t2",
-                       "draft board tasks overlay the staged replacement")
+        XCTAssertEqual(vm.editSquaresDraft["0-0"]?.taskId, "t2",
+                       "draft overlays the staged replacement")
 
         // A task-field override is a second, independent staged edit.
         vm.handleEditTaskOverride(
@@ -988,24 +938,27 @@ final class BoardPlayViewModelTests: XCTestCase {
                       "removal must not touch the DB before Save")
     }
 
-    func test_editDraftBoardTasks_reflectsStagedRemoval() throws {
-        // Regression (review Critical): the Edit-tasks grid renders from
-        // `editDraftBoardTasks`; a staged removal must drop the cell (compactMap),
-        // and removing every cell must yield [] — NOT the full original board.
+    func test_editSquaresEditCells_reflectsStagedRemoval() throws {
+        // Regression (review Critical, ported to D20's derived grid): the
+        // squares-edit grid is rebuilt fresh from the draft on every read —
+        // a staged removal must render the cell empty (not the full
+        // original board), and removing every cell must yield an
+        // all-empty grid.
         let db = try makeDb()
         try seedWorkspace(db)   // b1: t1@(0,0) bt-b1-1, t2@(0,1) bt-b1-2
         let vm = loadedVM(db, boardId: "b1")
         vm.seedEditDraft(from: try XCTUnwrap(vm.board))
-        XCTAssertEqual(vm.editDraftBoardTasks.count, 2, "seeded draft renders both placements")
+        XCTAssertEqual(vm.editSquaresEditCells.filter { !$0.isEmpty && !$0.isCenter }.count, 2,
+                       "seeded draft renders both placements")
 
         vm.handleEditRemove(cellKey: "0-1")
-        XCTAssertFalse(vm.editDraftBoardTasks.contains { $0.id == "bt-b1-2" },
+        XCTAssertFalse(vm.editSquaresEditCells.contains { $0.id == "bt-b1-2" },
                        "removed cell must disappear from the rendered grid, not persist")
-        XCTAssertTrue(vm.editDraftBoardTasks.contains { $0.id == "bt-b1-1" })
+        XCTAssertTrue(vm.editSquaresEditCells.contains { $0.id == "bt-b1-1" })
 
-        // Remove the last remaining square → the grid must be empty, not the full board.
+        // Remove the last remaining square → the grid must be all-empty, not the full board.
         vm.handleEditRemove(cellKey: "0-0")
-        XCTAssertTrue(vm.editDraftBoardTasks.isEmpty,
+        XCTAssertTrue(vm.editSquaresEditCells.allSatisfy { $0.isEmpty || $0.isCenter },
                       "all-removed draft renders an empty grid (guard must not resurrect originals)")
         XCTAssertEqual(vm.editSquaresEditCount, 2, "both removals still count as edits (Save enabled)")
     }
@@ -1037,7 +990,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         let board = try XCTUnwrap(vm.board)
 
         vm.seedEditDraft(from: board)
-        vm.handleEditCellReplace(cellKey: "0-0", newTaskId: "t2")
+        vm.handleEditReplace(cellKey: "0-0", taskId: "t2")
         vm.handleEditTaskOverride(
             taskId: "t2",
             patch: .init(title: "X", type: .normal, action: "", unit: "", maxCount: nil)
@@ -1048,7 +1001,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         vm.seedEditDraft(from: board)
         XCTAssertEqual(vm.editSquaresEditCount, 0)
         XCTAssertTrue(vm.editTaskOverrides.isEmpty)
-        XCTAssertNil(vm.editRearrangeCells)
+        XCTAssertFalse(vm.editShuffled)
     }
 
     /// Board Edit redesign slice 2 (T3) — name is no longer part of the
@@ -1069,17 +1022,19 @@ final class BoardPlayViewModelTests: XCTestCase {
         vm.seedEditDraft(from: board)
 
         // 1. Center toggle: FREE → NONE.
-        vm.editCenterType = .none
+        vm.handleEditCenterTask()
         // 2. Replace t1 → t2 in cell (0,0).
-        vm.handleEditCellReplace(cellKey: "0-0", newTaskId: "t2")
-        // 3. Position move: seed rearrange cells, then move bt1 (slot 0) into the
-        //    empty slot 1 = (0,1) by swapping the two array entries.
-        vm.seedRearrangeCells(for: board)
-        var cells = try XCTUnwrap(vm.editRearrangeCells)
+        vm.handleEditReplace(cellKey: "0-0", taskId: "t2")
+        // 3. Position move: move bt1 (slot 0) into the empty slot 1 = (0,1)
+        //    by swapping the two array entries (D20 — cells are always
+        //    derived fresh, no separate seed step).
+        var cells = vm.editSquaresEditCells
         cells.swapAt(0, 1)
-        vm.handleRearrange(newCells: cells)
+        vm.handleEditMove(newCells: cells)
 
-        XCTAssertEqual(vm.editSquaresEditCount, 2, "one replacement + one position move")
+        // Board Edit redesign slice 3 (D11): `editSquaresEditCount` is now
+        // the FULL unified count — center change + replacement + move.
+        XCTAssertEqual(vm.editSquaresEditCount, 3, "one center change + one replacement + one position move")
 
         let started = vm.handleEditSave()
         XCTAssertTrue(started, "save should dispatch")
@@ -1095,6 +1050,180 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(bt.taskId, "t2", "cell replacement committed")
         XCTAssertEqual(bt.row, 0)
         XCTAssertEqual(bt.col, 1, "position move committed")
+    }
+
+    // MARK: - 11b. Board Edit redesign slice 3 — squares Save (D14/D15/D16/D2)
+
+    /// D14 — a Normal/Counting/Achievement task staged via the picker's
+    /// quick-add is inserted at Save with `createdInWizard: false` (a
+    /// deliberate library task, unlike the wizard's hidden drafts).
+    func test_handleEditSave_addsPendingNewTask_andPlacement_inOneTransaction() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)   // b1: t1@(0,0), t2@(0,1)
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        let now = AppDatabase.currentTimestamp()
+        let pendingTask = Task(
+            id: "pending-1", userId: "u1", title: "Brand new task", type: .normal,
+            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now,
+            version: 1, isDeleted: false, createdInWizard: true // Save must flip this to false
+        )
+        let payload = PendingTaskPayload(task: pendingTask, childTasks: [], childLinks: [])
+        vm.handleEditAdd(cellKey: "2-2", taskId: "pending-1", pending: payload)
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+        XCTAssertNil(dbTask(db, "pending-1"), "nothing written until Save")
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(dbTask(db, "pending-1"))
+        XCTAssertFalse(saved.createdInWizard, "D14 — a deliberate library task")
+        let placement = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.taskId == "pending-1" })
+        XCTAssertEqual(placement.row, 2)
+        XCTAssertEqual(placement.col, 2)
+        let sync = try db.fetchPendingSyncItems()
+        XCTAssertTrue(sync.contains { $0.entityType == "tasks" && $0.entityId == "pending-1" && $0.operationType == .create })
+    }
+
+    /// D15 — removals run BEFORE adds so a freed position is never mistaken
+    /// for occupied.
+    func test_handleEditSave_removeThenAddSamePosition() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)   // b1: t1@(0,0) bt-b1-1, t2@(0,1)
+        try db.saveTask(makeTask("t3"))
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        vm.handleEditRemove(cellKey: "0-0")
+        vm.handleEditAdd(cellKey: "0-0", taskId: "t3")
+        XCTAssertEqual(vm.editSquaresEditCount, 2, "one removal + one add")
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let placements = try db.fetchBoardTasks(boardId: "b1")
+        XCTAssertFalse(placements.contains { $0.id == "bt-b1-1" }, "original placement removed")
+        XCTAssertTrue(placements.contains { $0.taskId == "t3" && $0.row == 0 && $0.col == 0 },
+                      "the new placement lands at the freed position")
+    }
+
+    /// D16 — "Make it a free space" stages the center placement's removal
+    /// AND the type toggle, but D11 counts it as ONE edit; the tombstone
+    /// still lands on Save.
+    func test_handleEditSave_centerFree_tombstonesCenterPlacement() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var board = makeBoard(id: "b1")
+        board.centerSquareType = .none
+        try db.saveBoard(board)
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "btc", boardId: "b1", taskId: "t1", row: 1, col: 1))
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertEqual(vm.editCenterType, .none)
+
+        vm.handleEditCenterFree()
+        XCTAssertEqual(vm.editCenterType, .free)
+        XCTAssertNil(vm.editSquaresDraft["1-1"], "center placement staged for removal")
+        XCTAssertEqual(vm.editSquaresEditCount, 1, "the center toggle is ONE edit, not two (D11)")
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(saved.centerSquareType, .free)
+        XCTAssertFalse(try db.fetchBoardTasks(boardId: "b1").contains { $0.id == "btc" },
+                       "the center placement is tombstoned even though the count excluded it")
+    }
+
+    /// D10 — Shuffle persists the new positions; a locked square never moves.
+    func test_handleEditSave_shuffle_persistsPositions_locksUnchanged() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        for i in 1...4 { try db.saveTask(makeTask("t\(i)")) }
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt2", boardId: "b1", taskId: "t2", row: 0, col: 1))
+        try db.saveBoardTask(makeBoardTask(id: "bt3", boardId: "b1", taskId: "t3", row: 0, col: 2))
+        try db.saveBoardTask(makeBoardTask(id: "bt4", boardId: "b1", taskId: "t4", row: 1, col: 0))
+        try db.dbQueue.write { database in
+            guard var row = try BoardTask.fetchOne(database, key: "bt4") else { return }
+            row.isLocked = true
+            try row.save(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertTrue(vm.canShuffle)
+        vm.handleEditShuffle(rng: { 0.0 })
+        XCTAssertTrue(vm.editShuffled)
+        XCTAssertEqual(vm.editSquaresEditCount, 1, "shuffle is one edit")
+        XCTAssertTrue(vm.editSquaresDraft.values.contains { $0.id == "bt4" },
+                      "locked cell still present in the draft")
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try db.fetchBoardTasks(boardId: "b1")
+        let bt4 = try XCTUnwrap(saved.first { $0.id == "bt4" })
+        XCTAssertEqual(bt4.row, 1)
+        XCTAssertEqual(bt4.col, 0, "the locked square never moved")
+        XCTAssertTrue(bt4.isLocked)
+    }
+
+    /// D14 — nothing is written until `handleEditSave` runs (the "cancel"
+    /// path is simply never calling it).
+    func test_cancelWithoutSaving_writesNothing() throws {
+        let db = try makeDb()
+        try seedWorkspace(db)
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        let now = AppDatabase.currentTimestamp()
+        let pendingTask = Task(
+            id: "pending-x", userId: "u1", title: "Not saved", type: .normal,
+            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now,
+            version: 1, isDeleted: false
+        )
+        vm.handleEditAdd(
+            cellKey: "2-2", taskId: "pending-x",
+            pending: PendingTaskPayload(task: pendingTask, childTasks: [], childLinks: [])
+        )
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+
+        XCTAssertNil(dbTask(db, "pending-x"), "nothing is written until Save")
+        XCTAssertTrue(try db.fetchBoardTasks(boardId: "b1").allSatisfy { $0.taskId != "pending-x" })
+    }
+
+    /// D2 — an unrelated edit on a still-CHOSEN-on-disk board still triggers
+    /// the one-time normalization, even though the user never touched the
+    /// center.
+    func test_handleEditSave_legacyChosenPlusUnrelatedEdit_normalizesOnSave() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        var board = makeBoard(id: "b1")
+        board.centerSquareType = .chosen
+        try db.saveBoard(board)
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        try db.saveBoardTask(makeBoardTask(id: "btc", boardId: "b1", taskId: "t1", row: 1, col: 1))
+        try db.saveBoardTask(makeBoardTask(id: "bt2", boardId: "b1", taskId: "t2", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        vm.handleEditToggleLock(cellKey: "0-0")   // an UNRELATED edit — not the center.
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+
+        let saved = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(saved.centerSquareType, .none, "normalized even though the user never touched the center")
+        let center = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "btc" })
+        XCTAssertTrue(center.isLocked, "the implicit legacy lock is preserved (keepLocked defaults true)")
+        XCTAssertFalse(center.isCenter)
     }
 
     /// Board Edit can no longer switch a task into or out of Compound: a
@@ -1830,17 +1959,14 @@ final class BoardPlayViewModelTests: XCTestCase {
         // atomicity check (name, pre-slice-2) is now the center toggle,
         // covered by its OWN dedicated test
         // (`test_handleEditSave_commitsCenterToggle_replacement_and
-        // Position_thenEmitsSaved`) — combining it here would pin cell
-        // (1,1) as the center BEFORE `seedRearrangeCells` runs, which is
-        // exactly the cell this test rearranges, so this composition stays
-        // squares-only: replace + remove + rearrange.
-        vm.handleEditCellReplace(cellKey: "0-1", newTaskId: "t2b")      // replace t2 → t2b
+        // Position_thenEmitsSaved`) — this composition stays squares-only:
+        // replace + remove + rearrange.
+        vm.handleEditReplace(cellKey: "0-1", taskId: "t2b")             // replace t2 → t2b
         vm.handleEditRemove(cellKey: "1-0")                             // remove t4's cell
-        vm.seedRearrangeCells(for: liveBoard)                           // rearrange: move t5 (1,1) → (2,2)
-        var cells = try XCTUnwrap(vm.editRearrangeCells)
+        var cells = vm.editSquaresEditCells                             // rearrange: move t5 (1,1) → (2,2)
         let idxOf: (Int, Int) -> Int = { r, c in r * 3 + c }
         cells.swapAt(idxOf(1, 1), idxOf(2, 2))
-        vm.handleRearrange(newCells: cells)
+        vm.handleEditMove(newCells: cells)
 
         XCTAssertEqual(vm.editSquaresEditCount, 3, "one replace + one removal + one position move")
 
@@ -1901,12 +2027,11 @@ final class BoardPlayViewModelTests: XCTestCase {
         let vm = loadedVM(db, boardId: "b1")
         let liveBoard = try XCTUnwrap(vm.board)
         vm.seedEditDraft(from: liveBoard)
-        vm.seedRearrangeCells(for: liveBoard)
-        var cells = try XCTUnwrap(vm.editRearrangeCells)
+        var cells = vm.editSquaresEditCells
         let idxOf: (Int, Int) -> Int = { r, c in r * 3 + c }
         // Move t3 (0,2) → (2,2): breaks row_0, completes row_2.
         cells.swapAt(idxOf(0, 2), idxOf(2, 2))
-        vm.handleRearrange(newCells: cells)
+        vm.handleEditMove(newCells: cells)
 
         XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
@@ -2012,7 +2137,7 @@ final class BoardPlayViewModelTests: XCTestCase {
         let vm = loadedVM(db, boardId: "b1")
         let liveBoard = try XCTUnwrap(vm.board)
         vm.seedEditDraft(from: liveBoard)
-        vm.handleEditCellReplace(cellKey: "0-1", newTaskId: "t4")   // t2 → t4 @ (0,1)
+        vm.handleEditReplace(cellKey: "0-1", taskId: "t4")   // t2 → t4 @ (0,1)
 
         XCTAssertTrue(vm.handleEditSave())
         XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
