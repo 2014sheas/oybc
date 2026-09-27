@@ -61,16 +61,21 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 
 | Slice | Scope | Status |
 | --- | --- | --- |
-| 1 | Per-square locks (`BoardTask.isLocked`, synced) honored by rearrange; Lock/Unlock in the existing edit tap menu; one cell renderer with lock + dirty chips across play / edit / arrange / wizard preview on both platforms; web Playground demo + iOS snapshots | in progress |
-| 2 | Title-row "…" menu; Board details sheet; core-board gating (no name / timeframe / repeats / archive on `isCore`); Archive / Delete / Repeat move out of the panel | planned |
-| 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired | planned |
+| 1 | Per-square locks (`BoardTask.isLocked`, synced) honored by rearrange; Lock/Unlock in the existing edit tap menu; one cell renderer with lock + dirty chips across play / edit / arrange / wizard preview on both platforms; web Playground demo + iOS snapshots | shipped (#510) |
+| 2 | Title-row "…" menu; Board details sheet; core-board gating (no name / timeframe / repeats / archive on `isCore`); Archive / Delete / Repeat move out of the panel | in progress — see §Slice 2 below |
+| 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired; remove the center selector from Board details; retire the Edit tasks ⇄ Rearrange toggle | planned |
 | 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | planned |
 
 Independent of the train (bugfix PRs any time): iOS Board Edit rewrites an
-achievement task's type (P0); start-date edits on ongoing boards are counted
-but never saved (both); zero-placement boards show "Loading…" forever (web);
-"Board saved" reported for a board sealed mid-session (both); stale
-`repeat-board.spec.ts` describes.
+achievement task's type (P0); zero-placement boards show "Loading…" forever
+(web). ~~start-date edits on ongoing boards are counted but never saved
+(both)~~ — **fixed in slice 2** (D12/B1: `buildBoardDetailsPatch` /
+`BoardDetailsDraft.patch()`). ~~"Board saved" reported for a board sealed
+mid-session (both)~~ — **fixed in slice 2** (D11/B2: `assertBoardEditable`
+throws inside the transaction instead of silently returning). ~~stale
+`repeat-board.spec.ts` describes~~ — **fixed in slice 2** (T5: the two
+describes that targeted the retired play-surface row now drive the "…" menu
+→ Repeat sheet).
 
 ## Slice 1 — detailed scope
 
@@ -118,3 +123,81 @@ reds today).
 
 **Out of slice 1**: everything in slices 2–4; the wizard's shuffle honoring
 locks; any change to the tap-menu's other items; the pre-design bugfixes.
+
+## Slice 2 — detailed scope
+
+Plan: `.superpowers/sdd/2026-09-26-board-edit-slice2/plan.md` (worktree
+`/Volumes/Stephen/oybc-worktrees/board-edit-slice2`, branch
+`feature/board-edit-slice2-menu`, base `dev` 59e9ca75 / #510). One PR, web +
+iOS together (rule 6).
+
+- **Title-row "…" menu** replaces the play surface's Edit / Archive / Repeat
+  row. The trailing slot becomes `Edit squares` (renamed from "Edit" / "Edit
+  board") + a "…" square that opens a `Menu` (iOS) / Riso popover (web). The
+  `Edit squares` gate is unchanged (`status == active && sealedAt == nil &&
+  !editMode`); the "…" menu is hidden while `editMode` is true.
+- **Menu items per board kind**, from one pure builder mirrored on both
+  platforms (`buildBoardMenuItems` / `BoardMenuItems.items`):
+  - Ad-hoc, active and unsealed: `Board details…` · `Repeat this board…`
+    (only when repeat-eligible: a repeating board needs a resolved source
+    template, a one-off board needs a center other than CHOSEN) · `Archive`
+    · `Delete`.
+  - Core (`isCore`): `Core defaults…` · `Delete` only — name, timeframe,
+    repeats and archive are not fields on a core board.
+  - Sealed (closed) boards: `Core defaults…` (core only) · `Delete` only.
+    Repeat and Archive both write to the sealed board row (back-stamp /
+    status), so they're deferred to slice 4 alongside Reopen and the
+    relaxed closed-board rules.
+  - Draft boards: no menu (the draft-resume prompt replaces the header).
+- **Board details** is a new sheet with its own Cancel · "Board details" ·
+  Save, committed independently via `saveBoardDetails` (a metadata-only
+  patch, not part of the squares draft) — opening it is only possible
+  outside edit mode, so the two drafts never coexist. Fields: the immutable
+  size chip, name, dates (**only for custom / ongoing boards** — calendar
+  timeframes show the existing read-only window note), and the center
+  selector (Free / Choose / None). **No timeframe control** — the timeframe
+  never switches after creation. The center selector stays here only for
+  this slice; it's the only way off a CHOSEN center until slice 3 migrates
+  CHOSEN to a locked task, and is removed from Board details in slice 3.
+- **"Repeat this board…"** opens a Repeat sheet (Cancel · "Repeat this
+  board" · Save) that reuses the existing staged REPEATS logic unchanged
+  (web `BoardEditRepeatSection` + `buildRepeatSavePlan`; iOS the panel's
+  former `repeatsSection` markup, extracted). Hidden under the same rules
+  the old panel used.
+- **Archive / Delete** get `.alert`-shaped confirms (Cancel / Archive,
+  Cancel / Delete-destructive), reusing existing copy. After Archive or
+  Delete: a standalone board pops back to the Boards list; a core board
+  inside the window pager stays in the pager and the window falls back to
+  its lazy setup prompt (keyed on `board.isCore`, not on `embedded`).
+- **Core defaults…** opens the existing `CoreDefaultsEditSheetView` /
+  `CoreDefaultsSheet` for the board's timeframe, wrapped in a new
+  data-loading host mounted only while open (reuses the same pools / tasks
+  / templates / roster-mix / library loads `BoardSettingsView` /
+  `BoardSettingsPage` already do).
+- **The squares panel after slice 2** keeps: Cancel, the gold pill (now
+  "Editing squares"), the Edit tasks ⇄ Rearrange toggle + hint, the
+  edit/rearrange grid, the tap menu (Replace / Edit / Lock / Remove / center
+  Free⇄Task), and the save bar. It **loses**: the size chip,
+  `BoardSetupForm`/`BoardSetupFormView`, REPEATS, and "Archive this board" —
+  those moved to Board details / the Repeat sheet / the "…" menu. Its Save
+  still commits the squares draft plus, when changed, a center-only metadata
+  patch (`{ centerSquareType }`) in the same transaction. The Edit tasks ⇄
+  Rearrange toggle itself is untouched here — it's retired in slice 3, not
+  slice 2.
+- **Sealed / deleted mid-session is a typed error, never "Board saved."** A
+  new `assertBoardEditable` guard runs first inside every edit transaction
+  (squares save, details save, repeat-start). If the board is sealed or
+  deleted it throws (`BoardNotEditableError` / `BoardEditError
+  .boardNotEditable`), the whole transaction rolls back (staged task
+  overrides included), and the UI shows "This board has been closed, so
+  your changes weren't saved." and exits edit mode / closes the sheet. Until
+  slice 4, sealed boards' menu is Delete-only (+ Core defaults… on core) —
+  Repeat and Archive return to the sealed menu once slice 4 relaxes the
+  closed-board rules.
+- **File-size budget**: `BoardPlayView.swift`, `BoardPlaySurface.tsx` and
+  `BoardPlayViewModel.swift` must end strictly smaller than their slice-1
+  caps; the new UI lands in new files under `boardActions/` /
+  `Views/BoardsTab/BoardActions/`.
+- **No new Playground demo.** Slice 2 recomposes shipped sheets; it's
+  verified in-route with Playwright (393 + 1440, light + dark) and iOS leaf
+  snapshots.
