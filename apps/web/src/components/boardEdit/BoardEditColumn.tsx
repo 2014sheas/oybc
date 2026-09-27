@@ -5,7 +5,8 @@ import { BoardOptionsSection } from '../boardActions/BoardOptionsSection';
 import { SquaresEditGrid, type KeyboardMoveDir } from './SquaresEditGrid';
 import type { EditSlot, UseSquaresEditDraftResult } from '../../hooks/useSquaresEditDraft';
 import { taskCellLabel } from '../board/cellModel';
-import styles from '../../pages/BoardPlayPage.module.css';
+import pageStyles from '../../pages/BoardPlayPage.module.css';
+import styles from './BoardEditColumn.module.css';
 
 export interface BoardEditColumnProps {
   board: Board;
@@ -74,13 +75,13 @@ export function BoardEditColumn({
   const reason = squaresLockedReason(board, nowPinned.getTime());
 
   return (
-    <>
+    <div className={styles.wrap}>
       {squaresEditable ? (
-        <>
+        <div>
           {/* D7 — the ONE squares-editor grid: tap routes to the square menu
               / add picker; press-and-hold moves a square; Shuffle and moves
               skip locked squares. */}
-          <p className={styles.editHint}>
+          <p className={pageStyles.editHint}>
             <b>Tap a square</b> to replace, edit, lock or remove it. Press and hold to move it.
             Shuffle and moves skip locked squares.
           </p>
@@ -116,11 +117,11 @@ export function BoardEditColumn({
               }
             }}
           />
-        </>
+        </div>
       ) : (
         // D4 — SQUARES hidden: one muted line explaining why, no grid, no
         // save bar (the panel drops its 76pt clearance too — see BoardEditPanel).
-        <p className={styles.editHint}>{reason}</p>
+        <p className={pageStyles.editHint}>{reason}</p>
       )}
 
       <BoardOptionsSection
@@ -137,6 +138,6 @@ export function BoardEditColumn({
         onExitEdit={onExitEdit}
         onRemoved={onRemoved}
       />
-    </>
+    </div>
   );
 }

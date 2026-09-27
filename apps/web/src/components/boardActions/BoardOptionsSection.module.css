@@ -7,6 +7,14 @@
    (light in both schemes) with static ink text — never adaptive ink on gold.
    ============================================================ */
 
+/* Label + card, grouped as one flex item for BoardEditColumn's column
+   stack (see BoardOptionsSection.tsx's `.section` comment). */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .card {
   padding: 0;
   overflow: hidden;

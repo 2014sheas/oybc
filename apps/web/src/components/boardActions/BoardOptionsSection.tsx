@@ -218,20 +218,25 @@ export function BoardOptionsSection({
 
   return (
     <>
-      <RisoSectionLabel>BOARD</RisoSectionLabel>
-      <RisoCard role="group" aria-label="Board options" className={styles.card}>
-        {menuItems.map((item) => (
-          <button
-            key={item.kind}
-            type="button"
-            className={`${styles.row} ${item.danger ? styles.danger : ''}`}
-            onClick={() => handleSelect(item.kind)}
-          >
-            <RisoIcon name={item.icon} size={18} />
-            {item.label}
-          </button>
-        ))}
-      </RisoCard>
+      {/* One wrapping element (not a bare Fragment) so a flex-`gap` ancestor
+          (BoardEditColumn's column stack) only puts space BEFORE this whole
+          section, never between the label and its card. */}
+      <div className={styles.section}>
+        <RisoSectionLabel>BOARD</RisoSectionLabel>
+        <RisoCard role="group" aria-label="Board options" className={styles.card}>
+          {menuItems.map((item) => (
+            <button
+              key={item.kind}
+              type="button"
+              className={`${styles.row} ${item.danger ? styles.danger : ''}`}
+              onClick={() => handleSelect(item.kind)}
+            >
+              <RisoIcon name={item.icon} size={18} />
+              {item.label}
+            </button>
+          ))}
+        </RisoCard>
+      </div>
 
       {/* Portaled to `document.body`: every sheet/dialog here is a
           `position: fixed` full-viewport backdrop, which a sticky/relative

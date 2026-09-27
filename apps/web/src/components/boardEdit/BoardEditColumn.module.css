@@ -1,0 +1,14 @@
+/* ============================================================
+   BoardEditColumn — the edit-mode board column (Edit consolidation,
+   docs/BOARD_EDIT_REDESIGN.md slice 5, plan W2).
+   ============================================================ */
+
+/* Vertical stack: squares editor (or the D4 reason line) + the BOARD
+   options section below it. `gap` gives the section label clearance from
+   the squares grid's 8px hard-offset shadow (SquaresEditGrid.module.css
+   `.grid`) — without it the shadow visually clips into "BOARD". */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
