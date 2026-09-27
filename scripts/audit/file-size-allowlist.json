@@ -4,7 +4,7 @@
     "apps/ios/OYBC/Views/BoardsTab/BoardPlayView.swift": 2017,
     "apps/ios/OYBC/Services/SyncService.swift": 2352,
     "apps/ios/OYBC/Views/BoardsTab/ViewModels/BoardPlayViewModel.swift": 1518,
-    "apps/web/src/components/BoardPlaySurface.tsx": 1242,
+    "apps/web/src/components/BoardPlaySurface.tsx": 1241,
     "apps/ios/OYBC/Views/ProfileTab/CounterDetailView.swift": 1009,
     "apps/ios/OYBC/Database/AppDatabase.swift": 1005
   }

@@ -33,13 +33,14 @@ import { recurringBadgeState } from './boards/recurringBadgeState';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { BoardEditPanel } from './boardEdit/BoardEditPanel';
-import { SquaresEditGrid, type KeyboardMoveDir } from './boardEdit/SquaresEditGrid';
+import { BoardEditColumn } from './boardEdit/BoardEditColumn';
 import type { EditSlot } from '../hooks/useSquaresEditDraft';
 import { SquareTapMenu } from './boardEdit/SquareTapMenu';
 import { SquarePickerSheet, type SquarePick } from './boardEdit/SquarePickerSheet';
 import { isSquarePickerCandidate } from './boardEdit/squarePickerCandidates';
 import { BoardEditTaskSheet } from './boardEdit/BoardEditTaskSheet';
-import { BoardTitleActions } from './boardActions/BoardTitleActions';
+import { BoardEditButton } from './boardActions/BoardEditButton';
+import { canEditSquares } from './boardActions/boardMenu';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
 import { compactStreakLabel, getHighlightedSquares } from '@oybc/shared';
@@ -181,8 +182,12 @@ export function BoardPlaySurface({
   // D15 — the closed-board direct-log sheet.
   const [lateLogTaskId, setLateLogTaskId] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Edit mode: replaces the stats rail with the in-place edit panel (Phase 1).
-  const [editMode, setEditMode] = useState(false);
+  // Edit mode: replaces the stats rail with the in-place edit panel. Edit
+  // consolidation (D3/D9) — `editSession` carries the squares gate captured
+  // ONCE at Edit entry (`canEditSquares`); `editMode` is derived so every
+  // existing `editMode`-gated render below is unchanged.
+  const [editSession, setEditSession] = useState<{ squaresEditable: boolean } | null>(null);
+  const editMode = editSession !== null;
   // "Board saved" green toast shown after a successful edit-mode save.
   const [savedToast, setSavedToast] = useState(false);
   const savedToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -275,6 +280,22 @@ export function BoardPlaySurface({
     onEditModeChange?.(editMode);
   }, [editMode, onEditModeChange]);
 
+  // D9 belt-and-braces: a Delete from Edit can unmount this whole surface
+  // (core pager falls back to its setup prompt) before the effect above
+  // re-fires with `editMode=false`. This ref-based cleanup fires
+  // `onEditModeChange(false)` unconditionally on unmount — redundant with the
+  // explicit call in the Delete `onRemoved` handler below, cheap insurance
+  // against the pager's chip/paging staying locked forever.
+  const onEditModeChangeRef = useRef(onEditModeChange);
+  useEffect(() => {
+    onEditModeChangeRef.current = onEditModeChange;
+  }, [onEditModeChange]);
+  useEffect(() => {
+    return () => {
+      onEditModeChangeRef.current?.(false);
+    };
+  }, []);
+
   // Reset the squares-editor overlay chrome on exit, so re-entering edit
   // mode never flashes a stale menu/picker/task-edit sheet from a prior
   // session (the underlying draft itself resets in `useSquaresEditDraft`).
@@ -335,7 +356,7 @@ export function BoardPlaySurface({
   }, []);
 
   // "Board saved" toast, shared by BoardEditPanel's Save and
-  // BoardTitleActions' Board-details Save (Board Edit redesign slice 2).
+  // BoardOptionsSection's Board-details Save (Board Edit redesign slice 2).
   const triggerBoardSavedToast = useCallback((): void => {
     setSavedToast(true);
     if (savedToastTimerRef.current) clearTimeout(savedToastTimerRef.current);
@@ -515,13 +536,14 @@ export function BoardPlaySurface({
         <aside className={play.rail}>
           <BoardEditPanel
             board={board}
+            squaresEditable={editSession.squaresEditable}
             editCount={editDraft.editCount}
             canShuffle={editDraft.canShuffle}
             onShuffle={() => editDraft.shuffle()}
             onSaveEdits={commitEdits}
-            onCancel={() => setEditMode(false)}
+            onCancel={() => setEditSession(null)}
             onSaved={() => {
-              setEditMode(false);
+              setEditSession(null);
               triggerBoardSavedToast();
             }}
           />
@@ -531,23 +553,15 @@ export function BoardPlaySurface({
         <aside className={play.rail}>
           <div className={play.railTop}>
             {header}
-            {/* Edit gate (core-board surface rework): status == ACTIVE &&
-                sealedAt == nil && !editMode. The "…" board menu (Board
-                details / Repeat / Core defaults / Archive / Delete) is
-                `BoardTitleActions` (Board Edit redesign slice 2, D13). */}
-            <BoardTitleActions
-              board={board}
-              userId={userId}
-              sourceTemplate={sourceTemplate}
-              templatesLoaded={templatesLoaded}
-              weekStartDay={prefs.weekStartDay}
-              taskMap={taskMap}
-              dealtTaskIds={sortedBoardTasks.map((bt) => bt.taskId)}
-              counterFamilyByTaskId={counterFamilyByTaskId}
-              onEditSquares={() => setEditMode(true)}
-              onDetailsSaved={triggerBoardSavedToast}
-              onRemoved={() => board.isCore || navigate('/boards')}
-            />
+            {/* Edit consolidation (D1/D2) — the ONE `Edit` button; every board
+                option now lives in Edit's BOARD section (`BoardOptionsSection`,
+                rendered by `BoardEditColumn`) — the title-row "…" is retired. */}
+            <span className={play.railRight}>
+              <BoardEditButton
+                board={board}
+                onClick={() => setEditSession({ squaresEditable: canEditSquares(board, Date.now()) })}
+              />
+            </span>
           </div>
           <div>
             <div className={play.kickerRow}>
@@ -625,48 +639,33 @@ export function BoardPlaySurface({
       {!boardTasksLoaded ? (
         <p className={styles.emptyState}>Loading board tasks…</p>
       ) : editMode ? (
-        <>
-          {/* D7 — the ONE squares-editor grid: tap routes to the square menu
-              / add picker; press-and-hold moves a square; Shuffle and moves
-              skip locked squares. Retires the Edit tasks ⇄ Rearrange
-              sub-modes, tap-to-swap, and the jiggle. */}
-          <p className={styles.editHint}>
-            <b>Tap a square</b> to replace, edit, lock or remove it. Press and hold to move it.
-            Shuffle and moves skip locked squares.
-          </p>
-          <SquaresEditGrid
-            slots={editDraft.slots}
-            gridSize={gridSize}
-            announcement={keyboardAnnouncement}
-            onTapSlot={(slot, row, col, x, y) => {
-              // D13 — a plain empty (non-center) square jumps straight to
-              // the Add picker; every other tap (a task-holding cell, the
-              // pinned FREE center, or an empty NONE center) opens the menu.
-              const half = Math.floor(gridSize / 2);
-              const isOddBoard = gridSize % 2 === 1;
-              const atPositionalCenter = isOddBoard && row === half && col === half;
-              if (slot.isEmpty && !atPositionalCenter) {
-                setPickerState({ mode: 'add', row, col });
-                return;
-              }
-              setSquareMenu({ slot, row, col, x, y });
-            }}
-            onCommitReorder={editDraft.commitReorder}
-            onKeyboardMove={(cellId, dir) => {
-              const cell = editDraft.cells.find((c) => c.cellId === cellId);
-              const cellTask = cell ? editDraft.resolveTask(cell.taskId) : undefined;
-              const title = (cellTask ? taskCellLabel(cellTask) : '') || 'This square';
-              const result = editDraft.stageKeyboardMove(cellId, dir as KeyboardMoveDir);
-              if (result.blocked === 'locked') {
-                setKeyboardAnnouncement(`${title} is locked`);
-              } else if (result.blocked === 'bounds') {
-                setKeyboardAnnouncement('Already at the edge of the board');
-              } else if (result.moved && result.row != null && result.col != null) {
-                setKeyboardAnnouncement(`Moved ${title} to row ${result.row + 1}, column ${result.col + 1}`);
-              }
-            }}
-          />
-        </>
+        // Edit consolidation (plan W2) — the squares editor (or its D4 muted
+        // reason line) + the BOARD options section, extracted into
+        // `BoardEditColumn` to keep this file under the D11 size cap.
+        <BoardEditColumn
+          board={board}
+          squaresEditable={editSession.squaresEditable}
+          editDraft={editDraft}
+          gridSize={gridSize}
+          announcement={keyboardAnnouncement}
+          onOpenPicker={(row, col) => setPickerState({ mode: 'add', row, col })}
+          onOpenSquareMenu={(slot, row, col, x, y) => setSquareMenu({ slot, row, col, x, y })}
+          onAnnounce={setKeyboardAnnouncement}
+          userId={userId}
+          sourceTemplate={sourceTemplate}
+          templatesLoaded={templatesLoaded}
+          weekStartDay={prefs.weekStartDay}
+          taskMap={taskMap}
+          dealtTaskIds={sortedBoardTasks.map((bt) => bt.taskId)}
+          counterFamilyByTaskId={counterFamilyByTaskId}
+          onDetailsSaved={triggerBoardSavedToast}
+          onExitEdit={() => setEditSession(null)}
+          onRemoved={() => {
+            setEditSession(null);
+            onEditModeChange?.(false);
+            if (!board.isCore) navigate('/boards');
+          }}
+        />
       ) : (
         <RisoBoardGrid size={gridSize} cellSize={90} className={isSealed ? play.sealedGrid : undefined}>
           {(() => {
@@ -884,8 +883,8 @@ export function BoardPlaySurface({
 
         if (slot.isEmpty) {
           // An empty NONE center — the only empty slot that opens a menu
-          // (a plain empty square jumps straight to the picker, see the
-          // `onTapSlot` handler passed to `SquaresEditGrid` above).
+          // (a plain empty square jumps straight to the picker, see
+          // `BoardEditColumn`'s `onTapSlot` routing).
           return (
             <SquareTapMenu
               taskTitle="Empty square"

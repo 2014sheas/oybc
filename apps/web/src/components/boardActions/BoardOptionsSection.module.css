@@ -1,0 +1,50 @@
+/* ============================================================
+   BoardOptionsSection — the Edit screen's BOARD section.
+   Edit consolidation (docs/BOARD_EDIT_REDESIGN.md, plan D6). Rules below
+   are moved verbatim from the retired `BoardActionsMenu.module.css`'s
+   `.row` / `.danger` (the "…" popover's row styling), now inside a
+   `RisoCard`. Tokens from riso.css. Dark contract: hover fill stays gold
+   (light in both schemes) with static ink text — never adaptive ink on gold.
+   ============================================================ */
+
+.card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 11px;
+  padding: 13px 14px;
+  border: none;
+  border-bottom: 1.5px solid var(--riso-hair);
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.row:last-child {
+  border-bottom: none;
+}
+.row:hover,
+.row:focus-visible {
+  /* Gold is light in both schemes — text stays static ink. */
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.row.danger {
+  color: var(--riso-red);
+}
+.row.danger:hover,
+.row.danger:focus-visible {
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+}
+.row:focus-visible {
+  outline: none;
+}

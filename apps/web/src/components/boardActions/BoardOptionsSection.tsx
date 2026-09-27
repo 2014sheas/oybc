@@ -1,27 +1,18 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  BoardStatus,
-  Timeframe,
-  isBoardEnded,
-  type Board,
-  type RecurringBoardTemplate,
-  type Task,
-  type WeekStartDay,
-} from '@oybc/shared';
-import { RisoButton, RisoIcon } from '../riso';
+import { Timeframe, type Board, type RecurringBoardTemplate, type Task, type WeekStartDay } from '@oybc/shared';
+import { RisoCard, RisoIcon, RisoSectionLabel } from '../riso';
 import { archiveBoard, deleteBoard } from '../../db/operations/boards';
 import { closeBoard, reopenBoard } from '../../db/operations/boardLifecycle';
-import { buildBoardMenuItems, type BoardMenuItemKind } from './boardMenu';
-import { BoardActionsMenu } from './BoardActionsMenu';
+import { boardItemDraftPolicy, buildBoardMenuItems, DISCARD_SQUARES_SUFFIX, type BoardMenuItemKind } from './boardMenu';
 import { BoardDetailsSheet } from './BoardDetailsSheet';
 import { BoardRepeatSheet } from './BoardRepeatSheet';
 import { CoreDefaultsSheetHost } from './CoreDefaultsSheetHost';
 import { BoardActionConfirmDialog } from './BoardActionConfirmDialog';
 import { BOARD_CLOSED_MESSAGE } from './boardDetailsPatch';
-import play from '../play/Play.module.css';
+import styles from './BoardOptionsSection.module.css';
 
-/** Which sheet/dialog is currently presented from the menu. */
+/** Which sheet/dialog is currently presented from the BOARD section. */
 type BoardAction =
   | 'details'
   | 'repeat'
@@ -29,6 +20,7 @@ type BoardAction =
   | 'confirmArchive'
   | 'confirmDelete'
   | 'confirmReopen'
+  | 'confirmDiscard'
   | null;
 
 /** A one-button notice shown after a sheet / confirm closes (iOS `.alert` + OK). */
@@ -41,7 +33,7 @@ interface BoardActionNotice {
  *  `BoardActionsPresenter`'s "Board closed" alert. */
 const BOARD_CLOSED_NOTICE: BoardActionNotice = { title: 'Board closed', body: BOARD_CLOSED_MESSAGE };
 
-export interface BoardTitleActionsProps {
+export interface BoardOptionsSectionProps {
   board: Board;
   userId: string | undefined;
   sourceTemplate: RecurringBoardTemplate | null | undefined;
@@ -50,22 +42,29 @@ export interface BoardTitleActionsProps {
   taskMap: Record<string, Task>;
   dealtTaskIds: string[];
   counterFamilyByTaskId: Record<string, string>;
-  /** Enter squares-edit mode (the `Edit squares` button). */
-  onEditSquares: () => void;
-  /** Fired after a successful Board-details save (the caller shows the toast). */
+  /** Whether the squares-editor draft has unsaved edits (plan D8) — drives
+   *  the discard suffix/confirm on Archive/Delete/Close/Reopen. */
+  squaresDirty: boolean;
+  /** Fired after a successful Board-details/Repeat/Core-defaults save (the
+   *  caller shows the "Board saved" toast; Edit itself is NOT exited — D9). */
   onDetailsSaved: () => void;
-  /** Fired after a successful Archive / Delete. */
+  /** Fired on a successful Close/Reopen (D9: exits Edit — the pill flip IS
+   *  the feedback), and before `onRemoved` on a successful Archive/Delete. */
+  onExitEdit: () => void;
+  /** Fired after a successful Archive / Delete, after `onExitEdit`. */
   onRemoved: () => void;
 }
 
 /**
- * BoardTitleActions — the title-row trailing cluster (Board Edit redesign
- * slice 2, plan D1/T4): `Edit squares` (or the sealed "Read-only" lock) +
- * the "…" board menu, plus every sheet/dialog the menu opens. Extracted
- * from `BoardPlaySurface` so new UI lands in a new file (D13 — the surface
- * must shrink, not grow).
+ * BoardOptionsSection — the Edit screen's **BOARD** section (Edit
+ * consolidation, plan D6): a `RisoSectionLabel "BOARD"` + `RisoCard` of rows
+ * from `buildBoardMenuItems`, plus every sheet/dialog a row opens. Retired
+ * the title-row "…" `BoardActionsMenu` trigger entirely — this is now the
+ * ONLY entry point to Board details / Repeat / Core defaults / Close /
+ * Reopen / Archive / Delete. Rendered by `BoardEditColumn`, below the
+ * squares editor (or its `squaresLockedReason` line).
  */
-export function BoardTitleActions({
+export function BoardOptionsSection({
   board,
   userId,
   sourceTemplate,
@@ -74,13 +73,16 @@ export function BoardTitleActions({
   taskMap,
   dealtTaskIds,
   counterFamilyByTaskId,
-  onEditSquares,
+  squaresDirty,
   onDetailsSaved,
+  onExitEdit,
   onRemoved,
-}: BoardTitleActionsProps): React.ReactElement {
+}: BoardOptionsSectionProps): React.ReactElement {
   const [action, setAction] = useState<BoardAction>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<BoardActionNotice | null>(null);
+  // D8 discardFirst — which row the "Discard changes?" confirm is gating.
+  const [discardTarget, setDiscardTarget] = useState<'close' | 'reopen' | null>(null);
 
   /** A menu sheet's save hit a closed board: swap the sheet for the notice. */
   const handleBoardClosed = (): void => {
@@ -88,16 +90,22 @@ export function BoardTitleActions({
     setNotice(BOARD_CLOSED_NOTICE);
   };
 
-  const isSealed = board.sealedAt != null;
   // Pinned per-render instant (react-hooks/purity — mirrors BoardPlaySurface's
-  // `nowPinned`); `Date.now()` itself is flagged as an impure call by the
-  // react-compiler lint rule, so go through `new Date()` like that surface does.
+  // `nowPinned`), captured once when this section mounts (Edit entry) since
+  // this component's lifetime IS an Edit session. `Date.now()` itself is
+  // flagged as an impure call by the react-compiler lint rule, so go through
+  // `new Date()` like that surface does.
   const nowPinned = useMemo(() => new Date(), []);
   const now = nowPinned.getTime();
-  const isEnded = isBoardEnded(board, now);
   const menuItems = buildBoardMenuItems({ board, sourceTemplate, templatesLoaded, now });
 
   const handleSelect = (kind: BoardMenuItemKind): void => {
+    const policy = boardItemDraftPolicy(kind);
+    if (policy === 'discardFirst' && squaresDirty) {
+      setDiscardTarget(kind === 'close' || kind === 'reopen' ? kind : null);
+      setAction('confirmDiscard');
+      return;
+    }
     switch (kind) {
       case 'details':
         setAction('details');
@@ -123,6 +131,20 @@ export function BoardTitleActions({
     }
   };
 
+  /** D8 discardFirst confirmed — proceed to the gated row's own action. */
+  const handleDiscardConfirmed = (): void => {
+    const target = discardTarget;
+    setDiscardTarget(null);
+    if (target === 'close') {
+      setAction(null);
+      void handleClose();
+    } else if (target === 'reopen') {
+      setAction('confirmReopen');
+    } else {
+      setAction(null);
+    }
+  };
+
   // Close / Reopen give no toast — the CLOSED / ENDED pill flipping IS the
   // feedback (iOS parity: `BoardActionsPresenter` shows nothing on success).
   // "Board saved" is edit-save copy and would be wrong here.
@@ -131,8 +153,9 @@ export function BoardTitleActions({
     try {
       await closeBoard(board.id);
       setBusy(false);
+      onExitEdit();
     } catch (err) {
-      console.error('BoardTitleActions: close failed', err);
+      console.error('BoardOptionsSection: close failed', err);
       setBusy(false);
       // One generic failure for every error (iOS parity). BOARD_CLOSED_NOTICE
       // ("…your changes weren't saved") is for a board sealed under an open
@@ -147,8 +170,9 @@ export function BoardTitleActions({
       await reopenBoard(board.id);
       setAction(null);
       setBusy(false);
+      onExitEdit();
     } catch (err) {
-      console.error('BoardTitleActions: reopen failed', err);
+      console.error('BoardOptionsSection: reopen failed', err);
       setBusy(false);
       setAction(null);
       setNotice({ title: 'Reopen failed', body: 'Reopen failed — please try again.' });
@@ -160,9 +184,10 @@ export function BoardTitleActions({
     try {
       await archiveBoard(board.id);
       setAction(null);
+      onExitEdit();
       onRemoved();
     } catch (err) {
-      console.error('BoardTitleActions: archive failed', err);
+      console.error('BoardOptionsSection: archive failed', err);
       setBusy(false);
       setAction(null);
       setNotice({ title: 'Archive failed', body: 'Archive failed — please try again.' });
@@ -174,47 +199,45 @@ export function BoardTitleActions({
     try {
       await deleteBoard(board.id);
       setAction(null);
+      onExitEdit();
       onRemoved();
     } catch (err) {
-      console.error('BoardTitleActions: delete failed', err);
+      console.error('BoardOptionsSection: delete failed', err);
       setBusy(false);
       setAction(null);
       setNotice({ title: 'Delete failed', body: 'Delete failed — please try again.' });
     }
   };
 
+  const archiveBody = `It moves to Archived. Your streak and history are kept — restore it anytime.${
+    squaresDirty ? DISCARD_SQUARES_SUFFIX : ''
+  }`;
+  const deleteBody = `"${board.name}" will be removed. This can't be undone from the app.${
+    squaresDirty ? DISCARD_SQUARES_SUFFIX : ''
+  }`;
+
   return (
     <>
-      <span className={play.railRight}>
-        {/* Board Edit redesign slice 4 (D13) — Edit squares gates on
-            `status == ACTIVE && sealedAt == nil && !isEnded && !editMode`;
-            no "Read-only" label anywhere (D14) — the ENDED/CLOSED pill and
-            banner already say so. */}
-        {board.status === BoardStatus.ACTIVE && !isSealed && !isEnded && (
-          <RisoButton
-            kind="neutral"
-            size="small"
-            icon={<RisoIcon name="edit" size={16} />}
-            onClick={onEditSquares}
-            aria-label="Edit squares"
-            title="Edit squares"
+      <RisoSectionLabel>BOARD</RisoSectionLabel>
+      <RisoCard role="group" aria-label="Board options" className={styles.card}>
+        {menuItems.map((item) => (
+          <button
+            key={item.kind}
+            type="button"
+            className={`${styles.row} ${item.danger ? styles.danger : ''}`}
+            onClick={() => handleSelect(item.kind)}
           >
-            Edit squares
-          </RisoButton>
-        )}
-        <BoardActionsMenu items={menuItems} boardName={board.name} onSelect={handleSelect} />
-      </span>
+            <RisoIcon name={item.icon} size={18} />
+            {item.label}
+          </button>
+        ))}
+      </RisoCard>
 
       {/* Portaled to `document.body`: every sheet/dialog here is a
-          `position: fixed` full-viewport backdrop, but this component
-          renders inside `.rail` (`position: sticky`), which — per the
-          CSS stacking rules for sticky-positioned ancestors — traps ANY
-          fixed-position descendant inside its own local stacking context.
-          Without the portal, the backdrop paints BEHIND the board grid
-          (`.boardWrap`, a later DOM sibling of `.rail`) at any viewport
-          width where the two visually overlap (every width ≤ 1080px,
-          where the two-column rail+grid layout collapses to one column —
-          caught by Playwright, not by eye on a wide desktop window). */}
+          `position: fixed` full-viewport backdrop, which a sticky/relative
+          ancestor's local stacking context would trap behind a later DOM
+          sibling — see the CSS stacking-context note this section carries
+          forward from its `BoardTitleActions` predecessor. */}
       {(action != null || notice != null) &&
         createPortal(
           <>
@@ -261,7 +284,7 @@ export function BoardTitleActions({
             {action === 'confirmArchive' && (
               <BoardActionConfirmDialog
                 title="Archive this board?"
-                body="It moves to Archived. Your streak and history are kept — restore it anytime."
+                body={archiveBody}
                 confirmLabel="Archive"
                 busy={busy}
                 onCancel={() => setAction(null)}
@@ -272,7 +295,7 @@ export function BoardTitleActions({
             {action === 'confirmDelete' && (
               <BoardActionConfirmDialog
                 title="Delete board?"
-                body={`"${board.name}" will be removed. This can't be undone from the app.`}
+                body={deleteBody}
                 confirmLabel="Delete"
                 destructive
                 busy={busy}
@@ -289,6 +312,20 @@ export function BoardTitleActions({
                 busy={busy}
                 onCancel={() => setAction(null)}
                 onConfirm={() => void handleReopen()}
+              />
+            )}
+
+            {action === 'confirmDiscard' && (
+              <BoardActionConfirmDialog
+                title="Discard changes?"
+                body="Your unsaved changes will be lost."
+                cancelLabel="Keep editing"
+                confirmLabel="Discard"
+                onCancel={() => {
+                  setDiscardTarget(null);
+                  setAction(null);
+                }}
+                onConfirm={handleDiscardConfirmed}
               />
             )}
 
