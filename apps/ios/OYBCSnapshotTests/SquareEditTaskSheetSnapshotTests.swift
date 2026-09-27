@@ -72,7 +72,28 @@ final class SquareEditTaskSheetSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Achievement task
+
+    /// P0 regression: an achievement opens with its real type badge, no
+    /// Simple / Counting picker, and the read-only achievement notice.
+    func testAchievementLight() {
+        assertSnapshot(
+            of: makeSheet(task: achievementTask()),
+            as: .image(layout: .fixed(width: 393, height: 680)),
+            record: recordMode
+        )
+    }
+
     // MARK: - Task fixtures
+
+    /// Achievement task — type is immutable here, title only.
+    private func achievementTask() -> Task {
+        SnapshotFixtures.makeTask(
+            id: "sett-achievement",
+            title: "Bingo on June",
+            type: .achievement
+        )
+    }
 
     /// Plain normal task — type chip shows "Simple" selected.
     private func normalTask() -> Task {

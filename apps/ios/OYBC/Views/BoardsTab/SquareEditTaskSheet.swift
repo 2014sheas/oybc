@@ -6,12 +6,16 @@ import SwiftUI
 /// mode (Phase 2 — Edit tasks sub-mode).
 ///
 /// This sheet edits **only** the subset of task fields exposed in the board-edit
-/// flow: name, type (Simple / Counting), and type-specific counters.
+/// flow: name, type (Simple ⇄ Counting only), and type-specific counters.
 /// Nothing is written to the database on Done — the parent (`BoardPlayView`)
 /// stages a `StagedTaskOverride` and commits on "Save changes".
 ///
 /// Key invariants:
-///   - Achievement tasks are never surfaced here (the tap-menu skips them).
+///   - An achievement's type is immutable here: the sheet seeds its real
+///     type, hides the type picker, and edits the title only (its trigger
+///     and target are edited from Task Detail). The commit path ignores any
+///     override into or out of Achievement too
+///     (`BoardPlayViewModel.boardEditAllowsTypeSwitch`).
 ///   - The "Free" type chip is Phase 2b (center conversion) — omitted here.
 ///   - No switching into or out of Compound: the type picker offers Simple /
 ///     Counting only and is hidden for a compound (whose sub-tasks and rule
@@ -66,14 +70,28 @@ struct SquareEditTaskSheet: View {
         self.onDone = onDone
         self.onCancel = onCancel
 
-        // Achievement tasks are never surfaced from the board-edit tap menu,
-        // but clamp defensively to .normal so state is always valid.
-        let seedType: TaskType = task.type == .achievement ? .normal : task.type
         _title       = State(initialValue: task.title)
-        _type        = State(initialValue: seedType)
+        _type        = State(initialValue: Self.initialType(for: task))
         _action      = State(initialValue: task.action ?? "")
         _unit        = State(initialValue: task.unit ?? "")
         _maxCountStr = State(initialValue: task.maxCount.map { String($0) } ?? "")
+    }
+
+    /// The type the sheet's local state is seeded with (and therefore the
+    /// `Patch.type` Done returns when the type segment is left untouched).
+    ///
+    /// Always the task's REAL type — never clamped. (It used to seed an
+    /// achievement as `.normal`, so a plain rename on an achievement square
+    /// rewrote the task into a Simple task on Save — the P0 in
+    /// docs/BOARD_EDIT_REDESIGN.md.)
+    static func initialType(for task: Task) -> TaskType {
+        task.type
+    }
+
+    /// Whether the Simple / Counting type picker is shown — only for a task
+    /// that may switch between them (never a compound or an achievement).
+    private var showsTypePicker: Bool {
+        task.type == .normal || task.type == .counting
     }
 
     // MARK: - Validation
@@ -112,9 +130,10 @@ struct SquareEditTaskSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     headerBadge
                     nameSection
-                    if task.type != .compound { typeSection }
+                    if showsTypePicker { typeSection }
                     if type == .counting { countingSection }
                     if type == .compound { compoundSection }
+                    if type == .achievement { achievementSection }
                     everywhereHint
                 }
                 .padding(16)
@@ -210,6 +229,17 @@ struct SquareEditTaskSheet: View {
     private var compoundSection: some View {
         editSection(label: "Compound") {
             Text("Sub-tasks and the completion rule are edited from the task's detail page. The title can still be changed here.")
+                .font(.risoBody(13, .semibold))
+                .foregroundStyle(Color.risoMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Read-only notice for achievement tasks — the trigger and the
+    /// board/template it watches are edited from the task's detail page.
+    private var achievementSection: some View {
+        editSection(label: "Achievement") {
+            Text("What this achievement watches is edited from the task's detail page. The title can still be changed here.")
                 .font(.risoBody(13, .semibold))
                 .foregroundStyle(Color.risoMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)

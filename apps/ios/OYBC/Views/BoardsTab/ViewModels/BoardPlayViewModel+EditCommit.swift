@@ -372,13 +372,24 @@ extension BoardPlayViewModel {
         return true
     }
 
+    /// Whether Board Edit may switch a task from `from` to `to`. Only
+    /// Simple ⇄ Counting: a Compound carries `compound_children` + a rule and
+    /// an Achievement carries its trigger + board/template target — neither
+    /// can be entered or left from the "Edit task…" sheet (their structure is
+    /// edited from Task Detail), so their type is immutable here.
+    nonisolated static func boardEditAllowsTypeSwitch(from: TaskType, to: TaskType) -> Bool {
+        let switchable: Set<TaskType> = [.normal, .counting]
+        return switchable.contains(from) && switchable.contains(to)
+    }
+
     /// Applies a staged "Edit task…" override to a task's fields (title,
-    /// type — never into/out of Compound — and the counting fields). Shared
-    /// by the Save's step 4 (existing tasks) and step 1 (pending tasks).
+    /// type — Simple ⇄ Counting only, see `boardEditAllowsTypeSwitch` — and
+    /// the counting fields). Shared by the Save's step 4 (existing tasks),
+    /// step 1 (pending tasks) and the staged grid (`editDraftTaskMap`).
     nonisolated static func applyingOverride(_ override: StagedTaskOverride, to task: Task) -> Task {
         var updated = task
         updated.title = override.title
-        if override.type != .compound && task.type != .compound {
+        if boardEditAllowsTypeSwitch(from: task.type, to: override.type) {
             updated.type = override.type
         }
         switch updated.type {
