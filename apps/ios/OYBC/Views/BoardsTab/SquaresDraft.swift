@@ -63,6 +63,10 @@ struct SquaresDraftCell {
 /// `EditTaskSheet` (Tasks tab) is a separate, richer flow with description,
 /// timeboxed dates, achievement config — none of those are exposed from the
 /// board-edit context.
+///
+/// `type` only takes effect Simple ⇄ Counting (`BoardPlayViewModel
+/// .applyingOverride`); a compound's or an achievement's type is immutable
+/// through Board Edit.
 struct StagedTaskOverride {
     var title: String
     var type: TaskType

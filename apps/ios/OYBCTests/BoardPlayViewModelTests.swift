@@ -1272,6 +1272,133 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(normal.title, "Renamed normal", "the title still commits")
     }
 
+    // MARK: - P0: Board Edit must never rewrite an achievement's type
+
+    private func makeAchievementTask(
+        _ id: String,
+        referencedBoardId: String? = nil,
+        referencedTemplateId: String? = nil,
+        trigger: AchievementTrigger = .bingo,
+        requiredCount: Int? = nil
+    ) -> Task {
+        var t = makeTask(id)
+        t.type = .achievement
+        t.referencedBoardId = referencedBoardId
+        t.referencedTemplateId = referencedTemplateId
+        t.achievementTrigger = trigger
+        t.requiredCount = requiredCount
+        return t
+    }
+
+    /// P0 (docs/BOARD_EDIT_REDESIGN.md) — "Edit task…" on an achievement
+    /// square, renamed and Done: the sheet hands back a patch carrying the
+    /// type it was seeded with, and the commit must keep `.achievement` and
+    /// every watcher field. Also covers a Simple/Counting segment flipped to
+    /// Counting (goal + unit filled in): no counting fields may land on an
+    /// achievement either.
+    func test_editCommit_keepsAchievementTypeAndFields_boardMode() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveBoard(makeBoard(id: "b-ref"))
+        try db.saveTask(makeAchievementTask("ta", referencedBoardId: "b-ref", trigger: .bingo))
+        try db.saveTask(makeAchievementTask("tb", referencedBoardId: "b-ref", trigger: .greenlog))
+        try db.saveBoardTask(makeBoardTask(id: "bt-a", boardId: "b1", taskId: "ta", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt-b", boardId: "b1", taskId: "tb", row: 0, col: 1))
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+
+        // The Done patch built from the sheet's own seed, exactly as the
+        // "Edit task…" sheet returns it when only the title is changed.
+        let sheetSeed = SquareEditTaskSheet.initialType(for: try XCTUnwrap(vm.editDraftTaskMap["ta"]))
+        vm.handleEditTaskOverride(
+            taskId: "ta",
+            patch: .init(title: "Renamed watcher", type: sheetSeed, action: "", unit: "", maxCount: nil)
+        )
+        vm.handleEditTaskOverride(
+            taskId: "tb",
+            patch: .init(title: "Flipped to counting", type: .counting, action: "Run", unit: "km", maxCount: 5)
+        )
+        XCTAssertEqual(vm.editDraftTaskMap["ta"]?.type, .achievement,
+                       "the staged draft grid must not show the square as Simple")
+
+        XCTAssertTrue(vm.handleEditSave(), "save should dispatch")
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
+                      "handleEditSave never emitted .saved")
+
+        let a = try XCTUnwrap(dbTask(db, "ta"))
+        XCTAssertEqual(a.type, .achievement, "Board Edit must not rewrite an achievement's type")
+        XCTAssertEqual(a.title, "Renamed watcher", "the title still commits")
+        XCTAssertEqual(a.referencedBoardId, "b-ref")
+        XCTAssertEqual(a.achievementTrigger, .bingo)
+
+        let b = try XCTUnwrap(dbTask(db, "tb"))
+        XCTAssertEqual(b.type, .achievement, "an achievement cannot be switched to Counting")
+        XCTAssertEqual(b.title, "Flipped to counting")
+        XCTAssertEqual(b.referencedBoardId, "b-ref")
+        XCTAssertEqual(b.achievementTrigger, .greenlog)
+        XCTAssertNil(b.action, "no counting fields land on an achievement")
+        XCTAssertNil(b.unit)
+        XCTAssertNil(b.maxCount)
+    }
+
+    /// Same P0, template mode, through the slice-3 picker path: a
+    /// not-yet-created achievement staged by Add, then "Edit task…" on it —
+    /// the override merges into the pending payload at insert (step 1).
+    func test_editCommit_keepsAchievementTypeAndFields_pendingTemplateMode() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("t-lib")) // `loadedVM` waits for a non-empty library
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        let pending = makeAchievementTask(
+            "pending-ach", referencedTemplateId: "tmpl-1", trigger: .greenlog, requiredCount: 3
+        )
+        vm.handleEditAdd(
+            cellKey: "0-0", taskId: "pending-ach",
+            pending: PendingTaskPayload(task: pending, childTasks: [], childLinks: [])
+        )
+        let sheetSeed = SquareEditTaskSheet.initialType(for: try XCTUnwrap(vm.editDraftTaskMap["pending-ach"]))
+        vm.handleEditTaskOverride(
+            taskId: "pending-ach",
+            patch: .init(title: "Three greenlogs", type: sheetSeed, action: "", unit: "", maxCount: nil)
+        )
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+        let saved = try XCTUnwrap(dbTask(db, "pending-ach"))
+        XCTAssertEqual(saved.type, .achievement)
+        XCTAssertEqual(saved.title, "Three greenlogs")
+        XCTAssertEqual(saved.referencedTemplateId, "tmpl-1")
+        XCTAssertEqual(saved.achievementTrigger, .greenlog)
+        XCTAssertEqual(saved.requiredCount, 3)
+    }
+
+    /// The commit guard is symmetric: nothing becomes an achievement through
+    /// Board Edit either (it would be a watcher with no trigger or target).
+    func test_editCommit_ignoresTypeOverrideIntoAchievement() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("tn"))
+        try db.saveBoardTask(makeBoardTask(id: "bt-n", boardId: "b1", taskId: "tn", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        vm.handleEditTaskOverride(
+            taskId: "tn",
+            patch: .init(title: "Renamed", type: .achievement, action: "", unit: "", maxCount: nil)
+        )
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+        let saved = try XCTUnwrap(dbTask(db, "tn"))
+        XCTAssertEqual(saved.type, .normal)
+        XCTAssertEqual(saved.title, "Renamed")
+    }
+
     // `test_handleEditSave_blankName_doesNotStart` removed (Board Edit
     // redesign slice 2, T3) — name validation lives in
     // `BoardDetailsDraft.validationError` / `BoardDetailsSheetView` now;

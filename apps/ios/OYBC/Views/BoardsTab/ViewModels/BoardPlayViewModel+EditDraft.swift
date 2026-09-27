@@ -21,15 +21,10 @@ extension BoardPlayViewModel {
         }
         guard !editTaskOverrides.isEmpty else { return map }
         for (taskId, override) in editTaskOverrides {
-            guard var t = map[taskId] else { continue }
-            t.title = override.title
-            if override.type != .compound && t.type != .compound { t.type = override.type } // never into/out of Compound (as the commit)
-            if t.type == .counting {
-                t.action   = override.action
-                t.unit     = override.unit
-                t.maxCount = override.maxCount
-            }
-            map[taskId] = t
+            guard let t = map[taskId] else { continue }
+            // The SAME rule the Save commits (type switch only Simple ⇄
+            // Counting), so the staged grid never shows what Save won't write.
+            map[taskId] = Self.applyingOverride(override, to: t)
         }
         return map
     }
