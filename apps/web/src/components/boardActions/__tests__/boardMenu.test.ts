@@ -80,9 +80,10 @@ describe('buildBoardMenuItems', () => {
     expect(kinds(makeBoard({ status: BoardStatus.DRAFT, isCore: true }))).toEqual([]);
   });
 
-  it('CHOSEN-center one-off: no Repeat', () => {
+  it('legacy CHOSEN-center one-off: Repeat shown (slice 3 D5 — repeats with a NONE template)', () => {
     expect(kinds(makeBoard({ centerSquareType: CenterSquareType.CHOSEN }))).toEqual([
       'details',
+      'repeat',
       'archive',
       'delete',
     ]);
@@ -119,10 +120,12 @@ describe('buildBoardMenuItems', () => {
 });
 
 describe('isRepeatEligible', () => {
-  it('matches the retired REPEATS section hide rule', () => {
+  it('hides only while unresolved (any center type is eligible)', () => {
     expect(isRepeatEligible(makeBoard(), undefined, true)).toBe(true);
     expect(isRepeatEligible(makeBoard(), undefined, false)).toBe(false);
-    expect(isRepeatEligible(makeBoard({ centerSquareType: CenterSquareType.CHOSEN }), undefined, true)).toBe(false);
+    // Slice 3 D5: a legacy CHOSEN one-off is eligible (effective center = NONE).
+    expect(isRepeatEligible(makeBoard({ centerSquareType: CenterSquareType.CHOSEN }), undefined, true)).toBe(true);
+    expect(isRepeatEligible(makeBoard({ centerSquareType: CenterSquareType.CHOSEN }), undefined, false)).toBe(false);
     expect(isRepeatEligible(makeBoard({ spawnedFromTemplateId: 'tpl-1' }), undefined, true)).toBe(false);
     expect(isRepeatEligible(makeBoard({ spawnedFromTemplateId: 'tpl-1' }), TEMPLATE, true)).toBe(true);
     // A repeating board keeps its (Repeating / Paused) sheet even with a CHOSEN center.

@@ -211,14 +211,16 @@ function draftOf(board: Board, patch: Partial<BoardDetailsDraft> = {}): BoardDet
 }
 
 describe('seedBoardDetailsDraft', () => {
-  it('seeds name / timeframe / Y-M-D dates / center from the board', () => {
+  it('seeds name / timeframe / Y-M-D dates from the board — no center field (slice 3 D6)', () => {
     expect(seedBoardDetailsDraft(makeBoard())).toEqual({
       name: 'Summer goals',
       timeframe: Timeframe.CUSTOM,
       customStartDate: '2026-07-01',
       customEndDate: '2026-07-31',
-      centerType: CenterSquareType.FREE,
     });
+    expect(Object.keys(seedBoardDetailsDraft(makeBoard({ centerSquareType: CenterSquareType.CHOSEN })))).not.toContain(
+      'centerType',
+    );
   });
 
   it('an ongoing board seeds an empty end date', () => {
@@ -297,11 +299,12 @@ describe('buildBoardDetailsPatch', () => {
     expect(patch).toBeNull();
   });
 
-  it('a center change writes centerSquareType only', () => {
-    const board = makeBoard();
-    expect(
-      buildBoardDetailsPatch(board, draftOf(board, { centerType: CenterSquareType.NONE }), 'monday', NOW),
-    ).toEqual({ centerSquareType: CenterSquareType.NONE });
+  it('never writes centerSquareType — the center group is gone (slice 3 D6)', () => {
+    for (const type of [CenterSquareType.FREE, CenterSquareType.NONE, CenterSquareType.CHOSEN]) {
+      const board = makeBoard({ centerSquareType: type });
+      const patch = buildBoardDetailsPatch(board, draftOf(board, { name: 'Renamed' }), 'monday', NOW);
+      expect(patch).toEqual({ name: 'Renamed' });
+    }
   });
 });
 
@@ -317,8 +320,8 @@ describe('countBoardDetailsEdits — counts exactly what the patch writes', () =
     ['ongoing stale end picker', makeBoard(ONGOING), { customEndDate: '2026-09-01' }, 0, []],
     ['custom → ongoing', makeBoard(), { timeframe: Timeframe.INDEFINITE, customEndDate: '' }, 1, ['timeframe', 'startDate', 'endDate']],
     ['monthly with stale date picker', makeBoard({ timeframe: Timeframe.MONTHLY }), { customStartDate: '2026-07-09' }, 0, []],
-    ['center', makeBoard(), { centerType: CenterSquareType.NONE }, 1, ['centerSquareType']],
-    ['rename + dates + center', makeBoard(), { name: 'Y', customEndDate: '2026-08-01', centerType: CenterSquareType.NONE }, 3, ['name', 'startDate', 'endDate', 'centerSquareType']],
+    ['rename + dates', makeBoard(), { name: 'Y', customEndDate: '2026-08-01' }, 2, ['name', 'startDate', 'endDate']],
+    ['legacy CHOSEN board, untouched', makeBoard({ centerSquareType: CenterSquareType.CHOSEN }), {}, 0, []],
   ];
 
   for (const [label, board, overrides, count, keys] of cases) {
@@ -332,37 +335,33 @@ describe('countBoardDetailsEdits — counts exactly what the patch writes', () =
 });
 
 describe('validateBoardDetails', () => {
-  const ok = { hasCandidateTasks: true, centerTaskId: 'task-1' };
-
   it('a valid draft passes', () => {
-    expect(validateBoardDetails(seedBoardDetailsDraft(makeBoard()), ok)).toBeNull();
+    expect(validateBoardDetails(seedBoardDetailsDraft(makeBoard()))).toBeNull();
   });
 
   it('name is required', () => {
-    expect(validateBoardDetails(draftOf(makeBoard(), { name: '   ' }), ok)).toBe('Board name is required.');
+    expect(validateBoardDetails(draftOf(makeBoard(), { name: '   ' }))).toBe('Board name is required.');
   });
 
   it('custom needs both dates', () => {
-    expect(validateBoardDetails(draftOf(makeBoard(), { customEndDate: '' }), ok)).toBe(
+    expect(validateBoardDetails(draftOf(makeBoard(), { customEndDate: '' }))).toBe(
       'Both start and end dates are required for a custom timeframe.',
     );
   });
 
   it('custom end must be on or after the start', () => {
     expect(
-      validateBoardDetails(draftOf(makeBoard(), { customStartDate: '2026-07-10', customEndDate: '2026-07-09' }), ok),
+      validateBoardDetails(draftOf(makeBoard(), { customStartDate: '2026-07-10', customEndDate: '2026-07-09' })),
     ).toBe('End date must be on or after the start date.');
   });
 
   it('an ongoing board needs no end date', () => {
-    expect(validateBoardDetails(seedBoardDetailsDraft(makeBoard(ONGOING)), ok)).toBeNull();
+    expect(validateBoardDetails(seedBoardDetailsDraft(makeBoard(ONGOING)))).toBeNull();
   });
 
-  it('CHOSEN only with a candidate', () => {
-    const chosen = draftOf(makeBoard(), { centerType: CenterSquareType.CHOSEN });
-    const msg = 'CHOSEN is unavailable — this board has no existing center task to restore.';
-    expect(validateBoardDetails(chosen, { hasCandidateTasks: false, centerTaskId: 'task-1' })).toBe(msg);
-    expect(validateBoardDetails(chosen, { hasCandidateTasks: true, centerTaskId: undefined })).toBe(msg);
-    expect(validateBoardDetails(chosen, ok)).toBeNull();
+  it('a legacy CHOSEN board with no center task is still valid (no CHOSEN validation — slice 3 D6)', () => {
+    expect(
+      validateBoardDetails(seedBoardDetailsDraft(makeBoard({ centerSquareType: CenterSquareType.CHOSEN }))),
+    ).toBeNull();
   });
 });

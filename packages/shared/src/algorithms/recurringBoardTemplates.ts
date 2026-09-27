@@ -25,7 +25,13 @@
  * Canonical design: docs/ARCHITECTURE.md §Phase 6.2.
  */
 
-import { placeBoard, fillableCellCount, CenterSquareType, type BoardSize } from '@oybc/bingo-core';
+import {
+  placeBoard,
+  fillableCellCount,
+  effectiveCenter,
+  CenterSquareType,
+  type BoardSize,
+} from '@oybc/bingo-core';
 import { getTimeframeBoundaries, formatWindowLabel } from './calendarBoundaries';
 import { Timeframe } from '../constants/enums';
 import type { Board } from '../types/board';
@@ -377,7 +383,8 @@ export interface RepeatBoardTemplateInput {
  * the source board's `spawnedFromTemplateId`.
  *
  * @param board - The source one-off board. Only `name`/`boardSize`/
- *   `centerSquareType`/`isRandomized`/`startDate` are read.
+ *   `centerSquareType`/`isRandomized`/`startDate` are read; the center is
+ *   read through `effectiveCenter` (legacy CHOSEN → NONE).
  * @param boardTaskIds - Caller-resolved: distinct, non-deleted, non-FREE-
  *   center task ids currently placed on the board (in placement order).
  * @param cadence - The newly-chosen repeat cadence (DAILY/WEEKLY/MONTHLY/
@@ -406,7 +413,10 @@ export function buildRepeatBoardTemplateInput(
     name: board.name,
     timeframe: cadence,
     boardSize: board.boardSize,
-    centerSquareType: board.centerSquareType,
+    // Board Edit slice 3 (D5): a legacy CHOSEN board repeats with a NONE
+    // template — templates hold no positions, so neither a chosen center nor
+    // any lock carries into future windows.
+    centerSquareType: effectiveCenter(board.centerSquareType),
     isRandomized: board.isRandomized,
     manualTaskIds: [...boardTaskIds],
     isActive: true,

@@ -638,7 +638,46 @@ extension AppDatabase {
     ///   - position: Grid position `(row, col)` (0-based).
     /// - Returns: The newly-created `BoardTask` record.
     @discardableResult
-    func addBoardTaskToBoard(_ boardId: String, taskId: String, position: (row: Int, col: Int)) throws -> BoardTask {
+    func addBoardTaskToBoard(
+        _ boardId: String,
+        taskId: String,
+        position: (row: Int, col: Int),
+        isLocked: Bool = false
+    ) throws -> BoardTask {
+        try write { db in
+            try Self.addBoardTaskToBoard(
+                db: db, boardId: boardId, taskId: taskId, position: position, isLocked: isLocked
+            )
+        }
+    }
+
+    /// `db`-scoped core of `addBoardTaskToBoard` (Board Edit slice 3, D15): lets
+    /// the squares Save compose a staged add into its ONE outer
+    /// `database.write { db in }` transaction (GRDB's `write` is not reentrant).
+    /// The pre-reads that seed the affected-board search run against the passed
+    /// `db`, so the whole add — guards, insert, cascade — is atomic.
+    ///
+    /// Must be called inside an active write transaction covering `boardTasks`,
+    /// `boards`, and `syncQueue`.
+    ///
+    /// - Parameters:
+    ///   - db: The open write transaction.
+    ///   - boardId: The board receiving the new placement.
+    ///   - taskId: The task to place.
+    ///   - position: Grid position `(row, col)` (0-based).
+    ///   - isLocked: Initial lock state of the new placement (a staged add can
+    ///     carry a lock from the draft).
+    /// - Returns: The newly-created `BoardTask` record.
+    /// - Throws: `AppDatabaseError.invalidPlacement` for a closed / missing
+    ///   board, an out-of-bounds or occupied cell, or a duplicate task; GRDB errors.
+    @discardableResult
+    static func addBoardTaskToBoard(
+        db: Database,
+        boardId: String,
+        taskId: String,
+        position: (row: Int, col: Int),
+        isLocked: Bool = false
+    ) throws -> BoardTask {
         let now = AppDatabase.currentTimestamp()
 
         let newBoardTask = BoardTask(
@@ -648,13 +687,18 @@ extension AppDatabase {
             row: position.row,
             col: position.col,
             isCenter: false,
+            isLocked: isLocked,
             createdAt: now,
             updatedAt: now,
             version: 1
         )
 
-        let allBoardTasksPre = try fetchAllBoardTasks()
-        let allCompoundChildrenPre = try fetchAllCompoundChildren()
+        let allBoardTasksPre: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allCompoundChildrenPre: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
 
         let syntheticBoardTasks = allBoardTasksPre + [newBoardTask]
         let parentCompounds = DerivationPass.findTransitiveParentCompounds(
@@ -667,112 +711,176 @@ extension AppDatabase {
             boardTasks: syntheticBoardTasks
         )
 
-        try write { db in
-            // Board-integrity PR-2 (Part 4): re-fetch the OWNING board
-            // inside the write txn — a sealed/deleted/missing board
-            // refuses a new placement. Matches the #357 guard idiom in
-            // `updateBoardAndCascade` / `updateBoardTaskPositions`.
-            guard let owningBoard = try Board.fetchOne(db, key: boardId),
-                  !owningBoard.isDeleted, owningBoard.sealedAt == nil else {
-                throw AppDatabaseError.invalidPlacement("This board is closed or no longer exists.")
+        // Board-integrity PR-2 (Part 4): re-fetch the OWNING board
+        // inside the write txn — a sealed/deleted/missing board
+        // refuses a new placement. Matches the #357 guard idiom in
+        // `updateBoardAndCascade` / `updateBoardTaskPositions`.
+        guard let owningBoard = try Board.fetchOne(db, key: boardId),
+              !owningBoard.isDeleted, owningBoard.sealedAt == nil else {
+            throw AppDatabaseError.invalidPlacement("This board is closed or no longer exists.")
+        }
+
+        // Board-integrity PR-2 (Part 3): reject placements that would
+        // violate the placement invariants. Checked against the board's
+        // LIVE rows (`allBoardTasksPre` above only seeds the
+        // affected-board-id search).
+        guard position.row >= 0, position.row < owningBoard.boardSize,
+              position.col >= 0, position.col < owningBoard.boardSize else {
+            throw AppDatabaseError.invalidPlacement("Position is out of bounds for this board.")
+        }
+        let liveOnBoard = try BoardTask
+            .filter(Column("boardId") == boardId && Column("isDeleted") == false)
+            .fetchAll(db)
+        guard !liveOnBoard.contains(where: { $0.row == position.row && $0.col == position.col }) else {
+            throw AppDatabaseError.invalidPlacement("That cell is already occupied.")
+        }
+        guard !liveOnBoard.contains(where: { $0.taskId == taskId }) else {
+            throw AppDatabaseError.invalidPlacement("This task is already placed on this board.")
+        }
+
+        try newBoardTask.save(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "boardTasks",
+            entityId: newBoardTask.id,
+            operationType: .create,
+            payload: newBoardTask,
+            now: now
+        ).enqueue(db)
+
+        let allBoardTasksPost: [BoardTask] = try BoardTask
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+        let allTasks: [Task] = try Task.fetchAll(db)
+        let allBoards: [Board] = try Board.fetchAll(db)
+        let allChildren: [CompoundChild] = try CompoundChild
+            .filter(Column("isDeleted") == false)
+            .fetchAll(db)
+
+        var taskById: [String: Task] = [:]
+        for t in allTasks { taskById[t.id] = t }
+        var childrenByCompound: [String: [CompoundChild]] = [:]
+        for c in allChildren {
+            childrenByCompound[c.compoundTaskId, default: []].append(c)
+        }
+
+        // Windowed Completion: resolve against each board's window from the
+        // event log, not the lifetime cache (see updateBoardTaskAndCascade).
+        let windowContext = try Self.buildWindowContext(db: db)
+
+        for affectedBoardId in affectedBoardIds {
+            guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted, board.sealedAt == nil else { continue }
+            // Board-integrity PR-2 (Part 2): resolve collisions/OOB
+            // before deriving (see updateBoardTaskAndCascade).
+            let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
+                allBoardTasksPost.filter { $0.boardId == affectedBoardId },
+                boardSize: board.boardSize
+            )
+            let update = DerivationPass.computeBoardStatsUpdate(
+                board: board,
+                boardTasksOnBoard: boardTasksOnBoard,
+                childrenByCompound: childrenByCompound,
+                taskById: taskById,
+                allBoards: allBoards,
+                windowContext: windowContext
+            )
+
+            let totalSquares = board.boardSize * board.boardSize
+            let isGreenlogNow = update.completedTasks >= totalSquares
+
+            board.completedTasks = update.completedTasks
+            board.totalTasks = totalSquares
+            board.linesCompleted = update.linesCompleted
+            board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
+            board.updatedAt = now
+            board.version += 1
+
+            if isGreenlogNow, board.status == .active {
+                board.status = .completed
+                board.completedAt = now
+            } else if !isGreenlogNow, board.status == .completed {
+                board.status = .active
+                board.completedAt = nil
             }
 
-            // Board-integrity PR-2 (Part 3): reject placements that would
-            // violate the placement invariants. Checked against a FRESH
-            // in-txn read of the board's LIVE rows, not the pre-txn
-            // `allBoardTasksPre` snapshot above (which is only used to seed
-            // the affected-board-id search and could be stale under a
-            // concurrent write).
-            guard position.row >= 0, position.row < owningBoard.boardSize,
-                  position.col >= 0, position.col < owningBoard.boardSize else {
-                throw AppDatabaseError.invalidPlacement("Position is out of bounds for this board.")
-            }
-            let liveOnBoard = try BoardTask
-                .filter(Column("boardId") == boardId && Column("isDeleted") == false)
-                .fetchAll(db)
-            guard !liveOnBoard.contains(where: { $0.row == position.row && $0.col == position.col }) else {
-                throw AppDatabaseError.invalidPlacement("That cell is already occupied.")
-            }
-            guard !liveOnBoard.contains(where: { $0.taskId == taskId }) else {
-                throw AppDatabaseError.invalidPlacement("This task is already placed on this board.")
-            }
-
-            try newBoardTask.save(db)
+            try board.save(db)
             try SyncQueueBuilder.makeItem(
-                entityType: "boardTasks",
-                entityId: newBoardTask.id,
-                operationType: .create,
-                payload: newBoardTask,
+                entityType: "boards",
+                entityId: affectedBoardId,
+                operationType: .update,
+                payload: board,
                 now: now
             ).enqueue(db)
-
-            let allBoardTasksPost: [BoardTask] = try BoardTask
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-            let allTasks: [Task] = try Task.fetchAll(db)
-            let allBoards: [Board] = try Board.fetchAll(db)
-            let allChildren: [CompoundChild] = try CompoundChild
-                .filter(Column("isDeleted") == false)
-                .fetchAll(db)
-
-            var taskById: [String: Task] = [:]
-            for t in allTasks { taskById[t.id] = t }
-            var childrenByCompound: [String: [CompoundChild]] = [:]
-            for c in allChildren {
-                childrenByCompound[c.compoundTaskId, default: []].append(c)
-            }
-
-            // Windowed Completion: resolve against each board's window from the
-            // event log, not the lifetime cache (see updateBoardTaskAndCascade).
-            let windowContext = try Self.buildWindowContext(db: db)
-
-            for affectedBoardId in affectedBoardIds {
-                guard var board = try Board.fetchOne(db, key: affectedBoardId), !board.isDeleted, board.sealedAt == nil else { continue }
-                // Board-integrity PR-2 (Part 2): resolve collisions/OOB
-                // before deriving (see updateBoardTaskAndCascade).
-                let boardTasksOnBoard = PlacementIntegrity.resolvePlacements(
-                    allBoardTasksPost.filter { $0.boardId == affectedBoardId },
-                    boardSize: board.boardSize
-                )
-                let update = DerivationPass.computeBoardStatsUpdate(
-                    board: board,
-                    boardTasksOnBoard: boardTasksOnBoard,
-                    childrenByCompound: childrenByCompound,
-                    taskById: taskById,
-                    allBoards: allBoards,
-                    windowContext: windowContext
-                )
-
-                let totalSquares = board.boardSize * board.boardSize
-                let isGreenlogNow = update.completedTasks >= totalSquares
-
-                board.completedTasks = update.completedTasks
-                board.totalTasks = totalSquares
-                board.linesCompleted = update.linesCompleted
-                board.completedLineIds = update.completedLineIds.isEmpty ? nil : update.completedLineIds
-                board.updatedAt = now
-                board.version += 1
-
-                if isGreenlogNow, board.status == .active {
-                    board.status = .completed
-                    board.completedAt = now
-                } else if !isGreenlogNow, board.status == .completed {
-                    board.status = .active
-                    board.completedAt = nil
-                }
-
-                try board.save(db)
-                try SyncQueueBuilder.makeItem(
-                    entityType: "boards",
-                    entityId: affectedBoardId,
-                    operationType: .update,
-                    payload: board,
-                    now: now
-                ).enqueue(db)
-            }
         }
 
         return newBoardTask
     }
 
+
+    // MARK: - Legacy CHOSEN center (Board Edit slice 3)
+
+    /// One-time AUTHORED conversion of a legacy CHOSEN board (slice 3, D2).
+    ///
+    /// Live code already reads CHOSEN as "NONE + a locked center placement"
+    /// via `CenterSquare.effectiveCenter` / `isLegacyChosenCenterLocked` (D1);
+    /// this writes that shape to disk when the user's next squares Save commits
+    /// an edit: the board becomes `.none` with no `centerTaskId` (the same
+    /// sanitization `updateBoardAndCascade` applies), and the live placement at
+    /// the positional center gets `isLocked = keepLocked, isCenter = false`.
+    /// Each changed row gets a version bump + one sync-queue item. No stats
+    /// cascade: CHOSEN and NONE derive identically (neither auto-completes).
+    ///
+    /// No-op unless the stored row is CHOSEN. Never touches a sealed row:
+    /// `assertBoardEditable` runs first and throws. Must be called inside an
+    /// active write transaction covering `boards`, `boardTasks`, `syncQueue`.
+    ///
+    /// Twin of web `normalizeLegacyChosenCenter` (`db/operations/boardTasks.ts`).
+    ///
+    /// - Parameters:
+    ///   - db: The open write transaction.
+    ///   - boardId: The board being saved.
+    ///   - keepLocked: The draft's lock state for the center placement.
+    /// - Throws: `BoardEditError.boardNotEditable` for a sealed / deleted /
+    ///   missing board (nothing written); any GRDB error.
+    static func normalizeLegacyChosenCenter(db: Database, boardId: String, keepLocked: Bool) throws {
+        try Self.assertBoardEditable(db: db, boardId: boardId)
+        guard var board = try Board.fetchOne(db, key: boardId),
+              CenterSquare.isLegacyChosen(board.centerSquareType) else { return }
+
+        let now = Self.currentTimestamp()
+        board.centerSquareType = .none
+        board.centerTaskId = nil
+        board.updatedAt = now
+        board.version += 1
+        try board.save(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "boards",
+            entityId: boardId,
+            operationType: .update,
+            payload: board,
+            now: now
+        ).enqueue(db)
+
+        let centerIndex = CenterSquare.getCenterSquareIndex(gridSize: board.boardSize)
+        guard centerIndex >= 0 else { return }
+        let centerRow = centerIndex / board.boardSize
+        let centerCol = centerIndex % board.boardSize
+        guard var center = try BoardTask
+            .filter(Column("boardId") == boardId && Column("isDeleted") == false)
+            .filter(Column("row") == centerRow && Column("col") == centerCol)
+            .fetchOne(db)
+        else { return }
+
+        center.isLocked = keepLocked
+        center.isCenter = false
+        center.updatedAt = now
+        center.version += 1
+        try center.save(db)
+        try SyncQueueBuilder.makeItem(
+            entityType: "boardTasks",
+            entityId: center.id,
+            operationType: .update,
+            payload: center,
+            now: now
+        ).enqueue(db)
+    }
 }

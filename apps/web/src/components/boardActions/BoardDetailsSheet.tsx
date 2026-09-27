@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Timeframe, type Board, type WeekStartDay } from '@oybc/shared';
 import { BoardSetupForm } from '../wizard/BoardSetupForm';
 import { RisoButton } from '../riso';
 import { useModalA11y } from '../../hooks/useModalA11y';
-import { countBoardTasksForBoard } from '../../db/operations';
 import { saveBoardDetails, BoardNotEditableError } from '../../db/operations/boards';
 import {
   buildBoardDetailsPatch,
@@ -36,7 +35,8 @@ export interface BoardDetailsSheetProps {
  * the squares draft, since it only opens outside edit mode.
  *
  * Fields: the immutable size chip + `BoardSetupForm` in `edit-active` mode
- * (name, dates for custom/ongoing only, center). The iOS twin is
+ * (name, dates for custom/ongoing only — no center selector since Board Edit
+ * slice 3, D6: the center changes only in the squares editor). The iOS twin is
  * `BoardDetailsSheetView.swift` over the same `BoardDetailsDraft` contract
  * (`boardDetailsPatch.ts` ↔ `BoardDetailsDraft.swift`).
  */
@@ -48,22 +48,13 @@ export function BoardDetailsSheet({
   onSaved,
 }: BoardDetailsSheetProps): React.ReactElement {
   const [draft, setDraft] = useState<BoardDetailsDraft>(() => seedBoardDetailsDraft(board));
-  const [hasCandidateTasks, setHasCandidateTasks] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void countBoardTasksForBoard(board.id).then((count) => setHasCandidateTasks(count > 0));
-    // Seed once per board id, mirroring the retired panel's seeding strategy.
-  }, [board.id]);
-
   const editCount = countBoardDetailsEdits(board, draft);
   const dirty = editCount > 0;
-  const validationError = validateBoardDetails(draft, {
-    hasCandidateTasks,
-    centerTaskId: board.centerTaskId,
-  });
+  const validationError = validateBoardDetails(draft);
   const canSave = dirty && !validationError && !saving;
 
   const requestClose = (): void => {
@@ -161,12 +152,13 @@ export function BoardDetailsSheet({
               onCustomEndDateChange={(customEndDate) =>
                 setDraft((d) => ({ ...d, customEndDate }))
               }
-              centerType={draft.centerType}
-              onCenterTypeChange={(centerType) => setDraft((d) => ({ ...d, centerType }))}
+              // edit-active hides the center selector (slice 3, D6); these
+              // only satisfy the shared form's props until T3 slims them.
+              centerType={board.centerSquareType}
+              onCenterTypeChange={() => { /* no-op — no center selector in edit-active */ }}
               isRecurring={false}
               isCore={false}
               weekStartDay={weekStartDay}
-              chosenCenterDisabled={board.centerTaskId == null || !hasCandidateTasks}
               storedWindow={
                 board.endDate ? { startDate: board.startDate, endDate: board.endDate } : undefined
               }

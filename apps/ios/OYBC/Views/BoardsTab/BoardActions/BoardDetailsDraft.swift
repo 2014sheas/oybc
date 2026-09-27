@@ -15,6 +15,10 @@ import Foundation
 /// Timeframe never switches after creation — the ONLY switch is Custom ⇄
 /// Ongoing (the End date's "None — no end date" choice). Calendar timeframes
 /// have no date edits at all.
+///
+/// Slice 3 (D6): the center is no longer edited here — it changes only in the
+/// squares editor (Free ⇄ task square + Lock/Unlock), so the draft carries no
+/// center field, validation or patch group.
 struct BoardDetailsDraft {
 
     /// The board as it was when the sheet opened (the diff baseline).
@@ -25,7 +29,6 @@ struct BoardDetailsDraft {
     var timeframe: Timeframe
     var startDate: Date
     var endDate: Date
-    var centerType: CenterSquareType
 
     let originalStartDate: Date
     let originalEndDate: Date
@@ -44,7 +47,6 @@ struct BoardDetailsDraft {
         self.board = board
         name = board.name
         timeframe = board.timeframe
-        centerType = board.centerSquareType
         let cal = Calendar.current
         let fallbackStart = cal.startOfDay(for: now)
         let seedStart = Self.parseBoardDate(board.startDate) ?? fallbackStart
@@ -91,12 +93,10 @@ struct BoardDetailsDraft {
         return startChanged || endChanged
     }
 
-    private var centerChanged: Bool { centerType != board.centerSquareType }
-
-    /// Edit count, one per group (name / dates / center). Counts exactly what
+    /// Edit count, one per group (name / dates). Counts exactly what
     /// `patch()` would write, so the badge and the save can't disagree.
     var editCount: Int {
-        [nameChanged, datesChanged, centerChanged].filter { $0 }.count
+        [nameChanged, datesChanged].filter { $0 }.count
     }
 
     var isDirty: Bool { editCount > 0 }
@@ -106,17 +106,12 @@ struct BoardDetailsDraft {
     /// The first validation failure, or nil when the draft can save. Copy is
     /// shared with web's `validateBoardDetails`.
     ///
-    /// - Parameter hasCandidateTasks: Whether the board has any placement that
-    ///   could back a CHOSEN center.
     /// - Returns: A user-facing message, or nil when valid.
-    func validationError(hasCandidateTasks: Bool) -> String? {
+    func validationError() -> String? {
         if trimmedName.isEmpty { return "Board name is required." }
         if effectiveTimeframe == .custom,
            Self.snapEnd(endDate) < Self.snapStart(startDate) {
             return "End date must be on or after the start date."
-        }
-        if centerType == .chosen, board.centerTaskId == nil || !hasCandidateTasks {
-            return "CHOSEN is unavailable — this board has no existing center task to restore."
         }
         return nil
     }
@@ -134,7 +129,6 @@ struct BoardDetailsDraft {
         guard isDirty else { return nil }
         var patch = AppDatabase.UpdateActiveBoardPatch()
         if nameChanged { patch.name = trimmedName }
-        if centerChanged { patch.centerSquareType = centerType }
         guard datesChanged else { return patch }
         if timeframeChanged { patch.timeframe = effectiveTimeframe }
         patch.startDate = Self.snapStart(startDate)

@@ -75,9 +75,10 @@ enum BoardMenuItems {
     /// in-panel REPEATS section used (`BoardEditPanel.showsOneOffRepeat` +
     /// `repeatInfo != nil`).
     ///
-    /// - A one-off board (no `spawnedFromTemplateId`) is eligible unless its
-    ///   center is CHOSEN: a CHOSEN center can never validate a spawn pool
-    ///   (`validateSpawnPool` rejects it as `.unsupportedCenter`).
+    /// - A one-off board (no `spawnedFromTemplateId`) is eligible when its
+    ///   EFFECTIVE center is FREE or NONE — always, since slice 3 (D5): a
+    ///   legacy CHOSEN board reads as NONE + a locked center and repeats with
+    ///   a NONE-center template (locks don't carry into templates).
     /// - A repeating board is eligible only once its source record resolved —
     ///   an unresolved record has nothing to pause or resume.
     ///
@@ -87,7 +88,8 @@ enum BoardMenuItems {
     /// - Returns: `true` if the Repeat item should show.
     static func isRepeatEligible(board: Board, sourceTemplate: RecurringBoardTemplate?) -> Bool {
         if board.spawnedFromTemplateId == nil {
-            return board.centerSquareType != .chosen
+            // Effective center is always FREE or NONE — both repeatable.
+            return true
         }
         return sourceTemplate != nil
     }

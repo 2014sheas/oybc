@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { placeBoard } from '../src/placement';
+import { shuffleUnlockedSlots } from '../src/shuffle';
 import { CenterSquareType } from '../src/constants';
 
 /**
@@ -38,8 +39,24 @@ interface PlaceBoardVector {
   expected: (string | null)[];
 }
 
+/**
+ * Board Edit slice 3 (D10): the squares editor's Shuffle kernel. `seed`
+ * drives the LCG below; when it is null, `rngConstant` is a constant rng
+ * (pins the near-1.0 clamp and the 0.0 edge). Every `expected` was generated
+ * by the implementation and cross-checked by an independent re-implementation.
+ */
+interface ShuffleUnlockedVector {
+  name: string;
+  slots: (string | null)[];
+  fixed: boolean[];
+  seed: number | null;
+  rngConstant: number | null;
+  expected: (string | null)[];
+}
+
 interface Fixture {
   placeBoardVectors: PlaceBoardVector[];
+  shuffleUnlockedVectors: ShuffleUnlockedVector[];
 }
 
 const FIXTURE_PATH = path.join(__dirname, 'fixtures/placementVectors.json');
@@ -80,6 +97,25 @@ describe('placeBoard — cross-platform vectors', () => {
         rng: vector.seed != null ? makeSeededRng(vector.seed) : undefined,
       });
       expect(placement.map((t) => t?.id ?? null)).toEqual(vector.expected);
+    },
+  );
+});
+
+describe('shuffleUnlockedSlots — cross-platform vectors', () => {
+  it('has at least six vectors', () => {
+    expect(fixture.shuffleUnlockedVectors.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(fixture.shuffleUnlockedVectors.map((v) => [v.name, v] as const))(
+    '%s',
+    (_name, vector) => {
+      const rng =
+        vector.seed != null
+          ? makeSeededRng(vector.seed)
+          : () => vector.rngConstant as number;
+      expect(shuffleUnlockedSlots(vector.slots, vector.fixed, rng)).toEqual(
+        vector.expected,
+      );
     },
   );
 });

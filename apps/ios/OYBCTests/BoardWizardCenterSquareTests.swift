@@ -127,4 +127,99 @@ final class BoardWizardCenterSquareTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.row == 1 && $0.col == 1 }, "No row at the reserved FREE center")
         XCTAssertEqual(rows.filter { $0.isCenter }.count, 0)
     }
+
+    // MARK: - Board Edit slice 3 (D4): active persist translates CHOSEN
+
+    func testRowBuilder_translatesChosenToLockedTaskSquare_whenRequested() {
+        let rows = makeWizardBoardTaskRows(
+            placement: full3x3(), boardId: "b", size: 3, centerType: .chosen,
+            translateChosenToLock: true, now: "n"
+        )
+        let center = rows.first { $0.row == 1 && $0.col == 1 }!
+        XCTAssertFalse(center.isCenter, "a translated CHOSEN center is an ordinary task square")
+        XCTAssertTrue(center.isLocked, "…pinned by a lock instead")
+        XCTAssertEqual(rows.filter { $0.isLocked }.count, 1, "only the center is locked")
+        XCTAssertEqual(rows.filter { $0.isCenter }.count, 0)
+    }
+
+    func testRowBuilder_translationIsInertForFreeAndNone() {
+        for type in [CenterSquareType.none, .free] {
+            var p = full3x3()
+            if type == .free { p[4] = nil }
+            let rows = makeWizardBoardTaskRows(
+                placement: p, boardId: "b", size: 3, centerType: type,
+                translateChosenToLock: true, now: "n"
+            )
+            XCTAssertEqual(rows.filter { $0.isLocked || $0.isCenter }.count, 0, "\(type)")
+        }
+    }
+
+    private func seedUserAndTasks(_ db: AppDatabase, userId: String, count: Int) throws {
+        let now = AppDatabase.currentTimestamp()
+        try db.saveUser(User(
+            id: userId, email: "\(userId)@example.com", displayName: "T", photoURL: nil,
+            preferences: User.encodePreferences(.defaults),
+            createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+        ))
+        for i in 0..<count {
+            var task = t("t\(i)")
+            task.userId = userId
+            try db.saveTask(task)
+        }
+    }
+
+    private func persist(_ vm: BoardWizardViewModel, userId: String, status: WizardStatus) throws -> String {
+        let expectation = XCTestExpectation(description: "persistWizardBoard")
+        var resultId: String?
+        var errorMessage: String?
+        persistWizardBoard(
+            controller: vm, userId: userId, placement: full3x3(),
+            dates: (start: "2026-07-01T00:00:00.000", end: "2026-07-01T23:59:59.999"),
+            status: status, database: vm.database,
+            onSuccess: { id in resultId = id; expectation.fulfill() },
+            onError: { msg in errorMessage = msg; expectation.fulfill() }
+        )
+        wait(for: [expectation], timeout: 5.0)
+        XCTAssertNil(errorMessage)
+        return try XCTUnwrap(resultId)
+    }
+
+    private func chosenWizard(_ db: AppDatabase, userId: String) -> BoardWizardViewModel {
+        let vm = BoardWizardViewModel(preferences: .defaults, userId: userId, database: db)
+        vm.name = "Chosen"
+        vm.updateSize(3)
+        vm.updateCenterType(.chosen)
+        vm.centerTaskId = "t4"
+        vm.isRandomized = false
+        return vm
+    }
+
+    func testActivePersist_chosenPick_writesNoneBoard_andLockedCenterPlacement() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUserAndTasks(db, userId: "u1", count: 9)
+        let boardId = try persist(chosenWizard(db, userId: "u1"), userId: "u1", status: .active)
+
+        let board = try XCTUnwrap(db.fetchBoard(id: boardId))
+        XCTAssertEqual(board.centerSquareType, .none, "no new live board is CHOSEN")
+        XCTAssertNil(board.centerTaskId)
+        let rows = try db.fetchBoardTasks(boardId: boardId)
+        let center = try XCTUnwrap(rows.first { $0.row == 1 && $0.col == 1 })
+        XCTAssertEqual(center.taskId, "t4")
+        XCTAssertTrue(center.isLocked)
+        XCTAssertFalse(center.isCenter)
+        XCTAssertEqual(rows.filter { $0.isLocked }.count, 1)
+    }
+
+    func testDraftPersist_chosenPick_keepsChosenAndCenterTaskId() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUserAndTasks(db, userId: "u1", count: 9)
+        let boardId = try persist(chosenWizard(db, userId: "u1"), userId: "u1", status: .draft)
+
+        let board = try XCTUnwrap(db.fetchBoard(id: boardId))
+        XCTAssertEqual(board.centerSquareType, .chosen, "drafts keep CHOSEN so resume restores the pick")
+        XCTAssertEqual(board.centerTaskId, "t4")
+        let center = try XCTUnwrap(db.fetchBoardTasks(boardId: boardId).first { $0.row == 1 && $0.col == 1 })
+        XCTAssertTrue(center.isCenter)
+        XCTAssertFalse(center.isLocked)
+    }
 }

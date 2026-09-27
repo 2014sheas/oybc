@@ -2,6 +2,9 @@ import {
   getCenterSquareIndex,
   isCenterAutoCompleted,
   getCenterDisplayText,
+  effectiveCenter,
+  isLegacyChosen,
+  isLegacyChosenCenterLocked,
 } from '../src/centerSquare';
 import { CenterSquareType } from '../src/constants';
 
@@ -56,5 +59,46 @@ describe('getCenterDisplayText', () => {
 
   it('returns empty string for NONE type', () => {
     expect(getCenterDisplayText(CenterSquareType.NONE)).toBe('');
+  });
+});
+
+describe('effectiveCenter (legacy CHOSEN read-path normalization)', () => {
+  it('maps CHOSEN to NONE', () => {
+    expect(effectiveCenter(CenterSquareType.CHOSEN)).toBe(CenterSquareType.NONE);
+  });
+
+  it('passes FREE and NONE through unchanged', () => {
+    expect(effectiveCenter(CenterSquareType.FREE)).toBe(CenterSquareType.FREE);
+    expect(effectiveCenter(CenterSquareType.NONE)).toBe(CenterSquareType.NONE);
+  });
+});
+
+describe('isLegacyChosen', () => {
+  it('is true only for CHOSEN', () => {
+    expect(isLegacyChosen(CenterSquareType.CHOSEN)).toBe(true);
+    expect(isLegacyChosen(CenterSquareType.FREE)).toBe(false);
+    expect(isLegacyChosen(CenterSquareType.NONE)).toBe(false);
+  });
+});
+
+describe('isLegacyChosenCenterLocked', () => {
+  it('is true for the positional center of a CHOSEN odd board', () => {
+    expect(isLegacyChosenCenterLocked(CenterSquareType.CHOSEN, 2, 2, 5)).toBe(true);
+    expect(isLegacyChosenCenterLocked(CenterSquareType.CHOSEN, 1, 1, 3)).toBe(true);
+  });
+
+  it('is false off-center on a CHOSEN board', () => {
+    expect(isLegacyChosenCenterLocked(CenterSquareType.CHOSEN, 0, 0, 5)).toBe(false);
+    expect(isLegacyChosenCenterLocked(CenterSquareType.CHOSEN, 2, 1, 5)).toBe(false);
+  });
+
+  it('is false for FREE / NONE centers', () => {
+    expect(isLegacyChosenCenterLocked(CenterSquareType.FREE, 2, 2, 5)).toBe(false);
+    expect(isLegacyChosenCenterLocked(CenterSquareType.NONE, 2, 2, 5)).toBe(false);
+  });
+
+  it('is false on an even board (no positional center)', () => {
+    expect(isLegacyChosenCenterLocked(CenterSquareType.CHOSEN, 2, 2, 4)).toBe(false);
+    expect(isLegacyChosenCenterLocked(CenterSquareType.CHOSEN, 1, 1, 4)).toBe(false);
   });
 });

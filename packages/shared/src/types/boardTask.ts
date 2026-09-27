@@ -55,4 +55,10 @@ export interface CreateBoardTaskInput {
   row: number;
   col: number;
   isCenter: boolean;
+  /**
+   * Optional per-square lock at creation (Board Edit slice 3): the wizard's
+   * active persist writes a CHOSEN pick as a locked centre placement.
+   * Absent = unlocked.
+   */
+  isLocked?: boolean;
 }

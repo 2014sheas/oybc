@@ -312,8 +312,22 @@ final class BoardPlacementTests: XCTestCase {
         let expected: [String?]
     }
 
+    /// Board Edit slice 3 (D10): the squares editor's Shuffle kernel. `seed`
+    /// drives the LCG; when it is nil, `rngConstant` is a constant rng (pins
+    /// the near-1.0 clamp and the 0.0 edge). Same file drives
+    /// packages/bingo-core/tests/placementVectors.test.ts.
+    private struct ShuffleUnlockedVector: Decodable {
+        let name: String
+        let slots: [String?]
+        let fixed: [Bool]
+        let seed: Int?
+        let rngConstant: Double?
+        let expected: [String?]
+    }
+
     private struct PlacementVectorsFixture: Decodable {
         let placeBoardVectors: [PlaceBoardVector]
+        let shuffleUnlockedVectors: [ShuffleUnlockedVector]
     }
 
     private func loadPlacementVectorsFixture() throws -> PlacementVectorsFixture {
@@ -356,6 +370,25 @@ final class BoardPlacementTests: XCTestCase {
                 )
             }
             XCTAssertEqual(ids(placement), v.expected, "Vector '\(v.name)'")
+        }
+    }
+
+    func testShuffleUnlockedVectorsFixture_matchesShuffleUnlockedSlots() throws {
+        let fixture = try loadPlacementVectorsFixture()
+        XCTAssertGreaterThanOrEqual(fixture.shuffleUnlockedVectors.count, 6)
+        for v in fixture.shuffleUnlockedVectors {
+            let rng: () -> Double
+            if let seed = v.seed {
+                rng = makeSeededRng(UInt32(seed))
+            } else {
+                let constant = try XCTUnwrap(v.rngConstant, "Vector '\(v.name)' needs seed or rngConstant")
+                rng = { constant }
+            }
+            XCTAssertEqual(
+                Shuffle.shuffleUnlockedSlots(v.slots, fixed: v.fixed, rng: rng),
+                v.expected,
+                "Vector '\(v.name)'"
+            )
         }
     }
 }

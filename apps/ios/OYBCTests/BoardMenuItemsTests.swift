@@ -73,9 +73,11 @@ final class BoardMenuItemsTests: XCTestCase {
         XCTAssertEqual(items(makeBoard(status: .draft)), [])
     }
 
-    func test_chosenCenterOneOff_hidesRepeat() {
-        XCTAssertEqual(items(makeBoard(center: .chosen)), [.details, .archive, .delete])
-        XCTAssertFalse(BoardMenuItems.isRepeatEligible(board: makeBoard(center: .chosen), sourceTemplate: nil))
+    /// Board Edit slice 3 (D5): a legacy CHOSEN one-off reads as NONE + a
+    /// locked center, so it is repeat-eligible like any locked board.
+    func test_chosenCenterOneOff_showsRepeat() {
+        XCTAssertEqual(items(makeBoard(center: .chosen)), [.details, .repeatBoard, .archive, .delete])
+        XCTAssertTrue(BoardMenuItems.isRepeatEligible(board: makeBoard(center: .chosen), sourceTemplate: nil))
     }
 
     func test_unresolvedTemplate_hidesRepeat() {

@@ -15,13 +15,30 @@ typealias WizardPlacement = [Task?]
 /// a gold "FREE" cell over a real task (the preview never did, because it gates
 /// on `centreType != .none`). This helper is the single source of truth shared
 /// by the wizard-save and recurring-spawn paths so the rule can't diverge.
+///
+/// Board Edit slice 3 (D4): CHOSEN is legacy. When `translateChosenToLock` is
+/// set (the ACTIVE wizard persist), a `.chosen` centre is written as an
+/// ordinary task square pinned by a lock — `isCenter = false, isLocked = true`
+/// — and the caller stores the board as `.none`. Drafts leave it unset so a
+/// resumed draft still recognises its CHOSEN centre.
+///
+/// - Parameters:
+///   - placement: Row-major wizard placement (`nil` = no row).
+///   - boardId: The owning board.
+///   - size: Board size.
+///   - centerType: The wizard's centre type.
+///   - translateChosenToLock: Write a `.chosen` centre as a locked task square.
+///   - now: Timestamp for `createdAt` / `updatedAt`.
+/// - Returns: One `BoardTask` per non-nil slot.
 func makeWizardBoardTaskRows(
     placement: WizardPlacement,
     boardId: String,
     size: Int,
     centerType: CenterSquareType,
+    translateChosenToLock: Bool = false,
     now: String
 ) -> [BoardTask] {
+    let lockChosenCenter = translateChosenToLock && centerType == .chosen
     let isOdd = size % 2 != 0
     let centerRow = size / 2
     let centerCol = size / 2
@@ -37,7 +54,8 @@ func makeWizardBoardTaskRows(
             taskId: task.id,
             row: row,
             col: col,
-            isCenter: isCenterPos && centerType == .chosen,
+            isCenter: isCenterPos && centerType == .chosen && !lockChosenCenter,
+            isLocked: isCenterPos && lockChosenCenter,
             createdAt: now,
             updatedAt: now,
             version: 1
@@ -469,7 +487,15 @@ func persistWizardBoard(
 ) {
     let trimmedName = controller.name.trimmingCharacters(in: .whitespacesAndNewlines)
     let size = controller.size
-    let centerType = controller.centerType
+    let wizardCenterType = controller.centerType
+    // Board Edit slice 3 (D4): an ACTIVE persist never writes CHOSEN — the
+    // pick becomes a NONE board whose centre placement is locked (see
+    // `makeWizardBoardTaskRows(translateChosenToLock:)`). Drafts keep CHOSEN
+    // + `centerTaskId` so resume restores the pick.
+    let translateChosen = status == .active
+    let centerType: CenterSquareType = translateChosen
+        ? CenterSquare.effectiveCenter(wizardCenterType)
+        : wizardCenterType
     let chosenCenterId: String? = centerType == .chosen ? controller.centerTaskId : nil
     let draftBoardId = controller.draftBoardId
     let now = AppDatabase.currentTimestamp()
@@ -594,7 +620,8 @@ func persistWizardBoard(
                 placement: placement,
                 boardId: boardId,
                 size: size,
-                centerType: centerType,
+                centerType: wizardCenterType,
+                translateChosenToLock: translateChosen,
                 now: now
             )
             // Only persist deferred (Bug #85) tasks that are actually placed —

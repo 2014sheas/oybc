@@ -669,6 +669,28 @@ describe('buildRepeatBoardTemplateInput', () => {
     };
   }
 
+  it('a legacy CHOSEN board repeats with a NONE template center (Board Edit slice 3 D5)', () => {
+    const input = buildRepeatBoardTemplateInput(
+      buildSourceBoard({ centerSquareType: CenterSquareType.CHOSEN }),
+      ['task-a'],
+      Timeframe.DAILY,
+      'monday',
+    );
+    expect(input.centerSquareType).toBe(CenterSquareType.NONE);
+  });
+
+  it('FREE and NONE template centers copy through unchanged', () => {
+    for (const type of [CenterSquareType.FREE, CenterSquareType.NONE]) {
+      const input = buildRepeatBoardTemplateInput(
+        buildSourceBoard({ centerSquareType: type }),
+        ['task-a'],
+        Timeframe.DAILY,
+        'monday',
+      );
+      expect(input.centerSquareType).toBe(type);
+    }
+  });
+
   it('cadence === board.timeframe: lastSpawnedWindowKey is that same-granularity window', () => {
     // A DAILY board repeated Daily — the window key is just that day's start,
     // matching the "trivial" case where cadence and the board's own

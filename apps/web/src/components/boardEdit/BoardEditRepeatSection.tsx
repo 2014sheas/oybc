@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import {
-  CenterSquareType,
   Timeframe,
   formatCadenceAdverb,
   formatSpawnProvenanceNote,
@@ -37,9 +36,10 @@ export type RepeatSavePlan =
  * Returns the repeat mutation to run after a successful board save, or
  * `null` when the staged state is a no-op:
  *  - One-off board (`spawnedFromTemplateId == null`): a staged cadence ≠ Off
- *    becomes `startRepeating` — but never for a CHOSEN center (a CHOSEN
- *    center can never validate a spawn pool — `validateSpawnPool` rejects it
- *    as `unsupportedCenter`) and never without a signed-in user id.
+ *    becomes `startRepeating` — never without a signed-in user id. Any center
+ *    type is eligible: a legacy CHOSEN board repeats with a NONE template
+ *    (`buildRepeatBoardTemplateInput` reads `effectiveCenter` — Board Edit
+ *    slice 3, D5).
  *  - Repeating board with a resolved source record: a staged Active value
  *    differing from the record's current `isActive` becomes `setActive`.
  *    An unresolved (soft-deleted) record stages nothing.
@@ -51,7 +51,6 @@ export function buildRepeatSavePlan(args: {
   stagedCadence: RepeatCadenceChoice;
   /** Staged Active value; `null` = the toggle was never touched. */
   stagedActive: boolean | null;
-  centerType: CenterSquareType;
   hasUserId: boolean;
 }): RepeatSavePlan | null {
   const {
@@ -59,7 +58,6 @@ export function buildRepeatSavePlan(args: {
     sourceTemplateIsActive,
     stagedCadence,
     stagedActive,
-    centerType,
     hasUserId,
   } = args;
 
@@ -70,10 +68,6 @@ export function buildRepeatSavePlan(args: {
   }
 
   if (stagedCadence === 'off') return null;
-  // CHOSEN-center boards can't start repeating (see docblock) — the section
-  // is hidden for them, and this guard keeps a stale staged cadence inert
-  // if the user picks a cadence and THEN flips the center to CHOSEN.
-  if (centerType === CenterSquareType.CHOSEN) return null;
   if (!hasUserId) return null;
   return { kind: 'startRepeating', cadence: stagedCadence };
 }
@@ -109,9 +103,6 @@ export interface BoardEditRepeatSectionProps {
    *  loading, `null` for a one-off board. */
   sourceTemplate: RecurringBoardTemplate | null | undefined;
   userId: string | undefined;
-  /** Staged draft centerSquareType (the panel's controlled value) — gates
-   *  the one-off variant (CHOSEN hides it). */
-  centerType: CenterSquareType;
   /** Staged cadence for the one-off variant ('off' = no change). */
   stagedCadence: RepeatCadenceChoice;
   onStagedCadenceChange: (cadence: RepeatCadenceChoice) => void;
@@ -132,7 +123,7 @@ export interface BoardEditRepeatSectionProps {
  * `BoardPlayRepeatSection`). Two variants, both STAGED (nothing writes
  * until the panel's Save — docs/BOARD_EDIT.md staged-draft contract):
  *
- *  - One-off board (no source record), non-CHOSEN center: an
+ *  - One-off board (no source record), any center type: an
  *    Off · Daily · Weekly · Monthly · Yearly cadence segmented. On Save
  *    with cadence ≠ Off the panel runs `repeatBoardAsRecurring` AFTER the
  *    board save commits.
@@ -149,7 +140,6 @@ export function BoardEditRepeatSection({
   board,
   sourceTemplate,
   userId,
-  centerType,
   stagedCadence,
   onStagedCadenceChange,
   stagedActive,
@@ -208,11 +198,9 @@ export function BoardEditRepeatSection({
     );
   }
 
-  // One-off board. CHOSEN-center boards can never start repeating (a CHOSEN
-  // center can never validate a spawn pool — `validateSpawnPool` rejects it
-  // as `unsupportedCenter`), so the section is hidden for them; likewise
-  // with no signed-in user id there's nothing to own the new record.
-  if (centerType === CenterSquareType.CHOSEN || !userId) return null;
+  // One-off board. With no signed-in user id there's nothing to own the new
+  // record. (A legacy CHOSEN center no longer hides this — slice 3, D5.)
+  if (!userId) return null;
 
   return (
     <div className={styles.repeatsSection}>

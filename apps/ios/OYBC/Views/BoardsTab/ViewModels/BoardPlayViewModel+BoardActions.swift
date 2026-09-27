@@ -4,8 +4,8 @@ import GRDB
 // MARK: - BoardPlayViewModel + Board actions (Board Edit redesign slice 2)
 
 /// The title-row "…" menu's write paths — Board details / Repeat / Archive /
-/// Delete — plus the two small async reads their sheets need
-/// (`loadSpawnNote` / `hasCenterCandidate`). Split out of
+/// Delete — plus the small async read the Repeat sheet needs
+/// (`loadSpawnNote`). Split out of
 /// `BoardPlayViewModel.swift` (which is at its frozen size cap) alongside
 /// `+EditCommit.swift`'s squares-editor commit, docs/BOARD_EDIT_REDESIGN.md.
 ///
@@ -107,17 +107,6 @@ extension BoardPlayViewModel {
                 tasksById: tasksById,
                 dealtTaskIds: dealt
             )
-        }.value
-    }
-
-    /// Whether the board has any placement that could back a CHOSEN
-    /// center — gates the Board details sheet's CHOSEN option
-    /// (`BoardDetailsDraft.validationError(hasCandidateTasks:)`).
-    func hasCenterCandidate() async -> Bool {
-        let bid = boardId
-        let db = database
-        return await _Concurrency.Task.detached(priority: .userInitiated) {
-            ((try? db.fetchBoardTasks(boardId: bid).count) ?? 0) > 0
         }.value
     }
 }

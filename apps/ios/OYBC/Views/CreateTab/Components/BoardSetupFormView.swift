@@ -26,7 +26,10 @@ struct BoardSetupFormView: View {
     var timeframeBinding: Binding<Timeframe>
     var customStartDateBinding: Binding<Date>
     var customEndDateBinding: Binding<Date>
-    var centerTypeBinding: Binding<CenterSquareType>
+    /// Nil hides the center section. The Board details sheet passes nil
+    /// (slice 3, D6 — the center changes only in the squares editor); the
+    /// section itself is deleted in slice 3 T5.
+    var centerTypeBinding: Binding<CenterSquareType>?
     var weekStartDay: String
     /// When true (edit-active only), the CHOSEN option in the center picker is
     /// guarded with an explanatory note.
@@ -59,7 +62,9 @@ struct BoardSetupFormView: View {
         editTimeframeSection
 
         // ── Center square ──
-        editCenterSection
+        if let centerTypeBinding {
+            editCenterSection(centerTypeBinding)
+        }
     }
 
     // MARK: - Edit-active: Board name section
@@ -207,7 +212,7 @@ struct BoardSetupFormView: View {
     // MARK: - Edit-active: Center square section
 
     @ViewBuilder
-    private var editCenterSection: some View {
+    private func editCenterSection(_ centerTypeBinding: Binding<CenterSquareType>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("CENTER SQUARE")
                 .risoSectionLabel()
@@ -301,7 +306,7 @@ extension BoardSetupFormView {
         timeframe: Binding<Timeframe>,
         customStartDate: Binding<Date>,
         customEndDate: Binding<Date>,
-        centerType: Binding<CenterSquareType>,
+        centerType: Binding<CenterSquareType>? = nil,
         weekStartDay: String,
         chosenCenterDisabled: Bool = false,
         storedWindow: (start: Date, end: Date)? = nil

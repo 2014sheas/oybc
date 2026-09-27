@@ -599,6 +599,24 @@ final class RecurringBoardTemplatesTests: XCTestCase {
     /// not the Wednesday itself).
     private let wednesdayBoardStart = "2026-06-24T00:00:00.000"
 
+    /// Board Edit slice 3 (D5): a legacy CHOSEN board repeats with a NONE
+    /// template center — templates can't hold CHOSEN (`validateSpawnPool`
+    /// rejects it) and locks don't carry into templates (OQ1).
+    func testBuildRepeatBoardTemplateInput_LegacyChosenBoard_WritesNoneCenter() {
+        let input = buildRepeatBoardTemplateInput(
+            boardName: "Legacy", boardSize: 3, centerSquareType: .chosen,
+            isRandomized: false, boardStartDate: wednesdayBoardStart,
+            boardTaskIds: ["t1"], cadence: .daily, weekStartDay: "monday"
+        )
+        XCTAssertEqual(input?.centerSquareType, CenterSquareType.none)
+        let free = buildRepeatBoardTemplateInput(
+            boardName: "Free", boardSize: 3, centerSquareType: .free,
+            isRandomized: false, boardStartDate: wednesdayBoardStart,
+            boardTaskIds: ["t1"], cadence: .daily, weekStartDay: "monday"
+        )
+        XCTAssertEqual(free?.centerSquareType, .free)
+    }
+
     func testBuildRepeatBoardTemplateInput_CadenceEqualsTimeframe_WindowKeyMatchesBoardWindow() {
         // A .daily board repeated .daily — the cadence window IS the board's
         // own day, so the window key is just that day's start.

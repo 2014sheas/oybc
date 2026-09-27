@@ -32,7 +32,15 @@ const FlexibleDateTime = z.string().datetime({ local: true, offset: true });
  */
 const LEGACY_CUSTOM_FREE = 'custom_free';
 
-/** `CenterSquareType`, tolerantly coercing the retired `custom_free` → FREE. */
+/**
+ * `CenterSquareType`, tolerantly coercing the retired `custom_free` → FREE.
+ *
+ * `CHOSEN` stays decodable, unchanged (Board Edit slice 3, D3): it is legacy —
+ * live boards read it via `effectiveCenter` (@oybc/bingo-core) as NONE + a
+ * locked center placement, and slice-3+ clients never write it except on
+ * wizard drafts. Old peers, sealed rows and drafts still carry it, so do NOT
+ * drop it from this schema.
+ */
 const CenterSquareTypeSchema = z.preprocess(
   (v) => (v === LEGACY_CUSTOM_FREE ? CenterSquareType.FREE : v),
   z.nativeEnum(CenterSquareType)
@@ -592,6 +600,7 @@ export const CreateBoardTaskInputSchema = z.object({
   row: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   col: z.number().int().min(0).max(BOARD_TASK_POSITION_MAX),
   isCenter: z.boolean(),
+  isLocked: z.boolean().optional(),
 });
 
 export const BoardTaskSchema = z.object({

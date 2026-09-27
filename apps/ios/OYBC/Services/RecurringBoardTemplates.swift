@@ -360,7 +360,8 @@ struct RepeatBoardTemplateInput {
 ///   - boardName: The source board's name — carried forward as the
 ///     template's name.
 ///   - boardSize: The source board's grid size.
-///   - centerSquareType: The source board's center type.
+///   - centerSquareType: The source board's center type (stored; normalized
+///     through `CenterSquare.effectiveCenter`, so CHOSEN → NONE).
 ///   - isRandomized: The source board's shuffle setting.
 ///   - boardStartDate: The source board's `startDate` (ISO8601) — the
 ///     anchor for locating the cadence window that contains it.
@@ -395,7 +396,9 @@ func buildRepeatBoardTemplateInput(
         name: boardName,
         timeframe: cadence,
         boardSize: boardSize,
-        centerSquareType: centerSquareType,
+        // Board Edit slice 3 (D5): the template gets the EFFECTIVE center —
+        // a legacy CHOSEN board repeats as NONE (templates are FREE | NONE).
+        centerSquareType: CenterSquare.effectiveCenter(centerSquareType),
         isRandomized: isRandomized,
         manualTaskIds: boardTaskIds,
         isActive: true,

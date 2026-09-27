@@ -120,3 +120,17 @@ describe('BoardSetupForm — edit-active calendar window (Board Edit slice 2 sel
     expect(html).not.toContain('2020-02-01');
   });
 });
+
+describe('BoardSetupForm — center selector (Board Edit slice 3, D6)', () => {
+  it('edit-active (Board details) has no Center square selector — the center changes only in the squares editor', () => {
+    const html = render({ mode: 'edit-active', centerType: CenterSquareType.FREE });
+    expect(html).not.toContain('Center square');
+    expect(html).not.toContain('bw-center-type');
+  });
+
+  it('create mode keeps the Center square selector, including Choose (the wizard is unchanged)', () => {
+    const html = render({ mode: 'create', centerType: CenterSquareType.FREE });
+    expect(html).toContain('Center square');
+    expect(html).toContain(`value="${CenterSquareType.CHOSEN}"`);
+  });
+});

@@ -688,7 +688,7 @@ describe('persistWizardBoardRows — member-rule mint', () => {
     expect(rows[0].col).toBe(0); // cell 3 — the member kept its square
   });
 
-  it('a CHOSEN centre that resolves to a derived counter keeps its cell and the board follows it', async () => {
+  it('a CHOSEN centre that resolves to a derived counter keeps its cell as a LOCKED placement (slice 3 D4)', async () => {
     const root = await seedSourceBoardWithCounter();
     const filler: Task = {
       id: FILLER,
@@ -738,14 +738,16 @@ describe('persistWizardBoardRows — member-rule mint', () => {
 
     const derivedId = derivedTaskId(boardId, ROOT);
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
-    const centre = rows.find((bt) => bt.isCenter);
+    const centre = rows.find((bt) => bt.row === 1 && bt.col === 1);
     expect(centre?.taskId).toBe(derivedId);
-    expect(centre?.row).toBe(1);
-    expect(centre?.col).toBe(1);
+    expect(centre?.isLocked).toBe(true);
+    expect(centre?.isCenter).toBe(false);
     // The other cell is untouched by the plan.
-    expect(rows.find((bt) => !bt.isCenter)?.taskId).toBe(FILLER);
+    expect(rows.find((bt) => bt.row === 0 && bt.col === 0)?.taskId).toBe(FILLER);
+    // An ACTIVE save never writes CHOSEN: the pin is a locked task square.
     const board = await db.boards.get(boardId);
-    expect(board?.centerTaskId).toBe(derivedId);
+    expect(board?.centerSquareType).toBe(CenterSquareType.NONE);
+    expect(board?.centerTaskId).toBeUndefined();
   });
 
   it('a DRAFT save mints nothing; activating the same draft mints it', async () => {
@@ -923,5 +925,99 @@ describe('persistWizardBoardRows — manualTaskVary (B3)', () => {
     expect(await db.tasks.get(derivedTaskId(boardId, HAND))).toBeUndefined();
     const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
     expect(rows[0].taskId).toBe(HAND);
+  });
+});
+
+/**
+ * Board Edit slice 3 (D4) — the wizard's "Choose" centre stays in the UI, but
+ * an ACTIVE persist writes it as the slice-3 shape: `centerSquareType = NONE`,
+ * no `centerTaskId`, and the centre placement `isLocked: true, isCenter:
+ * false`. A DRAFT keeps CHOSEN + `centerTaskId` so resume restores the pick.
+ * Mirrors iOS `BoardWizardCenterSquareTests`.
+ */
+describe('persistWizardBoardRows — CHOSEN centre translation (slice 3 D4)', () => {
+  function plainTask(id: string): Task {
+    return {
+      id,
+      userId: USER,
+      title: `Task ${id}`,
+      type: TaskType.NORMAL,
+      isCompleted: false,
+      totalCompletions: 0,
+      totalInstances: 0,
+      createdAt: START,
+      updatedAt: START,
+      version: 1,
+      isDeleted: false,
+    };
+  }
+
+  async function chosenInput(status: 'active' | 'draft', draftBoardId: string | null = null) {
+    const edge = plainTask(uuid(701));
+    const pick = plainTask(uuid(702));
+    if (!(await db.tasks.get(edge.id))) await db.tasks.bulkAdd([edge, pick]);
+    const placement: (Task | null)[] = new Array(9).fill(null);
+    placement[0] = edge;
+    placement[4] = pick;
+    return baseInput({
+      status,
+      draftBoardId,
+      placement,
+      centerType: CenterSquareType.CHOSEN,
+      boardFields: {
+        name: 'Chosen board',
+        boardSize: 3,
+        timeframe: Timeframe.DAILY,
+        startDate: START,
+        centerSquareType: CenterSquareType.CHOSEN,
+        centerTaskId: pick.id,
+        isRandomized: false,
+      },
+    });
+  }
+
+  it('an ACTIVE save persists NONE + a locked centre placement + no centerTaskId', async () => {
+    const boardId = await persistWizardBoardRows(await chosenInput('active'));
+    const board = await db.boards.get(boardId);
+    expect(board?.status).toBe(BoardStatus.ACTIVE);
+    expect(board?.centerSquareType).toBe(CenterSquareType.NONE);
+    expect(board?.centerTaskId).toBeUndefined();
+
+    const rows = await db.boardTasks.where('boardId').equals(boardId).toArray();
+    const centre = rows.find((bt) => bt.row === 1 && bt.col === 1);
+    expect(centre?.taskId).toBe(uuid(702));
+    expect(centre?.isLocked).toBe(true);
+    expect(centre?.isCenter).toBe(false);
+    const edge = rows.find((bt) => bt.row === 0 && bt.col === 0);
+    expect(edge?.isLocked).not.toBe(true);
+    expect(rows.some((bt) => bt.isCenter)).toBe(false);
+  });
+
+  it('a DRAFT save keeps CHOSEN + centerTaskId and an unlocked isCenter placement', async () => {
+    const boardId = await persistWizardBoardRows(await chosenInput('draft'));
+    const board = await db.boards.get(boardId);
+    expect(board?.status).toBe(BoardStatus.DRAFT);
+    expect(board?.centerSquareType).toBe(CenterSquareType.CHOSEN);
+    expect(board?.centerTaskId).toBe(uuid(702));
+    const centre = (await db.boardTasks.where('boardId').equals(boardId).toArray()).find(
+      (bt) => bt.row === 1 && bt.col === 1,
+    );
+    expect(centre?.isCenter).toBe(true);
+    expect(centre?.isLocked).not.toBe(true);
+  });
+
+  it('activating a CHOSEN draft translates it and clears the stored centerTaskId', async () => {
+    const draftId = await persistWizardBoardRows(await chosenInput('draft'));
+    await persistWizardBoardRows(await chosenInput('active', draftId));
+    const board = await db.boards.get(draftId);
+    expect(board?.status).toBe(BoardStatus.ACTIVE);
+    expect(board?.centerSquareType).toBe(CenterSquareType.NONE);
+    expect(board?.centerTaskId).toBeUndefined();
+    const live = (await db.boardTasks.where('boardId').equals(draftId).toArray()).filter(
+      (bt) => !bt.isDeleted,
+    );
+    const centre = live.find((bt) => bt.row === 1 && bt.col === 1);
+    expect(centre?.isLocked).toBe(true);
+    expect(centre?.isCenter).toBe(false);
   });
 });

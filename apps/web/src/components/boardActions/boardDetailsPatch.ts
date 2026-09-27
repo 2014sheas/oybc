@@ -1,5 +1,4 @@
 import {
-  CenterSquareType,
   Timeframe,
   toLocalISO,
   getTimeframeBoundaries,
@@ -126,7 +125,6 @@ export interface BoardDetailsDraft {
   customStartDate: string;
   /** Empty for an ongoing board. */
   customEndDate: string;
-  centerType: CenterSquareType;
 }
 
 /**
@@ -141,7 +139,6 @@ export function seedBoardDetailsDraft(board: Board): BoardDetailsDraft {
     timeframe: board.timeframe as Timeframe,
     customStartDate: toYMD(board.startDate),
     customEndDate: toYMD(board.endDate),
-    centerType: board.centerSquareType as CenterSquareType,
   };
 }
 
@@ -183,15 +180,14 @@ function detailsPatch(
   });
   if (dates.startDate !== undefined) patch.startDate = dates.startDate;
   if (dates.endDate !== undefined) patch.endDate = dates.endDate;
-
-  if (draft.centerType !== board.centerSquareType) patch.centerSquareType = draft.centerType;
+  // No center group (Board Edit slice 3, D6): the center changes only in the
+  // squares editor.
   return patch;
 }
 
 /**
  * Build the metadata patch the Board details sheet saves: only the fields
- * that actually change (trimmed name, custom ⇄ ongoing timeframe + dates,
- * center).
+ * that actually change (trimmed name, custom ⇄ ongoing timeframe + dates).
  *
  * @param board - The board being edited.
  * @param draft - The sheet's current draft.
@@ -214,7 +210,7 @@ export function buildBoardDetailsPatch(
 }
 
 /**
- * Count the draft's edits in field groups (name / dates / center), counting
+ * Count the draft's edits in field groups (name / dates), counting
  * ONLY what `buildBoardDetailsPatch` would write — derived from the same
  * builder, so the "N edits" counter and the Save can never disagree again
  * (bugfix B1 was exactly that disagreement).
@@ -222,14 +218,13 @@ export function buildBoardDetailsPatch(
  * @param board - The board being edited.
  * @param draft - The sheet's current draft.
  * @param now - Injected "today" for determinism; defaults to now.
- * @returns 0–3.
+ * @returns 0–2.
  */
 export function countBoardDetailsEdits(board: Board, draft: BoardDetailsDraft, now?: Date): number {
   const patch = detailsPatch(board, draft, null, now);
   let count = 0;
   if (patch.name !== undefined) count++;
   if (patch.timeframe !== undefined || patch.startDate !== undefined || patch.endDate !== undefined) count++;
-  if (patch.centerSquareType !== undefined) count++;
   return count;
 }
 
@@ -237,15 +232,9 @@ export function countBoardDetailsEdits(board: Board, draft: BoardDetailsDraft, n
  * Validate the draft before Save.
  *
  * @param draft - The sheet's current draft.
- * @param ctx.hasCandidateTasks - Whether the board has any placed task (the
- *   CHOSEN guard — `countBoardTasksForBoard(board.id) > 0`).
- * @param ctx.centerTaskId - The board's stored `centerTaskId`.
  * @returns The user-facing error, or `null` when the draft is valid.
  */
-export function validateBoardDetails(
-  draft: BoardDetailsDraft,
-  ctx: { hasCandidateTasks: boolean; centerTaskId: string | null | undefined },
-): string | null {
+export function validateBoardDetails(draft: BoardDetailsDraft): string | null {
   if (!draft.name.trim()) return 'Board name is required.';
   if (draft.timeframe === Timeframe.CUSTOM) {
     if (!draft.customStartDate || !draft.customEndDate) {
@@ -254,12 +243,6 @@ export function validateBoardDetails(
     if (draft.customEndDate < draft.customStartDate) {
       return 'End date must be on or after the start date.';
     }
-  }
-  if (
-    draft.centerType === CenterSquareType.CHOSEN &&
-    (ctx.centerTaskId == null || !ctx.hasCandidateTasks)
-  ) {
-    return 'CHOSEN is unavailable — this board has no existing center task to restore.';
   }
   return null;
 }

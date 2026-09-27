@@ -29,4 +29,18 @@ final class CenterSquareTypeDecodeTests: XCTestCase {
             .free
         )
     }
+
+    // Board Edit slice 3 (D3): CHOSEN is legacy but must stay decodable as
+    // itself — the unknown-value fallback would otherwise silently turn every
+    // legacy CHOSEN board into a FREE board.
+    func test_legacy_chosen_decodes_as_chosen_not_free() throws {
+        XCTAssertEqual(
+            try JSONDecoder().decode(CenterSquareType.self, from: Data("\"chosen\"".utf8)),
+            .chosen
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(CenterSquareType.fromDatabaseValue("chosen".databaseValue)),
+            .chosen
+        )
+    }
 }
