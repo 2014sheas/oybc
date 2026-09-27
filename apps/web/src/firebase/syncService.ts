@@ -19,6 +19,7 @@ import {
   recordSyncEvent,
   recordSyncError,
   resetSyncStatus,
+  markFirstPullCompleted,
   setExhaustedCount,
 } from './syncStatus';
 import { db } from '../db/internal';
@@ -554,6 +555,7 @@ export async function pullSync(
     }
   }
 
+  markFirstPullCompleted();
   return result;
 }
 

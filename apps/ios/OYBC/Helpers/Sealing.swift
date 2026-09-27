@@ -179,9 +179,11 @@ func isBoardClosed(_ board: Board) -> Bool {
 /// expired-but-unsealed board is "still fully live" (the closing-out
 /// banner's **Log** action depends on this — the 11:58pm workout logged at
 /// 12:04am from the closing daily's own surface is stamped at its `endDate`
-/// and counts for the closing daily), and the timeframe-scaled backstop
-/// bounds the overtime, after which the board auto-seals and locks. A sealed
-/// board can never be interacted with again (no unseal gesture in v1).
+/// and counts for the closing daily), and next-window auto-close bounds the
+/// overtime, after which the board closes. A sealed board locks ORDINARY
+/// play; its squares route to the closed-board late-log sheet instead
+/// (`AppDatabase+LateLog.swift`), and Reopen clears the seal (Board Edit
+/// redesign slice 4).
 ///
 /// Extracted as a standalone pure function (rather than left inline in the
 /// view) so the gating rule is unit-testable without instantiating SwiftUI.

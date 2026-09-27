@@ -211,11 +211,16 @@ describe('isBoardEnded / isBoardClosed (autoCloseDeadlineVectors.json#lifecycle)
 });
 
 // ── Sealed-window tombstone immunity (docs Decision 9 + §Write paths) ─────────
-import {
-  buildSealImmuneWindows,
-  isOccurredAtSealImmune,
-  isEventSealImmune,
-} from '../../src/algorithms/taskEvents';
+import { buildSealImmuneWindows, isEventSealImmune } from '../../src/algorithms/taskEvents';
+
+/** The occurredAt-only immunity check: an event with no `boardId` (a heal /
+ *  backfill mint, never a late log) is immune iff a window holds it. */
+function isOccurredAtSealImmune(
+  occurredAt: string,
+  windows: Parameters<typeof isEventSealImmune>[1],
+): boolean {
+  return isEventSealImmune({ occurredAt, createdAt: occurredAt, boardId: undefined }, windows);
+}
 
 describe('sealed-window tombstone immunity', () => {
   const sealedBoards = [
@@ -340,19 +345,4 @@ describe('isEventSealImmune (sealReDerivationVectors.json#sealImmunity)', () => 
       expect(isEventSealImmune(event, windows)).toBe(v.expectedImmune);
     });
   }
-
-  it('agrees with isOccurredAtSealImmune for every event made before its seal', () => {
-    const windows = buildSealImmuneWindows([
-      { startDate: '2026-09-15T00:00:00.000Z', endDate: '2026-09-15T23:59:59.999Z', sealedAt: '2026-09-17T00:00:00.000Z' },
-    ]);
-    for (const occurredAt of [
-      '2026-09-14T23:59:59.999Z',
-      '2026-09-15T00:00:00.000Z',
-      '2026-09-15T23:59:59.999Z',
-      '2026-09-16T00:00:00.000Z',
-    ]) {
-      const event = { occurredAt, createdAt: occurredAt, boardId: 'b' };
-      expect(isEventSealImmune(event, windows)).toBe(isOccurredAtSealImmune(occurredAt, windows));
-    }
-  });
 });

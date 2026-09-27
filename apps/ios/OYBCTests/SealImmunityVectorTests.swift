@@ -120,6 +120,8 @@ final class SealImmunityVectorTests: XCTestCase {
             lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
         )
         XCTAssertFalse(isEventSealImmune(late, windows: windows))
-        XCTAssertTrue(isOccurredAtSealImmune(late.occurredAt, windows: windows))
+        var mint = late
+        mint.boardId = nil // a heal / backfill mint (no board) stays immune
+        XCTAssertTrue(isEventSealImmune(mint, windows: windows))
     }
 }

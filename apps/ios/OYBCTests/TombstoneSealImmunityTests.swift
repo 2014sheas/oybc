@@ -125,8 +125,8 @@ final class TombstoneSealImmunityTests: XCTestCase {
         let endMs = DateFormatting.parseISO(end)!.timeIntervalSince1970 * 1000
         let sealedMs = DateFormatting.parseISO(sealedAt)!.timeIntervalSince1970 * 1000
         XCTAssertEqual(w.map(\.endMs), [endMs, sealedMs, sealedMs])
-        XCTAssertFalse(isOccurredAtSealImmune(overtimeGap, windows: [w[0]]))
-        XCTAssertTrue(isOccurredAtSealImmune(end, windows: [w[0]]))
+        XCTAssertFalse(isEventSealImmune(occurredAt: overtimeGap, createdAt: overtimeGap, boardId: nil, windows: [w[0]]))
+        XCTAssertTrue(isEventSealImmune(occurredAt: end, createdAt: end, boardId: nil, windows: [w[0]]))
     }
 
     // MARK: - F11: unparseable windowEnd fails open (web parity)

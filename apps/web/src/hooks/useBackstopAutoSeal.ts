@@ -4,8 +4,9 @@ import { repairPlacementIntegrity } from '../db/operations/placementIntegrity';
 import { getSyncStatus, subscribeSyncStatus } from '../firebase/syncStatus';
 
 /**
- * Board Edit redesign slice 4 (D5) — resolves once the session's first pull
- * has completed (`totalPulled` ticks up from 0), or after `timeoutMs`
+ * Board Edit redesign slice 4 (D5) — resolves once the session's first full
+ * `pullSync` pass has finished (`firstPullCompleted` — every collection,
+ * boards included, not merely the first applied doc), or after `timeoutMs`
  * (offline / a slow first sync), whichever comes first. Offline (per
  * `navigator.onLine`) resolves immediately — mirrors today's on-mount
  * posture when there is nothing to wait for.
@@ -21,7 +22,7 @@ function waitForFirstPullOrTimeout(timeoutMs = 10_000): Promise<void> {
       resolve();
       return;
     }
-    if (getSyncStatus().totalPulled > 0) {
+    if (getSyncStatus().firstPullCompleted) {
       resolve();
       return;
     }
@@ -35,7 +36,7 @@ function waitForFirstPullOrTimeout(timeoutMs = 10_000): Promise<void> {
       resolve();
     };
     const unsubscribe = subscribeSyncStatus(() => {
-      if (getSyncStatus().totalPulled > 0) finish();
+      if (getSyncStatus().firstPullCompleted) finish();
     });
     timer = setTimeout(finish, timeoutMs);
   });
@@ -47,7 +48,9 @@ function waitForFirstPullOrTimeout(timeoutMs = 10_000): Promise<void> {
  *
  * Mounted by `BoardsPage`; runs once per user on mount. Mirrors the
  * recurring-spawn lazy-detection posture (`useRecurringBoardSpawn`): boards
- * past their timeframe-scaled backstop deadline are sealed when the user opens
+ * past their auto-close deadline (the end of the NEXT window of their
+ * timeframe — `computeAutoCloseDeadlineMs`; never for a reopened board) are
+ * sealed when the user opens
  * the Boards tab — never background-scheduled, never a DB write without a user
  * having opened the app (the house lazy-detection invariant).
  *

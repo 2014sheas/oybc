@@ -132,7 +132,7 @@ extension BoardPlayView {
             let children = viewModel.compoundChildrenByCompound[task.id] ?? []
             let parts: [LateLogCompoundPart] = children.compactMap { link in
                 guard let child = viewModel.taskMap[link.childTaskId], !child.isDeleted else { return nil }
-                let isStageable = child.type == .normal
+                let isStageable = child.type == .normal || (child.type == .counting && child.sharedCounterId == nil)
                 let alreadyDone: Bool = {
                     if child.type == .compound {
                         return CompoundEvaluation.evaluate(
@@ -154,6 +154,9 @@ extension BoardPlayView {
                 taskTitle: task.title,
                 kind: .compound(parts: parts),
                 onCommitCompound: { childIds in runLateLogCompound(compoundTaskId: task.id, childIds: childIds) },
+                canCommitCompound: { staged in
+                    viewModel.wouldLateLogCompoundRuleBeMet(compoundTaskId: task.id, childTaskIds: staged)
+                },
                 errorMessage: lateLogErrorMessage
             )
 

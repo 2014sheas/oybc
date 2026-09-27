@@ -170,8 +170,15 @@ extension AppDatabase {
         // (decode defaults false; pre-v27 rows are all live).
         let boardTasks = try BoardTask.fetchAll(db).filter { !$0.isDeleted }
         let children = try CompoundChild.filter(Column("isDeleted") == false).fetchAll(db)
-        let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: taskId, children: children)
-        let affected = DerivationPass.findAffectedBoardIds(changedTaskId: taskId, parentCompounds: parents, boardTasks: boardTasks)
+        // A shared-counter ROOT is never placed itself — its window-stamped
+        // derived rows are, and they resolve from the root's events (Board
+        // Edit redesign slice 4, D10). Reach the sealed boards placing those
+        // rows too, like the sealed re-derivation's reachability.
+        var affected = Set<String>()
+        for id in try Self.withWindowStampedDerived(db: db, taskIds: [taskId]) {
+            let parents = DerivationPass.findTransitiveParentCompounds(changedTaskId: id, children: children)
+            affected.formUnion(DerivationPass.findAffectedBoardIds(changedTaskId: id, parentCompounds: parents, boardTasks: boardTasks))
+        }
         let placing = sealedBoards.filter { affected.contains($0.id) }
         return buildSealImmuneWindows(
             sealedBoards: placing.compactMap { b in

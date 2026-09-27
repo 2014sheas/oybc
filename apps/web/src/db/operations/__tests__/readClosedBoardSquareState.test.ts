@@ -152,6 +152,32 @@ describe('readClosedBoardSquareState — COUNTING', () => {
     expect(overshoot?.isGreen).toBe(true);
   });
 
+  it('excludes events outside the board window (a prior window, the overtime gap)', async () => {
+    await seedCountingTask(TASK, 5);
+    await seedBoard(DAILY);
+    await placeTask(DAILY, TASK, 0);
+    // Yesterday's increment (a previous window) and one in the overtime gap
+    // (endDate, sealedAt] — neither belongs to this board's sealed window.
+    const base = {
+      taskId: TASK,
+      userId: USER,
+      kind: 'increment' as const,
+      isDeleted: false,
+      version: 1,
+    };
+    await db.taskEvents.bulkAdd([
+      { ...base, id: 'ev-prev', delta: 4, occurredAt: '2026-06-30T12:00:00.000Z', createdAt: '2026-06-30T12:00:00.000Z', updatedAt: '2026-06-30T12:00:00.000Z' },
+      { ...base, id: 'ev-gap', delta: 2, occurredAt: '2026-07-02T00:00:00.500Z', createdAt: '2026-07-02T00:00:00.500Z', updatedAt: '2026-07-02T00:00:00.500Z' },
+      { ...base, id: 'ev-in', delta: 1, occurredAt: '2026-07-01T09:00:00.000Z', createdAt: '2026-07-01T09:00:00.000Z', updatedAt: '2026-07-01T09:00:00.000Z' },
+    ]);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+
+    await lateLogIncrement(DAILY, TASK, 2, FRIDAY_NOW);
+    const state = await readClosedBoardSquareState(DAILY, TASK);
+    expect(state?.count).toBe(3); // 1 in-window + the 2 late-logged at endDate
+    expect(state?.isGreen).toBe(false);
+  });
+
   it('resolves a window-stamped derived square to the ROOT for late logs + count', async () => {
     const ROOT = 'root';
     const DERIVED = 'derived';

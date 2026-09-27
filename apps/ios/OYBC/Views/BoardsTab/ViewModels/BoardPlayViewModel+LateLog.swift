@@ -38,6 +38,22 @@ extension BoardPlayViewModel {
         return !selectClosedBoardLateLogs(events: events, board: b, taskId: taskId).isEmpty
     }
 
+    /// Pre-check for the compound late-log sheet: would committing
+    /// `childTaskIds` meet `compoundTaskId`'s rule on this closed board? The
+    /// SAME pure planner the DB commit enforces
+    /// (`AppDatabase.planCompoundLateLog`), over this view model's in-memory
+    /// maps — so "Mark done on board" never enables for a rejected commit.
+    func wouldLateLogCompoundRuleBeMet(compoundTaskId: String, childTaskIds: Set<String>) -> Bool {
+        guard let b = board, b.sealedAt != nil, let compound = taskMap[compoundTaskId] else { return false }
+        let now = AppDatabase.currentTimestamp()
+        return AppDatabase.planCompoundLateLog(
+            board: b, compound: compound, requestedChildIds: childTaskIds,
+            taskById: taskMap, childrenByCompound: compoundChildrenByCompound,
+            eventsByTaskId: windowEventsByTaskId,
+            occurredAt: lateLogOccurredAt(board: b, nowIso: now), now: now
+        ).isRuleMet
+    }
+
     /// Marks a NORMAL square done on the closed board (D7). No-op (per
     /// `AppDatabase.lateLogCompletion`) if already complete in-window.
     func commitLateLogCompletion(taskId: String) async throws {
@@ -61,9 +77,9 @@ extension BoardPlayViewModel {
         reload()
     }
 
-    /// Stages then commits completions for `childTaskIds` under
-    /// `compoundTaskId` — rejected (no write) unless the operator rule is
-    /// met once staged (D7).
+    /// Commits the staged parts for `childTaskIds` under `compoundTaskId`
+    /// (NORMAL → completion, plain COUNTING → +1) — rejected (no write)
+    /// unless the operator rule is met once staged (D7).
     ///
     /// - Throws: `LateLogError.ruleNotMet` if the staged set doesn't satisfy
     ///   the compound's rule yet.

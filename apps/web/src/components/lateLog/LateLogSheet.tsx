@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  OperatorType,
   TaskType,
   formatWindowLabel,
   isEventOwningTask,
@@ -9,7 +8,12 @@ import {
   type CompoundChild,
   type Task,
 } from '@oybc/shared';
-import { fetchLiveEventsForTaskIds, readClosedBoardSquareState } from '../../db/operations/lateLog';
+import {
+  fetchLiveEventsForTaskIds,
+  previewLateLogCompoundRule,
+  readClosedBoardSquareState,
+  type LateLogCompoundAction,
+} from '../../db/operations/lateLog';
 import { useLateLog } from '../../hooks/useLateLog';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { parseCustomLogAmount } from '../counters/amountChips';
@@ -41,6 +45,26 @@ function sealedBoundMs(board: Board): number | null {
   return Math.min(endMs, sealedMs);
 }
 
+/** A direct event-owning child's sealed-bounded window count (increments
+ *  for COUNTING; completions count as 1 for NORMAL). */
+function childWindowSum(
+  child: Task,
+  events: ReadonlyArray<{ isDeleted: boolean; kind: string; occurredAt: string; delta?: number }>,
+  board: Board,
+): number {
+  const startMs = new Date(board.startDate).getTime();
+  const boundMs = sealedBoundMs(board);
+  const kind = child.type === TaskType.NORMAL ? 'completion' : 'increment';
+  const sum = events
+    .filter((e) => {
+      if (e.isDeleted || e.kind !== kind) return false;
+      const t = new Date(e.occurredAt).getTime();
+      return t >= startMs && (boundMs == null || t <= boundMs);
+    })
+    .reduce((acc, e) => acc + (kind === 'completion' ? 1 : (e.delta ?? 0)), 0);
+  return Math.max(0, sum);
+}
+
 /** A direct child's CURRENT (sealed-bounded) completion — event-owning
  *  children resolve windowed; everything else reads its lifetime cache
  *  (read-only rows, per the WC compound-child-fallback rule). */
@@ -50,42 +74,9 @@ function childIsCurrentlyComplete(
   board: Board,
 ): boolean {
   if (!isEventOwningTask(child)) return child.isCompleted;
-  const startMs = new Date(board.startDate).getTime();
-  const boundMs = sealedBoundMs(board);
-  const live = events.filter((e) => !e.isDeleted);
-  if (child.type === TaskType.NORMAL) {
-    return live.some((e) => {
-      if (e.kind !== 'completion') return false;
-      const t = new Date(e.occurredAt).getTime();
-      return t >= startMs && (boundMs == null || t <= boundMs);
-    });
-  }
-  const sum = live
-    .filter((e) => {
-      if (e.kind !== 'increment') return false;
-      const t = new Date(e.occurredAt).getTime();
-      return t >= startMs && (boundMs == null || t <= boundMs);
-    })
-    .reduce((acc, e) => acc + (e.delta ?? 0), 0);
-  return child.maxCount != null && Math.max(0, sum) >= child.maxCount;
-}
-
-/** Evaluate a compound's operator over direct-child completion booleans
- *  (same rule as the shared `evaluateCompound`, applied to a caller-supplied
- *  staged state rather than the raw event union). */
-function evaluateStaged(compound: Task, childStates: boolean[]): boolean {
-  switch (compound.operator) {
-    case OperatorType.AND:
-      return childStates.length === 0 || childStates.every(Boolean);
-    case OperatorType.OR:
-      return childStates.some(Boolean);
-    case OperatorType.M_OF_N: {
-      const required = Math.max(1, compound.threshold ?? 1);
-      return childStates.filter(Boolean).length >= required;
-    }
-    default:
-      return false;
-  }
+  const sum = childWindowSum(child, events, board);
+  if (child.type === TaskType.NORMAL) return sum > 0;
+  return child.maxCount != null && sum >= child.maxCount;
 }
 
 /**
@@ -391,19 +382,21 @@ function CompoundBody({
     return { link, child, isCurrentlyComplete, childEvents };
   });
 
-  const childStates = rows.map(({ child, isCurrentlyComplete, link }) => {
-    if (isCurrentlyComplete) return true;
-    if (child && stagedComplete.has(link.childTaskId)) return true;
-    if (child && stagedIncrement.has(link.childTaskId) && child.type === TaskType.COUNTING) {
-      // A staged +1 alone doesn't necessarily reach the goal — approximate
-      // by treating it as "one step closer", never as complete on its own
-      // unless the goal is exactly one unit away (reflected by re-running
-      // `childIsCurrentlyComplete` after the DB commit, not here).
-      return isCurrentlyComplete;
-    }
-    return false;
-  });
-  const ruleMet = evaluateStaged(task, childStates);
+  const stagedActions = useMemo<LateLogCompoundAction[]>(() => {
+    const out: LateLogCompoundAction[] = [];
+    for (const id of stagedComplete) out.push({ childTaskId: id, kind: 'completion' });
+    for (const id of stagedIncrement) out.push({ childTaskId: id, kind: 'increment', delta: 1 });
+    return out;
+  }, [stagedComplete, stagedIncrement]);
+  // The DB's own rule check (same planning + windowed `evaluateCompound` the
+  // commit enforces), so the button never enables for a commit that would be
+  // rejected — a staged +1 that finishes a counting child counts.
+  const ruleMet =
+    useLiveQuery(
+      () => previewLateLogCompoundRule(board.id, task.id, stagedActions),
+      [board.id, task.id, stagedActions],
+      false,
+    ) ?? false;
 
   const handleCommit = async (): Promise<void> => {
     setBusy(true);
@@ -427,7 +420,7 @@ function CompoundBody({
   return (
     <>
       <div className={styles.partsList}>
-        {rows.map(({ link, child, isCurrentlyComplete }) => {
+        {rows.map(({ link, child, isCurrentlyComplete, childEvents }) => {
           if (!child) return null;
           const readOnly = !isEventOwningTask(child) || isCurrentlyComplete;
           const staged =
@@ -462,9 +455,10 @@ function CompoundBody({
                 {on ? '✓' : ''}
               </span>
               <span className={styles.partLabel}>{child.title}</span>
-              {child.type === TaskType.COUNTING && (
+              {child.type === TaskType.COUNTING && isEventOwningTask(child) && (
                 <span className={styles.partMeta}>
-                  {child.currentCount ?? 0}/{child.maxCount ?? 0}
+                  {childWindowSum(child, childEvents, board) + (stagedIncrement.has(link.childTaskId) ? 1 : 0)}/
+                  {child.maxCount ?? 0}
                 </span>
               )}
             </button>

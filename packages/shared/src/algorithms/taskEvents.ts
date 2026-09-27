@@ -448,26 +448,6 @@ export function buildSealImmuneWindows(
 }
 
 /**
- * Whether an event's `occurredAt` is sealed-window immune (docs Decision 9):
- * it falls inside `[startDate, min(endDate, sealedAt)]` of some sealed board
- * that places the task. Immune events can never be tombstoned by any
- * un-complete/decrement gesture — history stays history. Bounds are inclusive
- * on both ends (the boundary instants belong to the frozen record).
- *
- * @param occurredAt The event's semantic timestamp (ISO8601).
- * @param windows    The task's immune windows (from {@link buildSealImmuneWindows}).
- * @returns `true` iff the event is immune to tombstoning.
- */
-export function isOccurredAtSealImmune(
-  occurredAt: string,
-  windows: ReadonlyArray<SealImmuneWindow>,
-): boolean {
-  if (windows.length === 0) return false;
-  const t = new Date(occurredAt).getTime();
-  return windows.some((w) => w.startMs <= t && t <= w.endMs);
-}
-
-/**
  * Whether an EVENT is sealed-window immune (docs Decision 9 as amended by the
  * Board Edit redesign slice 4, D10 / owner ruling R2). An event is immune iff
  * some sealed board S placing its task has

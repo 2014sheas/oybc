@@ -322,7 +322,9 @@ struct BoardPlayView: View {
     /// compound / achievement before calling.
     private func windowedIsCompleted(_ task: Task) -> Bool {
         if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).isCompleted
+            return resolveLinkedCounterDisplay(
+                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt
+            ).isCompleted
         }
         return viewModel.windowedState(of: task).isCompleted
     }
@@ -332,7 +334,9 @@ struct BoardPlayView: View {
     /// (window-stamped: root sum in its window; hub-linked: count − baseline).
     private func windowedCount(_ task: Task) -> Int {
         if task.sharedCounterId != nil {
-            return resolveLinkedCounterDisplay(task: task, eventsByTaskId: windowEventsByTaskId).displayed
+            return resolveLinkedCounterDisplay(
+                task: task, eventsByTaskId: windowEventsByTaskId, sealedAt: board?.sealedAt
+            ).displayed
         }
         return viewModel.windowedState(of: task).count
     }
@@ -1663,18 +1667,11 @@ struct BoardPlayView: View {
         let maxVal = task.maxCount ?? 0
         let unitText = task.unit ?? ""
         let isLinkedCounter = task.sharedCounterId != nil
-        let current: Int = {
-            // Windowed Completion — a SEALED board only snapshotted completion
-            // (not partial progress): max/max when the frozen cell is green,
-            // 0/max otherwise (docs §Effects of sealed).
-            if isSealed {
-                let done = board?.sealedCompletedCells?.contains(cellIndex(for: boardTask)) ?? false
-                return done ? maxVal : 0
-            }
-            // Windowed Completion — the windowed count (`windowedCount` owns
-            // the linked-counter rule).
-            return windowedCount(task)
-        }()
+        // Windowed Completion — the windowed count (`windowedCount` owns the
+        // linked-counter rule). Slice 4 D16: a CLOSED board shows the same
+        // window count as its grid cell (partial late logs visible), not the
+        // old max/0 snapshot.
+        let current = windowedCount(task)
 
         // R3: shared counting squares' quick +/- here use the counter's
         // persisted default amount (was hardcoded 1) — same rule as the

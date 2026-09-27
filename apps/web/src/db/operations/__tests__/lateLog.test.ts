@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BoardStatus,
   CenterSquareType,
@@ -16,6 +16,7 @@ import {
   lateLogCompletion,
   lateLogIncrement,
   lateLogCompoundParts,
+  previewLateLogCompoundRule,
   LateLogError,
 } from '../lateLog';
 import { sealBoard } from '../sealing';
@@ -212,7 +213,7 @@ describe('R1 scenario — late-logging a counting task on a closed Tuesday daily
     // can never resolve into a Friday window.
   });
 
-  it('rolls back everything if a downstream step throws (one transaction)', async () => {
+  it('a guard failure (unknown task on a valid closed board) writes nothing', async () => {
     await seedCountingTask(TASK, 5);
     await seedR1Fixture(TASK);
 
@@ -225,6 +226,58 @@ describe('R1 scenario — late-logging a counting task on a closed Tuesday daily
     );
     expect(await eventsFor(TASK)).toHaveLength(0);
     expect((await db.boards.get(DAILY))?.version).toBe(2); // only the seal write
+  });
+});
+
+describe('R1 scenario — variant: CLOSED weekly, OPEN monthly, a Friday daily', () => {
+  it('Tuesday + closed weekly + open monthly + lifetime get +5; the Friday daily does not', async () => {
+    const LATER_NOW = '2026-07-07T10:00:00.000Z'; // after the weekly closed
+    const FRIDAY_DAILY = 'friday-daily';
+    await seedCountingTask(TASK, 5);
+    await seedBoard(DAILY, { timeframe: Timeframe.DAILY, startDate: DAILY_START, endDate: DAILY_END });
+    await placeTask(DAILY, TASK, 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+    await seedBoard(WEEKLY, { timeframe: Timeframe.WEEKLY, startDate: WEEKLY_START, endDate: WEEKLY_END });
+    await placeTask(WEEKLY, TASK, 0);
+    await sealBoard(WEEKLY, '2026-07-06T00:00:01.000Z');
+    await seedBoard(MONTHLY, { timeframe: Timeframe.MONTHLY, startDate: MONTHLY_START, endDate: MONTHLY_END });
+    await placeTask(MONTHLY, TASK, 0);
+    await seedBoard(FRIDAY_DAILY, {
+      timeframe: Timeframe.DAILY,
+      startDate: '2026-07-03T00:00:00.000Z',
+      endDate: '2026-07-03T23:59:59.999Z',
+    });
+    await placeTask(FRIDAY_DAILY, TASK, 0);
+
+    await lateLogIncrement(DAILY, TASK, 5, LATER_NOW);
+
+    const events = await eventsFor(TASK);
+    expect(events).toHaveLength(1);
+    expect(events[0].occurredAt).toBe(new Date(DAILY_END).toISOString());
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([0]);
+    const weekly = await db.boards.get(WEEKLY);
+    expect(weekly?.sealedCompletedCells).toEqual([0]);
+    expect(weekly?.version).toBe(2); // seal write only — sealed re-derive is local-only
+    expect((await db.boards.get(MONTHLY))?.completedTasks).toBe(1);
+    expect((await db.boards.get(FRIDAY_DAILY))?.completedTasks).toBe(0);
+    expect((await db.tasks.get(TASK))?.currentCount).toBe(5);
+  });
+
+  it('rolls back the event, caches and every board if a sealed re-derive throws mid-transaction', async () => {
+    await seedCountingTask(TASK, 5);
+    await seedR1Fixture(TASK);
+    const original = db.boards.update.bind(db.boards);
+    const spy = vi.spyOn(db.boards, 'update').mockImplementation(((key: string, changes: object) =>
+      key === MONTHLY ? Promise.reject(new Error('boom')) : original(key, changes)) as typeof db.boards.update);
+    try {
+      await expect(lateLogIncrement(DAILY, TASK, 5, FRIDAY_NOW)).rejects.toThrow('boom');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await eventsFor(TASK)).toHaveLength(0);
+    expect((await db.tasks.get(TASK))?.currentCount).toBe(0);
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([]);
+    expect((await db.boards.get(WEEKLY))?.completedTasks).toBe(0);
   });
 });
 
@@ -443,9 +496,47 @@ describe('lateLogCompoundParts', () => {
     await placeTask(DAILY, compoundId, 0);
     await sealBoard(DAILY, DAILY_SEALED_AT);
 
-    await lateLogCompoundParts(DAILY, compoundId, [{ childTaskId: 'not-a-child', kind: 'completion' }], FRIDAY_NOW);
+    // The foreign action is dropped, leaving AND unmet — rejected, nothing written.
+    await expect(
+      lateLogCompoundParts(DAILY, compoundId, [{ childTaskId: 'not-a-child', kind: 'completion' }], FRIDAY_NOW),
+    ).rejects.toMatchObject({ kind: 'ruleNotMet' });
 
     expect(await eventsFor('not-a-child')).toHaveLength(0);
+  });
+
+  it('rejects (ruleNotMet) and writes nothing when the staged parts do not meet the rule', async () => {
+    const { compoundId, normalChildId, countingChildId } = await seedCompound();
+    await seedBoard(DAILY);
+    await placeTask(DAILY, compoundId, 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+
+    await expect(
+      lateLogCompoundParts(DAILY, compoundId, [{ childTaskId: normalChildId, kind: 'completion' }], FRIDAY_NOW),
+    ).rejects.toMatchObject({ kind: 'ruleNotMet' });
+    expect(await eventsFor(normalChildId)).toHaveLength(0);
+    expect(await eventsFor(countingChildId)).toHaveLength(0);
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([]);
+  });
+
+  it('preview: a staged +1 that finishes a 2/3 counting child meets AND; a prior-window increment never counts', async () => {
+    const { compoundId, normalChildId, countingChildId } = await seedCompound();
+    await seedBoard(DAILY);
+    await placeTask(DAILY, compoundId, 0);
+    const base = { taskId: countingChildId, userId: USER, kind: 'increment' as const, isDeleted: false, version: 1 };
+    await db.taskEvents.bulkAdd([
+      // Two in-window, one in a PREVIOUS window (must be ignored).
+      { ...base, id: 'in-1', delta: 2, occurredAt: '2026-07-01T08:00:00.000Z', createdAt: DAILY_START, updatedAt: DAILY_START },
+      { ...base, id: 'prev-1', delta: 5, occurredAt: '2026-06-30T08:00:00.000Z', createdAt: DAILY_START, updatedAt: DAILY_START },
+    ]);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+
+    const normalOnly = [{ childTaskId: normalChildId, kind: 'completion' as const }];
+    const both = [...normalOnly, { childTaskId: countingChildId, kind: 'increment' as const, delta: 1 }];
+    expect(await previewLateLogCompoundRule(DAILY, compoundId, normalOnly)).toBe(false);
+    expect(await previewLateLogCompoundRule(DAILY, compoundId, both)).toBe(true);
+
+    await lateLogCompoundParts(DAILY, compoundId, both, FRIDAY_NOW);
+    expect((await db.boards.get(DAILY))?.sealedCompletedCells).toEqual([0]);
   });
 
   it('throws on an unsealed board', async () => {

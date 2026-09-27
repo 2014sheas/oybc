@@ -275,6 +275,47 @@ describe('undoLateLog — COUNTING (increment)', () => {
   });
 });
 
+describe('undoLateLog — window-stamped derived re-freeze (D10 across derived rows)', () => {
+  it('refuses once a containing board placing ONLY another derived row of the same root seals after the log', async () => {
+    const ROOT = 'root-counter';
+    const DERIVED_D = 'derived-daily';
+    const DERIVED_W = 'derived-weekly';
+    const WEEKLY = 'weekly-board';
+    const WEEKLY_START = '2026-06-29T00:00:00.000Z';
+    const WEEKLY_END = '2026-07-05T23:59:59.999Z';
+    await seedCountingTask(ROOT, 10);
+    await seedCountingTask(DERIVED_D, 5, {
+      sharedCounterId: ROOT,
+      startDate: DAILY_START,
+      endDate: DAILY_END,
+      createdInWizard: true,
+      baseline: 0,
+    });
+    await seedCountingTask(DERIVED_W, 5, {
+      sharedCounterId: ROOT,
+      startDate: WEEKLY_START,
+      endDate: WEEKLY_END,
+      createdInWizard: true,
+      baseline: 0,
+    });
+    await seedBoard(DAILY);
+    await placeTask(DAILY, DERIVED_D, 0);
+    await sealBoard(DAILY, DAILY_SEALED_AT);
+    await seedBoard(WEEKLY, { timeframe: Timeframe.WEEKLY, startDate: WEEKLY_START, endDate: WEEKLY_END });
+    await placeTask(WEEKLY, DERIVED_W, 0);
+
+    await lateLogIncrement(DAILY, DERIVED_D, 5, FRIDAY_NOW);
+    // The weekly (placing only its OWN derived row of ROOT) seals after the log.
+    await sealBoard(WEEKLY, '2026-07-10T00:00:00.000Z');
+    expect((await db.boards.get(WEEKLY))?.sealedCompletedCells).toEqual([0]);
+
+    expect(await undoLateLog(DAILY, DERIVED_D, '2026-07-11T00:00:00.000Z')).toBe(false);
+    const rootEvents = await db.taskEvents.where('taskId').equals(ROOT).toArray();
+    expect(rootEvents.filter((e) => !e.isDeleted)).toHaveLength(1);
+    expect((await db.boards.get(WEEKLY))?.sealedCompletedCells).toEqual([0]);
+  });
+});
+
 describe('R4 recovery — a log stamped on the wrong day', () => {
   it('undo the hub/library log made on Friday, then late-log it on the Tuesday board', async () => {
     await seedCountingTask(TASK, 5);

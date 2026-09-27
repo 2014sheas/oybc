@@ -657,6 +657,15 @@ extension AppDatabase {
                 return UndoCounterLogResult(affectedBoards: [], undoneAmount: 0)
             }
 
+            // Board Edit redesign slice 4 (D9/D10) — refuse to tombstone a
+            // seal-immune entry (frozen history; a closed-board late log is
+            // excluded by `isEventSealImmune` itself). Web twin:
+            // `undoLastCounterLog` in tasks.sharedCounter.ts.
+            let immuneWindows = try Self.sealImmuneWindows(db: db, taskId: sourceTaskId)
+            if isEventSealImmune(entry, windows: immuneWindows) {
+                return UndoCounterLogResult(affectedBoards: [], undoneAmount: 0)
+            }
+
             // 3. Tombstone it.
             entry.isDeleted = true
             entry.deletedAt = now
@@ -770,6 +779,18 @@ extension AppDatabase {
                 db: db,
                 allChangedTaskIds: allChangedTaskIds,
                 cascadeOnlyTaskIds: reachedFrozenIds,
+                now: now
+            )
+
+            // Board Edit redesign slice 4 (D9) — the undone entry may sit
+            // inside a SEALED containing board's window (e.g. a late log on a
+            // closed board): re-derive every sealed board placing the source
+            // or a derived row (local-only), then refresh achievement
+            // watchers of every board it reaches.
+            try Self.reDeriveSealedBoards(db: db, changedTaskIds: [sourceTaskId])
+            try Self.refreshWatchersForBoards(
+                db: db,
+                changedBoardIds: try Self.boardIdsReachedByTasks(db: db, taskIds: Set(allChangedTaskIds)),
                 now: now
             )
             return UndoCounterLogResult(affectedBoards: creditBoards, undoneAmount: abs(entryDelta))

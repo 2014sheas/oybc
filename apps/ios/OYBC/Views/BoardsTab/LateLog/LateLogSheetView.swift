@@ -23,9 +23,10 @@ struct LateLogSheetItem: Identifiable {
 struct LateLogCompoundPart: Identifiable {
     let id: String
     let title: String
-    /// True for an event-owning (NORMAL) child — stageable via tap. Plain
-    /// counting / derived / nested-compound children are read-only rows
-    /// (D7: "non-event-owning children are read-only rows").
+    /// True for an event-owning child — a NORMAL child stages a completion,
+    /// a plain COUNTING child stages a +1 (D7). Derived / nested-compound
+    /// children are read-only rows ("non-event-owning children are
+    /// read-only rows").
     let isStageable: Bool
     /// Already complete (in the sealed window) BEFORE this sheet opened.
     let alreadyDone: Bool
@@ -51,6 +52,10 @@ struct LateLogSheetView: View {
     var onUndo: () -> Void = {}
     var onLogAmount: (Int) -> Void = { _ in }
     var onCommitCompound: ([String]) -> Void = { _ in }
+    /// Compound pre-check: whether the staged child ids meet the rule
+    /// (`BoardPlayViewModel.wouldLateLogCompoundRuleBeMet`). Disables
+    /// "Mark done on board" until it does.
+    var canCommitCompound: (Set<String>) -> Bool = { _ in true }
     var errorMessage: String?
 
     @State private var stagedChildIds: Set<String> = []
@@ -198,8 +203,11 @@ struct LateLogSheetView: View {
                 .disabled(!part.isStageable || part.alreadyDone)
             }
         }
+        let canCommit = canCommitCompound(stagedChildIds)
         RisoButton(title: "Mark done on board", kind: .primary, fullWidth: true) {
             onCommitCompound(Array(stagedChildIds))
         }
+        .disabled(!canCommit)
+        .opacity(canCommit ? 1 : 0.45)
     }
 }

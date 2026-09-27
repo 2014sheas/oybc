@@ -39,7 +39,6 @@ export {
   expandToWindowStampedDerived,
   boundWindowContextAtSeal,
   buildSealImmuneWindows,
-  isOccurredAtSealImmune,
   isEventSealImmune,
   SEED_EVENT_OCCURRED_AT,
 } from './taskEvents';

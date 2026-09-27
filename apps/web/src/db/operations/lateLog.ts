@@ -1,17 +1,21 @@
 import { db } from '../internal';
 import {
   TaskType,
+  boardWindowEnd,
+  evaluateCompound,
   isEventOwningTask,
   isEventSealImmune,
   isWindowStampedDerived,
   lateLogOccurredAt,
-  resolveWindowStampedDerivedState,
   selectClosedBoardLateLogs,
   SyncOperationType,
+  type Board,
+  type CompoundChild,
   type Task,
   type TaskEvent,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
+import { resolveClosedBoardCounterDisplay } from '../adapters';
 import { addToSyncQueue } from './syncQueue';
 import {
   appendCompletionEvent,
@@ -36,7 +40,7 @@ import { runBoardCascadeForTasks } from './orchestration';
  */
 
 /** Board metadata / task-shape guards these entry points enforce. */
-export type LateLogErrorKind = 'boardNotFound' | 'boardNotClosed' | 'taskNotFound' | 'wrongType';
+export type LateLogErrorKind = 'boardNotFound' | 'boardNotClosed' | 'taskNotFound' | 'wrongType' | 'ruleNotMet';
 
 /** Thrown by every entry point in this file on a guard failure. */
 export class LateLogError extends Error {
@@ -241,12 +245,12 @@ export interface LateLogCompoundAction {
 
 /**
  * Late-log a COMPOUND task's staged child parts on a closed board (D7). The
- * caller (the late-log sheet) has already staged which children to mark and
- * verified the compound's rule is met under that staged state — this choke
+ * caller (the late-log sheet) stages which children to mark; this choke
  * point re-validates each action structurally (a real, non-deleted,
- * event-owning direct child of the right type) and applies only the ones
- * that pass, silently ignoring the rest (defense in depth, never a partial
- * throw mid-commit).
+ * event-owning direct child of the right type), drops the rest, and then
+ * commits ONLY if the compound's rule is met under the staged state
+ * ({@link previewLateLogCompoundRule} is the sheet's read-only twin) —
+ * otherwise it throws `LateLogError('ruleNotMet')` and writes nothing.
  *
  * Non-event-owning children (a derived counter, or a nested compound) are
  * read-only and always skipped — matching the WC compound-child-fallback
@@ -271,40 +275,139 @@ export async function lateLogCompoundParts(
     if (!compound || compound.isDeleted) throw new LateLogError('taskNotFound', compoundTaskId);
     if (compound.type !== TaskType.COMPOUND) throw new LateLogError('wrongType', compoundTaskId);
 
-    const links = await db.compoundChildren
-      .where('compoundTaskId')
-      .equals(compoundTaskId)
-      .filter((c) => !c.isDeleted)
-      .toArray();
-    const childIds = new Set(links.map((l) => l.childTaskId));
-
+    const planned = await planCompoundActions(board, compoundTaskId, actions);
     const occurredAt = lateLogOccurredAt(board, now);
+
+    // Parity with iOS `lateLogCompoundParts`: the rule is enforced HERE, not
+    // only by the sheet's preview — a rule-unmet commit writes nothing.
+    if (!(await isCompoundRuleMetOnClosedBoard(board, compound, planned, occurredAt, now))) {
+      throw new LateLogError('ruleNotMet', compoundTaskId);
+    }
+
     const touchedTaskIds = new Set<string>([compoundTaskId]);
-
-    for (const action of actions) {
-      if (!childIds.has(action.childTaskId)) continue;
-      const child: Task | undefined = await db.tasks.get(action.childTaskId);
-      if (!child || child.isDeleted || !isEventOwningTask(child)) continue;
-
+    for (const action of planned) {
       if (action.kind === 'completion') {
-        if (child.type !== TaskType.NORMAL) continue;
-        const events = await db.taskEvents.where('taskId').equals(child.id).toArray();
-        if (hasCompletionInSealedWindow(events, board.startDate, board.endDate, board.sealedAt as string)) {
-          continue;
-        }
-        await appendCompletionEvent(child.id, boardId, now, occurredAt);
-        touchedTaskIds.add(child.id);
+        await appendCompletionEvent(action.childTaskId, boardId, now, occurredAt);
       } else {
-        if (child.type !== TaskType.COUNTING || child.sharedCounterId != null) continue;
-        const delta = action.delta;
-        if (!Number.isInteger(delta) || (delta as number) <= 0) continue;
-        await appendIncrementEvent(child.id, delta as number, boardId, now, occurredAt);
-        touchedTaskIds.add(child.id);
+        await appendIncrementEvent(action.childTaskId, action.delta as number, boardId, now, occurredAt);
       }
+      touchedTaskIds.add(action.childTaskId);
     }
 
     await applyLateLogSideEffects([...touchedTaskIds]);
   });
+}
+
+/**
+ * Structural re-validation of a compound late-log request: keeps only
+ * actions on a real, non-deleted, event-owning DIRECT child of the right type
+ * (NORMAL → completion not already in the sealed window; plain COUNTING →
+ * positive integer increment). Everything else is silently dropped.
+ */
+async function planCompoundActions(
+  board: Board,
+  compoundTaskId: string,
+  actions: ReadonlyArray<LateLogCompoundAction>,
+): Promise<LateLogCompoundAction[]> {
+  const links = await db.compoundChildren
+    .where('compoundTaskId')
+    .equals(compoundTaskId)
+    .filter((c) => !c.isDeleted)
+    .toArray();
+  const childIds = new Set(links.map((l) => l.childTaskId));
+  const planned: LateLogCompoundAction[] = [];
+  for (const action of actions) {
+    if (!childIds.has(action.childTaskId)) continue;
+    const child: Task | undefined = await db.tasks.get(action.childTaskId);
+    if (!child || child.isDeleted || !isEventOwningTask(child)) continue;
+    if (action.kind === 'completion') {
+      if (child.type !== TaskType.NORMAL) continue;
+      const events = await db.taskEvents.where('taskId').equals(child.id).toArray();
+      if (hasCompletionInSealedWindow(events, board.startDate, board.endDate, board.sealedAt as string)) continue;
+      planned.push({ childTaskId: child.id, kind: 'completion' });
+    } else {
+      if (child.type !== TaskType.COUNTING || child.sharedCounterId != null) continue;
+      if (!Number.isInteger(action.delta) || (action.delta as number) <= 0) continue;
+      planned.push({ childTaskId: child.id, kind: 'increment', delta: action.delta });
+    }
+  }
+  return planned;
+}
+
+/**
+ * Whether `compound`'s rule is met on the closed `board` once the `planned`
+ * child events are added — the shared windowed `evaluateCompound` over the
+ * board's window `[startDate, endDate]`, with every event bounded at
+ * `sealedAt` (the sealed snapshot's own bound) plus the planned events as
+ * synthetic rows. Pure read: nothing is written.
+ */
+async function isCompoundRuleMetOnClosedBoard(
+  board: Board,
+  compound: Task,
+  planned: ReadonlyArray<LateLogCompoundAction>,
+  occurredAt: string,
+  now: string,
+): Promise<boolean> {
+  const sealedMs = new Date(board.sealedAt as string).getTime();
+  const [tasks, links, events] = await Promise.all([
+    db.tasks.toArray(),
+    db.compoundChildren.filter((c) => !c.isDeleted).toArray(),
+    db.taskEvents.filter((e) => !e.isDeleted).toArray(),
+  ]);
+  const taskById: Record<string, Task> = {};
+  for (const t of tasks) taskById[t.id] = t;
+  const childrenByCompound: Record<string, CompoundChild[]> = {};
+  for (const l of links) (childrenByCompound[l.compoundTaskId] ??= []).push(l);
+  const eventsByTaskId: Record<string, TaskEvent[]> = {};
+  for (const e of events) {
+    if (new Date(e.occurredAt).getTime() > sealedMs) continue;
+    (eventsByTaskId[e.taskId] ??= []).push(e);
+  }
+  planned.forEach((a, i) => {
+    (eventsByTaskId[a.childTaskId] ??= []).push({
+      id: `staged-${i}`,
+      userId: compound.userId,
+      taskId: a.childTaskId,
+      kind: a.kind,
+      ...(a.kind === 'increment' ? { delta: a.delta } : {}),
+      occurredAt,
+      boardId: board.id,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+      isDeleted: false,
+    } as TaskEvent);
+  });
+  return evaluateCompound(compound, childrenByCompound, taskById, {
+    windowStart: board.startDate,
+    windowEnd: boardWindowEnd(board),
+    eventsByTaskId,
+  });
+}
+
+/**
+ * Read-only preview for the late-log sheet's compound body: would committing
+ * `actions` meet the compound's rule on this closed board? Same planning +
+ * evaluation the commit ({@link lateLogCompoundParts}) enforces, so the
+ * "Mark done on board" button can never enable for a commit the DB rejects.
+ *
+ * @param boardId        The closed board.
+ * @param compoundTaskId The compound placed on it.
+ * @param actions        The currently staged per-child actions.
+ * @returns `false` for a board that isn't closed or a non-compound task.
+ */
+export async function previewLateLogCompoundRule(
+  boardId: string,
+  compoundTaskId: string,
+  actions: ReadonlyArray<LateLogCompoundAction>,
+): Promise<boolean> {
+  const board = await db.boards.get(boardId);
+  if (!board || board.isDeleted || board.sealedAt == null) return false;
+  const compound = await db.tasks.get(compoundTaskId);
+  if (!compound || compound.isDeleted || compound.type !== TaskType.COMPOUND) return false;
+  const now = currentTimestamp();
+  const planned = await planCompoundActions(board, compoundTaskId, actions);
+  return isCompoundRuleMetOnClosedBoard(board, compound, planned, lateLogOccurredAt(board, now), now);
 }
 
 /**
@@ -446,22 +549,14 @@ export async function readClosedBoardSquareState(
 
   const effectiveTaskId = task.sharedCounterId ?? taskId;
   const rootEvents = await db.taskEvents.where('taskId').equals(effectiveTaskId).toArray();
-  const liveRootEvents = rootEvents.filter((e) => !e.isDeleted);
-  const sealedMs = new Date(board.sealedAt).getTime();
-  const boundedRootEvents = liveRootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedMs);
-
-  let count: number;
-  let isGreen: boolean;
-  if (isWindowStampedDerived(task)) {
-    const state = resolveWindowStampedDerivedState(task, boundedRootEvents);
-    count = state.count;
-    isGreen = state.isCompleted;
-  } else {
-    // Plain / source counting task — its own events ARE the root's events.
-    const sum = boundedRootEvents.reduce((acc, e) => acc + (e.delta ?? 0), 0);
-    count = Math.max(0, sum);
-    isGreen = task.maxCount != null && count >= task.maxCount;
-  }
+  // Same resolver the closed grid cell uses (D16), so the sheet's readout can
+  // never disagree with the square: windowed to `[startDate, min(endDate,
+  // sealedAt)]` — never the prior windows' or the overtime gap's events.
+  const { displayed: count, isCompleted: isGreen } = resolveClosedBoardCounterDisplay(
+    task,
+    { [effectiveTaskId]: rootEvents.filter((e) => !e.isDeleted) },
+    board,
+  );
   const lateLogs = selectClosedBoardLateLogs(rootEvents, board, effectiveTaskId);
   return { isGreen, count, lateLogs, effectiveTaskId };
 }

@@ -1510,6 +1510,7 @@ extension SyncService {
         lastEventAt = nil
         lastError = nil
         exhaustedCount = 0
+        hasCompletedFirstPull = false
     }
 
     // MARK: - Observability helpers
