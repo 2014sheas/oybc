@@ -161,4 +161,35 @@ final class BoardDetailsDraftTests: XCTestCase {
         XCTAssertNotNil(c.validationError(hasCandidateTasks: false))
         XCTAssertNil(c.validationError(hasCandidateTasks: true))
     }
+
+    // MARK: - Read-only calendar window (slice 2 self-review)
+
+    /// A monthly board from a PAST month shows ITS window, not the month
+    /// containing `now` (the sheet used to render today's window).
+    func test_readOnlyWindow_prefersStoredWindow_overToday() {
+        let stored = (start: day(2020, 2, 1), end: day(2020, 2, 29, hour: 23))
+        let now = day(2026, 9, 26)
+        let w = BoardSetupFormView.readOnlyWindow(
+            timeframe: .monthly, storedWindow: stored, weekStartDay: "monday", now: now
+        )
+        XCTAssertEqual(w?.start, stored.start)
+        XCTAssertEqual(w?.end, stored.end)
+    }
+
+    func test_readOnlyWindow_withoutStoredWindow_fallsBackToWindowContainingNow() {
+        let now = day(2026, 9, 26)
+        let w = BoardSetupFormView.readOnlyWindow(
+            timeframe: .monthly, storedWindow: nil, weekStartDay: "monday", now: now
+        )
+        XCTAssertEqual(w?.start, day(2026, 9, 1))
+    }
+
+    func test_readOnlyWindow_customAndOngoing_haveNoNote() {
+        let stored = (start: day(2020, 2, 1), end: day(2020, 2, 29))
+        for tf in [Timeframe.custom, .indefinite] {
+            XCTAssertNil(BoardSetupFormView.readOnlyWindow(
+                timeframe: tf, storedWindow: stored, weekStartDay: "monday", now: day(2026, 9, 26)
+            ))
+        }
+    }
 }

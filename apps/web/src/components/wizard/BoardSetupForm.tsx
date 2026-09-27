@@ -129,6 +129,15 @@ export interface BoardSetupFormProps {
    * the board yet). Ignored in `create` mode.
    */
   chosenCenterDisabled?: boolean;
+
+  /**
+   * `edit-active` mode only — the board's OWN stored window (local-ISO).
+   * When set, a calendar timeframe's read-only window shows it instead of
+   * the window containing today: an existing board's dates never move, so
+   * showing "this month" for last month's still-active board would be
+   * wrong (and date-dependent). Ignored in `create` mode.
+   */
+  storedWindow?: { startDate: string; endDate: string };
 }
 
 /**
@@ -172,6 +181,7 @@ export function BoardSetupForm({
   isCore,
   weekStartDay,
   chosenCenterDisabled = false,
+  storedWindow,
 }: BoardSetupFormProps): React.ReactElement {
   const isEditActive = mode === 'edit-active';
   const isOddBoard = size % 2 !== 0;
@@ -183,10 +193,12 @@ export function BoardSetupForm({
   // window — getTimeframeBoundaries throws for both. Recurring boards never
   // carry either (the cadence segmented below excludes them), so this
   // always resolves for a recurring session.
-  const computedBoundaries =
-    timeframe !== Timeframe.CUSTOM && timeframe !== Timeframe.INDEFINITE
-      ? getTimeframeBoundaries(timeframe, new Date(), weekStartDay)
-      : null;
+  const isCalendarTimeframe = timeframe !== Timeframe.CUSTOM && timeframe !== Timeframe.INDEFINITE;
+  const computedBoundaries = !isCalendarTimeframe
+    ? null
+    : isEditActive && storedWindow
+      ? storedWindow
+      : getTimeframeBoundaries(timeframe, new Date(), weekStartDay);
 
   const timeframeLabel = computedBoundaries
     ? formatTimeframeLabel(timeframe, computedBoundaries.startDate)

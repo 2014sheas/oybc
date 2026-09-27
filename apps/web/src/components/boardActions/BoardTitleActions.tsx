@@ -16,10 +16,21 @@ import { BoardDetailsSheet } from './BoardDetailsSheet';
 import { BoardRepeatSheet } from './BoardRepeatSheet';
 import { CoreDefaultsSheetHost } from './CoreDefaultsSheetHost';
 import { BoardActionConfirmDialog } from './BoardActionConfirmDialog';
+import { BOARD_CLOSED_MESSAGE } from './boardDetailsPatch';
 import play from '../play/Play.module.css';
 
 /** Which sheet/dialog is currently presented from the menu. */
 type BoardAction = 'details' | 'repeat' | 'coreDefaults' | 'confirmArchive' | 'confirmDelete' | null;
+
+/** A one-button notice shown after a sheet / confirm closes (iOS `.alert` + OK). */
+interface BoardActionNotice {
+  title: string;
+  body: string;
+}
+
+/** D11 — a board sealed / deleted while a menu sheet was open. iOS twin:
+ *  `BoardActionsPresenter`'s "Board closed" alert. */
+const BOARD_CLOSED_NOTICE: BoardActionNotice = { title: 'Board closed', body: BOARD_CLOSED_MESSAGE };
 
 export interface BoardTitleActionsProps {
   board: Board;
@@ -60,6 +71,13 @@ export function BoardTitleActions({
 }: BoardTitleActionsProps): React.ReactElement {
   const [action, setAction] = useState<BoardAction>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<BoardActionNotice | null>(null);
+
+  /** A menu sheet's save hit a closed board: swap the sheet for the notice. */
+  const handleBoardClosed = (): void => {
+    setAction(null);
+    setNotice(BOARD_CLOSED_NOTICE);
+  };
 
   const isSealed = board.sealedAt != null;
   const menuItems = buildBoardMenuItems({ board, sourceTemplate, templatesLoaded });
@@ -93,6 +111,8 @@ export function BoardTitleActions({
     } catch (err) {
       console.error('BoardTitleActions: archive failed', err);
       setBusy(false);
+      setAction(null);
+      setNotice({ title: 'Archive failed', body: 'Archive failed — please try again.' });
     }
   };
 
@@ -105,6 +125,8 @@ export function BoardTitleActions({
     } catch (err) {
       console.error('BoardTitleActions: delete failed', err);
       setBusy(false);
+      setAction(null);
+      setNotice({ title: 'Delete failed', body: 'Delete failed — please try again.' });
     }
   };
 
@@ -142,7 +164,7 @@ export function BoardTitleActions({
           width where the two visually overlap (every width ≤ 1080px,
           where the two-column rail+grid layout collapses to one column —
           caught by Playwright, not by eye on a wide desktop window). */}
-      {action != null &&
+      {(action != null || notice != null) &&
         createPortal(
           <>
             {action === 'details' && (
@@ -150,6 +172,7 @@ export function BoardTitleActions({
                 board={board}
                 weekStartDay={weekStartDay}
                 onClose={() => setAction(null)}
+                onBoardClosed={handleBoardClosed}
                 onSaved={() => {
                   setAction(null);
                   onDetailsSaved();
@@ -167,6 +190,7 @@ export function BoardTitleActions({
                 dealtTaskIds={dealtTaskIds}
                 counterFamilyByTaskId={counterFamilyByTaskId}
                 onClose={() => setAction(null)}
+                onBoardClosed={handleBoardClosed}
                 onSaved={() => {
                   setAction(null);
                   onDetailsSaved();
@@ -203,6 +227,17 @@ export function BoardTitleActions({
                 busy={busy}
                 onCancel={() => setAction(null)}
                 onConfirm={() => void handleDelete()}
+              />
+            )}
+
+            {notice != null && (
+              <BoardActionConfirmDialog
+                title={notice.title}
+                body={notice.body}
+                cancelLabel={null}
+                confirmLabel="OK"
+                onCancel={() => setNotice(null)}
+                onConfirm={() => setNotice(null)}
               />
             )}
           </>,

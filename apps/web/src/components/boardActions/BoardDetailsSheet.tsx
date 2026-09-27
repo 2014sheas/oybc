@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { Board, WeekStartDay } from '@oybc/shared';
+import { Timeframe, type Board, type WeekStartDay } from '@oybc/shared';
 import { BoardSetupForm } from '../wizard/BoardSetupForm';
 import { RisoButton } from '../riso';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { countBoardTasksForBoard } from '../../db/operations';
 import { saveBoardDetails, BoardNotEditableError } from '../../db/operations/boards';
 import {
-  BOARD_CLOSED_MESSAGE,
   buildBoardDetailsPatch,
   countBoardDetailsEdits,
   seedBoardDetailsDraft,
@@ -22,6 +21,9 @@ export interface BoardDetailsSheetProps {
   weekStartDay: WeekStartDay;
   /** Backdrop click / Escape / Cancel (with a dirty-discard confirm). */
   onClose: () => void;
+  /** D11 — the save found the board sealed / deleted; the caller closes the
+   *  sheet and shows the "Board closed" notice (`BOARD_CLOSED_MESSAGE`). */
+  onBoardClosed: () => void;
   /** Fired after a successful save; the caller shows the "Board saved" toast. */
   onSaved: () => void;
 }
@@ -42,6 +44,7 @@ export function BoardDetailsSheet({
   board,
   weekStartDay,
   onClose,
+  onBoardClosed,
   onSaved,
 }: BoardDetailsSheetProps): React.ReactElement {
   const [draft, setDraft] = useState<BoardDetailsDraft>(() => seedBoardDetailsDraft(board));
@@ -94,9 +97,7 @@ export function BoardDetailsSheet({
       onSaved();
     } catch (err) {
       if (err instanceof BoardNotEditableError) {
-        setError(BOARD_CLOSED_MESSAGE);
-        setSaving(false);
-        onClose();
+        onBoardClosed();
         return;
       }
       console.error('BoardDetailsSheet: save failed', err);
@@ -166,11 +167,16 @@ export function BoardDetailsSheet({
               isCore={false}
               weekStartDay={weekStartDay}
               chosenCenterDisabled={board.centerTaskId == null || !hasCandidateTasks}
+              storedWindow={
+                board.endDate ? { startDate: board.startDate, endDate: board.endDate } : undefined
+              }
             />
 
-            <p className={styles.hint}>
-              End date offers “None — no end date” for an ongoing board.
-            </p>
+            {(draft.timeframe === Timeframe.CUSTOM || draft.timeframe === Timeframe.INDEFINITE) && (
+              <p className={styles.hint}>
+                End date offers “None — no end date” for an ongoing board.
+              </p>
+            )}
 
             <div className={styles.footer}>
               <RisoButton kind="neutral" onClick={requestClose} disabled={saving}>

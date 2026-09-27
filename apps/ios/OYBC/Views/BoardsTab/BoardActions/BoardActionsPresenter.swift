@@ -22,8 +22,11 @@ enum BoardAction: Equatable {
 /// A board sealed/deleted mid-flight (D11) surfaces through the SAME
 /// "Board closed" alert for both save-shaped actions (Board details,
 /// Repeat) — the sheet's own `onSave` closure re-throws
-/// `BoardEditError.boardNotEditable` after stashing the copy here so the
-/// sheet still runs its own dismiss-on-error path.
+/// `BoardEditError.boardNotEditable` after flagging `pendingBoardClosed`,
+/// so the sheet still runs its own dismiss-on-error path. The alert is
+/// raised from the sheet's `onDismiss`, never while the sheet is still up:
+/// SwiftUI can't present an alert from a view that is already presenting a
+/// sheet, so setting it mid-sheet could silently drop it.
 struct BoardActionsPresenter: ViewModifier {
     @Binding var activeAction: BoardAction?
     /// The board the menu belongs to. Presentation content is a no-op
@@ -38,18 +41,29 @@ struct BoardActionsPresenter: ViewModifier {
     let weekStartDay: String
     let userId: String
     @ObservedObject var viewModel: BoardPlayViewModel
-    /// Fired after a successful Board details save (drives the "Board
-    /// saved" toast — the same one the squares editor's Save uses).
+    /// Fired after a successful Board details or Repeat save (drives the
+    /// "Board saved" toast — the same one the squares editor's Save uses;
+    /// web's `BoardTitleActions` fires its toast for both too).
     let onDetailsSaved: () -> Void
     /// Fired after a successful Archive or Delete. The caller decides what
     /// "removed" means (`board.isCore ? reload the pager : dismiss()`).
     let onRemoved: () -> Void
 
     @State private var boardClosedMessage: String?
+    /// Set by a save-shaped sheet that hit a closed board; promoted to
+    /// `boardClosedMessage` once that sheet has finished dismissing.
+    @State private var pendingBoardClosed = false
+
+    /// Sheet `onDismiss`: raise the deferred "Board closed" alert, if any.
+    private func presentPendingBoardClosed() {
+        guard pendingBoardClosed else { return }
+        pendingBoardClosed = false
+        boardClosedMessage = BoardEditError.boardClosedMessage
+    }
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: detailsBinding) {
+            .sheet(isPresented: detailsBinding, onDismiss: presentPendingBoardClosed) {
                 if let board {
                     BoardDetailsSheetView(
                         board: board,
@@ -60,7 +74,7 @@ struct BoardActionsPresenter: ViewModifier {
                                 try await viewModel.saveBoardDetails(patch)
                                 onDetailsSaved()
                             } catch let error as BoardEditError where error == .boardNotEditable {
-                                boardClosedMessage = BoardEditError.boardClosedMessage
+                                pendingBoardClosed = true
                                 throw error
                             }
                         },
@@ -68,7 +82,7 @@ struct BoardActionsPresenter: ViewModifier {
                     )
                 }
             }
-            .sheet(isPresented: repeatBinding) {
+            .sheet(isPresented: repeatBinding, onDismiss: presentPendingBoardClosed) {
                 if let board {
                     BoardRepeatSheetView(
                         board: board,
@@ -77,8 +91,9 @@ struct BoardActionsPresenter: ViewModifier {
                         onSave: { intent in
                             do {
                                 try await viewModel.saveRepeat(intent, weekStartDay: weekStartDay)
+                                onDetailsSaved()
                             } catch let error as BoardEditError where error == .boardNotEditable {
-                                boardClosedMessage = BoardEditError.boardClosedMessage
+                                pendingBoardClosed = true
                                 throw error
                             }
                         },

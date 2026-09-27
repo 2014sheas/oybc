@@ -10,7 +10,6 @@ import {
   buildRepeatSavePlan,
   type RepeatCadenceChoice,
 } from '../boardEdit/BoardEditRepeatSection';
-import { BOARD_CLOSED_MESSAGE } from './boardDetailsPatch';
 import styles from './BoardDetailsSheet.module.css';
 
 export interface BoardRepeatSheetProps {
@@ -23,6 +22,9 @@ export interface BoardRepeatSheetProps {
   dealtTaskIds: string[];
   counterFamilyByTaskId: Record<string, string>;
   onClose: () => void;
+  /** D11 — the save found the board sealed / deleted; the caller closes the
+   *  sheet and shows the "Board closed" notice. */
+  onBoardClosed: () => void;
   onSaved: () => void;
 }
 
@@ -42,6 +44,7 @@ export function BoardRepeatSheet({
   dealtTaskIds,
   counterFamilyByTaskId,
   onClose,
+  onBoardClosed,
   onSaved,
 }: BoardRepeatSheetProps): React.ReactElement {
   const [repeatCadence, setRepeatCadence] = useState<RepeatCadenceChoice>('off');
@@ -78,9 +81,7 @@ export function BoardRepeatSheet({
       onSaved();
     } catch (err) {
       if (err instanceof BoardNotEditableError) {
-        setError(BOARD_CLOSED_MESSAGE);
-        setSaving(false);
-        onClose();
+        onBoardClosed();
         return;
       }
       console.error('BoardRepeatSheet: save failed', err);

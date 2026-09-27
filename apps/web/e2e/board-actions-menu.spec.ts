@@ -77,6 +77,50 @@ test.describe('Board menu — ad-hoc board', () => {
   });
 });
 
+test.describe('Board menu — board sealed while Board details is open (D11)', () => {
+  const SEALED_MID_ID = 'a0000000-0000-0000-0000-000000000008';
+  const seed = {
+    id: SEALED_MID_ID,
+    name: 'Closing soon',
+    boardSize: 3,
+    timeframe: 'monthly' as const,
+    status: 'active' as const,
+    startDate: FIVE_DAYS_AGO,
+    endDate: NEXT_MONTH,
+    centerSquareType: 'free' as const,
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await seedBoard(page, seed);
+  });
+
+  test('Save shows the "Board closed" notice and writes nothing', async ({ page }) => {
+    await page.goto(`/boards/${SEALED_MID_ID}?__oybc_test_bypass=1`);
+    await page.getByRole('button', { name: 'Board menu' }).click();
+    await page.getByRole('menuitem', { name: 'Board details…' }).click();
+    await page.locator('#bw-board-name').fill('Renamed after close');
+
+    // The seal backstop (or another device) closes the board mid-session.
+    await seedBoard(page, { ...seed, sealedAt: new Date().toISOString() });
+
+    await page
+      .getByRole('dialog', { name: 'Board details' })
+      .getByRole('button', { name: 'Save' })
+      .click();
+
+    const notice = page.getByRole('alertdialog', { name: 'Board closed' });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('This board has been closed, so your changes weren’t saved.');
+    await expect(page.getByRole('dialog', { name: 'Board details' })).toHaveCount(0);
+    await expect(page.getByText('Board saved')).toHaveCount(0);
+    await notice.getByRole('button', { name: 'OK' }).click();
+    await expect(notice).toHaveCount(0);
+
+    const stored = await readBoard(page, SEALED_MID_ID);
+    expect(stored?.name).toBe('Closing soon');
+  });
+});
+
 test.describe('Board menu — ongoing board start-date edit (bugfix B1 regression)', () => {
   test.beforeEach(async ({ page }) => {
     await seedBoard(page, {

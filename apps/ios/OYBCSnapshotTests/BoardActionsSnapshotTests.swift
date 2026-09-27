@@ -11,7 +11,8 @@ import SnapshotTesting
 ///
 /// `testDetailsMonthlyReadOnlyWindow` intentionally uses a FIXED board
 /// (`SnapshotFixtures.makeBoard`'s hardcoded April 2026 dates), so the
-/// rendered read-only window note reflects the board's own stored dates,
+/// rendered read-only window note reflects the board's own stored dates
+/// (`BoardSetupFormView.storedWindow`, local-ISO so no UTC day shift),
 /// never `now` — this is NOT one of the calendar-dependent snapshots
 /// (`reference_snapshot_date_dependent.md`).
 final class BoardActionsSnapshotTests: XCTestCase {
@@ -66,7 +67,7 @@ final class BoardActionsSnapshotTests: XCTestCase {
         let board = SnapshotFixtures.makeBoard(
             id: "bd-custom", name: "Spring Sprint", boardSize: 3,
             timeframe: .custom,
-            startDate: "2026-04-01T00:00:00.000Z", endDate: "2026-04-30T23:59:59.000Z"
+            startDate: "2026-04-01T00:00:00.000", endDate: "2026-04-30T23:59:59.999"
         )
         assertSnapshot(
             of: BoardDetailsSheetView(board: board, weekStartDay: "monday", onSave: { _ in }, onDismiss: {}),
@@ -79,7 +80,7 @@ final class BoardActionsSnapshotTests: XCTestCase {
         let board = SnapshotFixtures.makeBoard(
             id: "bd-custom-dark", name: "Spring Sprint", boardSize: 3,
             timeframe: .custom,
-            startDate: "2026-04-01T00:00:00.000Z", endDate: "2026-04-30T23:59:59.000Z"
+            startDate: "2026-04-01T00:00:00.000", endDate: "2026-04-30T23:59:59.999"
         )
         assertSnapshot(
             of: BoardDetailsSheetView(board: board, weekStartDay: "monday", onSave: { _ in }, onDismiss: {}),
@@ -95,7 +96,7 @@ final class BoardActionsSnapshotTests: XCTestCase {
         let board = SnapshotFixtures.makeBoard(
             id: "bd-ongoing", name: "Ongoing Habit Tracker", boardSize: 3,
             timeframe: .indefinite,
-            startDate: "2026-04-01T00:00:00.000Z", endDate: "2026-04-30T23:59:59.000Z"
+            startDate: "2026-04-01T00:00:00.000", endDate: "2026-04-30T23:59:59.999"
         )
         assertSnapshot(
             of: BoardDetailsSheetView(board: board, weekStartDay: "monday", onSave: { _ in }, onDismiss: {}),
@@ -111,7 +112,7 @@ final class BoardActionsSnapshotTests: XCTestCase {
         let board = SnapshotFixtures.makeBoard(
             id: "bd-monthly", name: "April Goals", boardSize: 5,
             timeframe: .monthly,
-            startDate: "2026-04-01T00:00:00.000Z", endDate: "2026-04-30T23:59:59.000Z"
+            startDate: "2026-04-01T00:00:00.000", endDate: "2026-04-30T23:59:59.999"
         )
         assertSnapshot(
             of: BoardDetailsSheetView(board: board, weekStartDay: "monday", onSave: { _ in }, onDismiss: {}),

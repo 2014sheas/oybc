@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CenterSquareType, type Board } from '@oybc/shared';
 import { RisoButton, RisoSegmented, RisoSectionLabel } from '../riso';
 import type { RisoSegmentedOption } from '../riso';
 import { BoardNotEditableError, type UpdateActiveBoardPatch } from '../../db/operations/boards';
 import { BOARD_CLOSED_MESSAGE } from '../boardActions/boardDetailsPatch';
+import { BoardActionConfirmDialog } from '../boardActions/BoardActionConfirmDialog';
 import styles from './BoardEditPanel.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,7 +47,7 @@ export interface BoardEditPanelProps {
   onExtraCommit: (metadataPatch: UpdateActiveBoardPatch | undefined) => Promise<void>;
   /**
    * Called when the user cancels with no unsaved changes, or after
-   * the inline "Discard changes?" confirm — and also after a Save that
+   * the inline "Discard changes?" confirm — and also on the OK of the "Board closed" notice after a Save that
    * finds the board sealed or deleted mid-session (D11: the closed-board
    * copy is shown first, then the panel exits edit mode).
    */
@@ -101,6 +103,11 @@ export function BoardEditPanel({
   const [confirm, setConfirm] = useState<'cancel' | null>(null);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  // D11 — the Save found the board sealed / deleted mid-session. Shown as a
+  // "Board closed" notice; its OK exits edit mode (iOS twin: BoardPlayView's
+  // "Board closed" alert). Held HERE, not after `onCancel()`, because exiting
+  // edit mode unmounts this panel and would drop any message with it.
+  const [boardClosed, setBoardClosed] = useState(false);
 
   // ── Reset transient UI state on (re-)entry ───────────────────────────────
 
@@ -117,7 +124,7 @@ export function BoardEditPanel({
   const editCount = squareEditCount + (centerChanged ? 1 : 0);
 
   const dirty = editCount > 0;
-  const canSave = dirty && !saving;
+  const canSave = dirty && !saving && !boardClosed;
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -137,9 +144,8 @@ export function BoardEditPanel({
       await onExtraCommit(centerChanged ? { centerSquareType: centerType } : undefined);
     } catch (err) {
       if (err instanceof BoardNotEditableError) {
-        setValidationError(BOARD_CLOSED_MESSAGE);
         setSaving(false);
-        onCancel();
+        setBoardClosed(true);
         return;
       }
       console.error('BoardEditPanel: save failed', err);
@@ -158,13 +164,27 @@ export function BoardEditPanel({
 
   return (
     <div className={styles.panel}>
+      {/* Portaled: the panel sits in the sticky rail, whose stacking context
+          would trap a fixed backdrop behind the grid (see BoardTitleActions). */}
+      {boardClosed &&
+        createPortal(
+          <BoardActionConfirmDialog
+            title="Board closed"
+            body={BOARD_CLOSED_MESSAGE}
+            cancelLabel={null}
+            confirmLabel="OK"
+            onCancel={onCancel}
+            onConfirm={onCancel}
+          />,
+          document.body,
+        )}
       {/* Header: Cancel + "Editing squares" gold pill with red dot */}
       <div className={styles.editbar}>
         <button
           type="button"
           className={styles.cancelBtn}
           onClick={requestCancel}
-          disabled={saving}
+          disabled={saving || boardClosed}
           aria-label="Cancel editing"
           /* move focus into the panel on entry — the Edit button that had focus
              just unmounted, so without this keyboard focus drops to <body>. */

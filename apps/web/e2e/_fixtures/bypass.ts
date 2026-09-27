@@ -286,6 +286,9 @@ export interface SeedBoard {
   /** Phase 6.1 core-board marker — a core board opened by id redirects
    *  into the per-window pager (`core-board-pager-redirect.spec.ts`). */
   isCore?: boolean;
+  /** Seal instant — re-seeding with it simulates the backstop sealing a
+   *  board while an edit sheet is open (board-actions-menu D11 spec). */
+  sealedAt?: string;
 }
 
 export async function seedBoard(page: Page, board: SeedBoard): Promise<void> {

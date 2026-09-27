@@ -31,6 +31,12 @@ struct BoardSetupFormView: View {
     /// When true (edit-active only), the CHOSEN option in the center picker is
     /// guarded with an explanatory note.
     var chosenCenterDisabled: Bool
+    /// The board's OWN stored window (slice 2 self-review). An existing
+    /// board's dates never move, so a calendar timeframe's read-only note
+    /// shows these rather than the window containing today (which would
+    /// label last month's still-active board as "this month" and make the
+    /// note date-dependent). Nil falls back to the computed-from-today window.
+    var storedWindow: (start: Date, end: Date)?
 
     // MARK: - Body
 
@@ -98,10 +104,11 @@ struct BoardSetupFormView: View {
     /// timeframe — mirrors `RisoBoardSetupForm.timeframeDateNote`.
     @ViewBuilder
     private var editTimeframeDateNote: some View {
-        if let boundaries = computeTimeframeBoundaries(
+        if let boundaries = Self.readOnlyWindow(
             timeframe: timeframeBinding.wrappedValue,
-            referenceDate: Date(),
-            weekStartDay: weekStartDay
+            storedWindow: storedWindow,
+            weekStartDay: weekStartDay,
+            now: Date()
         ) {
             let start = DateFormatter.localizedString(from: boundaries.start, dateStyle: .medium, timeStyle: .none)
             let end = DateFormatter.localizedString(from: boundaries.end, dateStyle: .medium, timeStyle: .none)
@@ -296,7 +303,8 @@ extension BoardSetupFormView {
         customEndDate: Binding<Date>,
         centerType: Binding<CenterSquareType>,
         weekStartDay: String,
-        chosenCenterDisabled: Bool = false
+        chosenCenterDisabled: Bool = false,
+        storedWindow: (start: Date, end: Date)? = nil
     ) {
         self.nameBinding = name
         self.timeframeBinding = timeframe
@@ -305,5 +313,28 @@ extension BoardSetupFormView {
         self.centerTypeBinding = centerType
         self.weekStartDay = weekStartDay
         self.chosenCenterDisabled = chosenCenterDisabled
+        self.storedWindow = storedWindow
+    }
+
+    /// The window the read-only calendar-timeframe note shows: the board's
+    /// stored window when known, else the window containing `now`.
+    ///
+    /// - Parameters:
+    ///   - timeframe: The board's timeframe (custom / ongoing have no note).
+    ///   - storedWindow: The board's own parsed start/end, if any.
+    ///   - weekStartDay: Week-start preference for the computed fallback.
+    ///   - now: Clock for the computed fallback.
+    /// - Returns: The window to display, or nil for custom / ongoing.
+    static func readOnlyWindow(
+        timeframe: Timeframe,
+        storedWindow: (start: Date, end: Date)?,
+        weekStartDay: String,
+        now: Date
+    ) -> (start: Date, end: Date)? {
+        guard timeframe != .custom, timeframe != .indefinite else { return nil }
+        if let storedWindow { return storedWindow }
+        return computeTimeframeBoundaries(
+            timeframe: timeframe, referenceDate: now, weekStartDay: weekStartDay
+        )
     }
 }

@@ -63,7 +63,8 @@ struct BoardDetailsSheetView: View {
                         customEndDate: $draft.endDate,
                         centerType: $draft.centerType,
                         weekStartDay: weekStartDay,
-                        chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks
+                        chosenCenterDisabled: board.centerTaskId == nil || !hasCandidateTasks,
+                        storedWindow: storedWindow
                     )
                     if let errorMessage {
                         Text(errorMessage)
@@ -103,6 +104,15 @@ struct BoardDetailsSheetView: View {
         .task {
             hasCandidateTasks = await hasCandidateTasksProvider()
         }
+    }
+
+    /// The board's own stored window, for a calendar timeframe's read-only
+    /// note (never the window containing today — the board's dates don't move).
+    private var storedWindow: (start: Date, end: Date)? {
+        guard let start = parseISO8601Date(board.startDate),
+              let endStr = board.endDate, let end = parseISO8601Date(endStr)
+        else { return nil }
+        return (start, end)
     }
 
     /// Read-only board-size chip — moved here from `BoardEditPanel` (slice 2).
