@@ -5,9 +5,11 @@ import {
   isEventSealImmune,
   isWindowStampedDerived,
   lateLogOccurredAt,
+  resolveWindowStampedDerivedState,
   selectClosedBoardLateLogs,
   SyncOperationType,
   type Task,
+  type TaskEvent,
 } from '@oybc/shared';
 import { currentTimestamp } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -393,3 +395,89 @@ export async function undoLateLog(
     return true;
   });
 }
+
+// ─── Read model for the late-log sheet (D15) ───────────────────────────────
+
+/** What the late-log sheet needs to render a NORMAL or COUNTING square. */
+export interface ClosedBoardSquareState {
+  /** Whether the square is already green under the sealed-bounded window
+   *  (`[startDate, min(endDate, sealedAt)]`) — from ANY source, immune
+   *  history or a late log. */
+  isGreen: boolean;
+  /** For COUNTING only: the sealed-bounded windowed count (D16); `0` for NORMAL. */
+  count: number;
+  /** Late logs made directly on this board for this task (root-resolved for
+   *  a window-stamped derived square), newest first — `[]` means nothing to
+   *  undo. */
+  lateLogs: TaskEvent[];
+  /** The id `commitCompletion`/`commitIncrement`/`undo` should be called
+   *  with from the UI — the tapped task for NORMAL/plain COUNTING, or the
+   *  ROOT for a window-stamped derived square (derived rows own no events). */
+  effectiveTaskId: string;
+}
+
+/**
+ * Read-only state for the late-log sheet's normal/counting body — one query,
+ * reused by `useLiveQuery` so the sheet updates as events change. Returns
+ * `null` when the board isn't closed or the task can't be late-logged from
+ * this sheet (missing/deleted/wrong type/hub-linked derived — OQ2).
+ *
+ * @param boardId The closed board.
+ * @param taskId  The tapped square's task (NORMAL or COUNTING).
+ */
+export async function readClosedBoardSquareState(
+  boardId: string,
+  taskId: string,
+): Promise<ClosedBoardSquareState | null> {
+  const board = await db.boards.get(boardId);
+  if (!board || board.isDeleted || board.sealedAt == null) return null;
+  const task = await db.tasks.get(taskId);
+  if (!task || task.isDeleted) return null;
+
+  if (task.type === TaskType.NORMAL) {
+    const events = await db.taskEvents.where('taskId').equals(taskId).toArray();
+    const isGreen = hasCompletionInSealedWindow(events, board.startDate, board.endDate, board.sealedAt);
+    const lateLogs = selectClosedBoardLateLogs(events, board, taskId);
+    return { isGreen, count: 0, lateLogs, effectiveTaskId: taskId };
+  }
+
+  if (task.type !== TaskType.COUNTING) return null;
+  if (task.sharedCounterId != null && !isWindowStampedDerived(task)) return null; // hub-linked — OQ2
+
+  const effectiveTaskId = task.sharedCounterId ?? taskId;
+  const rootEvents = await db.taskEvents.where('taskId').equals(effectiveTaskId).toArray();
+  const liveRootEvents = rootEvents.filter((e) => !e.isDeleted);
+  const sealedMs = new Date(board.sealedAt).getTime();
+  const boundedRootEvents = liveRootEvents.filter((e) => new Date(e.occurredAt).getTime() <= sealedMs);
+
+  let count: number;
+  let isGreen: boolean;
+  if (isWindowStampedDerived(task)) {
+    const state = resolveWindowStampedDerivedState(task, boundedRootEvents);
+    count = state.count;
+    isGreen = state.isCompleted;
+  } else {
+    // Plain / source counting task — its own events ARE the root's events.
+    const sum = boundedRootEvents.reduce((acc, e) => acc + (e.delta ?? 0), 0);
+    count = Math.max(0, sum);
+    isGreen = task.maxCount != null && count >= task.maxCount;
+  }
+  const lateLogs = selectClosedBoardLateLogs(rootEvents, board, effectiveTaskId);
+  return { isGreen, count, lateLogs, effectiveTaskId };
+}
+
+/**
+ * Every non-deleted TaskEvent for a set of task ids — the late-log
+ * compound sheet's read seam (its parts list needs each direct child's
+ * events to resolve current completion). `db/operations` is the only
+ * layer allowed to touch the raw Dexie table (B3, issue #284); this lets
+ * `LateLogSheet.tsx` stay off `db/internal`.
+ *
+ * @param taskIds Candidate task ids (deleted rows are filtered internally).
+ */
+export async function fetchLiveEventsForTaskIds(taskIds: ReadonlyArray<string>): Promise<TaskEvent[]> {
+  if (taskIds.length === 0) return [];
+  const events = await db.taskEvents.where('taskId').anyOf([...taskIds]).toArray();
+  return events.filter((e) => !e.isDeleted);
+}
+

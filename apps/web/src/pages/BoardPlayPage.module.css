@@ -82,6 +82,24 @@
   text-transform: uppercase;
 }
 
+/* Board Edit redesign slice 4 (D14) — ENDED pill: gold fill, ink-static
+   text (adaptive-safe on gold — docs/RISO_WEB.md dark contract), 2px ink
+   border. Distinct from CLOSED's neutral `.sealedBadge`. */
+.endedBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: var(--riso-gold);
+  color: var(--riso-ink-static);
+  border: 2px solid var(--riso-ink-static);
+  border-radius: 999px;
+  font-family: var(--riso-font-head);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* ─── Interactive grid ──────────────────────────────────────────────────────── */
 
 

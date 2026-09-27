@@ -5,7 +5,9 @@ import {
   TaskType,
   buildCounterFamilyMap,
   effectiveCenter,
+  isBoardEnded,
   isLegacyChosenCenterLocked,
+  isWindowStampedDerived,
   type Board,
   type Task,
 } from '@oybc/shared';
@@ -16,7 +18,7 @@ import {
   type FlashVariant,
   type CreditedToast,
 } from '../hooks';
-import { taskToSquareData, taskToSquareState } from '../db/adapters';
+import { resolveClosedBoardCounterDisplay, taskToSquareData, taskToSquareState } from '../db/adapters';
 import {
   DetailModal,
   FloatingContextMenu,
@@ -27,11 +29,9 @@ import {
   resolveSharedCounterSourceId,
 } from './boardPlaySharedCounterUtils';
 import { buildBoardQuickAmountOptions, initialChipAmount, parseCustomLogAmount } from './counters/amountChips';
-import { BoardStatusBadge } from './BoardStatusBadge';
 import { recurringBadgeState } from './boards/recurringBadgeState';
 import { RecurringBadge } from './RecurringBadge';
 import { TaskDetailSheet } from './TaskDetailSheet';
-import { formatDisplayDate } from '../utils/dateFormat';
 import { BoardEditPanel } from './boardEdit/BoardEditPanel';
 import { SquaresEditGrid, type KeyboardMoveDir } from './boardEdit/SquaresEditGrid';
 import type { EditSlot } from '../hooks/useSquaresEditDraft';
@@ -43,7 +43,6 @@ import { BoardTitleActions } from './boardActions/BoardTitleActions';
 import { usePreferences } from '../hooks/usePreferences';
 import { useNavigate } from 'react-router-dom';
 import { compactStreakLabel, getHighlightedSquares } from '@oybc/shared';
-import { getExpiryLabel } from '../utils/boardDisplayUtils';
 import { gatedStreak } from '../utils/gatedStreak';
 import { RisoIcon } from './riso';
 import { RisoBoardCell } from './board/RisoBoardCell';
@@ -54,6 +53,10 @@ import { RisoGreenlog } from './play/RisoGreenlog';
 import { CounterLogToast } from './counters/CounterLogToast';
 import { RisoArrivalBanner } from './play/RisoArrivalBanner';
 import { ShareBoardSheet } from './share/ShareBoardSheet';
+import { EndedBanner } from './boardPlay/EndedBanner';
+import { BoardStatusPill } from './boardPlay/BoardStatusPill';
+import { BoardLeftStatCard } from './boardPlay/BoardLeftStatCard';
+import { LateLogSheet } from './lateLog/LateLogSheet';
 import styles from '../pages/BoardPlayPage.module.css';
 import play from './play/Play.module.css';
 
@@ -143,7 +146,6 @@ export function BoardPlaySurface({
     sortedBoardTasks,
     gridSize,
     btByPosition,
-    isExpired,
     squareWindowContext,
     sourceTemplate,
     templatesLoaded, boardTasksLoaded,
@@ -164,6 +166,8 @@ export function BoardPlaySurface({
   const navigate = useNavigate();
   // Pinned instant for the stat bar's expiry label (shape C).
   const nowPinned = useMemo(() => new Date(), []);
+  // Board Edit redesign slice 4 (D12–D16) — "Ended, not closed" (pinned clock).
+  const isEnded = isBoardEnded(board, nowPinned.getTime());
   const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
   // Riso bingo toast (keyed to replay the drop) + greenlog overlay.
   const [bingoToast, setBingoToast] = useState<{ key: number } | null>(null);
@@ -174,6 +178,8 @@ export function BoardPlaySurface({
   const [selectedSquareId, setSelectedSquareId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [openedTaskInLibrary, setOpenedTaskInLibrary] = useState<string | null>(null);
+  // D15 — the closed-board direct-log sheet.
+  const [lateLogTaskId, setLateLogTaskId] = useState<string | null>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Edit mode: replaces the stats rail with the in-place edit panel (Phase 1).
   const [editMode, setEditMode] = useState(false);
@@ -292,9 +298,9 @@ export function BoardPlaySurface({
 
   // ── Derived data ───────────────────────────────────────────────────────
   // achievementBadgesByBoardTaskId, sharedCounterSourceIds,
-  // sharedCounterHintsByTaskId, sortedBoardTasks, gridSize, btByPosition,
-  // and isExpired all come from useBoardPlayData above. The edit-mode draft
-  // (`editDraft.editCount` / `.slots`) comes from useBoardPlay below.
+  // sharedCounterHintsByTaskId, sortedBoardTasks, gridSize, and btByPosition
+  // all come from useBoardPlayData above (isEnded/isSealed replaced its
+  // isExpired, D12). The edit-mode draft comes from useBoardPlay below.
 
   // ── Flash message helper ───────────────────────────────────────────────
 
@@ -550,13 +556,7 @@ export function BoardPlaySurface({
             </div>
             <h2 className={play.title}>{board.name}</h2>
             <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              {isSealed ? (
-                // User-facing label is "Closed" — "sealed" is internal
-                // Windowed-Completion vocabulary, never UI copy.
-                <span className={styles.sealedBadge}>Closed</span>
-              ) : (
-                <BoardStatusBadge status={board.status} />
-              )}
+              <BoardStatusPill status={board.status} isSealed={isSealed} isEnded={isEnded} />
               {/* Hidden until resolved — never a state it reverses. */}
               {recurringBadgeState(board, sourceTemplate, templatesLoaded) !== 'hidden' && (
                 <RecurringBadge paused={sourceTemplate?.isActive === false} />
@@ -577,11 +577,8 @@ export function BoardPlaySurface({
               picker) + spawn-provenance note moved into Board Edit's
               REPEATS section (`BoardEditRepeatSection`). */}
 
-          {isExpired && !isSealed && (
-            <div className={styles.expiredBanner}>
-              Board expired on {board.endDate ? formatDisplayDate(board.endDate) : 'unknown date'}
-            </div>
-          )}
+          {/* D14 — replaces the old "Board expired…" banner. */}
+          {isEnded && !isSealed && <EndedBanner endDate={board.endDate} />}
 
           <div className={play.statStack}>
             <div className={play.stat}>
@@ -591,25 +588,10 @@ export function BoardPlaySurface({
                 <small>/{board.totalTasks}</small>
               </div>
             </div>
-            {isSealed ? (
-              /* Sealed: the LEFT card becomes the permanent-record ENDED card. */
-              <div className={play.stat}>
-                <div className={play.statK}>Ended</div>
-                <div className={play.statV} style={{ fontSize: '18px' }}>
-                  {board.endDate
-                    ? new Date(board.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                    : '—'}
-                </div>
-                <div className={play.statSub}>permanent record</div>
-              </div>
-            ) : (
-              <div className={play.stat}>
-                <div className={play.statK}>Left</div>
-                <div className={play.statV} style={{ fontSize: '18px' }}>
-                  {getExpiryLabel(board, nowPinned) || '—'}
-                </div>
-              </div>
-            )}
+            <BoardLeftStatCard
+              isSealed={isSealed} isEnded={isEnded} timeframe={board.timeframe}
+              endDate={board.endDate} nowPinned={nowPinned}
+            />
             <div className={`${play.stat} ${play.gold}`}>
               <div className={play.statK}>Bingos</div>
               <div className={play.statV}>
@@ -768,11 +750,12 @@ export function BoardPlaySurface({
                   : squareState.isCompleted;
                 // Use squareState.currentCount (baseline-adjusted for linked
                 // counters). For standalone counters this equals task.currentCount.
-                // On a sealed board only completion was snapshotted (not partial
-                // progress), so a frozen counting square reads max/max when green
-                // and 0/max otherwise — an honest read of what was frozen.
+                // D16 — a CLOSED counting square shows the sealed-bounded
+                // WINDOWED count (e.g. "3/5"), same bound `taskIsCompleted` used.
                 const taskCurrentCount = isSealed
-                  ? (taskIsCompleted ? (task.maxCount ?? 0) : 0)
+                  ? squareData.type === 'counting'
+                    ? resolveClosedBoardCounterDisplay(task, squareWindowContext.eventsByTaskId, board).displayed
+                    : 0
                   : squareState.currentCount;
 
                 // Phase 2 — Shared Counters: mark the cell as shared when
@@ -846,7 +829,14 @@ export function BoardPlaySurface({
                         });
                       }
                     }
-                  : undefined;
+                  : () => {
+                      // D15 — closed-board tap opens the late-log sheet;
+                      // achievement / hub-linked derived (OQ2) stay a no-op.
+                      const hubLinked = squareData.type === 'counting'
+                        && task.sharedCounterId != null && !isWindowStampedDerived(task);
+                      if (squareData.type === 'achievement' || hubLinked) return;
+                      setLateLogTaskId(task.id);
+                    };
 
                 cells.push(
                   <RisoBoardCell
@@ -1230,6 +1220,15 @@ export function BoardPlaySurface({
       {/* D17 — the play-mode "+" add-to-empty-cell modal is retired. Every
           structural edit (add/replace/remove/move/lock) goes through the
           squares editor now. */}
+
+      {/* D15 — the closed-board direct-log sheet. */}
+      {isSealed && lateLogTaskId && taskMap[lateLogTaskId] && (
+        <LateLogSheet
+          board={board} task={taskMap[lateLogTaskId]} taskMap={taskMap}
+          compoundChildrenByCompound={compoundChildrenByCompound}
+          onClose={() => setLateLogTaskId(null)}
+        />
+      )}
 
       {/* "Board saved" toast — displayed after a successful edit-mode save (~2.4s). */}
       {savedToast && (

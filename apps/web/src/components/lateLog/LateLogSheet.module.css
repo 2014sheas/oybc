@@ -1,0 +1,240 @@
+/* Late-log sheet (Board Edit redesign slice 4, D15) — a direct log on a
+   CLOSED board's square. Bottom sheet on phone, a centered 460px modal on
+   desktop, matching the squares-editor picker (`SquarePickerSheet.module.css`). */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.sheet {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 16px;
+  padding: 20px;
+  width: 460px;
+  max-width: 92vw;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 6px 6px 0 var(--riso-shadow-ink);
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .backdrop {
+    align-items: flex-end;
+  }
+  .sheet {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    border-bottom: none;
+    max-height: 88vh;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+.window {
+  font-family: var(--riso-font-head);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+}
+.title {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  margin-top: 2px;
+  color: var(--riso-ink);
+}
+.closedPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  font-family: var(--riso-font-head);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: var(--riso-muted);
+  padding: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.closeButton:hover {
+  color: var(--riso-ink);
+}
+.closeButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+
+.readout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.count {
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--riso-ink);
+}
+.countMax {
+  font-size: 16px;
+  color: var(--riso-muted);
+}
+.bar {
+  flex: 1;
+  height: 15px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper);
+  overflow: hidden;
+  position: relative;
+}
+.barFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--riso-blue);
+}
+.unit {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--riso-muted);
+}
+
+.chipRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.customRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.customInput {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1.5px solid var(--riso-ink);
+  border-radius: 8px;
+  background: var(--riso-paper);
+  color: var(--riso-ink);
+  font: inherit;
+}
+
+.partsList {
+  border: 2px solid var(--riso-ink);
+  border-radius: var(--riso-r-card);
+  background: var(--riso-paper);
+  overflow: hidden;
+}
+.partRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1.5px solid var(--riso-hair);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--riso-ink);
+}
+.partRow:last-child {
+  border-bottom: none;
+}
+.partRow:disabled {
+  cursor: default;
+}
+.partCheck {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid var(--riso-ink);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.partCheckOn {
+  background: var(--riso-green);
+  color: var(--riso-on-color);
+}
+.partCheckOff {
+  background: var(--riso-paper-2);
+}
+.partLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 15px;
+}
+.partMeta {
+  font-size: 11px;
+  color: var(--riso-muted);
+  font-weight: 700;
+}
+
+.undoLink {
+  align-self: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--riso-blue);
+  padding: 4px;
+}
+.undoLink:hover {
+  color: var(--riso-red);
+}
+
+.noop {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--riso-muted);
+  padding: 8px 0;
+}

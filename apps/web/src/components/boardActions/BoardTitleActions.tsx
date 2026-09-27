@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   BoardStatus,
   Timeframe,
+  isBoardEnded,
   type Board,
   type RecurringBoardTemplate,
   type Task,
@@ -10,6 +11,7 @@ import {
 } from '@oybc/shared';
 import { RisoButton, RisoIcon } from '../riso';
 import { archiveBoard, deleteBoard } from '../../db/operations/boards';
+import { closeBoard, reopenBoard, BoardLifecycleError } from '../../db/operations/boardLifecycle';
 import { buildBoardMenuItems, type BoardMenuItemKind } from './boardMenu';
 import { BoardActionsMenu } from './BoardActionsMenu';
 import { BoardDetailsSheet } from './BoardDetailsSheet';
@@ -20,7 +22,14 @@ import { BOARD_CLOSED_MESSAGE } from './boardDetailsPatch';
 import play from '../play/Play.module.css';
 
 /** Which sheet/dialog is currently presented from the menu. */
-type BoardAction = 'details' | 'repeat' | 'coreDefaults' | 'confirmArchive' | 'confirmDelete' | null;
+type BoardAction =
+  | 'details'
+  | 'repeat'
+  | 'coreDefaults'
+  | 'confirmArchive'
+  | 'confirmDelete'
+  | 'confirmReopen'
+  | null;
 
 /** A one-button notice shown after a sheet / confirm closes (iOS `.alert` + OK). */
 interface BoardActionNotice {
@@ -80,7 +89,13 @@ export function BoardTitleActions({
   };
 
   const isSealed = board.sealedAt != null;
-  const menuItems = buildBoardMenuItems({ board, sourceTemplate, templatesLoaded });
+  // Pinned per-render instant (react-hooks/purity — mirrors BoardPlaySurface's
+  // `nowPinned`); `Date.now()` itself is flagged as an impure call by the
+  // react-compiler lint rule, so go through `new Date()` like that surface does.
+  const nowPinned = useMemo(() => new Date(), []);
+  const now = nowPinned.getTime();
+  const isEnded = isBoardEnded(board, now);
+  const menuItems = buildBoardMenuItems({ board, sourceTemplate, templatesLoaded, now });
 
   const handleSelect = (kind: BoardMenuItemKind): void => {
     switch (kind) {
@@ -99,6 +114,44 @@ export function BoardTitleActions({
       case 'delete':
         setAction('confirmDelete');
         break;
+      case 'close':
+        void handleClose();
+        break;
+      case 'reopen':
+        setAction('confirmReopen');
+        break;
+    }
+  };
+
+  const handleClose = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await closeBoard(board.id);
+      setBusy(false);
+      onDetailsSaved();
+    } catch (err) {
+      console.error('BoardTitleActions: close failed', err);
+      setBusy(false);
+      if (err instanceof BoardLifecycleError && err.kind === 'notFound') {
+        setNotice(BOARD_CLOSED_NOTICE);
+      } else {
+        setNotice({ title: 'Close failed', body: 'Close failed — please try again.' });
+      }
+    }
+  };
+
+  const handleReopen = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await reopenBoard(board.id);
+      setAction(null);
+      setBusy(false);
+      onDetailsSaved();
+    } catch (err) {
+      console.error('BoardTitleActions: reopen failed', err);
+      setBusy(false);
+      setAction(null);
+      setNotice({ title: 'Reopen failed', body: 'Reopen failed — please try again.' });
     }
   };
 
@@ -133,7 +186,11 @@ export function BoardTitleActions({
   return (
     <>
       <span className={play.railRight}>
-        {board.status === BoardStatus.ACTIVE && !isSealed && (
+        {/* Board Edit redesign slice 4 (D13) — Edit squares gates on
+            `status == ACTIVE && sealedAt == nil && !isEnded && !editMode`;
+            no "Read-only" label anywhere (D14) — the ENDED/CLOSED pill and
+            banner already say so. */}
+        {board.status === BoardStatus.ACTIVE && !isSealed && !isEnded && (
           <RisoButton
             kind="neutral"
             size="small"
@@ -144,12 +201,6 @@ export function BoardTitleActions({
           >
             Edit squares
           </RisoButton>
-        )}
-        {isSealed && (
-          <span className={play.readOnly}>
-            <RisoIcon name="lock" size={12} />
-            Read-only
-          </span>
         )}
         <BoardActionsMenu items={menuItems} boardName={board.name} onSelect={handleSelect} />
       </span>
@@ -227,6 +278,17 @@ export function BoardTitleActions({
                 busy={busy}
                 onCancel={() => setAction(null)}
                 onConfirm={() => void handleDelete()}
+              />
+            )}
+
+            {action === 'confirmReopen' && (
+              <BoardActionConfirmDialog
+                title="Reopen this board?"
+                body="It accepts logs again until you close it. Streaks and achievements that watch it will recompute."
+                confirmLabel="Reopen"
+                busy={busy}
+                onCancel={() => setAction(null)}
+                onConfirm={() => void handleReopen()}
               />
             )}
 

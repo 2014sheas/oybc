@@ -17,7 +17,7 @@ import {
   removeMissingBoardSources,
   updateRecurringBoardTemplate,
 } from '../db/operations/recurringBoardTemplates';
-import { sealBoard } from '../db/operations/sealing';
+import { closeBoard } from '../db/operations/boardLifecycle';
 import { RisoButton, RisoChip, RisoIcon, RisoMiniBoardArt } from '../components/riso';
 import { CoreStrip } from '../components/boards/CoreStrip';
 import { BoardCard } from '../components/boards/BoardCard';
@@ -188,7 +188,11 @@ export function BoardsPage(): React.ReactElement {
         boards={closingOutBoards}
         onLog={(id) => navigate(`/boards/${id}`)}
         onSeal={async (id) => {
-          await sealBoard(id);
+          // Board Edit redesign slice 4 (D3) — the banner's "Seal" action IS
+          // "Close board": route through `closeBoard` (not the bare seal
+          // primitive) so every manual seal also refreshes achievement
+          // watchers (D8), not just the title-row menu's Close.
+          await closeBoard(id);
         }}
       />
 
