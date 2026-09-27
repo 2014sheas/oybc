@@ -11,3 +11,5 @@ export * from './users';
 export * from './wizardBoard';
 export * from './compoundStructureEdit';
 export * from './maintenance';
+export * from './boardLifecycle';
+export * from './lateLog';

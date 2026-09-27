@@ -28,7 +28,11 @@ export function useClosingOutBoards(userId: string | undefined): Board[] {
           await db.boards.filter((b) => b.userId === userId && !b.isDeleted).toArray(),
         );
         return boards
-          .filter((b) => isBoardClosingOut(b, nowMs))
+          // Board Edit redesign slice 4 (D6) — a manually reopened board is
+          // "Ended, not closed" but never auto-closes; the user chose to
+          // keep it open, so it is excluded from this banner (its own header
+          // carries the ENDED banner + Close instead) until it closes again.
+          .filter((b) => isBoardClosingOut(b, nowMs) && b.reopenedAt == null)
           .sort(
             (a, b) =>
               new Date(a.endDate ?? 0).getTime() - new Date(b.endDate ?? 0).getTime(),

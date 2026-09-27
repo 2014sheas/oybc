@@ -41,6 +41,7 @@ import {
   mergeUserPreferences,
   SYNC_COLLECTIONS,
   LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
+  CLEARABLE_BOARD_FIELDS,
   type User,
   type SyncCollection,
 } from '@oybc/shared';
@@ -943,24 +944,20 @@ async function writeSingleDoc(
   }
   cleaned._syncedAt = serverTimestamp();
 
-  // Indefinite boards carry no `endDate`. Because we write with `merge: true`,
-  // omitting the field would PRESERVE a stale deadline on Firestore from
-  // before a convert-to-indefinite edit, which a second device would then
-  // pull — silently un-converting the board. Explicitly delete the field so
-  // the remote doc matches the local source of truth. (Harmless no-op on a
-  // fresh doc / a board that never had an endDate.)
-  if (entityType === 'boards' && cleaned.endDate === undefined) {
-    cleaned.endDate = deleteField();
-  }
-
-  // Same carve-out for `completedAt`: a COMPLETED→ACTIVE revert (live cascade
-  // un-completing a board) clears `completedAt` locally by writing
-  // `undefined`, but under `merge: true` simply omitting the field would
-  // PRESERVE the stale completion timestamp on the remote doc for other
-  // devices to pull. Explicitly delete it so the remote matches the local
-  // source of truth. (Harmless no-op on docs that never had a completedAt.)
-  if (entityType === 'boards' && cleaned.completedAt === undefined) {
-    cleaned.completedAt = deleteField();
+  // Board Edit redesign slice 4 (D2) — a cleared board field (indefinite
+  // `endDate`, an un-greenlogged `completedAt`, or a Reopen clearing
+  // `sealedAt`/`sealedCompletedCells`) must propagate as an explicit
+  // Firestore field delete: writes use `merge: true`, so simply omitting an
+  // `undefined` field would PRESERVE the stale remote value for another
+  // device to pull. `CLEARABLE_BOARD_FIELDS` (`@oybc/shared`) is the single
+  // source of truth for this list — harmless no-op on docs that never had
+  // the field.
+  if (entityType === 'boards') {
+    for (const field of CLEARABLE_BOARD_FIELDS) {
+      if (cleaned[field] === undefined) {
+        cleaned[field] = deleteField();
+      }
+    }
   }
 
   await store.setDoc(docPath, cleaned);

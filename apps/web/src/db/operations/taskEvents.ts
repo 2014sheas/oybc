@@ -9,7 +9,7 @@ import {
   findTransitiveParentCompounds,
   findAffectedBoardIds,
   buildSealImmuneWindows,
-  isOccurredAtSealImmune,
+  isEventSealImmune,
 } from '@oybc/shared';
 import { generateUUID } from '../utils';
 import { addToSyncQueue } from './syncQueue';
@@ -149,7 +149,7 @@ export async function recomputeTaskCachesFromPull(taskId: string): Promise<void>
  *
  * @param taskId The event-owning task whose immune windows to resolve.
  */
-async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWindow[]> {
+export async function getSealImmuneWindowsForTask(taskId: string): Promise<SealImmuneWindow[]> {
   const sealedBoards = (await db.boards.toArray()).filter((b) => !b.isDeleted && b.sealedAt != null);
   if (sealedBoards.length === 0) return [];
   // Live placements only — a tombstoned BoardTask no longer places the task
@@ -267,7 +267,7 @@ export async function tombstoneWindowCompletions(
     const occurredMs = new Date(e.occurredAt).getTime();
     if (occurredMs < lowerMs) continue;
     if (upperMs !== null && occurredMs > upperMs) continue; // a later window's completion
-    if (isOccurredAtSealImmune(e.occurredAt, immuneWindows)) continue; // sealed history is immutable
+    if (isEventSealImmune(e, immuneWindows)) continue; // sealed history is immutable (unless a late log — D10)
     await db.taskEvents.update(e.id, {
       isDeleted: true,
       deletedAt: now,
@@ -294,7 +294,7 @@ export async function tombstoneWindowCompletions(
 export async function tombstoneLatestCompletion(taskId: string, now: string): Promise<void> {
   const immuneWindows = await getSealImmuneWindowsForTask(taskId);
   const events = (await db.taskEvents.where('taskId').equals(taskId).toArray()).filter(
-    (e) => !e.isDeleted && e.kind === 'completion' && !isOccurredAtSealImmune(e.occurredAt, immuneWindows),
+    (e) => !e.isDeleted && e.kind === 'completion' && !isEventSealImmune(e, immuneWindows),
   );
   if (events.length === 0) {
     // Still restamp — a stale lifetime cache (e.g. legacy isCompleted with no
@@ -334,7 +334,7 @@ export async function isUncompleteBlockedBySeal(taskId: string): Promise<boolean
     (e) => !e.isDeleted && e.kind === 'completion',
   );
   if (live.length === 0) return false;
-  return live.every((e) => isOccurredAtSealImmune(e.occurredAt, immuneWindows));
+  return live.every((e) => isEventSealImmune(e, immuneWindows));
 }
 
 /**
