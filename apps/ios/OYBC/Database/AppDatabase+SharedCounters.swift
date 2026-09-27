@@ -186,7 +186,11 @@ extension AppDatabase {
     ///   - now: The operation's ISO8601 timestamp (also the freeze clock).
     /// - Returns: `propagating` — the linked rows to write, enqueue and
     ///   cascade; `reachedFrozenIds` — frozen rows to cascade only.
-    private static func fetchLinkedTasksForLog(
+    ///
+    /// Not `private` — the Board Edit redesign slice 4 closed-board late-log
+    /// path (`AppDatabase+LateLog.swift`) reuses this exact propagation-target
+    /// resolution when a late log lands on a shared-counter ROOT.
+    static func fetchLinkedTasksForLog(
         db: Database,
         sourceTaskId: String,
         reachOccurredAt: String,

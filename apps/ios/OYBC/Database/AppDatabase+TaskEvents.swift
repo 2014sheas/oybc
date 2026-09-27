@@ -281,7 +281,7 @@ extension AppDatabase {
             // (open-ended, like nil) — the same rule as source eligibility;
             // web matches.
             if let upper = upperDate, occurred > upper { continue } // a later window's completion
-            if isOccurredAtSealImmune(e.occurredAt, windows: immuneWindows) { continue } // sealed history is immutable
+            if isEventSealImmune(e, windows: immuneWindows) { continue } // sealed history is immutable (D10: except a closed-board late log)
             e.isDeleted = true
             e.deletedAt = now
             e.updatedAt = now
@@ -308,7 +308,7 @@ extension AppDatabase {
         let live = try TaskEvent
             .filter(Column("taskId") == taskId)
             .fetchAll(db)
-            .filter { !$0.isDeleted && $0.kind == .completion && !isOccurredAtSealImmune($0.occurredAt, windows: immuneWindows) }
+            .filter { !$0.isDeleted && $0.kind == .completion && !isEventSealImmune($0, windows: immuneWindows) }
         guard var latest = live.first else {
             try stampTaskCachesAuthored(db: db, taskId: taskId, now: now)
             return
@@ -350,7 +350,7 @@ extension AppDatabase {
             .fetchAll(db)
             .filter { !$0.isDeleted && $0.kind == .completion }
         guard !live.isEmpty else { return false }
-        return live.allSatisfy { isOccurredAtSealImmune($0.occurredAt, windows: immuneWindows) }
+        return live.allSatisfy { isEventSealImmune($0, windows: immuneWindows) }
     }
 
     /// Convenience read-path wrapper of `isUncompleteBlockedBySeal(db:taskId:)`

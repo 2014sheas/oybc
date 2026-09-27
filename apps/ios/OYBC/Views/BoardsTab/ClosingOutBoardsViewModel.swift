@@ -56,6 +56,11 @@ final class ClosingOutBoardsViewModel {
                 let nowMs = now.timeIntervalSince1970 * 1000
                 return boards
                     .filter { isBoardClosingOut($0, nowMs: nowMs) }
+                    // Board Edit redesign slice 4 (D6, OQ3): a manually
+                    // reopened board is excluded from the banner — the user
+                    // chose to keep it open, and its own header carries the
+                    // ENDED banner + Close instead.
+                    .filter { $0.reopenedAt == nil }
                     .sorted { a, b in
                         let am = a.endDate.flatMap { DateFormatting.parseISO($0) }?.timeIntervalSince1970 ?? 0
                         let bm = b.endDate.flatMap { DateFormatting.parseISO($0) }?.timeIntervalSince1970 ?? 0
@@ -85,16 +90,19 @@ final class ClosingOutBoardsViewModel {
 
     // MARK: - Seal action
 
-    /// Seals a board (docs §Sealing → Lifecycle step 3 — the user "Seal"
-    /// action) off the main thread, then reloads the closing-out set so the
-    /// row disappears once sealed. Marks `sealingBoardId` for the duration so
-    /// the row can show a "Sealing…" state and disable its buttons.
+    /// Closes a board from the closing-out banner's "Close out" button
+    /// (Board Edit redesign slice 4, D3 — the same `closeBoard` op the "…"
+    /// menu's "Close board" row uses, so every manual close gets the
+    /// achievement-watcher refresh too) off the main thread, then reloads the
+    /// closing-out set so the row disappears once closed. Marks
+    /// `sealingBoardId` for the duration so the row can show a "Closing…"
+    /// state and disable its buttons.
     func seal(boardId: String, userId: String) {
         sealingBoardId = boardId
         let database = self.database
         _Concurrency.Task {
             _ = try? await _Concurrency.Task.detached(priority: .userInitiated) {
-                try database.sealBoard(boardId: boardId)
+                try database.closeBoard(boardId: boardId)
             }.value
             await self.reload(userId: userId)
             await MainActor.run { self.sealingBoardId = nil }

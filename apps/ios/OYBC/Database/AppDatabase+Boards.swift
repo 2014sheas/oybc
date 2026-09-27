@@ -115,8 +115,14 @@ extension AppDatabase {
     ///
     /// Caller is responsible for any pre-confirmation UI (e.g., the alert in
     /// `BoardEditPanel`).
+    ///
+    /// Board Edit redesign slice 4 (D12): Archive is one of the two metadata
+    /// writes offered on a CLOSED board, so this guards via the relaxed
+    /// `assertBoardMetadataWritable` (missing/deleted only) rather than the
+    /// stricter `assertBoardEditable` — a sealed board archives fine.
     func archiveBoard(id: String) throws {
         try write { db in
+            try Self.assertBoardMetadataWritable(db: db, boardId: id)
             guard var board = try Board.fetchOne(db, key: id) else { return }
             let now = Self.currentTimestamp()
             board.status = .archived
