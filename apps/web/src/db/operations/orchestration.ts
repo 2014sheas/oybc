@@ -57,6 +57,30 @@ export interface BoardCascadeEntry extends BoardStatsUpdate {
 // ─── Shared cascade helper ────────────────────────────────────────────────────
 
 /**
+ * Options for the board cascades below.
+ *
+ * `authored` (default `true`): an authored cascade bumps `version` +
+ * `updatedAt` and enqueues the Board sync — the local-write contract, and the
+ * existing task/compound/boardTasks/taskEvents pull cascades. `authored:
+ * false` writes the SAME derived fields (stats + the greenlog status
+ * transition) in place with no version bump and no enqueue — for pull-path
+ * refreshes triggered by a pulled BOARD row (a pulled Reopen; the
+ * achievement-watcher refresh), where an authored write would push the
+ * board back and re-trigger the same refresh on the peer (a ping-pong).
+ * Non-authored output is a deterministic function of the converged local
+ * data, so every device converges independently (docs/WINDOWED_COMPLETION.md
+ * §Seal snapshots — the same contract as the sealed re-derive).
+ */
+interface CascadeOptions {
+  authored?: boolean;
+}
+
+/** `updatedAt` + `version` bump for an authored cascade write; nothing otherwise. */
+function authorStamp(board: Board, now: string, authored: boolean): Partial<Board> {
+  return authored ? { updatedAt: now, version: (board.version ?? 1) + 1 } : {};
+}
+
+/**
  * Run the derivation pass for a Task that just changed (locally OR via pull).
  *
  * Recomputes board stats + status transitions + sync entries for every board
@@ -101,7 +125,9 @@ export async function runBoardCascadeForTask(
  */
 export async function runBoardCascadeForTasks(
   changedTaskIds: Iterable<string>,
+  opts: CascadeOptions = {},
 ): Promise<Map<string, BoardCascadeEntry>> {
+  const authored = opts.authored ?? true;
   const now = currentTimestamp();
 
   // Build the lookups for the derivation pass.
@@ -170,8 +196,7 @@ export async function runBoardCascadeForTasks(
       completedTasks: stats.completedTasks,
       linesCompleted: stats.linesCompleted,
       completedLineIds: stats.completedLineIds,
-      updatedAt: now,
-      version: (affectedBoard.version ?? 1) + 1,
+      ...authorStamp(affectedBoard, now, authored),
     };
 
     // Auto-complete board on greenlog.
@@ -190,8 +215,9 @@ export async function runBoardCascadeForTasks(
 
     await db.boards.update(affectedBoardId, boardUpdate);
 
-    // Enqueue sync for this board (inside the transaction for all-or-nothing semantics).
-    const updatedBoard = await db.boards.get(affectedBoardId);
+    // Enqueue sync for this board (inside the transaction for all-or-nothing
+    // semantics) — authored writes only; a non-authored refresh stays local.
+    const updatedBoard = authored ? await db.boards.get(affectedBoardId) : undefined;
     if (updatedBoard) {
       await addToSyncQueue('boards', affectedBoardId, SyncOperationType.UPDATE, updatedBoard, 0);
     }
@@ -234,7 +260,11 @@ export async function runBoardCascadeForTasks(
  *
  * @param boardId The board to recompute.
  */
-export async function runBoardCascadeForBoardId(boardId: string): Promise<void> {
+export async function runBoardCascadeForBoardId(
+  boardId: string,
+  opts: CascadeOptions = {},
+): Promise<void> {
+  const authored = opts.authored ?? true;
   const board = await db.boards.get(boardId);
   if (!board || board.isDeleted || board.sealedAt) return;
 
@@ -275,8 +305,7 @@ export async function runBoardCascadeForBoardId(boardId: string): Promise<void> 
     completedTasks: stats.completedTasks,
     linesCompleted: stats.linesCompleted,
     completedLineIds: stats.completedLineIds,
-    updatedAt: now,
-    version: (board.version ?? 1) + 1,
+    ...authorStamp(board, now, authored),
   };
 
   if (isGreenlog && board.status === BoardStatus.ACTIVE) {
@@ -288,7 +317,7 @@ export async function runBoardCascadeForBoardId(boardId: string): Promise<void> 
   }
 
   await db.boards.update(boardId, boardUpdate);
-  const updatedBoard = await db.boards.get(boardId);
+  const updatedBoard = authored ? await db.boards.get(boardId) : undefined;
   if (updatedBoard) {
     await addToSyncQueue('boards', boardId, SyncOperationType.UPDATE, updatedBoard, 0);
   }

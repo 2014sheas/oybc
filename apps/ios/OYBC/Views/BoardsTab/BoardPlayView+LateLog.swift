@@ -99,8 +99,8 @@ extension BoardPlayView {
                 taskTitle: task.title,
                 kind: .normal,
                 isUndoable: viewModel.hasClosedBoardLateLog(for: task),
-                onMarkDone: { runLateLogCompletion(taskId: task.id) },
-                onUndo: { runLateLogUndo(task: task) },
+                onMarkDone: { await runLateLogCompletion(taskId: task.id) },
+                onUndo: { await runLateLogUndo(task: task) },
                 errorMessage: lateLogErrorMessage
             )
 
@@ -116,8 +116,8 @@ extension BoardPlayView {
                 taskTitle: task.title,
                 kind: .counting(current: current, max: task.maxCount ?? 0, unit: task.unit ?? ""),
                 isUndoable: viewModel.hasClosedBoardLateLog(for: task),
-                onUndo: { runLateLogUndo(task: task) },
-                onLogAmount: { amount in runLateLogIncrement(task: task, delta: amount) },
+                onUndo: { await runLateLogUndo(task: task) },
+                onLogAmount: { amount in await runLateLogIncrement(task: task, delta: amount) },
                 errorMessage: lateLogErrorMessage
             )
 
@@ -146,7 +146,7 @@ extension BoardPlayView {
                 windowLabel: closedBoardWindowLabel,
                 taskTitle: task.title,
                 kind: .compound(parts: parts),
-                onCommitCompound: { childIds in runLateLogCompound(compoundTaskId: task.id, childIds: childIds) },
+                onCommitCompound: { childIds in await runLateLogCompound(compoundTaskId: task.id, childIds: childIds) },
                 canCommitCompound: { staged in
                     viewModel.wouldLateLogCompoundRuleBeMet(compoundTaskId: task.id, childTaskIds: staged)
                 },
@@ -160,53 +160,48 @@ extension BoardPlayView {
 
     // MARK: - Actions
 
-    private func runLateLogCompletion(taskId: String) {
-        _Concurrency.Task { @MainActor in
-            do {
-                try await viewModel.commitLateLogCompletion(taskId: taskId)
-                lateLogTarget = nil
-            } catch {
-                lateLogErrorMessage = "Couldn't log it — please try again."
-            }
+    // Each action is `async` and awaited by `LateLogSheetView.perform`, which
+    // holds the sheet's `isBusy` (all buttons disabled) until it returns.
+
+    private func runLateLogCompletion(taskId: String) async {
+        do {
+            try await viewModel.commitLateLogCompletion(taskId: taskId)
+            lateLogTarget = nil
+        } catch {
+            lateLogErrorMessage = "Couldn't log it — please try again."
         }
     }
 
     /// Passes the TAPPED (placed) task — the VM hands the DB the placed id
     /// (F1: the pre-resolved root is never placed → `taskNotPlaced`).
-    private func runLateLogIncrement(task: Task, delta: Int) {
-        _Concurrency.Task { @MainActor in
-            do {
-                try await viewModel.commitLateLogIncrement(for: task, delta: delta)
-                lateLogErrorMessage = nil
-            } catch {
-                lateLogErrorMessage = "Couldn't log it — please try again."
-            }
+    private func runLateLogIncrement(task: Task, delta: Int) async {
+        do {
+            try await viewModel.commitLateLogIncrement(for: task, delta: delta)
+            lateLogErrorMessage = nil
+        } catch {
+            lateLogErrorMessage = "Couldn't log it — please try again."
         }
     }
 
-    private func runLateLogCompound(compoundTaskId: String, childIds: [String]) {
-        _Concurrency.Task { @MainActor in
-            do {
-                try await viewModel.commitLateLogCompoundParts(compoundTaskId: compoundTaskId, childTaskIds: childIds)
-                lateLogTarget = nil
-            } catch let error as LateLogError where error == .ruleNotMet {
-                lateLogErrorMessage = "Not all parts are done yet."
-            } catch {
-                lateLogErrorMessage = "Couldn't log it — please try again."
-            }
+    private func runLateLogCompound(compoundTaskId: String, childIds: [String]) async {
+        do {
+            try await viewModel.commitLateLogCompoundParts(compoundTaskId: compoundTaskId, childTaskIds: childIds)
+            lateLogTarget = nil
+        } catch let error as LateLogError where error == .ruleNotMet {
+            lateLogErrorMessage = "Not all parts are done yet."
+        } catch {
+            lateLogErrorMessage = "Couldn't log it — please try again."
         }
     }
 
     /// Undo for a tapped square — the VM resolves the event-owning
     /// id (the ROOT for a window-stamped derived row).
-    private func runLateLogUndo(task: Task) {
-        _Concurrency.Task { @MainActor in
-            do {
-                try await viewModel.undoLateLog(for: task)
-                lateLogTarget = nil
-            } catch {
-                lateLogErrorMessage = "Couldn't undo — please try again."
-            }
+    private func runLateLogUndo(task: Task) async {
+        do {
+            try await viewModel.undoLateLog(for: task)
+            lateLogTarget = nil
+        } catch {
+            lateLogErrorMessage = "Couldn't undo — please try again."
         }
     }
 }

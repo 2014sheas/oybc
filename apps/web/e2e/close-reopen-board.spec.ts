@@ -63,6 +63,11 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     await expect(page.getByText('Closed', { exact: true })).toBeVisible();
     await expect(page.getByText('permanent record')).toBeVisible();
     await expect(page.getByText(/Board ended on .+\. Still logging/)).toHaveCount(0);
+    // The CLOSED pill IS the feedback (iOS parity) — never the edit-save
+    // toast. A point-in-time count, not a retrying `toHaveCount(0)`: the toast
+    // self-dismisses after ~2.4s, so a retrying assertion would pass anyway.
+    await page.waitForTimeout(300);
+    expect(await page.getByText('Board saved').count()).toBe(0);
 
     const sealedRow = await readBoard(page, BOARD_ID);
     expect(sealedRow?.sealedAt).toBeTruthy();
@@ -102,6 +107,8 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
 
     await expect(page.getByText('Ended', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Closed', { exact: true })).toHaveCount(0);
+    await page.waitForTimeout(300);
+    expect(await page.getByText('Board saved').count()).toBe(0);
     const reopened = await readBoard(page, BOARD_ID);
     expect(reopened?.sealedAt).toBeFalsy();
     expect(reopened?.reopenedAt).toBeTruthy();

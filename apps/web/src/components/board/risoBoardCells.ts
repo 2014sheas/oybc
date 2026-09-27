@@ -4,6 +4,7 @@ import {
   getHighlightedSquares,
   getCenterSquareIndex,
   isCenterAutoCompleted,
+  isLegacyChosenCenterLocked,
   getCenterDisplayText,
   resolvePlacements,
   type Board,
@@ -97,7 +98,12 @@ export function buildRisoBoardCells(
         task,
         done,
         currentCount: type === 'counting' ? cur : undefined,
-        locked: bt.isLocked === true,
+        // Board Edit redesign slice 3 (D1) — the EFFECTIVE lock, matching
+        // BoardPlaySurface: a stored lock, or a legacy-CHOSEN board's
+        // positional center (not yet normalized on disk).
+        locked:
+          bt.isLocked === true ||
+          isLegacyChosenCenterLocked(board.centerSquareType, bt.row, bt.col, size),
       }),
       _done: done,
     };

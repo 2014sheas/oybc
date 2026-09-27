@@ -225,3 +225,22 @@ describe('buildRisoBoardCells — ACHIEVEMENT squares resolve cross-board (#360)
     expect(cells[0].done).toBe(false);
   });
 });
+
+describe('buildRisoBoardCells — lock chip (Board Edit post-merge sweep, finding 4)', () => {
+  it("shows the lock chip on a legacy-CHOSEN board's positional center even though isLocked is unset", () => {
+    // 3×3 legacy CHOSEN board: the center placement predates per-square locks
+    // (isLocked absent) but is effectively locked until the next squares Save
+    // normalizes it (D1) — BoardPlaySurface already folds this in.
+    const board = makeBoard({ boardSize: 3, totalTasks: 9, centerSquareType: CenterSquareType.CHOSEN });
+    const tasks = [makeTask('c'), makeTask('o')];
+    const cells = buildRisoBoardCells(board, [place('c', 1, 1), place('o', 0, 0)], Object.fromEntries(tasks.map((t) => [t.id, t])), {}, ctx([]));
+    expect(cells[4].locked).toBe(true);
+    expect(cells[0].locked).toBeUndefined();
+  });
+
+  it('a non-CHOSEN board center is unlocked unless its placement is', () => {
+    const board = makeBoard({ boardSize: 3, totalTasks: 9, centerSquareType: CenterSquareType.NONE });
+    const cells = buildRisoBoardCells(board, [place('c', 1, 1)], { c: makeTask('c') }, {}, ctx([]));
+    expect(cells[4].locked).toBeUndefined();
+  });
+});

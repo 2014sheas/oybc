@@ -1120,15 +1120,10 @@ final class SyncService: ObservableObject {
                            let boardId = remoteData["boardId"] as? String {
                             try runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: userId)
                         }
-                        // Sealed-board transport convergence: a pulled SEALED
-                        // boards doc may carry a stale snapshot (sealed offline
-                        // elsewhere with a partial event union). Re-derive THAT
-                        // board from the local converged event union bounded at
-                        // its own sealedAt — deterministic, local-only (no
-                        // version bump / enqueue), inside this transaction.
-                        if collection.firestoreName == "boards",
-                           remoteData["sealedAt"] is String {
-                            try AppDatabase.reDeriveSealedBoardSnapshots(db: db, boardIds: [remoteId])
+                        // Pulled board: sealed-transport convergence / a pulled Reopen's
+                        // live re-derive / watcher refresh — all local-only, this txn.
+                        if collection.firestoreName == "boards" {
+                            try AppDatabase.applyPulledBoardSideEffects(db: db, boardId: remoteId, remoteData: remoteData, localData: localData)
                         }
                     }
                 }
@@ -1874,12 +1869,9 @@ extension SyncService {
                        let boardId = remoteData["boardId"] as? String {
                         try runPullCascadeForBoardTask(db: db, boardId: boardId, ownerUid: authenticatedUserId)
                     }
-                    // Sealed-board transport convergence — see the batch pull
-                    // path (`processPullCollection`) for rationale. Same
-                    // deterministic, local-only, same-transaction semantics.
-                    if collection.firestoreName == "boards",
-                       remoteData["sealedAt"] is String {
-                        try AppDatabase.reDeriveSealedBoardSnapshots(db: db, boardIds: [remoteId])
+                    // Pulled board — see `AppDatabase.applyPulledBoardSideEffects`.
+                    if collection.firestoreName == "boards" {
+                        try AppDatabase.applyPulledBoardSideEffects(db: db, boardId: remoteId, remoteData: remoteData, localData: localData)
                     }
                     recordEvent(.pulled)
                 }
@@ -2014,7 +2006,7 @@ extension SyncService {
 
         if board.sealedAt != nil {
             try AppDatabase.reDeriveSealedBoardSnapshots(db: db, boardIds: [boardId])
-            return
+            return try AppDatabase.refreshWatchersAfterPull(db: db, boardIds: [boardId])
         }
 
         let allChildren: [CompoundChild] = try CompoundChild
@@ -2068,6 +2060,7 @@ extension SyncService {
             let payloadStr = String(data: payload, encoding: .utf8) ?? "{}"
             try Self.insertPullCascadeBoardSync(db: db, boardId: boardId, payload: payloadStr, now: now, ownerUid: ownerUid)
         }
+        try AppDatabase.refreshWatchersAfterPull(db: db, boardIds: [boardId])
     }
 
     /// Batched multi-task pull cascade (Windowed Completion, docs §Sync —
@@ -2207,9 +2200,11 @@ extension SyncService {
                 //    frozen snapshot — the only sanctioned mutation of a sealed
                 //    record. Uses `affectedTaskIds` (not `cascadeTaskIds`) so a
                 //    sealed board placing a task whose row isn't local yet still
-                //    re-derives. Local-only, inside this txn.
+                //    re-derives. Local-only, inside this txn. Then (6) refresh the
+                //    achievement watchers of every board reached — non-authored.
                 if !affectedTaskIds.isEmpty {
                     try AppDatabase.reDeriveSealedBoards(db: db, changedTaskIds: affectedTaskIds)
+                    try AppDatabase.refreshWatchersAfterPull(db: db, boardIds: AppDatabase.boardIdsReachedByTasks(db: db, taskIds: affectedTaskIds))
                 }
             }
         } catch {

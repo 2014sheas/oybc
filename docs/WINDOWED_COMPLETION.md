@@ -635,7 +635,20 @@ Tuesday, forgot 5 mi, logs it Friday from the Tuesday board.
   changed board (specific board, or the board's `spawnedFromTemplateId`);
   `refreshWatchersForBoards` re-derives the boards placing them (sealed →
   local-only re-derive; live → the ordinary cascade) to a fixpoint, bounded
-  by a visited set. Runs on Close, Reopen, and every late-log / undo commit.
+  by a visited set. Runs on Close, Reopen, and every late-log / undo commit
+  (authored: version bump + enqueue), and on every pull cascade that changes a
+  board — the `boards`, `boardTasks` and `taskEvents` pulls — **non-authored**
+  (no version bump, no enqueue): the authoring peer already pushed its own
+  refresh, watcher stats are a deterministic function of converged data, and an
+  authored pull-side write would push back and re-trigger the refresh on the
+  peer (ping-pong).
+- **Pulled Reopen.** A pulled `boards` row that was sealed locally and arrives
+  unsealed re-derives the board's LIVE stats from the local event union,
+  non-authored, in the pull transaction — the reopening device derived its row
+  from ITS union, which may lack this device's late logs (made while sealed here,
+  so only the non-authored sealed re-derive ever counted them). The peer
+  converges when it pulls those events (its `taskEvents` cascade is authored).
+  Web `pullApply.ts` `boards` branch ↔ iOS `AppDatabase.applyPulledBoardSideEffects`.
 - **Mixed-version hazard (accepted, flag-day).** A pre-slice-4 client ignores
   `reopenedAt` and may re-seal a reopened board under the old rule, and an old
   iOS client never clears a pulled `sealedAt`. The owner's devices update
