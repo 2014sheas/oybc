@@ -103,27 +103,28 @@
   font-size: 0.85rem;
 }
 
-/* ---- Footer: Back / Save Draft / Activate ---- */
+/* ---- Footer: ‹ Back (compact) + one primary filling the rest ---- */
 .footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding-top: 18px;
   border-top: 1.5px solid var(--riso-hair);
-  flex-wrap: wrap;
 }
-.footerActions {
-  display: flex;
-  gap: 12px;
+.backButton {
+  flex: 0 0 auto;
+}
+.activateButton,
+.createBoardButton {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-/* ---- Riso buttons (back / draft / activate / create / shuffle) ----
+/* ---- Riso buttons (back / activate / create / shuffle) ----
    Board Creation Split (web PR C) — Activate Board (one-off) is RED;
    Create Board / Save changes (recurring) is BLUE. Was uniformly green
    before the split. */
 .backButton,
-.draftButton,
 .activateButton,
 .createBoardButton,
 .shuffleButton {
@@ -138,8 +139,7 @@
   transition: transform 0.09s, box-shadow 0.09s;
   white-space: nowrap;
 }
-.backButton,
-.draftButton {
+.backButton {
   background: var(--riso-paper-2);
   color: var(--riso-ink);
 }
@@ -161,7 +161,6 @@
 }
 
 .backButton:hover:not(:disabled),
-.draftButton:hover:not(:disabled),
 .activateButton:hover:not(:disabled),
 .createBoardButton:hover:not(:disabled),
 .shuffleButton:hover:not(:disabled) {
@@ -169,7 +168,6 @@
   box-shadow: 4px 4px 0 var(--riso-shadow-ink);
 }
 .backButton:active:not(:disabled),
-.draftButton:active:not(:disabled),
 .activateButton:active:not(:disabled),
 .createBoardButton:active:not(:disabled),
 .shuffleButton:active:not(:disabled) {
@@ -177,7 +175,6 @@
   box-shadow: 0 0 0 var(--riso-shadow-ink);
 }
 .backButton:disabled,
-.draftButton:disabled,
 .activateButton:disabled,
 .createBoardButton:disabled,
 .shuffleButton:disabled {
@@ -185,7 +182,6 @@
   cursor: not-allowed;
 }
 .backButton:focus-visible,
-.draftButton:focus-visible,
 .activateButton:focus-visible,
 .createBoardButton:focus-visible,
 .shuffleButton:focus-visible {

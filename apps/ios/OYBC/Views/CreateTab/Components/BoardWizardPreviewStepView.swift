@@ -20,7 +20,7 @@ enum ArrangeSubMode: String, Hashable {
 /// **Riso reskin** — wizard-only view, reskinned in place. All persist logic,
 /// callback wiring, and branch behaviour are preserved verbatim:
 ///   - `performCreation(status:)` with its recurring / one-off branches.
-///   - Three button-set variants (one-off: Back/Draft/Activate; recurring: Back/Create or Save).
+///   - Two-button footer variants (one-off: Back/Activate; recurring: Back/Create or Save).
 ///   - `persistWizardBoard`, `persistRecurringTemplate` call sites unchanged.
 ///
 /// Layout (Board Creation Split, iOS PR A — per-mode; README §Screens "2. One-off
@@ -33,8 +33,9 @@ enum ArrangeSubMode: String, Hashable {
 ///     docs/BOARD_SOURCES.md §Surfaces item 4) — name, cadence + first-window
 ///     line, one row per source with its range line, the hand-added rows,
 ///     and the SQUARES total. No grid, no shuffle, no deck list.
-///   - Riso footer buttons per mode (one-off: Back/Draft/Activate — red;
-///     recurring: Back/Create Board — blue, no draft).
+///   - Riso footer per mode — compact ‹ Back + one full-width primary
+///     (one-off: Activate Board — red; recurring: Create Board / Save
+///     Changes — blue). No "Save as Draft": leaving via Cancel offers it.
 ///
 /// Persistence: `placement` (`@State`) is the single source of truth for both the
 /// grid and `persistWizardBoard`. Rearranging via drag/tap updates `placement` via
@@ -52,6 +53,10 @@ struct BoardWizardPreviewStepView: View {
     let library: TaskLibraryViewModel
     let userId: String
     let onBack: () -> Void
+    /// Called after a successful write. The Preview step only ever
+    /// activates, so it always passes `.active`; the parameter stays a
+    /// `WizardStatus` because the parent shares this callback with the
+    /// Cancel dialog's draft save.
     let onComplete: (_ boardId: String, _ status: WizardStatus) -> Void
     var onTemplateComplete: ((_ templateId: String) -> Void)? = nil
     /// Task Pools + Recurring Boards Rework (P4) — the user's pools, needed
@@ -443,8 +448,9 @@ struct BoardWizardPreviewStepView: View {
     /// everywhere"). Confirmed gap: before this, Activate was only
     /// `.disabled(isCreating)` — a core board below the floor could reach
     /// Step 3 (Step 2's Next is already gated, but a jump via the stepper
-    /// or summary "Edit" links bypasses it) and Activate anyway. Save as
-    /// Draft is intentionally NOT gated — drafts may be incomplete.
+    /// or summary "Edit" links bypasses it) and Activate anyway. The Cancel
+    /// dialog's Save Draft is intentionally NOT gated — drafts may be
+    /// incomplete.
     private var isBelowCoreFloor: Bool {
         controller.isCore && controller.selectedTaskIds.count < controller.tasksRequired
     }
@@ -752,7 +758,8 @@ private extension BoardWizardPreviewStepView {
         }
     }
 
-    /// One-off: ‹ Back · Save as Draft · Activate Board
+    /// One-off: ‹ Back (compact) · Activate Board (fills the rest).
+    /// There is no "Save as Draft" here — the Cancel dialog offers it.
     @ViewBuilder
     private var oneOffFooter: some View {
         VStack(alignment: .trailing, spacing: 8) {
@@ -762,17 +769,15 @@ private extension BoardWizardPreviewStepView {
             }
             HStack(spacing: 10) {
                 RisoButton(title: "‹ Back", kind: .neutral, action: onBack)
+                    .fixedSize()
                     .disabled(isCreating)
 
-                Spacer()
-
-                RisoButton(title: isCreating ? "Saving…" : "Save as Draft", kind: .neutral) {
-                    performCreation(status: .draft)
-                }
-                .disabled(isCreating)
-
-                RisoButton(title: isCreating ? "Activating…" : "Activate Board", kind: .primary) {
-                    performCreation(status: .active)
+                RisoButton(
+                    title: isCreating ? "Activating…" : "Activate Board",
+                    kind: .primary,
+                    fullWidth: true
+                ) {
+                    performCreation()
                 }
                 .disabled(isCreating || isBelowCoreFloor)
             }
@@ -783,28 +788,19 @@ private extension BoardWizardPreviewStepView {
         .background(Color.risoPaper)
     }
 
-    /// Recurring: ‹ Back · Save as Draft · Create Board (or ‹ Back · Save
-    /// Changes when editing an existing repeating board — there's no
-    /// "draft" concept for an edit, so "Save as Draft" is omitted in that
-    /// case, mirroring the pre-PR-B footer exactly). Board Creation Split
-    /// (PR B) — accent is blue, matching the wizard's fixed mode.
+    /// Recurring: ‹ Back (compact) · Create Board — or Save Changes when
+    /// editing an existing repeating board — filling the rest. Board
+    /// Creation Split (PR B) — accent is blue, matching the wizard's fixed
+    /// mode. No "Save as Draft" — the Cancel dialog offers it.
     @ViewBuilder
     private var recurringFooter: some View {
         HStack(spacing: 10) {
             RisoButton(title: "‹ Back", kind: .neutral, action: onBack)
+                .fixedSize()
                 .disabled(isCreating)
 
-            Spacer()
-
-            if controller.editingTemplateId == nil {
-                RisoButton(title: isCreating ? "Saving…" : "Save as Draft", kind: .neutral) {
-                    performCreation(status: .draft)
-                }
-                .disabled(isCreating)
-            }
-
-            RisoButton(title: recurringPrimaryLabel, kind: .blue) {
-                performCreation(status: .active)
+            RisoButton(title: recurringPrimaryLabel, kind: .blue, fullWidth: true) {
+                performCreation()
             }
             .disabled(isCreating)
         }
@@ -816,19 +812,10 @@ private extension BoardWizardPreviewStepView {
 
     // MARK: - Creation logic (verbatim from original)
 
-    private func performCreation(status: WizardStatus) {
+    private func performCreation() {
         errorMessage = nil
 
         if controller.isRecurring {
-            if status == .draft {
-                // Board Creation Split (PR B) — "Save as Draft" now saves
-                // a real DRAFT `Board` (the same one-off persist path a
-                // one-off wizard uses) instead of creating — and
-                // immediately spawning — a `RecurringBoardTemplate`.
-                // Nothing runs until "Create Board".
-                performRecurringDraftSave()
-                return
-            }
             isCreating = true
             persistRecurringTemplate(
                 controller: controller,
@@ -839,7 +826,7 @@ private extension BoardWizardPreviewStepView {
                     switch outcome {
                     case .createdAndSpawned(let templateId, let boardId):
                         _ = templateId
-                        onComplete(boardId, status)
+                        onComplete(boardId, .active)
                     case .createdSpawnSkipped(let templateId, _):
                         onTemplateComplete?(templateId)
                     case .updated(let templateId):
@@ -877,59 +864,17 @@ private extension BoardWizardPreviewStepView {
             userId: userId,
             placement: snapshot,
             dates: dates,
-            status: status,
+            status: .active,
             database: controller.database,
             onSuccess: { boardId in
                 isCreating = false
-                onComplete(boardId, status)
+                onComplete(boardId, .active)
             },
             onError: { message in
                 isCreating = false
                 errorMessage = controller.draftBoardId == nil
                     ? "Failed to create board: \(message)"
                     : "Failed to update draft: \(message)"
-            }
-        )
-    }
-
-    /// Board Creation Split (PR B) — recurring "Save as Draft". Reuses the
-    /// EXACT one-off persist path (`persistWizardBoard(status: .draft)`);
-    /// `controller.isRecurring` drives that function's own
-    /// `isRecurringDraft` + `recurringDraftMix` bookkeeping (see
-    /// `BoardWizardPersist.swift`), so this call site needs no special
-    /// casing beyond skipping the (grid-only) `placement` fallback message
-    /// wording, which stays the plain "Failed to save draft" — a recurring
-    /// draft is never "updating" in the one-off sense of resurrecting a
-    /// prior ACTIVE board.
-    private func performRecurringDraftSave() {
-        let resolved = resolveWizardDates(controller: controller)
-        let dates: (start: String, end: String?)
-        switch resolved {
-        case .ok(let start, let end):
-            dates = (start, end)
-        case .error(let msg):
-            errorMessage = msg
-            return
-        }
-
-        isCreating = true
-        let snapshot = placement.isEmpty
-            ? buildWizardPlacement(controller: controller, library: library)
-            : placement
-        persistWizardBoard(
-            controller: controller,
-            userId: userId,
-            placement: snapshot,
-            dates: dates,
-            status: .draft,
-            database: controller.database,
-            onSuccess: { boardId in
-                isCreating = false
-                onComplete(boardId, .draft)
-            },
-            onError: { message in
-                isCreating = false
-                errorMessage = "Failed to save draft: \(message)"
             }
         )
     }

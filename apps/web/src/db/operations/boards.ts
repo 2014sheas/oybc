@@ -396,7 +396,7 @@ export async function createBoard(
    *  wizard to carry the Phase 6.1 `isCore` marker when launched from
    *  the recurring banner, and (Board Creation Split, web PR D) the
    *  `isRecurringDraft`/`recurringDraftMix` pair a recurring wizard's
-   *  "Save as Draft" writes. Kept off CreateBoardInput so external
+   *  cancel-dialog "Save Draft" writes. Kept off CreateBoardInput so external
    *  callers don't need to think about provenance fields. */
   options: { isCore?: boolean; isRecurringDraft?: boolean; recurringDraftMix?: string } = {},
 ): Promise<Board> {

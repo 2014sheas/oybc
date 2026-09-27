@@ -596,7 +596,7 @@ describe('persistRecurringTemplate — staged edits (Inline Task Editing PR-2)',
 /**
  * Board Creation Split (web PR D) — recurring drafts. `persistWizardBoard`
  * (the SAME one-off draft-save path) is now also the recurring wizard's
- * "Save as Draft" / cancel-dialog "Save Draft" writer: it stamps
+ * cancel-dialog "Save Draft" writer: it stamps
  * `isRecurringDraft` + a JSON `recurringDraftMix` snapshot instead of
  * spawning a `RecurringBoardTemplate` immediately. "Create Board" on a
  * resumed recurring draft then converts it: `persistRecurringTemplate`'s
@@ -604,7 +604,7 @@ describe('persistRecurringTemplate — staged edits (Inline Task Editing PR-2)',
  * (soft-deletes) the placeholder draft Board.
  */
 describe('Board Creation Split (web PR D) — recurring draft save writes isRecurringDraft + recurringDraftMix', () => {
-  it('a recurring "Save as Draft" writes isRecurringDraft=true and a mix snapshot; a one-off draft never sets the mix field', async () => {
+  it('a recurring draft save writes isRecurringDraft=true and a mix snapshot; a one-off draft never sets the mix field', async () => {
     const poolTaskIds = await seedTasks(3, 'pool');
     await db.pools.add(makePool('pool-1', 'Morning Kickstart', poolTaskIds));
     const [manualId] = await seedTasks(1, 'manual');
@@ -718,8 +718,7 @@ describe('Board Creation Split (web PR D) — convert draft → template on Crea
   it('a resumed recurring draft, once Created, produces a RecurringBoardTemplate + spawned board and retires (soft-deletes) the placeholder draft', async () => {
     const taskIds = await seedTasks(POOL_SIZE, 'task');
 
-    // 1) Save as Draft — mirrors the recurring Preview step's "Save as
-    //    Draft" / the cancel dialog's unified "Save Draft".
+    // 1) Save Draft — mirrors the cancel dialog's unified "Save Draft".
     const draftController = makeController({
       isRecurring: true,
       selectedTaskIds: new Set(taskIds),

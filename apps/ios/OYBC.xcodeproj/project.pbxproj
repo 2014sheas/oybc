@@ -34,6 +34,7 @@
 		0700AF09466B71E2C9D52012 /* CounterArrivalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 355962AACBA78E1DEC29F282 /* CounterArrivalStore.swift */; };
 		0868D664B992765712218C19 /* RisoOnboardingSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDCC4E46445C7DC265F9BFC9 /* RisoOnboardingSnapshotTests.swift */; };
 		08EEB7C81C1DCF7FF674C306 /* BoardDetailsDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCBD8B664A620E4DC31601BA /* BoardDetailsDraft.swift */; };
+		0961D05FF7A46C9633D7E60D /* RearrangeJiggleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCEF8FBDEA02F3DC90FE801E /* RearrangeJiggleTests.swift */; };
 		0AD00F177166675ACEFA4FC2 /* TimeframeFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2241CE9069C5B296837472 /* TimeframeFormatting.swift */; };
 		0BF5FB181157FCDC92BBD5A2 /* OperatorType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DD08A5EA4BACEBCD439A100 /* OperatorType.swift */; };
 		0C586068F765A3B01C905AE2 /* BoardSourceMemberRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB4E5B5A5898AA296EA8B0D /* BoardSourceMemberRules.swift */; };
@@ -959,6 +960,7 @@
 		DB8DBA01AE362FA9AA69D1A2 /* BrowsableTasksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowsableTasksTests.swift; sourceTree = "<group>"; };
 		DBB367C25140CE615FD660C2 /* SyncService+QueueOwnership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SyncService+QueueOwnership.swift"; sourceTree = "<group>"; };
 		DCA2E34EA7CAA29BA2596F60 /* TaskDeleteConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDeleteConfirmView.swift; sourceTree = "<group>"; };
+		DCEF8FBDEA02F3DC90FE801E /* RearrangeJiggleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RearrangeJiggleTests.swift; sourceTree = "<group>"; };
 		DE2853654120D7E16111DA40 /* EntitlementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementTests.swift; sourceTree = "<group>"; };
 		DF7B94F09C3473C58879F79F /* RisoBingoToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoBingoToast.swift; sourceTree = "<group>"; };
 		DF7CFCFD2C7AF0403A3655F8 /* placementVectors.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = placementVectors.json; sourceTree = "<group>"; };
@@ -1020,7 +1022,7 @@
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
 		FFB954BE701004999E12FBE9 /* CoreBoardWindowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowViewModelTests.swift; sourceTree = "<group>"; };
-		"TEMP_DD55DFFD-4449-435B-ADC1-6EF0F0BC381B" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_C30C212C-A2B2-4378-8243-00ED79FB3AF7" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1419,6 +1421,7 @@
 				34AA407C5E0BDA5DF02D73CE /* PoolHealthTests.swift */,
 				B038D37E36B63028551A45B4 /* PoolMixTests.swift */,
 				96E5EE0906DD75CFE73E0B00 /* PoolsCoreBoardDefaultsMigrationTests.swift */,
+				DCEF8FBDEA02F3DC90FE801E /* RearrangeJiggleTests.swift */,
 				B31EFBC131E94BA5D5BB91DB /* RecurringBoardsTests.swift */,
 				1C357533A685D897575D4D12 /* RecurringBoardsUXPassTests.swift */,
 				F8ECE2006B76266C5018FD05 /* RecurringBoardTemplatesMixTests.swift */,
@@ -1786,10 +1789,10 @@
 			path = OYBCUITests;
 			sourceTree = "<group>";
 		};
-		"TEMP_21763076-97A2-47E3-BFD3-0DC83D8AD7EE" /* ios */ = {
+		"TEMP_E48C3F33-8A2E-4FBA-BA94-FEF0341B1F9D" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_DD55DFFD-4449-435B-ADC1-6EF0F0BC381B" /* Signing.xcconfig */,
+				"TEMP_C30C212C-A2B2-4378-8243-00ED79FB3AF7" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -2365,6 +2368,7 @@
 				30277AD2D139DBB594619DF7 /* PoolHealthTests.swift in Sources */,
 				542E073370FD24EBE0905B14 /* PoolMixTests.swift in Sources */,
 				827471798A1660C038CC919A /* PoolsCoreBoardDefaultsMigrationTests.swift in Sources */,
+				0961D05FF7A46C9633D7E60D /* RearrangeJiggleTests.swift in Sources */,
 				790A8C925419EF55D5704E8A /* RecurringBoardTemplatesMixTests.swift in Sources */,
 				6BF9AEAC77D9F447A5B9A82A /* RecurringBoardTemplatesTests.swift in Sources */,
 				3C523FE7122A485435C16813 /* RecurringBoardsTests.swift in Sources */,
@@ -2510,7 +2514,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_DD55DFFD-4449-435B-ADC1-6EF0F0BC381B" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_C30C212C-A2B2-4378-8243-00ED79FB3AF7" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2607,7 +2611,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_DD55DFFD-4449-435B-ADC1-6EF0F0BC381B" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_C30C212C-A2B2-4378-8243-00ED79FB3AF7" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

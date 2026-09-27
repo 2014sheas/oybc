@@ -27,9 +27,9 @@ import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
  * ArrangeGrid behavior unchanged.
  *
  * The footer still diverges per mode (Board Creation Split, web PR C+D):
- * one-off has a RED "Activate Board"; recurring a BLUE "Create Board",
- * with "Save as Draft" only for a FRESH recurring session (omitted when
- * `editingTemplateId` is set — an edit has no "draft" concept).
+ * one-off has a RED "Activate Board"; recurring a BLUE "Create Board"
+ * ("Save Changes" when `editingTemplateId` is set). No mode carries a
+ * "Save as Draft" button — saving a draft is the Cancel dialog's job.
  *
  * See `BoardSetupForm.test.ts`'s docstring for why this uses
  * `react-dom/server`'s `renderToStaticMarkup` (no jsdom/RTL harness in
@@ -190,7 +190,7 @@ describe('BoardWizardPreviewStep — repeating-board summary-card view (frame 5b
     expect(html).not.toContain('added by hand');
   });
 
-  it('shows a "Create Board" primary AND "Save as Draft" for a fresh recurring session (web PR D)', () => {
+  it('shows a "Create Board" primary and no "Save as Draft" for a fresh recurring session', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
     const controller = makeController({
       isRecurring: true,
@@ -202,13 +202,13 @@ describe('BoardWizardPreviewStep — repeating-board summary-card view (frame 5b
     const html = renderPreview(controller, tasks);
 
     expect(html).toContain('Create Board');
-    expect(html).toContain('Save as Draft');
+    expect(html).not.toContain('Save as Draft');
     expect(html).not.toContain('Save Changes');
     expect(html).not.toContain('template');
     expect(html).not.toContain('spawn');
   });
 
-  it('omits "Save as Draft" when editing an existing repeating board, showing "Save Changes" instead (no "draft" concept for an edit)', () => {
+  it('shows "Save Changes" (and no "Save as Draft") when editing an existing repeating board', () => {
     const tasks = [makeTask('t1'), makeTask('t2')];
     const controller = makeController({
       isRecurring: true,
@@ -236,7 +236,7 @@ describe('BoardWizardPreviewStep — repeating-board summary-card view (frame 5b
     expect(html).not.toContain('Squares');
     expect(html).toContain('Rearrange');
     expect(html).toContain('Activate Board');
-    expect(html).toContain('Save as Draft');
+    expect(html).not.toContain('Save as Draft');
   });
 });
 
