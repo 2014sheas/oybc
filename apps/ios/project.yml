@@ -184,6 +184,24 @@ targets:
         CODE_SIGN_STYLE: Automatic
         GENERATE_INFOPLIST_FILE: YES
 
+  # XCUITest target (automated gesture tests the snapshot target can't
+  # cover — e.g. Board Edit press-and-hold-to-move). Drives a DEBUG build
+  # launched with `-bypassAuth YES -uiTestSeedEditBoard YES` (see
+  # OYBC/Services/UITestSeed.swift). Run via the OYBCUITests scheme.
+  OYBCUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - OYBCUITests
+    dependencies:
+      - target: OYBC
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "com.oybc.OYBCUITests"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: OYBC
+
 schemes:
   OYBC:
     build:
@@ -211,3 +229,13 @@ schemes:
       config: Debug
       targets:
         - OYBCSnapshotTests
+
+  OYBCUITests:
+    build:
+      targets:
+        OYBC: all
+        OYBCUITests: all
+    test:
+      config: Debug
+      targets:
+        - OYBCUITests

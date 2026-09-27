@@ -16,10 +16,27 @@ import UIKit
 /// - **Tap** any square (task, locked, empty, or the FREE center) → `onTap`.
 ///   Routed by the caller to the square menu (occupied) or the picker
 ///   (empty) or the center dialog (FREE).
-/// - **Long-press (0.35s) then drag** a movable square → lift + live
-///   cascade (identical slot-rect hit-testing to `RearrangeGrid`); release
-///   commits the new order via `onReorder`. Attached via `.simultaneousGesture`
-///   so a quick tap still resolves as `onTap` (D8).
+/// - **Long-press (0.35s) then drag** a movable square → lift (+ haptic) the
+///   moment the hold COMPLETES, then live cascade (identical slot-rect
+///   hit-testing to `RearrangeGrid`); release commits the new order via
+///   `onReorder`. Attached via `.simultaneousGesture` so a quick tap still
+///   resolves as `onTap` (D8); the tap that trails a hold is swallowed so
+///   hold-and-release never opens the menu. A gesture the system cancels
+///   (incoming call, scroll takeover…) reverts the lift instead of leaving
+///   the grid stuck. `onLiftChange` lets the host lock its ScrollView while
+///   a square is lifted so the scroll pan can't steal the drag.
+///
+/// ### Hit-testing invariants (the "hold-to-move does nothing" bug)
+/// 1. Cells are placed by `.offset`, which moves rendering but NOT the
+///    layout frame. Every interaction and accessibility modifier
+///    (`contentShape`, gestures, `accessibility*`) must sit BEFORE the
+///    `.offset` so it travels with the rendered square. Attached after it,
+///    all nine hit regions and VoiceOver frames collapse onto slot 0, where
+///    the topmost (last) cell swallows every touch.
+/// 2. The square face (`RisoBoardPlayCell`) is display-only here
+///    (`.allowsHitTesting(false)`). It carries its own `.onTapGesture` for
+///    play mode; as a CHILD gesture it outranks this grid's `.onTapGesture`,
+///    so any touch on the face was eaten by its no-op tap.
 /// - Locked squares and the FREE center never lift and are never drop
 ///   targets (`SquareEditCellData.isPinned`).
 ///
@@ -37,6 +54,9 @@ struct SquaresEditGrid: View {
     var onTap: (String) -> Void
     var onReorder: ([SquareEditCellData]) -> Void
     var onKeyboardMove: (String, SquaresEditDirection) -> SquaresEditMoveResult
+    /// Fires `true` when a square lifts and `false` when it drops / reverts.
+    /// The host uses it to disable its ScrollView mid-drag.
+    var onLiftChange: (Bool) -> Void = { _ in }
 
     /// Windowed-Completion-aware completion read (docs/WINDOWED_COMPLETION.md
     /// §Task caches) — see the equivalent doc on the retired `RearrangeGrid`.
@@ -48,6 +68,15 @@ struct SquaresEditGrid: View {
     @State private var liftedId: String? = nil
     @State private var dragActive: Bool = false
     @State private var dragPosition: CGPoint = .zero
+    /// When the last lift ended — a tap landing within `tapAfterLiftGrace`
+    /// is the release of that hold, not a real tap.
+    @State private var lastLiftEndedAt: Date = .distantPast
+    /// True while a hold-drag gesture is live. Auto-resets when the gesture
+    /// ends OR is cancelled — `onEnded` never runs on a cancel, so this is
+    /// the only reliable cleanup signal.
+    @GestureState private var isHoldGestureLive: Bool = false
+
+    private let tapAfterLiftGrace: TimeInterval = 0.3
 
     // MARK: - Body
 
@@ -76,14 +105,16 @@ struct SquaresEditGrid: View {
                     isDimmed: isDimmed
                 )
                 .frame(width: cellSize, height: cellSize)
-                .offset(x: xOff, y: yOff)
-                .animation(.spring(response: 0.22, dampingFraction: 0.82), value: slotIdx)
+                // Interaction + accessibility BEFORE `.offset` — see the
+                // layout/hit-testing invariant in the type doc.
                 .contentShape(Rectangle())
-                .onTapGesture { onTap(cell.id) }
+                .onTapGesture { handleTap(cell.id) }
                 .simultaneousGesture(
                     isMovable ? longPressDragGesture(for: cell, stride: stride) : nil
                 )
                 .accessibilityElement(children: .combine)
+                // Slot-positional id for OYBCUITests (no VoiceOver effect).
+                .accessibilityIdentifier("squaresEditCell.\(slotIdx)")
                 .accessibilityActions {
                     if isMovable {
                         Button("Move up") { accessibilityMove(cell, .up) }
@@ -92,6 +123,8 @@ struct SquaresEditGrid: View {
                         Button("Move right") { accessibilityMove(cell, .right) }
                     }
                 }
+                .offset(x: xOff, y: yOff)
+                .animation(.spring(response: 0.22, dampingFraction: 0.82), value: slotIdx)
             }
 
             if dragActive,
@@ -113,6 +146,67 @@ struct SquaresEditGrid: View {
                 displayCells = newCells
             }
         }
+        .onChange(of: dragActive) { _, active in onLiftChange(active) }
+        .onChange(of: isHoldGestureLive) { _, live in
+            guard !live else { return }
+            // The gesture is over. A successful release already committed
+            // and cleared the lift in `onEnded`; defer one tick so that runs
+            // first, then revert anything still lifted (a cancelled gesture).
+            DispatchQueue.main.async { revertStrandedLift() }
+        }
+        .onDisappear { if dragActive { onLiftChange(false) } }
+    }
+
+    // MARK: - Tap routing
+
+    /// Routes a tap, swallowing the trailing tap of a hold-and-release.
+    /// Defensive: a SwiftUI tap can still recognize on the release of a
+    /// ~0.6s press when a simultaneous long-press sits beside it (observed
+    /// while diagnosing in OYBCUITests), which would open the menu for a
+    /// square the user only meant to lift.
+    private func handleTap(_ cellId: String) {
+        guard liftedId == nil,
+              Date().timeIntervalSince(lastLiftEndedAt) > tapAfterLiftGrace else { return }
+        onTap(cellId)
+    }
+
+    // MARK: - Lift lifecycle
+
+    /// Lifts `cell` (haptic + hole + ghost). Idempotent per lift. The ghost
+    /// starts over the square's own slot — the hold completes before any
+    /// drag location exists, so `dragPosition` would otherwise be `.zero`
+    /// and the ghost would flash in the grid's top-left corner.
+    private func lift(_ cell: SquareEditCellData, stride: CGFloat) {
+        guard liftedId == nil else { return }
+        let slot = displayCells.firstIndex(where: { $0.id == cell.id }) ?? 0
+        let half = (stride - Riso.cellGap) / 2
+        dragPosition = CGPoint(
+            x: CGFloat(slot % gridSize) * stride + half,
+            y: CGFloat(slot / gridSize) * stride + half
+        )
+        liftedId = cell.id
+        dragActive = true
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    /// Clears the lift state (animated) and stamps the tap-grace window.
+    private func clearLift() {
+        lastLiftEndedAt = Date()
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
+            liftedId = nil
+            dragActive = false
+            dragPosition = .zero
+        }
+    }
+
+    /// Cancel path: the gesture died without `onEnded` — drop the lift and
+    /// snap the live cascade back to the committed order.
+    private func revertStrandedLift() {
+        guard liftedId != nil else { return }
+        clearLift()
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
+            displayCells = cells
+        }
     }
 
     // MARK: - VoiceOver move (D9)
@@ -128,6 +222,8 @@ struct SquaresEditGrid: View {
 
     // MARK: - Cell rendering
 
+    /// Display-only square visual — hit-testing is disabled (invariant 2 in
+    /// the type doc); the grid cell's `contentShape` owns every touch.
     @ViewBuilder
     private func squareCellView(cell: SquareEditCellData, isHole: Bool, isDimmed: Bool) -> some View {
         ZStack {
@@ -155,6 +251,7 @@ struct SquaresEditGrid: View {
             }
         }
         .opacity(isDimmed ? 0.45 : 1.0)
+        .allowsHitTesting(false)
     }
 
     /// The shared board square for a real cell (FREE center or task/pending
@@ -210,38 +307,35 @@ struct SquaresEditGrid: View {
     ) -> some Gesture {
         LongPressGesture(minimumDuration: 0.35)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("squaresEditGrid")))
+            .updating($isHoldGestureLive) { value, live, _ in
+                if case .second(true, _) = value { live = true }
+            }
             .onChanged { value in
-                switch value {
-                case .first(true):
-                    guard liftedId != cell.id else { return }
-                    liftedId = cell.id
-                    dragActive = true
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                case .second(true, let dragValue):
-                    guard let dragValue else { return }
-                    dragPosition = dragValue.location
-                    let targetCol = max(0, min(gridSize - 1, Int(dragValue.location.x / stride)))
-                    let targetRow = max(0, min(gridSize - 1, Int(dragValue.location.y / stride)))
-                    let targetIndex = targetRow * gridSize + targetCol
-                    if let reordered = reorderSquaresToSlot(
-                        cells: displayCells, draggingId: cell.id, targetIndex: targetIndex
-                    ) {
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
-                            displayCells = reordered
-                        }
+                // `.first(true)` is finger-DOWN, not hold-complete — the lift
+                // waits for `.second(true, _)`, which fires once the 0.35s
+                // hold succeeds (then again for every drag update).
+                guard case .second(true, let dragValue) = value else { return }
+                if liftedId == nil { lift(cell, stride: stride) }
+                guard liftedId == cell.id, let dragValue else { return }
+                dragPosition = dragValue.location
+                let targetCol = max(0, min(gridSize - 1, Int(dragValue.location.x / stride)))
+                let targetRow = max(0, min(gridSize - 1, Int(dragValue.location.y / stride)))
+                let targetIndex = targetRow * gridSize + targetCol
+                if let reordered = reorderSquaresToSlot(
+                    cells: displayCells, draggingId: cell.id, targetIndex: targetIndex
+                ) {
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.82)) {
+                        displayCells = reordered
                     }
-                default:
-                    break
                 }
             }
             .onEnded { _ in
+                // Only the lifted square commits (a second finger's gesture
+                // on another cell must not clear or commit this lift).
+                guard liftedId == cell.id else { return }
                 let finalCells = displayCells
                 let changed = !zip(finalCells, cells).allSatisfy { $0.id == $1.id }
-                withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
-                    liftedId = nil
-                    dragActive = false
-                    dragPosition = .zero
-                }
+                clearLift()
                 if changed { onReorder(finalCells) }
             }
     }
