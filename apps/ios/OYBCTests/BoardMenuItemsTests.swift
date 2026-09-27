@@ -39,30 +39,80 @@ final class BoardMenuItemsTests: XCTestCase {
         )
     }
 
-    private func items(_ board: Board, _ template: RecurringBoardTemplate? = nil) -> [BoardMenuItem] {
-        BoardMenuItems.items(board: board, sourceTemplate: template)
+    private func ms(_ iso: String) -> Double {
+        (DateFormatting.parseISO(iso)?.timeIntervalSince1970 ?? 0) * 1000
+    }
+
+    /// Mid-window "now" for the still-live cases (board's default `endDate`
+    /// is "2026-09-30T23:59:59.999").
+    private var liveNowMs: Double { ms("2026-09-15T00:00:00.000Z") }
+    /// Past-endDate "now" for the Ended cases.
+    private var endedNowMs: Double { ms("2026-10-02T00:00:00.000Z") }
+
+    private func items(_ board: Board, _ template: RecurringBoardTemplate? = nil, now: Double? = nil) -> [BoardMenuItem] {
+        BoardMenuItems.items(board: board, sourceTemplate: template, now: now ?? liveNowMs)
     }
 
     func test_adhocActive_detailsRepeatArchiveDelete() {
         XCTAssertEqual(items(makeBoard()), [.details, .repeatBoard, .archive, .delete])
     }
 
-    func test_adhocEndedUnsealed_isStillEditable() {
-        XCTAssertEqual(items(makeBoard(endDate: "2020-01-31T23:59:59.999")),
-                       [.details, .repeatBoard, .archive, .delete])
+    /// Board Edit redesign slice 4 (D12): an ended-but-unsealed ad-hoc board
+    /// leads with Close board, then keeps the editable-shaped rest of the
+    /// row (Board details is still offered — extending a custom board's
+    /// endDate un-ends it).
+    func test_adhocEnded_closeThenDetailsRepeatArchiveDelete() {
+        XCTAssertEqual(
+            items(makeBoard(endDate: "2020-01-31T23:59:59.999"), now: endedNowMs),
+            [.close, .details, .repeatBoard, .archive, .delete]
+        )
     }
 
-    func test_adhocSealed_deleteOnly() {
-        XCTAssertEqual(items(makeBoard(sealedAt: "2026-10-01T06:00:00.000Z")), [.delete])
+    /// A board past its `endDate` at the OLD `now` reads as still-live at an
+    /// earlier `now` — the same board, different instant.
+    func test_adhocNotYetEnded_isStillFullyEditable() {
+        XCTAssertEqual(
+            items(makeBoard(endDate: "2020-01-31T23:59:59.999"), now: ms("2020-01-01T00:00:00.000Z")),
+            [.details, .repeatBoard, .archive, .delete]
+        )
+    }
+
+    /// Board Edit redesign slice 4 (D12): a closed (sealed) ad-hoc board
+    /// leads with Reopen board — no Board details row.
+    func test_adhocClosed_reopenRepeatArchiveDelete() {
+        XCTAssertEqual(items(makeBoard(sealedAt: "2026-10-01T06:00:00.000Z")),
+                       [.reopen, .repeatBoard, .archive, .delete])
     }
 
     func test_coreActive_coreDefaultsAndDelete() {
         XCTAssertEqual(items(makeBoard(isCore: true)), [.coreDefaults, .delete])
     }
 
-    func test_coreSealed_coreDefaultsAndDelete() {
+    /// Board Edit redesign slice 4 (D12): core, ended (not yet sealed).
+    func test_coreEnded_closeCoreDefaultsDelete() {
+        XCTAssertEqual(
+            items(makeBoard(isCore: true, endDate: "2020-01-31T23:59:59.999"), now: endedNowMs),
+            [.close, .coreDefaults, .delete]
+        )
+    }
+
+    /// Board Edit redesign slice 4 (D12): core, closed (sealed).
+    func test_coreClosed_reopenCoreDefaultsDelete() {
         XCTAssertEqual(items(makeBoard(isCore: true, sealedAt: "2026-10-01T06:00:00.000Z")),
-                       [.coreDefaults, .delete])
+                       [.reopen, .coreDefaults, .delete])
+    }
+
+    /// OQ5: no Close/Reopen on an archived board even when its window has
+    /// ended or it's sealed — unchanged from slice 2.
+    func test_archivedEnded_deleteOnly() {
+        XCTAssertEqual(
+            items(makeBoard(status: .archived, endDate: "2020-01-31T23:59:59.999"), now: endedNowMs),
+            [.delete]
+        )
+    }
+
+    func test_archivedSealed_deleteOnly() {
+        XCTAssertEqual(items(makeBoard(status: .archived, sealedAt: "2026-10-01T06:00:00.000Z")), [.delete])
     }
 
     func test_archived_deleteOnly() {

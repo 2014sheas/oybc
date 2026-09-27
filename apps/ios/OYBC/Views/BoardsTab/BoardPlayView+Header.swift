@@ -52,8 +52,12 @@ extension BoardPlayView {
                 streakValue: greenlogStreakValue,
                 status: board?.status,
                 isSealed: isSealed,
+                isEnded: isEnded,
                 showRecurringBadge: board.map { RisoRecurringBadge.shouldShow(for: $0) } ?? false,
-                canEdit: board?.status == .active && !isSealed && !editMode,
+                // Board Edit redesign slice 4 (D13): Edit squares also gates
+                // on `!isEnded` now — an ended-but-unsealed board still
+                // logs, but no longer edits its squares.
+                canEdit: board?.status == .active && !isSealed && !isEnded && !editMode,
                 onEdit: {
                     guard let b = board else { return }
                     viewModel.seedEditDraft(from: b)
@@ -66,17 +70,23 @@ extension BoardPlayView {
                 // while `editMode` (edits must go through Save/Cancel
                 // first); otherwise the pure builder's ordered list.
                 menuItems: editMode ? [] : (board.map {
-                    BoardMenuItems.items(board: $0, sourceTemplate: viewModel.editSourceTemplate)
+                    BoardMenuItems.items(
+                        board: $0, sourceTemplate: viewModel.editSourceTemplate,
+                        now: Date().timeIntervalSince1970 * 1000
+                    )
                 } ?? []),
                 onMenuSelect: { handleMenuSelect($0) }
             )
         }
     }
 
-    /// Board Edit redesign slice 2 — routes a tapped "…" menu item to the
-    /// matching `BoardAction`, which `BoardActionsPresenter` presents.
+    /// Board Edit redesign slice 2 (+ slice 4's Close/Reopen) — routes a
+    /// tapped "…" menu item to the matching `BoardAction`, which
+    /// `BoardActionsPresenter` presents.
     func handleMenuSelect(_ item: BoardMenuItem) {
         switch item {
+        case .close: boardAction = .close
+        case .reopen: boardAction = .confirmReopen
         case .details: boardAction = .details
         case .repeatBoard: boardAction = .repeatBoard
         case .coreDefaults: boardAction = .coreDefaults

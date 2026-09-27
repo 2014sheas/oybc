@@ -24,9 +24,13 @@ struct BoardPlayHeaderView: View {
     /// Live status badge value; nil hides the badge row entirely
     /// (board not loaded yet).
     var status: BoardStatus? = nil
-    /// Sealed boards show CLOSED in place of the status badge and the
-    /// Read-only lock in the trailing slot.
+    /// Sealed boards show CLOSED in place of the status badge; the trailing
+    /// slot drops Edit squares (no "Read-only" label anywhere — D14).
     var isSealed: Bool = false
+    /// Board Edit redesign slice 4 (D14): a board whose window ended but
+    /// isn't sealed yet shows ENDED in place of the status badge. Ignored
+    /// when `isSealed` (CLOSED wins).
+    var isEnded: Bool = false
     /// Whether to show the RECURRING provenance badge.
     var showRecurringBadge: Bool = false
     /// Whether the trailing slot shows the Edit button (the caller's
@@ -64,6 +68,8 @@ struct BoardPlayHeaderView: View {
                     HStack(spacing: 6) {
                         if isSealed {
                             RisoSealedBadge()
+                        } else if isEnded {
+                            RisoEndedBadge()
                         } else {
                             statusBadge(status)
                         }
@@ -76,14 +82,17 @@ struct BoardPlayHeaderView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Trailing slot: Edit squares + "…" menu / Read-only (+ menu when
-            // non-empty) / nothing. Board Edit redesign slice 2 (D1): the
-            // "…" menu is a SEPARATE affordance from Edit squares — it is
-            // hidden only while `editMode` (the caller passes `canEdit`
-            // false and an empty `menuItems` together in that case) or for
-            // a draft (empty `menuItems`).
+            // Trailing slot: Edit squares + "…" menu, or just the menu.
+            // Board Edit redesign slice 2 (D1): the "…" menu is a SEPARATE
+            // affordance from Edit squares — it is hidden only while
+            // `editMode` (the caller passes `canEdit` false and an empty
+            // `menuItems` together in that case) or for a draft (empty
+            // `menuItems`). Board Edit redesign slice 4 (D14): no
+            // "Read-only" label anywhere — a sealed/ended board's trailing
+            // slot is just the menu.
+            let showEdit = canEdit && !isSealed && !isEnded
             HStack(spacing: 8) {
-                if canEdit && !isSealed {
+                if showEdit {
                     RisoButton(
                         title: "Edit squares",
                         kind: .neutral,
@@ -92,20 +101,12 @@ struct BoardPlayHeaderView: View {
                         action: onEdit
                     )
                     .accessibilityLabel("Edit squares")
-                } else if isSealed {
-                    HStack(spacing: 5) {
-                        Image(systemName: "lock")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("Read-only")
-                            .font(.risoBody(11, .bold))
-                    }
-                    .foregroundStyle(Color.risoMuted)
                 }
                 if !menuItems.isEmpty {
                     BoardActionsMenuButton(items: menuItems, onSelect: onMenuSelect)
                 }
             }
-            .padding(.top, canEdit && !isSealed ? 22 : 24)
+            .padding(.top, showEdit ? 22 : 24)
         }
     }
 

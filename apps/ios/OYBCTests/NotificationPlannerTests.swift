@@ -52,10 +52,11 @@ final class NotificationPlannerTests: XCTestCase {
         status: BoardStatus = .active,
         isDeleted: Bool = false,
         isCore: Bool = false,
-        name: String = "Board"
+        name: String = "Board",
+        reopenedAt: Date? = nil
     ) -> Board {
         let start = startDate ?? endDate.addingTimeInterval(-86_400)
-        let dict: [String: Any] = [
+        var dict: [String: Any] = [
             "id": id,
             "userId": "u1",
             "name": name,
@@ -75,6 +76,7 @@ final class NotificationPlannerTests: XCTestCase {
             "isDeleted": isDeleted,
             "isCore": isCore,
         ]
+        if let reopenedAt { dict["reopenedAt"] = wizardLocalISOString(reopenedAt) }
         let data = try! JSONSerialization.data(withJSONObject: dict)
         return try! JSONDecoder().decode(Board.self, from: data)
     }
@@ -162,6 +164,26 @@ final class NotificationPlannerTests: XCTestCase {
         // Deadline today → fire would be yesterday 9am (in the past).
         let b = board(id: "b1", timeframe: .weekly,
                       endDate: date(2026, 6, 15, hour: 23, minute: 59))
+        let result = NotificationPlanner.desiredNotifications(
+            boards: [b], prefs: prefs(), now: now
+        ).filter { $0.category == .expiry }
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    /// Board Edit redesign slice 4 (T4/T5) — a reopened board's `endDate` is
+    /// necessarily already in the past (it was closed, then reopened), so
+    /// the planner emits no expiry reminder for it — the SAME
+    /// past-fire-date exclusion `testExpiryExcludesPastFireDate` pins, now
+    /// asserted explicitly for the reopened case. No `NotificationPlanner`
+    /// code reads `reopenedAt` — this is a behavioral consequence of the
+    /// existing rule, pinned so a future change can't silently regress it.
+    func testExpiryExcludesReopenedBoard() {
+        let now = date(2026, 6, 15)
+        let b = board(
+            id: "b1", timeframe: .monthly,
+            endDate: date(2026, 5, 31, hour: 23, minute: 59),
+            reopenedAt: date(2026, 6, 1)
+        )
         let result = NotificationPlanner.desiredNotifications(
             boards: [b], prefs: prefs(), now: now
         ).filter { $0.category == .expiry }

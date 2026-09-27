@@ -192,6 +192,9 @@ struct BoardPlayView: View {
     @State private var creditToast: CreditToastState? = nil
     /// Board task id of the counting cell whose stepper sheet is open.
     @State private var countingStepperBoardTaskId: String?
+    /// D15 late-log sheet target + its inline error (internal for `+LateLog`).
+    @State var lateLogTarget: LateLogSheetItem?
+    @State var lateLogErrorMessage: String?
     // MARK: P3 — Shared-counter arrival banner (passive completion)
     /// The showing arrival banner's data, or nil when no banner is up.
     @State private var arrivalBanner: ArrivalBannerData? = nil
@@ -402,7 +405,8 @@ struct BoardPlayView: View {
     /// "+" add affordance, and the toolbar Edit entry. Delegates to the
     /// standalone `isBoardPlayLocked` predicate (Helpers/Sealing.swift) so
     /// the gating rule is unit-testable.
-    private var isBoardLocked: Bool {
+    // internal for the +LateLog extension split
+    var isBoardLocked: Bool {
         guard let b = board else { return false }
         return isBoardPlayLocked(b)
     }
@@ -413,6 +417,12 @@ struct BoardPlayView: View {
     // internal for the +Header extension split
     var isSealed: Bool {
         board?.sealedAt != nil
+    }
+
+    /// D13/D14 "Ended, not closed". Internal for `+Header`/`+LateLog`.
+    var isEnded: Bool {
+        guard let b = board else { return false }
+        return isBoardEnded(b, nowMs: Date().timeIntervalSince1970 * 1000)
     }
 
     /// Set of 0-based cell indices (row * gridSize + col) that are part of a
@@ -457,22 +467,7 @@ struct BoardPlayView: View {
                             .padding(.horizontal, Riso.gutter)
                             .padding(.top, 24)
                     } else {
-                        // ── Stat bar ──
-                        if let b = board {
-                            RisoStatBar(
-                                completedTasks: b.completedTasks,
-                                totalTasks: b.totalTasks,
-                                linesCompleted: b.linesCompleted,
-                                expiryText: risoExpiryText(board: b),
-                                // Windowed Completion chrome — a sealed
-                                // board's LEFT card becomes the
-                                // permanent-record ENDED card.
-                                endedText: isSealed ? risoEndedText(board: b) : nil
-                            )
-                            .padding(.horizontal, Riso.gutter)
-                            .padding(.top, 14)
-                            .padding(.bottom, 13)
-                        }
+                        statBarSection // ── Stat bar ──
 
                         // ── Grid ──
                         if board != nil {
@@ -482,15 +477,7 @@ struct BoardPlayView: View {
                                 .opacity(isSealed ? 0.92 : 1)
                         }
 
-                        // ── Sealed banner (below grid) ── locked == sealed;
-                        // an expired-but-unsealed board stays live (no banner).
-                        if isBoardLocked {
-                            Text("Board closed — a permanent record")
-                                .font(.risoBody(12, .semibold))
-                                .foregroundStyle(Color.risoRed)
-                                .padding(.horizontal, Riso.gutter)
-                                .padding(.top, 8)
-                        }
+                        endedClosedBanners // D14 (ended) + OQ6 (closed)
                     }
 
                     Spacer(minLength: 20)
@@ -821,6 +808,8 @@ struct BoardPlayView: View {
                 )
             }
         }
+        // D15 closed-board late-log sheet.
+        .sheet(item: $lateLogTarget) { item in lateLogSheet(for: item) }
         .sheet(isPresented: Binding(
             get: { detailBoardTaskId != nil },
             set: { if !$0 { detailBoardTaskId = nil } }
@@ -1273,11 +1262,8 @@ struct BoardPlayView: View {
         let rawCount = task?.currentCount ?? 0
         let maxVal = task?.maxCount ?? 0
         let isLinkedCounter = task?.sharedCounterId != nil
-        // Windowed Completion — only completion was snapshotted at seal time
-        // (not partial progress), so a frozen counting square reads max/max
-        // when green and 0/max otherwise — an honest read of what was frozen.
+        // D16 — CLOSED shows the window count, not the old max/0 snapshot.
         let current: Int = {
-            if isSealed { return isCompleted ? maxVal : 0 }
             guard let t = task else { return 0 }
             if t.type == .counting { return windowedCount(t) }
             return rawCount
@@ -1350,13 +1336,15 @@ struct BoardPlayView: View {
             )
         }()
 
+        let lateLogRoutable = isLateLogRoutable(task: task) // D15
+
         RisoBoardPlayCell(
             title: task?.title ?? "Unknown",
             taskType: cellKind,
             isCompleted: isCompleted,
             isBingoLine: highlighted.contains(index),
             isCenter: false,
-            isInteractionLocked: isBoardLocked,
+            isInteractionLocked: isBoardLocked && !lateLogRoutable,
             showsLockChip: effectiveLockChip,
             currentCount: current,
             maxCount: maxVal,
@@ -1365,7 +1353,11 @@ struct BoardPlayView: View {
             compoundChildCount: compoundLinks.count,
             compoundRequiredCount: compoundRequiredCount,
             onTap: {
-                guard !isBoardLocked, !isProcessing, !pagerSwipeActive else { return }
+                if isBoardLocked {
+                    routeLateLogTap(routable: lateLogRoutable, boardTask: boardTask, task: task)
+                    return
+                }
+                guard !isProcessing, !pagerSwipeActive else { return }
                 // Haptic feedback — fire immediately on tap (before async write
                 // lands).
                 let generator = UIImpactFeedbackGenerator(style: .medium)
@@ -2023,5 +2015,6 @@ struct BackButton: View {
     NavigationStack {
         BoardPlayView(boardId: "example-board-id-123")
             .environmentObject(AuthService())
+            .environmentObject(NotificationService())
     }
 }
