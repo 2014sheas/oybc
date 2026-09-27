@@ -2318,4 +2318,122 @@ final class BoardPlayViewModelTests: XCTestCase {
         let loaded = try XCTUnwrap(vm.taskMap["ach1"])
         XCTAssertTrue(vm.compoundChildIsCompleted(loaded), "no events to window — the latch is the state")
     }
+
+    // MARK: - Slice 3 self-review
+
+    /// Unlock → hold-move in ONE session: the unlock must land before the
+    /// move, or `updateBoardTaskPositions` rejects the still-locked row and
+    /// the whole Save fails.
+    func test_handleEditSave_unlockThenMove_sameSession_commits() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+        try db.dbQueue.write { database in
+            guard var row = try BoardTask.fetchOne(database, key: "bt1") else { return }
+            row.isLocked = true
+            try row.save(database)
+        }
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        XCTAssertEqual(vm.handleEditKeyboardMove(cellId: "bt1", direction: .down), .blockedLocked,
+                       "a locked square doesn't move")
+        vm.handleEditToggleLock(cellKey: "0-0")
+        XCTAssertEqual(vm.handleEditKeyboardMove(cellId: "bt1", direction: .up), .blockedEdge)
+        XCTAssertEqual(vm.handleEditKeyboardMove(cellId: "bt1", direction: .down), .moved(row: 1, col: 0))
+        XCTAssertNotNil(vm.editSquaresDraft["1-0"])
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+        let bt1 = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
+        XCTAssertEqual(bt1.row, 1)
+        XCTAssertEqual(bt1.col, 0)
+        XCTAssertFalse(bt1.isLocked)
+    }
+
+    /// Move → Lock in place in ONE session: the lock lands after the move.
+    func test_handleEditSave_moveThenLock_sameSession_commits() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("t1"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        vm.handleEditKeyboardMove(cellId: "bt1", direction: .down)
+        vm.handleEditToggleLock(cellKey: "1-0")
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+        let bt1 = try XCTUnwrap(try db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
+        XCTAssertEqual(bt1.row, 1)
+        XCTAssertEqual(bt1.col, 0)
+        XCTAssertTrue(bt1.isLocked)
+    }
+
+    /// "Edit task…" on a staged NEW task: the draft task map resolves the
+    /// pending task (so the menu action works), and Save inserts it WITH the
+    /// staged override applied (web `resolveTask` parity).
+    func test_editTask_onPendingAdd_overrideAppliedAtInsert() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("t-lib")) // `loadedVM` waits for a non-empty library
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        let now = AppDatabase.currentTimestamp()
+        let pendingTask = Task(
+            id: "pending-y", userId: "u1", title: "Original", type: .normal,
+            totalCompletions: 0, totalInstances: 0, createdAt: now, updatedAt: now,
+            version: 1, isDeleted: false
+        )
+        vm.handleEditAdd(
+            cellKey: "0-0", taskId: "pending-y",
+            pending: PendingTaskPayload(task: pendingTask, childTasks: [], childLinks: [])
+        )
+        XCTAssertEqual(vm.editDraftTaskMap["pending-y"]?.title, "Original")
+
+        vm.handleEditTaskOverride(
+            taskId: "pending-y",
+            patch: SquareEditTaskSheet.Patch(title: "Renamed", type: .normal, action: "", unit: "", maxCount: nil)
+        )
+        XCTAssertEqual(vm.editDraftTaskMap["pending-y"]?.title, "Renamed")
+
+        XCTAssertTrue(vm.handleEditSave())
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved })
+        let saved = try XCTUnwrap(dbTask(db, "pending-y"))
+        XCTAssertEqual(saved.title, "Renamed")
+        XCTAssertEqual(saved.createdInWizard, false)
+    }
+
+    /// D11 — `editShuffled` goes back to false once every placement is back
+    /// on its baseline slot, so later hold-moves count per cell again.
+    func test_shuffleFlag_clearsWhenPositionsReturnToBaseline() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+        try db.saveBoardTask(makeBoardTask(id: "bt2", boardId: "b1", taskId: "t2", row: 0, col: 2))
+
+        let vm = loadedVM(db, boardId: "b1")
+        vm.seedEditDraft(from: try XCTUnwrap(vm.board))
+        let baseline = vm.editSquaresEditCells
+        vm.handleEditShuffle(rng: { 0.0 })
+        XCTAssertTrue(vm.editShuffled)
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+
+        vm.handleEditMove(newCells: baseline)
+        XCTAssertFalse(vm.editShuffled)
+        XCTAssertEqual(vm.editSquaresEditCount, 0)
+
+        vm.handleEditKeyboardMove(cellId: "bt1", direction: .down)
+        vm.handleEditKeyboardMove(cellId: "bt2", direction: .down)
+        XCTAssertEqual(vm.editSquaresEditCount, 2, "two plain moves after the reset count per cell")
+    }
 }

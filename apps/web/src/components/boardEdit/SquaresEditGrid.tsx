@@ -133,6 +133,8 @@ export function SquaresEditGrid({
   function onPointerDown(i: number, e: React.PointerEvent): void {
     const slot = displayed[i];
     if (!slot) return;
+    // Primary button / touch / pen only — a right-click is not a tap.
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     // A locked square or the pinned FREE center is still TAPPABLE (Unlock /
     // "Make it a task square"); an empty square is tappable too (opens the
     // Add picker). Only a MOVABLE slot gets the hold-to-lift timer — every
@@ -180,12 +182,31 @@ export function SquaresEditGrid({
       }
     };
 
-    const onUp = (): void => {
+    const detach = (): void => {
       if (holdTimer != null) window.clearTimeout(holdTimer);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
       if (touchmoveGuard) window.removeEventListener('touchmove', touchmoveGuard);
       dragCleanupRef.current = null;
+    };
+
+    // The browser claimed the gesture (a touch scroll began, D8: "page scroll
+    // wins"). Without this the hold timer would still fire mid-scroll and lift
+    // the square — then the non-passive touchmove guard would freeze page
+    // scroll until some later pointerup. Abort: no tap, no commit.
+    const onCancel = (): void => {
+      start.cancelled = true;
+      detach();
+      if (holding) {
+        setPrev(null);
+        setLiftedCid(null);
+        setGhost(null);
+      }
+    };
+
+    const onUp = (): void => {
+      detach();
 
       if (holding) {
         const finalArr = previewRef.current;
@@ -204,12 +225,8 @@ export function SquaresEditGrid({
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    dragCleanupRef.current = () => {
-      if (holdTimer != null) window.clearTimeout(holdTimer);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      if (touchmoveGuard) window.removeEventListener('touchmove', touchmoveGuard);
-    };
+    window.addEventListener('pointercancel', onCancel);
+    dragCleanupRef.current = detach;
   }
 
   function onKeyDown(i: number, slot: EditSlot, e: React.KeyboardEvent<HTMLButtonElement>): void {

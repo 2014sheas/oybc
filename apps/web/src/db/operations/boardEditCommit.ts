@@ -55,10 +55,15 @@ export interface CommitSquareEditsInput {
  *   4. Task-field overrides (`updateTaskAndCascade`).
  *   5. Removals (`removeBoardTaskFromBoard`) — BEFORE moves/adds so freed
  *      positions are not occupied.
+ *   5b. UNLOCKS on pre-existing cells (`setBoardTaskLocked(false)`) — BEFORE
+ *      moves: `reorderBoardTasks` rejects moving a row that is locked ON
+ *      DISK, so "Unlock → hold-drag → Save" in one session must clear the
+ *      lock first (slice-3 self-review).
  *   6. Moves (`reorderBoardTasks`).
  *   7. Adds (`addBoardTaskToBoard`, with `isLocked` from the draft).
- *   8. Lock changes on pre-existing cells (`setBoardTaskLocked`) — a NEW
- *      cell's lock was already written by step 7.
+ *   8. LOCKS on pre-existing cells (`setBoardTaskLocked(true)`) — AFTER
+ *      moves, so "move → Lock in place" lands the row at its new slot first.
+ *      A NEW cell's lock was already written by step 7.
  *   9. The center metadata patch (`updateBoardAndCascade`), when the
  *      Free⇄Task type changed.
  *
@@ -87,7 +92,7 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         .filter((c) => c.pending !== undefined)
         .map((c) => ({
           task: { ...c.pending!.task, createdInWizard: false },
-          childTasks: c.pending!.childTasks,
+          childTasks: c.pending!.childTasks.map((t) => ({ ...t, createdInWizard: false })),
           childLinks: c.pending!.childLinks,
         }));
       if (pendingWrites.length > 0) {
@@ -117,6 +122,13 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         await removeBoardTaskFromBoard(removedId);
       }
 
+      // 5b. Unlocks on pre-existing cells — before moves (see doc above).
+      for (const cell of cells) {
+        if (cell.originalTaskId !== null && cell.originalLocked && !cell.isLocked) {
+          await setBoardTaskLocked(cell.cellId, false);
+        }
+      }
+
       // 6. Moves (existing placements only — a staged add is created at its
       //    final position directly in step 7).
       const moves = cells
@@ -138,10 +150,10 @@ export async function commitSquareEdits(input: CommitSquareEditsInput): Promise<
         }
       }
 
-      // 8. Lock changes on pre-existing cells.
+      // 8. Locks on pre-existing cells — after moves (see doc above).
       for (const cell of cells) {
-        if (cell.originalTaskId !== null && cell.isLocked !== cell.originalLocked) {
-          await setBoardTaskLocked(cell.cellId, cell.isLocked);
+        if (cell.originalTaskId !== null && !cell.originalLocked && cell.isLocked) {
+          await setBoardTaskLocked(cell.cellId, true);
         }
       }
 

@@ -106,6 +106,7 @@ const EMPTY_STATE: SquaresEditDraftState = {
   draftCenterType: CenterSquareType.NONE,
   removedIds: new Set(),
   shuffled: false,
+  originalCenterCellId: null,
 };
 
 /**

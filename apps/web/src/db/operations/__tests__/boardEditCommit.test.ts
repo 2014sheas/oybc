@@ -226,4 +226,54 @@ describe('commitSquareEdits', () => {
     expect((await db.tasks.get('task-override-target'))?.title).not.toBe('Should roll back');
     expect(await db.syncQueue.count()).toBe(0);
   });
+  it('unlock + move of the same square in ONE session commits (unlocks land before moves)', async () => {
+    await db.boards.add(seedBoard());
+    await db.tasks.add(seedTask('task-a'));
+    await db.boardTasks.add(seedPlacement('bt-a', 'task-a', 0, 0, { isLocked: true }));
+
+    await commitSquareEdits(
+      baseInput({
+        cells: [
+          cell({ cellId: 'bt-a', taskId: 'task-a', row: 2, col: 2, originalRow: 0, originalCol: 0, isLocked: false, originalLocked: true }),
+        ],
+      }),
+    );
+
+    expect(await db.boardTasks.get('bt-a')).toMatchObject({ row: 2, col: 2, isLocked: false });
+  });
+
+  it('move + lock of the same square in ONE session commits (locks land after moves)', async () => {
+    await db.boards.add(seedBoard());
+    await db.tasks.add(seedTask('task-a'));
+    await db.boardTasks.add(seedPlacement('bt-a', 'task-a', 0, 0));
+
+    await commitSquareEdits(
+      baseInput({
+        cells: [
+          cell({ cellId: 'bt-a', taskId: 'task-a', row: 2, col: 2, originalRow: 0, originalCol: 0, isLocked: true, originalLocked: false }),
+        ],
+      }),
+    );
+
+    expect(await db.boardTasks.get('bt-a')).toMatchObject({ row: 2, col: 2, isLocked: true });
+  });
+
+  it('a pending task’s child tasks are also written createdInWizard: false (iOS parity)', async () => {
+    await db.boards.add(seedBoard());
+    const parent = seedTask('task-p', { createdInWizard: true });
+    const child = seedTask('task-child', { createdInWizard: true });
+
+    await commitSquareEdits(
+      baseInput({
+        cells: [
+          cell({
+            cellId: 'new-0-0-task-p', taskId: 'task-p', row: 0, col: 0, originalTaskId: null,
+            pending: { task: parent, childTasks: [child], childLinks: [] },
+          }),
+        ],
+      }),
+    );
+
+    expect((await db.tasks.get('task-child'))?.createdInWizard).toBe(false);
+  });
 });

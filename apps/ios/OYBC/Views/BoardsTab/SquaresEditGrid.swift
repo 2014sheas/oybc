@@ -36,7 +36,7 @@ struct SquaresEditGrid: View {
     let sideLength: CGFloat
     var onTap: (String) -> Void
     var onReorder: ([SquareEditCellData]) -> Void
-    var onKeyboardMove: (String, SquaresEditDirection) -> Void
+    var onKeyboardMove: (String, SquaresEditDirection) -> SquaresEditMoveResult
 
     /// Windowed-Completion-aware completion read (docs/WINDOWED_COMPLETION.md
     /// §Task caches) — see the equivalent doc on the retired `RearrangeGrid`.
@@ -86,10 +86,10 @@ struct SquaresEditGrid: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityActions {
                     if isMovable {
-                        Button("Move up") { onKeyboardMove(cell.id, .up) }
-                        Button("Move down") { onKeyboardMove(cell.id, .down) }
-                        Button("Move left") { onKeyboardMove(cell.id, .left) }
-                        Button("Move right") { onKeyboardMove(cell.id, .right) }
+                        Button("Move up") { accessibilityMove(cell, .up) }
+                        Button("Move down") { accessibilityMove(cell, .down) }
+                        Button("Move left") { accessibilityMove(cell, .left) }
+                        Button("Move right") { accessibilityMove(cell, .right) }
                     }
                 }
             }
@@ -112,6 +112,17 @@ struct SquaresEditGrid: View {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.85)) {
                 displayCells = newCells
             }
+        }
+    }
+
+    // MARK: - VoiceOver move (D9)
+
+    /// Runs a one-step move and speaks the result (web `aria-live` parity).
+    private func accessibilityMove(_ cell: SquareEditCellData, _ direction: SquaresEditDirection) {
+        let result = onKeyboardMove(cell.id, direction)
+        let title = cell.pending?.task.title ?? cell.taskId.flatMap { taskMap[$0]?.title } ?? ""
+        if let message = result.announcement(title: title) {
+            UIAccessibility.post(notification: .announcement, argument: message)
         }
     }
 

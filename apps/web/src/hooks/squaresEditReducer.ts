@@ -29,8 +29,13 @@ export interface SquaresEditDraftState {
   draftCenterType: CenterSquareType;
   /** ids of live placements (present at seed) staged for removal. */
   removedIds: Set<string>;
-  /** Set once `shuffle()` has run (D11 — collapses however many cells moved into ONE edit). */
+  /** Set once `shuffle()` has run (D11 — collapses however many cells moved into ONE edit);
+   *  cleared again once a later move returns every cell to its baseline position. */
   shuffled: boolean;
+  /** The live placement seeded at the positional center, if any (iOS
+   *  `editOriginalCenterBoardTaskId`). Drives D2's `keepLocked` and D11's
+   *  "the Free toggle's implied removal is not a second edit". */
+  originalCenterCellId: string | null;
 }
 
 /** A slot that holds position: the pinned center or a locked square. */
@@ -46,13 +51,26 @@ export function isFixedSlot<S extends { isPinned: boolean } | undefined>(slot: S
  * render-facing `EditSlot` (with a model, for the grid's live drag preview)
  * and a minimal test literal (`{cellId, isPinned}`) can reuse it.
  */
-export function reorderToSlot<S extends { cellId: string; isPinned: boolean }>(
+export function reorderToSlot<S extends { cellId: string; isPinned: boolean; isEmpty?: boolean }>(
   slots: S[],
   dragCid: string,
   slotIndex: number,
 ): S[] {
-  if (isFixedSlot(slots[slotIndex])) return slots;
-  const movableIndices = slots.map((_, i) => i).filter((i) => !isFixedSlot(slots[i]));
+  const target = slots[slotIndex];
+  if (isFixedSlot(target)) return slots;
+  // D7 — dropping onto an EMPTY slot is a straight swap (iOS
+  // `reorderSquaresToSlot` parity); empties never flow in the cascade.
+  if (target?.isEmpty) {
+    const fromIdx = slots.findIndex((s) => s.cellId === dragCid);
+    if (fromIdx < 0 || fromIdx === slotIndex) return slots;
+    const swapped = slots.slice();
+    swapped[fromIdx] = target;
+    swapped[slotIndex] = slots[fromIdx];
+    return swapped;
+  }
+  const movableIndices = slots
+    .map((_, i) => i)
+    .filter((i) => !isFixedSlot(slots[i]) && !slots[i].isEmpty);
   const toK = movableIndices.indexOf(slotIndex);
   if (toK < 0) return slots;
   const order = movableIndices.map((i) => slots[i]);
@@ -72,6 +90,15 @@ export function isPinnedCenter(draftCenterType: CenterSquareType): boolean {
   return effectiveCenter(draftCenterType) === CenterSquareType.FREE;
 }
 
+/** D11 — `shuffled` goes back to false once no existing placement sits off its baseline slot. */
+function withShuffleReset(state: SquaresEditDraftState): SquaresEditDraftState {
+  if (!state.shuffled) return state;
+  const anyMoved = state.cells.some(
+    (c) => c.originalTaskId !== null && (c.row !== c.originalRow || c.col !== c.originalCol),
+  );
+  return anyMoved ? state : { ...state, shuffled: false };
+}
+
 /** Seed the draft from the live `boardTasks` snapshot on edit-mode entry
  *  (D1 — the effective lock baseline: `bt.isLocked || isLegacyChosenCenterLocked(...)`). */
 export function seedDraft(
@@ -81,7 +108,11 @@ export function seedDraft(
 ): SquaresEditDraftState {
   const half = Math.floor(gridSize / 2);
   const isOddBoard = gridSize % 2 === 1;
+  const originalCenter = isOddBoard
+    ? boardTasks.find((bt) => bt.row === half && bt.col === half)
+    : undefined;
   return {
+    originalCenterCellId: originalCenter?.id ?? null,
     cells: boardTasks.map((bt) => {
       const atPositionalCenter = isOddBoard && bt.row === half && bt.col === half;
       const effLocked =
@@ -180,13 +211,13 @@ export function commitReorder<S extends { cellId: string; isCenter: boolean; isE
       newPositions.set(slot.cellId, { row: Math.floor(i / gridSize), col: i % gridSize });
     }
   });
-  return {
+  return withShuffleReset({
     ...state,
     cells: state.cells.map((c) => {
       const pos = newPositions.get(c.cellId);
       return pos ? { ...c, row: pos.row, col: pos.col } : c;
     }),
-  };
+  });
 }
 
 export type KeyboardMoveDir = 'up' | 'down' | 'left' | 'right';
@@ -200,6 +231,9 @@ export function stageKeyboardMove(
 ): { state: SquaresEditDraftState; moved: boolean; blocked?: 'locked' | 'bounds'; row?: number; col?: number } {
   const cell = state.cells.find((c) => c.cellId === cellId);
   if (!cell) return { state, moved: false };
+  // A locked square never moves (the grid only offers Alt+Arrow on movable
+  // squares; this is the reducer-level backstop, iOS parity).
+  if (cell.isLocked) return { state, moved: false, blocked: 'locked' };
   const [dr, dc] =
     dir === 'up' ? [-1, 0] : dir === 'down' ? [1, 0] : dir === 'left' ? [0, -1] : [0, 1];
   const targetRow = cell.row + dr;
@@ -216,14 +250,14 @@ export function stageKeyboardMove(
     return { state, moved: false, blocked: 'locked' };
   }
   return {
-    state: {
+    state: withShuffleReset({
       ...state,
       cells: state.cells.map((c) => {
         if (c.cellId === cellId) return { ...c, row: targetRow, col: targetCol };
         if (targetCell && c.cellId === targetCell.cellId) return { ...c, row: cell.row, col: cell.col };
         return c;
       }),
-    },
+    }),
     moved: true,
     row: targetRow,
     col: targetCol,
@@ -302,11 +336,16 @@ export function deriveCanShuffle(state: SquaresEditDraftState, gridSize: number)
   return unfixedWithTask >= 2;
 }
 
-/** D2's `keepLocked` argument — the draft's CURRENT lock for the positional-center cell, if any. */
-export function deriveCenterCellKeepLocked(state: SquaresEditDraftState, gridSize: number): boolean {
-  const half = Math.floor(gridSize / 2);
-  if (gridSize % 2 !== 1) return false;
-  return state.cells.find((c) => c.row === half && c.col === half)?.isLocked ?? false;
+/**
+ * D2's `keepLocked` argument — the draft's CURRENT lock for the ORIGINAL
+ * center placement (the row `normalizeLegacyChosenCenter` writes), wherever
+ * it has moved to. Defaults to `true` (the effective legacy baseline) when
+ * that placement was removed this session — it is tombstoned by Save's
+ * removal step regardless. Mirrors iOS `handleEditSave`'s `centerKeepLocked`.
+ */
+export function deriveCenterCellKeepLocked(state: SquaresEditDraftState, _gridSize: number): boolean {
+  if (state.originalCenterCellId === null) return true;
+  return state.cells.find((c) => c.cellId === state.originalCenterCellId)?.isLocked ?? true;
 }
 
 export interface DeriveEditCountInput {
@@ -318,10 +357,22 @@ export interface DeriveEditCountInput {
 /** D11 — the squares editor's derived edit count. */
 export function deriveEditCount({ state, boardCenterType }: DeriveEditCountInput): number {
   const centerChanged = effectiveCenter(state.draftCenterType) !== effectiveCenter(boardCenterType);
+  // D11 — the center Free toggle is ONE edit even though it drops the center
+  // placement: its implied removal is folded into `centerChanged`, never
+  // counted twice (Save still tombstones it — `removedIds` is unfiltered).
+  // Mirrors iOS `editCountInput`.
+  let removedCount = state.removedIds.size;
+  if (
+    isPinnedCenter(state.draftCenterType) &&
+    state.originalCenterCellId !== null &&
+    state.removedIds.has(state.originalCenterCellId)
+  ) {
+    removedCount -= 1;
+  }
   return deriveSquareEditCount({
     cells: state.cells,
     taskOverrides: state.taskOverrides,
-    removedCount: state.removedIds.size,
+    removedCount,
     centerChanged,
     shuffled: state.shuffled,
   });

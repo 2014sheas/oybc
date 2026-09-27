@@ -49,7 +49,7 @@ struct BoardEditPanel: View {
     /// Fires after a committed hold-drag reorder.
     var onReorder: ([SquareEditCellData]) -> Void = { _ in }
     /// VoiceOver / keyboard fallback move (D9).
-    var onKeyboardMove: (String, SquaresEditDirection) -> Void = { _, _ in }
+    var onKeyboardMove: (String, SquaresEditDirection) -> SquaresEditMoveResult = { _, _ in .ignored }
     /// Fires on the Shuffle button tap.
     var onShuffle: () -> Void = {}
 

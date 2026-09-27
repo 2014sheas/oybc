@@ -146,4 +146,16 @@ final class SquaresEditDraftTests: XCTestCase {
         XCTAssertEqual(result[3], "d")
         XCTAssertEqual(Set(result.compactMap { $0 }), Set(slots.compactMap { $0 }))
     }
+
+    // MARK: - D9 VoiceOver announcement copy (web aria-live parity)
+
+    func test_moveResult_announcementCopy_matchesWeb() {
+        XCTAssertEqual(SquaresEditMoveResult.moved(row: 0, col: 2).announcement(title: "Read"),
+                       "Moved Read to row 1, column 3")
+        XCTAssertEqual(SquaresEditMoveResult.blockedLocked.announcement(title: "Read"), "Read is locked")
+        XCTAssertEqual(SquaresEditMoveResult.blockedEdge.announcement(title: "Read"),
+                       "Already at the edge of the board")
+        XCTAssertEqual(SquaresEditMoveResult.blockedLocked.announcement(title: ""), "This square is locked")
+        XCTAssertNil(SquaresEditMoveResult.ignored.announcement(title: "Read"))
+    }
 }

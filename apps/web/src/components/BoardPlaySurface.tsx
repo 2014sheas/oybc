@@ -898,7 +898,7 @@ export function BoardPlaySurface({
           // `onTapSlot` handler passed to `SquaresEditGrid` above).
           return (
             <SquareTapMenu
-              taskTitle="Free space"
+              taskTitle="Empty square"
               x={x}
               y={y}
               onAdd={() => setPickerState({ mode: 'add', row, col })}

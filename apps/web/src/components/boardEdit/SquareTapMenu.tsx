@@ -155,7 +155,7 @@ export function SquareTapMenu({
                 d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"
               />
             </svg>
-            Replace task
+            Replace task…
           </button>
         )}
 
@@ -183,7 +183,7 @@ export function SquareTapMenu({
                 d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
               />
             </svg>
-            Edit task
+            Edit task…
           </button>
         )}
 

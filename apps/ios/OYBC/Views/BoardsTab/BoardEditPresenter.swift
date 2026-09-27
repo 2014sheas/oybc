@@ -53,8 +53,10 @@ struct BoardEditPresenter: ViewModifier {
 
     private var menuTitle: String {
         guard let target = squareMenuTarget else { return "Square" }
-        if target.isCenter, viewModel.editCenterType == .free { return "FREE space" }
-        guard let draft = viewModel.editSquaresDraft[target.cellKey] else { return "Square" }
+        if target.isCenter, viewModel.editCenterType == .free { return "Free space" }
+        guard let draft = viewModel.editSquaresDraft[target.cellKey] else {
+            return target.isEmpty || target.isCenter ? "Empty square" : "Square"
+        }
         return viewModel.editDraftTaskMap[draft.taskId]?.title ?? "Square"
     }
 
@@ -148,12 +150,12 @@ struct BoardEditPresenter: ViewModifier {
     @ViewBuilder
     private func menuActions(for target: SquareMenuCellTarget) -> some View {
         if let draft = viewModel.editSquaresDraft[target.cellKey] {
-            Button("Replace task") {
+            Button("Replace task…") {
                 pickerTarget = SquarePickerRouteTarget(
                     cellKey: target.cellKey, mode: .replace(currentTaskId: draft.taskId)
                 )
             }
-            Button("Edit task") {
+            Button("Edit task…") {
                 if let task = viewModel.editDraftTaskMap[draft.taskId] {
                     taskEditTarget = EditModeTaskTarget(id: target.cellKey, task: task)
                 }

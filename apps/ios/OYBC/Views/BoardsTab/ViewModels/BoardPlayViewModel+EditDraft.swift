@@ -13,8 +13,13 @@ extension BoardPlayViewModel {
     /// `taskMap` with staged task-field overrides applied. Used to resolve a
     /// cell's rendered title/type without a database write.
     var editDraftTaskMap: [String: Task] {
-        guard !editTaskOverrides.isEmpty else { return taskMap }
+        // Staged NEW (pending) tasks resolve too, so the square menu's
+        // title and "Edit task…" work on them (web `resolveTask` parity).
         var map = taskMap
+        for cell in editSquaresDraft.values {
+            if let pending = cell.pending { map[pending.task.id] = pending.task }
+        }
+        guard !editTaskOverrides.isEmpty else { return map }
         for (taskId, override) in editTaskOverrides {
             guard var t = map[taskId] else { continue }
             t.title = override.title

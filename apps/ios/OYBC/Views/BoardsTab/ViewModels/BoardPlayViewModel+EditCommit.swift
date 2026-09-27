@@ -168,8 +168,20 @@ extension BoardPlayViewModel {
         // task (the `@Published` dictionaries are only safe on the MainActor).
         let draftSnapshot = editSquaresDraft
 
-        // (1) Pending (not-yet-created) tasks staged via the picker.
-        let pendingPayloads: [PendingTaskPayload] = draftSnapshot.values.compactMap { $0.pending }
+        // (1) Pending (not-yet-created) tasks staged via the picker. A staged
+        // "Edit task…" override on a pending task is merged into its payload
+        // here (it has no `taskMap` row for step 4 to patch) — web
+        // `resolveTask` / `updateTaskAndCascade`-after-insert parity.
+        let overridesSnapshot = editTaskOverrides
+        let pendingPayloads: [PendingTaskPayload] = draftSnapshot.values.compactMap { cell in
+            guard let payload = cell.pending else { return nil }
+            guard let override = overridesSnapshot[payload.task.id] else { return payload }
+            return PendingTaskPayload(
+                task: Self.applyingOverride(override, to: payload.task),
+                childTasks: payload.childTasks,
+                childLinks: payload.childLinks
+            )
+        }
 
         // (3) Replacements — EXISTING cells whose task changed.
         let cellReplacements: [(boardTaskId: String, newTaskId: String)] = draftSnapshot.values
@@ -206,11 +218,19 @@ extension BoardPlayViewModel {
                 return (row: row, col: col, taskId: cell.taskId, isLocked: cell.isLocked)
             }
 
-        // (8) Lock changes — EXISTING cells only (a staged add's lock is
-        // written by `addBoardTaskToBoard(isLocked:)` at insertion).
-        let lockChanges: [(boardTaskId: String, locked: Bool)] = draftSnapshot.values
-            .filter { !$0.isNew && $0.isLocked != $0.originalIsLocked }
-            .map { (boardTaskId: $0.id, locked: $0.isLocked) }
+        // (5b / 8) Lock changes — EXISTING cells only (a staged add's lock is
+        // written by `addBoardTaskToBoard(isLocked:)` at insertion). Split by
+        // direction: UNLOCKS land before the moves (step 5b) because
+        // `updateBoardTaskPositions` rejects moving a row that is locked ON
+        // DISK — "Unlock → hold-drag → Save" in one session would otherwise
+        // fail; LOCKS land after the moves (step 8) so "move → Lock in place"
+        // moves the row first.
+        let unlocks: [String] = draftSnapshot.values
+            .filter { !$0.isNew && $0.originalIsLocked && !$0.isLocked }
+            .map { $0.id }
+        let locks: [String] = draftSnapshot.values
+            .filter { !$0.isNew && !$0.originalIsLocked && $0.isLocked }
+            .map { $0.id }
 
         // (2) D2 — legacy-CHOSEN normalization's `keepLocked`: the draft's
         // CURRENT lock state for the (possibly moved) original center
@@ -277,25 +297,7 @@ extension BoardPlayViewModel {
 
                     // 4. Staged task-field overrides.
                     for (task, override) in taskOverridePairs {
-                        var updated = task
-                        updated.title = override.title
-                        if override.type != .compound && task.type != .compound {
-                            updated.type = override.type
-                        }
-                        switch updated.type {
-                        case .counting:
-                            updated.action = override.action
-                            if let u = override.unit   { updated.unit   = u }
-                            if let m = override.maxCount { updated.maxCount = m }
-                        case .normal:
-                            if task.type == .counting {
-                                updated.action   = nil
-                                updated.unit     = nil
-                                updated.maxCount = nil
-                            }
-                        default:
-                            break
-                        }
+                        var updated = Self.applyingOverride(override, to: task)
                         updated.updatedAt = now
                         updated.version  += 1
                         try AppDatabase.saveTaskAndCascade(db: db, task: updated)
@@ -305,6 +307,12 @@ extension BoardPlayViewModel {
                     //    freed position is never mistaken for occupied.
                     for removedId in cellRemovals {
                         try AppDatabase.removeBoardTaskFromBoard(db: db, boardTaskId: removedId)
+                    }
+
+                    // 5b. Staged UNLOCKS on existing placements — before the
+                    //     moves (see the `unlocks` doc above).
+                    for boardTaskId in unlocks {
+                        try AppDatabase.setBoardTaskLocked(db: db, boardTaskId: boardTaskId, locked: false)
                     }
 
                     // 6. Staged position moves.
@@ -331,13 +339,9 @@ extension BoardPlayViewModel {
                         )
                     }
 
-                    // 8. Staged lock changes on EXISTING placements.
-                    for change in lockChanges {
-                        try AppDatabase.setBoardTaskLocked(
-                            db: db,
-                            boardTaskId: change.boardTaskId,
-                            locked: change.locked
-                        )
+                    // 8. Staged LOCKS on existing placements — after the moves.
+                    for boardTaskId in locks {
+                        try AppDatabase.setBoardTaskLocked(db: db, boardTaskId: boardTaskId, locked: true)
                     }
 
                     // 9. Center-only metadata patch — skipped when unchanged.
@@ -366,6 +370,32 @@ extension BoardPlayViewModel {
             }
         }
         return true
+    }
+
+    /// Applies a staged "Edit task…" override to a task's fields (title,
+    /// type — never into/out of Compound — and the counting fields). Shared
+    /// by the Save's step 4 (existing tasks) and step 1 (pending tasks).
+    nonisolated static func applyingOverride(_ override: StagedTaskOverride, to task: Task) -> Task {
+        var updated = task
+        updated.title = override.title
+        if override.type != .compound && task.type != .compound {
+            updated.type = override.type
+        }
+        switch updated.type {
+        case .counting:
+            updated.action = override.action
+            if let u = override.unit   { updated.unit   = u }
+            if let m = override.maxCount { updated.maxCount = m }
+        case .normal:
+            if task.type == .counting {
+                updated.action   = nil
+                updated.unit     = nil
+                updated.maxCount = nil
+            }
+        default:
+            break
+        }
+        return updated
     }
 
     /// Publishes a one-shot `editEvent` the view observes to run the residual

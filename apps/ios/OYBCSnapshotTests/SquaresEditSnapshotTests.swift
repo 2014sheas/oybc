@@ -64,7 +64,7 @@ final class SquaresEditSnapshotTests: XCTestCase {
             sideLength: sideLength,
             onTap: { _ in },
             onReorder: { _ in },
-            onKeyboardMove: { _, _ in }
+            onKeyboardMove: { _, _ in .ignored }
         )
         .padding(Riso.gutter)
         .background(Color.risoPaper)

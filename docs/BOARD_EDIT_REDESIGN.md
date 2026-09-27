@@ -35,7 +35,9 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
   for a live board's squares.
 - **Locks** replace the CHOSEN center type: center is Free or Task; any
   square (center included) can be locked so Shuffle and moves keep it in
-  place. Existing CHOSEN boards migrate to a locked center task. Lock chip is
+  place. Existing CHOSEN boards are read as a locked center task
+  (read-path normalization, no migration) and converted on disk on the
+  user's next squares Save — see §Slice 3. Lock chip is
   red (DS template "Lock a Square"); staged edits show a gold pencil chip.
 - **Window**: the timeframe never switches after creation; only dates on
   custom / ongoing boards (Board details).
@@ -62,8 +64,8 @@ claude.ai artifact "Board Edit Redesign Brief" (2026-09-26).
 | Slice | Scope | Status |
 | --- | --- | --- |
 | 1 | Per-square locks (`BoardTask.isLocked`, synced) honored by rearrange; Lock/Unlock in the existing edit tap menu; one cell renderer with lock + dirty chips across play / edit / arrange / wizard preview on both platforms; web Playground demo + iOS snapshots | shipped (#510) |
-| 2 | Title-row "…" menu; Board details sheet; core-board gating (no name / timeframe / repeats / archive on `isCore`); Archive / Delete / Repeat move out of the panel | in progress — see §Slice 2 below |
-| 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired; remove the center selector from Board details; retire the Edit tasks ⇄ Rearrange toggle | planned |
+| 2 | Title-row "…" menu; Board details sheet; core-board gating (no name / timeframe / repeats / archive on `isCore`); Archive / Delete / Repeat move out of the panel | shipped (#511) |
+| 3 | Squares editor rebuild: single mode, tap-to-add on empties, hold-to-lift, Shuffle in the save bar, the quick-add picker, CHOSEN retired → locked center, play-mode "+" retired; remove the center selector from Board details; retire the Edit tasks ⇄ Rearrange toggle | in progress — see §Slice 3 below |
 | 4 | Close / Reopen / direct late log on closed boards / next-window auto-close | planned |
 
 Independent of the train (bugfix PRs any time): iOS Board Edit rewrites an
@@ -201,3 +203,87 @@ iOS together (rule 6).
 - **No new Playground demo.** Slice 2 recomposes shipped sheets; it's
   verified in-route with Playwright (393 + 1440, light + dark) and iOS leaf
   snapshots.
+
+## Slice 3 — detailed scope
+
+Plan: `.superpowers/sdd/2026-09-26-board-edit-slice3/plan.md` (Decisions
+D1–D20; branch `feature/board-edit-slice3-squares`). One PR, web + iOS
+together (rule 6).
+
+- **CHOSEN is retired by a read-path normalization, not a migration (D1–D3).**
+  Sealed rows must never mutate, and a non-authored write of synced
+  user-visible state would diverge across peers, so no GRDB/Dexie migration
+  runs. Two pure kernels (`packages/bingo-core/src/centerSquare.ts` ↔
+  `Services/CenterSquare.swift`): `effectiveCenter(type)` maps CHOSEN → NONE,
+  and `isLegacyChosenCenterLocked(type, row, col, size)` makes the positional
+  center placement read as locked. Effective lock = `bt.isLocked ||
+  isLegacyChosenCenterLocked(...)`. `CenterSquareType.CHOSEN` stays in the
+  enum and Zod (old peers, sealed rows, wizard drafts still carry it; iOS
+  would otherwise decode unknown values as FREE).
+- **On-disk conversion happens on the next squares Save (D2)** — an authored
+  write inside the Save transaction: `normalizeLegacyChosenCenter(boardId,
+  keepLocked)` sets `centerSquareType = NONE`, clears `centerTaskId`, and
+  writes the ORIGINAL center placement's `isLocked = keepLocked, isCenter =
+  false` (version bumps + sync enqueue; `assertBoardEditable` first, so a
+  sealed board is never touched). The conversion itself is not an edit; an
+  untouched CHOSEN board has 0 edits and Save stays disabled.
+- **Board creation (D4)**: the wizard's Center step ("Choose") is unchanged
+  in memory; the ACTIVE persist writes a CHOSEN pick as NONE + a locked center
+  placement (no `centerTaskId`). Drafts keep CHOSEN so resume restores the pick.
+- **Repeat (D5)**: every one-off board is repeat-eligible; the template's
+  center is `effectiveCenter(...)` (FREE | NONE). Locks do not carry into
+  templates (no positional data).
+- **Board details (D6)** no longer has a center selector; the center changes
+  only in the squares editor (Free ⇄ task square, plus Lock/Unlock).
+- **One grid (D7–D9)**: tap a task square → the square menu (Replace task… ·
+  Edit task… · Lock in place / Unlock · Remove from board, + "Make it a free
+  space" on the center); tap an empty square → the picker; tap the FREE center
+  → "Make it a task square"; tap an EMPTY center → "Add a task…" / "Make it a
+  free space". Press-and-hold (350 ms) lifts a movable square into the
+  existing drag cascade; dropping on an empty square is a straight swap;
+  locked squares and the FREE center never lift and are never drop targets.
+  Web: a movement past 6 px or a browser `pointercancel` before the hold fires
+  cancels it (page scroll wins). Keyboard / VoiceOver: Alt+Arrow (web) and
+  "Move up/down/left/right" accessibility actions (iOS) swap one step, with
+  the same announcement copy ("Moved {title} to row R, column C", "{title} is
+  locked", "Already at the edge of the board").
+- **Shuffle (D10)** = `shuffleUnlockedSlots` (bingo-core ↔ `Shuffle.swift`),
+  Fisher-Yates over the non-fixed slots (empties included); fixed = locked
+  placements + the FREE center. Pinned by `shuffleUnlockedVectors` in
+  `placementVectors.json` (synced to the iOS fixture). Disabled with fewer
+  than 2 unfixed task squares.
+- **Edit count (D11)**, derived: replacements + adds + removals + task
+  overrides + lock changes (existing placements only — an add's lock is part
+  of the add) + center change + position edits, where position edits are 0
+  when nothing moved, else 1 if the session shuffled, else the number of moved
+  placements. The shuffle flag clears once every placement is back on its
+  baseline slot. **One user action = one edit**: the center Free toggle is ONE
+  edit even though it also tombstones the center placement (the implied
+  removal is folded into the center-change term; Save still writes it).
+- **Gold pencil chip (D12)** on any square holding a placement that differs
+  from saved (task, staged task override, position, lock); never on an empty
+  square or the FREE center; rendered side by side with the lock chip.
+- **Picker (D13/D14)** = the wizard's quick-add row + the collapsed
+  special-task panel (Replace: kicker "Replace square"; Add: "Add square" /
+  "Empty square"). New normal / counting / achievement tasks are staged and
+  written only at Save, with `createdInWizard = false` (children too);
+  Cancel discards them. **Compound carve-out**: the special panel writes a
+  compound immediately (web parity), so only its placement is staged — a
+  compound created in a cancelled session stays in the library.
+- **Save transaction (D15)**, one atomic transaction on both platforms
+  (web `commitSquareEdits` in `db/operations/boardEditCommit.ts` ↔ iOS
+  `handleEditSave`): `assertBoardEditable` → insert pending tasks →
+  `normalizeLegacyChosenCenter` (if still CHOSEN on disk) → replacements →
+  task overrides → removals → **unlocks** → moves → adds (with their lock) →
+  **locks** → the center metadata patch (FREE ⇄ NONE, only when changed).
+  Unlocks run before moves because the move op rejects a row locked on disk
+  ("Unlock → hold-drag → Save" in one session); locks run after moves.
+- **"Remove from board" leaves a dashed empty square (D16)**; "Make it a
+  free space" on a task center also stages the center placement's removal, so
+  derivation can auto-fill FREE.
+- **Play-mode "+" retired (D17)**: empty squares in play are plain dashed
+  squares; the only add path is the squares editor.
+- **Deviation**: `ArrangeGrid.tsx` / `RearrangeGrid.swift` are NOT deleted —
+  they remain the board-creation wizard's Preview ⇄ Rearrange grid.
+  `SquaresEditGrid` (web ↔ iOS) is the board-edit fork. `CellSwapModal.tsx` /
+  `CellSwapSheet.swift` are deleted.

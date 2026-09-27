@@ -133,6 +133,18 @@ describe('reorderToSlot', () => {
     expect(next.map((s) => s.cellId)).toEqual(['locked', 'c', 'a', 'b']);
   });
 
+  it('dropping onto an EMPTY slot is a straight swap; empties never cascade (D7, iOS parity)', () => {
+    const slots = [
+      { cellId: 'a', isPinned: false, isEmpty: false },
+      { cellId: 'b', isPinned: false, isEmpty: false },
+      { cellId: 'e', isPinned: false, isEmpty: true },
+      { cellId: 'c', isPinned: false, isEmpty: false },
+    ];
+    expect(reorderToSlot(slots, 'a', 2).map((s) => s.cellId)).toEqual(['e', 'b', 'a', 'c']);
+    // Inserting before an occupied slot cascades only the occupied movables.
+    expect(reorderToSlot(slots, 'c', 0).map((s) => s.cellId)).toEqual(['c', 'a', 'e', 'b']);
+  });
+
   it('is a no-op when the target slot is itself fixed', () => {
     const slots = [
       { cellId: 'a', isPinned: false },
@@ -143,6 +155,14 @@ describe('reorderToSlot', () => {
 });
 
 describe('stageKeyboardMove (D9)', () => {
+  it('never moves a LOCKED source square (reducer backstop, iOS parity)', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0, { isLocked: true })], CenterSquareType.NONE, 3);
+    const { state, moved, blocked } = stageKeyboardMove(seeded, 'a', 'down', 3);
+    expect(moved).toBe(false);
+    expect(blocked).toBe('locked');
+    expect(state.cells[0]).toMatchObject({ row: 0, col: 0 });
+  });
+
   it('swaps a movable cell with an occupied neighbor', () => {
     const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 1)], CenterSquareType.NONE, 3);
     const { state, moved } = stageKeyboardMove(seeded, 'a', 'right', 3);
@@ -250,9 +270,23 @@ describe('deriveCenterCellKeepLocked', () => {
     expect(deriveCenterCellKeepLocked(unlocked, 3)).toBe(false);
   });
 
-  it('is false when nothing occupies the center', () => {
+  it('defaults to true (the effective baseline) when the board had no center placement', () => {
     const seeded = seedDraft([], CenterSquareType.NONE, 3);
-    expect(deriveCenterCellKeepLocked(seeded, 3)).toBe(false);
+    expect(deriveCenterCellKeepLocked(seeded, 3)).toBe(true);
+  });
+
+  it('follows the ORIGINAL center placement, not whatever cell now sits at the center (iOS parity)', () => {
+    // Legacy CHOSEN: unlock the center, move it out, move `x` in, then re-lock
+    // the original center elsewhere — keepLocked must be the ORIGINAL row's
+    // lock (true), since `normalizeLegacyChosenCenter` writes THAT row.
+    let s = seedDraft([bt('center', 't-c', 1, 1), bt('x', 't-x', 0, 0)], CenterSquareType.CHOSEN, 3);
+    s = toggleLock(s, 'center');
+    s = stageKeyboardMove(s, 'center', 'up', 3).state; // center → (0,1)
+    s = stageKeyboardMove(s, 'x', 'right', 3).state; // x (0,0) swaps with center → x at (0,1), center at (0,0)
+    s = stageKeyboardMove(s, 'x', 'down', 3).state; // x → (1,1)
+    s = toggleLock(s, 'center');
+    expect(s.cells.find((c) => c.cellId === 'x')).toMatchObject({ row: 1, col: 1, isLocked: false });
+    expect(deriveCenterCellKeepLocked(s, 3)).toBe(true);
   });
 });
 
@@ -261,6 +295,24 @@ describe('isPinnedCenter', () => {
     expect(isPinnedCenter(CenterSquareType.FREE)).toBe(true);
     expect(isPinnedCenter(CenterSquareType.NONE)).toBe(false);
     expect(isPinnedCenter(CenterSquareType.CHOSEN)).toBe(false);
+  });
+});
+
+describe('shuffled flag (D11 — "false when positions return to baseline")', () => {
+  it('clears once a later move returns every cell to baseline, so later hold-moves count per cell', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 2)], CenterSquareType.NONE, 3);
+    const shuffled = shuffleCells(seeded, 3, () => 0);
+    expect(shuffled.shuffled).toBe(true);
+    const baselineSlots = Array.from({ length: 9 }, (_, i) =>
+      i === 0 ? { cellId: 'a', isCenter: false, isEmpty: false }
+        : i === 2 ? { cellId: 'b', isCenter: false, isEmpty: false }
+          : { cellId: `empty-${i}`, isCenter: false, isEmpty: true },
+    );
+    const restored = commitReorder(shuffled, baselineSlots, 3);
+    expect(restored.shuffled).toBe(false);
+    let s = stageKeyboardMove(restored, 'a', 'down', 3).state;
+    s = stageKeyboardMove(s, 'b', 'down', 3).state;
+    expect(deriveEditCount({ state: s, boardCenterType: CenterSquareType.NONE })).toBe(2);
   });
 });
 
@@ -283,30 +335,35 @@ describe('deriveEditCount (D11)', () => {
     expect(deriveEditCount({ state: centered, boardCenterType: CenterSquareType.NONE })).toBe(1);
   });
 
-  it('Free toggle with a task at the center is still ONE edit (the removal folds in, D11)', () => {
+  it('Free toggle with a task at the center is ONE edit — the implied removal folds in (D11, iOS parity)', () => {
     const seeded = seedDraft([bt('center', 't-c', 1, 1)], CenterSquareType.NONE, 3);
     const next = setCenterFree(seeded, 3);
-    // 1 for the removal + 1 for the center-type change = 2? No — D11 says the
-    // Free⇄task toggle is ONE edit even though Free drops the center
-    // placement, so the removal term must not double-count a center drop.
-    // The removal IS a real staged removal (removedIds), so the count is the
-    // center-change term (1) PLUS the removal term (1) — this is intentional
-    // per D11's worked formula (independent additive terms); pin the exact
-    // number so a future change to the formula is caught here.
-    expect(deriveEditCount({ state: next, boardCenterType: CenterSquareType.NONE })).toBe(2);
+    // The removal IS still staged (Save tombstones the placement) …
+    expect([...next.removedIds]).toEqual(['center']);
+    // … but D11: "The center Free ⇄ task toggle is ONE edit, even though Free
+    // drops the center placement." ONE user action → ONE edit.
+    expect(deriveEditCount({ state: next, boardCenterType: CenterSquareType.NONE })).toBe(1);
+  });
+
+  it('a plain Remove of the center task (no Free toggle) still counts as a removal', () => {
+    const seeded = seedDraft([bt('center', 't-c', 1, 1)], CenterSquareType.NONE, 3);
+    const removed = stageRemove(seeded, 'center');
+    expect(deriveEditCount({ state: removed, boardCenterType: CenterSquareType.NONE })).toBe(1);
+  });
+
+  it('locking a staged ADD is part of the one add edit, not a second edit (iOS parity)', () => {
+    const seeded = seedDraft([], CenterSquareType.NONE, 3);
+    const added = stageAdd(seeded, 0, 0, { taskId: 't-new' });
+    const locked = toggleLock(added, added.cells[0].cellId);
+    expect(deriveEditCount({ state: locked, boardCenterType: CenterSquareType.NONE })).toBe(1);
   });
 
   it('Shuffle counts as ONE edit; reverting every cell to baseline goes back to 0', () => {
     const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 2)], CenterSquareType.NONE, 3);
-    const rng = () => 0.999999999999;
-    const shuffled = shuffleCells(seeded, 3, rng);
-    // Whatever the shuffle produced, if anything moved, it counts as 1.
-    const movedAfterShuffle = shuffled.cells.some(
-      (c) => c.row !== c.originalRow || c.col !== c.originalCol,
-    );
-    if (movedAfterShuffle) {
-      expect(deriveEditCount({ state: shuffled, boardCenterType: CenterSquareType.NONE })).toBe(1);
-    }
+    // rng ≡ 0 deterministically rotates the unfixed slots, so something moves.
+    const shuffled = shuffleCells(seeded, 3, () => 0);
+    expect(shuffled.cells.some((c) => c.row !== c.originalRow || c.col !== c.originalCol)).toBe(true);
+    expect(deriveEditCount({ state: shuffled, boardCenterType: CenterSquareType.NONE })).toBe(1);
     // Manually restore every cell to its original position: back to 0 even
     // though `shuffled` stays true (the formula gates on movedCount, not the flag).
     const restored: SquaresEditDraftState = {

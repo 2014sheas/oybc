@@ -16,6 +16,33 @@ enum SquaresEditDirection {
     }
 }
 
+// MARK: - SquaresEditMoveResult
+
+/// Outcome of a single-step keyboard / VoiceOver move (D9) — drives the
+/// spoken announcement (web `aria-live` parity: same copy).
+enum SquaresEditMoveResult: Equatable {
+    /// Moved to the given 0-based slot.
+    case moved(row: Int, col: Int)
+    /// Blocked by a locked square or the FREE center.
+    case blockedLocked
+    /// Already at the grid edge.
+    case blockedEdge
+    /// Unknown cell (stale id) — nothing to announce.
+    case ignored
+
+    /// The VoiceOver announcement for this result, or nil when silent.
+    /// Copy is verbatim the web `BoardPlaySurface` aria-live strings.
+    func announcement(title: String) -> String? {
+        let name = title.isEmpty ? "This square" : title
+        switch self {
+        case .moved(let row, let col): return "Moved \(name) to row \(row + 1), column \(col + 1)"
+        case .blockedLocked: return "\(name) is locked"
+        case .blockedEdge: return "Already at the edge of the board"
+        case .ignored: return nil
+        }
+    }
+}
+
 // MARK: - BoardPlayViewModel + Shuffle / move
 
 /// Position-move handlers (Board Edit redesign slice 3, T4) — split out of
@@ -40,24 +67,36 @@ extension BoardPlayViewModel {
             rebuilt["\(row)-\(col)"] = original
         }
         editSquaresDraft = rebuilt
+        // D11 — `shuffled` clears once every existing placement is back on
+        // its baseline slot (web `withShuffleReset` parity).
+        if editShuffled {
+            let anyMoved = rebuilt.contains { key, cell in
+                guard !cell.isNew, let (row, col) = parseSquareCellKey(key) else { return false }
+                return cell.originalRow != row || cell.originalCol != col
+            }
+            if !anyMoved { editShuffled = false }
+        }
     }
 
     /// VoiceOver / keyboard fallback (D9): swaps the named cell with its
     /// neighbor one step in `direction`. A no-op off the grid edge or into a
     /// pinned (locked / FREE center) slot.
-    func handleEditKeyboardMove(cellId: String, direction: SquaresEditDirection) {
+    @discardableResult
+    func handleEditKeyboardMove(cellId: String, direction: SquaresEditDirection) -> SquaresEditMoveResult {
         let size = gridSize
-        guard size > 0 else { return }
+        guard size > 0 else { return .ignored }
         var cells = editSquaresEditCells
-        guard let fromIdx = cells.firstIndex(where: { $0.id == cellId }) else { return }
+        guard let fromIdx = cells.firstIndex(where: { $0.id == cellId }) else { return .ignored }
+        guard !cells[fromIdx].isPinned else { return .blockedLocked } // a locked square never moves
         let row = fromIdx / size, col = fromIdx % size
         let d = direction.delta
         let newRow = row + d.row, newCol = col + d.col
-        guard newRow >= 0, newRow < size, newCol >= 0, newCol < size else { return }
+        guard newRow >= 0, newRow < size, newCol >= 0, newCol < size else { return .blockedEdge }
         let toIdx = newRow * size + newCol
-        guard !cells[toIdx].isPinned else { return }
+        guard !cells[toIdx].isPinned else { return .blockedLocked }
         cells.swapAt(fromIdx, toIdx)
         handleEditMove(newCells: cells)
+        return .moved(row: newRow, col: newCol)
     }
 
     /// Shuffles every non-fixed slot (D10). Fixed = an effectively-locked

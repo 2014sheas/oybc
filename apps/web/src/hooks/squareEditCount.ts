@@ -79,7 +79,11 @@ export function deriveSquareEditCount(input: SquareEditCountInput): number {
     (c) => c.originalTaskId !== null && c.taskId !== c.originalTaskId,
   ).length;
   const adds = cells.filter((c) => c.originalTaskId === null).length;
-  const lockChanges = cells.filter((c) => c.isLocked !== c.originalLocked).length;
+  // A staged ADD's lock is written at insertion (D15 step 7) — part of the
+  // one add edit, never a second one (iOS `SquaresEditCount` parity).
+  const lockChanges = cells.filter(
+    (c) => c.originalTaskId !== null && c.isLocked !== c.originalLocked,
+  ).length;
   const movedCount = cells.filter(
     (c) => c.originalTaskId !== null && (c.row !== c.originalRow || c.col !== c.originalCol),
   ).length;
