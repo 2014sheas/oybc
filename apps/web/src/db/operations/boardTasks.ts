@@ -371,6 +371,10 @@ export async function removeBoardTaskFromBoard(boardTaskId: string): Promise<voi
  * @param taskId - The task to place.
  * @param row - Grid row (0-based).
  * @param col - Grid column (0-based).
+ * @param options - Board Edit slice 3 (D15 step 7) — `isLocked` seeds the
+ *   new placement's lock straight from the squares-editor draft, so a staged
+ *   add-then-lock in the same session writes as ONE locked row rather than
+ *   an add followed by a separate lock write.
  * @returns The newly-created BoardTask record.
  */
 export async function addBoardTaskToBoard(
@@ -378,6 +382,7 @@ export async function addBoardTaskToBoard(
   taskId: string,
   row: number,
   col: number,
+  options?: { isLocked?: boolean },
 ): Promise<BoardTask> {
   const now = currentTimestamp();
 
@@ -388,6 +393,7 @@ export async function addBoardTaskToBoard(
     row,
     col,
     isCenter: false,
+    ...(options?.isLocked === true ? { isLocked: true } : {}),
     createdAt: now,
     updatedAt: now,
     version: 1,

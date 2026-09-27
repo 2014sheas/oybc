@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback } from 'react';
 import {
   BoardStatus,
-  CenterSquareType,
+  effectiveCenter,
   type Board,
   type BoardSize,
   type BoardTask,
@@ -9,12 +9,7 @@ import {
   type Task,
 } from '@oybc/shared';
 import { db } from '../db/internal';
-import {
-  compoundChildToggleDesired,
-  taskToSquareData,
-  taskToSquareState,
-  type SquareWindowContext,
-} from '../db/adapters';
+import { compoundChildToggleDesired, type SquareWindowContext } from '../db/adapters';
 import { handleTaskCompletion } from '../db/operations/orchestration';
 import {
   decrementSharedCounter,
@@ -22,53 +17,11 @@ import {
   setCounterDefaultLogAmount,
 } from '../db/operations/tasks';
 import { resolveCreditedCounterName } from '../components/boardPlaySharedCounterUtils';
-import {
-  updateBoardTaskAndCascade,
-  removeBoardTaskFromBoard,
-  addBoardTaskToBoard,
-  reorderBoardTasks,
-  setBoardTaskLocked,
-} from '../db/operations/boardTasks';
-import { updateTaskAndCascade, toggleCompoundChildFallback, undoLastCounterLog, type UpdateTaskPatch } from '../db/operations/tasks';
-import {
-  assertBoardEditable,
-  updateBoardAndCascade,
-  type UpdateActiveBoardPatch,
-} from '../db/operations/boards';
 import { deriveFlashOutcome } from '../components/boardPlayFlash';
+import { toggleCompoundChildFallback, undoLastCounterLog } from '../db/operations/tasks';
+import { commitSquareEdits } from '../db/operations/boardEditCommit';
 import type { ContextMenuState } from '../components/interactiveTaskSquareUtils';
-import { type SubMode } from '../components/boardEdit/BoardEditPanel';
-import { type ArrangeSlot } from '../components/boardEdit/ArrangeGrid';
-import { type BoardCellModel } from '../components/board/RisoBoardCell';
-import { freeCellModel, toBoardCellModel } from '../components/board/cellModel';
-import { deriveSquareEditCount, isDraftCellDirty } from './squareEditCount';
-
-/**
- * Per-cell staged entry for the squares draft (Phase 2 — staged edit model).
- * Seeded from live `BoardTask` rows on entering edit mode; mutated only by
- * Replace/Edit actions — never by live-query updates (to avoid clobbering
- * staged changes mid-session).
- */
-export interface SquareDraftCell {
-  boardTaskId: string;
-  /** Current staged row — may differ from originalRow after a Rearrange. */
-  row: number;
-  /** Current staged col — may differ from originalCol after a Rearrange. */
-  col: number;
-  isCenter: boolean;
-  /** Current staged taskId — may differ from originalTaskId after a Replace. */
-  taskId: string;
-  /** The taskId at the time edit mode was entered. Never changes. */
-  originalTaskId: string;
-  /** The row at the time edit mode was entered. Never changes (Phase 3). */
-  originalRow: number;
-  /** The col at the time edit mode was entered. Never changes (Phase 3). */
-  originalCol: number;
-  /** Current staged lock — Board Edit redesign slice 1 (`BoardTask.isLocked`). */
-  isLocked: boolean;
-  /** The lock state at the time edit mode was entered. Never changes. */
-  originalLocked: boolean;
-}
+import { useSquaresEditDraft, type UseSquaresEditDraftResult } from './useSquaresEditDraft';
 
 /** What `onFlash` is called with. `greenlog` routes to the overlay and a
  *  new bingo to the toast; only the residual cases reach the transient flash. */
@@ -122,7 +75,7 @@ export interface UseBoardPlayParams {
   /**
    * Windowed Completion (docs/WINDOWED_COMPLETION.md §Semantics): the board's
    * window context (from `useBoardPlayData`/`useSquareWindowContext`), threaded
-   * into the rearrange-preview's `taskToSquareState`/`taskToSquareData` calls so
+   * into the squares-editor's `taskToSquareState`/`taskToSquareData` calls so
    * a lifetime-complete task on a fresh window's board previews grey, matching
    * the real grid (BoardPlaySurface's own render already does this).
    */
@@ -137,59 +90,10 @@ export interface UseBoardPlayParams {
 
 /** Everything `BoardPlaySurface` needs from the handler/edit-draft layer. */
 export interface UseBoardPlayResult {
-  // ── Edit-draft state ──
-  squaresDraft: SquareDraftCell[];
-  taskOverrides: Map<string, UpdateTaskPatch>;
-  draftCenterType: CenterSquareType;
-  setDraftCenterType: React.Dispatch<React.SetStateAction<CenterSquareType>>;
-  subMode: SubMode;
-  setSubMode: React.Dispatch<React.SetStateAction<SubMode>>;
-  squareTapMenu: {
-    boardTaskId: string;
-    taskId: string;
-    x: number;
-    y: number;
-    isCenterTask: boolean;
-    /** Board Edit redesign slice 1 — the tapped square's staged lock state. */
-    isLocked: boolean;
-  } | null;
-  setSquareTapMenu: React.Dispatch<
-    React.SetStateAction<{
-      boardTaskId: string;
-      taskId: string;
-      x: number;
-      y: number;
-      isCenterTask: boolean;
-      isLocked: boolean;
-    } | null>
-  >;
-  freeCenterTapMenu: { x: number; y: number } | null;
-  setFreeCenterTapMenu: React.Dispatch<React.SetStateAction<{ x: number; y: number } | null>>;
-  editReplaceId: string | null;
-  setEditReplaceId: React.Dispatch<React.SetStateAction<string | null>>;
-  editTaskSheetId: string | null;
-  setEditTaskSheetId: React.Dispatch<React.SetStateAction<string | null>>;
-  // ── Derived edit-mode data ──
-  squareEditCount: number;
-  draftByPosition: Record<string, SquareDraftCell>;
-  arrangeSlots: ArrangeSlot[];
-  // ── Draft handlers ──
-  handleEditReplace: (boardTaskId: string, newTaskId: string) => void;
-  /** Stage a removal for the given boardTaskId (empties the cell; committed on Save). */
-  handleEditRemove: (boardTaskId: string) => void;
-  /** Board Edit redesign slice 1 — stage a lock / unlock for the given placement. */
-  handleEditToggleLock: (boardTaskId: string) => void;
-  handleEditTaskDone: (taskId: string, patch: UpdateTaskPatch) => void;
-  handleRearrangeReorder: (newSlots: ArrangeSlot[]) => void;
-  /**
-   * Commits every staged square edit, then (board-integrity PR-4, item 3,
-   * docs/BOARD_INTEGRITY.md) the board-metadata patch too — ALL in one Dexie
-   * transaction. `metadataPatch` is optional only so existing non-Save
-   * callers (none today) aren't forced to supply one; `BoardEditPanel`'s
-   * `handleSave` always passes it, folding what used to be its own separate
-   * `updateBoardAndCascade` call into this single atomic commit.
-   */
-  commitSquareEdits: (metadataPatch?: UpdateActiveBoardPatch) => Promise<void>;
+  /** Board Edit redesign slice 3 (T2) — the squares-editor draft engine. */
+  editDraft: UseSquaresEditDraftResult;
+  /** Commits the whole staged squares-editor session (D15, ONE transaction). */
+  commitEdits: () => Promise<void>;
   // ── Completion handlers ──
   handleComplete: (
     boardTaskId: string,
@@ -224,17 +128,18 @@ export interface UseBoardPlayResult {
    */
   undoCounterLog: (sourceTaskId: string) => Promise<void>;
   handleCompoundChildToggle: (childTaskId: string) => Promise<void>;
-  // ── Board-task write methods (from the play-mode add modal) ──
-  addTaskToCell: (taskId: string, row: number, col: number) => Promise<void>;
 }
 
 /**
- * The handler + edit-draft logic layer for playing a board. Extracted from
- * `BoardPlaySurface` (B2-W3, issue #270) — pure code-motion, no behavior
- * change. Owns the staged edit-mode draft (squares / overrides / center /
- * sub-mode / tap menus / replace + task-edit sheets), the completion
- * orchestration handlers, and the play-mode board-task write methods; the
- * component keeps the flash/toast/timer UI and all JSX.
+ * The handler + edit-draft layer for playing a board. Board Edit redesign
+ * slice 3 (T2): the staged squares-edit draft moved OUT of this file
+ * entirely into `useSquaresEditDraft.ts` (position-keyed, staged-ADD-aware,
+ * Shuffle, Free⇄Task center, keyboard moves — replacing the slice-1/2
+ * Edit-tasks ⇄ Rearrange sub-mode split); this hook now only composes it,
+ * builds the Save transaction's input, and keeps the completion-orchestration
+ * handlers (unchanged from B2-W3, issue #270). The play-mode "+" / add-modal
+ * write path is retired (D17) — every structural edit goes through the
+ * squares editor now.
  *
  * @param params - Read-model data (from `useBoardPlayData`) plus the transient-UI callbacks.
  */
@@ -254,411 +159,43 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
   } = params;
   const boardId = board.id;
 
-  // ── Phase 2 — Edit tasks sub-mode + squares draft ────────────────────────
-
-  // Sub-mode is hoisted here (from BoardEditPanel) so the grid can gate taps.
-  const [subMode, setSubMode] = useState<SubMode>('editTasks');
-
-  // Squares draft: per-cell staged state seeded when entering edit mode.
-  // Never updated by live boardTasks changes (only by Replace/Edit actions).
-  const [squaresDraft, setSquaresDraft] = useState<SquareDraftCell[]>([]);
-  // Whether the current edit session's draft has been seeded. Distinguishes the
-  // un-seeded first render (draft still [] because the seed effect runs a frame
-  // after `editMode` flips) from a legitimately EMPTY draft after the user has
-  // removed every square — the two are indistinguishable by `squaresDraft.length`
-  // alone, and conflating them silently disabled Save / skipped the discard
-  // confirm on "remove everything" (review Critical).
-  const [draftSeeded, setDraftSeeded] = useState(false);
-
-  // Staged task-field overrides, keyed by taskId.
-  // Applied to the grid display while in edit mode; committed on Save.
-  const [taskOverrides, setTaskOverrides] = useState<Map<string, UpdateTaskPatch>>(
-    () => new Map(),
-  );
-
-  // Phase 2b — draft centerSquareType, lifted so the grid can compute
-  // isPinnedCenter. Seeded on edit-mode entry from board.centerSquareType;
-  // updated by both the BoardSetupForm selector (via BoardEditPanel) and the
-  // center cell toggle (direct tap in editTasks mode).
-  const [draftCenterType, setDraftCenterType] = useState<CenterSquareType>(
-    board.centerSquareType as CenterSquareType,
-  );
-
-  // Phase 2b — tap menu for the FREE center in editTasks mode.
-  // The free center has no boardTaskId so it can't use squareTapMenu.
-  const [freeCenterTapMenu, setFreeCenterTapMenu] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
-  // Tap menu: set when a non-pinned square is tapped in editTasks sub-mode.
-  // Stores click coordinates (not a DOMRect) because RisoBoardCell's onClick
-  // is `() => void` (no event parameter). The SquareTapMenu positions itself
-  // from these coordinates.
-  // Phase 2b: isCenterTask added — true when the tapped cell is the NONE center;
-  // causes SquareTapMenu to show the "Make it a free space" toggle item.
-  const [squareTapMenu, setSquareTapMenu] = useState<{
-    boardTaskId: string;
-    taskId: string;
-    x: number;
-    y: number;
-    isCenterTask: boolean;
-    isLocked: boolean;
-  } | null>(null);
-
-  // The boardTaskId whose cell is being replaced in edit mode (opens CellSwapModal).
-  const [editReplaceId, setEditReplaceId] = useState<string | null>(null);
-
-  // The taskId being edited in edit mode (opens BoardEditTaskSheet).
-  const [editTaskSheetId, setEditTaskSheetId] = useState<string | null>(null);
-
-  // Count of staged square edits — derived, see `deriveSquareEditCount`
-  // (Board Edit redesign slice 1 moved the derivation out so it is testable
-  // and so the lock-toggle term lives beside the others).
-  const squareEditCount = deriveSquareEditCount({
-    squaresDraft, taskOverrides, draftCenterType, boardTasks, editMode, draftSeeded,
+  const editDraft = useSquaresEditDraft({
+    board,
+    editMode,
+    boardTasks,
+    taskMap,
+    compoundChildrenByCompound,
+    gridSize,
+    squareWindowContext,
   });
 
-  // Seed the squares draft when entering edit mode; reset all draft state when
-  // exiting. boardTasks is intentionally NOT in the dep array — we seed once
-  // on entry and must not re-seed on live-query updates (that would clobber
-  // staged changes mid-session). board is also not in deps for the same reason;
-  // we read board.centerSquareType once at entry time (the snapshot rule).
-  useEffect(() => {
-    if (!editMode) {
-      setSquaresDraft([]);
-      setDraftSeeded(false);
-      setTaskOverrides(new Map());
-      setSubMode('editTasks');
-      setSquareTapMenu(null);
-      setEditReplaceId(null);
-      setEditTaskSheetId(null);
-      // Phase 2b: clear center-related menus + reset the draft center type, so a
-      // toggle-then-cancel-then-reedit doesn't flash a stale FREE center for one
-      // frame before the entry seed runs.
-      setFreeCenterTapMenu(null);
-      setDraftCenterType(board.centerSquareType as CenterSquareType);
-      return;
-    }
-    // Phase 2b: seed draft center type from the board's current stored value.
-    setDraftCenterType(board.centerSquareType as CenterSquareType);
-    // Seed from the current boardTasks snapshot.
-    setSquaresDraft(
-      boardTasks.map((bt) => ({
-        boardTaskId: bt.id,
-        row: bt.row,
-        col: bt.col,
-        isCenter: bt.isCenter ?? false,
-        taskId: bt.taskId,
-        originalTaskId: bt.taskId,
-        // Phase 3: original positions for derived rearrange-edit count.
-        originalRow: bt.row,
-        originalCol: bt.col,
-        // Board Edit redesign slice 1 — per-square lock (absent ⇒ unlocked
-        // for rows predating the field).
-        isLocked: bt.isLocked === true,
-        originalLocked: bt.isLocked === true,
-      })),
-    );
-    setDraftSeeded(true);
-    setTaskOverrides(new Map());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode]);
-
-  // Phase 2 — draft position lookup (edit mode only; stable key format matches btByPosition).
-  const draftByPosition: Record<string, SquareDraftCell> = {};
-  if (editMode) {
-    for (const cell of squaresDraft) {
-      draftByPosition[`${cell.row}-${cell.col}`] = cell;
-    }
-  }
-
-  // ── Phase 2 — Square-edit handlers ────────────────────────────────────────
-
   /**
-   * Stage a Replace for the given boardTaskId.
-   * Called when the CellSwapModal (edit-mode flow) confirms a new task.
-   * NO DB write happens here — committed in onExtraCommit at Save time.
+   * Commits the whole staged squares-editor session in ONE Dexie transaction
+   * (D15, `boardEditCommit.ts`). Builds the removal list from the LIVE
+   * `boardTasks` snapshot vs the draft's tracked removals (a cell absent from
+   * the draft only counts if it was a live placement at seed time — a staged
+   * add that got removed again leaves no trace), and the center metadata
+   * patch only when the effective center type actually changed (FREE ⇄ NONE
+   * only — CHOSEN is never written post-slice-3, D1/D16).
    */
-  const handleEditReplace = useCallback((boardTaskId: string, newTaskId: string) => {
-    setSquaresDraft((prev) =>
-      prev.map((cell) =>
-        cell.boardTaskId === boardTaskId ? { ...cell, taskId: newTaskId } : cell,
-      ),
-    );
-    // squareEditCount is derived from squaresDraft — no manual increment.
-  }, []);
+  const commitEdits = useCallback(async (): Promise<void> => {
+    const effectiveDraftCenter = effectiveCenter(editDraft.draftCenterType);
+    const effectiveBoardCenter = effectiveCenter(board.centerSquareType);
+    const centerPatch =
+      effectiveDraftCenter !== effectiveBoardCenter
+        ? { centerSquareType: effectiveDraftCenter }
+        : undefined;
 
-  /**
-   * Stage a Remove for the given boardTaskId.
-   * Called from the edit-mode square tap menu's "Remove from board" item.
-   * Drops the cell from the draft — arrangeSlots (a useMemo over squaresDraft)
-   * auto-reflects the now-empty position, and squareEditCount picks it up via
-   * the staged-removal term. NO DB write happens here — the placement is
-   * hard-deleted in commitSquareEdits at Save time.
-   */
-  const handleEditRemove = useCallback((boardTaskId: string) => {
-    setSquaresDraft((prev) => prev.filter((c) => c.boardTaskId !== boardTaskId));
-    // squareEditCount is derived from squaresDraft vs boardTasks — no manual increment.
-  }, []);
-
-  /**
-   * Board Edit redesign slice 1 — stage a lock toggle for the given placement.
-   * NO DB write happens here — committed in commitSquareEdits at Save time via
-   * `setBoardTaskLocked`. Toggling back to the seeded state un-counts it.
-   */
-  const handleEditToggleLock = useCallback((boardTaskId: string) => {
-    setSquaresDraft((prev) =>
-      prev.map((cell) =>
-        cell.boardTaskId === boardTaskId ? { ...cell, isLocked: !cell.isLocked } : cell,
-      ),
-    );
-  }, []);
-
-  /**
-   * Stage Task-field edits for the given taskId.
-   * Called when BoardEditTaskSheet's Done fires.
-   * Merges with any previously staged override for the same taskId.
-   * NO DB write happens here — committed in onExtraCommit at Save time.
-   */
-  const handleEditTaskDone = useCallback(
-    (taskId: string, patch: UpdateTaskPatch) => {
-      setTaskOverrides((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(taskId) ?? {};
-        next.set(taskId, { ...existing, ...patch });
-        return next;
-      });
-      // squareEditCount is derived from taskOverrides — no manual increment.
-    },
-    [],
-  );
-
-  /**
-   * Commits all staged square edits.
-   * Called by BoardEditPanel.handleSave BEFORE the metadata patch.
-   * Order: task replacements first, then task-field edits.
-   */
-  /**
-   * Phase 3 — Rearrange reorder callback.
-   *
-   * Called by ArrangeGrid whenever the user commits a drag-drop or tap-swap.
-   * Maps the new flat slot order back to (row, col) by index position and
-   * updates `squaresDraft` in place for non-center, non-empty slots.
-   * The center square's position is never modified.
-   */
-  const handleRearrangeReorder = useCallback(
-    (newSlots: ArrangeSlot[]) => {
-      setSquaresDraft((prev) => {
-        const newPositions = new Map<string, { row: number; col: number }>();
-        newSlots.forEach((slot, i) => {
-          if (!slot.isEmpty && !slot.isCenter) {
-            newPositions.set(slot.cid, {
-              row: Math.floor(i / gridSize),
-              col: i % gridSize,
-            });
-          }
-        });
-        return prev.map((cell) => {
-          const pos = newPositions.get(cell.boardTaskId);
-          return pos ? { ...cell, row: pos.row, col: pos.col } : cell;
-        });
-      });
-    },
-    [gridSize],
-  );
-
-  /**
-   * Phase 3 — Build the ArrangeSlot[] for rearrange sub-mode.
-   *
-   * Each slot carries the current staged (row, col) from squaresDraft.
-   * Bingo highlights are suppressed (isLine: false) — the post-save
-   * derivation pass will re-compute correct lines.
-   *
-   * Centre squares are flagged isCenter:true so ArrangeGrid pins them.
-   * Empty positions (no draftCell at a given row/col) are flagged isEmpty:true.
-   */
-  const arrangeSlots = useMemo<ArrangeSlot[]>(() => {
-    if (!editMode || subMode !== 'rearrange') return [];
-
-    const half = Math.floor(gridSize / 2);
-
-    const slots: ArrangeSlot[] = [];
-    for (let r = 0; r < gridSize; r++) {
-      for (let c = 0; c < gridSize; c++) {
-        // Phase 2b: distinguish positional center from "pinned" center.
-        // NONE center is NOT pinned — it participates in drag/swap normally.
-        const isPositionalCenter = gridSize % 2 === 1 && r === half && c === half;
-        const isCenter = isPositionalCenter && draftCenterType !== CenterSquareType.NONE;
-        const draftCell = squaresDraft.find((d) => d.row === r && d.col === c);
-
-        if (isPositionalCenter && !draftCell && draftCenterType !== CenterSquareType.NONE) {
-          // FREE (or CHOSEN with no task) centre — pinned, not draggable.
-          slots.push({
-            cid: `center-${r}-${c}`,
-            isCenter: true,
-            isEmpty: false,
-            model: freeCellModel(`center-${r}-${c}`),
-          });
-        } else if (draftCell) {
-          // Real tile (including CHOSEN centre).
-          const baseTask: Task | undefined = taskMap[draftCell.taskId];
-          let model: BoardCellModel | null = null;
-          if (baseTask) {
-            const task: Task =
-              taskOverrides.has(draftCell.taskId)
-                ? { ...baseTask, ...(taskOverrides.get(draftCell.taskId) as Partial<Task>) }
-                : baseTask;
-            const taskChildren = compoundChildrenByCompound[task.id] ?? [];
-            const squareData = taskToSquareData(
-              task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-            );
-            const squareState = taskToSquareState(
-              task, taskChildren, taskMap, compoundChildrenByCompound, squareWindowContext,
-            );
-            model = toBoardCellModel({
-              key: draftCell.boardTaskId,
-              task,
-              done: squareState.isCompleted,
-              currentCount: squareData.type === 'counting' ? squareState.currentCount : undefined,
-              // isLine suppressed during rearrange — the post-save derivation re-rings.
-              locked: draftCell.isLocked,
-              dirty: isDraftCellDirty(draftCell, taskOverrides),
-            });
-          }
-          slots.push({
-            cid: draftCell.boardTaskId,
-            isCenter,
-            // Board Edit redesign slice 1 — a locked square is pinned like the
-            // center: never lifts, never a drop target.
-            isPinned: draftCell.isLocked,
-            isEmpty: false,
-            model,
-          });
-        } else {
-          // Empty slot (no task placed here in the current draft).
-          slots.push({
-            cid: `empty-${r}-${c}`,
-            isCenter: false,
-            isEmpty: true,
-            model: null,
-          });
-        }
-      }
-    }
-    return slots;
-  }, [
-    editMode,
-    subMode,
-    gridSize,
-    squaresDraft,
-    taskMap,
-    taskOverrides,
-    compoundChildrenByCompound,
-    draftCenterType, // Phase 2b: NONE center is not pinned
-    squareWindowContext,
-  ]);
-
-  /**
-   * Board-integrity PR-4, item 3 (docs/BOARD_INTEGRITY.md): Board-Edit Save
-   * used to run as ~5 sequential Dexie transactions (one per staged
-   * replacement, one per task-field override, one for the reorder batch, one
-   * per removal, then a SEPARATE `updateBoardAndCascade` transaction back in
-   * `BoardEditPanel`). A mid-sequence failure left a half-applied board with
-   * only a generic "save failed" — and web's Cancel never rolled back the
-   * part that DID commit.
-   *
-   * Fix: every step below (including the board-metadata patch, folded in as
-   * step 5) now runs inside ONE outer `db.transaction(...)`. Every helper
-   * called here (`updateBoardTaskAndCascade`, `updateTaskAndCascade`,
-   * `reorderBoardTasks`, `removeBoardTaskFromBoard`, `updateBoardAndCascade`)
-   * already opens its OWN `db.transaction('rw', [...])` internally — Dexie
-   * transactions are reentrant: when a nested `db.transaction()` call's
-   * requested table scope is a subset of the ALREADY-open ambient
-   * transaction's scope (verified for exactly this outer scope during PR-4
-   * review), Dexie joins the same underlying IndexedDB transaction instead of
-   * opening a new one. So wrapping the unchanged call sequence in the outer
-   * transaction below is sufficient for atomicity — no "InTxn" duplicate
-   * variants were needed for any of these five ops. The outer scope is the
-   * union of every table any of them touches (directly or via
-   * `addToSyncQueue`/`buildWindowContext`).
-   *
-   * Op order is UNCHANGED from before this fix: replacements → task-field
-   * overrides → reorders → removals → (new) metadata patch. A throw at any
-   * step now rolls back every write from every earlier step too, so a
-   * partial Save can never be observed — the board is either fully saved or
-   * untouched.
-   *
-   * @param metadataPatch - The board-metadata patch from `BoardEditPanel`'s
-   *   Save button (name/timeframe/dates/center). Optional so a future
-   *   non-Save caller could commit just the square edits, but every current
-   *   caller (Save) supplies it.
-   */
-  const commitSquareEdits = useCallback(
-    async (metadataPatch?: UpdateActiveBoardPatch): Promise<void> => {
-      await db.transaction(
-        'rw',
-        [db.boards, db.boardTasks, db.tasks, db.compoundChildren, db.taskEvents, db.syncQueue],
-        async () => {
-          // 0. Editable guard (Board Edit redesign slice 2, D11) — a board
-          //    sealed or deleted mid-session throws `BoardNotEditableError`
-          //    here, before any write, so the whole Save (task overrides
-          //    included) rolls back and the panel can say so instead of
-          //    reporting "Board saved".
-          await assertBoardEditable(boardId);
-          // 1. Cell replacements: cells whose staged taskId differs from the original.
-          for (const cell of squaresDraft) {
-            if (cell.taskId !== cell.originalTaskId) {
-              await updateBoardTaskAndCascade(cell.boardTaskId, cell.taskId);
-            }
-          }
-          // 2. Global task-field edits: apply UpdateTaskPatch for each staged override.
-          for (const [taskId, patch] of taskOverrides.entries()) {
-            await updateTaskAndCascade(taskId, patch);
-          }
-          // 3. Position reorders (Phase 3): cells whose staged row/col differs from original.
-          //    Phase 2b: NONE center is not pinned — its moves ARE included.
-          const moves = squaresDraft
-            .filter(
-              (c) =>
-                !(c.isCenter && draftCenterType !== CenterSquareType.NONE) &&
-                (c.row !== c.originalRow || c.col !== c.originalCol),
-            )
-            .map((c) => ({ boardTaskId: c.boardTaskId, row: c.row, col: c.col }));
-          if (moves.length > 0) {
-            await reorderBoardTasks(boardId, moves);
-          }
-          // 3b. Lock toggles (Board Edit redesign slice 1) — AFTER the
-          //     reorders so a square moved then locked in the same session
-          //     passes `reorderBoardTasks`' locked-row guard.
-          for (const cell of squaresDraft) {
-            if (cell.isLocked !== cell.originalLocked) {
-              await setBoardTaskLocked(cell.boardTaskId, cell.isLocked);
-            }
-          }
-          // 4. Staged removals: pre-edit placements (still un-mutated in the DB during
-          //    staging) that are absent from the draft. `removeBoardTaskFromBoard`
-          //    tombstones the placement + cascades + enqueues sync, leaving the
-          //    cell empty; it's idempotent, so a re-run after a partial failure is
-          //    safe. Loop mirrors the replacement loop above.
-          const draftIds = new Set(squaresDraft.map((c) => c.boardTaskId));
-          for (const bt of boardTasks) {
-            if (!draftIds.has(bt.id)) {
-              await removeBoardTaskFromBoard(bt.id);
-            }
-          }
-          // 5. Board-metadata patch (name/timeframe/dates/center) — folded into
-          //    this same transaction (item 3). Previously a separate
-          //    `updateBoardAndCascade` call made by `BoardEditPanel` AFTER this
-          //    function had already returned (and already committed).
-          if (metadataPatch) {
-            await updateBoardAndCascade(boardId, metadataPatch);
-          }
-        },
-      );
-    },
-    [squaresDraft, taskOverrides, boardId, draftCenterType, boardTasks],
-  );
+    await commitSquareEdits({
+      boardId,
+      cells: editDraft.cells,
+      removedBoardTaskIds: editDraft.removedBoardTaskIds,
+      taskOverrides: editDraft.taskOverrides,
+      isLegacyChosenOnDisk: editDraft.isLegacyChosenOnDisk,
+      centerCellKeepLocked: editDraft.centerCellKeepLocked,
+      centerPatch,
+    });
+  }, [boardId, board.centerSquareType, editDraft]);
 
   // ── Completion handler ─────────────────────────────────────────────────
 
@@ -945,55 +482,13 @@ export function useBoardPlay(params: UseBoardPlayParams): UseBoardPlayResult {
       compoundChildrenByCompound, squareWindowContext]
   );
 
-  // ── Play-mode board-task write methods ─────────────────────────────────
-  // The add modal lives in the component's JSX; this method owns the DB call +
-  // error flash so the write leaves the JSX (B2-W3). (The play-mode swap/remove
-  // context items were retired — those structural edits belong to Board Edit
-  // mode: swap → "Replace task", remove → the edit tap-menu's staged "Remove
-  // from board".)
-
-  /** M4 — Add a task to the empty cell at (row, col) on this board. */
-  const addTaskToCell = useCallback(
-    async (taskId: string, row: number, col: number): Promise<void> => {
-      try {
-        await addBoardTaskToBoard(boardId, taskId, row, col);
-      } catch (err) {
-        console.error('Add task to cell failed:', err);
-        onFlash('Add failed — please try again', 'bingo');
-      }
-    },
-    [boardId, onFlash],
-  );
-
   return {
-    squaresDraft,
-    taskOverrides,
-    draftCenterType,
-    setDraftCenterType,
-    subMode,
-    setSubMode,
-    squareTapMenu,
-    setSquareTapMenu,
-    freeCenterTapMenu,
-    setFreeCenterTapMenu,
-    editReplaceId,
-    setEditReplaceId,
-    editTaskSheetId,
-    setEditTaskSheetId,
-    squareEditCount,
-    draftByPosition,
-    arrangeSlots,
-    handleEditReplace,
-    handleEditRemove,
-    handleEditToggleLock,
-    handleEditTaskDone,
-    handleRearrangeReorder,
-    commitSquareEdits,
+    editDraft,
+    commitEdits,
     handleComplete,
     handleSharedCounterIncrement,
     handleSharedCounterDecrement,
     undoCounterLog,
     handleCompoundChildToggle,
-    addTaskToCell,
   };
 }

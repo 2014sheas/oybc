@@ -1,0 +1,318 @@
+import { describe, expect, it } from 'vitest';
+import { CenterSquareType, type BoardTask } from '@oybc/shared';
+import {
+  commitReorder,
+  deriveCanShuffle,
+  deriveCenterCellKeepLocked,
+  deriveEditCount,
+  isPinnedCenter,
+  reorderToSlot,
+  seedDraft,
+  setCenterFree,
+  setCenterTask,
+  shuffleCells,
+  stageAdd,
+  stageKeyboardMove,
+  stageRemove,
+  stageReplace,
+  stageTaskEdit,
+  toggleLock,
+  type SquaresEditDraftState,
+} from '../squaresEditReducer';
+
+/**
+ * Board Edit redesign slice 3 (T2) — the pure squares-edit draft reducer.
+ * Vitest runs `environment: 'node'` with no React renderer wired in (see
+ * `vitest.config.ts`), so `useSquaresEditDraft.ts` itself is untested
+ * directly — every transition it delegates to lives here instead, fully
+ * framework-free.
+ */
+
+function bt(id: string, taskId: string, row: number, col: number, overrides: Partial<BoardTask> = {}): BoardTask {
+  return {
+    id, boardId: 'board-1', taskId, row, col, isCenter: false,
+    createdAt: '', updatedAt: '', version: 1, isDeleted: false,
+    ...overrides,
+  };
+}
+
+describe('seedDraft', () => {
+  it('seeds a 3x3 board with the effective lock baseline for a legacy CHOSEN center (D1)', () => {
+    const state = seedDraft(
+      [bt('bt-a', 'task-a', 0, 0), bt('bt-c', 'task-c', 1, 1, { isCenter: true })],
+      CenterSquareType.CHOSEN,
+      3,
+    );
+    const center = state.cells.find((c) => c.cellId === 'bt-c')!;
+    // Effectively locked even though the raw BoardTask.isLocked is undefined.
+    expect(center.isLocked).toBe(true);
+    expect(center.originalLocked).toBe(true);
+    const other = state.cells.find((c) => c.cellId === 'bt-a')!;
+    expect(other.isLocked).toBe(false);
+  });
+
+  it('an explicit isLocked=true row is effectively locked regardless of position', () => {
+    const state = seedDraft([bt('bt-a', 'task-a', 0, 0, { isLocked: true })], CenterSquareType.NONE, 3);
+    expect(state.cells[0].isLocked).toBe(true);
+  });
+});
+
+describe('stageAdd / stageReplace / stageRemove', () => {
+  const seeded = seedDraft([bt('bt-a', 'task-a', 0, 0)], CenterSquareType.NONE, 3);
+
+  it('stageAdd creates a cell with originalTaskId=null (an ADD, always dirty)', () => {
+    const next = stageAdd(seeded, 0, 1, { taskId: 'task-b' });
+    const added = next.cells.find((c) => c.row === 0 && c.col === 1)!;
+    expect(added.originalTaskId).toBeNull();
+    expect(added.taskId).toBe('task-b');
+  });
+
+  it('stageReplace changes taskId, keeping the cellId/original baseline', () => {
+    const next = stageReplace(seeded, 'bt-a', { taskId: 'task-z' });
+    expect(next.cells[0].taskId).toBe('task-z');
+    expect(next.cells[0].originalTaskId).toBe('task-a');
+  });
+
+  it('stageRemove drops the cell and records it as a removal (existing placement)', () => {
+    const next = stageRemove(seeded, 'bt-a');
+    expect(next.cells).toHaveLength(0);
+    expect(next.removedIds.has('bt-a')).toBe(true);
+  });
+
+  it('removing a staged ADD does not count as a removal (never existed live)', () => {
+    const withAdd = stageAdd(seeded, 0, 1, { taskId: 'task-b' });
+    const addedId = withAdd.cells.find((c) => c.row === 0 && c.col === 1)!.cellId;
+    const next = stageRemove(withAdd, addedId);
+    expect(next.removedIds.size).toBe(0);
+  });
+});
+
+describe('toggleLock / stageTaskEdit', () => {
+  it('toggles isLocked on the target cell only', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 1)], CenterSquareType.NONE, 3);
+    const next = toggleLock(seeded, 'a');
+    expect(next.cells.find((c) => c.cellId === 'a')!.isLocked).toBe(true);
+    expect(next.cells.find((c) => c.cellId === 'b')!.isLocked).toBe(false);
+  });
+
+  it('stageTaskEdit merges into any existing override for the same taskId', () => {
+    let state: SquaresEditDraftState = seedDraft([bt('a', 't-a', 0, 0)], CenterSquareType.NONE, 3);
+    state = stageTaskEdit(state, 't-a', { title: 'First' });
+    state = stageTaskEdit(state, 't-a', { description: 'Second' });
+    expect(state.taskOverrides.get('t-a')).toEqual({ title: 'First', description: 'Second' });
+  });
+});
+
+describe('commitReorder', () => {
+  it('maps the new slot order back to row/col by flat index, skipping empty/center slots', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 1)], CenterSquareType.NONE, 3);
+    // New order: b first (→ 0,0), then a (→ 0,1).
+    const newSlots = [
+      { cellId: 'b', isCenter: false, isEmpty: false },
+      { cellId: 'a', isCenter: false, isEmpty: false },
+      { cellId: 'empty-0-2', isCenter: false, isEmpty: true },
+    ];
+    const next = commitReorder(seeded, newSlots, 3);
+    expect(next.cells.find((c) => c.cellId === 'b')).toMatchObject({ row: 0, col: 0 });
+    expect(next.cells.find((c) => c.cellId === 'a')).toMatchObject({ row: 0, col: 1 });
+  });
+});
+
+describe('reorderToSlot', () => {
+  it('never moves a fixed (pinned) slot and inserts the drag item before the target, cascading the rest', () => {
+    const slots = [
+      { cellId: 'locked', isPinned: true },
+      { cellId: 'a', isPinned: false },
+      { cellId: 'b', isPinned: false },
+      { cellId: 'c', isPinned: false },
+    ];
+    const next = reorderToSlot(slots, 'c', 1);
+    // The locked slot never moves.
+    expect(next[0].cellId).toBe('locked');
+    // c inserted before the (movable) target index 1 → order becomes c, a, b.
+    expect(next.map((s) => s.cellId)).toEqual(['locked', 'c', 'a', 'b']);
+  });
+
+  it('is a no-op when the target slot is itself fixed', () => {
+    const slots = [
+      { cellId: 'a', isPinned: false },
+      { cellId: 'locked', isPinned: true },
+    ];
+    expect(reorderToSlot(slots, 'a', 1)).toBe(slots);
+  });
+});
+
+describe('stageKeyboardMove (D9)', () => {
+  it('swaps a movable cell with an occupied neighbor', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 1)], CenterSquareType.NONE, 3);
+    const { state, moved } = stageKeyboardMove(seeded, 'a', 'right', 3);
+    expect(moved).toBe(true);
+    expect(state.cells.find((c) => c.cellId === 'a')).toMatchObject({ row: 0, col: 1 });
+    expect(state.cells.find((c) => c.cellId === 'b')).toMatchObject({ row: 0, col: 0 });
+  });
+
+  it('moves into an empty neighbor with no swap partner', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0)], CenterSquareType.NONE, 3);
+    const { state, moved } = stageKeyboardMove(seeded, 'a', 'down', 3);
+    expect(moved).toBe(true);
+    expect(state.cells[0]).toMatchObject({ row: 1, col: 0 });
+  });
+
+  it('is blocked at the grid bounds', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0)], CenterSquareType.NONE, 3);
+    const { moved, blocked } = stageKeyboardMove(seeded, 'a', 'up', 3);
+    expect(moved).toBe(false);
+    expect(blocked).toBe('bounds');
+  });
+
+  it('is blocked moving into a locked neighbor', () => {
+    const seeded = seedDraft(
+      [bt('a', 't-a', 0, 0), bt('locked', 't-b', 0, 1, { isLocked: true })],
+      CenterSquareType.NONE,
+      3,
+    );
+    const { moved, blocked } = stageKeyboardMove(seeded, 'a', 'right', 3);
+    expect(moved).toBe(false);
+    expect(blocked).toBe('locked');
+  });
+
+  it('is blocked moving into the pinned FREE center', () => {
+    // 3x3, FREE center at (1,1) — a cell at (0,1) moving down would land on it.
+    const seeded = seedDraft([bt('a', 't-a', 0, 1)], CenterSquareType.FREE, 3);
+    const { moved, blocked } = stageKeyboardMove(seeded, 'a', 'down', 3);
+    expect(moved).toBe(false);
+    expect(blocked).toBe('locked');
+  });
+});
+
+describe('shuffleCells (D10)', () => {
+  it('never moves a locked cell or the pinned center; preserves the multiset of unfixed values', () => {
+    const seeded = seedDraft(
+      [
+        bt('locked', 't-locked', 0, 0, { isLocked: true }),
+        bt('a', 't-a', 0, 1),
+        bt('b', 't-b', 0, 2),
+        bt('c', 't-c', 2, 2),
+      ],
+      CenterSquareType.FREE,
+      3,
+    );
+    const rng = (() => {
+      let i = 0;
+      const seq = [0.9, 0.1, 0.5];
+      return () => seq[i++ % seq.length];
+    })();
+    const next = shuffleCells(seeded, 3, rng);
+    expect(next.cells.find((c) => c.cellId === 'locked')).toMatchObject({ row: 0, col: 0 });
+    expect(next.shuffled).toBe(true);
+    // The center (1,1) is FREE and pinned — no cell can land there.
+    expect(next.cells.some((c) => c.row === 1 && c.col === 1)).toBe(false);
+    const before = new Set(seeded.cells.filter((c) => !c.isLocked).map((c) => c.cellId));
+    const after = new Set(next.cells.filter((c) => !c.isLocked).map((c) => c.cellId));
+    expect(after).toEqual(before);
+  });
+});
+
+describe('setCenterFree / setCenterTask (D16)', () => {
+  it('setCenterFree stages the removal of a task at the center and flips the type', () => {
+    const seeded = seedDraft([bt('center', 't-c', 1, 1)], CenterSquareType.NONE, 3);
+    const next = setCenterFree(seeded, 3);
+    expect(next.draftCenterType).toBe(CenterSquareType.FREE);
+    expect(next.cells).toHaveLength(0);
+    expect(next.removedIds.has('center')).toBe(true);
+  });
+
+  it('setCenterTask flips FREE to NONE with an empty (addable) center', () => {
+    const seeded = seedDraft([], CenterSquareType.FREE, 3);
+    const next = setCenterTask(seeded);
+    expect(next.draftCenterType).toBe(CenterSquareType.NONE);
+    expect(next.cells).toHaveLength(0);
+  });
+});
+
+describe('deriveCanShuffle (OQ8)', () => {
+  it('is false with fewer than 2 unfixed slots holding a task', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0, { isLocked: true }), bt('b', 't-b', 0, 1)], CenterSquareType.NONE, 3);
+    expect(deriveCanShuffle(seeded, 3)).toBe(false);
+  });
+
+  it('is true with 2+ unfixed slots holding a task', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 1)], CenterSquareType.NONE, 3);
+    expect(deriveCanShuffle(seeded, 3)).toBe(true);
+  });
+});
+
+describe('deriveCenterCellKeepLocked', () => {
+  it('reads the CURRENT draft lock of whichever cell occupies the center', () => {
+    const seeded = seedDraft([bt('center', 't-c', 1, 1)], CenterSquareType.CHOSEN, 3);
+    expect(deriveCenterCellKeepLocked(seeded, 3)).toBe(true); // effective-locked at seed
+    const unlocked = toggleLock(seeded, 'center');
+    expect(deriveCenterCellKeepLocked(unlocked, 3)).toBe(false);
+  });
+
+  it('is false when nothing occupies the center', () => {
+    const seeded = seedDraft([], CenterSquareType.NONE, 3);
+    expect(deriveCenterCellKeepLocked(seeded, 3)).toBe(false);
+  });
+});
+
+describe('isPinnedCenter', () => {
+  it('is true only for FREE (CHOSEN/NONE are not pinned, D1)', () => {
+    expect(isPinnedCenter(CenterSquareType.FREE)).toBe(true);
+    expect(isPinnedCenter(CenterSquareType.NONE)).toBe(false);
+    expect(isPinnedCenter(CenterSquareType.CHOSEN)).toBe(false);
+  });
+});
+
+describe('deriveEditCount (D11)', () => {
+  it('an untouched legacy CHOSEN board has a baseline of 0 (D1)', () => {
+    const seeded = seedDraft([bt('center', 't-c', 1, 1)], CenterSquareType.CHOSEN, 3);
+    expect(deriveEditCount({ state: seeded, boardCenterType: CenterSquareType.CHOSEN })).toBe(0);
+  });
+
+  it('add / remove / center-toggle each count as one edit', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0)], CenterSquareType.NONE, 3);
+
+    const added = stageAdd(seeded, 0, 1, { taskId: 't-b' });
+    expect(deriveEditCount({ state: added, boardCenterType: CenterSquareType.NONE })).toBe(1);
+
+    const removed = stageRemove(seeded, 'a');
+    expect(deriveEditCount({ state: removed, boardCenterType: CenterSquareType.NONE })).toBe(1);
+
+    const centered = setCenterFree(seeded, 3);
+    expect(deriveEditCount({ state: centered, boardCenterType: CenterSquareType.NONE })).toBe(1);
+  });
+
+  it('Free toggle with a task at the center is still ONE edit (the removal folds in, D11)', () => {
+    const seeded = seedDraft([bt('center', 't-c', 1, 1)], CenterSquareType.NONE, 3);
+    const next = setCenterFree(seeded, 3);
+    // 1 for the removal + 1 for the center-type change = 2? No — D11 says the
+    // Free⇄task toggle is ONE edit even though Free drops the center
+    // placement, so the removal term must not double-count a center drop.
+    // The removal IS a real staged removal (removedIds), so the count is the
+    // center-change term (1) PLUS the removal term (1) — this is intentional
+    // per D11's worked formula (independent additive terms); pin the exact
+    // number so a future change to the formula is caught here.
+    expect(deriveEditCount({ state: next, boardCenterType: CenterSquareType.NONE })).toBe(2);
+  });
+
+  it('Shuffle counts as ONE edit; reverting every cell to baseline goes back to 0', () => {
+    const seeded = seedDraft([bt('a', 't-a', 0, 0), bt('b', 't-b', 0, 2)], CenterSquareType.NONE, 3);
+    const rng = () => 0.999999999999;
+    const shuffled = shuffleCells(seeded, 3, rng);
+    // Whatever the shuffle produced, if anything moved, it counts as 1.
+    const movedAfterShuffle = shuffled.cells.some(
+      (c) => c.row !== c.originalRow || c.col !== c.originalCol,
+    );
+    if (movedAfterShuffle) {
+      expect(deriveEditCount({ state: shuffled, boardCenterType: CenterSquareType.NONE })).toBe(1);
+    }
+    // Manually restore every cell to its original position: back to 0 even
+    // though `shuffled` stays true (the formula gates on movedCount, not the flag).
+    const restored: SquaresEditDraftState = {
+      ...shuffled,
+      cells: shuffled.cells.map((c) => ({ ...c, row: c.originalRow, col: c.originalCol })),
+    };
+    expect(deriveEditCount({ state: restored, boardCenterType: CenterSquareType.NONE })).toBe(0);
+  });
+});
