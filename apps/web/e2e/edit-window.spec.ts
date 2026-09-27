@@ -147,9 +147,12 @@ test.describe('Board-Edit preserves the board window (bugfix/edit-preserves-boar
 
     await page.screenshot({ path: '.playwright-mcp/edit-window-01.png' });
 
-    // ── 2. "…" → Board details… → change ONLY the name → Save. ──
-    await page.getByRole('button', { name: 'Board menu' }).click();
-    await page.getByRole('menuitem', { name: 'Board details…' }).click();
+    // ── 2. Edit → Board details… → change ONLY the name → Save. ──
+    await page.getByRole('button', { name: 'Edit board' }).click();
+    await page
+      .getByRole('group', { name: 'Board options' })
+      .getByRole('button', { name: 'Board details…', exact: true })
+      .click();
     const nameInput = page.locator('#bw-board-name');
     await expect(nameInput).toHaveValue(BOARD_NAME);
     await nameInput.fill(RENAMED_BOARD_NAME);
@@ -158,7 +161,11 @@ test.describe('Board-Edit preserves the board window (bugfix/edit-preserves-boar
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
 
-    // The sheet closes back to the normal play rail on a successful save.
+    // Edit consolidation (D9) — the sheet closes but the save stays IN
+    // Edit; exit (no dirty squares — Cancel exits immediately) to see the
+    // renamed heading + the play grid on the normal rail.
+    await expect(page.getByText('Board saved')).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel editing' }).click();
     await expect(page.getByRole('heading', { name: RENAMED_BOARD_NAME })).toBeVisible();
 
     // ── 3. THE BUG: the square must still be green — the window (and the ──

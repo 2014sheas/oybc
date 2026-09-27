@@ -1,7 +1,8 @@
 import Foundation
 
-/// One entry in the board title row's "…" menu (Board Edit redesign slice 2,
-/// D3 — docs/BOARD_EDIT_REDESIGN.md). Twin of web `BoardMenuItem` in
+/// One entry in the Edit screen's BOARD section (Board Edit redesign slice 2,
+/// D3, superseded by the Edit consolidation D6 — docs/BOARD_EDIT_REDESIGN.md).
+/// Twin of web `BoardMenuItem` in
 /// `apps/web/src/components/boardActions/boardMenu.ts`; the raw values are the
 /// web `kind` strings so the two case tables read line-for-line.
 enum BoardMenuItem: String, Identifiable, Equatable {
@@ -44,9 +45,87 @@ enum BoardMenuItem: String, Identifiable, Equatable {
     var isDestructive: Bool { self == .delete }
 }
 
-/// Pure builder for the board "…" menu (slice 2, D3 + D6). No DB, no view
-/// state — the caller passes the board and its resolved source record.
+/// Board Edit consolidation — dirty-squares-draft handling per BOARD-section
+/// row kind (D8). Decided once per row kind, not per board instance.
+enum BoardItemDraftPolicy: Equatable {
+    /// The sheet opens over the Edit screen; the squares draft is untouched
+    /// (both platforms' squares commits are field-level and never re-seed
+    /// the draft on reload) — `.details`, `.repeatBoard`, `.coreDefaults`.
+    case keep
+    /// The action leaves the screen, so the draft dies with it; when dirty
+    /// the confirm body gets `BoardMenuItems.discardSquaresSuffix` appended
+    /// — `.archive`, `.delete`.
+    case discardInConfirm
+    /// Only reachable with a dirty draft via the D3 race (squares were
+    /// editable at Edit entry, then the board ended/sealed mid-session):
+    /// show a "Discard changes?" confirm first — `.close`, `.reopen`.
+    case discardFirst
+}
+
+/// Pure builder for the Edit screen's BOARD section (slice 2, D3 + D6). No
+/// DB, no view state — the caller passes the board and its resolved source
+/// record.
 enum BoardMenuItems {
+
+    /// Board Edit consolidation (D2) — the Edit gate: any non-draft board.
+    /// Drafts never reach the play surface (the draft-resume prompt replaces
+    /// the header), so this only ever reads `false` for a draft in practice.
+    ///
+    /// - Parameter board: The board to test.
+    /// - Returns: `true` unless `board.status == .draft`.
+    static func showsEditButton(board: Board) -> Bool {
+        board.status != .draft
+    }
+
+    /// Board Edit consolidation (D3) — the SQUARES section gate, captured
+    /// once at Edit entry (it does not flip mid-session; a board that ends
+    /// or seals while the user edits keeps its squares section, and the
+    /// existing Save-time "Board closed" guard handles that race). Exactly
+    /// slice 4's D13 rule, named and shared instead of copied three times.
+    ///
+    /// - Parameters:
+    ///   - board: The board to test.
+    ///   - now: Current time (epoch ms).
+    /// - Returns: `true` iff the SQUARES grid should be editable.
+    static func canEditSquares(board: Board, now: Double) -> Bool {
+        board.status == .active && board.sealedAt == nil && !isBoardEnded(board, nowMs: now)
+    }
+
+    /// Board Edit consolidation (D4) — the muted explanation line shown in
+    /// place of the SQUARES grid when `canEditSquares` is false. Copy
+    /// verbatim from the design decision; `nil` when squares ARE editable.
+    ///
+    /// - Parameters:
+    ///   - board: The board to test.
+    ///   - now: Current time (epoch ms).
+    /// - Returns: The reason line, or `nil` when squares are editable.
+    static func squaresLockedReason(board: Board, now: Double) -> String? {
+        if canEditSquares(board: board, now: now) { return nil }
+        if board.status == .archived {
+            return "This board is archived, so its squares can't change."
+        }
+        if isBoardEnded(board, nowMs: now) || isBoardClosed(board) {
+            return "This board has ended, so its squares can't change."
+        }
+        return "This board is complete, so its squares can't change."
+    }
+
+    /// Board Edit consolidation (D8) — the dirty-squares-draft policy for a
+    /// given BOARD-section row kind. Pure lookup, not board-instance-aware.
+    ///
+    /// - Parameter kind: The row's `BoardMenuItem`.
+    /// - Returns: How that row should treat a dirty squares draft.
+    static func draftPolicy(for kind: BoardMenuItem) -> BoardItemDraftPolicy {
+        switch kind {
+        case .details, .repeatBoard, .coreDefaults: return .keep
+        case .archive, .delete: return .discardInConfirm
+        case .close, .reopen: return .discardFirst
+        }
+    }
+
+    /// Board Edit consolidation (D8) — appended verbatim to the Archive /
+    /// Delete confirm body when the squares draft is dirty.
+    static let discardSquaresSuffix = " Your unsaved square changes will be discarded."
 
     /// The menu rows for `board`, in display order (Board Edit redesign
     /// slice 4, D12 — extends slice 2's table with Ended/Closed rows).

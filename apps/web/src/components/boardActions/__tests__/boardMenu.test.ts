@@ -6,7 +6,17 @@ import {
   type Board,
   type RecurringBoardTemplate,
 } from '@oybc/shared';
-import { buildBoardMenuItems, isRepeatEligible, type BoardMenuItemKind } from '../boardMenu';
+import {
+  boardItemDraftPolicy,
+  buildBoardMenuItems,
+  canEditSquares,
+  DISCARD_SQUARES_SUFFIX,
+  isRepeatEligible,
+  showsEditButton,
+  squaresLockedReason,
+  type BoardItemDraftPolicy,
+  type BoardMenuItemKind,
+} from '../boardMenu';
 
 /**
  * Board Edit redesign slice 2 (T1) + slice 4 (T3, D12) — the title-row "…"
@@ -188,5 +198,112 @@ describe('isRepeatEligible', () => {
         true,
       ),
     ).toBe(true);
+  });
+});
+
+/**
+ * Edit consolidation (plan W1) — pure helpers backing the Edit screen. Case
+ * tables mirrored line-for-line with iOS `BoardMenuItemsTests`.
+ */
+
+// Board-state table shared by canEditSquares / squaresLockedReason /
+// showsEditButton / the invariant below.
+const STATES: Record<string, Board> = {
+  'active-live': makeBoard(),
+  'active-not-yet-ended': makeBoard({ endDate: new Date(NOW + 1000).toISOString() }),
+  'ended-unsealed': makeBoard({ endDate: '2026-01-31T23:59:59.999' }),
+  closed: makeBoard({ sealedAt: '2026-08-01T00:00:00.000Z' }),
+  archived: makeBoard({ status: BoardStatus.ARCHIVED }),
+  'archived-sealed': makeBoard({ status: BoardStatus.ARCHIVED, sealedAt: '2026-01-01T00:00:00.000Z' }),
+  'completed-unsealed': makeBoard({ status: BoardStatus.COMPLETED }),
+  draft: makeBoard({ status: BoardStatus.DRAFT }),
+};
+
+describe('canEditSquares', () => {
+  it('true only for an active, unsealed, not-yet-ended board', () => {
+    expect(canEditSquares(STATES['active-live'], NOW)).toBe(true);
+    expect(canEditSquares(STATES['active-not-yet-ended'], NOW)).toBe(true);
+    expect(canEditSquares(STATES['ended-unsealed'], NOW)).toBe(false);
+    expect(canEditSquares(STATES.closed, NOW)).toBe(false);
+    expect(canEditSquares(STATES.archived, NOW)).toBe(false);
+    expect(canEditSquares(STATES['archived-sealed'], NOW)).toBe(false);
+    expect(canEditSquares(STATES['completed-unsealed'], NOW)).toBe(false);
+    expect(canEditSquares(STATES.draft, NOW)).toBe(false);
+  });
+});
+
+describe('squaresLockedReason', () => {
+  it('null exactly when canEditSquares is true', () => {
+    expect(squaresLockedReason(STATES['active-live'], NOW)).toBeNull();
+    expect(squaresLockedReason(STATES['active-not-yet-ended'], NOW)).toBeNull();
+  });
+
+  it("ended or closed (not archived): \"This board has ended, so its squares can't change.\"", () => {
+    expect(squaresLockedReason(STATES['ended-unsealed'], NOW)).toBe(
+      "This board has ended, so its squares can't change.",
+    );
+    expect(squaresLockedReason(STATES.closed, NOW)).toBe(
+      "This board has ended, so its squares can't change.",
+    );
+  });
+
+  it("archived: \"This board is archived, so its squares can't change.\" — even when also ended/sealed", () => {
+    expect(squaresLockedReason(STATES.archived, NOW)).toBe(
+      "This board is archived, so its squares can't change.",
+    );
+    expect(squaresLockedReason(STATES['archived-sealed'], NOW)).toBe(
+      "This board is archived, so its squares can't change.",
+    );
+  });
+
+  it("completed (in window, unsealed): \"This board is complete, so its squares can't change.\"", () => {
+    expect(squaresLockedReason(STATES['completed-unsealed'], NOW)).toBe(
+      "This board is complete, so its squares can't change.",
+    );
+  });
+});
+
+describe('showsEditButton', () => {
+  it('false only for a draft board', () => {
+    for (const [name, board] of Object.entries(STATES)) {
+      expect(showsEditButton(board)).toBe(name !== 'draft');
+    }
+    expect(showsEditButton(makeBoard({ status: BoardStatus.DRAFT, isCore: true }))).toBe(false);
+  });
+});
+
+describe('boardItemDraftPolicy', () => {
+  it('covers every row kind', () => {
+    const expected: Record<BoardMenuItemKind, BoardItemDraftPolicy> = {
+      details: 'keep',
+      repeat: 'keep',
+      coreDefaults: 'keep',
+      archive: 'discardInConfirm',
+      delete: 'discardInConfirm',
+      close: 'discardFirst',
+      reopen: 'discardFirst',
+    };
+    for (const [kind, policy] of Object.entries(expected) as [BoardMenuItemKind, BoardItemDraftPolicy][]) {
+      expect(boardItemDraftPolicy(kind)).toBe(policy);
+    }
+  });
+});
+
+describe('DISCARD_SQUARES_SUFFIX', () => {
+  it('is the verbatim D8 sentence, leading-space so it appends cleanly', () => {
+    expect(DISCARD_SQUARES_SUFFIX).toBe(' Your unsaved square changes will be discarded.');
+  });
+});
+
+describe('invariant: canEditSquares ⇒ no close/reopen rows', () => {
+  it('holds for every state in the table', () => {
+    for (const board of Object.values(STATES)) {
+      if (!canEditSquares(board, NOW)) continue;
+      const kinds = buildBoardMenuItems({ board, sourceTemplate: undefined, templatesLoaded: true, now: NOW }).map(
+        (i) => i.kind,
+      );
+      expect(kinds).not.toContain('close');
+      expect(kinds).not.toContain('reopen');
+    }
   });
 });

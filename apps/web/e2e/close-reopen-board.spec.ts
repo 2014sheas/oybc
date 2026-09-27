@@ -1,17 +1,19 @@
-import { test, expect, seedBoard, seedTask, seedBoardTask, readBoard } from './_fixtures/bypass';
+import { test, expect, seedBoard, seedTask, seedBoardTask, readBoard, openBoardOption } from './_fixtures/bypass';
 
 /**
  * E2E coverage for the Board Edit redesign slice 4 (T3): Close / Reopen +
  * the closed-board direct late log (docs/BOARD_EDIT_REDESIGN.md; plan D3,
- * D6, D7, D10, D12–D15).
+ * D6, D7, D10, D12–D15). Edit consolidation (slice 5) moved Close/Reopen
+ * from the retired "…" menu into the Edit screen's BOARD section — updated
+ * below to open Edit first.
  *
  * Walks the owner's device checklist end to end on one ad-hoc monthly
  * board:
  *   ENDED pill + banner + "LEFT / Ended / … · still logging" stat card
- *   → "…" → Close board → CLOSED pill + "ENDED / … / permanent record"
+ *   → Edit → Close board → CLOSED pill + "ENDED / … / permanent record"
  *   → tap a normal square → "Mark done on board" → green, still CLOSED
  *   → tap again → "Undo late log" → grey
- *   → "…" → Reopen board (verbatim alert copy) → ENDED again.
+ *   → Edit → Reopen board (verbatim alert copy) → ENDED again.
  */
 
 const now = new Date();
@@ -51,13 +53,20 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     await expect(page.getByText(/Board ended on .+\. Still logging until you close it\./)).toBeVisible();
     await expect(page.getByText('Left', { exact: true })).toBeVisible();
     await expect(page.getByText(/· still logging/)).toBeVisible();
-    // No Edit squares on an ended board (D13).
-    await expect(page.getByRole('button', { name: 'Edit squares' })).toHaveCount(0);
+    // Edit consolidation (D2) — `Edit board` is now VISIBLE on an ended
+    // board (Edit is gated on "any non-draft board", not on squares being
+    // editable); entering it shows the D4 reason line instead of the
+    // squares grid, with no Save bar.
+    const editBtn = page.getByRole('button', { name: 'Edit board' });
+    await expect(editBtn).toBeVisible();
+    await editBtn.click();
+    await expect(page.getByText("This board has ended, so its squares can't change.")).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Shuffle' })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Board menu' }).click();
-    let menu = page.getByRole('menu', { name: 'Board menu' });
-    await expect(menu.getByRole('menuitem', { name: 'Close board' })).toBeVisible();
-    await menu.getByRole('menuitem', { name: 'Close board' }).click();
+    const group = page.getByRole('group', { name: 'Board options' });
+    await expect(group.getByRole('button', { name: 'Close board', exact: true })).toBeVisible();
+    await group.getByRole('button', { name: 'Close board', exact: true }).click();
 
     // ── CLOSED ──────────────────────────────────────────────────────────
     await expect(page.getByText('Closed', { exact: true })).toBeVisible();
@@ -95,9 +104,7 @@ test.describe('Close / Reopen a board (Board Edit redesign slice 4)', () => {
     expect(afterUndo?.sealedCompletedCells).not.toContain(0);
 
     // ── Reopen ──────────────────────────────────────────────────────────
-    await page.getByRole('button', { name: 'Board menu' }).click();
-    menu = page.getByRole('menu', { name: 'Board menu' });
-    await menu.getByRole('menuitem', { name: 'Reopen board' }).click();
+    await openBoardOption(page, 'Reopen board');
     const confirm = page.getByRole('alertdialog', { name: 'Reopen this board?' });
     await expect(confirm).toContainText(
       'It accepts logs again until you close it. Streaks and achievements that watch it will recompute.',

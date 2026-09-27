@@ -10,7 +10,9 @@ import {
   type TaskEvent,
 } from '@oybc/shared';
 import { db } from '../../internal';
-import { updateBoardAndCascade, type UpdateActiveBoardPatch } from '../boards';
+import { saveBoardDetails, updateBoardAndCascade, type UpdateActiveBoardPatch } from '../boards';
+import { commitSquareEdits } from '../boardEditCommit';
+import type { SquareDraftCell } from '../../../hooks/squareEditCount';
 
 /**
  * bugfix/edit-preserves-board-window — regression coverage for the
@@ -252,5 +254,136 @@ describe('Board-Edit window preservation (bugfix/edit-preserves-board-window)', 
     // The completion (2 days ago) now predates the new custom start (1 day
     // ago) — correctly excluded, since the user explicitly moved the window.
     expect(board!.completedTasks).toBe(0);
+  });
+});
+
+/**
+ * Edit consolidation (plan W3) — pins D8's `keep` policy for
+ * details/repeat/coreDefaults rows: opening "Board details…" from the Edit
+ * screen and saving it does NOT clobber a squares-editor draft still open in
+ * the same session, because the two commits (`saveBoardDetails` and
+ * `commitSquareEdits`) are field-level and independently atomic. Mirrors the
+ * iOS `BoardPlayViewModelTests` regression (I3).
+ */
+describe('Board-Edit — Board details save + squares-editor save compose (Edit consolidation D8 "keep")', () => {
+  it('saveBoardDetails (name + dates) then commitSquareEdits (replace + lock + center patch): both persist, version strictly increases each write', async () => {
+    await seedBoard();
+    await db.tasks.bulkAdd([
+      {
+        id: 'task-A',
+        userId: 'user-1',
+        title: 'Task A',
+        type: TaskType.NORMAL,
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: daysAgoISO(5),
+        updatedAt: daysAgoISO(5),
+        version: 1,
+        isDeleted: false,
+      },
+      {
+        id: 'task-B',
+        userId: 'user-1',
+        title: 'Task B',
+        type: TaskType.NORMAL,
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: daysAgoISO(5),
+        updatedAt: daysAgoISO(5),
+        version: 1,
+        isDeleted: false,
+      },
+      {
+        id: 'task-C',
+        userId: 'user-1',
+        title: 'Task C',
+        type: TaskType.NORMAL,
+        isCompleted: false,
+        totalCompletions: 0,
+        totalInstances: 0,
+        createdAt: daysAgoISO(5),
+        updatedAt: daysAgoISO(5),
+        version: 1,
+        isDeleted: false,
+      },
+    ]);
+    await seedPlacement('bt-A', 'task-A', 0, 0);
+    await seedPlacement('bt-B', 'task-B', 0, 1);
+
+    const versionAfterSeed = (await db.boards.get('board-1'))!.version;
+
+    // ── 1. Board details… → rename + change dates → Save. ──
+    const newStart = daysAgoISO(3);
+    const newEnd = daysFromNowISO(4);
+    const detailsPatch: UpdateActiveBoardPatch = {
+      name: 'Renamed from Edit',
+      centerSquareType: CenterSquareType.NONE,
+      timeframe: Timeframe.WEEKLY,
+      startDate: newStart,
+      endDate: newEnd,
+    };
+    await saveBoardDetails('board-1', detailsPatch);
+
+    const afterDetails = await db.boards.get('board-1');
+    expect(afterDetails!.name).toBe('Renamed from Edit');
+    expect(afterDetails!.startDate).toBe(newStart);
+    expect(afterDetails!.endDate).toBe(newEnd);
+    expect(afterDetails!.version).toBeGreaterThan(versionAfterSeed);
+
+    // ── 2. Still in Edit — the squares-editor draft (staged BEFORE the
+    //    details save opened, per D8 "keep": the draft is untouched by it)
+    //    now commits: replace bt-A's task, lock bt-B in place, and flip the
+    //    center to FREE. ──
+    const cells: SquareDraftCell[] = [
+      {
+        cellId: 'bt-A',
+        row: 0,
+        col: 0,
+        taskId: 'task-C',
+        isLocked: false,
+        originalTaskId: 'task-A',
+        originalRow: 0,
+        originalCol: 0,
+        originalLocked: false,
+      },
+      {
+        cellId: 'bt-B',
+        row: 0,
+        col: 1,
+        taskId: 'task-B',
+        isLocked: true,
+        originalTaskId: 'task-B',
+        originalRow: 0,
+        originalCol: 1,
+        originalLocked: false,
+      },
+    ];
+    await commitSquareEdits({
+      boardId: 'board-1',
+      cells,
+      removedBoardTaskIds: [],
+      taskOverrides: new Map(),
+      isLegacyChosenOnDisk: false,
+      centerCellKeepLocked: false,
+      centerPatch: { centerSquareType: CenterSquareType.FREE },
+    });
+
+    // ── 3. Both changes stuck: the Details name/dates survive the squares
+    //    commit (D8 "keep" — commitSquareEdits only patches placements + the
+    //    center type, never re-sends name/timeframe/dates), AND the squares
+    //    edit landed. Version strictly increased on EACH write. ──
+    const afterSquares = await db.boards.get('board-1');
+    expect(afterSquares!.name).toBe('Renamed from Edit');
+    expect(afterSquares!.startDate).toBe(newStart);
+    expect(afterSquares!.endDate).toBe(newEnd);
+    expect(afterSquares!.centerSquareType).toBe(CenterSquareType.FREE);
+    expect(afterSquares!.version).toBeGreaterThan(afterDetails!.version);
+
+    const replacedPlacement = await db.boardTasks.get('bt-A');
+    expect(replacedPlacement!.taskId).toBe('task-C');
+    const lockedPlacement = await db.boardTasks.get('bt-B');
+    expect(lockedPlacement!.isLocked).toBe(true);
   });
 });

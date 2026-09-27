@@ -1272,6 +1272,73 @@ final class BoardPlayViewModelTests: XCTestCase {
         XCTAssertEqual(normal.title, "Renamed normal", "the title still commits")
     }
 
+    // MARK: - I3 (Board Edit consolidation, D8 `keep`) — Board details Save
+    // then squares Save, both from the same Edit session
+
+    /// D8 `keep` — the Board details sheet opens OVER the Edit screen and
+    /// commits independently (`saveBoardDetails` is its own atomic write);
+    /// the squares draft is untouched and the user stays in Edit. Pins that
+    /// a details save followed by a squares save persists BOTH: the details
+    /// name/dates AND the staged square change, with `version` strictly
+    /// increasing on each write. Mirrors web's
+    /// `boardEditWindowPreservation.test.ts` W3 extension.
+    func test_boardDetailsSave_thenSquaresSave_bothPersist() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        try db.saveBoard(makeBoard(id: "b1"))     // 3×3, FREE center, monthly, "Board b1"
+        try db.saveTask(makeTask("t1"))
+        try db.saveTask(makeTask("t2"))
+        try db.saveBoardTask(makeBoardTask(id: "bt1", boardId: "b1", taskId: "t1", row: 0, col: 0))
+
+        let vm = loadedVM(db, boardId: "b1")
+        let board = try XCTUnwrap(vm.board)
+        let versionBeforeDetails = board.version
+        vm.seedEditDraft(from: board)
+
+        // 0. A square replacement is staged BEFORE the Board details sheet
+        //    opens — the D8 `keep` claim is that the details save (and the
+        //    `reload()` it triggers) leaves this draft alone.
+        vm.handleEditReplace(cellKey: "0-0", taskId: "t2")
+        XCTAssertEqual(vm.editSquaresEditCount, 1)
+
+        // 1. "Board details" sheet save (D8 `keep` — independent of the
+        //    squares draft, which is untouched by this write).
+        let detailsExpectation = expectation(description: "saveBoardDetails")
+        _Concurrency.Task {
+            try await vm.saveBoardDetails(.init(
+                name: "Renamed via Details",
+                startDate: "2026-05-01T00:00:00.000",
+                endDate: "2026-05-31T23:59:59.999"
+            ))
+            detailsExpectation.fulfill()
+        }
+        wait(for: [detailsExpectation], timeout: 5)
+
+        let afterDetails = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(afterDetails.name, "Renamed via Details")
+        XCTAssertEqual(afterDetails.startDate, "2026-05-01T00:00:00.000")
+        XCTAssertGreaterThan(afterDetails.version, versionBeforeDetails, "details save bumps version")
+
+        // Still in Edit with the draft intact (D8 `keep`): the replacement
+        // staged before the details save is still pending.
+        XCTAssertEqual(vm.editSquaresEditCount, 1, "the details save left the squares draft untouched")
+        let bt0 = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
+        XCTAssertEqual(bt0.taskId, "t1", "the staged replacement is not written by the details save")
+
+        // 2. Squares Save.
+        XCTAssertTrue(vm.handleEditSave(), "squares save should dispatch")
+        XCTAssertTrue(waitUntil { vm.editEvent?.outcome == .saved },
+                      "handleEditSave never emitted .saved")
+
+        let final = try XCTUnwrap(db.fetchBoard(id: "b1"))
+        XCTAssertEqual(final.name, "Renamed via Details", "the Details name survives the squares save")
+        XCTAssertEqual(final.startDate, "2026-05-01T00:00:00.000", "the Details window survives the squares save")
+        XCTAssertGreaterThan(final.version, afterDetails.version, "squares save bumps version again")
+
+        let bt = try XCTUnwrap(db.fetchBoardTasks(boardId: "b1").first { $0.id == "bt1" })
+        XCTAssertEqual(bt.taskId, "t2", "the staged square replacement committed")
+    }
+
     // MARK: - P0: Board Edit must never rewrite an achievement's type
 
     private func makeAchievementTask(

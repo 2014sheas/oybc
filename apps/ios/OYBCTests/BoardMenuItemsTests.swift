@@ -1,7 +1,7 @@
 import XCTest
 @testable import OYBC
 
-/// Board Edit redesign slice 2 (T1) — the pure "…" menu builder
+/// Board Edit redesign slice 2 (T1) — the pure BOARD-section builder
 /// (`BoardMenuItems`). Same case table as web `boardMenu.test.ts`.
 final class BoardMenuItemsTests: XCTestCase {
 
@@ -151,5 +151,155 @@ final class BoardMenuItemsTests: XCTestCase {
         XCTAssertEqual(BoardMenuItem.repeatBoard.rawValue, "repeat")
         XCTAssertTrue(BoardMenuItem.delete.isDestructive)
         XCTAssertFalse(BoardMenuItem.archive.isDestructive)
+    }
+
+    // MARK: - Edit consolidation (I1) — canEditSquares / squaresLockedReason /
+    // showsEditButton / draftPolicy. Case table mirrored line-for-line with
+    // web `boardMenu.test.ts`.
+
+    func test_canEditSquares_activeLive() {
+        XCTAssertTrue(BoardMenuItems.canEditSquares(board: makeBoard(), now: liveNowMs))
+    }
+
+    /// A board past its `endDate` at a LATER `now` still reads as editable
+    /// at an earlier `now` — same board, different instant.
+    func test_canEditSquares_activeNotYetEnded() {
+        let board = makeBoard(endDate: "2020-01-31T23:59:59.999")
+        XCTAssertTrue(BoardMenuItems.canEditSquares(board: board, now: ms("2020-01-01T00:00:00.000Z")))
+    }
+
+    func test_canEditSquares_endedUnsealed_false() {
+        let board = makeBoard(endDate: "2020-01-31T23:59:59.999")
+        XCTAssertFalse(BoardMenuItems.canEditSquares(board: board, now: endedNowMs))
+    }
+
+    func test_canEditSquares_closed_false() {
+        let board = makeBoard(sealedAt: "2026-10-01T06:00:00.000Z")
+        XCTAssertFalse(BoardMenuItems.canEditSquares(board: board, now: liveNowMs))
+    }
+
+    func test_canEditSquares_archived_false() {
+        XCTAssertFalse(BoardMenuItems.canEditSquares(board: makeBoard(status: .archived), now: liveNowMs))
+    }
+
+    func test_canEditSquares_archivedSealed_false() {
+        let board = makeBoard(status: .archived, sealedAt: "2026-10-01T06:00:00.000Z")
+        XCTAssertFalse(BoardMenuItems.canEditSquares(board: board, now: liveNowMs))
+    }
+
+    func test_canEditSquares_completedUnsealed_false() {
+        XCTAssertFalse(BoardMenuItems.canEditSquares(board: makeBoard(status: .completed), now: liveNowMs))
+    }
+
+    func test_canEditSquares_draft_false() {
+        XCTAssertFalse(BoardMenuItems.canEditSquares(board: makeBoard(status: .draft), now: liveNowMs))
+    }
+
+    func test_squaresLockedReason_editable_nil() {
+        XCTAssertNil(BoardMenuItems.squaresLockedReason(board: makeBoard(), now: liveNowMs))
+    }
+
+    func test_squaresLockedReason_endedUnsealed() {
+        let board = makeBoard(endDate: "2020-01-31T23:59:59.999")
+        XCTAssertEqual(
+            BoardMenuItems.squaresLockedReason(board: board, now: endedNowMs),
+            "This board has ended, so its squares can't change."
+        )
+    }
+
+    func test_squaresLockedReason_closed() {
+        let board = makeBoard(sealedAt: "2026-10-01T06:00:00.000Z")
+        XCTAssertEqual(
+            BoardMenuItems.squaresLockedReason(board: board, now: liveNowMs),
+            "This board has ended, so its squares can't change."
+        )
+    }
+
+    func test_squaresLockedReason_archived() {
+        XCTAssertEqual(
+            BoardMenuItems.squaresLockedReason(board: makeBoard(status: .archived), now: liveNowMs),
+            "This board is archived, so its squares can't change."
+        )
+    }
+
+    /// Archived wins over ended/closed copy even when both are true.
+    func test_squaresLockedReason_archivedSealed_isArchivedCopy() {
+        let board = makeBoard(status: .archived, sealedAt: "2026-10-01T06:00:00.000Z")
+        XCTAssertEqual(
+            BoardMenuItems.squaresLockedReason(board: board, now: liveNowMs),
+            "This board is archived, so its squares can't change."
+        )
+    }
+
+    func test_squaresLockedReason_completedUnsealed() {
+        XCTAssertEqual(
+            BoardMenuItems.squaresLockedReason(board: makeBoard(status: .completed), now: liveNowMs),
+            "This board is complete, so its squares can't change."
+        )
+    }
+
+    func test_showsEditButton_falseOnlyForDraft() {
+        XCTAssertTrue(BoardMenuItems.showsEditButton(board: makeBoard(status: .active)))
+        XCTAssertTrue(BoardMenuItems.showsEditButton(board: makeBoard(status: .completed)))
+        XCTAssertTrue(BoardMenuItems.showsEditButton(board: makeBoard(status: .archived)))
+        XCTAssertTrue(BoardMenuItems.showsEditButton(
+            board: makeBoard(sealedAt: "2026-10-01T06:00:00.000Z")))
+        XCTAssertFalse(BoardMenuItems.showsEditButton(board: makeBoard(status: .draft)))
+    }
+
+    func test_draftPolicy_allSevenKinds() {
+        XCTAssertEqual(BoardMenuItems.draftPolicy(for: .details), .keep)
+        XCTAssertEqual(BoardMenuItems.draftPolicy(for: .repeatBoard), .keep)
+        XCTAssertEqual(BoardMenuItems.draftPolicy(for: .coreDefaults), .keep)
+        XCTAssertEqual(BoardMenuItems.draftPolicy(for: .archive), .discardInConfirm)
+        XCTAssertEqual(BoardMenuItems.draftPolicy(for: .delete), .discardInConfirm)
+        XCTAssertEqual(BoardMenuItems.draftPolicy(for: .close), .discardFirst)
+        XCTAssertEqual(BoardMenuItems.draftPolicy(for: .reopen), .discardFirst)
+    }
+
+    func test_discardSquaresSuffix_copy() {
+        XCTAssertEqual(BoardMenuItems.discardSquaresSuffix, " Your unsaved square changes will be discarded.")
+    }
+
+    /// Invariant: whenever squares are editable, the BOARD section never
+    /// offers Close or Reopen (those rows only exist when `canEditSquares`
+    /// is false — D3/D8's `discardFirst` reasoning depends on this).
+    func test_invariant_canEditSquares_impliesNoCloseOrReopen() {
+        let cases: [(Board, Double)] = [
+            (makeBoard(), liveNowMs),
+            (makeBoard(endDate: "2020-01-31T23:59:59.999"), ms("2020-01-01T00:00:00.000Z")),
+            (makeBoard(isCore: true), liveNowMs),
+        ]
+        for (board, now) in cases {
+            guard BoardMenuItems.canEditSquares(board: board, now: now) else { continue }
+            let kinds = items(board, now: now)
+            XCTAssertFalse(kinds.contains(.close), "canEditSquares true but Close offered: \(board)")
+            XCTAssertFalse(kinds.contains(.reopen), "canEditSquares true but Reopen offered: \(board)")
+        }
+    }
+
+    // MARK: - BoardAction routing (Edit consolidation D8 `discardFirst`)
+
+    /// Every BOARD-section row maps to exactly one presenter action — the
+    /// same table `handleBoardItem` and the post-Discard re-route share.
+    func test_boardAction_routedFromEveryRow() {
+        XCTAssertEqual(BoardAction.routed(from: .close), .close)
+        XCTAssertEqual(BoardAction.routed(from: .reopen), .confirmReopen)
+        XCTAssertEqual(BoardAction.routed(from: .details), .details)
+        XCTAssertEqual(BoardAction.routed(from: .repeatBoard), .repeatBoard)
+        XCTAssertEqual(BoardAction.routed(from: .coreDefaults), .coreDefaults)
+        XCTAssertEqual(BoardAction.routed(from: .archive), .confirmArchive)
+        XCTAssertEqual(BoardAction.routed(from: .delete), .confirmDelete)
+    }
+
+    /// The "Discard changes?" confirm's target is read from the action
+    /// itself (captured when the alert presents), so Discard never depends on
+    /// `activeAction` still holding `.confirmDiscard` when the button fires —
+    /// SwiftUI may already have cleared it through the alert's binding.
+    func test_boardAction_discardTarget() {
+        XCTAssertEqual(BoardAction.confirmDiscard(then: .close).discardTarget, .close)
+        XCTAssertEqual(BoardAction.confirmDiscard(then: .reopen).discardTarget, .reopen)
+        XCTAssertNil(BoardAction.close.discardTarget)
+        XCTAssertNil(BoardAction.confirmReopen.discardTarget)
     }
 }

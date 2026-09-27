@@ -10,8 +10,14 @@ import styles from './BoardEditPanel.module.css';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface BoardEditPanelProps {
-  /** The ACTIVE board being edited. */
+  /** The board being edited. */
   board: Board;
+  /** Edit consolidation (plan D3/D4) — whether the SQUARES section is
+   *  editable this session (`canEditSquares`, captured once at Edit entry).
+   *  When false: the top-left control reads `Done` (not `Cancel`) and calls
+   *  `onCancel` directly, and no save row / hints / discard card render —
+   *  there is nothing to save or discard. */
+  squaresEditable: boolean;
   /** Number of staged square edits (D11 — replacements + adds + removals +
    *  task overrides + lock changes + a center change + position edits). */
   editCount: number;
@@ -45,18 +51,26 @@ export interface BoardEditPanelProps {
 /**
  * BoardEditPanel — left-rail edit chrome shown in place of the play stats
  * rail while the board is in edit mode. Board Edit redesign slice 3 (D7)
- * retires the Edit tasks ⇄ Rearrange sub-mode toggle — there is ONE grid
- * now (`SquaresEditGrid`, rendered by `BoardPlaySurface`), so this panel is
- * just the Cancel/Editing header + the D18 save bar (edit count · Shuffle ·
- * responsive hint · Save changes).
+ * retired the Edit tasks ⇄ Rearrange sub-mode toggle — there is ONE grid
+ * now (`SquaresEditGrid`, rendered by `BoardEditColumn`), so this panel is
+ * just the Cancel/Done + Editing header + (when `squaresEditable`) the D18
+ * save bar (edit count · Shuffle · responsive hint · Save changes). Edit
+ * consolidation (plan D4/D5) added the non-editable variant — `squaresEditable
+ * = false` on an ended/closed/archived/completed board, where the header's
+ * `Done` just exits Edit; the BOARD section (rendered by `BoardEditColumn`)
+ * is the only thing left to do there.
  *
- * @param board - The ACTIVE board to edit. Must be non-null.
- * @param onCancel - Called on clean cancel, after Discard confirm, or after
- *   a save that finds the board sealed/deleted (D11).
+ * @param board - The board being edited. Must be non-null.
+ * @param squaresEditable - Whether the SQUARES section is editable this
+ *   session (see the prop doc for the non-editable variant).
+ * @param onCancel - Called on clean cancel, after Discard confirm, on
+ *   `Done` (non-editable variant), or after a save that finds the board
+ *   sealed/deleted (D11).
  * @param onSaved - Called after a successful save.
  */
 export function BoardEditPanel({
   board,
+  squaresEditable,
   editCount,
   canShuffle,
   onShuffle,
@@ -124,7 +138,7 @@ export function BoardEditPanel({
   return (
     <div className={styles.panel}>
       {/* Portaled: the panel sits in the sticky rail, whose stacking context
-          would trap a fixed backdrop behind the grid (see BoardTitleActions). */}
+          would trap a fixed backdrop behind the grid (see BoardOptionsSection). */}
       {boardClosed &&
         createPortal(
           <BoardActionConfirmDialog
@@ -137,83 +151,101 @@ export function BoardEditPanel({
           />,
           document.body,
         )}
-      {/* Header: Cancel + "Editing squares" gold pill with red dot */}
+      {/* Header: Cancel/Done + "Editing" gold pill with red dot (D5) */}
       <div className={styles.editbar}>
-        <button
-          type="button"
-          className={styles.cancelBtn}
-          onClick={requestCancel}
-          disabled={saving || boardClosed}
-          aria-label="Cancel editing"
-          /* move focus into the panel on entry — the Edit button that had focus
-             just unmounted, so without this keyboard focus drops to <body>. */
-          autoFocus
-        >
-          ← Cancel
-        </button>
+        {squaresEditable ? (
+          <button
+            type="button"
+            className={styles.cancelBtn}
+            onClick={requestCancel}
+            disabled={saving || boardClosed}
+            aria-label="Cancel editing"
+            /* move focus into the panel on entry — the Edit button that had focus
+               just unmounted, so without this keyboard focus drops to <body>. */
+            autoFocus
+          >
+            ← Cancel
+          </button>
+        ) : (
+          // D4 — nothing to save/discard when the squares section is hidden;
+          // the top-left control just exits Edit.
+          <button
+            type="button"
+            className={styles.cancelBtn}
+            onClick={onCancel}
+            aria-label="Done editing"
+            autoFocus
+          >
+            ← Done
+          </button>
+        )}
         <span className={styles.editingPill} aria-label="Board is in edit mode">
-          Editing squares
+          Editing
         </span>
       </div>
 
-      {/* Validation error banner */}
-      {validationError && (
-        <p className={styles.validationError} role="alert">
-          {validationError}
-        </p>
-      )}
-
-      {/* Inline confirm card or Save bar (D18) */}
-      {confirm === 'cancel' ? (
-        <div className={styles.confirmCard} role="group" aria-label="Discard changes?">
-          <div className={styles.confirmTitle}>Discard changes?</div>
-          <p className={styles.confirmBody}>
-            Your unsaved changes will be lost.
-          </p>
-          <div className={styles.confirmBtns}>
-            <RisoButton size="small" autoFocus onClick={() => setConfirm(null)}>
-              Keep editing
-            </RisoButton>
-            <RisoButton kind="primary" size="small" onClick={onCancel}>
-              Discard
-            </RisoButton>
-          </div>
-        </div>
-      ) : (
+      {squaresEditable && (
         <>
-          {/* Save row: N edits counter + Shuffle + Save button (D18) */}
-          <div className={styles.saveRow}>
-            <div className={styles.editCounter} aria-live="polite" aria-label={editCount === 0 ? 'No changes' : `${editCount} edit${editCount === 1 ? '' : 's'}`}>
-              <div className={styles.editCount}>{editCount}</div>
-              <div className={styles.editLabel}>{editCount === 0 ? 'no changes' : `edit${editCount === 1 ? '' : 's'}`}</div>
-            </div>
-            <RisoButton
-              kind="neutral"
-              size="small"
-              icon={<RisoIcon name="shuffle" size={14} />}
-              disabled={!canShuffle || saving || boardClosed}
-              onClick={onShuffle}
-            >
-              Shuffle
-            </RisoButton>
-            <RisoButton
-              kind="primary"
-              fullWidth
-              disabled={!canSave}
-              onClick={() => void handleSave()}
-            >
-              {saving ? 'Saving…' : 'Save changes'}
-            </RisoButton>
-          </div>
+          {/* Validation error banner */}
+          {validationError && (
+            <p className={styles.validationError} role="alert">
+              {validationError}
+            </p>
+          )}
 
-          {/* D18 — responsive hint: desktop explains Shuffle's mechanics,
-              phone keeps it to the tap/hold gesture. */}
-          <p className={`${styles.hint} ${styles.hintDesktop}`}>
-            Shuffle rearranges every square except locked ones. Nothing is written until you save.
-          </p>
-          <p className={`${styles.hint} ${styles.hintPhone}`}>
-            Tap a square for options. Hold to move it.
-          </p>
+          {/* Inline confirm card or Save bar (D18) */}
+          {confirm === 'cancel' ? (
+            <div className={styles.confirmCard} role="group" aria-label="Discard changes?">
+              <div className={styles.confirmTitle}>Discard changes?</div>
+              <p className={styles.confirmBody}>
+                Your unsaved changes will be lost.
+              </p>
+              <div className={styles.confirmBtns}>
+                <RisoButton size="small" autoFocus onClick={() => setConfirm(null)}>
+                  Keep editing
+                </RisoButton>
+                <RisoButton kind="primary" size="small" onClick={onCancel}>
+                  Discard
+                </RisoButton>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Save row: N edits counter + Shuffle + Save button (D18) */}
+              <div className={styles.saveRow}>
+                <div className={styles.editCounter} aria-live="polite" aria-label={editCount === 0 ? 'No changes' : `${editCount} edit${editCount === 1 ? '' : 's'}`}>
+                  <div className={styles.editCount}>{editCount}</div>
+                  <div className={styles.editLabel}>{editCount === 0 ? 'no changes' : `edit${editCount === 1 ? '' : 's'}`}</div>
+                </div>
+                <RisoButton
+                  kind="neutral"
+                  size="small"
+                  icon={<RisoIcon name="shuffle" size={14} />}
+                  disabled={!canShuffle || saving || boardClosed}
+                  onClick={onShuffle}
+                >
+                  Shuffle
+                </RisoButton>
+                <RisoButton
+                  kind="primary"
+                  fullWidth
+                  disabled={!canSave}
+                  onClick={() => void handleSave()}
+                >
+                  {saving ? 'Saving…' : 'Save changes'}
+                </RisoButton>
+              </div>
+
+              {/* D18 — responsive hint: desktop explains Shuffle's mechanics,
+                  phone keeps it to the tap/hold gesture. */}
+              <p className={`${styles.hint} ${styles.hintDesktop}`}>
+                Shuffle rearranges every square except locked ones. Nothing is written until you save.
+              </p>
+              <p className={`${styles.hint} ${styles.hintPhone}`}>
+                Tap a square for options. Hold to move it.
+              </p>
+            </>
+          )}
         </>
       )}
     </div>
