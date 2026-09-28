@@ -296,8 +296,8 @@ modals) are **4b-ii-b**.
   `FilterTabs`→`RisoChip` (filter + group-subtasks chips — same swap as 4a) and
   the shared `TypeBadge`→the new `RisoTypeBadge` (extracted, see below).
 - **New shared `components/riso/RisoTypeBadge.tsx`** — the square N/C/K/A type
-  badge, color-coded (normal paper / counting blue / compound green / achievement
-  purple), `aria-hidden`. **Extract-at-three:** 4a's `TaskRow` had an inline copy;
+  badge, color-coded (normal paper / counting blue / compound green — orange since the
+  compound-orange pass, `--riso-orange` / achievement purple), `aria-hidden`. **Extract-at-three:** 4a's `TaskRow` had an inline copy;
   this PR refactors `TaskRow` to consume the shared component too (removing its
   `.tbadge*` CSS + `badgeLetter`/`badgeClass` helpers), so library + wizard share
   one badge source.
