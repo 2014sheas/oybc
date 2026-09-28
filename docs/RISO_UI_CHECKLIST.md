@@ -37,7 +37,9 @@ dark) is `RisoKitGallery` / `RisoKitSnapshotTests`.
       lightened and static cream would fall to ~1.9:1 (green) / 2.6:1 (red).
       This is a deliberate divergence from web's static `--riso-on-color`
       (ROADMAP C8, decided 2026-09). `risoOnColor` stays for the initials
-      avatar only. On gold it is `risoInkStatic`; on an ink fill, `risoPaper`.
+      avatar only. On gold — and on `risoOrange` (the compound task type, also a
+      light fill in both schemes) — it is `risoInkStatic`; on an ink fill,
+      `risoPaper`.
 - [ ] **Fonts** are `.risoHead(...)` / `.risoBody(...)`. Never
       `.system(size:)`, `.font(.headline)`, or bare `.fontWeight(...)`.
 - [ ] **Radius** = `Riso.cardRadius` (cards/controls) or `Riso.cellRadius`

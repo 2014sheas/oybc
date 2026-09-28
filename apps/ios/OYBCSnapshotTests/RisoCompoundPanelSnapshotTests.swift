@@ -192,7 +192,8 @@ final class RisoCompoundPanelSnapshotTests: XCTestCase {
 
     /// Wraps `RisoCompoundFieldsView` in the same panel card + header chrome
     /// the user sees when the Compound chip is selected in `RisoSpecialTaskPanel`.
-    /// The type-chip row is rendered statically (Compound = selected/green).
+    /// The type-chip row is rendered statically (Compound = selected/orange),
+    /// mirroring `RisoSpecialTaskPanel.typeChip` (fill + foreground from `RisoTaskKind`).
     private func makeHost(seed: CompoundSeed) -> some View {
         let library = SnapshotFixtures.makeCompoundSnapshotLibrary()
         return CompoundPanelHost(seed: seed.fieldSeed, taskLibrary: library)
@@ -366,7 +367,7 @@ private struct CompoundPanelHost: View {
     private func staticTypeChip(_ label: String, kind: RisoTaskKind, isOn: Bool) -> some View {
         Text(label)
             .font(.risoHead(12, .bold))
-            .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
+            .foregroundStyle(isOn ? kind.foreground : Color.risoInk)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 7)
             .background(

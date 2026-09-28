@@ -1,5 +1,7 @@
 # Handoff: OYBC "Riso" Design Overhaul
 
+> **Superseded (2026-09-27):** the compound task type is now **orange** (`--riso-orange` / `Color.risoOrange`, gold contract: ink-static text), not green; green is reserved for success/win states. See `docs/RISO_WEB.md` tokens.
+
 ## Overview
 
 A complete visual redesign of OYBC (bingo-board habit/goal tracker for iOS) in the **"Riso" direction**: a bold risograph-print poster aesthetic — cream paper, hard black keylines, hard offset shadows, halftone overprint texture, and a confident three-ink palette. The core design principle is **escalation**: the resting UI is quiet paper, and ink "detonates" as the user completes squares, hits bingos, and finally GREENLOGs a board. Loudness is earned, never ambient.

@@ -367,8 +367,8 @@
   color: var(--riso-on-color);
 }
 .soTypeBadge.cmnd {
-  background: var(--riso-green);
-  color: var(--riso-on-color);
+  background: var(--riso-orange);
+  color: var(--riso-ink-static);
 }
 .soTypeBadge.achv {
   background: var(--riso-achievement);

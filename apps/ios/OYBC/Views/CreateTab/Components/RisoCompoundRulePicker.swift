@@ -72,10 +72,12 @@ struct RisoCompoundRulePicker: View {
         } label: {
             Text(choice.rawValue)
                 .font(.risoHead(11, .bold))
-                .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
+                // Selected = compound type colour; orange is a light fill
+                // (gold contract) → static ink, never paper/adaptive ink.
+                .foregroundStyle(isOn ? Color.risoInkStatic : Color.risoInk)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 9)
-                .background(Capsule().fill(isOn ? Color.risoGreen : Color.risoPaper))
+                .background(Capsule().fill(isOn ? Color.risoOrange : Color.risoPaper))
                 .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
         }
         .buttonStyle(.plain)

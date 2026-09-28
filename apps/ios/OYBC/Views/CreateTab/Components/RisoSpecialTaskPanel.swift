@@ -177,7 +177,9 @@ struct RisoSpecialTaskPanel: View {
         } label: {
             Text(type.rawValue)
                 .font(.risoHead(12, .bold))
-                .foregroundStyle(isOn ? Color.risoPaper : Color.risoInk)
+                // kind.foreground: paper on blue/purple, static ink on the
+                // light orange compound fill (gold contract).
+                .foregroundStyle(isOn ? kind.foreground : Color.risoInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 7)
                 .background(

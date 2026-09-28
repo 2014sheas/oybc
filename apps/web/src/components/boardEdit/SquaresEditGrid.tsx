@@ -279,6 +279,8 @@ export function SquaresEditGrid({
               type="button"
               data-cid={slot.cellId}
               data-wbcell={i}
+              data-done={slot.model?.done && !slot.model.isFree ? 'true' : undefined}
+              data-type={slot.model?.type}
               className={wrapperClassName}
               aria-label={ariaLabel}
               onPointerDown={(e) => onPointerDown(i, e)}

@@ -29,8 +29,8 @@
   color: var(--riso-on-color);
 }
 .typeBadgeCompound {
-  background: var(--riso-green);
-  color: var(--riso-on-color);
+  background: var(--riso-orange);
+  color: var(--riso-ink-static);
 }
 .typeBadgeAchievement {
   background: var(--riso-achievement);

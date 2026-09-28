@@ -71,7 +71,8 @@ export function RisoKitPlayground(): React.ReactElement {
           <RisoButton kind="primary">Start a board</RisoButton>
           <RisoButton kind="neutral">Board details</RisoButton>
           <RisoButton kind="blue">Counting</RisoButton>
-          <RisoButton kind="green">Compound</RisoButton>
+          <RisoButton kind="green">Success</RisoButton>
+          <RisoButton kind="orange">Compound</RisoButton>
           <RisoButton kind="gold">Bingo</RisoButton>
           <RisoButton kind="ghost">Ghost</RisoButton>
           <RisoButton kind="primary" disabled>

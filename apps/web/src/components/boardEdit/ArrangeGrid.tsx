@@ -408,6 +408,8 @@ export function ArrangeGrid({
               key={slot.cid}
               data-cid={slot.cid}
               data-wbcell={i}
+              data-done={slot.model?.done && !slot.model.isFree ? 'true' : undefined}
+              data-type={slot.model?.type}
               className={wrapperClassName}
               {...(rearrange
                 ? {
