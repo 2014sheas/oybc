@@ -720,19 +720,31 @@ Rule for all three: **shrink the baseline as you clean up (the scripts emit a no
 Xcode Cloud builds whatever lands on **`release/testflight`** and delivers it to
 the internal TestFlight Dev group (config facts + traps: memory
 `reference_xcode_cloud_setup`; workflows are edited in App Store Connect, not
-Xcode). Cadence:
+Xcode). **Every push to the lane = one Xcode Cloud build = one App Store Connect
+upload**, and ASC caps uploads per app per day (**ITMS-90382 "Upload limit reached —
+wait 1 day"**, hit 2026-09-27 at build 151 after ~14 lane pushes in <24h, mostly
+while the owner slept). Rules:
 
-- **Mainline cut**: `git push origin origin/dev:release/testflight`.
-- **Feature-branch cut (on request)**: `git push origin origin/<branch>:release/testflight`
-  — proven 2026-09-15 (core-board rework). One lane = one branch at a time;
-  **restore the lane to dev after the feature merges** (a squash-merge makes
-  this a force push — use `--force-with-lease=release/testflight:<old-sha>`).
-- Preconditions per cut: the lane is an ancestor of the pushed ref (or lease-guarded
-  force), and `apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+- **Cut only when the owner asks for a build he will test** (typically away from
+  his Mac). Never cut for work that will merge before he can test it (overnight /
+  unattended trains). At his Mac, device-test by building the worktree's
+  `apps/ios/OYBC.xcodeproj` in Xcode (⌘R) — free.
+- **Claude never pushes the lane.** `.claude/settings.json` has a PreToolUse hook
+  that denies any Bash command matching a git push to the lane (it also blocks
+  commands that merely *mention* one — false positives are acceptable). Agents
+  hand the owner the exact command and he runs it himself with a leading `!`.
+- **Never "restore the lane to dev" after a merge** — a squash-merge rebuilds
+  identical code. Leave the lane where it is; the next cut replaces it with a
+  lease-guarded force push
+  (`--force-with-lease=release/testflight:<current-lane-sha> origin <ref>:release/testflight`).
+- Cut refs: `origin/dev` (mainline) or `origin/<branch>` (feature; one lane = one
+  branch at a time).
+- Preconditions per cut: `apps/ios/OYBC.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
   is committed + current (Xcode Cloud hard-fails without it).
-- Budget: ~30 macOS-minutes per build against the 25 free compute h/mo — cut
-  deliberately, not per-push. Parallel lanes would need a second ASC workflow on a
-  `testflight/*` branch pattern (owner-clickable in ASC; not set up).
+- Owner-side backstop: enable **Auto-cancel Builds** on the ASC Xcode Cloud
+  workflow so a newer push cancels an in-flight build before it uploads.
+  Parallel lanes would need a second ASC workflow on a `testflight/*` branch
+  pattern (not set up).
 
 **CI trap discovered the same day**: a PR whose merge state is conflicted
 (`gh pr view N --json mergeStateStatus` → `DIRTY`) gets ALL of its
