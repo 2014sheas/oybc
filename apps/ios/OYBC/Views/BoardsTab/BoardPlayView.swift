@@ -1740,7 +1740,7 @@ struct BoardPlayView: View {
         let links = (compoundChildrenByCompound[task.id] ?? [])
 
         detailSection("Children") {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
                 if links.isEmpty {
                     Text("No children found")
                         .font(.risoBody(13, .semibold))
@@ -1768,7 +1768,7 @@ struct BoardPlayView: View {
                                             .font(.risoBody(14, .semibold))
                                             .foregroundStyle(Color.risoInk)
                                         Spacer(minLength: 0)
-                                    }
+                                    }.padding(.vertical, 6).contentShape(Rectangle()) // whole row (incl. Spacer) is the tap target
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(isProcessing || isBoardLocked || childTask == nil || sealBlocked)
