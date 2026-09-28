@@ -63,8 +63,8 @@
   color: var(--riso-on-color);
 }
 .miniBadgeCompound {
-  background: var(--riso-orange);
-  color: var(--riso-ink-static);
+  background: var(--riso-teal);
+  color: var(--riso-on-color);
 }
 
 .body {

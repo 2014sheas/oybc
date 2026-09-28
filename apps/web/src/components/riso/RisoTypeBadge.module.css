@@ -21,8 +21,8 @@
   color: var(--riso-on-color);
 }
 .compound {
-  background: var(--riso-orange);
-  color: var(--riso-ink-static);
+  background: var(--riso-teal);
+  color: var(--riso-on-color);
 }
 .achievement {
   background: var(--riso-achievement);

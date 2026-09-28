@@ -4,14 +4,15 @@ import styles from './RisoButton.module.css';
 /**
  * Visual kind of a Riso button.
  *
- * `neutral`/`primary`/`blue`/`green`/`orange` mirror the iOS `RisoButtonKind`
- * so the two platforms stay in lockstep (`orange` = the compound task type's
- * submit action — a light fill, so ink-static text like `gold`); `gold`, `ghost`, and `dark` are web-prototype
+ * `neutral`/`primary`/`blue`/`green`/`teal` mirror the iOS `RisoButtonKind`
+ * so the two platforms stay in lockstep (`teal` = the compound task type's
+ * submit action — a dark fill, so cream on-color text like `blue`/`green`);
+ * `gold`, `ghost`, and `dark` are web-prototype
  * additions (gold highlight CTAs; ghost = transparent fill + ink keyline, no
  * shadow — the outline secondary; dark = the Apple sign-in slab, intentionally
  * ADAPTIVE — black-on-light / white-on-dark per Apple's guidance).
  */
-export type RisoButtonKind = 'neutral' | 'primary' | 'blue' | 'green' | 'orange' | 'gold' | 'ghost' | 'dark';
+export type RisoButtonKind = 'neutral' | 'primary' | 'blue' | 'green' | 'teal' | 'gold' | 'ghost' | 'dark';
 
 /** Size variants. `large` for hero CTAs, `small` for dense/inline rows. */
 export type RisoButtonSize = 'default' | 'large' | 'small';

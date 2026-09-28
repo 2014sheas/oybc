@@ -134,14 +134,11 @@
   background: var(--riso-ink);
   display: block;
 }
-/* Grip dots on a done cell: cream on the dark fills (red/blue/purple), static
-   ink on the light compound-orange fill (gold contract). Keyed off data
-   attributes, since RisoBoardCell's `.done` is scoped to its own CSS module. */
+/* Grip dots on a done cell are cream — every done fill (red/blue/teal) is a
+   dark fill. Keyed off a data attribute, since RisoBoardCell's `.done` is
+   scoped to its own CSS module. */
 .cellWrapper[data-done='true'] .grip i {
   background: var(--riso-on-color);
-}
-.cellWrapper[data-done='true'][data-type='compound'] .grip i {
-  background: var(--riso-ink-static);
 }
 
 /* ---- Empty slot: visual placeholder for an unfilled position ---- */

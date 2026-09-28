@@ -1301,7 +1301,7 @@ struct BoardPlayView: View {
         // Operator-aware completion target for the cell's progress bar —
         // mirrors web's DetailModal fractions (OR → any one child completes;
         // M_OF_N → threshold; AND → all children) and matches the
-        // `CompoundEvaluation` semantics that color the cell (compound orange).
+        // `CompoundEvaluation` semantics that color the cell (compound teal).
         let compoundRequiredCount: Int = {
             guard let t = task, t.type == .compound, !compoundLinks.isEmpty else {
                 return compoundLinks.count

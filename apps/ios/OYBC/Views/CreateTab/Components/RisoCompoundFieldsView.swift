@@ -326,14 +326,12 @@ struct RisoCompoundFieldsView: View {
                     addNewSub()
                 }
                 .font(.risoHead(13, .bold))
-                // Orange (compound type) is a light fill → static ink; the
-                // disabled muted fill keeps the paper label.
-                .foregroundStyle(canAddSub ? Color.risoInkStatic : Color.risoPaper)
+                .foregroundStyle(Color.risoPaper)
                 .padding(.vertical, 10)
                 .padding(.horizontal, 14)
                 .background(
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .fill(canAddSub ? Color.risoOrange : Color.risoMuted)
+                        .fill(canAddSub ? Color.risoTeal : Color.risoMuted)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: Riso.cardRadius)
@@ -404,8 +402,8 @@ struct RisoCompoundFieldsView: View {
                     .foregroundStyle(Color.risoRed)
             }
 
-            // Submit button — orange fill matches the compound type color
-            RisoButton(title: submitLabel, kind: .orange, fullWidth: true) {
+            // Submit button — teal fill matches the compound type color
+            RisoButton(title: submitLabel, kind: .teal, fullWidth: true) {
                 submitCompound()
             }
             .opacity(canSubmitCompound ? 1 : 0.45)
@@ -416,7 +414,7 @@ struct RisoCompoundFieldsView: View {
     // MARK: - Sub chips
 
     /// Rendered list of added sub-task chips. Counting subs show a small
-    /// blue type-dot; compound subs show an orange dot.
+    /// blue type-dot; compound subs show a teal dot.
     private var compoundSubChips: some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(Array(compoundSubs.enumerated()), id: \.offset) { index, sub in
@@ -428,7 +426,7 @@ struct RisoCompoundFieldsView: View {
                             .frame(width: 6, height: 6)
                     } else if sub.taskType == .compound {
                         Circle()
-                            .fill(Color.risoOrange)
+                            .fill(Color.risoTeal)
                             .frame(width: 6, height: 6)
                     }
                     Text(sub.displayTitle)

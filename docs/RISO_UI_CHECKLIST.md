@@ -32,14 +32,14 @@ dark) is `RisoKitGallery` / `RisoKitSnapshotTests`.
       `.systemGray*`, `.white/.black`, `.primary/.secondary`, or raw
       `Color(red:green:blue:)`.
 - [ ] **On-colour contract (iOS):** content (text, icons, keylines) on a red /
-      blue / green (or achievement) fill is the **adaptive** `Color.risoPaper` —
+      blue / green / teal (or achievement) fill is the **adaptive** `Color.risoPaper` —
       cream in light mode, near-black ink in dark mode, where the fills are
       lightened and static cream would fall to ~1.9:1 (green) / 2.6:1 (red).
       This is a deliberate divergence from web's static `--riso-on-color`
       (ROADMAP C8, decided 2026-09). `risoOnColor` stays for the initials
-      avatar only. On gold — and on `risoOrange` (the compound task type, also a
-      light fill in both schemes) — it is `risoInkStatic`; on an ink fill,
-      `risoPaper`.
+      avatar only. `risoTeal` (the compound task type) is a dark fill like
+      blue/green, so content on it is `risoPaper` too — never `risoInkStatic`.
+      On gold it is `risoInkStatic`; on an ink fill, `risoPaper`.
 - [ ] **Fonts** are `.risoHead(...)` / `.risoBody(...)`. Never
       `.system(size:)`, `.font(.headline)`, or bare `.fontWeight(...)`.
 - [ ] **Radius** = `Riso.cardRadius` (cards/controls) or `Riso.cellRadius`

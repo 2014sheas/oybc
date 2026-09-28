@@ -291,11 +291,11 @@ button.chipLibrary:focus-visible {
   background: var(--riso-paper-2);
   color: var(--riso-ink);
 }
-/* Create compound = orange (compound type colour; light fill → ink-static text,
-   mirrors iOS RisoButtonKind.orange on the compound-submit CTA) */
+/* Create compound = teal (compound type colour; dark fill → cream on-color text,
+   mirrors iOS RisoButtonKind.teal on the compound-submit CTA) */
 .createButton {
-  background: var(--riso-orange);
-  color: var(--riso-ink-static);
+  background: var(--riso-teal);
+  color: var(--riso-on-color);
 }
 .backButton:hover:not(:disabled),
 .createButton:hover:not(:disabled) {
