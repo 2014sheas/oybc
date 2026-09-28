@@ -59,11 +59,11 @@
   background: var(--riso-green);
   color: var(--riso-on-color);
 }
-/* Compound task type. Orange is a LIGHT fill in both schemes (gold contract):
-   static dark ink, never cream / adaptive ink. Mirrors iOS RisoButtonKind.orange. */
-.orange {
-  background: var(--riso-orange);
-  color: var(--riso-ink-static);
+/* Compound task type. Teal is a DARK fill (red/blue/green contract): static
+   cream on-color text. Mirrors iOS RisoButtonKind.teal. */
+.teal {
+  background: var(--riso-teal);
+  color: var(--riso-on-color);
 }
 .gold {
   background: var(--riso-gold);

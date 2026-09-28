@@ -92,10 +92,9 @@ extension Color {
     static let risoGreen = Color("RisoGreen", bundle: .riso)
     static let risoGold = Color("RisoGold", bundle: .riso)
     static let risoAchievement = Color("RisoAchievement", bundle: .riso)
-    /// Compound task type (`#DD8500` light / `#F2A33C` dark) — web's
-    /// `--riso-orange`. A LIGHT fill in both schemes — content on it uses
-    /// `risoInkStatic`, never `risoPaper` / `risoOnColor` (same rule as gold).
-    static let risoOrange = Color("RisoOrange", bundle: .riso)
+    /// Compound task type. A dark fill like blue/red/green — content on it
+    /// uses `risoPaper` / `risoOnColor`, same as those.
+    static let risoTeal = Color("RisoTeal", bundle: .riso)
 }
 
 // MARK: - Fonts

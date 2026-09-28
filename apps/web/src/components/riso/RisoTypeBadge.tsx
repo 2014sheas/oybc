@@ -25,7 +25,7 @@ export interface RisoTypeBadgeProps {
 
 /**
  * RisoTypeBadge — square type marker (N / C / K / A), color-coded by task type
- * (normal = paper, counting = blue, compound = orange, achievement = purple).
+ * (normal = paper, counting = blue, compound = teal, achievement = purple).
  *
  * Decorative (`aria-hidden`): the task title carries identity and the row's
  * meta line names the type, so the letter is redundant to assistive tech.

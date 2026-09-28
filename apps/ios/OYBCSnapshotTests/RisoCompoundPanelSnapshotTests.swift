@@ -192,7 +192,7 @@ final class RisoCompoundPanelSnapshotTests: XCTestCase {
 
     /// Wraps `RisoCompoundFieldsView` in the same panel card + header chrome
     /// the user sees when the Compound chip is selected in `RisoSpecialTaskPanel`.
-    /// The type-chip row is rendered statically (Compound = selected/orange),
+    /// The type-chip row is rendered statically (Compound = selected/teal),
     /// mirroring `RisoSpecialTaskPanel.typeChip` (fill + foreground from `RisoTaskKind`).
     private func makeHost(seed: CompoundSeed) -> some View {
         let library = SnapshotFixtures.makeCompoundSnapshotLibrary()

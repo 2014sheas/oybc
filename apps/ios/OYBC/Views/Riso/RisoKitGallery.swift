@@ -38,7 +38,7 @@ struct RisoKitGallery: View {
                     HStack(spacing: 10) {
                         RisoButton(title: "Small", small: true) {}
                         RisoButton(title: "Add", kind: .green, small: true) {}
-                        RisoButton(title: "Add", kind: .orange, systemImage: "plus", small: true) {}
+                        RisoButton(title: "Add", kind: .teal, systemImage: "plus", small: true) {}
                     }
 
                     sectionLabel("Toolbar pills")

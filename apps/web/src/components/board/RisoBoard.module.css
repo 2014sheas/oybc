@@ -1,8 +1,8 @@
 /* ============================================================
    OYBC · Riso Web — read-only board renderer (Phase 3a)
    The real type/done-aware bingo grid: cells colored by type
-   (normal = red, counting = blue, compound = orange w/ ink-static
-   text — orange follows the gold contract), halftone overprint on done, gold check badge, counting bars,
+   (normal = red, counting = blue, compound = teal — all dark fills
+   with cream on-color text), halftone overprint on done, gold check badge, counting bars,
    FREE center, gold bingo-line ring. Read-only here; Phase 3b
    adds the interactive play variant on the same cell.
    Translated from the prototype's .cell block onto --riso-* tokens.
@@ -94,9 +94,7 @@
   background: var(--riso-blue);
 }
 .compound.done {
-  /* orange is a LIGHT fill (gold contract) — override .done's cream text */
-  background: var(--riso-orange);
-  color: var(--riso-ink-static);
+  background: var(--riso-teal);
 }
 .counting,
 .compound {
@@ -125,8 +123,7 @@
   background: var(--riso-blue);
 }
 .tag.compound {
-  background: var(--riso-orange);
-  color: var(--riso-ink-static);
+  background: var(--riso-teal);
 }
 .cbar {
   position: absolute;
@@ -146,7 +143,7 @@
   background: var(--riso-blue);
 }
 .cbar.compound > i {
-  background: var(--riso-orange);
+  background: var(--riso-teal);
 }
 .cbar > span {
   position: absolute;

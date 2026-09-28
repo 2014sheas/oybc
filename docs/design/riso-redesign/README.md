@@ -1,6 +1,6 @@
 # Handoff: OYBC "Riso" Design Overhaul
 
-> **Superseded (2026-09-27):** the compound task type is now **orange** (`--riso-orange` / `Color.risoOrange`, gold contract: ink-static text), not green; green is reserved for success/win states. See `docs/RISO_WEB.md` tokens.
+> **Superseded (2026-09-28):** the compound task type is now **teal** (`--riso-teal` / `Color.risoTeal`, a dark fill: cream on-color text like red/blue/green), not green; green is reserved for success/win states. (Orange was tried in #520 and rejected by the owner on 2026-09-28.) See `docs/RISO_WEB.md` tokens.
 
 ## Overview
 
