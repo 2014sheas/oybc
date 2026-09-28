@@ -234,11 +234,12 @@ struct RisoBoardPlayCell: View {
                 .tracking(-0.09)
                 .lineLimit(isCompleted ? 2 : 3)
                 .multilineTextAlignment(.center)
-                // Incomplete bingo-line cells fill gold — use non-inverting ink
-                // so the title stays readable in dark mode.
+                // Incomplete bingo-line cells fill gold, and done compound
+                // cells fill orange — both LIGHT fills, so use non-inverting
+                // ink so the title stays readable in dark mode.
                 .foregroundStyle(
                     isCompleted
-                        ? Color.risoPaper
+                        ? (taskType == .compound ? Color.risoInkStatic : Color.risoPaper)
                         : (isBingoLine ? Color.risoInkStatic : Color.risoInk)
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -267,12 +268,13 @@ struct RisoBoardPlayCell: View {
             } else if taskType == .compound {
                 Text("C")
                     .font(.risoHead(7, .extraBold))
-                    .foregroundStyle(Color.risoPaper)
+                    // Orange is a light fill (gold contract) → static ink.
+                    .foregroundStyle(Color.risoInkStatic)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.risoGreen)
+                            .fill(Color.risoOrange)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
@@ -343,7 +345,7 @@ struct RisoBoardPlayCell: View {
                 // Denominator = the operator's completion target, so an
                 // "Any of" square reads 1/1 (not 1/4) once any child is done.
                 let required = compoundRequiredCount ?? compoundChildCount
-                return (min(compoundDoneCount, required), required, Color.risoGreen)
+                return (min(compoundDoneCount, required), required, Color.risoOrange)
             default:
                 return (0, 1, Color.risoBlue)
             }
@@ -398,7 +400,7 @@ struct RisoBoardPlayCell: View {
         // Done — color by type
         switch taskType {
         case .counting: return Color.risoBlue
-        case .compound: return Color.risoGreen
+        case .compound: return Color.risoOrange
         default: return Color.risoRed
         }
     }

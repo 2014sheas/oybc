@@ -6,7 +6,10 @@ enum RisoButtonKind {
     case neutral   // paper2 / ink
     case primary   // red / paper
     case blue      // blue / paper
-    case green     // green / paper — compound-type submit action
+    case green     // green / paper — success / confirm
+    case orange    // orange / inkStatic — compound-type submit action. Orange
+                    // is a light fill (gold contract), so the label uses
+                    // risoInkStatic, never risoPaper / adaptive risoInk.
     case gold      // gold / inkStatic — primary CTA on a non-toolbar surface
                     // (e.g. the closing-out banner's Seal action). Uses
                     // risoInkStatic (never adaptive risoInk) so the label
@@ -18,13 +21,14 @@ enum RisoButtonKind {
         case .primary: return .risoRed
         case .blue: return .risoBlue
         case .green: return .risoGreen
+        case .orange: return .risoOrange
         case .gold: return .risoGold
         }
     }
     var foreground: Color {
         switch self {
         case .neutral: return .risoInk
-        case .gold: return .risoInkStatic
+        case .gold, .orange: return .risoInkStatic
         default: return .risoPaper
         }
     }
@@ -439,13 +443,15 @@ enum RisoTaskKind {
         switch self {
         case .normal: return .risoPaper
         case .counting: return .risoBlue
-        case .compound: return .risoGreen
+        case .compound: return .risoOrange
         case .achievement: return .risoAchievement
         }
     }
     var foreground: Color {
         switch self {
         case .normal: return .risoMuted
+        // Orange is a light fill in both schemes (gold contract).
+        case .compound: return .risoInkStatic
         default: return .risoPaper
         }
     }

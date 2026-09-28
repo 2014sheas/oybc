@@ -59,6 +59,12 @@
   background: var(--riso-green);
   color: var(--riso-on-color);
 }
+/* Compound task type. Orange is a LIGHT fill in both schemes (gold contract):
+   static dark ink, never cream / adaptive ink. Mirrors iOS RisoButtonKind.orange. */
+.orange {
+  background: var(--riso-orange);
+  color: var(--riso-ink-static);
+}
 .gold {
   background: var(--riso-gold);
   /* Static dark ink — gold doesn't flip, so adaptive ink would go cream-on-gold

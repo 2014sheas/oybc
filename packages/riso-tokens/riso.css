@@ -29,6 +29,7 @@
   --riso-green: #1f9b6b; /* success, completed, greenlog field */
   --riso-gold: #ffc21f; /* bingo accents, FREE star, highlights */
   --riso-achievement: #7a3fb0; /* achievement task type */
+  --riso-orange: #dd8500; /* compound task type (light fill → ink-static text) */
 
   /* Hairline dividers + the ink used for hard offset shadows. */
   --riso-hair: rgba(24, 18, 11, 0.14);
@@ -77,6 +78,7 @@
   --riso-green: #3bcb92;
   --riso-gold: #ffc21f; /* unchanged */
   --riso-achievement: #9d6ad8;
+  --riso-orange: #f2a33c;
 
   --riso-hair: rgba(241, 233, 217, 0.16);
   /* Hard shadows stay ink-dark in both themes (the shadow is the page's

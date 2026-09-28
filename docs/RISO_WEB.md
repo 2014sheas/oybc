@@ -54,15 +54,21 @@ values — see `docs/COMING_SOON.md`.
 | `--riso-green` | `#1F9B6B` | `#3BCB92` | success, completed, greenlog field |
 | `--riso-gold` | `#FFC21F` | `#FFC21F` | bingo accents, FREE star (unchanged) |
 | `--riso-achievement` | `#7A3FB0` | `#9D6AD8` | achievement task type |
+| `--riso-orange` | `#DD8500` | `#F2A33C` | compound task type (light fill → `--riso-ink-static` text, like gold) |
 | `--riso-on-color` | `#FBF6EA` | `#FBF6EA` | content on a **dark** fill (red/blue/green) |
-| `--riso-ink-static` | `#18120B` | `#18120B` | content on a **light** fill (gold) + halftone dots |
+| `--riso-ink-static` | `#18120B` | `#18120B` | content on a **light** fill (gold, orange) + halftone dots |
 
 **The dark contract (matches iOS `risoInkStatic`):** content placed on a colored
 fill must **not** flip with the theme — it reads against the fill, not the page.
 Which static token depends on the fill's lightness: **dark** fills
-(red/blue/green) carry `--riso-on-color` (static cream); the **light** gold fill
-carries `--riso-ink-static` (static dark) — using adaptive `--riso-ink` on gold
-would go cream-on-gold in dark mode and fail WCAG AA. Adaptive `--riso-ink` is
+(red/blue/green) carry `--riso-on-color` (static cream); the **light** gold and
+orange fills carry `--riso-ink-static` (static dark) — using adaptive `--riso-ink`
+on them would go cream-on-gold/orange in dark mode and fail WCAG AA, and cream
+`--riso-on-color` on orange is only ≈2.4:1 (ink-static reads ≈8.0:1 light /
+≈10.5:1 dark). Orange = the **compound task type** (cells, tags, badges, the
+compound-create CTA); green stays reserved for success/completed/greenlog.
+The C8 platform divergence below does **not** apply to orange — both platforms
+use static ink on it. Adaptive `--riso-ink` is
 only for content on `--riso-paper`/`--riso-paper-2`.
 **Platform divergence (ROADMAP C8, decided 2026-09):** web keeps static
 `--riso-on-color` cream on red/blue/green fills; iOS keeps its *adaptive*
