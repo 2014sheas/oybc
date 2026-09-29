@@ -5,6 +5,7 @@ import {
   Timeframe,
   formatWindowLabel,
   getTimeframeBoundaries,
+  resolveCoreBoardSetupDefaults,
   sourcesForRecord,
   type BoardSource,
   type BoardWindow,
@@ -12,6 +13,7 @@ import {
   type Pool,
   type Task,
 } from '@oybc/shared';
+import { resolveCoreSetupPrefill } from './coreSetupPrefill';
 import type { PendingTaskPayload } from '../createPage/useCreateFormState';
 import type { TaskEditPatch } from '../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../db/recurringDraftMix';
@@ -378,6 +380,13 @@ export function useBoardWizard({
     poolPrefillAppliedRef.current = true;
   }, []);
 
+  // T2 (docs/POOLS_RECURRING.md §Per-timeframe size + centre) — separate
+  // one-shot flag from `poolPrefillAppliedRef`, set only by the exposed
+  // `setSize`/`setCenterType` (never the prefill effect itself, which
+  // writes via the *Raw setters). Guards the size/centre prefill so a
+  // user who changes them while the row loads is never stomped.
+  const userTouchedSetupRef = useRef(false);
+
   // §Member rules (B3, RC7) — the live compound-children map (library links +
   // this session's pending compounds + the staged-edit overlay). Both the
   // sources layer (Split-up expansion) and the rules layer (part rows) read
@@ -528,6 +537,22 @@ export function useBoardWizard({
     if (draft || effectiveTemplate || effectivePrefill === null) return;
     if (coreBoardDefault === undefined) return; // still loading
     poolPrefillAppliedRef.current = true;
+
+    // T2 — per-timeframe size/centre prefill, ahead of the null-row early
+    // return below (a null row still resolves — inherit prefs, a no-op
+    // here). Writes via the *Raw setters, never `setSize`/`setCenterType`,
+    // so applying it doesn't itself trip `userTouchedSetupRef`.
+    const prefillSetup = resolveCoreSetupPrefill(
+      coreBoardDefault,
+      preferences,
+      userTouchedSetupRef.current,
+    );
+    if (prefillSetup) {
+      sizeRef.current = prefillSetup.boardSize;
+      setSizeRaw(prefillSetup.boardSize);
+      setCenterTypeRaw(prefillSetup.centerType);
+    }
+
     if (coreBoardDefault === null) return; // no default configured for this timeframe
     // Board Sources P4 — prefill lands as SOURCES + manual (never a flat
     // resolved selection): each resolvable core pool becomes a default
@@ -564,6 +589,7 @@ export function useBoardWizard({
     effectivePrefill,
     poolsById,
     tasksById,
+    preferences,
     setSources,
     setManualTaskIds,
   ]);
@@ -584,6 +610,7 @@ export function useBoardWizard({
   // have to re-implement the same guards.
 
   const setSize = useCallback((s: 3 | 4 | 5) => {
+    userTouchedSetupRef.current = true; // T2 — never overwrite an explicit change
     const oldIsOdd = sizeRef.current % 2 !== 0;
     sizeRef.current = s; // sync so a back-to-back call sees the live value
     setSizeRaw(s);
@@ -602,6 +629,7 @@ export function useBoardWizard({
   }, []);
 
   const setCenterType = useCallback((t: CenterSquareType) => {
+    userTouchedSetupRef.current = true; // T2 — same guard as `setSize`
     setCenterTypeRaw(t);
     if (t !== CenterSquareType.CHOSEN) {
       setCenterTaskIdRaw(null);
@@ -845,14 +873,16 @@ export function useBoardWizard({
 
   const reset = useCallback(() => {
     setName('');
-    // Re-apply size + centerType through the same coercion the initial
-    // factory uses, so reset can never reintroduce an even-board+FREE
-    // mismatch. Going via `setSizeRaw` + `coerceCenterType` rather than
-    // calling `setSize` so the centerType honours the pref instead of
-    // always being normalised to FREE.
-    const nextSize = preferences.defaultBoardSize;
-    setSizeRaw(nextSize);
-    setCenterTypeRaw(coerceCenterType(nextSize, preferences.defaultCenterType));
+    // T2 — resolve via the shared resolver (row override ?? prefs, then
+    // even-size coercion), so a reset core-prefilled wizard falls back to
+    // ITS timeframe's default. `coreBoardDefault` is `null` for a non-core
+    // wizard, so this is a no-op fallback to prefs otherwise — identical
+    // to the prior `coerceCenterType` call it replaces.
+    userTouchedSetupRef.current = false;
+    const resolvedSetup = resolveCoreBoardSetupDefaults(coreBoardDefault, preferences);
+    sizeRef.current = resolvedSetup.boardSize;
+    setSizeRaw(resolvedSetup.boardSize);
+    setCenterTypeRaw(resolvedSetup.centerType);
     // Board Creation Split (web PR C) — `isRecurring` is fixed for this
     // controller's lifetime, so reset() must respect the current mode
     // rather than resolving the one-off `defaultTimeframe` preference
@@ -880,7 +910,7 @@ export function useBoardWizard({
     resetSources();
     // §Member rules (B3) — and the rules layered on top of it.
     resetMemberRules();
-  }, [preferences, isRecurring, resetSources, resetMemberRules]);
+  }, [preferences, coreBoardDefault, isRecurring, resetSources, resetMemberRules]);
 
   // ── Derived flags ─────────────────────────────────────────────────────
   // The whole `BoardWizardDerived` slice (step gates + copy, the

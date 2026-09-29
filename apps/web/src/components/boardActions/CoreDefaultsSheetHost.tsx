@@ -2,6 +2,7 @@ import type { Timeframe } from '@oybc/shared';
 import {
   useCoreBoardDefault,
   usePools,
+  usePreferences,
   useRecurringBoardTemplates,
   useTemplateRosterHealth,
 } from '../../hooks';
@@ -38,6 +39,7 @@ export function CoreDefaultsSheetHost({
   const templates = useRecurringBoardTemplates(userId);
   const rosterHealth = useTemplateRosterHealth(templates);
   const existingDefault = useCoreBoardDefault(userId, timeframe);
+  const [preferences] = usePreferences();
 
   // Tri-state: wait for the live query to resolve before seeding the sheet's
   // draft state, so a signed-in user with no row yet doesn't briefly flash
@@ -49,6 +51,7 @@ export function CoreDefaultsSheetHost({
       userId={userId}
       timeframe={timeframe}
       existingDefault={existingDefault ?? undefined}
+      preferences={preferences}
       pools={pools}
       templates={templates}
       achievableTaskIdsByTemplateId={rosterHealth?.mixByTemplateId}
