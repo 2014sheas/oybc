@@ -163,6 +163,7 @@ struct RisoTaskDetailContentView: View {
                                 Text(board.status.rawValue.uppercased())
                                     .risoSectionLabel(Color.risoMuted)
                             }
+                            .contentShape(Rectangle()) // whole row (incl. the Spacer) is the tap target
                         }
                         .buttonStyle(.plain)
                     }

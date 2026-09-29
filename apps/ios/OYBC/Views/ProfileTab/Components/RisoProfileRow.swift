@@ -59,6 +59,7 @@ struct RisoProfileRow: View {
         }
         .padding(.vertical, 12)
         .padding(.horizontal, Riso.cardPadding)
+        .contentShape(Rectangle()) // whole row is the tap target, not just the opaque icon/label glyphs
     }
 
     private var iconSquare: some View {

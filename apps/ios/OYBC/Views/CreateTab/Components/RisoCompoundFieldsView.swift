@@ -500,6 +500,7 @@ struct RisoCompoundFieldsView: View {
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 11)
+                    .contentShape(Rectangle()) // whole row (incl. the Spacer) is the tap target
                 }
                 .buttonStyle(.plain)
 

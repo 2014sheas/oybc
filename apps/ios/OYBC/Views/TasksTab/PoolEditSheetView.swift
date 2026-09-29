@@ -291,6 +291,7 @@ struct PoolEditSheetView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 11)
             .frame(maxWidth: .infinity)
+            .contentShape(RoundedRectangle(cornerRadius: Riso.cardRadius)) // whole dashed row is the tap target, not just the "Reuse a task…" glyphs
             .overlay(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
                     .strokeBorder(Color.risoInk.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
@@ -334,6 +335,7 @@ struct PoolEditSheetView: View {
                                         .foregroundStyle(Color.risoMuted)
                                 }
                                 .padding(.vertical, 10).padding(.horizontal, 14)
+                                .contentShape(Rectangle()) // whole row is the tap target, not just the title/icon glyphs
                             }
                             .buttonStyle(.plain)
                             .disabled(busy)
@@ -373,6 +375,7 @@ struct PoolEditSheetView: View {
                         Text("Delete pool")
                             .font(.risoBody(14, .semibold)).foregroundStyle(Color.risoRed)
                             .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .contentShape(Rectangle()) // whole row is the tap target, not just the text glyphs
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)

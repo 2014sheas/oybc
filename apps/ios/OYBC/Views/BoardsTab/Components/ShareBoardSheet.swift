@@ -336,6 +336,7 @@ struct ShareBoardSheet: View {
                     .foregroundStyle(Color.risoInk)
                 Spacer()
             }
+            .contentShape(Rectangle()) // whole row (incl. the Spacer) is the tap target
         }
         .buttonStyle(.plain)
     }

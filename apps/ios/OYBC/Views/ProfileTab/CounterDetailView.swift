@@ -655,6 +655,7 @@ struct CounterDetailContent: View {
                         .padding(.vertical, 8)
                         .padding(.horizontal, 10)
                         .background(Capsule().fill(isSelected ? Color.risoGold : Color.clear))
+                        .contentShape(Capsule()) // whole pill tappable, not just the glyphs (unselected fill is Color.clear)
                         .overlay(
                             Capsule().strokeBorder(
                                 isSelected ? Color.risoInk : Color.risoPaper.opacity(0.6),
@@ -692,6 +693,7 @@ struct CounterDetailContent: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Color.risoPaper)
                     .frame(width: 52, height: 44)
+                    .contentShape(Rectangle()) // whole 52×44 frame is the tap target, not just the small glyph
                     .overlay(
                         RoundedRectangle(cornerRadius: Riso.cardRadius)
                             .strokeBorder(Color.risoPaper.opacity(0.7), lineWidth: Riso.Keyline.dense)
@@ -798,6 +800,7 @@ struct CounterDetailContent: View {
             }
             .padding(.horizontal, Riso.cardPadding)
             .padding(.vertical, 12)
+            .contentShape(Rectangle()) // whole card (incl. the Spacer) is the tap target
         }
         .buttonStyle(.plain)
         .disabled(member.boardId == nil)
