@@ -16,6 +16,7 @@ struct CoreDefaultsSheetHost: View {
     @State private var coreDefault: CoreBoardDefault?
     @State private var pools: [Pool] = []
     @State private var tasks: [Task] = []
+    @State private var preferences: UserPreferences = .defaults
     @State private var rosterVM: RecurringBoardTemplatesViewModel
     @State private var library: TaskLibraryViewModel
     @State private var isLoaded = false
@@ -51,6 +52,7 @@ struct CoreDefaultsSheetHost: View {
                     achievableTaskIdsByTemplateId: rosterVM.mixByTemplateId,
                     library: library,
                     userId: userId,
+                    preferences: preferences,
                     onSaved: onSaved
                 )
             } else {
@@ -77,15 +79,17 @@ struct CoreDefaultsSheetHost: View {
         let tf = timeframe
         let uid = userId
         do {
-            let (defaults, poolsFetched, tasksFetched) = try await _Concurrency.Task.detached(priority: .userInitiated) {
+            let (defaults, poolsFetched, tasksFetched, prefs) = try await _Concurrency.Task.detached(priority: .userInitiated) {
                 let defaults = try db.fetchCoreBoardDefaults(userId: uid)
                 let poolsFetched = try db.fetchPools(userId: uid)
                 let tasksFetched = try db.fetchTasks(userId: uid)
-                return (defaults, poolsFetched, tasksFetched)
+                let prefs = try db.fetchUser(id: uid)?.decodedPreferences ?? .defaults
+                return (defaults, poolsFetched, tasksFetched, prefs)
             }.value
             coreDefault = defaults.first { $0.timeframe == tf }
             pools = poolsFetched
             tasks = tasksFetched
+            preferences = prefs
             isLoaded = true
         } catch {
             loadError = "Failed to load core defaults: \(error.localizedDescription)"

@@ -43,6 +43,10 @@ struct CoreDefaultsEditSheetView: View {
     /// Read reactively so a quick-added task's title resolves immediately.
     let library: TaskLibraryViewModel
     let userId: String
+    /// The user's global "new board" preferences — the inherit fallback for
+    /// the BOARD section below (docs/POOLS_RECURRING.md §Per-timeframe size
+    /// + centre, owner-decided 2026-09-29).
+    let preferences: UserPreferences
     /// Fired after a successful save.
     let onSaved: () -> Void
 
@@ -50,6 +54,12 @@ struct CoreDefaultsEditSheetView: View {
 
     @State private var poolIdsDraft: Set<String> = []
     @State private var coreDefaultTaskIdsDraft: [String] = []
+    /// Per-timeframe size + centre — nil means "nothing explicit yet, show
+    /// the resolved global default." Seeded from the row's overrides; Save
+    /// writes `.clear` when nil, `.set(x)` otherwise. Never persisted until
+    /// the user actually picks a segment / flips the toggle.
+    @State private var boardSizeDraft: DefaultBoardSize?
+    @State private var centerTypeDraft: DefaultCenterSquareType?
     /// Local copy of `pools` so a freshly-created pool (via the picker's
     /// "+ Build a new pool…") shows up immediately without waiting for the
     /// caller's own reload.
@@ -87,6 +97,14 @@ struct CoreDefaultsEditSheetView: View {
         )
     }
 
+    // MARK: - Board (size + centre)
+
+    /// The size the segmented control shows: the local draft where the user
+    /// has already picked one, else the global "new board" default.
+    private var boardSizeSelection: DefaultBoardSize { boardSizeDraft ?? preferences.defaultBoardSize }
+    private var centerTypeSelection: DefaultCenterSquareType { centerTypeDraft ?? preferences.defaultCenterType }
+    private var hasExplicitBoardOverride: Bool { boardSizeDraft != nil || centerTypeDraft != nil }
+
     var body: some View {
         ZStack {
             Color.risoPaper.ignoresSafeArea()
@@ -95,6 +113,7 @@ struct CoreDefaultsEditSheetView: View {
                 header
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
+                        boardSection
                         poolsSection
                         tasksSection
                         if let errorMessage {
@@ -149,6 +168,77 @@ struct CoreDefaultsEditSheetView: View {
                 .disabled(busy)
         }
         .padding(.horizontal, Riso.gutter).padding(.bottom, 20)
+    }
+
+    // MARK: - Board section
+
+    private var boardSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("BOARD").font(.risoBody(11, .bold)).tracking(1.1).foregroundStyle(Color.risoMuted)
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Text("Size").font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+                        .frame(minWidth: 80, alignment: .leading)
+                    Spacer()
+                    RisoSegmented(
+                        options: [(DefaultBoardSize.three, "3×3"),
+                                  (DefaultBoardSize.four, "4×4"),
+                                  (DefaultBoardSize.five, "5×5")],
+                        selection: Binding(
+                            get: { boardSizeSelection },
+                            set: { newValue in
+                                // Same odd/even coercion as the wizard's own
+                                // `updateSize`: an even pick forces "no free
+                                // space"; crossing back from even to odd
+                                // restores a sensible visible default.
+                                let oldIsOdd = boardSizeSelection.rawValue % 2 != 0
+                                boardSizeDraft = newValue
+                                let newIsOdd = newValue.rawValue % 2 != 0
+                                if !newIsOdd {
+                                    centerTypeDraft = .none
+                                } else if !oldIsOdd {
+                                    centerTypeDraft = .free
+                                }
+                            }
+                        ),
+                        equalWidth: false
+                    )
+                }
+                .padding(.horizontal, Riso.cardPadding).padding(.vertical, 12)
+
+                // Even boards have no centre concept — hidden, not disabled.
+                if boardSizeSelection.rawValue % 2 != 0 {
+                    Divider().background(Color.risoInk.opacity(0.12))
+                        .padding(.horizontal, Riso.cardPadding)
+                    HStack(spacing: 10) {
+                        Text("Free space").font(.risoBody(14, .bold)).foregroundStyle(Color.risoInk)
+                        Spacer()
+                        RisoPillSwitch(isOn: Binding(
+                            get: { centerTypeSelection == .free },
+                            set: { isOn in centerTypeDraft = isOn ? .free : DefaultCenterSquareType.none }
+                        ))
+                    }
+                    .padding(.horizontal, Riso.cardPadding).padding(.vertical, 12)
+                }
+            }
+            .risoCard()
+            .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+
+            if hasExplicitBoardOverride {
+                Button {
+                    boardSizeDraft = nil
+                    centerTypeDraft = nil
+                } label: {
+                    Text("Use new-board default")
+                        .font(.risoBody(12, .semibold)).foregroundStyle(Color.risoBlue)
+                        .underline()
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("Using your new-board default")
+                    .font(.risoBody(12, .regular)).foregroundStyle(Color.risoMuted)
+            }
+        }
     }
 
     // MARK: - Pools
@@ -242,6 +332,14 @@ struct CoreDefaultsEditSheetView: View {
         let tf = timeframe
         let corePoolIds = Array(poolIdsDraft)
         let coreDefaultTaskIds = coreDefaultTaskIdsDraft
+        // Per-timeframe size + centre — this sheet always represents the
+        // FULL state (never `.keep`): nil means the user wants "inherit",
+        // which must CLEAR a previously-set row override, not leave it
+        // stranded. `.set($0)` here passes a concrete enum value (never the
+        // bare `.none` literal), so the `.set(.none)`-ambiguity trap doesn't
+        // apply.
+        let sizePatch: CoreBoardDefaultFieldPatch<DefaultBoardSize> = boardSizeDraft.map { .set($0) } ?? .clear
+        let centerPatch: CoreBoardDefaultFieldPatch<DefaultCenterSquareType> = centerTypeDraft.map { .set($0) } ?? .clear
 
         _Concurrency.Task {
             do {
@@ -252,6 +350,8 @@ struct CoreDefaultsEditSheetView: View {
                         timeframe: tf,
                         corePoolIds: corePoolIds,
                         coreDefaultTaskIds: coreDefaultTaskIds,
+                        defaultBoardSize: sizePatch,
+                        defaultCenterType: centerPatch,
                         now: now
                     )
                 }.value
@@ -274,5 +374,7 @@ struct CoreDefaultsEditSheetView: View {
         localPools = pools
         poolIdsDraft = Set(coreDefault?.corePoolIds ?? [])
         coreDefaultTaskIdsDraft = coreDefault?.coreDefaultTaskIds ?? []
+        boardSizeDraft = coreDefault?.defaultBoardSize
+        centerTypeDraft = coreDefault?.defaultCenterType
     }
 }

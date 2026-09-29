@@ -42,8 +42,32 @@ func resolveCoreBoardSetupDefaults(
     coreDefault: CoreBoardDefault?,
     preferences: UserPreferences
 ) -> CoreBoardSetupDefaults {
-    let boardSize = (coreDefault?.defaultBoardSize ?? preferences.defaultBoardSize).rawValue
-    let desired = coreDefault?.defaultCenterType ?? preferences.defaultCenterType
+    resolveCoreBoardSetupDefaults(
+        defaultBoardSize: coreDefault?.defaultBoardSize,
+        defaultCenterType: coreDefault?.defaultCenterType,
+        preferences: preferences
+    )
+}
+
+/// Same resolution as `resolveCoreBoardSetupDefaults(coreDefault:preferences:)`,
+/// taking the two override fields directly rather than a full
+/// `CoreBoardDefault` row. Lets a caller resolve against an in-progress,
+/// not-yet-persisted draft (e.g. `CoreDefaultsEditSheetView`'s BOARD
+/// section, which tracks its own local overrides until Save) without
+/// constructing a throwaway row.
+///
+/// - Parameters:
+///   - defaultBoardSize: The override, or nil to inherit.
+///   - defaultCenterType: The override, or nil to inherit.
+///   - preferences: The user's global preferences.
+/// - Returns: The resolved `{ boardSize, centerType }`.
+func resolveCoreBoardSetupDefaults(
+    defaultBoardSize: DefaultBoardSize?,
+    defaultCenterType: DefaultCenterSquareType?,
+    preferences: UserPreferences
+) -> CoreBoardSetupDefaults {
+    let boardSize = (defaultBoardSize ?? preferences.defaultBoardSize).rawValue
+    let desired = defaultCenterType ?? preferences.defaultCenterType
     let isOdd = boardSize % 2 != 0
     return CoreBoardSetupDefaults(
         boardSize: boardSize,

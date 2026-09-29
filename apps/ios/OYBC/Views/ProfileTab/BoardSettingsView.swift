@@ -123,6 +123,7 @@ struct BoardSettingsView: View {
                     achievableTaskIdsByTemplateId: rosterVM.mixByTemplateId,
                     library: library,
                     userId: authService.currentUser?.id ?? "",
+                    preferences: preferences,
                     onSaved: {
                         defaultsEditTarget = nil
                         reload()
@@ -317,7 +318,15 @@ struct BoardSettingsView: View {
             tasksById: tasksById
         )
         let poolNames = resolved.pulledPoolIds.compactMap { poolsById[$0]?.name }
-        let summary = Self.formatDefaultsSummary(resolvedCount: resolved.selectedTaskIds.count, poolNames: poolNames)
+        // Per-timeframe size + centre — the suffix appears only when this
+        // timeframe explicitly overrides either field; an inheriting row
+        // shows no suffix even though it still resolves to a size.
+        let setup = hasExplicitCoreBoardSetup(coreDefault)
+            ? resolveCoreBoardSetupDefaults(coreDefault: coreDefault, preferences: preferences)
+            : nil
+        let summary = Self.formatDefaultsSummary(
+            resolvedCount: resolved.selectedTaskIds.count, poolNames: poolNames, setup: setup
+        )
 
         return Button { defaultsEditTarget = .timeframe(tf) } label: {
             HStack(spacing: 10) {

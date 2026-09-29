@@ -386,11 +386,14 @@ enum SnapshotFixtures {
         id: String,
         timeframe: Timeframe,
         corePoolIds: [String] = [],
-        coreDefaultTaskIds: [String] = []
+        coreDefaultTaskIds: [String] = [],
+        defaultBoardSize: DefaultBoardSize? = nil,
+        defaultCenterType: DefaultCenterSquareType? = nil
     ) -> CoreBoardDefault {
         CoreBoardDefault(
             id: id, userId: userId, timeframe: timeframe,
             corePoolIds: corePoolIds, coreDefaultTaskIds: coreDefaultTaskIds,
+            defaultBoardSize: defaultBoardSize, defaultCenterType: defaultCenterType,
             createdAt: fixedTimestamp, updatedAt: fixedTimestamp,
             lastSyncedAt: nil, version: 1, isDeleted: false, deletedAt: nil
         )

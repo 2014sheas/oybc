@@ -63,21 +63,61 @@ final class BoardSettingsSnapshotTests: XCTestCase {
             achievableTaskIdsByTemplateId: [:],
             library: makeLibrary([t1, t2, t3, t4]),
             userId: SnapshotFixtures.userId,
+            preferences: .defaults,
+            onSaved: {}
+        )
+    }
+
+    /// Per-timeframe size + centre (docs/POOLS_RECURRING.md §Per-timeframe
+    /// size + centre, owner-decided 2026-09-29) — a row with an EXPLICIT
+    /// override, so the BOARD section opens on that value (not the inherited
+    /// global default) with the "Use new-board default" clear link showing.
+    private func defaultsSheetExplicit(size: DefaultBoardSize, centerType: DefaultCenterSquareType?) -> some View {
+        let coreDefault = SnapshotFixtures.makeCoreBoardDefault(
+            id: "cd2", timeframe: .daily,
+            defaultBoardSize: size, defaultCenterType: centerType
+        )
+        return CoreDefaultsEditSheetView(
+            timeframe: .daily,
+            coreDefault: coreDefault,
+            pools: [],
+            tasks: [t1, t2, t3, t4],
+            templates: [],
+            achievableTaskIdsByTemplateId: [:],
+            library: makeLibrary([t1, t2, t3, t4]),
+            userId: SnapshotFixtures.userId,
+            preferences: .defaults,
             onSaved: {}
         )
     }
 
     func testDefaultsEmptyLight() {
-        assertSnapshot(of: defaultsSheet(hasDefault: false), as: .image(layout: .fixed(width: 393, height: 560), traits: lightTraits()), record: recordMode)
+        assertSnapshot(of: defaultsSheet(hasDefault: false), as: .image(layout: .fixed(width: 393, height: 660), traits: lightTraits()), record: recordMode)
     }
     func testDefaultsEmptyDark() {
-        assertSnapshot(of: defaultsSheet(hasDefault: false), as: .image(layout: .fixed(width: 393, height: 560), traits: darkTraits()), record: recordMode)
+        assertSnapshot(of: defaultsSheet(hasDefault: false), as: .image(layout: .fixed(width: 393, height: 660), traits: darkTraits()), record: recordMode)
     }
     func testDefaultsPopulatedLight() {
-        assertSnapshot(of: defaultsSheet(hasDefault: true), as: .image(layout: .fixed(width: 393, height: 620), traits: lightTraits()), record: recordMode)
+        assertSnapshot(of: defaultsSheet(hasDefault: true), as: .image(layout: .fixed(width: 393, height: 720), traits: lightTraits()), record: recordMode)
     }
     func testDefaultsPopulatedDark() {
-        assertSnapshot(of: defaultsSheet(hasDefault: true), as: .image(layout: .fixed(width: 393, height: 620), traits: darkTraits()), record: recordMode)
+        assertSnapshot(of: defaultsSheet(hasDefault: true), as: .image(layout: .fixed(width: 393, height: 720), traits: darkTraits()), record: recordMode)
+    }
+
+    // MARK: - CoreDefaultsEditSheetView — BOARD section states
+
+    func testDefaultsExplicit3x3FreeLight() {
+        assertSnapshot(of: defaultsSheetExplicit(size: .three, centerType: .free), as: .image(layout: .fixed(width: 393, height: 660), traits: lightTraits()), record: recordMode)
+    }
+    func testDefaultsExplicit3x3FreeDark() {
+        assertSnapshot(of: defaultsSheetExplicit(size: .three, centerType: .free), as: .image(layout: .fixed(width: 393, height: 660), traits: darkTraits()), record: recordMode)
+    }
+    func testDefaultsExplicit4x4Light() {
+        // 4x4 has no centre concept — the "Free space" row is hidden.
+        assertSnapshot(of: defaultsSheetExplicit(size: .four, centerType: nil), as: .image(layout: .fixed(width: 393, height: 640), traits: lightTraits()), record: recordMode)
+    }
+    func testDefaultsExplicit4x4Dark() {
+        assertSnapshot(of: defaultsSheetExplicit(size: .four, centerType: nil), as: .image(layout: .fixed(width: 393, height: 640), traits: darkTraits()), record: recordMode)
     }
 
     // MARK: - PoolPickerSheetView
