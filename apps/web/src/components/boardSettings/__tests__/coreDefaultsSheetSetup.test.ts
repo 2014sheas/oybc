@@ -16,16 +16,15 @@ describe('nextExplicitCenterForSizeChange', () => {
     expect(nextExplicitCenterForSizeChange(4, 4, CenterSquareType.NONE)).toBe(CenterSquareType.NONE);
   });
 
-  it('promotes a NONE that evenness forced back to FREE when crossing even→odd', () => {
+  it('promotes the NONE an even board forced back to an explicit FREE when crossing even→odd', () => {
     expect(nextExplicitCenterForSizeChange(4, 3, CenterSquareType.NONE)).toBe(CenterSquareType.FREE);
     expect(nextExplicitCenterForSizeChange(4, 5, CenterSquareType.NONE)).toBe(CenterSquareType.FREE);
   });
 
-  it('leaves inherit (null) alone when crossing even→odd — never invents an explicit pick', () => {
-    expect(nextExplicitCenterForSizeChange(4, 3, null)).toBeNull();
-  });
-
-  it('preserves a non-NONE explicit pick when crossing even→odd (defensive; unreachable in practice since even always forces NONE)', () => {
+  it('crossing even→odd from an INHERITED even size also lands on explicit FREE (the resolved centre at 4×4 is always NONE — same as the wizard and iOS)', () => {
+    // Global prefs 4×4 + centre None, no override yet: picking 3×3 must not
+    // silently inherit "no free space" when iOS / both wizards show FREE.
+    expect(nextExplicitCenterForSizeChange(4, 3, null)).toBe(CenterSquareType.FREE);
     expect(nextExplicitCenterForSizeChange(4, 3, CenterSquareType.FREE)).toBe(CenterSquareType.FREE);
   });
 

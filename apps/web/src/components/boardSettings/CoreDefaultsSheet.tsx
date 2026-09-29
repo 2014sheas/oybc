@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   CenterSquareType,
   Timeframe,
@@ -175,19 +175,17 @@ export function CoreDefaultsSheet({
       ),
     [explicitSize, explicitCenter, preferences],
   );
-  // Tracks the last RESOLVED size so `handleSizeChange` can tell an
-  // even→odd crossing (where the even board forced NONE) apart from a
-  // deliberate odd-board NONE — mirrors the wizard's `setSize` /
-  // `coerceCenterType` pairing (`useBoardWizard.ts`).
-  const prevResolvedSizeRef = useRef(resolvedSetup.boardSize);
-
+  // The even→odd crossing check reads the CURRENT resolved size (this
+  // render's `resolvedSetup`), not a ref — a ref went stale after "Use
+  // new-board default" (it still held the cleared explicit size) and
+  // mis-detected the next pick's crossing. Mirrors the wizard's `setSize` /
+  // `coerceCenterType` pairing (`useBoardWizard.ts`) and iOS's size binding.
   function handleSizeChange(newSize: BoardSize): void {
     const nextCenter = nextExplicitCenterForSizeChange(
-      prevResolvedSizeRef.current,
+      resolvedSetup.boardSize,
       newSize,
       explicitCenter,
     );
-    prevResolvedSizeRef.current = newSize;
     setExplicitSize(newSize);
     setExplicitCenter(nextCenter);
   }
@@ -276,9 +274,6 @@ export function CoreDefaultsSheet({
                   value={resolvedSetup.boardSize}
                   onChange={handleSizeChange}
                 />
-                {explicitSize === null && (
-                  <p className={styles.inheritNote}>Using your new-board default</p>
-                )}
               </div>
 
               {resolvedSetup.boardSize !== 4 && (
@@ -302,13 +297,15 @@ export function CoreDefaultsSheet({
                       <span className={styles.toggleTrack} />
                     </label>
                   </div>
-                  {explicitCenter === null && (
-                    <p className={styles.inheritNote}>Using your new-board default</p>
-                  )}
                 </div>
               )}
 
-              {(explicitSize !== null || explicitCenter !== null) && (
+              {/* iOS parity (`CoreDefaultsEditSheetView`): ONE caption for the
+                  section while nothing is explicit; once either field is, the
+                  clear link replaces it and clears BOTH back to inherit. */}
+              {explicitSize === null && explicitCenter === null ? (
+                <p className={styles.inheritNote}>Using your new-board default</p>
+              ) : (
                 <button type="button" className={styles.linkButton} onClick={clearToInherit} disabled={busy}>
                   Use new-board default
                 </button>

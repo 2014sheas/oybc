@@ -114,7 +114,9 @@ final class SyncClearableFieldsTests: XCTestCase {
     // MARK: - coreBoardDefaults: per-timeframe size / centre overrides (2026-09-29)
 
     func test_clearableFieldsFor_perCollectionMap() {
-        XCTAssertEqual(Set(SyncService.clearableFields(for: "boards")), Set(clearableBoardFields))
+        // Literal names, not `clearableBoardFields` — that constant IS this map's
+        // `boards` entry, so comparing the two would assert nothing.
+        XCTAssertEqual(Set(SyncService.clearableFields(for: "boards")), ["endDate", "completedAt", "sealedAt", "sealedCompletedCells"])
         XCTAssertEqual(Set(SyncService.clearableFields(for: "coreBoardDefaults")), ["defaultBoardSize", "defaultCenterType"])
         XCTAssertEqual(SyncService.clearableFields(for: "tasks"), [])
         XCTAssertEqual(SyncService.clearableFields(for: "nope"), [])

@@ -203,6 +203,10 @@ struct CoreDefaultsEditSheetView: View {
                         ),
                         equalWidth: false
                     )
+                    // VoiceOver: name the group (web twin: `aria-label="Board size"`);
+                    // same pattern as `RisoMemberRuleRowView`'s squares segmented.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Board size")
                 }
                 .padding(.horizontal, Riso.cardPadding).padding(.vertical, 12)
 
@@ -217,6 +221,9 @@ struct CoreDefaultsEditSheetView: View {
                             get: { centerTypeSelection == .free },
                             set: { isOn in centerTypeDraft = isOn ? .free : DefaultCenterSquareType.none }
                         ))
+                        // `RisoPillSwitch` is a label-hidden Toggle — give it the
+                        // row's name (web twin: `<label htmlFor>` "Free space").
+                        .accessibilityLabel("Free space")
                     }
                     .padding(.horizontal, Riso.cardPadding).padding(.vertical, 12)
                 }
