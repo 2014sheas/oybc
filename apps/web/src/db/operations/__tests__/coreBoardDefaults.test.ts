@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { SyncOperationType, TaskType, Timeframe, type Pool, type Task } from '@oybc/shared';
+import { CenterSquareType, SyncOperationType, TaskType, Timeframe, type Pool, type Task } from '@oybc/shared';
 import { db } from '../../internal';
 import {
   createCoreBoardDefault,
@@ -225,5 +225,128 @@ describe('P7 defaults-sheet round trip', () => {
     );
     expect(prefill.selectedTaskIds).toEqual(new Set(['pool-task', 'task-manual']));
     expect(prefill.pulledPoolIds).toEqual(['pool-1']);
+  });
+});
+
+/**
+ * Per-timeframe size + centre (docs/POOLS_RECURRING.md §Per-timeframe size +
+ * centre, 2026-09-29). Both fields are optional overrides; `null` on update
+ * CLEARS back to inherit and is stored as ABSENT (never `null`) so the push
+ * path's clearable-field delete fires and the Zod row schema keeps parsing.
+ */
+describe('coreBoardDefaults — defaultBoardSize / defaultCenterType', () => {
+  afterEach(async () => {
+    await db.coreBoardDefaults.clear();
+    await db.syncQueue.clear();
+  });
+
+  it('create stores the overrides when given, and leaves them ABSENT when omitted or null', async () => {
+    const withBoth = await createCoreBoardDefault('user-1', {
+      timeframe: Timeframe.DAILY,
+      corePoolIds: [],
+      coreDefaultTaskIds: [],
+      defaultBoardSize: 3,
+      defaultCenterType: CenterSquareType.NONE,
+    });
+    expect(withBoth.defaultBoardSize).toBe(3);
+    expect(withBoth.defaultCenterType).toBe(CenterSquareType.NONE);
+
+    const omitted = await createCoreBoardDefault('user-1', {
+      timeframe: Timeframe.WEEKLY,
+      corePoolIds: [],
+      coreDefaultTaskIds: [],
+    });
+    expect(omitted).not.toHaveProperty('defaultBoardSize');
+    expect(omitted).not.toHaveProperty('defaultCenterType');
+
+    const nulled = await createCoreBoardDefault('user-1', {
+      timeframe: Timeframe.MONTHLY,
+      corePoolIds: [],
+      coreDefaultTaskIds: [],
+      defaultBoardSize: null,
+      defaultCenterType: null,
+    });
+    expect(nulled).not.toHaveProperty('defaultBoardSize');
+    expect(nulled).not.toHaveProperty('defaultCenterType');
+    const stored = await db.coreBoardDefaults.get(nulled.id);
+    expect(stored).not.toHaveProperty('defaultBoardSize');
+    expect(stored).not.toHaveProperty('defaultCenterType');
+  });
+
+  it('update: omitted keeps, a value sets, null clears to ABSENT — each bumping version + enqueueing', async () => {
+    const row = await createCoreBoardDefault('user-1', {
+      timeframe: Timeframe.DAILY,
+      corePoolIds: ['pool-1'],
+      coreDefaultTaskIds: [],
+    });
+
+    // set both
+    const set = await updateCoreBoardDefault(row.id, {
+      defaultBoardSize: 4,
+      defaultCenterType: CenterSquareType.FREE,
+    });
+    expect(set?.defaultBoardSize).toBe(4);
+    expect(set?.defaultCenterType).toBe(CenterSquareType.FREE);
+    expect(set?.corePoolIds).toEqual(['pool-1']); // untouched
+    expect(set?.version).toBe(2);
+
+    // omitted = keep (a pools-only edit must not stomp the overrides)
+    const kept = await updateCoreBoardDefault(row.id, { corePoolIds: ['pool-2'] });
+    expect(kept?.defaultBoardSize).toBe(4);
+    expect(kept?.defaultCenterType).toBe(CenterSquareType.FREE);
+    expect(kept?.corePoolIds).toEqual(['pool-2']);
+    expect(kept?.version).toBe(3);
+
+    // null = clear ONE, keep the other
+    const clearedSize = await updateCoreBoardDefault(row.id, { defaultBoardSize: null });
+    expect(clearedSize).not.toHaveProperty('defaultBoardSize');
+    expect(clearedSize?.defaultCenterType).toBe(CenterSquareType.FREE);
+    expect(clearedSize?.version).toBe(4);
+
+    const clearedCentre = await updateCoreBoardDefault(row.id, { defaultCenterType: null });
+    expect(clearedCentre).not.toHaveProperty('defaultBoardSize');
+    expect(clearedCentre).not.toHaveProperty('defaultCenterType');
+    expect(clearedCentre?.version).toBe(5);
+
+    // The stored row (not just the returned one) is null-free / key-free.
+    const stored = await db.coreBoardDefaults.get(row.id);
+    expect(stored).not.toHaveProperty('defaultBoardSize');
+    expect(stored).not.toHaveProperty('defaultCenterType');
+
+    // Every update enqueued (D3 coalesces onto the pending create row).
+    const queued = await db.syncQueue.filter((q) => q.entityId === row.id).toArray();
+    expect(queued.length).toBeGreaterThanOrEqual(1);
+    const last = queued[queued.length - 1];
+    expect(last.payload).not.toHaveProperty('defaultBoardSize');
+    expect(last.payload).not.toHaveProperty('defaultCenterType');
+  });
+
+  it('upsert round-trip: set on create, keep on a pools-only save, clear via null', async () => {
+    const created = await upsertCoreBoardDefault('user-1', Timeframe.YEARLY, {
+      corePoolIds: [],
+      coreDefaultTaskIds: [],
+      defaultBoardSize: 5,
+      defaultCenterType: CenterSquareType.NONE,
+    });
+    expect(created.version).toBe(1);
+    expect(created.defaultBoardSize).toBe(5);
+    expect(created.defaultCenterType).toBe(CenterSquareType.NONE);
+
+    const poolsOnly = await upsertCoreBoardDefault('user-1', Timeframe.YEARLY, {
+      corePoolIds: ['pool-9'],
+    });
+    expect(poolsOnly.id).toBe(created.id);
+    expect(poolsOnly.defaultBoardSize).toBe(5);
+    expect(poolsOnly.defaultCenterType).toBe(CenterSquareType.NONE);
+
+    const cleared = await upsertCoreBoardDefault('user-1', Timeframe.YEARLY, {
+      defaultBoardSize: null,
+      defaultCenterType: null,
+    });
+    expect(cleared.id).toBe(created.id);
+    expect(cleared).not.toHaveProperty('defaultBoardSize');
+    expect(cleared).not.toHaveProperty('defaultCenterType');
+    expect(cleared.corePoolIds).toEqual(['pool-9']);
+    expect(await fetchCoreBoardDefaults('user-1')).toHaveLength(1);
   });
 });

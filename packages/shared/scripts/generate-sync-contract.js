@@ -83,6 +83,7 @@ function main() {
     USER_SCOPED_SYNC_COLLECTIONS,
     LEGACY_PULL_SKIP_COLLECTIONS,
     CLEARABLE_BOARD_FIELDS,
+    CLEARABLE_FIELDS_BY_COLLECTION,
   } = loadConstants();
 
   if (!Array.isArray(SYNC_COLLECTIONS) || SYNC_COLLECTIONS.length === 0) {
@@ -98,6 +99,9 @@ function main() {
     userScopedSyncCollections: USER_SCOPED_SYNC_COLLECTIONS,
     legacyPullSkipCollections: LEGACY_PULL_SKIP_COLLECTIONS,
     clearableBoardFields: CLEARABLE_BOARD_FIELDS,
+    // Per-collection map (2026-09-29) — `clearableBoardFields` above is its
+    // `boards` entry, kept for the docs/tests that name it.
+    clearableFieldsByCollection: CLEARABLE_FIELDS_BY_COLLECTION,
   };
 
   const json = JSON.stringify(fixture, null, 2) + '\n';

@@ -172,12 +172,31 @@ extension AppDatabase {
     /// upgrade transaction (it needs a deterministic, uuidv5-derived id,
     /// not a fresh upsert), and enqueues sync via its own
     /// `enqueueMigrationSync` raw-SQL helper.
+    ///
+    /// **Per-timeframe size + centre** (docs/POOLS_RECURRING.md, 2026-09-29):
+    /// `defaultBoardSize` / `defaultCenterType` are tri-state patches
+    /// (`CoreBoardDefaultFieldPatch`) defaulting to `.keep`, so every
+    /// pre-feature caller preserves whatever override is stored; the
+    /// defaults sheet passes `.set(x)` to override or `.set(nil)` to clear
+    /// back to inherit. A clear is stored NULL and pushed as a field delete.
+    ///
+    /// - Parameters:
+    ///   - userId: Owner uid.
+    ///   - timeframe: The core timeframe (never `.custom`).
+    ///   - corePoolIds: Replaces the stored pool list.
+    ///   - coreDefaultTaskIds: Replaces the stored individual-defaults list.
+    ///   - defaultBoardSize: `.keep` / `.set(nil)` (clear) / `.set(size)`.
+    ///   - defaultCenterType: `.keep` / `.set(nil)` (clear) / `.set(centre)`.
+    ///   - now: ISO8601 stamp for `updatedAt` (and `createdAt` on insert).
+    /// - Returns: The persisted row.
     @discardableResult
     func upsertCoreBoardDefaultAndEnqueue(
         userId: String,
         timeframe: Timeframe,
         corePoolIds: [String],
         coreDefaultTaskIds: [String],
+        defaultBoardSize: CoreBoardDefaultFieldPatch<DefaultBoardSize> = .keep,
+        defaultCenterType: CoreBoardDefaultFieldPatch<DefaultCenterSquareType> = .keep,
         now: String
     ) throws -> CoreBoardDefault {
         return try write { db in
@@ -187,6 +206,8 @@ extension AppDatabase {
                 timeframe: timeframe,
                 corePoolIds: corePoolIds,
                 coreDefaultTaskIds: coreDefaultTaskIds,
+                defaultBoardSize: defaultBoardSize,
+                defaultCenterType: defaultCenterType,
                 now: now
             )
         }
@@ -228,12 +249,15 @@ extension AppDatabase {
                         && Column("isDeleted") == false
                 )
                 .fetchOne(db)?.coreDefaultTaskIds ?? []
+            // `.keep` on both overrides — the checkbox never touches size/centre.
             return try Self.upsertCoreBoardDefault(
                 db: db,
                 userId: userId,
                 timeframe: timeframe,
                 corePoolIds: corePoolIds,
                 coreDefaultTaskIds: existingTaskIds,
+                defaultBoardSize: .keep,
+                defaultCenterType: .keep,
                 now: now
             )
         }
@@ -251,6 +275,8 @@ extension AppDatabase {
         timeframe: Timeframe,
         corePoolIds: [String],
         coreDefaultTaskIds: [String],
+        defaultBoardSize: CoreBoardDefaultFieldPatch<DefaultBoardSize>,
+        defaultCenterType: CoreBoardDefaultFieldPatch<DefaultCenterSquareType>,
         now: String
     ) throws -> CoreBoardDefault {
         let coreDefault: CoreBoardDefault
@@ -265,18 +291,26 @@ extension AppDatabase {
         {
             existing.corePoolIds = corePoolIds
             existing.coreDefaultTaskIds = coreDefaultTaskIds
+            defaultBoardSize.apply(to: &existing.defaultBoardSize)
+            defaultCenterType.apply(to: &existing.defaultCenterType)
             existing.updatedAt = now
             existing.version += 1
             try existing.update(db)
             coreDefault = existing
             op = .update
         } else {
+            var freshSize: DefaultBoardSize? = nil
+            var freshCentre: DefaultCenterSquareType? = nil
+            defaultBoardSize.apply(to: &freshSize)
+            defaultCenterType.apply(to: &freshCentre)
             let fresh = CoreBoardDefault(
                 id: Self.generateUUID(),
                 userId: userId,
                 timeframe: timeframe,
                 corePoolIds: corePoolIds,
                 coreDefaultTaskIds: coreDefaultTaskIds,
+                defaultBoardSize: freshSize,
+                defaultCenterType: freshCentre,
                 createdAt: now,
                 updatedAt: now,
                 lastSyncedAt: nil,

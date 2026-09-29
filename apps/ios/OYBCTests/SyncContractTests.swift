@@ -26,6 +26,7 @@ final class SyncContractTests: XCTestCase {
         let userScopedSyncCollections: [String]
         let legacyPullSkipCollections: [String]
         let clearableBoardFields: [String]
+        let clearableFieldsByCollection: [String: [String]]
     }
 
     private func loadFixture() throws -> SyncContractFixture {
@@ -103,5 +104,29 @@ final class SyncContractTests: XCTestCase {
             Set(fixture.clearableBoardFields),
             "iOS clearableBoardFields must set-match @oybc/shared's CLEARABLE_BOARD_FIELDS."
         )
+    }
+
+    /// Per-collection clearable fields (2026-09-29) — iOS
+    /// `clearableFieldsByCollection` must match @oybc/shared's
+    /// `CLEARABLE_FIELDS_BY_COLLECTION` key-for-key, each value set-equal.
+    func testClearableFieldsByCollectionMatchesFixture() throws {
+        let fixture = try loadFixture()
+        XCTAssertFalse(fixture.clearableFieldsByCollection.isEmpty)
+        XCTAssertEqual(
+            Set(clearableFieldsByCollection.keys),
+            Set(fixture.clearableFieldsByCollection.keys),
+            "iOS clearableFieldsByCollection must cover exactly the collections @oybc/shared lists."
+        )
+        for (collection, fields) in fixture.clearableFieldsByCollection {
+            XCTAssertEqual(
+                Set(clearableFieldsByCollection[collection] ?? []),
+                Set(fields),
+                "iOS clearable fields for \(collection) must set-match @oybc/shared's."
+            )
+            XCTAssertTrue(
+                iosSyncCollectionNames.contains(collection),
+                "clearable collection \(collection) must be a real sync collection"
+            )
+        }
     }
 }

@@ -340,7 +340,9 @@ slice amends [`WINDOWED_COMPLETION.md`](WINDOWED_COMPLETION.md) in the same PR
   contract (+ `syncContract.json` for Swift). Push sends a field delete for
   each absent one; the iOS pull NULLs each one a winning remote row lacks.
   Without it a Reopen never reaches the other device. See
-  `SYNC_STRATEGY.md`.
+  `SYNC_STRATEGY.md`. (Generalised 2026-09-29 into the per-collection
+  `CLEARABLE_FIELDS_BY_COLLECTION`, of which this constant is the `boards`
+  entry — `coreBoardDefaults` clears its size/centre overrides the same way.)
 - **Close (D3)** = the existing seal transaction (`closeBoard` → `sealBoard` /
   `sealBoardTx`) + achievement-watcher refresh. No confirm. The Boards-tab
   closing-out banner's "Close out" routes through `closeBoard` too.

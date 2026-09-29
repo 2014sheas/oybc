@@ -343,12 +343,44 @@ struct BoardSettingsView: View {
     /// Pure, testable summary line for a defaults row. Copy rule (owner-
     /// enforced, docs/POOLS_RECURRING.md §Behavior invariants): "No
     /// default tasks", never "Not set"; "from", never "deals from".
-    static func formatDefaultsSummary(resolvedCount: Int, poolNames: [String]) -> String {
+    /// Mirrors web `formatDefaultsSummary` (`components/boardSettings/`).
+    ///
+    /// - Parameters:
+    ///   - resolvedCount: Number of tasks the row's pools + defaults resolve to.
+    ///   - poolNames: Names of the pulled pools.
+    ///   - setup: The RESOLVED size + centre when the timeframe explicitly
+    ///     overrides either (`hasExplicitCoreBoardSetup` →
+    ///     `resolveCoreBoardSetupDefaults`); nil for an inheriting timeframe,
+    ///     which shows no suffix.
+    /// - Returns: e.g. `"4 default tasks · from Morning Pool · 3×3 · free space"`.
+    static func formatDefaultsSummary(
+        resolvedCount: Int,
+        poolNames: [String],
+        setup: CoreBoardSetupDefaults? = nil
+    ) -> String {
+        let base = formatTasksPart(resolvedCount: resolvedCount, poolNames: poolNames)
+        guard let setup else { return base }
+        return "\(base) · \(formatSetupSuffix(setup))"
+    }
+
+    private static func formatTasksPart(resolvedCount: Int, poolNames: [String]) -> String {
         guard resolvedCount > 0 else { return "No default tasks" }
         let taskPart = "\(resolvedCount) default task\(resolvedCount == 1 ? "" : "s")"
         guard !poolNames.isEmpty else { return taskPart }
         let poolPart = poolNames.count == 1 ? "from \(poolNames[0])" : "from \(poolNames.count) pools"
         return "\(taskPart) · \(poolPart)"
+    }
+
+    /// The size / centre suffix on its own: "3×3 · free space", "5×5 · no
+    /// free space", or a bare "4×4" (an even board has no centre concept, so
+    /// its centre value is never described).
+    ///
+    /// - Parameter setup: A resolved size + centre pair.
+    /// - Returns: The suffix text.
+    static func formatSetupSuffix(_ setup: CoreBoardSetupDefaults) -> String {
+        let size = "\(setup.boardSize)×\(setup.boardSize)"
+        guard setup.boardSize % 2 != 0 else { return size }
+        return setup.centerType == .free ? "\(size) · free space" : "\(size) · no free space"
     }
 
     // MARK: - Repeating-boards roster

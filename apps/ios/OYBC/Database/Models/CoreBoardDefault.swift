@@ -28,6 +28,16 @@ import GRDB
 /// Both `corePoolIds` and `coreDefaultTaskIds` are stored as JSON-string
 /// TEXT columns (same pattern as `Pool.taskIds`).
 ///
+/// **Per-timeframe size + centre** (docs/POOLS_RECURRING.md §Per-timeframe
+/// size + centre, 2026-09-29): `defaultBoardSize` / `defaultCenterType` are
+/// optional overrides (GRDB v36 nullable columns); nil = inherit the global
+/// `UserPreferences` pair. Resolve through `resolveCoreBoardSetupDefaults`
+/// (`Helpers/CoreBoardSetupDefaults.swift`), never by reading them raw. nil
+/// ENCODES AS ABSENT on the wire (`encodeIfPresent`), which is what lets the
+/// clearable-fields mechanism (`clearableFieldsByCollection["coreBoardDefaults"]`)
+/// delete a cleared override on push; an unknown stored/remote value decodes
+/// as nil (inherit) rather than failing the row.
+///
 /// Canonical design: docs/POOLS_RECURRING.md §Data model → New entity:
 /// CoreBoardDefault.
 struct CoreBoardDefault: Codable, FetchableRecord, PersistableRecord {
@@ -43,6 +53,10 @@ struct CoreBoardDefault: Codable, FetchableRecord, PersistableRecord {
     /// Individual default tasks, pre-filled as plain chips alongside pool
     /// tasks.
     var coreDefaultTaskIds: [String]
+    /// Per-timeframe board size override (3 / 4 / 5); nil = inherit prefs.
+    var defaultBoardSize: DefaultBoardSize?
+    /// Per-timeframe centre override (free / none); nil = inherit prefs.
+    var defaultCenterType: DefaultCenterSquareType?
 
     // Timestamps
     var createdAt: String
@@ -62,6 +76,7 @@ struct CoreBoardDefault: Codable, FetchableRecord, PersistableRecord {
 
     enum CodingKeys: String, CodingKey {
         case id, userId, timeframe, corePoolIds, coreDefaultTaskIds
+        case defaultBoardSize, defaultCenterType
         case createdAt, updatedAt
         case lastSyncedAt, version, isDeleted, deletedAt
     }
@@ -72,6 +87,8 @@ struct CoreBoardDefault: Codable, FetchableRecord, PersistableRecord {
         timeframe: Timeframe,
         corePoolIds: [String],
         coreDefaultTaskIds: [String],
+        defaultBoardSize: DefaultBoardSize? = nil,
+        defaultCenterType: DefaultCenterSquareType? = nil,
         createdAt: String,
         updatedAt: String,
         lastSyncedAt: String? = nil,
@@ -84,6 +101,8 @@ struct CoreBoardDefault: Codable, FetchableRecord, PersistableRecord {
         self.timeframe = timeframe
         self.corePoolIds = corePoolIds
         self.coreDefaultTaskIds = coreDefaultTaskIds
+        self.defaultBoardSize = defaultBoardSize
+        self.defaultCenterType = defaultCenterType
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastSyncedAt = lastSyncedAt
@@ -112,6 +131,15 @@ struct CoreBoardDefault: Codable, FetchableRecord, PersistableRecord {
         } else {
             coreDefaultTaskIds = []
         }
+
+        // Lenient: absent, NULL, or an out-of-range / unknown value all decode
+        // as nil (= inherit prefs) — a peer can never poison a row's shape.
+        defaultBoardSize = (try? container.decodeIfPresent(Int.self, forKey: .defaultBoardSize))
+            .flatMap { $0 }
+            .flatMap(DefaultBoardSize.init(rawValue:))
+        defaultCenterType = (try? container.decodeIfPresent(String.self, forKey: .defaultCenterType))
+            .flatMap { $0 }
+            .flatMap(DefaultCenterSquareType.init(rawValue:))
 
         createdAt = try container.decode(String.self, forKey: .createdAt)
         updatedAt = try container.decode(String.self, forKey: .updatedAt)
@@ -142,11 +170,47 @@ struct CoreBoardDefault: Codable, FetchableRecord, PersistableRecord {
             try container.encode("[]", forKey: .coreDefaultTaskIds)
         }
 
+        // nil → key ABSENT (never an explicit null): the sync push then stamps
+        // `FieldValue.delete()` for it via the clearable-fields mechanism.
+        try container.encodeIfPresent(defaultBoardSize?.rawValue, forKey: .defaultBoardSize)
+        try container.encodeIfPresent(defaultCenterType?.rawValue, forKey: .defaultCenterType)
+
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(lastSyncedAt, forKey: .lastSyncedAt)
         try container.encode(version, forKey: .version)
         try container.encode(isDeleted, forKey: .isDeleted)
         try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+    }
+}
+
+/// Tri-state write instruction for a `CoreBoardDefault` override field —
+/// the Swift twin of the TS `UpdateCoreBoardDefaultInput`'s
+/// `undefined | null | value` on `defaultBoardSize` / `defaultCenterType`.
+///
+/// - `.keep` — leave the stored value untouched (a pools-only save must
+///   never stomp an override; the P5 checkbox path always passes this).
+/// - `.set(nil)` / `.clear` — CLEAR back to "inherit prefs" (stored NULL,
+///   pushed as a field delete).
+/// - `.set(x)` — override with `x`.
+///
+/// **Sharp edge:** for the centre field ALWAYS write
+/// `.set(DefaultCenterSquareType.none)` — a bare `.set(.none)` resolves to
+/// `Optional.none` (= `.clear`), silently clearing instead of setting
+/// "no free space". Prefer `.clear` for the clear intent so the two never
+/// read alike.
+enum CoreBoardDefaultFieldPatch<Value> {
+    case keep
+    case set(Value?)
+
+    /// Clear back to "inherit prefs" — spelled out so it can't be confused
+    /// with setting an enum's `.none` case.
+    static var clear: Self { .set(nil) }
+
+    /// Applies this patch to a stored optional in place.
+    ///
+    /// - Parameter stored: The current stored value, mutated for `.set`.
+    func apply(to stored: inout Value?) {
+        if case .set(let next) = self { stored = next }
     }
 }

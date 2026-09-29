@@ -365,3 +365,14 @@ export type {
   OpenSeriesCandidate,
 } from './boardSources';
 export type { BoardNameFields } from './boardDisplayName';
+
+// ===== Per-timeframe core-board size + centre (docs/POOLS_RECURRING.md) =====
+export {
+  resolveCoreBoardSetupDefaults,
+  hasExplicitCoreBoardSetup,
+} from './coreBoardSetupDefaults';
+export type {
+  CoreBoardSetupDefaults,
+  CoreBoardSetupOverrides,
+  CoreBoardSetupPrefs,
+} from './coreBoardSetupDefaults';

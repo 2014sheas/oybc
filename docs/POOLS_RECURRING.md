@@ -116,9 +116,44 @@ CoreBoardDefault {
   id, userId, timeframe,       // DAILY/WEEKLY/MONTHLY/YEARLY, immutable
   corePoolIds: string[],       // pools that pre-fill core-board setup
   coreDefaultTaskIds: string[],// individual default tasks
+  defaultBoardSize?: 3|4|5,    // per-timeframe size (2026-09-29); null = inherit prefs
+  defaultCenterType?: FREE|NONE,// per-timeframe centre; null = inherit prefs
   createdAt / updatedAt / lastSyncedAt? / version / isDeleted / deletedAt
 }
 ```
+
+#### Per-timeframe size + centre (owner-decided 2026-09-29)
+
+Each core timeframe can carry its own default **board size** and **centre
+behaviour**, edited in the same "Core defaults…" sheet as its pools and
+default tasks (Board settings, and a core board's Edit screen → BOARD
+section). Rules:
+
+- **Override, inherit when unset.** A null field inherits the global
+  `UserPreferences.defaultBoardSize` / `defaultCenterType` ("New board
+  defaults"), which stay the fallback for every timeframe with no override
+  and for custom / ongoing boards. No existing row is migrated.
+- **One shared resolver**, `resolveCoreBoardSetupDefaults(coreDefault, prefs)`
+  (`@oybc/shared` ↔ Swift twin, vector-pinned), feeds BOTH wizards at their
+  existing core-prefill point. It applies the wizard's even-size rule (4×4
+  has no centre → `NONE`). A saved draft or a repeat series keeps its own
+  size — defaults **pre-fill** setup exactly like pools do; they never own
+  the board. On web the row loads asynchronously, so size/centre apply in the
+  same one-shot prefill effect as pools, and a user who has already changed
+  the size is never stomped.
+- **Centre options** are the same two the global default offers (free space /
+  none). "Choose a task" stays a per-board pick in the wizard.
+- **Clearing back to inherit must sync**: web push drops absent fields and the
+  iOS pull leaves absent columns untouched (the Reopen lesson, WC slice 4), so
+  both fields join the clearable-fields mechanism (sync-contract `CLEARABLE_*`
+  constants): deleted on push when null, set to NULL on the iOS pull when
+  absent.
+- Storage: Zod optional; web Dexie field-only (no index, no store version);
+  iOS GRDB **v36** adds two nullable columns, `decodeIfPresent`. Rides the
+  existing `coreBoardDefaults` per-row LWW; `firestore.rules` validates no
+  per-field shape here, so no rules change.
+- Board settings' per-timeframe summary line appends "3×3 · free space" when
+  a timeframe sets either field explicitly.
 
 - Chosen over UserPreferences fields because prefs sync as a single LWW doc
   (concurrent prefs writes would race the whole default set); per-row LWW

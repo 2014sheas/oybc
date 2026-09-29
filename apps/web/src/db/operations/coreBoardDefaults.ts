@@ -67,6 +67,10 @@ export async function createCoreBoardDefault(
     timeframe: input.timeframe,
     corePoolIds: [...input.corePoolIds],
     coreDefaultTaskIds: [...input.coreDefaultTaskIds],
+    // Per-timeframe size + centre overrides: stored only when set (an
+    // omitted or `null` input means "inherit prefs" = key ABSENT, never null).
+    ...(input.defaultBoardSize != null ? { defaultBoardSize: input.defaultBoardSize } : {}),
+    ...(input.defaultCenterType != null ? { defaultCenterType: input.defaultCenterType } : {}),
     createdAt: now,
     updatedAt: now,
     version: 1,
@@ -79,9 +83,16 @@ export async function createCoreBoardDefault(
 }
 
 /**
- * Update an existing CoreBoardDefault's `corePoolIds` and/or
- * `coreDefaultTaskIds`. Bumps `version` + `updatedAt`. Returns the
- * updated row (or undefined when the id doesn't exist).
+ * Update an existing CoreBoardDefault's `corePoolIds`, `coreDefaultTaskIds`
+ * and/or its per-timeframe `defaultBoardSize` / `defaultCenterType`
+ * overrides. Bumps `version` + `updatedAt`. Returns the updated row (or
+ * undefined when the id doesn't exist).
+ *
+ * The two override fields are tri-state on the input: an omitted key keeps
+ * the stored value, `null` CLEARS it (stored as an ABSENT key — Dexie's
+ * `update()` deletes a property set to `undefined` — so the push path's
+ * `CLEARABLE_FIELDS_BY_COLLECTION.coreBoardDefaults` delete fires and the
+ * Zod row schema keeps parsing), and a value overrides.
  */
 export async function updateCoreBoardDefault(
   id: string,
@@ -91,15 +102,18 @@ export async function updateCoreBoardDefault(
   if (!existing) return undefined;
 
   const patch: Partial<CoreBoardDefault> = {
-    corePoolIds: updates.corePoolIds ? [...updates.corePoolIds] : undefined,
-    coreDefaultTaskIds: updates.coreDefaultTaskIds
-      ? [...updates.coreDefaultTaskIds]
-      : undefined,
     updatedAt: currentTimestamp(),
     version: (existing.version ?? 0) + 1,
   };
-  for (const key of Object.keys(patch) as (keyof typeof patch)[]) {
-    if (patch[key] === undefined) delete patch[key];
+  if (updates.corePoolIds) patch.corePoolIds = [...updates.corePoolIds];
+  if (updates.coreDefaultTaskIds) patch.coreDefaultTaskIds = [...updates.coreDefaultTaskIds];
+  // `undefined` here is deliberate: it is the "delete this key" instruction
+  // to Dexie's `update()`, which is how a `null` input clears the override.
+  if (updates.defaultBoardSize !== undefined) {
+    patch.defaultBoardSize = updates.defaultBoardSize ?? undefined;
+  }
+  if (updates.defaultCenterType !== undefined) {
+    patch.defaultCenterType = updates.defaultCenterType ?? undefined;
   }
 
   await db.coreBoardDefaults.update(id, patch);
@@ -118,7 +132,7 @@ export async function updateCoreBoardDefault(
 export async function upsertCoreBoardDefault(
   userId: string,
   timeframe: Timeframe,
-  updates: { corePoolIds?: string[]; coreDefaultTaskIds?: string[] },
+  updates: UpdateCoreBoardDefaultInput,
 ): Promise<CoreBoardDefault> {
   const existing = await fetchCoreBoardDefault(userId, timeframe);
   if (existing) {
@@ -129,6 +143,8 @@ export async function upsertCoreBoardDefault(
     timeframe,
     corePoolIds: updates.corePoolIds ?? [],
     coreDefaultTaskIds: updates.coreDefaultTaskIds ?? [],
+    defaultBoardSize: updates.defaultBoardSize,
+    defaultCenterType: updates.defaultCenterType,
   });
 }
 
