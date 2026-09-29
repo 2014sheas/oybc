@@ -729,10 +729,11 @@ while the owner slept). Rules:
   his Mac). Never cut for work that will merge before he can test it (overnight /
   unattended trains). At his Mac, device-test by building the worktree's
   `apps/ios/OYBC.xcodeproj` in Xcode (⌘R) — free.
-- **Claude never pushes the lane.** `.claude/settings.json` has a PreToolUse hook
-  that denies any Bash command matching a git push to the lane (it also blocks
-  commands that merely *mention* one — false positives are acceptable). Agents
-  hand the owner the exact command and he runs it himself with a leading `!`.
+- **Soft guard, not a hard block** (owner, 2026-09-28: "There should not be a HARD
+  guard against that action"). `.claude/settings.json` has a PreToolUse hook that
+  returns `ask` (with the upload-cap reason) for any Bash command matching a git
+  push to the lane; when the owner has asked for the build, Claude pushes it itself.
+  The written rule above is the real guard — never cut a build nobody asked for.
 - **Never "restore the lane to dev" after a merge** — a squash-merge rebuilds
   identical code. Leave the lane where it is; the next cut replaces it with a
   lease-guarded force push
