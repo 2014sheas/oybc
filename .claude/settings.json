@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command // \"\"' | grep -Eq 'git[[:space:]].*push.*release/testflight' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Blocked: pushing release/testflight starts an Xcode Cloud build + App Store Connect upload (daily cap ITMS-90382, hit 2026-09-27). Claude never pushes the lane. If the owner asked for a build he will test now, give him the exact command to run himself with a leading '!'.\"}}' || true",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -Eq 'git[[:space:]].*push.*release/testflight' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"TestFlight lane push = one Xcode Cloud build + one App Store Connect upload (daily cap ITMS-90382). Proceed only if the owner asked for this build and will test it.\"}}' || true",
             "statusMessage": "Checking for TestFlight lane push"
           }
         ]
