@@ -204,6 +204,7 @@ struct RearrangeGrid: View {
 
                 rearrangeCellView(
                     cell: cell,
+                    slot: slotIdx,
                     cellSize: cellSize,
                     isHole: isHole,
                     isSelected: isSelected,
@@ -212,16 +213,23 @@ struct RearrangeGrid: View {
                     jiggleActive: showJiggle
                 )
                 .frame(width: cellSize, height: cellSize)
+                // Hit region + gestures sit BEFORE `.offset`: `.offset` moves
+                // rendering, not the layout frame, so a `contentShape` placed
+                // after it would hit-test at the un-offset spot (every cell
+                // stacked on slot 0 — the #516 SquaresEditGrid bug). The face
+                // itself is non-hit-testable (see `rearrangeCellView`), so this
+                // shape owns every touch on the cell.
+                .contentShape(Rectangle())
+                .gesture(rearrange && !cell.isPinned && !cell.isEmpty
+                    ? makeDragGesture(for: cell, cellSize: cellSize, stride: stride)
+                    : nil)
+                .onTapGesture { handleTap(cell: cell) }
                 .offset(x: xOff, y: yOff)
                 // Animate position changes during live cascade and committed reorders.
                 .animation(
                     .spring(response: 0.22, dampingFraction: 0.82),
                     value: slotIdx
                 )
-                .gesture(rearrange && !cell.isPinned && !cell.isEmpty
-                    ? makeDragGesture(for: cell, cellSize: cellSize, stride: stride)
-                    : nil)
-                .onTapGesture { handleTap(cell: cell) }
             }
 
             // ── Ghost (lifted tile that follows the finger) ──
@@ -264,6 +272,7 @@ struct RearrangeGrid: View {
     @ViewBuilder
     private func rearrangeCellView(
         cell: RearrangeCellData,
+        slot: Int,
         cellSize: CGFloat,
         isHole: Bool,
         isSelected: Bool,
@@ -289,6 +298,9 @@ struct RearrangeGrid: View {
                     )
             } else {
                 faceCell(for: cell, task: task, isDirty: isDirty)
+                    // Positional id for `OYBCUITests` (`WizardRearrangeUITests`);
+                    // lands on the face's own accessibility element.
+                    .accessibilityIdentifier("rearrangeCell.\(slot)")
                     .overlay(
                         Group {
                             if isSelected {
@@ -302,6 +314,11 @@ struct RearrangeGrid: View {
         }
         .opacity(isDimmed ? 0.45 : 1.0)
         .modifier(RearrangeJiggleModifier(active: jiggleActive && !reduceMotion))
+        // `RisoBoardPlayCell` always attaches its own (play-mode) tap gesture;
+        // as a child gesture it outranks the grid's `onTapGesture`, so
+        // tap-to-swap never fired. The grid's cell-level `contentShape` takes
+        // every touch instead. Accessibility is unaffected.
+        .allowsHitTesting(false)
     }
 
     /// The shared board square for a real cell (center or task). Windowed

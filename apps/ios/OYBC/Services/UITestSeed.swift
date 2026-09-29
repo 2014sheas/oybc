@@ -33,28 +33,9 @@ enum UITestSeed {
 
         try db.saveBoard(makeBoard(userId: userId, now: now))
 
-        let titles = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta"]
-        // Reading-order slots, skipping the FREE center (1,1).
-        let slots = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 1), (2, 2)]
-        for (i, title) in titles.enumerated() {
-            let taskId = "uitest-task-\(i)"
-            try db.saveTask(Task(
-                id: taskId, userId: userId, title: title, description: nil, type: .normal,
-                action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil,
-                referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil,
-                requiredCount: nil, totalCompletions: 0, totalInstances: 1,
-                isCompleted: false, completedAt: nil, currentCount: nil,
-                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
-                isDeleted: false, deletedAt: nil
-            ))
-            let (row, col) = slots[i]
-            try db.saveBoardTask(BoardTask(
-                id: "uitest-bt-\(i)", boardId: boardId, taskId: taskId,
-                row: row, col: col, isCenter: false,
-                isLocked: title == "Theta",
-                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
-            ))
-        }
+        try seedTasks(boardId: boardId, taskIdPrefix: "uitest-task-",
+                      boardTaskIdPrefix: "uitest-bt-", lockedTitle: "Theta",
+                      userId: userId, now: now)
 
         NotificationDelegate.shared.pendingDeepLink = NotificationDeepLink(boardId: boardId)
     }
@@ -100,27 +81,9 @@ enum UITestSeed {
 
         try db.saveBoard(makeClosedBoard(userId: userId, now: now))
 
-        let titles = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta"]
-        let slots = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 1), (2, 2)]
-        for (i, title) in titles.enumerated() {
-            let taskId = "uitest-closed-task-\(i)"
-            try db.saveTask(Task(
-                id: taskId, userId: userId, title: title, description: nil, type: .normal,
-                action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil,
-                referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil,
-                requiredCount: nil, totalCompletions: 0, totalInstances: 1,
-                isCompleted: false, completedAt: nil, currentCount: nil,
-                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
-                isDeleted: false, deletedAt: nil
-            ))
-            let (row, col) = slots[i]
-            try db.saveBoardTask(BoardTask(
-                id: "uitest-closed-bt-\(i)", boardId: closedBoardId, taskId: taskId,
-                row: row, col: col, isCenter: false,
-                isLocked: false,
-                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
-            ))
-        }
+        try seedTasks(boardId: closedBoardId, taskIdPrefix: "uitest-closed-task-",
+                      boardTaskIdPrefix: "uitest-closed-bt-", lockedTitle: nil,
+                      userId: userId, now: now)
 
         NotificationDelegate.shared.pendingDeepLink = NotificationDeepLink(boardId: closedBoardId)
     }
@@ -142,6 +105,97 @@ enum UITestSeed {
         ]
         let data = try JSONSerialization.data(withJSONObject: dict)
         return try JSONDecoder().decode(Board.self, from: data)
+    }
+
+    // MARK: - Wizard Preview → Rearrange fixture
+
+    /// Launch argument that seeds a one-off DRAFT board with all eight tasks
+    /// placed — used by `WizardRearrangeUITests`. The draft deep-links like
+    /// the fixtures above; its play screen is the draft guard, whose
+    /// "Resume draft" button opens the wizard, and a fully-placed draft
+    /// resumes straight onto Step 3 (Preview) —
+    /// `BoardWizardViewModel.resolveDraftInitialStep`.
+    static let seedWizardPreviewArgument = "-uiTestSeedWizardPreview"
+
+    /// Id of the seeded draft board.
+    static let wizardDraftBoardId = "uitest-wizard-draft"
+
+    /// Seeds the wizard-preview draft fixture when its launch argument is
+    /// present. Same eight titles around a FREE center, none locked,
+    /// `isRandomized` false so the Preview grid is the stored placement.
+    ///
+    /// - Parameter userId: The bypass user's id (owner of every seeded row).
+    /// - Throws: Any GRDB write error.
+    @MainActor
+    static func seedWizardPreviewIfRequested(userId: String) throws {
+        guard ProcessInfo.processInfo.arguments.contains(seedWizardPreviewArgument) else { return }
+        let db = AppDatabase.shared
+        let now = AppDatabase.currentTimestamp()
+
+        try db.saveBoard(makeDraftBoard(userId: userId, now: now))
+        try seedTasks(boardId: wizardDraftBoardId, taskIdPrefix: "uitest-draft-task-",
+                      boardTaskIdPrefix: "uitest-draft-bt-", lockedTitle: nil,
+                      userId: userId, now: now)
+
+        NotificationDelegate.shared.pendingDeepLink = NotificationDeepLink(boardId: wizardDraftBoardId)
+    }
+
+    /// A one-off DRAFT custom 3×3 board with a FREE center, not randomized.
+    private static func makeDraftBoard(userId: String, now: String) throws -> Board {
+        let dict: [String: Any] = [
+            "id": wizardDraftBoardId, "userId": userId, "name": "UI Test Draft",
+            "status": BoardStatus.draft.rawValue,
+            "boardSize": 3, "timeframe": Timeframe.custom.rawValue,
+            "startDate": "2026-01-01T00:00:00.000", "endDate": "2030-12-31T23:59:59.999",
+            "centerSquareType": CenterSquareType.free.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": now, "updatedAt": now,
+            "version": 1, "isDeleted": false,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        return try JSONDecoder().decode(Board.self, from: data)
+    }
+
+    // MARK: - Shared builders
+
+    /// Upserts the eight fixture tasks "Alpha"…"Theta" and places them in
+    /// reading order around the FREE center (1,1) of a 3×3 board.
+    ///
+    /// - Parameters:
+    ///   - boardId: Board the placements belong to.
+    ///   - taskIdPrefix: Prefix for the deterministic task ids (suffix = index).
+    ///   - boardTaskIdPrefix: Prefix for the deterministic placement ids.
+    ///   - lockedTitle: Title of the one square placed LOCKED, or nil for none.
+    ///   - userId: Owner of every row.
+    ///   - now: Timestamp for created/updated fields.
+    /// - Throws: Any GRDB write error.
+    private static func seedTasks(
+        boardId: String, taskIdPrefix: String, boardTaskIdPrefix: String,
+        lockedTitle: String?, userId: String, now: String
+    ) throws {
+        let db = AppDatabase.shared
+        let titles = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Eta", "Theta"]
+        // Reading-order slots, skipping the FREE center (1,1).
+        let slots = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 1), (2, 2)]
+        for (i, title) in titles.enumerated() {
+            let taskId = "\(taskIdPrefix)\(i)"
+            try db.saveTask(Task(
+                id: taskId, userId: userId, title: title, description: nil, type: .normal,
+                action: nil, unit: nil, maxCount: nil, operatorType: nil, threshold: nil,
+                referencedBoardId: nil, referencedTemplateId: nil, achievementTrigger: nil,
+                requiredCount: nil, totalCompletions: 0, totalInstances: 1,
+                isCompleted: false, completedAt: nil, currentCount: nil,
+                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1,
+                isDeleted: false, deletedAt: nil
+            ))
+            let (row, col) = slots[i]
+            try db.saveBoardTask(BoardTask(
+                id: "\(boardTaskIdPrefix)\(i)", boardId: boardId, taskId: taskId,
+                row: row, col: col, isCenter: false,
+                isLocked: title == lockedTitle,
+                createdAt: now, updatedAt: now, lastSyncedAt: nil, version: 1
+            ))
+        }
     }
 }
 #endif
