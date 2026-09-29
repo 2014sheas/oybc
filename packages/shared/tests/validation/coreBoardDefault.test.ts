@@ -3,7 +3,7 @@ import {
   UpdateCoreBoardDefaultInputSchema,
   CoreBoardDefaultSchema,
 } from '../../src/validation/schemas';
-import { Timeframe } from '../../src/constants/enums';
+import { CenterSquareType, Timeframe } from '../../src/constants/enums';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -76,9 +76,76 @@ describe('CoreBoardDefaultSchema', () => {
   it('rejects version < 1', () => {
     expect(() => CoreBoardDefaultSchema.parse(validRow({ version: 0 }))).toThrow();
   });
+
+  // Per-timeframe size + centre (docs/POOLS_RECURRING.md, 2026-09-29).
+  describe('defaultBoardSize / defaultCenterType', () => {
+    it('are optional — a pre-feature row (both absent) still parses, and stays absent', () => {
+      const parsed = CoreBoardDefaultSchema.parse(validRow());
+      expect(parsed).not.toHaveProperty('defaultBoardSize');
+      expect(parsed).not.toHaveProperty('defaultCenterType');
+    });
+
+    it('accept every legal size (3 | 4 | 5) and centre (free | none) and round-trip them', () => {
+      for (const size of [3, 4, 5]) {
+        expect(CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: size })).defaultBoardSize).toBe(size);
+      }
+      for (const centre of [CenterSquareType.FREE, CenterSquareType.NONE]) {
+        expect(
+          CoreBoardDefaultSchema.parse(validRow({ defaultCenterType: centre })).defaultCenterType,
+        ).toBe(centre);
+      }
+    });
+
+    it('reject an out-of-range size and a CHOSEN centre (CHOSEN is a per-board pick, never a default)', () => {
+      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: 6 }))).toThrow();
+      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: '5' }))).toThrow();
+      expect(() =>
+        CoreBoardDefaultSchema.parse(validRow({ defaultCenterType: CenterSquareType.CHOSEN })),
+      ).toThrow();
+    });
+
+    it('reject null on the ROW (a clear is stored as absent, never null — the Board.sealedAt posture)', () => {
+      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultBoardSize: null }))).toThrow();
+      expect(() => CoreBoardDefaultSchema.parse(validRow({ defaultCenterType: null }))).toThrow();
+    });
+  });
 });
 
 // ─── CreateCoreBoardDefaultInputSchema ────────────────────────────────────────
+
+describe('CreateCoreBoardDefaultInputSchema — size / centre', () => {
+  it('accepts the overrides, and accepts their absence', () => {
+    const base = { timeframe: Timeframe.DAILY, corePoolIds: [], coreDefaultTaskIds: [] };
+    expect(() => CreateCoreBoardDefaultInputSchema.parse(base)).not.toThrow();
+    expect(
+      CreateCoreBoardDefaultInputSchema.parse({
+        ...base,
+        defaultBoardSize: 4,
+        defaultCenterType: CenterSquareType.NONE,
+      }),
+    ).toMatchObject({ defaultBoardSize: 4, defaultCenterType: CenterSquareType.NONE });
+    expect(() => CreateCoreBoardDefaultInputSchema.parse({ ...base, defaultBoardSize: 2 })).toThrow();
+  });
+});
+
+describe('UpdateCoreBoardDefaultInputSchema — size / centre tri-state', () => {
+  it('omitted = keep, null = clear, value = set', () => {
+    expect(UpdateCoreBoardDefaultInputSchema.parse({})).toEqual({});
+    expect(
+      UpdateCoreBoardDefaultInputSchema.parse({ defaultBoardSize: null, defaultCenterType: null }),
+    ).toEqual({ defaultBoardSize: null, defaultCenterType: null });
+    expect(
+      UpdateCoreBoardDefaultInputSchema.parse({
+        defaultBoardSize: 3,
+        defaultCenterType: CenterSquareType.FREE,
+      }),
+    ).toEqual({ defaultBoardSize: 3, defaultCenterType: CenterSquareType.FREE });
+    expect(() => UpdateCoreBoardDefaultInputSchema.parse({ defaultBoardSize: 7 })).toThrow();
+    expect(() =>
+      UpdateCoreBoardDefaultInputSchema.parse({ defaultCenterType: CenterSquareType.CHOSEN }),
+    ).toThrow();
+  });
+});
 
 describe('CreateCoreBoardDefaultInputSchema', () => {
   it('accepts a minimal create input', () => {

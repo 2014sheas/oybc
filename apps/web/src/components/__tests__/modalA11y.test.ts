@@ -3,6 +3,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import {
+  CenterSquareType,
   OperatorType,
   TaskType,
   Timeframe,
@@ -300,6 +301,7 @@ const CASES: DialogCase[] = [
         userId: 'user-1',
         timeframe: Timeframe.WEEKLY,
         existingDefault: undefined,
+        preferences: { defaultBoardSize: 5, defaultCenterType: CenterSquareType.FREE },
         pools: [],
         templates: [],
         achievableTaskIdsByTemplateId: undefined,

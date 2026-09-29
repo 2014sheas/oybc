@@ -91,6 +91,56 @@ describe('pushSync — CLEARABLE_BOARD_FIELDS field-delete wiring (D2)', () => {
     expect(writes[0].data.sealedCompletedCells).toEqual([0, 1]);
   });
 
+  it('a coreBoardDefaults row with its size / centre overrides cleared pushes deleteField() for both (2026-09-29)', async () => {
+    const CBD_ID = 'cbd-1';
+    const row: SyncableEntity = {
+      id: CBD_ID,
+      userId: USER,
+      version: 3,
+      updatedAt: '2026-09-29T00:00:00.000Z',
+      isDeleted: false,
+    }; // no defaultBoardSize / defaultCenterType — cleared back to inherit
+    await db.table('coreBoardDefaults').put(row);
+    await addToSyncQueue('coreBoardDefaults', CBD_ID, SyncOperationType.UPDATE, row);
+    const { store, writes } = makeFakeStore();
+
+    const result = await pushSync(USER, { store });
+
+    expect(result).toMatchObject({ pushed: 1, failed: 0 });
+    expect(writes[0].path).toBe(`users/${USER}/coreBoardDefaults/${CBD_ID}`);
+    expect(Object.keys(writes[0].data)).toEqual(
+      expect.arrayContaining(['defaultBoardSize', 'defaultCenterType']),
+    );
+    // The boards-only fields must NOT leak onto a coreBoardDefaults doc.
+    expect(writes[0].data).not.toHaveProperty('sealedAt');
+    expect(writes[0].data).not.toHaveProperty('endDate');
+    await db.syncQueue.clear();
+    await db.table('coreBoardDefaults').clear();
+  });
+
+  it('a coreBoardDefaults row with its overrides SET pushes the real values, not deletes', async () => {
+    const CBD_ID = 'cbd-2';
+    const row = {
+      id: CBD_ID,
+      userId: USER,
+      version: 1,
+      updatedAt: '2026-09-29T00:00:00.000Z',
+      isDeleted: false,
+      defaultBoardSize: 4,
+      defaultCenterType: 'none',
+    } as SyncableEntity;
+    await db.table('coreBoardDefaults').put(row);
+    await addToSyncQueue('coreBoardDefaults', CBD_ID, SyncOperationType.UPDATE, row);
+    const { store, writes } = makeFakeStore();
+
+    await pushSync(USER, { store });
+
+    expect(writes[0].data.defaultBoardSize).toBe(4);
+    expect(writes[0].data.defaultCenterType).toBe('none');
+    await db.syncQueue.clear();
+    await db.table('coreBoardDefaults').clear();
+  });
+
   it('a non-board entity type never gets the clearable-field treatment', async () => {
     await db.table('tasks').put({ id: 't1', userId: USER, version: 1, updatedAt: '2026-07-10T00:00:00.000Z', isDeleted: false });
     await addToSyncQueue('tasks', 't1', SyncOperationType.UPDATE, {

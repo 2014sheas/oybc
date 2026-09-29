@@ -28,5 +28,17 @@
     "completedAt",
     "sealedAt",
     "sealedCompletedCells"
-  ]
+  ],
+  "clearableFieldsByCollection": {
+    "boards": [
+      "endDate",
+      "completedAt",
+      "sealedAt",
+      "sealedCompletedCells"
+    ],
+    "coreBoardDefaults": [
+      "defaultBoardSize",
+      "defaultCenterType"
+    ]
+  }
 }

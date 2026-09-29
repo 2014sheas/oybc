@@ -134,6 +134,112 @@ final class BoardWizardCoreDefaultsTests: XCTestCase {
     // isCorePoolDefaultSaved/setCorePoolDefaultSaved helpers were removed
     // (defaults sheet = sole author surface); their tests went with them.
 
+    // MARK: - Per-timeframe size + centre (docs/POOLS_RECURRING.md
+    // §Per-timeframe size + centre, owner-decided 2026-09-29)
+
+    func testPrefill_RowWithSizeAndCentre_OpensAtTheRowsValues() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        _ = try db.upsertCoreBoardDefaultAndEnqueue(
+            userId: userId, timeframe: .daily, corePoolIds: [], coreDefaultTaskIds: [],
+            defaultBoardSize: .set(.three), defaultCenterType: .set(DefaultCenterSquareType.none),
+            now: AppDatabase.currentTimestamp()
+        )
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, prefilledRecurringTimeframe: .daily, userId: userId, database: db
+        )
+
+        XCTAssertEqual(vm.size, 3)
+        XCTAssertEqual(vm.centerType, .none)
+    }
+
+    func testPrefill_NoRow_SizeAndCentreFallToGlobalPreferences() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        // No CoreBoardDefault row for .yearly at all.
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, prefilledRecurringTimeframe: .yearly, userId: userId, database: db
+        )
+
+        // UserPreferences.defaults is 5x5 / free.
+        XCTAssertEqual(vm.size, 5)
+        XCTAssertEqual(vm.centerType, .free)
+    }
+
+    func testPrefill_RowWithSize4AndFree_CoercesCentreToNone() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        _ = try db.upsertCoreBoardDefaultAndEnqueue(
+            userId: userId, timeframe: .weekly, corePoolIds: [], coreDefaultTaskIds: [],
+            defaultBoardSize: .set(.four), defaultCenterType: .set(.free),
+            now: AppDatabase.currentTimestamp()
+        )
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, prefilledRecurringTimeframe: .weekly, userId: userId, database: db
+        )
+
+        // Even board sizes have no centre concept — the row's FREE override
+        // is coerced to NONE, exactly like the global-preference fallback.
+        XCTAssertEqual(vm.size, 4)
+        XCTAssertEqual(vm.centerType, .none)
+    }
+
+    func testDraft_KeepsItsOwnSize_IgnoringACoreDefaultRow() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        // A row exists for .monthly with a totally different size — a
+        // resumed draft must never be stomped by it.
+        _ = try db.upsertCoreBoardDefaultAndEnqueue(
+            userId: userId, timeframe: .monthly, corePoolIds: [], coreDefaultTaskIds: [],
+            defaultBoardSize: .set(.five), defaultCenterType: .set(.free),
+            now: AppDatabase.currentTimestamp()
+        )
+        let now = AppDatabase.currentTimestamp()
+        let dict: [String: Any] = [
+            "id": "draft-1", "userId": userId, "name": "Draft",
+            "status": BoardStatus.draft.rawValue, "boardSize": 3,
+            "timeframe": Timeframe.monthly.rawValue,
+            "startDate": now, "endDate": NSNull(),
+            "centerSquareType": CenterSquareType.none.rawValue, "isRandomized": false,
+            "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false,
+            "isCore": true,
+        ]
+        let draft = try JSONDecoder().decode(
+            Board.self, from: JSONSerialization.data(withJSONObject: dict)
+        )
+
+        let vm = BoardWizardViewModel(preferences: .defaults, draft: (draft, []), userId: userId, database: db)
+
+        XCTAssertEqual(vm.size, 3)
+        XCTAssertEqual(vm.centerType, .none)
+    }
+
+    func testReset_CorePrefilledVM_ReResolvesTheRowsDefaults() throws {
+        let db = try makeDb()
+        try seedUser(db)
+        _ = try db.upsertCoreBoardDefaultAndEnqueue(
+            userId: userId, timeframe: .daily, corePoolIds: [], coreDefaultTaskIds: [],
+            defaultBoardSize: .set(.three), defaultCenterType: .set(DefaultCenterSquareType.none),
+            now: AppDatabase.currentTimestamp()
+        )
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, prefilledRecurringTimeframe: .daily, userId: userId, database: db
+        )
+        XCTAssertEqual(vm.size, 3)
+        vm.updateSize(5) // simulate the user changing it mid-flow
+
+        vm.reset()
+
+        // reset() must re-resolve the SAME row-backed defaults, not
+        // collapse to UserPreferences.defaults (5x5 / free).
+        XCTAssertEqual(vm.size, 3)
+        XCTAssertEqual(vm.centerType, .none)
+    }
+
     // MARK: - Floor-gate math (proves it's not hardcoded to 8/3x3)
 
     func test3x3FreeCenterFloorIs8() {

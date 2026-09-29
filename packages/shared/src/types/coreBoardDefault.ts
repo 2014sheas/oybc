@@ -1,4 +1,6 @@
 import { Timeframe } from '../constants/enums';
+import type { BoardSize } from '../constants';
+import type { DefaultCenterSquareType } from './user';
 
 /**
  * CoreBoardDefault — Task Pools + Recurring Boards Rework (P1)
@@ -38,6 +40,20 @@ export interface CoreBoardDefault {
   /** Individual default tasks, pre-filled as plain chips alongside pool tasks. */
   coreDefaultTaskIds: string[];
 
+  // Per-timeframe size + centre (docs/POOLS_RECURRING.md §Per-timeframe
+  // size + centre, owner-decided 2026-09-29). Both OPTIONAL: an absent
+  // field inherits the global `UserPreferences.defaultBoardSize` /
+  // `defaultCenterType`; resolve through `resolveCoreBoardSetupDefaults`
+  // (`algorithms/coreBoardSetupDefaults.ts`), never by reading these raw.
+  // Declared `?:` (absent, never `null`) like `Board.sealedAt` /
+  // `reopenedAt`; a clear is stored as ABSENT and reaches other devices via
+  // `CLEARABLE_FIELDS_BY_COLLECTION.coreBoardDefaults` (deleted on push,
+  // NULLed on the iOS pull). `null` exists only on the UPDATE input below.
+  /** Per-timeframe board size override (3 | 4 | 5); absent = inherit prefs. */
+  defaultBoardSize?: BoardSize;
+  /** Per-timeframe centre override (FREE | NONE); absent = inherit prefs. */
+  defaultCenterType?: DefaultCenterSquareType;
+
   // Timestamps
   createdAt: string;           // ISO8601
   updatedAt: string;           // ISO8601
@@ -58,6 +74,10 @@ export interface CreateCoreBoardDefaultInput {
   timeframe: Timeframe;
   corePoolIds: string[];
   coreDefaultTaskIds: string[];
+  /** Optional size override; omit (or pass `null`) to inherit prefs. */
+  defaultBoardSize?: BoardSize | null;
+  /** Optional centre override; omit (or pass `null`) to inherit prefs. */
+  defaultCenterType?: DefaultCenterSquareType | null;
 }
 
 /**
@@ -68,4 +88,13 @@ export interface CreateCoreBoardDefaultInput {
 export interface UpdateCoreBoardDefaultInput {
   corePoolIds?: string[];
   coreDefaultTaskIds?: string[];
+  /**
+   * Tri-state: `undefined` (key omitted) keeps the stored value, `null`
+   * CLEARS it back to "inherit prefs" (stored as absent), a value
+   * overrides. iOS twin: `CoreBoardDefaultFieldPatch` (`.keep` /
+   * `.set(nil)` / `.set(x)`).
+   */
+  defaultBoardSize?: BoardSize | null;
+  /** Same tri-state as `defaultBoardSize`. */
+  defaultCenterType?: DefaultCenterSquareType | null;
 }

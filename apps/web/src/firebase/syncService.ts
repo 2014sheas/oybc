@@ -42,7 +42,7 @@ import {
   mergeUserPreferences,
   SYNC_COLLECTIONS,
   LEGACY_PULL_SKIP_COLLECTIONS as SHARED_LEGACY_PULL_SKIP_COLLECTIONS,
-  CLEARABLE_BOARD_FIELDS,
+  clearableFieldsFor,
   type User,
   type SyncCollection,
 } from '@oybc/shared';
@@ -946,19 +946,19 @@ async function writeSingleDoc(
   }
   cleaned._syncedAt = serverTimestamp();
 
-  // Board Edit redesign slice 4 (D2) — a cleared board field (indefinite
-  // `endDate`, an un-greenlogged `completedAt`, or a Reopen clearing
-  // `sealedAt`/`sealedCompletedCells`) must propagate as an explicit
+  // Board Edit redesign slice 4 (D2) — a cleared field (a board's indefinite
+  // `endDate`, an un-greenlogged `completedAt`, a Reopen clearing
+  // `sealedAt`/`sealedCompletedCells`, or a core-board default's size /
+  // centre override cleared back to inherit) must propagate as an explicit
   // Firestore field delete: writes use `merge: true`, so simply omitting an
   // `undefined` field would PRESERVE the stale remote value for another
-  // device to pull. `CLEARABLE_BOARD_FIELDS` (`@oybc/shared`) is the single
-  // source of truth for this list — harmless no-op on docs that never had
-  // the field.
-  if (entityType === 'boards') {
-    for (const field of CLEARABLE_BOARD_FIELDS) {
-      if (cleaned[field] === undefined) {
-        cleaned[field] = deleteField();
-      }
+  // device to pull. `CLEARABLE_FIELDS_BY_COLLECTION` (`@oybc/shared`, read
+  // via `clearableFieldsFor`) is the single source of truth per collection —
+  // an empty list for every other collection, and a harmless no-op on docs
+  // that never had the field.
+  for (const field of clearableFieldsFor(entityType)) {
+    if (cleaned[field] === undefined) {
+      cleaned[field] = deleteField();
     }
   }
 

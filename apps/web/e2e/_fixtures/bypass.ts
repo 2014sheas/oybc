@@ -623,4 +623,44 @@ export async function seedTaskEvent(page: Page, event: SeedTaskEvent): Promise<v
   }, row);
 }
 
+// ─── T2/T3 — CoreBoardDefault read helper ───────────────────────────────────
+//
+// Same raw-IDB pattern as the other readers. Used by
+// `core-defaults-size.spec.ts` (docs/POOLS_RECURRING.md §Per-timeframe
+// size + centre) to assert the saved row's shape directly after a UI save
+// (an explicit override is stored as a present key; "inherit" is stored as
+// an ABSENT key — see `CoreDefaultsSheet`'s tri-state save).
+
+/**
+ * Read the bypass user's `CoreBoardDefault` row for one timeframe via the
+ * `[userId+timeframe]` compound index (mirrors `fetchCoreBoardDefault`'s
+ * query). Returns `null` when no row exists for that timeframe. A field
+ * ABSENT on the returned object means "inherit" — the sheet's clear path
+ * deletes the key rather than storing `null` (see `updateCoreBoardDefault`).
+ */
+export async function readCoreBoardDefault(
+  page: Page,
+  timeframe: 'daily' | 'weekly' | 'monthly' | 'yearly',
+): Promise<Record<string, unknown> | null> {
+  return await page.evaluate(
+    async ({ userId, tf }) => {
+      return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+        const openReq = indexedDB.open('oybc');
+        openReq.onerror = () => reject(openReq.error);
+        openReq.onsuccess = () => {
+          const db = openReq.result;
+          const tx = db.transaction(['coreBoardDefaults'], 'readonly');
+          const req = tx.objectStore('coreBoardDefaults').index('[userId+timeframe]').get([userId, tf]);
+          req.onsuccess = () => {
+            db.close();
+            resolve((req.result as Record<string, unknown> | undefined) ?? null);
+          };
+          req.onerror = () => reject(req.error);
+        };
+      });
+    },
+    { userId: BYPASS_USER_ID, tf: timeframe },
+  );
+}
+
 export { expect } from '@playwright/test';

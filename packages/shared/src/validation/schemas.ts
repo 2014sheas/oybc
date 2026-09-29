@@ -757,7 +757,31 @@ export const PoolSchema = z.object({
   { message: 'taskIds must not contain duplicates' },
 );
 
+/**
+ * The two centre values a user can pick as a blanket default (global prefs)
+ * or a per-timeframe core-board default. CHOSEN needs per-board context.
+ * Declared here, ahead of the CoreBoardDefault schemas that reference it
+ * (module-level `const`s are TDZ-bound in declaration order).
+ */
+export const DefaultCenterSquareTypeSchema = z.union([
+  z.literal(CenterSquareType.FREE),
+  z.literal(CenterSquareType.NONE),
+]);
+
 // ===== CoreBoardDefault Schemas (P1 — replaces DefaultPool) =====
+
+/**
+ * Per-timeframe size + centre (docs/POOLS_RECURRING.md §Per-timeframe size
+ * + centre, 2026-09-29). Optional on the row and the create input (absent =
+ * inherit prefs — the `Board.sealedAt` / `reopenedAt` posture: `?:`, never
+ * `null`). The UPDATE input additionally accepts `null` = clear back to
+ * inherit; the ops layer stores that as absent so the clear rides
+ * `CLEARABLE_FIELDS_BY_COLLECTION.coreBoardDefaults` on push.
+ */
+const coreBoardSetupOverrideFields = {
+  defaultBoardSize: BoardSizeSchema.optional(),
+  defaultCenterType: DefaultCenterSquareTypeSchema.optional(),
+};
 
 /**
  * `Timeframe.CUSTOM` is excluded — same reason as `DefaultPool` /
@@ -770,6 +794,7 @@ export const CreateCoreBoardDefaultInputSchema = z.object({
   timeframe: RecurringTimeframeSchema,
   corePoolIds: z.array(z.string().uuid()),
   coreDefaultTaskIds: z.array(z.string().uuid()),
+  ...coreBoardSetupOverrideFields,
 }).refine(
   (data) => new Set(data.corePoolIds).size === data.corePoolIds.length,
   { message: 'corePoolIds must not contain duplicates' },
@@ -781,6 +806,9 @@ export const CreateCoreBoardDefaultInputSchema = z.object({
 export const UpdateCoreBoardDefaultInputSchema = z.object({
   corePoolIds: z.array(z.string().uuid()).optional(),
   coreDefaultTaskIds: z.array(z.string().uuid()).optional(),
+  // Tri-state on update only: omitted = keep, `null` = clear, value = set.
+  defaultBoardSize: BoardSizeSchema.optional().nullable(),
+  defaultCenterType: DefaultCenterSquareTypeSchema.optional().nullable(),
 }).refine(
   (data) => {
     if (data.corePoolIds === undefined) return true;
@@ -801,6 +829,7 @@ export const CoreBoardDefaultSchema = z.object({
   timeframe: RecurringTimeframeSchema,
   corePoolIds: z.array(z.string().uuid()),
   coreDefaultTaskIds: z.array(z.string().uuid()),
+  ...coreBoardSetupOverrideFields,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSyncedAt: z.string().datetime().optional(),
@@ -862,10 +891,8 @@ export const DefaultPoolSchema = z.object({
 
 export const WeekStartDaySchema = z.union([z.literal('monday'), z.literal('sunday')]);
 
-export const DefaultCenterSquareTypeSchema = z.union([
-  z.literal(CenterSquareType.FREE),
-  z.literal(CenterSquareType.NONE),
-]);
+// `DefaultCenterSquareTypeSchema` is declared above the CoreBoardDefault
+// schemas (it is shared by `CoreBoardDefaultSchema` and `UserPreferencesSchema`).
 
 export const ThemePreferenceSchema = z.union([
   z.literal('light'),

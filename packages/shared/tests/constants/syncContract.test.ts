@@ -5,6 +5,8 @@ import {
   USER_SCOPED_SYNC_COLLECTIONS,
   LEGACY_PULL_SKIP_COLLECTIONS,
   CLEARABLE_BOARD_FIELDS,
+  CLEARABLE_FIELDS_BY_COLLECTION,
+  clearableFieldsFor,
 } from '../../src/constants';
 
 /**
@@ -45,6 +47,7 @@ describe('syncContract fixture', () => {
     userScopedSyncCollections?: string[];
     legacyPullSkipCollections?: string[];
     clearableBoardFields?: string[];
+    clearableFieldsByCollection?: Record<string, string[]>;
   };
 
   it(`syncCollections matches SYNC_COLLECTIONS (${REGENERATE_HINT})`, () => {
@@ -70,6 +73,38 @@ describe('syncContract fixture', () => {
       'sealedAt',
       'sealedCompletedCells',
     ]);
+  });
+
+  it(`clearableFieldsByCollection matches CLEARABLE_FIELDS_BY_COLLECTION (${REGENERATE_HINT})`, () => {
+    expect(fixture.clearableFieldsByCollection).toEqual(
+      Object.fromEntries(
+        Object.entries(CLEARABLE_FIELDS_BY_COLLECTION).map(([k, v]) => [k, [...v]]),
+      ),
+    );
+  });
+
+  it('CLEARABLE_BOARD_FIELDS is the boards entry of the per-collection map', () => {
+    expect(CLEARABLE_BOARD_FIELDS).toBe(CLEARABLE_FIELDS_BY_COLLECTION.boards);
+  });
+
+  it('coreBoardDefaults clears its per-timeframe size + centre overrides (2026-09-29)', () => {
+    expect([...CLEARABLE_FIELDS_BY_COLLECTION.coreBoardDefaults]).toEqual([
+      'defaultBoardSize',
+      'defaultCenterType',
+    ]);
+  });
+
+  it('every clearable collection is a real sync collection', () => {
+    for (const name of Object.keys(CLEARABLE_FIELDS_BY_COLLECTION)) {
+      expect([...SYNC_COLLECTIONS]).toContain(name);
+    }
+  });
+
+  it('clearableFieldsFor returns the map entry, and [] for a collection with none', () => {
+    expect(clearableFieldsFor('boards')).toEqual([...CLEARABLE_BOARD_FIELDS]);
+    expect(clearableFieldsFor('coreBoardDefaults')).toEqual(['defaultBoardSize', 'defaultCenterType']);
+    expect(clearableFieldsFor('tasks')).toEqual([]);
+    expect(clearableFieldsFor('not-a-collection')).toEqual([]);
   });
 });
 

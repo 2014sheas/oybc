@@ -1174,15 +1174,15 @@ final class SyncService: ObservableObject {
         var cleaned = SyncWirePayload.expandJSONStrings(data)
         cleaned["_syncedAt"] = FieldValue.serverTimestamp()
 
-        // Board Edit redesign slice 4 (D2): `endDate` / `completedAt` /
-        // `sealedAt` / `sealedCompletedCells` must all propagate their
+        // Board Edit redesign slice 4 (D2): clearable fields (`boards.endDate`
+        // / `completedAt` / `sealedAt` / `sealedCompletedCells`, and a core
+        // default's cleared size / centre override) must propagate their
         // ABSENCE, not just their presence — under `merge: true`, simply
         // omitting an absent field would PRESERVE a stale remote value (e.g.
         // a Reopen's cleared `sealedAt` never reaching Firestore, silently
-        // re-closing the board on every other device). See
-        // `SyncService+ClearableFields.swift`. Harmless no-op when the field
-        // was never set.
-        Self.applyClearableBoardFieldDeletes(collection: collection, cleaned: &cleaned)
+        // re-closing the board on every other device). Per-collection map in
+        // `SyncService+ClearableFields.swift`; no-op when never set.
+        Self.applyClearableFieldDeletes(collection: collection, cleaned: &cleaned)
 
         try await docStore.write(path: path, data: cleaned)
     }
@@ -1331,12 +1331,12 @@ final class SyncService: ObservableObject {
         // Pull is a full-entity replace: the remote doc is the source of
         // truth. The upsert above only SETs columns PRESENT in the remote
         // doc, so a field FieldValue.delete()-ed on the authoring device
-        // (e.g. an indefinite board's `endDate`, or a Reopen's cleared
-        // `sealedAt` / `sealedCompletedCells`) would leave a STALE local
-        // value. Board Edit redesign slice 4 (D2): NULL every clearable
-        // field absent from this doc. See `SyncService+ClearableFields.swift`;
-        // harmless when the local row never had the field set.
-        try Self.applyClearableBoardFieldNulls(db: db, grdbTable: grdbTable, cleaned: cleaned)
+        // (e.g. an indefinite board's `endDate`, a Reopen's cleared
+        // `sealedAt` / `sealedCompletedCells`, or a core default's cleared
+        // size / centre) would leave a STALE local value. Board Edit slice 4
+        // (D2): NULL every clearable field of this table's collection absent
+        // from the doc (`SyncService+ClearableFields.swift`); no-op if unset.
+        try Self.applyClearableFieldNulls(db: db, grdbTable: grdbTable, cleaned: cleaned)
     }
 
     /// Cached per-table column names. Populated lazily on first lookup

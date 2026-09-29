@@ -1,12 +1,37 @@
 import { useMemo, useState } from 'react';
-import { Timeframe, type CoreBoardDefault, type Pool, type RecurringBoardTemplate, type Task } from '@oybc/shared';
+import {
+  CenterSquareType,
+  Timeframe,
+  resolveCoreBoardSetupDefaults,
+  type BoardSize,
+  type CoreBoardDefault,
+  type CoreBoardSetupPrefs,
+  type DefaultCenterSquareType,
+  type Pool,
+  type RecurringBoardTemplate,
+  type Task,
+} from '@oybc/shared';
 import { upsertCoreBoardDefault } from '../../db/operations/coreBoardDefaults';
+import { nextExplicitCenterForSizeChange } from './coreDefaultsSheetSetup';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { WizardQuickAddRow } from '../wizard/WizardQuickAddRow';
-import { RisoButton, RisoIcon, RisoTypeBadge } from '../riso';
+import {
+  RisoButton,
+  RisoIcon,
+  RisoSectionLabel,
+  RisoSegmented,
+  RisoTypeBadge,
+  type RisoSegmentedOption,
+} from '../riso';
 import { selectLibraryPickerResults } from '../pools/poolEditSheetSelectors';
 import { PoolPickerSheet } from '../pools/PoolPickerSheet';
 import styles from './CoreDefaultsSheet.module.css';
+
+const BOARD_SIZE_OPTIONS: ReadonlyArray<RisoSegmentedOption<BoardSize>> = [
+  { value: 3, label: '3×3' },
+  { value: 4, label: '4×4' },
+  { value: 5, label: '5×5' },
+];
 
 const TIMEFRAME_LABEL: Record<Timeframe, string> = {
   [Timeframe.DAILY]: 'Daily',
@@ -25,6 +50,10 @@ export interface CoreDefaultsSheetProps {
   /** The existing `CoreBoardDefault` row, or `undefined` when the user
    *  hasn't set one up yet for this timeframe. */
   existingDefault: CoreBoardDefault | undefined;
+  /** The user's global new-board defaults (size + centre) — the BOARD
+   *  section's inherit fallback, resolved via `resolveCoreBoardSetupDefaults`
+   *  alongside this timeframe's own override. */
+  preferences: CoreBoardSetupPrefs;
   /** The user's non-deleted pools — for the pool-picker sheet. */
   pools: Pool[];
   /** Active repeating boards — the pool picker's health-note input. */
@@ -58,13 +87,17 @@ export interface CoreDefaultsSheetProps {
  * an optional PREFILL, not an activation gate — an empty selection is a
  * valid save (it just means "no default tasks" going forward).
  *
- * Both fields save together via `upsertCoreBoardDefault(userId, timeframe,
- * {corePoolIds, coreDefaultTaskIds})` in one call.
+ * All four fields save together via `upsertCoreBoardDefault(userId,
+ * timeframe, {corePoolIds, coreDefaultTaskIds, defaultBoardSize,
+ * defaultCenterType})` in one call — the BOARD section's size/centre
+ * (docs/POOLS_RECURRING.md §Per-timeframe size + centre) join the
+ * pools/tasks that were already here.
  */
 export function CoreDefaultsSheet({
   userId,
   timeframe,
   existingDefault,
+  preferences,
   pools,
   templates,
   achievableTaskIdsByTemplateId,
@@ -76,6 +109,17 @@ export function CoreDefaultsSheet({
   const [corePoolIds, setCorePoolIds] = useState<string[]>(() => existingDefault?.corePoolIds ?? []);
   const [coreDefaultTaskIds, setCoreDefaultTaskIds] = useState<string[]>(
     () => existingDefault?.coreDefaultTaskIds ?? [],
+  );
+  // T3 (docs/POOLS_RECURRING.md §Per-timeframe size + centre) — `null` =
+  // inherit the global new-board default; a value = this timeframe's own
+  // override. Never persisted until the user actually picks one — the
+  // controls below render the RESOLVED value (via `resolveCoreBoardSetupDefaults`)
+  // while these stay `null`.
+  const [explicitSize, setExplicitSize] = useState<BoardSize | null>(
+    () => existingDefault?.defaultBoardSize ?? null,
+  );
+  const [explicitCenter, setExplicitCenter] = useState<DefaultCenterSquareType | null>(
+    () => existingDefault?.defaultCenterType ?? null,
   );
   const [sessionTaskCache, setSessionTaskCache] = useState<Map<string, Task>>(() => new Map());
   const [showPoolPicker, setShowPoolPicker] = useState(false);
@@ -117,6 +161,40 @@ export function CoreDefaultsSheet({
     [browsableTasks, selectedIdSet, librarySearch],
   );
 
+  // T3 — the resolved size/centre this sheet's controls DISPLAY: the
+  // explicit override where set, else the global preference, run through
+  // the same even-size coercion `resolveCoreBoardSetupDefaults` applies
+  // everywhere else (a 4×4 always resolves to NONE regardless of what's
+  // stored). Recomputed from the two override states, not the saved row,
+  // so the controls react live as the user picks.
+  const resolvedSetup = useMemo(
+    () =>
+      resolveCoreBoardSetupDefaults(
+        { defaultBoardSize: explicitSize ?? undefined, defaultCenterType: explicitCenter ?? undefined },
+        preferences,
+      ),
+    [explicitSize, explicitCenter, preferences],
+  );
+  // The even→odd crossing check reads the CURRENT resolved size (this
+  // render's `resolvedSetup`), not a ref — a ref went stale after "Use
+  // new-board default" (it still held the cleared explicit size) and
+  // mis-detected the next pick's crossing. Mirrors the wizard's `setSize` /
+  // `coerceCenterType` pairing (`useBoardWizard.ts`) and iOS's size binding.
+  function handleSizeChange(newSize: BoardSize): void {
+    const nextCenter = nextExplicitCenterForSizeChange(
+      resolvedSetup.boardSize,
+      newSize,
+      explicitCenter,
+    );
+    setExplicitSize(newSize);
+    setExplicitCenter(nextCenter);
+  }
+
+  function clearToInherit(): void {
+    setExplicitSize(null);
+    setExplicitCenter(null);
+  }
+
   function handleTogglePool(poolId: string): void {
     setCorePoolIds((prev) =>
       prev.includes(poolId) ? prev.filter((id) => id !== poolId) : [...prev, poolId],
@@ -145,7 +223,15 @@ export function CoreDefaultsSheet({
     setBusy(true);
     setError(null);
     try {
-      await upsertCoreBoardDefault(userId, timeframe, { corePoolIds, coreDefaultTaskIds });
+      await upsertCoreBoardDefault(userId, timeframe, {
+        corePoolIds,
+        coreDefaultTaskIds,
+        // Tri-state: a value sets the override, `null` clears it back to
+        // inherit — never omitted, since the sheet's local state always
+        // fully represents the user's intent (see `UpdateCoreBoardDefaultInput`).
+        defaultBoardSize: explicitSize,
+        defaultCenterType: explicitCenter,
+      });
       onSaved();
     } catch (e) {
       setError(`Could not save: ${(e as Error).message}`);
@@ -178,6 +264,53 @@ export function CoreDefaultsSheet({
               Pre-fill every new {TIMEFRAME_LABEL[timeframe].toLowerCase()} board's setup with
               these pools and tasks. You can still add or remove tasks before saving each board.
             </p>
+
+            <RisoSectionLabel>BOARD</RisoSectionLabel>
+            <div className={styles.boardSection}>
+              <div className={styles.fieldGroup}>
+                <RisoSegmented
+                  aria-label="Board size"
+                  options={BOARD_SIZE_OPTIONS}
+                  value={resolvedSetup.boardSize}
+                  onChange={handleSizeChange}
+                />
+              </div>
+
+              {resolvedSetup.boardSize !== 4 && (
+                <div className={styles.fieldGroup}>
+                  <div className={styles.toggleRow}>
+                    <label className={styles.rowLabel} htmlFor="core-defaults-free-space">
+                      Free space
+                    </label>
+                    <label className={styles.toggleSwitch}>
+                      <input
+                        id="core-defaults-free-space"
+                        type="checkbox"
+                        checked={resolvedSetup.centerType === CenterSquareType.FREE}
+                        onChange={(e) =>
+                          setExplicitCenter(
+                            e.target.checked ? CenterSquareType.FREE : CenterSquareType.NONE,
+                          )
+                        }
+                        disabled={busy}
+                      />
+                      <span className={styles.toggleTrack} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* iOS parity (`CoreDefaultsEditSheetView`): ONE caption for the
+                  section while nothing is explicit; once either field is, the
+                  clear link replaces it and clears BOTH back to inherit. */}
+              {explicitSize === null && explicitCenter === null ? (
+                <p className={styles.inheritNote}>Using your new-board default</p>
+              ) : (
+                <button type="button" className={styles.linkButton} onClick={clearToInherit} disabled={busy}>
+                  Use new-board default
+                </button>
+              )}
+            </div>
 
             <span className={styles.kicker}>Pools</span>
             {corePoolIds.length > 0 && (

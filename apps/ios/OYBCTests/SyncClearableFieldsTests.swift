@@ -8,7 +8,9 @@ import FirebaseFirestore
 /// pin that the push side stamps `FieldValue.delete()` for every absent
 /// clearable field, and the pull side NULLs the local column when a winning
 /// remote doc omits it — the same carve-out `endDate` / `completedAt` already
-/// had, now centralized and extended to all four fields.
+/// had, now centralized and extended to all four fields. Since 2026-09-29 the
+/// mechanism is per-collection: `coreBoardDefaults` clears its per-timeframe
+/// size / centre overrides the same way (see the last section).
 @MainActor
 final class SyncClearableFieldsTests: XCTestCase {
 
@@ -25,7 +27,7 @@ final class SyncClearableFieldsTests: XCTestCase {
 
     func test_applyClearableBoardFieldDeletes_stampsDeleteForEveryAbsentField() {
         var cleaned: [String: Any] = ["id": "b1", "name": "Board"] // sealedAt etc. all absent
-        SyncService.applyClearableBoardFieldDeletes(collection: "boards", cleaned: &cleaned)
+        SyncService.applyClearableFieldDeletes(collection: "boards", cleaned: &cleaned)
 
         for field in clearableBoardFields {
             XCTAssertTrue(cleaned[field] is FieldValue, "\(field) must be stamped FieldValue.delete() when absent")
@@ -35,7 +37,7 @@ final class SyncClearableFieldsTests: XCTestCase {
 
     func test_applyClearableBoardFieldDeletes_leavesPresentFieldsAlone() {
         var cleaned: [String: Any] = ["id": "b1", "sealedAt": "2026-07-09T00:00:00.000Z"]
-        SyncService.applyClearableBoardFieldDeletes(collection: "boards", cleaned: &cleaned)
+        SyncService.applyClearableFieldDeletes(collection: "boards", cleaned: &cleaned)
 
         XCTAssertEqual(cleaned["sealedAt"] as? String, "2026-07-09T00:00:00.000Z", "a PRESENT clearable field must not be deleted")
         XCTAssertTrue(cleaned["endDate"] is FieldValue, "an absent one still gets the delete stamp")
@@ -43,7 +45,7 @@ final class SyncClearableFieldsTests: XCTestCase {
 
     func test_applyClearableBoardFieldDeletes_noOpForNonBoardsCollection() {
         var cleaned: [String: Any] = ["id": "t1"]
-        SyncService.applyClearableBoardFieldDeletes(collection: "tasks", cleaned: &cleaned)
+        SyncService.applyClearableFieldDeletes(collection: "tasks", cleaned: &cleaned)
         for field in clearableBoardFields {
             XCTAssertNil(cleaned[field], "non-boards collections must never get the boards-only carve-out")
         }
@@ -75,7 +77,7 @@ final class SyncClearableFieldsTests: XCTestCase {
         // A winning remote doc that omits ALL four clearable fields (mirrors
         // a Reopen's push, which deletes them) — every one must NULL locally.
         try db.write { conn in
-            try SyncService.applyClearableBoardFieldNulls(db: conn, grdbTable: "boards", cleaned: ["id": "b1"])
+            try SyncService.applyClearableFieldNulls(db: conn, grdbTable: "boards", cleaned: ["id": "b1"])
         }
 
         let board = try db.fetchBoard(id: "b1")!
@@ -93,7 +95,7 @@ final class SyncClearableFieldsTests: XCTestCase {
         // The remote doc carries a present sealedAt (a re-close after a
         // reopen) — this must survive, not be NULLed.
         try db.write { conn in
-            try SyncService.applyClearableBoardFieldNulls(
+            try SyncService.applyClearableFieldNulls(
                 db: conn, grdbTable: "boards", cleaned: ["id": "b1", "sealedAt": "2026-07-20T00:00:00.000Z"]
             )
         }
@@ -103,9 +105,79 @@ final class SyncClearableFieldsTests: XCTestCase {
 
     func test_applyClearableBoardFieldNulls_noOpForNonBoardsTable() throws {
         let db = try AppDatabase.makeTestInstance()
-        // Should not throw / touch anything for a non-boards table.
+        // Should not throw / touch anything for a table with no clearable fields.
         try db.write { conn in
-            try SyncService.applyClearableBoardFieldNulls(db: conn, grdbTable: "tasks", cleaned: ["id": "t1"])
+            try SyncService.applyClearableFieldNulls(db: conn, grdbTable: "tasks", cleaned: ["id": "t1"])
         }
+    }
+
+    // MARK: - coreBoardDefaults: per-timeframe size / centre overrides (2026-09-29)
+
+    func test_clearableFieldsFor_perCollectionMap() {
+        // Literal names, not `clearableBoardFields` — that constant IS this map's
+        // `boards` entry, so comparing the two would assert nothing.
+        XCTAssertEqual(Set(SyncService.clearableFields(for: "boards")), ["endDate", "completedAt", "sealedAt", "sealedCompletedCells"])
+        XCTAssertEqual(Set(SyncService.clearableFields(for: "coreBoardDefaults")), ["defaultBoardSize", "defaultCenterType"])
+        XCTAssertEqual(SyncService.clearableFields(for: "tasks"), [])
+        XCTAssertEqual(SyncService.clearableFields(for: "nope"), [])
+    }
+
+    func test_applyClearableFieldDeletes_coreBoardDefaults_stampsBothWhenAbsent() {
+        var cleaned: [String: Any] = ["id": "cbd-1", "corePoolIds": ["p1"]]
+        SyncService.applyClearableFieldDeletes(collection: "coreBoardDefaults", cleaned: &cleaned)
+        XCTAssertTrue(cleaned["defaultBoardSize"] is FieldValue)
+        XCTAssertTrue(cleaned["defaultCenterType"] is FieldValue)
+        XCTAssertEqual(cleaned["corePoolIds"] as? [String], ["p1"], "present fields are untouched")
+        for field in clearableBoardFields {
+            XCTAssertNil(cleaned[field], "boards-only field \(field) must never leak onto a coreBoardDefaults doc")
+        }
+    }
+
+    func test_applyClearableFieldDeletes_coreBoardDefaults_leavesPresentAlone() {
+        var cleaned: [String: Any] = ["id": "cbd-1", "defaultBoardSize": 4]
+        SyncService.applyClearableFieldDeletes(collection: "coreBoardDefaults", cleaned: &cleaned)
+        XCTAssertEqual(cleaned["defaultBoardSize"] as? Int, 4)
+        XCTAssertTrue(cleaned["defaultCenterType"] is FieldValue)
+    }
+
+    private func seedCoreDefault(_ db: AppDatabase, size: DefaultBoardSize?, centre: DefaultCenterSquareType?) throws {
+        let ts = "2026-09-29T00:00:00.000Z"
+        let row = CoreBoardDefault(
+            id: "cbd-1", userId: "u1", timeframe: .daily, corePoolIds: [], coreDefaultTaskIds: [],
+            defaultBoardSize: size, defaultCenterType: centre, createdAt: ts, updatedAt: ts
+        )
+        try db.write { try row.insert($0) }
+    }
+
+    func test_applyClearableFieldNulls_coreBoardDefaults_clearsAbsentOverridesOnLocalRow() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try seedCoreDefault(db, size: .three, centre: .free)
+
+        // A winning remote doc that omits BOTH overrides (a peer cleared them).
+        try db.write { conn in
+            try SyncService.applyClearableFieldNulls(db: conn, grdbTable: "core_board_defaults", cleaned: ["id": "cbd-1"])
+        }
+
+        let row = try XCTUnwrap(try db.fetchCoreBoardDefault(userId: "u1", timeframe: .daily))
+        XCTAssertNil(row.defaultBoardSize)
+        XCTAssertNil(row.defaultCenterType)
+    }
+
+    func test_applyClearableFieldNulls_coreBoardDefaults_leavesPresentAlone() throws {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try seedCoreDefault(db, size: .three, centre: .free)
+
+        // Remote carries a size but no centre → only the centre NULLs.
+        try db.write { conn in
+            try SyncService.applyClearableFieldNulls(
+                db: conn, grdbTable: "core_board_defaults", cleaned: ["id": "cbd-1", "defaultBoardSize": 3]
+            )
+        }
+
+        let row = try XCTUnwrap(try db.fetchCoreBoardDefault(userId: "u1", timeframe: .daily))
+        XCTAssertEqual(row.defaultBoardSize, .three, "raw SQL NULL-out only touches ABSENT fields")
+        XCTAssertNil(row.defaultCenterType)
     }
 }

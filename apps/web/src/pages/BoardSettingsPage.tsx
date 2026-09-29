@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   CenterSquareType,
   Timeframe,
+  hasExplicitCoreBoardSetup,
+  resolveCoreBoardSetupDefaults,
   type CoreBoardDefault,
   type Pool,
   type RecurringBoardTemplate,
@@ -138,10 +140,14 @@ export function BoardSettingsPage(): React.ReactElement {
       const poolNames = resolved.pulledPoolIds
         .map((id) => poolsById[id]?.name)
         .filter((name): name is string => name != null);
-      out[tf] = formatDefaultsSummary(resolved.selectedTaskIds.size, poolNames);
+      // T3 — the size/centre suffix appears only when this timeframe
+      // explicitly overrides either field; an inheriting row shows no
+      // suffix even though it still resolves to a size under the hood.
+      const setup = hasExplicitCoreBoardSetup(row) ? resolveCoreBoardSetupDefaults(row, prefs) : undefined;
+      out[tf] = formatDefaultsSummary(resolved.selectedTaskIds.size, poolNames, setup);
     }
     return out;
-  }, [dailyDefault, weeklyDefault, monthlyDefault, yearlyDefault, poolsById, library.taskMap]);
+  }, [dailyDefault, weeklyDefault, monthlyDefault, yearlyDefault, poolsById, library.taskMap, prefs]);
 
   const attentionByTemplateId = rosterHealth?.attentionByTemplateId ?? {};
   const poolPreviewByTemplateId = useMemo<Record<string, PoolPreview>>(() => {
@@ -330,6 +336,7 @@ export function BoardSettingsPage(): React.ReactElement {
           userId={userId}
           timeframe={defaultsSheetTimeframe}
           existingDefault={coreDefaultByTimeframe[defaultsSheetTimeframe] ?? undefined}
+          preferences={prefs}
           pools={pools}
           templates={templates}
           achievableTaskIdsByTemplateId={templateMixes}

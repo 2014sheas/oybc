@@ -193,6 +193,17 @@ final class BoardWizardViewModel {
     /// banner persists.
     let isCore: Bool
 
+    /// Per-timeframe size + centre — the timeframe this VM opened
+    /// core-prefilled for (`effectivePrefill` at init), or nil for every
+    /// other entry point. `reset()` reads this to re-resolve the same
+    /// `CoreBoardDefault`-aware setup defaults init used.
+    private let corePrefillTimeframe: Timeframe?
+
+    /// Per-timeframe size + centre — the user id passed to init, retained
+    /// so `reset()` can re-fetch `corePrefillTimeframe`'s `CoreBoardDefault`
+    /// row exactly like init does.
+    private let prefillUserId: String?
+
     /// Phase B — when the wizard was launched from the core-board
     /// browser to spawn a non-current window, this is the reference
     /// date for the target window. `computedBoundaries` resolves
@@ -279,6 +290,15 @@ final class BoardWizardViewModel {
         // (Phase 6.1 banner / core-board browser); preserve an existing
         // draft's core-ness on resume.
         self.isCore = draft?.board.isCore ?? (effectivePrefill != nil)
+
+        // Per-timeframe size + centre (docs/POOLS_RECURRING.md
+        // §Per-timeframe size + centre, owner-decided 2026-09-29) — retained
+        // so `reset()` can re-resolve the SAME core-prefilled setup defaults
+        // this init used, rather than falling back to the global "new
+        // board" preference. Nil for every non-core-prefill entry
+        // (draft/template/recurring/plain fresh wizard).
+        self.corePrefillTimeframe = effectivePrefill
+        self.prefillUserId = userId
 
         if let d = draft {
             self.name = d.board.name
@@ -421,6 +441,17 @@ final class BoardWizardViewModel {
                 // surface; the wizard never writes `CoreBoardDefault`.
                 if let userId = userId {
                     let coreDefault = try? database.fetchCoreBoardDefault(userId: userId, timeframe: timeframe)
+                    // Per-timeframe size + centre — override the plain-prefs
+                    // fallback set above with this timeframe's resolved
+                    // setup (row override where set, else the global
+                    // preference, then the even-size rule). A no-row fetch
+                    // resolves identically to the fallback already assigned,
+                    // so this is harmless when there's no override.
+                    let setupDefaults = resolveCoreBoardSetupDefaults(
+                        coreDefault: coreDefault, preferences: preferences
+                    )
+                    self.size = setupDefaults.boardSize
+                    self.centerType = setupDefaults.centerType
                     let rawPoolIds = coreDefault?.corePoolIds ?? []
                     let rawDefaultIds = coreDefault?.coreDefaultTaskIds ?? []
                     // A fresh prefill pre-pulls only sources/tasks that
@@ -764,8 +795,18 @@ final class BoardWizardViewModel {
 
     func reset() {
         name = ""
-        let nextSize = initialPreferences.defaultBoardSize.rawValue
-        size = nextSize
+        // Per-timeframe size + centre — a core-prefilled VM (`corePrefillTimeframe`
+        // set at init) re-resolves the SAME `CoreBoardDefault`-aware setup
+        // this init used, rather than collapsing to the global "new board"
+        // preference. Every other VM (no row fetched, `coreDefault: nil`)
+        // resolves identically to the pre-existing plain-prefs coercion.
+        let coreDefault: CoreBoardDefault? = corePrefillTimeframe.flatMap { tf in
+            prefillUserId.flatMap { try? database.fetchCoreBoardDefault(userId: $0, timeframe: tf) }
+        }
+        let setupDefaults = resolveCoreBoardSetupDefaults(
+            coreDefault: coreDefault, preferences: initialPreferences
+        )
+        size = setupDefaults.boardSize
         // Board Creation Split (iOS PR A) — `isRecurring` is fixed for this
         // VM's lifetime, so reset() must respect the current mode rather
         // than resolving the one-off `defaultTimeframe` preference
@@ -780,12 +821,7 @@ final class BoardWizardViewModel {
         }
         customStartDate = ""
         customEndDate = ""
-        // Same coercion the initial factory uses, so reset can never
-        // reintroduce an even-board+FREE mismatch.
-        centerType = Self.coerceCenterType(
-            size: nextSize,
-            desired: Self.resolveCenterType(initialPreferences.defaultCenterType)
-        )
+        centerType = setupDefaults.centerType
         selectedTaskIds = []
         poolOrder = []
         stagedEdits = [:]

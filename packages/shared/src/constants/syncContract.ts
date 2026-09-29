@@ -111,31 +111,56 @@ export const LEGACY_PULL_SKIP_COLLECTIONS = [
 ] as const satisfies readonly SyncCollection[];
 
 /**
- * Board fields whose **absence** on a pushed/pulled row means "cleared", so
- * the sync layer must propagate the clear explicitly (Board Edit redesign
- * slice 4 — D2). Firestore writes are `merge: true` (an absent key keeps the
- * remote value) and the iOS pull upserts present keys only (an absent key
- * keeps the local value), so without an explicit delete a cleared field
- * silently comes back.
+ * Per-collection fields whose **absence** on a pushed/pulled row means
+ * "cleared", so the sync layer must propagate the clear explicitly (Board
+ * Edit redesign slice 4 — D2, generalised for the per-timeframe core-board
+ * defaults 2026-09-29). Firestore writes are `merge: true` (an absent key
+ * keeps the remote value) and the iOS pull upserts present keys only (an
+ * absent key keeps the local value), so without an explicit delete a
+ * cleared field silently comes back.
  *
- *  - `endDate` — a board edited to indefinite drops its end.
- *  - `completedAt` — a board un-greenlogged drops its completion stamp.
- *  - `sealedAt` / `sealedCompletedCells` — **Reopen** clears the seal and its
- *    frozen snapshot.
+ *  - `boards.endDate` — a board edited to indefinite drops its end.
+ *  - `boards.completedAt` — a board un-greenlogged drops its completion stamp.
+ *  - `boards.sealedAt` / `sealedCompletedCells` — **Reopen** clears the seal
+ *    and its frozen snapshot.
+ *  - `coreBoardDefaults.defaultBoardSize` / `defaultCenterType` — a
+ *    per-timeframe size / centre override cleared back to "inherit prefs"
+ *    (docs/POOLS_RECURRING.md §Per-timeframe size + centre).
  *
  * Consumers: web push (`syncService.ts` — `deleteField()` for each absent
- * field on a `boards` row); iOS push (`FieldValue.delete()`) and iOS pull
- * (NULL-out each field absent from a winning remote row). iOS asserts its
- * list against `syncContract.json` (`clearableBoardFields`).
+ * field of the row's collection, via `clearableFieldsFor`); iOS push
+ * (`FieldValue.delete()`) and iOS pull (NULL-out each field absent from a
+ * winning remote row) in `SyncService+ClearableFields.swift`. iOS asserts
+ * its map against `syncContract.json` (`clearableFieldsByCollection`, plus
+ * the legacy `clearableBoardFields` mirror).
  *
  * Not a collection list — `scripts/check-sync-contract-rules.mjs` ignores it.
  */
-export const CLEARABLE_BOARD_FIELDS = [
-  'endDate',
-  'completedAt',
-  'sealedAt',
-  'sealedCompletedCells',
-] as const;
+export const CLEARABLE_FIELDS_BY_COLLECTION = {
+  boards: ['endDate', 'completedAt', 'sealedAt', 'sealedCompletedCells'],
+  coreBoardDefaults: ['defaultBoardSize', 'defaultCenterType'],
+} as const satisfies Partial<Record<SyncCollection, readonly string[]>>;
+
+/** Collections that carry at least one clearable field. */
+export type ClearableFieldCollection = keyof typeof CLEARABLE_FIELDS_BY_COLLECTION;
+
+/**
+ * The Board half of `CLEARABLE_FIELDS_BY_COLLECTION` — kept as a named
+ * constant because the Board Edit docs/tests reference it by this name.
+ */
+export const CLEARABLE_BOARD_FIELDS = CLEARABLE_FIELDS_BY_COLLECTION.boards;
 
 /** Union of the literal field names in `CLEARABLE_BOARD_FIELDS`. */
 export type ClearableBoardField = (typeof CLEARABLE_BOARD_FIELDS)[number];
+
+/**
+ * The clearable fields for one collection — an empty list for a collection
+ * with none, so a push/pull site can loop unconditionally.
+ *
+ * @param collection - A Firestore subcollection name (e.g. `'boards'`).
+ * @returns The field names whose absence must sync as a delete/NULL.
+ */
+export function clearableFieldsFor(collection: string): readonly string[] {
+  const map: Partial<Record<string, readonly string[]>> = CLEARABLE_FIELDS_BY_COLLECTION;
+  return map[collection] ?? [];
+}

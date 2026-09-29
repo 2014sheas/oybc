@@ -91,5 +91,20 @@ extension AppDatabase {
         migrator.registerMigration("v35") { db in
             try db.execute(sql: "ALTER TABLE boards ADD COLUMN reopenedAt TEXT")
         }
+
+        // v36: per-timeframe core-board size + centre (docs/POOLS_RECURRING.md
+        // §Per-timeframe size + centre, owner-decided 2026-09-29). Two nullable
+        // override columns on `core_board_defaults`; NULL = inherit the global
+        // `UserPreferences.defaultBoardSize` / `defaultCenterType`. No backfill
+        // (no row is migrated — every existing timeframe keeps inheriting).
+        // `CoreBoardDefault.init(from:)` decodes an absent key as nil and
+        // `encode(to:)` omits nil, so the clear rides the clearable-fields
+        // mechanism (`CLEARABLE_FIELDS_BY_COLLECTION.coreBoardDefaults`) on
+        // push and is NULLed on pull. Same `coreBoardDefaults` per-row LWW —
+        // no rules change, no sync-contract collection change.
+        migrator.registerMigration("v36") { db in
+            try db.execute(sql: "ALTER TABLE core_board_defaults ADD COLUMN defaultBoardSize INTEGER")
+            try db.execute(sql: "ALTER TABLE core_board_defaults ADD COLUMN defaultCenterType TEXT")
+        }
     }
 }
