@@ -152,6 +152,7 @@ final class AuthService: ObservableObject {
                 // XCUITest fixtures (OYBCUITests) — no-op without their launch args.
                 try UITestSeed.seedIfRequested(userId: userId)
                 try UITestSeed.seedClosedIfRequested(userId: userId)
+                try UITestSeed.seedWizardPreviewIfRequested(userId: userId)
 
                 let user = try AppDatabase.shared.read { db in
                     try User.fetchOne(db, key: userId)
