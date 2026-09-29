@@ -107,6 +107,7 @@ struct TutorialGreenlogOverlay: View {
                             .foregroundStyle(Color.risoPaper)
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
+                            .contentShape(RoundedRectangle(cornerRadius: Riso.cardRadius)) // whole 56pt button is the tap target — no fill behind the outline
                             .overlay(RoundedRectangle(cornerRadius: Riso.cardRadius)
                                 .strokeBorder(Color.risoPaper, lineWidth: Riso.Keyline.container))
                     }

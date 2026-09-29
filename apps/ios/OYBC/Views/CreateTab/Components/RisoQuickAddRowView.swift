@@ -186,6 +186,7 @@ struct RisoQuickAddRowView: View {
                     }
                     .padding(.vertical, 9)
                     .padding(.horizontal, 12)
+                    .contentShape(Rectangle()) // whole row is the tap target, not just the title/icon glyphs
                 }
                 .buttonStyle(.plain)
 

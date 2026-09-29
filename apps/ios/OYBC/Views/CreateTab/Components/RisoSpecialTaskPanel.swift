@@ -111,6 +111,7 @@ struct RisoSpecialTaskPanel: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.clear)
+            .contentShape(RoundedRectangle(cornerRadius: Riso.cardRadius)) // whole dashed row is the tap target, not just the opaque icon/text glyphs
             .overlay(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
                     .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [5, 4]))
@@ -683,6 +684,7 @@ struct RisoInlineStepperView: View {
                     .font(.risoHead(18, .extraBold))
                     .foregroundStyle(Color.risoInk)
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle()) // whole 44×44 frame is the tap target, not just the small glyph
             }
             .buttonStyle(.plain)
 
@@ -709,6 +711,7 @@ struct RisoInlineStepperView: View {
                     .font(.risoHead(18, .extraBold))
                     .foregroundStyle(Color.risoInk)
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle()) // whole 44×44 frame is the tap target, not just the small glyph
             }
             .buttonStyle(.plain)
         }

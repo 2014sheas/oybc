@@ -260,6 +260,7 @@ struct RisoSegmented<T: Hashable>: View {
                         .padding(.vertical, 7)
                         .padding(.horizontal, 12)
                         .background(Capsule().fill(isOn ? Color.risoInk : Color.clear))
+                        .contentShape(Capsule()) // whole segment is the tap target, not just the label glyphs (idle fill is Color.clear)
                 }
                 .buttonStyle(.plain)
             }

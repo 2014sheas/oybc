@@ -100,6 +100,7 @@ struct RisoLibrarySheetView: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.clear)
+            .contentShape(RoundedRectangle(cornerRadius: Riso.cardRadius)) // whole dashed row is the tap target, not just the opaque icon/text glyphs
             .overlay(
                 RoundedRectangle(cornerRadius: Riso.cardRadius)
                     .strokeBorder(style: StrokeStyle(lineWidth: Riso.Keyline.container, dash: [5, 4]))

@@ -292,6 +292,7 @@ struct RisoCountingStepperSheet: View {
                         .padding(.vertical, 8)
                         .padding(.horizontal, 10)
                         .background(Capsule().fill(isSelected ? Color.risoGold : Color.clear))
+                        .contentShape(Capsule()) // whole pill is the tap target, not just the label glyphs (unselected fill is Color.clear)
                         .overlay(
                             Capsule().strokeBorder(
                                 isSelected ? Color.risoInk : Color.risoInk.opacity(0.35),
