@@ -19,6 +19,63 @@
   color: var(--riso-ink);
 }
 
+/* ─── Page header (title + Settings entry point) ────────────────────────
+   `#5a` identity-header gear button, pill form. `ProfilePage` doesn't yet
+   host the full identity-header rework (tiles/hero/counters — PR2), so this
+   sits alongside the existing "Profile" title for now. */
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.pageHeader .header {
+  padding-bottom: 0;
+}
+.settingsButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  background: var(--riso-paper-2);
+  color: var(--riso-ink);
+  font-family: var(--riso-font-head);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--riso-shadow-ink);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.settingsButton:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+}
+.settingsButton:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--riso-shadow-ink);
+}
+.settingsButton:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}
+/* ≤760px: collapse to a 40px round icon-only button (design spec §Mobile web). */
+@media (max-width: 760px) {
+  .settingsButton {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  .settingsButtonLabel {
+    display: none;
+  }
+}
+
 /* ─── Sub-page header (back link + title) ───────────────────── */
 .subPageHeader {
   display: flex;

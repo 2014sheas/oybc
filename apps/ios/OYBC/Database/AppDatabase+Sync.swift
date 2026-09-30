@@ -142,8 +142,9 @@ extension AppDatabase {
     /// FAILED until a manual or network-regain retry recovers them.
     ///
     /// Cheap indexed `fetchCount`. Refreshed onto `SyncService.exhaustedCount`
-    /// after every push cycle so the sync sheet / Profile row can surface
-    /// "N changes couldn't sync". Mirrors web `countExhaustedSyncItems`.
+    /// after every push cycle for the network-regain auto-retry (no
+    /// production UI surfaces it since the sync row/sheet were removed,
+    /// 2026-09-30). Mirrors web `countExhaustedSyncItems`.
     ///
     /// - Returns: The number of exhausted FAILED items.
     func countExhaustedSyncItems() throws -> Int {

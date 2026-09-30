@@ -9,6 +9,8 @@ import { CreateHubPage } from './pages/CreateHubPage';
 import { TasksPage } from './pages/TasksPage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { SettingsPage } from './pages/SettingsPage';
+import { HelpPage } from './pages/HelpPage';
 import { StreaksPage } from './pages/StreaksPage';
 import { AccountSecurityPage } from './pages/AccountSecurityPage';
 import { BoardSettingsPage } from './pages/BoardSettingsPage';
@@ -110,6 +112,8 @@ function AuthenticatedLayout(): React.ReactElement {
         <Route path="/tasks" element={<TasksRoute />} />
         <Route path="/tasks/:id" element={<TaskDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile/settings" element={<SettingsPage />} />
+        <Route path="/profile/help" element={<HelpPage />} />
         <Route path="/profile/streaks" element={<StreaksPage />} />
         <Route path="/profile/board-settings" element={<BoardSettingsPage />} />
         <Route path="/profile/account-security" element={<AccountSecurityPage />} />

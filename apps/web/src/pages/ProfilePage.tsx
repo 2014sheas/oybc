@@ -1,20 +1,20 @@
 import { useCallback, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { UserPreferences } from '@oybc/shared';
 import { useAuth } from '../firebase/useAuth';
-import { updateDisplayName, SIGN_OUT_QUEUE_CLEAR_FAILED_MESSAGE } from '../firebase/authService';
-import { deleteAccount, friendlyError } from '../firebase/accountSecurity';
+import { updateDisplayName } from '../firebase/authService';
 import { fetchUser } from '../db/operations';
-import { usePreferences } from '../hooks';
-import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
-import { RisoSegmented, RisoButton } from '../components/riso';
-import { UpgradeModal } from '../components/signedOut/UpgradeModal';
-import { useModalA11y } from '../hooks/useModalA11y';
+import { RisoIcon } from '../components/riso';
 import styles from './ProfilePage.module.css';
 
 /**
- * ProfilePage — Account info, app-level settings, and sign out.
+ * ProfilePage — Account info and quick links (Streaks, Shared counters,
+ * Board settings). Everything touched rarely (Theme, Account & security,
+ * Help & getting started, Board renewals, Developer, Sign Out) now lives
+ * behind the Settings pill button, at `/profile/settings` (Profile reorg
+ * PR1, `design_handoff_profile_reorg/README.md`). PR2 rebuilds the rest of
+ * this page's home-surface layout (tiles, tutorial row/hero, counters
+ * block) — this pass only removes what moved and adds the entry point.
  *
  * Board-creation defaults (timeframe, size, center type, week-start) live
  * on the Board settings sub-page (`/profile/board-settings`, "New board
@@ -24,51 +24,14 @@ import styles from './ProfilePage.module.css';
  * retired; its fields moved into Board settings.)
  */
 export function ProfilePage(): React.ReactElement {
-  const { user, signOut, isAnonymous } = useAuth();
-  const [prefs, updatePrefs] = usePreferences();
-  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const [discardBusy, setDiscardBusy] = useState(false);
-  const [discardError, setDiscardError] = useState<string | null>(null);
+  const { user, isAnonymous } = useAuth();
+  const navigate = useNavigate();
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   // Track whether the edit was cancelled so onBlur doesn't save
   const cancelledRef = useRef(false);
-
-  // Guest "Discard guest data" (docs/GUEST_MODE.md §Deletion) — routes
-  // through the same deleteAccount() as a real account, NOT signOut(), since
-  // a plain sign-out would orphan the anonymous Firestore tree. Success is
-  // silent: the auth-state listener nils the session and this page unmounts.
-  const handleDiscardGuestData = useCallback(async () => {
-    setDiscardBusy(true);
-    setDiscardError(null);
-    try {
-      await deleteAccount();
-    } catch (err) {
-      setDiscardError(friendlyError(err));
-      setDiscardBusy(false);
-    }
-  }, []);
-
-  // Sign-out failures (incl. an aborted sync-queue clear — see
-  // authService.signOut) stay on the confirm modal so the user sees them.
-  // Success is silent: the auth-state listener nils the session.
-  const handleSignOut = useCallback(async () => {
-    setSignOutError(null);
-    try {
-      await signOut();
-    } catch (err) {
-      setSignOutError(
-        err instanceof Error && err.message === SIGN_OUT_QUEUE_CLEAR_FAILED_MESSAGE
-          ? err.message
-          : friendlyError(err)
-      );
-    }
-  }, [signOut]);
 
   const saveName = useCallback(async (value: string) => {
     setNameError(null);
@@ -78,23 +41,6 @@ export function ProfilePage(): React.ReactElement {
       setNameError(err instanceof Error ? err.message : 'Failed to update name');
     }
   }, []);
-
-  // aria-modal, Escape → cancel, Tab trap, focus restore for the sign-out /
-  // discard-guest-data confirm modals (mutually exclusive — a guest never
-  // sees the sign-out modal, and a real account never sees the discard one —
-  // but each gets its own hook). Focus opens on Cancel: both are destructive.
-  const { ref: signOutModalRef, props: signOutModalProps } = useModalA11y<HTMLDivElement>({
-    open: showSignOutConfirm,
-    onCancel: () => setShowSignOutConfirm(false),
-    initialFocus: 'cancel',
-  });
-  const { ref: discardModalRef, props: discardModalProps } = useModalA11y<HTMLDivElement>({
-    open: showDiscardConfirm,
-    onCancel: () => {
-      if (!discardBusy) setShowDiscardConfirm(false);
-    },
-    initialFocus: 'cancel',
-  });
 
   // Read displayName reactively from the Dexie user row so edits show
   // immediately. `useAuth().user` only updates on sign-in/sign-out, not
@@ -121,7 +67,18 @@ export function ProfilePage(): React.ReactElement {
 
   return (
     <div className={styles.container}>
-      <h1 className={styles.header}>Profile</h1>
+      <div className={styles.pageHeader}>
+        <h1 className={styles.header}>Profile</h1>
+        <button
+          type="button"
+          className={styles.settingsButton}
+          onClick={() => navigate('/profile/settings')}
+          aria-label="Settings"
+        >
+          <RisoIcon name="sliders" size={16} />
+          <span className={styles.settingsButtonLabel}>Settings</span>
+        </button>
+      </div>
 
       {/* Account card */}
       <div className={styles.card}>
@@ -187,52 +144,6 @@ export function ProfilePage(): React.ReactElement {
         </div>
       </div>
 
-      {/* App-level settings */}
-      <div className={styles.sectionLabel}>App</div>
-      <div className={styles.card}>
-        <div className={styles.settingsRow}>
-          <span className={styles.rowLabel}>Theme</span>
-          <RisoSegmented<UserPreferences['theme']>
-            aria-label="Theme"
-            variant="pill"
-            value={prefs.theme}
-            onChange={(value) => updatePrefs({ theme: value })}
-            options={[
-              { value: 'system', label: 'System' },
-              { value: 'light', label: 'Light' },
-              { value: 'dark', label: 'Dark' },
-            ]}
-          />
-        </div>
-        <SyncStatusIndicator />
-      </div>
-
-      {/* Account management — a guest has no "Account & security" (nothing
-          linked yet); the single "Save your account" CTA replaces it and
-          opens the upgrade modal (docs/GUEST_MODE.md §In-app guest treatment). */}
-      <div className={styles.sectionLabel}>Account</div>
-      <div className={styles.card}>
-        {isAnonymous ? (
-          <div className={styles.saveAccountRow}>
-            <p className={styles.saveAccountCopy}>
-              You’re using OYBC as a guest. Add a sign-in method to keep your boards, streaks, and
-              GREENLOG history — and sync them across every device.
-            </p>
-            <RisoButton kind="primary" fullWidth onClick={() => setShowUpgradeModal(true)}>
-              Save your account
-            </RisoButton>
-          </div>
-        ) : (
-          <Link
-            to="/profile/account-security"
-            className={`${styles.settingsRow} ${styles.rowLink}`}
-          >
-            <span className={styles.rowLabel}>Account &amp; security</span>
-            <span className={styles.rowArrow}>&rarr;</span>
-          </Link>
-        )}
-      </div>
-
       {/* Activity */}
       <div className={styles.sectionLabel}>Activity</div>
       <div className={styles.card}>
@@ -263,144 +174,6 @@ export function ProfilePage(): React.ReactElement {
           <span className={styles.rowArrow}>&rarr;</span>
         </Link>
       </div>
-
-      {/* Developer tools — dev builds only. The Playground can wipe the real
-          local database, so this section (and the route it links to) must
-          not be reachable in production. */}
-      {import.meta.env.DEV && (
-        <>
-          <div className={styles.sectionLabel}>Developer</div>
-          <div className={styles.card}>
-            <Link to="/playground" className={`${styles.settingsRow} ${styles.rowLink}`}>
-              <span className={styles.rowLabel}>Playground</span>
-              <span className={styles.rowArrow}>&rarr;</span>
-            </Link>
-          </div>
-        </>
-      )}
-
-      {/* Sign out — a guest gets the destructive "Discard guest data" in its
-          place (docs/GUEST_MODE.md §Deletion); a plain sign-out would orphan
-          the anonymous Firestore tree with no way back in. */}
-      {isAnonymous ? (
-        <button
-          type="button"
-          className={styles.signOutButton}
-          onClick={() => setShowDiscardConfirm(true)}
-        >
-          Discard guest data
-        </button>
-      ) : (
-        <button
-          type="button"
-          className={styles.signOutButton}
-          onClick={() => {
-            setSignOutError(null);
-            setShowSignOutConfirm(true);
-          }}
-        >
-          Sign Out
-        </button>
-      )}
-
-      {/* Version footer — mirrors iOS ProfileView "OYBC · v{version} ({build})" footer.
-          Web has no build number (no bundle metadata at runtime), so we show semver only.
-          Version is injected at build time from package.json via vite.config.ts `define`. */}
-      <p className={styles.versionFooter}>
-        OYBC · v{__APP_VERSION__}
-      </p>
-
-      {/* Sign-out confirmation modal */}
-      {showSignOutConfirm && (
-        <div
-          className={styles.confirmBackdrop}
-          onClick={() => setShowSignOutConfirm(false)}
-        >
-          <div
-            ref={signOutModalRef}
-            className={styles.confirmModal}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-labelledby="sign-out-title"
-            {...signOutModalProps}
-          >
-            <h2 id="sign-out-title" className={styles.confirmTitle}>
-              Sign out?
-            </h2>
-            <p className={styles.confirmBody}>
-              Are you sure you want to sign out?
-            </p>
-            {signOutError && <p className={styles.nameError}>{signOutError}</p>}
-            <div className={styles.confirmActions}>
-              <button
-                type="button"
-                className={styles.confirmCancel}
-                data-modal-cancel
-                onClick={() => setShowSignOutConfirm(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={styles.confirmDestructive}
-                onClick={() => void handleSignOut()}
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Discard-guest-data confirmation modal (docs/GUEST_MODE.md §Deletion) —
-          routes through deleteAccount(), never signOut(). Success is silent:
-          the auth-state listener nils the session and this page unmounts, so
-          `discardBusy` is only ever reset on failure (mirrors DeleteAccountSheet). */}
-      {showDiscardConfirm && (
-        <div
-          className={styles.confirmBackdrop}
-          onClick={() => !discardBusy && setShowDiscardConfirm(false)}
-        >
-          <div
-            ref={discardModalRef}
-            className={styles.confirmModal}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-labelledby="discard-guest-title"
-            {...discardModalProps}
-          >
-            <h2 id="discard-guest-title" className={styles.confirmTitle}>
-              Discard guest data?
-            </h2>
-            <p className={styles.confirmBody}>
-              This permanently erases every board, streak, and GREENLOG on this device. Guest data
-              isn’t backed up to an account, so this can’t be undone.
-            </p>
-            {discardError && <p className={styles.nameError}>{discardError}</p>}
-            <div className={styles.confirmActions}>
-              <button
-                type="button"
-                className={styles.confirmCancel}
-                data-modal-cancel
-                onClick={() => setShowDiscardConfirm(false)}
-                disabled={discardBusy}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={styles.confirmDestructive}
-                onClick={() => void handleDiscardGuestData()}
-                disabled={discardBusy}
-              >
-                {discardBusy ? 'Discarding…' : 'Discard forever'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
     </div>
   );
 }

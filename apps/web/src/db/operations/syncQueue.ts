@@ -489,8 +489,8 @@ export async function promoteEligibleFailedItems(): Promise<number> {
  * small. Scans rather than `where('status')` because `status` has no
  * standalone Dexie index (only the `[status+priority+createdAt]` compound),
  * so an equality query on it would need compound-index emulation. Refreshed
- * onto the sync status after every push cycle so the UI can surface
- * "N changes couldn't sync".
+ * onto the sync status after every push cycle (network-regain auto-retry +
+ * the dev Playground read it; no production UI does since 2026-09-30).
  *
  * @returns The number of exhausted FAILED items.
  */

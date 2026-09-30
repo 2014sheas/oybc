@@ -1548,10 +1548,10 @@ extension SyncService {
 
     /// Manually recover items stuck past the retry cap: reset them to a
     /// fresh PENDING state, refresh the count for immediate UI feedback,
-    /// then run a full sync for an immediate push. Backs the sync sheet's
-    /// "Retry" button AND the network-regain auto-recovery. Mirrors the web
-    /// SyncStatusIndicator retry handler (`retryExhaustedSyncItems` +
-    /// `fullSync`) and `handleOnline`.
+    /// then run a full sync for an immediate push. Backs the network-regain
+    /// auto-recovery (`MainTabView`); the sync sheet's manual "Retry" button
+    /// was removed with the sync UI (2026-09-30). Mirrors the web
+    /// `handleOnline` path (`retryExhaustedSyncItems` + `fullSync`).
     ///
     /// - Parameter userId: The authenticated user's Firestore UID.
     func retryExhaustedItems(userId: String) async {

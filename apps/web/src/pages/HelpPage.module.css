@@ -1,0 +1,59 @@
+/* HelpPage — /profile/help (Profile reorg PR1). Reuses ProfilePage's shared
+   sub-page chrome (`profileStyles`); own kicker + placeholder card. */
+
+.content {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.kicker {
+  font-family: var(--riso-font-head);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--riso-muted);
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.card {
+  background: var(--riso-paper-2);
+  border: 2px solid var(--riso-ink);
+  border-radius: 14px;
+  box-shadow: 4px 4px 0 var(--riso-shadow-ink);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.cardTitle {
+  margin: 0 0 4px;
+  font-family: var(--riso-font-head);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--riso-ink);
+}
+.cardBody {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--riso-muted);
+}
+
+.disabledRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  opacity: 0.55;
+}
+.disabledLabel {
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.disabledCaption {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--riso-muted);
+}

@@ -3,7 +3,15 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for the Riso Profile tab (Phase 5).
+/// Snapshot coverage for the Riso Profile tab (Phase 5; trimmed by the
+/// Profile reorg PR1 — Theme/Sign Out/version-footer generic component
+/// pieces stay here since they're reusable Riso patterns, but the composed
+/// full-page mock below now reflects the PR1 Profile: identity row + gear
+/// button, streaks card, and a 3-row Preferences card
+/// (Getting started / Board settings / Shared counters). Theme,
+/// Notifications, Account & security, Help, Sign Out, and the version
+/// footer moved to `SettingsSnapshotTests`; Sync UI (`RisoSyncRow`/
+/// `SyncSheet`) was deleted entirely, not relocated.
 ///
 /// Snapshots the leaf presentational pieces — account card, theme
 /// segmented rows, preferences rows (with and without count badge),
@@ -242,7 +250,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
         let view = composedProfileView()
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 393, height: 980)),
+            as: .image(layout: .fixed(width: 393, height: 940)),
             record: recordMode
         )
     }
@@ -252,7 +260,7 @@ final class RisoProfileSnapshotTests: XCTestCase {
         assertSnapshot(
             of: view,
             as: .image(
-                layout: .fixed(width: 393, height: 980),
+                layout: .fixed(width: 393, height: 940),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
@@ -436,6 +444,24 @@ final class RisoProfileSnapshotTests: XCTestCase {
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
 
+                    // Identity row — account card + gear button (→ Settings,
+                    // Profile reorg PR1). Static gear glyph — no navigation
+                    // in a snapshot host.
+                    HStack(alignment: .center, spacing: 12) {
+                        RisoProfileAccountCard(
+                            displayName: "OYBC User",
+                            email: "you@example.com",
+                            onEditName: {}
+                        )
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Color.risoInk)
+                            .frame(width: 40, height: 40)
+                            .risoCard(fill: .risoPaper2)
+                    }
+                    .padding(.horizontal, Riso.gutter)
+                    .padding(.bottom, 18)
+
                     // Your streaks section
                     Text("Your streaks")
                         .risoSectionLabel()
@@ -450,26 +476,12 @@ final class RisoProfileSnapshotTests: XCTestCase {
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
 
-                    // App section label
-                    Text("App")
-                        .risoSectionLabel()
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 8)
-
-                    // App card — static theme + static sync row
-                    VStack(spacing: 0) {
-                        themeRowStatic(selected: .system)
-                        Divider()
-                            .background(Color.risoInk.opacity(0.12))
-                            .padding(.horizontal, 14)
-                        syncRowStatic
-                    }
-                    .risoCard()
-                    .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
-
-                    // Preferences section label
+                    // Preferences section label — Profile reorg PR1 trimmed
+                    // this card to Getting started / Board settings / Shared
+                    // counters; Theme, Notifications, Account & security,
+                    // Help, Sign Out, and the version footer all moved to
+                    // Settings (pushed from the gear button above). Sync UI
+                    // was deleted entirely, not relocated.
                     Text("Preferences")
                         .risoSectionLabel()
                         .padding(.horizontal, Riso.gutter)
@@ -478,34 +490,25 @@ final class RisoProfileSnapshotTests: XCTestCase {
                     // Preferences card
                     VStack(spacing: 0) {
                         RisoProfileRow(
-                            icon: "square.grid.3x3",
-                            label: "Board preferences",
+                            icon: "graduationcap",
+                            label: "Getting started",
+                            value: "3/8",
                             chevron: true
                         )
                         Divider()
                             .background(Color.risoInk.opacity(0.12))
                             .padding(.horizontal, 14)
                         RisoProfileRow(
-                            icon: "bell",
-                            label: "Notifications",
+                            icon: "slider.horizontal.3",
+                            label: "Board settings",
                             chevron: true
                         )
                         Divider()
                             .background(Color.risoInk.opacity(0.12))
                             .padding(.horizontal, 14)
                         RisoProfileRow(
-                            icon: "calendar.badge.clock",
-                            label: "Recurring templates",
-                            countBadge: 3,
-                            chevron: true
-                        )
-                        Divider()
-                            .background(Color.risoInk.opacity(0.12))
-                            .padding(.horizontal, 14)
-                        RisoProfileRow(
-                            icon: "tray.full",
-                            label: "Default pools",
-                            countBadge: 2,
+                            icon: "arrow.triangle.2.circlepath",
+                            label: "Shared counters",
                             chevron: true
                         )
                     }
@@ -513,96 +516,8 @@ final class RisoProfileSnapshotTests: XCTestCase {
                     .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
-
-                    // Sign Out card (resting)
-                    RisoProfileRow(
-                        icon: "escape",
-                        label: "Sign Out",
-                        danger: true
-                    )
-                    .risoCard()
-                    .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 14)
-
-                    // Version footer
-                    Text("OYBC · v1.0 (1)")
-                        .font(.risoBody(11, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, 24)
                 }
             }
         }
-    }
-
-    private func themeRowStatic(selected: ThemePreference) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "circle.lefthalf.filled")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.risoInk)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.risoPaper))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-
-            Text("Theme")
-                .font(.risoBody(14, .bold))
-                .foregroundStyle(Color.risoInk)
-
-            Spacer()
-
-            HStack(spacing: 6) {
-                ForEach([
-                    (ThemePreference.system, "System"),
-                    (ThemePreference.light, "Light"),
-                    (ThemePreference.dark, "Dark"),
-                ], id: \.0) { opt in
-                    Text(opt.1)
-                        .font(.risoHead(13, .bold))
-                        .foregroundStyle(selected == opt.0 ? Color.risoPaper : Color.risoInk)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                .fill(selected == opt.0 ? Color.risoBlue : Color.risoPaper2)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-                        )
-                }
-            }
-            .fixedSize()
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
-    }
-
-    private var syncRowStatic: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.risoInk)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.risoPaper))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-
-            Text("Sync")
-                .font(.risoBody(14, .bold))
-                .foregroundStyle(Color.risoInk)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(Color.risoGreen)
-                    .frame(width: 7, height: 7)
-                // Mirrors RisoSyncRow's minimal states: "Up to date" /
-                // "Syncing…" / "Offline" (no raw errors or timestamps).
-                Text("Up to date")
-                    .risoSub()
-            }
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
     }
 }

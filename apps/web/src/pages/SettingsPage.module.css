@@ -1,0 +1,103 @@
+/* SettingsPage — /profile/settings (Profile reorg PR1). Reuses ProfilePage's
+   shared sub-page chrome + card/row/sign-out/version-footer classes
+   (`profileStyles`) — see ProfilePage.module.css's header comment. Only the
+   two-line preference rows (label + caption) and the toggle switch are new
+   here; the toggle is a self-contained copy of BoardSettingsPage's, per that
+   file's own "self-contained per convention" note. */
+
+.content {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* ─── Two-line preference row (icon + label/caption + arrow) ────────────── */
+.prefRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 16px;
+  border-bottom: 1.5px solid var(--riso-hair);
+  text-decoration: none;
+  color: inherit;
+}
+.prefRow:last-child {
+  border-bottom: none;
+}
+.prefRow:focus-visible {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: -3px;
+}
+.prefRowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.prefRowLabel {
+  font-family: var(--riso-font-head);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--riso-ink);
+}
+.prefRowCaption {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--riso-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prefRowArrow {
+  flex-shrink: 0;
+  font-family: var(--riso-font-head);
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--riso-muted);
+}
+
+/* ─── Toggle switch (Board renewals) — copied from BoardSettingsPage.module.css ─── */
+.toggleSwitch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toggleSwitch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggleTrack {
+  position: absolute;
+  inset: 0;
+  background: var(--riso-paper);
+  border: 2px solid var(--riso-ink);
+  border-radius: 999px;
+  transition: background 0.15s;
+}
+.toggleTrack::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: var(--riso-ink);
+  border-radius: 50%;
+  transition: transform 0.15s, background 0.15s;
+}
+.toggleSwitch input:checked + .toggleTrack {
+  background: var(--riso-green);
+}
+.toggleSwitch input:checked + .toggleTrack::before {
+  transform: translateX(20px);
+  background: var(--riso-on-color);
+}
+.toggleSwitch input:focus-visible + .toggleTrack {
+  outline: 3px solid var(--riso-blue);
+  outline-offset: 2px;
+}

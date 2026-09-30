@@ -268,7 +268,9 @@ struct AccountSecurityContent: View {
             RisoPaperBackground()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    RisoSubPageHeader(title: "Account & security")
+                    // Profile reorg PR1 — moved off Profile, now reachable
+                    // only from Settings, so the kicker changes accordingly.
+                    RisoSubPageHeader(title: "Account & security", kicker: "Settings")
                         .padding(.top, 16).padding(.bottom, 20)
 
                     if let statusMessage { banner(statusMessage, color: .risoGreen) }

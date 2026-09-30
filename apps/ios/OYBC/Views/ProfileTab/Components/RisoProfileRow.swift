@@ -2,10 +2,13 @@ import SwiftUI
 
 /// A single row inside a Riso profile card.
 ///
-/// Layout: `[icon-square] [label] [count pill?] [value?] [chevron?]`
+/// Layout: `[icon-square] [label + caption?] [count pill?] [value?] [chevron?]`
 ///
 /// - `icon`: An SF Symbol name rendered in a 26×26 keyline square.
 /// - `label`: Row title (Bricolage 700, ink).
+/// - `caption`: Optional second line under the label (Archivo regular,
+///   muted, 12pt) — e.g. Settings' "Notifications" row summary. `nil`
+///   renders identically to the original single-line row.
 /// - `countBadge`: Optional integer — rendered as the "N" ink pill from
 ///   the prototype's `ts-lib-count` style.
 /// - `value`: Optional trailing text (Archivo semibold, muted).
@@ -14,6 +17,7 @@ import SwiftUI
 struct RisoProfileRow: View {
     let icon: String
     let label: String
+    var caption: String? = nil
     var countBadge: Int? = nil
     var value: String? = nil
     var chevron: Bool = false
@@ -26,12 +30,20 @@ struct RisoProfileRow: View {
             // Icon square — 26×26, 2px keyline
             iconSquare
 
-            // Label
-            Text(label)
-                .font(.risoBody(14, .bold))
-                .foregroundStyle(labelColor)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(1)
+            // Label (+ optional caption line)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.risoBody(14, .bold))
+                    .foregroundStyle(labelColor)
+                    .lineLimit(1)
+                if let caption {
+                    Text(caption)
+                        .font(.risoBody(12, .regular))
+                        .foregroundStyle(Color.risoMuted)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // Count badge (ink pill, cream text)
             if let n = countBadge {

@@ -357,7 +357,9 @@ shared sub-page chrome:
 - `SyncStatusIndicator` — re-skinned **and** fixed the long-standing raw-error
   leak (CLAUDE.md follow-up): dropped the `{lastError.message}` row for the iOS
   minimal **3-state** status (Up to date / Syncing… / Offline, colored dot). No
-  internal error string shown to users.
+  internal error string shown to users. (**Removed outright 2026-09-30** — all
+  sync status UI was deleted in the Profile reorg, owner decision: a dev tool,
+  not production UI.)
 
 Next: **5a-ii** (the other sub-page modules: RecurringTemplates, DefaultPools),
 then **5b** (net-new Account & security).
@@ -454,7 +456,7 @@ SelectableTaskItem, SubtaskChip. Dev-only `/playground` is gated, not re-skinned
 to fold in as the relevant screen is touched / before web launch; still tracked
 in CLAUDE.md's Known follow-ups): gate `/playground` behind
 `import.meta.env.DEV`; replace the raw-error leak in web `SyncStatusIndicator`
-with the iOS minimal three-state row (do with the Profile/sync re-skin, Phase 5);
+with the iOS minimal three-state row (done in Phase 5a-i, then moot — the indicator was removed outright on 2026-09-30);
 web draft-board containment (`createdInWizard` hidden until active; drafts never
 playable — do with the Boards/Create re-skins, Phases 3–4).
 

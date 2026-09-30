@@ -663,4 +663,32 @@ export async function readCoreBoardDefault(
   );
 }
 
+// ─── User preferences read helper ───────────────────────────────────────────
+//
+// Same raw-IDB pattern as `readCoreBoardDefault`/`readBoard`. Preferences
+// live as a nested object on the `users` store row (`User.preferences`,
+// merged via `mergeUserPreferences` on every write — see
+// `db/operations/users.ts` `updateUserPreferences`), not their own store.
+// Used by `profile-settings.spec.ts` to assert a Board-renewals toggle
+// flip on `/profile/settings` actually persisted to Dexie.
+export async function readUserPreferences(page: Page): Promise<Record<string, unknown> | null> {
+  return await page.evaluate(async (userId) => {
+    return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['users'], 'readonly');
+        const req = tx.objectStore('users').get(userId);
+        req.onsuccess = () => {
+          db.close();
+          const user = req.result as { preferences?: Record<string, unknown> } | undefined;
+          resolve(user?.preferences ?? null);
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, BYPASS_USER_ID);
+}
+
 export { expect } from '@playwright/test';

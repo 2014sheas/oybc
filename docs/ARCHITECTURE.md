@@ -580,7 +580,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - `BoardPlayPage.tsx` ↔ `BoardPlayView.swift` — board play
 - `CreatePage.tsx` ↔ `CreateView.swift` — board creation
 - `ProfilePage.tsx` ↔ `ProfileView.swift` — settings + sign out
-- `SyncStatusIndicator.tsx` ↔ `SyncStatusIndicatorView.swift` — online/offline + sync controls
+- `SyncStatusIndicator.tsx` ↔ `SyncStatusIndicatorView.swift` — online/offline + sync controls (removed 2026-09-30 — sync status UI is not production UI)
 - `NetworkMonitor.swift` — iOS NWPathMonitor wrapper (no web equivalent; uses `navigator.onLine`)
 
 **Principle**: Extract from `BoardLifecyclePlayground` into production pages. Don't rebuild.

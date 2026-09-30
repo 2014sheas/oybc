@@ -1,23 +1,25 @@
 import SwiftUI
 
-/// ProfileView — Riso-styled account info, app-level settings, and sign out.
+/// ProfileView — Riso-styled account info + the jobs done most often
+/// (streaks, Getting started, Board settings, Shared counters).
 ///
-/// Phase 5 Riso reskin: preserves all behavior (theme write path via
-/// `themeBinding`, name edit via `updateDisplayName`, sign out via
-/// `authService.signOut()`, the 4 preferences NavigationLinks + the
-/// `onEditRecurringTemplate` callback, and the `RisoSyncRow` status).
-/// The Developer/Playground section is intentionally removed.
+/// Profile reorg PR1: Theme, Notifications, Account & security, Help,
+/// Sign Out, the version footer, and the DEV rows all moved to
+/// `SettingsView`, pushed from the new gear button. Sync UI (`RisoSyncRow`
+/// / `SyncSheet`) was deleted entirely, not relocated (owner decision,
+/// `.superpowers/sdd/2026-09-30-profile-reorg/owner-decisions.md` #2).
+/// PR2 rebuilds the rest of this screen (identity header, tiles, tutorial
+/// hero, inline counters) — for now the account card / streaks card /
+/// Getting started row / Board settings + Shared counters rows are
+/// unchanged.
 ///
 /// Layout (over `RisoPaperBackground`, scrolling VStack of `.risoCard()` sections):
 /// 1. Header kicker + H1
-/// 2. Account card — initials avatar, name ✎, email
-/// 3. App card — Theme segmented + Sync row
-/// 4. Preferences section — 3 rows with count pills + NavigationLinks
-/// 5. Sign Out card — resting row → inline dashed confirm
-/// 6. Version footer
+/// 2. Identity row — account card + trailing gear button (→ Settings)
+/// 3. Your streaks card
+/// 4. Preferences section — Getting started / Board settings / Shared counters
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
-    @EnvironmentObject var syncService: SyncService
     @EnvironmentObject var tutorialStore: TutorialProgressStore
 
     // MARK: - Inputs
@@ -34,18 +36,6 @@ struct ProfileView: View {
     // MARK: - Private state
 
     @State private var showEditProfile = false
-    @State private var showSignOutConfirm = false
-    @State private var signOutError: String?
-    /// Whether the Sync detail sheet is presented.
-    @State private var showSyncSheet = false
-
-    // MARK: - Guest mode state (docs/GUEST_MODE.md §Phase 3/5)
-
-    /// Whether the guest→account upgrade sheet is presented.
-    @State private var showUpgradeSheet = false
-    @State private var showDiscardConfirm = false
-    @State private var discardError: String?
-    @State private var isDiscarding = false
 
     /// Async-loaded per-timeframe bingo + greenlog streaks for the "Your
     /// streaks" card. Empty until `loadCounts()` computes it.
@@ -55,8 +45,6 @@ struct ProfileView: View {
     @State private var streaksLoaded = false
 
     // MARK: - Derived
-
-    private var preferences: UserPreferences { authService.userPreferences }
 
     private var displayName: String {
         authService.currentUser?.displayName ?? "OYBC User"
@@ -85,13 +73,21 @@ struct ProfileView: View {
                         .padding(.top, 16)
                         .padding(.bottom, 18)
 
-                    // Account card
-                    RisoProfileAccountCard(
-                        displayName: displayName,
-                        email: email,
-                        isGuest: isGuest,
-                        onEditName: { showEditProfile = true }
-                    )
+                    // Identity row — account card + gear (→ Settings)
+                    HStack(alignment: .center, spacing: 12) {
+                        RisoProfileAccountCard(
+                            displayName: displayName,
+                            email: email,
+                            isGuest: isGuest,
+                            onEditName: { showEditProfile = true }
+                        )
+
+                        NavigationLink(value: ProfileRoute.settings) {
+                            gearButton
+                        }
+                        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
+                        .accessibilityLabel("Settings")
+                    }
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
 
@@ -104,57 +100,11 @@ struct ProfileView: View {
                     .padding(.horizontal, Riso.gutter)
                     .padding(.bottom, 18)
 
-                    // App section
-                    sectionLabel("App")
-                    appCard
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 18)
-
                     // Preferences section
                     sectionLabel("Preferences")
                     preferencesCard
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 18)
-
-                    // Guest mode (docs/GUEST_MODE.md §Phase 3/5): "Save your account"
-                    // + "Discard guest data" replace the Sign Out card entirely — a
-                    // guest never gets a plain, reversible-looking sign-out (it would
-                    // orphan the anon tree with no way back in).
-                    if isGuest {
-                        guestUpgradeCard
-                            .padding(.horizontal, Riso.gutter)
-                            .padding(.bottom, 12)
-
-                        discardGuestDataCard
-                            .padding(.horizontal, Riso.gutter)
-                            .padding(.bottom, 14)
-                    } else {
-                        signOutCard
-                            .padding(.horizontal, Riso.gutter)
-                            .padding(.bottom, 14)
-                    }
-
-                    // Version footer
-                    versionFooter
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 24)
-
-                    #if DEBUG
-                    // Developer affordances: replay first-run onboarding /
-                    // reset the Getting Started tutorial progress.
-                    VStack(spacing: 8) {
-                        SwiftUI.Button("Replay onboarding") {
-                            UserDefaults.hasSeenOnboarding = false
-                        }
-                        SwiftUI.Button("Reset tutorial progress") {
-                            tutorialStore.reset()
-                        }
-                    }
-                    .font(.risoBody(12, .semibold))
-                    .foregroundStyle(Color.risoMuted)
-                    .frame(maxWidth: .infinity)
-                    .padding(.bottom, 24)
-                    #endif
                 }
             }
         }
@@ -176,18 +126,6 @@ struct ProfileView: View {
             )
         }
         .onAppear { loadCounts() }
-        // Sync detail sheet (handoff §5d) — medium detent, drag indicator.
-        // `SyncSheetContainer` reads env directly so no props need threading here.
-        .sheet(isPresented: $showSyncSheet) {
-            SyncSheetContainer(onClose: { showSyncSheet = false })
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-        }
-        // Guest→account upgrade sheet (docs/GUEST_MODE.md §Phase 4) — opened
-        // from the "Save your account" CTA below.
-        .sheet(isPresented: $showUpgradeSheet) {
-            UpgradeAccountSheet()
-        }
     }
 
     // MARK: - Header
@@ -200,6 +138,28 @@ struct ProfileView: View {
         }
     }
 
+    // MARK: - Gear button (→ Settings)
+
+    /// 40×40 paper-2 keyline square with a `gearshape` glyph — matches
+    /// `RisoSubPageHeader`'s back-button metrics exactly (2pt ink border,
+    /// 7pt radius). The `RisoButtonStyle` wrapper on the `NavigationLink`
+    /// supplies both the press-into-paper animation and the hard shadow.
+    private var gearButton: some View {
+        Image(systemName: "gearshape")
+            .font(.system(size: 16, weight: .bold))
+            .foregroundStyle(Color.risoInk)
+            .frame(width: 40, height: 40)
+            .risoCard(fill: .risoPaper2)
+            // 40pt visual square, 44pt touch target (HIG minimum): the
+            // content shape is laid on a 44pt frame, then the negative
+            // padding gives the 40pt layout back so the button style's
+            // hard shadow still traces the card (same trick as the
+            // RisoSubPageHeader back button).
+            .padding(2)
+            .contentShape(Rectangle())
+            .padding(-2)
+    }
+
     // MARK: - Section label
 
     private func sectionLabel(_ title: String) -> some View {
@@ -207,48 +167,6 @@ struct ProfileView: View {
             .risoSectionLabel()
             .padding(.horizontal, Riso.gutter)
             .padding(.bottom, 8)
-    }
-
-    // MARK: - App card (Theme + Sync)
-
-    private var appCard: some View {
-        VStack(spacing: 0) {
-            // Theme row
-            HStack(spacing: 12) {
-                iconSquare(systemName: "circle.lefthalf.filled")
-
-                Text("Theme")
-                    .font(.risoBody(14, .bold))
-                    .foregroundStyle(Color.risoInk)
-
-                Spacer()
-
-                RisoSegmented(
-                    options: [
-                        (ThemePreference.system, "System"),
-                        (ThemePreference.light, "Light"),
-                        (ThemePreference.dark, "Dark"),
-                    ],
-                    selection: themeBinding,
-                    // Sizes each segment to its label (System is wider than
-                    // Light/Dark) instead of `.fixedSize()` collapsing the
-                    // equal-width layout into mismatched, clipping pills.
-                    equalWidth: false
-                )
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, Riso.cardPadding)
-
-            rowDivider
-
-            // Sync row — tapping opens the Sync detail sheet
-            Button { showSyncSheet = true } label: {
-                RisoSyncRow()
-            }
-            .buttonStyle(.plain)
-        }
-        .risoCard()
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
     // MARK: - Preferences card
@@ -267,39 +185,6 @@ struct ProfileView: View {
                 )
             }
             .buttonStyle(.plain)
-
-            rowDivider
-
-            // Notifications (Phase 7 — local reminders)
-            NavigationLink {
-                NotificationPreferencesView()
-            } label: {
-                RisoProfileRow(
-                    icon: "bell",
-                    label: "Notifications",
-                    chevron: true
-                )
-            }
-            .buttonStyle(.plain)
-
-            // Account & security — change email/password, linked providers,
-            // delete account (handoff §5c). Hidden for a guest (docs/GUEST_MODE.md
-            // §Phase 3): there's no email/password/linked-provider identity to
-            // manage yet — that's exactly what "Save your account" below sets up.
-            if !isGuest {
-                rowDivider
-
-                NavigationLink {
-                    AccountSecurityView()
-                } label: {
-                    RisoProfileRow(
-                        icon: "lock.shield",
-                        label: "Account & security",
-                        chevron: true
-                    )
-                }
-                .buttonStyle(.plain)
-            }
 
             rowDivider
 
@@ -338,251 +223,12 @@ struct ProfileView: View {
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
-    // MARK: - Sign Out card
-
-    private var signOutCard: some View {
-        Group {
-            if showSignOutConfirm {
-                // Inline dashed-red confirm — the whole card becomes dashed red.
-                // Matches the prototype's `tt-confirm` pattern inside `.pf-card.pf-out`.
-                VStack(spacing: 12) {
-                    Text("Sign out?")
-                        .font(.risoBody(14, .bold))
-                        .foregroundStyle(Color.risoRed)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 14)
-
-                    if let signOutError {
-                        Text(signOutError)
-                            .font(.risoBody(11, .regular))
-                            .foregroundStyle(Color.risoRed)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    HStack(spacing: 10) {
-                        RisoButton(title: "Cancel", kind: .neutral, fullWidth: true) {
-                            showSignOutConfirm = false
-                            signOutError = nil
-                        }
-                        RisoButton(title: "Sign Out", kind: .primary, fullWidth: true) {
-                            do {
-                                try authService.signOut()
-                            } catch {
-                                // Keep the confirm card visible so the error
-                                // (rendered inside it) is actually seen.
-                                signOutError = error.localizedDescription
-                            }
-                        }
-                    }
-                    .padding(.bottom, 14)
-                }
-                .padding(.horizontal, Riso.cardPadding)
-                // Card: paper2 fill + dashed red border (no solid ink keyline)
-                .background(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .fill(Color.risoPaper2)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .strokeBorder(
-                            Color.risoRed.opacity(0.6),
-                            style: StrokeStyle(lineWidth: 2, dash: [6, 4])
-                        )
-                )
-                .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-            } else {
-                // Resting Sign Out row — solid ink keyline card
-                Button {
-                    signOutError = nil
-                    showSignOutConfirm = true
-                } label: {
-                    RisoProfileRow(
-                        icon: "escape",
-                        label: "Sign Out",
-                        danger: true
-                    )
-                }
-                .buttonStyle(.plain)
-                .risoCard()
-                .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-            }
-        }
-    }
-
-    // MARK: - Guest mode cards (docs/GUEST_MODE.md §Phase 3/5)
-
-    /// Primary CTA replacing the hidden "Account & security" row + the Sign
-    /// Out card for a guest — the single most important thing a guest can do.
-    private var guestUpgradeCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("You're using OYBC as a guest. Save your account so your boards, tasks, and streaks are backed up and available on your other devices.")
-                .font(.risoBody(12, .regular))
-                .foregroundStyle(Color.risoMuted)
-                .fixedSize(horizontal: false, vertical: true)
-
-            RisoButton(title: "Save your account", kind: .primary, fullWidth: true, large: true) {
-                showUpgradeSheet = true
-            }
-        }
-        .padding(Riso.cardPadding)
-        .risoCard()
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-    }
-
-    /// A guest's replacement for "Sign Out": since a plain sign-out would
-    /// orphan the anonymous Firebase tree with no way back in, the only
-    /// available exit is a destructive, explicitly-irreversible discard —
-    /// routed through `deleteAccount()` (not `signOut()`). This doubles as
-    /// the guest's App Store 5.1.1(v) in-app deletion affordance, since the
-    /// "Account & security" delete flow is hidden for guests.
-    private var discardGuestDataCard: some View {
-        Group {
-            if showDiscardConfirm {
-                // Same inline dashed-red confirm shape as the Sign Out card.
-                VStack(spacing: 12) {
-                    Text("Discard guest data?")
-                        .font(.risoBody(14, .bold))
-                        .foregroundStyle(Color.risoRed)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 14)
-
-                    Text("This permanently erases every board, task, and streak on this device. It can't be undone.")
-                        .font(.risoBody(12, .regular))
-                        .foregroundStyle(Color.risoMuted)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let discardError {
-                        Text(discardError)
-                            .font(.risoBody(11, .regular))
-                            .foregroundStyle(Color.risoRed)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    HStack(spacing: 10) {
-                        RisoButton(title: "Cancel", kind: .neutral, fullWidth: true) {
-                            showDiscardConfirm = false
-                            discardError = nil
-                        }
-                        RisoButton(
-                            title: isDiscarding ? "Discarding…" : "Discard",
-                            kind: .primary,
-                            fullWidth: true
-                        ) {
-                            discardGuestData()
-                        }
-                        .disabled(isDiscarding)
-                        .opacity(isDiscarding ? 0.6 : 1)
-                    }
-                    .padding(.bottom, 14)
-                }
-                .padding(.horizontal, Riso.cardPadding)
-                .background(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .fill(Color.risoPaper2)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                        .strokeBorder(
-                            Color.risoRed.opacity(0.6),
-                            style: StrokeStyle(lineWidth: 2, dash: [6, 4])
-                        )
-                )
-                .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-            } else {
-                Button {
-                    discardError = nil
-                    showDiscardConfirm = true
-                } label: {
-                    RisoProfileRow(
-                        icon: "trash",
-                        label: "Discard guest data",
-                        danger: true
-                    )
-                }
-                .buttonStyle(.plain)
-                .risoCard()
-                .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-            }
-        }
-    }
-
-    /// Runs the discard: `deleteAccount()` deletes the Auth user (firing the
-    /// server-side `onUserDeleted` purge) and wipes local GRDB. On success
-    /// `authService.currentUser` becomes nil, so `AuthGateView` swaps back to
-    /// `LoginView` on its own — no local dismiss/navigation needed here.
-    private func discardGuestData() {
-        isDiscarding = true
-        discardError = nil
-        _Concurrency.Task {
-            defer { isDiscarding = false }
-            do {
-                try await authService.deleteAccount()
-            } catch {
-                discardError = error.localizedDescription
-            }
-        }
-    }
-
-    // MARK: - Version footer
-
-    private var versionFooter: some View {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-        return Text("OYBC · v\(version) (\(build))")
-            .font(.risoBody(11, .regular))
-            .foregroundStyle(Color.risoMuted)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 4)
-    }
-
     // MARK: - Helpers
-
-    private func iconSquare(systemName: String, danger: Bool = false) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(danger ? Color.risoRed : Color.risoInk)
-            .frame(width: 26, height: 26)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.risoPaper)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(danger ? Color.risoRed : Color.risoInk, lineWidth: Riso.Keyline.dense)
-            )
-    }
 
     private var rowDivider: some View {
         Divider()
             .background(Color.risoInk.opacity(0.12))
             .padding(.horizontal, Riso.cardPadding)
-    }
-
-    // MARK: - Theme binding
-
-    /// Writes through `AppDatabase.updateUserPreferences` — same atomic
-    /// transaction + sync-queue pattern the sub-page uses. `AuthService`'s
-    /// row observation re-publishes `currentUser` when the write commits,
-    /// so `MainTabView.preferredColorScheme` flips without manual refresh.
-    private var themeBinding: Binding<ThemePreference> {
-        Binding(
-            get: { preferences.theme },
-            set: { newValue in
-                guard let userId = authService.currentUser?.id else { return }
-                do {
-                    _ = try AppDatabase.shared.updateUserPreferences(userId: userId) { current in
-                        var next = current
-                        next.theme = newValue
-                        return next
-                    }
-                } catch {
-                    dlog("⚠️ updateUserPreferences(theme) failed: \(error)")
-                }
-            }
-        )
     }
 
     // MARK: - Streak loading
@@ -598,7 +244,7 @@ struct ProfileView: View {
         // Per-timeframe streaks for the "Your streaks" card. `computeAllStreaks`
         // is pure (safe off-main); `fetchBoards` returns all boards and the
         // algorithm re-filters to core/non-deleted internally.
-        let weekStartDay = preferences.weekStartDay.rawValue
+        let weekStartDay = authService.userPreferences.weekStartDay.rawValue
         // Capture `now` on main before the detached task (parity with the slot /
         // window VMs) so a midnight rollover between dispatch and execution can't
         // mismatch the boards snapshot against a next-day `now`.
@@ -620,6 +266,7 @@ struct ProfileView: View {
         ProfileView()
             .environmentObject(authService)
             .environmentObject(authService.syncService)
+            .environmentObject(TutorialProgressStore())
             .environmentObject(NetworkMonitor())
     }
 }

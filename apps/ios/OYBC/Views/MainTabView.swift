@@ -113,6 +113,13 @@ struct MainTabView: View {
             }
         case .settings:
             selectedTab = 3
+            // Same reset+push pattern as .boardSettings — Profile reorg PR1
+            // moved Settings off the Profile root, so the deep-link now
+            // pushes the sub-page instead of just landing on the tab.
+            DispatchQueue.main.async {
+                profilePath = NavigationPath()
+                profilePath.append(ProfileRoute.settings)
+            }
         case .shareGreenlog:
             showGreenlogPreview = true
         }
@@ -354,6 +361,16 @@ struct MainTabView: View {
                         BoardSettingsView()
                     case .streaks:
                         StreaksView()
+                    case .settings:
+                        // Profile reorg PR1 — Settings sub-page pushed from
+                        // the Profile gear button (or a tutorial deep-link).
+                        // `onOpenTutorial` reuses the same cross-tab hop
+                        // ProfileView's own "Getting started" row uses.
+                        SettingsView(onOpenTutorial: { openTutorial() })
+                    case .notifications:
+                        NotificationPreferencesView()
+                    case .help:
+                        HelpView(onOpenTutorial: { openTutorial() })
                     }
                 }
                 // NOTE: the Profile-stack `CoreBrowserRoute` destination was

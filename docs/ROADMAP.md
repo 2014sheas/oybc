@@ -186,6 +186,7 @@ The port pattern (TS source of truth → hand-mirrored Swift twin) is faithful w
 Sync atomicity is verified solid (same-transaction enqueue, atomic pull+cascade with rollback, watermark-after-clean-pull). The gaps are recovery and observability — what happens after things go wrong.
 
 ### D1 — Dead-letter surfacing for exhausted retries — SHIPPED [#293](https://github.com/2014sheas/oybc/pull/293) (issue #292)
+> **2026-09-30:** the user-facing "N changes couldn't sync — Retry" affordance (web `SyncStatusIndicator`, iOS sync row/sheet) was removed with ALL sync status UI by owner decision (a dev tool, not production UI — Profile reorg PR1). The exhausted-count tracking and the network-regain auto-re-promote remain; there is no manual Retry surface.
 - **Why:** after `MAX_SYNC_RETRIES` (5), a queue item is abandoned in FAILED forever with only a `console.warn`. The local row stays correct; Firestore silently never learns of it; the user has no signal. On multi-device accounts that is slow, invisible divergence.
 - **Scope:** count permanently-FAILED items into the sync status on both platforms; the iOS sync row and web `SyncStatusIndicator` show a "N changes couldn't sync — Retry" affordance that resets `retryCount` and re-promotes (keep copy minimal per the #151 three-state convention — no raw error text). Consider auto-re-promoting exhausted items on network-regain as the cheap first step.
 - **Acceptance:** an item exhausting retries becomes user-visible and user-recoverable on both platforms; test covers promote-after-reset.

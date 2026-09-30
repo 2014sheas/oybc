@@ -28,8 +28,9 @@ export interface SyncStatus {
   /**
    * FAILED items that exhausted their retry budget (`retryCount >=
    * MAX_SYNC_RETRIES`). Refreshed after each push cycle via
-   * `setExhaustedCount`; surfaced to the user as "N changes couldn't sync"
-   * with a Retry affordance. `0` means nothing is stuck.
+   * `setExhaustedCount`. Drives the network-regain auto-re-promote (and the
+   * dev Playground's sync dashboard); no production UI surfaces it since the
+   * sync status indicator was removed (2026-09-30). `0` means nothing is stuck.
    */
   exhaustedCount: number;
   /**
