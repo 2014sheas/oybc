@@ -31,7 +31,8 @@ struct CountersHubView: View {
 
     /// §Member rules (B3, RC9) — expired-member visibility. Per-window
     /// derived counters expire with their board's window, so by default a
-    /// group only lists its LIVE members (`filterCounterTasks`). Off by
+    /// group only lists its LIVE members (the kernel's `memberVisibility`,
+    /// applied after root detection so a counter never vanishes). Off by
     /// default, matching the Tasks tab's own default for the same predicate;
     /// the value is threaded into Counter detail on push so the two screens
     /// agree (web carries it in the URL as `?showExpired=1`).
@@ -119,10 +120,11 @@ struct CountersHubView: View {
         guard let userId = authService.currentUser?.id else { return }
         let visibility = showExpired
         _Concurrency.Task.detached(priority: .userInitiated) {
-            // RC9 — filtered BEFORE grouping so an expired member can't
-            // contribute a board row either. `tasksForDedupe` keeps the
-            // UNfiltered set: the "+ New counter" sheet matches against the
-            // whole library, not the hub's current view.
+            // RC9 — expired members are dropped inside the kernel, after
+            // the root walk, so a hidden member contributes no board row and
+            // a root never disappears. `tasksForDedupe` is the whole live
+            // set: the "+ New counter" sheet matches against the library,
+            // not the hub's current view.
             let (tasks, result) = AppDatabase.shared.fetchSharedCounterGroups(
                 userId: userId, showExpired: visibility
             )

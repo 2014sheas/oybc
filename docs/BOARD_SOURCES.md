@@ -810,13 +810,23 @@ window-stamped derived counters B2 started minting.
   its detail page gained a "Show expired tasks" toggle
   (`ShowExpiredToggle.tsx` ↔ `RisoShowExpiredToggle` in
   `Views/Riso/RisoControls.swift`, the latter shared with the Tasks tab's
-  existing toggle rather than a second definition) backed by
-  `filterCounterTasks`/`SharedCounterGroups.swift`'s filter and threaded
+  existing toggle rather than a second definition) backed by the kernel's
+  `memberVisibility` input (`buildSharedCounterGroups` in
+  `sharedCounterGroups.ts` ↔ `SharedCounterGroups.swift`) and threaded
   through `useSharedCounterGroups({ showExpired })` ↔
-  `AppDatabase+SharedCounterGroups` callers — window-stamped derived
-  **counter roots** are library content and are never filtered, only the
-  per-window rows; web carries the state as `?showExpired=1`, iOS as
-  passed-through view state. The delete-confirm line ("`{n} board
+  `AppDatabase.fetchSharedCounterGroups(userId:showExpired:now:)` — **roots
+  are never hidden; only member rows are filtered, and only after root
+  detection has run over the whole live task set.** (Hub-expired-filter
+  amendment, 2026-09-30: the rule originally lived in the callers as
+  `visibleCounterTasks` ↔ `filterCounterTasks`, run BEFORE grouping. A
+  board-born counter is a root only because a live task links to it, so once
+  its last members expired they were filtered out first, the root stopped
+  being a root, and the whole counter vanished from the hub and the Profile
+  home until "Show expired" was toggled. Both caller filters are retired;
+  the kernel now drops expired members after the root walk, and a root whose
+  members have all expired is listed as a single-member group — lifetime
+  total, nothing counting now. Web carries the toggle as `?showExpired=1`,
+  iOS as passed-through view state. The delete-confirm line ("`{n} board
   counter{s} made from this one will be removed.`") is centralised as
   `BoardSources.derivedCounterRemovalNote(count:)` on iOS (consumed by both
   `CounterDeleteConfirmView.swift`, newly extracted from `CounterDetailView.swift`
@@ -1291,12 +1301,17 @@ is a pre-existing bug that B makes visible; fix it, don't special-case.
 - Tasks tab / wizard Library sheet: like any task, then default-hidden
   after `endDate` by `isTaskExpired` (+ "show expired").
 - Counters hub/detail: the same `isTaskExpired` default + "show expired"
-  affordance, applied in the **caller hooks** that assemble the `tasks`
-  input (`useSharedCounterGroups.ts` ↔ the hub/detail view-model), NOT
-  inside the vector-pinned pure `buildSharedCounterGroups`, whose filtering
-  contract is unchanged (it now also takes an optional `eventsByTaskId` so
-  window-stamped members display their own window's count). Roots are never
-  filtered.
+  affordance, applied **inside** `buildSharedCounterGroups` via its optional
+  `memberVisibility: { showExpired, now }` input (absent → every live
+  member, so the vector-pinned output is unchanged; it also takes an
+  optional `eventsByTaskId` so window-stamped members display their own
+  window's count). The callers (`useSharedCounterGroups.ts` ↔
+  `AppDatabase.fetchSharedCounterGroups`) pass the WHOLE live task set;
+  root detection sees every member, expired or not, and only the member
+  rows are then filtered. Roots are never filtered — a root whose members
+  have all expired stays listed as a single-member group (2026-09-30
+  amendment; the caller-side pre-filter it replaced un-rooted such
+  counters and hid them).
 
 ### Deletion
 

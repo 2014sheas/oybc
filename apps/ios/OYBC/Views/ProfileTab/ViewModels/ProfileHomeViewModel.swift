@@ -71,7 +71,7 @@ final class ProfileHomeViewModel: ObservableObject {
         _Concurrency.Task.detached(priority: .userInitiated) {
             let boards = (try? db.fetchBoards(userId: userId)) ?? []
             let templates = (try? db.fetchRecurringBoardTemplates(userId: userId)) ?? []
-            let (tasks, groups) = db.fetchSharedCounterGroups(userId: userId, showExpired: false)
+            let (tasks, groups) = db.fetchSharedCounterGroups(userId: userId, showExpired: false, now: now)
             let events = (try? db.fetchNonDeletedTaskEvents(userId: userId)) ?? []
             let eventsByTaskId = Dictionary(grouping: events, by: \.taskId)
             let tasksById = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })

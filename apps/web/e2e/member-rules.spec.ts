@@ -596,8 +596,10 @@ test.describe('Wizard edit mode — the frame-5a note', () => {
     });
 
     await page.goto('/profile/board-settings');
-    await expect(page.getByText('Morning Kickstart')).toBeVisible();
-    await page.getByRole('button', { name: 'Edit tasks', exact: true }).click();
+    // Profile reorg 3/3 (#531): the list row itself opens the editor — the
+    // separate "Edit tasks" / "Delete" buttons moved into the editor.
+    await page.getByRole('button', { name: /Morning Kickstart/ }).click();
+    await expect(page.getByText('EDIT RECURRING BOARD')).toBeVisible();
 
     // The note sits under the stepper and stays there for every step.
     await expect(page.getByText('Changes apply from the next board.')).toBeVisible();
