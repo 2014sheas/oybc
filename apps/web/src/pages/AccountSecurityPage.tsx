@@ -91,7 +91,9 @@ export function AccountSecurityPage(): React.ReactElement {
   return (
     <div className={styles.container}>
       <div className={styles.subPageHeader}>
-        <Link to="/profile" className={styles.backLink} aria-label="Back to Profile">
+        {/* Reached from Settings since the Profile reorg (PR1) — back goes
+            there, mirroring the iOS twin's "SETTINGS" kicker. */}
+        <Link to="/profile/settings" className={styles.backLink} aria-label="Back to Settings">
           ‹
         </Link>
         <h1 className={styles.title}>Account &amp; security</h1>

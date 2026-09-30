@@ -28,6 +28,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 16px;
 }
 .pageHeader .header {
   padding-bottom: 0;
@@ -38,7 +39,6 @@
   gap: 7px;
   flex-shrink: 0;
   padding: 10px 16px;
-  margin-bottom: 16px;
   border: 2px solid var(--riso-ink);
   border-radius: 999px;
   background: var(--riso-paper-2);

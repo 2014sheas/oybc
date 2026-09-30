@@ -58,6 +58,11 @@ test.describe('Profile → Settings', () => {
 
     await page.getByRole('link', { name: /Account & security/ }).click();
     await expect(page).toHaveURL(/\/profile\/account-security/);
+
+    // Reached from Settings now, so its back link returns to Settings (the
+    // iOS twin's kicker changed from PROFILE to SETTINGS for the same reason).
+    await page.getByRole('link', { name: 'Back to Settings' }).click();
+    await expect(page).toHaveURL(/\/profile\/settings$/);
   });
 
   test('Help & getting started shows the placeholder pages', async ({ page }) => {
