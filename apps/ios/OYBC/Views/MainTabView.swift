@@ -59,6 +59,12 @@ struct MainTabView: View {
     /// playable board — this is the only Boards-tab → draft entry point.
     @State private var pendingDraftId: String? = nil
 
+    /// Profile reorg PR3 — Board settings' "REPEATING BOARDS" "New ›" link.
+    /// Set true + switch to the Create tab; `CreateHubView` consumes it on
+    /// appear and enters the fresh recurring wizard, the same
+    /// `enterFreshWizard(startRecurring: true)` path its own BLUE CTA uses.
+    @State private var pendingStartRecurringWizard: Bool = false
+
     /// Resolves `preferences.theme` into the SwiftUI `preferredColorScheme`
     /// value. `system` returns `nil`, which yields OS appearance; any other
     /// value forces a specific scheme across the whole tab tree.
@@ -319,6 +325,7 @@ struct MainTabView: View {
                             pendingRecurringTimeframe: $pendingRecurringTimeframe,
                             pendingTargetWindowDate: $pendingTargetWindowDate,
                             pendingDraftId: $pendingDraftId,
+                            pendingStartRecurringWizard: $pendingStartRecurringWizard,
                             onBoardCompleted: { boardId, _ in
                                 // Match web: after activate OR save-draft,
                                 // the user lands on the board they just
@@ -357,8 +364,12 @@ struct MainTabView: View {
                         // replaces the retired RecurringTemplatesView /
                         // DefaultPoolsListView pages. Edit/pause/resume are
                         // all local sheets now, so there's no cross-tab
-                        // wizard-hop plumbing left to wire here.
-                        BoardSettingsView()
+                        // wizard-hop plumbing left to wire here except the
+                        // "New ›" repeating-board entry (Profile reorg PR3).
+                        BoardSettingsView(onNewRepeatingBoard: {
+                            pendingStartRecurringWizard = true
+                            selectedTab = 2
+                        })
                     case .streaks:
                         StreaksView()
                     case .settings:

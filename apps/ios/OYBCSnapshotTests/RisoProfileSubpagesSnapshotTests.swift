@@ -3,51 +3,36 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot tests for the Riso Profile sub-pages (handoff §5a) — Board
-/// Preferences + the `RecurringTemplateCard` component that now powers the
-/// P7 Board-settings "Repeating boards" roster. Renders the REAL views,
-/// seeded via fixtures + an injected `AuthService`.
+/// Snapshot tests for the Riso Profile sub-pages (handoff §5a) — the
+/// `RecurringTemplateCard` component that now powers the Board-settings
+/// "REPEATING BOARDS" roster. Renders the REAL component directly.
 ///
-/// P7 (Task Pools + Recurring Boards Rework) retired the `RecurringTemplatesView`
-/// / `DefaultPoolsListView` pages (and the `PoolEditSheet` /
-/// `DefaultPool`-scoped tests that used to guard the latter's editor) in
-/// favor of `BoardSettingsView`. `BoardSettingsView` itself self-loads
-/// from `AppDatabase.shared` + `@EnvironmentObject AuthService` (same
-/// reason the two retired list pages were never snapshotted here — see
-/// the CLAUDE.md snapshot-testing sharp edges section), so it's not
-/// snapshotted directly; its DB-free, props-only `CoreDefaultsEditSheetView`
-/// and the shared `PoolPickerSheetView` are covered in
-/// `BoardSettingsSnapshotTests.swift` instead, following the exact
-/// pattern `PoolEditSheetView` already proved safe in `RisoPoolsSnapshotTests`.
-/// (Board Creation Split PR B retired the roster's third sheet,
-/// `RepeatingBoardEditSheetView` — "Edit tasks" now opens the full
-/// `BoardWizardView` in edit mode instead, covered by the wizard's own
-/// snapshot suite.)
+/// `BoardSettingsView` (the container) still self-loads from
+/// `AppDatabase.shared` + `@EnvironmentObject AuthService` (same reason the
+/// two retired list pages were never snapshotted here — see the CLAUDE.md
+/// snapshot-testing sharp edges section), so it's not snapshotted directly;
+/// its DB-free, props-only `CoreDefaultsEditSheetView` and the shared
+/// `PoolPickerSheetView` — plus, since Profile reorg PR3, the full
+/// restructured screen via the presentational `BoardSettingsContent` leaf —
+/// are covered in `BoardSettingsSnapshotTests.swift` instead.
 @MainActor
 final class RisoProfileSubpagesSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // MARK: - Recurring template card
+    // MARK: - Recurring template row
     //
-    // The inline TemplateEditSheet was retired (pool-only sheet could
-    // underfill); P7 routed creation/edit to a local sheet
-    // (`RepeatingBoardEditSheetView`), which Board Creation Split (PR B)
-    // then retired in favor of opening the full `BoardWizardView` in edit
-    // mode. These guard the list card component (`RecurringTemplateCard`)
-    // — reused verbatim as the Board-settings roster's row — in its
-    // healthy and "needs attention" states, plus a multi-row "list"
-    // arrangement (active + paused).
+    // Profile reorg PR3 dropped the pool-preview chip row, "Add tasks", and
+    // inline "Delete" from this component (now a plain row — the card
+    // chrome moved out to the composite card `BoardSettingsContent` wraps
+    // every row in), so these fixed heights are much shorter than the
+    // pre-PR3 baselines. Guards the row in its healthy and "needs
+    // attention" states, plus a multi-row "list" arrangement (active +
+    // paused) wrapped the same way `BoardSettingsContent.rosterCard` does.
 
-    /// Issue #321 — pool-preview chip row (first 3 resolved titles + "+{k}
-    /// more" overflow) and the "Add tasks" affordance in `metaRow`. Both
-    /// grow the card's height, so the fixed heights below are bumped from
-    /// the pre-#321 130/180 baselines to avoid clipping.
-    private func templateCard(
+    private func templateRow(
         attention: SpawnAttentionReason?,
-        isActive: Bool = true,
-        poolPreview: [String] = ["Drink water", "Read 30 min", "Run 5 km"],
-        poolPreviewOverflow: Int = 6
+        isActive: Bool = true
     ) -> some View {
         let tpl = SnapshotFixtures.makeRecurringTemplate(
             id: "tpl1", name: "Morning Routine", timeframe: .weekly,
@@ -56,27 +41,28 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
         return RecurringTemplateCard(
             template: tpl,
             attentionReason: attention,
-            poolPreview: poolPreview,
-            poolPreviewOverflow: poolPreviewOverflow,
-            onEdit: {}, onToggleActive: { _ in }, onDelete: {}, onAddTasks: {}
+            weekStartDay: .monday,
+            onEdit: {}, onToggleActive: { _ in }
         )
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .padding(Riso.gutter)
         .background(Color.risoPaper)
     }
 
     func testTemplateCardHealthyLight() {
-        assertSnapshot(of: templateCard(attention: nil), as: .image(layout: .fixed(width: 393, height: 180)), record: recordMode)
+        assertSnapshot(of: templateRow(attention: nil), as: .image(layout: .fixed(width: 393, height: 100)), record: recordMode)
     }
     func testTemplateCardAttentionLight() {
-        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 230)), record: recordMode)
+        assertSnapshot(of: templateRow(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 150)), record: recordMode)
     }
     func testTemplateCardAttentionDark() {
-        assertSnapshot(of: templateCard(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 230), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+        assertSnapshot(of: templateRow(attention: .poolTooSmall), as: .image(layout: .fixed(width: 393, height: 150), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
     }
 
-    // MARK: - Roster list (P7) — active + paused rows together, standing
-    // in for `BoardSettingsView`'s "Repeating boards" section (which
-    // itself can't be snapshotted — see the file header doc).
+    // MARK: - Roster list — active + paused rows in ONE composite card,
+    // standing in for `BoardSettingsView`'s "REPEATING BOARDS" section
+    // (the container itself can't be snapshotted — see the file header doc).
 
     private func rosterList() -> some View {
         let active = SnapshotFixtures.makeRecurringTemplate(
@@ -87,27 +73,28 @@ final class RisoProfileSubpagesSnapshotTests: XCTestCase {
             id: "tpl-paused", name: "Weekend Reset", timeframe: .weekly,
             boardSize: 3, seedTaskCount: 8, isActive: false
         )
-        return VStack(spacing: 10) {
+        return VStack(spacing: 0) {
             RecurringTemplateCard(
-                template: active, attentionReason: nil,
-                poolPreview: ["Drink water", "Read 30 min"], poolPreviewOverflow: 0,
-                onEdit: {}, onToggleActive: { _ in }, onDelete: {}, onAddTasks: {}
+                template: active, attentionReason: nil, weekStartDay: .monday,
+                onEdit: {}, onToggleActive: { _ in }
             )
+            Divider().background(Color.risoInk.opacity(0.12)).padding(.horizontal, Riso.cardPadding)
             RecurringTemplateCard(
-                template: paused, attentionReason: nil,
-                poolPreview: ["Meal prep"], poolPreviewOverflow: 0,
-                onEdit: {}, onToggleActive: { _ in }, onDelete: {}, onAddTasks: {}
+                template: paused, attentionReason: nil, weekStartDay: .monday,
+                onEdit: {}, onToggleActive: { _ in }
             )
         }
+        .risoCard()
+        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
         .padding(Riso.gutter)
         .background(Color.risoPaper)
     }
 
     func testRosterListLight() {
-        assertSnapshot(of: rosterList(), as: .image(layout: .fixed(width: 393, height: 300)), record: recordMode)
+        assertSnapshot(of: rosterList(), as: .image(layout: .fixed(width: 393, height: 170)), record: recordMode)
     }
     func testRosterListDark() {
-        assertSnapshot(of: rosterList(), as: .image(layout: .fixed(width: 393, height: 300), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
+        assertSnapshot(of: rosterList(), as: .image(layout: .fixed(width: 393, height: 170), traits: .init(userInterfaceStyle: .dark)), record: recordMode)
     }
 
     // BoardPreferencesView is deferred — it reads `@EnvironmentObject

@@ -8,14 +8,25 @@ import SnapshotTesting
 /// `PoolPickerSheetView`. Both are DB-free, props-only leaf views during
 /// RENDER (writes only happen inside action closures, never on appear) —
 /// the exact pattern `PoolEditSheetView` already proved snapshot-safe in
-/// `RisoPoolsSnapshotTests`. `BoardSettingsView` itself is NOT snapshotted
-/// here — see `RisoProfileSubpagesSnapshotTests`'s file header for why.
+/// `RisoPoolsSnapshotTests`. `BoardSettingsView` (the container) itself is
+/// NOT snapshotted here — see `RisoProfileSubpagesSnapshotTests`'s file
+/// header for why.
 ///
 /// Board Creation Split (PR B) retired the local `RepeatingBoardEditSheetView`
 /// this file used to also cover (`testRosterEdit*`) — editing a repeating
 /// board's roster entry now opens the full `BoardWizardView` in edit mode
 /// instead, which is exercised by the wizard's own snapshot coverage, not
 /// re-snapshotted per entry point here.
+///
+/// Profile reorg PR3 (`design_handoff_profile_reorg/README.md` §4) split
+/// `BoardSettingsView` into a thin container + the presentational
+/// `BoardSettingsContent` leaf (props + closures, no environment/DB — same
+/// split `NotificationPreferencesView`/`Content` already use), so the
+/// restructured full screen CAN be snapshotted directly now — see
+/// `testFullScreen*` below, guarding the three-group layout against
+/// `4c-board-settings.png`: the full-width 5-segment Timeframe row, the
+/// paused-vs-active repeating-board rows in one composite card, and the
+/// verbatim footer helper.
 final class BoardSettingsSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
@@ -153,5 +164,68 @@ final class BoardSettingsSnapshotTests: XCTestCase {
     }
     func testPoolPickerDark() {
         assertSnapshot(of: poolPicker(), as: .image(layout: .fixed(width: 393, height: 420), traits: darkTraits()), record: recordMode)
+    }
+
+    // MARK: - BoardSettingsContent (Profile reorg PR3) — the full restructured screen
+
+    /// Mirrors `4c-board-settings.png`: Size 3×3 / Timeframe Custom / Center
+    /// square Free / Week starts Mon; Daily has a pool-backed default,
+    /// Weekly/Yearly have none, Monthly has an explicit 3×3 + free-space
+    /// override; one active weekly repeating board + one paused weekly one,
+    /// in the same composite roster card.
+    private func fullScreen() -> some View {
+        let morning = pool("p1", "Morning Kickstart", taskIds: [t1.id, t2.id])
+        var defaults: [Timeframe: CoreBoardDefault] = [:]
+        defaults[.daily] = SnapshotFixtures.makeCoreBoardDefault(
+            id: "cd-daily", timeframe: .daily, corePoolIds: ["p1"]
+        )
+        defaults[.monthly] = SnapshotFixtures.makeCoreBoardDefault(
+            id: "cd-monthly", timeframe: .monthly,
+            coreDefaultTaskIds: [t1.id, t2.id, t3.id, t4.id],
+            defaultBoardSize: .three, defaultCenterType: .free
+        )
+
+        let active = SnapshotFixtures.makeRecurringTemplate(
+            id: "tpl-active", name: "Morning Routine", timeframe: .weekly,
+            boardSize: 5, seedTaskCount: 9, isActive: true
+        )
+        let paused = SnapshotFixtures.makeRecurringTemplate(
+            id: "tpl-paused", name: "Weekend Reset", timeframe: .weekly,
+            boardSize: 3, seedTaskCount: 8, isActive: false
+        )
+
+        return BoardSettingsContent(
+            preferences: .defaults,
+            coreDefaultsByTimeframe: defaults,
+            poolsById: [morning.id: morning],
+            tasksById: Dictionary(uniqueKeysWithValues: [t1, t2, t3, t4].map { ($0.id, $0) }),
+            templates: [active, paused],
+            attentionByTemplateId: [:],
+            taskCountByTemplateId: [active.id: 9, paused.id: 8]
+        )
+    }
+
+    func testFullScreenLight() {
+        assertSnapshot(of: fullScreen(), as: .image(layout: .fixed(width: 393, height: 960), traits: lightTraits()), record: recordMode)
+    }
+    func testFullScreenDark() {
+        assertSnapshot(of: fullScreen(), as: .image(layout: .fixed(width: 393, height: 960), traits: darkTraits()), record: recordMode)
+    }
+
+    /// Empty-roster state — keeps today's copy ("No repeating boards yet —
+    /// turn one on from a board's \"Repeats\" setting…").
+    private func emptyRoster() -> some View {
+        BoardSettingsContent(
+            preferences: .defaults,
+            coreDefaultsByTimeframe: [:],
+            poolsById: [:],
+            tasksById: [:],
+            templates: [],
+            attentionByTemplateId: [:]
+        )
+    }
+
+    func testEmptyRosterLight() {
+        assertSnapshot(of: emptyRoster(), as: .image(layout: .fixed(width: 393, height: 900), traits: lightTraits()), record: recordMode)
     }
 }
