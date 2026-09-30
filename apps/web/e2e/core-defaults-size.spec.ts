@@ -26,7 +26,14 @@ async function openDefaultsSheet(
   timeframeLabel: string,
 ): Promise<import('@playwright/test').Locator> {
   await page.goto('/profile/board-settings?__oybc_test_bypass=1');
-  await page.getByRole('button', { name: new RegExp(`^${timeframeLabel}`) }).click();
+  // Scoped to the "Pre-filled tasks by timeframe" group (Profile reorg
+  // PR3) — the "EVERY NEW BOARD" card above it now ALSO has a Timeframe
+  // segmented row with a bare "Daily"/"Weekly"/etc. button, which would
+  // otherwise collide with a page-wide `/^Daily/` match.
+  await page
+    .getByRole('group', { name: 'Pre-filled tasks by timeframe' })
+    .getByRole('button', { name: new RegExp(`^${timeframeLabel}`) })
+    .click();
   const sheet = page.getByRole('dialog', { name: `${timeframeLabel} defaults` });
   await expect(sheet).toBeVisible();
   return sheet;
@@ -72,7 +79,10 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     await expect(sheet).toBeHidden();
 
     // Board-settings summary line grows the size/centre suffix.
-    await expect(page.getByRole('button', { name: /^Daily/ })).toContainText('3×3 · no free space');
+    const prefilledTasksGroup = page.getByRole('group', { name: 'Pre-filled tasks by timeframe' });
+    await expect(prefilledTasksGroup.getByRole('button', { name: /^Daily/ })).toContainText(
+      '3×3 · no free space',
+    );
 
     // At-rest: both fields stored as explicit values (never inferred).
     const savedRow = await readCoreBoardDefault(page, 'daily');
@@ -101,7 +111,10 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     await expect(sheet2).toBeHidden();
 
     // Summary line drops the suffix entirely (no explicit override left).
-    const dailyRowText = await page.getByRole('button', { name: /^Daily/ }).innerText();
+    const dailyRowText = await page
+      .getByRole('group', { name: 'Pre-filled tasks by timeframe' })
+      .getByRole('button', { name: /^Daily/ })
+      .innerText();
     expect(dailyRowText).not.toMatch(/\d×\d/);
 
     // At-rest: both keys deleted (absent), never stored as `null` — the
@@ -134,7 +147,10 @@ test.describe('Per-timeframe core-board default size + centre', () => {
     await expect(sheet).toBeHidden();
 
     // Even sizes show no free-space wording in the summary suffix.
-    const weeklyRowText = await page.getByRole('button', { name: /^Weekly/ }).innerText();
+    const weeklyRowText = await page
+      .getByRole('group', { name: 'Pre-filled tasks by timeframe' })
+      .getByRole('button', { name: /^Weekly/ })
+      .innerText();
     expect(weeklyRowText).toContain('4×4');
     expect(weeklyRowText).not.toMatch(/free space/);
 

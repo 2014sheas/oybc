@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  CenterSquareType,
   Timeframe,
   hasExplicitCoreBoardSetup,
   resolveCoreBoardSetupDefaults,
@@ -21,8 +20,8 @@ import {
 import { useTaskLibrary, useBrowsableTasks } from './createPage/useTaskLibrary';
 import { applyCoreBoardDefaultPrefill } from './createHub/poolPullLogic';
 
-import { computePoolPreview, type PoolPreview } from '../components/recurringTemplates/poolPreview';
 import { formatDefaultsSummary } from '../components/boardSettings/formatDefaultsSummary';
+import { EveryNewBoardCard } from '../components/boardSettings/EveryNewBoardCard';
 import { RepeatingBoardRow } from '../components/boardSettings/RepeatingBoardRow';
 import { CoreDefaultsSheet } from '../components/boardSettings/CoreDefaultsSheet';
 import { RepeatingBoardWizardOverlay } from '../components/boardSettings/RepeatingBoardWizardOverlay';
@@ -36,29 +35,45 @@ const CORE_TIMEFRAMES: { value: Timeframe; label: string }[] = [
 ];
 
 /**
- * BoardSettingsPage — /profile/board-settings (Task Pools + Recurring
- * Boards Rework, P7, docs/POOLS_RECURRING.md §Surfaces item 9). Replaces
- * BOTH retired Profile sub-pages — "Recurring templates"
- * (`/profile/recurring-templates`) and "Default pools"
- * (`/profile/default-pools[/:timeframe]`) — with one page:
+ * BoardSettingsPage — /profile/board-settings. Restructured into three
+ * groups (Profile reorg PR3, `design_handoff_profile_reorg/README.md` §4
+ * "Board settings" / screenshot `4c-board-settings.png`;
+ * `.superpowers/sdd/2026-09-30-profile-reorg/owner-decisions.md` PR3
+ * paragraph):
  *
- * - Per-timeframe core-defaults rows (Daily/Weekly/Monthly/Yearly), each
- *   showing its resolved default tasks (pool tasks ∪ `coreDefaultTaskIds`,
- *   deduped) or "No default tasks" (never "Not set" — copy rule). Tapping
- *   a row opens `CoreDefaultsSheet` for that timeframe.
- * - The repeating-boards roster: EVERY spawn record (active AND paused —
- *   this is the safety net for paused boards, so it must not filter on
- *   `isActive`), reusing the same row/health/pool-preview machinery the
- *   retired templates page used (`RepeatingBoardRow`, `computeTemplateAttention`,
- *   `computePoolPreview`, `useTemplateMixes`). "Edit tasks" opens the full
- *   recurring wizard in EDIT mode (`RepeatingBoardWizardOverlay` wrapping
- *   `BoardWizardPage` with `editingTemplate` set) — Board Creation Split
- *   (web PR D) retired the local `RosterEditSheet` in favor of this,
- *   mirroring iOS's `BoardSettingsView` fullScreenCover.
+ * 1. **EVERY NEW BOARD** (`EveryNewBoardCard`) — Size / Timeframe / Center
+ *    square / Week starts, all writing the SAME `UserPreferences` fields
+ *    this page always wrote (previously plain `<select>`s under "New board
+ *    defaults"); now `RisoSegmented` rows matching the design.
+ * 2. **PRE-FILLED TASKS BY TIMEFRAME** (was "Core-board defaults") —
+ *    unchanged behavior, renamed heading only. Per-timeframe core-defaults
+ *    rows (Daily/Weekly/Monthly/Yearly), each showing its resolved default
+ *    tasks (pool tasks ∪ `coreDefaultTaskIds`, deduped) or "No default
+ *    tasks" (never "Not set" — copy rule). Tapping a row opens
+ *    `CoreDefaultsSheet` for that timeframe.
+ * 3. **REPEATING BOARDS** (was "Repeating boards") — same roster query
+ *    (EVERY spawn record, active AND paused — the safety net for paused
+ *    boards, so it must not filter on `isActive`), but each row is now a
+ *    ONE-LINE compact `RepeatingBoardRow`: name + timeframe badge, a
+ *    `{size} board · {n}-task pool · renews {day}`/`… · paused` meta line,
+ *    an optional attention badge, a trailing Active/Paused toggle, and a
+ *    chevron. Pool-preview chips and the separate "Edit tasks"/"Delete"
+ *    buttons are dropped — the whole row opens the editor
+ *    (`RepeatingBoardWizardOverlay` wrapping `BoardWizardPage` in
+ *    `editingTemplate` mode, unchanged). A trailing "New ›" link opens the
+ *    Create hub's repeating-board wizard entry directly
+ *    (`/create?newBoard=recurring`, the same top-nav deep link
+ *    `AppTopNav`'s "New board" button uses for the one-off variant).
+ *
+ * Footer helper diverges ONE WORD from the iOS copy: "Renewal reminders
+ * are under Settings" (not "Settings › Notifications") — web has no
+ * Notifications sub-page; the renewal "prompt me" toggles live directly on
+ * `/profile/settings`'s "Board renewals" card (Profile reorg PR1, owner
+ * decision 3).
  *
  * Also absorbs "New board defaults" (week-start / board size / timeframe /
- * center square — every field on the new-board form) at the top, which used
- * to live on the now-deleted `/profile/board-preferences` sub-page
+ * center square — every field on the new-board form), which used to live
+ * on the now-deleted `/profile/board-preferences` sub-page
  * (`BoardPreferencesPage`). Not a P7 concept; relocated here because the old
  * sub-page was deleted and it otherwise had no other home.
  *
@@ -135,14 +150,6 @@ export function BoardSettingsPage(): React.ReactElement {
   }, [dailyDefault, weeklyDefault, monthlyDefault, yearlyDefault, poolsById, library.taskMap, prefs]);
 
   const attentionByTemplateId = rosterHealth?.attentionByTemplateId ?? {};
-  const poolPreviewByTemplateId = useMemo<Record<string, PoolPreview>>(() => {
-    const out: Record<string, PoolPreview> = {};
-    for (const t of templates) {
-      const mixTaskIds = templateMixes?.[t.id] ?? t.seedTaskIds;
-      out[t.id] = computePoolPreview(mixTaskIds, library.taskMap);
-    }
-    return out;
-  }, [templates, templateMixes, library.taskMap]);
   const taskCountByTemplateId = useMemo<Record<string, number>>(() => {
     const out: Record<string, number> = {};
     for (const t of templates) {
@@ -163,87 +170,11 @@ export function BoardSettingsPage(): React.ReactElement {
         <h1 className={styles.title}>Board settings</h1>
       </header>
 
-      <div className={styles.sectionLabel}>New board defaults</div>
-      <div className={styles.card}>
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-week-start">
-            Week starts on
-          </label>
-          <select
-            id="pref-week-start"
-            className={styles.select}
-            value={prefs.weekStartDay}
-            onChange={(e) =>
-              setPref('weekStartDay', e.target.value as UserPreferences['weekStartDay'])
-            }
-          >
-            <option value="monday">Monday</option>
-            <option value="sunday">Sunday</option>
-          </select>
-        </div>
+      <div className={styles.sectionLabel}>Every new board</div>
+      <EveryNewBoardCard preferences={prefs} onChange={setPref} />
 
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-board-size">
-            Default board size
-          </label>
-          <select
-            id="pref-board-size"
-            className={styles.select}
-            value={prefs.defaultBoardSize}
-            onChange={(e) =>
-              setPref(
-                'defaultBoardSize',
-                Number(e.target.value) as UserPreferences['defaultBoardSize']
-              )
-            }
-          >
-            <option value={3}>3 × 3</option>
-            <option value={4}>4 × 4</option>
-            <option value={5}>5 × 5</option>
-          </select>
-        </div>
-
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-timeframe">
-            Default timeframe
-          </label>
-          <select
-            id="pref-timeframe"
-            className={styles.select}
-            value={prefs.defaultTimeframe}
-            onChange={(e) => setPref('defaultTimeframe', e.target.value as Timeframe)}
-          >
-            <option value={Timeframe.CUSTOM}>Custom</option>
-            <option value={Timeframe.DAILY}>Daily</option>
-            <option value={Timeframe.WEEKLY}>Weekly</option>
-            <option value={Timeframe.MONTHLY}>Monthly</option>
-            <option value={Timeframe.YEARLY}>Yearly</option>
-          </select>
-        </div>
-
-        <div className={styles.settingsRow}>
-          <label className={styles.rowLabel} htmlFor="pref-center-type">
-            Default center square
-          </label>
-          <select
-            id="pref-center-type"
-            className={styles.select}
-            value={prefs.defaultCenterType}
-            onChange={(e) =>
-              setPref(
-                'defaultCenterType',
-                e.target.value as UserPreferences['defaultCenterType']
-              )
-            }
-          >
-            <option value={CenterSquareType.FREE}>Free</option>
-            <option value={CenterSquareType.NONE}>None</option>
-          </select>
-        </div>
-      </div>
-
-      <div className={styles.sectionLabel}>Core-board defaults</div>
-      <div className={styles.card}>
+      <div className={styles.sectionLabel}>Pre-filled tasks by timeframe</div>
+      <div className={styles.card} role="group" aria-label="Pre-filled tasks by timeframe">
         {CORE_TIMEFRAMES.map(({ value, label }) => {
           const summary = defaultsSummaryByTimeframe[value] ?? 'No default tasks';
           return (
@@ -261,7 +192,12 @@ export function BoardSettingsPage(): React.ReactElement {
         })}
       </div>
 
-      <div className={styles.sectionLabel}>Repeating boards</div>
+      <div className={styles.sectionHeader}>
+        <span className={styles.sectionLabel}>Repeating boards</span>
+        <Link to="/create?newBoard=recurring" className={styles.sectionHeaderLink}>
+          New &rsaquo;
+        </Link>
+      </div>
       {templates.length === 0 ? (
         <div className={styles.emptyState}>
           <p className={styles.emptyTitle}>No repeating boards yet.</p>
@@ -271,20 +207,22 @@ export function BoardSettingsPage(): React.ReactElement {
           </p>
         </div>
       ) : (
-        <div className={styles.list}>
+        <div className={styles.card}>
           {templates.map((t) => (
             <RepeatingBoardRow
               key={t.id}
               template={t}
               taskCount={taskCountByTemplateId[t.id] ?? t.seedTaskIds.length}
+              weekStartDay={prefs.weekStartDay}
               attentionReason={attentionByTemplateId[t.id]}
-              poolPreview={poolPreviewByTemplateId[t.id]?.titles}
-              poolPreviewOverflow={poolPreviewByTemplateId[t.id]?.overflow}
-              onEditTasks={setEditingTemplate}
+              onOpen={setEditingTemplate}
             />
           ))}
         </div>
       )}
+      <p className={styles.footerHelper}>
+        Tap a board to edit its pool and cadence. Renewal reminders are under Settings.
+      </p>
 
       {userId && defaultsSheetTimeframe !== null && (
         <CoreDefaultsSheet
