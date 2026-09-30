@@ -579,7 +579,7 @@ Replaced the playground-only app with a real production UI. Tab-based navigation
 - `BoardsPage.tsx` ↔ `BoardListView.swift` — board list
 - `BoardPlayPage.tsx` ↔ `BoardPlayView.swift` — board play
 - `CreatePage.tsx` ↔ `CreateView.swift` — board creation
-- `ProfilePage.tsx` ↔ `ProfileView.swift` — settings + sign out
+- `ProfilePage.tsx` ↔ `ProfileView.swift` — Profile home (identity header + gear, Board settings / Streak tiles, Getting started, inline Shared counters); settings + sign out live behind the gear (`SettingsPage.tsx` ↔ `SettingsView.swift`, 2026-09-30 Profile reorg)
 - `SyncStatusIndicator.tsx` ↔ `SyncStatusIndicatorView.swift` — online/offline + sync controls (removed 2026-09-30 — sync status UI is not production UI)
 - `NetworkMonitor.swift` — iOS NWPathMonitor wrapper (no web equivalent; uses `navigator.onLine`)
 
