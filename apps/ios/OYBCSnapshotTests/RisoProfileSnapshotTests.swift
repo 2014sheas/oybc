@@ -3,23 +3,21 @@ import SwiftUI
 import SnapshotTesting
 @testable import OYBC
 
-/// Snapshot coverage for the Riso Profile tab (Phase 5; trimmed by the
-/// Profile reorg PR1 — Theme/Sign Out/version-footer generic component
-/// pieces stay here since they're reusable Riso patterns, but the composed
-/// full-page mock below now reflects the PR1 Profile: identity row + gear
-/// button, streaks card, and a 3-row Preferences card
-/// (Getting started / Board settings / Shared counters). Theme,
-/// Notifications, Account & security, Help, Sign Out, and the version
-/// footer moved to `SettingsSnapshotTests`; Sync UI (`RisoSyncRow`/
-/// `SyncSheet`) was deleted entirely, not relocated.
+/// Snapshot coverage for the Profile-home screen (Profile reorg PR2,
+/// `design_handoff_profile_reorg/README.md` §1: identity header, day-one
+/// hero / tiles / Getting-started row, Shared counters).
 ///
-/// Snapshots the leaf presentational pieces — account card, theme
-/// segmented rows, preferences rows (with and without count badge),
-/// and the sign-out card (resting and confirm states) — each in
-/// light and dark mode.
-///
-/// These views are all pure-props and need no environment objects,
-/// which makes them hostable without AuthService/SyncService stubs.
+/// `ProfileView` itself is `@EnvironmentObject`-bound to `AuthService`
+/// (Firebase-backed) AND owns a `@StateObject ProfileHomeViewModel` that
+/// reads the live DB on `.onAppear` — same reason `SettingsSnapshotTests`
+/// gives for not hosting `SettingsView` directly. This composes the SAME
+/// pure-props components `ProfileView` itself renders
+/// (`RisoProfileIdentityHeader`, `RisoProfileTile` + its three tile-content
+/// views, `RisoGettingStartedHero`, `RisoProfileRow`,
+/// `ProfileCountersSection`) with static fixture data, so a change to any
+/// of those components is picked up here automatically — this is NOT a
+/// hand-duplicated markup copy the way the old (PR1-era) composed-Profile
+/// snapshot was.
 ///
 /// `record: .missing` auto-records baselines on the first run.
 /// CI overrides with `SNAPSHOT_TESTING_RECORD=never`.
@@ -27,497 +25,264 @@ final class RisoProfileSnapshotTests: XCTestCase {
 
     private let recordMode: SnapshotTestingConfiguration.Record? = .missing
 
-    // MARK: - Account Card
+    // MARK: - Fixture counters (matches the design handoff's own example values)
 
-    func testAccountCardLight() {
-        let view = accountCardView(
-            displayName: "OYBC User",
-            email: "you@example.com"
+    private var pushUps: SharedCounterGroup {
+        SharedCounterGroup(
+            counterId: "push-ups", name: "Push-ups", action: "Do", unit: "reps",
+            lifetime: 512, tasks: [], taskCount: 2, boardCount: 2, activeTaskCount: 2
         )
+    }
+
+    private var pagesRead: SharedCounterGroup {
+        SharedCounterGroup(
+            counterId: "pages-read", name: "Pages read", action: "Read", unit: "pages",
+            lifetime: 1240, tasks: [], taskCount: 1, boardCount: 1, activeTaskCount: 1
+        )
+    }
+
+    // MARK: - Populated (light + dark)
+
+    func testPopulatedLight() {
         assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 353, height: 96)),
+            of: composedProfileHome(),
+            as: .image(layout: .fixed(width: 393, height: 640)),
             record: recordMode
         )
     }
 
-    func testAccountCardDark() {
-        let view = accountCardView(
-            displayName: "OYBC User",
-            email: "you@example.com"
-        )
+    func testPopulatedDark() {
         assertSnapshot(
-            of: view,
+            of: composedProfileHome(),
             as: .image(
-                layout: .fixed(width: 353, height: 96),
+                layout: .fixed(width: 393, height: 640),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
         )
     }
 
-    func testAccountCardNoEmailLight() {
-        let view = accountCardView(displayName: "Jane Doe", email: nil)
+    // MARK: - Day-one (completedCount == 0 — gold hero above the tiles)
+
+    func testDayOneHeroLight() {
+        let view = composedProfileHome(
+            boardSummary: .init(defaultsLine: "Defaults 3×3 · Free · Mon", repeatingLine: "No repeating boards yet"),
+            streak: nil,
+            gettingStarted: .dayOneHero,
+            tutorialDone: 0,
+            counters: [],
+            totalCounterCount: 0
+        )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 353, height: 96)),
+            as: .image(layout: .fixed(width: 393, height: 820)),
             record: recordMode
         )
     }
 
-    // MARK: - Account Card — guest (docs/GUEST_MODE.md)
-
-    func testAccountCardGuestLight() {
-        let view = accountCardView(displayName: "OYBC User", email: nil, isGuest: true)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 353, height: 96)),
-            record: recordMode
+    func testDayOneHeroDark() {
+        let view = composedProfileHome(
+            boardSummary: .init(defaultsLine: "Defaults 3×3 · Free · Mon", repeatingLine: "No repeating boards yet"),
+            streak: nil,
+            gettingStarted: .dayOneHero,
+            tutorialDone: 0,
+            counters: [],
+            totalCounterCount: 0
         )
-    }
-
-    func testAccountCardGuestDark() {
-        let view = accountCardView(displayName: "OYBC User", email: nil, isGuest: true)
         assertSnapshot(
             of: view,
             as: .image(
-                layout: .fixed(width: 353, height: 96),
+                layout: .fixed(width: 393, height: 820),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
         )
     }
 
-    // MARK: - Your streaks card
+    // MARK: - Tutorial complete (isComplete == true — no row, no hero)
 
-    private func yourStreaksView() -> some View {
-        ZStack {
-            Color.risoPaper
-            RisoYourStreaksCard(streaks: [
-                .daily: StreakPair(bingo: 12, greenlog: 5),
-                .weekly: StreakPair(bingo: 3, greenlog: 0),
-                .monthly: StreakPair(bingo: 0, greenlog: 0),
-                .yearly: StreakPair(bingo: 1, greenlog: 1),
-            ])
-            .padding(20)
-        }
-    }
-
-    func testYourStreaksCardLight() {
+    func testTutorialCompleteLight() {
+        let view = composedProfileHome(gettingStarted: .hidden)
         assertSnapshot(
-            of: yourStreaksView(),
-            as: .image(layout: .fixed(width: 393, height: 260)),
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 560)),
             record: recordMode
         )
     }
 
-    func testYourStreaksCardDark() {
+    func testTutorialCompleteDark() {
+        let view = composedProfileHome(gettingStarted: .hidden)
         assertSnapshot(
-            of: yourStreaksView(),
+            of: view,
             as: .image(
-                layout: .fixed(width: 393, height: 260),
+                layout: .fixed(width: 393, height: 560),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
         )
     }
 
-    // MARK: - Theme Segmented (App card)
+    // MARK: - Empty streak + empty counters
 
-    func testThemeSegmentedSystemLight() {
-        let view = themeSegmentedView(selected: .system)
+    func testEmptyStreakAndCountersLight() {
+        let view = composedProfileHome(
+            boardSummary: .init(defaultsLine: "Defaults 3×3 · Free · Mon", repeatingLine: "No repeating boards yet"),
+            streak: nil,
+            gettingStarted: .hidden,
+            counters: [],
+            totalCounterCount: 0
+        )
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 353, height: 58)),
+            as: .image(layout: .fixed(width: 393, height: 560)),
             record: recordMode
         )
     }
 
-    func testThemeSegmentedLightModeLight() {
-        let view = themeSegmentedView(selected: .light)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 353, height: 58)),
-            record: recordMode
+    func testEmptyStreakAndCountersDark() {
+        let view = composedProfileHome(
+            boardSummary: .init(defaultsLine: "Defaults 3×3 · Free · Mon", repeatingLine: "No repeating boards yet"),
+            streak: nil,
+            gettingStarted: .hidden,
+            counters: [],
+            totalCounterCount: 0
         )
-    }
-
-    func testThemeSegmentedDarkModeDark() {
-        let view = themeSegmentedView(selected: .dark)
         assertSnapshot(
             of: view,
             as: .image(
-                layout: .fixed(width: 353, height: 58),
+                layout: .fixed(width: 393, height: 560),
                 traits: .init(userInterfaceStyle: .dark)
             ),
             record: recordMode
         )
     }
 
-    // MARK: - Preferences Row (with and without count badge)
+    // MARK: - Guest
 
-    func testPreferencesRowNoBadgeLight() {
-        let view = preferencesRowView(
-            icon: "square.grid.3x3",
-            label: "Board preferences",
-            countBadge: nil
-        )
+    func testGuestLight() {
+        let view = composedProfileHome(displayName: "OYBC User", email: nil, isGuest: true)
         assertSnapshot(
             of: view,
-            as: .image(layout: .fixed(width: 353, height: 54)),
+            as: .image(layout: .fixed(width: 393, height: 640)),
             record: recordMode
         )
     }
 
-    func testPreferencesRowWithBadgeLight() {
-        let view = preferencesRowView(
-            icon: "calendar.badge.clock",
-            label: "Recurring templates",
-            countBadge: 3
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 353, height: 54)),
-            record: recordMode
-        )
-    }
+    // MARK: - Composed Profile-home helper
 
-    func testPreferencesRowWithBadgeDark() {
-        let view = preferencesRowView(
-            icon: "tray.full",
-            label: "Default pools",
-            countBadge: 2
-        )
-        assertSnapshot(
-            of: view,
-            as: .image(
-                layout: .fixed(width: 353, height: 54),
-                traits: .init(userInterfaceStyle: .dark)
-            ),
-            record: recordMode
-        )
-    }
-
-    // MARK: - Sign Out row — resting
-
-    func testSignOutRowRestingLight() {
-        let view = signOutCardView(confirmShown: false)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 353, height: 54)),
-            record: recordMode
-        )
-    }
-
-    func testSignOutRowRestingDark() {
-        let view = signOutCardView(confirmShown: false)
-        assertSnapshot(
-            of: view,
-            as: .image(
-                layout: .fixed(width: 353, height: 54),
-                traits: .init(userInterfaceStyle: .dark)
-            ),
-            record: recordMode
-        )
-    }
-
-    // MARK: - Sign Out confirm
-
-    func testSignOutConfirmLight() {
-        let view = signOutCardView(confirmShown: true)
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 353, height: 130)),
-            record: recordMode
-        )
-    }
-
-    func testSignOutConfirmDark() {
-        let view = signOutCardView(confirmShown: true)
-        assertSnapshot(
-            of: view,
-            as: .image(
-                layout: .fixed(width: 353, height: 130),
-                traits: .init(userInterfaceStyle: .dark)
-            ),
-            record: recordMode
-        )
-    }
-
-    // MARK: - Composed Profile layout (light + dark)
-
-    func testProfileComposedLight() {
-        let view = composedProfileView()
-        assertSnapshot(
-            of: view,
-            as: .image(layout: .fixed(width: 393, height: 940)),
-            record: recordMode
-        )
-    }
-
-    func testProfileComposedDark() {
-        let view = composedProfileView()
-        assertSnapshot(
-            of: view,
-            as: .image(
-                layout: .fixed(width: 393, height: 940),
-                traits: .init(userInterfaceStyle: .dark)
-            ),
-            record: recordMode
-        )
-    }
-
-    // MARK: - Helpers
-
-    private func accountCardView(displayName: String, email: String?, isGuest: Bool = false) -> some View {
-        ZStack {
-            Color.risoPaper
-            RisoProfileAccountCard(
-                displayName: displayName,
-                email: email,
-                isGuest: isGuest,
-                onEditName: {}
-            )
-            .padding(20)
-        }
-    }
-
-    /// Renders a static theme row inside a Riso card (no binding mutation).
-    private func themeSegmentedView(selected: ThemePreference) -> some View {
-        ZStack {
-            Color.risoPaper
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Image(systemName: "circle.lefthalf.filled")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.risoInk)
-                        .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.risoPaper))
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-
-                    Text("Theme")
-                        .font(.risoBody(14, .bold))
-                        .foregroundStyle(Color.risoInk)
-
-                    Spacer()
-
-                    // Static (non-binding) segmented for snapshot
-                    HStack(spacing: 6) {
-                        ForEach([
-                            (ThemePreference.system, "System"),
-                            (ThemePreference.light, "Light"),
-                            (ThemePreference.dark, "Dark"),
-                        ], id: \.0) { opt in
-                            Text(opt.1)
-                                .font(.risoHead(13, .bold))
-                                .foregroundStyle(selected == opt.0 ? Color.risoPaper : Color.risoInk)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                        .fill(selected == opt.0 ? Color.risoBlue : Color.risoPaper2)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: Riso.cardRadius)
-                                        .strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.container)
-                                )
-                        }
-                    }
-                    .fixedSize()
-                }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 14)
-            }
-            .risoCard()
-            .padding(20)
-        }
-    }
-
-    private func preferencesRowView(icon: String, label: String, countBadge: Int?) -> some View {
-        ZStack {
-            Color.risoPaper
-            RisoProfileRow(
-                icon: icon,
-                label: label,
-                countBadge: countBadge,
-                chevron: true
-            )
-            .risoCard()
-            .padding(20)
-        }
-    }
-
-    /// Renders the sign-out card in either resting or confirm state.
-    /// Mirrors the production ProfileView's two branches exactly.
-    private func signOutCardView(confirmShown: Bool) -> some View {
-        ZStack {
-            Color.risoPaper
-            Group {
-                if confirmShown {
-                    signOutConfirmContent
-                } else {
-                    signOutRestingContent
-                }
-            }
-            .padding(20)
-        }
-    }
-
-    private var signOutRestingContent: some View {
-        RisoProfileRow(
-            icon: "escape",
-            label: "Sign Out",
-            danger: true
-        )
-        .risoCard()
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-    }
-
-    private var signOutConfirmContent: some View {
-        VStack(spacing: 12) {
-            Text("Sign out?")
-                .font(.risoBody(14, .bold))
-                .foregroundStyle(Color.risoRed)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 14)
-
-            HStack(spacing: 10) {
-                // Cancel
-                Text("Cancel")
-                    .font(.risoHead(15, .bold))
-                    .foregroundStyle(Color.risoInk)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .risoCard(fill: .risoPaper2)
-
-                // Sign Out (primary red)
-                Text("Sign Out")
-                    .font(.risoHead(15, .bold))
-                    .foregroundStyle(Color.risoPaper)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
-                    .risoCard(fill: .risoRed)
-            }
-            .padding(.bottom, 14)
-        }
-        .padding(.horizontal, 14)
-        // Dashed-red card border — no solid keyline wrapper (matches production)
-        .background(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .fill(Color.risoPaper2)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Riso.cardRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Riso.cardRadius)
-                .strokeBorder(
-                    Color.risoRed.opacity(0.6),
-                    style: StrokeStyle(lineWidth: 2, dash: [6, 4])
-                )
-        )
-        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-    }
-
-    /// Composed profile layout — header + all cards — without environment
-    /// objects. Uses static placeholder values for all live data.
+    /// Assembles the same pure-props components `ProfileView` composes, in
+    /// the same order, with static fixture data standing in for
+    /// `AuthService`/`TutorialProgressStore`/`ProfileHomeViewModel`.
     @ViewBuilder
-    private func composedProfileView() -> some View {
+    private func composedProfileHome(
+        displayName: String = "Alex Rivera",
+        email: String? = "alex@example.com",
+        isGuest: Bool = false,
+        boardSummary: ProfileHomeViewModel.BoardSettingsTileSummary = .init(
+            defaultsLine: "Defaults 3×3 · Free · Mon", repeatingLine: "2 repeating boards"
+        ),
+        streak: ProfileHomeViewModel.StreakStats? = .init(bingoStreak: 12, longestStreak: 24, greenlogCount: 37),
+        gettingStarted: ProfileHomeViewModel.GettingStartedDisplay = .row,
+        tutorialDone: Int = 3,
+        nextLessonTitle: String? = "Score a bingo",
+        counters: [SharedCounterGroup]? = nil,
+        totalCounterCount: Int = 3
+    ) -> some View {
+        let resolvedCounters = counters ?? [pushUps, pagesRead]
         ZStack(alignment: .top) {
             RisoPaperBackground()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Header
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Account").risoKicker()
-                        Text("Profile").risoH1()
-                            .padding(.top, 4)
-                    }
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.top, 16)
-                    .padding(.bottom, 18)
+                    identityRow(displayName: displayName, email: email, isGuest: isGuest)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.top, 16)
+                        .padding(.bottom, 18)
 
-                    // Account card
-                    RisoProfileAccountCard(
-                        displayName: "OYBC User",
-                        email: "you@example.com",
-                        onEditName: {}
+                    if gettingStarted == .dayOneHero {
+                        RisoGettingStartedHero(
+                            done: tutorialDone, total: TutorialProgressStore.totalLessons, onStart: {}
+                        )
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
+                    }
+
+                    tilesRow(boardSummary: boardSummary, streak: streak)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
+
+                    if gettingStarted == .row {
+                        Button {} label: {
+                            RisoProfileRow(
+                                icon: "checkmark.circle",
+                                label: "Getting started",
+                                caption: nextLessonTitle.map { "Next: \($0)" },
+                                value: "\(tutorialDone)/\(TutorialProgressStore.totalLessons)",
+                                chevron: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .risoCard()
+                        .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
+                    }
+
+                    ProfileCountersSection(
+                        groups: resolvedCounters,
+                        totalCount: totalCounterCount,
+                        onOpenHub: {}, onOpenDetail: { _ in }, onNewCounter: {}, onLog: { _ in }
                     )
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
-
-                    // Identity row — account card + gear button (→ Settings,
-                    // Profile reorg PR1). Static gear glyph — no navigation
-                    // in a snapshot host.
-                    HStack(alignment: .center, spacing: 12) {
-                        RisoProfileAccountCard(
-                            displayName: "OYBC User",
-                            email: "you@example.com",
-                            onEditName: {}
-                        )
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Color.risoInk)
-                            .frame(width: 40, height: 40)
-                            .risoCard(fill: .risoPaper2)
-                    }
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
-
-                    // Your streaks section
-                    Text("Your streaks")
-                        .risoSectionLabel()
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 8)
-                    RisoYourStreaksCard(streaks: [
-                        .daily: StreakPair(bingo: 12, greenlog: 5),
-                        .weekly: StreakPair(bingo: 3, greenlog: 0),
-                        .monthly: StreakPair(bingo: 0, greenlog: 0),
-                        .yearly: StreakPair(bingo: 1, greenlog: 1),
-                    ])
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
-
-                    // Preferences section label — Profile reorg PR1 trimmed
-                    // this card to Getting started / Board settings / Shared
-                    // counters; Theme, Notifications, Account & security,
-                    // Help, Sign Out, and the version footer all moved to
-                    // Settings (pushed from the gear button above). Sync UI
-                    // was deleted entirely, not relocated.
-                    Text("Preferences")
-                        .risoSectionLabel()
-                        .padding(.horizontal, Riso.gutter)
-                        .padding(.bottom, 8)
-
-                    // Preferences card
-                    VStack(spacing: 0) {
-                        RisoProfileRow(
-                            icon: "graduationcap",
-                            label: "Getting started",
-                            value: "3/8",
-                            chevron: true
-                        )
-                        Divider()
-                            .background(Color.risoInk.opacity(0.12))
-                            .padding(.horizontal, 14)
-                        RisoProfileRow(
-                            icon: "slider.horizontal.3",
-                            label: "Board settings",
-                            chevron: true
-                        )
-                        Divider()
-                            .background(Color.risoInk.opacity(0.12))
-                            .padding(.horizontal, 14)
-                        RisoProfileRow(
-                            icon: "arrow.triangle.2.circlepath",
-                            label: "Shared counters",
-                            chevron: true
-                        )
-                    }
-                    .risoCard()
-                    .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 32)
                 }
             }
+        }
+    }
+
+    private func identityRow(displayName: String, email: String?, isGuest: Bool) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            RisoProfileIdentityHeader(
+                displayName: displayName, email: email, isGuest: isGuest, onEditName: {}
+            )
+            Button {} label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color.risoInk)
+                    .frame(width: 40, height: 40)
+                    .risoCard(fill: .risoPaper2)
+            }
+            .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
+        }
+    }
+
+    /// `streak == nil` renders the dashed empty-streak tile.
+    private func tilesRow(
+        boardSummary: ProfileHomeViewModel.BoardSettingsTileSummary,
+        streak: ProfileHomeViewModel.StreakStats?
+    ) -> some View {
+        HStack(spacing: 12) {
+            Button {} label: {
+                RisoProfileTile {
+                    ProfileBoardSettingsTileContent(
+                        defaultsLine: boardSummary.defaultsLine, repeatingLine: boardSummary.repeatingLine
+                    )
+                }
+            }
+            .buttonStyle(RisoProfileTileButtonStyle())
+
+            Button {} label: {
+                if let streak {
+                    RisoProfileTile(fill: .risoGold) {
+                        ProfileStreakTileContent(
+                            bingoStreak: streak.bingoStreak,
+                            longestStreak: streak.longestStreak,
+                            greenlogCount: streak.greenlogCount
+                        )
+                    }
+                } else {
+                    RisoProfileTile(dashed: true) { ProfileEmptyStreakTileContent() }
+                }
+            }
+            .buttonStyle(RisoProfileTileButtonStyle(offset: streak != nil ? Riso.Shadow.card : nil))
         }
     }
 }

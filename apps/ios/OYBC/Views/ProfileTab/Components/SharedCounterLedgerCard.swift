@@ -33,6 +33,13 @@ struct SharedCounterLedgerCard: View {
     let onOpenDetail: () -> Void
     /// Fired by the "+ Log" pill — logs `group.defaultLogAmount ?? 1`.
     let onLog: () -> Void
+    /// Profile-home compact variant (design handoff §1.4) — a single flat
+    /// row (name+meta / total+ALL-TIME / "+ Log" pill), no member-progress
+    /// rows, no own card chrome (the caller wraps N compact rows in ONE
+    /// shared card with dividers, `RisoProfileRow`-style). `false` (the
+    /// default) keeps the full Ledger-card layout the Counters Hub uses,
+    /// byte-identical to before this flag existed.
+    var compact: Bool = false
 
     // MARK: - Derived
 
@@ -46,6 +53,74 @@ struct SharedCounterLedgerCard: View {
     // MARK: - Body
 
     var body: some View {
+        if compact {
+            compactBody
+        } else {
+            fullBody
+        }
+    }
+
+    // MARK: - Compact row (Profile home)
+
+    private var compactBody: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(group.name)
+                    .font(.risoHead(16, .extraBold))
+                    .foregroundStyle(Color.risoInk)
+                    .lineLimit(1)
+                Text("\(group.taskCount) task\(group.taskCount == 1 ? "" : "s") · \(group.boardCount) board\(group.boardCount == 1 ? "" : "s")")
+                    .font(.risoBody(11, .regular))
+                    .foregroundStyle(Color.risoMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(group.lifetime.formatted())
+                    .font(.risoHead(20, .extraBold))
+                    .foregroundStyle(Color.risoBlue)
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                Text("ALL-TIME")
+                    .font(.risoBody(9, .bold))
+                    .tracking(0.9)
+                    .foregroundStyle(Color.risoMuted)
+            }
+
+            logPillButton
+        }
+        .padding(.horizontal, Riso.cardPadding)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpenDetail() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(group.name), \(group.lifetime) all-time \(unitLabel), \(group.taskCount) tasks on \(group.boardCount) boards")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    // MARK: - "+ Log" pill (shared by both layouts)
+
+    private var logPillButton: some View {
+        Button(action: onLog) {
+            Text("+ Log")
+                .font(.risoHead(12, .extraBold))
+                .foregroundStyle(Color.risoPaper)
+                .padding(.vertical, 7)
+                .padding(.horizontal, 14)
+                .background(Capsule().fill(Color.risoBlue))
+                .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
+        }
+        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
+        .disabled(isLogging)
+        .accessibilityLabel("Log \(logAmount) \(unitLabel) for \(group.name)")
+    }
+
+    // MARK: - Full card (Counters Hub)
+
+    private var fullBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Top row: name + lifetime
             HStack(alignment: .top, spacing: 10) {
@@ -96,18 +171,7 @@ struct SharedCounterLedgerCard: View {
 
                 Spacer(minLength: 6)
 
-                Button(action: onLog) {
-                    Text("+ Log")
-                        .font(.risoHead(12, .extraBold))
-                        .foregroundStyle(Color.risoPaper)
-                        .padding(.vertical, 7)
-                        .padding(.horizontal, 14)
-                        .background(Capsule().fill(Color.risoBlue))
-                        .overlay(Capsule().strokeBorder(Color.risoInk, lineWidth: Riso.Keyline.dense))
-                }
-                .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small, radius: 999))
-                .disabled(isLogging)
-                .accessibilityLabel("Log \(logAmount) \(unitLabel) for \(group.name)")
+                logPillButton
 
                 Text("›")
                     .font(.risoHead(14, .bold))
