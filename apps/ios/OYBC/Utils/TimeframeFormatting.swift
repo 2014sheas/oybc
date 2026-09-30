@@ -171,7 +171,8 @@ func formatRecurringCadence(timeframe: Timeframe) -> String {
 /// Boards Rework P5).
 ///
 /// Several call sites already hand-roll this exact 6-case switch
-/// privately (`RisoYourStreaksCard.label(_:)`,
+/// privately (the retired `RisoYourStreaksCard.label(_:)` — deleted in the
+/// Profile reorg, PR2 — was one of them),
 /// `PendingCoreBoardsSectionView.label(for:)`,
 /// `RisoCoreTimeframeGrid.timeframeLabel`, `EditTaskSheet.timeframeLabel`
 /// — the last one also adds a `.none` case). Not consolidated onto this

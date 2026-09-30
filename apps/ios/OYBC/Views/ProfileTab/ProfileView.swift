@@ -1,23 +1,25 @@
 import SwiftUI
 
-/// ProfileView — Riso-styled account info + the jobs done most often
-/// (streaks, Getting started, Board settings, Shared counters).
+/// ProfileView — the Profile-home screen (Profile reorg PR2, design handoff
+/// `design_handoff_profile_reorg/README.md` §1). Everything touched rarely
+/// moved to `SettingsView` (pushed from the gear button, PR1); this screen
+/// is left with the two jobs the owner ranked highest — Board settings and
+/// Shared counters — plus the Streak tile and the Getting Started
+/// onboarding surface.
 ///
-/// Profile reorg PR1: Theme, Notifications, Account & security, Help,
-/// Sign Out, the version footer, and the DEV rows all moved to
-/// `SettingsView`, pushed from the new gear button. Sync UI (`RisoSyncRow`
-/// / `SyncSheet`) was deleted entirely, not relocated (owner decision,
-/// `.superpowers/sdd/2026-09-30-profile-reorg/owner-decisions.md` #2).
-/// PR2 rebuilds the rest of this screen (identity header, tiles, tutorial
-/// hero, inline counters) — for now the account card / streaks card /
-/// Getting started row / Board settings + Shared counters rows are
-/// unchanged.
+/// Layout (top to bottom, matches the handoff's frame `#4a` / day-one `#4e`):
+/// 1. Identity header (avatar/name/email + trailing gear → Settings).
+/// 2. Day-one hero (`completedCount == 0`) — ABOVE the tiles, replaces the row.
+/// 3. Two tiles — Board settings / Streak (or its empty "no bingo yet" state).
+/// 4. Getting Started row (`0 < completedCount < 8`) — BELOW the tiles.
+/// 5. Shared counters — up to 2 most-recently-logged counters + "All N ›";
+///    "+ Log" raises the hub's "Logged +N · Undo" toast (bottom overlay).
 ///
-/// Layout (over `RisoPaperBackground`, scrolling VStack of `.risoCard()` sections):
-/// 1. Header kicker + H1
-/// 2. Identity row — account card + trailing gear button (→ Settings)
-/// 3. Your streaks card
-/// 4. Preferences section — Getting started / Board settings / Shared counters
+/// Container stays thin: identity/tutorial state comes straight from
+/// `AuthService`/`TutorialProgressStore` (env objects), DB-backed state
+/// (streaks, repeating-board count, counters) comes from the injected
+/// `ProfileHomeViewModel`. All visual pieces are their own files under
+/// `Components/` so this body stays a thin composition, not a monolith.
 struct ProfileView: View {
     @EnvironmentObject var authService: AuthService
     @EnvironmentObject var tutorialStore: TutorialProgressStore
@@ -27,22 +29,27 @@ struct ProfileView: View {
     /// Opens the Getting Started tutorial board (cross-tab to Boards).
     /// Optional so #Preview / tests can mount ProfileView standalone.
     var onOpenTutorial: (() -> Void)? = nil
-    /// Cross-tab: open a board from a Profile sub-page (Counters hub → Counter
-    /// detail → member card). Routed by `MainTabView.openBoard`, so a core
-    /// board lands in its pager window. Optional like `onOpenTutorial` (previews
-    /// / snapshots compose the view bare); MainTabView always wires it.
+    /// Cross-tab: open a board from a Profile sub-page (Counters hub →
+    /// Counter detail → member card). Routed by `MainTabView.openBoard`, so
+    /// a core board lands in its pager window. Optional like
+    /// `onOpenTutorial` (previews / snapshots compose the view bare);
+    /// MainTabView always wires it.
     var onOpenBoard: ((String) -> Void)? = nil
 
     // MARK: - Private state
 
+    @StateObject private var vm = ProfileHomeViewModel()
     @State private var showEditProfile = false
 
-    /// Async-loaded per-timeframe bingo + greenlog streaks for the "Your
-    /// streaks" card. Empty until `loadCounts()` computes it.
-    @State private var streaks: [Timeframe: StreakPair] = [:]
-    /// False until `loadCounts()` lands — empty streaks mean "not
-    /// computed yet", not "all zero" (late-mutation audit, shape B).
-    @State private var streaksLoaded = false
+    /// Counters-hub / counter-detail navigation, owned locally (the "All N ›"
+    /// link and a compact row's tap aren't `ProfileRoute` cases — they carry
+    /// the `onOpenBoard` cross-tab closure, same reason the pre-reorg
+    /// ProfileView pushed `CountersHubView` via a plain `NavigationLink`
+    /// rather than a route value).
+    @State private var showCountersHub = false
+    @State private var navigateToCounterId: String? = nil
+    @State private var showNewCounterSheet = false
+    @State private var logError: String?
 
     // MARK: - Derived
 
@@ -59,60 +66,97 @@ struct ProfileView: View {
     }
 
     private var isGuest: Bool { authService.isAnonymous }
+    private var preferences: UserPreferences { authService.userPreferences }
+
+    private var boardSettingsSummary: ProfileHomeViewModel.BoardSettingsTileSummary {
+        ProfileHomeViewModel.boardSettingsTileSummary(
+            defaultBoardSize: preferences.defaultBoardSize,
+            centerType: preferences.defaultCenterType,
+            weekStartDay: preferences.weekStartDay,
+            repeatingCount: vm.repeatingBoardsCount
+        )
+    }
+
+    private var gettingStartedDisplay: ProfileHomeViewModel.GettingStartedDisplay {
+        ProfileHomeViewModel.gettingStartedDisplay(
+            completedCount: tutorialStore.completedCount,
+            isComplete: tutorialStore.isComplete
+        )
+    }
+
+    private var nextLessonTitle: String? {
+        nextIncompleteLessonTitle(completedIDs: tutorialStore.completedLessonIDs)
+    }
 
     // MARK: - Body
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             RisoPaperBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    header
+                    identityRow
                         .padding(.horizontal, Riso.gutter)
                         .padding(.top, 16)
                         .padding(.bottom, 18)
 
-                    // Identity row — account card + gear (→ Settings)
-                    HStack(alignment: .center, spacing: 12) {
-                        RisoProfileAccountCard(
-                            displayName: displayName,
-                            email: email,
-                            isGuest: isGuest,
-                            onEditName: { showEditProfile = true }
+                    if gettingStartedDisplay == .dayOneHero {
+                        RisoGettingStartedHero(
+                            done: tutorialStore.completedCount,
+                            total: TutorialProgressStore.totalLessons,
+                            onStart: { onOpenTutorial?() }
                         )
-
-                        NavigationLink(value: ProfileRoute.settings) {
-                            gearButton
-                        }
-                        .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
-                        .accessibilityLabel("Settings")
-                    }
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
-
-                    // Your streaks section — tapping the card pushes StreaksView
-                    sectionLabel("Your streaks")
-                    NavigationLink { StreaksView() } label: {
-                        RisoYourStreaksCard(streaks: streaks, streaksLoaded: streaksLoaded)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, Riso.gutter)
-                    .padding(.bottom, 18)
-
-                    // Preferences section
-                    sectionLabel("Preferences")
-                    preferencesCard
                         .padding(.horizontal, Riso.gutter)
                         .padding(.bottom, 18)
+                    }
+
+                    tilesRow
+                        .padding(.horizontal, Riso.gutter)
+                        .padding(.bottom, 18)
+
+                    if gettingStartedDisplay == .row {
+                        gettingStartedRow
+                            .padding(.horizontal, Riso.gutter)
+                            .padding(.bottom, 18)
+                    }
+
+                    ProfileCountersSection(
+                        groups: vm.recentCounters,
+                        totalCount: vm.totalCounterCount,
+                        loggingCounterIds: vm.loggingCounterIds,
+                        onOpenHub: { showCountersHub = true },
+                        onOpenDetail: { counterId in navigateToCounterId = counterId },
+                        onNewCounter: { showNewCounterSheet = true },
+                        onLog: { group in handleLog(group) }
+                    )
+                    .padding(.bottom, 32)
                 }
+            }
+
+            // "Logged +N · Undo" — the same `CounterLogToastView` the Counters
+            // Hub raises after its "+ Log" pill (parity with web's Profile
+            // home, which reuses the hub's `CounterLogToast`).
+            if let toast = vm.toast {
+                CounterLogToastView(
+                    amount: toast.amount,
+                    unit: toast.unit,
+                    verb: toast.verb,
+                    onUndo: { handleUndo(counterId: toast.counterId) },
+                    onDone: { vm.dismissToast() }
+                )
+                .padding(.horizontal, Riso.gutter)
+                .padding(.bottom, 24)
+                .id(toast.toastKey)
             }
         }
         .navigationBarHidden(true)
-        // Edit profile sheet — replaces the old inline alert.
-        // Presented modally so the NavigationStack chrome appears correctly
-        // (title + gold-pill Done button). Dismissed by the sheet itself
-        // via `onSave` / `onCancel`.
+        .navigationDestination(isPresented: $showCountersHub) {
+            CountersHubView(onOpenBoard: onOpenBoard ?? { _ in })
+        }
+        .navigationDestination(item: $navigateToCounterId) { counterId in
+            CounterDetailView(counterId: counterId, onOpenBoard: onOpenBoard ?? { _ in })
+        }
         .sheet(isPresented: $showEditProfile) {
             EditProfileSheet(
                 displayName: displayName,
@@ -125,25 +169,52 @@ struct ProfileView: View {
                 onCancel: { showEditProfile = false }
             )
         }
-        .onAppear { loadCounts() }
+        .sheet(isPresented: $showNewCounterSheet, onDismiss: reload) {
+            if let userId = authService.currentUser?.id {
+                NewCounterSheetView(
+                    userId: userId,
+                    tasks: vm.counterDedupeTasks,
+                    onNavigateToCounter: { _ in
+                        showNewCounterSheet = false
+                        showCountersHub = true
+                    }
+                )
+            }
+        }
+        .alert(
+            "Counter not updated",
+            isPresented: Binding(get: { logError != nil }, set: { if !$0 { logError = nil } }),
+            presenting: logError
+        ) { _ in
+            Button("OK", role: .cancel) { logError = nil }
+        } message: { message in
+            Text(message)
+        }
+        .onAppear { reload() }
     }
 
-    // MARK: - Header
+    // MARK: - Identity row (avatar/name/email + gear → Settings)
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Account").risoKicker()
-            Text("Profile").risoH1()
-                .padding(.top, 4)
+    private var identityRow: some View {
+        HStack(alignment: .center, spacing: 12) {
+            RisoProfileIdentityHeader(
+                displayName: displayName,
+                email: email,
+                isGuest: isGuest,
+                onEditName: { showEditProfile = true }
+            )
+
+            NavigationLink(value: ProfileRoute.settings) {
+                gearButton
+            }
+            .buttonStyle(RisoButtonStyle(offset: Riso.Shadow.small))
+            .accessibilityLabel("Settings")
         }
     }
 
-    // MARK: - Gear button (→ Settings)
-
     /// 40×40 paper-2 keyline square with a `gearshape` glyph — matches
     /// `RisoSubPageHeader`'s back-button metrics exactly (2pt ink border,
-    /// 7pt radius). The `RisoButtonStyle` wrapper on the `NavigationLink`
-    /// supplies both the press-into-paper animation and the hard shadow.
+    /// 7pt radius).
     private var gearButton: some View {
         Image(systemName: "gearshape")
             .font(.system(size: 16, weight: .bold))
@@ -153,110 +224,87 @@ struct ProfileView: View {
             // 40pt visual square, 44pt touch target (HIG minimum): the
             // content shape is laid on a 44pt frame, then the negative
             // padding gives the 40pt layout back so the button style's
-            // hard shadow still traces the card (same trick as the
-            // RisoSubPageHeader back button).
+            // hard shadow still traces the card.
             .padding(2)
             .contentShape(Rectangle())
             .padding(-2)
     }
 
-    // MARK: - Section label
+    // MARK: - Tiles row (Board settings / Streak)
 
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .risoSectionLabel()
-            .padding(.horizontal, Riso.gutter)
-            .padding(.bottom, 8)
+    private var tilesRow: some View {
+        HStack(spacing: 12) {
+            NavigationLink(value: ProfileRoute.boardSettings) {
+                RisoProfileTile {
+                    ProfileBoardSettingsTileContent(
+                        defaultsLine: boardSettingsSummary.defaultsLine,
+                        repeatingLine: boardSettingsSummary.repeatingLine
+                    )
+                }
+            }
+            .buttonStyle(RisoProfileTileButtonStyle())
+
+            NavigationLink(value: ProfileRoute.streaks) {
+                if vm.streak.bingoStreak > 0 {
+                    RisoProfileTile(fill: .risoGold) {
+                        ProfileStreakTileContent(
+                            bingoStreak: vm.streak.bingoStreak,
+                            longestStreak: vm.streak.longestStreak,
+                            greenlogCount: vm.streak.greenlogCount
+                        )
+                    }
+                } else {
+                    RisoProfileTile(dashed: true) { ProfileEmptyStreakTileContent() }
+                }
+            }
+            .buttonStyle(RisoProfileTileButtonStyle(offset: vm.streak.bingoStreak > 0 ? Riso.Shadow.card : nil))
+        }
     }
 
-    // MARK: - Preferences card
+    // MARK: - Getting started row (0 < completedCount < 8)
 
-    private var preferencesCard: some View {
-        VStack(spacing: 0) {
-            // Getting started — re-entry to the tutorial board (cross-tab).
-            Button { onOpenTutorial?() } label: {
-                RisoProfileRow(
-                    icon: "graduationcap",
-                    label: "Getting started",
-                    value: tutorialStore.isComplete
-                        ? "Done"
-                        : "\(tutorialStore.completedCount)/\(TutorialProgressStore.totalLessons)",
-                    chevron: true
-                )
-            }
-            .buttonStyle(.plain)
-
-            rowDivider
-
-            // Board settings (Task Pools + Recurring Boards Rework, P7) —
-            // replaces the separate "Recurring templates" / "Default
-            // pools" rows: per-timeframe core-board defaults + the
-            // repeating-boards roster now live on one page. No count
-            // badge — a single number spanning two different entity
-            // types (defaults vs. repeating boards) isn't meaningful.
-            NavigationLink {
-                BoardSettingsView()
-            } label: {
-                RisoProfileRow(
-                    icon: "slider.horizontal.3",
-                    label: "Board settings",
-                    chevron: true
-                )
-            }
-            .buttonStyle(.plain)
-
-            rowDivider
-
-            // Shared counters (Shared Counters P1)
-            NavigationLink {
-                CountersHubView(onOpenBoard: onOpenBoard ?? { _ in })
-            } label: {
-                RisoProfileRow(
-                    icon: "arrow.triangle.2.circlepath",
-                    label: "Shared counters",
-                    chevron: true
-                )
-            }
-            .buttonStyle(.plain)
+    private var gettingStartedRow: some View {
+        Button { onOpenTutorial?() } label: {
+            RisoProfileRow(
+                icon: "checkmark.circle",
+                label: "Getting started",
+                caption: nextLessonTitle.map { "Next: \($0)" },
+                value: "\(tutorialStore.completedCount)/\(TutorialProgressStore.totalLessons)",
+                chevron: true
+            )
         }
+        .buttonStyle(.plain)
         .risoCard()
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
-    // MARK: - Helpers
+    // MARK: - "+ Log" pill + Undo
 
-    private var rowDivider: some View {
-        Divider()
-            .background(Color.risoInk.opacity(0.12))
-            .padding(.horizontal, Riso.cardPadding)
+    private func handleLog(_ group: SharedCounterGroup) {
+        guard let userId = authService.currentUser?.id else { return }
+        vm.handleLog(
+            group: group,
+            userId: userId,
+            weekStartDay: preferences.weekStartDay.rawValue,
+            onError: { message in logError = message }
+        )
     }
 
-    // MARK: - Streak loading
-
-    /// Loads the "Your streaks" card data async on appear. P7 (Task Pools
-    /// + Recurring Boards Rework) dropped the two Preferences-row count
-    /// badges this used to also load (`recurringTemplateCount`/
-    /// `defaultPoolCount`) — the merged "Board settings" row shows no
-    /// count (a single number spanning defaults + repeating boards isn't
-    /// meaningful) — so this is streaks-only now.
-    private func loadCounts() {
+    private func handleUndo(counterId: String) {
         guard let userId = authService.currentUser?.id else { return }
-        // Per-timeframe streaks for the "Your streaks" card. `computeAllStreaks`
-        // is pure (safe off-main); `fetchBoards` returns all boards and the
-        // algorithm re-filters to core/non-deleted internally.
-        let weekStartDay = authService.userPreferences.weekStartDay.rawValue
-        // Capture `now` on main before the detached task (parity with the slot /
-        // window VMs) so a midnight rollover between dispatch and execution can't
-        // mismatch the boards snapshot against a next-day `now`.
-        let now = Date()
-        _Concurrency.Task.detached(priority: .userInitiated) {
-            let boards = (try? AppDatabase.shared.fetchBoards(userId: userId)) ?? []
-            let result = computeAllStreaks(boards: boards, weekStartDay: weekStartDay, now: now)
-            await MainActor.run {
-                streaks = result
-                streaksLoaded = true
-            }
-        }
+        vm.handleUndo(
+            counterId: counterId,
+            userId: userId,
+            weekStartDay: preferences.weekStartDay.rawValue,
+            onError: { message in logError = message }
+        )
+    }
+
+    // MARK: - Loading
+
+    private func reload() {
+        guard let userId = authService.currentUser?.id else { return }
+        vm.load(userId: userId, weekStartDay: preferences.weekStartDay.rawValue)
     }
 }
 

@@ -568,6 +568,34 @@ export async function readBoard(
   }, id);
 }
 
+/**
+ * Read a task row directly from IndexedDB. Used by the Profile home "+ Log"
+ * e2e coverage (`profile-home.spec.ts`) to assert a source counting task's
+ * `currentCount` actually incremented after the UI write, not just that a
+ * toast appeared.
+ */
+export async function readTask(
+  page: Page,
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  return await page.evaluate(async (taskId) => {
+    return new Promise<Record<string, unknown> | null>((resolve, reject) => {
+      const openReq = indexedDB.open('oybc');
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(['tasks'], 'readonly');
+        const req = tx.objectStore('tasks').get(taskId);
+        req.onsuccess = () => {
+          db.close();
+          resolve((req.result as Record<string, unknown> | undefined) ?? null);
+        };
+        req.onerror = () => reject(req.error);
+      };
+    });
+  }, id);
+}
+
 // ─── Windowed Completion — TaskEvent seed helper ────────────────────────────
 //
 // Same raw-IDB pattern as the other seeders. `docs/WINDOWED_COMPLETION.md`'s
@@ -586,6 +614,14 @@ export interface SeedTaskEvent {
   /** Provenance only (never read during evaluation). */
   boardId?: string;
   isDeleted?: boolean;
+  /**
+   * Override the write-time timestamp (defaults to "now"). Needed by tests
+   * that seed several events and must control WRITE recency independently
+   * of `occurredAt` — e.g. `selectLastIncrementEntry` / Profile home's
+   * "most recently logged" ordering sorts by `createdAt`, not `occurredAt`
+   * (a late log's `occurredAt` can be stamped in the past).
+   */
+  createdAt?: string;
 }
 
 /**

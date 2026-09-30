@@ -127,3 +127,12 @@ let tutorialLessonsByPos: [Int: TutorialLesson] = {
 func tutorialMoveNumber(for lesson: TutorialLesson) -> Int {
     (tutorialLessons.firstIndex(where: { $0.id == lesson.id }) ?? 0) + 1
 }
+
+/// The title of the first lesson (in `tutorialLessons` order) NOT in
+/// `completedIDs` — the Profile home "Getting started" row/hero's
+/// "Next: {title}" caption (design handoff §Interactions: "'Next' label =
+/// title of the first lesson in `tutorialLessons` order that is not
+/// learned"). `nil` once every lesson is done.
+func nextIncompleteLessonTitle(completedIDs: Set<String>) -> String? {
+    tutorialLessons.first { !completedIDs.contains($0.id) }?.title
+}

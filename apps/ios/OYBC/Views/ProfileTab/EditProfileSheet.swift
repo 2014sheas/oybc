@@ -3,8 +3,10 @@ import SwiftUI
 /// EditProfileSheet — bottom sheet to update the user's display name
 /// (§5b of the Riso redesign spec).
 ///
-/// Opened from `RisoProfileAccountCard`'s name/✎ tap affordance in
-/// `ProfileView`. On Save it calls `updateName(_:)`, which in production
+/// Opened from `RisoProfileIdentityHeader`'s name/✎ tap affordance in
+/// `ProfileView` (Profile reorg PR2 — the identity header ported this
+/// affordance out of the retired `RisoProfileAccountCard`). On Save it
+/// calls `updateName(_:)`, which in production
 /// wraps `AuthService.updateDisplayName(_:)` — updating Firebase Auth and
 /// the local GRDB User row atomically (same path the old inline alert used).
 ///

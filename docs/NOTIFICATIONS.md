@@ -86,7 +86,7 @@ Plus the previously-dead `expiringReminders` (default true), now live. They ride
 - `Services/NotificationService.swift` — OS scheduling + reconcile, auth-owned
 - `Services/NotificationDelegate.swift` — app-lifetime delegate, cold-launch buffer
 - `Views/ProfileTab/NotificationPreferencesView.swift` — settings (thin container + `NotificationPreferencesContent` leaf; the leaf is snapshot-tested in `OYBCSnapshotTests/NotificationPreferencesSnapshotTests.swift`)
-- Wiring: `OYBCApp.swift` (delegate register), `AuthService.swift` (owns service + `clearAll` on sign-out), `AuthGateView.swift` (env injection), `MainTabView.swift` (reconcile + deep-link drain), `ProfileView.swift` (nav row). `expiringReminders` moved out of `BoardPreferencesView`.
+- Wiring: `OYBCApp.swift` (delegate register), `AuthService.swift` (owns service + `clearAll` on sign-out), `AuthGateView.swift` (env injection), `MainTabView.swift` (reconcile + deep-link drain), `SettingsView.swift` (nav row — moved off `ProfileView` in the 2026-09-30 Profile reorg). `expiringReminders` moved out of `BoardPreferencesView`.
 
 ## Verification that can't be unit-tested (relay to user)
 
