@@ -144,6 +144,53 @@ final class BoardWizardStepsSnapshotTests: XCTestCase {
         )
     }
 
+    // MARK: - Setup step (Step 1) — editing an existing repeating board
+
+    /// Profile reorg PR3 — Delete left the Board-settings roster row and now
+    /// lives in the editor: the Setup step (where the editor lands) shows a
+    /// "Delete repeating board" quiet red row under the form when the
+    /// controller is hydrated from an existing template AND the parent
+    /// wires the handler. Pinned `targetWindowDate` keeps the cadence
+    /// caption deterministic.
+    private func makeEditingController() -> BoardWizardViewModel {
+        let template = SnapshotFixtures.makeRecurringTemplate(
+            id: "tpl-edit", name: "Weekly Workout", timeframe: .weekly, boardSize: 3, seedTaskCount: 9
+        )
+        return BoardWizardViewModel(
+            preferences: SnapshotFixtures.makeUserPreferences(),
+            targetWindowDate: SnapshotFixtures.fixedReferenceDate,
+            editingTemplate: template
+        )
+    }
+
+    func testSetupStepEditingRepeatingBoard() {
+        let view = BoardWizardSetupStepView(
+            controller: makeEditingController(),
+            onCancel: { },
+            onNext: { },
+            onDeleteRepeatingBoard: { }
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 760), traits: lightTraits),
+            record: recordMode
+        )
+    }
+
+    func testSetupStepEditingRepeatingBoardDark() {
+        let view = BoardWizardSetupStepView(
+            controller: makeEditingController(),
+            onCancel: { },
+            onNext: { },
+            onDeleteRepeatingBoard: { }
+        )
+        assertSnapshot(
+            of: view,
+            as: .image(layout: .fixed(width: 393, height: 760), traits: darkTraits),
+            record: recordMode
+        )
+    }
+
     // MARK: - Preview step (Step 3) — light
 
     /// Preview-step fixture — fills the wizard out with selected tasks

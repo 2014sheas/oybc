@@ -13,6 +13,7 @@ import {
 import { algorithmSupplies } from '../../pages/createHub/wizardSources';
 import {
   createRecurringBoardTemplate,
+  softDeleteRecurringBoardTemplate,
   updateRecurringBoardTemplate,
 } from '../../db/operations/recurringBoardTemplates';
 import { deleteDraftWithCascade } from '../../db/operations/boards';
@@ -668,4 +669,36 @@ async function retireResumedDraftIfNeeded(draftBoardId: string | null): Promise<
   } catch (err) {
     console.warn(`[persistRecurringTemplate] failed to retire resumed draft ${draftBoardId}:`, err);
   }
+}
+
+/**
+ * Delete the repeating board a wizard session is EDITING (Profile reorg
+ * PR3 — Delete moved from the Board-settings roster row into the editor's
+ * Setup step). Twin of iOS `deleteEditedRecurringTemplate`
+ * (`BoardWizardPersist.swift`).
+ *
+ * Routes through the SAME `softDeleteRecurringBoardTemplate` op the old
+ * roster button called: a soft-delete tombstone with a version bump +
+ * a DELETE sync-queue item. Boards already created from the template are
+ * deliberately untouched (as before). Nothing else in the session is
+ * persisted — pending tasks / staged edits are simply dropped with the
+ * wizard.
+ *
+ * @param controller - The wizard controller; must be in edit mode.
+ * @returns The deleted template's id (for `onTemplateComplete`).
+ * @throws If the controller is not editing a repeating board — a fresh
+ *   session has nothing to delete, and calling this from one is a wiring
+ *   bug, not a user-facing state.
+ */
+export async function deleteEditedRecurringTemplate({
+  controller,
+}: {
+  controller: BoardWizardController;
+}): Promise<string> {
+  const templateId = controller.editingTemplateId;
+  if (templateId === null) {
+    throw new Error('deleteEditedRecurringTemplate: the wizard is not editing a repeating board.');
+  }
+  await softDeleteRecurringBoardTemplate(templateId);
+  return templateId;
 }

@@ -448,6 +448,7 @@
 		E08234095DF9E8966C89DAF3 /* CounterOpsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A46C5E323B8BC86684D490B /* CounterOpsTests.swift */; };
 		E0894E4DE72A0307D028E9C8 /* CreateHubDraftsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3F18DF150886C6CA0F36DD /* CreateHubDraftsListView.swift */; };
 		E0DA461A0FC7A7AEE130AFB8 /* NotificationPreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 838CDB33DF9CBB9C230865E5 /* NotificationPreferencesView.swift */; };
+		E2623A5D16DCEACCBB5CC63B /* BoardWizardPersist+DeleteRecurringTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D83ABC2029097355B7D378 /* BoardWizardPersist+DeleteRecurringTemplate.swift */; };
 		E26577D8B18712713F97E1D3 /* RecurringDraftMixPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577A9FF2077DA1361731C107 /* RecurringDraftMixPayload.swift */; };
 		E47B395CA96B6E8FC1DFB92E /* TaskTitleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2657746FBB2A2ACDE23FA7F7 /* TaskTitleTests.swift */; };
 		E4DD53C5C8E9671515E7A07B /* BoardSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10275E8E4F0064643EC2ECC8 /* BoardSources.swift */; };
@@ -870,6 +871,7 @@
 		A06D816B26BA1EA95F704B62 /* AppDatabase+DefaultPoolsTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+DefaultPoolsTestSupport.swift"; sourceTree = "<group>"; };
 		A0CB0EA87156513D6744FDB3 /* DateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFormatting.swift; sourceTree = "<group>"; };
 		A13D4A0DE05DC8355C8A2551 /* RisoKitGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoKitGallery.swift; sourceTree = "<group>"; };
+		A1D83ABC2029097355B7D378 /* BoardWizardPersist+DeleteRecurringTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BoardWizardPersist+DeleteRecurringTemplate.swift"; sourceTree = "<group>"; };
 		A21392B9218C35E587B83EC5 /* RisoProfileSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoProfileSnapshotTests.swift; sourceTree = "<group>"; };
 		A26AD6B44858BA231B338C25 /* AuthClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthClient.swift; sourceTree = "<group>"; };
 		A2B9CC1100E046499CED2041 /* RisoProfileRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoProfileRow.swift; sourceTree = "<group>"; };
@@ -1050,7 +1052,7 @@
 		FF5F9FDA837D8BC9484CCF6C /* CoreBoardDefault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardDefault.swift; sourceTree = "<group>"; };
 		FF67441213041C9A9901261C /* RisoCoreTimeframeGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RisoCoreTimeframeGrid.swift; sourceTree = "<group>"; };
 		FFB954BE701004999E12FBE9 /* CoreBoardWindowViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreBoardWindowViewModelTests.swift; sourceTree = "<group>"; };
-		"TEMP_2EDB8DE6-5C34-41E4-A693-EBF2D07EE0C5" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		"TEMP_87E19E40-7AE9-48CD-9C18-D0EAD29EE037" /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1734,6 +1736,7 @@
 			isa = PBXGroup;
 			children = (
 				59C7E61CA9243686BBA1D7FB /* BoardWizardPersist.swift */,
+				A1D83ABC2029097355B7D378 /* BoardWizardPersist+DeleteRecurringTemplate.swift */,
 				AF95AF59BC3B4BD4D062426D /* BoardWizardPreviewDerived.swift */,
 				ECCBF1C8380F30B8C320AABD /* BoardWizardView.swift */,
 				672279842817679C05C429E7 /* CreateHubView.swift */,
@@ -1839,10 +1842,10 @@
 			path = OYBCUITests;
 			sourceTree = "<group>";
 		};
-		"TEMP_67D2AE66-A587-4F6E-93F7-41F803F11A7B" /* ios */ = {
+		"TEMP_57A5F689-AE09-4A22-BC09-ACC6C14FFE81" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_2EDB8DE6-5C34-41E4-A693-EBF2D07EE0C5" /* Signing.xcconfig */,
+				"TEMP_87E19E40-7AE9-48CD-9C18-D0EAD29EE037" /* Signing.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -2127,6 +2130,7 @@
 				E4DD53C5C8E9671515E7A07B /* BoardSources.swift in Sources */,
 				A6587A770CE6BA5A3F726513 /* BoardTask.swift in Sources */,
 				B0A090A23437AFB103276BD1 /* BoardWizardCancelDialogView.swift in Sources */,
+				E2623A5D16DCEACCBB5CC63B /* BoardWizardPersist+DeleteRecurringTemplate.swift in Sources */,
 				441C5B2BAC4E663AED8969B2 /* BoardWizardPersist.swift in Sources */,
 				9AA6BB2997D37628530F40FF /* BoardWizardPreviewDerived.swift in Sources */,
 				34CD652D040F6B6899F3D228 /* BoardWizardPreviewStepView.swift in Sources */,
@@ -2578,7 +2582,7 @@
 /* Begin XCBuildConfiguration section */
 		017A8B55D46C455027C5CBDA /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_2EDB8DE6-5C34-41E4-A693-EBF2D07EE0C5" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_87E19E40-7AE9-48CD-9C18-D0EAD29EE037" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;
@@ -2675,7 +2679,7 @@
 		};
 		2D2075CA2813758686875591 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_2EDB8DE6-5C34-41E4-A693-EBF2D07EE0C5" /* Signing.xcconfig */;
+			baseConfigurationReference = "TEMP_87E19E40-7AE9-48CD-9C18-D0EAD29EE037" /* Signing.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = OYBC/OYBC.entitlements;

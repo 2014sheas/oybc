@@ -919,4 +919,105 @@ final class BoardWizardPersistRecurringTemplateTests: XCTestCase {
         XCTAssertNotNil(try db.fetchRecurringBoardTemplate(id: templateId))
         XCTAssertNotNil(try db.fetchBoard(id: boardId))
     }
+
+    // MARK: - Profile reorg PR3 — Delete lives in the editor
+
+    /// Runs `deleteEditedRecurringTemplate` synchronously (same expectation
+    /// wrapper shape as `runPersist`), returning `(templateId, error)`.
+    private func runDelete(controller: BoardWizardViewModel) -> (templateId: String?, error: String?) {
+        let expectation = XCTestExpectation(description: "deleteEditedRecurringTemplate")
+        var deletedId: String?
+        var errorMessage: String?
+        deleteEditedRecurringTemplate(
+            controller: controller,
+            database: controller.database,
+            onSuccess: { id in deletedId = id; expectation.fulfill() },
+            onError: { message in errorMessage = message; expectation.fulfill() }
+        )
+        wait(for: [expectation], timeout: 5.0)
+        return (deletedId, errorMessage)
+    }
+
+    /// The editor's Delete routes through the SAME op the retired roster-row
+    /// button called: a soft-delete tombstone + version bump + a DELETE
+    /// sync-queue item, with boards already created from the repeating
+    /// board left untouched.
+    func test_deleteFromEditor_tombstonesTemplate_bumpsVersion_enqueuesDelete_leavesCreatedBoards() throws {
+        let userId = "test-user-\(UUID().uuidString)"
+        try seedUser(userId)
+        try seedTask("x", userId: userId)
+        let now = AppDatabase.currentTimestamp()
+
+        let existingTemplate = RecurringBoardTemplate(
+            id: AppDatabase.generateUUID(),
+            userId: userId,
+            name: "Weekend Reset",
+            timeframe: .weekly,
+            boardSize: 3,
+            centerSquareType: .none,
+            isRandomized: true,
+            seedTaskIds: ["x"],
+            poolIds: [],
+            manualTaskIds: ["x"],
+            removedTaskIds: [],
+            isActive: false,
+            createdAt: now,
+            updatedAt: now,
+            version: 3
+        )
+        // Saved WITHOUT a pending create: an already-synced row. (With a
+        // pending create still queued, the DELETE would coalesce with it and
+        // drop both — the never-synced-entity rule in `SyncQueueBuilder`.)
+        try db.saveRecurringBoardTemplate(existingTemplate)
+        // A board already created from it — must survive the delete. Built
+        // by decode (same as `AppDatabaseSyncEnqueueTests.makeBoard`): the
+        // model's custom `init(from:)` suppresses the memberwise init.
+        let boardDict: [String: Any] = [
+            "id": AppDatabase.generateUUID(), "userId": userId, "name": "Weekend Reset",
+            "status": BoardStatus.active.rawValue, "boardSize": 3, "timeframe": Timeframe.weekly.rawValue,
+            "startDate": now, "endDate": now, "centerSquareType": CenterSquareType.none.rawValue,
+            "isRandomized": true, "totalTasks": 9, "completedTasks": 0, "linesCompleted": 0,
+            "createdAt": now, "updatedAt": now, "version": 1, "isDeleted": false,
+            "spawnedFromTemplateId": existingTemplate.id,
+        ]
+        let board = try JSONDecoder().decode(Board.self, from: JSONSerialization.data(withJSONObject: boardDict))
+        try db.saveBoard(board)
+        let queueBefore = try db.fetchPendingSyncItems().count
+
+        let vm = BoardWizardViewModel(
+            preferences: .defaults, editingTemplate: existingTemplate, userId: userId, database: db
+        )
+        let result = runDelete(controller: vm)
+        XCTAssertNil(result.error)
+        XCTAssertEqual(result.templateId, existingTemplate.id)
+
+        let refetched = try XCTUnwrap(db.fetchRecurringBoardTemplate(id: existingTemplate.id))
+        XCTAssertTrue(refetched.isDeleted)
+        XCTAssertNotNil(refetched.deletedAt)
+        XCTAssertEqual(refetched.version, 4)
+
+        let deleteItems = try db.fetchPendingSyncItems().filter {
+            $0.entityId == existingTemplate.id && $0.operationType == .delete
+        }
+        XCTAssertEqual(deleteItems.count, 1)
+        XCTAssertEqual(try db.fetchPendingSyncItems().count, queueBefore + 1)
+
+        let survivingBoard = try XCTUnwrap(db.fetchBoard(id: board.id))
+        XCTAssertFalse(survivingBoard.isDeleted)
+    }
+
+    /// A fresh session has nothing to delete: the helper refuses (error
+    /// callback) and writes nothing — the guard against a wiring bug.
+    func test_deleteFromEditor_refusesWhenNotEditing_writesNothing() throws {
+        let userId = "test-user-\(UUID().uuidString)"
+        try seedUser(userId)
+        let queueBefore = try db.fetchPendingSyncItems().count
+
+        let vm = BoardWizardViewModel(preferences: .defaults, startRecurring: true, userId: userId, database: db)
+        XCTAssertNil(vm.editingTemplateId)
+        let result = runDelete(controller: vm)
+        XCTAssertNil(result.templateId)
+        XCTAssertNotNil(result.error)
+        XCTAssertEqual(try db.fetchPendingSyncItems().count, queueBefore)
+    }
 }

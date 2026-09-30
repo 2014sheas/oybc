@@ -205,5 +205,44 @@ test.describe('Board settings page', () => {
       await expect(page.getByRole('group', { name: 'Repeats every' })).toBeVisible();
       await expect(page.getByRole('group', { name: 'Timeframe' })).toHaveCount(0);
     });
+
+    test('Delete lives in the editor: row → "Delete repeating board" → confirm → row gone + Dexie tombstone', async ({
+      page,
+    }) => {
+      await page.goto('/profile/board-settings?__oybc_test_bypass=1');
+
+      // The list itself carries no Delete (owner decision) …
+      await expect(page.getByRole('button', { name: /^Delete /i })).toHaveCount(0);
+
+      // … the editor's Setup step does (Profile reorg PR3 self-review).
+      await page.getByRole('button', { name: /Weekend Reset/ }).click();
+      await expect(page.getByText('EDIT RECURRING BOARD')).toBeVisible();
+      await page.getByRole('button', { name: 'Delete repeating board' }).click();
+
+      const confirm = page.getByRole('alertdialog', { name: 'Confirm delete repeating board' });
+      await expect(confirm).toBeVisible();
+      await expect(confirm).toContainText('Delete "Weekend Reset"?');
+      await expect(confirm).toContainText('Boards already created from it will not be deleted.');
+
+      // Cancel backs out with nothing written.
+      await confirm.getByRole('button', { name: 'Cancel' }).click();
+      await expect(confirm).toBeHidden();
+      expect(((await readTemplate(page, PAUSED_ID)) as Record<string, unknown>).isDeleted).toBe(false);
+
+      // Confirm deletes, closes the editor, and lands back on Board settings.
+      await page.getByRole('button', { name: 'Delete repeating board' }).click();
+      await confirm.getByRole('button', { name: 'Delete', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Board settings' })).toBeVisible();
+      await expect(page.getByText('EDIT RECURRING BOARD')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /Weekend Reset/ })).toHaveCount(0);
+      // The other board is untouched.
+      await expect(page.getByRole('button', { name: /Morning Routine/ })).toBeVisible();
+
+      // Same op the old roster button called: soft-delete tombstone + version bump.
+      const deleted = (await readTemplate(page, PAUSED_ID)) as Record<string, unknown>;
+      expect(deleted.isDeleted).toBe(true);
+      expect(deleted.deletedAt).toBeTruthy();
+      expect(deleted.version).toBe(2);
+    });
   });
 });

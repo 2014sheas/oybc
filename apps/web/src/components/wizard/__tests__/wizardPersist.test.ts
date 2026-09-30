@@ -16,7 +16,12 @@ import {
 import { db } from '../../../db/internal';
 import { emptyPatch, type ChildPatch, type TaskEditPatch } from '../../../db/taskEditPatch';
 import { decodeRecurringDraftMix } from '../../../db/recurringDraftMix';
-import { buildWizardPlacement, persistRecurringTemplate, persistWizardBoard } from '../wizardPersist';
+import {
+  buildWizardPlacement,
+  deleteEditedRecurringTemplate,
+  persistRecurringTemplate,
+  persistWizardBoard,
+} from '../wizardPersist';
 import type { BoardWizardController } from '../../../pages/createHub/useBoardWizard';
 import type { PendingTaskPayload } from '../../../pages/createPage/useCreateFormState';
 import type { TaskLibrary } from '../../../pages/createPage/useTaskLibrary';
@@ -1206,5 +1211,60 @@ describe('persist paths — manualTaskVary threading (§Member rules B3)', () =>
     const [lo, hi] = varyRange(GOAL, 1, GOAL);
     expect(derived?.maxCount).toBeGreaterThanOrEqual(lo);
     expect(derived?.maxCount).toBeLessThanOrEqual(hi);
+  });
+});
+
+describe('deleteEditedRecurringTemplate — Profile reorg PR3 (Delete lives in the editor)', () => {
+  it('soft-deletes the edited repeating board through the same op the roster row used: tombstone + version bump + DELETE sync item, spawned boards untouched', async () => {
+    const template = makeTemplate({ id: 'tmpl-1', version: 3 });
+    await db.recurringBoardTemplates.add(template);
+    // A board already created from this repeating board — must survive.
+    await db.boards.add({
+      id: 'board-1',
+      userId: 'user-1',
+      name: 'Daily Workout',
+      boardSize: 3,
+      timeframe: Timeframe.DAILY,
+      status: BoardStatus.ACTIVE,
+      startDate: NOW,
+      endDate: NOW,
+      centerSquareType: CenterSquareType.FREE,
+      isRandomized: true,
+      totalTasks: 8,
+      completedTasks: 0,
+      linesCompleted: 0,
+      spawnedFromTemplateId: 'tmpl-1',
+      createdAt: NOW,
+      updatedAt: NOW,
+      version: 1,
+      isDeleted: false,
+    });
+
+    const controller = makeController({ editingTemplateId: 'tmpl-1' });
+    const deletedId = await deleteEditedRecurringTemplate({ controller });
+    expect(deletedId).toBe('tmpl-1');
+
+    const stored = await db.recurringBoardTemplates.get('tmpl-1');
+    expect(stored?.isDeleted).toBe(true);
+    expect(stored?.deletedAt).toBeTruthy();
+    expect(stored?.version).toBe(4);
+
+    const queued = (await db.syncQueue.toArray()).filter((q) => q.entityId === 'tmpl-1');
+    expect(queued.map((q) => q.operationType)).toEqual(['delete']);
+
+    const board = await db.boards.get('board-1');
+    expect(board?.isDeleted).toBe(false);
+  });
+
+  it('refuses a session that is not editing a repeating board (nothing to delete) and writes nothing', async () => {
+    const template = makeTemplate({ id: 'tmpl-1' });
+    await db.recurringBoardTemplates.add(template);
+
+    const controller = makeController({ editingTemplateId: null });
+    await expect(deleteEditedRecurringTemplate({ controller })).rejects.toThrow(/not editing/);
+
+    const stored = await db.recurringBoardTemplates.get('tmpl-1');
+    expect(stored?.isDeleted).toBe(false);
+    expect(await db.syncQueue.count()).toBe(0);
   });
 });

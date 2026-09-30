@@ -41,6 +41,13 @@ struct BoardWizardView: View {
     @State private var showCancelDialog: Bool = false
     @State private var cancelDialogError: String? = nil
     @State private var isSavingFromCancel: Bool = false
+    /// Profile reorg PR3 — "Delete repeating board" (edit mode only). The
+    /// Setup step asks; this view confirms (`.alert`) and runs
+    /// `deleteEditedRecurringTemplate` — the same soft-delete op the
+    /// retired roster-row button called — then closes via
+    /// `onTemplateComplete` (Board settings dismisses its cover + reloads).
+    /// Mirrors web `BoardWizardPage`'s `DeleteRepeatingBoardConfirmDialog`.
+    @State private var showDeleteConfirm: Bool = false
 
     // The user's pools + active recurring templates, for the Tasks step's
     // Sources sheet ("Add from a pool or board"). Owned here (mirrors
@@ -388,6 +395,25 @@ struct BoardWizardView: View {
             )
             .presentationDetents([.medium])
         }
+        .alert(
+            "Delete \"\(editingTemplate?.name ?? wizard.name)\"?",
+            isPresented: $showDeleteConfirm
+        ) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { handleDeleteConfirmed() }
+        } message: {
+            Text("Boards already created from it will not be deleted.")
+        }
+    }
+
+    private func handleDeleteConfirmed() {
+        cancelDialogError = nil
+        deleteEditedRecurringTemplate(
+            controller: wizard,
+            database: wizard.database,
+            onSuccess: { templateId in onTemplateComplete?(templateId) },
+            onError: { message in cancelDialogError = "Failed to delete repeating board: \(message)" }
+        )
     }
 
     @ViewBuilder
@@ -397,7 +423,8 @@ struct BoardWizardView: View {
             BoardWizardSetupStepView(
                 controller: wizard,
                 onCancel: handleCancelRequested,
-                onNext: { wizard.goNext() }
+                onNext: { wizard.goNext() },
+                onDeleteRepeatingBoard: editingTemplate != nil ? { showDeleteConfirm = true } : nil
             )
         case 2:
             BoardWizardTasksStepView(

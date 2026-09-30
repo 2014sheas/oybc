@@ -3,7 +3,8 @@ import SwiftUI
 /// RecurringTemplateCard — compact one-line row for one repeating board
 /// template on `BoardSettingsView`'s "REPEATING BOARDS" card (Profile reorg
 /// PR3, `design_handoff_profile_reorg/README.md` §4). iOS twin of web's
-/// `RecurringTemplateRow.tsx`.
+/// `components/boardSettings/RepeatingBoardRow.tsx` (meta line helpers ↔
+/// its `repeatingBoardMeta.ts`).
 ///
 /// Row 1: name (muted when paused) + timeframe tag, trailing active toggle
 /// + chevron. Row 2 (meta): `{size} board · {n}-task pool · renews {day}`
@@ -19,9 +20,10 @@ import SwiftUI
 /// BOARD" mode (`onEdit`), and the card chrome (border/shadow/background)
 /// moved OUT to the single composite card `BoardSettingsContent` wraps
 /// every row in — this component is now a plain row, not its own card.
-/// **Known gap**: this leaves no UI path to delete a repeating board
-/// template (the wizard's edit mode has no delete action either) — flagged
-/// as a follow-up rather than adding new wizard UI under this PR's scope.
+/// Delete now lives in the editor: the "Delete repeating board" row on the
+/// wizard's Setup step (`BoardWizardSetupStepView` → `BoardWizardView`'s
+/// `.alert` → `deleteEditedRecurringTemplate`, the same soft-delete op
+/// this row used to call).
 ///
 /// Tapping the row opens the board wizard hydrated from this template
 /// (edit mode) — the same cross-tab route web's row Edit button used. The
@@ -32,7 +34,7 @@ struct RecurringTemplateCard: View {
 
     let template: RecurringBoardTemplate
     /// Non-nil when this template's pool can't spawn — surfaces a badge.
-    /// Strict mirror of web's `attentionReason` (see `RecurringTemplateRow`).
+    /// Strict mirror of web's `attentionReason` (see `RepeatingBoardRow`).
     let attentionReason: SpawnAttentionReason?
     /// The "N-task pool" meta-row count. P1 (Task Pools + Recurring
     /// Boards Rework) — `template.seedTaskIds.count` goes stale the first
@@ -82,6 +84,7 @@ struct RecurringTemplateCard: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Color.risoMuted)
+                .accessibilityHidden(true) // decorative — the row itself is the affordance
         }
     }
 

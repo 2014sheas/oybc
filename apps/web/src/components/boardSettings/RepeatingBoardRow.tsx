@@ -67,9 +67,11 @@ export interface RepeatingBoardRowProps {
  * attention badge, a trailing Active/Paused toggle, and a chevron. The
  * whole row opens the template editor — pool-preview chips and the "Edit
  * tasks"/"Delete" buttons are dropped from this list per the
- * owner-decisions PR3 paragraph (they stay in the editor; Delete
- * specifically has no editor-side replacement yet — see the PR3 report's
- * follow-up note, out of this PR's scope).
+ * owner-decisions PR3 paragraph — they stay in the editor: Delete is the
+ * "Delete repeating board" row on the editor's Setup step
+ * (`BoardWizardSetupStep` → `DeleteRepeatingBoardConfirmDialog` →
+ * `deleteEditedRecurringTemplate`, the same soft-delete op this row used to
+ * call).
  *
  * The row is a `role="button"` DIV (not a literal `<button>`) because it
  * contains a real nested interactive control (the toggle's `<input
