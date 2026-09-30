@@ -37,6 +37,11 @@ final class ProfileHomeViewModel: ObservableObject {
     @Published private(set) var isLoaded = false
     /// Counter ids with an in-flight "+ Log" write — disables that row's pill.
     @Published private(set) var loggingCounterIds: Set<String> = []
+    /// The "Logged +N · Undo" toast raised by a successful "+ Log" — the same
+    /// `CounterLogToastView` affordance the Counters Hub shows (parity with
+    /// web's Profile home, which reuses the hub's `CounterLogToast`). `nil`
+    /// when no toast is showing; cleared by Undo or the view's auto-dismiss.
+    @Published private(set) var toast: LogToast?
 
     struct StreakStats: Equatable {
         var bingoStreak: Int = 0
@@ -105,23 +110,36 @@ final class ProfileHomeViewModel: ObservableObject {
         }
     }
 
-    // MARK: - "+ Log" pill
+    // MARK: - "+ Log" pill + Undo toast
 
-    /// Logs `group.defaultLogAmount ?? 1` for `group` in place, then reloads.
-    /// Mirrors `CountersHubView.handleLog`'s write path exactly (same
+    /// Toast state for one "+ Log" — mirrors the Hub's private
+    /// `HubToastState` field for field (`toastKey` re-keys the view so the
+    /// auto-dismiss timer restarts on back-to-back logs).
+    struct LogToast: Equatable {
+        let counterId: String
+        let amount: Int
+        let unit: String
+        let verb: CounterLogToastView.Verb
+        let toastKey: String
+    }
+
+    /// Dismisses the toast without undoing (auto-dismiss / `onDone`).
+    func dismissToast() {
+        toast = nil
+    }
+
+    /// Logs `group.defaultLogAmount ?? 1` for `group` in place, raises the
+    /// "Logged +N · Undo" toast, then reloads. Mirrors
+    /// `CountersHubView.handleLog`'s write path exactly (same
     /// `incrementSharedCounter` call, same `attemptLoggedWrite` logging
-    /// wrapper) — the Profile compact row and the Hub's full card share one
-    /// underlying op, per the design handoff's "reuse, don't duplicate".
+    /// wrapper, same toast/Undo affordance) — the Profile compact row and the
+    /// Hub's full card share one underlying op, per the design handoff's
+    /// "reuse, don't duplicate".
     ///
     /// - Parameters:
     ///   - group: The counter to log.
     ///   - onError: Fired on the main actor when the write fails (the caller
-    ///     surfaces an alert — Profile home has no toast/Undo affordance;
-    ///     that stays a Hub-only convenience one tap away via "All N ›").
-    ///   - onSuccess: Fired on the main actor after a successful write,
-    ///     BEFORE the reload kicks off — callers that need to know
-    ///     immediately (none today) can hook it; `load()` itself refreshes
-    ///     `recentCounters`/`totalCounterCount` afterward.
+    ///     surfaces an alert; a failed write never toasts "Logged +N").
     func handleLog(
         group: SharedCounterGroup,
         userId: String,
@@ -131,6 +149,7 @@ final class ProfileHomeViewModel: ObservableObject {
         guard !loggingCounterIds.contains(group.counterId) else { return }
         let amount = group.defaultLogAmount ?? 1
         let counterId = group.counterId
+        let unit = group.unit ?? ""
         let db = self.db
         loggingCounterIds.insert(counterId)
         _Concurrency.Task.detached(priority: .userInitiated) {
@@ -141,6 +160,36 @@ final class ProfileHomeViewModel: ObservableObject {
                 self.loggingCounterIds.remove(counterId)
                 guard ok else {
                     onError("Failed to log. Try again.")
+                    return
+                }
+                self.toast = LogToast(
+                    counterId: counterId, amount: amount, unit: unit,
+                    verb: .logged, toastKey: UUID().uuidString
+                )
+                self.load(userId: userId, weekStartDay: weekStartDay)
+            }
+        }
+    }
+
+    /// Reverses the most recent log on `counterId` (the toast's Undo) via
+    /// `undoLastCounterLog` — the same op the Hub's Undo calls — clears the
+    /// toast, then reloads. A failed write reports through `onError` instead
+    /// of silently leaving the count as-is.
+    func handleUndo(
+        counterId: String,
+        userId: String,
+        weekStartDay: String,
+        onError: @escaping (String) -> Void
+    ) {
+        let db = self.db
+        _Concurrency.Task.detached(priority: .userInitiated) {
+            let ok = attemptLoggedWrite("ProfileHomeViewModel.handleUndo(\(counterId))") {
+                _ = try db.undoLastCounterLog(sourceTaskId: counterId)
+            }
+            await MainActor.run {
+                self.toast = nil
+                guard ok else {
+                    onError("Failed to undo. Try again.")
                     return
                 }
                 self.load(userId: userId, weekStartDay: weekStartDay)

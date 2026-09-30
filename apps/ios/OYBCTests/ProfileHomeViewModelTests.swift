@@ -4,8 +4,9 @@ import XCTest
 /// Unit tests for `ProfileHomeViewModel` (Profile reorg PR2) — the pure
 /// helpers (counter recency ordering, tile-summary formatting, Getting
 /// Started display selection) get full coverage without touching the DB;
-/// one integration test confirms `load()` wires an injected
-/// `AppDatabase.makeTestInstance()` end to end.
+/// integration tests against an injected `AppDatabase.makeTestInstance()`
+/// confirm `load()` wires end to end and that "+ Log" / Undo go through the
+/// shared-counter ops and drive the toast state.
 @MainActor
 final class ProfileHomeViewModelTests: XCTestCase {
 
@@ -252,6 +253,58 @@ final class ProfileHomeViewModelTests: XCTestCase {
         XCTAssertEqual(vm.recentCounters.map(\.counterId), ["src"])
         XCTAssertEqual(vm.recentCounters.first?.lifetime, 42)
         XCTAssertEqual(vm.streak.greenlogCount, 0)
+    }
+
+    // MARK: - "+ Log" / Undo (toast parity with the Counters Hub)
+
+    /// Seeds one hub-born counter and loads the VM — the fixture both
+    /// "+ Log" tests start from.
+    private func makeLoadedCounterVM() throws -> (ProfileHomeViewModel, AppDatabase) {
+        let db = try AppDatabase.makeTestInstance()
+        try seedUser(db)
+        try db.write { txn in
+            try task(id: "src", currentCount: 5, isCounter: true).save(txn)
+        }
+        let vm = ProfileHomeViewModel(db: db)
+        vm.load(userId: "u1", weekStartDay: "monday")
+        XCTAssertTrue(try waitUntil(timeout: 2) { vm.isLoaded })
+        return (vm, db)
+    }
+
+    func test_handleLog_incrementsSourceAndRaisesUndoableToast() throws {
+        let (vm, db) = try makeLoadedCounterVM()
+        let group = try XCTUnwrap(vm.recentCounters.first)
+        XCTAssertNil(vm.toast)
+
+        var errors: [String] = []
+        vm.handleLog(group: group, userId: "u1", weekStartDay: "monday") { errors.append($0) }
+        XCTAssertTrue(try waitUntil(timeout: 2) { vm.toast != nil })
+
+        XCTAssertEqual(errors, [])
+        XCTAssertEqual(vm.toast?.counterId, "src")
+        XCTAssertEqual(vm.toast?.amount, 1, "logs `defaultLogAmount ?? 1`")
+        XCTAssertEqual(vm.toast?.unit, "reps")
+        XCTAssertEqual(vm.toast?.verb, .logged)
+        // The write went through the shared-counter op: source row bumped…
+        XCTAssertEqual(try db.fetchTask(id: "src")?.currentCount, 6)
+        // …and the reload reflects it.
+        XCTAssertTrue(try waitUntil(timeout: 2) { vm.recentCounters.first?.lifetime == 6 })
+    }
+
+    func test_handleUndo_reversesLastLogAndClearsToast() throws {
+        let (vm, db) = try makeLoadedCounterVM()
+        let group = try XCTUnwrap(vm.recentCounters.first)
+        vm.handleLog(group: group, userId: "u1", weekStartDay: "monday") { _ in }
+        XCTAssertTrue(try waitUntil(timeout: 2) { vm.toast != nil })
+        XCTAssertEqual(try db.fetchTask(id: "src")?.currentCount, 6)
+
+        var errors: [String] = []
+        vm.handleUndo(counterId: "src", userId: "u1", weekStartDay: "monday") { errors.append($0) }
+        XCTAssertTrue(try waitUntil(timeout: 2) { vm.toast == nil })
+
+        XCTAssertEqual(errors, [])
+        XCTAssertEqual(try db.fetchTask(id: "src")?.currentCount, 5, "undo tombstones the log and restores the count")
+        XCTAssertTrue(try waitUntil(timeout: 2) { vm.recentCounters.first?.lifetime == 5 })
     }
 
     /// Polls `condition()` on the main run loop until it's true or `timeout`

@@ -50,8 +50,18 @@ struct ProfileCountersSection: View {
                     Text("All \(totalCount) ›")
                         .font(.risoBody(12, .bold))
                         .foregroundStyle(Color.risoBlue)
+                        // 12pt text is well under the 44pt HIG minimum: lay
+                        // the hit shape on a padded frame, then give the
+                        // padding back so the header's layout is unchanged
+                        // (same trick as ProfileView's gear button).
+                        .padding(.vertical, 14)
+                        .padding(.horizontal, 12)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -14)
+                        .padding(.horizontal, -12)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("All \(totalCount) counters")
             }
         }
     }

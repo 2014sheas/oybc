@@ -148,7 +148,9 @@ export function lastLoggedTimestamp(
 /**
  * Orders a user's shared-counter groups by most-recently-logged first and
  * returns the top `limit` (spec: "two most recently logged", "All N ›"
- * pushes the hub for the rest).
+ * pushes the hub for the rest). Equal timestamps break on `counterId`
+ * ascending — the same rule as iOS `ProfileHomeViewModel.orderCountersByRecency`,
+ * so both platforms show the same two rows for the same data.
  */
 export function selectRecentCounters(
   groups: readonly SharedCounterGroup[],
@@ -162,7 +164,10 @@ export function selectRecentCounters(
       lastLoggedAt: lastLoggedTimestamp(group, tasksById, eventsBySourceId),
       member: selectMostRecentlyLoggedMember(group, tasksById),
     }))
-    .sort((a, b) => (a.lastLoggedAt < b.lastLoggedAt ? 1 : a.lastLoggedAt > b.lastLoggedAt ? -1 : 0))
+    .sort((a, b) => {
+      if (a.lastLoggedAt !== b.lastLoggedAt) return a.lastLoggedAt < b.lastLoggedAt ? 1 : -1;
+      return a.group.counterId < b.group.counterId ? -1 : a.group.counterId > b.group.counterId ? 1 : 0;
+    })
     .slice(0, limit);
 }
 

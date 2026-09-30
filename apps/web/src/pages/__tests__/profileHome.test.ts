@@ -304,6 +304,20 @@ describe('selectRecentCounters', () => {
     expect(result.map((r) => r.group.counterId)).toEqual(['b', 'c']);
   });
 
+  it('breaks an equal-timestamp tie on counterId ascending (same rule as iOS)', () => {
+    const groupZ = makeGroup({ counterId: 'z', name: 'Zed' });
+    const groupA = makeGroup({ counterId: 'a', name: 'Alpha' });
+    const same = '2026-09-29T00:00:00.000Z';
+    const events: Record<string, TaskEvent[]> = {
+      z: [makeEvent('ez', 'z', { createdAt: same })],
+      a: [makeEvent('ea', 'a', { createdAt: same })],
+    };
+
+    // Input order is z-first; a deterministic tie-break must NOT depend on it.
+    const result = selectRecentCounters([groupZ, groupA], new Map(), events, 2);
+    expect(result.map((r) => r.group.counterId)).toEqual(['a', 'z']);
+  });
+
   it('attaches the resolved member for each row', () => {
     const source = makeMember({ taskId: 'source-1', isSource: true, boardId: null, boardName: null });
     const linked = makeMember({ taskId: 'm-1', boardName: 'Spring 10K' });

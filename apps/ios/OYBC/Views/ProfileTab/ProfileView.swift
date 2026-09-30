@@ -12,7 +12,8 @@ import SwiftUI
 /// 2. Day-one hero (`completedCount == 0`) — ABOVE the tiles, replaces the row.
 /// 3. Two tiles — Board settings / Streak (or its empty "no bingo yet" state).
 /// 4. Getting Started row (`0 < completedCount < 8`) — BELOW the tiles.
-/// 5. Shared counters — up to 2 most-recently-logged counters + "All N ›".
+/// 5. Shared counters — up to 2 most-recently-logged counters + "All N ›";
+///    "+ Log" raises the hub's "Logged +N · Undo" toast (bottom overlay).
 ///
 /// Container stays thin: identity/tutorial state comes straight from
 /// `AuthService`/`TutorialProgressStore` (env objects), DB-backed state
@@ -90,7 +91,7 @@ struct ProfileView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             RisoPaperBackground()
 
             ScrollView(showsIndicators: false) {
@@ -131,6 +132,22 @@ struct ProfileView: View {
                     )
                     .padding(.bottom, 32)
                 }
+            }
+
+            // "Logged +N · Undo" — the same `CounterLogToastView` the Counters
+            // Hub raises after its "+ Log" pill (parity with web's Profile
+            // home, which reuses the hub's `CounterLogToast`).
+            if let toast = vm.toast {
+                CounterLogToastView(
+                    amount: toast.amount,
+                    unit: toast.unit,
+                    verb: toast.verb,
+                    onUndo: { handleUndo(counterId: toast.counterId) },
+                    onDone: { vm.dismissToast() }
+                )
+                .padding(.horizontal, Riso.gutter)
+                .padding(.bottom, 24)
+                .id(toast.toastKey)
             }
         }
         .navigationBarHidden(true)
@@ -261,12 +278,22 @@ struct ProfileView: View {
         .risoHardShadow(Riso.Shadow.small, radius: Riso.cardRadius)
     }
 
-    // MARK: - "+ Log" pill
+    // MARK: - "+ Log" pill + Undo
 
     private func handleLog(_ group: SharedCounterGroup) {
         guard let userId = authService.currentUser?.id else { return }
         vm.handleLog(
             group: group,
+            userId: userId,
+            weekStartDay: preferences.weekStartDay.rawValue,
+            onError: { message in logError = message }
+        )
+    }
+
+    private func handleUndo(counterId: String) {
+        guard let userId = authService.currentUser?.id else { return }
+        vm.handleUndo(
+            counterId: counterId,
             userId: userId,
             weekStartDay: preferences.weekStartDay.rawValue,
             onError: { message in logError = message }
