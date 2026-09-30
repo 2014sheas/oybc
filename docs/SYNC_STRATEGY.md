@@ -777,7 +777,7 @@ Op-precedence table (rows = existing PENDING op, cols = incoming op):
 Previously a queue item that exhausted `MAX_SYNC_RETRIES` (5) sat FAILED forever with only a `console.warn` — invisible to the user, and Firestore never learned of the change (slow, silent multi-device divergence). D1 made this observable and recoverable on both platforms:
 
 - Both platforms track an `exhaustedCount` (FAILED items past the retry cap) alongside the existing sync-status state.
-- The web `SyncStatusIndicator` and iOS's minimal sync row (`RisoSyncRow.swift` / `SyncSheet.swift`) show a plain-count "N changes couldn't sync" affordance with a **Retry** button when `exhaustedCount > 0` — no raw error text, keeping the #151 three-state-row minimalism.
+- The web `SyncStatusIndicator` and iOS's minimal sync row (`RisoSyncRow.swift` / `SyncSheet.swift`) show a plain-count "N changes couldn't sync" affordance with a **Retry** button when `exhaustedCount > 0` — no raw error text, keeping the #151 three-state-row minimalism. **Removed 2026-09-30** (Profile reorg PR1, owner decision: sync status UI was a dev tool, not production UI) — no manual Retry surface exists now; the count still drives the network-regain auto-re-promote below.
 - Tapping Retry (`retryExhaustedSyncItems()` web, mirrored iOS) resets the exhausted rows' `retryCount` to 0 and re-promotes them to PENDING, then kicks an immediate sync.
 - **Network-regain auto-re-promote**: exhausted items also get exactly one free re-promote the moment connectivity returns (`online` event listener), without the user needing to tap Retry manually.
 
@@ -787,7 +787,7 @@ Previously a queue item that exhausted `MAX_SYNC_RETRIES` (5) sat FAILED forever
 | --- | --- | --- |
 | Lost increments across concurrent offline edits | **Union-of-events** on `task_events` (per-row LWW + tombstones) — *replaced* the retired additive three-way merge | `taskEvents.ts` / `AppDatabase+TaskEvents.swift`; see [§Task Events sync](#task-events-sync-windowed-completion--shipped) |
 | Queue bloat from edit bursts | D3 — per-entity PENDING coalescing | `syncQueue.ts` `coalesceSyncOperation` / `SyncQueueBuilder.coalesce` |
-| Permanently-stuck items | D1 — exhausted-count UI + Retry + network-regain re-promote | `SyncStatusIndicator.tsx` / `RisoSyncRow.swift`, `retryExhaustedSyncItems` |
+| Permanently-stuck items | D1 — exhausted-count + network-regain re-promote (the Retry UI was removed 2026-09-30) | `retryExhaustedSyncItems` (web `handleOnline` / iOS `MainTabView` network-regain) |
 
 ---
 
