@@ -36,24 +36,6 @@ const CORE_TIMEFRAMES: { value: Timeframe; label: string }[] = [
 ];
 
 /**
- * Phase 6.1 recurring-window "prompt me" toggles — independent of the
- * new-board defaults above because these drive the Boards-tab banner, not
- * the new-board form. When enabled, the Boards tab prompts the user to
- * create a board for each new window (daily/weekly/monthly/yearly) on
- * first open inside that window.
- */
-const RECURRING_TOGGLES: {
-  key: 'recurringDailyEnabled' | 'recurringWeeklyEnabled' | 'recurringMonthlyEnabled' | 'recurringYearlyEnabled';
-  label: string;
-  timeframe: Timeframe;
-}[] = [
-  { key: 'recurringDailyEnabled', label: 'Prompt for daily board', timeframe: Timeframe.DAILY },
-  { key: 'recurringWeeklyEnabled', label: 'Prompt for weekly board', timeframe: Timeframe.WEEKLY },
-  { key: 'recurringMonthlyEnabled', label: 'Prompt for monthly board', timeframe: Timeframe.MONTHLY },
-  { key: 'recurringYearlyEnabled', label: 'Prompt for yearly board', timeframe: Timeframe.YEARLY },
-];
-
-/**
  * BoardSettingsPage — /profile/board-settings (Task Pools + Recurring
  * Boards Rework, P7, docs/POOLS_RECURRING.md §Surfaces item 9). Replaces
  * BOTH retired Profile sub-pages — "Recurring templates"
@@ -74,13 +56,16 @@ const RECURRING_TOGGLES: {
  *   (web PR D) retired the local `RosterEditSheet` in favor of this,
  *   mirroring iOS's `BoardSettingsView` fullScreenCover.
  *
- * Also absorbs the two sections that used to live on the now-deleted
- * `/profile/board-preferences` sub-page (`BoardPreferencesPage`):
- * "New board defaults" (week-start / board size / timeframe / center square —
- * every field on the new-board form) at the top, and "Recurring board
- * reminders" (the Phase 6.1 prompt-me toggles) at the bottom. Neither is a
- * P7 concept; they're relocated here because the old sub-page was deleted
- * and they otherwise had no other home.
+ * Also absorbs "New board defaults" (week-start / board size / timeframe /
+ * center square — every field on the new-board form) at the top, which used
+ * to live on the now-deleted `/profile/board-preferences` sub-page
+ * (`BoardPreferencesPage`). Not a P7 concept; relocated here because the old
+ * sub-page was deleted and it otherwise had no other home.
+ *
+ * The Phase 6.1 "Recurring board reminders" prompt-me toggles that used to
+ * live at the bottom of this page moved to `/profile/settings` as the
+ * "Board renewals" card (Profile reorg PR1, owner decision 3, 2026-09-30) —
+ * web has no Notifications sub-page, so they live on Settings instead.
  */
 export function BoardSettingsPage(): React.ReactElement {
   const { user } = useAuth();
@@ -300,36 +285,6 @@ export function BoardSettingsPage(): React.ReactElement {
           ))}
         </div>
       )}
-
-      <div className={styles.sectionLabel}>Recurring board reminders</div>
-      <p className={styles.sectionIntro}>
-        When enabled, the Boards tab will prompt you to create a board for
-        each new window. Detection runs only when you open the app — no
-        background notifications.
-      </p>
-      <div className={styles.card}>
-        {RECURRING_TOGGLES.map(({ key, label, timeframe }) => (
-          <div className={styles.settingsRow} key={key}>
-            <label className={styles.rowLabel} htmlFor={`pref-${key}`}>
-              {label}
-            </label>
-            <label className={styles.toggleSwitch}>
-              <input
-                id={`pref-${key}`}
-                type="checkbox"
-                checked={prefs[key]}
-                onChange={(e) => setPref(key, e.target.checked)}
-              />
-              <span className={styles.toggleTrack} />
-            </label>
-            {prefs[key] && (
-              <Link to={`/boards/core/${timeframe}`} className={styles.browseLink}>
-                Browse →
-              </Link>
-            )}
-          </div>
-        ))}
-      </div>
 
       {userId && defaultsSheetTimeframe !== null && (
         <CoreDefaultsSheet
